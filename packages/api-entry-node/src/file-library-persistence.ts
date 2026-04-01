@@ -68,6 +68,12 @@ export function buildFileLibraryRecord(input: {
 export class JsonDocProjectFileLibraryCatalogRepo {
   constructor(private readonly docStore: JsonDocStorePort) {}
 
+  async listByOwner(ownerUserId: string): Promise<FileLibraryRecord[]> {
+    return this.docStore.list<FileLibraryRecord>(FILE_LIBRARY_CATALOG_COLLECTION, {
+      created_by_user_id: ownerUserId,
+    });
+  }
+
   async listByProject(workspaceId: string, projectId: string): Promise<FileLibraryRecord[]> {
     return this.docStore.list<FileLibraryRecord>(FILE_LIBRARY_CATALOG_COLLECTION, {
       workspace_id: workspaceId,

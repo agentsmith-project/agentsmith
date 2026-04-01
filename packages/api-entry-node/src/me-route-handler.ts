@@ -29,6 +29,7 @@ import {
   presentUserExternalConnection,
   updateUserExternalConnection,
 } from './user-external-connections-store.js';
+import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
 
 interface UserProfileRecord {
   display_name?: string | null;
@@ -117,6 +118,17 @@ export async function handleMeRoute(args: {
       return true;
     }
     json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
+    return true;
+  }
+
+  if (pathname === '/api/v1/me/desktop/file-libraries') {
+    if (method !== 'GET') {
+      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
+      return true;
+    }
+    const items = await new JsonDocProjectFileLibraryCatalogRepo(docStore).listByOwner(user.id);
+    items.sort((left, right) => right.created_at.localeCompare(left.created_at));
+    json(res, 200, { items });
     return true;
   }
 

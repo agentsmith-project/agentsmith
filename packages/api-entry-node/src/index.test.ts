@@ -29,6 +29,23 @@ describe('api-entry-node me routes', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ unread_count: 0 });
   });
+
+  it('returns desktop file libraries for the authenticated owner sorted newest first', async () => {
+    const { baseUrl } = startServer();
+    const older = await createFileLibrary(baseUrl, 'Older Library');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const newer = await createFileLibrary(baseUrl, 'Newer Library');
+
+    const response = await apiFetch(baseUrl, '/api/v1/me/desktop/file-libraries');
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      items: Array<{ id: string; name: string }>;
+    };
+    expect(payload.items.slice(0, 2)).toEqual([
+      expect.objectContaining({ id: newer.id, name: 'Newer Library' }),
+      expect.objectContaining({ id: older.id, name: 'Older Library' }),
+    ]);
+  });
 });
 
 describe('api-entry-node sse ticket routes', () => {

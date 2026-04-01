@@ -52,6 +52,15 @@ describe('normalizeInternalAgentImageForRuntime', () => {
     ).toBe('kind-registry:5000/mbos/agentsmith-codex-runner:test-release');
   });
 
+  it('upgrades older runtime tags to the current internal runner image', () => {
+    expect(
+      normalizeInternalAgentImageForRuntime(
+        'imotion-cn-beijing.cr.volces.com/mbos/agentsmith-codex-runner:20260327T223209Z',
+        'imotion-cn-beijing.cr.volces.com/mbos/agentsmith-codex-runner:20260331T234338Z',
+      ),
+    ).toBe('imotion-cn-beijing.cr.volces.com/mbos/agentsmith-codex-runner:20260331T234338Z');
+  });
+
   it('does not rewrite unrelated registries', () => {
     expect(
       normalizeInternalAgentImageForRuntime(

@@ -149,10 +149,27 @@ function readImageRegistryHost(image: string): string {
   return '';
 }
 
+function readImageRepository(image: string): string {
+  const trimmed = image.trim();
+  if (!trimmed) return '';
+  const atIndex = trimmed.indexOf('@');
+  if (atIndex >= 0) return trimmed.slice(0, atIndex);
+  const slashIndex = trimmed.indexOf('/');
+  const colonIndex = trimmed.lastIndexOf(':');
+  if (colonIndex > slashIndex) return trimmed.slice(0, colonIndex);
+  return trimmed;
+}
+
 export function normalizeInternalAgentImageForRuntime(image: string, runtimeImage = process.env.INTERNAL_AGENT_IMAGE ?? ''): string {
   const requested = image.trim();
   const runtime = runtimeImage.trim();
   if (!requested || !runtime) return requested;
+
+  const requestedRepository = readImageRepository(requested);
+  const runtimeRepository = readImageRepository(runtime);
+  if (requestedRepository && runtimeRepository && requestedRepository === runtimeRepository) {
+    return runtime;
+  }
 
   const requestedRegistry = readImageRegistryHost(requested);
   const runtimeRegistry = readImageRegistryHost(runtime);

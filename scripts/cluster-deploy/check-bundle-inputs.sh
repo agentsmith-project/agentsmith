@@ -63,6 +63,10 @@ for relative in manifest.get("bundle_files", []):
         source = root_dir / relative
     elif relative == "scripts/check-preset-external-file-library.sh":
         source = root_dir / "scripts" / "check-preset-external-file-library.sh"
+    elif relative == "scripts/file-library-real-smoke.sh":
+        source = root_dir / "scripts" / "file-library-real-smoke.sh"
+    elif relative == "scripts/notebook-agent-refresh-token.js":
+        source = root_dir / "scripts" / "notebook-agent-refresh-token.js"
     elif relative.startswith("scripts/substrate/"):
         source = root_dir / "scripts" / "substrate" / pathlib.Path(relative).name
     elif relative.startswith("scripts/app/"):
@@ -99,6 +103,7 @@ cluster_automation_files=(
   "${ROOT_DIR}/scripts/cluster-deploy/upgrade-app.sh"
   "${ROOT_DIR}/scripts/cluster-deploy/upgrade-sandbox.sh"
   "${ROOT_DIR}/scripts/cluster-deploy/upgrade-status.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/upgrade-files-verify.sh"
   "${ROOT_DIR}/scripts/cluster-deploy/bootstrap.sh"
   "${ROOT_DIR}/scripts/cluster-deploy/verify.sh"
   "${ROOT_DIR}/scripts/cluster-deploy/report.sh"

@@ -128,6 +128,20 @@ state_set verify.mode "${DEMO_DEPLOY_MODE}"
 
 bash "${RELEASE_SCRIPT_DIR}/check-preset-external-file-library.sh"
 
+API_BASE="${HOST_LOCAL_API_BASE_URL}" \
+KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL}" \
+PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL}" \
+CLIENT_PUBLIC_POSTGRES_HOST="${CLIENT_PUBLIC_POSTGRES_HOST:-}" \
+CLIENT_PUBLIC_POSTGRES_PORT="${CLIENT_PUBLIC_POSTGRES_PORT:-}" \
+CLIENT_PUBLIC_MINIO_ENDPOINT="${CLIENT_PUBLIC_MINIO_ENDPOINT:-}" \
+HOST_LOCAL_POSTGRES_HOST="${HOST_LOCAL_POSTGRES_HOST:-localhost}" \
+HOST_LOCAL_MINIO_ENDPOINT="${HOST_LOCAL_MINIO_ENDPOINT:-http://localhost:${MINIO_API_PORT:-19000}}" \
+EXTERNAL_DEPS_POSTGRES_IP="${EXTERNAL_DEPS_POSTGRES_IP:-}" \
+EXTERNAL_DEPS_MINIO_IP="${EXTERNAL_DEPS_MINIO_IP:-}" \
+PROJECT_ID="${PRESET_PROJECT_ID}" \
+FILE_LIBRARY_VERIFY_ENFORCE_DEPLOY_CLIENT_TRUTH=1 \
+bash "${ROOT_DIR}/scripts/file-library-real-smoke.sh"
+
 mkdir -p "${REPORT_DIR}/verify-artifacts"
 docker run --rm \
   --network host \
@@ -138,6 +152,8 @@ docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "${REPORT_DIR}/verify-artifacts:/app/test-results" \
   -v "${RELEASE_ROOT}/e2e/integration-real-helpers.ts:/app/e2e/integration-real-helpers.ts:ro" \
+  -v "${RELEASE_ROOT}/e2e/integration-files.spec.ts:/app/e2e/integration-files.spec.ts:ro" \
+  -v "${RELEASE_ROOT}/e2e/integration-workspace-access.ts:/app/e2e/integration-workspace-access.ts:ro" \
   -v "${RELEASE_ROOT}/e2e/integration-release-user-story.spec.ts:/app/e2e/integration-release-user-story.spec.ts:ro" \
   -e BASE_URL="${HOST_LOCAL_WEB_BASE_URL}" \
   -e INTEGRATION_API_BASE="${HOST_LOCAL_API_BASE_URL}" \
@@ -170,6 +186,7 @@ docker run --rm \
   "${VERIFY_RUNNER_IMAGE}" \
   npx playwright test \
     --config playwright.config.integration.ts \
+    e2e/integration-files.spec.ts \
     e2e/integration-workspace-entry.spec.ts \
     e2e/integration-workspace-publish-usable.spec.ts \
     e2e/integration-preset-external-file-library.spec.ts \

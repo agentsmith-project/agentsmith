@@ -39,6 +39,38 @@ runner_logs="$(docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 || true)"
 grep -q '\[agent-codex-runner\] connected' <<<"${runner_logs}" || die "verify failed: external-runner not connected"
 docker_compose ps --status running universal-proxy | grep -q universal-proxy || die "verify failed: universal-proxy not running"
 
+token_json="$(
+  curl -fsS "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+    -H 'content-type: application/x-www-form-urlencoded' \
+    --data-urlencode 'grant_type=password' \
+    --data-urlencode "client_id=${KEYCLOAK_CLIENT_ID}" \
+    --data-urlencode "username=${INTEGRATION_DEV_ADMIN_USERNAME}" \
+    --data-urlencode "password=${INTEGRATION_DEV_ADMIN_PASSWORD}" \
+    --data-urlencode 'scope=openid profile email'
+)"
+ACCESS_TOKEN="$(printf '%s' "${token_json}" | json_extract access_token)"
+[[ -n "${ACCESS_TOKEN}" ]] || die "failed to obtain dev-admin token during verify"
+
+PROJECTS_JSON="$(
+  curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/ws_default/projects?page=1&page_size=100" \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}"
+)"
+PRESET_PROJECT_NAME_VALUE="${PRESET_PROJECT_NAME:-Demo Project}"
+PRESET_PROJECT_ID="$(printf '%s' "${PROJECTS_JSON}" | json_find_named_id "${PRESET_PROJECT_NAME_VALUE}")"
+[[ -n "${PRESET_PROJECT_ID}" ]] || die "verify failed: preset project missing in ws_default"
+
+API_BASE="${HOST_LOCAL_API_BASE_URL}" \
+KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL}" \
+PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL}" \
+CLIENT_PUBLIC_POSTGRES_HOST="${CLIENT_PUBLIC_POSTGRES_HOST:-}" \
+CLIENT_PUBLIC_POSTGRES_PORT="${CLIENT_PUBLIC_POSTGRES_PORT:-}" \
+CLIENT_PUBLIC_MINIO_ENDPOINT="${CLIENT_PUBLIC_MINIO_ENDPOINT:-}" \
+HOST_LOCAL_POSTGRES_HOST="${HOST_LOCAL_POSTGRES_HOST:-127.0.0.1}" \
+HOST_LOCAL_MINIO_ENDPOINT="${HOST_LOCAL_MINIO_ENDPOINT:-http://127.0.0.1:${MINIO_API_PORT:-19000}}" \
+PROJECT_ID="${PRESET_PROJECT_ID}" \
+FILE_LIBRARY_VERIFY_ENFORCE_DEPLOY_CLIENT_TRUTH=1 \
+bash "${ROOT_DIR}/scripts/file-library-real-smoke.sh"
+
 mkdir -p "${REPORT_DIR}/verify-artifacts"
 docker run --rm \
   --network host \
@@ -49,6 +81,8 @@ docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "${REPORT_DIR}/verify-artifacts:/app/test-results" \
   -v "${RELEASE_ROOT}/e2e/integration-real-helpers.ts:/app/e2e/integration-real-helpers.ts:ro" \
+  -v "${RELEASE_ROOT}/e2e/integration-files.spec.ts:/app/e2e/integration-files.spec.ts:ro" \
+  -v "${RELEASE_ROOT}/e2e/integration-workspace-access.ts:/app/e2e/integration-workspace-access.ts:ro" \
   -v "${RELEASE_ROOT}/e2e/integration-workspace-entry.spec.ts:/app/e2e/integration-workspace-entry.spec.ts:ro" \
   -v "${RELEASE_ROOT}/e2e/integration-workspace-publish-usable.spec.ts:/app/e2e/integration-workspace-publish-usable.spec.ts:ro" \
   -v "${RELEASE_ROOT}/e2e/integration-preset-external-file-library.spec.ts:/app/e2e/integration-preset-external-file-library.spec.ts:ro" \
@@ -82,6 +116,7 @@ docker run --rm \
   "${VERIFY_RUNNER_IMAGE}" \
   npx playwright test \
     --config playwright.config.integration.ts \
+    e2e/integration-files.spec.ts \
     e2e/integration-workspace-entry.spec.ts \
     e2e/integration-workspace-publish-usable.spec.ts \
     e2e/integration-preset-external-file-library.spec.ts \

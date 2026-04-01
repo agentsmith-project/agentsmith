@@ -332,6 +332,19 @@ bash scripts/cluster-deploy/verify.sh
 bash scripts/cluster-deploy/report.sh
 ```
 
+`verify.sh` includes both release-user-story coverage and explicit Files correctness checks. The Files part validates:
+
+- temporary file library create/delete
+- folder create
+- upload
+- list
+- download
+- share-link
+- move
+- cleanup
+- Files UI CRUD smoke
+- client-visible mount address truth
+
 ## Verified Full-Auto Rehearsal
 
 AgentSmith has been rehearsed locally with:

@@ -36,6 +36,16 @@ bash scripts/verify.sh
 bash scripts/report.sh
 ```
 
+`verify.sh` includes explicit Files correctness checks:
+
+- create/delete a temporary file library
+- create folder
+- upload / list / download
+- share-link
+- move / cleanup
+- Files UI CRUD smoke
+- client-visible mount address truth
+
 Reset:
 
 ```bash

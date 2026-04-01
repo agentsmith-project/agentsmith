@@ -156,6 +156,8 @@
     "scripts/resolve-runtime-addresses.sh",
     "scripts/render-env.sh",
     "scripts/check-preset-external-file-library.sh",
+    "scripts/file-library-real-smoke.sh",
+    "scripts/notebook-agent-refresh-token.js",
     "scripts/demo-deploy-modes-gate.sh",
     "scripts/lib/common.sh",
     "scripts/lib/deploy-common.sh",
@@ -167,8 +169,11 @@
     "scripts/lib/preset-common.sh",
     "infra/runtime/presets.env",
     "e2e/integration-real-helpers.ts",
+    "e2e/integration-files.spec.ts",
+    "e2e/integration-workspace-access.ts",
     "e2e/integration-release-user-story.spec.ts",
     "docs/user-guides/demo-deploy-operations.md",
+    "docs/user-guides/demo-deploy-simple-quickstart-zh.md",
     "docs/contracts/deployment-spec-v1.md",
     "README-demo-deploy.md",
     "tools/kind",
@@ -180,7 +185,8 @@
   ],
   "verify_stories": [
     "preset-story",
-    "new-workspace-story"
+    "new-workspace-story",
+    "files-correctness"
   ],
   "verify_modes": {
     "simple": [

@@ -296,6 +296,17 @@ The bundle build must fail if any required file, tool, image, or manifest refere
 ### Verify Execution Contract
 - Deployment verification must run from a bundled verify image, not from ad hoc host source trees.
 - The verify image must include the Playwright integration configuration and all files needed for the release user story.
+- Deployment verification must include an explicit Files correctness check in addition to the notebook/agent release stories.
+- That Files check must validate:
+  - temporary file library create/delete
+  - folder create
+  - upload
+  - list
+  - download
+  - share-link
+  - move
+  - cleanup
+  - client-visible mount address truth
 - The verify image must be able to:
   - reach the deployed Web/API/Keycloak endpoints over host networking
   - use the host Docker daemon to start the external runner test container

@@ -390,3 +390,15 @@ The minimum release proof for `cluster-deploy` is:
 3. cluster admin prerequisites are already complete
 4. `prepare -> publish-images -> deploy-substrate -> deploy-app -> prepare-admin-handoff -> deploy-sandbox -> bootstrap -> verify -> report` passes on the target host
 5. external and internal notebook flows succeed
+6. `verify` includes explicit Files correctness validation:
+   - temporary file library create/delete
+   - folder create
+   - upload
+   - list
+   - download
+   - share-link
+   - move
+   - cleanup
+   - client-visible mount address truth
+7. routine `cluster upgrade` keeps `upgrade-status` read-only and runs Files correctness through a separate post-step:
+   - `npm run cluster:upgrade-files-verify`

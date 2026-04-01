@@ -105,6 +105,7 @@
     "cluster:upgrade-app": "bash scripts/cluster-deploy/upgrade-app.sh",
     "cluster:upgrade-sandbox": "bash scripts/cluster-deploy/upgrade-sandbox.sh",
     "cluster:upgrade-status": "bash scripts/cluster-deploy/upgrade-status.sh",
+    "cluster:upgrade-files-verify": "bash scripts/cluster-deploy/upgrade-files-verify.sh",
     "cluster:upgrade": "bash scripts/cluster-deploy/upgrade.sh",
     "cluster:bootstrap": "bash scripts/cluster-deploy/bootstrap.sh",
     "cluster:verify": "bash scripts/cluster-deploy/verify.sh",

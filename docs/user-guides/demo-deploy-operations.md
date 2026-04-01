@@ -140,6 +140,19 @@ bash scripts/verify.sh
 bash scripts/report.sh
 ```
 
+`verify.sh` now includes explicit Files correctness checks in both `simple` and `full`. It validates:
+
+- temporary file library create/delete
+- folder create
+- upload
+- list
+- download
+- share-link
+- move
+- cleanup
+- Files UI CRUD smoke
+- client-visible mount address truth
+
 Reset when you need a clean redeploy:
 
 ```bash
@@ -259,6 +272,7 @@ Expected successful verify summary:
 
 - `simple`
   - external-only verify succeeds
+  - Files correctness verify succeeds
   - no internal/k8s checks are required
 - `full`
   - `4 passed`

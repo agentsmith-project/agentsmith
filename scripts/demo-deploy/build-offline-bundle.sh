@@ -217,6 +217,8 @@ cp "${ROOT_DIR}/infra/deploy/demo/env/site.env.example" "${BUNDLE_DIR}/env/site.
 cp "${ROOT_DIR}/infra/deploy/demo/kind/config.yaml" "${BUNDLE_DIR}/kind/config.yaml"
 cp "${ROOT_DIR}/infra/deploy/shared/universal-proxy/config.yaml" "${BUNDLE_DIR}/universal-proxy/config.yaml"
 cp "${ROOT_DIR}/scripts/check-preset-external-file-library.sh" "${BUNDLE_DIR}/scripts/check-preset-external-file-library.sh"
+cp "${ROOT_DIR}/scripts/file-library-real-smoke.sh" "${BUNDLE_DIR}/scripts/file-library-real-smoke.sh"
+cp "${ROOT_DIR}/scripts/notebook-agent-refresh-token.js" "${BUNDLE_DIR}/scripts/notebook-agent-refresh-token.js"
 cp "${ROOT_DIR}/infra/deploy/demo/k8s/juicefs-csi.yaml" "${BUNDLE_DIR}/k8s/juicefs-csi.yaml"
 cp "${ROOT_DIR}/infra/integration/postgres-init/001-create-databases.sql" "${BUNDLE_DIR}/postgres-init/"
 cp "${ROOT_DIR}/packages/adapters-private/sql/projects.sql" "${BUNDLE_DIR}/postgres-init/"
@@ -237,11 +239,14 @@ cp "${ROOT_DIR}/scripts/app/deploy-common.sh" "${BUNDLE_DIR}/scripts/app/deploy-
 cp "${ROOT_DIR}/infra/runtime/presets.env" "${BUNDLE_DIR}/infra/runtime/presets.env"
 chmod +x "${BUNDLE_DIR}"/scripts/*.sh "${BUNDLE_DIR}/scripts/lib/"*.sh
 cp "${ROOT_DIR}/e2e/integration-real-helpers.ts" "${BUNDLE_DIR}/e2e/integration-real-helpers.ts"
+cp "${ROOT_DIR}/e2e/integration-files.spec.ts" "${BUNDLE_DIR}/e2e/integration-files.spec.ts"
+cp "${ROOT_DIR}/e2e/integration-workspace-access.ts" "${BUNDLE_DIR}/e2e/integration-workspace-access.ts"
 cp "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts" "${BUNDLE_DIR}/e2e/integration-release-user-story.spec.ts"
 mkdir -p "${BUNDLE_DIR}/docs/contracts"
 cp "${ROOT_DIR}/docs/contracts/deployment-spec-v1.md" "${BUNDLE_DIR}/docs/contracts/deployment-spec-v1.md"
 mkdir -p "${BUNDLE_DIR}/docs/user-guides"
 cp "${ROOT_DIR}/docs/user-guides/demo-deploy-operations.md" "${BUNDLE_DIR}/docs/user-guides/demo-deploy-operations.md"
+cp "${ROOT_DIR}/docs/user-guides/demo-deploy-simple-quickstart-zh.md" "${BUNDLE_DIR}/docs/user-guides/demo-deploy-simple-quickstart-zh.md"
 cp "${ROOT_DIR}/scripts/demo-deploy-modes-gate.sh" "${BUNDLE_DIR}/scripts/demo-deploy-modes-gate.sh"
 cp "${ROOT_DIR}/README-demo-deploy.md" "${BUNDLE_DIR}/README-demo-deploy.md"
 

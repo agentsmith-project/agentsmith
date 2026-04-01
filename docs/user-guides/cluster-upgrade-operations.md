@@ -80,7 +80,30 @@ You can also run the stages manually:
 bash scripts/cluster-deploy/upgrade-app.sh
 bash scripts/cluster-deploy/upgrade-sandbox.sh
 bash scripts/cluster-deploy/upgrade-status.sh
+bash scripts/cluster-deploy/upgrade-files-verify.sh
 ```
+
+## Required Post-Upgrade Files Check
+
+`upgrade-status.sh` stays read-only.
+
+Files correctness is verified separately on purpose, because it creates a temporary file library and cleans it up again. Run it immediately after `upgrade-status.sh`:
+
+```bash
+bash scripts/cluster-deploy/upgrade-files-verify.sh
+```
+
+This post-check validates:
+
+- file library create/delete
+- folder create
+- upload
+- list
+- download
+- share-link
+- move
+- cleanup
+- client-visible mount address truth
 
 ## Expected Outcome
 
@@ -91,6 +114,7 @@ After upgrade:
 - `universal-proxy` is running
 - `external-runner` reconnects with the preserved runtime env
 - `sandbox-manager` is ready in namespace `mbos`
+- `upgrade-files-verify.sh` passes
 - substrate services and existing business data remain untouched
 
 ## Operational Boundary

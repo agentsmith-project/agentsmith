@@ -130,8 +130,26 @@ export interface FileLibraryClientMountAccess {
   created_at: string;
 }
 
+export interface FileLibraryDesktopMountAccess {
+  filesystem_name: string;
+  metadata_url: string;
+  storage_bucket_url?: string;
+  deployment_base_url: string;
+  default_mount_roots: {
+    linux: string;
+    macos: string;
+    windows: string;
+  };
+  windows_requires_drive_letter: boolean;
+  created_at: string;
+}
+
 export interface StorageCredentialExchangeResponse {
   client_mount_access: FileLibraryClientMountAccess;
+}
+
+export interface DesktopMountAccessExchangeResponse {
+  desktop_mount_access: FileLibraryDesktopMountAccess;
 }
 
 export interface FileItem {

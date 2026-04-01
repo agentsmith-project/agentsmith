@@ -15,13 +15,19 @@ import { useTranslations } from 'next-intl';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { ProjectWorkbenchBar, ProjectWorkbenchSwitcher } from '@/components/layout/ProjectWorkbenchBar';
 import { toast } from '@/components/ui/toast';
+import { DesktopAccessDialog } from '@/components/files/files-page/DesktopAccessDialog';
 import { FilesPageContent } from '@/components/files/files-page/FilesPageContent';
 import { LibraryAccessDialog } from '@/components/files/files-page/LibraryAccessDialog';
 import { LibraryDialogs } from '@/components/files/files-page/LibraryDialogs';
 import { MoveDialogs } from '@/components/files/files-page/MoveDialogs';
 import { ObjectOperationDialogs } from '@/components/files/files-page/ObjectOperationDialogs';
 
-import type { FileLibrary, FileLibraryClientMountAccess, FileObjectsListItem } from '@/lib/api/types';
+import type {
+  FileLibrary,
+  FileLibraryClientMountAccess,
+  FileLibraryDesktopMountAccess,
+  FileObjectsListItem,
+} from '@/lib/api/types';
 import { useFilesPageCapabilities } from '@/lib/hooks/use-permissions';
 import {
   useCreateFileLibrary,
@@ -37,7 +43,10 @@ import {
   useUploadFileObject,
 } from '@/lib/hooks/use-file-objects';
 import { FileSortBy, FileSortOrder, useFilesUrlState } from '@/lib/hooks/use-files-url-state';
-import { useFileLibraryStorageCredentialExchange } from '@/lib/hooks/use-file-libraries-v2';
+import {
+  useFileLibraryDesktopMountAccess,
+  useFileLibraryStorageCredentialExchange,
+} from '@/lib/hooks/use-file-libraries-v2';
 import { useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 import { useFileUploadManager } from '@/components/files/hooks/use-file-upload-manager';
 import { useFileBatchOperations } from '@/components/files/hooks/use-file-batch-operations';
@@ -115,8 +124,12 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
   const deleteObjects = useDeleteFileObjects();
   const moveObject = useMoveFileObject();
   const exchangeStorageCredentials = useFileLibraryStorageCredentialExchange();
+  const exchangeDesktopMountAccess = useFileLibraryDesktopMountAccess();
 
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [desktopAccessOpen, setDesktopAccessOpen] = React.useState(false);
+  const [desktopAccessTarget, setDesktopAccessTarget] = React.useState<FileLibrary | null>(null);
+  const [desktopMountAccess, setDesktopMountAccess] = React.useState<FileLibraryDesktopMountAccess | null>(null);
   const [libraryAccessOpen, setLibraryAccessOpen] = React.useState(false);
   const [libraryAccessTarget, setLibraryAccessTarget] = React.useState<FileLibrary | null>(null);
   const [libraryMountAccess, setLibraryMountAccess] = React.useState<FileLibraryClientMountAccess | null>(null);
@@ -350,6 +363,23 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
     }
   }, [exchangeStorageCredentials, projectId, t, workspaceId]);
 
+  const openDesktopAccessDialog = React.useCallback(async (library: FileLibrary) => {
+    setDesktopAccessTarget(library);
+    setDesktopAccessOpen(true);
+    setDesktopMountAccess(null);
+    try {
+      const result = await exchangeDesktopMountAccess.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId: library.id,
+      });
+      setDesktopMountAccess(result.desktop_mount_access);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('file_manager.desktop_access_failed');
+      toast.error(`${t('file_manager.desktop_access_failed')}: ${message}`);
+    }
+  }, [exchangeDesktopMountAccess, projectId, t, workspaceId]);
+
   return (
     <PageLayout
       density="immersive"
@@ -448,6 +478,7 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
         onClearSelection={clearSelection}
         onCreateFolder={() => setCreateFolderOpen(true)}
         onCreateLibrary={openCreateLibraryDialog}
+        onOpenDesktopAccess={openDesktopAccessDialog}
         onDeleteLibrary={openDeleteLibraryDialog}
         onOpenMountAccess={openMountAccessDialog}
         onGoUp={() => navigateToPrefix(parentPrefixForPrefix(prefix))}
@@ -475,6 +506,15 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
         uploadQueueCompleted={uploadQueueCompleted}
         uploadQueueTotal={uploadQueueTotal}
         workspaceId={workspaceId}
+      />
+
+      <DesktopAccessDialog
+        exchangePending={exchangeDesktopMountAccess.isPending}
+        desktopMountAccess={desktopMountAccess}
+        open={desktopAccessOpen}
+        targetLibrary={desktopAccessTarget}
+        t={t}
+        onOpenChange={setDesktopAccessOpen}
       />
 
       <LibraryAccessDialog

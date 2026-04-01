@@ -50,6 +50,24 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-file-libraries-v2', () => ({
+  useFileLibraryDesktopMountAccess: () => ({
+    mutateAsync: vi.fn().mockResolvedValue({
+      desktop_mount_access: {
+        filesystem_name: 'flib-ws-default-proj-001-shared-docs',
+        metadata_url: 'postgres://user:password@files.example.com:5432/jfs_lib_1',
+        storage_bucket_url: 'https://files.example.com:19000/jfs-lib-1',
+        deployment_base_url: 'https://mbos.imotion.ai:3001',
+        default_mount_roots: {
+          linux: '~/AgentSmith',
+          macos: '~/AgentSmith',
+          windows: '%USERPROFILE%\\AgentSmith',
+        },
+        windows_requires_drive_letter: true,
+        created_at: '2026-03-16T08:00:00.000Z',
+      },
+    }),
+    isPending: false,
+  }),
   useFileLibraryStorageCredentialExchange: () => ({
     mutateAsync: vi.fn().mockResolvedValue({
       client_mount_access: {
@@ -151,15 +169,15 @@ describe('FilesPage (object browser)', () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
     const user = userEvent.setup();
 
-    expect(await screen.findByTestId('files__library-mount-access--lib_a')).toBeInTheDocument();
-    expect(screen.queryByTestId('files__library-mount-access--lib_b')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('files__library-desktop-access--lib_a')).toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-desktop-access--lib_b')).not.toBeInTheDocument();
 
     await user.click(screen.getByTestId('files__library-item--lib_b'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('files__library-mount-access--lib_b')).toBeInTheDocument();
+      expect(screen.getByTestId('files__library-desktop-access--lib_b')).toBeInTheDocument();
     });
-    expect(screen.queryByTestId('files__library-mount-access--lib_a')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-desktop-access--lib_a')).not.toBeInTheDocument();
   });
 
   it('navigates into a folder prefix row on double click', async () => {
@@ -211,11 +229,22 @@ describe('FilesPage (object browser)', () => {
     expect(screen.queryByTestId('files__dropzone-overlay')).not.toBeInTheDocument();
   });
 
-  it('opens mount access dialog for a library', async () => {
+  it('opens desktop access dialog for a library', async () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
     const user = userEvent.setup();
 
-    await user.click(await screen.findByTestId('files__library-mount-access--lib_1'));
+    await user.click(await screen.findByTestId('files__library-desktop-access--lib_1'));
+
+    expect(await screen.findByTestId('files__dialog__desktop-mount-access')).toBeInTheDocument();
+    expect(screen.getByTestId('files__desktop-mount__deployment-url')).toHaveValue('https://mbos.imotion.ai:3001');
+    expect(screen.getByTestId('files__desktop-mount__root-windows')).toHaveValue('%USERPROFILE%\\AgentSmith');
+  });
+
+  it('opens advanced manual mount dialog for a library', async () => {
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId('files__library-manual-mount-access--lib_1'));
 
     expect(await screen.findByTestId('files__dialog__library-mount-access')).toBeInTheDocument();
     expect(screen.getByTestId('files__library-mount__filesystem-name')).toHaveValue('flib-ws-default-proj-001-shared-docs');
@@ -229,7 +258,7 @@ describe('FilesPage (object browser)', () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
     const user = userEvent.setup();
 
-    await user.click(await screen.findByTestId('files__library-mount-access--lib_1'));
+    await user.click(await screen.findByTestId('files__library-manual-mount-access--lib_1'));
     await user.click(await screen.findByTestId('files__library-mount__tab-windows'));
     await waitFor(() =>
       expect(screen.getByTestId('files__library-mount__tab-windows')).toHaveAttribute('data-state', 'active'),

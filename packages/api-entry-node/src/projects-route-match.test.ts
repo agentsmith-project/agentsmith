@@ -244,6 +244,14 @@ describe('matchProjectsRoute', () => {
       libraryId: 'lib_1',
     });
     expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/desktop-mount-access'),
+    ).toEqual({
+      kind: 'fileLibraryDesktopMountAccess',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/entries'),
     ).toEqual({
       kind: 'fileLibraryEntries',
@@ -337,6 +345,14 @@ describe('matchProjectsRoute', () => {
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/storage-credential-exchange'),
     ).toEqual({
       kind: 'fileLibraryStorageCredentialExchange',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/desktop-mount-access'),
+    ).toEqual({
+      kind: 'fileLibraryDesktopMountAccess',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'flib_1',

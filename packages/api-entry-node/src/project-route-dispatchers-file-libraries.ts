@@ -6,6 +6,7 @@ const FILE_LIBRARY_ROUTE_KINDS = new Set([
   'fileLibraryItem',
   'fileLibraryBackend',
   'fileLibraryStorageCredentialExchange',
+  'fileLibraryDesktopMountAccess',
   'fileLibraryEntries',
   'fileLibraryFolders',
   'fileLibraryDelete',

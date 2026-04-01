@@ -3,6 +3,7 @@ import { APIError } from '../errors';
 import type {
   CreateFileLibraryFolderRequest,
   CreateFileLibraryRequest,
+  DesktopMountAccessExchangeResponse,
   DeleteFileLibraryEntriesRequest,
   DeleteFileLibraryEntriesResponse,
   FileLibraryEntry,
@@ -236,6 +237,17 @@ export class FileLibrariesAPI {
   ): Promise<StorageCredentialExchangeResponse> {
     return this.client.post<StorageCredentialExchangeResponse>(
       `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/storage-credential-exchange`,
+      {},
+    );
+  }
+
+  async exchangeDesktopMountAccess(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+  ): Promise<DesktopMountAccessExchangeResponse> {
+    return this.client.post<DesktopMountAccessExchangeResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/desktop-mount-access`,
       {},
     );
   }

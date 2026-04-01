@@ -30,6 +30,7 @@ import {
   createAndProvisionProjectFileLibrary,
   mapFileLibraryInfraError,
 } from './project-file-library-service.js';
+import type { FileLibraryDesktopMountAccess, FileLibraryMountAccess } from './file-library-model.js';
 import { notebookTasksCollection } from './notebook-task/task-store.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
@@ -251,12 +252,46 @@ function isOwnedFileLibrary(library: { created_by_user_id?: string }, ownerUserI
   return typeof library.created_by_user_id === 'string' && library.created_by_user_id === ownerUserId;
 }
 
+function firstHeaderValue(input: string | string[] | undefined): string | null {
+  if (!input) return null;
+  const raw = Array.isArray(input) ? input[0] : input;
+  const first = raw.split(',')[0]?.trim();
+  return first && first.length > 0 ? first : null;
+}
+
+function inferRequestOrigin(req: http.IncomingMessage): string {
+  const host = firstHeaderValue(req.headers['x-forwarded-host']) ?? firstHeaderValue(req.headers.host) ?? 'localhost';
+  const proto = firstHeaderValue(req.headers['x-forwarded-proto'])
+    ?? (((req.socket as { encrypted?: boolean }).encrypted ?? false) ? 'https' : 'http');
+  return `${proto}://${host}`;
+}
+
+function toDesktopMountAccess(
+  req: http.IncomingMessage,
+  access: FileLibraryMountAccess,
+): FileLibraryDesktopMountAccess {
+  return {
+    filesystem_name: access.filesystem_name,
+    metadata_url: access.metadata_url,
+    storage_bucket_url: access.storage_bucket_url,
+    deployment_base_url: inferRequestOrigin(req),
+    default_mount_roots: {
+      linux: '~/AgentSmith',
+      macos: '~/AgentSmith',
+      windows: '%USERPROFILE%\\AgentSmith',
+    },
+    windows_requires_drive_letter: true,
+    created_at: access.created_at,
+  };
+}
+
 export async function handleProjectFileLibraryRoutes(args: {
   routeKind:
     | 'fileLibraries'
     | 'fileLibraryItem'
     | 'fileLibraryBackend'
     | 'fileLibraryStorageCredentialExchange'
+    | 'fileLibraryDesktopMountAccess'
     | 'fileLibraryEntries'
     | 'fileLibraryFolders'
     | 'fileLibraryDelete'
@@ -780,6 +815,18 @@ export async function handleProjectFileLibraryRoutes(args: {
     }
     json(res, 200, {
       client_mount_access: access,
+    });
+    return true;
+  }
+
+  if (routeKind === 'fileLibraryDesktopMountAccess' && method === 'POST') {
+    const access = await mountAccessRepo.getById(workspaceId, projectId, libraryId);
+    if (!access) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
+      return true;
+    }
+    json(res, 200, {
+      desktop_mount_access: toDesktopMountAccess(req, access),
     });
     return true;
   }

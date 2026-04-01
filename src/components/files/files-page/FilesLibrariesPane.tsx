@@ -1,4 +1,4 @@
-import { Download, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Download, MonitorCog, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,7 @@ type FilesLibrariesPaneProps = {
   selectedLibraryId: string | null;
   onSelectLibrary: (libraryId: string) => void;
   onCreateLibrary: () => void;
+  onOpenDesktopAccess: (library: FileLibrary) => void;
   onOpenMountAccess: (library: FileLibrary) => void;
   onRenameLibrary: (library: FileLibrary) => void;
   onDeleteLibrary: (library: FileLibrary) => void;
@@ -27,6 +28,7 @@ export function FilesLibrariesPane({
   selectedLibraryId,
   onSelectLibrary,
   onCreateLibrary,
+  onOpenDesktopAccess,
   onOpenMountAccess,
   onRenameLibrary,
   onDeleteLibrary,
@@ -103,15 +105,37 @@ export function FilesLibrariesPane({
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
+                                  onOpenDesktopAccess(library);
+                                }}
+                                aria-label={t('file_manager.desktop_access')}
+                                data-testid={`files__library-desktop-access--${library.id}`}
+                              >
+                                <MonitorCog className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t('file_manager.desktop_access')}</TooltipContent>
+                          </Tooltip>
+                        ) : null}
+                        {canExchangeCredentials ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 rounded-full border border-white/8 bg-transparent text-secondary hover:bg-hover/55 hover:text-primary"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
                                   onOpenMountAccess(library);
                                 }}
-                                aria-label={t('file_manager.mount_access')}
-                                data-testid={`files__library-mount-access--${library.id}`}
+                                aria-label={t('file_manager.manual_mount_access')}
+                                data-testid={`files__library-manual-mount-access--${library.id}`}
                               >
                                 <Download className="h-3.5 w-3.5" />
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>{t('file_manager.mount_access')}</TooltipContent>
+                            <TooltipContent>{t('file_manager.manual_mount_access')}</TooltipContent>
                           </Tooltip>
                         ) : null}
                         {!canManage ? null : (

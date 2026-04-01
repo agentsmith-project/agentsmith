@@ -111,6 +111,72 @@ describe('project-file-library-routes', () => {
     expect(payload.client_mount_access?.recommended_mount_commands?.windows).toContain('%USERPROFILE%');
   });
 
+  it('returns desktop mount access without shell commands', async () => {
+    const json = vi.fn();
+    const res = {} as never;
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res,
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Shared Docs',
+      }),
+    });
+
+    const createdBody = json.mock.calls.at(-1)?.[2] as { id: string };
+    const desktopJson = vi.fn();
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryDesktopMountAccess',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req: {
+        headers: {
+          host: 'mbos.imotion.ai:3001',
+          'x-forwarded-proto': 'https',
+        },
+        socket: {},
+      } as never,
+      res,
+      deps,
+      user: OWNER_USER,
+      json: desktopJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    const [, statusCode, payload] = desktopJson.mock.calls[0] as [unknown, number, {
+      desktop_mount_access?: {
+        deployment_base_url?: string;
+        default_mount_roots?: Record<string, string>;
+        windows_requires_drive_letter?: boolean;
+        metadata_url?: string;
+        recommended_mount_commands?: unknown;
+      };
+    }];
+    expect(statusCode).toBe(200);
+    expect(payload.desktop_mount_access).toMatchObject({
+      deployment_base_url: 'https://mbos.imotion.ai:3001',
+      default_mount_roots: {
+        linux: '~/AgentSmith',
+        macos: '~/AgentSmith',
+        windows: '%USERPROFILE%\\AgentSmith',
+      },
+      windows_requires_drive_letter: true,
+      metadata_url: expect.stringContaining('postgres://'),
+    });
+    expect(payload.desktop_mount_access?.recommended_mount_commands).toBeUndefined();
+  });
+
   it('does not expose metadata credentials from backend details', async () => {
     const json = vi.fn();
     const res = {} as never;

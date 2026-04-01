@@ -343,6 +343,28 @@ export const fileHandlers = [
       },
     });
   }),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/desktop-mount-access', ({ params, request }) => {
+    const library = sourceLibraries.find((item) => item.id === params.id);
+    if (!library) {
+      return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' }, { status: 404 });
+    }
+    const url = new URL(request.url);
+    return HttpResponse.json({
+      desktop_mount_access: {
+        filesystem_name: library.filesystem_name,
+        metadata_url: `postgres://jfsu_${library.id}:secret@files.example.com:15432/jfs_lib_${library.id}`,
+        storage_bucket_url: `https://files.example.com:19000/${library.filesystem_name}`,
+        deployment_base_url: `${url.protocol}//${url.host}`,
+        default_mount_roots: {
+          linux: '~/AgentSmith',
+          macos: '~/AgentSmith',
+          windows: '%USERPROFILE%\\AgentSmith',
+        },
+        windows_requires_drive_letter: true,
+        created_at: nowIso(),
+      },
+    });
+  }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/entries', ({ params, request }) => {
     const libraryId = String(params.id ?? '');
     const url = new URL(request.url);

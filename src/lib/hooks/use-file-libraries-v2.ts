@@ -169,3 +169,22 @@ export function useFileLibraryStorageCredentialExchange() {
     },
   });
 }
+
+export function useFileLibraryDesktopMountAccess() {
+  const api = new FileLibrariesAPI(getApiClient());
+
+  return useMutation({
+    mutationFn: ({
+      workspaceId,
+      projectId,
+      libraryId,
+    }: {
+      workspaceId: string;
+      projectId: string;
+      libraryId: string;
+    }) => api.exchangeDesktopMountAccess(workspaceId, projectId, libraryId),
+    onError: (error: unknown) => {
+      handleErrorForToast(error, 'useFileLibraryDesktopMountAccess');
+    },
+  });
+}

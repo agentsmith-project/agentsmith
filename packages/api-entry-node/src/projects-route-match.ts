@@ -18,6 +18,7 @@ export type ProjectsRoute =
   | { kind: 'fileLibraryItem'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryBackend'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryStorageCredentialExchange'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryDesktopMountAccess'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryEntries'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryFolders'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryDelete'; workspaceId: string; projectId: string; libraryId: string }
@@ -209,6 +210,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'item',
       workspaceId: decodeURIComponent(itemMatched[1]),
       projectId: decodeURIComponent(itemMatched[2]),
+    };
+  }
+
+  const fileLibraryDesktopMountAccessMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/desktop-mount-access\/?$/,
+  );
+  if (fileLibraryDesktopMountAccessMatched) {
+    return {
+      kind: 'fileLibraryDesktopMountAccess',
+      workspaceId: decodeURIComponent(fileLibraryDesktopMountAccessMatched[1]),
+      projectId: decodeURIComponent(fileLibraryDesktopMountAccessMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryDesktopMountAccessMatched[3]),
     };
   }
 

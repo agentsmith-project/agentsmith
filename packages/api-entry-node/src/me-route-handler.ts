@@ -1,6 +1,7 @@
 import type http from 'node:http';
 import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import type { AuthenticatedUser } from './auth.js';
+import { completeDesktopAuthRequest } from './desktop-auth-store.js';
 import { json, readBody } from './http-utils.js';
 import {
   getUserNotifications,
@@ -95,10 +96,32 @@ export async function handleMeRoute(args: {
   docStore: JsonDocStorePort;
   governanceIncidentsDir?: string;
 }): Promise<boolean> {
-  const { req, res, method, requestUrl, user, docStore, governanceIncidentsDir } = args;
+  const { req, res, method, requestUrl, user, docStore, cache, governanceIncidentsDir } = args;
   const pathname = requestUrl.pathname;
   if (!pathname.startsWith('/api/v1/me/')) {
     return false;
+  }
+
+  const desktopAuthCompleteMatch = pathname.match(/^\/api\/v1\/me\/desktop\/auth\/requests\/([^/]+)\/complete$/);
+  if (desktopAuthCompleteMatch) {
+    if (method !== 'POST') {
+      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
+      return true;
+    }
+    const requestId = decodeURIComponent(desktopAuthCompleteMatch[1] ?? '');
+    const completed = await completeDesktopAuthRequest(cache, {
+      requestId,
+      user,
+    });
+    if (!completed) {
+      json(res, 404, {
+        error_code: 'NOT_FOUND',
+        message: 'desktop_auth_request_not_found',
+      });
+      return true;
+    }
+    json(res, 200, completed);
+    return true;
   }
 
   if (pathname === '/api/v1/me/profile') {

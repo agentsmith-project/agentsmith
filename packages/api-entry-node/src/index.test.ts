@@ -48,6 +48,89 @@ describe('api-entry-node me routes', () => {
   });
 });
 
+describe('api-entry-node brokered desktop auth routes', () => {
+  it('starts, completes, exchanges, and accepts desktop sessions for desktop me routes', async () => {
+    const { baseUrl } = startServer();
+
+    const startResponse = await fetch(`${baseUrl}/api/v1/desktop/auth/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        deployment_base_url: 'http://localhost:3101',
+      }),
+    });
+    expect(startResponse.status).toBe(201);
+    const started = (await startResponse.json()) as {
+      request_id: string;
+      browser_start_url: string;
+      poll_url: string;
+      poll_interval_ms: number;
+    };
+    expect(started.request_id).toMatch(/^dreq_/);
+    expect(started.browser_start_url).toContain('/en-US/desktop/auth/request?desktop_auth_request_id=');
+
+    const pendingResponse = await fetch(`${baseUrl}${started.poll_url}`);
+    expect(pendingResponse.status).toBe(200);
+    await expect(pendingResponse.json()).resolves.toMatchObject({
+      request_id: started.request_id,
+      status: 'pending',
+    });
+
+    const completeResponse = await apiFetch(
+      baseUrl,
+      `/api/v1/me/desktop/auth/requests/${started.request_id}/complete`,
+      { method: 'POST' },
+    );
+    expect(completeResponse.status).toBe(200);
+    const completed = (await completeResponse.json()) as {
+      status: 'authenticated';
+      exchange_ticket: string;
+    };
+    expect(completed.exchange_ticket).toMatch(/^dext_/);
+
+    const authenticatedResponse = await fetch(`${baseUrl}${started.poll_url}`);
+    expect(authenticatedResponse.status).toBe(200);
+    await expect(authenticatedResponse.json()).resolves.toMatchObject({
+      request_id: started.request_id,
+      status: 'authenticated',
+      exchange_ticket: completed.exchange_ticket,
+      authenticated_user: expect.objectContaining({
+        id: 'user_test',
+      }),
+    });
+
+    const exchangeResponse = await fetch(`${baseUrl}/api/v1/desktop/auth/exchange`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        request_id: started.request_id,
+        exchange_ticket: completed.exchange_ticket,
+      }),
+    });
+    expect(exchangeResponse.status).toBe(200);
+    const exchanged = (await exchangeResponse.json()) as {
+      access_token: string;
+      signed_in_user: {
+        id: string;
+        email: string;
+      };
+    };
+    expect(exchanged.access_token).toMatch(/^dsk_/);
+    expect(exchanged.signed_in_user).toMatchObject({
+      id: 'user_test',
+      email: 'test@example.com',
+    });
+
+    const meResponse = await fetch(`${baseUrl}/api/v1/me/desktop/file-libraries`, {
+      headers: { authorization: `Bearer ${exchanged.access_token}` },
+    });
+    expect(meResponse.status).toBe(200);
+    await expect(meResponse.json()).resolves.toMatchObject({
+      items: expect.any(Array),
+    });
+  });
+});
+
 describe('api-entry-node sse ticket routes', () => {
   it('returns an sse ticket for authenticated requests', async () => {
     const { baseUrl } = startServer();

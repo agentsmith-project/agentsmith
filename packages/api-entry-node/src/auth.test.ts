@@ -3,6 +3,12 @@ import { InMemoryCache } from '@mbos/adapters-private';
 import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { extractBearerToken, verifyBearerToken, verifyRequestAuth } from './auth.js';
+import {
+  exchangeDesktopAuthRequest,
+  resetDesktopAuthForTest,
+  startDesktopAuthRequest,
+  completeDesktopAuthRequest,
+} from './desktop-auth-store.js';
 import { issueInternalTicket, resetInternalTicketsForTest } from './internal-ticket-store.js';
 import { issueSSETicket, resetSSETicketsForTest } from './sse-ticket-store.js';
 import { listPersistedSystemWorkspaces } from './system-workspace-persistence.js';
@@ -53,6 +59,7 @@ describe('auth', () => {
     return Promise.all([
       resetSSETicketsForTest(cache, issued),
       resetInternalTicketsForTest(cache, issued),
+      resetDesktopAuthForTest(cache, { requestIds: issued, accessTokens: issued }),
       Promise.resolve().then(() => {
         vi.restoreAllMocks();
         delete process.env.INTERNAL_KEYCLOAK_BASE_URL;
@@ -130,6 +137,39 @@ describe('auth', () => {
       payload: expect.objectContaining({
         endpoint_id: 'ep_1',
       }),
+    });
+    expect(jwtVerifyMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts desktop access tokens on bearer routes', async () => {
+    const started = await startDesktopAuthRequest(cache, {
+      deploymentBaseUrl: 'https://agentsmith.example.com',
+    });
+    issuedTickets.push(started.request_id);
+    const completed = await completeDesktopAuthRequest(cache, {
+      requestId: started.request_id,
+      user: {
+        id: 'user_desktop',
+        email: 'desktop@example.com',
+        name: 'Desktop User',
+      },
+    });
+    const exchanged = await exchangeDesktopAuthRequest(cache, {
+      requestId: started.request_id,
+      exchangeTicket: completed?.exchange_ticket ?? '',
+    });
+    issuedTickets.push(exchanged?.accessToken ?? '');
+
+    const auth = await verifyRequestAuth(makeRequest({
+      url: '/api/v1/me/desktop/file-libraries',
+      authorization: `Bearer ${exchanged?.accessToken}`,
+    }), { cache });
+
+    expect(auth?.tokenType).toBe('desktop_token');
+    expect(auth?.internalTicket).toBeNull();
+    expect(auth?.user).toMatchObject({
+      id: 'user_desktop',
+      email: 'desktop@example.com',
     });
     expect(jwtVerifyMock).not.toHaveBeenCalled();
   });

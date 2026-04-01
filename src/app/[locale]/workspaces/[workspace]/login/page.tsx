@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useRouter } from '@/lib/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -29,11 +29,13 @@ type WorkspaceLoginConfig = {
 export default function WorkspaceLoginPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const t = useTranslations('auth');
   const hydrated = useAuthStoreHydration();
   const { setAuth, isAuthenticated } = useAuthStore();
   const locale = (params?.locale as string) || 'en-US';
   const workspaceId = (params?.workspace as string) || '';
+  const desktopAuthRequestId = searchParams.get('desktop_auth_request_id')?.trim() ?? '';
   const [config, setConfig] = useState<WorkspaceLoginConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [configError, setConfigError] = useState<string | null>(null);
@@ -120,7 +122,15 @@ export default function WorkspaceLoginPage() {
       const redirectUri = `${window.location.origin}/workspaces/${workspaceId}/login/callback`;
       sessionStorage.setItem(
         'mbos:keycloak:pkce',
-        JSON.stringify({ verifier, state, redirectUri, createdAt: Date.now(), workspaceId, locale }),
+        JSON.stringify({
+          verifier,
+          state,
+          redirectUri,
+          createdAt: Date.now(),
+          workspaceId,
+          locale,
+          desktopAuthRequestId: desktopAuthRequestId || undefined,
+        }),
       );
 
       const authUrl = new URL(`${realmBase}/protocol/openid-connect/auth`);

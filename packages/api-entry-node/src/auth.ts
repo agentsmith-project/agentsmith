@@ -6,6 +6,7 @@ import {
   type JWTPayload,
 } from 'jose';
 import type { CachePort, JsonDocStorePort } from '@mbos/ports';
+import { resolveDesktopAccessToken } from './desktop-auth-store.js';
 import type { ResolvedInternalTicket } from './internal-ticket-store.js';
 import { resolveInternalTicket } from './internal-ticket-store.js';
 import { resolveSSETicket } from './sse-ticket-store.js';
@@ -22,7 +23,7 @@ export interface AuthenticatedUser {
 export interface VerifiedRequestAuth {
   user: AuthenticatedUser;
   internalTicket: ResolvedInternalTicket | null;
-  tokenType: 'jwt' | 'api_key' | 'sse_ticket' | 'internal_ticket';
+  tokenType: 'jwt' | 'api_key' | 'sse_ticket' | 'internal_ticket' | 'desktop_token';
 }
 
 interface IssuerConfig {
@@ -246,6 +247,16 @@ export async function verifyRequestAuth(
       user: toInternalTicketUser(internalTicket),
       internalTicket,
       tokenType: 'internal_ticket',
+    };
+  }
+  const desktopToken = headerToken && options?.cache
+    ? await resolveDesktopAccessToken(options.cache, headerToken)
+    : null;
+  if (desktopToken) {
+    return {
+      user: desktopToken.user,
+      internalTicket: null,
+      tokenType: 'desktop_token',
     };
   }
   const ticketToken = canUseTicketQuery(req) && options?.cache

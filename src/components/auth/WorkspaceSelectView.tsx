@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ArrowRight, Building2 } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 export function WorkspaceSelectView() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const t = useTranslations('auth');
   const locale = (params?.locale as string) || 'en-US';
   const { clearAuth } = useAuthStore();
@@ -27,9 +28,13 @@ export function WorkspaceSelectView() {
   } = useWorkspaces({ public: true });
 
   const isUnauthorized = isError && error instanceof APIError && error.statusCode === 401;
+  const desktopAuthRequestId = searchParams.get('desktop_auth_request_id')?.trim() ?? '';
 
   const handleWorkspaceSelect = (workspaceId: string) => {
-    router.push(`/${locale}/workspaces/${workspaceId}/login`);
+    const suffix = desktopAuthRequestId
+      ? `?desktop_auth_request_id=${encodeURIComponent(desktopAuthRequestId)}`
+      : '';
+    router.push(`/${locale}/workspaces/${workspaceId}/login${suffix}`);
   };
 
   const handleReLogin = useCallback(() => {

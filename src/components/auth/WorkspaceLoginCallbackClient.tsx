@@ -6,6 +6,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api/client';
+import { buildPublicApiUrl } from '@/lib/public-runtime-config';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
 import { readAccessTokenClaims } from '@/lib/auth/token-claims';
 
@@ -22,6 +23,7 @@ interface StoredPkceContext {
   createdAt: number;
   workspaceId?: string;
   locale?: string;
+  desktopAuthRequestId?: string;
 }
 
 type WorkspaceLoginConfig = {
@@ -78,6 +80,19 @@ async function tryBindWorkspaceAdmin(workspaceId: string, accessToken: string): 
       authorization: `Bearer ${accessToken}`,
     },
   }).catch(() => undefined);
+}
+
+async function tryCompleteDesktopAuthRequest(requestId: string, accessToken: string): Promise<void> {
+  await fetch(buildPublicApiUrl(`/me/desktop/auth/requests/${encodeURIComponent(requestId)}/complete`), {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+    },
+  }).then(async (response) => {
+    if (!response.ok) {
+      throw new Error(`desktop_auth_complete_failed_${response.status}`);
+    }
+  });
 }
 
 export function WorkspaceLoginCallbackClient({
@@ -188,9 +203,16 @@ export function WorkspaceLoginCallbackClient({
       );
       getApiClient().setToken(token.access_token);
       await tryBindWorkspaceAdmin(workspaceId, token.access_token);
+      if (pkce.desktopAuthRequestId) {
+        await tryCompleteDesktopAuthRequest(pkce.desktopAuthRequestId, token.access_token);
+      }
       sessionStorage.removeItem('mbos:keycloak:pkce');
       if (!cancelled) {
-        window.location.replace(`/${locale}/workspaces/${workspaceId}`);
+        window.location.replace(
+          pkce.desktopAuthRequestId
+            ? `/${locale}/desktop/auth/complete?desktop_auth_request_id=${encodeURIComponent(pkce.desktopAuthRequestId)}`
+            : `/${locale}/workspaces/${workspaceId}`,
+        );
       }
     };
 

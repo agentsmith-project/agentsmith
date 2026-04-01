@@ -46,6 +46,7 @@ Use these documents from the bundle:
 
 - `docs/contracts/deployment-spec-v1.md`
 - `docs/user-guides/demo-deploy-operations.md`
+- `docs/user-guides/demo-deploy-simple-quickstart-zh.md`
 
 Mode summary:
 

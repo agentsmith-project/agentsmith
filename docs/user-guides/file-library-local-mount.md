@@ -1,36 +1,68 @@
-# File Library Client Mount
+# File Library Local Mount
 
-This guide explains how to mount a project file library from your own machine and how to verify that local changes stay in sync with the Files page.
+This guide explains the supported local-mount paths for project file libraries.
+
+The default product path is now:
+
+- use **AgentSmith Desktop**
+
+Manual JuiceFS shell commands are kept only for advanced debugging and verification.
 
 ## Prerequisites
 
-- `juicefs` CLI installed on the local machine
 - access to the target project file library
 - mount permission through AgentSmith
+
+If you are using AgentSmith Desktop:
+
+- install the Desktop build for your platform
+- let Desktop Doctor check the platform prerequisites
+
+If you are using the manual debug path:
+
+- `juicefs` CLI installed on the local machine
 - platform filesystem support:
   - Linux: FUSE
   - macOS: macFUSE
   - Windows: JuiceFS-supported mount dependencies
 
-## Exchange Mount Access
+## Preferred Path: AgentSmith Desktop
 
 In the Files page:
 
 1. Open the target file library.
-2. Click `Mount Access`.
+2. Click `Desktop`.
+3. Sign in to AgentSmith Desktop with the same deployment.
+4. Activate the target library inside Desktop.
+
+Expected behavior:
+
+- Desktop lists the current user's visible libraries
+- the user activates the library there
+- Desktop handles the local mount target
+- Desktop diagnostics explain missing prerequisites or mount failures
+
+## Advanced Debug Path: Manual Mount
+
+Use this path only when you need to debug or manually validate the underlying JuiceFS access.
+
+In the Files page:
+
+1. Open the target file library.
+2. Click `Advanced manual mount`.
 3. Reveal the `metadata_url`.
 4. Copy the command for your platform.
 
 The exchange surface exposes:
-- `client_mount_access.filesystem_name`
-- `client_mount_access.metadata_url`
-- `client_mount_access.storage_bucket_url`
+- `manual_mount_access.filesystem_name`
+- `manual_mount_access.metadata_url`
+- `manual_mount_access.storage_bucket_url`
 - recommended mount path
 - platform-specific `juicefs mount` commands
 
 It does not expose backend MinIO credentials by default.
 
-## Mount Locally
+## Manual Mount Locally
 
 Example:
 
@@ -61,11 +93,20 @@ Expected behavior:
 
 ## Common Failures
 
-### `file_library_juicefs_cli_missing`
-The AgentSmith backend host does not have `juicefs` installed or it is not reachable via PATH.
+### Desktop path blocked by missing prerequisites
+This is expected when the current machine is missing one or more platform requirements:
 
-### `file_library_mc_cli_missing`
-The AgentSmith backend host does not have `mc` installed or it is not reachable via PATH.
+- Linux: FUSE
+- macOS: macFUSE
+- Windows: WinFsp
+
+Use Desktop diagnostics to see the missing prerequisite and the next action.
+
+### `desktop_mount_prerequisites_missing:*`
+Desktop blocked mount activation because the local machine is not ready for filesystem mounting yet.
+
+### `desktop_mount_access_failed_*`
+Desktop could not exchange mount access for the target library.
 
 ### `file_library_env_missing_*`
 The backend is missing one or more required storage environment variables.

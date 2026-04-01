@@ -1669,6 +1669,8 @@ export async function startCodexRunnerDockerProcess(args: {
     '--env',
     'MBOS_AGENT_RUNNER_DEBUG=1',
     '--env',
+    `MBOS_AGENT_JUICEFS_MOUNT_READY_TIMEOUT_MS=${process.env.INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS?.trim() || '120000'}`,
+    '--env',
     'MBOS_AGENT_WORKSPACE_ROOT=/workspace/ags-workspaces',
     '--env',
     `MBOS_AGENT_BUILTIN_SKILLS_DIR=${builtinSkillsDir}`,
@@ -1758,18 +1760,26 @@ export async function mountFileLibraryLocally(
   if ((resolvedStorageBucketUrl ?? '').trim()) {
     mountArgs.push('--bucket', resolvedStorageBucketUrl!.trim());
   }
-  const mountResult = await spawnAndCapture('juicefs', mountArgs, { env: withoutProxyEnv() });
-  if (mountResult.code !== 0) {
-    await rm(mountPath, { recursive: true, force: true }).catch(() => undefined);
-    throw new Error(`local_juicefs_mount_failed:${mountResult.stderr.slice(-800)}`);
+  let lastError = '';
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const mountResult = await spawnAndCapture('juicefs', mountArgs, { env: withoutProxyEnv() });
+    if (mountResult.code === 0) {
+      return {
+        mountPath,
+        stop: async () => {
+          await unmountSingleWorkspace(mountPath);
+          await rm(mountPath, { recursive: true, force: true }).catch(() => undefined);
+        },
+      };
+    }
+    lastError = mountResult.stderr.slice(-800);
+    await unmountSingleWorkspace(mountPath).catch(() => undefined);
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
   }
-  return {
-    mountPath,
-    stop: async () => {
-      await unmountSingleWorkspace(mountPath);
-      await rm(mountPath, { recursive: true, force: true }).catch(() => undefined);
-    },
-  };
+  await rm(mountPath, { recursive: true, force: true }).catch(() => undefined);
+  throw new Error(`local_juicefs_mount_failed:${lastError}`);
 }
 
 function rewriteLocalClientMetadataUrl(

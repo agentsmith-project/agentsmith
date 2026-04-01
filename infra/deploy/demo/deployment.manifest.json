@@ -1,5 +1,9 @@
 {
   "schema_version": 1,
+  "deployment_modes": [
+    "simple",
+    "full"
+  ],
   "release_flow": [
     "prepare",
     "reset",
@@ -152,6 +156,7 @@
     "scripts/resolve-runtime-addresses.sh",
     "scripts/render-env.sh",
     "scripts/check-preset-external-file-library.sh",
+    "scripts/demo-deploy-modes-gate.sh",
     "scripts/lib/common.sh",
     "scripts/lib/deploy-common.sh",
     "scripts/substrate/deploy-common.sh",
@@ -163,7 +168,9 @@
     "infra/runtime/presets.env",
     "e2e/integration-real-helpers.ts",
     "e2e/integration-release-user-story.spec.ts",
+    "docs/user-guides/demo-deploy-operations.md",
     "docs/contracts/deployment-spec-v1.md",
+    "README-demo-deploy.md",
     "tools/kind",
     "tools/kubectl",
     "tools/juicefs",
@@ -174,5 +181,15 @@
   "verify_stories": [
     "preset-story",
     "new-workspace-story"
-  ]
+  ],
+  "verify_modes": {
+    "simple": [
+      "preset-story-external",
+      "new-workspace-story-external"
+    ],
+    "full": [
+      "preset-story",
+      "new-workspace-story"
+    ]
+  }
 }

@@ -182,8 +182,8 @@ describe('task-route-handler workspace access', () => {
       });
 
       expect(resolved).toEqual({
-        metadataUrl: 'postgres://jfsu_user:secret@127.0.0.1:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://127.0.0.1:19000/jfs-lib-demo',
+        metadataUrl: 'postgres://jfsu_user:secret@host.docker.internal:15432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://host.docker.internal:19000/jfs-lib-demo',
       });
     } finally {
       if (previousClientPgPort === undefined) delete process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT;

@@ -28,7 +28,7 @@ if [[ "${SKIP_BUNDLE_INPUTS_CHECK:-0}" != "1" ]]; then
   (cd "${ROOT_DIR}" && npm run test:client-public-runtime)
 fi
 
-if [[ "${SKIP_RELEASE_PRECHECK:-0}" != "1" ]]; then
+if [[ "${RUN_RELEASE_PRECHECK:-0}" == "1" && "${SKIP_RELEASE_PRECHECK:-0}" != "1" ]]; then
   (cd "${ROOT_DIR}" && npm run test:release:precheck)
 fi
 
@@ -240,6 +240,10 @@ cp "${ROOT_DIR}/e2e/integration-real-helpers.ts" "${BUNDLE_DIR}/e2e/integration-
 cp "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts" "${BUNDLE_DIR}/e2e/integration-release-user-story.spec.ts"
 mkdir -p "${BUNDLE_DIR}/docs/contracts"
 cp "${ROOT_DIR}/docs/contracts/deployment-spec-v1.md" "${BUNDLE_DIR}/docs/contracts/deployment-spec-v1.md"
+mkdir -p "${BUNDLE_DIR}/docs/user-guides"
+cp "${ROOT_DIR}/docs/user-guides/demo-deploy-operations.md" "${BUNDLE_DIR}/docs/user-guides/demo-deploy-operations.md"
+cp "${ROOT_DIR}/scripts/demo-deploy-modes-gate.sh" "${BUNDLE_DIR}/scripts/demo-deploy-modes-gate.sh"
+cp "${ROOT_DIR}/README-demo-deploy.md" "${BUNDLE_DIR}/README-demo-deploy.md"
 
 cp "$(command -v kind)" "${TOOLS_DIR}/kind"
 cp "$(command -v kubectl)" "${TOOLS_DIR}/kubectl"

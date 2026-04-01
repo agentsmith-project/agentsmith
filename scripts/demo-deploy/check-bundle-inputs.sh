@@ -23,6 +23,8 @@ for relative in manifest.get("bundle_files", []):
     source = root_dir / relative if not relative.startswith("tools/") else pathlib.Path("/nonexistent")
     if relative == "scripts/lib/common.sh":
       source = root_dir / "scripts" / "lib" / "common.sh"
+    elif relative == "scripts/demo-deploy-modes-gate.sh":
+      source = root_dir / "scripts" / "demo-deploy-modes-gate.sh"
     elif relative == "scripts/check-preset-external-file-library.sh":
       source = root_dir / "scripts" / "check-preset-external-file-library.sh"
     elif relative.startswith("scripts/lib/"):
@@ -46,6 +48,10 @@ for relative in manifest.get("bundle_files", []):
     elif relative.startswith("universal-proxy/"):
       source = root_dir / "infra" / "deploy" / "shared" / "universal-proxy" / pathlib.Path(relative).name
     elif relative.startswith("docs/contracts/"):
+      source = root_dir / relative
+    elif relative.startswith("docs/user-guides/"):
+      source = root_dir / relative
+    elif relative == "README-demo-deploy.md":
       source = root_dir / relative
     elif relative.startswith("e2e/"):
       source = root_dir / relative

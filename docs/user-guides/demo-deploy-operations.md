@@ -6,6 +6,20 @@
 
 `demo-deploy` is the demo / single-host deployment line.
 
+It supports two deployment modes selected through `env/site.env`:
+
+- `DEMO_DEPLOY_MODE=full`
+  - Compose substrate and app
+  - local `kind`
+  - JuiceFS CSI
+  - `sandbox-manager`
+  - external and internal agents
+- `DEMO_DEPLOY_MODE=simple`
+  - Compose substrate and app
+  - `universal-proxy`
+  - `external-runner`
+  - external agents only
+
 For local development hosts, keep the mental model simple:
 
 - there is one shared local `substrate`
@@ -20,8 +34,17 @@ In other words:
 Use it when:
 
 - one host runs the application services and data services
-- that same host runs a local `kind` cluster for sandbox simulation
 - you want an offline, host-local demo environment
+
+Use `full` when:
+
+- that same host should run a local `kind` cluster for sandbox simulation
+- you want to demonstrate internal agent execution
+
+Use `simple` when:
+
+- you only need external agents
+- you want to avoid installing or operating local Kubernetes components
 
 Do not use it as the real-cluster release line. For the real-cluster path, use:
 
@@ -65,7 +88,7 @@ Everything under `/home/percy/agentsmith/deploy` is managed deployment state. Do
   - `web`
   - `universal-proxy`
   - `external-runner`
-- `kind` cluster services:
+- `kind` cluster services in `full`:
   - `sandbox-manager`
   - `juicefs-csi-controller`
   - `juicefs-csi-node`
@@ -93,6 +116,18 @@ On a development host, this local `kind` cluster is shared by the local rehearsa
 UI-facing file library mount instructions must use client-visible addresses. They must not show `localhost`, `postgres`, `minio`, Docker bridge addresses, or `host.docker.internal`.
 
 ## Standard Flow
+
+Before running, set the mode in `/home/percy/agentsmith/deploy/config/site.env`:
+
+```bash
+DEMO_DEPLOY_MODE=full
+```
+
+or:
+
+```bash
+DEMO_DEPLOY_MODE=simple
+```
 
 From the active release directory:
 
@@ -130,7 +165,7 @@ Defaults:
 
 - `current` points to the active release under `/home/percy/agentsmith/deploy/releases/...`
 - `config/site.env` contains the operator-owned deployment config
-- `deploy` can recreate an unhealthy `kind` cluster automatically
+- `deploy` can recreate an unhealthy `kind` cluster automatically in `full`
 - JuiceFS CSI runs on `v0.31.3`
 - `bootstrap` reuses or recreates the canonical external runner container as needed
 - `verify` runs from the bundled release assets, not ad hoc host source trees
@@ -183,7 +218,7 @@ These values are shown in the file library mount dialog and must be reachable fr
 - `PRESET_OPENAI_ENDPOINT_BASE_URL`
 - `PRESET_OPENAI_ENDPOINT_PROTOCOL`
 
-### Internal sandbox and JuiceFS
+### Internal sandbox and JuiceFS (`full` only)
 
 - `INTERNAL_AGENT_K8S_NAMESPACE`
 - `INTERNAL_AGENT_JUICEFS_CSI_DRIVER`
@@ -191,7 +226,7 @@ These values are shown in the file library mount dialog and must be reachable fr
 - `INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS`
 - `INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE`
 
-### External dependency network
+### External dependency network (`full` only)
 
 - `EXTERNAL_DEPS_NETWORK_NAME`
 - `EXTERNAL_DEPS_NETWORK_SUBNET`
@@ -222,7 +257,11 @@ bash scripts/report.sh
 
 Expected successful verify summary:
 
-- `4 passed`
-- `[demo-deploy] verify ok`
+- `simple`
+  - external-only verify succeeds
+  - no internal/k8s checks are required
+- `full`
+  - `4 passed`
+  - `[demo-deploy] verify ok`
 
 Reports are written under `/home/percy/agentsmith/deploy/reports/`.

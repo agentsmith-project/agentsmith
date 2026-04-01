@@ -92,6 +92,7 @@
     "demo:bootstrap": "bash scripts/demo-deploy/bootstrap.sh",
     "demo:verify": "bash scripts/demo-deploy/verify.sh",
     "demo:report": "bash scripts/demo-deploy/report.sh",
+    "test:demo:rehearsal:modes": "bash scripts/demo-deploy-modes-gate.sh",
     "cluster:bundle": "bash scripts/cluster-deploy/build-bundle.sh",
     "cluster:prepare": "bash scripts/cluster-deploy/prepare.sh",
     "cluster:publish-images": "bash scripts/cluster-deploy/publish-images.sh",

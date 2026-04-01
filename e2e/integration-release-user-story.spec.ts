@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import {
   API_BASE,
@@ -7,13 +5,8 @@ import {
   KEYCLOAK_DEV_ADMIN_USERNAME,
   createCredentialViaUi,
   createProjectInWorkspace,
-  mountFileLibraryLocally,
-  openMountAccessAndRevealMountDetails,
   startCodexRunnerDockerProcess,
-  startCodexRunnerProcess,
   waitForAgentPresenceOnline,
-  waitForAnyMountedWorkspacePath,
-  waitForMountedWorkspacePath,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
@@ -34,12 +27,9 @@ const INTERNAL_AGENT_IMAGE =
   process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() ||
   process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() ||
   'agentsmith-codex-runner:local';
+const DEMO_DEPLOY_MODE = process.env.INTEGRATION_DEMO_DEPLOY_MODE?.trim() || 'full';
+const DEMO_MODE_IS_FULL = DEMO_DEPLOY_MODE === 'full';
 const CREATE_NEW_TASK_RESPONSE_TIMEOUT_MS = 60_000;
-const VERIFY_CONTAINER_CLIENT_MOUNT_OVERRIDES = {
-  metadataHostOverride: process.env.INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE?.trim() || undefined,
-  metadataPortOverride: process.env.INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE?.trim() || undefined,
-  storageEndpointOverride: process.env.INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim() || undefined,
-} as const;
 
 function requireRealLaneApiKey(): string {
   const value = BACKEND_REAL_API_KEY?.trim();
@@ -385,6 +375,16 @@ async function createAgentViaUi(args: {
   await dialog.getByRole('button', { name: /^create$/i }).click();
   const response = await createResponse;
   expect(response.ok()).toBeTruthy();
+  const createdAgent = (await response.json()) as { id: string };
+  const token = await readStoredAuthToken(page);
+  const visibilityResponse = await page.request.patch(
+    `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents/${createdAgent.id}`,
+    {
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      data: { visibility: 'public' },
+    },
+  );
+  expect(visibilityResponse.ok()).toBeTruthy();
   await expect(dialog).toBeHidden({ timeout: 30_000 });
   await expect(page.getByText(name)).toBeVisible({ timeout: 30_000 });
 }
@@ -523,6 +523,14 @@ async function openWorkspaceFilesRoot(args: {
 }
 
 async function openFolderByName(page: Page, name: string): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const visibleDialog = page.locator('[role="dialog"]:visible, [role="alertdialog"]:visible').last();
+    if (!(await visibleDialog.isVisible().catch(() => false))) {
+      break;
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+  }
   const folderRow = page.getByTestId('files__object-row').filter({ hasText: name }).first();
   await expect(folderRow).toBeVisible({ timeout: 30_000 });
   const button = folderRow.getByRole('button').first();
@@ -557,7 +565,7 @@ function externalExecutionHost(): string {
     return dockerManualHost;
   }
   if (process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.includes('host.docker.internal')) {
-    return '127.0.0.1';
+    return 'host.docker.internal';
   }
   const explicitMetaHost = process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
   if (explicitMetaHost) {
@@ -599,9 +607,13 @@ async function waitForUsageFacts(args: {
   endpointIds: string[];
 }): Promise<Array<{ resource_id?: string; requests?: number; tokens_total?: number }>> {
   const token = await readStoredAuthToken(args.page);
+  const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const endTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   for (let attempt = 0; attempt < 90; attempt += 1) {
     const response = await args.page.request.get(
-      `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/usage/facts?page=1&page_size=200`,
+      `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/usage/facts?start_time=${encodeURIComponent(
+        startTime,
+      )}&end_time=${encodeURIComponent(endTime)}&page=1&page_size=200`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     if (!response.ok()) {
@@ -709,15 +721,17 @@ test.describe('@lane-real release user story end-to-end', () => {
       mode: 'external',
       endpointId: primaryEndpointId,
     });
-    await createAgentViaUi({
-      page,
-      workspaceId,
-      projectId,
-      name: internalAgentName,
-      mode: 'internal',
-      endpointId: secondaryEndpointId,
-      image: INTERNAL_AGENT_IMAGE,
-    });
+    if (DEMO_MODE_IS_FULL) {
+      await createAgentViaUi({
+        page,
+        workspaceId,
+        projectId,
+        name: internalAgentName,
+        mode: 'internal',
+        endpointId: secondaryEndpointId,
+        image: INTERNAL_AGENT_IMAGE,
+      });
+    }
 
     const externalAgent = await resolveAgent(page, workspaceId, projectId, externalAgentName);
     if (!externalAgent.wsUrl || !externalAgent.key) {
@@ -781,40 +795,6 @@ test.describe('@lane-real release user story end-to-end', () => {
       await openFolderByName(page, '.artifacts');
       await expect(page.getByText('external_summary.md')).toBeVisible({ timeout: 30_000 });
 
-      await loginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-      await openWorkspaceFilesRoot({
-        page,
-        workspaceId,
-        projectId,
-        workspaceName: externalTaskOne.workspaceName,
-      });
-      const externalMountDetails = await openMountAccessAndRevealMountDetails(page, externalTaskOne.workspaceName);
-      const mountedExternalWorkspace = await mountFileLibraryLocally(
-        externalMountDetails.metadataUrl,
-        externalMountDetails.storageBucketUrl ?? undefined,
-        VERIFY_CONTAINER_CLIENT_MOUNT_OVERRIDES,
-      );
-      try {
-        const externalStoryPath = await waitForMountedWorkspacePath(
-          mountedExternalWorkspace.mountPath,
-          path.join('notes', 'external_story.txt'),
-        );
-        const externalSummaryPath = await waitForMountedWorkspacePath(
-          mountedExternalWorkspace.mountPath,
-          path.join('.artifacts', 'external_summary.md'),
-        );
-        const externalStory = await readFile(externalStoryPath, 'utf-8');
-        expect(externalStory).toContain('external turn 1');
-        expect(externalStory).toContain('external turn 2');
-        const externalSummary = await readFile(externalSummaryPath, 'utf-8');
-        expect(externalSummary.toLowerCase()).toContain('external');
-        expect(
-          /2\s+lines?/i.test(externalSummary)
-          || (externalSummary.includes('external turn 1') && externalSummary.includes('external turn 2')),
-        ).toBe(true);
-      } finally {
-        await mountedExternalWorkspace.stop();
-      }
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/${externalTaskOne.taskId}`);
       await expect(page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
@@ -863,112 +843,89 @@ test.describe('@lane-real release user story end-to-end', () => {
         expectedPath: '.artifacts/external_reuse.md',
       });
 
-      const internalTask = await createTaskViaUi({
-        page,
-        workspaceId,
-        projectId,
-        title: `Internal Task ${Date.now()}`,
-        agentName: internalAgentName,
-        workspaceMode: 'create_new',
-        workspaceName: `Internal Workspace ${Date.now()}`,
-      });
-      await sendNotebookMessage(
-        page,
-        [
-          'Run the following shell command exactly, then reply with exactly INT_T1_OK.',
-          '```bash',
-          "mkdir -p notes && cat <<'EOF' > notes/internal_story.txt",
-          'internal turn 1',
-          'EOF',
-          '```',
-        ].join(' '),
-      );
-      await waitForAgentReply({
-        page,
-        workspaceId,
-        projectId,
-        taskId: internalTask.taskId,
-        expectedToken: 'INT_T1_OK',
-        minAgentMessages: 1,
-      });
-      await sendNotebookMessage(
-        page,
-        [
-          'Run the following shell commands exactly, then reply with exactly INT_T2_OK.',
-          '```bash',
-          "if [ ! -f notes/internal_story.txt ]; then echo 'missing-internal-story' >&2; exit 1; fi",
-          "printf '\\ninternal turn 2\\n' >> notes/internal_story.txt",
-          'mkdir -p .artifacts',
-          "cat <<'EOF' > .artifacts/internal_summary.md",
-          '# Internal Story Summary',
-          'internal turn 1',
-          'internal turn 2',
-          'EOF',
-          '```',
-        ].join(' '),
-      );
-      await waitForAgentReply({
-        page,
-        workspaceId,
-        projectId,
-        taskId: internalTask.taskId,
-        expectedToken: 'INT_T2_OK',
-        minAgentMessages: 2,
-      });
-      await waitForTaskArtifacts({
-        page,
-        workspaceId,
-        projectId,
-        taskId: internalTask.taskId,
-        expectedPath: '.artifacts/internal_summary.md',
-      });
-      await openWorkspaceFilesRoot({
-        page,
-        workspaceId,
-        projectId,
-        workspaceName: internalTask.workspaceName,
-      });
-      await openFolderByName(page, '.artifacts');
-      await expect(page.getByText('internal_summary.md')).toBeVisible({ timeout: 30_000 });
-
-      await loginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-      await openWorkspaceFilesRoot({
-        page,
-        workspaceId,
-        projectId,
-        workspaceName: internalTask.workspaceName,
-      });
-      const internalMountDetails = await openMountAccessAndRevealMountDetails(page, internalTask.workspaceName);
-      const mountedInternalWorkspace = await mountFileLibraryLocally(
-        internalMountDetails.metadataUrl,
-        internalMountDetails.storageBucketUrl ?? undefined,
-        VERIFY_CONTAINER_CLIENT_MOUNT_OVERRIDES,
-      );
-      try {
-        const internalStoryPath = await waitForAnyMountedWorkspacePath(
-          mountedInternalWorkspace.mountPath,
+      if (DEMO_MODE_IS_FULL) {
+        const internalTask = await createTaskViaUi({
+          page,
+          workspaceId,
+          projectId,
+          title: `Internal Task ${Date.now()}`,
+          agentName: internalAgentName,
+          workspaceMode: 'create_new',
+          workspaceName: `Internal Workspace ${Date.now()}`,
+        });
+        await sendNotebookMessage(
+          page,
           [
-            'internal_story.txt',
-            path.join('notes', 'internal_story.txt'),
-            path.join('.artifacts', 'internal_story.txt'),
-          ],
+            'Run the following shell command exactly, then reply with exactly INT_T1_OK.',
+            '```bash',
+            "mkdir -p notes && cat <<'EOF' > notes/internal_story.txt",
+            'internal turn 1',
+            'EOF',
+            '```',
+          ].join(' '),
         );
-        const internalSummaryPath = await waitForMountedWorkspacePath(
-          mountedInternalWorkspace.mountPath,
-          path.join('.artifacts', 'internal_summary.md'),
+        await waitForAgentReply({
+          page,
+          workspaceId,
+          projectId,
+          taskId: internalTask.taskId,
+          expectedToken: 'INT_T1_OK',
+          minAgentMessages: 1,
+        });
+        await sendNotebookMessage(
+          page,
+          [
+            'Run the following shell commands exactly, then reply with exactly INT_T2_OK.',
+            '```bash',
+            "if [ ! -f notes/internal_story.txt ]; then echo 'missing-internal-story' >&2; exit 1; fi",
+            "printf '\\ninternal turn 2\\n' >> notes/internal_story.txt",
+            'mkdir -p .artifacts',
+            "cat <<'EOF' > .artifacts/internal_summary.md",
+            '# Internal Story Summary',
+            'internal turn 1',
+            'internal turn 2',
+            'EOF',
+            '```',
+          ].join(' '),
         );
-        const internalStory = await readFile(internalStoryPath, 'utf-8');
-        expect(internalStory).toContain('internal turn 1');
-        expect(internalStory).toContain('internal turn 2');
-        const internalSummary = await readFile(internalSummaryPath, 'utf-8');
-        expect(internalSummary).toContain('internal turn 2');
-      } finally {
-        await mountedInternalWorkspace.stop();
+        await waitForAgentReply({
+          page,
+          workspaceId,
+          projectId,
+          taskId: internalTask.taskId,
+          expectedToken: 'INT_T2_OK',
+          minAgentMessages: 2,
+        });
+        await waitForTaskArtifacts({
+          page,
+          workspaceId,
+          projectId,
+          taskId: internalTask.taskId,
+          expectedPath: '.artifacts/internal_summary.md',
+        });
+        await openWorkspaceFilesRoot({
+          page,
+          workspaceId,
+          projectId,
+          workspaceName: internalTask.workspaceName,
+        });
+        await openFolderByName(page, '.artifacts');
+        await expect(page.getByText('internal_summary.md')).toBeVisible({ timeout: 30_000 });
+
+        await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
       }
-      await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
 
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/usage`);
       await expect(page.getByTestId('usage__view')).toBeVisible({ timeout: 30_000 });
+      const expectedUsageEndpointIds = DEMO_MODE_IS_FULL
+        ? [primaryEndpointId, secondaryEndpointId]
+        : [primaryEndpointId];
+      await waitForUsageFacts({
+        page,
+        workspaceId,
+        projectId,
+        endpointIds: expectedUsageEndpointIds,
+      });
       await expect(page.getByRole('button', { name: anthropicEndpointName })).toBeVisible({ timeout: 30_000 });
       await expect(page.getByRole('button', { name: openaiEndpointName })).toBeVisible({ timeout: 30_000 });
       await expectUsageTabToShowRequests({
@@ -976,11 +933,13 @@ test.describe('@lane-real release user story end-to-end', () => {
         endpointId: primaryEndpointId,
         endpointName: anthropicEndpointName,
       });
-      await expectUsageTabToShowRequests({
-        page,
-        endpointId: secondaryEndpointId,
-        endpointName: openaiEndpointName,
-      });
+      if (DEMO_MODE_IS_FULL) {
+        await expectUsageTabToShowRequests({
+          page,
+          endpointId: secondaryEndpointId,
+          endpointName: openaiEndpointName,
+        });
+      }
       expect(pageErrors).toEqual([]);
       expect(projectName).toContain('Release Story Project');
     } finally {

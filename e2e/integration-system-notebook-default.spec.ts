@@ -3,6 +3,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { readStoredAuthToken } from './integration-workspace-access';
 
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
+const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
 const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
 const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
@@ -429,23 +430,6 @@ async function createCredential(page: Page, workspaceId: string, projectId: stri
   await expect(page.getByText('Provider Anthropic Key')).toBeVisible({ timeout: 30_000 });
 }
 
-async function createFileLibrary(page: Page, workspaceId: string, projectId: string): Promise<string> {
-  const libraryName = `Mainline Notebook Workspace ${Date.now()}`;
-  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/files`);
-  await expect(page.getByTestId('files__library-create')).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('files__library-create').click();
-
-  const dialog = page.getByTestId('files__dialog__library-create');
-  await expect(dialog).toBeVisible({ timeout: 30_000 });
-  await dialog.getByTestId('files__library-create__name').fill(libraryName);
-  await dialog.getByTestId('files__library-create__submit').click();
-  await expect(dialog).toBeHidden({ timeout: 30_000 });
-
-  const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: libraryName }).first();
-  await expect(libraryItem).toBeVisible({ timeout: 30_000 });
-  return libraryName;
-}
-
 async function createEndpoint(page: Page, workspaceId: string, projectId: string): Promise<void> {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/endpoints`);
   await expect(page.getByTestId('endpoints__create-btn')).toBeVisible({ timeout: 30_000 });
@@ -746,7 +730,6 @@ async function runNotebookTask(
   workspaceId: string,
   projectId: string,
   agentName: string,
-  workspaceLibraryName: string,
   token: string,
   expectedToken: string,
 ): Promise<void> {
@@ -759,9 +742,8 @@ async function runNotebookTask(
   await dialog.locator('#task-title').fill('Mainline Real Notebook Task');
   await dialog.locator('#task-agent').click();
   await page.getByRole('option', { name: new RegExp(agentName) }).click();
-  await dialog.getByRole('radio', { name: /continue an existing workspace/i }).click();
-  await dialog.getByTestId('task-create__file-library').click();
-  await page.getByRole('option', { name: new RegExp(workspaceLibraryName) }).click();
+  await dialog.getByRole('radio', { name: /create a new workspace/i }).click();
+  await dialog.getByTestId('task-create__workspace-name').fill(`Mainline Notebook Workspace ${Date.now()}`);
   await dialog.getByRole('button', { name: /create/i }).click();
 
   await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/.+`), {
@@ -823,7 +805,6 @@ test.describe('@lane-real integration system-to-notebook mainline', () => {
     await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
     await createCredential(page, workspaceId, projectId, providerApiKey);
     await createEndpoint(page, workspaceId, projectId);
-    const workspaceLibraryName = await createFileLibrary(page, workspaceId, projectId);
     const agentName = await createAgent(page, workspaceId, projectId);
 
     const token = await readStoredAuthToken(page);
@@ -847,7 +828,6 @@ test.describe('@lane-real integration system-to-notebook mainline', () => {
         workspaceId,
         projectId,
         agentName,
-        workspaceLibraryName,
         token,
         NOTEBOOK_EXPECTED_TOKEN,
       );

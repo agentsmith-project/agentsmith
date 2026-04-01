@@ -49,6 +49,29 @@ if [[ ! -f "${SITE_ENV_PATH}" ]]; then
   SITE_ENV_PATH="${RELEASE_ROOT}/env/site.env.example"
 fi
 
+DEMO_DEPLOY_MODE="$(
+  python3 - <<'PY' "${SITE_ENV_PATH}"
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+mode = "full"
+for raw_line in path.read_text(encoding='utf-8').splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith('#') or '=' not in line:
+        continue
+    key, value = line.split('=', 1)
+    if key.strip() == 'DEMO_DEPLOY_MODE':
+        mode = value.strip().strip('"').strip("'") or "full"
+        break
+print(mode)
+PY
+)"
+case "${DEMO_DEPLOY_MODE}" in
+  full|simple) ;;
+  *) die "invalid DEMO_DEPLOY_MODE in ${SITE_ENV_PATH}: ${DEMO_DEPLOY_MODE}" ;;
+esac
+
 mapfile -t PORT_ROWS < <(python3 - <<'PY' "${SITE_ENV_PATH}"
 import pathlib
 import sys
@@ -71,13 +94,34 @@ for name in [
     'KEYCLOAK_PORT',
     'API_PORT',
     'WEB_PORT',
-    'SANDBOX_HOST_PORT',
 ]:
     value = values.get(name)
     if value:
         print(f"{name}:{value}")
 PY
 )
+
+if [[ "${DEMO_DEPLOY_MODE}" == "full" ]]; then
+  sandbox_port="$(
+    python3 - <<'PY' "${SITE_ENV_PATH}"
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+for raw_line in path.read_text(encoding='utf-8').splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith('#') or '=' not in line:
+        continue
+    key, value = line.split('=', 1)
+    if key.strip() == 'SANDBOX_HOST_PORT':
+        print(value.strip().strip('"').strip("'"))
+        break
+PY
+  )"
+  if [[ -n "${sandbox_port}" ]]; then
+    PORT_ROWS+=("SANDBOX_HOST_PORT:${sandbox_port}")
+  fi
+fi
 
 for row in "${PORT_ROWS[@]}"; do
   name="${row%%:*}"

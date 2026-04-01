@@ -20,13 +20,29 @@ That governance document does not override this spec. It explains how developmen
 ### Purpose
 - `demo-deploy` is the demo / single-host release line.
 - It keeps application services on Docker Compose.
-- It uses local `kind` to simulate the internal sandbox execution surface.
+- It supports two operator-selected deployment modes:
+  - `full`
+  - `simple`
 - It is not the real-cluster release path.
+
+### Deployment Modes
+- `DEMO_DEPLOY_MODE=full`
+  - Docker Compose substrate and app
+  - local `kind`
+  - JuiceFS CSI
+  - `sandbox-manager`
+  - external and internal agents
+- `DEMO_DEPLOY_MODE=simple`
+  - Docker Compose substrate and app
+  - `universal-proxy`
+  - `external-runner`
+  - external agents only
+  - no `kind`, JuiceFS CSI, or `sandbox-manager`
 
 ### Topology
 - Host services run with Docker Compose.
-- Internal agent workloads run in a local `kind` Kubernetes cluster.
-- JuiceFS CSI is the only internal workspace persistence model.
+- Internal agent workloads run in a local `kind` Kubernetes cluster only in `full`.
+- JuiceFS CSI is the only internal workspace persistence model in `full`.
 
 ### Compose Services
 - `postgres`
@@ -38,7 +54,7 @@ That governance document does not override this spec. It explains how developmen
 - `web`
 - `external-runner`
 
-### kind Services
+### kind Services (`full` only)
 - `juicefs-csi-controller`
 - `juicefs-csi-node`
 - `sandbox-manager`
@@ -54,6 +70,9 @@ That governance document does not override this spec. It explains how developmen
 - `report`
 
 These six stages are the only supported deployment flow.
+
+- `simple` deploys, bootstraps, verifies, and reports only the external-agent surface.
+- `full` deploys, bootstraps, verifies, and reports the complete external + internal surface.
 
 ## Address Model
 
@@ -137,6 +156,9 @@ Service-specific env files are generated from `site.env` by the formal render st
 
 Preset workspace admin and project creator identities are selected by stable username/email and resolved to the current Keycloak `sub` during bootstrap. Deployment inputs must not contain fixed user UUIDs.
 
+### Mode Selector
+- `DEMO_DEPLOY_MODE`
+
 ### Storage and Ports
 - `POSTGRES_USER`
 - `POSTGRES_PASSWORD`
@@ -184,7 +206,7 @@ Preset workspace admin and project creator identities are selected by stable use
 - `MBOS_AGENT_BUILTIN_SKILLS_DIR`
 - `MBOS_AGENT_JUICEFS_MOUNT_OPTIONS`
 
-### Internal JuiceFS CSI
+### Internal JuiceFS CSI (`full` only)
 - `INTERNAL_AGENT_K8S_NAMESPACE`
 - `INTERNAL_AGENT_JUICEFS_CSI_DRIVER`
 - `INTERNAL_AGENT_WORKSPACE_CAPACITY`
@@ -235,11 +257,15 @@ The offline bundle must contain:
 - env examples
 - the single editable `env/site.env.example`
 - deployment scripts
+- operator runbook
+- bundle README
 - checksums
 - this deployment spec
 - the machine-readable deployment manifest
 
 The bundle build must always create a fresh directory for the current `release_id`. It must not reuse an existing bundle directory, and it must not carry forward historical image tar files from earlier local experiments.
+
+The bundle is always complete. Operators choose `simple` or `full` at deploy time through `env/site.env`. `simple` mode may leave bundled `kind` and CSI assets unused.
 
 ### Layered Image Contract
 - Stable and heavy dependencies must be built into reusable base images.
@@ -292,7 +318,8 @@ The bundle build must fail if any required file, tool, image, or manifest refere
   - workspace settings cannot resolve project creator directory search results from the published workspace identity provider
   - the system-to-notebook default story fails in the local backend-real run
 - The local precheck is the earliest required browser-level gate for release work. The bundled `verify` stage is the final confirmation gate, not the first place these failures should appear.
-- `scripts/demo-deploy/build-offline-bundle.sh` must run the bundle input check, the rendered-env check, the client-public-runtime check, and the local precheck before the first Docker image build unless an operator explicitly opts out with `SKIP_BUNDLE_INPUTS_CHECK=1` or `SKIP_RELEASE_PRECHECK=1`.
+- `scripts/demo-deploy/build-offline-bundle.sh` must run the bundle input check, the rendered-env check, and the client-public-runtime check before the first Docker image build unless an operator explicitly opts out with `SKIP_BUNDLE_INPUTS_CHECK=1`.
+- `scripts/demo-deploy/build-offline-bundle.sh` may additionally run `npm run test:release:precheck` only when the operator explicitly enables `RUN_RELEASE_PRECHECK=1`.
 
 ## Bootstrap Contract
 
@@ -303,14 +330,15 @@ Bootstrap must be idempotent and must initialize the environment in this order:
 3. default workspace
 4. demo project
 5. demo credentials and endpoints
-6. external and internal agents
+6. external and internal agents in `full`, external agent only in `simple`
 7. preset external runner runtime credentials
 
 Bootstrap is complete only when:
 - `ws_default` exists and is `ready`
 - `Demo Project` exists
 - both demo endpoints exist
-- both demo agents exist
+- the preset external agent exists
+- the preset internal agent exists in `full`
 - preset external agent key and websocket URL have been generated into `env/runner-runtime.env`
 - the compose `external-runner` service has connected successfully
 

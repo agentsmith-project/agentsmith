@@ -434,7 +434,7 @@ export function resolveFileLibraryMetadataUrlForDockerManualExternalExecution(
 ): string {
   try {
     const parsed = new URL(metadataUrl);
-    parsed.hostname = env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim() || '127.0.0.1';
+    parsed.hostname = env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim() || 'host.docker.internal';
     parsed.port = env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE?.trim()
       || env.FILE_LIBRARY_CLIENT_POSTGRES_PORT?.trim()
       || '15432';
@@ -498,7 +498,7 @@ export function resolveFileLibraryStorageBucketUrlForDockerManualExternalExecuti
     || env.MINIO_API_PORT?.trim()
     || env.FILE_LIBRARY_CLIENT_MINIO_PORT?.trim()
     || '19000';
-  const endpoint = explicitEndpoint || `http://127.0.0.1:${loopbackPort}`;
+  const endpoint = explicitEndpoint || `http://host.docker.internal:${loopbackPort}`;
   try {
     return replaceUrlOrigin(storageBucketUrl, endpoint);
   } catch {

@@ -20,6 +20,8 @@ set -a
 source "${SITE_ENV}"
 set +a
 
+DEMO_DEPLOY_MODE="$(demo_deploy_mode)"
+
 require_nonempty() {
   local key="$1"
   local value="${!key:-}"
@@ -44,7 +46,9 @@ runner_host="${RESOLVED_RUNNER_HOST:-host.docker.internal}"
 
 kind_gateway_host="${RESOLVED_KIND_GATEWAY_HOST:-}"
 if [[ -z "${kind_gateway_host}" ]]; then
-  if detect_kind_gateway_ip >/dev/null 2>&1; then
+  if demo_mode_is_simple; then
+    kind_gateway_host="simple-mode-disabled.invalid"
+  elif detect_kind_gateway_ip >/dev/null 2>&1; then
     kind_gateway_host="$(detect_kind_gateway_ip)"
   elif [[ "${ALLOW_UNRESOLVED_KIND_GATEWAY:-0}" == "1" ]]; then
     kind_gateway_host="kind-gateway-unresolved.invalid"

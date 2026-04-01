@@ -44,6 +44,8 @@ DEPLOY_ROOT="${TMP_ROOT}/cluster-root" RELEASE_ROOT="${RELEASE_ROOT}" \
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'SANDBOX_MANAGER_URL=https://sandbox-manager.mbos.imotion.ai' '[cluster-rendered-env] missing sandbox manager url'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'AGENT_EXECUTION_HTTP_BASE_URL=https://mbos.imotion.ai/api' '[cluster-rendered-env] missing internal agent execution http base'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'AGENT_EXECUTION_WS_BASE_URL=wss://mbos.imotion.ai/api' '[cluster-rendered-env] missing internal agent execution websocket base'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE=host.docker.internal' '[cluster-rendered-env] missing docker manual metadata host override'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://host.docker.internal:19000' '[cluster-rendered-env] missing docker manual storage endpoint override'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_DEFAULT_CPU_REQUEST=1' '[cluster-rendered-env] missing internal cpu request default'
 release_check_require_pattern "${RELEASE_ROOT}/env/base.env" '^NO_PROXY=.*(^|,)(postgres|minio)(,|$)' '[cluster-rendered-env] missing compose no_proxy entries'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.mbos.svc.cluster.local' '[cluster-rendered-env] missing internal postgres external fqdn'

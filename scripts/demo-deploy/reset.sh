@@ -13,6 +13,10 @@ ensure_dirs
 if [[ -d "${CURRENT_LINK}" ]]; then
   RELEASE_ROOT="$(cd "${CURRENT_LINK}" && pwd)"
 fi
+if [[ -f "${RELEASE_ROOT}/env/site.env" ]]; then
+  # shellcheck disable=SC1090
+  source "${RELEASE_ROOT}/env/site.env"
+fi
 
 cleanup_stale_demo_runtime_containers() {
   local name
@@ -36,11 +40,14 @@ fi
 
 cleanup_stale_demo_runtime_containers
 
-if kind get clusters 2>/dev/null | grep -qx 'agentsmith'; then
-  kind delete cluster --name agentsmith || true
+if demo_mode_is_full; then
+  if kind get clusters 2>/dev/null | grep -qx 'agentsmith'; then
+    kind delete cluster --name agentsmith || true
+  fi
 fi
 
 cleanup_report_dir_artifacts "${REPORT_DIR}"
 rm -rf "${STATE_DIR}"/* "${LOG_DIR}"/* "${REPORT_DIR}"/*
 state_set release.phase reset_completed
+state_set reset.mode "$(demo_deploy_mode)"
 log "reset ok"

@@ -12,6 +12,7 @@ source "${ROOT_DIR}/scripts/lib/preset-common.sh"
 load_agentsmith_presets "${ROOT_DIR}"
 load_release_env
 apply_preset_endpoint_defaults
+DEMO_DEPLOY_MODE="$(demo_deploy_mode)"
 
 BACKEND_REAL_ANTHROPIC_BASE_URL="${PRESET_ANTHROPIC_ENDPOINT_BASE_URL:-https://anthropic-compatible.provider.example/v1}"
 BACKEND_REAL_OPENAI_BASE_URL="${PRESET_OPENAI_ENDPOINT_BASE_URL:-https://openai-compatible.provider.example/v1}"
@@ -25,6 +26,9 @@ HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:$
 EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-${CLIENT_PUBLIC_POSTGRES_HOST:-}}"
 EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-${CLIENT_PUBLIC_POSTGRES_PORT:-}}"
 EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-${CLIENT_PUBLIC_MINIO_ENDPOINT:-}}"
+DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE="${DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-host.docker.internal}"
+DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-${CLIENT_PUBLIC_POSTGRES_PORT:-}}"
+DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://host.docker.internal:${MINIO_API_PORT:-19000}}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 INTEGRATION_DEV_ADMIN_USERNAME="${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}"
@@ -51,11 +55,12 @@ trap cleanup_verify_artifacts EXIT
 wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
 wait_tcp "127.0.0.1" "${API_PORT:-20000}" 240
 wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
-wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240
-
-kubectl get csidriver csi.juicefs.com >/dev/null
-kubectl get deploy sandbox-manager -n agentsmith-sandbox >/dev/null
-kubectl get cronjob sandbox-manager-cleaner -n agentsmith-sandbox >/dev/null
+if demo_mode_is_full; then
+  wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240
+  kubectl get csidriver csi.juicefs.com >/dev/null
+  kubectl get deploy sandbox-manager -n agentsmith-sandbox >/dev/null
+  kubectl get cronjob sandbox-manager-cleaner -n agentsmith-sandbox >/dev/null
+fi
 docker inspect -f '{{.State.Running}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | grep -q true || die "preset verify failed: external-runner not running"
 docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 | grep -q '\[agent-codex-runner\] connected' || die "preset verify failed: external-runner not connected"
 docker_compose ps --status running universal-proxy | grep -q universal-proxy || die "preset verify failed: universal-proxy not running"
@@ -105,9 +110,13 @@ AGENTS_JSON="$(
     -H "Authorization: Bearer ${ACCESS_TOKEN}"
 )"
 EXTERNAL_AGENT_COUNT="$(printf '%s' "${AGENTS_JSON}" | json_count_items_by_field mode external)"
-INTERNAL_AGENT_COUNT="$(printf '%s' "${AGENTS_JSON}" | json_count_items_by_field mode internal)"
 [[ "${EXTERNAL_AGENT_COUNT}" -ge 1 ]] || die "preset verify failed: external agent missing"
-[[ "${INTERNAL_AGENT_COUNT}" -ge 1 ]] || die "preset verify failed: internal agent missing"
+if demo_mode_is_full; then
+  INTERNAL_AGENT_COUNT="$(printf '%s' "${AGENTS_JSON}" | json_count_items_by_field mode internal)"
+  [[ "${INTERNAL_AGENT_COUNT}" -ge 1 ]] || die "preset verify failed: internal agent missing"
+else
+  INTERNAL_AGENT_COUNT="0"
+fi
 
 state_set verify.preset_workspace_id ws_default
 state_set verify.preset_project_id "${PRESET_PROJECT_ID}"
@@ -115,6 +124,7 @@ state_set verify.preset_endpoint_count "${ENDPOINT_COUNT}"
 state_set verify.preset_external_agent_count "${EXTERNAL_AGENT_COUNT}"
 state_set verify.preset_internal_agent_count "${INTERNAL_AGENT_COUNT}"
 state_set verify.preset_external_runner connected
+state_set verify.mode "${DEMO_DEPLOY_MODE}"
 
 bash "${RELEASE_SCRIPT_DIR}/check-preset-external-file-library.sh"
 
@@ -135,6 +145,9 @@ docker run --rm \
   -e EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE}" \
   -e EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE}" \
   -e EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE}" \
+  -e DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE}" \
+  -e DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE}" \
+  -e DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE}" \
   -e INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE="127.0.0.1" \
   -e INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE="${CLIENT_PUBLIC_POSTGRES_PORT:-15432}" \
   -e INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="http://127.0.0.1:${MINIO_API_PORT:-19000}" \
@@ -146,10 +159,12 @@ docker run --rm \
   -e BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL}" \
   -e BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL}" \
   -e BACKEND_REAL_MODEL="${PRESET_ENDPOINT_MODEL:-placeholder-model}" \
+  -e INTEGRATION_DEMO_DEPLOY_MODE="${DEMO_DEPLOY_MODE}" \
   -e INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_CODEX_RUNNER_EMBEDDED=1 \
   -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR=/etc/codex/skills \
+  -e INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS="${MBOS_AGENT_JUICEFS_MOUNT_READY_TIMEOUT_MS:-120000}" \
   -e INTEGRATION_RUNNER_LOG_DIR=/app/test-results/runner-logs \
   -e RESET_FIRST=0 \
   "${VERIFY_RUNNER_IMAGE}" \

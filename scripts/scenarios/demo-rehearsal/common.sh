@@ -36,7 +36,7 @@ ensure_demo_rehearsal_site_env() {
 
 ensure_demo_rehearsal_release_bundle() {
   local release_id="demo-rehearsal-$(date -u +%Y%m%dT%H%M%SZ)"
-  OUT_DIR="${DEMO_REHEARSAL_RELEASES_DIR}" RELEASE_ID="${release_id}" bash "${ROOT_DIR}/scripts/demo-deploy/build-offline-bundle.sh"
+  OUT_DIR="${DEMO_REHEARSAL_RELEASES_DIR}" RELEASE_ID="${release_id}" SKIP_RELEASE_PRECHECK=1 bash "${ROOT_DIR}/scripts/demo-deploy/build-offline-bundle.sh"
   export RELEASE_ROOT="${DEMO_REHEARSAL_RELEASES_DIR}/agentsmith-${release_id}"
 }
 

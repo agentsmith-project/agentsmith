@@ -23,10 +23,34 @@ cp "${ROOT_DIR}/scripts/lib/preset-common.sh" "${RELEASE_ROOT}/scripts/lib/prese
 mkdir -p "${RELEASE_ROOT}/infra/runtime"
 cp "${ROOT_DIR}/infra/runtime/presets.env" "${RELEASE_ROOT}/infra/runtime/presets.env"
 
-RESOLVED_RUNNER_HOST=host.docker.internal \
-RESOLVED_KIND_GATEWAY_HOST=10.88.0.1 \
-ALLOW_UNRESOLVED_KIND_GATEWAY=1 \
-bash "${ROOT_DIR}/scripts/demo-deploy/render-env.sh" >/dev/null
+run_render() {
+  local mode="$1"
+  python3 - <<'PY' "${RELEASE_ROOT}/env/site.env" "${mode}"
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+mode = sys.argv[2]
+lines = path.read_text(encoding='utf-8').splitlines()
+updated = []
+replaced = False
+for line in lines:
+    if line.startswith('DEMO_DEPLOY_MODE='):
+        updated.append(f'DEMO_DEPLOY_MODE={mode}')
+        replaced = True
+    else:
+        updated.append(line)
+if not replaced:
+    updated.append(f'DEMO_DEPLOY_MODE={mode}')
+path.write_text("\n".join(updated) + "\n", encoding='utf-8')
+PY
+  RESOLVED_RUNNER_HOST=host.docker.internal \
+  RESOLVED_KIND_GATEWAY_HOST=10.88.0.1 \
+  ALLOW_UNRESOLVED_KIND_GATEWAY=1 \
+  bash "${ROOT_DIR}/scripts/demo-deploy/render-env.sh" >/dev/null
+}
+
+run_render full
 
 release_check_require_files "missing_rendered_env" \
   "${RELEASE_ROOT}/env/base.env" \
@@ -50,9 +74,23 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'FILE_LIBRARY_CLI
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=localhost' 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE=15432' 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://localhost:19000' 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE=host.docker.internal' 'rendered_env_mismatch:api.env:DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE=15432' 'rendered_env_mismatch:api.env:DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://host.docker.internal:19000' 'rendered_env_mismatch:api.env:DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE'
 release_check_require_pattern "${RELEASE_ROOT}/env/base.env" '^NO_PROXY=.*(^|,)(postgres|minio)(,|$)' 'rendered_env_mismatch:base.env:NO_PROXY'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.agentsmith-sandbox.svc.cluster.local' 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE=5432' 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://minio-external.agentsmith-sandbox.svc.cluster.local:9000' 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE'
+
+run_render simple
+
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'DEMO_DEPLOY_MODE=simple' 'rendered_env_mismatch:base.env:DEMO_DEPLOY_MODE'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL=http://host.docker.internal:20000' 'rendered_env_mismatch:simple:api.env:EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE=host.docker.internal' 'rendered_env_mismatch:simple:api.env:DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://host.docker.internal:19000' 'rendered_env_mismatch:simple:api.env:DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE'
+release_check_forbid_pattern "${RELEASE_ROOT}/env/api.env" '^SANDBOX_MANAGER_URL=' 'rendered_env_unexpected:simple:api.env:SANDBOX_MANAGER_URL'
+release_check_forbid_pattern "${RELEASE_ROOT}/env/api.env" '^AGENT_EXECUTION_HTTP_BASE_URL=' 'rendered_env_unexpected:simple:api.env:AGENT_EXECUTION_HTTP_BASE_URL'
+release_check_forbid_pattern "${RELEASE_ROOT}/env/api.env" '^AGENT_EXECUTION_WS_BASE_URL=' 'rendered_env_unexpected:simple:api.env:AGENT_EXECUTION_WS_BASE_URL'
+release_check_require_pattern "${RELEASE_ROOT}/env/internal.env" 'internal sandbox runtime is disabled' 'rendered_env_mismatch:simple:internal.env'
 
 echo "[rendered-env] ok"

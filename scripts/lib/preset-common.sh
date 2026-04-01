@@ -1,6 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+normalize_endpoint_upstream_protocol() {
+  local value="${1:-}"
+  case "${value}" in
+    openai_compatible)
+      printf '%s\n' "openai_chat_completions"
+      ;;
+    anthropic_compatible)
+      printf '%s\n' "anthropic_messages"
+      ;;
+    openai_chat_completions|openai_responses|anthropic_messages)
+      printf '%s\n' "${value}"
+      ;;
+    *)
+      printf '%s\n' "${value}"
+      ;;
+  esac
+}
+
 load_agentsmith_presets() {
   local root_dir="$1"
   local preset_file="${root_dir}/infra/runtime/presets.env"
@@ -101,4 +119,13 @@ apply_preset_endpoint_defaults() {
       export "${key}"
     fi
   done
+
+  if [[ -n "${PRESET_ANTHROPIC_ENDPOINT_PROTOCOL:-}" ]]; then
+    PRESET_ANTHROPIC_ENDPOINT_PROTOCOL="$(normalize_endpoint_upstream_protocol "${PRESET_ANTHROPIC_ENDPOINT_PROTOCOL}")"
+    export PRESET_ANTHROPIC_ENDPOINT_PROTOCOL
+  fi
+  if [[ -n "${PRESET_OPENAI_ENDPOINT_PROTOCOL:-}" ]]; then
+    PRESET_OPENAI_ENDPOINT_PROTOCOL="$(normalize_endpoint_upstream_protocol "${PRESET_OPENAI_ENDPOINT_PROTOCOL}")"
+    export PRESET_OPENAI_ENDPOINT_PROTOCOL
+  fi
 }

@@ -130,14 +130,14 @@ describe('file-library-runtime readiness', () => {
         'postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable',
         env,
       ),
-    ).toBe('postgres://jfsu_user:secret@127.0.0.1:15432/jfs_lib_demo?sslmode=disable');
+    ).toBe('postgres://jfsu_user:secret@host.docker.internal:15432/jfs_lib_demo?sslmode=disable');
 
     expect(
       resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution(
         'http://192.168.0.220:19000/jfs-lib-demo',
         env,
       ),
-    ).toBe('http://127.0.0.1:19000/jfs-lib-demo');
+    ).toBe('http://host.docker.internal:19000/jfs-lib-demo');
   });
 
   it('preserves non-loopback file library access for external runner execution', () => {

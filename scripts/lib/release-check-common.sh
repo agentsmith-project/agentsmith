@@ -38,3 +38,13 @@ release_check_require_pattern() {
     exit 1
   }
 }
+
+release_check_forbid_pattern() {
+  local file_path="$1"
+  local pattern="$2"
+  local error_key="$3"
+  if grep -E "${pattern}" "${file_path}" >/dev/null; then
+    echo "${error_key}" >&2
+    exit 1
+  fi
+}

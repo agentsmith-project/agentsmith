@@ -90,6 +90,21 @@ Notebook Terminal 的当前产品规则：
 - terminal 内临时 shell 状态只在当前 terminal session 有效，不会自动影响后续 agent run
 - 默认不承诺 `sudo`；terminal 面向的是 task 工作环境，不是主机提权入口
 - 长运行前台程序应支持 `Ctrl-C` / `Ctrl-D` 等标准终端交互
+- `Hide Terminal` 只收起 terminal 工作面；`Close terminal` 才会结束当前 shell session
+- 刷新页面或短时断线后，系统会优先恢复同一个 terminal session；如果另一个标签页已经接管该 terminal，会显示友好提示并要求重新打开
+
+Terminal 发布前最小门禁：
+```bash
+cd /home/percy/works/mbos-v1/agentsmith
+npx tsc --noEmit
+npm run test:notebook:backend-real:terminal:matrix
+npm run test:e2e:integration:notebook:terminal:ux
+```
+
+截图验收重点：
+- active 态：header 是 `Hide Terminal`，panel 内是 `Close terminal`
+- connecting 态：用户知道系统在准备/连接，而不是页面卡死
+- failed 态：显示普通用户语言，不暴露原始错误码
 
 ## 4. 治理链路排障
 

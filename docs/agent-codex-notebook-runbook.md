@@ -247,6 +247,8 @@ Resume rule:
 - terminal session 与后续 agent run 不共享隐式 shell 状态；在 terminal 里 `export` 的变量不会自动影响之后的 agent run
 - terminal 默认运行在 runner 工作用户下，不承诺 `sudo` 或 root 提权
 - `Ctrl-C` / `Ctrl-D` 视为正式支持的终端交互；关闭 terminal session 会结束当前前台 shell
+- task header 里的 `Hide Terminal` 只收起 terminal 工作面，不结束当前 shell；panel 内的 `Close terminal` 才会显式结束会话
+- 浏览器刷新、短时断线或重新打开 task 页面时，会优先尝试恢复当前 terminal session；terminal 会话被别的标签页接管时，当前页面会显示友好提示
 
 ### 5.2.4 Notebook Terminal local-manual smoke
 
@@ -283,6 +285,18 @@ npm run test:notebook:release:strict
 `test:notebook:release:strict` 会在 matrix smoke 通过后继续跑：
 
 - notebook terminal UX Playwright walkthrough
+
+Notebook terminal UX walkthrough 当前固定覆盖：
+
+- active terminal：task 主界面中打开 terminal，看到真实 shell 输出与输入阻断提示
+- connecting：runner 预热期间显示连接中状态
+- failed：terminal 创建被拒绝时显示普通用户可理解的失败提示
+
+关键截图证据位于：
+
+- `test-results/integration-notebook-termi-e1a4d-sion-with-real-shell-output-chromium/`
+- `test-results/integration-notebook-termi-27f25-mup-retries-are-in-progress-chromium/`
+- `test-results/integration-notebook-termi-30e8e-rminal-creation-is-rejected-chromium/`
 
 默认 smoke 使用当前 local-manual 基线对象：
 

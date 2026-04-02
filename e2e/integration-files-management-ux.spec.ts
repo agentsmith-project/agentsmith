@@ -163,10 +163,30 @@ test.describe('@lane-real files management UX walkthrough', () => {
 
     await expect(page.getByTestId(`files__library-status--${readyLibrary.libraryId}`)).toContainText('Ready');
     await expect(page.getByTestId(`files__library-desktop-access--${readyLibrary.libraryId}`)).toBeEnabled();
-    await expect(page.getByTestId(`files__library-manual-mount-access--${readyLibrary.libraryId}`)).toBeEnabled();
+    await expect(page.getByTestId(`files__library-manual-mount-access--${readyLibrary.libraryId}`)).toHaveCount(0);
     await expect(page.getByTestId('files__library-unavailable-empty-state')).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText('files.file_manager.loading');
     await page.screenshot({ path: testInfo.outputPath('files-ready-overview.png'), fullPage: true });
+
+    await page.getByTestId(`files__library-desktop-access--${readyLibrary.libraryId}`).click();
+    const desktopDialog = page.getByTestId('files__dialog__desktop-mount-access');
+    await expect(desktopDialog).toBeVisible();
+    await expect(desktopDialog).toContainText('AgentSmith Desktop');
+    await expect(page.getByTestId('files__desktop-setup__download')).toBeVisible();
+    await expect(page.getByTestId('files__desktop-mount__deployment-url')).toHaveValue('http://localhost:3101');
+    await expect(page.getByTestId('files__desktop-setup__debug-panel')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('files-ready-desktop-dialog.png'), fullPage: true });
+
+    await page.getByTestId('files__desktop-setup__platform-windows').click();
+    await expect(page.getByTestId('files__desktop-setup__platform-windows')).toHaveAttribute('data-state', 'active');
+    await page.screenshot({ path: testInfo.outputPath('files-ready-desktop-dialog-windows.png'), fullPage: true });
+
+    await page.getByTestId('files__desktop-setup__debug-toggle').click();
+    await expect(page.getByTestId('files__desktop-setup__debug-panel')).toBeVisible();
+    await expect(page.getByTestId('files__library-mount__filesystem-name')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('files-ready-desktop-dialog-debug.png'), fullPage: true });
+    await page.keyboard.press('Escape');
+    await expect(desktopDialog).toHaveCount(0);
 
     const degradedCard = page.getByTestId(`files__library-item--${degradedLibrary.id}`);
     await expect(degradedCard).toBeVisible({ timeout: 30_000 });
@@ -177,7 +197,7 @@ test.describe('@lane-real files management UX walkthrough', () => {
       'This library needs attention before you rely on it for local mounts.',
     );
     await expect(page.getByTestId(`files__library-desktop-access--${degradedLibrary.id}`)).toBeDisabled();
-    await expect(page.getByTestId(`files__library-manual-mount-access--${degradedLibrary.id}`)).toBeDisabled();
+    await expect(page.getByTestId(`files__library-manual-mount-access--${degradedLibrary.id}`)).toHaveCount(0);
     await expect(page.getByTestId('files__library-unavailable-empty-state')).toBeVisible();
     await expect(page.getByTestId('files__library-unavailable-empty-state')).toContainText(
       'This library is not ready for browsing or local mounts.',

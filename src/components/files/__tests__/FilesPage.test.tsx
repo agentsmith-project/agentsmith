@@ -196,7 +196,6 @@ describe('FilesPage (object browser)', () => {
       'file_manager.library_status_reason_failed',
     );
     expect(screen.getByTestId('files__library-desktop-access--lib_failed')).toBeDisabled();
-    expect(screen.getByTestId('files__library-manual-mount-access--lib_failed')).toBeDisabled();
   });
 
   it('shows a governance empty state instead of normal loading for degraded libraries', async () => {
@@ -290,16 +289,21 @@ describe('FilesPage (object browser)', () => {
 
     expect(await screen.findByTestId('files__dialog__desktop-mount-access')).toBeInTheDocument();
     expect(screen.getByTestId('files__desktop-mount__deployment-url')).toHaveValue('https://mbos.imotion.ai:3001');
-    expect(screen.getByTestId('files__desktop-mount__root-windows')).toHaveValue('%USERPROFILE%\\AgentSmith');
+    expect(screen.getByText('file_manager.desktop_app_name')).toBeInTheDocument();
+    expect(screen.getByTestId('files__desktop-setup__platform-macos')).toHaveAttribute('data-state', 'active');
+    expect(screen.getByTestId('files__desktop-setup__download')).toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-mount__filesystem-name')).not.toBeInTheDocument();
   });
 
-  it('opens advanced manual mount dialog for a library', async () => {
+  it('keeps manual mount details inside the desktop dialog debug section', async () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
     const user = userEvent.setup();
 
-    await user.click(await screen.findByTestId('files__library-manual-mount-access--lib_1'));
+    expect(screen.queryByTestId('files__library-manual-mount-access--lib_1')).not.toBeInTheDocument();
+    await user.click(await screen.findByTestId('files__library-desktop-access--lib_1'));
+    await user.click(await screen.findByTestId('files__desktop-setup__debug-toggle'));
 
-    expect(await screen.findByTestId('files__dialog__library-mount-access')).toBeInTheDocument();
+    expect(await screen.findByTestId('files__desktop-setup__debug-panel')).toBeInTheDocument();
     expect(screen.getByTestId('files__library-mount__filesystem-name')).toHaveValue('flib-ws-default-proj-001-shared-docs');
     expect(screen.getByTestId('files__library-mount__tab-macos')).toHaveAttribute('data-state', 'active');
     expect(screen.getByTestId('files__library-mount__command-macos')).toHaveValue(
@@ -311,7 +315,8 @@ describe('FilesPage (object browser)', () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
     const user = userEvent.setup();
 
-    await user.click(await screen.findByTestId('files__library-manual-mount-access--lib_1'));
+    await user.click(await screen.findByTestId('files__library-desktop-access--lib_1'));
+    await user.click(await screen.findByTestId('files__desktop-setup__debug-toggle'));
     await user.click(await screen.findByTestId('files__library-mount__tab-windows'));
     await waitFor(() =>
       expect(screen.getByTestId('files__library-mount__tab-windows')).toHaveAttribute('data-state', 'active'),

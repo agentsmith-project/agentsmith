@@ -43,7 +43,6 @@ interface FilesPageContentProps {
   onCreateLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onCreateLibrary'];
   onOpenDesktopAccess: React.ComponentProps<typeof FilesLibrariesPane>['onOpenDesktopAccess'];
   onDeleteLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onDeleteLibrary'];
-  onOpenMountAccess: React.ComponentProps<typeof FilesLibrariesPane>['onOpenMountAccess'];
   onGoUp: React.ComponentProps<typeof FilesBrowserPane>['onGoUp'];
   onNavigateToPrefix: React.ComponentProps<typeof FilesBrowserPane>['onNavigateToPrefix'];
   onRenameLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onRenameLibrary'];
@@ -106,7 +105,6 @@ export function FilesPageContent({
   onCreateLibrary,
   onOpenDesktopAccess,
   onDeleteLibrary,
-  onOpenMountAccess,
   onGoUp,
   onNavigateToPrefix,
   onRenameLibrary,
@@ -160,7 +158,6 @@ export function FilesPageContent({
           onSelectLibrary={onSelectLibrary}
           onCreateLibrary={onCreateLibrary}
           onOpenDesktopAccess={onOpenDesktopAccess}
-          onOpenMountAccess={onOpenMountAccess}
           onRenameLibrary={onRenameLibrary}
           onDeleteLibrary={onDeleteLibrary}
         />

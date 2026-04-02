@@ -17,7 +17,6 @@ import { ProjectWorkbenchBar, ProjectWorkbenchSwitcher } from '@/components/layo
 import { toast } from '@/components/ui/toast';
 import { DesktopAccessDialog } from '@/components/files/files-page/DesktopAccessDialog';
 import { FilesPageContent } from '@/components/files/files-page/FilesPageContent';
-import { LibraryAccessDialog } from '@/components/files/files-page/LibraryAccessDialog';
 import { LibraryDialogs } from '@/components/files/files-page/LibraryDialogs';
 import { MoveDialogs } from '@/components/files/files-page/MoveDialogs';
 import { ObjectOperationDialogs } from '@/components/files/files-page/ObjectOperationDialogs';
@@ -130,8 +129,6 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
   const [desktopAccessOpen, setDesktopAccessOpen] = React.useState(false);
   const [desktopAccessTarget, setDesktopAccessTarget] = React.useState<FileLibrary | null>(null);
   const [desktopMountAccess, setDesktopMountAccess] = React.useState<FileLibraryDesktopMountAccess | null>(null);
-  const [libraryAccessOpen, setLibraryAccessOpen] = React.useState(false);
-  const [libraryAccessTarget, setLibraryAccessTarget] = React.useState<FileLibrary | null>(null);
   const [libraryMountAccess, setLibraryMountAccess] = React.useState<FileLibraryClientMountAccess | null>(null);
   const [revealMetadataUrl, setRevealMetadataUrl] = React.useState(false);
 
@@ -346,8 +343,6 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
   }, [objectsQuery]);
 
   const openMountAccessDialog = React.useCallback(async (library: FileLibrary) => {
-    setLibraryAccessTarget(library);
-    setLibraryAccessOpen(true);
     setRevealMetadataUrl(false);
     setLibraryMountAccess(null);
     try {
@@ -367,6 +362,8 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
     setDesktopAccessTarget(library);
     setDesktopAccessOpen(true);
     setDesktopMountAccess(null);
+    setLibraryMountAccess(null);
+    setRevealMetadataUrl(false);
     try {
       const result = await exchangeDesktopMountAccess.mutateAsync({
         workspaceId,
@@ -480,7 +477,6 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
         onCreateLibrary={openCreateLibraryDialog}
         onOpenDesktopAccess={openDesktopAccessDialog}
         onDeleteLibrary={openDeleteLibraryDialog}
-        onOpenMountAccess={openMountAccessDialog}
         onGoUp={() => navigateToPrefix(parentPrefixForPrefix(prefix))}
         onNavigateToPrefix={navigateToPrefix}
         onRenameLibrary={openRenameLibraryDialog}
@@ -512,20 +508,17 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
       <DesktopAccessDialog
         exchangePending={exchangeDesktopMountAccess.isPending}
         desktopMountAccess={desktopMountAccess}
+        manualMountAccess={libraryMountAccess}
+        manualMountAccessPending={exchangeStorageCredentials.isPending}
         open={desktopAccessOpen}
+        revealMetadataUrl={revealMetadataUrl}
         targetLibrary={desktopAccessTarget}
         t={t}
+        onLoadManualMountAccess={() => {
+          if (!desktopAccessTarget) return;
+          void openMountAccessDialog(desktopAccessTarget);
+        }}
         onOpenChange={setDesktopAccessOpen}
-      />
-
-      <LibraryAccessDialog
-        exchangePending={exchangeStorageCredentials.isPending}
-        mountAccess={libraryMountAccess}
-        open={libraryAccessOpen}
-        revealMetadataUrl={revealMetadataUrl}
-        targetLibrary={libraryAccessTarget}
-        t={t}
-        onOpenChange={setLibraryAccessOpen}
         onToggleRevealMetadataUrl={() => setRevealMetadataUrl((value) => !value)}
       />
 

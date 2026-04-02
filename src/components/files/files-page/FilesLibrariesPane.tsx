@@ -1,4 +1,4 @@
-import { Download, MonitorCog, Pencil, Plus, Trash2 } from 'lucide-react';
+import { MonitorCog, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -14,7 +14,6 @@ type FilesLibrariesPaneProps = {
   onSelectLibrary: (libraryId: string) => void;
   onCreateLibrary: () => void;
   onOpenDesktopAccess: (library: FileLibrary) => void;
-  onOpenMountAccess: (library: FileLibrary) => void;
   onRenameLibrary: (library: FileLibrary) => void;
   onDeleteLibrary: (library: FileLibrary) => void;
 };
@@ -29,7 +28,6 @@ export function FilesLibrariesPane({
   onSelectLibrary,
   onCreateLibrary,
   onOpenDesktopAccess,
-  onOpenMountAccess,
   onRenameLibrary,
   onDeleteLibrary,
 }: FilesLibrariesPaneProps) {
@@ -146,31 +144,6 @@ export function FilesLibrariesPane({
                             </TooltipTrigger>
                             <TooltipContent>
                               {isMountable ? t('file_manager.desktop_access') : t('file_manager.library_status_reason_failed_mount')}
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : null}
-                        {canExchangeCredentials ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="ghost"
-                                className="h-8 w-8 rounded-full border border-white/8 bg-transparent text-secondary hover:bg-hover/55 hover:text-primary"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  onOpenMountAccess(library);
-                                }}
-                                disabled={!isMountable}
-                                aria-label={t('file_manager.manual_mount_access')}
-                                data-testid={`files__library-manual-mount-access--${library.id}`}
-                              >
-                                <Download className="h-3.5 w-3.5" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {isMountable ? t('file_manager.manual_mount_access') : t('file_manager.library_status_reason_failed_mount')}
                             </TooltipContent>
                           </Tooltip>
                         ) : null}

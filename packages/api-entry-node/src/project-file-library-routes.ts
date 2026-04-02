@@ -259,11 +259,35 @@ function firstHeaderValue(input: string | string[] | undefined): string | null {
   return first && first.length > 0 ? first : null;
 }
 
+function normalizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
 function inferRequestOrigin(req: http.IncomingMessage): string {
+  const publicWebBaseUrl = process.env.PUBLIC_WEB_BASE_URL?.trim();
+  if (publicWebBaseUrl) {
+    return normalizeBaseUrl(publicWebBaseUrl);
+  }
+
+  const origin = firstHeaderValue(req.headers.origin);
+  if (origin) {
+    return normalizeBaseUrl(origin);
+  }
+
+  const referer = firstHeaderValue(req.headers.referer);
+  if (referer) {
+    try {
+      const parsed = new URL(referer);
+      return normalizeBaseUrl(parsed.origin);
+    } catch {
+      // fall through to host-based inference
+    }
+  }
+
   const host = firstHeaderValue(req.headers['x-forwarded-host']) ?? firstHeaderValue(req.headers.host) ?? 'localhost';
   const proto = firstHeaderValue(req.headers['x-forwarded-proto'])
     ?? (((req.socket as { encrypted?: boolean }).encrypted ?? false) ? 'https' : 'http');
-  return `${proto}://${host}`;
+  return normalizeBaseUrl(`${proto}://${host}`);
 }
 
 function normalizeDesktopMetadataUrl(metadataUrl: string): string {

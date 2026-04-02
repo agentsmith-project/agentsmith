@@ -11,6 +11,7 @@ launch_detached "${API_PID_FILE}" "${API_LOG}" "
     KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' \
     KEYCLOAK_REALM='${KEYCLOAK_REALM}' \
     EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL='http://localhost:${PORT_API}' \
+    PUBLIC_WEB_BASE_URL='http://localhost:${PORT_WEB}' \
     PUBLIC_API_BASE_URL='http://localhost:${PORT_API}' \
     AGENT_EXECUTION_HTTP_BASE_URL='http://localhost:${PORT_API}' \
     SANDBOX_MANAGER_URL='${SANDBOX_MANAGER_URL:-}' \

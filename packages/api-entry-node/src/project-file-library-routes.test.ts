@@ -192,6 +192,64 @@ describe('project-file-library-routes', () => {
     }
   });
 
+  it('prefers the public web base url for desktop sign-in guidance', async () => {
+    const previousPublicWebBaseUrl = process.env.PUBLIC_WEB_BASE_URL;
+    process.env.PUBLIC_WEB_BASE_URL = 'http://localhost:3101/';
+
+    try {
+      const json = vi.fn();
+      const res = {} as never;
+      const deps = createDeps();
+
+      await handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraries',
+        method: 'POST',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        req: {} as never,
+        res,
+        deps,
+        user: OWNER_USER,
+        json,
+        readBody: vi.fn().mockResolvedValue({
+          name: 'Desktop Sign-in Guidance',
+        }),
+      });
+
+      const createdBody = json.mock.calls.at(-1)?.[2] as { id: string };
+      const desktopJson = vi.fn();
+
+      await expect(handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraryDesktopMountAccess',
+        method: 'POST',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: createdBody.id,
+        req: {
+          headers: {
+            host: 'localhost:21000',
+          },
+          socket: {},
+        } as never,
+        res,
+        deps,
+        user: OWNER_USER,
+        json: desktopJson,
+        readBody: vi.fn(),
+      })).resolves.toBe(true);
+
+      const [, statusCode, payload] = desktopJson.mock.calls[0] as [unknown, number, {
+        desktop_mount_access?: {
+          deployment_base_url?: string;
+        };
+      }];
+      expect(statusCode).toBe(200);
+      expect(payload.desktop_mount_access?.deployment_base_url).toBe('http://localhost:3101');
+    } finally {
+      process.env.PUBLIC_WEB_BASE_URL = previousPublicWebBaseUrl;
+    }
+  });
+
   it('does not expose metadata credentials from backend details', async () => {
     const json = vi.fn();
     const res = {} as never;

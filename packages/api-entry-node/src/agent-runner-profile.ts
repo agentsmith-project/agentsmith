@@ -23,13 +23,29 @@ function readRunnerRuntime(config: AgentConfigLike): AgentRunnerRuntime | null {
   }
 }
 
+function isLoopbackLikeHost(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1';
+}
+
+function resolveImplicitExternalRuntime(): Extract<AgentRunnerRuntime, 'dev_direct' | 'docker_manual'> {
+  const rawBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.trim();
+  if (!rawBase) return 'docker_manual';
+  try {
+    const parsed = new URL(rawBase);
+    return isLoopbackLikeHost(parsed.hostname) ? 'dev_direct' : 'docker_manual';
+  } catch {
+    return 'docker_manual';
+  }
+}
+
 export function resolveAgentRunnerRuntime(
   agent: Pick<AgentRecord, 'mode' | 'config'> | null | undefined,
 ): AgentRunnerRuntime {
   if (agent?.mode === 'internal') {
     return 'k8s_internal';
   }
-  return readRunnerRuntime(agent?.config) ?? 'docker_manual';
+  return readRunnerRuntime(agent?.config) ?? resolveImplicitExternalRuntime();
 }
 
 export function isComposeManagedExternalAgent(

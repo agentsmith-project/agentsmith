@@ -50,6 +50,7 @@ import {
   UnavailableFileLibraryOrchestrator,
 } from './file-library-runtime.js';
 import { UniversalProxyService } from './universal-proxy-service.js';
+import { NotebookTerminalService } from './notebook-terminal-service.js';
 
 export function createDefaultNodeApiDeps(): NodeApiDeps {
   const projectRepo = createProjectRepoFactoryResult({}).projectRepo;
@@ -59,7 +60,9 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   const fileLibraryCatalogRepo = new JsonDocFileLibraryCatalogRepo(docStore);
   const objectStore = new InMemoryObjectStore();
   const fileLibraryBucket = 'mbos-dev';
+  const agentResourceService = new AgentResourceService(docStore, cache);
 
+  const agentExecutionService = new AgentExecutionService(agentResourceService);
   return {
     governanceReportsDir: join(process.cwd(), 'artifacts/governance-reports'),
     governanceRunsDir: join(process.cwd(), 'artifacts/governance-runs'),
@@ -68,8 +71,9 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     docStore,
     chatResourceService: new ChatResourceService(docStore),
     endpointResourceService: new EndpointResourceService(docStore),
-    agentResourceService: new AgentResourceService(docStore, cache),
-    agentExecutionService: new AgentExecutionService(new AgentResourceService(docStore, cache)),
+    agentResourceService,
+    agentExecutionService,
+    notebookTerminalService: new NotebookTerminalService(cache, agentExecutionService),
     fileLibraryBucket,
     createFileLibraryCatalogUseCase: new CreateFileLibraryCatalogUseCase(
       fileLibraryCatalogRepo,
@@ -153,6 +157,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   const endpointResourceService = new EndpointResourceService(docStore);
   const agentResourceService = new AgentResourceService(docStore, cache);
   const agentExecutionService = new AgentExecutionService(agentResourceService);
+  const notebookTerminalService = new NotebookTerminalService(cache, agentExecutionService);
   const sandboxClient = sandboxUrl && sandboxServiceKey
     ? new SandboxManagerClient(sandboxUrl, sandboxServiceKey)
     : undefined;
@@ -208,6 +213,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       endpointResourceService,
       agentResourceService,
       agentExecutionService,
+      notebookTerminalService,
       ...(internalAgentPodManager ? { internalAgentPodManager } : {}),
       ...(internalAgentWorkspaceBindingManager
         ? {

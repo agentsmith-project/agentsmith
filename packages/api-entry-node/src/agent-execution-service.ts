@@ -16,6 +16,18 @@ export interface AgentStreamEvent {
   artifact?: AgentExecutionArtifactPayload;
 }
 
+export interface AgentTerminalEvent {
+  type: 'started' | 'output' | 'exited' | 'error';
+  session_id?: string;
+  cols?: number;
+  rows?: number;
+  chunk?: string;
+  exit_code?: number | null;
+  signal?: string | null;
+  error_code?: string;
+  error_message?: string;
+}
+
 export interface AgentExecutionTraceEventPayload {
   sequence: number;
   at: string;
@@ -47,6 +59,12 @@ interface PendingStream {
   cancelTimeout?: NodeJS.Timeout;
 }
 
+interface PendingTerminal {
+  push: (event: AgentTerminalEvent) => void;
+  close: () => void;
+  fail: (error: Error) => void;
+}
+
 interface AgentSocketState {
   ws: WebSocket;
   agentId: string;
@@ -56,6 +74,7 @@ interface AgentSocketState {
   connectedAt: string;
   resourceProxyBaseUrl?: string;
   pendingByRequestId: Map<string, PendingStream>;
+  terminalBySessionId: Map<string, PendingTerminal>;
 }
 
 interface AsyncQueue<T> {
@@ -411,6 +430,7 @@ export class AgentExecutionService {
           connectedAt: new Date().toISOString(),
           ...(resourceProxyBaseUrl ? { resourceProxyBaseUrl } : {}),
           pendingByRequestId: new Map(),
+          terminalBySessionId: new Map(),
         });
         void this.agentResourceService.markAgentConnected(agentId, {
           remote_ip: inferRemoteIp(req),
@@ -509,6 +529,108 @@ export class AgentExecutionService {
     };
   }
 
+  async dispatchTerminalSession(input: {
+    workspaceId: string;
+    projectId: string;
+    sessionId: string;
+    agentId: string;
+    terminalSessionId: string;
+    payload: {
+      cols: number;
+      rows: number;
+      shell?: string;
+      cwd?: string;
+      executionContext?: Record<string, unknown>;
+    };
+  }): Promise<{
+    stream: AsyncIterable<AgentTerminalEvent>;
+    writeInput: (data: string) => void;
+    resize: (cols: number, rows: number) => void;
+    close: () => void;
+  }> {
+    const socket = this.resolveSocket(input.agentId, input.sessionId);
+    if (!socket || socket.ws.readyState !== socket.ws.OPEN) {
+      throw new Error('agent_offline');
+    }
+    if (socket.workspaceId !== input.workspaceId || socket.projectId !== input.projectId) {
+      throw new Error('agent_workspace_mismatch');
+    }
+    if (socket.terminalBySessionId.has(input.terminalSessionId)) {
+      throw new Error('terminal_session_already_exists');
+    }
+
+    const queue = createAsyncQueue<AgentTerminalEvent>();
+    const pending: PendingTerminal = {
+      push: queue.push,
+      close: queue.close,
+      fail: queue.fail,
+    };
+    socket.terminalBySessionId.set(input.terminalSessionId, pending);
+
+    socket.ws.send(
+      JSON.stringify({
+        type: 'server.terminal.start',
+        session_id: input.sessionId,
+        terminal_session_id: input.terminalSessionId,
+        timestamp: new Date().toISOString(),
+        payload: {
+          cols: input.payload.cols,
+          rows: input.payload.rows,
+          ...(typeof input.payload.shell === 'string' && input.payload.shell.trim()
+            ? { shell: input.payload.shell.trim() }
+            : {}),
+          ...(typeof input.payload.cwd === 'string' && input.payload.cwd.trim()
+            ? { cwd: input.payload.cwd.trim() }
+            : {}),
+          ...(input.payload.executionContext ? { execution_context: input.payload.executionContext } : {}),
+        },
+      }),
+    );
+
+    return {
+      stream: queue.iterable,
+      writeInput: (data: string) => {
+        if (!socket.terminalBySessionId.has(input.terminalSessionId)) return;
+        if (socket.ws.readyState !== socket.ws.OPEN) return;
+        socket.ws.send(
+          JSON.stringify({
+            type: 'server.terminal.stdin',
+            session_id: input.sessionId,
+            terminal_session_id: input.terminalSessionId,
+            timestamp: new Date().toISOString(),
+            payload: { data },
+          }),
+        );
+      },
+      resize: (cols: number, rows: number) => {
+        if (!socket.terminalBySessionId.has(input.terminalSessionId)) return;
+        if (socket.ws.readyState !== socket.ws.OPEN) return;
+        socket.ws.send(
+          JSON.stringify({
+            type: 'server.terminal.resize',
+            session_id: input.sessionId,
+            terminal_session_id: input.terminalSessionId,
+            timestamp: new Date().toISOString(),
+            payload: { cols, rows },
+          }),
+        );
+      },
+      close: () => {
+        if (!socket.terminalBySessionId.has(input.terminalSessionId)) return;
+        if (socket.ws.readyState !== socket.ws.OPEN) return;
+        socket.ws.send(
+          JSON.stringify({
+            type: 'server.terminal.close',
+            session_id: input.sessionId,
+            terminal_session_id: input.terminalSessionId,
+            timestamp: new Date().toISOString(),
+            payload: {},
+          }),
+        );
+      },
+    };
+  }
+
   private handleSocketClose(socketKey: string, ws: WebSocket): void {
     const socket = this.socketsByKey.get(socketKey);
     if (!socket) return;
@@ -517,6 +639,14 @@ export class AgentExecutionService {
       if (pending.cancelTimeout) {
         clearTimeout(pending.cancelTimeout);
       }
+      pending.push({
+        type: 'error',
+        error_code: 'AGENT_DISCONNECTED',
+        error_message: 'agent_disconnected',
+      });
+      pending.close();
+    }
+    for (const pending of socket.terminalBySessionId.values()) {
       pending.push({
         type: 'error',
         error_code: 'AGENT_DISCONNECTED',
@@ -579,6 +709,72 @@ export class AgentExecutionService {
         });
       });
       return;
+    }
+
+    const terminalSessionId =
+      typeof payload.payload?.terminal_session_id === 'string'
+        ? payload.payload.terminal_session_id
+        : (typeof (payload as { terminal_session_id?: unknown }).terminal_session_id === 'string'
+          ? (payload as { terminal_session_id?: string }).terminal_session_id ?? null
+          : null);
+    if (terminalSessionId) {
+      const pendingTerminal = socket.terminalBySessionId.get(terminalSessionId);
+      if (!pendingTerminal) return;
+
+      if (payload.type === 'agent.terminal.started') {
+        pendingTerminal.push({
+          type: 'started',
+          session_id: terminalSessionId,
+          cols: typeof payload.payload?.cols === 'number' ? payload.payload.cols : undefined,
+          rows: typeof payload.payload?.rows === 'number' ? payload.payload.rows : undefined,
+        });
+        return;
+      }
+
+      if (payload.type === 'agent.terminal.output') {
+        if (typeof payload.payload?.chunk !== 'string') {
+          socket.terminalBySessionId.delete(terminalSessionId);
+          pendingTerminal.push({
+            type: 'error',
+            error_code: 'AGENT_PROTOCOL_ERROR',
+            error_message: 'agent_terminal_output_invalid',
+          });
+          pendingTerminal.close();
+          return;
+        }
+        pendingTerminal.push({
+          type: 'output',
+          session_id: terminalSessionId,
+          chunk: payload.payload.chunk,
+        });
+        return;
+      }
+
+      if (payload.type === 'agent.terminal.exited') {
+        socket.terminalBySessionId.delete(terminalSessionId);
+        pendingTerminal.push({
+          type: 'exited',
+          session_id: terminalSessionId,
+          exit_code: typeof payload.payload?.exit_code === 'number' ? payload.payload.exit_code : null,
+          signal: typeof payload.payload?.signal === 'string' ? payload.payload.signal : null,
+        });
+        pendingTerminal.close();
+        return;
+      }
+
+      if (payload.type === 'agent.terminal.error') {
+        socket.terminalBySessionId.delete(terminalSessionId);
+        pendingTerminal.push({
+          type: 'error',
+          session_id: terminalSessionId,
+          error_code:
+            typeof payload.payload?.error_code === 'string' ? payload.payload.error_code : 'AGENT_UPSTREAM_ERROR',
+          error_message:
+            typeof payload.payload?.error_message === 'string' ? payload.payload.error_message : 'agent_upstream_error',
+        });
+        pendingTerminal.close();
+        return;
+      }
     }
 
     const requestId = payload.request_id;

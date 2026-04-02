@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, ArrowLeft, Trash2, Loader2, Pencil } from 'lucide-react';
+import { Plus, ArrowLeft, Trash2, Loader2, Pencil, TerminalSquare } from 'lucide-react';
 import { useDeleteTask } from '@/lib/hooks/use-task';
 import type { Task } from '@/lib/types/task';
 import {
@@ -33,10 +33,13 @@ export interface TaskHeaderProps {
   agentPresence?: 'online' | 'offline' | 'managed' | null;
   agentRunActivity?: { active: boolean; elapsedSeconds: number } | null;
   canDeleteTask?: boolean;
+  canOpenTerminal?: boolean;
+  terminalOpen?: boolean;
   onCreateNew?: () => void;
   onEdit?: () => void;
   onDeleted?: () => void;
   onLeave?: () => void;
+  onToggleTerminal?: () => void;
 }
 
 export function TaskHeader({
@@ -47,10 +50,13 @@ export function TaskHeader({
   agentPresence = null,
   agentRunActivity = null,
   canDeleteTask = true,
+  canOpenTerminal = false,
+  terminalOpen = false,
   onCreateNew,
   onEdit,
   onDeleted,
   onLeave,
+  onToggleTerminal,
 }: TaskHeaderProps) {
   const router = useRouter();
   const params = useParams();
@@ -175,6 +181,19 @@ export function TaskHeader({
             {t('edit')}
           </Button>
         )}
+        {onToggleTerminal ? (
+          <Button
+            variant={terminalOpen ? 'default' : 'outline'}
+            size="sm"
+            className="h-8 px-2.5 text-xs"
+            onClick={onToggleTerminal}
+            disabled={!canOpenTerminal}
+            data-testid="notebook__task-header-terminal"
+          >
+            <TerminalSquare className="mr-2 h-4 w-4" />
+            {t('terminal_open')}
+          </Button>
+        ) : null}
         {canDeleteTask && (
           <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
             <AlertDialogTrigger asChild>

@@ -50,6 +50,8 @@ export type ProjectsRoute =
     artifactId: string;
   }
   | { kind: 'taskEvents'; workspaceId: string; projectId: string; taskId: string }
+  | { kind: 'taskTerminalSessions'; workspaceId: string; projectId: string; taskId: string }
+  | { kind: 'taskTerminalSession'; workspaceId: string; projectId: string; taskId: string; terminalSessionId: string }
   | { kind: 'audit'; workspaceId: string; projectId: string }
   | { kind: 'usage'; workspaceId: string; projectId: string }
   | { kind: 'usageFacts'; workspaceId: string; projectId: string }
@@ -699,6 +701,31 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(taskEventsMatched[1]),
       projectId: decodeURIComponent(taskEventsMatched[2]),
       taskId: decodeURIComponent(taskEventsMatched[3]),
+    };
+  }
+
+  const taskTerminalSessionMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/terminal\/sessions\/([^/]+)\/?$/,
+  );
+  if (taskTerminalSessionMatched) {
+    return {
+      kind: 'taskTerminalSession',
+      workspaceId: decodeURIComponent(taskTerminalSessionMatched[1]),
+      projectId: decodeURIComponent(taskTerminalSessionMatched[2]),
+      taskId: decodeURIComponent(taskTerminalSessionMatched[3]),
+      terminalSessionId: decodeURIComponent(taskTerminalSessionMatched[4]),
+    };
+  }
+
+  const taskTerminalSessionsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/terminal\/sessions\/?$/,
+  );
+  if (taskTerminalSessionsMatched) {
+    return {
+      kind: 'taskTerminalSessions',
+      workspaceId: decodeURIComponent(taskTerminalSessionsMatched[1]),
+      projectId: decodeURIComponent(taskTerminalSessionsMatched[2]),
+      taskId: decodeURIComponent(taskTerminalSessionsMatched[3]),
     };
   }
 

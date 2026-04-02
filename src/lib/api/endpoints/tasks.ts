@@ -16,6 +16,9 @@ import type {
   TaskTraceListResponse,
   TaskTraceEvent,
   TaskAttachedInputDetail,
+  CreateTaskTerminalSessionRequest,
+  TaskTerminalSessionCreateResponse,
+  TaskTerminalSessionStatus,
 } from '../../types/task';
 import type { ApiClient } from '../client';
 import { API_BASE } from '../client';
@@ -256,6 +259,29 @@ export class TaskAPI {
    */
   getSSEUrl(workspaceId: string, projectId: string, taskId: string): string {
     return `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/events`;
+  }
+
+  async createTerminalSession(
+    workspaceId: string,
+    projectId: string,
+    taskId: string,
+    data: CreateTaskTerminalSessionRequest,
+  ): Promise<TaskTerminalSessionCreateResponse> {
+    return this.client.post<TaskTerminalSessionCreateResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
+      data,
+    );
+  }
+
+  async getTerminalSession(
+    workspaceId: string,
+    projectId: string,
+    taskId: string,
+    terminalSessionId: string,
+  ): Promise<TaskTerminalSessionStatus> {
+    return this.client.get<TaskTerminalSessionStatus>(
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/terminal/sessions/${terminalSessionId}`,
+    );
   }
 }
 

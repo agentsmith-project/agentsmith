@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   isComposeManagedExternalAgent,
@@ -6,10 +6,30 @@ import {
 } from './agent-runner-profile.js';
 
 describe('agent-runner-profile', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('defaults external agents to docker_manual runtime', () => {
     expect(resolveAgentRunnerRuntime({
       mode: 'external',
       config: {},
+    })).toBe('docker_manual');
+  });
+
+  it('treats configless external agents as dev_direct when execution base is loopback', () => {
+    vi.stubEnv('EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL', 'http://localhost:21000');
+    expect(resolveAgentRunnerRuntime({
+      mode: 'external',
+      config: null,
+    })).toBe('dev_direct');
+  });
+
+  it('keeps configless external agents as docker_manual when execution base is non-loopback', () => {
+    vi.stubEnv('EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL', 'http://host.docker.internal:20000');
+    expect(resolveAgentRunnerRuntime({
+      mode: 'external',
+      config: null,
     })).toBe('docker_manual');
   });
 

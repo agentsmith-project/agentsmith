@@ -579,6 +579,29 @@ describe('matchProjectsRoute', () => {
     });
   });
 
+  it('matches notebook task terminal session collection route', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/terminal/sessions'),
+    ).toEqual({
+      kind: 'taskTerminalSessions',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+    });
+  });
+
+  it('matches notebook task terminal session item route', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/terminal/sessions/term_1'),
+    ).toEqual({
+      kind: 'taskTerminalSession',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      terminalSessionId: 'term_1',
+    });
+  });
+
   it('returns null for unknown route', () => {
     expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/unknown')).toBeNull();
   });

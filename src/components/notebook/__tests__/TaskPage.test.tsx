@@ -51,6 +51,7 @@ vi.mock('next-intl', () => ({
       'notebook.conversation.send_conflict_title': 'Task run still in progress',
       'notebook.conversation.send_conflict_description': 'The previous turn has not finished yet. Wait for it to complete before sending.',
       'notebook.conversation.agent_offline_send_blocked': 'Agent is offline. Start/reconnect the external agent execution channel before sending.',
+      'notebook.task.terminal_agent_run_blocked': 'Close the terminal session before starting a new agent run.',
     };
     const scoped = namespace ? `${namespace}.${key}` : key;
     return dict[scoped] ?? scoped;
@@ -136,6 +137,14 @@ vi.mock('../TaskHeader', () => ({
     </div>
     );
   },
+}));
+
+vi.mock('../TaskTerminalPanel', () => ({
+  TaskTerminalPanel: ({ open, onOpenChange }: any) => (open ? (
+    <div data-testid="task-terminal-panel">
+      <button onClick={() => onOpenChange(false)}>Close Terminal</button>
+    </div>
+  ) : null),
 }));
 
 vi.mock('../ConversationPanel', () => ({
@@ -349,6 +358,28 @@ describe('TaskPage', () => {
       renderComponent();
 
       expect(screen.getByTestId('artifacts-panel')).toBeInTheDocument();
+    });
+
+    it('opens and closes terminal panel from task header action', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      expect(screen.queryByTestId('task-terminal-panel')).not.toBeInTheDocument();
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onToggleTerminal();
+      });
+
+      expect(screen.getByTestId('task-terminal-panel')).toBeInTheDocument();
+      await user.click(screen.getByText('Close Terminal'));
+      expect(screen.queryByTestId('task-terminal-panel')).not.toBeInTheDocument();
+    });
+
+    it('disables terminal opening while a send is already pending', () => {
+      mockSendMessageIsPending.value = true;
+      renderComponent();
+
+      expect(latestTaskHeaderPropsRef.current.canOpenTerminal).toBe(false);
     });
 
     it('does not pass a global execution details mode into ConversationPanel', () => {

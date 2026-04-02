@@ -114,7 +114,7 @@ function deriveHttpBaseFromWebSocketBase(value: string | undefined | null): stri
   }
 }
 
-function resolveExecutionApiBase(
+export function resolveExecutionApiBase(
   publicBaseUrl: string,
   agent: { mode: 'external' | 'internal'; config?: Record<string, unknown> | null },
 ): string {

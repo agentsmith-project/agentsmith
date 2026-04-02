@@ -38,6 +38,11 @@ export function createNodeApiServer(
     void handleRequest(req, res, deps);
   });
   server.on('upgrade', (req, socket, head) => {
+    const pathname = new URL(req.url ?? '', 'http://localhost').pathname;
+    if (/\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/tasks\/[^/]+\/terminal\/ws\/?$/.test(pathname)) {
+      deps.notebookTerminalService.handleUpgrade(req, socket, head);
+      return;
+    }
     deps.agentExecutionService.handleUpgrade(req, socket, head);
   });
 

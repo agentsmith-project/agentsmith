@@ -26,7 +26,9 @@ export function isTaskRoute(route: { kind: string }): boolean {
     || route.kind === 'taskTraces'
     || route.kind === 'taskArtifacts'
     || route.kind === 'taskArtifactDownload'
-    || route.kind === 'taskEvents';
+    || route.kind === 'taskEvents'
+    || route.kind === 'taskTerminalSessions'
+    || route.kind === 'taskTerminalSession';
 }
 
 export function routeHasProjectScope(route: ProjectsRoute): route is ProjectsRoute & { workspaceId: string; projectId: string } {

@@ -35,6 +35,7 @@ import {
   fetchTaskWorkspaceAccess,
   prepareTaskWorkspace,
   resolveTaskCwd,
+  shouldRetryTaskWorkspaceMount,
 } from './task-workspace.js';
 
 describe('task-workspace', () => {
@@ -296,6 +297,13 @@ describe('task-workspace', () => {
         }),
       }),
     );
+  });
+
+  it('classifies transient mount failures as retryable', () => {
+    expect(shouldRetryTaskWorkspaceMount(new Error('task_workspace_mount_not_ready'))).toBe(true);
+    expect(shouldRetryTaskWorkspaceMount(new Error('connection reset by peer'))).toBe(true);
+    expect(shouldRetryTaskWorkspaceMount(new Error('failed to receive message'))).toBe(true);
+    expect(shouldRetryTaskWorkspaceMount(new Error('permission denied'))).toBe(false);
   });
 
   it('reuses prepared file library workspace for subsequent task runs', async () => {

@@ -1,0 +1,40 @@
+import { describe, expect, it, vi } from 'vitest';
+import { InMemoryCache } from '@mbos/adapters-private';
+import { NotebookTerminalService } from './notebook-terminal-service.js';
+import { resolveInternalTicket } from './internal-ticket-store.js';
+
+describe('NotebookTerminalService', () => {
+  it('creates an in-memory terminal session with a browser ws ticket', async () => {
+    const cache = new InMemoryCache();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 120,
+      rows: 32,
+    });
+
+    expect(created.sessionId).toMatch(/^term_/);
+    expect(created.wsPath).toContain(`/tasks/task_1/terminal/ws?session_id=${created.sessionId}`);
+    expect(created.wsTicket).toMatch(/^term_/);
+
+    const session = service.getSession(created.sessionId);
+    expect(session).not.toBeNull();
+    expect(session?.status).toBe('pending');
+    expect(session?.cols).toBe(120);
+    expect(session?.rows).toBe(32);
+
+    const ticket = await resolveInternalTicket(cache, created.wsTicket, 'terminal_ws_access');
+    expect(ticket?.workspace_id).toBe('ws_default');
+    expect(ticket?.project_id).toBe('proj_1');
+    expect(ticket?.payload.task_id).toBe('task_1');
+    expect(ticket?.payload.terminal_session_id).toBe(created.sessionId);
+  });
+});

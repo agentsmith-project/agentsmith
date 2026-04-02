@@ -183,3 +183,30 @@ export interface TaskListResponse {
   page_size: number;
   has_more?: boolean;
 }
+
+export interface CreateTaskTerminalSessionRequest {
+  cols?: number;
+  rows?: number;
+  shell?: string;
+}
+
+export interface TaskTerminalSessionCreateResponse {
+  session_id: string;
+  status: 'pending' | 'active' | 'closed' | 'failed';
+  ws_url: string;
+}
+
+export interface TaskTerminalSessionStatus {
+  id: string;
+  status: 'pending' | 'active' | 'closed' | 'failed';
+  cols: number;
+  rows: number;
+  created_at: string;
+  last_activity_at: string;
+}
+
+export type TaskTerminalServerEvent =
+  | { type: 'started'; session_id: string; cols?: number; rows?: number }
+  | { type: 'output'; session_id: string; chunk: string }
+  | { type: 'exited'; session_id: string; exit_code: number | null; signal: string | null }
+  | { type: 'error'; session_id?: string; error_code: string; error_message: string };

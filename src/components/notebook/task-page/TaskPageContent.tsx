@@ -70,6 +70,7 @@ interface TaskPageContentProps {
   workspaceId: string;
   projectId: string;
   taskId: string;
+  terminalPanel?: React.ReactNode;
 }
 
 export function TaskPageContent({
@@ -106,6 +107,7 @@ export function TaskPageContent({
   streamingContent,
   streamingMessageId,
   taskId: _taskId,
+  terminalPanel,
   traceErrorByMessageId,
   traceEventsByMessageId,
   traceHasMoreByMessageId,
@@ -114,50 +116,53 @@ export function TaskPageContent({
   workspaceId: _workspaceId,
 }: TaskPageContentProps) {
   return (
-    <div className="flex min-h-0 flex-1 gap-3 overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.03),_transparent_40%)]">
-      <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-[18px] border border-white/5 bg-surface/70 p-1.5 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
-        {showSseDebugPanel ? (
-          <NotebookSseDebugPanel events={sseDebugEvents} />
-        ) : null}
-        <ConversationPanel
-          messages={messages}
-          streamingMessageId={streamingMessageId}
-          streamingContent={streamingContent}
-          connectionStatus={connectionStatus}
-          connectionErrorCode={connectionErrorCode}
-          connectionErrorMessage={connectionErrorMessage}
-          traceEventsByMessageId={traceEventsByMessageId}
-          traceHasMoreByMessageId={traceHasMoreByMessageId}
-          traceLoadingByMessageId={traceLoadingByMessageId}
-          traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
-          traceErrorByMessageId={traceErrorByMessageId}
-          diagnosticsLinks={diagnosticsLinks}
-          onTraceExpand={fetchTracesForMessage}
-          onTraceLoadMore={loadMoreTracesForMessage}
-          onSendMessage={handleSendMessage}
-          agentRunning={agentIsBusy}
-          pendingQueue={pendingMessages}
-          onPendingUpdate={handlePendingUpdate}
-          onPendingRemove={handlePendingRemove}
-          runActivity={runActivity}
-          onCancelActiveRun={handleCancelActiveRun}
-          onRunActionClick={onRunActionClick}
-          focusTraceMessageId={focusTraceMessageId}
-          focusTraceName={focusTraceName}
-          focusTraceToken={focusTraceToken}
-          sandboxStarting={sandboxStarting}
-          disabled={disabled}
-          activeAgentMessageId={activeAgentMessageId}
-          sending={sending}
-        />
-      </div>
-      <div className="flex h-full min-h-0 w-[216px] flex-shrink-0 overflow-hidden rounded-[16px] border border-white/5 bg-surface/68 p-1.5 shadow-[0_10px_24px_rgba(0,0,0,0.1)]">
-        <ArtifactsPanel
-          artifacts={artifacts}
-          onView={handleViewArtifact}
-          onDownload={handleDownloadArtifact}
-          disabled={isDisabled || !canUpdateTask}
-        />
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.03),_transparent_40%)]">
+      {terminalPanel}
+      <div className="mt-3 flex min-h-0 flex-1 gap-3 overflow-hidden">
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-[18px] border border-white/5 bg-surface/70 p-1.5 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
+          {showSseDebugPanel ? (
+            <NotebookSseDebugPanel events={sseDebugEvents} />
+          ) : null}
+          <ConversationPanel
+            messages={messages}
+            streamingMessageId={streamingMessageId}
+            streamingContent={streamingContent}
+            connectionStatus={connectionStatus}
+            connectionErrorCode={connectionErrorCode}
+            connectionErrorMessage={connectionErrorMessage}
+            traceEventsByMessageId={traceEventsByMessageId}
+            traceHasMoreByMessageId={traceHasMoreByMessageId}
+            traceLoadingByMessageId={traceLoadingByMessageId}
+            traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
+            traceErrorByMessageId={traceErrorByMessageId}
+            diagnosticsLinks={diagnosticsLinks}
+            onTraceExpand={fetchTracesForMessage}
+            onTraceLoadMore={loadMoreTracesForMessage}
+            onSendMessage={handleSendMessage}
+            agentRunning={agentIsBusy}
+            pendingQueue={pendingMessages}
+            onPendingUpdate={handlePendingUpdate}
+            onPendingRemove={handlePendingRemove}
+            runActivity={runActivity}
+            onCancelActiveRun={handleCancelActiveRun}
+            onRunActionClick={onRunActionClick}
+            focusTraceMessageId={focusTraceMessageId}
+            focusTraceName={focusTraceName}
+            focusTraceToken={focusTraceToken}
+            sandboxStarting={sandboxStarting}
+            disabled={disabled}
+            activeAgentMessageId={activeAgentMessageId}
+            sending={sending}
+          />
+        </div>
+        <div className="flex h-full min-h-0 w-[216px] flex-shrink-0 overflow-hidden rounded-[16px] border border-white/5 bg-surface/68 p-1.5 shadow-[0_10px_24px_rgba(0,0,0,0.1)]">
+          <ArtifactsPanel
+            artifacts={artifacts}
+            onView={handleViewArtifact}
+            onDownload={handleDownloadArtifact}
+            disabled={isDisabled || !canUpdateTask}
+          />
+        </div>
       </div>
     </div>
   );

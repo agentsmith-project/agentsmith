@@ -9,6 +9,8 @@ import { promisify } from 'node:util';
 const execFile = promisify(execFileCallback);
 const DEFAULT_MOUNT_READY_TIMEOUT_MS = 30_000;
 const DEFAULT_MOUNT_READY_POLL_MS = 250;
+const DEFAULT_MOUNT_RETRY_COUNT = 2;
+const DEFAULT_MOUNT_RETRY_DELAY_MS = 750;
 
 type FileLibraryWorkspaceExecutionContext = {
   workspace_id?: string;
@@ -46,6 +48,19 @@ export type TaskWorkspacePaths = {
 };
 
 const mountedWorkspaceByMountPath = new Set<string>();
+
+function debugTaskWorkspace(message: string, extra?: Record<string, unknown>): void {
+  if (process.env.MBOS_AGENT_RUNNER_DEBUG !== '1') return;
+  const payload = extra ? ` ${JSON.stringify(extra)}` : '';
+  process.stdout.write(`[agent-codex-runner][task-workspace] ${message}${payload}\n`);
+}
+
+export function shouldRetryTaskWorkspaceMount(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return message.includes('task_workspace_mount_not_ready')
+    || message.includes('connection reset by peer')
+    || message.includes('failed to receive message');
+}
 
 function sanitizeWorkspacePath(raw: string | undefined): string {
   const value = (raw ?? '').trim();
@@ -273,6 +288,13 @@ export async function fetchTaskWorkspaceAccess(
     throw new Error('task_workspace_access_context_missing');
   }
 
+  debugTaskWorkspace('fetch_workspace_access_start', {
+    api_base: apiBase,
+    workspace_id: workspaceId,
+    project_id: projectId,
+    task_id: taskId,
+  });
+
   const response = await fetch(
     `${apiBase}/api/v1/workspaces/${encodeURIComponent(workspaceId)}`
       + `/projects/${encodeURIComponent(projectId)}`
@@ -285,9 +307,20 @@ export async function fetchTaskWorkspaceAccess(
     },
   );
   if (!response.ok) {
+    debugTaskWorkspace('fetch_workspace_access_failed', {
+      status: response.status,
+      api_base: apiBase,
+      task_id: taskId,
+    });
     throw new Error(`task_workspace_access_failed:${response.status}`);
   }
-  return await response.json() as TaskWorkspaceAccessPayload;
+  const payload = await response.json() as TaskWorkspaceAccessPayload;
+  debugTaskWorkspace('fetch_workspace_access_ready', {
+    task_id: taskId,
+    metadata_url: payload.metadata_url,
+    storage_bucket_url: payload.storage_bucket_url ?? null,
+  });
+  return payload;
 }
 
 async function mountTaskWorkspace(metadataUrl: string, mountPath: string, storageBucketUrl?: string): Promise<void> {
@@ -302,8 +335,17 @@ async function mountTaskWorkspace(metadataUrl: string, mountPath: string, storag
   await mkdir(cacheDir, { recursive: true });
   await mkdir(logRoot, { recursive: true });
   if (await isMountPointReady(mountPath)) {
+    debugTaskWorkspace('mount_workspace_already_ready', {
+      mount_path: mountPath,
+    });
     return;
   }
+  debugTaskWorkspace('mount_workspace_start', {
+    mount_path: mountPath,
+    metadata_url: metadataUrl,
+    storage_bucket_url: storageBucketUrl ?? null,
+    log_path: logPath,
+  });
   const child = spawn(
     'juicefs',
     buildJuicefsMountArgs({
@@ -323,8 +365,15 @@ async function mountTaskWorkspace(metadataUrl: string, mountPath: string, storag
     child.once('spawn', resolve);
     child.once('error', reject);
   });
+  debugTaskWorkspace('mount_workspace_spawned', {
+    mount_path: mountPath,
+    log_path: logPath,
+  });
   child.unref();
   await waitForMountPointReady(mountPath, logPath);
+  debugTaskWorkspace('mount_workspace_ready', {
+    mount_path: mountPath,
+  });
 }
 
 export async function prepareTaskWorkspace(input: {
@@ -357,7 +406,41 @@ export async function prepareTaskWorkspace(input: {
       workspaceRoot: process.env.MBOS_AGENT_WORKSPACE_ROOT,
     });
     if (!mountedWorkspaceByMountPath.has(mountPath)) {
-      await mountTaskWorkspace(workspaceAccess.metadata_url, mountPath, workspaceAccess.storage_bucket_url);
+      const maxAttempts = Number.parseInt(
+        process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_COUNT ?? '',
+        10,
+      ) || DEFAULT_MOUNT_RETRY_COUNT;
+      const retryDelayMs = Number.parseInt(
+        process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_DELAY_MS ?? '',
+        10,
+      ) || DEFAULT_MOUNT_RETRY_DELAY_MS;
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          await mountTaskWorkspace(
+            workspaceAccess.metadata_url,
+            mountPath,
+            workspaceAccess.storage_bucket_url,
+          );
+          lastError = undefined;
+          break;
+        } catch (error) {
+          lastError = error;
+          debugTaskWorkspace('mount_workspace_attempt_failed', {
+            mount_path: mountPath,
+            attempt,
+            max_attempts: maxAttempts,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          if (attempt >= maxAttempts || !shouldRetryTaskWorkspaceMount(error)) {
+            throw error;
+          }
+          await sleep(retryDelayMs);
+        }
+      }
+      if (lastError) {
+        throw lastError;
+      }
       mountedWorkspaceByMountPath.add(mountPath);
     }
     return {

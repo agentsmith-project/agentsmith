@@ -20,7 +20,8 @@ import {
   writeNotebookTaskSseEvent,
 } from './notebook-task-sse-broker.js';
 import { resolveNotebookTaskInputDetails, type NotebookTaskInputRefRecord as SharedNotebookTaskInputRefRecord } from './notebook-input-refs.js';
-import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestrator.js';
+import { resolveExecutionApiBase, runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestrator.js';
+import { buildNotebookTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
@@ -54,7 +55,8 @@ import {
   type TaskRecord,
 } from './notebook-task/task-models.js';
 import { createAndProvisionProjectFileLibrary, mapFileLibraryInfraError } from './project-file-library-service.js';
-import { isAgentExecutionTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
+import { isAgentExecutionTicket, issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
+import { buildThirdPartyCredentialFiles } from './third-party-credential-files.js';
 import {
   buildTaskRealtimeView,
   mapTaskMessagesForExecution,
@@ -209,6 +211,87 @@ export function resolveTaskWorkspaceMountAccess(input: {
 function defaultWorkspaceNameFromTaskTitle(title: string): string {
   const trimmed = title.trim();
   return trimmed ? `${trimmed} Workspace` : 'Notebook Workspace';
+}
+
+function buildTerminalUsername(user: AuthenticatedUser): string {
+  const local = user.email.split('@')[0]?.trim();
+  if (local) return local;
+  return user.id.trim() || 'unknown_user';
+}
+
+function resolveWebSocketBaseUrl(req: http.IncomingMessage): string {
+  const requestUrl = resolvePublicBaseUrl(req).replace(/\/+$/, '');
+  if (requestUrl.startsWith('https://')) {
+    return `wss://${requestUrl.slice('https://'.length)}`;
+  }
+  if (requestUrl.startsWith('http://')) {
+    return `ws://${requestUrl.slice('http://'.length)}`;
+  }
+  return requestUrl;
+}
+
+async function buildTaskTerminalExecutionContext(args: {
+  deps: NodeApiDeps;
+  task: TaskRecord;
+  user: AuthenticatedUser;
+  agent: { mode: 'external' | 'internal'; config?: Record<string, unknown> | null };
+  publicBaseUrl: string;
+}): Promise<Record<string, unknown>> {
+  const taskInputs = await buildNotebookTaskInputs({
+    deps: args.deps,
+    workspaceId: args.task.workspace_id,
+    projectId: args.task.project_id,
+    taskId: args.task.id,
+    attachedInputs: args.task.attached_inputs as NotebookTaskInputRefRecord[],
+    debugLog: debugNotebookExecution,
+  });
+  const credentialFiles = await buildThirdPartyCredentialFiles(
+    args.deps.docStore,
+    args.user.id,
+    { taskId: args.task.id, workspaceId: args.task.workspace_id },
+  );
+  const workspaceLibrary = args.task.workspace_file_library_id
+    ? await new JsonDocProjectFileLibraryCatalogRepo(args.deps.docStore).getById(
+      args.task.workspace_id,
+      args.task.project_id,
+      args.task.workspace_file_library_id,
+    )
+    : null;
+  const executionTicket = await issueInternalTicket(args.deps.cache, {
+    purpose: 'agent_execution',
+    userId: args.user.id,
+    prefix: 'exec',
+    workspaceId: args.task.workspace_id,
+    projectId: args.task.project_id,
+    payload: {
+      endpoint_id: 'terminal',
+      task_id: args.task.id,
+      session_id: args.task.id,
+      agent_id: args.task.agent_id,
+      mode: 'notebook',
+    },
+    ttlMs: 8 * 60 * 60 * 1000,
+    maxUses: 500,
+  });
+
+  return {
+    workspace_id: args.task.workspace_id,
+    project_id: args.task.project_id,
+    task_id: args.task.id,
+    session_id: args.task.id,
+    username: buildTerminalUsername(args.user),
+    api_base: resolveExecutionApiBase(args.publicBaseUrl, args.agent),
+    execution_ticket: executionTicket.ticket,
+    workspace_binding_mode: args.agent.mode === 'internal' ? 'pre_mounted' : 'file_library',
+    workspace_path: args.agent.mode === 'internal' ? '/workspace' : undefined,
+    workspace_file_library_id: args.task.workspace_file_library_id ?? null,
+    workspace_file_library_name: args.task.workspace_file_library_name ?? null,
+    workspace_dir_name: workspaceLibrary?.filesystem_name
+      ?? sanitizeFileLibraryWorkspaceDirName(args.task.workspace_file_library_name, args.task.workspace_file_library_id),
+    task_inputs: taskInputs,
+    credential_files: credentialFiles,
+    notebook_mode: true,
+  };
 }
 
 function findActiveTaskUsingWorkspace(
@@ -471,6 +554,102 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
     json(res, 200, await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task));
+    return true;
+  }
+
+  if (route.kind === 'taskTerminalSessions' && method === 'POST') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
+    if (!task) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
+    if (task.status !== 'active') {
+      json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_not_active' });
+      return true;
+    }
+    if (ACTIVE_RUNS_BY_TASK.has(task.id)) {
+      json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_run_in_progress' });
+      return true;
+    }
+    const body = asObject(await readBody(req));
+    const cols = typeof body.cols === 'number' && Number.isFinite(body.cols) ? Math.floor(body.cols) : 120;
+    const rows = typeof body.rows === 'number' && Number.isFinite(body.rows) ? Math.floor(body.rows) : 30;
+    const shell = typeof body.shell === 'string' ? body.shell.trim() : '';
+    const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, task.agent_id);
+    if (!agent || agent.status !== 'enabled') {
+      json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_agent_not_available' });
+      return true;
+    }
+    if (agent.mode === 'internal') {
+      if (!deps.internalAgentPodManager || !deps.internalAgentWorkspaceBindingManager || !task.workspace_file_library_id) {
+        json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_terminal_internal_runtime_unavailable' });
+        return true;
+      }
+      const workspaceBinding = await deps.internalAgentWorkspaceBindingManager.ensureWorkspaceBinding({
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        fileLibraryId: task.workspace_file_library_id,
+      });
+      await deps.internalAgentPodManager.ensureAgentReady({
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        workloadId: sanitizeWorkloadId(task.id),
+        sessionId: task.id,
+        agent,
+        workspaceMount: workspaceBinding.workspaceMount,
+      });
+    } else if (!deps.agentExecutionService.getAgentSessionOnlineState(agent.id, task.id)
+      && !deps.agentExecutionService.getAgentOnlineState(agent.id)) {
+      json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_runner_offline' });
+      return true;
+    }
+
+    const executionContext = await buildTaskTerminalExecutionContext({
+      deps,
+      task,
+      user,
+      agent,
+      publicBaseUrl: resolvePublicBaseUrl(req),
+    });
+    const created = await deps.notebookTerminalService.createSession({
+      workspaceId: task.workspace_id,
+      projectId: task.project_id,
+      taskId: task.id,
+      agentId: task.agent_id,
+      runnerSessionId: task.id,
+      userId: user.id,
+      cols,
+      rows,
+      ...(shell ? { shell } : {}),
+      executionContext,
+    });
+    json(res, 201, {
+      session_id: created.sessionId,
+      status: 'pending',
+      ws_url: `${resolveWebSocketBaseUrl(req)}${created.wsPath}`,
+    });
+    return true;
+  }
+
+  if (route.kind === 'taskTerminalSession' && method === 'GET') {
+    const session = deps.notebookTerminalService.getSession(route.terminalSessionId);
+    if (!session || session.workspaceId !== route.workspaceId || session.projectId !== route.projectId || session.taskId !== route.taskId) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_terminal_session_not_found' });
+      return true;
+    }
+    if (session.userId !== user.id) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_terminal_session_not_found' });
+      return true;
+    }
+    json(res, 200, {
+      id: session.id,
+      status: session.status,
+      cols: session.cols,
+      rows: session.rows,
+      created_at: session.createdAt,
+      last_activity_at: session.lastActivityAt,
+    });
     return true;
   }
 

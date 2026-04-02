@@ -42,6 +42,7 @@ vi.mock('next-intl', () => ({
       'agent_mode_internal': 'Internal Runner',
       'workspace_file_library_label': 'Workspace',
       'workspace_file_library_unknown': 'No Workspace Library',
+      'terminal_open': 'Open Terminal',
     };
     return translations[key] || key;
   },
@@ -125,6 +126,15 @@ describe('TaskHeader', () => {
       renderComponent();
 
       expect(screen.getByTestId('notebook__task-header')).toBeInTheDocument();
+    });
+
+    it('renders terminal toggle when provided', () => {
+      renderComponent(mockTask, {
+        onToggleTerminal: vi.fn(),
+        canOpenTerminal: true,
+      });
+
+      expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Open Terminal');
     });
   });
 
@@ -312,6 +322,29 @@ describe('TaskHeader', () => {
       const newIndex = buttonTexts.indexOf('New');
 
       expect(deleteIndex).toBeLessThan(newIndex);
+    });
+  });
+
+  describe('Terminal Button', () => {
+    it('calls onToggleTerminal when clicked', async () => {
+      const user = userEvent.setup();
+      const onToggleTerminal = vi.fn();
+      renderComponent(mockTask, {
+        onToggleTerminal,
+        canOpenTerminal: true,
+      });
+
+      await user.click(screen.getByTestId('notebook__task-header-terminal'));
+      expect(onToggleTerminal).toHaveBeenCalledTimes(1);
+    });
+
+    it('disables terminal button when unavailable', () => {
+      renderComponent(mockTask, {
+        onToggleTerminal: vi.fn(),
+        canOpenTerminal: false,
+      });
+
+      expect(screen.getByTestId('notebook__task-header-terminal')).toBeDisabled();
     });
   });
 });

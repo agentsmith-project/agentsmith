@@ -27,6 +27,7 @@ import { selectLatestInstruction } from './prompt-selection.js';
 import { resolveRunnerSuccessPolicy } from './run-result-policy.js';
 import { ensureCodexSessionStateCompatible } from './session-state.js';
 import { resolveCodexTerminalOutcome } from './terminal-outcome.js';
+import { startTerminalProcess, type TerminalExecutionContext, type TerminalProcess } from './terminal-runtime.js';
 
 type ServerStartPayload = {
   model?: string;
@@ -82,6 +83,8 @@ type ServerHelloPayload = {
 type AgentMessage = {
   type?: string;
   request_id?: string;
+  terminal_session_id?: string;
+  session_id?: string;
   payload?: ServerStartPayload | ServerHelloPayload;
 };
 
@@ -110,6 +113,7 @@ const ws = new WebSocket(wsUrl, {
 
 type RunningProcess = ChildProcessByStdio<null, Readable, Readable>;
 const runningByRequestId = new Map<string, RunningProcess>();
+const runningTerminalBySessionId = new Map<string, TerminalProcess>();
 const cancelRequestedByRequestId = new Set<string>();
 const traceSeqByRequestId = new Map<string, number>();
 const runStartedAtByRequestId = new Map<string, number>();
@@ -121,16 +125,17 @@ type FilterStats = RunnerFilterStats;
 const filterStatsByRequestId = new Map<string, FilterStats>();
 
 function getFilterStats(requestId: string): FilterStats {
-  let existing = filterStatsByRequestId.get(requestId);
+  const existing = filterStatsByRequestId.get(requestId);
   if (existing) return existing;
-  existing = {
+  const created: FilterStats = {
     stderr_superpowers_skill_missing: 0,
     model_metadata_warning: 0,
+    stderr_model_refresh_timeout: 0,
     delta_metadata_warning_event: 0,
     delta_empty_error_shell: 0,
   };
-  filterStatsByRequestId.set(requestId, existing);
-  return existing;
+  filterStatsByRequestId.set(requestId, created);
+  return created;
 }
 
 function sanitizePathPart(input: string | undefined, fallback: string): string {
@@ -146,6 +151,20 @@ function sendFrame(type: string, requestId: string, payload: Record<string, unkn
       request_id: requestId,
       timestamp: new Date().toISOString(),
       payload,
+    }),
+  );
+}
+
+function sendTerminalFrame(type: string, terminalSessionId: string, payload: Record<string, unknown>) {
+  ws.send(
+    JSON.stringify({
+      type,
+      terminal_session_id: terminalSessionId,
+      timestamp: new Date().toISOString(),
+      payload: {
+        terminal_session_id: terminalSessionId,
+        ...payload,
+      },
     }),
   );
 }
@@ -225,6 +244,83 @@ function debugLog(message: string, extra?: Record<string, unknown>): void {
   if (!runnerDebug) return;
   const payload = extra ? ` ${JSON.stringify(extra)}` : '';
   process.stdout.write(`[agent-codex-runner][debug] ${message}${payload}\n`);
+}
+
+function closeTerminalSession(terminalSessionId: string, signal: NodeJS.Signals = 'SIGTERM'): void {
+  const child = runningTerminalBySessionId.get(terminalSessionId);
+  if (!child || child.exitCode !== null) return;
+  child.kill(signal);
+  if (signal === 'SIGTERM') {
+    setTimeout(() => {
+      const existing = runningTerminalBySessionId.get(terminalSessionId);
+      if (existing && existing.exitCode === null) {
+        existing.kill('SIGKILL');
+      }
+    }, cancelKillDelayMs);
+  }
+}
+
+async function runTerminalSession(terminalSessionId: string, payload: {
+  cols?: number;
+  rows?: number;
+  shell?: string;
+  execution_context?: TerminalExecutionContext;
+}): Promise<void> {
+  debugLog('terminal start requested', {
+    terminal_session_id: terminalSessionId,
+    has_execution_context: !!payload.execution_context,
+    shell: payload.shell ?? null,
+  });
+  const executionContext = payload.execution_context ?? {};
+  const started = await startTerminalProcess({
+    executionContext,
+    shell: payload.shell,
+  });
+  const child = started.child;
+  runningTerminalBySessionId.set(terminalSessionId, child);
+  debugLog('terminal started', {
+    terminal_session_id: terminalSessionId,
+    cwd: started.cwd,
+  });
+  sendTerminalFrame('agent.terminal.started', terminalSessionId, {
+    cols: payload.cols ?? 120,
+    rows: payload.rows ?? 30,
+    cwd: started.cwd,
+  });
+
+  child.stdout.on('data', (buffer: Buffer) => {
+    sendTerminalFrame('agent.terminal.output', terminalSessionId, {
+      chunk: buffer.toString('utf-8'),
+    });
+  });
+  child.stderr.on('data', (buffer: Buffer) => {
+    sendTerminalFrame('agent.terminal.output', terminalSessionId, {
+      chunk: buffer.toString('utf-8'),
+    });
+  });
+  child.on('error', (error) => {
+    runningTerminalBySessionId.delete(terminalSessionId);
+    debugLog('terminal child error', {
+      terminal_session_id: terminalSessionId,
+      message: error.message,
+    });
+    sendTerminalFrame('agent.terminal.error', terminalSessionId, {
+      error_code: 'AGENT_UPSTREAM_ERROR',
+      error_message: error.message,
+    });
+  });
+  child.on('close', (code, signal) => {
+    runningTerminalBySessionId.delete(terminalSessionId);
+    debugLog('terminal exited', {
+      terminal_session_id: terminalSessionId,
+      exit_code: typeof code === 'number' ? code : null,
+      signal: signal ?? null,
+    });
+    sendTerminalFrame('agent.terminal.exited', terminalSessionId, {
+      exit_code: typeof code === 'number' ? code : null,
+      signal: signal ?? null,
+    });
+  });
 }
 
 function maybeEmitDeltaChunk(requestId: string, chunk: string): number {
@@ -449,9 +545,6 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
     return;
   }
   if (item.type === 'command_execution') {
-    if (type === 'item.started') {
-      commandCountByRequestId.set(requestId, (commandCountByRequestId.get(requestId) ?? 0) + 1);
-    }
     const exitCode = typeof item.exit_code === 'number' && Number.isFinite(item.exit_code)
       ? Math.trunc(item.exit_code)
       : null;
@@ -770,7 +863,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     modelAutoCompactTokenLimit,
     modelCatalogPath,
     resumeSession,
-    yolo: codexYolo,
   });
 
   const child = spawn(
@@ -1229,6 +1321,50 @@ ws.on('message', (raw) => {
     return;
   }
 
+  if (message.type === 'server.terminal.stdin' && message.terminal_session_id) {
+    const child = runningTerminalBySessionId.get(message.terminal_session_id);
+    const payload = message.payload as { data?: unknown } | undefined;
+    if (child && child.exitCode === null && typeof payload?.data === 'string') {
+      child.stdin.write(payload.data);
+    }
+    return;
+  }
+
+  if (message.type === 'server.terminal.resize' && message.terminal_session_id) {
+    // The current script(1)-backed PTY runtime does not expose dynamic resize.
+    // We accept the frame to keep protocol parity between browser/server/runner.
+    return;
+  }
+
+  if (message.type === 'server.terminal.close' && message.terminal_session_id) {
+    closeTerminalSession(message.terminal_session_id);
+    return;
+  }
+
+  if (message.type === 'server.terminal.start' && message.terminal_session_id) {
+    if (runningTerminalBySessionId.has(message.terminal_session_id)) {
+      sendTerminalFrame('agent.terminal.error', message.terminal_session_id, {
+        error_code: 'AGENT_TERMINAL_ALREADY_RUNNING',
+        error_message: 'terminal_session_already_running',
+      });
+      return;
+    }
+    const terminalPayload = message.payload as {
+      cols?: number;
+      rows?: number;
+      shell?: string;
+      execution_context?: TerminalExecutionContext;
+    } | undefined;
+    void runTerminalSession(message.terminal_session_id, terminalPayload ?? {}).catch((error) => {
+      runningTerminalBySessionId.delete(message.terminal_session_id!);
+      sendTerminalFrame('agent.terminal.error', message.terminal_session_id!, {
+        error_code: 'AGENT_UPSTREAM_ERROR',
+        error_message: error instanceof Error ? error.message : 'terminal_start_failed',
+      });
+    });
+    return;
+  }
+
   if (message.type !== 'server.request.start' || !message.request_id || !message.payload) {
     return;
   }
@@ -1280,7 +1416,13 @@ ws.on('close', () => {
       child.kill('SIGTERM');
     }
   }
+  for (const terminalChild of runningTerminalBySessionId.values()) {
+    if (terminalChild.exitCode === null) {
+      terminalChild.kill('SIGTERM');
+    }
+  }
   runningByRequestId.clear();
+  runningTerminalBySessionId.clear();
   cancelRequestedByRequestId.clear();
   connectedResourceProxyBase = '';
   traceSeqByRequestId.clear();

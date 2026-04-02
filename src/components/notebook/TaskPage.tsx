@@ -2,6 +2,7 @@
 import * as React from "react";
 import { useTranslations } from "next-intl";
 import { TaskHeader } from "./TaskHeader";
+import { TaskTerminalPanel } from "./TaskTerminalPanel";
 import {
   useTask,
   useTaskMessages,
@@ -95,6 +96,7 @@ export function TaskPage({
   const [realtimeFailureMessage, setRealtimeFailureMessage] = React.useState<
     string | null
   >(null);
+  const [terminalOpen, setTerminalOpen] = React.useState(false);
 
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
@@ -544,6 +546,10 @@ export function TaskPage({
   const handleSendMessage = async (content: string) => {
     const normalized = content.trim();
     if (!normalized) return;
+    if (terminalOpen) {
+      toast.info(tTask("terminal_agent_run_blocked"));
+      return;
+    }
     if (isAgentTurnRunning || sendMessage.isPending) {
       enqueuePendingMessage(normalized);
       toast.info(tConversation("pending_enqueued"));
@@ -730,7 +736,11 @@ export function TaskPage({
         item.status === "cancelled",
     );
   const isConversationInputDisabled =
-    isDisabled || !canUpdateTask || isExternalAgentOffline;
+    isDisabled || !canUpdateTask || isExternalAgentOffline || terminalOpen;
+  const canOpenTerminal =
+    canUpdateTask
+    && task.status === "active"
+    && !agentIsBusy;
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
@@ -745,10 +755,13 @@ export function TaskPage({
           elapsedSeconds: runElapsedSeconds,
         }}
         canDeleteTask={canDeleteTask}
+        canOpenTerminal={canOpenTerminal}
+        terminalOpen={terminalOpen}
         onCreateNew={canCreateTask ? handleCreateNew : undefined}
         onEdit={canUpdateTask ? () => setEditDialogOpen(true) : undefined}
         onDeleted={handleTaskDeleted}
         onLeave={handleLeave}
+        onToggleTerminal={() => setTerminalOpen((current) => !current)}
       />
       <TaskPageContent
         agentIsBusy={agentIsBusy}
@@ -796,6 +809,18 @@ export function TaskPage({
         streamingContent={streamingContent}
         streamingMessageId={streamingMessageId}
         taskId={taskId}
+        terminalPanel={(
+          <TaskTerminalPanel
+            open={terminalOpen}
+            workspaceId={workspaceId}
+            projectId={projectId}
+            taskId={taskId}
+            taskTitle={task.title}
+            taskApi={taskAPI}
+            disabled={!canOpenTerminal}
+            onOpenChange={setTerminalOpen}
+          />
+        )}
         traceErrorByMessageId={traceErrorByMessageId}
         traceEventsByMessageId={traceEventsByMessageId}
         traceHasMoreByMessageId={traceHasMoreByMessageId}

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { CachePort } from '@mbos/ports';
 
-export type InternalTicketPurpose = 'sse_access' | 'agent_execution';
+export type InternalTicketPurpose = 'sse_access' | 'agent_execution' | 'terminal_ws_access';
 
 export interface SseAccessTicketPayload {
   bearer_token: string;
@@ -15,9 +15,15 @@ export interface AgentExecutionTicketPayload {
   mode: 'notebook' | 'chat';
 }
 
+export interface TerminalWsAccessTicketPayload {
+  task_id: string;
+  terminal_session_id: string;
+}
+
 export type InternalTicketPayloadByPurpose = {
   sse_access: SseAccessTicketPayload;
   agent_execution: AgentExecutionTicketPayload;
+  terminal_ws_access: TerminalWsAccessTicketPayload;
 };
 
 type InternalTicketRecord<P extends InternalTicketPurpose = InternalTicketPurpose> = {
@@ -151,4 +157,10 @@ export function isAgentExecutionTicket(
   ticket: ResolvedInternalTicket | null | undefined,
 ): ticket is ResolvedInternalTicket<'agent_execution'> {
   return ticket?.purpose === 'agent_execution';
+}
+
+export function isTerminalWsAccessTicket(
+  ticket: ResolvedInternalTicket | null | undefined,
+): ticket is ResolvedInternalTicket<'terminal_ws_access'> {
+  return ticket?.purpose === 'terminal_ws_access';
 }

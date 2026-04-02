@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { join } from 'node:path';
+import { spawn as spawnPty } from 'node-pty';
 import {
   buildNotebookHeadlessPreamble,
   prepareNotebookWorkspaceAssets,
@@ -39,7 +39,14 @@ export type TerminalExecutionContext = {
   credential_files?: ExecutionContextFileItem[];
 };
 
-export type TerminalProcess = ChildProcessWithoutNullStreams;
+export type TerminalProcess = {
+  readonly exitCode: number | null;
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(signal?: string): void;
+  onData(listener: (chunk: string) => void): void;
+  onExit(listener: (event: { exitCode: number; signal?: number }) => void): void;
+};
 
 function debugTerminalRuntime(message: string, extra?: Record<string, unknown>): void {
   if (process.env.MBOS_AGENT_RUNNER_DEBUG !== '1') return;
@@ -58,15 +65,27 @@ function resolveTerminalShell(shellOverride?: string): string {
   if (explicit) return explicit;
   const envShell = process.env.SHELL?.trim();
   if (envShell) return envShell;
+  if (process.platform === 'win32') {
+    return 'pwsh.exe';
+  }
   return 'bash';
 }
 
-function buildInteractiveCommand(shellOverride?: string): string {
+function buildInteractiveCommand(shellOverride?: string): {
+  file: string;
+  args: string[];
+} {
   const shell = resolveTerminalShell(shellOverride);
   if (/pwsh(?:\.exe)?$/i.test(shell) || /powershell(?:\.exe)?$/i.test(shell)) {
-    return `${shell} -NoLogo`;
+    return {
+      file: shell,
+      args: ['-NoLogo'],
+    };
   }
-  return `${shell} -i`;
+  return {
+    file: shell,
+    args: ['-i'],
+  };
 }
 
 async function primeShellDotfiles(homeDir: string, shellOverride?: string): Promise<void> {
@@ -83,7 +102,8 @@ export async function prepareTerminalWorkspace(input: {
 }): Promise<{
   cwd: string;
   taskPaths: TaskWorkspacePaths;
-  command: string;
+  shellFile: string;
+  shellArgs: string[];
   env: NodeJS.ProcessEnv;
 }> {
   const executionContext = input.executionContext;
@@ -158,11 +178,13 @@ export async function prepareTerminalWorkspace(input: {
       }),
     } : {}),
   };
+  const interactiveCommand = buildInteractiveCommand(input.shell);
 
   return {
     cwd,
     taskPaths,
-    command: buildInteractiveCommand(input.shell),
+    shellFile: interactiveCommand.file,
+    shellArgs: interactiveCommand.args,
     env,
   };
 }
@@ -170,33 +192,55 @@ export async function prepareTerminalWorkspace(input: {
 export async function startTerminalProcess(input: {
   executionContext: TerminalExecutionContext;
   shell?: string;
+  cols?: number;
+  rows?: number;
 }): Promise<{
   child: TerminalProcess;
   cwd: string;
 }> {
   const prepared = await prepareTerminalWorkspace(input);
-  debugTerminalRuntime('spawn_script_start', {
+  debugTerminalRuntime('spawn_pty_start', {
     cwd: prepared.cwd,
-    command: prepared.command,
+    shell: prepared.shellFile,
+    args: prepared.shellArgs,
   });
-  const child = spawn(
-    'script',
-    ['-qf', '-c', prepared.command, '/dev/null'],
-    {
-      cwd: prepared.cwd,
-      env: prepared.env,
-      stdio: 'pipe',
-    },
-  );
-  await new Promise<void>((resolve, reject) => {
-    child.once('spawn', resolve);
-    child.once('error', reject);
+  const child = spawnPty(prepared.shellFile, prepared.shellArgs, {
+    cwd: prepared.cwd,
+    env: prepared.env,
+    cols: input.cols ?? 120,
+    rows: input.rows ?? 30,
+    name: prepared.env.TERM || 'xterm-256color',
   });
-  debugTerminalRuntime('spawn_script_ready', {
+  debugTerminalRuntime('spawn_pty_ready', {
     cwd: prepared.cwd,
   });
+
+  let exitCode: number | null = null;
+  child.onExit((event) => {
+    exitCode = event.exitCode;
+  });
+
   return {
-    child,
+    child: {
+      get exitCode() {
+        return exitCode;
+      },
+      write(data: string) {
+        child.write(data);
+      },
+      resize(cols: number, rows: number) {
+        child.resize(cols, rows);
+      },
+      kill(signal?: string) {
+        child.kill(signal);
+      },
+      onData(listener: (chunk: string) => void) {
+        child.onData(listener);
+      },
+      onExit(listener: (event: { exitCode: number; signal?: number }) => void) {
+        child.onExit(listener);
+      },
+    },
     cwd: prepared.cwd,
   };
 }

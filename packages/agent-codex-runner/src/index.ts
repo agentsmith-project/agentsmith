@@ -275,6 +275,8 @@ async function runTerminalSession(terminalSessionId: string, payload: {
   const started = await startTerminalProcess({
     executionContext,
     shell: payload.shell,
+    cols: payload.cols,
+    rows: payload.rows,
   });
   const child = started.child;
   runningTerminalBySessionId.set(terminalSessionId, child);
@@ -288,36 +290,20 @@ async function runTerminalSession(terminalSessionId: string, payload: {
     cwd: started.cwd,
   });
 
-  child.stdout.on('data', (buffer: Buffer) => {
+  child.onData((chunk) => {
     sendTerminalFrame('agent.terminal.output', terminalSessionId, {
-      chunk: buffer.toString('utf-8'),
+      chunk,
     });
   });
-  child.stderr.on('data', (buffer: Buffer) => {
-    sendTerminalFrame('agent.terminal.output', terminalSessionId, {
-      chunk: buffer.toString('utf-8'),
-    });
-  });
-  child.on('error', (error) => {
-    runningTerminalBySessionId.delete(terminalSessionId);
-    debugLog('terminal child error', {
-      terminal_session_id: terminalSessionId,
-      message: error.message,
-    });
-    sendTerminalFrame('agent.terminal.error', terminalSessionId, {
-      error_code: 'AGENT_UPSTREAM_ERROR',
-      error_message: error.message,
-    });
-  });
-  child.on('close', (code, signal) => {
+  child.onExit(({ exitCode, signal }) => {
     runningTerminalBySessionId.delete(terminalSessionId);
     debugLog('terminal exited', {
       terminal_session_id: terminalSessionId,
-      exit_code: typeof code === 'number' ? code : null,
+      exit_code: exitCode,
       signal: signal ?? null,
     });
     sendTerminalFrame('agent.terminal.exited', terminalSessionId, {
-      exit_code: typeof code === 'number' ? code : null,
+      exit_code: exitCode,
       signal: signal ?? null,
     });
   });
@@ -1325,14 +1311,21 @@ ws.on('message', (raw) => {
     const child = runningTerminalBySessionId.get(message.terminal_session_id);
     const payload = message.payload as { data?: unknown } | undefined;
     if (child && child.exitCode === null && typeof payload?.data === 'string') {
-      child.stdin.write(payload.data);
+      child.write(payload.data);
     }
     return;
   }
 
   if (message.type === 'server.terminal.resize' && message.terminal_session_id) {
-    // The current script(1)-backed PTY runtime does not expose dynamic resize.
-    // We accept the frame to keep protocol parity between browser/server/runner.
+    const child = runningTerminalBySessionId.get(message.terminal_session_id);
+    const payload = message.payload as { cols?: unknown; rows?: unknown } | undefined;
+    if (child && child.exitCode === null) {
+      const cols = typeof payload?.cols === 'number' && Number.isFinite(payload.cols) ? Math.max(1, Math.floor(payload.cols)) : null;
+      const rows = typeof payload?.rows === 'number' && Number.isFinite(payload.rows) ? Math.max(1, Math.floor(payload.rows)) : null;
+      if (cols !== null && rows !== null) {
+        child.resize(cols, rows);
+      }
+    }
     return;
   }
 

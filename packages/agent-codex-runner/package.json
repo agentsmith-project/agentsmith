@@ -10,6 +10,7 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
+    "node-pty": "^1.1.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {

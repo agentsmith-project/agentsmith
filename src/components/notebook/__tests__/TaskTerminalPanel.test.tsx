@@ -52,9 +52,11 @@ vi.mock('next-intl', () => ({
       terminal_banner: `Terminal ready for ${values?.title ?? 'task'}`,
       terminal_closed: 'Terminal closed',
       terminal_failed: `Terminal failed: ${values?.reason ?? ''}`,
+      terminal_reconnecting: 'Reconnecting to the previous terminal session...',
       terminal_error_runner_offline: 'The runner is still getting ready for this task. Retry in a moment.',
       terminal_error_agent_unavailable: "This task's runner is not available right now.",
       terminal_error_connection_failed: 'The terminal connection could not be opened. Please retry.',
+      terminal_error_taken_over: 'This terminal was opened in another browser tab. Reopen it here if you want to continue.',
     };
     return map[key] ?? key;
   },
@@ -74,14 +76,14 @@ class MockWebSocket {
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event: { reason: string }) => void) | null = null;
   constructor(public url: string) {
     MockWebSocket.instances.push(this);
   }
   send = vi.fn();
   close = vi.fn(() => {
     this.readyState = 3;
-    this.onclose?.();
+    this.onclose?.({ reason: '' });
   });
   open() {
     this.readyState = MockWebSocket.OPEN;
@@ -100,6 +102,7 @@ describe('TaskTerminalPanel', () => {
     vi.clearAllMocks();
     MockWebSocket.instances = [];
     vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
+    window.sessionStorage.clear();
   });
 
   afterEach(() => {
@@ -129,7 +132,7 @@ describe('TaskTerminalPanel', () => {
         projectId="proj_1"
         taskId="task_1"
         taskTitle="terminal-smoke"
-        taskApi={{ createTerminalSession } as never}
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
         onOpenChange={vi.fn()}
       />,
     );
@@ -167,15 +170,12 @@ describe('TaskTerminalPanel', () => {
         projectId="proj_1"
         taskId="task_2"
         taskTitle="terminal-warmup"
-        taskApi={{ createTerminalSession } as never}
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
         onOpenChange={vi.fn()}
       />,
     );
 
     await waitFor(() => expect(createTerminalSession).toHaveBeenCalledTimes(2));
-    await waitFor(() => {
-      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Waiting for the current agent run to finish before opening the terminal...');
-    });
     await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
     await waitFor(() => {
       expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Connecting');
@@ -195,7 +195,7 @@ describe('TaskTerminalPanel', () => {
         projectId="proj_1"
         taskId="task_1"
         taskTitle="terminal-smoke"
-        taskApi={{ createTerminalSession } as never}
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
         onOpenChange={vi.fn()}
       />,
     );
@@ -205,4 +205,39 @@ describe('TaskTerminalPanel', () => {
       expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent("This task's runner is not available right now.");
     });
   });
+
+  it('reconnects to a stored terminal session before creating a new one', async () => {
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_3',
+      'term_existing',
+    );
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      id: 'term_existing',
+      status: 'disconnected',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-04-02T00:00:00Z',
+      last_activity_at: '2026-04-02T00:00:01Z',
+      ws_url: 'ws://example.test/terminal-existing',
+    });
+    const createTerminalSession = vi.fn();
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_3"
+        taskTitle="terminal-reconnect"
+        taskApi={{ createTerminalSession, getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(getTerminalSession).toHaveBeenCalledWith('ws_default', 'proj_1', 'task_3', 'term_existing'));
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    expect(createTerminalSession).not.toHaveBeenCalled();
+    expect(terminalWritelnMock).toHaveBeenCalledWith('Reconnecting to the previous terminal session...');
+  });
+
 });

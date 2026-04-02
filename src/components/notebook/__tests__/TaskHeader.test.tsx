@@ -44,6 +44,7 @@ vi.mock('next-intl', () => ({
       'workspace_file_library_unknown': 'No Workspace Library',
       'terminal_open': 'Open Terminal',
       'terminal_hide': 'Hide Terminal',
+      'terminal_close': 'Close terminal',
     };
     return translations[key] || key;
   },

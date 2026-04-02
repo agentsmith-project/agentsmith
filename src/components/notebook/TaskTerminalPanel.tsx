@@ -14,6 +14,10 @@ type TerminalStatus = 'idle' | 'preparing' | 'connecting' | 'active' | 'closed' 
 
 type TerminalProgressReason = 'runner_offline' | 'run_in_progress' | null;
 
+function getTerminalSessionStorageKey(workspaceId: string, projectId: string, taskId: string): string {
+  return `agentsmith-terminal-session:${workspaceId}:${projectId}:${taskId}`;
+}
+
 function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: string): string {
   if (reason.includes('task_runner_offline')) {
     return t('terminal_error_runner_offline');
@@ -62,10 +66,31 @@ export function TaskTerminalPanel({
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [progressReason, setProgressReason] = React.useState<TerminalProgressReason>(null);
   const statusRef = React.useRef<TerminalStatus>('idle');
+  const explicitCloseRequestedRef = React.useRef(false);
+  const reconnectingRef = React.useRef(false);
+  const sessionStorageKey = React.useMemo(
+    () => getTerminalSessionStorageKey(workspaceId, projectId, taskId),
+    [projectId, taskId, workspaceId],
+  );
 
   React.useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  const readStoredSessionId = React.useCallback(() => {
+    if (typeof window === 'undefined') return null;
+    return window.sessionStorage.getItem(sessionStorageKey);
+  }, [sessionStorageKey]);
+
+  const storeSessionId = React.useCallback((sessionId: string) => {
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.setItem(sessionStorageKey, sessionId);
+  }, [sessionStorageKey]);
+
+  const clearStoredSessionId = React.useCallback(() => {
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.removeItem(sessionStorageKey);
+  }, [sessionStorageKey]);
 
   const createSessionWithRetry = React.useCallback(async () => {
     let lastError: unknown = null;
@@ -94,6 +119,45 @@ export function TaskTerminalPanel({
     }
     throw lastError instanceof Error ? lastError : new Error('task_runner_offline');
   }, [projectId, taskApi, taskId, workspaceId]);
+
+  const resolveSession = React.useCallback(async () => {
+    const storedSessionId = readStoredSessionId();
+    if (storedSessionId) {
+      try {
+        const session = await taskApi.getTerminalSession(workspaceId, projectId, taskId, storedSessionId);
+        if (
+          session.ws_url
+          && (session.status === 'pending' || session.status === 'active' || session.status === 'disconnected')
+        ) {
+          reconnectingRef.current = true;
+          return {
+            sessionId: session.id,
+            wsUrl: session.ws_url,
+          };
+        }
+      } catch {
+        // Ignore stale session metadata and fall back to a new session.
+      }
+      clearStoredSessionId();
+    }
+
+    const created = await createSessionWithRetry();
+    storeSessionId(created.session_id);
+    reconnectingRef.current = false;
+    return {
+      sessionId: created.session_id,
+      wsUrl: created.ws_url,
+    };
+  }, [
+    clearStoredSessionId,
+    createSessionWithRetry,
+    projectId,
+    readStoredSessionId,
+    storeSessionId,
+    taskApi,
+    taskId,
+    workspaceId,
+  ]);
 
   const cleanupSocket = React.useCallback(() => {
     if (resizeHandlerRef.current) {
@@ -148,13 +212,16 @@ export function TaskTerminalPanel({
     setStatus('connecting');
     setErrorMessage(null);
     setProgressReason(null);
+    explicitCloseRequestedRef.current = false;
 
-    void createSessionWithRetry().then((created) => {
+    void resolveSession().then((session) => {
       if (cancelled || !terminalRef.current) return;
       setStatus('connecting');
       setProgressReason(null);
-      terminalRef.current.writeln(t('terminal_connecting'));
-      const socket = new WebSocket(created.ws_url);
+      terminalRef.current.writeln(
+        reconnectingRef.current ? t('terminal_reconnecting') : t('terminal_connecting'),
+      );
+      const socket = new WebSocket(session.wsUrl);
       socketRef.current = socket;
 
       const dataDisposable = terminalRef.current.onData((data) => {
@@ -181,6 +248,7 @@ export function TaskTerminalPanel({
         setStatus('active');
         setErrorMessage(null);
         setProgressReason(null);
+        reconnectingRef.current = false;
         fitAddonRef.current?.fit();
         resizeHandler();
       };
@@ -216,7 +284,11 @@ export function TaskTerminalPanel({
         }
         if (message.type === 'exited') {
           setStatus('closed');
+          clearStoredSessionId();
           terminalRef.current.writeln(`\r\n${t('terminal_closed')}`);
+          if (explicitCloseRequestedRef.current) {
+            onOpenChange(false);
+          }
           return;
         }
         if (message.type === 'error') {
@@ -232,9 +304,20 @@ export function TaskTerminalPanel({
         setErrorMessage(t('terminal_error_connection_failed'));
         setProgressReason(null);
       };
-      socket.onclose = () => {
+      socket.onclose = (event) => {
         dataDisposable.dispose();
         if (cancelled) return;
+        if (explicitCloseRequestedRef.current) {
+          clearStoredSessionId();
+          setStatus('closed');
+          onOpenChange(false);
+          return;
+        }
+        if (event.reason === 'terminal_replaced') {
+          setStatus('failed');
+          setErrorMessage(t('terminal_error_taken_over'));
+          return;
+        }
         setStatus((current) => current === 'failed' ? 'failed' : 'closed');
       };
     }).catch((error) => {
@@ -243,6 +326,7 @@ export function TaskTerminalPanel({
       setStatus('failed');
       setErrorMessage(friendlyReason);
       setProgressReason(null);
+      clearStoredSessionId();
       toast.error(friendlyReason);
     });
 
@@ -250,7 +334,19 @@ export function TaskTerminalPanel({
       cancelled = true;
       cleanupSocket();
     };
-  }, [cleanupSocket, createSessionWithRetry, disabled, open, t]);
+  }, [clearStoredSessionId, cleanupSocket, disabled, onOpenChange, open, resolveSession, t]);
+
+  const handleEndSession = React.useCallback(() => {
+    explicitCloseRequestedRef.current = true;
+    setErrorMessage(null);
+    setProgressReason(null);
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'terminal.close' }));
+      return;
+    }
+    clearStoredSessionId();
+    onOpenChange(false);
+  }, [clearStoredSessionId, onOpenChange]);
 
   if (!open) return null;
 
@@ -264,7 +360,7 @@ export function TaskTerminalPanel({
           <div className="text-sm font-semibold text-foreground">{t('terminal_title')}</div>
           <div className="mt-1 text-xs text-tertiary">{t('terminal_description')}</div>
         </div>
-      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <Badge variant={
             status === 'active'
               ? 'default'
@@ -276,7 +372,7 @@ export function TaskTerminalPanel({
           }>
             {t(`terminal_status_${status}`)}
           </Badge>
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" size="sm" onClick={handleEndSession}>
             {t('terminal_close')}
           </Button>
         </div>

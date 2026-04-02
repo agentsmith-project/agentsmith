@@ -28,8 +28,26 @@ type RegisteredTerminalSession = {
   rows: number;
   shell?: string;
   executionContext?: Record<string, unknown>;
-  status: 'pending' | 'active' | 'closed' | 'failed';
+  status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
   browserSocket?: WebSocket;
+  runtime?: {
+    writeInput: (data: string) => void;
+    resize: (cols: number, rows: number) => void;
+    close: () => void;
+    stream: AsyncIterable<{
+      type: 'started' | 'output' | 'exited' | 'error';
+      session_id?: string;
+      cols?: number;
+      rows?: number;
+      chunk?: string;
+      exit_code?: number | null;
+      signal?: string | null;
+      error_code?: string;
+      error_message?: string;
+    }>;
+  };
+  disconnectTimer?: NodeJS.Timeout;
+  streamBound?: boolean;
   createdAt: string;
   lastActivityAt: string;
   endedAt?: string;
@@ -47,6 +65,7 @@ export class NotebookTerminalService {
   private readonly wsServer: WebSocketServer;
   private readonly sessions = new Map<string, RegisteredTerminalSession>();
   private hooks: NotebookTerminalLifecycleHooks = {};
+  private readonly reconnectGraceMs = 10_000;
 
   constructor(
     private readonly cache: CachePort,
@@ -146,6 +165,34 @@ export class NotebookTerminalService {
     };
   }
 
+  async issueReconnectTicket(sessionId: string): Promise<{
+    wsPath: string;
+    wsTicket: string;
+  } | null> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    const issued = await issueInternalTicket(this.cache, {
+      purpose: 'terminal_ws_access',
+      userId: session.userId,
+      workspaceId: session.workspaceId,
+      projectId: session.projectId,
+      prefix: 'term',
+      ttlMs: 10 * 60 * 1000,
+      maxUses: 3,
+      payload: {
+        task_id: session.taskId,
+        terminal_session_id: session.id,
+      },
+    });
+    return {
+      wsPath: `/api/v1/workspaces/${encodeURIComponent(session.workspaceId)}`
+        + `/projects/${encodeURIComponent(session.projectId)}`
+        + `/tasks/${encodeURIComponent(session.taskId)}`
+        + `/terminal/ws?session_id=${encodeURIComponent(session.id)}&ticket=${encodeURIComponent(issued.ticket)}`,
+      wsTicket: issued.ticket,
+    };
+  }
+
   async getSession(sessionId: string): Promise<RegisteredTerminalSession | null> {
     const live = this.sessions.get(sessionId);
     if (live) return live;
@@ -217,70 +264,116 @@ export class NotebookTerminalService {
       agent_id: session.agentId,
       runner_session_id: session.runnerSessionId,
     });
+    if (session.disconnectTimer) {
+      clearTimeout(session.disconnectTimer);
+      session.disconnectTimer = undefined;
+    }
     if (session.browserSocket && session.browserSocket.readyState === session.browserSocket.OPEN) {
       session.browserSocket.close(1012, 'terminal_replaced');
     }
     session.browserSocket = ws;
-    session.status = 'pending';
+    if (session.runtime) {
+      session.status = session.status === 'failed' || session.status === 'closed'
+        ? session.status
+        : 'active';
+    } else {
+      session.status = 'pending';
+    }
     session.lastActivityAt = new Date().toISOString();
     await this.persistSession(session);
 
-    let runtime: Awaited<ReturnType<AgentExecutionService['dispatchTerminalSession']>>;
-    try {
-      runtime = await this.agentExecutionService.dispatchTerminalSession({
-        workspaceId: session.workspaceId,
-        projectId: session.projectId,
-        sessionId: session.runnerSessionId,
-        agentId: session.agentId,
-        terminalSessionId: session.id,
-        payload: {
-          cols: session.cols,
-          rows: session.rows,
-          ...(session.shell ? { shell: session.shell } : {}),
-          ...(session.executionContext ? { executionContext: session.executionContext } : {}),
-        },
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'terminal_dispatch_failed';
-      debugTerminal('dispatch_failed', {
-        session_id: session.id,
-        task_id: session.taskId,
-        agent_id: session.agentId,
-        runner_session_id: session.runnerSessionId,
-        error: message,
-      });
-      if (ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'error',
+    if (!session.runtime) {
+      try {
+        session.runtime = await this.agentExecutionService.dispatchTerminalSession({
+          workspaceId: session.workspaceId,
+          projectId: session.projectId,
+          sessionId: session.runnerSessionId,
+          agentId: session.agentId,
+          terminalSessionId: session.id,
+          payload: {
+            cols: session.cols,
+            rows: session.rows,
+            ...(session.shell ? { shell: session.shell } : {}),
+            ...(session.executionContext ? { executionContext: session.executionContext } : {}),
+          },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'terminal_dispatch_failed';
+        debugTerminal('dispatch_failed', {
           session_id: session.id,
-          error_code: 'TERMINAL_DISPATCH_FAILED',
-          error_message: message,
-        }));
-        ws.close(1011, 'terminal_dispatch_failed');
+          task_id: session.taskId,
+          agent_id: session.agentId,
+          runner_session_id: session.runnerSessionId,
+          error: message,
+        });
+        if (ws.readyState === ws.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            session_id: session.id,
+            error_code: 'TERMINAL_DISPATCH_FAILED',
+            error_message: message,
+          }));
+          ws.close(1011, 'terminal_dispatch_failed');
+        }
+        this.finishSession(session.id, 'failed', message);
+        return;
       }
-      this.finishSession(session.id, 'failed', message);
-      return;
+    } else if (ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'started',
+        session_id: session.id,
+        cols: session.cols,
+        rows: session.rows,
+      }));
     }
 
     ws.on('message', (raw) => {
-      this.handleBrowserMessage(session, runtime, raw);
+      if (!session.runtime) return;
+      this.handleBrowserMessage(session, session.runtime, raw);
     });
-    ws.on('close', () => {
-      runtime.close();
-      this.finishSession(session.id, 'closed', 'browser_socket_closed');
+    ws.on('close', (_code, reasonBuffer) => {
+      const reason = reasonBuffer.toString();
+      if (reason === 'terminal_replaced') {
+        return;
+      }
+      session.browserSocket = undefined;
+      if (!session.runtime || session.status === 'closed' || session.status === 'failed') {
+        return;
+      }
+      session.status = 'disconnected';
+      session.lastActivityAt = new Date().toISOString();
+      session.closeReason = 'browser_disconnected';
+      void this.persistSession(session);
+      session.disconnectTimer = setTimeout(() => {
+        session.runtime?.close();
+        this.finishSession(session.id, 'closed', 'browser_disconnected_timeout');
+      }, this.reconnectGraceMs);
     });
     ws.on('error', () => {
-      runtime.close();
-      this.finishSession(session.id, 'failed', 'browser_socket_error');
+      session.browserSocket = undefined;
+      if (!session.runtime || session.status === 'closed' || session.status === 'failed') {
+        return;
+      }
+      session.status = 'disconnected';
+      session.lastActivityAt = new Date().toISOString();
+      session.closeReason = 'browser_socket_error';
+      void this.persistSession(session);
+      session.disconnectTimer = setTimeout(() => {
+        session.runtime?.close();
+        this.finishSession(session.id, 'failed', 'browser_socket_error');
+      }, this.reconnectGraceMs);
     });
 
+    if (session.streamBound) {
+      return;
+    }
+    session.streamBound = true;
     void (async () => {
-      for await (const event of runtime.stream) {
+      for await (const event of session.runtime.stream) {
         debugTerminal('runtime_event', {
           session_id: session.id,
           type: event.type,
         });
-        if (ws.readyState !== ws.OPEN) break;
         if (event.type === 'started') {
           session.status = 'active';
         }
@@ -293,10 +386,12 @@ export class NotebookTerminalService {
         }
         session.lastActivityAt = new Date().toISOString();
         await this.persistSession(session);
-        ws.send(JSON.stringify(event));
+        if (session.browserSocket?.readyState === session.browserSocket.OPEN) {
+          session.browserSocket.send(JSON.stringify(event));
+        }
       }
-      if (ws.readyState === ws.OPEN) {
-        ws.close(1000, 'terminal_complete');
+      if (session.browserSocket?.readyState === session.browserSocket.OPEN) {
+        session.browserSocket.close(1000, 'terminal_complete');
       }
       this.finishSession(
         session.id,
@@ -308,8 +403,8 @@ export class NotebookTerminalService {
       debugTerminal('runtime_stream_failed', {
         session_id: session.id,
       });
-      if (ws.readyState === ws.OPEN) {
-        ws.close(1011, 'terminal_stream_failed');
+      if (session.browserSocket?.readyState === session.browserSocket.OPEN) {
+        session.browserSocket.close(1011, 'terminal_stream_failed');
       }
       this.finishSession(session.id, 'failed', 'terminal_stream_failed');
     });
@@ -358,6 +453,10 @@ export class NotebookTerminalService {
   ): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
+    if (session.disconnectTimer) {
+      clearTimeout(session.disconnectTimer);
+      session.disconnectTimer = undefined;
+    }
     session.status = status;
     const endedAt = new Date().toISOString();
     session.lastActivityAt = endedAt;
@@ -365,6 +464,8 @@ export class NotebookTerminalService {
     if (closeReason?.trim()) session.closeReason = closeReason.trim();
     if (exitCode !== undefined) session.exitCode = exitCode;
     session.browserSocket = undefined;
+    session.runtime = undefined;
+    session.streamBound = false;
     void this.persistSession(session);
     void this.hooks.onSessionClosed?.(session);
   }

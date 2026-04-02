@@ -681,6 +681,9 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_terminal_session_not_found' });
       return true;
     }
+    const reconnectIssued = (session.status === 'pending' || session.status === 'active' || session.status === 'disconnected')
+      ? await deps.notebookTerminalService.issueReconnectTicket(session.id)
+      : null;
     json(res, 200, {
       id: session.id,
       status: session.status,
@@ -691,6 +694,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       ended_at: session.endedAt ?? null,
       close_reason: session.closeReason ?? null,
       exit_code: session.exitCode ?? null,
+      ws_url: reconnectIssued ? `${resolveTerminalWebSocketBaseUrl(req)}${reconnectIssued.wsPath}` : null,
     });
     return true;
   }

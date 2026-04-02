@@ -44,8 +44,21 @@ async function resolveTerminalTaskId(page: Page, options?: { allowFallback?: boo
       Authorization: `Bearer ${bearer}`,
       'content-type': 'application/json',
     };
+    const fetchWithRetry = async (input: string, init?: RequestInit, attempts = 5): Promise<Response> => {
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+          const response = await fetch(input, init);
+          return response;
+        } catch (error) {
+          lastError = error;
+          await new Promise((resolve) => window.setTimeout(resolve, 500 * (attempt + 1)));
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error('terminal_task_fetch_failed');
+    };
     if (taskId && !preferFreshTask) {
-      const seedRes = await fetch(`${taskBase}/${encodeURIComponent(taskId)}`, {
+      const seedRes = await fetchWithRetry(`${taskBase}/${encodeURIComponent(taskId)}`, {
         headers: {
           Authorization: `Bearer ${bearer}`,
         },
@@ -59,7 +72,7 @@ async function resolveTerminalTaskId(page: Page, options?: { allowFallback?: boo
     }
     let resolvedAgentId = agentId;
     if (!preferFreshTask) {
-      const listRes = await fetch(taskBase, {
+      const listRes = await fetchWithRetry(taskBase, {
         headers: {
           Authorization: `Bearer ${bearer}`,
         },
@@ -85,15 +98,19 @@ async function resolveTerminalTaskId(page: Page, options?: { allowFallback?: boo
     }
     let createRes: Response | null = null;
     for (let attempt = 0; attempt < 8; attempt += 1) {
-      createRes = await fetch(taskBase, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          title: `Playwright Terminal UX ${Date.now()}`,
-          agent_id: resolvedAgentId,
-          workspace_mode: 'create_new',
-        }),
-      });
+      createRes = await fetchWithRetry(
+        taskBase,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            title: `Playwright Terminal UX ${Date.now()}`,
+            agent_id: resolvedAgentId,
+            workspace_mode: 'create_new',
+          }),
+        },
+        3,
+      );
       if (createRes.ok) break;
       if (createRes.status !== 409 && createRes.status < 500) {
         throw new Error(`task_create_failed:${createRes.status}`);
@@ -217,7 +234,7 @@ test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
     test.setTimeout(180_000);
 
     await loginThroughWorkspaceSelection(page);
-    const freshTaskId = await resolveTerminalTaskId(page, { allowFallback: true, preferFreshTask: true });
+    const failureTaskId = TASK_ID || await resolveTerminalTaskId(page, { allowFallback: true, preferFreshTask: false });
     await page.route(TERMINAL_SESSION_ROUTE, async (route) => {
       if (route.request().method() !== 'POST') {
         await route.continue();
@@ -233,7 +250,7 @@ test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
       });
     });
 
-    await page.goto(`/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook/tasks/${freshTaskId}`);
+    await page.goto(`/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook/tasks/${failureTaskId}`);
     const terminalToggle = page.getByTestId('notebook__task-header-terminal');
     await expect(terminalToggle).toBeVisible({ timeout: 30_000 });
     await terminalToggle.click();

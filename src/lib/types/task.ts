@@ -192,13 +192,13 @@ export interface CreateTaskTerminalSessionRequest {
 
 export interface TaskTerminalSessionCreateResponse {
   session_id: string;
-  status: 'pending' | 'active' | 'closed' | 'failed';
+  status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
   ws_url: string;
 }
 
 export interface TaskTerminalSessionStatus {
   id: string;
-  status: 'pending' | 'active' | 'closed' | 'failed';
+  status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
   cols: number;
   rows: number;
   created_at: string;
@@ -206,6 +206,7 @@ export interface TaskTerminalSessionStatus {
   ended_at?: string | null;
   close_reason?: string | null;
   exit_code?: number | null;
+  ws_url?: string | null;
 }
 
 export type TaskTerminalServerEvent =

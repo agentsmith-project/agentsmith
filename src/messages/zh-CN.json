@@ -2762,6 +2762,7 @@
       "location": "当前位置",
       "root": "根目录",
       "items": "项",
+      "loading": "加载中...",
       "col_name": "名称",
       "col_size": "大小",
       "col_modified": "修改时间",

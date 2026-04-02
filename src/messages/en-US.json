@@ -2759,6 +2759,7 @@
       "location": "Location",
       "root": "root",
       "items": "items",
+      "loading": "Loading...",
       "col_name": "Name",
       "col_size": "Size",
       "col_modified": "Modified",

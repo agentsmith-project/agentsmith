@@ -72,6 +72,12 @@ cd /home/percy/works/mbos-v1/agentsmith-desktop
 npm run smoke:local-manual-mount
 ```
 
+### Files 管理侧 UX 发布验收
+```bash
+cd /home/percy/works/mbos-v1/agentsmith
+npm run test:e2e:integration:files:management-ux
+```
+
 ## 4. 治理链路排障
 
 如果问题落在 `Members / Resource Policy / Audit / Usage`：
@@ -172,6 +178,17 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 3. 只在本地挂载链路出问题
 - 直接看：
   - [File Library Client Mount](./user-guides/file-library-local-mount.md)
+
+4. 想确认 Files 页面是否符合正常人心智
+- 跑真实 walkthrough，而不是只看组件测试：
+```bash
+npm run test:e2e:integration:files:management-ux
+```
+- 这条命令会自动登录真实环境、验证 `ready` / `degraded` 文件库展示，并产出截图证据。
+- 截图产物默认写到：
+  - `test-results/.../files-ready-overview.png`
+  - `test-results/.../files-degraded-overview.png`
+  - `test-results/.../files-degraded-delete-dialog.png`
 
 ## Token Issues
 

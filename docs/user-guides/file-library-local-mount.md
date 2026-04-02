@@ -159,4 +159,16 @@ The release-grade validation commands are:
 ```bash
 npm run test:files:backend-real:smoke
 npm run test:files:backend-real:sync
+npm run test:e2e:integration:files:management-ux
 ```
+
+The Files management walkthrough command above is the release-grade UX check for:
+- `ready` libraries remaining mountable
+- `degraded` libraries showing recovery guidance instead of a misleading loading state
+- delete confirmation using explicit cleanup wording
+- screenshot artifacts being generated for release evidence
+
+The screenshot evidence is written under `test-results/` so the release reviewer can inspect:
+- ready library overview
+- degraded library overview
+- degraded library delete confirmation

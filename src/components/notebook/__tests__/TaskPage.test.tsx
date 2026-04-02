@@ -52,6 +52,7 @@ vi.mock('next-intl', () => ({
       'notebook.conversation.send_conflict_description': 'The previous turn has not finished yet. Wait for it to complete before sending.',
       'notebook.conversation.agent_offline_send_blocked': 'Agent is offline. Start/reconnect the external agent execution channel before sending.',
       'notebook.task.terminal_agent_run_blocked': 'Close the terminal session before starting a new agent run.',
+      'notebook.task.terminal_input_blocked_placeholder': 'Close Terminal before starting a new agent run...',
     };
     const scoped = namespace ? `${namespace}.${key}` : key;
     return dict[scoped] ?? scoped;
@@ -371,6 +372,9 @@ describe('TaskPage', () => {
       });
 
       expect(screen.getByTestId('task-terminal-panel')).toBeInTheDocument();
+      expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
+        'Close Terminal before starting a new agent run...',
+      );
       await user.click(screen.getByText('Close Terminal'));
       expect(screen.queryByTestId('task-terminal-panel')).not.toBeInTheDocument();
     });

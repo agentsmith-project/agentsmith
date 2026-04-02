@@ -34,6 +34,7 @@
     "test:e2e:integration:endpoints-capabilities": "playwright test --config playwright.config.integration.ts e2e/integration-endpoint-capabilities.spec.ts --project=chromium --workers=1",
     "test:e2e:integration:workspace-governance-matrix": "playwright test --config playwright.config.integration.ts e2e/integration-workspace-project-governance-matrix.spec.ts --project=chromium --workers=1",
     "test:e2e:integration:notebook:codex": "playwright test --config playwright.config.integration.ts e2e/integration-notebook-codex-runner.spec.ts --project=chromium --workers=1",
+    "test:e2e:integration:notebook:terminal:ux": "bash scripts/notebook-terminal-ux-real-gate.sh",
     "test:e2e:integration:notebook:codex:docker": "playwright test --config playwright.config.integration.ts e2e/integration-notebook-codex-runner.spec.ts --project=chromium --workers=1 --grep docker",
     "test:e2e:integration:files:mount-sync": "playwright test --config playwright.config.integration.ts e2e/integration-files-mount-sync.spec.ts --project=chromium --workers=1",
     "test:e2e:integration:chat:real": "INTEGRATION_REAL_COMPLETION_E2E=true playwright test --config playwright.config.integration.ts e2e/integration-chat.spec.ts --project=chromium --workers=1 --grep \"real deepseek\"",

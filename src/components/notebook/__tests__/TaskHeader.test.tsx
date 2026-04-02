@@ -43,6 +43,7 @@ vi.mock('next-intl', () => ({
       'workspace_file_library_label': 'Workspace',
       'workspace_file_library_unknown': 'No Workspace Library',
       'terminal_open': 'Open Terminal',
+      'terminal_hide': 'Hide Terminal',
     };
     return translations[key] || key;
   },
@@ -135,6 +136,16 @@ describe('TaskHeader', () => {
       });
 
       expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Open Terminal');
+    });
+
+    it('renders hide terminal label when terminal panel is already open', () => {
+      renderComponent(mockTask, {
+        onToggleTerminal: vi.fn(),
+        canOpenTerminal: true,
+        terminalOpen: true,
+      });
+
+      expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Hide Terminal');
     });
   });
 

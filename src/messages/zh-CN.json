@@ -559,6 +559,8 @@
     "workspace_file_library_unknown": "未绑定工作区",
     "agent_busy": "Agent 忙碌中 · {duration}",
     "terminal_open": "打开终端",
+    "terminal_hide": "收起终端",
+    "terminal_input_blocked_placeholder": "请先关闭终端，再开始新的智能体运行...",
     "terminal_title": "任务终端",
     "terminal_description": "直接控制当前任务绑定的 runner 环境。",
     "terminal_status_idle": "空闲",

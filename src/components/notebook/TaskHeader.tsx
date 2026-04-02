@@ -191,7 +191,7 @@ export function TaskHeader({
             data-testid="notebook__task-header-terminal"
           >
             <TerminalSquare className="mr-2 h-4 w-4" />
-            {t('terminal_open')}
+            {t(terminalOpen ? 'terminal_hide' : 'terminal_open')}
           </Button>
         ) : null}
         {canDeleteTask && (

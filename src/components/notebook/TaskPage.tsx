@@ -808,6 +808,7 @@ export function TaskPage({
         sseDebugEvents={sseDebugEvents}
         streamingContent={streamingContent}
         streamingMessageId={streamingMessageId}
+        inputPlaceholder={terminalOpen ? tTask('terminal_input_blocked_placeholder') : undefined}
         taskId={taskId}
         terminalPanel={(
           <TaskTerminalPanel

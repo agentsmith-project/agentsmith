@@ -557,6 +557,8 @@
     "workspace_file_library_unknown": "No Workspace",
     "agent_busy": "Agent Busy · {duration}",
     "terminal_open": "Open Terminal",
+    "terminal_hide": "Hide Terminal",
+    "terminal_input_blocked_placeholder": "Close Terminal before starting a new agent run...",
     "terminal_title": "Task Terminal",
     "terminal_description": "Directly control the current runner environment for this task.",
     "terminal_status_idle": "Idle",

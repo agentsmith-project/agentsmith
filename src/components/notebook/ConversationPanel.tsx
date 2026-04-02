@@ -64,6 +64,7 @@ export interface ConversationPanelProps {
     agent?: string | null;
   };
   sandboxStarting?: boolean;
+  inputPlaceholder?: string;
 }
 
 export function ConversationPanel({
@@ -96,6 +97,7 @@ export function ConversationPanel({
   sending = false,
   diagnosticsLinks,
   sandboxStarting = false,
+  inputPlaceholder,
 }: ConversationPanelProps) {
   const t = useTranslations('notebook.conversation');
   const tCommon = useTranslations('common');
@@ -236,6 +238,7 @@ export function ConversationPanel({
           onPendingRemove={onPendingRemove}
           disabled={disabled}
           sending={sending}
+          placeholder={inputPlaceholder}
         />
       </div>
     </div>

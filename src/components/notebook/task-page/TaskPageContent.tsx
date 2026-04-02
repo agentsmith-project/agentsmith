@@ -71,6 +71,7 @@ interface TaskPageContentProps {
   projectId: string;
   taskId: string;
   terminalPanel?: React.ReactNode;
+  inputPlaceholder?: string;
 }
 
 export function TaskPageContent({
@@ -108,6 +109,7 @@ export function TaskPageContent({
   streamingMessageId,
   taskId: _taskId,
   terminalPanel,
+  inputPlaceholder,
   traceErrorByMessageId,
   traceEventsByMessageId,
   traceHasMoreByMessageId,
@@ -153,6 +155,7 @@ export function TaskPageContent({
             disabled={disabled}
             activeAgentMessageId={activeAgentMessageId}
             sending={sending}
+            inputPlaceholder={inputPlaceholder}
           />
         </div>
         <div className="flex h-full min-h-0 w-[216px] flex-shrink-0 overflow-hidden rounded-[16px] border border-white/5 bg-surface/68 p-1.5 shadow-[0_10px_24px_rgba(0,0,0,0.1)]">

@@ -78,6 +78,12 @@ cd /home/percy/works/mbos-v1/agentsmith
 npm run test:e2e:integration:files:management-ux
 ```
 
+### Notebook Terminal backend-real smoke
+```bash
+cd /home/percy/works/mbos-v1/agentsmith
+npm run test:notebook:backend-real:terminal
+```
+
 ## 4. 治理链路排障
 
 如果问题落在 `Members / Resource Policy / Audit / Usage`：

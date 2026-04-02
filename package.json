@@ -55,6 +55,7 @@
     "test:cluster:hotfix:regression": "bash scripts/cluster-hotfix-regression-gate.sh",
     "test:governance": "bash scripts/governance-default-gate.sh",
     "test:notebook:backend-real:smoke": "bash scripts/notebook-real-smoke-gate.sh",
+    "test:notebook:backend-real:terminal": "bash scripts/notebook-terminal-real-smoke.sh",
     "test:internal:backend-real:notebook-workspace": "bash scripts/run-internal-notebook-real-gate.sh",
     "test:agents:backend-real:codex": "bash scripts/run-integration-e2e-full.sh e2e/integration-agents-codex-runner.spec.ts && bash scripts/run-integration-e2e-full.sh e2e/integration-notebook-codex-runner.spec.ts && bash scripts/run-integration-e2e-full.sh e2e/integration-notebook-codex-runner.spec.ts --grep docker",
     "test:files:backend-real:smoke": "bash scripts/file-library-real-smoke.sh",

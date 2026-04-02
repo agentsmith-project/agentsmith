@@ -228,6 +228,59 @@ Resume rule:
 - notebook follow-up turns resume only within the same `task_id` because `CODEX_HOME` is task-scoped
 - different tasks share the workspace files, but never share Codex session/sqlite state
 
+### 5.2.3 Notebook Terminal Session
+
+`Terminal` 是 notebook task 主界面里的交互式 runner 会话，不是 agent run 的别名。
+
+- 用户访问入口集成在 task 主界面里，不需要跳到独立页面
+- browser 侧使用独立 terminal websocket，不复用 notebook SSE
+- runner 侧继续复用 `agent-execution/ws` 物理连接，但 terminal frame 与 agent run frame 分离
+- external / internal 使用同一套 runner 代码和 terminal 协议；差异只体现在 session 准备与运行位置
+
+当前行为约束：
+
+- 一个 task 同时最多一个活跃 terminal session
+- agent run 执行中不允许同时打开 terminal
+- terminal session 只进入当前 task 对应的 runner 环境和 workspace
+
+### 5.2.4 Notebook Terminal local-manual smoke
+
+当前仓库提供一条真实 backend-real smoke：
+
+```bash
+npm run test:notebook:backend-real:terminal
+```
+
+这条 smoke 会：
+
+1. 创建 notebook terminal session
+2. 连接 browser-side websocket
+3. 在真实 runner shell 中执行：
+   - `pwd`
+   - `echo NOTEBOOK_TERMINAL_READY`
+   - `exit`
+4. 验证：
+   - stdin / stdout / exit 链路成功
+   - terminal cwd 落在 task workspace
+   - zsh 首次启动向导不会干扰会话
+
+默认 smoke 使用当前 local-manual 基线对象：
+
+- `workspace_id=ws_default`
+- `project_id=proj_1775067184556_95890`
+- `task_id=task_4a307f2e08ad4a9ca6b5823abd4bc2aa`
+
+也可以通过环境变量覆盖：
+
+```bash
+TASK_WS_ID=ws_default \
+TASK_PROJECT_ID=proj_xxx \
+TASK_ID=task_xxx \
+API_BASE=http://localhost:21000 \
+TOKEN_FILE=artifacts/backend-real/current/token.txt \
+npm run test:notebook:backend-real:terminal
+```
+
 ### 5.3 API debug env vars (recommended for troubleshooting)
 - `DEBUG_AGENT_EXECUTION=1` (execution websocket accept/reject logs)
 - `DEBUG_ENDPOINT_PROXY=1` (proxy request summaries + SSE translation counters)

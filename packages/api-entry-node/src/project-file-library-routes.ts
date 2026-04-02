@@ -444,6 +444,15 @@ export async function handleProjectFileLibraryRoutes(args: {
     }
     await catalogRepo.update(workspaceId, projectId, libraryId, { status: 'deleting' });
     try {
+      const backend = await backendRepo.getInternal(workspaceId, projectId, libraryId);
+      const mountAccess = await mountAccessRepo.getById(workspaceId, projectId, libraryId);
+      const canFastDeleteFailedLibrary = library.status === 'failed' && !backend && !mountAccess;
+      if (canFastDeleteFailedLibrary) {
+        await catalogRepo.delete(workspaceId, projectId, libraryId);
+        res.statusCode = 204;
+        res.end();
+        return true;
+      }
       await assertFileLibraryEmpty({
         deps,
         workspaceId,

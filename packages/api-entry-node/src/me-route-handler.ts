@@ -30,7 +30,11 @@ import {
   presentUserExternalConnection,
   updateUserExternalConnection,
 } from './user-external-connections-store.js';
-import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
+import {
+  JsonDocProjectFileLibraryBackendRepo,
+  JsonDocProjectFileLibraryCatalogRepo,
+  JsonDocProjectFileLibraryMountAccessRepo,
+} from './file-library-persistence.js';
 
 interface UserProfileRecord {
   display_name?: string | null;
@@ -84,6 +88,32 @@ async function getUserProfile(docStore: JsonDocStorePort, user: AuthenticatedUse
 
 async function setUserProfile(docStore: JsonDocStorePort, userId: string, profile: UserProfileRecord): Promise<void> {
   await docStore.upsert(USER_PROFILE_COLLECTION, userId, profile);
+}
+
+async function listMountableDesktopFileLibraries(args: {
+  docStore: JsonDocStorePort;
+  userId: string;
+}): Promise<Awaited<ReturnType<JsonDocProjectFileLibraryCatalogRepo['listByOwner']>>> {
+  const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(args.docStore);
+  const backendRepo = new JsonDocProjectFileLibraryBackendRepo(args.docStore);
+  const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(args.docStore);
+  const items = await catalogRepo.listByOwner(args.userId);
+  const mountable = await Promise.all(items.map(async (item) => {
+    if (item.status !== 'ready') {
+      return null;
+    }
+    const [backend, mountAccess] = await Promise.all([
+      backendRepo.getInternal(item.workspace_id, item.project_id, item.id),
+      mountAccessRepo.getById(item.workspace_id, item.project_id, item.id),
+    ]);
+    if (!backend || !mountAccess) {
+      return null;
+    }
+    return item;
+  }));
+  return mountable
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .sort((left, right) => right.created_at.localeCompare(left.created_at));
 }
 
 export async function handleMeRoute(args: {
@@ -149,8 +179,10 @@ export async function handleMeRoute(args: {
       json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
       return true;
     }
-    const items = await new JsonDocProjectFileLibraryCatalogRepo(docStore).listByOwner(user.id);
-    items.sort((left, right) => right.created_at.localeCompare(left.created_at));
+    const items = await listMountableDesktopFileLibraries({
+      docStore,
+      userId: user.id,
+    });
     json(res, 200, { items });
     return true;
   }

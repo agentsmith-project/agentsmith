@@ -238,6 +238,44 @@ describe('project-file-library-routes', () => {
     );
   });
 
+  it('deletes failed libraries that never provisioned backend state', async () => {
+    const json = vi.fn();
+    const res = {
+      end: vi.fn(),
+    } as unknown as never;
+    const deps = createDeps();
+    await deps.docStore.upsert('project_file_libraries', 'flib_failed', {
+      id: 'flib_failed',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Broken Smoke Library',
+      description: 'failed provisioning',
+      status: 'failed',
+      filesystem_name: 'flib-broken-smoke-library',
+      created_by_user_id: 'user_1',
+      created_at: '2026-04-01T00:00:00.000Z',
+      updated_at: '2026-04-01T00:00:00.000Z',
+    });
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'DELETE',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_failed',
+      req: {} as never,
+      res,
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect((res as unknown as { statusCode?: number }).statusCode).toBe(204);
+    expect((res as unknown as { end: ReturnType<typeof vi.fn> }).end).toHaveBeenCalled();
+    await expect(deps.docStore.get('project_file_libraries', 'flib_failed')).resolves.toBeNull();
+  });
+
   it('returns a precise error when juicefs cli is unavailable during provisioning', async () => {
     const json = vi.fn();
     const res = {} as never;

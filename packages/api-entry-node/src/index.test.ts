@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps } from './index.js';
+import {
+  JsonDocProjectFileLibraryBackendRepo,
+  JsonDocProjectFileLibraryCatalogRepo,
+  JsonDocProjectFileLibraryMountAccessRepo,
+} from './file-library-persistence.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { UniversalProxyService } from './universal-proxy-service.js';
 import {
@@ -44,6 +49,80 @@ describe('api-entry-node me routes', () => {
     expect(payload.items.slice(0, 2)).toEqual([
       expect.objectContaining({ id: newer.id, name: 'Newer Library' }),
       expect.objectContaining({ id: older.id, name: 'Older Library' }),
+    ]);
+  });
+
+  it('filters desktop file libraries down to mountable ready libraries', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const { baseUrl } = startServerWithDeps(deps);
+    const ready = await createFileLibrary(baseUrl, 'Ready Library');
+
+    const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(deps.docStore);
+    const backendRepo = new JsonDocProjectFileLibraryBackendRepo(deps.docStore);
+    const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore);
+    await catalogRepo.save({
+      id: 'flib_failed',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Failed Library',
+      description: 'broken',
+      status: 'failed',
+      filesystem_name: 'flib-failed',
+      created_by_user_id: 'user_test',
+      created_at: new Date(Date.now() + 50).toISOString(),
+      updated_at: new Date(Date.now() + 50).toISOString(),
+    });
+    await catalogRepo.save({
+      id: 'flib_ready_missing_mount',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Ready Missing Mount',
+      description: 'missing mount access',
+      status: 'ready',
+      filesystem_name: 'flib-ready-missing-mount',
+      created_by_user_id: 'user_test',
+      created_at: new Date(Date.now() + 100).toISOString(),
+      updated_at: new Date(Date.now() + 100).toISOString(),
+    });
+    await backendRepo.save('ws_default', 'proj_1', 'flib_ready_missing_mount', {
+      library_id: 'flib_ready_missing_mount',
+      filesystem_name: 'flib-ready-missing-mount',
+      provisioning_status: 'ready',
+      gateway_status: 'not_started',
+      postgres: {
+        host: '127.0.0.1',
+        port: 15432,
+        database: 'jfs_ready_missing_mount',
+        username: 'jfsu_ready_missing_mount',
+      },
+      minio: {
+        endpoint: 'http://127.0.0.1:19000',
+        bucket: 'flib-ready-missing-mount',
+      },
+      metadata_url: 'postgres://user:pass@127.0.0.1:15432/jfs_ready_missing_mount?sslmode=disable',
+      internal_metadata_url: 'postgres://user:pass@127.0.0.1:15432/jfs_ready_missing_mount?sslmode=disable',
+    });
+    await mountAccessRepo.save('ws_default', 'proj_1', ready.id, {
+      filesystem_name: 'flib-ready-library',
+      metadata_url: 'postgres://user:pass@127.0.0.1:15432/jfs_ready_library?sslmode=disable',
+      storage_bucket_url: 'http://127.0.0.1:19000/flib-ready-library',
+      recommended_mount_path: '~/Agentsmith/Ready Library',
+      platform_notes: [],
+      recommended_mount_commands: {
+        linux: 'noop',
+        macos: 'noop',
+        windows: 'noop',
+      },
+      created_at: new Date().toISOString(),
+    });
+
+    const response = await apiFetch(baseUrl, '/api/v1/me/desktop/file-libraries');
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      items: Array<{ id: string; name: string }>;
+    };
+    expect(payload.items).toEqual([
+      expect.objectContaining({ id: ready.id, name: 'Ready Library' }),
     ]);
   });
 });

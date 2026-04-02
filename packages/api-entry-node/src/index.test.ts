@@ -28,6 +28,39 @@ async function createFileLibrary(baseUrl: string, name = 'Notebook Workspace'): 
 }
 
 describe('api-entry-node me routes', () => {
+  it('shuts down file library gateways when the server closes', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const shutdown = vi.fn(async () => undefined);
+    const { server } = startServerWithDeps({
+      ...deps,
+      fileLibraryGatewayManager: {
+        ...deps.fileLibraryGatewayManager,
+        reconcile: vi.fn(async () => undefined),
+        shutdown,
+      },
+    });
+
+    await new Promise<void>((resolve) => {
+      if (server.listening) {
+        resolve();
+        return;
+      }
+      server.once('listening', () => resolve());
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    expect(shutdown).toHaveBeenCalledTimes(1);
+  });
+
   it('returns unread notification count for authenticated user', async () => {
     const { baseUrl } = startServer();
     const response = await apiFetch(baseUrl, '/api/v1/me/notifications/unread-count');

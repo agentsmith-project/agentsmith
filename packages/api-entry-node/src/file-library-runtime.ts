@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { access, constants, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, constants, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import net from 'node:net';
+import process from 'node:process';
 import { Client as PgClient } from 'pg';
 import { Client as MinioClient } from 'minio';
 import type {
@@ -20,10 +21,24 @@ import type {
 } from './file-library-orchestrator.js';
 
 type GatewaySession = EnsureFileLibraryGatewayResult & {
+  pid?: number;
   child?: ChildProcessWithoutNullStreams;
   metadataUrl?: string;
   lastError?: string;
+  logPath?: string;
 };
+
+interface PersistedGatewayState {
+  libraryId: string;
+  pid: number;
+  port: number;
+  loopbackUrl: string;
+  metadataUrl: string;
+  logPath: string;
+  lastStartedAt: string;
+  ownerProcessPid: number;
+  status: 'starting' | 'ready' | 'degraded';
+}
 
 interface FileLibraryRuntimeConfig {
   juicefsBin: string;
@@ -46,6 +61,28 @@ interface FileLibraryRuntimeConfig {
   gatewayRootUserPrefix: string;
   gatewayRootPasswordSeed: string;
   gatewayLogDir: string;
+  gatewayStateDir: string;
+}
+
+interface GatewayProcessInfo {
+  pid: number;
+  args: string;
+  libraryId: string | null;
+}
+
+interface GatewayManagerPlatform {
+  spawnGateway(
+    cmd: string,
+    args: string[],
+    options: { env: NodeJS.ProcessEnv },
+  ): ChildProcessWithoutNullStreams;
+  listProcesses(): Promise<GatewayProcessInfo[]>;
+  processExists(pid: number): boolean;
+  killProcess(pid: number, signal: NodeJS.Signals): void;
+  wait(ms: number): Promise<void>;
+  fetch(input: string, init?: RequestInit): Promise<Response>;
+  now(): string;
+  ownerPid(): number;
 }
 
 function envNumber(name: string, fallback: number): number {
@@ -356,6 +393,7 @@ export function resolveFileLibraryRuntimeConfig(env: NodeJS.ProcessEnv = process
       || env.AGENTSMITH_SECRET_KEY?.trim()
       || 'agentsmith-file-library-gateway-seed',
     gatewayLogDir: env.FILE_LIBRARY_GATEWAY_LOG_DIR?.trim() || join(process.cwd(), 'artifacts/file-library-gateway'),
+    gatewayStateDir: env.FILE_LIBRARY_GATEWAY_STATE_DIR?.trim() || join(process.cwd(), 'artifacts/file-library-gateway-state'),
   };
 }
 
@@ -539,6 +577,151 @@ export function resolveFileLibraryStorageBucketUrlForInternalExecution(
 
 function buildRuntimeConfig(): FileLibraryRuntimeConfig {
   return resolveFileLibraryRuntimeConfig(process.env);
+}
+
+const gatewayManagerPlatform: GatewayManagerPlatform = {
+  spawnGateway(cmd, args, options) {
+    return spawn(cmd, args, {
+      env: options.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  },
+  async listProcesses() {
+    const output = await new Promise<string>((resolve, reject) => {
+      const child = spawn('ps', ['-eo', 'pid=,args='], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => {
+        stdout += String(chunk);
+      });
+      child.stderr.on('data', (chunk) => {
+        stderr += String(chunk);
+      });
+      child.on('error', reject);
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve(stdout);
+          return;
+        }
+        reject(new Error(stderr.trim() || 'ps_failed'));
+      });
+    });
+
+    return output
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const match = line.match(/^(\d+)\s+(.*)$/);
+        if (!match) return null;
+        return {
+          pid: Number(match[1]),
+          args: match[2],
+          libraryId: null,
+        } satisfies GatewayProcessInfo;
+      })
+      .filter((value): value is GatewayProcessInfo => Boolean(value));
+  },
+  processExists(pid) {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  killProcess(pid, signal) {
+    process.kill(pid, signal);
+  },
+  wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  },
+  fetch(input, init) {
+    return fetch(input, init);
+  },
+  now() {
+    return new Date().toISOString();
+  },
+  ownerPid() {
+    return process.pid;
+  },
+};
+
+function gatewayStateFilePath(config: FileLibraryRuntimeConfig, libraryId: string): string {
+  return join(config.gatewayStateDir, `${libraryId}.json`);
+}
+
+function extractGatewayLibraryId(args: string, gatewayLogDir: string): string | null {
+  if (!args.includes('juicefs gateway')) return null;
+  const normalizedDir = gatewayLogDir.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+  const match = args.match(new RegExp(`--log\\s+${normalizedDir}/([^\\s/]+)\\.log`));
+  return match?.[1] ?? null;
+}
+
+async function readGatewayState(
+  config: FileLibraryRuntimeConfig,
+  libraryId: string,
+): Promise<PersistedGatewayState | null> {
+  try {
+    const raw = await readFile(gatewayStateFilePath(config, libraryId), 'utf8');
+    return JSON.parse(raw) as PersistedGatewayState;
+  } catch {
+    return null;
+  }
+}
+
+async function writeGatewayState(
+  config: FileLibraryRuntimeConfig,
+  state: PersistedGatewayState,
+): Promise<void> {
+  await mkdir(config.gatewayStateDir, { recursive: true });
+  await writeFile(
+    gatewayStateFilePath(config, state.libraryId),
+    JSON.stringify(state, null, 2),
+    'utf8',
+  );
+}
+
+async function removeGatewayState(
+  config: FileLibraryRuntimeConfig,
+  libraryId: string,
+): Promise<void> {
+  await rm(gatewayStateFilePath(config, libraryId), { force: true });
+}
+
+async function listStateLibraryIds(config: FileLibraryRuntimeConfig): Promise<string[]> {
+  try {
+    const entries = await readdir(config.gatewayStateDir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+      .map((entry) => entry.name.slice(0, -'.json'.length));
+  } catch {
+    return [];
+  }
+}
+
+async function terminateGatewayProcess(
+  platform: GatewayManagerPlatform,
+  pid: number,
+): Promise<void> {
+  if (!platform.processExists(pid)) return;
+  try {
+    platform.killProcess(pid, 'SIGTERM');
+  } catch {
+    return;
+  }
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (!platform.processExists(pid)) return;
+    await platform.wait(100);
+  }
+  if (!platform.processExists(pid)) return;
+  try {
+    platform.killProcess(pid, 'SIGKILL');
+  } catch {
+    // ignore
+  }
 }
 
 async function createPgDatabase(config: FileLibraryRuntimeConfig, libraryId: string): Promise<{ dbName: string; dbUser: string; dbPassword: string }> {
@@ -790,18 +973,102 @@ export class InMemoryFileLibraryGatewayManager implements FileLibraryGatewayMana
   async stopGateway(libraryId: string): Promise<void> {
     this.sessions.delete(libraryId);
   }
+
+  async reconcile(): Promise<void> {
+    return;
+  }
+
+  async shutdown(): Promise<void> {
+    this.sessions.clear();
+  }
 }
 
 export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager {
   private readonly sessions = new Map<string, GatewaySession>();
+  private readonly reconcilePromise: Promise<void>;
 
-  constructor(private readonly config: FileLibraryRuntimeConfig = buildRuntimeConfig()) {}
+  constructor(
+    private readonly config: FileLibraryRuntimeConfig = buildRuntimeConfig(),
+    private readonly platform: GatewayManagerPlatform = gatewayManagerPlatform,
+  ) {
+    this.reconcilePromise = this.reconcile();
+  }
+
+  private async ensureReconciled(): Promise<void> {
+    await this.reconcilePromise.catch(() => undefined);
+  }
+
+  private async listManagedProcesses(): Promise<GatewayProcessInfo[]> {
+    const processes = await this.platform.listProcesses();
+    return processes
+      .map((processInfo) => ({
+        ...processInfo,
+        libraryId: processInfo.libraryId ?? extractGatewayLibraryId(processInfo.args, this.config.gatewayLogDir),
+      }))
+      .filter((processInfo) => Boolean(processInfo.libraryId));
+  }
+
+  private async reconcileLibrary(libraryId: string): Promise<void> {
+    const state = await readGatewayState(this.config, libraryId);
+    const processes = (await this.listManagedProcesses()).filter((processInfo) => processInfo.libraryId === libraryId);
+
+    const keepPid = state && this.platform.processExists(state.pid)
+      ? state.pid
+      : null;
+
+    for (const processInfo of processes) {
+      if (keepPid && processInfo.pid === keepPid) continue;
+      await terminateGatewayProcess(this.platform, processInfo.pid);
+    }
+
+    if (state && !keepPid) {
+      await removeGatewayState(this.config, libraryId);
+    }
+  }
+
+  async reconcile(): Promise<void> {
+    await mkdir(this.config.gatewayStateDir, { recursive: true });
+    const stateLibraryIds = await listStateLibraryIds(this.config);
+    const processLibraryIds = new Set(
+      (await this.listManagedProcesses())
+        .map((processInfo) => processInfo.libraryId)
+        .filter((libraryId): libraryId is string => Boolean(libraryId)),
+    );
+    for (const libraryId of new Set([...stateLibraryIds, ...processLibraryIds])) {
+      await this.reconcileLibrary(libraryId);
+    }
+  }
 
   async ensureGateway(input: EnsureFileLibraryGatewayInput): Promise<EnsureFileLibraryGatewayResult> {
     await ensureExecutable(this.config.juicefsBin);
+    await this.ensureReconciled();
+    await this.reconcileLibrary(input.libraryId);
     const existing = this.sessions.get(input.libraryId);
-    if (existing?.child && existing.child.exitCode === null) {
+    if (existing?.pid && this.platform.processExists(existing.pid)) {
       return existing;
+    }
+
+    const persisted = await readGatewayState(this.config, input.libraryId);
+    if (persisted && this.platform.processExists(persisted.pid)) {
+      try {
+        const response = await this.platform.fetch(`${persisted.loopbackUrl}/`, { method: 'GET' });
+        if (response.status > 0) {
+          const restored: GatewaySession = {
+            loopbackUrl: persisted.loopbackUrl,
+            port: persisted.port,
+            status: 'ready',
+            lastStartedAt: persisted.lastStartedAt,
+            pid: persisted.pid,
+            metadataUrl: persisted.metadataUrl,
+            logPath: persisted.logPath,
+          };
+          this.sessions.set(input.libraryId, restored);
+          return restored;
+        }
+      } catch {
+        await terminateGatewayProcess(this.platform, persisted.pid);
+        await removeGatewayState(this.config, input.libraryId);
+      }
     }
 
     await mkdir(this.config.gatewayLogDir, { recursive: true });
@@ -811,7 +1078,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     await mkdir(dirname(logPath), { recursive: true });
     const rootUser = deterministicGatewayUser(input.libraryId, this.config.gatewayRootUserPrefix);
     const rootPassword = deriveSecret(this.config.gatewayRootPasswordSeed, 'gateway-root', input.libraryId, 24);
-    const child = spawn(
+    const child = this.platform.spawnGateway(
       this.config.juicefsBin,
       [
         'gateway',
@@ -827,7 +1094,6 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
           MINIO_ROOT_USER: rootUser,
           MINIO_ROOT_PASSWORD: rootPassword,
         },
-        stdio: ['ignore', 'pipe', 'pipe'],
       },
     );
 
@@ -835,11 +1101,26 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       loopbackUrl,
       port,
       status: 'starting',
-      lastStartedAt: new Date().toISOString(),
+      lastStartedAt: this.platform.now(),
+      pid: child.pid ?? undefined,
       child,
       metadataUrl: input.metadataUrl,
+      logPath,
     };
     this.sessions.set(input.libraryId, created);
+    if (child.pid) {
+      await writeGatewayState(this.config, {
+        libraryId: input.libraryId,
+        pid: child.pid,
+        port,
+        loopbackUrl,
+        metadataUrl: input.metadataUrl,
+        logPath,
+        lastStartedAt: created.lastStartedAt,
+        ownerProcessPid: this.platform.ownerPid(),
+        status: 'starting',
+      });
+    }
     let stderr = '';
     child.stderr.on('data', (chunk) => {
       stderr += String(chunk);
@@ -853,16 +1134,34 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       } else {
         created.status = 'stopped';
       }
+      this.sessions.delete(input.libraryId);
+      void removeGatewayState(this.config, input.libraryId);
     });
 
     try {
       await waitForGateway(`${loopbackUrl}/`);
       created.status = 'ready';
+      if (child.pid) {
+        await writeGatewayState(this.config, {
+          libraryId: input.libraryId,
+          pid: child.pid,
+          port,
+          loopbackUrl,
+          metadataUrl: input.metadataUrl,
+          logPath,
+          lastStartedAt: created.lastStartedAt,
+          ownerProcessPid: this.platform.ownerPid(),
+          status: 'ready',
+        });
+      }
       return created;
     } catch (error) {
       created.status = 'failed';
       created.lastError = error instanceof Error ? error.message : 'file_library_gateway_start_failed';
-      child.kill('SIGTERM');
+      if (child.pid) {
+        await terminateGatewayProcess(this.platform, child.pid);
+      }
+      await removeGatewayState(this.config, input.libraryId);
       throw error;
     }
   }
@@ -870,40 +1169,69 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   async getHealth(libraryId: string): Promise<FileLibraryGatewayHealth> {
     const existing = this.sessions.get(libraryId);
     if (!existing) {
+      const persisted = await readGatewayState(this.config, libraryId);
+      if (persisted && this.platform.processExists(persisted.pid)) {
+        this.sessions.set(libraryId, {
+          loopbackUrl: persisted.loopbackUrl,
+          port: persisted.port,
+          status: persisted.status,
+          lastStartedAt: persisted.lastStartedAt,
+          pid: persisted.pid,
+          metadataUrl: persisted.metadataUrl,
+          logPath: persisted.logPath,
+        });
+      }
+    }
+    const current = this.sessions.get(libraryId);
+    if (!current) {
       return {
         status: 'stopped',
-        checkedAt: new Date().toISOString(),
+        checkedAt: this.platform.now(),
       };
     }
-    if (!existing.child || existing.child.exitCode !== null) {
+    if (current.pid && !this.platform.processExists(current.pid)) {
+      this.sessions.delete(libraryId);
+      await removeGatewayState(this.config, libraryId);
       return {
-        status: existing.status === 'failed' ? 'failed' : 'stopped',
-        checkedAt: new Date().toISOString(),
-        lastError: existing.lastError,
+        status: current.status === 'failed' ? 'failed' : 'stopped',
+        checkedAt: this.platform.now(),
+        lastError: current.lastError,
       };
     }
     try {
-      const response = await fetch(`${existing.loopbackUrl}/`, { method: 'GET' });
+      const response = await this.platform.fetch(`${current.loopbackUrl}/`, { method: 'GET' });
       return {
         status: response.status > 0 ? 'ready' : 'degraded',
-        checkedAt: new Date().toISOString(),
-        lastError: existing.lastError,
+        checkedAt: this.platform.now(),
+        lastError: current.lastError,
       };
     } catch (error) {
-      existing.lastError = error instanceof Error ? error.message : 'file_library_gateway_health_failed';
+      current.lastError = error instanceof Error ? error.message : 'file_library_gateway_health_failed';
       return {
         status: 'degraded',
-        checkedAt: new Date().toISOString(),
-        lastError: existing.lastError,
+        checkedAt: this.platform.now(),
+        lastError: current.lastError,
       };
     }
   }
 
   async stopGateway(libraryId: string): Promise<void> {
     const existing = this.sessions.get(libraryId);
-    if (existing?.child && existing.child.exitCode === null) {
-      existing.child.kill('SIGTERM');
+    const pid = existing?.pid ?? (await readGatewayState(this.config, libraryId))?.pid;
+    if (pid) {
+      await terminateGatewayProcess(this.platform, pid);
     }
     this.sessions.delete(libraryId);
+    await removeGatewayState(this.config, libraryId);
+  }
+
+  async shutdown(): Promise<void> {
+    const libraryIds = new Set<string>([
+      ...this.sessions.keys(),
+      ...(await listStateLibraryIds(this.config)),
+    ]);
+    for (const libraryId of libraryIds) {
+      await this.stopGateway(libraryId);
+    }
   }
 }

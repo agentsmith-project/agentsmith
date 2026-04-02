@@ -25,6 +25,11 @@ export function createNodeApiServer(
   lifecycle?: Pick<ProjectRepoFactoryResult, 'shutdown'>,
   host?: string,
 ): http.Server {
+  void deps.fileLibraryGatewayManager?.reconcile?.().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : 'unknown_error';
+    process.stderr.write(`[api-entry-node] file library gateway reconcile failed: ${message}\n`);
+  });
+
   void ensureModelCatalogBootstrap(deps.docStore).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : 'unknown_error';
     process.stderr.write(`[api-entry-node] model catalog bootstrap failed: ${message}\n`);
@@ -61,12 +66,14 @@ export function createNodeApiServer(
     server.on('close', () => {
       if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
       ACTIVE_CHAT_STREAMS.clear();
+      void deps.fileLibraryGatewayManager?.shutdown?.();
       void lifecycle.shutdown();
     });
   } else {
     server.on('close', () => {
       if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
       ACTIVE_CHAT_STREAMS.clear();
+      void deps.fileLibraryGatewayManager?.shutdown?.();
     });
   }
 
@@ -83,7 +90,19 @@ function startFromCli(): void {
   }
 
   const { deps, lifecycle, repoMode } = createNodeApiDepsFromEnv(process.env);
-  createNodeApiServer(port, deps, lifecycle);
+  const server = createNodeApiServer(port, deps, lifecycle);
+  let closing = false;
+  const closeServer = (signal: string) => {
+    if (closing) return;
+    closing = true;
+    process.stderr.write(`[api-entry-node] received ${signal}, shutting down\n`);
+    server.close(() => {
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 10000).unref();
+  };
+  process.on('SIGTERM', () => closeServer('SIGTERM'));
+  process.on('SIGINT', () => closeServer('SIGINT'));
   // Keep log compact and machine-readable for local integration.
   process.stdout.write(`[api-entry-node] listening on ${port} (repo=${repoMode})\n`);
 }

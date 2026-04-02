@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
+  RealFileLibraryGatewayManager,
   resolveFileLibraryMetadataUrlForDockerManualExternalExecution,
   getFileLibraryRuntimeReadiness,
   resolveFileLibraryMetadataUrlForComposeManagedExternalExecution,
@@ -12,6 +17,49 @@ import {
   resolveFileLibraryStorageBucketUrlForExternalExecution,
   resolveFileLibraryStorageBucketUrlForInternalExecution,
 } from './file-library-runtime.js';
+
+function createGatewayConfig(overrides: Partial<ConstructorParameters<typeof RealFileLibraryGatewayManager>[0]> = {}) {
+  return {
+    juicefsBin: 'juicefs',
+    mcBin: 'mc',
+    pgAdminUrl: 'postgresql://mbos:secret@localhost:15432/mbos',
+    pgConnectHost: 'localhost',
+    pgConnectPort: 15432,
+    pgClientHost: 'localhost',
+    pgClientPort: 15432,
+    pgClientSslMode: undefined,
+    minioAdminEndPoint: 'localhost',
+    minioAdminPort: 19000,
+    minioAdminUseSSL: false,
+    minioAdminAccessKey: 'mbos',
+    minioAdminSecretKey: 'secret',
+    minioStorageEndpoint: 'http://localhost:19000',
+    minioClientEndpoint: 'http://localhost:19000',
+    minioRegion: 'us-east-1',
+    gatewayPortBase: 39000,
+    gatewayRootUserPrefix: 'flgw',
+    gatewayRootPasswordSeed: 'seed',
+    gatewayLogDir: join(tmpdir(), 'agentsmith-test-gateway-logs'),
+    gatewayStateDir: join(tmpdir(), 'agentsmith-test-gateway-state'),
+    ...overrides,
+  } as ConstructorParameters<typeof RealFileLibraryGatewayManager>[0];
+}
+
+function createChild(pid: number) {
+  const stdout = new EventEmitter();
+  const stderr = new EventEmitter();
+  const child = new EventEmitter() as EventEmitter & {
+    pid: number;
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+    exitCode: number | null;
+  };
+  child.pid = pid;
+  child.stdout = stdout;
+  child.stderr = stderr;
+  child.exitCode = null;
+  return child as never;
+}
 
 describe('file-library-runtime readiness', () => {
   it('reports missing executables and env explicitly', async () => {
@@ -202,5 +250,151 @@ describe('file-library-runtime readiness', () => {
         env,
       ),
     ).toBe('http://minio-external.agentsmith-sandbox.svc.cluster.local:9000/jfs-lib-demo');
+  });
+
+  it('reconciles orphaned duplicate gateway processes with no state', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-reconcile-'));
+    const kills: Array<{ pid: number; signal: string }> = [];
+    const alive = new Set<number>([101, 102]);
+    const manager = new RealFileLibraryGatewayManager(
+      createGatewayConfig({
+        gatewayLogDir: join(root, 'logs'),
+        gatewayStateDir: join(root, 'state'),
+      }),
+      {
+        spawnGateway: vi.fn(),
+        async listProcesses() {
+          return [
+            {
+              pid: 101,
+              args: `juicefs gateway postgres://user:pass@localhost:15432/db 127.0.0.1:39001 --log ${join(root, 'logs', 'flib_dup.log')} --no-banner`,
+              libraryId: null,
+            },
+            {
+              pid: 102,
+              args: `juicefs gateway postgres://user:pass@localhost:15432/db 127.0.0.1:39002 --log ${join(root, 'logs', 'flib_dup.log')} --no-banner`,
+              libraryId: null,
+            },
+          ];
+        },
+        processExists(pid) {
+          return alive.has(pid);
+        },
+        killProcess(pid, signal) {
+          kills.push({ pid, signal });
+          alive.delete(pid);
+        },
+        wait: async () => undefined,
+        fetch: vi.fn(),
+        now: () => '2026-04-02T18:30:00.000Z',
+        ownerPid: () => 999,
+      },
+    );
+
+    await manager.reconcile();
+
+    expect(kills).toEqual([
+      { pid: 101, signal: 'SIGTERM' },
+      { pid: 102, signal: 'SIGTERM' },
+    ]);
+  });
+
+  it('reuses a persisted healthy gateway instead of spawning a duplicate', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-state-'));
+    await mkdir(join(root, 'state'), { recursive: true });
+    await writeFile(join(root, 'state', 'flib_ready.json'), JSON.stringify({
+      libraryId: 'flib_ready',
+      pid: 501,
+      port: 39051,
+      loopbackUrl: 'http://127.0.0.1:39051',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_ready?sslmode=disable',
+      logPath: join(root, 'logs', 'flib_ready.log'),
+      lastStartedAt: '2026-04-02T18:31:00.000Z',
+      ownerProcessPid: 321,
+      status: 'ready',
+    }), 'utf8');
+
+    const spawnGateway = vi.fn();
+    const manager = new RealFileLibraryGatewayManager(
+      createGatewayConfig({
+        gatewayLogDir: join(root, 'logs'),
+        gatewayStateDir: join(root, 'state'),
+      }),
+      {
+        spawnGateway,
+        async listProcesses() {
+          return [
+            {
+              pid: 501,
+              args: `juicefs gateway postgres://user:pass@localhost:15432/jfs_lib_ready?sslmode=disable 127.0.0.1:39051 --log ${join(root, 'logs', 'flib_ready.log')} --no-banner`,
+              libraryId: null,
+            },
+          ];
+        },
+        processExists(pid) {
+          return pid === 501;
+        },
+        killProcess: vi.fn(),
+        wait: async () => undefined,
+        fetch: vi.fn(async () => new Response('ok', { status: 200 })),
+        now: () => '2026-04-02T18:32:00.000Z',
+        ownerPid: () => 1000,
+      },
+    );
+
+    const gateway = await manager.ensureGateway({
+      libraryId: 'flib_ready',
+      filesystemName: 'flib-ready',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_ready?sslmode=disable',
+    });
+
+    expect(gateway.port).toBe(39051);
+    expect(spawnGateway).not.toHaveBeenCalled();
+  });
+
+  it('stops a gateway from persisted state even when memory session is gone', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-stop-'));
+    await mkdir(join(root, 'state'), { recursive: true });
+    await writeFile(join(root, 'state', 'flib_stop.json'), JSON.stringify({
+      libraryId: 'flib_stop',
+      pid: 777,
+      port: 39077,
+      loopbackUrl: 'http://127.0.0.1:39077',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_stop?sslmode=disable',
+      logPath: join(root, 'logs', 'flib_stop.log'),
+      lastStartedAt: '2026-04-02T18:33:00.000Z',
+      ownerProcessPid: 222,
+      status: 'ready',
+    }), 'utf8');
+
+    const kills: Array<{ pid: number; signal: string }> = [];
+    let alive = true;
+    const manager = new RealFileLibraryGatewayManager(
+      createGatewayConfig({
+        gatewayLogDir: join(root, 'logs'),
+        gatewayStateDir: join(root, 'state'),
+      }),
+      {
+        spawnGateway: vi.fn(() => createChild(888)),
+        async listProcesses() {
+          return [];
+        },
+        processExists() {
+          return alive;
+        },
+        killProcess(pid, signal) {
+          kills.push({ pid, signal });
+          alive = false;
+        },
+        wait: async () => undefined,
+        fetch: vi.fn(),
+        now: () => '2026-04-02T18:34:00.000Z',
+        ownerPid: () => 2000,
+      },
+    );
+
+    await manager.stopGateway('flib_stop');
+
+    expect(kills).toEqual([{ pid: 777, signal: 'SIGTERM' }]);
   });
 });

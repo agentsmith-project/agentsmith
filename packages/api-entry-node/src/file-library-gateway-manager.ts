@@ -21,4 +21,6 @@ export interface FileLibraryGatewayManager {
   ensureGateway(input: EnsureFileLibraryGatewayInput): Promise<EnsureFileLibraryGatewayResult>;
   getHealth(libraryId: string): Promise<FileLibraryGatewayHealth>;
   stopGateway(libraryId: string): Promise<void>;
+  reconcile?(): Promise<void>;
+  shutdown?(): Promise<void>;
 }

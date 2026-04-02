@@ -166,6 +166,8 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 2. Files 页面中该库是 `failed` / `degraded`
 - 这属于文件库管理侧问题。
 - 先治理文件库本身，再回到 Desktop。
+- 当前策略是不提供一键“重新初始化”。
+- 最佳实践是人工判断后删除并重建，避免不透明的恢复动作带来额外存储副作用。
 
 3. 只在本地挂载链路出问题
 - 直接看：

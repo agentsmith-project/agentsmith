@@ -115,6 +115,8 @@ Recommended action:
 Important:
 - AgentSmith Desktop hides non-mountable libraries on purpose.
 - Files management is the place to govern failed or degraded libraries.
+- AgentSmith does not provide a one-click reinitialize action for failed libraries.
+- Current best practice is manual governance: decide whether to delete and recreate, instead of retrying an opaque repair action with unclear storage side effects.
 
 ### Desktop path blocked by missing prerequisites
 This is expected when the current machine is missing one or more platform requirements:
@@ -141,6 +143,8 @@ Recommended action:
 2. Return to Files management.
 3. Delete the broken library if it is temporary or disposable.
 4. Recreate the library and wait until it is `ready` before mounting.
+
+Do not expect a `reinitialize` button here. The current product policy is to keep failed-library recovery explicit and operator-driven.
 
 ### `file_library_env_missing_*`
 The backend is missing one or more required storage environment variables.

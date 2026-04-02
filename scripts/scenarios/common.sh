@@ -141,6 +141,7 @@ ensure_local_kind_cluster() {
   local cluster_name="${LOCAL_KIND_CLUSTER_NAME:-agentsmith}"
   local config_path="${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/demo/kind/config.yaml}"
   local kind_context="kind-${cluster_name}"
+  local control_plane_node="${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-${cluster_name}-control-plane}"
   local kind_node_image
   kind_node_image="$(awk '/image:/ {print $2; exit}' "${config_path}")"
   [[ -n "${kind_node_image}" ]] || {
@@ -156,6 +157,7 @@ ensure_local_kind_cluster() {
   mkdir -p "${HOME}/.kube" "${HOME}/agentsmith/cluster-deploy/config"
   kind export kubeconfig --name "${cluster_name}" >/dev/null
   kubectl config use-context "${kind_context}" >/dev/null || true
+  kubectl label node "${control_plane_node}" node=mbos --overwrite >/dev/null
   ensure_local_kind_registry
   cp "${HOME}/.kube/config" "${HOME}/agentsmith/cluster-deploy/config/kubeconfig"
   cp "${HOME}/.kube/config" "${HOME}/agentsmith/cluster-deploy/config/admin-kubeconfig"

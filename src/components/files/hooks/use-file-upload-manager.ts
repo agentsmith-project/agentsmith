@@ -40,6 +40,12 @@ function renameWithIndex(originalName: string, index: number) {
   return `${name} (${index})${ext}`;
 }
 
+function isUploadConflictError(error: unknown) {
+  if (!(error instanceof APIError)) return false;
+  if (error.errorCode === 'destination_exists') return true;
+  return error.statusCode === 409 && error.message === 'file_library_destination_exists';
+}
+
 export function useFileUploadManager({
   workspaceId,
   projectId,
@@ -119,8 +125,7 @@ export function useFileUploadManager({
           completed += 1;
           setUploadQueueCompleted(completed);
         } catch (err) {
-          const apiErr = err instanceof APIError ? err : null;
-          if (apiErr?.errorCode === 'destination_exists') {
+          if (isUploadConflictError(err)) {
             setUploadInProgress(false);
             handleUploadConflict(current, queue.slice(i + 1), total, completed);
             return;
@@ -229,8 +234,7 @@ export function useFileUploadManager({
         await continueAfterConflict(uploadConflict.remaining, uploadConflict.completed + 1, uploadConflict.total);
         return;
       } catch (err) {
-        const apiErr = err instanceof APIError ? err : null;
-        if (apiErr?.errorCode === 'destination_exists') {
+        if (isUploadConflictError(err)) {
           attempt += 1;
           continue;
         }

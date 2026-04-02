@@ -11,7 +11,21 @@ run_deploy_bootstrap() {
   load_release_env
   apply_non_environment_preset_defaults
   apply_preset_endpoint_defaults
-  DEMO_DEPLOY_MODE="$(demo_deploy_mode)"
+  local bootstrap_mode=""
+  local bootstrap_internal_agent_enabled="1"
+  if command -v demo_deploy_mode >/dev/null 2>&1; then
+    bootstrap_mode="$(demo_deploy_mode)"
+    if demo_mode_is_full; then
+      bootstrap_internal_agent_enabled="1"
+    else
+      bootstrap_internal_agent_enabled="0"
+    fi
+  elif command -v cluster_deploy_mode >/dev/null 2>&1; then
+    bootstrap_mode="$(cluster_deploy_mode)"
+    bootstrap_internal_agent_enabled="1"
+  else
+    die "bootstrap mode resolver is unavailable"
+  fi
 
   HOST_LOCAL_API_BASE_URL="${HOST_LOCAL_API_BASE_URL:-http://127.0.0.1:${API_PORT:-20000}}"
   HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}"
@@ -339,7 +353,7 @@ run_deploy_bootstrap() {
   EXTERNAL_AGENT_WS_URL="$(printf '%s' "${external_connection_resp}" | json_extract ws_url)"
 
   INTERNAL_AGENT_ID=""
-  if demo_mode_is_full; then
+  if [[ "${bootstrap_internal_agent_enabled}" == "1" ]]; then
     INTERNAL_AGENT_ID="$(printf '%s' "${agent_list_resp}" | json_find_named_id "${PRESET_INTERNAL_AGENT_NAME}")"
     if [[ -z "${INTERNAL_AGENT_ID}" ]]; then
       internal_agent_resp="$(
@@ -433,14 +447,14 @@ EOF
   state_set endpoint.anthropic_id "${ANTHROPIC_ENDPOINT_ID}"
   state_set endpoint.openai_id "${OPENAI_ENDPOINT_ID}"
   state_set agent.external_id "${EXTERNAL_AGENT_ID}"
-  if demo_mode_is_full; then
+  if [[ "${bootstrap_internal_agent_enabled}" == "1" ]]; then
     state_set agent.internal_id "${INTERNAL_AGENT_ID}"
   else
     state_set agent.internal_id skipped
   fi
   state_set agent.external_runner_connected true
   state_set agent.external_runner_ws_url "${EXTERNAL_AGENT_WS_URL}"
-  state_set bootstrap.mode "${DEMO_DEPLOY_MODE}"
+  state_set bootstrap.mode "${bootstrap_mode}"
 
   log "bootstrap ok"
 }

@@ -36,7 +36,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   set -eux; \
   export http_proxy="${HTTP_PROXY:-}" https_proxy="${HTTPS_PROXY:-}" HTTP_PROXY="${HTTP_PROXY:-}" HTTPS_PROXY="${HTTPS_PROXY:-}" NO_PROXY="${NO_PROXY:-}" no_proxy="${NO_PROXY:-}"; \
   apt-get update; \
-  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fuse3 procps; \
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    build-essential \
+    fuse3 \
+    procps \
+    python3; \
   arch="$(dpkg --print-architecture)"; \
   case "${arch}" in \
     amd64) juicefs_arch="amd64" ;; \

@@ -759,9 +759,10 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 201, uploaded);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'file_library_upload_failed';
-      json(res, message === 'file_library_destination_exists' ? 409 : 400, {
-        error_code: message === 'file_library_destination_exists' ? 'RESOURCE_CONFLICT' : 'FILE_LIBRARY_UPLOAD_FAILED',
-        message,
+      const isDestinationConflict = message === 'file_library_destination_exists';
+      json(res, isDestinationConflict ? 409 : 400, {
+        error_code: isDestinationConflict ? 'destination_exists' : 'FILE_LIBRARY_UPLOAD_FAILED',
+        message: isDestinationConflict ? 'destination_exists' : message,
       });
     }
     return true;

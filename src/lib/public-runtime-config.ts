@@ -3,6 +3,9 @@ export interface PublicRuntimeConfig {
   keycloakUrl: string;
   keycloakRealm: string;
   keycloakClientId: string;
+  desktopDownloadUrlMacos: string;
+  desktopDownloadUrlWindows: string;
+  desktopDownloadUrlLinux: string;
   useMsw: boolean;
   mswStrictReady: boolean;
   sseTicketEnabled: boolean;
@@ -43,6 +46,9 @@ export function readPublicRuntimeConfigFromEnv(
     keycloakUrl: (env.NEXT_PUBLIC_KEYCLOAK_URL ?? '').trim(),
     keycloakRealm: (env.NEXT_PUBLIC_KEYCLOAK_REALM ?? '').trim(),
     keycloakClientId: (env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? '').trim(),
+    desktopDownloadUrlMacos: (env.NEXT_PUBLIC_AGENTSMITH_DESKTOP_DOWNLOAD_URL_MACOS ?? '').trim(),
+    desktopDownloadUrlWindows: (env.NEXT_PUBLIC_AGENTSMITH_DESKTOP_DOWNLOAD_URL_WINDOWS ?? '').trim(),
+    desktopDownloadUrlLinux: (env.NEXT_PUBLIC_AGENTSMITH_DESKTOP_DOWNLOAD_URL_LINUX ?? '').trim(),
     useMsw: parseBoolean(env.NEXT_PUBLIC_USE_MSW),
     mswStrictReady: parseBoolean(env.NEXT_PUBLIC_MSW_STRICT_READY),
     sseTicketEnabled: parseBoolean(env.NEXT_PUBLIC_SSE_TICKET_ENABLED),

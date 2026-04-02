@@ -184,8 +184,23 @@ CLUSTER_DEPENDENCY_TARGET_IMAGES=(
   "${INGRESS_NGINX_CERTGEN_IMAGE}"
 )
 
-for image in "${COMPOSE_DEPENDENCY_IMAGES[@]}" "${CLUSTER_DEPENDENCY_SOURCE_IMAGES[@]}"; do
+ensure_local_image() {
+  local image="$1"
+  if [[ "${FORCE_REFRESH_DEPENDENCY_IMAGES:-0}" == "1" ]]; then
+    docker pull --platform linux/amd64 "${image}" >/dev/null
+    return
+  fi
+
+  if docker image inspect "${image}" >/dev/null 2>&1; then
+    log "reuse local image: ${image}"
+    return
+  fi
+
   docker pull --platform linux/amd64 "${image}" >/dev/null
+}
+
+for image in "${COMPOSE_DEPENDENCY_IMAGES[@]}" "${CLUSTER_DEPENDENCY_SOURCE_IMAGES[@]}"; do
+  ensure_local_image "${image}"
 done
 
 for idx in "${!CLUSTER_DEPENDENCY_SOURCE_IMAGES[@]}"; do

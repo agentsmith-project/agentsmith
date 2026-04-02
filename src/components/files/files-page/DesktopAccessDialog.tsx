@@ -17,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/toast';
 import type { FileLibrary, FileLibraryClientMountAccess, FileLibraryDesktopMountAccess } from '@/lib/api/types';
 import { ManualMountAccessContent } from '@/components/files/files-page/LibraryAccessDialog';
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 
 type DesktopPlatform = 'linux' | 'macos' | 'windows';
 
@@ -64,24 +65,25 @@ function detectPreferredPlatform(): DesktopPlatform {
 
 function buildDesktopDownloadOptions(t: DesktopAccessDialogProps['t']): DesktopDownloadOption[] {
   const releasePage = 'https://github.com/lzjever/agentsmith-desktop/releases/latest';
+  const runtimeConfig = getPublicRuntimeConfig();
   return [
     {
       platform: 'macos',
       label: t('file_manager.desktop_platform_macos'),
       buttonLabel: t('file_manager.desktop_download_button', { platform: t('file_manager.desktop_platform_macos') }),
-      url: process.env.NEXT_PUBLIC_AGENTSMITH_DESKTOP_DOWNLOAD_URL_MACOS?.trim() || releasePage,
+      url: runtimeConfig.desktopDownloadUrlMacos || releasePage,
     },
     {
       platform: 'windows',
       label: t('file_manager.desktop_platform_windows'),
       buttonLabel: t('file_manager.desktop_download_button', { platform: t('file_manager.desktop_platform_windows') }),
-      url: process.env.NEXT_PUBLIC_AGENTSMITH_DESKTOP_DOWNLOAD_URL_WINDOWS?.trim() || releasePage,
+      url: runtimeConfig.desktopDownloadUrlWindows || releasePage,
     },
     {
       platform: 'linux',
       label: t('file_manager.desktop_platform_linux'),
       buttonLabel: t('file_manager.desktop_download_button', { platform: t('file_manager.desktop_platform_linux') }),
-      url: process.env.NEXT_PUBLIC_AGENTSMITH_DESKTOP_DOWNLOAD_URL_LINUX?.trim() || releasePage,
+      url: runtimeConfig.desktopDownloadUrlLinux || releasePage,
     },
   ];
 }

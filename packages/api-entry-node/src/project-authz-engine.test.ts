@@ -118,6 +118,45 @@ describe('project-authz-engine', () => {
     ).toEqual([]);
   });
 
+  it('implies terminal use for older permission snapshots that already allow notebook and agent use', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const workspaceId = `ws_${Date.now()}`;
+    const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
+    await upsertProjectMembershipRecord(docStore, workspaceId, projectId, {
+      project_id: projectId,
+      user_id: 'user_test',
+      role: 'member',
+      status: 'active',
+      joined_at: new Date().toISOString(),
+    });
+
+    await upsertProjectMemberPermissionState(docStore, workspaceId, projectId, 'user_test', {
+      mode: 'custom',
+      template: null,
+      permissions: ['project:endpoint:use', 'project:agent:use'],
+    });
+
+    const visible = await resolveVisibleProjectPermissionsForActor({
+      docStore,
+      workspaceId,
+      projectId,
+      projectOwnerId: 'user_owner',
+      actorUserId: 'user_test',
+    });
+    expect(visible).toContain('project:terminal:use');
+
+    const evaluation = await evaluateProjectPermissions({
+      docStore,
+      workspaceId,
+      projectId,
+      projectOwnerId: 'user_owner',
+      actorUserId: 'user_test',
+      requiredPermissions: ['project:terminal:use'],
+    });
+    expect(evaluation.decisions[0]?.granted).toBe(true);
+    expect(['granted_by_member_governance', 'granted_by_terminal_compatibility']).toContain(evaluation.decisions[0]?.reason);
+  });
+
   it('evaluates resource policy allow-list for user and group subjects', async () => {
     const docStore = new InMemoryJsonDocStore();
     const workspaceId = `ws_${Date.now()}`;

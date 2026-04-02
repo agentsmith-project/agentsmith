@@ -48,6 +48,7 @@ export interface TaskPageProps {
   canCreateTask: boolean;
   canUpdateTask: boolean;
   canDeleteTask: boolean;
+  canUseTerminal?: boolean;
   diagnosticsBasePath?: string;
 }
 
@@ -58,6 +59,7 @@ export function TaskPage({
   canCreateTask,
   canUpdateTask,
   canDeleteTask,
+  canUseTerminal = false,
   diagnosticsBasePath,
 }: TaskPageProps) {
   type PendingMessage = ReturnType<typeof createPendingMessage>;
@@ -737,8 +739,16 @@ export function TaskPage({
     );
   const isConversationInputDisabled =
     isDisabled || !canUpdateTask || isExternalAgentOffline || terminalOpen;
+  const terminalDisabledReason = !canUseTerminal
+    ? tTask('terminal_unavailable_permission')
+    : task.status !== "active"
+      ? tTask('terminal_unavailable_task_inactive')
+      : agentIsBusy
+        ? tTask('terminal_unavailable_agent_busy')
+        : null;
   const canOpenTerminal =
-    canUpdateTask
+    canUseTerminal
+    && canUpdateTask
     && task.status === "active"
     && !agentIsBusy;
 
@@ -757,6 +767,7 @@ export function TaskPage({
         canDeleteTask={canDeleteTask}
         canOpenTerminal={canOpenTerminal}
         terminalOpen={terminalOpen}
+        terminalDisabledReason={terminalDisabledReason}
         onCreateNew={canCreateTask ? handleCreateNew : undefined}
         onEdit={canUpdateTask ? () => setEditDialogOpen(true) : undefined}
         onDeleted={handleTaskDeleted}

@@ -48,6 +48,9 @@ vi.mock('next-intl', () => ({
       terminal_banner: `Terminal ready for ${values?.title ?? 'task'}`,
       terminal_closed: 'Terminal closed',
       terminal_failed: `Terminal failed: ${values?.reason ?? ''}`,
+      terminal_error_runner_offline: 'The runner is still getting ready for this task. Retry in a moment.',
+      terminal_error_agent_unavailable: "This task's runner is not available right now.",
+      terminal_error_connection_failed: 'The terminal connection could not be opened. Please retry.',
     };
     return map[key] ?? key;
   },
@@ -137,4 +140,57 @@ describe('TaskTerminalPanel', () => {
       expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Failed');
     }, { timeout: 5000 });
   }, 10000);
+
+  it('keeps retrying while a warmup run is still in progress', async () => {
+    const createTerminalSession = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('task_run_in_progress'))
+      .mockResolvedValue({
+        session_id: 'term_2',
+        status: 'pending',
+        ws_url: 'ws://example.test/terminal-2',
+      });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_2"
+        taskTitle="terminal-warmup"
+        taskApi={{ createTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(createTerminalSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    await waitFor(() => {
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Connecting');
+      expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Failed');
+    });
+  }, 10000);
+
+  it('shows a friendly failure reason for non-retryable terminal session errors', async () => {
+    const createTerminalSession = vi
+      .fn()
+      .mockRejectedValue(new Error('task_agent_not_available'));
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_1"
+        taskTitle="terminal-smoke"
+        taskApi={{ createTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Failed');
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent("This task's runner is not available right now.");
+    });
+  });
 });

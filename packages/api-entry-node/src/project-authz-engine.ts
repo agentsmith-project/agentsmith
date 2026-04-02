@@ -35,6 +35,11 @@ export type ProjectAuthzPermissionSource =
   | {
     type: 'member_custom';
     permission: string;
+  }
+  | {
+    type: 'compat_implied';
+    permission: string;
+    implied_by: string[];
   };
 
 export type ProjectPermissionDecision = {
@@ -88,6 +93,12 @@ function addPermissionSource(
   if (!target.has(source.permission)) {
     target.set(source.permission, source);
   }
+}
+
+function shouldImplyTerminalUse(permissions: readonly string[]): boolean {
+  return permissions.includes('project:endpoint:use')
+    && permissions.includes('project:agent:use')
+    && !permissions.includes('project:terminal:use');
 }
 
 function templateMap(
@@ -168,9 +179,14 @@ async function collectPermissionSources(args: {
     }
   }
 
+  const effectivePermissions = [...byPermission.keys()];
+  if (shouldImplyTerminalUse(effectivePermissions)) {
+    effectivePermissions.push('project:terminal:use');
+  }
+
   return {
     membership_status: membershipStatus,
-    effective_permissions: [...byPermission.keys()],
+    effective_permissions: effectivePermissions,
     permission_sources: [...byPermission.values()],
   };
 }
@@ -213,6 +229,23 @@ export async function evaluateProjectPermissions(args: {
         reason: 'granted_by_member_governance',
         source: 'permission',
         source_detail: sourceDetail,
+        membership_status: snapshot.membership_status,
+      };
+    }
+    if (
+      permission === 'project:terminal:use'
+      && shouldImplyTerminalUse(snapshot.effective_permissions)
+    ) {
+      return {
+        permission,
+        granted: true,
+        reason: 'granted_by_terminal_compatibility',
+        source: 'permission' as const,
+        source_detail: {
+          type: 'compat_implied',
+          permission,
+          implied_by: ['project:endpoint:use', 'project:agent:use'],
+        },
         membership_status: snapshot.membership_status,
       };
     }
@@ -302,6 +335,7 @@ export async function resolveVisibleProjectRoleForActor(args: {
 function mapProjectActionToPermission(action: string): string | null {
   if (action.startsWith('project.audit.')) return 'project:audit:read';
   if (action.startsWith('project.usage.')) return 'project:endpoint:use';
+  if (action.startsWith('project.terminal.')) return 'project:terminal:use';
   if (action === 'project.read') return 'project:endpoint:use';
   if (action === 'project.delete' || action.startsWith('project.owner.') || action.startsWith('project.settings.lifecycle.')) {
     return 'project:lifecycle:update';

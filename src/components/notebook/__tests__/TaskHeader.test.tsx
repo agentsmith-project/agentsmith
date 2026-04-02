@@ -147,6 +147,16 @@ describe('TaskHeader', () => {
 
       expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Hide Terminal');
     });
+
+    it('exposes disabled reason when terminal access is unavailable', () => {
+      renderComponent(mockTask, {
+        onToggleTerminal: vi.fn(),
+        canOpenTerminal: false,
+        terminalDisabledReason: 'Terminal access is restricted.',
+      });
+
+      expect(screen.getByTestId('notebook__task-header-terminal')).toHaveAttribute('title', 'Terminal access is restricted.');
+    });
   });
 
   describe('Leave Button', () => {

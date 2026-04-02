@@ -3,6 +3,7 @@ import { InMemoryCache } from '@mbos/adapters-private';
 
 import {
   hasBlockingTaskRunForTerminal,
+  resolveTerminalWebSocketBaseUrl,
   resolveTaskWorkspaceMountAccess,
 } from './task-route-handler.js';
 import { buildNotebookTaskRunState, refreshNotebookTaskRunLease } from './notebook-task/task-run-coordination.js';
@@ -41,6 +42,25 @@ describe('task-route-handler workspace access', () => {
 
     await expect(hasBlockingTaskRunForTerminal(cache, 'task_terminal_busy')).resolves.toBe(true);
     expect(ACTIVE_RUNS_BY_TASK.has('task_terminal_busy')).toBe(true);
+  });
+
+  it('prefers the configured public api base for terminal websocket urls', () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://localhost:21000/';
+    try {
+      const resolved = resolveTerminalWebSocketBaseUrl({
+        headers: {
+          host: 'localhost:3101',
+          'x-forwarded-host': 'localhost:3101',
+          'x-forwarded-proto': 'http',
+        },
+      } as never);
+
+      expect(resolved).toBe('ws://localhost:21000');
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
   });
 
   it('rewrites client-visible mount access for internal agents when internal overrides are configured', () => {

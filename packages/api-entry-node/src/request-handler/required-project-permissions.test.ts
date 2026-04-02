@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { requiredProjectPermissions } from './required-project-permissions.js';
 
 describe('requiredProjectPermissions', () => {
-  it('requires endpoint and agent use permissions for terminal session routes', () => {
+  it('requires explicit terminal permission for terminal session routes', () => {
     expect(
       requiredProjectPermissions(
         {
@@ -13,7 +13,7 @@ describe('requiredProjectPermissions', () => {
         },
         'POST',
       ),
-    ).toEqual(['project:endpoint:use', 'project:agent:use']);
+    ).toEqual(['project:terminal:use']);
 
     expect(
       requiredProjectPermissions(
@@ -26,6 +26,6 @@ describe('requiredProjectPermissions', () => {
         },
         'GET',
       ),
-    ).toEqual(['project:endpoint:use', 'project:agent:use']);
+    ).toEqual(['project:terminal:use']);
   });
 });

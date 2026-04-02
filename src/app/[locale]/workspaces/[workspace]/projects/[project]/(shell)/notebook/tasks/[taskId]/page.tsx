@@ -9,7 +9,7 @@ import {
 import { PageState } from "@/components/layout/PageState";
 import { PageLoading } from "@/components/ui/loading";
 import { TaskPage } from "@/components/notebook/TaskPage";
-import { useCanAccessNotebook } from "@/lib/hooks/use-permissions";
+import { useCanAccessNotebook, useCanUseNotebookTerminal } from "@/lib/hooks/use-permissions";
 import { useResolvedProjectRoute } from "@/lib/hooks/use-resolved-project-route";
 
 interface TaskPageParams {
@@ -42,6 +42,7 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
     locale: string;
   } | null>(null);
   const canAccessNotebook = useCanAccessNotebook();
+  const canUseNotebookTerminal = useCanUseNotebookTerminal();
 
   useEffect(() => {
     if (!resolvedRoute.isReady) {
@@ -161,6 +162,7 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
             canCreateTask={canAccessNotebook}
             canUpdateTask={canAccessNotebook}
             canDeleteTask={canAccessNotebook}
+            canUseTerminal={canUseNotebookTerminal}
             diagnosticsBasePath={basePath}
           />
         </div>

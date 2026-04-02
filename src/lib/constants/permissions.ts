@@ -4,6 +4,7 @@
  * Project-level permissions:
  * - project:endpoint:use
  * - project:agent:use
+ * - project:terminal:use
  * - project:agent:manage
  * - project:agent:public
  * - project:audit:read
@@ -19,6 +20,7 @@ export const PLATFORM_PERMISSIONS = {
   PROJECT: [
     'project:endpoint:use',
     'project:agent:use',
+    'project:terminal:use',
     'project:agent:manage',
     'project:agent:public',
     'project:audit:read',
@@ -40,6 +42,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'workspace:governance:update': 'Manage workspace project governance',
   'project:endpoint:use': 'Use project endpoints',
   'project:agent:use': 'Use project agents in chat and notebook',
+  'project:terminal:use': 'Open and interact with notebook task terminals',
   'project:agent:manage': 'Create and manage project agents',
   'project:agent:public': 'Publish or unpublish agents for project-wide visibility',
   'project:audit:read': 'Read project audit records',
@@ -67,6 +70,7 @@ export const PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS = {
   owner: [
     'project:endpoint:use',
     'project:agent:use',
+    'project:terminal:use',
     'project:agent:manage',
     'project:audit:read',
     'project:governance:update',
@@ -77,12 +81,13 @@ export const PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS = {
   admin: [
     'project:endpoint:use',
     'project:agent:use',
+    'project:terminal:use',
     'project:agent:manage',
     'project:audit:read',
     'project:governance:update',
   ],
-  operator: ['project:endpoint:use', 'project:agent:use'],
-  member: ['project:endpoint:use', 'project:agent:use'],
+  operator: ['project:endpoint:use', 'project:agent:use', 'project:terminal:use'],
+  member: ['project:endpoint:use', 'project:agent:use', 'project:terminal:use'],
 } as const;
 
 export const WORKSPACE_BUILT_IN_TEMPLATE_PERMISSIONS = {

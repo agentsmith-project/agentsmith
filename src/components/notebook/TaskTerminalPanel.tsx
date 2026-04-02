@@ -12,6 +12,22 @@ import { useTranslations } from 'next-intl';
 
 type TerminalStatus = 'idle' | 'connecting' | 'active' | 'closed' | 'failed';
 
+function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: string): string {
+  if (reason.includes('task_runner_offline')) {
+    return t('terminal_error_runner_offline');
+  }
+  if (reason.includes('task_run_in_progress')) {
+    return t('terminal_error_runner_offline');
+  }
+  if (reason.includes('task_agent_not_available')) {
+    return t('terminal_error_agent_unavailable');
+  }
+  if (reason.includes('terminal_connection_failed')) {
+    return t('terminal_error_connection_failed');
+  }
+  return reason;
+}
+
 export interface TaskTerminalPanelProps {
   open: boolean;
   workspaceId: string;
@@ -39,6 +55,7 @@ export function TaskTerminalPanel({
   const fitAddonRef = React.useRef<FitAddon | null>(null);
   const socketRef = React.useRef<WebSocket | null>(null);
   const resizeHandlerRef = React.useRef<(() => void) | null>(null);
+  const readyBannerWrittenRef = React.useRef(false);
   const [status, setStatus] = React.useState<TerminalStatus>('idle');
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const statusRef = React.useRef<TerminalStatus>('idle');
@@ -49,7 +66,7 @@ export function TaskTerminalPanel({
 
   const createSessionWithRetry = React.useCallback(async () => {
     let lastError: unknown = null;
-    for (let attempt = 0; attempt < 60; attempt += 1) {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
       try {
         return await taskApi.createTerminalSession(workspaceId, projectId, taskId, {
           cols: terminalRef.current?.cols ?? 120,
@@ -58,7 +75,7 @@ export function TaskTerminalPanel({
       } catch (error) {
         lastError = error;
         const message = error instanceof Error ? error.message : 'task_terminal_session_create_failed';
-        if (!message.includes('task_runner_offline')) {
+        if (!message.includes('task_runner_offline') && !message.includes('task_run_in_progress')) {
           throw error;
         }
         await new Promise((resolve) => window.setTimeout(resolve, 1000));
@@ -105,9 +122,9 @@ export function TaskTerminalPanel({
       terminal.loadAddon(fitAddon);
       terminal.open(containerRef.current);
       fitAddon.fit();
-      terminal.writeln(`${t('terminal_banner', { title: taskTitle })}\r\n`);
       terminalRef.current = terminal;
       fitAddonRef.current = fitAddon;
+      readyBannerWrittenRef.current = false;
     }
     return () => {
       disposeTerminal();
@@ -161,11 +178,19 @@ export function TaskTerminalPanel({
           return;
         }
         if (message.type === 'started') {
+          if (!readyBannerWrittenRef.current && terminalRef.current) {
+            terminalRef.current.writeln(`${t('terminal_banner', { title: taskTitle })}\r\n`);
+            readyBannerWrittenRef.current = true;
+          }
           setStatus('active');
           setErrorMessage(null);
           return;
         }
         if (message.type === 'output') {
+          if (!readyBannerWrittenRef.current && terminalRef.current) {
+            terminalRef.current.writeln(`${t('terminal_banner', { title: taskTitle })}\r\n`);
+            readyBannerWrittenRef.current = true;
+          }
           if (statusRef.current !== 'active') {
             setStatus('active');
             setErrorMessage(null);
@@ -180,13 +205,14 @@ export function TaskTerminalPanel({
         }
         if (message.type === 'error') {
           setStatus('failed');
-          setErrorMessage(message.error_message);
-          terminalRef.current.writeln(`\r\n${t('terminal_failed', { reason: message.error_message })}`);
+          const friendlyReason = describeTerminalError(t, message.error_message);
+          setErrorMessage(friendlyReason);
+          terminalRef.current.writeln(`\r\n${t('terminal_failed', { reason: friendlyReason })}`);
         }
       };
       socket.onerror = () => {
         setStatus('failed');
-        setErrorMessage('terminal_connection_failed');
+        setErrorMessage(t('terminal_error_connection_failed'));
       };
       socket.onclose = () => {
         dataDisposable.dispose();
@@ -195,9 +221,10 @@ export function TaskTerminalPanel({
       };
     }).catch((error) => {
       const message = error instanceof Error ? error.message : 'task_terminal_session_create_failed';
+      const friendlyReason = describeTerminalError(t, message);
       setStatus('failed');
-      setErrorMessage(message);
-      toast.error(message);
+      setErrorMessage(friendlyReason);
+      toast.error(friendlyReason);
     });
 
     return () => {

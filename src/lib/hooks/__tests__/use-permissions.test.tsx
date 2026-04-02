@@ -9,6 +9,7 @@ import {
   useHasAllPermissions,
   useCanAccessChat,
   useCanAccessNotebook,
+  useCanUseNotebookTerminal,
   useCanReadAudit,
   useAgentPageCapabilities,
   useAlertPageCapabilities,
@@ -257,6 +258,28 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
+    it('useCanUseNotebookTerminal should require project:terminal:use', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:endpoint:use', 'project:terminal:use'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useCanUseNotebookTerminal(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(true);
+    });
+
     it('useCanAccessChat should reject removed project:endpoint:invoke permission name', () => {
       const mockProject = {
         id: 'proj_001',
@@ -273,6 +296,28 @@ describe('use-permissions hooks', () => {
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
       const { result } = renderHook(() => useCanAccessChat(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(false);
+    });
+
+    it('useCanUseNotebookTerminal should return false without project:terminal:use', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:endpoint:use', 'project:agent:use'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useCanUseNotebookTerminal(), {
         wrapper: createWrapper(),
       });
 

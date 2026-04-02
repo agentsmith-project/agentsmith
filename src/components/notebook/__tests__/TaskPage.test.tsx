@@ -297,6 +297,7 @@ describe('TaskPage', () => {
         canCreateTask={true}
         canUpdateTask={true}
         canDeleteTask={true}
+        canUseTerminal={true}
       />,
     );
   };
@@ -382,6 +383,22 @@ describe('TaskPage', () => {
     it('disables terminal opening while a send is already pending', () => {
       mockSendMessageIsPending.value = true;
       renderComponent();
+
+      expect(latestTaskHeaderPropsRef.current.canOpenTerminal).toBe(false);
+    });
+
+    it('disables terminal opening when the user lacks terminal permission', () => {
+      renderWithNotebookQueryClient(
+        <TaskPage
+          workspaceId={mockWorkspaceId}
+          projectId={mockProjectId}
+          taskId={mockTaskId}
+          canCreateTask={true}
+          canUpdateTask={true}
+          canDeleteTask={true}
+          canUseTerminal={false}
+        />,
+      );
 
       expect(latestTaskHeaderPropsRef.current.canOpenTerminal).toBe(false);
     });

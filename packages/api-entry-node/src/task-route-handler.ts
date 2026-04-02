@@ -234,8 +234,15 @@ export async function hasBlockingTaskRunForTerminal(
   return true;
 }
 
-function resolveWebSocketBaseUrl(req: http.IncomingMessage): string {
-  const requestUrl = resolvePublicBaseUrl(req).replace(/\/+$/, '');
+function sanitizeBaseUrl(value: string | undefined | null): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\/+$/, '');
+}
+
+export function resolveTerminalWebSocketBaseUrl(req: http.IncomingMessage): string {
+  const configuredApiBase = sanitizeBaseUrl(process.env.PUBLIC_API_BASE_URL);
+  const requestUrl = configuredApiBase ?? resolvePublicBaseUrl(req).replace(/\/+$/, '');
   if (requestUrl.startsWith('https://')) {
     return `wss://${requestUrl.slice('https://'.length)}`;
   }
@@ -659,7 +666,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     json(res, 201, {
       session_id: created.sessionId,
       status: 'pending',
-      ws_url: `${resolveWebSocketBaseUrl(req)}${created.wsPath}`,
+      ws_url: `${resolveTerminalWebSocketBaseUrl(req)}${created.wsPath}`,
     });
     return true;
   }

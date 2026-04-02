@@ -35,6 +35,7 @@ export interface TaskHeaderProps {
   canDeleteTask?: boolean;
   canOpenTerminal?: boolean;
   terminalOpen?: boolean;
+  terminalDisabledReason?: string | null;
   onCreateNew?: () => void;
   onEdit?: () => void;
   onDeleted?: () => void;
@@ -52,6 +53,7 @@ export function TaskHeader({
   canDeleteTask = true,
   canOpenTerminal = false,
   terminalOpen = false,
+  terminalDisabledReason = null,
   onCreateNew,
   onEdit,
   onDeleted,
@@ -188,6 +190,7 @@ export function TaskHeader({
             className="h-8 px-2.5 text-xs"
             onClick={onToggleTerminal}
             disabled={!canOpenTerminal}
+            title={!canOpenTerminal ? terminalDisabledReason ?? undefined : undefined}
             data-testid="notebook__task-header-terminal"
           >
             <TerminalSquare className="mr-2 h-4 w-4" />

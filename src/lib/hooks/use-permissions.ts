@@ -113,6 +113,10 @@ export function useCanAccessNotebook(): boolean {
   return useHasPermission('project:endpoint:use');
 }
 
+export function useCanUseNotebookTerminal(): boolean {
+  return useHasPermission('project:terminal:use');
+}
+
 export function useAgentPageCapabilities() {
   const canUse = useHasPermission('project:agent:use');
   const canManage = useHasPermission('project:agent:manage');

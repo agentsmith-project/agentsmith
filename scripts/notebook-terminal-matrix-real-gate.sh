@@ -16,6 +16,9 @@ run_with_retry() {
       echo "[notebook-terminal-matrix] ${label} failed after retries" >&2
       return 1
     fi
+    if [[ "${label}" == "external_terminal_smoke" ]]; then
+      bash scripts/local-manual/seed-notebook-demo.sh >/dev/null 2>&1 || true
+    fi
     echo "[notebook-terminal-matrix] retrying ${label} (${attempt}/3)" >&2
     sleep $((attempt * 2))
   done

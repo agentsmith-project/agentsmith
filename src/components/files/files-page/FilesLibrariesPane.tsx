@@ -64,6 +64,17 @@ export function FilesLibrariesPane({
           <div className="p-1.5" data-testid="files__library-list">
             {libraries.map((library) => {
               const active = library.id === selectedLibraryId;
+              const isMountable = library.status === 'ready';
+              const statusToneClass = library.status === 'failed'
+                ? 'border-error/25 bg-error/10 text-error'
+                : library.status === 'degraded'
+                  ? 'border-warning/25 bg-warning/10 text-warning'
+                  : 'border-white/8 bg-white/5 text-secondary';
+              const statusReason = library.status === 'failed'
+                ? t('file_manager.library_status_reason_failed')
+                : library.status === 'degraded'
+                  ? t('file_manager.library_status_reason_degraded')
+                  : null;
               return (
                 <div
                   key={library.id}
@@ -88,7 +99,26 @@ export function FilesLibrariesPane({
                       <div className={cn('truncate text-sm transition-colors', active ? 'text-strong' : 'text-primary')}>
                         {library.name}
                       </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={cn(
+                            'rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]',
+                            statusToneClass,
+                          )}
+                          data-testid={`files__library-status--${library.id}`}
+                        >
+                          {t(`file_manager.library_status_${library.status}`)}
+                        </span>
+                      </div>
                       {library.bucket ? <div className="truncate text-[11px] text-tertiary">{library.bucket}</div> : null}
+                      {statusReason ? (
+                        <div
+                          className="mt-1 text-[11px] text-tertiary"
+                          data-testid={`files__library-status-reason--${library.id}`}
+                        >
+                          {statusReason}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                   {active && showActions ? (
@@ -107,13 +137,16 @@ export function FilesLibrariesPane({
                                   event.stopPropagation();
                                   onOpenDesktopAccess(library);
                                 }}
+                                disabled={!isMountable}
                                 aria-label={t('file_manager.desktop_access')}
                                 data-testid={`files__library-desktop-access--${library.id}`}
                               >
                                 <MonitorCog className="h-3.5 w-3.5" />
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>{t('file_manager.desktop_access')}</TooltipContent>
+                            <TooltipContent>
+                              {isMountable ? t('file_manager.desktop_access') : t('file_manager.library_status_reason_failed_mount')}
+                            </TooltipContent>
                           </Tooltip>
                         ) : null}
                         {canExchangeCredentials ? (
@@ -129,13 +162,16 @@ export function FilesLibrariesPane({
                                   event.stopPropagation();
                                   onOpenMountAccess(library);
                                 }}
+                                disabled={!isMountable}
                                 aria-label={t('file_manager.manual_mount_access')}
                                 data-testid={`files__library-manual-mount-access--${library.id}`}
                               >
                                 <Download className="h-3.5 w-3.5" />
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>{t('file_manager.manual_mount_access')}</TooltipContent>
+                            <TooltipContent>
+                              {isMountable ? t('file_manager.manual_mount_access') : t('file_manager.library_status_reason_failed_mount')}
+                            </TooltipContent>
                           </Tooltip>
                         ) : null}
                         {!canManage ? null : (

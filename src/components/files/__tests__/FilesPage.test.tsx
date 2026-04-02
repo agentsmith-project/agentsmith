@@ -180,6 +180,25 @@ describe('FilesPage (object browser)', () => {
     expect(screen.queryByTestId('files__library-desktop-access--lib_a')).not.toBeInTheDocument();
   });
 
+  it('shows failed library status and disables mount actions for non-ready libraries', async () => {
+    mockLibraries = [
+      createFileLibrary({ id: 'lib_ready', name: 'Ready Library', status: 'ready' }),
+      createFileLibrary({ id: 'lib_failed', name: 'Failed Library', status: 'failed' }),
+    ];
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId('files__library-item--lib_failed'));
+
+    expect(screen.getByTestId('files__library-status--lib_failed')).toHaveTextContent('file_manager.library_status_failed');
+    expect(screen.getByTestId('files__library-status-reason--lib_failed')).toHaveTextContent(
+      'file_manager.library_status_reason_failed',
+    );
+    expect(screen.getByTestId('files__library-desktop-access--lib_failed')).toBeDisabled();
+    expect(screen.getByTestId('files__library-manual-mount-access--lib_failed')).toBeDisabled();
+  });
+
   it('navigates into a folder prefix row on double click', async () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
 

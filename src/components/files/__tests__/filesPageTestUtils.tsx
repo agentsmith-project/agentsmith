@@ -12,6 +12,8 @@ export function createFileLibrary(overrides: Record<string, unknown> = {}) {
     visibility: 'shared',
     provider: 's3',
     bucket: 'bucket-1',
+    status: 'ready',
+    filesystem_name: 'flib-ws-default-proj-001-shared-docs',
     created_by_user_id: 'user_001',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),

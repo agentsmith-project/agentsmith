@@ -37,8 +37,12 @@ vi.mock('next-intl', () => ({
     const map: Record<string, string> = {
       terminal_title: 'Task Terminal',
       terminal_description: 'Directly control the current runner environment for this task.',
+      terminal_scope_hint: 'Changes you make here affect files in this task workspace. Temporary shell variables stay only in this terminal session.',
       terminal_connecting: 'Connecting to runner...',
+      terminal_preparing_environment: 'Preparing the task environment before opening the terminal...',
+      terminal_preparing_run_busy: 'Waiting for the current agent run to finish before opening the terminal...',
       terminal_status_idle: 'Idle',
+      terminal_status_preparing: 'Preparing',
       terminal_status_connecting: 'Connecting',
       terminal_status_active: 'Active',
       terminal_status_closed: 'Closed',
@@ -137,6 +141,7 @@ describe('TaskTerminalPanel', () => {
     expect(socket?.url).toBe('ws://example.test/terminal');
     await waitFor(() => {
       expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Connecting');
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Changes you make here affect files in this task workspace');
       expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Failed');
     }, { timeout: 5000 });
   }, 10000);
@@ -145,11 +150,15 @@ describe('TaskTerminalPanel', () => {
     const createTerminalSession = vi
       .fn()
       .mockRejectedValueOnce(new Error('task_run_in_progress'))
-      .mockResolvedValue({
-        session_id: 'term_2',
-        status: 'pending',
-        ws_url: 'ws://example.test/terminal-2',
-      });
+      .mockImplementation(() => new Promise((resolve) => {
+        window.setTimeout(() => {
+          resolve({
+            session_id: 'term_2',
+            status: 'pending',
+            ws_url: 'ws://example.test/terminal-2',
+          });
+        }, 200);
+      }));
 
     render(
       <TaskTerminalPanel
@@ -164,6 +173,9 @@ describe('TaskTerminalPanel', () => {
     );
 
     await waitFor(() => expect(createTerminalSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Waiting for the current agent run to finish before opening the terminal...');
+    });
     await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
     await waitFor(() => {
       expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Connecting');

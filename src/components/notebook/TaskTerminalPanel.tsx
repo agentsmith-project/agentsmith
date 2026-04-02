@@ -10,7 +10,9 @@ import type { TaskTerminalServerEvent } from '@/lib/types/task';
 import { toast } from '@/components/ui/toast';
 import { useTranslations } from 'next-intl';
 
-type TerminalStatus = 'idle' | 'connecting' | 'active' | 'closed' | 'failed';
+type TerminalStatus = 'idle' | 'preparing' | 'connecting' | 'active' | 'closed' | 'failed';
+
+type TerminalProgressReason = 'runner_offline' | 'run_in_progress' | null;
 
 function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: string): string {
   if (reason.includes('task_runner_offline')) {
@@ -58,6 +60,7 @@ export function TaskTerminalPanel({
   const readyBannerWrittenRef = React.useRef(false);
   const [status, setStatus] = React.useState<TerminalStatus>('idle');
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [progressReason, setProgressReason] = React.useState<TerminalProgressReason>(null);
   const statusRef = React.useRef<TerminalStatus>('idle');
 
   React.useEffect(() => {
@@ -75,7 +78,15 @@ export function TaskTerminalPanel({
       } catch (error) {
         lastError = error;
         const message = error instanceof Error ? error.message : 'task_terminal_session_create_failed';
-        if (!message.includes('task_runner_offline') && !message.includes('task_run_in_progress')) {
+        if (message.includes('task_runner_offline')) {
+          setProgressReason('runner_offline');
+          setStatus('preparing');
+          setErrorMessage(null);
+        } else if (message.includes('task_run_in_progress')) {
+          setProgressReason('run_in_progress');
+          setStatus('preparing');
+          setErrorMessage(null);
+        } else {
           throw error;
         }
         await new Promise((resolve) => window.setTimeout(resolve, 1000));
@@ -136,9 +147,12 @@ export function TaskTerminalPanel({
     let cancelled = false;
     setStatus('connecting');
     setErrorMessage(null);
+    setProgressReason(null);
 
     void createSessionWithRetry().then((created) => {
       if (cancelled || !terminalRef.current) return;
+      setStatus('connecting');
+      setProgressReason(null);
       terminalRef.current.writeln(t('terminal_connecting'));
       const socket = new WebSocket(created.ws_url);
       socketRef.current = socket;
@@ -166,6 +180,7 @@ export function TaskTerminalPanel({
       socket.onopen = () => {
         setStatus('active');
         setErrorMessage(null);
+        setProgressReason(null);
         fitAddonRef.current?.fit();
         resizeHandler();
       };
@@ -194,6 +209,7 @@ export function TaskTerminalPanel({
           if (statusRef.current !== 'active') {
             setStatus('active');
             setErrorMessage(null);
+            setProgressReason(null);
           }
           terminalRef.current.write(message.chunk);
           return;
@@ -207,12 +223,14 @@ export function TaskTerminalPanel({
           setStatus('failed');
           const friendlyReason = describeTerminalError(t, message.error_message);
           setErrorMessage(friendlyReason);
+          setProgressReason(null);
           terminalRef.current.writeln(`\r\n${t('terminal_failed', { reason: friendlyReason })}`);
         }
       };
       socket.onerror = () => {
         setStatus('failed');
         setErrorMessage(t('terminal_error_connection_failed'));
+        setProgressReason(null);
       };
       socket.onclose = () => {
         dataDisposable.dispose();
@@ -224,6 +242,7 @@ export function TaskTerminalPanel({
       const friendlyReason = describeTerminalError(t, message);
       setStatus('failed');
       setErrorMessage(friendlyReason);
+      setProgressReason(null);
       toast.error(friendlyReason);
     });
 
@@ -245,8 +264,16 @@ export function TaskTerminalPanel({
           <div className="text-sm font-semibold text-foreground">{t('terminal_title')}</div>
           <div className="mt-1 text-xs text-tertiary">{t('terminal_description')}</div>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={status === 'active' ? 'default' : status === 'failed' ? 'destructive' : 'outline'}>
+      <div className="flex items-center gap-2">
+          <Badge variant={
+            status === 'active'
+              ? 'default'
+              : status === 'failed'
+                ? 'destructive'
+                : status === 'preparing'
+                  ? 'secondary'
+                  : 'outline'
+          }>
             {t(`terminal_status_${status}`)}
           </Badge>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
@@ -254,6 +281,16 @@ export function TaskTerminalPanel({
           </Button>
         </div>
       </div>
+      <div className="border-b border-white/6 bg-surface/40 px-4 py-2 text-xs text-tertiary">
+        {t('terminal_scope_hint')}
+      </div>
+      {status === 'preparing' ? (
+        <div className="border-b border-white/6 bg-accent/10 px-4 py-2 text-xs text-foreground">
+          {progressReason === 'run_in_progress'
+            ? t('terminal_preparing_run_busy')
+            : t('terminal_preparing_environment')}
+        </div>
+      ) : null}
       {errorMessage ? (
         <div className="border-b border-white/6 bg-error/10 px-4 py-2 text-xs text-error">
           {t('terminal_error_hint', { reason: errorMessage })}

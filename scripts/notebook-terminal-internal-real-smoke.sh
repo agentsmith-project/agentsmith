@@ -129,125 +129,192 @@ function fail(message, extra) {
     `/projects/${encodeURIComponent(projectId)}` +
     `/tasks/${encodeURIComponent(taskId)}/terminal/sessions`;
 
-  let created = null;
-  for (let attempt = 0; attempt < 90; attempt += 1) {
-    const create = await fetch(createUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ cols: 80, rows: 24 }),
-    });
-    const payload = await create.json();
-    if (create.ok) {
-      created = payload;
-      break;
-    }
-    if (
-      create.status === 409 && payload?.message === 'task_run_in_progress'
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      continue;
-    }
-    if (
-      create.status === 400 && payload?.message === 'sandbox_startup_timeout'
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      continue;
-    }
-    if (
-      create.status >= 500
-      || (create.status === 409 && payload?.message === 'task_terminal_internal_runtime_unavailable')
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      continue;
-    }
-    if (!(
-      create.status === 409 && payload?.message === 'task_run_in_progress'
-    )) {
+  async function createSession() {
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      const create = await fetch(createUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ cols: 80, rows: 24 }),
+      });
+      const payload = await create.json();
+      if (create.ok) {
+        return payload;
+      }
+      if (create.status === 409 && payload?.message === 'task_run_in_progress') {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
+      if (create.status === 400 && payload?.message === 'sandbox_startup_timeout') {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        continue;
+      }
+      if (
+        create.status >= 500
+        || (create.status === 409 && payload?.message === 'task_terminal_internal_runtime_unavailable')
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        continue;
+      }
       fail(`create_session_${create.status}`, payload);
     }
+    fail('create_session_timeout_waiting_for_warmup_run');
   }
-  if (!created) fail('create_session_timeout_waiting_for_warmup_run');
 
-  console.log('[notebook-terminal-internal-smoke] created', created.session_id);
+  async function runSession({
+    label,
+    onStarted,
+    onOutput,
+    validate,
+  }) {
+    const created = await createSession();
+    console.log(`[notebook-terminal-internal-smoke] created ${label}`, created.session_id);
 
-  const ws = new WebSocket(
-    created.ws_url.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:'),
-  );
+    return await new Promise((resolve, reject) => {
+      const ws = new WebSocket(
+        created.ws_url.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:'),
+      );
+      const state = {
+        sawStarted: false,
+        sawWizard: false,
+        exitCode: null,
+      };
+      const deadline = setTimeout(() => {
+        try { ws.close(); } catch {}
+        reject(new Error(`timeout:${label}`));
+      }, 30000);
 
-  let sawStarted = false;
-  let sawPwd = false;
-  let sawEcho = false;
-  let sawWizard = false;
+      ws.on('message', (buffer) => {
+        const message = JSON.parse(String(buffer));
+        if (message.type === 'started') {
+          state.sawStarted = true;
+          onStarted(ws);
+          return;
+        }
+        if (message.type === 'output') {
+          const chunk = typeof message.chunk === 'string' ? message.chunk : '';
+          process.stdout.write(chunk);
+          if (
+            chunk.includes('zsh-newuser-install') ||
+            chunk.includes('You are seeing this message because you have no zsh startup files')
+          ) {
+            state.sawWizard = true;
+          }
+          onOutput(chunk, ws, state);
+          return;
+        }
+        if (message.type === 'error') {
+          clearTimeout(deadline);
+          reject(new Error(`terminal_error:${label}:${JSON.stringify(message)}`));
+          return;
+        }
+        if (message.type === 'exited' || message.type === 'closed') {
+          clearTimeout(deadline);
+          state.exitCode = message.exit_code ?? null;
+          try {
+            validate(state);
+            resolve({ sessionId: created.session_id, exitCode: state.exitCode });
+          } catch (error) {
+            reject(error);
+          }
+        }
+      });
 
-  const deadline = setTimeout(() => {
-    try { ws.close(); } catch {}
-    fail('timeout', { sawStarted, sawPwd, sawEcho, sawWizard });
-  }, 30000);
+      ws.on('error', (error) => {
+        clearTimeout(deadline);
+        reject(new Error(`socket_error:${label}:${error.message}`));
+      });
+    });
+  }
 
-  ws.on('message', (buffer) => {
-    const message = JSON.parse(String(buffer));
-    if (message.type === 'started') {
-      sawStarted = true;
+  const firstState = {
+    sawPwd: false,
+    sawSessionVar: false,
+    sawInterrupted: false,
+  };
+  const first = await runSession({
+    label: 'session-one',
+    onStarted: (ws) => {
       setTimeout(() => {
         ws.send(JSON.stringify({
           type: 'terminal.stdin',
-          data: 'pwd\necho NOTEBOOK_TERMINAL_READY\n',
+          data: 'pwd\nexport NOTEBOOK_SESSION_VAR=terminal_session_value\necho SESSION_VAR=$NOTEBOOK_SESSION_VAR\nsleep 30\n',
         }));
         setTimeout(() => {
-          ws.send(JSON.stringify({
-            type: 'terminal.stdin',
-            data: 'exit\n',
-          }));
-        }, 500);
+          ws.send(JSON.stringify({ type: 'terminal.stdin', data: '\u0003' }));
+          setTimeout(() => {
+            ws.send(JSON.stringify({
+              type: 'terminal.stdin',
+              data: 'echo INTERRUPTED_OK\nexit\n',
+            }));
+          }, 300);
+        }, 1000);
       }, 750);
-      return;
-    }
-
-    if (message.type === 'output') {
-      const chunk = typeof message.chunk === 'string' ? message.chunk : '';
-      process.stdout.write(chunk);
-      if (chunk.includes('/workspace')) sawPwd = true;
-      if (chunk.includes('NOTEBOOK_TERMINAL_READY')) sawEcho = true;
-      if (
-        chunk.includes('zsh-newuser-install') ||
-        chunk.includes('You are seeing this message because you have no zsh startup files')
-      ) {
-        sawWizard = true;
+    },
+    onOutput: (chunk) => {
+      if (chunk.includes('/workspace')) {
+        firstState.sawPwd = true;
       }
-      return;
-    }
-
-    if (message.type === 'exited' || message.type === 'closed') {
-      clearTimeout(deadline);
-      if (!sawStarted || !sawPwd || !sawEcho || sawWizard) {
+      if (chunk.includes('SESSION_VAR=terminal_session_value')) {
+        firstState.sawSessionVar = true;
+      }
+      if (chunk.includes('INTERRUPTED_OK')) {
+        firstState.sawInterrupted = true;
+      }
+    },
+    validate: (state) => {
+      if (!state.sawStarted || !firstState.sawPwd || !firstState.sawSessionVar || !firstState.sawInterrupted || state.sawWizard) {
         fail('unexpected_terminal_result', {
-          sawStarted,
-          sawPwd,
-          sawEcho,
-          sawWizard,
-          event: message.type,
-          exitCode: message.exit_code ?? null,
+          label: 'session-one',
+          sawStarted: state.sawStarted,
+          sawPwd: firstState.sawPwd,
+          sawSessionVar: firstState.sawSessionVar,
+          sawInterrupted: firstState.sawInterrupted,
+          sawWizard: state.sawWizard,
+          exitCode: state.exitCode,
         });
       }
-      console.log('\n[notebook-terminal-internal-smoke] success', JSON.stringify({
-        session_id: created.session_id,
-        exit_code: message.exit_code ?? null,
-      }));
-      process.exit(0);
-    }
-
-    if (message.type === 'error') {
-      clearTimeout(deadline);
-      fail('terminal_error', message);
-    }
+    },
   });
 
-  ws.on('error', (error) => {
-    clearTimeout(deadline);
-    fail('socket_error', error.message);
+  const secondState = {
+    sawSessionReset: false,
+  };
+  const second = await runSession({
+    label: 'session-two',
+    onStarted: (ws) => {
+      setTimeout(() => {
+        ws.send(JSON.stringify({
+          type: 'terminal.stdin',
+          data: 'echo SESSION_VAR_SECOND=${NOTEBOOK_SESSION_VAR:-unset}\nexit\n',
+        }));
+      }, 750);
+    },
+    onOutput: (chunk) => {
+      if (chunk.includes('SESSION_VAR_SECOND=unset')) {
+        secondState.sawSessionReset = true;
+      }
+    },
+    validate: (state) => {
+      if (!state.sawStarted || !secondState.sawSessionReset || state.sawWizard) {
+        fail('unexpected_terminal_result', {
+          label: 'session-two',
+          sawStarted: state.sawStarted,
+          sawSessionReset: secondState.sawSessionReset,
+          sawWizard: state.sawWizard,
+          exitCode: state.exitCode,
+        });
+      }
+    },
   });
+
+  console.log('\n[notebook-terminal-internal-smoke] success', JSON.stringify({
+    first_session_id: first.sessionId,
+    second_session_id: second.sessionId,
+    exit_code: second.exitCode ?? first.exitCode ?? null,
+  }));
+  process.exit(0);
 })();
 NODE

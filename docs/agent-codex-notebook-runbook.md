@@ -242,6 +242,11 @@ Resume rule:
 - 一个 task 同时最多一个活跃 terminal session
 - agent run 执行中不允许同时打开 terminal
 - terminal session 只进入当前 task 对应的 runner 环境和 workspace
+- internal task 打开 terminal 时，系统会像 conversation 一样自动准备运行环境；用户侧只看到 `Preparing` / `Connecting`
+- 同一个 terminal session 内 shell 状态连续；临时环境变量和当前前台程序会留在当前 session 中
+- terminal session 与后续 agent run 不共享隐式 shell 状态；在 terminal 里 `export` 的变量不会自动影响之后的 agent run
+- terminal 默认运行在 runner 工作用户下，不承诺 `sudo` 或 root 提权
+- `Ctrl-C` / `Ctrl-D` 视为正式支持的终端交互；关闭 terminal session 会结束当前前台 shell
 
 ### 5.2.4 Notebook Terminal local-manual smoke
 
@@ -259,11 +264,15 @@ npm run test:notebook:release:strict
 2. 连接 browser-side websocket
 3. 在真实 runner shell 中执行：
    - `pwd`
-   - `echo NOTEBOOK_TERMINAL_READY`
-   - `exit`
+   - `export NOTEBOOK_SESSION_VAR=terminal_session_value`
+   - `sleep 30` 后发送 `Ctrl-C`
+   - 新开第二个 terminal session 验证 `NOTEBOOK_SESSION_VAR` 不会继承
 4. 验证：
    - stdin / stdout / exit 链路成功
    - terminal cwd 落在 task workspace
+   - 同一 session 内 shell 状态连续
+   - 新 session 不继承旧 session 的临时 shell 环境变量
+   - 长运行前台程序能被 `Ctrl-C` 中断
    - zsh 首次启动向导不会干扰会话
 
 `test:notebook:backend-real:terminal:matrix` 会串行验证：

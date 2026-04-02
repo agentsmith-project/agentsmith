@@ -84,6 +84,13 @@ cd /home/percy/works/mbos-v1/agentsmith
 npm run test:notebook:backend-real:terminal
 ```
 
+Notebook Terminal 的当前产品规则：
+- 打开 terminal 时，系统会自动准备这个 task 的运行环境；用户不需要区分 internal / external runner 是否已预热
+- terminal 内改动的文件会保留在当前 task workspace
+- terminal 内临时 shell 状态只在当前 terminal session 有效，不会自动影响后续 agent run
+- 默认不承诺 `sudo`；terminal 面向的是 task 工作环境，不是主机提权入口
+- 长运行前台程序应支持 `Ctrl-C` / `Ctrl-D` 等标准终端交互
+
 ## 4. 治理链路排障
 
 如果问题落在 `Members / Resource Policy / Audit / Usage`：

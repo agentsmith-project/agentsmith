@@ -37,6 +37,8 @@ AgentSmith 当前只采用一条治理主线：
 5. 系统超级管理员入口与 workspace 业务入口必须分离。
 6. Authn 由 workspace 绑定的 IdP 提供；Authz 由 AgentSmith 执行。
 7. workspace 生命周期只归系统超级管理员管理。
+8. `AgentSmith Web` 与 `AgentSmith Desktop` 属于独立交付面：共享合同与地址真相，不共享默认发布节奏。
+9. 任一交付面的发布阻断只影响自身；只有显式合同变更、地址真相变更或联调验收失败，才允许升级为跨交付面阻断。
 
 ## 3. 六层方法框架
 

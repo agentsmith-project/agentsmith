@@ -310,6 +310,7 @@ describe('project-file-library-routes', () => {
         message: 'file_library_juicefs_cli_missing',
       }),
     );
+    await expect(deps.docStore.list('project_file_libraries')).resolves.toHaveLength(0);
   });
 
   it('returns a precise error when minio env is missing during provisioning', async () => {
@@ -346,6 +347,7 @@ describe('project-file-library-routes', () => {
         message: 'file_library_env_missing_minio_access_key',
       }),
     );
+    await expect(deps.docStore.list('project_file_libraries')).resolves.toHaveLength(0);
   });
 
   it('cleans up internal workspace bindings when deleting a file library', async () => {

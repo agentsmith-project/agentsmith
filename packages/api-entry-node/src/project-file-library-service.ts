@@ -114,7 +114,11 @@ export async function createAndProvisionProjectFileLibrary(input: {
     });
     return await catalogRepo.update(input.workspaceId, input.projectId, created.id, { status: 'ready' });
   } catch (error) {
-    await catalogRepo.update(input.workspaceId, input.projectId, created.id, { status: 'failed' });
+    try {
+      await catalogRepo.delete(input.workspaceId, input.projectId, created.id);
+    } catch {
+      await catalogRepo.update(input.workspaceId, input.projectId, created.id, { status: 'failed' });
+    }
     throw error;
   }
 }

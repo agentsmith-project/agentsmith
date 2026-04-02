@@ -192,3 +192,15 @@ Historical provider-specific names and descriptions do not belong in current wor
 - `docs/CURRENT_BASELINE.md` if current baseline meaning changes
 - `Makefile` help
 - workflow/governance static checks
+
+## 8. Web / Desktop release separation
+
+Current delivery governance for AgentSmith companion surfaces:
+
+1. `AgentSmith Web` and `AgentSmith Desktop` are separate release surfaces.
+2. They may share contracts, address truth, and joint verification evidence, but they do not share a mandatory same-version or same-day release rule.
+3. A failure in one surface blocks the other only when:
+- the shared contract changes
+- the shared address truth changes
+- a required joint verification path fails
+4. Repository-local gates must stay local by default. Cross-surface verification belongs in explicit joint rehearsal or release guidance, not in unrelated default gates.

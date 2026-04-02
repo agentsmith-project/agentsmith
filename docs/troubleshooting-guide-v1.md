@@ -66,6 +66,12 @@ make local-manual-seed-notebook
 make local-manual-seed-notebook
 ```
 
+### Files / Desktop 挂载联调
+```bash
+cd /home/percy/works/mbos-v1/agentsmith-desktop
+npm run smoke:local-manual-mount
+```
+
 ## 4. 治理链路排障
 
 如果问题落在 `Members / Resource Policy / Audit / Usage`：
@@ -141,6 +147,29 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 3. [Development Guide](../DEVELOPMENT.md)
 4. [User Guides Index](./user-guides/README.md)
 5. [Agent Codex Notebook Runbook](./agent-codex-notebook-runbook.md)
+6. [File Library Client Mount](./user-guides/file-library-local-mount.md)
+
+## Files / Desktop Mount Issues
+
+如果问题是：
+- Desktop 看不到某个文件库
+- Desktop 挂载失败
+- Files 里出现 `failed` / `degraded` 文件库
+
+先按下面判断：
+
+1. Desktop 里看不到文件库
+- 先不要怀疑 Desktop。
+- 这通常表示该文件库不是可挂载状态。
+- 回到 Files 页面检查该库是否为 `ready`。
+
+2. Files 页面中该库是 `failed` / `degraded`
+- 这属于文件库管理侧问题。
+- 先治理文件库本身，再回到 Desktop。
+
+3. 只在本地挂载链路出问题
+- 直接看：
+  - [File Library Client Mount](./user-guides/file-library-local-mount.md)
 
 ## Token Issues
 

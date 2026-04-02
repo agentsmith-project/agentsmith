@@ -93,6 +93,29 @@ Expected behavior:
 
 ## Common Failures
 
+### Library missing from AgentSmith Desktop
+This is expected when the file library is not mountable yet.
+
+AgentSmith Desktop only lists libraries that are ready for local mounting:
+- status is `ready`
+- backend initialization exists
+- mount access exists
+
+If a library does not appear in Desktop, go back to the Files page and inspect that library there.
+
+### Files page shows `Failed` or `Degraded`
+Treat this as a Files management problem, not as a Desktop mount problem.
+
+Recommended action:
+1. Open the library in the Files page.
+2. Read the status badge and status reason.
+3. If the library is a broken temporary or smoke library, delete it.
+4. If the library is a real user library, rebuild or recreate it before trying Desktop again.
+
+Important:
+- AgentSmith Desktop hides non-mountable libraries on purpose.
+- Files management is the place to govern failed or degraded libraries.
+
 ### Desktop path blocked by missing prerequisites
 This is expected when the current machine is missing one or more platform requirements:
 
@@ -107,6 +130,17 @@ Desktop blocked mount activation because the local machine is not ready for file
 
 ### `desktop_mount_access_failed_*`
 Desktop could not exchange mount access for the target library.
+
+### `file_library_mount_access_not_found`
+The target library does not have usable mount access.
+
+This usually means the library never finished backend initialization.
+
+Recommended action:
+1. Do not keep retrying in Desktop.
+2. Return to Files management.
+3. Delete the broken library if it is temporary or disposable.
+4. Recreate the library and wait until it is `ready` before mounting.
 
 ### `file_library_env_missing_*`
 The backend is missing one or more required storage environment variables.

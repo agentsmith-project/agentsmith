@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -14,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 
 interface LibraryDeleteTarget {
   name: string;
+  status?: 'creating' | 'ready' | 'degraded' | 'failed' | 'deleting';
 }
 
 interface LibraryDialogsProps {
@@ -75,6 +77,8 @@ export function LibraryDialogs({
   onSetLibraryRenameName,
   onSetLibraryRenameOpen,
 }: LibraryDialogsProps) {
+  const isFailedLibraryDelete = libraryDeleteTarget?.status === 'failed' || libraryDeleteTarget?.status === 'degraded';
+
   return (
     <>
       <Dialog open={libraryCreateOpen} onOpenChange={onSetLibraryCreateOpen}>
@@ -169,13 +173,31 @@ export function LibraryDialogs({
         <DialogContent className="sm:max-w-[560px]" data-testid="files__dialog__library-delete">
           <DialogHeader>
             <DialogTitle>{t('file_manager.library_delete')}</DialogTitle>
+            <DialogDescription>
+              {libraryDeleteTarget
+                ? (
+                    isFailedLibraryDelete
+                      ? t('file_manager.library_delete_failed_recovery_description', { name: libraryDeleteTarget.name })
+                      : t('file_manager.library_delete_confirm', { name: libraryDeleteTarget.name })
+                  )
+                : t('file_manager.library_delete_confirm_empty')}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="text-sm text-tertiary">
-              {libraryDeleteTarget
-                ? t('file_manager.library_delete_confirm', { name: libraryDeleteTarget.name })
-                : t('file_manager.library_delete_confirm_empty')}
-            </div>
+            {libraryDeleteTarget ? (
+              <div
+                className={
+                  isFailedLibraryDelete
+                    ? 'rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning'
+                    : 'rounded-md border border-error/30 bg-error/10 px-3 py-2 text-xs text-error'
+                }
+                data-testid="files__library-delete__warning"
+              >
+                {isFailedLibraryDelete
+                  ? t('file_manager.library_delete_failed_recovery_warning')
+                  : t('file_manager.library_delete_warning')}
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="sources-library-delete-confirm">{t('file_manager.confirm_name')}</Label>
               <Input

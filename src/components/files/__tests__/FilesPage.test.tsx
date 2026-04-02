@@ -199,6 +199,24 @@ describe('FilesPage (object browser)', () => {
     expect(screen.getByTestId('files__library-manual-mount-access--lib_failed')).toBeDisabled();
   });
 
+  it('shows a recovery-focused delete warning for failed libraries', async () => {
+    mockLibraries = [
+      createFileLibrary({ id: 'lib_failed', name: 'Failed Library', status: 'failed' }),
+    ];
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId('files__library-item--lib_failed'));
+    await user.click(screen.getByTestId('files__library-delete-inline--lib_failed'));
+
+    expect(await screen.findByTestId('files__dialog__library-delete')).toBeInTheDocument();
+    expect(screen.getByText('file_manager.library_delete_failed_recovery_description')).toBeInTheDocument();
+    expect(screen.getByTestId('files__library-delete__warning')).toHaveTextContent(
+      'file_manager.library_delete_failed_recovery_warning',
+    );
+  });
+
   it('navigates into a folder prefix row on double click', async () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
 

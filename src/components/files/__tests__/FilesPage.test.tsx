@@ -199,6 +199,22 @@ describe('FilesPage (object browser)', () => {
     expect(screen.getByTestId('files__library-manual-mount-access--lib_failed')).toBeDisabled();
   });
 
+  it('shows a governance empty state instead of normal loading for degraded libraries', async () => {
+    mockLibraries = [
+      createFileLibrary({ id: 'lib_degraded', name: 'Degraded Library', status: 'degraded' }),
+    ];
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId('files__library-item--lib_degraded'));
+
+    expect(await screen.findByTestId('files__library-unavailable-empty-state')).toBeInTheDocument();
+    expect(screen.getByText('file_manager.library_unavailable_title')).toBeInTheDocument();
+    expect(screen.getByText('file_manager.library_unavailable_description')).toBeInTheDocument();
+    expect(screen.queryByText('file_manager.loading')).not.toBeInTheDocument();
+  });
+
   it('shows a recovery-focused delete warning for failed libraries', async () => {
     mockLibraries = [
       createFileLibrary({ id: 'lib_failed', name: 'Failed Library', status: 'failed' }),

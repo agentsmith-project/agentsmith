@@ -2703,6 +2703,8 @@
       "library_status_reason_degraded": "这个文件库当前需要先治理，再建议用于本地挂载。",
       "library_status_reason_failed": "这个文件库没有完成后端基础初始化。请先在 Files 管理侧删除或重建，再用于 Desktop 挂载。",
       "library_status_reason_failed_mount": "这个文件库在后端基础初始化恢复前不可用于挂载。",
+      "library_unavailable_title": "这个文件库当前不可用于浏览和本地挂载。",
+      "library_unavailable_description": "请先查看左侧文件库状态说明。如果后续仍需使用，请删除坏记录后重新创建，不提供自动重新初始化。",
       "confirm_name": "确认名称",
       "library_name": "文件库名称",
       "library_name_placeholder": "例如：共享资料",

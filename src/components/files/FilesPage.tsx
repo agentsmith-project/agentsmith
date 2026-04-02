@@ -494,6 +494,7 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
         selectedForMove={selectedForMove}
         selectedIds={selectedIds}
         selectedLibraryId={selectedLibraryId}
+        selectedLibraryStatus={selectedLibrary?.status ?? null}
         selectedObjectsCount={selectedObjects.length}
         selectionMode={selectionMode}
         setSearchInput={setSearchInput}

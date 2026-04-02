@@ -19,6 +19,7 @@ type FilesBrowserPaneProps = {
   searchInput: string;
   setSearchInput: (value: string) => void;
   selectedLibraryId: string | null;
+  selectedLibraryStatus: 'creating' | 'ready' | 'degraded' | 'failed' | 'deleting' | null;
   filteredItems: FileObjectsListItem[];
   selectedIds: SelectedRowId[];
   selectionMode: FileSelectionMode;
@@ -88,6 +89,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
     searchInput,
     setSearchInput,
     selectedLibraryId,
+    selectedLibraryStatus,
     filteredItems,
     selectedIds,
     selectionMode,
@@ -129,6 +131,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
   } = props;
 
   const isMultiMode = selectionMode === 'multi';
+  const selectedLibraryUnavailable = selectedLibraryStatus !== null && selectedLibraryStatus !== 'ready';
 
   return (
     <div
@@ -344,7 +347,19 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
           </div>
 
           <div className="flex-1 min-h-0">
-            {objectsQuery.isLoading ? (
+            {selectedLibraryUnavailable ? (
+              <div
+                className="px-6 py-12 text-center"
+                data-testid="files__library-unavailable-empty-state"
+              >
+                <div className="text-sm font-medium text-primary">
+                  {t('file_manager.library_unavailable_title')}
+                </div>
+                <div className="mt-2 text-sm text-tertiary">
+                  {t('file_manager.library_unavailable_description')}
+                </div>
+              </div>
+            ) : objectsQuery.isLoading ? (
               <div className="px-3 py-8 text-center text-tertiary">{t('file_manager.loading')}</div>
             ) : filteredItems.length === 0 ? (
               <div className="px-3 py-10 text-center text-tertiary">{t('file_manager.empty')}</div>

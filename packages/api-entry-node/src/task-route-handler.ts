@@ -665,7 +665,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskTerminalSession' && method === 'GET') {
-    const session = deps.notebookTerminalService.getSession(route.terminalSessionId);
+    const session = await deps.notebookTerminalService.getSession(route.terminalSessionId);
     if (!session || session.workspaceId !== route.workspaceId || session.projectId !== route.projectId || session.taskId !== route.taskId) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_terminal_session_not_found' });
       return true;

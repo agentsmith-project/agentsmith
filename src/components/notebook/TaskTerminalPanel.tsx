@@ -41,6 +41,31 @@ export function TaskTerminalPanel({
   const resizeHandlerRef = React.useRef<(() => void) | null>(null);
   const [status, setStatus] = React.useState<TerminalStatus>('idle');
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const statusRef = React.useRef<TerminalStatus>('idle');
+
+  React.useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  const createSessionWithRetry = React.useCallback(async () => {
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      try {
+        return await taskApi.createTerminalSession(workspaceId, projectId, taskId, {
+          cols: terminalRef.current?.cols ?? 120,
+          rows: terminalRef.current?.rows ?? 30,
+        });
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : 'task_terminal_session_create_failed';
+        if (!message.includes('task_runner_offline')) {
+          throw error;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('task_runner_offline');
+  }, [projectId, taskApi, taskId, workspaceId]);
 
   const cleanupSocket = React.useCallback(() => {
     if (resizeHandlerRef.current) {
@@ -95,10 +120,7 @@ export function TaskTerminalPanel({
     setStatus('connecting');
     setErrorMessage(null);
 
-    void taskApi.createTerminalSession(workspaceId, projectId, taskId, {
-      cols: terminalRef.current.cols,
-      rows: terminalRef.current.rows,
-    }).then((created) => {
+    void createSessionWithRetry().then((created) => {
       if (cancelled || !terminalRef.current) return;
       terminalRef.current.writeln(t('terminal_connecting'));
       const socket = new WebSocket(created.ws_url);
@@ -126,6 +148,7 @@ export function TaskTerminalPanel({
 
       socket.onopen = () => {
         setStatus('active');
+        setErrorMessage(null);
         fitAddonRef.current?.fit();
         resizeHandler();
       };
@@ -139,9 +162,14 @@ export function TaskTerminalPanel({
         }
         if (message.type === 'started') {
           setStatus('active');
+          setErrorMessage(null);
           return;
         }
         if (message.type === 'output') {
+          if (statusRef.current !== 'active') {
+            setStatus('active');
+            setErrorMessage(null);
+          }
           terminalRef.current.write(message.chunk);
           return;
         }
@@ -176,7 +204,7 @@ export function TaskTerminalPanel({
       cancelled = true;
       cleanupSocket();
     };
-  }, [cleanupSocket, disabled, open, projectId, taskApi, taskId, workspaceId, t]);
+  }, [cleanupSocket, createSessionWithRetry, disabled, open, t]);
 
   if (!open) return null;
 

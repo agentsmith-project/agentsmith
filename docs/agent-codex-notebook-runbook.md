@@ -249,6 +249,8 @@ Resume rule:
 
 ```bash
 npm run test:notebook:backend-real:terminal
+npm run test:notebook:backend-real:terminal:matrix
+npm run test:notebook:release:strict
 ```
 
 这条 smoke 会：
@@ -263,6 +265,15 @@ npm run test:notebook:backend-real:terminal
    - stdin / stdout / exit 链路成功
    - terminal cwd 落在 task workspace
    - zsh 首次启动向导不会干扰会话
+
+`test:notebook:backend-real:terminal:matrix` 会串行验证：
+
+- external runner terminal real smoke
+- internal runner terminal real smoke
+
+`test:notebook:release:strict` 会在 matrix smoke 通过后继续跑：
+
+- notebook terminal UX Playwright walkthrough
 
 默认 smoke 使用当前 local-manual 基线对象：
 

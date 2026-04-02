@@ -203,6 +203,9 @@ export interface TaskTerminalSessionStatus {
   rows: number;
   created_at: string;
   last_activity_at: string;
+  ended_at?: string | null;
+  close_reason?: string | null;
+  exit_code?: number | null;
 }
 
 export type TaskTerminalServerEvent =

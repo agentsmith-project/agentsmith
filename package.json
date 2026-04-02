@@ -59,6 +59,7 @@
     "test:notebook:backend-real:terminal": "bash scripts/notebook-terminal-real-smoke.sh",
     "test:notebook:backend-real:terminal:internal": "bash scripts/notebook-terminal-internal-real-smoke.sh",
     "test:notebook:backend-real:terminal:matrix": "bash scripts/notebook-terminal-matrix-real-gate.sh",
+    "test:notebook:release:strict": "npm run test:notebook:backend-real:terminal:matrix && npm run test:e2e:integration:notebook:terminal:ux",
     "test:internal:backend-real:notebook-workspace": "bash scripts/run-internal-notebook-real-gate.sh",
     "test:agents:backend-real:codex": "bash scripts/run-integration-e2e-full.sh e2e/integration-agents-codex-runner.spec.ts && bash scripts/run-integration-e2e-full.sh e2e/integration-notebook-codex-runner.spec.ts && bash scripts/run-integration-e2e-full.sh e2e/integration-notebook-codex-runner.spec.ts --grep docker",
     "test:files:backend-real:smoke": "bash scripts/file-library-real-smoke.sh",

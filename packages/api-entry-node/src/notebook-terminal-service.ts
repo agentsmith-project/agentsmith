@@ -37,6 +37,8 @@ type RegisteredTerminalSession = {
   exitCode?: number | null;
 };
 
+type PersistedTerminalSession = Omit<RegisteredTerminalSession, 'browserSocket'>;
+
 type NotebookTerminalLifecycleHooks = {
   onSessionClosed?: (session: RegisteredTerminalSession) => void | Promise<void>;
 };
@@ -55,6 +57,33 @@ export class NotebookTerminalService {
 
   configureLifecycleHooks(hooks: NotebookTerminalLifecycleHooks): void {
     this.hooks = hooks;
+  }
+
+  private sessionCacheKey(sessionId: string): string {
+    return `notebook_terminal_session:${sessionId}`;
+  }
+
+  private async persistSession(session: RegisteredTerminalSession): Promise<void> {
+    const payload: PersistedTerminalSession = {
+      id: session.id,
+      workspaceId: session.workspaceId,
+      projectId: session.projectId,
+      taskId: session.taskId,
+      agentId: session.agentId,
+      runnerSessionId: session.runnerSessionId,
+      userId: session.userId,
+      cols: session.cols,
+      rows: session.rows,
+      ...(session.shell ? { shell: session.shell } : {}),
+      ...(session.executionContext ? { executionContext: session.executionContext } : {}),
+      status: session.status,
+      createdAt: session.createdAt,
+      lastActivityAt: session.lastActivityAt,
+      ...(session.endedAt ? { endedAt: session.endedAt } : {}),
+      ...(session.closeReason ? { closeReason: session.closeReason } : {}),
+      ...(session.exitCode !== undefined ? { exitCode: session.exitCode } : {}),
+    };
+    await this.cache.set(this.sessionCacheKey(session.id), JSON.stringify(payload), 24 * 60 * 60);
   }
 
   async createSession(input: {
@@ -91,6 +120,7 @@ export class NotebookTerminalService {
       createdAt: now,
       lastActivityAt: now,
     });
+    await this.persistSession(this.sessions.get(sessionId)!);
 
     const issued = await issueInternalTicket(this.cache, {
       purpose: 'terminal_ws_access',
@@ -116,8 +146,16 @@ export class NotebookTerminalService {
     };
   }
 
-  getSession(sessionId: string): RegisteredTerminalSession | null {
-    return this.sessions.get(sessionId) ?? null;
+  async getSession(sessionId: string): Promise<RegisteredTerminalSession | null> {
+    const live = this.sessions.get(sessionId);
+    if (live) return live;
+    const raw = await this.cache.get(this.sessionCacheKey(sessionId));
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as RegisteredTerminalSession;
+    } catch {
+      return null;
+    }
   }
 
   handleUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): void {
@@ -185,6 +223,7 @@ export class NotebookTerminalService {
     session.browserSocket = ws;
     session.status = 'pending';
     session.lastActivityAt = new Date().toISOString();
+    await this.persistSession(session);
 
     let runtime: Awaited<ReturnType<AgentExecutionService['dispatchTerminalSession']>>;
     try {
@@ -253,6 +292,7 @@ export class NotebookTerminalService {
             : (event.error_message?.trim() || 'runtime_error');
         }
         session.lastActivityAt = new Date().toISOString();
+        await this.persistSession(session);
         ws.send(JSON.stringify(event));
       }
       if (ws.readyState === ws.OPEN) {
@@ -325,6 +365,7 @@ export class NotebookTerminalService {
     if (closeReason?.trim()) session.closeReason = closeReason.trim();
     if (exitCode !== undefined) session.exitCode = exitCode;
     session.browserSocket = undefined;
+    void this.persistSession(session);
     void this.hooks.onSessionClosed?.(session);
   }
 }

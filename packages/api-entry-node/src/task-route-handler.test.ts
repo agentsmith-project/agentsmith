@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { InMemoryCache } from '@mbos/adapters-private';
 
-import { resolveTaskWorkspaceMountAccess } from './task-route-handler.js';
+import {
+  hasBlockingTaskRunForTerminal,
+  resolveTaskWorkspaceMountAccess,
+} from './task-route-handler.js';
+import { buildNotebookTaskRunState, refreshNotebookTaskRunLease } from './notebook-task/task-run-coordination.js';
+import { ACTIVE_RUNS_BY_TASK } from './notebook-task/task-runtime-state.js';
 
 describe('task-route-handler workspace access', () => {
   it('keeps local mount access untouched for non-external agents', () => {
@@ -14,6 +20,27 @@ describe('task-route-handler workspace access', () => {
       metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
       storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
     });
+  });
+
+  it('clears stale in-memory active runs before terminal creation checks', async () => {
+    const cache = new InMemoryCache();
+    ACTIVE_RUNS_BY_TASK.add('task_terminal');
+
+    await expect(hasBlockingTaskRunForTerminal(cache, 'task_terminal')).resolves.toBe(false);
+    expect(ACTIVE_RUNS_BY_TASK.has('task_terminal')).toBe(false);
+  });
+
+  it('keeps blocking terminal creation when shared run state still exists', async () => {
+    const cache = new InMemoryCache();
+    ACTIVE_RUNS_BY_TASK.add('task_terminal_busy');
+    await refreshNotebookTaskRunLease(cache, buildNotebookTaskRunState({
+      taskId: 'task_terminal_busy',
+      runId: 'run_1',
+      startedAt: '2026-04-02T08:00:00.000Z',
+    }));
+
+    await expect(hasBlockingTaskRunForTerminal(cache, 'task_terminal_busy')).resolves.toBe(true);
+    expect(ACTIVE_RUNS_BY_TASK.has('task_terminal_busy')).toBe(true);
   });
 
   it('rewrites client-visible mount access for internal agents when internal overrides are configured', () => {

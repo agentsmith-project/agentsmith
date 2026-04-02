@@ -548,14 +548,26 @@ export class AgentExecutionService {
     resize: (cols: number, rows: number) => void;
     close: () => void;
   }> {
+    debugExecution(
+      `dispatch_terminal_start agent_id=${input.agentId} runner_session=${input.sessionId} terminal_session=${input.terminalSessionId}`,
+    );
     const socket = this.resolveSocket(input.agentId, input.sessionId);
     if (!socket || socket.ws.readyState !== socket.ws.OPEN) {
+      debugExecution(
+        `dispatch_terminal_offline agent_id=${input.agentId} runner_session=${input.sessionId} terminal_session=${input.terminalSessionId}`,
+      );
       throw new Error('agent_offline');
     }
     if (socket.workspaceId !== input.workspaceId || socket.projectId !== input.projectId) {
+      debugExecution(
+        `dispatch_terminal_workspace_mismatch agent_id=${input.agentId} runner_session=${input.sessionId} terminal_session=${input.terminalSessionId}`,
+      );
       throw new Error('agent_workspace_mismatch');
     }
     if (socket.terminalBySessionId.has(input.terminalSessionId)) {
+      debugExecution(
+        `dispatch_terminal_already_exists agent_id=${input.agentId} runner_session=${input.sessionId} terminal_session=${input.terminalSessionId}`,
+      );
       throw new Error('terminal_session_already_exists');
     }
 
@@ -585,6 +597,9 @@ export class AgentExecutionService {
           ...(input.payload.executionContext ? { execution_context: input.payload.executionContext } : {}),
         },
       }),
+    );
+    debugExecution(
+      `dispatch_terminal_sent agent_id=${input.agentId} runner_session=${input.sessionId} terminal_session=${input.terminalSessionId}`,
     );
 
     return {
@@ -722,6 +737,7 @@ export class AgentExecutionService {
       if (!pendingTerminal) return;
 
       if (payload.type === 'agent.terminal.started') {
+        debugExecution(`terminal_started agent_id=${socket.agentId} runner_session=${socket.sessionId ?? ''} terminal_session=${terminalSessionId}`);
         pendingTerminal.push({
           type: 'started',
           session_id: terminalSessionId,
@@ -732,6 +748,7 @@ export class AgentExecutionService {
       }
 
       if (payload.type === 'agent.terminal.output') {
+        debugExecution(`terminal_output agent_id=${socket.agentId} runner_session=${socket.sessionId ?? ''} terminal_session=${terminalSessionId}`);
         if (typeof payload.payload?.chunk !== 'string') {
           socket.terminalBySessionId.delete(terminalSessionId);
           pendingTerminal.push({
@@ -751,6 +768,7 @@ export class AgentExecutionService {
       }
 
       if (payload.type === 'agent.terminal.exited') {
+        debugExecution(`terminal_exited agent_id=${socket.agentId} runner_session=${socket.sessionId ?? ''} terminal_session=${terminalSessionId}`);
         socket.terminalBySessionId.delete(terminalSessionId);
         pendingTerminal.push({
           type: 'exited',
@@ -763,6 +781,7 @@ export class AgentExecutionService {
       }
 
       if (payload.type === 'agent.terminal.error') {
+        debugExecution(`terminal_error agent_id=${socket.agentId} runner_session=${socket.sessionId ?? ''} terminal_session=${terminalSessionId}`);
         socket.terminalBySessionId.delete(terminalSessionId);
         pendingTerminal.push({
           type: 'error',
@@ -913,9 +932,18 @@ export class AgentExecutionService {
   private resolveSocket(agentId: string, sessionId?: string): AgentSocketState | undefined {
     if (sessionId) {
       const exact = this.socketsByKey.get(buildSocketKey(agentId, sessionId));
-      if (exact) return exact;
+      if (exact) {
+        debugExecution(`resolve_socket_exact agent_id=${agentId} runner_session=${sessionId}`);
+        return exact;
+      }
     }
-    return this.socketsByKey.get(buildSocketKey(agentId));
+    const fallback = this.socketsByKey.get(buildSocketKey(agentId));
+    if (fallback) {
+      debugExecution(`resolve_socket_fallback agent_id=${agentId} runner_session=${sessionId ?? ''}`);
+    } else {
+      debugExecution(`resolve_socket_missing agent_id=${agentId} runner_session=${sessionId ?? ''}`);
+    }
+    return fallback;
   }
 }
 

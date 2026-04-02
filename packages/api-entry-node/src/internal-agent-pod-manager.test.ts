@@ -267,4 +267,52 @@ describe('internal-agent-pod-manager', () => {
       }),
     );
   });
+
+  it('recreates completed workload pods before waiting for session online', async () => {
+    const deletePod = vi.fn().mockResolvedValue(undefined);
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn()
+          .mockResolvedValueOnce({ phase: 'Completed' })
+          .mockResolvedValueOnce({ phase: 'offline' })
+          .mockResolvedValueOnce({ phase: 'Running' }),
+        createOrEnsurePod,
+        deletePod,
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: vi.fn(),
+      },
+      {
+        getAgentOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+      },
+    );
+
+    await manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_xxx',
+      }),
+    });
+
+    expect(deletePod).toHaveBeenCalledWith('ws_1', 'proj_1', 'task_1');
+    expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+  });
 });

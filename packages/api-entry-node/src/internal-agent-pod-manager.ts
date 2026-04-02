@@ -57,6 +57,10 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isTerminalPodPhase(phase: string | undefined): boolean {
+  return phase === 'Failed' || phase === 'Succeeded' || phase === 'Completed';
+}
+
 export function sanitizeWorkloadId(id: string): string {
   const normalized = id
     .toLowerCase()
@@ -279,33 +283,39 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       });
     }
     let status = await this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId);
+    const wsUrl = `${this.wsBaseUrl.replace(/\/+$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}&session_id=${encodeURIComponent(sessionId)}`;
 
-    if (status.phase === 'Failed') {
-      await this.sandboxClient.deletePod(workspaceId, projectId, workloadId).catch(() => undefined);
-      status = { phase: 'offline' };
-    }
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (isTerminalPodPhase(status.phase)) {
+        await this.sandboxClient.deletePod(workspaceId, projectId, workloadId).catch(() => undefined);
+        status = { phase: 'offline' };
+      }
 
-    if (status.phase === 'offline') {
-      const wsUrl = `${this.wsBaseUrl.replace(/\/+$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}&session_id=${encodeURIComponent(sessionId)}`;
-      await this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
-        image: config.image,
-        env: {
-          MBOS_AGENT_WS_URL: wsUrl,
-          MBOS_AGENT_KEY: config.rawKey,
-          MBOS_AGENT_CODEX_YOLO: '1',
-          MBOS_AGENT_RUNNER_DEBUG: '1',
-          MBOS_AGENT_TASK_TIMEOUT_SEC: '55',
-          ...(config.env ?? {}),
-        },
-        cpu_request: config.cpuRequest ?? '500m',
-        cpu_limit: config.cpuLimit ?? '2',
-        memory_request: config.memoryRequest ?? '512Mi',
-        memory_limit: config.memoryLimit ?? '4Gi',
-        idle_timeout_sec: idleTimeoutSec,
-        max_lifetime_sec: maxLifetimeSec,
-        ...(workspaceMount?.bindingId ? { workspace_binding_id: workspaceMount.bindingId } : {}),
-      });
-      status = await this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId);
+      if (status.phase === 'offline') {
+        await this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
+          image: config.image,
+          env: {
+            MBOS_AGENT_WS_URL: wsUrl,
+            MBOS_AGENT_KEY: config.rawKey,
+            MBOS_AGENT_CODEX_YOLO: '1',
+            MBOS_AGENT_RUNNER_DEBUG: '1',
+            MBOS_AGENT_TASK_TIMEOUT_SEC: '55',
+            ...(config.env ?? {}),
+          },
+          cpu_request: config.cpuRequest ?? '500m',
+          cpu_limit: config.cpuLimit ?? '2',
+          memory_request: config.memoryRequest ?? '512Mi',
+          memory_limit: config.memoryLimit ?? '4Gi',
+          idle_timeout_sec: idleTimeoutSec,
+          max_lifetime_sec: maxLifetimeSec,
+          ...(workspaceMount?.bindingId ? { workspace_binding_id: workspaceMount.bindingId } : {}),
+        });
+        status = await this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId);
+      }
+
+      if (!isTerminalPodPhase(status.phase)) {
+        break;
+      }
     }
 
     this.checkDeadline(deadline);

@@ -26,6 +26,7 @@ info "ensuring a single local external runner instance"
 rm -f "${RUNNER_READY_FILE}"
 stop_pid_file_if_running "${RUNNER_PID_FILE}" "runner"
 stop_matching_processes 'make notebook-agent-runner'
+rm -f "${RUNNER_LOG}"
 
 launch_detached "${RUNNER_PID_FILE}" "${RUNNER_LOG}" "
   cd '${ROOT_DIR}' && \

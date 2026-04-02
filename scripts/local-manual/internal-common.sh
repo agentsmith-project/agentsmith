@@ -337,6 +337,14 @@ restart_api_with_mode() {
   local internal_flag="$1"
   stop_pid_file_if_running "${API_PID_FILE}" "api"
   rm -f "${API_READY_FILE}" "${API_PORT_FILE}" "${API_PID_FILE}"
+  if [[ "${internal_flag}" == "1" ]]; then
+    local kind_gateway
+    kind_gateway="$(resolve_kind_gateway_ip)"
+    AGENT_EXECUTION_WS_BASE_URL="ws://${kind_gateway}:${PORT_API}" \
+      LOCAL_MANUAL_ENABLE_INTERNAL="${internal_flag}" \
+      bash "${ROOT_DIR}/scripts/local-manual/start-api.sh"
+    return
+  fi
   LOCAL_MANUAL_ENABLE_INTERNAL="${internal_flag}" bash "${ROOT_DIR}/scripts/local-manual/start-api.sh"
 }
 

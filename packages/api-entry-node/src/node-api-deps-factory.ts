@@ -49,6 +49,7 @@ import {
   RealFileLibraryOrchestrator,
   UnavailableFileLibraryOrchestrator,
 } from './file-library-runtime.js';
+import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { UniversalProxyService } from './universal-proxy-service.js';
 import { NotebookTerminalService } from './notebook-terminal-service.js';
 
@@ -63,7 +64,8 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   const agentResourceService = new AgentResourceService(docStore, cache);
 
   const agentExecutionService = new AgentExecutionService(agentResourceService);
-  return {
+  const notebookTerminalService = new NotebookTerminalService(cache, agentExecutionService);
+  const deps: NodeApiDeps = {
     governanceReportsDir: join(process.cwd(), 'artifacts/governance-reports'),
     governanceRunsDir: join(process.cwd(), 'artifacts/governance-runs'),
     governanceIncidentsDir: join(process.cwd(), 'artifacts/governance-incidents'),
@@ -73,7 +75,7 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     endpointResourceService: new EndpointResourceService(docStore),
     agentResourceService,
     agentExecutionService,
-    notebookTerminalService: new NotebookTerminalService(cache, agentExecutionService),
+    notebookTerminalService,
     fileLibraryBucket,
     createFileLibraryCatalogUseCase: new CreateFileLibraryCatalogUseCase(
       fileLibraryCatalogRepo,
@@ -106,6 +108,28 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
     universalProxyService: UniversalProxyService.fromEnv(process.env),
   };
+  notebookTerminalService.configureLifecycleHooks({
+    onSessionClosed: async (session) => {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: session.workspaceId,
+        projectId: session.projectId,
+        actor: { type: 'user', id: session.userId },
+        action: 'notebook.task.terminal.closed',
+        resourceType: 'notebook_task_terminal_session',
+        resourceId: session.id,
+        metadata: {
+          task_id: session.taskId,
+          agent_id: session.agentId,
+          status: session.status,
+          close_reason: session.closeReason ?? null,
+          exit_code: session.exitCode ?? null,
+          created_at: session.createdAt,
+          ended_at: session.endedAt ?? null,
+        },
+      });
+    },
+  });
+  return deps;
 }
 
 export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
@@ -201,9 +225,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
     });
   }
   const fileLibraryBucket = env.MINIO_BUCKET ?? 'mbos-dev';
-
-  return {
-    deps: {
+  const deps: NodeApiDeps = {
       governanceReportsDir: join(process.cwd(), 'artifacts/governance-reports'),
       governanceRunsDir: join(process.cwd(), 'artifacts/governance-runs'),
       governanceIncidentsDir: join(process.cwd(), 'artifacts/governance-incidents'),
@@ -256,7 +278,31 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
         ? new RealFileLibraryGatewayManager()
         : new InMemoryFileLibraryGatewayManager(),
       ...(universalProxyService ? { universalProxyService } : {}),
+    };
+  notebookTerminalService.configureLifecycleHooks({
+    onSessionClosed: async (session) => {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: session.workspaceId,
+        projectId: session.projectId,
+        actor: { type: 'user', id: session.userId },
+        action: 'notebook.task.terminal.closed',
+        resourceType: 'notebook_task_terminal_session',
+        resourceId: session.id,
+        metadata: {
+          task_id: session.taskId,
+          agent_id: session.agentId,
+          status: session.status,
+          close_reason: session.closeReason ?? null,
+          exit_code: session.exitCode ?? null,
+          created_at: session.createdAt,
+          ended_at: session.endedAt ?? null,
+        },
+      });
     },
+  });
+
+  return {
+    deps,
     lifecycle: factory,
     repoMode: env.DATABASE_URL ? 'postgres' : 'memory',
   };

@@ -219,6 +219,21 @@ function buildTerminalUsername(user: AuthenticatedUser): string {
   return user.id.trim() || 'unknown_user';
 }
 
+export async function hasBlockingTaskRunForTerminal(
+  cache: NodeApiDeps['cache'],
+  taskId: string,
+): Promise<boolean> {
+  if (!ACTIVE_RUNS_BY_TASK.has(taskId)) {
+    return false;
+  }
+  const sharedState = await getNotebookTaskRunState(cache, taskId);
+  if (!sharedState) {
+    ACTIVE_RUNS_BY_TASK.delete(taskId);
+    return false;
+  }
+  return true;
+}
+
 function resolveWebSocketBaseUrl(req: http.IncomingMessage): string {
   const requestUrl = resolvePublicBaseUrl(req).replace(/\/+$/, '');
   if (requestUrl.startsWith('https://')) {
@@ -568,7 +583,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_not_active' });
       return true;
     }
-    if (ACTIVE_RUNS_BY_TASK.has(task.id)) {
+    if (await hasBlockingTaskRunForTerminal(deps.cache, task.id)) {
       json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_run_in_progress' });
       return true;
     }
@@ -624,6 +639,23 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       ...(shell ? { shell } : {}),
       executionContext,
     });
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'notebook.task.terminal.opened',
+      resourceType: 'notebook_task_terminal_session',
+      resourceId: created.sessionId,
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
+      metadata: {
+        task_id: task.id,
+        agent_id: task.agent_id,
+        runner_mode: agent.mode,
+        cols,
+        rows,
+        ...(shell ? { shell } : {}),
+      },
+    });
     json(res, 201, {
       session_id: created.sessionId,
       status: 'pending',
@@ -649,6 +681,9 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       rows: session.rows,
       created_at: session.createdAt,
       last_activity_at: session.lastActivityAt,
+      ended_at: session.endedAt ?? null,
+      close_reason: session.closeReason ?? null,
+      exit_code: session.exitCode ?? null,
     });
     return true;
   }

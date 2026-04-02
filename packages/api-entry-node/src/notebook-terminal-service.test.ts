@@ -37,4 +37,46 @@ describe('NotebookTerminalService', () => {
     expect(ticket?.payload.task_id).toBe('task_1');
     expect(ticket?.payload.terminal_session_id).toBe(created.sessionId);
   });
+
+  it('records terminal session completion metadata through lifecycle hooks', async () => {
+    const cache = new InMemoryCache();
+    const onSessionClosed = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+    service.configureLifecycleHooks({ onSessionClosed });
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    (service as unknown as {
+      finishSession: (
+        sessionId: string,
+        status: 'closed' | 'failed',
+        closeReason?: string,
+        exitCode?: number | null,
+      ) => void;
+    }).finishSession(created.sessionId, 'closed', 'process_exited', 0);
+
+    const session = service.getSession(created.sessionId);
+    expect(session?.status).toBe('closed');
+    expect(session?.closeReason).toBe('process_exited');
+    expect(session?.exitCode).toBe(0);
+    expect(session?.endedAt).toMatch(/T/);
+    expect(onSessionClosed).toHaveBeenCalledTimes(1);
+    expect(onSessionClosed.mock.calls[0]?.[0]).toMatchObject({
+      id: created.sessionId,
+      status: 'closed',
+      closeReason: 'process_exited',
+      exitCode: 0,
+    });
+  });
 });

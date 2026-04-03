@@ -25,6 +25,14 @@ fi
 echo "Namespace: ${K8S_NAMESPACE}"
 echo "Namespace exists: $(kubectl get namespace "${K8S_NAMESPACE}" >/dev/null 2>&1 && echo yes || echo no)"
 echo "CSI driver: ${CSI_DRIVER}"
-echo "CSI ready: $(kubectl get csidriver "${CSI_DRIVER}" >/dev/null 2>&1 && echo yes || echo no)"
+CSI_DRIVER_PRESENT="$(kubectl get csidriver "${CSI_DRIVER}" >/dev/null 2>&1 && echo yes || echo no)"
+CSI_NODE_READY="unknown"
+if kubectl get daemonset juicefs-csi-node -n kube-system >/dev/null 2>&1; then
+  CSI_NODE_READY="$(
+    kubectl get daemonset juicefs-csi-node -n kube-system -o jsonpath='{.status.numberReady}/{.status.desiredNumberScheduled}' 2>/dev/null || echo unknown
+  )"
+fi
+echo "CSI ready: ${CSI_DRIVER_PRESENT}"
+echo "CSI node ready: ${CSI_NODE_READY}"
 echo "Internal agent: $(state_get internal_agent.name) ($(state_get internal_agent.id))"
 echo "Latest workload pod: $(kubectl get pods -n "${K8S_NAMESPACE}" --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1:].metadata.name}' 2>/dev/null || true)"

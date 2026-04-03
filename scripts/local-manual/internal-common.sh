@@ -115,10 +115,8 @@ ensure_internal_runner_image() {
 
 ensure_juicefs_csi() {
   local csi_namespace
-  if ! kubectl get csidriver "${CSI_DRIVER}" >/dev/null 2>&1; then
-    internal_info "installing JuiceFS CSI driver ${CSI_DRIVER}"
-    kubectl apply --validate=false -f https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml >/dev/null
-  fi
+  internal_info "reconciling JuiceFS CSI driver ${CSI_DRIVER}"
+  kubectl apply --validate=false -f https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml >/dev/null
 
   csi_namespace="$(
     kubectl get statefulset -A --no-headers 2>/dev/null \
@@ -145,8 +143,6 @@ ensure_juicefs_csi() {
   ensure_kind_image "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
 
   kubectl scale statefulset/juicefs-csi-controller -n "${csi_namespace}" --replicas=1 >/dev/null || true
-  kubectl patch statefulset/juicefs-csi-controller -n "${csi_namespace}" --type='json' -p='[{"op":"remove","path":"/spec/template/spec/containers/3"}]' >/dev/null || true
-  kubectl patch daemonset/juicefs-csi-node -n "${csi_namespace}" --type='json' -p='[{"op":"remove","path":"/spec/template/spec/containers/2"}]' >/dev/null || true
   kubectl delete pod -n "${csi_namespace}" -l app=juicefs-csi-controller >/dev/null 2>&1 || true
   kubectl delete pod -n "${csi_namespace}" -l app=juicefs-csi-node >/dev/null 2>&1 || true
   kubectl rollout status statefulset/juicefs-csi-controller -n "${csi_namespace}" --timeout=180s >/dev/null

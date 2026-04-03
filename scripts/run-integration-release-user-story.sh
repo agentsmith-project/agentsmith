@@ -97,10 +97,8 @@ ensure_local_image() {
 }
 
 ensure_juicefs_csi() {
-  if ! kubectl get csidriver "${CSI_DRIVER}" >/dev/null 2>&1; then
-    info "installing JuiceFS CSI driver ${CSI_DRIVER}"
-    kubectl apply --validate=false -f https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml >/dev/null
-  fi
+  info "reconciling JuiceFS CSI driver ${CSI_DRIVER}"
+  kubectl apply --validate=false -f https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml >/dev/null
 
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
     local cluster_name="${CONTEXT_NAME#kind-}"
@@ -116,8 +114,6 @@ ensure_juicefs_csi() {
     ensure_kind_image "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
 
     kubectl scale statefulset/juicefs-csi-controller -n kube-system --replicas=1 >/dev/null || true
-    kubectl patch statefulset/juicefs-csi-controller -n kube-system --type='json' -p='[{"op":"remove","path":"/spec/template/spec/containers/3"}]' >/dev/null || true
-    kubectl patch daemonset/juicefs-csi-node -n kube-system --type='json' -p='[{"op":"remove","path":"/spec/template/spec/containers/2"}]' >/dev/null || true
     kubectl delete pod -n kube-system -l app=juicefs-csi-controller >/dev/null 2>&1 || true
     kubectl delete pod -n kube-system -l app=juicefs-csi-node >/dev/null 2>&1 || true
   fi

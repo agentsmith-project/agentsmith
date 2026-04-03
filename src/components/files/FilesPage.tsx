@@ -62,7 +62,9 @@ import {
   useAuthStore,
   useAuthStoreHydration,
   selectIsAuthenticated,
+  selectToken,
 } from '@/lib/stores/authStore';
+import { getApiClient } from '@/lib/api/client';
 
 export interface FilesPageProps {
   workspaceId: string;
@@ -75,7 +77,23 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
   const tErrors = useTranslations('errors');
   const authHydrated = useAuthStoreHydration();
   const isAuthenticated = useAuthStore(selectIsAuthenticated);
-  const authReady = authHydrated && isAuthenticated;
+  const token = useAuthStore(selectToken);
+  const [apiClientAuthReady, setApiClientAuthReady] = React.useState(false);
+  React.useEffect(() => {
+    if (!authHydrated) {
+      setApiClientAuthReady(false);
+      return;
+    }
+    const client = getApiClient();
+    if (token) {
+      client.setToken(token);
+      setApiClientAuthReady(true);
+      return;
+    }
+    client.clearToken();
+    setApiClientAuthReady(false);
+  }, [authHydrated, token]);
+  const authReady = authHydrated && isAuthenticated && !!token && apiClientAuthReady;
   const { canManage, canExchangeCredentials } = useFilesPageCapabilities();
   const { layoutMode } = useProjectLayoutMode();
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;

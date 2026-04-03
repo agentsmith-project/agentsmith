@@ -15,6 +15,7 @@ import {
   useAuthStore,
   useAuthStoreHydration,
   selectIsAuthenticated,
+  selectToken,
 } from '@/lib/stores/authStore';
 import { FileItemIcon } from '@/components/files/FileItemIcon';
 import { PreviewDialog } from '@/components/files/file-object-details-panel/PreviewDialog';
@@ -49,7 +50,23 @@ export function FileObjectDetailsPanel({
   const t = useTranslations('files');
   const authHydrated = useAuthStoreHydration();
   const isAuthenticated = useAuthStore(selectIsAuthenticated);
-  const authReady = authHydrated && isAuthenticated;
+  const token = useAuthStore(selectToken);
+  const [apiClientAuthReady, setApiClientAuthReady] = React.useState(false);
+  React.useEffect(() => {
+    if (!authHydrated) {
+      setApiClientAuthReady(false);
+      return;
+    }
+    const client = getApiClient();
+    if (token) {
+      client.setToken(token);
+      setApiClientAuthReady(true);
+      return;
+    }
+    client.clearToken();
+    setApiClientAuthReady(false);
+  }, [authHydrated, token]);
+  const authReady = authHydrated && isAuthenticated && !!token && apiClientAuthReady;
   const selectedObject = selected.length === 1 && selected[0].kind === 'object' ? selected[0] : null;
   const [tab, setTab] = React.useState<'overview' | 'technical'>('overview');
 

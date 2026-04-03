@@ -50,10 +50,11 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
 }));
 
 vi.mock('@/lib/stores/authStore', () => ({
-  useAuthStore: (selector: (state: { isAuthenticated: boolean }) => boolean) =>
-    selector({ isAuthenticated: true }),
+  useAuthStore: (selector: (state: { isAuthenticated: boolean; token: string | null }) => unknown) =>
+    selector({ isAuthenticated: true, token: 'test-token' }),
   useAuthStoreHydration: () => true,
   selectIsAuthenticated: (state: { isAuthenticated: boolean }) => state.isAuthenticated,
+  selectToken: (state: { token: string | null }) => state.token,
 }));
 
 vi.mock('@/lib/hooks/use-file-libraries-v2', () => ({

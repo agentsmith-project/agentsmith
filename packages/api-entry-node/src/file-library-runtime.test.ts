@@ -15,6 +15,8 @@ import {
   resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution,
   resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution,
   resolveFileLibraryStorageBucketUrlForExternalExecution,
+  resolveFileLibraryStorageBucketUrlForGatewayRuntime,
+  resolveFileLibraryStorageBucketUrlForClientMount,
   resolveFileLibraryStorageBucketUrlForInternalExecution,
 } from './file-library-runtime.js';
 
@@ -212,7 +214,7 @@ describe('file-library-runtime readiness', () => {
     const env = {
       INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: 'postgres-external.agentsmith-sandbox.svc.cluster.local',
       INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE: '5432',
-      INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
+      JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
     } as NodeJS.ProcessEnv;
 
     expect(
@@ -234,7 +236,7 @@ describe('file-library-runtime readiness', () => {
     const env = {
       INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: 'postgres-external.agentsmith-sandbox.svc.cluster.local',
       INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE: '5432',
-      INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
+      JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
     } as NodeJS.ProcessEnv;
 
     expect(
@@ -250,6 +252,33 @@ describe('file-library-runtime readiness', () => {
         env,
       ),
     ).toBe('http://minio-external.agentsmith-sandbox.svc.cluster.local:9000/jfs-lib-demo');
+  });
+
+  it('rewrites bucket urls for gateway runtime with a gateway-specific endpoint', () => {
+    const env = {
+      JUICEFS_BUCKET_ENDPOINT_FOR_GATEWAY: 'http://localhost:19000',
+      JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
+    } as NodeJS.ProcessEnv;
+
+    expect(
+      resolveFileLibraryStorageBucketUrlForGatewayRuntime(
+        'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000/jfs-lib-demo',
+        env,
+      ),
+    ).toBe('http://localhost:19000/jfs-lib-demo');
+  });
+
+  it('rewrites bucket urls for client mount access with a client-facing endpoint', () => {
+    const env = {
+      JUICEFS_BUCKET_ENDPOINT_FOR_CLIENT_MOUNT: 'https://files.example.com:19000',
+    } as NodeJS.ProcessEnv;
+
+    expect(
+      resolveFileLibraryStorageBucketUrlForClientMount(
+        'http://localhost:19000/jfs-lib-demo',
+        env,
+      ),
+    ).toBe('https://files.example.com:19000/jfs-lib-demo');
   });
 
   it('reconciles orphaned duplicate gateway processes with no state', async () => {

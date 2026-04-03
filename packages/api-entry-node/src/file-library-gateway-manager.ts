@@ -2,6 +2,7 @@ export interface EnsureFileLibraryGatewayInput {
   libraryId: string;
   filesystemName: string;
   metadataUrl: string;
+  storageBucketUrl?: string;
 }
 
 export interface EnsureFileLibraryGatewayResult {

@@ -49,6 +49,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
     await mountAccessRepo.save('ws_demo', 'proj_demo', 'flib_demo', {
       filesystem_name: 'jfs_ws_demo_proj_demo_workspace_library',
       metadata_url: 'postgres://juicefs:secret@localhost:5432/juicefs_demo',
+      storage_bucket_url: 'http://localhost:19000/jfs_ws_demo_proj_demo_workspace_library',
       recommended_mount_path: '~/Agentsmith/Workspace Library',
       platform_notes: [],
       recommended_mount_commands: {
@@ -93,7 +94,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
         mountImage: 'juicedata/mount:ce-v1.3.1',
         metadataHostOverride: 'postgres-external.agentsmith-sandbox.svc.cluster.local',
         metadataPortOverride: '5432',
-        storageEndpointOverride: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
+        bucketEndpointForInternalMount: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
       },
     );
 
@@ -147,6 +148,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
     await mountAccessRepo.save('ws_demo', 'proj_demo', 'flib_public', {
       filesystem_name: 'jfs_ws_demo_proj_demo_workspace_library',
       metadata_url: 'postgres://juicefs:secret@192.168.0.220:15432/juicefs_demo',
+      storage_bucket_url: 'http://192.168.0.220:19000/jfs_ws_demo_proj_demo_workspace_library',
       recommended_mount_path: '~/Agentsmith/Workspace Library',
       platform_notes: [],
       recommended_mount_commands: {

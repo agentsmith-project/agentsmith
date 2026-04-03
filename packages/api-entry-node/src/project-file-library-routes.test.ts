@@ -114,10 +114,10 @@ describe('project-file-library-routes', () => {
   it('returns desktop mount access without shell commands', async () => {
     const previousPostgresHost = process.env.FILE_LIBRARY_CLIENT_POSTGRES_HOST;
     const previousPostgresPort = process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT;
-    const previousMinioEndpoint = process.env.FILE_LIBRARY_CLIENT_MINIO_ENDPOINT;
+    const previousMinioEndpoint = process.env.JUICEFS_BUCKET_ENDPOINT_FOR_CLIENT_MOUNT;
     process.env.FILE_LIBRARY_CLIENT_POSTGRES_HOST = '127.0.0.1';
     process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT = '15432';
-    process.env.FILE_LIBRARY_CLIENT_MINIO_ENDPOINT = 'http://127.0.0.1:19000';
+    process.env.JUICEFS_BUCKET_ENDPOINT_FOR_CLIENT_MOUNT = 'http://127.0.0.1:19000';
 
     try {
       const json = vi.fn();
@@ -188,7 +188,11 @@ describe('project-file-library-routes', () => {
     } finally {
       process.env.FILE_LIBRARY_CLIENT_POSTGRES_HOST = previousPostgresHost;
       process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT = previousPostgresPort;
-      process.env.FILE_LIBRARY_CLIENT_MINIO_ENDPOINT = previousMinioEndpoint;
+      if (previousMinioEndpoint === undefined) {
+        delete process.env.JUICEFS_BUCKET_ENDPOINT_FOR_CLIENT_MOUNT;
+      } else {
+        process.env.JUICEFS_BUCKET_ENDPOINT_FOR_CLIENT_MOUNT = previousMinioEndpoint;
+      }
     }
   });
 

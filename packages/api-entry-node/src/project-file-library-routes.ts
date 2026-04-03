@@ -26,6 +26,7 @@ import {
   guessFileLibraryContentType,
   normalizeFileLibraryPath,
 } from './file-library-gateway-client.js';
+import { resolveFileLibraryStorageBucketUrlForClientMount } from './file-library-runtime.js';
 import {
   createAndProvisionProjectFileLibrary,
   mapFileLibraryInfraError,
@@ -307,19 +308,55 @@ function normalizeDesktopMetadataUrl(metadataUrl: string): string {
   }
 }
 
-function normalizeDesktopStorageBucketUrl(storageBucketUrl?: string): string | undefined {
-  if (!storageBucketUrl) return storageBucketUrl;
-  const endpoint = process.env.FILE_LIBRARY_CLIENT_MINIO_ENDPOINT?.trim();
-  if (!endpoint) return storageBucketUrl;
-  try {
-    const source = new URL(storageBucketUrl);
-    const target = new URL(endpoint);
-    const bucketPath = source.pathname.replace(/^\/+/, '');
-    target.pathname = `/${bucketPath}`;
-    return target.toString();
-  } catch {
-    return storageBucketUrl;
+function normalizeClientStorageBucketUrl(storageBucketUrl?: string): string | undefined {
+  return resolveFileLibraryStorageBucketUrlForClientMount(storageBucketUrl);
+}
+
+function rewriteMountCommandUrls(
+  command: string,
+  originalMetadataUrl: string,
+  normalizedMetadataUrl: string,
+  originalStorageBucketUrl?: string,
+  normalizedStorageBucketUrl?: string,
+): string {
+  let updated = command.replaceAll(originalMetadataUrl, normalizedMetadataUrl);
+  if (originalStorageBucketUrl && normalizedStorageBucketUrl) {
+    updated = updated.replaceAll(originalStorageBucketUrl, normalizedStorageBucketUrl);
   }
+  return updated;
+}
+
+function toClientMountAccess(access: FileLibraryMountAccess): FileLibraryMountAccess {
+  const normalizedMetadataUrl = normalizeDesktopMetadataUrl(access.metadata_url);
+  const normalizedStorageBucketUrl = normalizeClientStorageBucketUrl(access.storage_bucket_url);
+  return {
+    ...access,
+    metadata_url: normalizedMetadataUrl,
+    storage_bucket_url: normalizedStorageBucketUrl,
+    recommended_mount_commands: {
+      linux: rewriteMountCommandUrls(
+        access.recommended_mount_commands.linux,
+        access.metadata_url,
+        normalizedMetadataUrl,
+        access.storage_bucket_url,
+        normalizedStorageBucketUrl,
+      ),
+      macos: rewriteMountCommandUrls(
+        access.recommended_mount_commands.macos,
+        access.metadata_url,
+        normalizedMetadataUrl,
+        access.storage_bucket_url,
+        normalizedStorageBucketUrl,
+      ),
+      windows: rewriteMountCommandUrls(
+        access.recommended_mount_commands.windows,
+        access.metadata_url,
+        normalizedMetadataUrl,
+        access.storage_bucket_url,
+        normalizedStorageBucketUrl,
+      ),
+    },
+  };
 }
 
 function toDesktopMountAccess(
@@ -329,7 +366,7 @@ function toDesktopMountAccess(
   return {
     filesystem_name: access.filesystem_name,
     metadata_url: normalizeDesktopMetadataUrl(access.metadata_url),
-    storage_bucket_url: normalizeDesktopStorageBucketUrl(access.storage_bucket_url),
+    storage_bucket_url: normalizeClientStorageBucketUrl(access.storage_bucket_url),
     deployment_base_url: inferRequestOrigin(req),
     default_mount_roots: {
       linux: '~/AgentSmith',
@@ -880,7 +917,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       return true;
     }
     json(res, 200, {
-      client_mount_access: access,
+      client_mount_access: toClientMountAccess(access),
     });
     return true;
   }

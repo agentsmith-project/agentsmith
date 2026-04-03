@@ -80,7 +80,7 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AG
 release_check_require_pattern "${RELEASE_ROOT}/env/base.env" '^NO_PROXY=.*(^|,)(postgres|minio)(,|$)' 'rendered_env_mismatch:base.env:NO_PROXY'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.agentsmith-sandbox.svc.cluster.local' 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE=5432' 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE'
-release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://minio-external.agentsmith-sandbox.svc.cluster.local:9000' 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT=http://minio-external.agentsmith-sandbox.svc.cluster.local:9000' 'rendered_env_mismatch:internal.env:JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT'
 
 run_render simple
 

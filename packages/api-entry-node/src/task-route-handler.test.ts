@@ -66,10 +66,10 @@ describe('task-route-handler workspace access', () => {
   it('rewrites client-visible mount access for internal agents when internal overrides are configured', () => {
     const previousMetaHost = process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
     const previousMetaPort = process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
-    const previousStorageEndpoint = process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
+    const previousStorageEndpoint = process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT;
     process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = 'postgres-external.agentsmith-sandbox.svc.cluster.local';
     process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = '5432';
-    process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000';
+    process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT = 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000';
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
         agentMode: 'internal',
@@ -86,8 +86,8 @@ describe('task-route-handler workspace access', () => {
       else process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = previousMetaHost;
       if (previousMetaPort === undefined) delete process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
       else process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = previousMetaPort;
-      if (previousStorageEndpoint === undefined) delete process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
-      else process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = previousStorageEndpoint;
+      if (previousStorageEndpoint === undefined) delete process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT;
+      else process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT = previousStorageEndpoint;
     }
   });
 
@@ -243,10 +243,10 @@ describe('task-route-handler workspace access', () => {
   it('rewrites loopback mount access for internal agent execution', () => {
     const previousMetaHost = process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
     const previousMetaPort = process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
-    const previousStorageEndpoint = process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
+    const previousStorageEndpoint = process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT;
     process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = 'postgres-external.agentsmith-sandbox.svc.cluster.local';
     process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = '5432';
-    process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000';
+    process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT = 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000';
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
         agentMode: 'internal',
@@ -270,9 +270,9 @@ describe('task-route-handler workspace access', () => {
         process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = previousMetaPort;
       }
       if (previousStorageEndpoint === undefined) {
-        delete process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
+        delete process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT;
       } else {
-        process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = previousStorageEndpoint;
+        process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT = previousStorageEndpoint;
       }
     }
   });

@@ -262,7 +262,7 @@ spec:
             - name: JUICEFS_MOUNT_IMAGE
               value: juicedata/mount:ce-v1.3.1
             - name: JUICEFS_STORAGE_ENDPOINT
-              value: ${INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE}
+              value: ${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT}
             - name: JUICEFS_STORAGE_ACCESS_KEY
               value: mbos
             - name: JUICEFS_STORAGE_SECRET_KEY

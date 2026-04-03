@@ -24,6 +24,7 @@ type GatewaySession = EnsureFileLibraryGatewayResult & {
   pid?: number;
   child?: ChildProcessWithoutNullStreams;
   metadataUrl?: string;
+  storageBucketUrl?: string;
   lastError?: string;
   logPath?: string;
 };
@@ -34,6 +35,7 @@ interface PersistedGatewayState {
   port: number;
   loopbackUrl: string;
   metadataUrl: string;
+  storageBucketUrl?: string;
   logPath: string;
   lastStartedAt: string;
   ownerProcessPid: number;
@@ -430,6 +432,22 @@ function replaceUrlOrigin(urlValue: string, replacementBase: string): string {
   return parsed.toString();
 }
 
+function resolveBucketEndpointForInternalMount(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT?.trim() || undefined;
+}
+
+function resolveBucketEndpointForGateway(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env.JUICEFS_BUCKET_ENDPOINT_FOR_GATEWAY?.trim()
+    || env.FILE_LIBRARY_CLIENT_MINIO_ENDPOINT?.trim()
+    || undefined;
+}
+
+function resolveBucketEndpointForClientMount(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env.JUICEFS_BUCKET_ENDPOINT_FOR_CLIENT_MOUNT?.trim()
+    || env.FILE_LIBRARY_CLIENT_MINIO_ENDPOINT?.trim()
+    || undefined;
+}
+
 export function resolveFileLibraryMetadataUrlForExternalExecution(
   metadataUrl: string,
   env: NodeJS.ProcessEnv = process.env,
@@ -566,7 +584,35 @@ export function resolveFileLibraryStorageBucketUrlForInternalExecution(
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
   if (!storageBucketUrl?.trim()) return storageBucketUrl;
-  const overrideEndpoint = env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim();
+  const overrideEndpoint = resolveBucketEndpointForInternalMount(env);
+  if (!overrideEndpoint) return storageBucketUrl;
+  try {
+    return replaceUrlOrigin(storageBucketUrl, overrideEndpoint);
+  } catch {
+    return storageBucketUrl;
+  }
+}
+
+export function resolveFileLibraryStorageBucketUrlForGatewayRuntime(
+  storageBucketUrl: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (!storageBucketUrl?.trim()) return storageBucketUrl;
+  const overrideEndpoint = resolveBucketEndpointForGateway(env);
+  if (!overrideEndpoint) return storageBucketUrl;
+  try {
+    return replaceUrlOrigin(storageBucketUrl, overrideEndpoint);
+  } catch {
+    return storageBucketUrl;
+  }
+}
+
+export function resolveFileLibraryStorageBucketUrlForClientMount(
+  storageBucketUrl: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (!storageBucketUrl?.trim()) return storageBucketUrl;
+  const overrideEndpoint = resolveBucketEndpointForClientMount(env);
   if (!overrideEndpoint) return storageBucketUrl;
   try {
     return replaceUrlOrigin(storageBucketUrl, overrideEndpoint);
@@ -950,6 +996,7 @@ export class InMemoryFileLibraryGatewayManager implements FileLibraryGatewayMana
       status: 'ready',
       lastStartedAt: new Date().toISOString(),
       metadataUrl: input.metadataUrl,
+      storageBucketUrl: input.storageBucketUrl,
     };
     this.sessions.set(input.libraryId, created);
     return created;
@@ -1044,12 +1091,27 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     await this.ensureReconciled();
     await this.reconcileLibrary(input.libraryId);
     const existing = this.sessions.get(input.libraryId);
-    if (existing?.pid && this.platform.processExists(existing.pid)) {
+    if (
+      existing?.pid
+      && this.platform.processExists(existing.pid)
+      && existing.metadataUrl === input.metadataUrl
+      && existing.storageBucketUrl === input.storageBucketUrl
+    ) {
       return existing;
+    }
+    if (existing?.pid && this.platform.processExists(existing.pid)) {
+      await terminateGatewayProcess(this.platform, existing.pid);
+      this.sessions.delete(input.libraryId);
+      await removeGatewayState(this.config, input.libraryId);
     }
 
     const persisted = await readGatewayState(this.config, input.libraryId);
-    if (persisted && this.platform.processExists(persisted.pid)) {
+    if (
+      persisted
+      && this.platform.processExists(persisted.pid)
+      && persisted.metadataUrl === input.metadataUrl
+      && persisted.storageBucketUrl === input.storageBucketUrl
+    ) {
       try {
         const response = await this.platform.fetch(`${persisted.loopbackUrl}/`, { method: 'GET' });
         if (response.status > 0) {
@@ -1060,6 +1122,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
             lastStartedAt: persisted.lastStartedAt,
             pid: persisted.pid,
             metadataUrl: persisted.metadataUrl,
+            storageBucketUrl: persisted.storageBucketUrl,
             logPath: persisted.logPath,
           };
           this.sessions.set(input.libraryId, restored);
@@ -1069,6 +1132,9 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         await terminateGatewayProcess(this.platform, persisted.pid);
         await removeGatewayState(this.config, input.libraryId);
       }
+    } else if (persisted?.pid && this.platform.processExists(persisted.pid)) {
+      await terminateGatewayProcess(this.platform, persisted.pid);
+      await removeGatewayState(this.config, input.libraryId);
     }
 
     await mkdir(this.config.gatewayLogDir, { recursive: true });
@@ -1084,6 +1150,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         'gateway',
         input.metadataUrl,
         `127.0.0.1:${port}`,
+        ...(input.storageBucketUrl ? ['--bucket', input.storageBucketUrl] : []),
         '--log',
         logPath,
         '--no-banner',
@@ -1105,6 +1172,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       pid: child.pid ?? undefined,
       child,
       metadataUrl: input.metadataUrl,
+      storageBucketUrl: input.storageBucketUrl,
       logPath,
     };
     this.sessions.set(input.libraryId, created);
@@ -1115,6 +1183,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         port,
         loopbackUrl,
         metadataUrl: input.metadataUrl,
+        storageBucketUrl: input.storageBucketUrl,
         logPath,
         lastStartedAt: created.lastStartedAt,
         ownerProcessPid: this.platform.ownerPid(),
@@ -1148,6 +1217,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
           port,
           loopbackUrl,
           metadataUrl: input.metadataUrl,
+          storageBucketUrl: input.storageBucketUrl,
           logPath,
           lastStartedAt: created.lastStartedAt,
           ownerProcessPid: this.platform.ownerPid(),
@@ -1175,11 +1245,12 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
           loopbackUrl: persisted.loopbackUrl,
           port: persisted.port,
           status: persisted.status,
-          lastStartedAt: persisted.lastStartedAt,
-          pid: persisted.pid,
-          metadataUrl: persisted.metadataUrl,
-          logPath: persisted.logPath,
-        });
+            lastStartedAt: persisted.lastStartedAt,
+            pid: persisted.pid,
+            metadataUrl: persisted.metadataUrl,
+            storageBucketUrl: persisted.storageBucketUrl,
+            logPath: persisted.logPath,
+          });
       }
     }
     const current = this.sessions.get(libraryId);

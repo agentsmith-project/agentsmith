@@ -3,8 +3,12 @@ import type { NodeApiDeps } from './node-api-deps.js';
 import {
   JsonDocProjectFileLibraryBackendRepo,
   JsonDocProjectFileLibraryCatalogRepo,
+  JsonDocProjectFileLibraryMountAccessRepo,
 } from './file-library-persistence.js';
-import { getFileLibraryGatewayInternalCredentials } from './file-library-runtime.js';
+import {
+  getFileLibraryGatewayInternalCredentials,
+  resolveFileLibraryStorageBucketUrlForGatewayRuntime,
+} from './file-library-runtime.js';
 
 export function normalizeFileLibraryPath(input?: string | null): string {
   const value = (input ?? '').trim().replace(/^\/+/, '').replace(/\/{2,}/g, '/');
@@ -57,6 +61,11 @@ export async function createFileLibraryGatewayClient(args: {
     args.projectId,
     args.libraryId,
   );
+  const mountAccess = await new JsonDocProjectFileLibraryMountAccessRepo(args.deps.docStore).getById(
+    args.workspaceId,
+    args.projectId,
+    args.libraryId,
+  );
   if (!backend?.internal_metadata_url) {
     throw new Error('file_library_backend_not_found');
   }
@@ -67,6 +76,7 @@ export async function createFileLibraryGatewayClient(args: {
     libraryId: args.libraryId,
     filesystemName: args.filesystemName,
     metadataUrl: backend.internal_metadata_url,
+    storageBucketUrl: resolveFileLibraryStorageBucketUrlForGatewayRuntime(mountAccess?.storage_bucket_url),
   });
   const url = new URL(gateway.loopbackUrl);
   const credentials = getFileLibraryGatewayInternalCredentials(args.libraryId);

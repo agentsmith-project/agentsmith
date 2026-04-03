@@ -3,6 +3,7 @@ import {
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectFileLibraryMountAccessRepo,
 } from './file-library-persistence.js';
+import { resolveFileLibraryStorageBucketUrlForInternalExecution } from './file-library-runtime.js';
 import type { SandboxWorkspaceBindingBody, SandboxWorkspaceBindingResponse } from './sandbox-manager-client.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
@@ -114,7 +115,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
       mountImage?: string;
       metadataHostOverride?: string;
       metadataPortOverride?: string;
-      storageEndpointOverride?: string;
+      bucketEndpointForInternalMount?: string;
       storageCredentialSeed?: string;
     },
   ) {
@@ -171,9 +172,23 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
       file_library_id: input.fileLibraryId,
       filesystem_name: library.filesystem_name,
       metadata_url: this.resolveMetadataUrlForInternalMount(mountAccess.metadata_url),
-      ...(this.options.storageEndpointOverride?.trim()
-        ? { storage_endpoint: this.options.storageEndpointOverride.trim() }
-        : {}),
+      ...(() => {
+        const resolvedBucketUrl = resolveFileLibraryStorageBucketUrlForInternalExecution(
+          mountAccess.storage_bucket_url,
+          {
+            ...process.env,
+            ...(this.options.bucketEndpointForInternalMount?.trim()
+              ? { JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT: this.options.bucketEndpointForInternalMount.trim() }
+              : {}),
+          },
+        );
+        if (!resolvedBucketUrl) return {};
+        try {
+          return { storage_endpoint: new URL(resolvedBucketUrl).origin };
+        } catch {
+          return {};
+        }
+      })(),
       ...(this.options.storageCapacity?.trim()
         ? { storage_capacity: this.options.storageCapacity.trim() }
         : {}),

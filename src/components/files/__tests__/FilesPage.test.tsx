@@ -49,6 +49,13 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
   useFilesPageCapabilities: () => ({ canRead: true, canManage: true, canExchangeCredentials: true }),
 }));
 
+vi.mock('@/lib/stores/authStore', () => ({
+  useAuthStore: (selector: (state: { isAuthenticated: boolean }) => boolean) =>
+    selector({ isAuthenticated: true }),
+  useAuthStoreHydration: () => true,
+  selectIsAuthenticated: (state: { isAuthenticated: boolean }) => state.isAuthenticated,
+}));
+
 vi.mock('@/lib/hooks/use-file-libraries-v2', () => ({
   useFileLibraryDesktopMountAccess: () => ({
     mutateAsync: vi.fn().mockResolvedValue({
@@ -332,12 +339,13 @@ describe('FilesPage (object browser)', () => {
 
     await screen.findByTestId('files__objects-table');
 
-    expect(mockUseFileObjectsInfinite).toHaveBeenCalledWith(
+    expect(mockUseFileObjectsInfinite).toHaveBeenLastCalledWith(
       'ws_default',
       'proj_001',
       'lib_1',
       expect.any(Object),
       {
+        enabled: true,
         refetchInterval: 5_000,
         refetchIntervalInBackground: false,
         refetchOnWindowFocus: true,

@@ -11,6 +11,11 @@ import { toast } from '@/components/ui/toast';
 import { getApiClient, FilesAPI } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import { formatBytes } from '@/lib/utils/formatters';
+import {
+  useAuthStore,
+  useAuthStoreHydration,
+  selectIsAuthenticated,
+} from '@/lib/stores/authStore';
 import { FileItemIcon } from '@/components/files/FileItemIcon';
 import { PreviewDialog } from '@/components/files/file-object-details-panel/PreviewDialog';
 import { PreviewSection } from '@/components/files/file-object-details-panel/PreviewSection';
@@ -42,6 +47,9 @@ export function FileObjectDetailsPanel({
   onDownload,
 }: FileObjectDetailsPanelProps) {
   const t = useTranslations('files');
+  const authHydrated = useAuthStoreHydration();
+  const isAuthenticated = useAuthStore(selectIsAuthenticated);
+  const authReady = authHydrated && isAuthenticated;
   const selectedObject = selected.length === 1 && selected[0].kind === 'object' ? selected[0] : null;
   const [tab, setTab] = React.useState<'overview' | 'technical'>('overview');
 
@@ -54,7 +62,7 @@ export function FileObjectDetailsPanel({
       const api = new FilesAPI(getApiClient());
       return api.getObjectMeta(workspaceId, projectId, selectedLibraryId, selectedObject.key);
     },
-    enabled: !!selectedLibraryId && !!selectedObject,
+    enabled: authReady && !!selectedLibraryId && !!selectedObject,
     staleTime: 5_000,
   });
 
@@ -63,7 +71,7 @@ export function FileObjectDetailsPanel({
     return resolvePreviewKind(metaQuery.data.content_type, metaQuery.data.key);
   }, [metaQuery.data, selectedObject]);
 
-  const previewEnabled = !!selectedLibraryId && !!selectedObject && !!metaQuery.data && tab === 'overview' && previewSupportsInline(previewKind);
+  const previewEnabled = authReady && !!selectedLibraryId && !!selectedObject && !!metaQuery.data && tab === 'overview' && previewSupportsInline(previewKind);
   const previewQuery = useQuery({
     queryKey: selectedLibraryId && selectedObject
       ? ['source-object-preview', workspaceId, projectId, selectedLibraryId, selectedObject.key]

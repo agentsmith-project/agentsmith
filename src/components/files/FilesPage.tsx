@@ -58,6 +58,11 @@ import {
   parentPrefixForKey,
   parentPrefixForPrefix,
 } from '@/components/files/files-page/utils';
+import {
+  useAuthStore,
+  useAuthStoreHydration,
+  selectIsAuthenticated,
+} from '@/lib/stores/authStore';
 
 export interface FilesPageProps {
   workspaceId: string;
@@ -68,11 +73,16 @@ export interface FilesPageProps {
 export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPageProps) {
   const t = useTranslations('files');
   const tErrors = useTranslations('errors');
+  const authHydrated = useAuthStoreHydration();
+  const isAuthenticated = useAuthStore(selectIsAuthenticated);
+  const authReady = authHydrated && isAuthenticated;
   const { canManage, canExchangeCredentials } = useFilesPageCapabilities();
   const { layoutMode } = useProjectLayoutMode();
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
-  const { data: librariesData, isLoading: libsLoading } = useFileLibraries(workspaceId, projectId);
+  const { data: librariesData, isLoading: libsLoading } = useFileLibraries(workspaceId, projectId, {
+    enabled: authReady,
+  });
   const libraries = React.useMemo(() => librariesData?.items ?? [], [librariesData?.items]);
   const {
     prefix,
@@ -104,6 +114,7 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
     [prefix, search, sortBy, sortOrder],
   );
   const objectsQuery = useFileObjectsInfinite(workspaceId, projectId, selectedLibraryId, listParams, {
+    enabled: authReady,
     refetchInterval: 5_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,

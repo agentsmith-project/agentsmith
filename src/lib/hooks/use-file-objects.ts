@@ -11,6 +11,7 @@ import { queryKeys } from '@/lib/query-keys';
 import type { FileObjectsListParams } from '@/lib/api/types';
 
 type FileObjectsQueryOptions = {
+  enabled?: boolean;
   refetchInterval?: number | false;
   refetchIntervalInBackground?: boolean;
   refetchOnWindowFocus?: boolean;
@@ -33,7 +34,7 @@ export function useFileObjects(
       if (!libraryId) throw new Error('libraryId is required');
       return filesAPI.listObjects(workspaceId, projectId, libraryId, params);
     },
-    enabled: !!workspaceId && !!projectId && !!libraryId,
+    enabled: (options?.enabled ?? true) && !!workspaceId && !!projectId && !!libraryId,
     staleTime: 5_000,
     refetchInterval: options?.refetchInterval,
     refetchIntervalInBackground: options?.refetchIntervalInBackground,
@@ -63,7 +64,7 @@ export function useFileObjectsInfinite(
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_continuation_token ?? undefined,
-    enabled: !!workspaceId && !!projectId && !!libraryId,
+    enabled: (options?.enabled ?? true) && !!workspaceId && !!projectId && !!libraryId,
     staleTime: 5_000,
     refetchInterval: options?.refetchInterval,
     refetchIntervalInBackground: options?.refetchIntervalInBackground,

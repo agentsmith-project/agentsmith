@@ -11,13 +11,17 @@ import { queryKeys } from '@/lib/query-keys';
 import { toast } from '@/components/ui/toast';
 import { handleErrorForToast } from '@/lib/api/errors';
 
-export function useFileLibraries(workspaceId: string, projectId: string) {
+export function useFileLibraries(
+  workspaceId: string,
+  projectId: string,
+  options?: { enabled?: boolean },
+) {
   const filesAPI = new FilesAPI(getApiClient());
 
   return useQuery({
     queryKey: queryKeys.fileLibraries.list(workspaceId, projectId),
     queryFn: () => filesAPI.listLibraries(workspaceId, projectId),
-    enabled: !!workspaceId && !!projectId,
+    enabled: (options?.enabled ?? true) && !!workspaceId && !!projectId,
     staleTime: 10000,
   });
 }

@@ -78,6 +78,24 @@ export class NotebookTerminalService {
     this.hooks = hooks;
   }
 
+  private isOpenSocket(socket?: WebSocket): socket is WebSocket {
+    return socket?.readyState === WebSocket.OPEN;
+  }
+
+  private sendToBrowserSocket(socket: WebSocket | undefined, payload: unknown): void {
+    if (!this.isOpenSocket(socket)) return;
+    socket.send(JSON.stringify(payload));
+  }
+
+  private closeBrowserSocket(
+    socket: WebSocket | undefined,
+    code: number,
+    reason: string,
+  ): void {
+    if (!this.isOpenSocket(socket)) return;
+    socket.close(code, reason);
+  }
+
   private sessionCacheKey(sessionId: string): string {
     return `notebook_terminal_session:${sessionId}`;
   }
@@ -268,9 +286,7 @@ export class NotebookTerminalService {
       clearTimeout(session.disconnectTimer);
       session.disconnectTimer = undefined;
     }
-    if (session.browserSocket && session.browserSocket.readyState === session.browserSocket.OPEN) {
-      session.browserSocket.close(1012, 'terminal_replaced');
-    }
+    this.closeBrowserSocket(session.browserSocket, 1012, 'terminal_replaced');
     session.browserSocket = ws;
     if (session.runtime) {
       session.status = session.status === 'failed' || session.status === 'closed'
@@ -306,25 +322,23 @@ export class NotebookTerminalService {
           runner_session_id: session.runnerSessionId,
           error: message,
         });
-        if (ws.readyState === ws.OPEN) {
-          ws.send(JSON.stringify({
-            type: 'error',
-            session_id: session.id,
-            error_code: 'TERMINAL_DISPATCH_FAILED',
-            error_message: message,
-          }));
-          ws.close(1011, 'terminal_dispatch_failed');
-        }
+        this.sendToBrowserSocket(ws, {
+          type: 'error',
+          session_id: session.id,
+          error_code: 'TERMINAL_DISPATCH_FAILED',
+          error_message: message,
+        });
+        this.closeBrowserSocket(ws, 1011, 'terminal_dispatch_failed');
         this.finishSession(session.id, 'failed', message);
         return;
       }
-    } else if (ws.readyState === ws.OPEN) {
-      ws.send(JSON.stringify({
+    } else {
+      this.sendToBrowserSocket(ws, {
         type: 'started',
         session_id: session.id,
         cols: session.cols,
         rows: session.rows,
-      }));
+      });
     }
 
     ws.on('message', (raw) => {
@@ -386,13 +400,9 @@ export class NotebookTerminalService {
         }
         session.lastActivityAt = new Date().toISOString();
         await this.persistSession(session);
-        if (session.browserSocket?.readyState === session.browserSocket.OPEN) {
-          session.browserSocket.send(JSON.stringify(event));
-        }
+        this.sendToBrowserSocket(session.browserSocket, event);
       }
-      if (session.browserSocket?.readyState === session.browserSocket.OPEN) {
-        session.browserSocket.close(1000, 'terminal_complete');
-      }
+      this.closeBrowserSocket(session.browserSocket, 1000, 'terminal_complete');
       this.finishSession(
         session.id,
         session.status === 'failed' ? 'failed' : 'closed',
@@ -403,9 +413,7 @@ export class NotebookTerminalService {
       debugTerminal('runtime_stream_failed', {
         session_id: session.id,
       });
-      if (session.browserSocket?.readyState === session.browserSocket.OPEN) {
-        session.browserSocket.close(1011, 'terminal_stream_failed');
-      }
+      this.closeBrowserSocket(session.browserSocket, 1011, 'terminal_stream_failed');
       this.finishSession(session.id, 'failed', 'terminal_stream_failed');
     });
   }

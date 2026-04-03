@@ -23,6 +23,10 @@ export interface ApiRequestOptions {
   signal?: AbortSignal;
 }
 
+export interface ApiUploadOptions extends ApiRequestOptions {
+  onProgress?: (progress: number) => void;
+}
+
 export interface ApiResponse<T> {
   data: T;
   error_code?: string;
@@ -57,6 +61,18 @@ export interface ApiClient {
    * GET request
    */
   get<T>(path: string, options?: ApiRequestOptions): Promise<T>;
+
+  /**
+   * GET request that returns a binary Blob payload while still sharing
+   * the standard auth / refresh / unauthorized handling path.
+   */
+  getBlob(path: string, options?: ApiRequestOptions): Promise<Blob>;
+
+  /**
+   * POST multipart/form-data request that shares the standard auth /
+   * refresh / unauthorized handling path and can report upload progress.
+   */
+  postMultipart<T>(path: string, formData: FormData, options?: ApiUploadOptions): Promise<T>;
 
   /**
    * POST request

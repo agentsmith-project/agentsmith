@@ -36,6 +36,7 @@ export interface TaskHeaderProps {
   canOpenTerminal?: boolean;
   terminalOpen?: boolean;
   terminalDisabledReason?: string | null;
+  onCloseTerminalSession?: () => void;
   onCreateNew?: () => void;
   onEdit?: () => void;
   onDeleted?: () => void;
@@ -54,6 +55,7 @@ export function TaskHeader({
   canOpenTerminal = false,
   terminalOpen = false,
   terminalDisabledReason = null,
+  onCloseTerminalSession,
   onCreateNew,
   onEdit,
   onDeleted,
@@ -195,6 +197,18 @@ export function TaskHeader({
           >
             <TerminalSquare className="mr-2 h-4 w-4" />
             {t(terminalOpen ? 'terminal_hide' : 'terminal_open')}
+          </Button>
+        ) : null}
+        {terminalOpen && onCloseTerminalSession ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 px-2.5 text-xs"
+            onClick={onCloseTerminalSession}
+            data-testid="notebook__task-header-terminal-close"
+          >
+            <TerminalSquare className="mr-2 h-4 w-4" />
+            {t('terminal_close')}
           </Button>
         ) : null}
         {canDeleteTask && (

@@ -8,7 +8,7 @@
  * The real backend API should have the same contract.
  */
 
-import type { ApiClient, ApiRequestOptions } from '../client';
+import type { ApiClient, ApiRequestOptions, ApiUploadOptions } from '../client';
 import { API_BASE, ApiError } from '../client';
 import { createAuthenticatedSSE } from '../sse-client';
 import { notifyUnauthorized } from '@/lib/auth/session-recovery';
@@ -135,6 +135,72 @@ export class MSWApiClient implements ApiClient {
       headers: this.getHeaders(options),
       signal: options?.signal,
     });
+  }
+
+  async getBlob(path: string, options?: ApiRequestOptions): Promise<Blob> {
+    const url = `${API_BASE}${this.buildUrl(path, options?.params)}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getHeaders(options),
+      signal: options?.signal,
+    });
+    if (!response.ok) {
+      if (response.status === 401) {
+        notifyUnauthorized(path);
+      }
+      const text = await response.text().catch(() => '');
+      let data: { error_code?: string; error?: string; message?: string; request_id?: string } = {};
+      if (text.trim()) {
+        try {
+          data = JSON.parse(text) as typeof data;
+        } catch {
+          data = { message: text };
+        }
+      }
+      throw new ApiError(
+        data.error_code || data.error || 'UNKNOWN_ERROR',
+        data.message || `HTTP ${response.status}`,
+        data.request_id,
+        response.status,
+      );
+    }
+    return response.blob();
+  }
+
+  async postMultipart<T>(path: string, formData: FormData, options?: ApiUploadOptions): Promise<T> {
+    const headers = this.getHeaders(options);
+    delete headers['Content-Type'];
+
+    const response = await fetch(`${API_BASE}${this.buildUrl(path, options?.params)}`, {
+      method: 'POST',
+      headers,
+      body: formData,
+      signal: options?.signal,
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        notifyUnauthorized(path);
+      }
+      const text = await response.text().catch(() => '');
+      let data: { error_code?: string; error?: string; message?: string; request_id?: string } = {};
+      if (text.trim()) {
+        try {
+          data = JSON.parse(text) as typeof data;
+        } catch {
+          data = { message: text };
+        }
+      }
+      throw new ApiError(
+        data.error_code || data.error || 'UNKNOWN_ERROR',
+        data.message || `HTTP ${response.status}`,
+        data.request_id,
+        response.status,
+      );
+    }
+
+    options?.onProgress?.(100);
+    return response.json() as Promise<T>;
   }
 
   async post<T>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<T> {

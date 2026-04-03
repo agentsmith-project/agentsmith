@@ -12,9 +12,7 @@ import type {
   FileObjectShareLink,
   FileObjectItem,
 } from '../types';
-import { API_BASE } from '../client';
 import type { ApiClient } from '../client';
-import { APIError } from '../errors';
 
 export class FilesAPI {
   constructor(private client: ApiClient) {}
@@ -141,86 +139,37 @@ export class FilesAPI {
     signal?: AbortSignal,
     onProgress?: (progress: number) => void,
   ): Promise<FileObjectItem> {
-    const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/upload`;
-    const token = this.client.getToken();
+    const formData = new FormData();
+    if (prefix) formData.append('prefix', prefix);
+    if (overwrite) formData.append('overwrite', 'true');
+    formData.append('file', file);
 
-    return new Promise<FileObjectItem>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      const formData = new FormData();
-      if (prefix) formData.append('prefix', prefix);
-      if (overwrite) formData.append('overwrite', 'true');
-      formData.append('file', file);
+    const parsed = await this.client.postMultipart<{
+      kind: 'file';
+      path: string;
+      name: string;
+      size_bytes: number;
+      content_type?: string;
+      modified_at: string;
+      etag?: string;
+    }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/upload`,
+      formData,
+      {
+        signal,
+        onProgress,
+      },
+    );
 
-      if (onProgress) {
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) {
-            const percentComplete = (e.loaded / e.total) * 100;
-            onProgress(Math.min(percentComplete, 99));
-          }
-        });
-      }
-
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const parsed = JSON.parse(xhr.responseText) as {
-              kind: 'file';
-              path: string;
-              name: string;
-              size_bytes: number;
-              content_type?: string;
-              modified_at: string;
-              etag?: string;
-            };
-            if (onProgress) onProgress(100);
-            resolve({
-              kind: 'object',
-              key: parsed.path,
-              name: parsed.name,
-              size_bytes: parsed.size_bytes,
-              content_type: parsed.content_type ?? 'application/octet-stream',
-              etag: parsed.etag,
-              last_modified: parsed.modified_at,
-            });
-          } catch {
-            reject(new Error('Failed to parse response'));
-          }
-          return;
-        }
-
-        try {
-          const errorData = JSON.parse(xhr.responseText) as {
-            error_code?: string;
-            message?: string;
-            request_id?: string;
-            details?: Record<string, unknown>;
-          };
-          if (errorData.error_code && errorData.message) {
-            reject(new APIError(errorData.error_code, errorData.message, errorData.request_id, xhr.status, errorData.details));
-            return;
-          }
-          reject(new Error(errorData.message || `Upload failed with status ${xhr.status}`));
-        } catch {
-          reject(new Error(`Upload failed with status ${xhr.status}`));
-        }
-      });
-
-      xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
-      xhr.addEventListener('abort', () => reject(new Error('Upload was aborted')));
-
-      const handleAbort = () => xhr.abort();
-      if (signal) {
-        if (signal.aborted) {
-          xhr.abort();
-          return;
-        }
-        signal.addEventListener('abort', handleAbort, { once: true });
-      }
-
-      xhr.open('POST', url);
-      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-      xhr.send(formData);
-    });
+    return {
+      kind: 'object',
+      key: parsed.path,
+      name: parsed.name,
+      size_bytes: parsed.size_bytes,
+      content_type: parsed.content_type ?? 'application/octet-stream',
+      etag: parsed.etag,
+      last_modified: parsed.modified_at,
+    };
   }
 
   async downloadObject(
@@ -229,22 +178,12 @@ export class FilesAPI {
     libraryId: string,
     key: string,
   ): Promise<Blob> {
-    const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/download?path=${encodeURIComponent(key)}`;
-    const token = this.client.getToken();
-
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    const response = await fetch(url, { method: 'GET', headers });
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const message =
-        typeof errorData === 'object' && errorData && 'message' in errorData
-          ? String((errorData as { message?: string }).message)
-          : `Download failed: ${response.statusText}`;
-      throw new Error(message);
-    }
-    return response.blob();
+    return this.client.getBlob(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/download`,
+      {
+        params: { path: key },
+      },
+    );
   }
 
   async deleteObjects(

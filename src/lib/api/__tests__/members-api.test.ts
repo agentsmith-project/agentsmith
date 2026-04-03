@@ -8,6 +8,8 @@ function createClient(mockGet: ReturnType<typeof vi.fn>): ApiClient {
     getToken: () => null,
     clearToken: () => undefined,
     get: mockGet as ApiClient['get'],
+    getBlob: vi.fn() as ApiClient['getBlob'],
+    postMultipart: vi.fn() as ApiClient['postMultipart'],
     post: vi.fn() as ApiClient['post'],
     put: vi.fn() as ApiClient['put'],
     patch: vi.fn() as ApiClient['patch'],

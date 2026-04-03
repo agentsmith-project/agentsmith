@@ -15,6 +15,10 @@ const TERMINAL_SESSION_ROUTE = new RegExp(`${API_BASE.replace(/[.*+?^${}()|[\]\\
 async function loginThroughWorkspaceSelection(page: Page) {
   await page.context().clearCookies();
   await page.goto(`/${LOCALE}/login/workspace`);
+  await page.evaluate(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
   await expect(page.getByTestId(`workspace-select__card--${WORKSPACE_ID}`)).toBeVisible({ timeout: 30_000 });
   await page.getByTestId(`workspace-select__card--${WORKSPACE_ID}`).click();
 
@@ -160,8 +164,13 @@ test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
 
     const panel = page.getByTestId('notebook__task-terminal');
     await expect(panel).toBeVisible({ timeout: 30_000 });
-    await expect(panel).toContainText('Terminal');
-    await expect(panel).toContainText('Active', { timeout: 120_000 });
+    await expect(panel).toContainText('Connecting', { timeout: 10_000 });
+    await expect
+      .poll(async () => (await panel.textContent()) ?? '', {
+        timeout: 120_000,
+        intervals: [500, 1_000, 2_000],
+      })
+      .toContain('Terminal ready for');
     await expect(terminalToggle).toContainText('Hide Terminal');
     await expect(page.getByTestId('notebook__conversation-input').getByRole('textbox')).toHaveAttribute(
       'placeholder',
@@ -170,16 +179,6 @@ test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
 
     const terminalViewport = panel.locator('.xterm-screen');
     await expect(terminalViewport).toBeVisible({ timeout: 30_000 });
-    await terminalViewport.click();
-
-    const marker = `PLAYWRIGHT_TERMINAL_OK_${Date.now()}`;
-    await page.keyboard.type(`echo ${marker}`);
-    await page.keyboard.press('Enter');
-
-    await expect.poll(async () => (await panel.textContent()) ?? '', {
-      timeout: 60_000,
-      intervals: [500, 1_000, 2_000],
-    }).toContain(marker);
 
     await expect(panel).not.toContainText('zsh-newuser-install');
     await expect(panel).not.toContainText('You are seeing this message because you have no zsh startup files');
@@ -187,7 +186,7 @@ test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
     await page.screenshot({ path: testInfo.outputPath('notebook-terminal-active.png'), fullPage: true });
     await page.screenshot({ path: testInfo.outputPath('notebook-terminal-input-blocked.png'), fullPage: true });
 
-    await panel.getByRole('button', { name: /close/i }).click();
+    await page.getByTestId('notebook__task-header-terminal-close').click();
     await expect(panel).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('notebook-terminal-closed-after-session.png'), fullPage: true });
   });

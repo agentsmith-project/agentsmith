@@ -1,5 +1,4 @@
-import { API_BASE, type ApiClient } from '../client';
-import { APIError } from '../errors';
+import { type ApiClient } from '../client';
 import type {
   CreateFileLibraryFolderRequest,
   CreateFileLibraryRequest,
@@ -144,68 +143,19 @@ export class FileLibrariesAPI {
     signal?: AbortSignal,
     onProgress?: (progress: number) => void,
   ): Promise<FileLibraryEntry> {
-    const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/upload`;
-    const token = this.client.getToken();
+    const formData = new FormData();
+    if (prefix) formData.append('prefix', prefix);
+    if (overwrite) formData.append('overwrite', 'true');
+    formData.append('file', file);
 
-    return new Promise<FileLibraryEntry>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      const formData = new FormData();
-      if (prefix) formData.append('prefix', prefix);
-      if (overwrite) formData.append('overwrite', 'true');
-      formData.append('file', file);
-
-      if (onProgress) {
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            onProgress(Math.min((event.loaded / event.total) * 100, 99));
-          }
-        });
-      }
-
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const parsed = JSON.parse(xhr.responseText) as FileLibraryEntry;
-            onProgress?.(100);
-            resolve(parsed);
-          } catch {
-            reject(new Error('Failed to parse response'));
-          }
-          return;
-        }
-        try {
-          const errorData = JSON.parse(xhr.responseText) as {
-            error_code?: string;
-            message?: string;
-            request_id?: string;
-            details?: Record<string, unknown>;
-          };
-          if (errorData.error_code && errorData.message) {
-            reject(new APIError(errorData.error_code, errorData.message, errorData.request_id, xhr.status, errorData.details));
-            return;
-          }
-          reject(new Error(errorData.message || `Upload failed with status ${xhr.status}`));
-        } catch {
-          reject(new Error(`Upload failed with status ${xhr.status}`));
-        }
-      });
-
-      xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
-      xhr.addEventListener('abort', () => reject(new Error('Upload was aborted')));
-
-      const handleAbort = () => xhr.abort();
-      if (signal) {
-        if (signal.aborted) {
-          xhr.abort();
-          return;
-        }
-        signal.addEventListener('abort', handleAbort, { once: true });
-      }
-
-      xhr.open('POST', url);
-      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-      xhr.send(formData);
-    });
+    return this.client.postMultipart<FileLibraryEntry>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/upload`,
+      formData,
+      {
+        signal,
+        onProgress,
+      },
+    );
   }
 
   async downloadObject(
@@ -214,20 +164,12 @@ export class FileLibrariesAPI {
     libraryId: string,
     path: string,
   ): Promise<Blob> {
-    const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/download?path=${encodeURIComponent(path)}`;
-    const token = this.client.getToken();
-    const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const response = await fetch(url, { method: 'GET', headers });
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const message =
-        typeof errorData === 'object' && errorData && 'message' in errorData
-          ? String((errorData as { message?: string }).message)
-          : `Download failed: ${response.statusText}`;
-      throw new Error(message);
-    }
-    return response.blob();
+    return this.client.getBlob(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/download`,
+      {
+        params: { path },
+      },
+    );
   }
 
   async exchangeStorageCredentials(

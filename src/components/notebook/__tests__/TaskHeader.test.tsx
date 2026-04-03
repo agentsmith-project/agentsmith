@@ -149,6 +149,17 @@ describe('TaskHeader', () => {
       expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Hide Terminal');
     });
 
+    it('renders close terminal action next to hide when terminal is open', () => {
+      renderComponent(mockTask, {
+        onToggleTerminal: vi.fn(),
+        onCloseTerminalSession: vi.fn(),
+        canOpenTerminal: true,
+        terminalOpen: true,
+      });
+
+      expect(screen.getByTestId('notebook__task-header-terminal-close')).toHaveTextContent('Close terminal');
+    });
+
     it('exposes disabled reason when terminal access is unavailable', () => {
       renderComponent(mockTask, {
         onToggleTerminal: vi.fn(),

@@ -3,6 +3,50 @@ import { InMemoryCache } from '@mbos/adapters-private';
 import { NotebookTerminalService } from './notebook-terminal-service.js';
 import { resolveInternalTicket } from './internal-ticket-store.js';
 
+class FakeWebSocket {
+  static readonly OPEN = 1;
+  readyState = FakeWebSocket.OPEN;
+  sent: string[] = [];
+  closeCalls: Array<{ code: number; reason: string }> = [];
+  private readonly handlers = new Map<string, Array<(...args: unknown[]) => void>>();
+
+  send(payload: string): void {
+    this.sent.push(payload);
+  }
+
+  close(code: number, reason: string): void {
+    this.closeCalls.push({ code, reason });
+    this.readyState = 3;
+    this.emit('close', code, Buffer.from(reason));
+  }
+
+  on(event: string, handler: (...args: unknown[]) => void): void {
+    const existing = this.handlers.get(event) ?? [];
+    existing.push(handler);
+    this.handlers.set(event, existing);
+  }
+
+  emit(event: string, ...args: unknown[]): void {
+    for (const handler of this.handlers.get(event) ?? []) {
+      handler(...args);
+    }
+  }
+}
+
+async function waitForAssertion(assertion: () => Promise<void> | void, attempts = 20): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw lastError;
+}
+
 describe('NotebookTerminalService', () => {
   it('creates an in-memory terminal session with a browser ws ticket', async () => {
     const cache = new InMemoryCache();
@@ -117,5 +161,51 @@ describe('NotebookTerminalService', () => {
       cols: 90,
       rows: 25,
     });
+  });
+
+  it('does not crash when the browser socket disappears before terminal stream fails', async () => {
+    const cache = new InMemoryCache();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput: vi.fn(),
+        resize: vi.fn(),
+        close: vi.fn(),
+        stream: (async function* stream() {
+          yield {
+            type: 'started' as const,
+            session_id: 'term_stream',
+            cols: 80,
+            rows: 24,
+          };
+          throw new Error('stream_boom');
+        })(),
+      })),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+
+    await (service as unknown as {
+      bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+
+    session!.browserSocket = undefined;
+    await waitForAssertion(async () => {
+      const updated = await service.getSession(created.sessionId);
+      expect(updated?.status).toBe('failed');
+      expect(updated?.closeReason).toBe('terminal_stream_failed');
+    });
+    expect(ws.closeCalls).toHaveLength(0);
   });
 });

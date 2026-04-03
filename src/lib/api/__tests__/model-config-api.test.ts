@@ -18,6 +18,8 @@ function toApiClient(mock: ReturnType<typeof createClient>): ApiClient {
     getToken: () => null,
     clearToken: () => undefined,
     get: mock.get,
+    getBlob: vi.fn(),
+    postMultipart: vi.fn(),
     post: mock.post,
     put: mock.put,
     patch: mock.patch,

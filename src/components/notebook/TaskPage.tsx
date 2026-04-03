@@ -99,6 +99,7 @@ export function TaskPage({
     string | null
   >(null);
   const [terminalOpen, setTerminalOpen] = React.useState(false);
+  const [terminalCloseRequestToken, setTerminalCloseRequestToken] = React.useState(0);
 
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
@@ -592,7 +593,7 @@ export function TaskPage({
     if (task?.run_state !== "idle") return;
     if (sendMessage.isPending || cancelActiveRun.isPending) return;
     if (!isAgentTurnRunning && !streamingMessageId && !streamingContent) return;
-    const graceMs = 5000;
+    const graceMs = 1000;
     const elapsedMs = runStartedAt ? Date.now() - runStartedAt : graceMs;
     if (elapsedMs >= graceMs) {
       resetCurrentRunUiState();
@@ -768,6 +769,7 @@ export function TaskPage({
         canOpenTerminal={canOpenTerminal}
         terminalOpen={terminalOpen}
         terminalDisabledReason={terminalDisabledReason}
+        onCloseTerminalSession={terminalOpen ? () => setTerminalCloseRequestToken((current) => current + 1) : undefined}
         onCreateNew={canCreateTask ? handleCreateNew : undefined}
         onEdit={canUpdateTask ? () => setEditDialogOpen(true) : undefined}
         onDeleted={handleTaskDeleted}
@@ -830,6 +832,7 @@ export function TaskPage({
             taskTitle={task.title}
             taskApi={taskAPI}
             disabled={!canOpenTerminal}
+            closeRequestToken={terminalCloseRequestToken}
             onOpenChange={setTerminalOpen}
           />
         )}

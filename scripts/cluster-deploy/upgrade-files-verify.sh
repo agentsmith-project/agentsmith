@@ -13,6 +13,7 @@ set +a
 bash "${ROOT_DIR}/scripts/cluster-deploy/render-env.sh"
 load_release_env
 load_kubeconfig
+require_version_images
 
 bash "${ROOT_DIR}/scripts/cluster-deploy/upgrade-status.sh"
 
@@ -25,7 +26,22 @@ CLIENT_PUBLIC_MINIO_ENDPOINT="${CLIENT_PUBLIC_MINIO_ENDPOINT:-}" \
 HOST_LOCAL_POSTGRES_HOST="${HOST_LOCAL_POSTGRES_HOST:-127.0.0.1}" \
 HOST_LOCAL_MINIO_ENDPOINT="${HOST_LOCAL_MINIO_ENDPOINT:-http://127.0.0.1:${MINIO_API_PORT:-19000}}" \
 FILE_LIBRARY_VERIFY_ENFORCE_DEPLOY_CLIENT_TRUTH=1 \
-bash "${ROOT_DIR}/scripts/file-library-real-smoke.sh"
+docker run --rm \
+  --network host \
+  -v "${RELEASE_ROOT}:/release:ro" \
+  -e NODE_PATH="/app/node_modules" \
+  -e API_BASE="${HOST_LOCAL_API_BASE_URL:-http://127.0.0.1:${API_PORT:-20000}}" \
+  -e KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}" \
+  -e PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL:-}" \
+  -e CLIENT_PUBLIC_POSTGRES_HOST="${CLIENT_PUBLIC_POSTGRES_HOST:-}" \
+  -e CLIENT_PUBLIC_POSTGRES_PORT="${CLIENT_PUBLIC_POSTGRES_PORT:-}" \
+  -e CLIENT_PUBLIC_MINIO_ENDPOINT="${CLIENT_PUBLIC_MINIO_ENDPOINT:-}" \
+  -e HOST_LOCAL_POSTGRES_HOST="${HOST_LOCAL_POSTGRES_HOST:-127.0.0.1}" \
+  -e HOST_LOCAL_MINIO_ENDPOINT="${HOST_LOCAL_MINIO_ENDPOINT:-http://127.0.0.1:${MINIO_API_PORT:-19000}}" \
+  -e FILE_LIBRARY_VERIFY_ENFORCE_DEPLOY_CLIENT_TRUTH=1 \
+  -e FILE_LIBRARY_VERIFY_ALLOW_PRIVATE_CLIENT_IPS_WITH_PUBLIC_WEB="${FILE_LIBRARY_VERIFY_ALLOW_PRIVATE_CLIENT_IPS_WITH_PUBLIC_WEB:-0}" \
+  "${VERIFY_RUNNER_IMAGE}" \
+  bash /release/scripts/file-library-real-smoke.sh
 
 mkdir -p "${REPORT_DIR}/verify-artifacts"
 docker run --rm \
@@ -33,7 +49,7 @@ docker run --rm \
   -v "${REPORT_DIR}/verify-artifacts:/app/test-results" \
   -v "${RELEASE_ROOT}/e2e/integration-files.spec.ts:/app/e2e/integration-files.spec.ts:ro" \
   -v "${RELEASE_ROOT}/e2e/integration-workspace-access.ts:/app/e2e/integration-workspace-access.ts:ro" \
-  -e BASE_URL="${HOST_LOCAL_WEB_BASE_URL:-http://127.0.0.1:${WEB_PORT:-3001}}" \
+  -e BASE_URL="${PUBLIC_WEB_BASE_URL:-${HOST_LOCAL_WEB_BASE_URL:-http://127.0.0.1:${WEB_PORT:-3001}}}" \
   -e INTEGRATION_API_BASE="${HOST_LOCAL_API_BASE_URL:-http://127.0.0.1:${API_PORT:-20000}}" \
   -e KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
   -e KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}" \

@@ -16,6 +16,54 @@ vi.mock('@/lib/auth/session-recovery', () => ({
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
+class MockXMLHttpRequest {
+  static instances: MockXMLHttpRequest[] = [];
+
+  status = 0;
+  responseText = '';
+  upload = {
+    addEventListener: vi.fn(),
+  };
+
+  private listeners = new Map<string, Array<() => void>>();
+  open = vi.fn();
+  send = vi.fn();
+  abort = vi.fn(() => {
+    this.emit('abort');
+  });
+  setRequestHeader = vi.fn();
+
+  constructor() {
+    MockXMLHttpRequest.instances.push(this);
+  }
+
+  addEventListener(event: string, handler: () => void) {
+    const existing = this.listeners.get(event) ?? [];
+    existing.push(handler);
+    this.listeners.set(event, existing);
+  }
+
+  emit(event: string) {
+    for (const handler of this.listeners.get(event) ?? []) {
+      handler();
+    }
+  }
+
+  static latest() {
+    const instance = MockXMLHttpRequest.instances.at(-1);
+    if (!instance) {
+      throw new Error('No XMLHttpRequest instance created');
+    }
+    return instance;
+  }
+
+  static reset() {
+    MockXMLHttpRequest.instances = [];
+  }
+}
+
+global.XMLHttpRequest = MockXMLHttpRequest as unknown as typeof XMLHttpRequest;
+
 describe('FetchApiClient', () => {
   let client: FetchApiClient;
   const testToken = 'test-auth-token';
@@ -23,6 +71,7 @@ describe('FetchApiClient', () => {
   beforeEach(() => {
     client = new FetchApiClient();
     mockFetch.mockClear();
+    MockXMLHttpRequest.reset();
     vi.mocked(tryRefreshSession).mockResolvedValue(false);
   });
 
@@ -163,6 +212,28 @@ describe('FetchApiClient', () => {
         })
       );
     });
+
+    it('should include Authorization header for blob downloads when token is set', async () => {
+      const blob = new Blob(['hello'], { type: 'text/plain' });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        blob: async () => blob,
+      });
+
+      await expect(client.getBlob('/files/test')).resolves.toBe(blob);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${API_BASE}/files/test`,
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            Authorization: `Bearer ${testToken}`,
+          }),
+        }),
+      );
+    });
   });
 
   describe('Query Parameters', () => {
@@ -253,6 +324,59 @@ describe('FetchApiClient', () => {
       expect(tryRefreshSession).toHaveBeenCalledTimes(1);
       expect(notifyUnauthorized).not.toHaveBeenCalled();
       expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should retry blob download once after successful session refresh', async () => {
+      vi.mocked(tryRefreshSession).mockResolvedValue(true);
+      const blob = new Blob(['after-refresh'], { type: 'text/plain' });
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          headers: { get: () => null },
+          json: async () => ({
+            error_code: 'UNAUTHORIZED',
+            message: 'Unauthorized',
+            request_id: 'req-auth-blob',
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          blob: async () => blob,
+        });
+
+      await expect(client.getBlob('/download')).resolves.toBe(blob);
+      expect(tryRefreshSession).toHaveBeenCalledTimes(1);
+      expect(notifyUnauthorized).not.toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should retry multipart upload once after successful session refresh', async () => {
+      vi.mocked(tryRefreshSession).mockResolvedValue(true);
+
+      const uploadPromise = client.postMultipart('/upload', new FormData());
+
+      const first = MockXMLHttpRequest.latest();
+      first.status = 401;
+      first.responseText = JSON.stringify({
+        error_code: 'UNAUTHORIZED',
+        message: 'Unauthorized',
+        request_id: 'req-upload-1',
+      });
+      first.emit('load');
+
+      await Promise.resolve();
+
+      const second = MockXMLHttpRequest.latest();
+      second.status = 200;
+      second.responseText = JSON.stringify({ id: 'uploaded' });
+      second.emit('load');
+
+      await expect(uploadPromise).resolves.toEqual({ id: 'uploaded' });
+      expect(tryRefreshSession).toHaveBeenCalledTimes(1);
+      expect(notifyUnauthorized).not.toHaveBeenCalled();
     });
 
     it('should throw ApiError on HTTP error response', async () => {

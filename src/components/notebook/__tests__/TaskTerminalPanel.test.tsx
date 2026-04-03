@@ -9,6 +9,7 @@ const terminalDisposeMock = vi.fn();
 const terminalLoadAddonMock = vi.fn();
 const terminalOpenMock = vi.fn();
 const terminalOnDataMock = vi.fn(() => ({ dispose: vi.fn() }));
+const terminalFocusMock = vi.fn();
 const fitMock = vi.fn();
 const fitDisposeMock = vi.fn();
 
@@ -22,6 +23,7 @@ vi.mock('@xterm/xterm', () => ({
     loadAddon = terminalLoadAddonMock;
     open = terminalOpenMock;
     onData = terminalOnDataMock;
+    focus = terminalFocusMock;
   },
 }));
 
@@ -144,7 +146,6 @@ describe('TaskTerminalPanel', () => {
     expect(socket?.url).toBe('ws://example.test/terminal');
     await waitFor(() => {
       expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Connecting');
-      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Changes you make here affect files in this task workspace');
       expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Failed');
     }, { timeout: 5000 });
   }, 10000);
@@ -238,6 +239,90 @@ describe('TaskTerminalPanel', () => {
     await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
     expect(createTerminalSession).not.toHaveBeenCalled();
     expect(terminalWritelnMock).toHaveBeenCalledWith('Reconnecting to the previous terminal session...');
+  });
+
+  it('focuses the terminal after a user-triggered open reaches the started state', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_focus',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-focus',
+    });
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open={false}
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_focus"
+        taskTitle="terminal-focus"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_focus"
+        taskTitle="terminal-focus"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'started' }),
+      });
+    });
+
+    await waitFor(() => expect(terminalFocusMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not steal focus when an existing session reconnects on initial mount', async () => {
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_mount',
+      'term_mount_existing',
+    );
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      id: 'term_mount_existing',
+      status: 'disconnected',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-04-02T00:00:00Z',
+      last_activity_at: '2026-04-02T00:00:01Z',
+      ws_url: 'ws://example.test/terminal-mount-existing',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_mount"
+        taskTitle="terminal-mount"
+        taskApi={{ createTerminalSession: vi.fn(), getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'started' }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(terminalWritelnMock).toHaveBeenCalledWith('Terminal ready for terminal-mount\r\n');
+    });
+    expect(terminalFocusMock).not.toHaveBeenCalled();
   });
 
 });

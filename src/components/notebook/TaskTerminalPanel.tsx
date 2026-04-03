@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TaskAPI } from '@/lib/api/endpoints/tasks';
 import type { TaskTerminalServerEvent } from '@/lib/types/task';
@@ -42,6 +41,7 @@ export interface TaskTerminalPanelProps {
   taskTitle: string;
   taskApi: TaskAPI;
   disabled?: boolean;
+  closeRequestToken?: number;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -53,6 +53,7 @@ export function TaskTerminalPanel({
   taskTitle,
   taskApi,
   disabled = false,
+  closeRequestToken = 0,
   onOpenChange,
 }: TaskTerminalPanelProps) {
   const t = useTranslations('notebook.task');
@@ -68,6 +69,10 @@ export function TaskTerminalPanel({
   const statusRef = React.useRef<TerminalStatus>('idle');
   const explicitCloseRequestedRef = React.useRef(false);
   const reconnectingRef = React.useRef(false);
+  const fitFrameRef = React.useRef<number | null>(null);
+  const closeRequestTokenRef = React.useRef(closeRequestToken);
+  const previousOpenRef = React.useRef(open);
+  const pendingTerminalFocusRef = React.useRef(false);
   const sessionStorageKey = React.useMemo(
     () => getTerminalSessionStorageKey(workspaceId, projectId, taskId),
     [projectId, taskId, workspaceId],
@@ -76,6 +81,16 @@ export function TaskTerminalPanel({
   React.useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  React.useEffect(() => {
+    if (!previousOpenRef.current && open) {
+      pendingTerminalFocusRef.current = true;
+    }
+    if (!open) {
+      pendingTerminalFocusRef.current = false;
+    }
+    previousOpenRef.current = open;
+  }, [open]);
 
   const readStoredSessionId = React.useCallback(() => {
     if (typeof window === 'undefined') return null;
@@ -172,8 +187,30 @@ export function TaskTerminalPanel({
     }
   }, []);
 
+  const scheduleFit = React.useCallback(() => {
+    if (typeof window === 'undefined') return;
+    if (fitFrameRef.current !== null) {
+      window.cancelAnimationFrame(fitFrameRef.current);
+      fitFrameRef.current = null;
+    }
+    fitFrameRef.current = window.requestAnimationFrame(() => {
+      fitFrameRef.current = null;
+      fitAddonRef.current?.fit();
+    });
+  }, []);
+
+  const focusTerminalIfRequested = React.useCallback(() => {
+    if (!pendingTerminalFocusRef.current) return;
+    terminalRef.current?.focus();
+    pendingTerminalFocusRef.current = false;
+  }, []);
+
   const disposeTerminal = React.useCallback(() => {
     cleanupSocket();
+    if (fitFrameRef.current !== null) {
+      window.cancelAnimationFrame(fitFrameRef.current);
+      fitFrameRef.current = null;
+    }
     fitAddonRef.current?.dispose();
     fitAddonRef.current = null;
     terminalRef.current?.dispose();
@@ -197,6 +234,7 @@ export function TaskTerminalPanel({
       terminal.loadAddon(fitAddon);
       terminal.open(containerRef.current);
       fitAddon.fit();
+      scheduleFit();
       terminalRef.current = terminal;
       fitAddonRef.current = fitAddon;
       readyBannerWrittenRef.current = false;
@@ -204,7 +242,7 @@ export function TaskTerminalPanel({
     return () => {
       disposeTerminal();
     };
-  }, [disposeTerminal, open, t, taskTitle]);
+  }, [disposeTerminal, open, scheduleFit, t, taskTitle]);
 
   React.useEffect(() => {
     if (!open || disabled || !terminalRef.current || socketRef.current) return;
@@ -235,6 +273,7 @@ export function TaskTerminalPanel({
       const resizeHandler = () => {
         if (!terminalRef.current || !fitAddonRef.current || socket.readyState !== WebSocket.OPEN) return;
         fitAddonRef.current.fit();
+        scheduleFit();
         socket.send(JSON.stringify({
           type: 'terminal.resize',
           cols: terminalRef.current.cols,
@@ -245,11 +284,12 @@ export function TaskTerminalPanel({
       window.addEventListener('resize', resizeHandler);
 
       socket.onopen = () => {
-        setStatus('active');
+        setStatus('connecting');
         setErrorMessage(null);
         setProgressReason(null);
         reconnectingRef.current = false;
         fitAddonRef.current?.fit();
+        scheduleFit();
         resizeHandler();
       };
       socket.onmessage = (event) => {
@@ -267,6 +307,9 @@ export function TaskTerminalPanel({
           }
           setStatus('active');
           setErrorMessage(null);
+          setProgressReason(null);
+          scheduleFit();
+          focusTerminalIfRequested();
           return;
         }
         if (message.type === 'output') {
@@ -280,6 +323,8 @@ export function TaskTerminalPanel({
             setProgressReason(null);
           }
           terminalRef.current.write(message.chunk);
+          scheduleFit();
+          focusTerminalIfRequested();
           return;
         }
         if (message.type === 'exited') {
@@ -334,7 +379,7 @@ export function TaskTerminalPanel({
       cancelled = true;
       cleanupSocket();
     };
-  }, [clearStoredSessionId, cleanupSocket, disabled, onOpenChange, open, resolveSession, t]);
+  }, [clearStoredSessionId, cleanupSocket, disabled, focusTerminalIfRequested, onOpenChange, open, resolveSession, t]);
 
   const handleEndSession = React.useCallback(() => {
     explicitCloseRequestedRef.current = true;
@@ -348,6 +393,18 @@ export function TaskTerminalPanel({
     onOpenChange(false);
   }, [clearStoredSessionId, onOpenChange]);
 
+  React.useEffect(() => {
+    if (!open) {
+      closeRequestTokenRef.current = closeRequestToken;
+      return;
+    }
+    if (closeRequestToken === closeRequestTokenRef.current) return;
+    closeRequestTokenRef.current = closeRequestToken;
+    if (closeRequestToken > 0) {
+      handleEndSession();
+    }
+  }, [closeRequestToken, handleEndSession, open]);
+
   if (!open) return null;
 
   return (
@@ -355,36 +412,24 @@ export function TaskTerminalPanel({
       className="mt-3 overflow-hidden rounded-[18px] border border-white/5 bg-surface/70 shadow-[0_12px_28px_rgba(0,0,0,0.12)]"
       data-testid="notebook__task-terminal"
     >
-      <div className="flex items-center justify-between gap-3 border-b border-white/6 px-4 py-3">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-foreground">{t('terminal_title')}</div>
-          <div className="mt-1 text-xs text-tertiary">{t('terminal_description')}</div>
-        </div>
-        <div className="flex items-center gap-2">
+      {(status !== 'active' || errorMessage) ? (
+        <div className="flex items-center justify-between gap-3 border-b border-white/6 px-4 py-2">
           <Badge variant={
-            status === 'active'
-              ? 'default'
-              : status === 'failed'
-                ? 'destructive'
-                : status === 'preparing'
-                  ? 'secondary'
-                  : 'outline'
+            status === 'failed'
+              ? 'destructive'
+              : status === 'preparing'
+                ? 'secondary'
+                : 'outline'
           }>
             {t(`terminal_status_${status}`)}
           </Badge>
-          <Button variant="outline" size="sm" onClick={handleEndSession}>
-            {t('terminal_close')}
-          </Button>
-        </div>
-      </div>
-      <div className="border-b border-white/6 bg-surface/40 px-4 py-2 text-xs text-tertiary">
-        {t('terminal_scope_hint')}
-      </div>
-      {status === 'preparing' ? (
-        <div className="border-b border-white/6 bg-accent/10 px-4 py-2 text-xs text-foreground">
-          {progressReason === 'run_in_progress'
-            ? t('terminal_preparing_run_busy')
-            : t('terminal_preparing_environment')}
+          {status === 'preparing' ? (
+            <div className="min-w-0 text-xs text-foreground">
+              {progressReason === 'run_in_progress'
+                ? t('terminal_preparing_run_busy')
+                : t('terminal_preparing_environment')}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {errorMessage ? (
@@ -392,8 +437,11 @@ export function TaskTerminalPanel({
           {t('terminal_error_hint', { reason: errorMessage })}
         </div>
       ) : null}
-      <div className="h-[320px] bg-[#0f141d] p-2">
-        <div ref={containerRef} className="h-full w-full" />
+      <div className="h-[360px] overflow-hidden bg-[#0f141d]">
+        <div
+          ref={containerRef}
+          className="h-full w-full overflow-hidden rounded-[12px] border border-white/6 bg-[#0f141d]"
+        />
       </div>
     </div>
   );

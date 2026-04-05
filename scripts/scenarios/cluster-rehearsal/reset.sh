@@ -6,6 +6,7 @@ init_cluster_rehearsal_env
 acquire_scenario_lock "${CLUSTER_REHEARSAL_NAME}"
 arm_scenario_lock_cleanup "${CLUSTER_REHEARSAL_NAME}"
 
+mark_scenario_world_changed
 bash "${ROOT_DIR}/scripts/cluster-deploy/reset.sh"
 release_scenario_lock "${CLUSTER_REHEARSAL_NAME}"
 disarm_scenario_lock_cleanup

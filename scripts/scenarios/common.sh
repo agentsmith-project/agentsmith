@@ -107,15 +107,39 @@ arm_scenario_lock_cleanup() {
   local scenario="$1"
   export SCENARIO_LOCK_CLEANUP_SCENARIO="${scenario}"
   export SCENARIO_LOCK_CLEANUP_ACTIVE=1
-  trap 'scenario_lock_cleanup_on_exit' EXIT
+  export SCENARIO_LOCK_WORLD_CHANGED=0
+  trap 'scenario_lock_cleanup_on_exit $?' EXIT
 }
 
 disarm_scenario_lock_cleanup() {
   export SCENARIO_LOCK_CLEANUP_ACTIVE=0
+  export SCENARIO_LOCK_WORLD_CHANGED=0
+  export SCENARIO_LOCK_CLEANUP_SCENARIO=""
+}
+
+mark_scenario_world_changed() {
+  export SCENARIO_LOCK_WORLD_CHANGED=1
+}
+
+scenario_recovery_hint() {
+  local scenario="$1"
+  cat >&2 <<EOF
+[scenario] WARN: ${scenario} remains active because the command failed after changing the environment.
+[scenario] Next steps: make ${scenario}-status && then make ${scenario}-down or make ${scenario}-reset
+EOF
 }
 
 scenario_lock_cleanup_on_exit() {
-  if [[ "${SCENARIO_LOCK_CLEANUP_ACTIVE:-0}" == "1" && -n "${SCENARIO_LOCK_CLEANUP_SCENARIO:-}" ]]; then
+  local status="${1:-0}"
+  if [[ "${SCENARIO_LOCK_CLEANUP_ACTIVE:-0}" != "1" || -z "${SCENARIO_LOCK_CLEANUP_SCENARIO:-}" ]]; then
+    return 0
+  fi
+  if [[ "${status}" == "0" ]]; then
+    return 0
+  fi
+  if [[ "${SCENARIO_LOCK_WORLD_CHANGED:-0}" == "1" ]]; then
+    scenario_recovery_hint "${SCENARIO_LOCK_CLEANUP_SCENARIO}"
+  else
     release_scenario_lock "${SCENARIO_LOCK_CLEANUP_SCENARIO}"
   fi
 }

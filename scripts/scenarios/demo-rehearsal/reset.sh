@@ -6,6 +6,7 @@ init_demo_rehearsal_env
 acquire_scenario_lock "${DEMO_REHEARSAL_NAME}"
 arm_scenario_lock_cleanup "${DEMO_REHEARSAL_NAME}"
 
+mark_scenario_world_changed
 bash "${ROOT_DIR}/scripts/demo-deploy/reset.sh"
 release_scenario_lock "${DEMO_REHEARSAL_NAME}"
 disarm_scenario_lock_cleanup

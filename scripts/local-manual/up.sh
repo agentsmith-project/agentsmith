@@ -6,6 +6,7 @@ init_local_manual_env
 acquire_scenario_lock local-manual
 arm_scenario_lock_cleanup local-manual
 
+mark_scenario_world_changed
 stop_local_manual_processes
 remove_local_manual_runtime_files
 reset_local_manual_state

@@ -8,7 +8,11 @@ arm_scenario_lock_cleanup "${DEMO_REHEARSAL_NAME}"
 ensure_demo_rehearsal_site_env
 ensure_demo_rehearsal_release_bundle
 if [[ "$(demo_env_value DEMO_DEPLOY_MODE)" == "full" ]]; then
+  mark_scenario_world_changed
   ensure_local_kind_cluster
+fi
+if [[ "${SCENARIO_LOCK_WORLD_CHANGED:-0}" != "1" ]]; then
+  mark_scenario_world_changed
 fi
 clear_local_dev_substrate
 

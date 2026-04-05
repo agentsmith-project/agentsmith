@@ -8,6 +8,7 @@ arm_scenario_lock_cleanup "${CLUSTER_REHEARSAL_NAME}"
 ensure_cluster_rehearsal_site_env
 ensure_cluster_rehearsal_registry_env
 ensure_cluster_rehearsal_release_bundle
+mark_scenario_world_changed
 ensure_local_kind_cluster
 cp "${HOME}/.kube/config" "${CLUSTER_REHEARSAL_CONFIG_DIR}/kubeconfig"
 cp "${HOME}/.kube/config" "${CLUSTER_REHEARSAL_CONFIG_DIR}/admin-kubeconfig"

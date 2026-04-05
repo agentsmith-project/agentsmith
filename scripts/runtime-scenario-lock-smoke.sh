@@ -57,4 +57,20 @@ if SCENARIO_RUNTIME_ROOT="${SCENARIO_RUNTIME_ROOT}" ACTIVE_SCENARIO_LOCK_FILE="$
 fi
 [[ -z "$(current_active_scenario)" ]]
 
+printf '[runtime-scenario-lock-smoke] guarded lock cleanup keeps lock after world change\n'
+if SCENARIO_RUNTIME_ROOT="${SCENARIO_RUNTIME_ROOT}" ACTIVE_SCENARIO_LOCK_FILE="${ACTIVE_SCENARIO_LOCK_FILE}" ROOT_DIR="${ROOT_DIR}" bash -lc '
+  set -euo pipefail
+  source "${ROOT_DIR}/scripts/scenarios/common.sh"
+  acquire_scenario_lock demo-rehearsal
+  arm_scenario_lock_cleanup demo-rehearsal
+  mark_scenario_world_changed
+  false
+'; then
+  echo '[runtime-scenario-lock-smoke] expected guarded world-change case to fail' >&2
+  exit 1
+fi
+[[ "$(current_active_scenario)" == 'demo-rehearsal' ]]
+release_scenario_lock demo-rehearsal
+[[ -z "$(current_active_scenario)" ]]
+
 printf '[runtime-scenario-lock-smoke] ok\n'

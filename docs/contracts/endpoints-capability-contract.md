@@ -22,7 +22,7 @@ without adding execution-path feature switches.
 - `type`
 - Capability-first:
 - `provider_family`: `openai | anthropic | deepseek | minimax | kimi | google | glm | alibaba | custom`
-- `protocol`: `openai_compatible | google_gemini | glm_native | dashscope_native`
+- `protocol`: `openai_chat_completions | openai_responses | anthropic_messages | google_gemini | glm_native | dashscope_native`
 - `capabilities[]`: enabled capability + default model binding per capability
 - `models[]`: model records bound to capability
 - `defaults`: default model for each capability
@@ -43,7 +43,7 @@ These routes proxy through the configured endpoint with auth credential resoluti
 ## Protocol Routing Baseline
 
 - Runtime uses a protocol-aware router (`endpoint-protocol-router`) to resolve capability -> upstream path.
-- Current baseline for all configured providers is OpenAI-compatible path mapping.
+- Current baseline routes OpenAI-family providers through `openai_chat_completions` or `openai_responses`, and Anthropic-family providers through `anthropic_messages`.
 - Provider-native path variants are added in the same router without changing route contracts.
 - If a requested capability is not enabled on the endpoint, API fails fast with:
 - `422 VALIDATION_ERROR: endpoint_capability_not_enabled`

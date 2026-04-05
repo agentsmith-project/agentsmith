@@ -96,7 +96,7 @@ main() {
     err "endpoint lookup failed (HTTP ${endpoint_code}); stale backend-real state? run init-resources"
     exit 1
   fi
-  endpoint_protocol="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.protocol||"openai_compatible"))')"
+  endpoint_protocol="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.protocol||"openai_chat_completions"))')"
   endpoint_base_url="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.base_url||""))')"
   endpoint_model="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.model||""))')"
   endpoint_credential_ref="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.credential_ref||""))')"

@@ -17,7 +17,7 @@ The proxy entrypoint remains:
 - Endpoint record is authoritative for target protocol.
 - Endpoint must persist `protocol` and `meta.compatibility_interface`.
 - `meta.compatibility_interface` is derived from protocol:
-  - `anthropic_compatible` -> `anthropic_compatible`
+  - `anthropic_messages` -> `anthropic_compatible`
   - all others -> `openai_compatible`
 
 ## Negotiation Rules
@@ -27,7 +27,8 @@ The proxy entrypoint remains:
    - `responses` -> `openai_responses`
    - `messages` -> `anthropic`
 2. Target wire protocol is derived from endpoint protocol:
-   - endpoint `anthropic_compatible` -> target `anthropic`
+   - endpoint `anthropic_messages` -> target `anthropic`
+   - endpoint `openai_responses` -> target `openai_responses`
    - otherwise target `openai_completion` except passthrough where source already matches
 3. Requests are normalized through canonical chat semantics before target encoding.
 4. Responses are converted back to source protocol when source != target.

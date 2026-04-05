@@ -18,6 +18,11 @@ const DOC_INDEX_EXPECTATIONS: Array<{ file: string; includes: string[] }> = [
   },
 ];
 
+const CURRENT_HISTORICAL_DOC_ALLOWLIST = new Set([
+  'docs/contracts/endpoint-upstream-protocol-refactor-handoff-v1.md',
+  'docs/user-guides/usage-limits-naming-refactor-task.md',
+]);
+
 type Violation = {
   file: string;
   line: number;
@@ -148,16 +153,20 @@ function checkHistoricalDocsPlacement(filePath: string, content: string): Violat
   if (relativePath.startsWith('docs/archive/')) {
     return [];
   }
+  if (CURRENT_HISTORICAL_DOC_ALLOWLIST.has(relativePath)) {
+    return [];
+  }
 
   const violations: Violation[] = [];
   const basename = path.basename(relativePath).toLowerCase();
-  const historicalMarkers = ['handoff', 'refactor-note'];
+  const historicalMarkers = ['handoff', 'refactor-note', 'refactor-task', 'migration'];
   if (historicalMarkers.some((marker) => basename.includes(marker))) {
     violations.push({
       file: relativePath,
       line: 1,
       rule: 'historical-doc-outside-archive',
-      detail: 'Historical handoff/refactor-note docs must live under docs/archive/.',
+      detail:
+        'Historical handoff/refactor/migration docs must live under docs/archive/ unless explicitly allowlisted as a current migration reference.',
     });
   }
 

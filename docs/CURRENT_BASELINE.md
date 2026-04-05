@@ -5,6 +5,11 @@
 
 本文件是当前唯一白名单。新人入项、评审、实施、验收都以本清单为准。
 
+补充说明：
+
+- 若某份文档标题包含 `handoff` / `refactor` / `migration`，默认把它当作历史迁移或阶段性交接材料阅读。
+- 这类文档可以保留旧术语与映射关系，但不覆盖本白名单与现行 index 的 current 口径。
+
 工程治理模型与 current 命令语义统一见：
 
 - [Current Engineering Governance Model](./current-engineering-governance-model.md)

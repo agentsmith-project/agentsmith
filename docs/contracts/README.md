@@ -1,6 +1,6 @@
 # Contracts Index
 
-当前仅保留现行合同与规范，不保留历史快照说明。
+当前目录以现行合同与规范为主；少量 `handoff` / `refactor` 文档保留阶段性交接与迁移背景。
 
 基线入口：
 
@@ -13,6 +13,7 @@
   - `permission gate`：前端路由/交互权限门禁（产品内能力约束）。
   - `engineering gate`：项目工程验收/检查门禁（研发流程约束）。
 - 机器可读规范中的字段命名可能包含后端内部或历史兼容术语，不单独构成前端产品能力承诺。
+- 标题包含 `handoff` / `refactor` / `migration` 的合同文档，允许保留旧术语、兼容映射与迁移前后对照；current 决策应以其余现行合同为准。
 
 ## 核心合同
 
@@ -33,7 +34,7 @@
 - `backend-storage-maturity-checklist.md`（后端数据持久化成熟度改进清单）
 - `cluster-deployment-spec-v1.md`（真实集群发布线：registry + install bundle + compose/k8s 边界）
 - `substrate-governance-and-runtime-lines-v1.md`（substrate / app / scenario 运行线治理合同）
-- `endpoint-upstream-protocol-refactor-handoff-v1.md`（endpoint 上游协议模型与 universal proxy 对齐的重构交接文档）
+- `endpoint-upstream-protocol-refactor-handoff-v1.md`（endpoint 上游协议模型与 universal proxy 对齐的重构交接文档；保留 legacy -> current 术语映射用于历史上下文）
 
 ## 模块合同
 

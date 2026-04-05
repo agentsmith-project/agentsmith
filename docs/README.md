@@ -4,6 +4,12 @@
 
 术语边界：文档中的 `release` / `engineering gate` 相关命令名若出现，默认是本项目工程校验与验收流程命名；`permission gate` 则是产品权限门禁语义。两者均不代表 AgentSmith 提供 DevOps 发布管理能力。
 
+历史迁移说明边界：
+
+- 标题包含 `handoff` / `refactor` / `migration` 的文档，默认用于保留阶段性交接、兼容背景与重构上下文。
+- 这类文档可以保留旧字段名、旧协议名或迁移前后的对照描述，不直接覆盖 current baseline。
+- 如需判断“当前应该怎么做”，优先看 `CURRENT_BASELINE.md`、各 index、以及不带 `handoff` / `refactor` / `migration` 的现行合同与 runbook。
+
 先读：
 
 - [Current Baseline (Whitelist)](./CURRENT_BASELINE.md)
@@ -41,7 +47,7 @@
 - [Cluster Deployment Spec](./contracts/cluster-deployment-spec-v1.md)
 - [Substrate Governance And Runtime Lines](./contracts/substrate-governance-and-runtime-lines-v1.md)
 - [Endpoint Upstream Protocol Refactor Handoff](./contracts/endpoint-upstream-protocol-refactor-handoff-v1.md)
-  - Handoff for aligning AgentSmith endpoint truth with universal proxy's upstream protocol model.
+  - Historical handoff for aligning AgentSmith endpoint truth with universal proxy's upstream protocol model. It intentionally keeps legacy-to-current terminology mapping.
 - [产品研发与治理方法论](./design/agentsmith-product-engineering-governance-methodology-v1.md)
 - `UXUI/`（设计系统与交互规范）
 - [User Guides Index](./user-guides/README.md)

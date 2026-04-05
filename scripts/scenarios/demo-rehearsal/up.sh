@@ -29,4 +29,5 @@ printf '[demo-rehearsal] API: http://localhost:%s\n' "${API_PORT}"
 if [[ "${DEMO_DEPLOY_MODE:-full}" == "full" ]]; then
   printf '[demo-rehearsal] Sandbox: http://localhost:%s\n' "${SANDBOX_HOST_PORT}"
 fi
-printf '[demo-rehearsal] Next steps: bash %s/scripts/demo-deploy/bootstrap.sh && bash %s/scripts/demo-deploy/verify.sh\n' "${ROOT_DIR}" "${ROOT_DIR}"
+printf '[demo-rehearsal] Stage: environment ready\n'
+printf '[demo-rehearsal] Next steps: make demo-rehearsal-bootstrap && make demo-rehearsal-verify && make demo-rehearsal-report\n'

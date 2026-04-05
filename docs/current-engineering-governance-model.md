@@ -9,6 +9,10 @@ Canonical entrypoint rule:
 - `npm run` names are the authoritative current command names.
 - `make` targets may wrap them for convenience, but they are not a second naming model.
 
+For the current runtime-line methodology and the shared-substrate model, use:
+
+- [Runtime Lines Matrix](./user-guides/runtime-lines-matrix.md)
+
 ## 1. Allowed top-level terms
 
 Current engineering guidance only uses these top-level terms:

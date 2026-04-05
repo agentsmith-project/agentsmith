@@ -121,3 +121,87 @@ run_stage() {
   local stage="$1"
   bash "${ROOT_DIR}/scripts/demo-deploy/${stage}.sh"
 }
+
+demo_phase_value() {
+  local phase
+  phase="${1:-$(demo_state_value release.phase)}"
+  printf '%s\n' "${phase}"
+}
+
+demo_phase_at_least_deployed() {
+  local phase
+  phase="$(demo_phase_value "${1:-}")"
+  [[ "${phase}" == "deploy_completed" || "${phase}" == "bootstrap_completed" || "${phase}" == "verify_completed" ]]
+}
+
+demo_phase_at_least_bootstrapped() {
+  local phase
+  phase="$(demo_phase_value "${1:-}")"
+  [[ "${phase}" == "bootstrap_completed" || "${phase}" == "verify_completed" ]]
+}
+
+demo_phase_verified() {
+  local phase
+  phase="$(demo_phase_value "${1:-}")"
+  [[ "${phase}" == "verify_completed" ]]
+}
+
+demo_require_phase() {
+  local action="$1"
+  local phase
+  phase="$(demo_phase_value)"
+
+  case "${action}" in
+    bootstrap)
+      if demo_phase_at_least_deployed "${phase}"; then
+        return 0
+      fi
+      cat >&2 <<EOF
+[demo-rehearsal] ERROR: bootstrap requires an environment prepared by demo-rehearsal-up.
+[demo-rehearsal] Current phase: ${phase:-unset}
+[demo-rehearsal] Next step: make demo-rehearsal-up
+EOF
+      ;;
+    verify)
+      if demo_phase_at_least_bootstrapped "${phase}"; then
+        return 0
+      fi
+      cat >&2 <<EOF
+[demo-rehearsal] ERROR: verify requires a bootstrapped rehearsal line.
+[demo-rehearsal] Current phase: ${phase:-unset}
+[demo-rehearsal] Next step: make demo-rehearsal-bootstrap
+EOF
+      ;;
+    report)
+      if demo_phase_verified "${phase}"; then
+        return 0
+      fi
+      cat >&2 <<EOF
+[demo-rehearsal] ERROR: report requires a completed verify run.
+[demo-rehearsal] Current phase: ${phase:-unset}
+[demo-rehearsal] Next step: make demo-rehearsal-verify
+EOF
+      ;;
+    *)
+      echo "[demo-rehearsal] ERROR: unsupported phase guard: ${action}" >&2
+      ;;
+  esac
+  exit 1
+}
+
+demo_stage_summary() {
+  local phase
+  phase="$(demo_phase_value)"
+
+  if demo_phase_verified "${phase}"; then
+    printf 'verify completed\n'
+  elif demo_phase_at_least_bootstrapped "${phase}"; then
+    printf 'bootstrapped\n'
+  elif demo_phase_at_least_deployed "${phase}"; then
+    printf 'environment ready\n'
+  elif [[ -n "${phase}" ]]; then
+    printf '%s\n' "${phase}"
+  else
+    printf 'not started\n'
+  fi
+}

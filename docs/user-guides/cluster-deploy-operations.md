@@ -6,6 +6,10 @@
 
 Use this page for the **first install** flow.
 
+Current runtime-line methodology, shared-substrate model, and rehearsal/deploy boundaries are summarized in:
+
+- [Runtime Lines Matrix](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/runtime-lines-matrix.md)
+
 For routine version updates of an existing production install, use:
 
 - [Cluster Upgrade Operations](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-upgrade-operations.md)
@@ -40,6 +44,12 @@ Use it when:
 Do not use it to replace the current demo deployment line.
 
 For local rehearsal on a development host, use the `cluster-rehearsal` commands instead of this runbook.
+
+Important:
+
+- the current stage baseline is the split command set: `prepare`, `publish-images`, `deploy-substrate`, `deploy-app`, `prepare-admin-handoff`, `apply-cluster-prereqs`, `deploy-sandbox`, `bootstrap`, `verify`, `report`
+- `scripts/cluster-deploy/deploy.sh` is the convenience wrapper for the full release path
+- `cluster-rehearsal` follows the staged semantics from the runtime-lines matrix and does not use `up` as a one-shot release wrapper
 
 ## Authority Boundary
 

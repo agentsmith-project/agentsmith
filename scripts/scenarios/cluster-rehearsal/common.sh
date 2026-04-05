@@ -136,6 +136,95 @@ run_stage() {
   bash "${ROOT_DIR}/scripts/cluster-deploy/${stage}.sh"
 }
 
+cluster_phase_value() {
+  local phase
+  phase="${1:-$(cluster_state_value release.phase)}"
+  printf '%s\n' "${phase}"
+}
+
+cluster_phase_at_least_app_deployed() {
+  local phase
+  phase="$(cluster_phase_value "${1:-}")"
+  case "${phase}" in
+    deploy_app_completed|admin_handoff_prepared|apply_cluster_prereqs_completed|deploy_sandbox_completed|bootstrap_completed|verify_completed)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+cluster_phase_at_least_bootstrapped() {
+  local phase
+  phase="$(cluster_phase_value "${1:-}")"
+  [[ "${phase}" == "bootstrap_completed" || "${phase}" == "verify_completed" ]]
+}
+
+cluster_phase_verified() {
+  local phase
+  phase="$(cluster_phase_value "${1:-}")"
+  [[ "${phase}" == "verify_completed" ]]
+}
+
+cluster_require_phase() {
+  local action="$1"
+  local phase
+  phase="$(cluster_phase_value)"
+
+  case "${action}" in
+    bootstrap)
+      if cluster_phase_at_least_app_deployed "${phase}"; then
+        return 0
+      fi
+      cat >&2 <<EOF
+[cluster-rehearsal] ERROR: bootstrap requires an environment prepared by cluster-rehearsal-up.
+[cluster-rehearsal] Current phase: ${phase:-unset}
+[cluster-rehearsal] Next step: make cluster-rehearsal-up
+EOF
+      ;;
+    verify)
+      if cluster_phase_at_least_bootstrapped "${phase}"; then
+        return 0
+      fi
+      cat >&2 <<EOF
+[cluster-rehearsal] ERROR: verify requires a bootstrapped rehearsal line.
+[cluster-rehearsal] Current phase: ${phase:-unset}
+[cluster-rehearsal] Next step: make cluster-rehearsal-bootstrap
+EOF
+      ;;
+    report)
+      if cluster_phase_verified "${phase}"; then
+        return 0
+      fi
+      cat >&2 <<EOF
+[cluster-rehearsal] ERROR: report requires a completed verify run.
+[cluster-rehearsal] Current phase: ${phase:-unset}
+[cluster-rehearsal] Next step: make cluster-rehearsal-verify
+EOF
+      ;;
+    *)
+      echo "[cluster-rehearsal] ERROR: unsupported phase guard: ${action}" >&2
+      ;;
+  esac
+  exit 1
+}
+
+cluster_stage_summary() {
+  local phase
+  phase="$(cluster_phase_value)"
+
+  if cluster_phase_verified "${phase}"; then
+    printf 'verify completed\n'
+  elif cluster_phase_at_least_bootstrapped "${phase}"; then
+    printf 'bootstrapped\n'
+  elif cluster_phase_at_least_app_deployed "${phase}"; then
+    printf 'environment ready\n'
+  elif [[ -n "${phase}" ]]; then
+    printf '%s\n' "${phase}"
+  else
+    printf 'not started\n'
+  fi
+}
+
 mark_cluster_rehearsal_admin_ready() {
   local ready_env="${CLUSTER_REHEARSAL_CONFIG_DIR}/admin-ready.env"
   cat > "${ready_env}" <<EOF

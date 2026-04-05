@@ -2,6 +2,10 @@
 
 这份文档只讲本机开发和 rehearsal 怎么跑，尽量保持最简单的心智模型。
 
+运行线职责、mode 边界、shared substrate 方法论以
+[Runtime Lines Matrix](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/runtime-lines-matrix.md)
+为唯一总入口；这份文档只展开本机操作顺序。
+
 ## 一句话规则
 
 先起共享底座，再跑一条工作线；同一时间只跑一条。
@@ -110,6 +114,8 @@ make local-manual-internal-down
 
 - 在本机验证 demo deploy 这条完整工作线
 - 使用本地 `kind-agentsmith` 和本地 registry
+- `up` 只推进到 environment-ready
+- `bootstrap` / `verify` / `report` 分阶段执行
 
 常用命令：
 
@@ -139,6 +145,9 @@ make demo-rehearsal-report
 
 - 在本机验证 cluster deploy 这条完整工作线
 - 用本地 `kind-agentsmith` 模拟 cluster 侧执行
+- `up` 只推进到 environment-ready
+- `bootstrap` 负责 admin handoff 后续动作、cluster prerequisites、sandbox deploy 和 bootstrap
+- `verify` / `report` 分阶段执行
 
 常用命令：
 

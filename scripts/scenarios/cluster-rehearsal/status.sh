@@ -18,6 +18,22 @@ printf 'Active scenario: %s\n' "$(current_active_scenario || true)"
 printf 'Deploy root: %s\n' "${CLUSTER_REHEARSAL_ROOT}"
 printf 'Mode: %s\n' "${CLUSTER_DEPLOY_MODE:-full-auto}"
 printf 'Phase: %s\n' "$(cluster_state_value release.phase)"
+printf 'Stage summary: %s\n' "$(cluster_stage_summary)"
+if cluster_phase_at_least_app_deployed; then
+  printf 'App readiness: ready for bootstrap\n'
+else
+  printf 'App readiness: pending\n'
+fi
+if cluster_phase_at_least_bootstrapped; then
+  printf 'Bootstrap: completed\n'
+else
+  printf 'Bootstrap: pending\n'
+fi
+if cluster_phase_verified; then
+  printf 'Verify: completed\n'
+else
+  printf 'Verify: pending\n'
+fi
 printf 'Release ID: %s\n' "$(cluster_release_id)"
 printf 'Web: %s\n' "$(scenario_service_status "cluster-rehearsal" "http://127.0.0.1:${WEB_PORT}/api/public/workspaces")"
 printf 'API: %s\n' "$(scenario_service_status "cluster-rehearsal" "http://127.0.0.1:${API_PORT}/api/public/workspaces")"

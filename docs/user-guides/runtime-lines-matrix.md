@@ -9,6 +9,8 @@
 - [Demo Deploy Operations](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/demo-deploy-operations.md)
 - [Cluster Deploy Operations](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-deploy-operations.md)
 
+如果你只想记住当前方法论，这一页就是总入口；其它 runbook 只负责展开具体步骤。
+
 ## 核心方法论
 
 当前工程基线只有这些规则：
@@ -20,6 +22,23 @@
 5. deploy 线与 rehearsal 线使用同一套 contract，但职责不同：
    - rehearsal 用来本机排演
    - deploy 用来正式目标环境发布
+
+## 词典
+
+- `substrate`
+  - 本机共享底座
+- `scenario`
+  - 一条当前正在编排的本机工作线
+- `rehearsal`
+  - 在开发机上排演正式发布流程
+- `deploy`
+  - 在目标环境上执行正式发布
+- `mode`
+  - 当前运行线内部的能力边界或自动化边界
+- `external path`
+  - system 管理侧之外的外部 agent / 用户访问链路
+- `internal path`
+  - system 管理侧内部的 sandbox / k8s 执行链路
 
 正式 contract 见：
 
@@ -68,6 +87,26 @@
 
 ## rehearsal 与 deploy 的关系
 
+## 阶段语义
+
+当前 rehearsal 线都遵守同一套阶段语义：
+
+- `up`
+  - 只把环境推进到 environment-ready
+  - 不自动执行 `bootstrap`、`verify`、`report`
+- `bootstrap`
+  - 只完成 runner 接入、管理员交接后续动作、sandbox 等 bootstrap 真相
+- `verify`
+  - 只执行验证
+- `report`
+  - 只生成报告
+- `down`
+  - 只清当前 scenario
+- `reset`
+  - 清当前 scenario 状态并回到干净阶段
+- `status`
+  - 只汇报当前阶段和 readiness
+
 ### `demo-rehearsal`
 
 它是 `demo-deploy` 的本机排演线。
@@ -79,6 +118,13 @@
 - `simple` / `full` 行为
 - 本地 `kind` internal 执行面
 
+顺序是：
+
+1. `make demo-rehearsal-up`
+2. `make demo-rehearsal-bootstrap`
+3. `make demo-rehearsal-verify`
+4. `make demo-rehearsal-report`
+
 ### `cluster-rehearsal`
 
 它是 `cluster-deploy` 的本机排演线。
@@ -89,6 +135,13 @@
 - registry 推送与镜像引用
 - target-host compose + k8s 分层
 - sandbox deploy / bootstrap / verify / report
+
+顺序是：
+
+1. `make cluster-rehearsal-up`
+2. `make cluster-rehearsal-bootstrap`
+3. `make cluster-rehearsal-verify`
+4. `make cluster-rehearsal-report`
 
 注意：
 

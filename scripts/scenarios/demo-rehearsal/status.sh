@@ -19,6 +19,22 @@ printf 'Active scenario: %s\n' "$(current_active_scenario || true)"
 printf 'Deploy root: %s\n' "${DEMO_REHEARSAL_ROOT}"
 printf 'Mode: %s\n' "${DEMO_DEPLOY_MODE:-full}"
 printf 'Phase: %s\n' "$(demo_state_value release.phase)"
+printf 'Stage summary: %s\n' "$(demo_stage_summary)"
+if demo_phase_at_least_deployed; then
+  printf 'App readiness: ready for bootstrap\n'
+else
+  printf 'App readiness: pending\n'
+fi
+if demo_phase_at_least_bootstrapped; then
+  printf 'Bootstrap: completed\n'
+else
+  printf 'Bootstrap: pending\n'
+fi
+if demo_phase_verified; then
+  printf 'Verify: completed\n'
+else
+  printf 'Verify: pending\n'
+fi
 printf 'Release ID: %s\n' "$(demo_release_id)"
 printf 'Web: %s\n' "$(scenario_service_status "demo-rehearsal" "http://127.0.0.1:${WEB_PORT}/api/public/workspaces")"
 printf 'API: %s\n' "$(scenario_service_status "demo-rehearsal" "http://127.0.0.1:${API_PORT}/api/public/workspaces")"

@@ -18,13 +18,6 @@ bash "${ROOT_DIR}/scripts/cluster-deploy/publish-images.sh"
 preload_cluster_rehearsal_kind_images
 bash "${ROOT_DIR}/scripts/cluster-deploy/deploy-substrate.sh"
 bash "${ROOT_DIR}/scripts/cluster-deploy/deploy-app.sh"
-bash "${ROOT_DIR}/scripts/cluster-deploy/prepare-admin-handoff.sh"
-mark_cluster_rehearsal_admin_ready
-bash "${ROOT_DIR}/scripts/cluster-deploy/apply-cluster-prereqs.sh"
-bash "${ROOT_DIR}/scripts/cluster-deploy/deploy-sandbox.sh"
-bash "${ROOT_DIR}/scripts/cluster-deploy/bootstrap.sh"
-bash "${ROOT_DIR}/scripts/cluster-deploy/verify.sh"
-bash "${ROOT_DIR}/scripts/cluster-deploy/report.sh"
 
 WEB_PORT="$(cluster_env_value WEB_PORT)"
 API_PORT="$(cluster_env_value API_PORT)"
@@ -34,3 +27,5 @@ API_PORT="${API_PORT:-20000}"
 printf '[cluster-rehearsal] ready (mode=%s)\n' "${CLUSTER_DEPLOY_MODE}"
 printf '[cluster-rehearsal] Web: http://localhost:%s\n' "${WEB_PORT}"
 printf '[cluster-rehearsal] API: http://localhost:%s\n' "${API_PORT}"
+printf '[cluster-rehearsal] Stage: environment ready\n'
+printf '[cluster-rehearsal] Next steps: make cluster-rehearsal-bootstrap && make cluster-rehearsal-verify && make cluster-rehearsal-report\n'

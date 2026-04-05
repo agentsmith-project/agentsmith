@@ -2,7 +2,7 @@ import type http from 'node:http';
 import { Readable } from 'node:stream';
 import type { ChatRoute } from './chat-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
-import { extractBearerToken, type AuthenticatedUser } from './auth.js';
+import type { AuthenticatedUser } from './auth.js';
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import { resolveImageMimeType, toImageDataUrl } from './chat-image-utils.js';

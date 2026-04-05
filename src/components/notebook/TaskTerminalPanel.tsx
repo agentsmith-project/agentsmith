@@ -379,7 +379,18 @@ export function TaskTerminalPanel({
       cancelled = true;
       cleanupSocket();
     };
-  }, [clearStoredSessionId, cleanupSocket, disabled, focusTerminalIfRequested, onOpenChange, open, resolveSession, t]);
+  }, [
+    clearStoredSessionId,
+    cleanupSocket,
+    disabled,
+    focusTerminalIfRequested,
+    onOpenChange,
+    open,
+    resolveSession,
+    scheduleFit,
+    t,
+    taskTitle,
+  ]);
 
   const handleEndSession = React.useCallback(() => {
     explicitCloseRequestedRef.current = true;

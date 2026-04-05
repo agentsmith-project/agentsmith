@@ -274,7 +274,18 @@ make local-manual-down
 
 ## Environment Setup
 
-Copy `.env.local.example` to `.env.local` and configure:
+Preferred real-backend local entrypoint:
+
+```bash
+cp .env.local-manual.example .env.local-manual
+make local-manual-up
+```
+
+`.env.local.example` is now a legacy frontend-only shortcut for the narrow case
+where you intentionally run `npm run dev` directly without `local-manual`.
+
+If you still need that legacy shortcut, copy `.env.local.example` to `.env.local`
+and configure:
 
 ```bash
 # For local development with backend

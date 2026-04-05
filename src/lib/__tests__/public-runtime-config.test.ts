@@ -51,4 +51,12 @@ describe('public runtime config', () => {
 
     expect(getPublicRuntimeConfig().apiBase).toBe('http://mbos.imotion.ai:20000');
   });
+
+  it('normalizes a public api base ending with /api to /api/v1', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_BASE', 'https://mbos.imotion.ai/api');
+
+    const { getPublicApiBaseUrl } = await import('../public-runtime-config');
+
+    expect(getPublicApiBaseUrl()).toBe('https://mbos.imotion.ai/api/v1');
+  });
 });

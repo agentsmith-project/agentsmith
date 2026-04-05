@@ -37,19 +37,8 @@ info() { echo "[local-manual] $*"; }
 err() { echo "[local-manual] ERROR: $*" >&2; }
 warn() { echo "[local-manual] WARN: $*" >&2; }
 
-docker_bridge_gateway() {
-  docker network inspect bridge -f '{{range .IPAM.Config}}{{println .Gateway}}{{end}}' 2>/dev/null \
-    | awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ { print; exit }'
-}
-
 detect_local_manual_file_library_client_postgres_host() {
-  local gateway
-  gateway="$(docker_bridge_gateway || true)"
-  if [[ -n "${gateway}" ]]; then
-    printf '%s\n' "${gateway}"
-    return 0
-  fi
-  printf '127.0.0.1\n'
+  printf 'localhost\n'
 }
 
 require_var() {

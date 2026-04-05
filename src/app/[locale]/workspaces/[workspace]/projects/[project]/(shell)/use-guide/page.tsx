@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Copy, KeyRound, LinkIcon, ServerCog, ShieldCheck, TerminalSquare } from 'lucide-react';
@@ -159,7 +159,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
     ? requestedProtocol
     : getDefaultProtocol(selectedEndpoint);
 
-  const updateQuery = (updates: Partial<Record<'endpoint' | 'protocol', string | null>>) => {
+  const updateQuery = useCallback((updates: Partial<Record<'endpoint' | 'protocol', string | null>>) => {
     const next = new URLSearchParams(searchParams.toString());
     for (const [key, value] of Object.entries(updates)) {
       if (!value) {
@@ -170,7 +170,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
     }
     const query = next.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  };
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     if (!routeReady || !routeValid || !canUseProject) {
@@ -192,6 +192,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
     routeReady,
     routeValid,
     selectedEndpoint?.id,
+    updateQuery,
   ]);
 
   if (!routeReady) {

@@ -28,6 +28,27 @@ require_nonempty() {
   [[ -n "${value}" ]] || die "missing required site.env value: ${key}"
 }
 
+resolve_runner_host() {
+  if [[ -n "${RESOLVED_RUNNER_HOST:-}" ]]; then
+    printf '%s\n' "${RESOLVED_RUNNER_HOST}"
+    return 0
+  fi
+
+  local compose_file=""
+  if [[ -f "${RELEASE_ROOT}/compose/docker-compose.yml" ]]; then
+    compose_file="${RELEASE_ROOT}/compose/docker-compose.yml"
+  elif [[ -f "${ROOT_DIR}/infra/deploy/demo/docker-compose.yml" ]]; then
+    compose_file="${ROOT_DIR}/infra/deploy/demo/docker-compose.yml"
+  fi
+
+  if [[ -n "${compose_file}" ]] && grep -Fq 'host.docker.internal:host-gateway' "${compose_file}"; then
+    printf 'host.docker.internal\n'
+    return 0
+  fi
+
+  die "unable to resolve runner host; set RESOLVED_RUNNER_HOST or provide a compose-managed host alias"
+}
+
 for required_key in \
   PUBLIC_API_BASE_URL \
   COMPOSE_INTERNAL_API_BASE_URL \
@@ -41,7 +62,7 @@ for required_key in \
   require_nonempty "${required_key}"
 done
 
-runner_host="${RESOLVED_RUNNER_HOST:-host.docker.internal}"
+runner_host="$(resolve_runner_host)"
 [[ -n "${runner_host}" ]] || die "resolved runner host is empty"
 
 kind_gateway_host="${RESOLVED_KIND_GATEWAY_HOST:-}"

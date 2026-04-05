@@ -488,9 +488,11 @@ export function resolveFileLibraryMetadataUrlForDockerManualExternalExecution(
   metadataUrl: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
+  const explicitHost = env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
+  if (!explicitHost) return metadataUrl;
   try {
     const parsed = new URL(metadataUrl);
-    parsed.hostname = env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim() || 'host.docker.internal';
+    parsed.hostname = explicitHost;
     parsed.port = env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE?.trim()
       || env.FILE_LIBRARY_CLIENT_POSTGRES_PORT?.trim()
       || '15432';
@@ -550,11 +552,12 @@ export function resolveFileLibraryStorageBucketUrlForDockerManualExternalExecuti
 ): string | undefined {
   if (!storageBucketUrl?.trim()) return storageBucketUrl;
   const explicitEndpoint = env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim();
+  if (!explicitEndpoint) return storageBucketUrl;
   const loopbackPort = env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_PORT_OVERRIDE?.trim()
     || env.MINIO_API_PORT?.trim()
     || env.FILE_LIBRARY_CLIENT_MINIO_PORT?.trim()
     || '19000';
-  const endpoint = explicitEndpoint || `http://host.docker.internal:${loopbackPort}`;
+  const endpoint = explicitEndpoint || `http://localhost:${loopbackPort}`;
   try {
     return replaceUrlOrigin(storageBucketUrl, endpoint);
   } catch {

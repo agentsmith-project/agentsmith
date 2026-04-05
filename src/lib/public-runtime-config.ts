@@ -76,6 +76,9 @@ export function getPublicApiBaseUrl(): string {
     }
     return 'http://localhost:20000/api/v1';
   }
+  if (/\/api$/i.test(apiBase)) {
+    return `${apiBase}/v1`;
+  }
   return /\/api\/v1$/i.test(apiBase) ? apiBase : `${apiBase}/api/v1`;
 }
 

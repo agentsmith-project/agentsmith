@@ -171,7 +171,9 @@ describe('file-library-runtime readiness', () => {
 
   it('rewrites client-visible file library access for docker-manual external runner execution', () => {
     const env = {
+      DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE: 'host.docker.internal',
       FILE_LIBRARY_CLIENT_POSTGRES_PORT: '15432',
+      DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://host.docker.internal:19000',
       MINIO_API_PORT: '19000',
     } as NodeJS.ProcessEnv;
 
@@ -188,6 +190,27 @@ describe('file-library-runtime readiness', () => {
         env,
       ),
     ).toBe('http://host.docker.internal:19000/jfs-lib-demo');
+  });
+
+  it('does not guess docker-manual file library access when overrides are missing', () => {
+    const env = {
+      FILE_LIBRARY_CLIENT_POSTGRES_PORT: '15432',
+      MINIO_API_PORT: '19000',
+    } as NodeJS.ProcessEnv;
+
+    expect(
+      resolveFileLibraryMetadataUrlForDockerManualExternalExecution(
+        'postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable',
+        env,
+      ),
+    ).toBe('postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable');
+
+    expect(
+      resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution(
+        'http://192.168.0.220:19000/jfs-lib-demo',
+        env,
+      ),
+    ).toBe('http://192.168.0.220:19000/jfs-lib-demo');
   });
 
   it('preserves non-loopback file library access for external runner execution', () => {

@@ -158,14 +158,14 @@ npm run governance:report -- --name local-debug
 本地 real-backend 常用值：
 
 ```bash
-NEXT_PUBLIC_API_BASE=http://localhost:20000
+NEXT_PUBLIC_API_BASE=http://localhost:20000/api/v1
 NEXT_PUBLIC_USE_MSW=false
 NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms
 NEXT_PUBLIC_KEYCLOAK_REALM=mbos
 NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 ```
 
-如果你看到带 `/api/v1` 的旧前端环境示例，把它当成历史内容，不要继续使用。
+如果你看到不带 `/api/v1` 的旧前端环境示例，把它当成历史内容，不要继续使用。
 
 ## 8. 不再推荐的做法
 

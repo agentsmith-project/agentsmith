@@ -742,7 +742,7 @@ notebook-agent-init-resources:
 	@if [ -z "$(PRESET_ENDPOINT_API_KEY)" ]; then \
 		echo "[make] Missing PRESET_ENDPOINT_API_KEY."; \
 		echo "[make] Example:"; \
-		echo "  PRESET_ENDPOINT_API_KEY='***' PRESET_ANTHROPIC_ENDPOINT_BASE_URL='<YOUR_ANTHROPIC_BASE_URL>' PRESET_ENDPOINT_MODEL='<YOUR_MODEL_ID>' PRESET_ANTHROPIC_ENDPOINT_PROTOCOL='anthropic_compatible' make notebook-agent-init-resources"; \
+		echo "  PRESET_ENDPOINT_API_KEY='***' PRESET_ANTHROPIC_ENDPOINT_BASE_URL='<YOUR_ANTHROPIC_BASE_URL>' PRESET_ENDPOINT_MODEL='<YOUR_MODEL_ID>' PRESET_ANTHROPIC_ENDPOINT_PROTOCOL='anthropic_messages' make notebook-agent-init-resources"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \

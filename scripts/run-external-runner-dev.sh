@@ -36,6 +36,12 @@ fi
   exit 1
 }
 
+[[ -n "${RUNNER_KEY}" ]] || {
+  echo "[external-runner-dev] missing MBOS_AGENT_KEY / RUNNER_KEY" >&2
+  usage >&2
+  exit 1
+}
+
 TMP_ROOT="$(mktemp -d)"
 cleanup() {
   rm -rf "${TMP_ROOT}"
@@ -48,10 +54,15 @@ mkdir -p "${RELEASE_ROOT}/env" "${RELEASE_ROOT}/scripts/demo-deploy" "${RELEASE_
 
 cp "${ROOT_DIR}/infra/deploy/demo/env/site.env.example" "${RELEASE_ROOT}/env/site.env.example"
 cp "${SITE_ENV_PATH}" "${RELEASE_ROOT}/env/site.env"
+cp "${ROOT_DIR}/scripts/demo-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/resolve-runtime-addresses.sh"
 cp "${ROOT_DIR}/scripts/demo-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/demo-deploy/resolve-runtime-addresses.sh"
 cp "${ROOT_DIR}/scripts/demo-deploy/render-env.sh" "${RELEASE_ROOT}/scripts/demo-deploy/render-env.sh"
-cp "${ROOT_DIR}/scripts/demo-deploy/lib/common.sh" "${RELEASE_ROOT}/scripts/lib/common.sh"
+cp "${ROOT_DIR}/scripts/lib/common.sh" "${RELEASE_ROOT}/scripts/lib/common.sh"
 cp "${ROOT_DIR}/scripts/lib/deploy-common.sh" "${RELEASE_ROOT}/scripts/lib/deploy-common.sh"
+cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${RELEASE_ROOT}/scripts/lib/k8s-external-services.sh"
+cp "${ROOT_DIR}/scripts/lib/preset-common.sh" "${RELEASE_ROOT}/scripts/lib/preset-common.sh"
+mkdir -p "${RELEASE_ROOT}/infra/runtime"
+cp "${ROOT_DIR}/infra/runtime/presets.env" "${RELEASE_ROOT}/infra/runtime/presets.env"
 
 bash "${RELEASE_ROOT}/scripts/demo-deploy/render-env.sh" >/dev/null
 

@@ -8,7 +8,7 @@ Provide a single operational path to validate MVP core readiness on real backend
 
 - No-sandbox deployment baseline (sandbox optional; internal path fail-fast)
 - Keycloak login and workspace/project entry
-- Endpoint protocol bridge chat streaming (`openai_compatible` / `anthropic_compatible`)
+- Endpoint protocol bridge chat streaming (`openai_chat_completions` / `anthropic_messages`)
 - Chat stream error surfacing and recovery
 - Endpoint rate/spending policy effect
 

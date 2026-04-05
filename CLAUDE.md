@@ -72,7 +72,7 @@ make bootstrap / api-dev / web / e2e / deps-down
 **library**: next-intl, **locales**: en-US, zh-CN, **keys**: snake_case, **namespaces**: common, nav, auth, workspace, project, sources, members, studio, chat, audit, usage, overview, agents, endpoints, settings, errors
 
 ## 环境配置
-- `NEXT_PUBLIC_API_BASE=http://localhost:20000`
+- `NEXT_PUBLIC_API_BASE=http://localhost:20000/api/v1`
 - `NEXT_PUBLIC_USE_MSW=true` (开发)
 - `NEXT_PUBLIC_KEYCLOAK_*` (生产)
 

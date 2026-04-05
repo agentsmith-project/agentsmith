@@ -57,6 +57,26 @@ const BANNED_RULES: Array<{ rule: string; regex: RegExp; detail: string }> = [
     regex: /\bformal gate\b/i,
     detail: 'Use `engineering gate` wording instead of `formal gate`.',
   },
+  {
+    rule: 'deprecated-env-entrypoint',
+    regex: /Copy `\.env\.example` to `\.env\.local`/,
+    detail: 'Current local frontend/backend entrypoint must use `.env.local.example`, not `.env.example`.',
+  },
+  {
+    rule: 'deprecated-local-api-base-example',
+    regex: /^\s*NEXT_PUBLIC_API_BASE=http:\/\/localhost:\d+\s*$/,
+    detail: 'Current local frontend API base examples must include `/api/v1`.',
+  },
+  {
+    rule: 'deprecated-preset-protocol-example',
+    regex: /PRESET_ANTHROPIC_ENDPOINT_PROTOCOL=anthropic_compatible/,
+    detail: 'Current preset protocol examples must use canonical protocol names.',
+  },
+  {
+    rule: 'deprecated-preset-protocol-example',
+    regex: /PRESET_OPENAI_ENDPOINT_PROTOCOL=openai_compatible/,
+    detail: 'Current preset protocol examples must use canonical protocol names.',
+  },
 ];
 
 function toRel(filePath: string): string {

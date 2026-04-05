@@ -34,4 +34,27 @@ acquire_scenario_lock cluster-rehearsal
 [[ "$(current_active_scenario)" == 'cluster-rehearsal' ]]
 release_scenario_lock cluster-rehearsal
 
+printf '[runtime-scenario-lock-smoke] invalid demo bootstrap must not leave a stale lock\n'
+if SCENARIO_RUNTIME_ROOT="${SCENARIO_RUNTIME_ROOT}" ACTIVE_SCENARIO_LOCK_FILE="${ACTIVE_SCENARIO_LOCK_FILE}" ROOT_DIR="${ROOT_DIR}" DEMO_REHEARSAL_ROOT="${TMP_DIR}/demo-rehearsal" bash -lc '
+  set -euo pipefail
+  bash "${ROOT_DIR}/scripts/scenarios/demo-rehearsal/bootstrap.sh"
+'; then
+  echo '[runtime-scenario-lock-smoke] expected invalid demo bootstrap to fail' >&2
+  exit 1
+fi
+[[ -z "$(current_active_scenario)" ]]
+
+printf '[runtime-scenario-lock-smoke] guarded lock cleanup releases lock on failure\n'
+if SCENARIO_RUNTIME_ROOT="${SCENARIO_RUNTIME_ROOT}" ACTIVE_SCENARIO_LOCK_FILE="${ACTIVE_SCENARIO_LOCK_FILE}" ROOT_DIR="${ROOT_DIR}" bash -lc '
+  set -euo pipefail
+  source "${ROOT_DIR}/scripts/scenarios/common.sh"
+  acquire_scenario_lock demo-rehearsal
+  arm_scenario_lock_cleanup demo-rehearsal
+  false
+'; then
+  echo '[runtime-scenario-lock-smoke] expected guarded lock cleanup case to fail' >&2
+  exit 1
+fi
+[[ -z "$(current_active_scenario)" ]]
+
 printf '[runtime-scenario-lock-smoke] ok\n'

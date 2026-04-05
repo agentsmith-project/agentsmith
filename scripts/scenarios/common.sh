@@ -103,6 +103,23 @@ release_scenario_lock() {
   fi
 }
 
+arm_scenario_lock_cleanup() {
+  local scenario="$1"
+  export SCENARIO_LOCK_CLEANUP_SCENARIO="${scenario}"
+  export SCENARIO_LOCK_CLEANUP_ACTIVE=1
+  trap 'scenario_lock_cleanup_on_exit' EXIT
+}
+
+disarm_scenario_lock_cleanup() {
+  export SCENARIO_LOCK_CLEANUP_ACTIVE=0
+}
+
+scenario_lock_cleanup_on_exit() {
+  if [[ "${SCENARIO_LOCK_CLEANUP_ACTIVE:-0}" == "1" && -n "${SCENARIO_LOCK_CLEANUP_SCENARIO:-}" ]]; then
+    release_scenario_lock "${SCENARIO_LOCK_CLEANUP_SCENARIO}"
+  fi
+}
+
 clear_local_dev_substrate() {
   SUBSTRATE=local-dev bash "${ROOT_DIR}/scripts/substrate/down.sh" >/dev/null 2>&1 || true
 }

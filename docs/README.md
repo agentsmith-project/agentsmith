@@ -28,6 +28,8 @@
 - [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
 - [Local Runtime Flows](./user-guides/local-runtime-flows.md)
   - One shared local substrate, one active flow at a time, and the shortest command path for `local-manual` / `demo-rehearsal` / `cluster-rehearsal`.
+- [Runtime Lines Matrix](./user-guides/runtime-lines-matrix.md)
+  - One-page matrix for current runtime lines, deploy lines, rehearsal lines, mode boundaries, and the shared-substrate model.
 - [Demo Deploy Operations](./user-guides/demo-deploy-operations.md)
   - Demo / single-host release line. Compose + local `kind` sandbox simulation.
 - [Cluster Deploy Operations](./user-guides/cluster-deploy-operations.md)

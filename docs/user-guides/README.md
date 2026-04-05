@@ -18,6 +18,7 @@
 | [Backend Storage Maturity Checklist](../contracts/backend-storage-maturity-checklist.md) | Next-step improvement checklist after main data truth has been productized. |
 | [Release Readiness Checklist](./release-readiness-checklist.md) | Final release verification order for contracts, default gates, real notebook flow, and full visual coverage. |
 | [Local Runtime Flows](./local-runtime-flows.md) | The shortest local runbook: one shared substrate, one active flow at a time, and how to switch between `local-manual`, `demo-rehearsal`, and `cluster-rehearsal`. |
+| [Runtime Lines Matrix](./runtime-lines-matrix.md) | One-page matrix for current runtime lines, deploy lines, rehearsal lines, mode boundaries, and the shared-substrate model. |
 | [Demo Deploy Operations](./demo-deploy-operations.md) | Demo / single-host deployment line: host deployment root, lifecycle commands, address model, and local `kind` sandbox verification flow. |
 | [Cluster Deploy Operations](./cluster-deploy-operations.md) | Real-cluster deployment line: registry-backed bundle release, target-host install flow, manager ingress, and namespace-only automation model. |
 | [Cluster Upgrade Operations](./cluster-upgrade-operations.md) | Existing production install version-update line: upgrade app services and namespaced sandbox resources without touching substrate or data. |

@@ -1,8 +1,8 @@
 import { execFile as execFileCallback, spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, join } from 'node:path';
-import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 
@@ -11,6 +11,8 @@ const DEFAULT_MOUNT_READY_TIMEOUT_MS = 30_000;
 const DEFAULT_MOUNT_READY_POLL_MS = 250;
 const DEFAULT_MOUNT_RETRY_COUNT = 2;
 const DEFAULT_MOUNT_RETRY_DELAY_MS = 750;
+
+export type RunnerMode = 'host_external' | 'docker_external' | 'k8s_internal';
 
 type FileLibraryWorkspaceExecutionContext = {
   workspace_id?: string;
@@ -39,12 +41,14 @@ type TaskWorkspaceAccessPayload = {
 };
 
 export type TaskWorkspacePaths = {
-  rootCwd: string;
-  codexRootDir: string;
-  codexHomeDir: string;
+  mode: RunnerMode;
+  mountRoot: string;
+  taskRoot: string;
   homeDir: string;
+  codexDir: string;
   artifactsDir: string;
   credentialDir: string;
+  skillsDir: string;
 };
 
 const mountedWorkspaceByMountPath = new Set<string>();
@@ -63,14 +67,13 @@ export function shouldRetryTaskWorkspaceMount(error: unknown): boolean {
 }
 
 function sanitizeWorkspacePath(raw: string | undefined): string {
-  const value = (raw ?? '').trim();
-  return value;
+  return (raw ?? '').trim();
 }
 
 function sanitizePathPart(input: string | null | undefined, fallback: string): string {
   const value = (input ?? '').trim();
   if (!value) return fallback;
-  return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || fallback;
+  return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 128) || fallback;
 }
 
 function parseJuicefsMountOptions(raw: string | undefined): string[] {
@@ -190,13 +193,8 @@ async function isMountPointReady(mountPath: string): Promise<boolean> {
 async function readMountLogExcerpt(logPath: string): Promise<string> {
   try {
     const content = (await readFile(logPath, 'utf8')).trim();
-    if (!content) {
-      return '';
-    }
-    return content
-      .split('\n')
-      .slice(-20)
-      .join('\n');
+    if (!content) return '';
+    return content.split('\n').slice(-20).join('\n');
   } catch {
     return '';
   }
@@ -207,9 +205,7 @@ async function waitForMountPointReady(mountPath: string, logPath: string): Promi
     || DEFAULT_MOUNT_READY_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await isMountPointReady(mountPath)) {
-      return;
-    }
+    if (await isMountPointReady(mountPath)) return;
     await sleep(DEFAULT_MOUNT_READY_POLL_MS);
   }
   const logExcerpt = await readMountLogExcerpt(logPath);
@@ -220,60 +216,72 @@ async function waitForMountPointReady(mountPath: string, logPath: string): Promi
   );
 }
 
-function buildStableWorkspaceStateKey(cwd: string): string {
-  const label = sanitizePathPart(basename(cwd), 'workspace');
-  const digest = createHash('sha256').update(cwd).digest('hex').slice(0, 12);
-  return `${label}-${digest}`;
+export function resolveRunnerMode(): RunnerMode {
+  const raw = (process.env.MBOS_RUNNER_MODE ?? process.env.MBOS_AGENT_RUNNER_MODE ?? '').trim();
+  switch (raw) {
+    case 'host_external':
+    case 'docker_external':
+    case 'k8s_internal':
+      return raw;
+    default:
+      throw new Error(`runner_mode_invalid:${raw || 'missing'}`);
+  }
 }
 
-export function buildTaskWorkspacePaths(cwd: string, taskId: string): TaskWorkspacePaths {
-  const codexWorkspaceRoot = join(
-    process.env.MBOS_AGENT_CODEX_STATE_ROOT?.trim() || '/var/tmp/agentsmith-codex',
-    buildStableWorkspaceStateKey(cwd),
+function resolveModeMountRoot(mode: RunnerMode): string {
+  if (mode === 'host_external') {
+    return join(process.env.HOME || homedir() || '/tmp', 'ags-workspace');
+  }
+  return '/workspace';
+}
+
+export function buildTaskWorkspaceMountPath(input: {
+  mode: RunnerMode;
+  taskId: string;
+}): string {
+  return join(
+    resolveModeMountRoot(input.mode),
+    sanitizePathPart(input.taskId, 'task-workspace'),
   );
-  const codexRootDir = join(codexWorkspaceRoot, 'tasks');
-  const codexHomeDir = join(codexRootDir, taskId);
+}
+
+export function buildTaskWorkspacePaths(taskRoot: string, mode: RunnerMode): TaskWorkspacePaths {
+  const taskStateRoot = join(
+    process.env.MBOS_AGENT_RUNNER_STATE_ROOT?.trim() || tmpdir(),
+    'agentsmith-runner-state',
+    sanitizePathPart(mode, 'runner-mode'),
+    sanitizePathPart(taskRoot, 'task-root'),
+  );
   return {
-    rootCwd: cwd,
-    codexRootDir,
-    codexHomeDir,
-    homeDir: join(codexHomeDir, 'home'),
-    artifactsDir: join(cwd, '.artifacts'),
-    credentialDir: join(codexWorkspaceRoot, 'credentials', taskId),
+    mode,
+    mountRoot: taskRoot,
+    taskRoot,
+    homeDir: taskRoot,
+    codexDir: join(taskRoot, '.codex'),
+    artifactsDir: join(taskRoot, '.artifacts'),
+    credentialDir: join(taskStateRoot, 'credentials'),
+    skillsDir: join(taskRoot, '.agents', 'skills'),
   };
 }
 
 export function resolveTaskCwd(input: {
-  workspacePath?: string;
-  username: string;
   taskId: string;
-}): { cwd: string; source: 'workspace_path' | 'tmp_fallback' } {
+  workspacePath?: string;
+}): { cwd: string; source: 'workspace_path' | 'mode_mount_path'; mode: RunnerMode } {
+  const mode = resolveRunnerMode();
   const workspacePath = sanitizeWorkspacePath(input.workspacePath);
   if (workspacePath) {
     return {
       cwd: workspacePath,
       source: 'workspace_path',
+      mode,
     };
   }
   return {
-    cwd: join('/tmp', input.username, input.taskId),
-    source: 'tmp_fallback',
+    cwd: buildTaskWorkspaceMountPath({ mode, taskId: input.taskId }),
+    source: 'mode_mount_path',
+    mode,
   };
-}
-
-export function buildTaskWorkspaceMountPath(input: {
-  username: string;
-  workspaceDirName?: string | null;
-  taskId: string;
-  workspaceRoot?: string;
-}): string {
-  const configuredRoot = sanitizeWorkspacePath(input.workspaceRoot);
-  const fallbackRoot = join(process.env.HOME || homedir() || join('/tmp', input.username), 'ags-workspaces');
-  const workspaceRoot = configuredRoot || fallbackRoot;
-  return join(
-    workspaceRoot,
-    sanitizePathPart(input.workspaceDirName, sanitizePathPart(input.taskId, 'task-workspace')),
-  );
 }
 
 export async function fetchTaskWorkspaceAccess(
@@ -365,10 +373,6 @@ async function mountTaskWorkspace(metadataUrl: string, mountPath: string, storag
     child.once('spawn', resolve);
     child.once('error', reject);
   });
-  debugTaskWorkspace('mount_workspace_spawned', {
-    mount_path: mountPath,
-    log_path: logPath,
-  });
   child.unref();
   await waitForMountPointReady(mountPath, logPath);
   debugTaskWorkspace('mount_workspace_ready', {
@@ -382,38 +386,34 @@ export async function prepareTaskWorkspace(input: {
   taskId: string;
 }): Promise<{
   cwd: string;
-  source: 'workspace_path' | 'tmp_fallback' | 'file_library_mount';
+  source: 'workspace_path' | 'mode_mount_path' | 'file_library_mount';
   paths: TaskWorkspacePaths;
 }> {
+  const mode = resolveRunnerMode();
+
   if (input.executionContext.workspace_binding_mode === 'pre_mounted') {
     const resolved = resolveTaskCwd({
       workspacePath: input.executionContext.workspace_path,
-      username: input.username,
       taskId: input.taskId,
     });
     return {
-      ...resolved,
-      paths: buildTaskWorkspacePaths(resolved.cwd, input.taskId),
+      cwd: resolved.cwd,
+      source: resolved.source,
+      paths: buildTaskWorkspacePaths(resolved.cwd, mode),
     };
   }
 
   if (input.executionContext.workspace_binding_mode === 'file_library') {
     const workspaceAccess = await fetchTaskWorkspaceAccess(input.executionContext);
     const mountPath = buildTaskWorkspaceMountPath({
-      username: input.username,
-      workspaceDirName: workspaceAccess.workspace_dir_name,
-      taskId: input.taskId,
-      workspaceRoot: process.env.MBOS_AGENT_WORKSPACE_ROOT,
+      mode,
+      taskId: workspaceAccess.task_id || input.taskId,
     });
     if (!mountedWorkspaceByMountPath.has(mountPath)) {
-      const maxAttempts = Number.parseInt(
-        process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_COUNT ?? '',
-        10,
-      ) || DEFAULT_MOUNT_RETRY_COUNT;
-      const retryDelayMs = Number.parseInt(
-        process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_DELAY_MS ?? '',
-        10,
-      ) || DEFAULT_MOUNT_RETRY_DELAY_MS;
+      const maxAttempts = Number.parseInt(process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_COUNT ?? '', 10)
+        || DEFAULT_MOUNT_RETRY_COUNT;
+      const retryDelayMs = Number.parseInt(process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_DELAY_MS ?? '', 10)
+        || DEFAULT_MOUNT_RETRY_DELAY_MS;
       let lastError: unknown;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
@@ -438,26 +438,24 @@ export async function prepareTaskWorkspace(input: {
           await sleep(retryDelayMs);
         }
       }
-      if (lastError) {
-        throw lastError;
-      }
+      if (lastError) throw lastError;
       mountedWorkspaceByMountPath.add(mountPath);
     }
     return {
       cwd: mountPath,
       source: 'file_library_mount',
-      paths: buildTaskWorkspacePaths(mountPath, input.taskId),
+      paths: buildTaskWorkspacePaths(mountPath, mode),
     };
   }
 
   const resolved = resolveTaskCwd({
     workspacePath: input.executionContext.workspace_path ?? process.env.WORKSPACE_PATH,
-    username: input.username,
     taskId: input.taskId,
   });
   return {
-    ...resolved,
-    paths: buildTaskWorkspacePaths(resolved.cwd, input.taskId),
+    cwd: resolved.cwd,
+    source: resolved.source,
+    paths: buildTaskWorkspacePaths(resolved.cwd, mode),
   };
 }
 

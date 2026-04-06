@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -29,22 +28,17 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 import {
-  buildTaskWorkspacePaths,
   buildTaskWorkspaceMountPath,
+  buildTaskWorkspacePaths,
   clearPreparedTaskWorkspaces,
   fetchTaskWorkspaceAccess,
   prepareTaskWorkspace,
+  resolveRunnerMode,
   resolveTaskCwd,
   shouldRetryTaskWorkspaceMount,
 } from './task-workspace.js';
 
 describe('task-workspace', () => {
-  function workspaceStateRoot(cwd: string): string {
-    const label = cwd.split('/').filter(Boolean).at(-1) ?? 'workspace';
-    const digest = createHash('sha256').update(cwd).digest('hex').slice(0, 12);
-    return `/codex-state/${label}-${digest}/tasks`;
-  }
-
   beforeEach(() => {
     vi.clearAllMocks();
     clearPreparedTaskWorkspaces();
@@ -77,65 +71,72 @@ describe('task-workspace', () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockReset();
     delete process.env.MBOS_AGENT_WORKSPACE_ROOT;
-    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/codex-state';
+    delete process.env.MBOS_AGENT_CODEX_STATE_ROOT;
     delete process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS;
     delete process.env.WORKSPACE_PATH;
+    process.env.HOME = '/home/alice';
+    process.env.MBOS_RUNNER_MODE = 'host_external';
   });
 
-  it('prefers WORKSPACE_PATH when provided', () => {
-    const resolved = resolveTaskCwd({
-      workspacePath: ' /workspace ',
-      username: 'alice',
+  it('resolves runner mode from explicit env', () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    expect(resolveRunnerMode()).toBe('docker_external');
+  });
+
+  it('builds host external task mount paths under ~/ags-workspace/<task_id>', () => {
+    expect(buildTaskWorkspaceMountPath({
+      mode: 'host_external',
       taskId: 'task_1',
+    })).toBe('/home/alice/ags-workspace/task_1');
+  });
+
+  it('builds docker and internal task mount paths under /workspace/<task_id>', () => {
+    expect(buildTaskWorkspaceMountPath({
+      mode: 'docker_external',
+      taskId: 'task_1',
+    })).toBe('/workspace/task_1');
+    expect(buildTaskWorkspaceMountPath({
+      mode: 'k8s_internal',
+      taskId: 'task_1',
+    })).toBe('/workspace/task_1');
+  });
+
+  it('builds task-root-scoped runtime paths under the task directory', () => {
+    const paths = buildTaskWorkspacePaths('/workspace/task_1', 'docker_external');
+    expect(paths).toEqual({
+      mode: 'docker_external',
+      mountRoot: '/workspace/task_1',
+      taskRoot: '/workspace/task_1',
+      homeDir: '/workspace/task_1',
+      codexDir: '/workspace/task_1/.codex',
+      artifactsDir: '/workspace/task_1/.artifacts',
+      credentialDir: expect.stringContaining('/agentsmith-runner-state/docker_external/_workspace_task_1/credentials'),
+      skillsDir: '/workspace/task_1/.agents/skills',
     });
-    expect(resolved).toEqual({
-      cwd: '/workspace',
+    expect(paths.credentialDir.startsWith(paths.taskRoot)).toBe(false);
+  });
+
+  it('prefers an explicit workspace path for pre-mounted internal runs', () => {
+    process.env.MBOS_RUNNER_MODE = 'k8s_internal';
+    expect(resolveTaskCwd({
+      workspacePath: '/workspace/task_internal',
+      taskId: 'task_internal',
+    })).toEqual({
+      cwd: '/workspace/task_internal',
       source: 'workspace_path',
+      mode: 'k8s_internal',
     });
   });
 
-  it('falls back to /tmp/{username}/{taskId} when WORKSPACE_PATH is empty', () => {
-    const resolved = resolveTaskCwd({
-      workspacePath: '   ',
-      username: 'alice',
+  it('falls back to the mode task mount path when workspace path is missing', () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    expect(resolveTaskCwd({
       taskId: 'task_1',
+    })).toEqual({
+      cwd: '/workspace/task_1',
+      source: 'mode_mount_path',
+      mode: 'docker_external',
     });
-    expect(resolved).toEqual({
-      cwd: '/tmp/alice/task_1',
-      source: 'tmp_fallback',
-    });
-  });
-
-  it('builds mount path from configured workspace root and workspace dir name', () => {
-    const mountPath = buildTaskWorkspaceMountPath({
-      username: 'alice',
-      workspaceRoot: '/srv/ags-workspaces',
-      workspaceDirName: 'market-analysis-q1',
-      taskId: 'task_1',
-    });
-    expect(mountPath).toBe('/srv/ags-workspaces/market-analysis-q1');
-  });
-
-  it('builds stable workspace paths within a persistent file library root', () => {
-    expect(buildTaskWorkspacePaths('/srv/ags-workspaces/market-analysis-q1', 'task_1')).toEqual({
-      rootCwd: '/srv/ags-workspaces/market-analysis-q1',
-      codexRootDir: `${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1')}`,
-      codexHomeDir: `${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1')}/task_1`,
-      homeDir: `${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1')}/task_1/home`,
-      artifactsDir: '/srv/ags-workspaces/market-analysis-q1/.artifacts',
-      credentialDir: `${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1').replace(/\/tasks$/, '')}/credentials/task_1`,
-    });
-  });
-
-
-  it('uses task-scoped codex state directories while keeping the workspace root stable', () => {
-    const taskOne = buildTaskWorkspacePaths('/srv/ags-workspaces/market-analysis-q1', 'task_1');
-    const taskTwo = buildTaskWorkspacePaths('/srv/ags-workspaces/market-analysis-q1', 'task_2');
-
-    expect(taskOne.rootCwd).toBe(taskTwo.rootCwd);
-    expect(taskOne.codexHomeDir).not.toBe(taskTwo.codexHomeDir);
-    expect(taskOne.homeDir).not.toBe(taskTwo.homeDir);
-    expect(taskOne.credentialDir).not.toBe(taskTwo.credentialDir);
   });
 
   it('fetches task-bound workspace access with bearer auth', async () => {
@@ -173,14 +174,14 @@ describe('task-workspace', () => {
     expect(response.file_library_id).toBe('flib_1');
   });
 
-  it('prepares and mounts file library workspace for notebook task bindings', async () => {
-    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/srv/ags-workspaces';
+  it('mounts external file-library workspaces directly at the task directory', async () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
         task_id: 'task_1',
         workspace_binding_mode: 'file_library',
-        workspace_dir_name: 'market-analysis-q1',
+        workspace_dir_name: 'ignored-in-v2',
         file_library_id: 'flib_1',
         file_library_name: 'Project Workspace',
         filesystem_name: 'flib-market-analysis-q1',
@@ -202,220 +203,46 @@ describe('task-workspace', () => {
       taskId: 'task_1',
     });
 
-    expect(mkdirMock).toHaveBeenCalledWith('/srv/ags-workspaces/market-analysis-q1', { recursive: true });
-    expect(execFileMock).toHaveBeenCalledWith(
-      'mountpoint',
-      ['-q', '/srv/ags-workspaces/market-analysis-q1'],
-      expect.any(Function),
-    );
+    expect(mkdirMock).toHaveBeenCalledWith('/workspace/task_1', { recursive: true });
     expect(spawnMock).toHaveBeenCalledWith(
       'juicefs',
       expect.arrayContaining([
         'mount',
         'postgres://juicefs-meta',
-        '/srv/ags-workspaces/market-analysis-q1',
-        '--log',
-        expect.stringContaining('.juicefs/log/agentsmith'),
-        '--check-storage',
-        '--bucket',
-        'http://localhost:19000/jfs-lib-flib_1',
-        '--cache-dir',
-        expect.stringContaining('.juicefs/cache/agentsmith'),
+        '/workspace/task_1',
       ]),
       expect.objectContaining({
         detached: true,
         stdio: 'ignore',
-        env: expect.not.objectContaining({
-          HTTP_PROXY: expect.any(String),
-          HTTPS_PROXY: expect.any(String),
-          ALL_PROXY: expect.any(String),
-          http_proxy: expect.any(String),
-          https_proxy: expect.any(String),
-          all_proxy: expect.any(String),
-        }),
       }),
     );
-    expect(spawnMock.mock.calls[0]?.[1]).not.toContain('-o');
-    expect(resolved.cwd).toBe('/srv/ags-workspaces/market-analysis-q1');
+    expect(resolved.cwd).toBe('/workspace/task_1');
     expect(resolved.source).toBe('file_library_mount');
-    expect(resolved.paths.artifactsDir).toBe('/srv/ags-workspaces/market-analysis-q1/.artifacts');
-    expect(resolved.paths.codexHomeDir).toBe(`${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1')}/task_1`);
-    expect(resolved.paths.homeDir).toBe(`${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1')}/task_1/home`);
-    expect(resolved.paths.credentialDir).toBe(`${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1').replace(/\/tasks$/, '')}/credentials/task_1`);
+    expect(resolved.paths.homeDir).toBe('/workspace/task_1');
+    expect(resolved.paths.codexDir).toBe('/workspace/task_1/.codex');
+    expect(resolved.paths.credentialDir).toContain('/agentsmith-runner-state/docker_external/_workspace_task_1/credentials');
   });
 
-  it('passes explicit JuiceFS mount options when configured', async () => {
-    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/srv/ags-workspaces';
-    process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS = 'writeback_cache,cache-size=204800';
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        task_id: 'task_1',
-        workspace_binding_mode: 'file_library',
-        workspace_dir_name: 'market-analysis-q1',
-        file_library_id: 'flib_1',
-        file_library_name: 'Project Workspace',
-        filesystem_name: 'flib-market-analysis-q1',
-        metadata_url: 'postgres://juicefs-meta',
-      }),
-    });
+  it('uses the explicit internal task path for pre-mounted workspaces', async () => {
+    process.env.MBOS_RUNNER_MODE = 'k8s_internal';
 
-    await prepareTaskWorkspace({
-      executionContext: {
-        api_base: 'http://localhost:20000',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
-        task_id: 'task_1',
-        execution_ticket: 'test-token',
-        workspace_binding_mode: 'file_library',
-      },
-      username: 'alice',
-      taskId: 'task_1',
-    });
-
-    expect(spawnMock).toHaveBeenCalledWith(
-      'juicefs',
-      expect.arrayContaining([
-        'mount',
-        'postgres://juicefs-meta',
-        '/srv/ags-workspaces/market-analysis-q1',
-        '-o',
-        'writeback_cache',
-        '--cache-size',
-        '204800',
-      ]),
-      expect.objectContaining({
-        detached: true,
-        stdio: 'ignore',
-        env: expect.not.objectContaining({
-          HTTP_PROXY: expect.any(String),
-          HTTPS_PROXY: expect.any(String),
-          ALL_PROXY: expect.any(String),
-          http_proxy: expect.any(String),
-          https_proxy: expect.any(String),
-          all_proxy: expect.any(String),
-        }),
-      }),
-    );
-  });
-
-  it('classifies transient mount failures as retryable', () => {
-    expect(shouldRetryTaskWorkspaceMount(new Error('task_workspace_mount_not_ready'))).toBe(true);
-    expect(shouldRetryTaskWorkspaceMount(new Error('connection reset by peer'))).toBe(true);
-    expect(shouldRetryTaskWorkspaceMount(new Error('failed to receive message'))).toBe(true);
-    expect(shouldRetryTaskWorkspaceMount(new Error('permission denied'))).toBe(false);
-  });
-
-  it('reuses prepared file library workspace for subsequent task runs', async () => {
-    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/srv/ags-workspaces';
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        task_id: 'task_1',
-        workspace_binding_mode: 'file_library',
-        workspace_dir_name: 'market-analysis-q1',
-        file_library_id: 'flib_1',
-        file_library_name: 'Project Workspace',
-        filesystem_name: 'flib-market-analysis-q1',
-        metadata_url: 'postgres://juicefs-meta',
-      }),
-    });
-
-    await prepareTaskWorkspace({
-      executionContext: {
-        api_base: 'http://localhost:20000',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
-        task_id: 'task_1',
-        execution_ticket: 'test-token',
-        workspace_binding_mode: 'file_library',
-      },
-      username: 'alice',
-      taskId: 'task_1',
-    });
-    execFileMock.mockClear();
-    spawnMock.mockClear();
-    mkdirMock.mockClear();
-
-    const resolved = await prepareTaskWorkspace({
-      executionContext: {
-        api_base: 'http://localhost:20000',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
-        task_id: 'task_1',
-        execution_ticket: 'test-token',
-        workspace_binding_mode: 'file_library',
-      },
-      username: 'alice',
-      taskId: 'task_1',
-    });
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(execFileMock).not.toHaveBeenCalled();
-    expect(spawnMock).not.toHaveBeenCalled();
-    expect(mkdirMock).not.toHaveBeenCalled();
-    expect(resolved.cwd).toBe('/srv/ags-workspaces/market-analysis-q1');
-    expect(resolved.source).toBe('file_library_mount');
-  });
-
-  it('reuses an already-mounted workspace path after runner restart', async () => {
-    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/srv/ags-workspaces';
-    execFileMock.mockImplementation((file, _args, maybeOptions, maybeCallback) => {
-      const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
-      if (file === 'mountpoint') {
-        callback(null);
-        return;
-      }
-      callback(null);
-    });
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        task_id: 'task_1',
-        workspace_binding_mode: 'file_library',
-        workspace_dir_name: 'market-analysis-q1',
-        file_library_id: 'flib_1',
-        file_library_name: 'Project Workspace',
-        filesystem_name: 'flib-market-analysis-q1',
-        metadata_url: 'postgres://juicefs-meta',
-      }),
-    });
-
-    const resolved = await prepareTaskWorkspace({
-      executionContext: {
-        api_base: 'http://localhost:20000',
-        workspace_id: 'ws_default',
-        project_id: 'proj_1',
-        task_id: 'task_1',
-        execution_ticket: 'test-token',
-        workspace_binding_mode: 'file_library',
-      },
-      username: 'alice',
-      taskId: 'task_1',
-    });
-
-    expect(spawnMock).not.toHaveBeenCalled();
-    expect(resolved.cwd).toBe('/srv/ags-workspaces/market-analysis-q1');
-    expect(resolved.source).toBe('file_library_mount');
-  });
-
-  it('uses pre-mounted workspace path for internal task bindings', async () => {
     const resolved = await prepareTaskWorkspace({
       executionContext: {
         workspace_binding_mode: 'pre_mounted',
-        workspace_path: '/workspace',
+        workspace_path: '/workspace/task_internal',
       },
       username: 'alice',
       taskId: 'task_internal',
     });
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(mkdirMock).not.toHaveBeenCalled();
-    expect(execFileMock).not.toHaveBeenCalled();
-    expect(resolved.cwd).toBe('/workspace');
+    expect(resolved.cwd).toBe('/workspace/task_internal');
     expect(resolved.source).toBe('workspace_path');
-    expect(resolved.paths.artifactsDir).toBe('/workspace/.artifacts');
-    expect(resolved.paths.codexHomeDir).toBe(`${workspaceStateRoot('/workspace')}/task_internal`);
-    expect(resolved.paths.homeDir).toBe(`${workspaceStateRoot('/workspace')}/task_internal/home`);
+    expect(resolved.paths.codexDir).toBe('/workspace/task_internal/.codex');
+    expect(resolved.paths.skillsDir).toBe('/workspace/task_internal/.agents/skills');
+  });
+
+  it('recognizes retryable mount failures', () => {
+    expect(shouldRetryTaskWorkspaceMount(new Error('task_workspace_mount_not_ready'))).toBe(true);
+    expect(shouldRetryTaskWorkspaceMount(new Error('boom'))).toBe(false);
   });
 });

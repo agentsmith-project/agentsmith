@@ -13,7 +13,7 @@ describe('prepareNotebookWorkspaceAssets', () => {
 
       await prepareNotebookWorkspaceAssets({
         cwd,
-        paths: buildTaskWorkspacePaths(cwd, 'task_1'),
+        paths: buildTaskWorkspacePaths(cwd, 'host_external'),
         executionContext: { task_id: 'task_1', run_id: 'run_1', workspace_binding_mode: 'file_library' },
         taskInputs: [],
       });
@@ -30,7 +30,7 @@ describe('prepareNotebookWorkspaceAssets', () => {
     try {
       await prepareNotebookWorkspaceAssets({
         cwd,
-        paths: buildTaskWorkspacePaths(cwd, 'task_2'),
+        paths: buildTaskWorkspacePaths(cwd, 'k8s_internal'),
         executionContext: { task_id: 'task_2', run_id: 'run_2', workspace_binding_mode: 'pre_mounted' },
         taskInputs: [],
       });

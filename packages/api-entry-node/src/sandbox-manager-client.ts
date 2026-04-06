@@ -30,6 +30,7 @@ export interface SandboxWorkspaceBindingBody {
   file_library_id: string;
   filesystem_name: string;
   metadata_url: string;
+  mount_path?: string;
   storage_endpoint?: string;
   storage_capacity?: string;
   storage_class_name?: string;

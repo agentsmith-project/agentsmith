@@ -1,12 +1,20 @@
 import { existsSync } from 'node:fs';
-import { cp, mkdir, rm, symlink } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_SKILLS_DIR = '/etc/codex/skills';
 const FALLBACK_DEV_SKILLS_DIR = resolve(MODULE_DIR, '../builtin-skills');
 const DEFAULT_BUILTIN_SKILLS = ['feishu-docs', 'jira-ops'];
+const MANIFEST_FILENAME = 'builtin-skills-manifest.json';
+
+type BuiltinSkillManifest = {
+  version: 1;
+  source_dir: string;
+  installed_skills: string[];
+  installed_at: string;
+};
 
 function parseBooleanFlag(input: string | undefined, fallback: boolean): boolean {
   if (typeof input !== 'string') return fallback;
@@ -37,6 +45,43 @@ function resolveSkillsSourceDir(): string {
   if (explicit) return explicit;
   if (existsSync(DEFAULT_SKILLS_DIR)) return DEFAULT_SKILLS_DIR;
   return FALLBACK_DEV_SKILLS_DIR;
+}
+
+async function mirrorDirectory(sourceDir: string, targetDir: string): Promise<void> {
+  await rm(targetDir, { recursive: true, force: true });
+  await cp(sourceDir, targetDir, { recursive: true, force: true });
+}
+
+async function rewriteAbsoluteSkillPaths(rootDir: string, skillDir: string): Promise<void> {
+  const entries = await readFileList(skillDir);
+  const fromBase = `/etc/codex/skills/${rootDir}`;
+  const toBase = skillDir;
+  for (const file of entries) {
+    let content: string;
+    try {
+      content = await readFile(file, 'utf8');
+    } catch {
+      continue;
+    }
+    if (!content.includes(fromBase)) continue;
+    await writeFile(file, content.split(fromBase).join(toBase), 'utf8');
+  }
+}
+
+async function readFileList(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const results: string[] = [];
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...await readFileList(fullPath));
+      continue;
+    }
+    if (entry.isFile()) {
+      results.push(fullPath);
+    }
+  }
+  return results;
 }
 
 export function resolveBuiltinSkillsConfig(): {
@@ -80,34 +125,37 @@ export async function inspectBuiltinSkills(args: {
   };
 }
 
-async function mirrorSkillDirectory(sourceDir: string, targetDir: string): Promise<void> {
-  await rm(targetDir, { recursive: true, force: true });
-  try {
-    await symlink(sourceDir, targetDir, 'dir');
-    return;
-  } catch {
-    await cp(sourceDir, targetDir, { recursive: true, force: true });
-  }
-}
-
-export async function materializeBuiltinSkills(args: {
+export async function seedBuiltinSkills(args: {
   sourceDir: string;
   skills: string[];
   targetDir: string;
+  manifestDir: string;
 }): Promise<{
   targetDir: string;
-  materialized: string[];
+  seeded: string[];
+  manifestPath: string;
 }> {
   await mkdir(args.targetDir, { recursive: true });
-  const materialized: string[] = [];
+  await mkdir(args.manifestDir, { recursive: true });
+  const seeded: string[] = [];
   for (const skill of args.skills) {
     const sourceSkillDir = resolve(args.sourceDir, skill);
     const targetSkillDir = resolve(args.targetDir, skill);
-    await mirrorSkillDirectory(sourceSkillDir, targetSkillDir);
-    materialized.push(skill);
+    await mirrorDirectory(sourceSkillDir, targetSkillDir);
+    await rewriteAbsoluteSkillPaths(skill, targetSkillDir);
+    seeded.push(skill);
   }
+  const manifestPath = join(args.manifestDir, MANIFEST_FILENAME);
+  const manifest: BuiltinSkillManifest = {
+    version: 1,
+    source_dir: args.sourceDir,
+    installed_skills: seeded,
+    installed_at: new Date().toISOString(),
+  };
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   return {
     targetDir: args.targetDir,
-    materialized,
+    seeded,
+    manifestPath,
   };
 }

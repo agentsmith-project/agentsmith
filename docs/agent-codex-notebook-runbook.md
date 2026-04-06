@@ -49,22 +49,21 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 
 Notebook external/internal agent execution has three practical runtime modes today. The important rule is:
 
-- `cwd` is always the real workspace root that Codex edits and reads.
-- `CODEX_HOME` is task-scoped runtime state for Codex itself.
-- `HOME` is an isolated task-scoped home for the runner child process.
+- `cwd` is always the task-scoped JuiceFS workdir for the current task.
+- `HOME` is the same task directory as `cwd`.
+- Codex runtime state lives under task-local `~/.codex`.
 - notebook deliverables still belong in workspace-relative `./.artifacts/`.
 
 | Runtime mode | Typical use | `workspace_binding_mode` | Runner process location | `cwd` used by Codex | `CODEX_HOME` | `HOME` | Artifacts dir | Credential files dir |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| External bare | local-manual, host development, direct host runner | `file_library` | host machine | `${MBOS_AGENT_WORKSPACE_ROOT:-$HOST_HOME/ags-workspaces}/<workspace_dir_name>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/home/` | `<cwd>/.artifacts/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/` |
-| External docker | demo deploy, cluster deploy, dockerized external runner | `file_library` | runner container | `${MBOS_AGENT_WORKSPACE_ROOT:-/workspace/ags-workspaces}/<workspace_dir_name>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/home/` | `<cwd>/.artifacts/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/` |
-| Internal k8s | internal notebook workload pod, pre-mounted JuiceFS workspace | `pre_mounted` | workload container | `/workspace/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/home/` | `/workspace/.artifacts/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/` |
+| External bare | local-manual, host development, direct host runner | `file_library` | host machine | `$HOME/ags-workspace/<task_id>/` | `<cwd>/.codex/` | same as `cwd` | `<cwd>/.artifacts/` | `<cwd>/.mbos/` |
+| External docker | demo deploy, cluster deploy, dockerized external runner | `file_library` | runner container | `/workspace/<task_id>/` | `<cwd>/.codex/` | same as `cwd` | `<cwd>/.artifacts/` | `<cwd>/.mbos/` |
+| Internal k8s | internal notebook workload pod, pre-mounted JuiceFS workspace | `pre_mounted` | workload container | `/workspace/<task_id>/` | `<cwd>/.codex/` | same as `cwd` | `<cwd>/.artifacts/` | `<cwd>/.mbos/` |
 
 Notes:
-- `<workspace-key>` is a stable hash-derived key from the real workspace root; it isolates Codex state by workspace without changing the visible workspace path.
-- external bare and external docker share the same Codex state layout; the only difference is the mounted workspace root prefix.
-- the selected notebook task file library root is always the editable workspace root.
-- different tasks share workspace files, but never share Codex session/sqlite state.
+- the mounted task path itself is the real editable workspace for the current task
+- external bare and external docker differ only by parent prefix and bwrap child isolation
+- Codex session/sqlite state is task-local because it is stored under task-local `~/.codex`
 
 ### 1.2 How Codex Uses Each Path
 

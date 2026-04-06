@@ -36,7 +36,7 @@ const DEFAULT_REAL_MODEL_PROFILE = {
   cache_read_discount_ratio: 0,
   cache_write_discount_ratio: 0,
 } as const;
-export const DOCKER_BUILD_PROXY = process.env.INTEGRATION_DOCKER_BUILD_PROXY ?? 'http://192.168.0.210:8889';
+export const DOCKER_BUILD_PROXY = process.env.INTEGRATION_DOCKER_BUILD_PROXY ?? '';
 export const INTERNAL_AGENT_IMAGE = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() || 'agentsmith-codex-runner:local';
 export const KEYCLOAK_DEV_ADMIN_USERNAME = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
 export const KEYCLOAK_DEV_ADMIN_PASSWORD = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
@@ -1053,6 +1053,7 @@ export async function requestTaskWorkspaceAccess(args: {
   filesystem_name: string;
   metadata_url: string;
   storage_bucket_url?: string;
+  task_root_path?: string;
   recommended_mount_path?: string;
   created_at?: string;
 }> {
@@ -1074,6 +1075,7 @@ export async function requestTaskWorkspaceAccess(args: {
     filesystem_name: string;
     metadata_url: string;
     storage_bucket_url?: string;
+    task_root_path?: string;
     recommended_mount_path?: string;
     created_at?: string;
   };
@@ -1239,12 +1241,45 @@ async function readJuicefsCsiStatus(namespace: string): Promise<{
   };
 }
 
+async function detectJuicefsCsiNamespace(): Promise<string> {
+  const [controllerNamespace, nodeNamespace] = await Promise.all([
+    spawnAndCapture(
+      'kubectl',
+      ['get', 'statefulset', '-A', '--no-headers'],
+      { env: withoutProxyEnv(process.env) },
+    ),
+    spawnAndCapture(
+      'kubectl',
+      ['get', 'daemonset', '-A', '--no-headers'],
+      { env: withoutProxyEnv(process.env) },
+    ),
+  ]);
+
+  const fromController = (controllerNamespace.stdout || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.split(/\s+/)[1] === 'juicefs-csi-controller');
+  if (fromController) {
+    return fromController.split(/\s+/)[0] || 'juicefs-system';
+  }
+
+  const fromNode = (nodeNamespace.stdout || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.split(/\s+/)[1] === 'juicefs-csi-node');
+  if (fromNode) {
+    return fromNode.split(/\s+/)[0] || 'juicefs-system';
+  }
+
+  return 'juicefs-system';
+}
+
 export async function waitForJuicefsCsiReady(args?: {
   namespace?: string;
   timeoutMs?: number;
   stableWindowMs?: number;
 }): Promise<void> {
-  const namespace = args?.namespace?.trim() || 'juicefs-system';
+  const namespace = args?.namespace?.trim() || await detectJuicefsCsiNamespace();
   const timeoutMs = args?.timeoutMs ?? 180_000;
   const stableWindowMs = args?.stableWindowMs ?? 15_000;
   const startedAt = Date.now();
@@ -1515,6 +1550,7 @@ export async function startCodexRunnerProcess(args: {
       {
         env: {
           ...process.env,
+          MBOS_RUNNER_MODE: 'host_external',
           MBOS_AGENT_WS_URL: args.wsUrl,
           MBOS_AGENT_KEY: args.agentKey,
           MBOS_AGENT_CODEX_YOLO: '1',
@@ -1601,15 +1637,32 @@ export async function startCodexRunnerDockerProcess(args: {
   imageTag: string;
   stop: () => Promise<void>;
 }> {
+  const baseImageTag = process.env.INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE?.trim() || 'agentsmith-codex-runner-base:local';
   const imageTag = process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() || 'agentsmith-codex-runner:local';
   const embeddedRunner = process.env.INTEGRATION_CODEX_RUNNER_EMBEDDED?.trim() === '1';
+  const rebuildBaseImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE?.trim() !== '0';
+  const rebuildRunnerImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE?.trim() !== '0';
   const builtinSkillsDir = embeddedRunner
     ? process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR?.trim() || '/etc/codex/skills'
     : '/etc/codex/skills';
   const buildContext = path.resolve(__dirname, '..');
+  const baseDockerfile = path.join(buildContext, 'infra/runner/Dockerfile.agent-codex-runner-base');
   const dockerfile = path.join(buildContext, 'infra/runner/Dockerfile.agent-codex-runner');
+  if (!embeddedRunner && rebuildBaseImage) {
+    const baseBuildArgs = ['build'];
+    if (DOCKER_BUILD_PROXY.trim()) {
+      baseBuildArgs.push('--build-arg', `HTTP_PROXY=${DOCKER_BUILD_PROXY.trim()}`);
+      baseBuildArgs.push('--build-arg', `HTTPS_PROXY=${DOCKER_BUILD_PROXY.trim()}`);
+      baseBuildArgs.push('--build-arg', `NO_PROXY=127.0.0.1,localhost,host.docker.internal`);
+    }
+    baseBuildArgs.push('-f', baseDockerfile, '-t', baseImageTag, '.');
+    const baseBuildResult = await spawnAndCapture('docker', baseBuildArgs, { cwd: buildContext });
+    if (baseBuildResult.code !== 0) {
+      throw new Error(`docker_runner_base_image_build_failed:${baseBuildResult.stderr.slice(-800)}`);
+    }
+  }
   const inspectResult = await spawnAndCapture('docker', ['image', 'inspect', imageTag]);
-  if (inspectResult.code !== 0) {
+  if (inspectResult.code !== 0 || (!embeddedRunner && rebuildRunnerImage)) {
     if (embeddedRunner) {
       throw new Error(`docker_runner_image_missing:${imageTag}`);
     }
@@ -1619,6 +1672,7 @@ export async function startCodexRunnerDockerProcess(args: {
       buildArgs.push('--build-arg', `HTTPS_PROXY=${DOCKER_BUILD_PROXY.trim()}`);
       buildArgs.push('--build-arg', `NO_PROXY=127.0.0.1,localhost,host.docker.internal`);
     }
+    buildArgs.push('--build-arg', `RUNNER_BASE_IMAGE=${baseImageTag}`);
     buildArgs.push('-f', dockerfile, '-t', imageTag, '.');
     const buildResult = await spawnAndCapture('docker', buildArgs, { cwd: buildContext });
     if (buildResult.code !== 0) {
@@ -1648,7 +1702,6 @@ export async function startCodexRunnerDockerProcess(args: {
   const runArgs = [
     'run',
     '--detach',
-    '--rm',
     '--name',
     containerName,
     '--network',
@@ -1661,6 +1714,8 @@ export async function startCodexRunnerDockerProcess(args: {
     '--security-opt',
     'apparmor:unconfined',
     '--env',
+    'MBOS_RUNNER_MODE=docker_external',
+    '--env',
     `MBOS_AGENT_WS_URL=${args.wsUrl}`,
     '--env',
     `MBOS_AGENT_KEY=${args.agentKey}`,
@@ -1671,7 +1726,7 @@ export async function startCodexRunnerDockerProcess(args: {
     '--env',
     `MBOS_AGENT_JUICEFS_MOUNT_READY_TIMEOUT_MS=${process.env.INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS?.trim() || '120000'}`,
     '--env',
-    'MBOS_AGENT_WORKSPACE_ROOT=/workspace/ags-workspaces',
+    'MBOS_AGENT_WORKSPACE_ROOT=/workspace',
     '--env',
     `MBOS_AGENT_BUILTIN_SKILLS_DIR=${builtinSkillsDir}`,
     '--env',
@@ -1679,7 +1734,7 @@ export async function startCodexRunnerDockerProcess(args: {
     '--env',
     'MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=1',
     '--volume',
-    `${workspaceRoot}:/workspace/ags-workspaces:rshared`,
+    `${workspaceRoot}:/workspace:rshared`,
   ];
   if (args.codeBin) {
     runArgs.push('--env', `CODEX_BIN=${args.codeBin}`);
@@ -1718,7 +1773,19 @@ export async function startCodexRunnerDockerProcess(args: {
     }
     const inspectRunning = await spawnAndCapture('docker', ['inspect', '-f', '{{.State.Running}}', containerName]);
     if (inspectRunning.code !== 0 || !inspectRunning.stdout.includes('true')) {
-      throw new Error(`docker_runner_exit:${logs.stderr.slice(-800)}`);
+      await preserveRunnerLogs();
+      const inspectDetails = await spawnAndCapture('docker', [
+        'inspect',
+        '-f',
+        'running={{.State.Running}} exit={{.State.ExitCode}} error={{.State.Error}} oom={{.State.OOMKilled}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}',
+        containerName,
+      ]);
+      await spawnAndCapture('docker', ['rm', '-f', containerName]);
+      await unmountWorkspaceTree(workspaceRoot);
+      await rm(workspaceRoot, { recursive: true, force: true }).catch(() => undefined);
+      throw new Error(
+        `docker_runner_exit:${`${logs.stdout}\n${logs.stderr}`.slice(-1200)}:inspect=${inspectDetails.stdout.trim()}:log=${runnerLogPath}`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }

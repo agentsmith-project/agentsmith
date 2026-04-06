@@ -9,7 +9,35 @@ source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 SPEC_FILE="${1:-e2e/integration-chat.spec.ts}"
 shift || true
 
+ORIGINAL_INTEGRATION_API_PORT="${INTEGRATION_API_PORT:-}"
+ORIGINAL_INTEGRATION_WEB_PORT="${INTEGRATION_WEB_PORT:-}"
+ORIGINAL_INTEGRATION_BASE_URL="${INTEGRATION_BASE_URL:-}"
+ORIGINAL_INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-}"
+ORIGINAL_BACKEND_REAL_STATE_DIR="${BACKEND_REAL_STATE_DIR:-}"
+
 load_backend_real_env "${ROOT_DIR}/.env.backend-real"
+export_backend_real_endpoint_env
+
+if [[ -n "${ORIGINAL_INTEGRATION_API_PORT}" ]]; then
+  export INTEGRATION_API_PORT="${ORIGINAL_INTEGRATION_API_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_WEB_PORT}" ]]; then
+  export INTEGRATION_WEB_PORT="${ORIGINAL_INTEGRATION_WEB_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_BASE_URL}" ]]; then
+  export INTEGRATION_BASE_URL="${ORIGINAL_INTEGRATION_BASE_URL}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_API_BASE}" ]]; then
+  export INTEGRATION_API_BASE="${ORIGINAL_INTEGRATION_API_BASE}"
+fi
+if [[ -n "${ORIGINAL_BACKEND_REAL_STATE_DIR}" ]]; then
+  export BACKEND_REAL_STATE_DIR="${ORIGINAL_BACKEND_REAL_STATE_DIR}"
+fi
+
+export BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY:-${BACKEND_REAL_API_KEY_VALUE:-}}"
+export BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL:-${BACKEND_REAL_MODEL_VALUE:-}}"
+export BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL:-${BACKEND_REAL_ANTHROPIC_BASE_URL_VALUE:-}}"
+export BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL:-${BACKEND_REAL_OPENAI_BASE_URL_VALUE:-}}"
 
 # Always clear proxy-related env vars for deterministic local integration/e2e testing.
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
@@ -17,10 +45,10 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 API_PORT="${INTEGRATION_API_PORT:-20000}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3001}"
 PLAYWRIGHT_BASE_URL="${INTEGRATION_BASE_URL:-http://localhost:${WEB_PORT}}"
-INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-http://localhost:${API_PORT}}"
+INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-http://127.0.0.1:${API_PORT}}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
-KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:18080/realms}"
+KEYCLOAK_URL="${KEYCLOAK_URL:-http://127.0.0.1:18080/realms}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
 INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
@@ -37,6 +65,7 @@ API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
 API_PID=""
 WEB_PID=""
+PROXY_PID=""
 PLAYWRIGHT_PID=""
 PLAYWRIGHT_STATUS=0
 KEEP_FAILED_ENV="${INTEGRATION_KEEP_FAILED_ENV:-0}"
@@ -165,6 +194,72 @@ port_in_use() {
   return 1
 }
 
+wait_for_http() {
+  local name="$1"
+  local url="$2"
+  local timeout="${3:-120}"
+  local last_code=""
+  for _ in $(seq 1 "${timeout}"); do
+    last_code="$(curl -s -o /dev/null -w "%{http_code}" "${url}" || true)"
+    if [[ "${last_code}" == "200" || "${last_code}" == "307" || "${last_code}" == "308" || "${last_code}" == "401" || "${last_code}" == "403" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "[integration-e2e-full] ${name} did not become ready (last status: ${last_code:-n/a})" >&2
+  return 1
+}
+
+ensure_universal_proxy() {
+  if [[ -n "${MBOS_UNIVERSAL_PROXY_BASE_URL:-}" ]]; then
+    curl -fsS "${MBOS_UNIVERSAL_PROXY_BASE_URL}/admin/state" >/dev/null 2>&1
+    return 0
+  fi
+
+  for candidate in "http://127.0.0.1:39080" "http://127.0.0.1:38080"; do
+    if curl -fsS "${candidate}/admin/state" >/dev/null 2>&1; then
+      export MBOS_UNIVERSAL_PROXY_BASE_URL="${candidate}"
+      return 0
+    fi
+  done
+
+  local proxy_root="${ROOT_DIR}/../llm-universal-proxy"
+  local proxy_port="${INTEGRATION_UNIVERSAL_PROXY_PORT:-39080}"
+  local proxy_base="http://127.0.0.1:${proxy_port}"
+  local proxy_state_dir="${INTEGRATION_LOG_DIR}/universal-proxy"
+  local proxy_log="${proxy_state_dir}/proxy.log"
+  local proxy_config="${proxy_state_dir}/config.yaml"
+  mkdir -p "${proxy_state_dir}"
+
+  if [[ ! -d "${proxy_root}" ]]; then
+    echo "[integration-e2e-full] universal proxy source not found at ${proxy_root}" >&2
+    return 1
+  fi
+  if port_in_use "${proxy_port}"; then
+    echo "[integration-e2e-full] universal proxy port ${proxy_port} is already in use" >&2
+    return 1
+  fi
+  if [[ ! -x "${proxy_root}/target/debug/llm-universal-proxy" ]]; then
+    (cd "${proxy_root}" && run_clean cargo build --quiet)
+  fi
+  cat > "${proxy_config}" <<EOF_PROXY
+listen: 127.0.0.1:${proxy_port}
+upstream_timeout_secs: 120
+upstreams: {}
+model_aliases: {}
+EOF_PROXY
+
+  PROXY_PID="$(
+    start_background_job "${proxy_log}" run_clean "${proxy_root}/target/debug/llm-universal-proxy" --config "${proxy_config}"
+  )"
+  if ! wait_for_http "universal proxy" "${proxy_base}/admin/state" 60; then
+    echo "--- Universal Proxy log tail ---" >&2
+    tail -n 120 "${proxy_log}" >&2 || true
+    return 1
+  fi
+  export MBOS_UNIVERSAL_PROXY_BASE_URL="${proxy_base}"
+}
+
 if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
   run_clean_with_integration_env npm run integration:deps:up
   run_clean make deps-ready
@@ -179,6 +274,10 @@ if [[ "${INTEGRATION_ENSURE_DEFAULT_WORKSPACE:-true}" == "true" ]]; then
   run_clean_with_integration_env npx tsx scripts/ensure-default-workspace.ts >/dev/null
 fi
 
+if ! ensure_universal_proxy; then
+  exit 1
+fi
+
 if port_in_use "${API_PORT}"; then
   echo "[integration-e2e-full] API port ${API_PORT} is already in use. Stop the process or set INTEGRATION_API_PORT." >&2
   exit 1
@@ -190,49 +289,51 @@ if port_in_use "${WEB_PORT}"; then
 fi
 
 API_PID="$(
-  PORT="${API_PORT}" \
-  DEBUG_NOTEBOOK_EXECUTION="${DEBUG_NOTEBOOK_EXECUTION:-}" \
-  MBOS_UNIVERSAL_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-}" \
-  KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-  PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
-  INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
-  KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
-  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-  DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
-  MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
-  MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
-  REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
-  MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
-  MINIO_PORT="${MINIO_PORT:-19000}" \
-  MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
-  MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
-  MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
-  MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
-  SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
-  SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
-  INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}" \
-  INTERNAL_AGENT_JUICEFS_CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-}" \
-  INTERNAL_AGENT_WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-}" \
-  EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-127.0.0.1}" \
-  EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-15432}" \
-  EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:19000}" \
-  INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-}" \
-  INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-}" \
-  JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT:-}" \
-  AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL:-}" \
-  start_background_job "${API_LOG}" run_clean npm run api:node:dev
+  start_background_job "${API_LOG}" run_clean env \
+    PORT="${API_PORT}" \
+    DEBUG_NOTEBOOK_EXECUTION="${DEBUG_NOTEBOOK_EXECUTION:-}" \
+    MBOS_UNIVERSAL_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-}" \
+    KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+    PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
+    INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
+    KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
+    KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+    DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
+    MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
+    MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+    REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
+    MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
+    MINIO_PORT="${MINIO_PORT:-19000}" \
+    MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
+    MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
+    MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
+    MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
+    SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
+    SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
+    INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}" \
+    INTERNAL_AGENT_JUICEFS_CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-}" \
+    INTERNAL_AGENT_WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-}" \
+    EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-127.0.0.1}" \
+    EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-15432}" \
+    EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:19000}" \
+    INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-}" \
+    INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-}" \
+    JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT:-}" \
+    AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL:-}" \
+    npm run api:node:dev
 )"
 
 WEB_PID="$(
-  MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
-  MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
-  NEXT_PUBLIC_USE_MSW=false \
-  AGENTSMITH_ENABLE_TEST_ROUTES=true \
-  NEXT_PUBLIC_API_BASE="${INTEGRATION_API_BASE}/api/v1" \
-  NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_URL}" \
-  NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-  NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-  start_background_job "${WEB_LOG}" run_clean npm run dev:test -- --port "${WEB_PORT}"
+  start_background_job "${WEB_LOG}" run_clean env \
+    MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
+    MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+    NEXT_PUBLIC_USE_MSW=false \
+    AGENTSMITH_ENABLE_TEST_ROUTES=true \
+    NEXT_PUBLIC_API_BASE="${INTEGRATION_API_BASE}/api/v1" \
+    NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_URL}" \
+    NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+    NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+    npm run dev:test -- --port "${WEB_PORT}"
 )"
 
 cleanup() {
@@ -246,9 +347,11 @@ cleanup() {
     return 0
   fi
   stop_background_job "${PLAYWRIGHT_PID}"
+  stop_background_job "${PROXY_PID}"
   stop_background_job "${WEB_PID}"
   stop_background_job "${API_PID}"
   wait "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
+  wait "${PROXY_PID}" >/dev/null 2>&1 || true
   wait "${WEB_PID}" >/dev/null 2>&1 || true
   wait "${API_PID}" >/dev/null 2>&1 || true
 }
@@ -296,9 +399,29 @@ try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default/login"
 try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default"
 try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default/projects"
 
-BASE_URL="${PLAYWRIGHT_BASE_URL}" \
-INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
-run_clean npx playwright test --config playwright.config.integration.ts "${SPEC_FILE}" --project=chromium --workers=1 "$@" &
+run_clean env \
+  BASE_URL="${PLAYWRIGHT_BASE_URL}" \
+  INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
+  SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
+  SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
+  INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}" \
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${INTERNAL_SANDBOX_REAL_STATE_FILE:-}" \
+  INTERNAL_AGENT_JUICEFS_CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-}" \
+  INTERNAL_AGENT_WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-}" \
+  INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME="${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}" \
+  INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS="${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS:-}" \
+  INTERNAL_AGENT_JUICEFS_SUBDIR="${INTERNAL_AGENT_JUICEFS_SUBDIR:-}" \
+  INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}" \
+  INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}" \
+  INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-}" \
+  INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-}" \
+  JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT:-}" \
+  INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE:-}" \
+  INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE:-}" \
+  INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-}" \
+  INTEGRATION_INTERNAL_AGENT_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-}" \
+  AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL:-}" \
+  npx playwright test --config playwright.config.integration.ts "${SPEC_FILE}" --project=chromium --workers=1 "$@" &
 PLAYWRIGHT_PID=$!
 set +e
 wait "${PLAYWRIGHT_PID}"

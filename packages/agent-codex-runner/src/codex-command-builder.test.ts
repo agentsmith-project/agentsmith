@@ -72,6 +72,7 @@ describe('codex-command-builder', () => {
 
     expect(catalog.models).toHaveLength(1);
     expect(catalog.models[0]?.slug).toBe('placeholder-model');
+    expect(catalog.models[0]?.display_name).toBe('placeholder-model');
     expect(catalog.models[0]?.context_window).toBe(128000);
     expect(catalog.models[0]?.auto_compact_token_limit).toBe(121600);
     expect(catalog.models[0]?.input_modalities).toEqual(['text']);

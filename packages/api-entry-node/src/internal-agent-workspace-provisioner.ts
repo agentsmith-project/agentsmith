@@ -28,7 +28,7 @@ export interface InternalAgentWorkspaceBinding {
 
 export interface InternalAgentWorkspaceMount {
   bindingId: string;
-  mountPath: '/workspace';
+  mountPath: string;
   readOnly?: boolean;
 }
 
@@ -37,6 +37,7 @@ export interface InternalAgentWorkspaceProvisioner {
     workspaceId: string;
     projectId: string;
     fileLibraryId: string;
+    taskId: string;
   }): Promise<{
     workspaceMount: InternalAgentWorkspaceMount;
     binding: InternalAgentWorkspaceBinding;
@@ -127,6 +128,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     workspaceId: string;
     projectId: string;
     fileLibraryId: string;
+    taskId: string;
   }): Promise<{
     workspaceMount: InternalAgentWorkspaceMount;
     binding: InternalAgentWorkspaceBinding;
@@ -168,10 +170,12 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     binding.storage_class_name = this.options.storageClassName?.trim() || binding.storage_class_name || '';
     binding.subdir = this.options.subdir?.trim() || binding.subdir || '';
 
+    const mountPath = `/workspace/${input.taskId}`;
     const remoteBinding = await this.k8sClient.ensureWorkspaceBinding(input.workspaceId, input.projectId, input.fileLibraryId, {
       file_library_id: input.fileLibraryId,
       filesystem_name: library.filesystem_name,
       metadata_url: this.resolveMetadataUrlForInternalMount(mountAccess.metadata_url),
+      mount_path: mountPath,
       ...(() => {
         const resolvedBucketUrl = resolveFileLibraryStorageBucketUrlForInternalExecution(
           mountAccess.storage_bucket_url,
@@ -216,7 +220,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     return {
       workspaceMount: {
         bindingId: binding.file_library_id,
-        mountPath: '/workspace',
+        mountPath,
       },
       binding,
     };

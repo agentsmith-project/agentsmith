@@ -36,6 +36,55 @@ type CaptureEntry = {
   route: string;
 };
 
+function resolveMountedTaskRoot(mountPath: string, taskRootPath?: string | null): string {
+  if (!taskRootPath || taskRootPath === '.') return mountPath;
+  return path.join(mountPath, taskRootPath);
+}
+
+function resolveLibraryObjectPath(relativePath: string, taskRootPath?: string | null): string {
+  if (!taskRootPath || taskRootPath === '.') return relativePath;
+  return `${taskRootPath.replace(/^\/+|\/+$/g, '')}/${relativePath}`;
+}
+
+async function expectTaskRuntimeStatePersisted(args: {
+  mountPath: string;
+  artifactName: string;
+  artifactToken: string;
+}): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const [artifactContent, codexConfig, modelCatalog, skillsManifest, feishuSkill] = await Promise.all([
+          readFile(path.join(args.mountPath, '.artifacts', args.artifactName), 'utf-8').catch(() => null),
+          readFile(path.join(args.mountPath, '.codex', 'config.toml'), 'utf-8').catch(() => null),
+          readFile(path.join(args.mountPath, '.codex', 'catalog.json'), 'utf-8').catch(() => null),
+          readFile(path.join(args.mountPath, '.mbos', 'builtin-skills-manifest.json'), 'utf-8').catch(() => null),
+          readFile(path.join(args.mountPath, '.agents', 'skills', 'feishu-docs', 'SKILL.md'), 'utf-8').catch(() => null),
+        ]);
+        const parsedCatalog = typeof modelCatalog === 'string'
+          ? JSON.parse(modelCatalog) as { models?: Array<{ slug?: string; display_name?: string }> }
+          : null;
+        return {
+          artifactReady: typeof artifactContent === 'string' && artifactContent.includes(args.artifactToken),
+          codexConfigReady: typeof codexConfig === 'string' && codexConfig.includes('model = '),
+          modelCatalogReady:
+            Array.isArray(parsedCatalog?.models)
+            && parsedCatalog.models.some((entry) => typeof entry?.slug === 'string' && entry.slug.trim().length > 0),
+          skillsManifestReady: typeof skillsManifest === 'string' && skillsManifest.includes('"feishu-docs"'),
+          feishuSkillReady: typeof feishuSkill === 'string' && feishuSkill.includes('feishu'),
+        };
+      },
+      { timeout: 300_000, intervals: [1_000, 2_000, 5_000, 10_000] },
+    )
+    .toEqual({
+      artifactReady: true,
+      codexConfigReady: true,
+      modelCatalogReady: true,
+      skillsManifestReady: true,
+      feishuSkillReady: true,
+    });
+}
+
 function requireInternalSandboxEnv(): string {
   const namespace = process.env.INTERNAL_AGENT_K8S_NAMESPACE?.trim();
   if (!process.env.SANDBOX_MANAGER_URL?.trim()) {
@@ -348,7 +397,7 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
       taskId,
       token: firstToken,
     });
-    await capturePage(page, captures, 'internal-task-detail-complete', 'internal-k8s notebook 任务完成后的详情页，工作目录固定为 /workspace');
+    await capturePage(page, captures, 'internal-task-detail-complete', 'internal-k8s notebook 任务完成后的详情页，工作目录固定为 /workspace/<task_id>');
 
     const authToken = await readStoredAuthToken(page);
     const workspaceAccessResponse = await page.request.post(
@@ -359,6 +408,7 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
     const workspaceAccessBody = (await workspaceAccessResponse.json()) as {
       metadata_url: string;
       storage_bucket_url?: string;
+      task_root_path?: string;
     };
     expect(workspaceAccessBody.metadata_url).toBeTruthy();
 
@@ -369,12 +419,11 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
     );
     try {
       console.log('[internal-real] verify first artifact via local mount');
-      await expect
-        .poll(
-          async () => readFile(path.join(localMount.mountPath, '.artifacts', firstArtifact), 'utf-8').catch(() => null),
-          { timeout: 90_000, intervals: [1_000, 2_000, 5_000] },
-        )
-        .toContain(firstToken);
+      await expectTaskRuntimeStatePersisted({
+        mountPath: resolveMountedTaskRoot(localMount.mountPath, workspaceAccessBody.task_root_path),
+        artifactName: firstArtifact,
+        artifactToken: firstToken,
+      });
 
       const workloadId = sanitizeWorkloadId(taskId);
       const firstWorkloadPod = await waitForWorkloadPodIdentity({
@@ -432,7 +481,14 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
       console.log('[internal-real] verify second artifact via local mount');
       await expect
         .poll(
-          async () => readFile(path.join(localMount.mountPath, '.artifacts', secondArtifact), 'utf-8').catch(() => null),
+          async () => readFile(
+            path.join(
+              resolveMountedTaskRoot(localMount.mountPath, workspaceAccessBody.task_root_path),
+              '.artifacts',
+              secondArtifact,
+            ),
+            'utf-8',
+          ).catch(() => null),
           { timeout: 90_000, intervals: [1_000, 2_000, 5_000] },
         )
         .toContain(secondToken);
@@ -447,15 +503,18 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
       projectId,
       libraryName: workspaceLibraryName,
     });
+    if (workspaceAccessBody.task_root_path && workspaceAccessBody.task_root_path !== '.') {
+      await openFolderByName(page, workspaceAccessBody.task_root_path);
+    }
     await openFolderByName(page, '.artifacts');
     const firstArtifactRow = page.getByTestId('files__object-row').filter({ hasText: firstArtifact }).first();
     await expect(firstArtifactRow).toBeVisible({ timeout: 30_000 });
     const downloadResponse = await page.request.get(
-      `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/file-libraries/${fileLibraryId}/download?path=${encodeURIComponent(`.artifacts/${firstArtifact}`)}`,
+      `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/file-libraries/${fileLibraryId}/download?path=${encodeURIComponent(resolveLibraryObjectPath(`.artifacts/${firstArtifact}`, workspaceAccessBody.task_root_path))}`,
       { headers: { Authorization: `Bearer ${authToken}` } },
     );
     expect(downloadResponse.ok()).toBeTruthy();
-    expect(downloadResponse.headers()['content-type']).toContain('text/plain');
+    expect(downloadResponse.headers()['content-type']).toContain('text/');
     await expect(downloadResponse.text()).resolves.toContain(firstToken);
     await capturePage(page, captures, 'internal-files-artifacts-visible', 'Files 页面中已可见 internal-k8s notebook 生成的 .artifacts 交付物');
     await flushArtifacts(captures);

@@ -72,7 +72,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
       pvc_name: 'juicefs-pvc-demo',
       volume_handle: 'juicefs-demo',
       filesystem_name: 'jfs_ws_demo_proj_demo_workspace_library',
-      mount_path: '/workspace',
+      mount_path: '/workspace/task_demo',
       storage_class_name: 'juicefs-static',
       mount_options: ['writeback_cache', 'cache-size=204800'],
       subdir: '/workspaces/ws_demo/flib_demo',
@@ -102,6 +102,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
       workspaceId: 'ws_demo',
       projectId: 'proj_demo',
       fileLibraryId: 'flib_demo',
+      taskId: 'task_demo',
     });
 
     expect(ensureWorkspaceBinding).toHaveBeenCalledWith(
@@ -112,6 +113,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
         file_library_id: 'flib_demo',
         filesystem_name: 'jfs_ws_demo_proj_demo_workspace_library',
         metadata_url: 'postgres://juicefs:secret@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/juicefs_demo?sslmode=disable',
+        mount_path: '/workspace/task_demo',
         storage_endpoint: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
         storage_class_name: 'juicefs-static',
         mount_options: ['writeback_cache', 'cache-size=204800'],
@@ -122,7 +124,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
     );
     expect(result.workspaceMount).toEqual({
       bindingId: 'flib_demo',
-      mountPath: '/workspace',
+      mountPath: '/workspace/task_demo',
     });
     expect(result.binding.pvc_name).toBe('juicefs-pvc-demo');
     expect(result.binding.storage_class_name).toBe('juicefs-static');
@@ -171,7 +173,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
       pvc_name: 'juicefs-pvc-demo',
       volume_handle: 'juicefs-demo',
       filesystem_name: 'jfs_ws_demo_proj_demo_workspace_library',
-      mount_path: '/workspace',
+      mount_path: '/workspace/task_public',
     });
 
     const provisioner = new InternalAgentWorkspaceProvisionerImpl(
@@ -191,6 +193,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
       workspaceId: 'ws_demo',
       projectId: 'proj_demo',
       fileLibraryId: 'flib_public',
+      taskId: 'task_public',
     });
 
     expect(ensureWorkspaceBinding).toHaveBeenCalledWith(
@@ -199,6 +202,7 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
       'flib_public',
       expect.objectContaining({
         metadata_url: 'postgres://juicefs:secret@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/juicefs_demo',
+        mount_path: '/workspace/task_public',
       }),
     );
   });

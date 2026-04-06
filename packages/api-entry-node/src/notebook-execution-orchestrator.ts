@@ -304,6 +304,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       }
     }
     const model = explicitModel || endpointModel || 'gpt-5-codex';
+    let internalWorkspacePath: string | undefined;
     if (agent.mode === 'internal') {
       if (!deps.internalAgentPodManager) {
         throw Object.assign(new Error('agent_sandbox_not_configured'), { code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
@@ -328,7 +329,9 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         workspaceId: task.workspace_id,
         projectId: task.project_id,
         fileLibraryId: task.workspace_file_library_id,
+        taskId: task.id,
       });
+      internalWorkspacePath = workspaceBinding.workspaceMount.mountPath;
       await deps.internalAgentPodManager.ensureAgentReady({
         workspaceId: task.workspace_id,
         projectId: task.project_id,
@@ -405,7 +408,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         model_auto_compact_token_limit: modelAutoCompactTokenLimit,
         model_catalog: modelCatalog,
         workspace_binding_mode: agent.mode === 'internal' ? 'pre_mounted' : 'file_library',
-        workspace_path: agent.mode === 'internal' ? '/workspace' : undefined,
+        workspace_path: agent.mode === 'internal' ? internalWorkspacePath : undefined,
         workspace_file_library_id: task.workspace_file_library_id ?? null,
         workspace_file_library_name: task.workspace_file_library_name ?? null,
         workspace_dir_name: workspaceLibrary?.filesystem_name

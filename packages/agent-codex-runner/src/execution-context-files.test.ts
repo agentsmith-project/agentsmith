@@ -1,4 +1,5 @@
 import { mkdtemp, readFile } from 'node:fs/promises';
+import { access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -46,6 +47,7 @@ describe('execution-context-files', () => {
     expect(result.written).toBe(2);
     const payload = await readFile(join(credentialDir, 'jira/connections.json'), 'utf-8');
     expect(payload).toContain('"ok":true');
+    await expect(access(join(cwd, '.codex', 'credential', 'jira', 'connections.json'))).rejects.toBeTruthy();
   });
 
   it('rejects path traversal', async () => {

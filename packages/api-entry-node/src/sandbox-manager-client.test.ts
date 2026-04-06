@@ -97,7 +97,7 @@ describe('SandboxManagerClient', () => {
         pvc_name: 'pvc',
         volume_handle: 'ws_1/proj_1/flib_demo',
         filesystem_name: 'agentsmith-workspace',
-        mount_path: '/workspace',
+        mount_path: '/workspace/task_demo',
       }), { status: 201 });
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -107,10 +107,11 @@ describe('SandboxManagerClient', () => {
       file_library_id: 'flib_demo',
       filesystem_name: 'agentsmith-workspace',
       metadata_url: 'postgres://postgres:postgres@db:5432/juicefs?sslmode=disable',
+      mount_path: '/workspace/task_demo',
     });
 
     expect(result.binding_id).toBe('flib_demo');
-    expect(result.mount_path).toBe('/workspace');
+    expect(result.mount_path).toBe('/workspace/task_demo');
   });
 
   it('treats delete workspace binding 404 as success', async () => {

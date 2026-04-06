@@ -707,6 +707,7 @@ agent-test-runner:
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	MBOS_RUNNER_MODE="$${MBOS_RUNNER_MODE:-host_external}" \
 	MBOS_AGENT_WS_URL="$(AGENT_WS_URL)" \
 	MBOS_AGENT_KEY="$(AGENT_KEY)" \
 	MBOS_AGENT_MODE="$(AGENT_MODE)" \
@@ -720,6 +721,7 @@ agent-codex-runner:
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	MBOS_RUNNER_MODE="$${MBOS_RUNNER_MODE:-host_external}" \
 	MBOS_AGENT_WS_URL="$(AGENT_WS_URL)" \
 	MBOS_AGENT_KEY="$(AGENT_KEY)" \
 	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
@@ -764,6 +766,7 @@ notebook-agent-runner:
 		exit 1; \
 	fi; \
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	MBOS_RUNNER_MODE="$${MBOS_RUNNER_MODE:-host_external}" \
 	MBOS_AGENT_WS_URL="$$WS_URL" \
 	MBOS_AGENT_KEY="$$AGENT_KEY_VALUE" \
 	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
@@ -1018,6 +1021,7 @@ notebook-agent-smoke-full:
 	$(MAKE) notebook-agent-refresh-token; \
 	echo "[make] starting agent-codex-runner in background..."; \
 	( env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+		MBOS_RUNNER_MODE="$${MBOS_RUNNER_MODE:-host_external}" \
 		MBOS_AGENT_WS_URL="$$WS_URL" \
 		MBOS_AGENT_KEY="$$AGENT_KEY_VALUE" \
 		MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \

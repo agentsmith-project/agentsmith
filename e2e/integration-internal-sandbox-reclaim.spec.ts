@@ -48,6 +48,11 @@ const INTERNAL_CLIENT_MOUNT_OVERRIDES = {
   storageEndpointOverride: process.env.INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim() || undefined,
 } as const;
 
+function resolveMountedTaskRoot(mountPath: string, taskRootPath?: string | null): string {
+  if (!taskRootPath || taskRootPath === '.') return mountPath;
+  return path.join(mountPath, taskRootPath);
+}
+
 function buildNotebookCommand(token: string, fileName: string): string {
   return [
     'Run the following shell command exactly, then reply with the token and filename.',
@@ -127,7 +132,11 @@ test.describe('@lane-real internal sandbox reclaim', () => {
         projectId,
         taskId: taskId1,
         token: token1,
-        artifactPath: path.join(localMount1.mountPath, '.artifacts', firstArtifactName),
+        artifactPath: path.join(
+          resolveMountedTaskRoot(localMount1.mountPath, workspaceAccess1.task_root_path),
+          '.artifacts',
+          firstArtifactName,
+        ),
         namespace,
         workloadId: workloadId1,
       });

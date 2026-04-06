@@ -7,6 +7,8 @@ import {
 } from './notebook-assets.js';
 import { prepareTaskWorkspace, type TaskWorkspacePaths } from './task-workspace.js';
 import { applyExecutionContextFiles, type ExecutionContextFileItem } from './execution-context-files.js';
+import { prepareLaunchCommand } from './child-launcher.js';
+import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
 
 export type TerminalExecutionContext = {
   workspace_id?: string;
@@ -132,10 +134,23 @@ export async function prepareTerminalWorkspace(input: {
   const taskPaths = cwdResult.paths;
   await Promise.all([
     mkdir(cwd, { recursive: true }),
-    mkdir(taskPaths.codexHomeDir, { recursive: true }),
-    mkdir(taskPaths.homeDir, { recursive: true }),
+    mkdir(taskPaths.codexDir, { recursive: true }),
+    mkdir(taskPaths.credentialDir, { recursive: true }),
+    mkdir(taskPaths.skillsDir, { recursive: true }),
   ]);
   await primeShellDotfiles(taskPaths.homeDir, input.shell);
+  const builtinSkillsConfig = resolveBuiltinSkillsConfig();
+  const builtinSkillsResult = await inspectBuiltinSkills({
+    sourceDir: builtinSkillsConfig.sourceDir,
+    skills: builtinSkillsConfig.skills,
+    required: builtinSkillsConfig.required,
+  });
+  await seedBuiltinSkills({
+    sourceDir: builtinSkillsResult.sourceDir,
+    skills: builtinSkillsResult.available,
+    targetDir: taskPaths.skillsDir,
+    manifestDir: taskPaths.credentialDir,
+  });
 
   const isNotebookMode = executionContext.notebook_mode === true;
   const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
@@ -179,13 +194,19 @@ export async function prepareTerminalWorkspace(input: {
     } : {}),
   };
   const interactiveCommand = buildInteractiveCommand(input.shell);
+  const launchCommand = await prepareLaunchCommand({
+    file: interactiveCommand.file,
+    args: interactiveCommand.args,
+    cwd,
+    env,
+  });
 
   return {
     cwd,
     taskPaths,
-    shellFile: interactiveCommand.file,
-    shellArgs: interactiveCommand.args,
-    env,
+    shellFile: launchCommand.file,
+    shellArgs: launchCommand.args,
+    env: launchCommand.env,
   };
 }
 

@@ -20,6 +20,117 @@ import {
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
+function resolveMountedTaskRoot(mountPath: string, taskRootPath?: string | null): string {
+  if (!taskRootPath || taskRootPath === '.') return mountPath;
+  return path.join(mountPath, taskRootPath);
+}
+
+async function expectTaskRuntimeStatePersisted(args: {
+  mountPath: string;
+  artifactName: string;
+  artifactToken: string;
+}): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const [artifactContent, codexConfig, modelCatalog, skillsManifest, feishuSkill] = await Promise.all([
+          readFile(path.join(args.mountPath, '.artifacts', args.artifactName), 'utf-8').catch(() => null),
+          readFile(path.join(args.mountPath, '.codex', 'config.toml'), 'utf-8').catch(() => null),
+          readFile(path.join(args.mountPath, '.codex', 'catalog.json'), 'utf-8').catch(() => null),
+          readFile(path.join(args.mountPath, '.mbos', 'builtin-skills-manifest.json'), 'utf-8').catch(() => null),
+          readFile(path.join(args.mountPath, '.agents', 'skills', 'feishu-docs', 'SKILL.md'), 'utf-8').catch(() => null),
+        ]);
+        const parsedCatalog = typeof modelCatalog === 'string'
+          ? JSON.parse(modelCatalog) as { models?: Array<{ slug?: string; display_name?: string }> }
+          : null;
+        return {
+          artifactReady: typeof artifactContent === 'string' && artifactContent.includes(args.artifactToken),
+          codexConfigReady: typeof codexConfig === 'string' && codexConfig.includes('model = '),
+          modelCatalogReady:
+            Array.isArray(parsedCatalog?.models)
+            && parsedCatalog.models.some((entry) => typeof entry?.slug === 'string' && entry.slug.trim().length > 0),
+          skillsManifestReady: typeof skillsManifest === 'string' && skillsManifest.includes('"feishu-docs"'),
+          feishuSkillReady: typeof feishuSkill === 'string' && feishuSkill.includes('feishu'),
+        };
+      },
+      { timeout: 300_000, intervals: [1_000, 2_000, 5_000, 10_000] },
+    )
+    .toEqual({
+      artifactReady: true,
+      codexConfigReady: true,
+      modelCatalogReady: true,
+      skillsManifestReady: true,
+      feishuSkillReady: true,
+    });
+}
+
+function isRetryableUpstreamCapacityError(content: string | null | undefined): boolean {
+  if (typeof content !== 'string') return false;
+  const normalized = content.toLowerCase();
+  return normalized.includes('selected model is at capacity')
+    || normalized.includes('model is at capacity')
+    || normalized.includes('needs retry');
+}
+
+async function sendNotebookWriteMessage(args: {
+  page: Page;
+  projectId: string;
+  taskId: string;
+  token: string;
+  artifactName: string;
+}): Promise<void> {
+  const authToken = await readStoredAuthToken(args.page);
+  const sendMessageResponse = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/ws_default/projects/${args.projectId}/tasks/${args.taskId}/messages`,
+    {
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        role: 'user',
+        content: [
+          'Run the following shell command exactly, then reply with the token and filename.',
+          '```bash',
+          `mkdir -p .artifacts && printf '%s\\n' '# Market sizing summary' '- Token: ${args.token}' '- Segment: North America consumer electronics' '- Insight: online channel share is expanding faster than retail' '- Recommendation: prioritize search plus retail media in the next planning cycle' > .artifacts/${args.artifactName}`,
+          '```',
+          `After the file is written, reply with exactly: ${args.token} ${args.artifactName}`,
+        ].join(' '),
+      },
+    },
+  );
+  if (!sendMessageResponse.ok()) {
+    throw new Error(`notebook_send_failed:${sendMessageResponse.status()}:${await sendMessageResponse.text()}`);
+  }
+}
+
+async function waitForAgentReply(args: {
+  page: Page;
+  projectId: string;
+  taskId: string;
+  token: string;
+}): Promise<{ id?: string; content?: string } | null> {
+  const authToken = await readStoredAuthToken(args.page);
+  let agentMessageRecord: { id?: string; content?: string } | null = null;
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const response = await args.page.request.get(
+      `${API_BASE}/api/v1/workspaces/ws_default/projects/${args.projectId}/tasks/${args.taskId}/messages`,
+      { headers: { Authorization: `Bearer ${authToken}` } },
+    );
+    if (response.ok()) {
+      const payload = (await response.json()) as Array<{ id?: string; role?: string; content?: string }>;
+      const agentMessages = payload.filter((item) => item.role === 'agent');
+      const withToken = agentMessages.find((item) => typeof item.content === 'string' && item.content.includes(args.token));
+      if (withToken) {
+        return withToken;
+      }
+      agentMessageRecord = agentMessages.at(-1) ?? null;
+    }
+    await args.page.waitForTimeout(2_000);
+  }
+  return agentMessageRecord;
+}
+
 function requireRealLaneApiKey(): string {
   const value = process.env.BACKEND_REAL_API_KEY?.trim();
   if (!value) {
@@ -130,6 +241,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       wsUrl: agentBundle.wsUrl,
       agentKey: agentBundle.agentKey,
     });
+    let runnerStopped = false;
     test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
 
     try {
@@ -147,53 +259,31 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
 
       const replyToken = `REAL_CODEX_NOTEBOOK_OK_${Date.now()}`;
       const artifactName = `market-summary-${Date.now()}.md`;
-      const token = await readStoredAuthToken(page);
-      const sendMessageResponse = await page.request.post(
-        `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/messages`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          data: {
-            role: 'user',
-            content: [
-              'Run the following shell command exactly, then reply with the token and filename.',
-              '```bash',
-              `mkdir -p .artifacts && printf '%s\\n' '# Market sizing summary' '- Token: ${replyToken}' '- Segment: North America consumer electronics' '- Insight: online channel share is expanding faster than retail' '- Recommendation: prioritize search plus retail media in the next planning cycle' > .artifacts/${artifactName}`,
-              '```',
-              `After the file is written, reply with exactly: ${replyToken} ${artifactName}`,
-            ].join(' '),
-          },
-        },
-      );
-      if (!sendMessageResponse.ok()) {
-        throw new Error(`notebook_send_failed:${sendMessageResponse.status()}:${await sendMessageResponse.text()}`);
-      }
-
       let agentMessageRecord: { id?: string; content?: string } | null = null;
-      for (let attempt = 0; attempt < 120; attempt += 1) {
-        const response = await page.request.get(
-          `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/messages`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        if (response.ok()) {
-          const payload = (await response.json()) as Array<{ id?: string; role?: string; content?: string }>;
-          const agentMessages = payload.filter((item) => item.role === 'agent');
-          const withToken = agentMessages.find((item) => typeof item.content === 'string' && item.content.includes(replyToken));
-          if (withToken) {
-            agentMessageRecord = withToken;
-            break;
-          }
-          agentMessageRecord = agentMessages.at(-1) ?? null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await sendNotebookWriteMessage({
+          page,
+          projectId,
+          taskId,
+          token: replyToken,
+          artifactName,
+        });
+        agentMessageRecord = await waitForAgentReply({
+          page,
+          projectId,
+          taskId,
+          token: replyToken,
+        });
+        if (!isRetryableUpstreamCapacityError(agentMessageRecord?.content)) {
+          break;
         }
-        await page.waitForTimeout(2_000);
       }
 
       expect(agentMessageRecord).toBeTruthy();
       expect(agentMessageRecord?.content).toContain(replyToken);
       expect(agentMessageRecord?.content).toContain(artifactName);
 
+      const token = await readStoredAuthToken(page);
       const workspaceAccessResponse = await page.request.post(
         `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/workspace-access`,
         { headers: { Authorization: `Bearer ${token}` } },
@@ -203,6 +293,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         workspace_dir_name: string;
         metadata_url: string;
         storage_bucket_url?: string;
+        task_root_path?: string;
       };
       expect(workspaceAccessBody.workspace_dir_name).toBeTruthy();
       expect(workspaceAccessBody.metadata_url).toBeTruthy();
@@ -218,23 +309,27 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         page.getByTestId('files__object-row').filter({ hasText: artifactName }).first(),
       ).toBeVisible({ timeout: 30_000 });
 
+      await runner.stop();
+      runnerStopped = true;
+
       const localMount = await mountFileLibraryLocally(
         workspaceAccessBody.metadata_url,
         workspaceAccessBody.storage_bucket_url,
       );
       try {
-        await expect
-          .poll(
-            async () => readFile(path.join(localMount.mountPath, '.artifacts', artifactName), 'utf-8').catch(() => null),
-            { timeout: 60_000, intervals: [1_000, 2_000, 5_000] },
-          )
-          .toContain(replyToken);
+        await expectTaskRuntimeStatePersisted({
+          mountPath: resolveMountedTaskRoot(localMount.mountPath, workspaceAccessBody.task_root_path),
+          artifactName,
+          artifactToken: replyToken,
+        });
       } finally {
         await localMount.stop();
       }
 
     } finally {
-      await runner.stop();
+      if (!runnerStopped) {
+        await runner.stop();
+      }
     }
   });
 
@@ -265,6 +360,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       wsUrl: agentBundle.wsUrl,
       agentKey: agentBundle.agentKey,
     });
+    let runnerStopped = false;
 
     try {
       await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
@@ -281,45 +377,28 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
 
       const replyToken = `REAL_CODEX_DOCKER_NOTEBOOK_OK_${Date.now()}`;
       const artifactName = `docker-market-summary-${Date.now()}.md`;
-      const token = await readStoredAuthToken(page);
-      const sendMessageResponse = await page.request.post(
-        `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/messages`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          data: {
-            role: 'user',
-            content: [
-              'Run the following shell command exactly, then reply with the token and filename.',
-              '```bash',
-              `mkdir -p .artifacts && printf '%s\\n' '# Market sizing summary' '- Token: ${replyToken}' '- Segment: North America consumer electronics' '- Insight: online channel share is expanding faster than retail' '- Recommendation: prioritize search plus retail media in the next planning cycle' > .artifacts/${artifactName}`,
-              '```',
-              `After the file is written, reply with exactly: ${replyToken} ${artifactName}`,
-            ].join(' '),
-          },
-        },
-      );
-      if (!sendMessageResponse.ok()) {
-        throw new Error(`notebook_send_failed:${sendMessageResponse.status()}:${await sendMessageResponse.text()}`);
+      let agentMessageRecord: { id?: string; content?: string } | null = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await sendNotebookWriteMessage({
+          page,
+          projectId,
+          taskId,
+          token: replyToken,
+          artifactName,
+        });
+        agentMessageRecord = await waitForAgentReply({
+          page,
+          projectId,
+          taskId,
+          token: replyToken,
+        });
+        if (!isRetryableUpstreamCapacityError(agentMessageRecord?.content)) {
+          break;
+        }
       }
+      expect(agentMessageRecord?.content).toContain(replyToken);
 
-      await expect
-        .poll(
-          async () => {
-            const response = await page.request.get(
-              `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/messages`,
-              { headers: { Authorization: `Bearer ${token}` } },
-            );
-            if (!response.ok()) return null;
-            const payload = (await response.json()) as Array<{ role?: string; content?: string }>;
-            return payload.find((item) => item.role === 'agent' && item.content?.includes(replyToken))?.content ?? null;
-          },
-          { timeout: 180_000, intervals: [2_000, 5_000, 10_000] },
-        )
-        .toContain(replyToken);
-
+      const token = await readStoredAuthToken(page);
       const workspaceAccessResponse = await page.request.post(
         `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/workspace-access`,
         { headers: { Authorization: `Bearer ${token}` } },
@@ -328,25 +407,30 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       const workspaceAccessBody = (await workspaceAccessResponse.json()) as {
         metadata_url: string;
         storage_bucket_url?: string;
+        task_root_path?: string;
       };
       expect(workspaceAccessBody.metadata_url).toBeTruthy();
+
+      await runner.stop();
+      runnerStopped = true;
 
       const localMount = await mountFileLibraryLocally(
         workspaceAccessBody.metadata_url,
         workspaceAccessBody.storage_bucket_url,
       );
       try {
-        await expect
-          .poll(
-            async () => readFile(path.join(localMount.mountPath, '.artifacts', artifactName), 'utf-8').catch(() => null),
-            { timeout: 60_000, intervals: [1_000, 2_000, 5_000] },
-          )
-          .toContain(replyToken);
+        await expectTaskRuntimeStatePersisted({
+          mountPath: resolveMountedTaskRoot(localMount.mountPath, workspaceAccessBody.task_root_path),
+          artifactName,
+          artifactToken: replyToken,
+        });
       } finally {
         await localMount.stop();
       }
     } finally {
-      await runner.stop();
+      if (!runnerStopped) {
+        await runner.stop();
+      }
     }
   });
 });

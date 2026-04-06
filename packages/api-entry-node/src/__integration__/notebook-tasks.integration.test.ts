@@ -388,6 +388,7 @@ describe('api-entry-node notebook task routes', () => {
     await expect(workspaceAccessRes.json()).resolves.toMatchObject({
       task_id: task.id,
       workspace_binding_mode: 'file_library',
+      task_root_path: '.',
       workspace_dir_name: workspaceLibrary.filesystem_name,
       file_library_id: workspaceLibrary.id,
       file_library_name: workspaceLibrary.name,
@@ -543,8 +544,8 @@ describe('api-entry-node notebook task routes', () => {
       expect(workspaceAccessRes.status).toBe(200);
       await expect(workspaceAccessRes.json()).resolves.toMatchObject({
         task_id: task.id,
-        metadata_url: expect.stringContaining('@127.0.0.1:15432/'),
-        storage_bucket_url: expect.stringContaining('http://127.0.0.1:19000/'),
+        metadata_url: expect.stringMatching(/@(localhost|172\.18\.0\.1):15432\//),
+        storage_bucket_url: expect.stringMatching(/http:\/\/(localhost|172\.18\.0\.1):19000\//),
       });
     } finally {
       if (previousExternalExecutionBase === undefined) {
@@ -916,6 +917,7 @@ describe('api-entry-node notebook task routes', () => {
       executionTicket: string;
       notebookMode: boolean | null;
       workspaceBindingMode: string | null;
+      workspacePath: string | null;
       workspaceFileLibraryId: string | null;
       workspaceFileLibraryName: string | null;
       workspaceDirName: string | null;
@@ -945,6 +947,7 @@ describe('api-entry-node notebook task routes', () => {
               user_bearer_token?: string;
               notebook_mode?: boolean;
               workspace_binding_mode?: string;
+              workspace_path?: string;
               workspace_file_library_id?: string | null;
               workspace_file_library_name?: string | null;
               workspace_dir_name?: string | null;
@@ -970,6 +973,9 @@ describe('api-entry-node notebook task routes', () => {
             : null,
           workspaceBindingMode: typeof msg.payload?.execution_context?.workspace_binding_mode === 'string'
             ? msg.payload.execution_context.workspace_binding_mode
+            : null,
+          workspacePath: typeof msg.payload?.execution_context?.workspace_path === 'string'
+            ? msg.payload.execution_context.workspace_path
             : null,
           workspaceFileLibraryId: typeof msg.payload?.execution_context?.workspace_file_library_id === 'string'
             ? msg.payload.execution_context.workspace_file_library_id
@@ -1126,6 +1132,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(execution.apiBase).toBe(baseUrl);
     expect(execution.notebookMode).toBe(true);
     expect(execution.workspaceBindingMode).toBe('file_library');
+    expect(execution.workspacePath).toBeNull();
     expect(execution.workspaceFileLibraryId).toBe(workspaceLibrary.id);
     expect(execution.workspaceFileLibraryName).toBe(workspaceLibrary.name);
     expect(execution.workspaceDirName).toBe(workspaceLibrary.filesystem_name);
@@ -1531,5 +1538,183 @@ describe('api-entry-node notebook task routes', () => {
     expect(metrics.task_traces_queries_total).toBeGreaterThan(0);
     expect(metrics.task_traces_queries_message_scoped_total).toBeGreaterThan(0);
     expect(metrics.trace_query_latency_by_scope?.message?.count ?? 0).toBeGreaterThan(0);
+  });
+
+  it('builds external terminal sessions with file-library execution context and no workspace path', async () => {
+    const deps = createDefaultNodeApiDeps();
+    let capturedExecutionContext: Record<string, unknown> | null = null;
+    deps.notebookTerminalService.createSession = async (input) => {
+      capturedExecutionContext = input.executionContext ?? null;
+      return {
+        sessionId: 'term_external_capture',
+        wsPath: '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_external_terminal/terminal/ws?session_id=term_external_capture&ticket=term_ticket',
+        wsTicket: 'term_ticket',
+      };
+    };
+    deps.agentExecutionService.getAgentSessionOnlineState = () => true;
+    deps.agentExecutionService.getAgentOnlineState = () => true;
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'external-terminal-agent',
+      mode: 'external',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      presence: 'online',
+      config: {
+        _external_key_source: 'generated',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_external',
+          wire_api: 'responses',
+          model: 'placeholder-model',
+        },
+      },
+    });
+    await deps.agentResourceService.markAgentConnected(agent.id, {
+      remote_ip: '127.0.0.1',
+      protocol_version: '1.0',
+      last_pong_at: new Date().toISOString(),
+    });
+
+    const { baseUrl } = startServerWithDeps(deps);
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'External Terminal Workspace');
+    const createTaskRes = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      'test-token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'External terminal task',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = await createTaskRes.json() as { id: string };
+
+    const createTerminalRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/terminal/sessions`,
+      'test-token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cols: 120, rows: 40, shell: '/bin/zsh' }),
+      },
+    );
+    expect(createTerminalRes.status).toBe(201);
+    expect(capturedExecutionContext).toBeTruthy();
+    expect(capturedExecutionContext?.workspace_binding_mode).toBe('file_library');
+    expect(capturedExecutionContext?.workspace_path).toBeUndefined();
+    expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
+    expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
+    expect(capturedExecutionContext?.notebook_mode).toBe(true);
+    expect(Array.isArray(capturedExecutionContext?.credential_files)).toBe(true);
+  });
+
+  it('builds internal terminal sessions with a task-root workspace path', async () => {
+    const deps = createDefaultNodeApiDeps();
+    let capturedExecutionContext: Record<string, unknown> | null = null;
+    let ensuredWorkspaceMountPath = '';
+    let ensuredWorkspaceTaskId = '';
+    deps.notebookTerminalService.createSession = async (input) => {
+      capturedExecutionContext = input.executionContext ?? null;
+      return {
+        sessionId: 'term_internal_capture',
+        wsPath: '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_internal_terminal/terminal/ws?session_id=term_internal_capture&ticket=term_ticket',
+        wsTicket: 'term_ticket',
+      };
+    };
+    deps.internalAgentWorkspaceBindingManager = {
+      ensureWorkspaceBinding: async (input) => {
+        ensuredWorkspaceTaskId = input.taskId;
+        ensuredWorkspaceMountPath = `/workspace/${input.taskId}`;
+        return {
+          binding: {
+            id: 'bind_internal_terminal',
+            workspace_id: input.workspaceId,
+            project_id: input.projectId,
+            file_library_id: input.fileLibraryId,
+            kind: 'juicefs_volume',
+            status: 'ready',
+            metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
+            storage_bucket_url: 'http://localhost:19000/jfs-internal',
+            created_at: '2026-04-05T00:00:00.000Z',
+            updated_at: '2026-04-05T00:00:00.000Z',
+          },
+          workspaceMount: {
+            volumeName: 'juicefs-task',
+            mountPath: ensuredWorkspaceMountPath,
+            fileLibraryId: input.fileLibraryId,
+          },
+        };
+      },
+    };
+    deps.internalAgentPodManager = {
+      ensureAgentReady: async () => undefined,
+      keepalive: async () => undefined,
+      releasePod: async () => undefined,
+    } as never;
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-terminal-agent',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const { baseUrl } = startServerWithDeps(deps);
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Internal Terminal Workspace');
+    const createTaskRes = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      'test-token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Internal terminal task',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = await createTaskRes.json() as { id: string };
+
+    const createTerminalRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/terminal/sessions`,
+      'test-token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cols: 100, rows: 30 }),
+      },
+    );
+    expect(createTerminalRes.status).toBe(201);
+    expect(ensuredWorkspaceTaskId).toBe(task.id);
+    expect(ensuredWorkspaceMountPath).toBe(`/workspace/${task.id}`);
+    expect(capturedExecutionContext).toBeTruthy();
+    expect(capturedExecutionContext?.workspace_binding_mode).toBe('pre_mounted');
+    expect(capturedExecutionContext?.workspace_path).toBe(`/workspace/${task.id}`);
+    expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
+    expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
+    expect(capturedExecutionContext?.notebook_mode).toBe(true);
   });
 });

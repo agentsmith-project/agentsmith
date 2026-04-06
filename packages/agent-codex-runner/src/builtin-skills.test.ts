@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { inspectBuiltinSkills, materializeBuiltinSkills, resolveBuiltinSkillsConfig } from './builtin-skills.js';
+import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
 
 describe('builtin-skills', () => {
   it('resolves dev fallback defaults when env vars are not set', () => {
@@ -78,22 +78,31 @@ describe('builtin-skills', () => {
     }
   });
 
-  it('materializes builtin skills into a task-scoped codex home directory', async () => {
+  it('seeds builtin skills into the task user directory and rewrites absolute /etc paths', async () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
     const targetRoot = mkdtempSync(join(tmpdir(), 'runner-skills-target-'));
+    const manifestRoot = mkdtempSync(join(tmpdir(), 'runner-skills-manifest-'));
     try {
       mkdirSync(join(sourceRoot, 'feishu-docs'), { recursive: true });
-      writeFileSync(join(sourceRoot, 'feishu-docs', 'SKILL.md'), 'feishu');
-      const result = await materializeBuiltinSkills({
+      writeFileSync(
+        join(sourceRoot, 'feishu-docs', 'SKILL.md'),
+        'python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py tools-list',
+      );
+      const result = await seedBuiltinSkills({
         sourceDir: sourceRoot,
         skills: ['feishu-docs'],
         targetDir: targetRoot,
+        manifestDir: manifestRoot,
       });
-      expect(result.materialized).toEqual(['feishu-docs']);
-      expect(readFileSync(join(targetRoot, 'feishu-docs', 'SKILL.md'), 'utf-8')).toBe('feishu');
+      expect(result.seeded).toEqual(['feishu-docs']);
+      expect(readFileSync(join(targetRoot, 'feishu-docs', 'SKILL.md'), 'utf-8')).toContain(
+        `${targetRoot}/feishu-docs/scripts/feishu_mcp.py`,
+      );
+      expect(readFileSync(result.manifestPath, 'utf-8')).toContain('"installed_skills"');
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(targetRoot, { recursive: true, force: true });
+      rmSync(manifestRoot, { recursive: true, force: true });
     }
   });
 });

@@ -56,15 +56,17 @@ All frames are JSON objects:
 
         | Item | External bare (`file_library`) | External docker (`file_library`) | Internal (`pre_mounted`) |
         | --- | --- | --- | --- |
-        | `cwd` | `${MBOS_AGENT_WORKSPACE_ROOT:-$HOST_HOME/ags-workspaces}/<workspace_dir_name>/` | `${MBOS_AGENT_WORKSPACE_ROOT:-/workspace/ags-workspaces}/<workspace_dir_name>/` | `/workspace/` |
-        | `CODEX_HOME` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/` |
-        | `HOME` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/home/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/home/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/home/` |
-        | credentials | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/` via `MBOS_TASK_CREDENTIAL_DIR` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/` via `MBOS_TASK_CREDENTIAL_DIR` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/` via `MBOS_TASK_CREDENTIAL_DIR` |
+        | runner mode | `host_external` | `docker_external` | `k8s_internal` |
+        | task root (`cwd`) | `$HOME/ags-workspace/<task_id>/` | `/workspace/<task_id>/` | `/workspace/<task_id>/` |
+        | `HOME` | same as task root | same as task root | same as task root |
+        | Codex state | `<task_root>/.codex/` | `<task_root>/.codex/` | `<task_root>/.codex/` |
+        | skills | `<task_root>/.agents/skills/` | `<task_root>/.agents/skills/` | `<task_root>/.agents/skills/` |
+        | credentials | `<task_root>/.mbos/` via `MBOS_TASK_CREDENTIAL_DIR` | `<task_root>/.mbos/` via `MBOS_TASK_CREDENTIAL_DIR` | `<task_root>/.mbos/` via `MBOS_TASK_CREDENTIAL_DIR` |
 
         Notes:
-        - `cwd` is the only path Codex uses as the editable workspace truth.
-        - `CODEX_HOME` is task-scoped Codex runtime state and is not shared across tasks.
-        - `HOME` is an isolated child-process home, not the developer's real host home.
+        - the task mount point is the real JuiceFS-backed working directory for the current task
+        - `cwd` and `HOME` are intentionally the same task root
+        - external child processes are wrapped with `bwrap`; internal workloads keep per-task sandbox isolation
 - `server.request.cancel`
   - payload: `{ "reason": "client_cancelled" }`
 - `server.ping`

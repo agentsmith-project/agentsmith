@@ -305,7 +305,7 @@ async function buildTaskTerminalExecutionContext(args: {
     api_base: resolveExecutionApiBase(args.publicBaseUrl, args.agent),
     execution_ticket: executionTicket.ticket,
     workspace_binding_mode: args.agent.mode === 'internal' ? 'pre_mounted' : 'file_library',
-    workspace_path: args.agent.mode === 'internal' ? '/workspace' : undefined,
+    workspace_path: args.agent.mode === 'internal' ? `/workspace/${args.task.id}` : undefined,
     workspace_file_library_id: args.task.workspace_file_library_id ?? null,
     workspace_file_library_name: args.task.workspace_file_library_name ?? null,
     workspace_dir_name: workspaceLibrary?.filesystem_name
@@ -612,6 +612,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         workspaceId: task.workspace_id,
         projectId: task.project_id,
         fileLibraryId: task.workspace_file_library_id,
+        taskId: task.id,
       });
       await deps.internalAgentPodManager.ensureAgentReady({
         workspaceId: task.workspace_id,
@@ -765,6 +766,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     json(res, 200, {
       task_id: task.id,
       workspace_binding_mode: 'file_library',
+      task_root_path: '.',
       workspace_dir_name: workspaceFileLibrary.filesystem_name,
       file_library_id: workspaceFileLibrary.id,
       file_library_name: workspaceFileLibrary.name,

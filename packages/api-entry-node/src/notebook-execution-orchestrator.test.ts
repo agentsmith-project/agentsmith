@@ -193,7 +193,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         ensureWorkspaceBinding: vi.fn(async () => ({
           workspaceMount: {
             bindingId: 'flib_internal',
-            mountPath: '/workspace',
+            mountPath: '/workspace/task_internal',
           },
           binding: {
             file_library_id: 'flib_internal',
@@ -278,7 +278,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
             supports_parallel_tool_calls: false,
           },
           workspace_binding_mode: 'pre_mounted',
-          workspace_path: '/workspace',
+          workspace_path: '/workspace/task_internal',
           workspace_file_library_id: 'flib_internal',
         }),
       }),

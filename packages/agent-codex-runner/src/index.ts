@@ -22,12 +22,13 @@ import {
 } from './artifact-scan.js';
 import { prepareTaskWorkspace } from './task-workspace.js';
 import { applyExecutionContextFiles, type ExecutionContextFileItem } from './execution-context-files.js';
-import { inspectBuiltinSkills, materializeBuiltinSkills, resolveBuiltinSkillsConfig } from './builtin-skills.js';
+import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
 import { selectLatestInstruction } from './prompt-selection.js';
 import { resolveRunnerSuccessPolicy } from './run-result-policy.js';
 import { ensureCodexSessionStateCompatible } from './session-state.js';
 import { resolveCodexTerminalOutcome } from './terminal-outcome.js';
 import { startTerminalProcess, type TerminalExecutionContext, type TerminalProcess } from './terminal-runtime.js';
+import { prepareLaunchCommand } from './child-launcher.js';
 
 type ServerStartPayload = {
   model?: string;
@@ -681,8 +682,9 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const taskPaths = cwdResult.paths;
   await Promise.all([
     mkdir(cwd, { recursive: true }),
-    mkdir(taskPaths.codexHomeDir, { recursive: true }),
-    mkdir(taskPaths.homeDir, { recursive: true }),
+    mkdir(taskPaths.codexDir, { recursive: true }),
+    mkdir(taskPaths.credentialDir, { recursive: true }),
+    mkdir(taskPaths.skillsDir, { recursive: true }),
   ]);
   const builtinSkillsConfig = resolveBuiltinSkillsConfig();
   debugLog('checking builtin skills', {
@@ -696,10 +698,11 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     skills: builtinSkillsConfig.skills,
     required: builtinSkillsConfig.required,
   });
-  const builtinSkillsRuntime = await materializeBuiltinSkills({
+  const builtinSkillsRuntime = await seedBuiltinSkills({
     sourceDir: builtinSkillsResult.sourceDir,
     skills: builtinSkillsResult.available,
-    targetDir: join(taskPaths.codexHomeDir, 'skills'),
+    targetDir: taskPaths.skillsDir,
+    manifestDir: taskPaths.credentialDir,
   });
   const isNotebookMode = executionContext.notebook_mode === true;
   const resumeSession = isNotebookMode || sessionId.length > 0;
@@ -754,7 +757,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const modelCatalogSupportsSearchTool = executionContext.model_catalog?.supports_search_tool === true;
   const modelCatalogSupportsParallelToolCalls = executionContext.model_catalog?.supports_parallel_tool_calls === true;
   const sessionStateResult = await ensureCodexSessionStateCompatible({
-    codexDir: taskPaths.codexHomeDir,
+    codexDir: taskPaths.codexDir,
     model: payload.model ?? executionContext.model ?? 'gpt-5-codex',
     wireApi: executionContext.wire_api ?? 'responses',
     resourceProxyBase: endpointProxyBase,
@@ -769,7 +772,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   });
   debugLog('validated codex session state', {
     request_id: requestId,
-    codex_dir: taskPaths.codexHomeDir,
+    codex_dir: taskPaths.codexDir,
     reset_performed: sessionStateResult.resetPerformed,
     reason: sessionStateResult.reason,
   });
@@ -777,7 +780,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const wireApi = 'responses';
 
   const model = executionContext.model ?? payload.model ?? 'gpt-5-codex';
-  const codexConfigDir = taskPaths.codexHomeDir;
+  const codexConfigDir = taskPaths.codexDir;
   await mkdir(codexConfigDir, { recursive: true });
   const modelCatalogPath = join(codexConfigDir, 'catalog.json');
   await writeFile(
@@ -833,7 +836,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     credential_files_bytes: executionFilesResult.totalBytes,
     builtin_skills_source_dir: builtinSkillsResult.sourceDir,
     builtin_skills_runtime_dir: builtinSkillsRuntime.targetDir,
-    builtin_skills_mounted: builtinSkillsRuntime.materialized,
+    builtin_skills_mounted: builtinSkillsRuntime.seeded,
     artifacts_dir: isNotebookMode ? artifactsDir : null,
     credential_dir: taskPaths.credentialDir,
     cwd_source: cwdResult.source,
@@ -851,35 +854,40 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     resumeSession,
   });
 
+  const childCommand = await prepareLaunchCommand({
+    file: codexBin,
+    args: codexArgs,
+    cwd,
+    env: {
+      ...process.env,
+      HOME: taskPaths.homeDir,
+      NO_COLOR: '1',
+      MBOS_TASK_CREDENTIAL_DIR: taskPaths.credentialDir,
+      ...(isNotebookMode ? {
+        MBOS_NOTEBOOK_API_BASE: executionContext.api_base ?? '',
+        MBOS_NOTEBOOK_WORKSPACE_ID: executionContext.workspace_id ?? '',
+        MBOS_NOTEBOOK_PROJECT_ID: executionContext.project_id ?? '',
+        MBOS_NOTEBOOK_EXECUTION_TICKET: executionContext.execution_ticket ?? '',
+      } : {}),
+      ...(executionContext.execution_ticket ? {
+        [proxyAuthHeaderEnvName]: `Bearer ${executionContext.execution_ticket}`,
+      } : {}),
+    },
+  });
   const child = spawn(
-    codexBin,
-    codexArgs,
+    childCommand.file,
+    childCommand.args,
     {
       cwd,
-      env: {
-        ...process.env,
-        HOME: taskPaths.homeDir,
-        CODEX_HOME: taskPaths.codexHomeDir,
-        NO_COLOR: '1',
-        MBOS_TASK_CREDENTIAL_DIR: taskPaths.credentialDir,
-        ...(isNotebookMode ? {
-          MBOS_NOTEBOOK_API_BASE: executionContext.api_base ?? '',
-          MBOS_NOTEBOOK_WORKSPACE_ID: executionContext.workspace_id ?? '',
-          MBOS_NOTEBOOK_PROJECT_ID: executionContext.project_id ?? '',
-          MBOS_NOTEBOOK_EXECUTION_TICKET: executionContext.execution_ticket ?? '',
-        } : {}),
-        ...(executionContext.execution_ticket ? {
-          [proxyAuthHeaderEnvName]: `Bearer ${executionContext.execution_ticket}`,
-        } : {}),
-      },
+      env: childCommand.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   );
   debugLog('spawned codex', {
     request_id: requestId,
     yolo: codexYolo,
-    cmd: codexBin,
-    argv: codexArgs.map((arg) => {
+    cmd: childCommand.file,
+    argv: childCommand.args.map((arg) => {
       if (arg === prompt) return '<prompt>';
       return arg;
     }),

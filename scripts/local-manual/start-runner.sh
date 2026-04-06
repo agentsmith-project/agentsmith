@@ -30,7 +30,8 @@ rm -f "${RUNNER_LOG}"
 
 launch_detached "${RUNNER_PID_FILE}" "${RUNNER_LOG}" "
   cd '${ROOT_DIR}' && \
-  export MBOS_AGENT_RUNNER_DEBUG='${MBOS_AGENT_RUNNER_DEBUG:-1}' \
+  export MBOS_RUNNER_MODE='${MBOS_RUNNER_MODE:-host_external}' \
+    MBOS_AGENT_RUNNER_DEBUG='${MBOS_AGENT_RUNNER_DEBUG:-1}' \
     MBOS_AGENT_TASK_TIMEOUT_SEC='${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}' \
     MBOS_AGENT_CODEX_YOLO='${MBOS_AGENT_CODEX_YOLO:-1}' && \
   exec make notebook-agent-runner

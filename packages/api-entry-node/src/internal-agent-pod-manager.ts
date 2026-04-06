@@ -297,6 +297,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
           env: {
             MBOS_AGENT_WS_URL: wsUrl,
             MBOS_AGENT_KEY: config.rawKey,
+            MBOS_RUNNER_MODE: 'k8s_internal',
             MBOS_AGENT_CODEX_YOLO: '1',
             MBOS_AGENT_RUNNER_DEBUG: '1',
             MBOS_AGENT_TASK_TIMEOUT_SEC: '55',

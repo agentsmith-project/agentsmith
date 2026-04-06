@@ -8,6 +8,15 @@ const { mkdirMock, writeFileMock, prepareTaskWorkspaceMock, prepareNotebookWorks
   applyExecutionContextFilesMock: vi.fn(),
 }));
 
+const { prepareLaunchCommandMock } = vi.hoisted(() => ({
+  prepareLaunchCommandMock: vi.fn(),
+}));
+
+const { inspectBuiltinSkillsMock, seedBuiltinSkillsMock } = vi.hoisted(() => ({
+  inspectBuiltinSkillsMock: vi.fn(),
+  seedBuiltinSkillsMock: vi.fn(),
+}));
+
 const {
   nodePtySpawnMock,
   nodePtyWriteMock,
@@ -46,6 +55,20 @@ vi.mock('./execution-context-files.js', () => ({
   applyExecutionContextFiles: applyExecutionContextFilesMock,
 }));
 
+vi.mock('./child-launcher.js', () => ({
+  prepareLaunchCommand: prepareLaunchCommandMock,
+}));
+
+vi.mock('./builtin-skills.js', () => ({
+  resolveBuiltinSkillsConfig: vi.fn(() => ({
+    sourceDir: '/seed-skills',
+    required: true,
+    skills: ['feishu-docs'],
+  })),
+  inspectBuiltinSkills: inspectBuiltinSkillsMock,
+  seedBuiltinSkills: seedBuiltinSkillsMock,
+}));
+
 vi.mock('node-pty', () => ({
   spawn: nodePtySpawnMock,
 }));
@@ -62,15 +85,33 @@ describe('terminal-runtime', () => {
       source: 'file_library_mount',
       paths: {
         rootCwd: '/workspace',
-        codexRootDir: '/codex/tasks',
-        codexHomeDir: '/codex/tasks/task_1',
-        homeDir: '/codex/tasks/task_1/home',
+        mode: 'docker_external',
+        mountRoot: '/workspace',
+        taskRoot: '/workspace',
+        homeDir: '/workspace',
+        codexDir: '/workspace/.codex',
         artifactsDir: '/workspace/.artifacts',
-        credentialDir: '/codex/credentials/task_1',
+        credentialDir: '/tmp/agentsmith-runner-state/docker_external/_workspace/credentials',
+        skillsDir: '/workspace/.agents/skills',
       },
     });
     prepareNotebookWorkspaceAssetsMock.mockResolvedValue(undefined);
     applyExecutionContextFilesMock.mockResolvedValue({ writtenFiles: [] });
+    inspectBuiltinSkillsMock.mockResolvedValue({
+      sourceDir: '/seed-skills',
+      available: ['feishu-docs'],
+      missing: [],
+    });
+    seedBuiltinSkillsMock.mockResolvedValue({
+      targetDir: '/workspace/.agents/skills',
+      seeded: ['feishu-docs'],
+      manifestPath: '/workspace/.mbos/builtin-skills-manifest.json',
+    });
+    prepareLaunchCommandMock.mockImplementation(async (input: { file: string; args: string[]; env: NodeJS.ProcessEnv }) => ({
+      file: input.file,
+      args: input.args,
+      env: input.env,
+    }));
     nodePtySpawnMock.mockReturnValue({
       write: nodePtyWriteMock,
       resize: nodePtyResizeMock,
@@ -90,7 +131,7 @@ describe('terminal-runtime', () => {
     });
 
     expect(writeFileMock).toHaveBeenCalledWith(
-      '/codex/tasks/task_1/home/.zshrc',
+      '/workspace/.zshrc',
       '# AgentSmith Terminal Session\n',
       { flag: 'a' },
     );
@@ -115,8 +156,8 @@ describe('terminal-runtime', () => {
         rows: 40,
         name: expect.any(String),
         env: expect.objectContaining({
-          HOME: '/codex/tasks/task_1/home',
-          MBOS_TASK_CREDENTIAL_DIR: '/codex/credentials/task_1',
+          HOME: '/workspace',
+          MBOS_TASK_CREDENTIAL_DIR: '/tmp/agentsmith-runner-state/docker_external/_workspace/credentials',
         }),
       }),
     );

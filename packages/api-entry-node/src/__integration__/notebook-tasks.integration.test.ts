@@ -388,6 +388,8 @@ describe('api-entry-node notebook task routes', () => {
     await expect(workspaceAccessRes.json()).resolves.toMatchObject({
       task_id: task.id,
       workspace_binding_mode: 'file_library',
+      container_workspace_path: `/workspace/${task.id}`,
+      library_root_path: '.',
       task_root_path: '.',
       workspace_dir_name: workspaceLibrary.filesystem_name,
       file_library_id: workspaceLibrary.id,

@@ -14,16 +14,12 @@ import {
   createProjectInWorkspace,
   keycloakLoginToWorkspace,
   mountFileLibraryLocally,
+  resolveMountedTaskRoot,
   startCodexRunnerProcess,
   startCodexRunnerDockerProcess,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
-
-function resolveMountedTaskRoot(mountPath: string, taskRootPath?: string | null): string {
-  if (!taskRootPath || taskRootPath === '.') return mountPath;
-  return path.join(mountPath, taskRootPath);
-}
 
 async function expectTaskRuntimeStatePersisted(args: {
   mountPath: string;
@@ -293,6 +289,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         workspace_dir_name: string;
         metadata_url: string;
         storage_bucket_url?: string;
+        library_root_path?: string | null;
         task_root_path?: string;
       };
       expect(workspaceAccessBody.workspace_dir_name).toBeTruthy();
@@ -318,7 +315,10 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       );
       try {
         await expectTaskRuntimeStatePersisted({
-          mountPath: resolveMountedTaskRoot(localMount.mountPath, workspaceAccessBody.task_root_path),
+          mountPath: resolveMountedTaskRoot(localMount.mountPath, {
+            libraryRootPath: workspaceAccessBody.library_root_path,
+            taskRootPath: workspaceAccessBody.task_root_path,
+          }),
           artifactName,
           artifactToken: replyToken,
         });
@@ -407,6 +407,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       const workspaceAccessBody = (await workspaceAccessResponse.json()) as {
         metadata_url: string;
         storage_bucket_url?: string;
+        library_root_path?: string | null;
         task_root_path?: string;
       };
       expect(workspaceAccessBody.metadata_url).toBeTruthy();
@@ -420,7 +421,10 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       );
       try {
         await expectTaskRuntimeStatePersisted({
-          mountPath: resolveMountedTaskRoot(localMount.mountPath, workspaceAccessBody.task_root_path),
+          mountPath: resolveMountedTaskRoot(localMount.mountPath, {
+            libraryRootPath: workspaceAccessBody.library_root_path,
+            taskRootPath: workspaceAccessBody.task_root_path,
+          }),
           artifactName,
           artifactToken: replyToken,
         });

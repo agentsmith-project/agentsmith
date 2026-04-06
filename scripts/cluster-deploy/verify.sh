@@ -4,6 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 source "${ROOT_DIR}/scripts/lib/preset-common.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 
 load_agentsmith_presets "${ROOT_DIR}"
 load_release_env
@@ -26,11 +27,24 @@ INTEGRATION_DEV_ADMIN_USERNAME="${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}"
 INTEGRATION_DEV_ADMIN_PASSWORD="${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-agentsmith-cluster}"
 EXTERNAL_RUNNER_CONTAINER_NAME="${EXTERNAL_RUNNER_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME}-external-runner-1}"
+VERIFY_EVIDENCE_DIR="${REPORT_DIR}/verify-artifacts/evidence"
+mkdir -p "${VERIFY_EVIDENCE_DIR}"
+resolve_public_runtime_addresses \
+  "${PUBLIC_WEB_BASE_URL}" \
+  "${PUBLIC_API_BASE_URL}" \
+  "${PUBLIC_KEYCLOAK_BASE_URL}" \
+  "${HOST_LOCAL_WEB_BASE_URL}" \
+  "${HOST_LOCAL_API_BASE_URL}" \
+  "${HOST_LOCAL_KEYCLOAK_BASE_URL}"
+gate_evidence_init "${VERIFY_EVIDENCE_DIR}" "cluster_deploy_verify"
+gate_write_runtime_descriptor "${VERIFY_EVIDENCE_DIR}" "cluster_deploy_verify"
+gate_write_resolved_env "${VERIFY_EVIDENCE_DIR}"
 
 wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
 wait_tcp "127.0.0.1" "${API_PORT:-20000}" 240
 wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
 wait_http "${SANDBOX_MANAGER_PUBLIC_BASE_URL}/readyz" 240
+gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "host_local_stack" "passed" "web/api/keycloak/sandbox ready"
 
 kubectl get deploy sandbox-manager -n "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null
 kubectl get cronjob sandbox-manager-cleaner -n "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null
@@ -38,6 +52,7 @@ docker inspect -f '{{.State.Running}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/de
 runner_logs="$(docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 || true)"
 grep -q '\[agent-codex-runner\] connected' <<<"${runner_logs}" || die "verify failed: external-runner not connected"
 docker_compose ps --status running universal-proxy | grep -q universal-proxy || die "verify failed: universal-proxy not running"
+gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "external_runner" "passed" "${EXTERNAL_RUNNER_CONTAINER_NAME}"
 
 token_json="$(
   curl -fsS "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
@@ -126,3 +141,4 @@ docker run --rm \
 
 state_set release.phase verify_completed
 log "verify ok"
+gate_record_success "${VERIFY_EVIDENCE_DIR}" "cluster_verify"

@@ -2353,6 +2353,7 @@ paths:
                 required:
                   - task_id
                   - workspace_binding_mode
+                  - library_root_path
                   - workspace_dir_name
                   - file_library_id
                   - file_library_name
@@ -2367,6 +2368,11 @@ paths:
                     type: string
                     enum:
                       - file_library
+                  container_workspace_path:
+                    type: string
+                    nullable: true
+                  library_root_path:
+                    type: string
                   workspace_dir_name:
                     type: string
                   file_library_id:

@@ -683,6 +683,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   await Promise.all([
     mkdir(cwd, { recursive: true }),
     mkdir(taskPaths.codexDir, { recursive: true }),
+    mkdir(taskPaths.mbosDir, { recursive: true }),
     mkdir(taskPaths.credentialDir, { recursive: true }),
     mkdir(taskPaths.skillsDir, { recursive: true }),
   ]);
@@ -702,7 +703,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     sourceDir: builtinSkillsResult.sourceDir,
     skills: builtinSkillsResult.available,
     targetDir: taskPaths.skillsDir,
-    manifestDir: taskPaths.credentialDir,
+    manifestDir: taskPaths.mbosDir,
   });
   const isNotebookMode = executionContext.notebook_mode === true;
   const resumeSession = isNotebookMode || sessionId.length > 0;

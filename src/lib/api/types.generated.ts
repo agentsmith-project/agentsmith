@@ -7973,11 +7973,13 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        container_workspace_path?: string | null;
                         /** Format: date-time */
                         created_at: string;
                         file_library_id: string;
                         file_library_name: string;
                         filesystem_name: string;
+                        library_root_path: string;
                         metadata_url: string;
                         recommended_mount_path: string;
                         task_id: string;

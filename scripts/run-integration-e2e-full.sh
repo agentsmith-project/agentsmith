@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 
 SPEC_FILE="${1:-e2e/integration-chat.spec.ts}"
 shift || true
@@ -44,11 +45,13 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 
 API_PORT="${INTEGRATION_API_PORT:-20000}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3001}"
-PLAYWRIGHT_BASE_URL="${INTEGRATION_BASE_URL:-http://localhost:${WEB_PORT}}"
-INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-http://127.0.0.1:${API_PORT}}"
-KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
+KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
+resolve_loopback_runtime_addresses "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}"
+PLAYWRIGHT_BASE_URL="${INTEGRATION_BASE_URL:-${RUNTIME_BROWSER_WEB_BASE_URL}}"
+INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-${RUNTIME_HOST_API_BASE_URL}}"
+KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-${RUNTIME_BROWSER_KEYCLOAK_BASE_URL}}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
-KEYCLOAK_URL="${KEYCLOAK_URL:-http://127.0.0.1:18080/realms}"
+KEYCLOAK_URL="${KEYCLOAK_URL:-${KEYCLOAK_BASE_URL%/}/realms}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
 INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
@@ -61,6 +64,9 @@ INIT_DEPS="${INTEGRATION_INIT_DEPS:-true}"
 ensure_backend_real_state
 INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-$(backend_real_tmp_file integration)}"
 mkdir -p "${INTEGRATION_LOG_DIR}"
+gate_evidence_init "${INTEGRATION_LOG_DIR}" "backend_real"
+gate_write_runtime_descriptor "${INTEGRATION_LOG_DIR}" "backend_real"
+gate_write_resolved_env "${INTEGRATION_LOG_DIR}"
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
 API_PID=""
@@ -263,27 +269,34 @@ EOF_PROXY
 if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
   run_clean_with_integration_env npm run integration:deps:up
   run_clean make deps-ready
+  gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "integration_deps" "passed" "integration dependencies bootstrapped"
 fi
 
 if [[ "${INIT_DEPS}" == "true" ]]; then
   run_clean_with_integration_env npm run integration:deps:init:postgres
   run_clean_with_integration_env npm run integration:deps:init:keycloak
+  gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "integration_identity_seed" "passed" "postgres and keycloak initialized"
 fi
 
 if [[ "${INTEGRATION_ENSURE_DEFAULT_WORKSPACE:-true}" == "true" ]]; then
   run_clean_with_integration_env npx tsx scripts/ensure-default-workspace.ts >/dev/null
+  gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "default_workspace" "passed" "default workspace ensured"
 fi
 
 if ! ensure_universal_proxy; then
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "proxy" "universal proxy unavailable"
   exit 1
 fi
+gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "universal_proxy" "passed" "${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"
 
 if port_in_use "${API_PORT}"; then
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "api_port" "api port already in use"
   echo "[integration-e2e-full] API port ${API_PORT} is already in use. Stop the process or set INTEGRATION_API_PORT." >&2
   exit 1
 fi
 
 if port_in_use "${WEB_PORT}"; then
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "web_port" "web port already in use"
   echo "[integration-e2e-full] Web port ${WEB_PORT} is already in use. Stop the process or set INTEGRATION_WEB_PORT." >&2
   exit 1
 fi
@@ -368,11 +381,13 @@ for _ in $(seq 1 120); do
 done
 
 if [[ "${api_ready}" -ne 1 ]]; then
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "api_ready" "API did not become ready in time (last status: ${code})"
   echo "[integration-e2e-full] API did not become ready in time (last status: ${code})" >&2
   echo "--- API log tail ---" >&2
   tail -n 120 "${API_LOG}" >&2 || true
   exit 1
 fi
+gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "api_ready" "passed" "${INTEGRATION_API_BASE}"
 
 web_ready=0
 for _ in $(seq 1 120); do
@@ -385,11 +400,13 @@ for _ in $(seq 1 120); do
 done
 
 if [[ "${web_ready}" -ne 1 ]]; then
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "web_ready" "Web did not become ready in time (last status: ${code})"
   echo "[integration-e2e-full] Web did not become ready in time (last status: ${code})" >&2
   echo "--- Web log tail ---" >&2
   tail -n 120 "${WEB_LOG}" >&2 || true
   exit 1
 fi
+gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "web_ready" "passed" "${PLAYWRIGHT_BASE_URL}"
 
 echo "[integration-e2e-full] warming key routes before Playwright..." >&2
 try_warm_route "/${INTEGRATION_LOCALE}/login"
@@ -398,6 +415,7 @@ try_warm_route "/${INTEGRATION_LOCALE}/system/login"
 try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default/login"
 try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default"
 try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default/projects"
+gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "browser_auth_preflight" "passed" "workspace routes warmed"
 
 run_clean env \
   BASE_URL="${PLAYWRIGHT_BASE_URL}" \
@@ -428,5 +446,7 @@ wait "${PLAYWRIGHT_PID}"
 PLAYWRIGHT_STATUS=$?
 set -e
 if [[ "${PLAYWRIGHT_STATUS}" -ne 0 ]]; then
+  gate_record_failure "${INTEGRATION_LOG_DIR}" "scenario_assertion_failed" "playwright" "playwright exited with status ${PLAYWRIGHT_STATUS}"
   exit "${PLAYWRIGHT_STATUS}"
 fi
+gate_record_success "${INTEGRATION_LOG_DIR}" "playwright"

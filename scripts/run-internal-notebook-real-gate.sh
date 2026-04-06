@@ -11,6 +11,7 @@ KIND_CONFIG_PATH="${ROOT_DIR}/infra/deploy/demo/kind/config.yaml"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 load_backend_real_env
 export_backend_real_endpoint_env
 
@@ -42,6 +43,10 @@ ensure_backend_real_state
 INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR:-$(backend_real_tmp_file internal)}"
 mkdir -p "${INTERNAL_REAL_DIR}"
 INTERNAL_REAL_DIR="$(realpath -m "${INTERNAL_REAL_DIR}")"
+resolve_loopback_runtime_addresses "${API_PORT}" "${WEB_PORT}" "${INTEGRATION_KEYCLOAK_PORT}"
+gate_evidence_init "${INTERNAL_REAL_DIR}" "internal_backend_real"
+gate_write_runtime_descriptor "${INTERNAL_REAL_DIR}" "internal_backend_real"
+gate_write_resolved_env "${INTERNAL_REAL_DIR}"
 SANDBOX_LOG="${INTERNAL_SANDBOX_MANAGER_LOG:-${INTERNAL_REAL_DIR}/sandbox-manager.log}"
 CONFIG_PATH="${INTERNAL_SANDBOX_MANAGER_CONFIG:-${INTERNAL_REAL_DIR}/sandbox-manager.yaml}"
 CONFIG_PATH="$(realpath -m "${CONFIG_PATH}")"
@@ -74,6 +79,7 @@ MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 info() { echo "[internal-real-gate] $*"; }
 
 if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+  gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "endpoint_env" "Missing PRESET_ENDPOINT_API_KEY"
   echo "[internal-backend-real-gate] Missing PRESET_ENDPOINT_API_KEY." >&2
   exit 1
 fi
@@ -106,6 +112,7 @@ ensure_kind_cluster() {
 }
 
 ensure_kind_cluster
+gate_record_preflight_check "${INTERNAL_REAL_DIR}" "kind_cluster" "passed" "${KIND_CLUSTER_NAME}"
 
 if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
   if ! docker image inspect "${RUNNER_BASE_IMAGE}" >/dev/null 2>&1; then
@@ -148,8 +155,11 @@ ensure_local_image() {
 
 ensure_juicefs_csi() {
   local csi_namespace
+  local csi_manifest
   info "reconciling JuiceFS CSI driver ${CSI_DRIVER}"
-  kubectl apply --validate=false -f https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml >/dev/null
+  csi_manifest="$(mktemp "${INTERNAL_REAL_DIR}/juicefs-csi.XXXXXX.yaml")"
+  curl -fsSL --max-time 30 "https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml" -o "${csi_manifest}"
+  kubectl apply --validate=false --request-timeout=30s -f "${csi_manifest}" >/dev/null
 
   csi_namespace="$(
     kubectl get statefulset -A --no-headers 2>/dev/null \
@@ -197,6 +207,7 @@ if [[ "${CONTEXT_NAME}" == kind-* ]]; then
 fi
 
 ensure_juicefs_csi
+gate_record_preflight_check "${INTERNAL_REAL_DIR}" "juicefs_csi" "passed" "${CSI_DRIVER}"
 
 KIND_GATEWAY=""
 if docker network inspect kind >/dev/null 2>&1; then
@@ -231,6 +242,7 @@ render_k8s_external_dependency_services \
   "${KIND_GATEWAY}" \
   "${INTEGRATION_MINIO_API_PORT}"
 kubectl apply -f "${EXTERNAL_DEPS_MANIFEST}" >/dev/null
+gate_record_preflight_check "${INTERNAL_REAL_DIR}" "external_dependency_services" "passed" "${EXTERNAL_DEPS_MANIFEST}"
 
 cat > "${CONFIG_PATH}" <<EOF
 version: 1
@@ -400,6 +412,7 @@ info "starting local sandbox manager on :${SANDBOX_PORT}"
 INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" bash "${CONTROL_SCRIPT}" start-manager
 info "starting local sandbox cleaner loop"
 INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" bash "${CONTROL_SCRIPT}" start-cleaner
+gate_record_preflight_check "${INTERNAL_REAL_DIR}" "sandbox_manager" "passed" "port ${SANDBOX_PORT}"
 
 info "running internal notebook workspace real integration"
 info "internal screenshots and review artifacts will be written to:"
@@ -462,8 +475,18 @@ run_internal_spec() {
 set +e
 run_internal_spec e2e/integration-internal-notebook-workspace.spec.ts "${API_PORT}" "${WEB_PORT}"
 WORKSPACE_STATUS=$?
+if [[ "${WORKSPACE_STATUS}" -eq 0 ]]; then
+  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "workspace_spec" "passed" "integration-internal-notebook-workspace"
+else
+  gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "workspace_spec" "integration-internal-notebook-workspace failed with status ${WORKSPACE_STATUS}"
+fi
 run_internal_spec e2e/integration-internal-sandbox-reclaim.spec.ts "$((API_PORT + 1))" "$((WEB_PORT + 1))"
 RECLAIM_STATUS=$?
+if [[ "${RECLAIM_STATUS}" -eq 0 ]]; then
+  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec" "passed" "integration-internal-sandbox-reclaim"
+elif [[ "${WORKSPACE_STATUS}" -eq 0 ]]; then
+  gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${RECLAIM_STATUS}"
+fi
 set -e
 
 if [[ "${WORKSPACE_STATUS}" -ne 0 ]]; then
@@ -477,3 +500,4 @@ if [[ "${GATE_STATUS}" -ne 0 ]]; then
 fi
 
 info "internal notebook workspace real gate passed"
+gate_record_success "${INTERNAL_REAL_DIR}" "internal_specs"

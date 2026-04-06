@@ -47,6 +47,7 @@ export type TaskWorkspacePaths = {
   homeDir: string;
   codexDir: string;
   artifactsDir: string;
+  mbosDir: string;
   credentialDir: string;
   skillsDir: string;
 };
@@ -259,6 +260,7 @@ export function buildTaskWorkspacePaths(taskRoot: string, mode: RunnerMode): Tas
     homeDir: taskRoot,
     codexDir: join(taskRoot, '.codex'),
     artifactsDir: join(taskRoot, '.artifacts'),
+    mbosDir: join(taskRoot, '.mbos'),
     credentialDir: join(taskStateRoot, 'credentials'),
     skillsDir: join(taskRoot, '.agents', 'skills'),
   };

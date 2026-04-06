@@ -15,6 +15,8 @@ import {
   createProjectInWorkspace,
   keycloakLoginToWorkspace,
   mountFileLibraryLocally,
+  resolveLibraryObjectPath,
+  resolveMountedTaskRoot,
   waitForWorkloadPodDeleted,
   waitForWorkloadPodIdentity,
 } from './integration-real-helpers';
@@ -35,16 +37,6 @@ type CaptureEntry = {
   notes: string;
   route: string;
 };
-
-function resolveMountedTaskRoot(mountPath: string, taskRootPath?: string | null): string {
-  if (!taskRootPath || taskRootPath === '.') return mountPath;
-  return path.join(mountPath, taskRootPath);
-}
-
-function resolveLibraryObjectPath(relativePath: string, taskRootPath?: string | null): string {
-  if (!taskRootPath || taskRootPath === '.') return relativePath;
-  return `${taskRootPath.replace(/^\/+|\/+$/g, '')}/${relativePath}`;
-}
 
 async function expectTaskRuntimeStatePersisted(args: {
   mountPath: string;
@@ -408,9 +400,12 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
     const workspaceAccessBody = (await workspaceAccessResponse.json()) as {
       metadata_url: string;
       storage_bucket_url?: string;
+      container_workspace_path?: string | null;
+      library_root_path?: string | null;
       task_root_path?: string;
     };
     expect(workspaceAccessBody.metadata_url).toBeTruthy();
+    expect(workspaceAccessBody.container_workspace_path).toBe(`/workspace/${taskId}`);
 
     const localMount = await mountFileLibraryLocally(
       workspaceAccessBody.metadata_url,
@@ -420,7 +415,10 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
     try {
       console.log('[internal-real] verify first artifact via local mount');
       await expectTaskRuntimeStatePersisted({
-        mountPath: resolveMountedTaskRoot(localMount.mountPath, workspaceAccessBody.task_root_path),
+        mountPath: resolveMountedTaskRoot(localMount.mountPath, {
+          libraryRootPath: workspaceAccessBody.library_root_path,
+          taskRootPath: workspaceAccessBody.task_root_path,
+        }),
         artifactName: firstArtifact,
         artifactToken: firstToken,
       });
@@ -483,7 +481,10 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
         .poll(
           async () => readFile(
             path.join(
-              resolveMountedTaskRoot(localMount.mountPath, workspaceAccessBody.task_root_path),
+              resolveMountedTaskRoot(localMount.mountPath, {
+                libraryRootPath: workspaceAccessBody.library_root_path,
+                taskRootPath: workspaceAccessBody.task_root_path,
+              }),
               '.artifacts',
               secondArtifact,
             ),
@@ -510,7 +511,10 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
     const firstArtifactRow = page.getByTestId('files__object-row').filter({ hasText: firstArtifact }).first();
     await expect(firstArtifactRow).toBeVisible({ timeout: 30_000 });
     const downloadResponse = await page.request.get(
-      `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/file-libraries/${fileLibraryId}/download?path=${encodeURIComponent(resolveLibraryObjectPath(`.artifacts/${firstArtifact}`, workspaceAccessBody.task_root_path))}`,
+      `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/file-libraries/${fileLibraryId}/download?path=${encodeURIComponent(resolveLibraryObjectPath(`.artifacts/${firstArtifact}`, {
+        libraryRootPath: workspaceAccessBody.library_root_path,
+        taskRootPath: workspaceAccessBody.task_root_path,
+      }))}`,
       { headers: { Authorization: `Bearer ${authToken}` } },
     );
     expect(downloadResponse.ok()).toBeTruthy();

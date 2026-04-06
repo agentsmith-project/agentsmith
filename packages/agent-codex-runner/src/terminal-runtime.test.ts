@@ -91,6 +91,7 @@ describe('terminal-runtime', () => {
         homeDir: '/workspace',
         codexDir: '/workspace/.codex',
         artifactsDir: '/workspace/.artifacts',
+        mbosDir: '/workspace/.mbos',
         credentialDir: '/tmp/agentsmith-runner-state/docker_external/_workspace/credentials',
         skillsDir: '/workspace/.agents/skills',
       },

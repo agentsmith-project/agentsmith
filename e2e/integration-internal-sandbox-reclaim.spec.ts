@@ -17,6 +17,7 @@ import {
   runInternalSandboxControl,
   sanitizeWorkloadId,
   requestTaskWorkspaceAccess,
+  resolveMountedTaskRoot,
   sendTaskMessage,
   waitForJuicefsCsiReady,
   waitForNotebookExecutionOutcome,
@@ -47,11 +48,6 @@ const INTERNAL_CLIENT_MOUNT_OVERRIDES = {
   metadataPortOverride: process.env.INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE?.trim() || undefined,
   storageEndpointOverride: process.env.INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim() || undefined,
 } as const;
-
-function resolveMountedTaskRoot(mountPath: string, taskRootPath?: string | null): string {
-  if (!taskRootPath || taskRootPath === '.') return mountPath;
-  return path.join(mountPath, taskRootPath);
-}
 
 function buildNotebookCommand(token: string, fileName: string): string {
   return [
@@ -132,8 +128,10 @@ test.describe('@lane-real internal sandbox reclaim', () => {
         projectId,
         taskId: taskId1,
         token: token1,
-        artifactPath: path.join(
-          resolveMountedTaskRoot(localMount1.mountPath, workspaceAccess1.task_root_path),
+        artifactPath: path.join(resolveMountedTaskRoot(localMount1.mountPath, {
+          libraryRootPath: workspaceAccess1.library_root_path,
+          taskRootPath: workspaceAccess1.task_root_path,
+        }),
           '.artifacts',
           firstArtifactName,
         ),

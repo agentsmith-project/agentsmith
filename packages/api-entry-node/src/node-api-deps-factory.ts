@@ -215,7 +215,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
         agentExecutionService,
         (internalAgentWsBaseUrl || `ws://localhost:${env.PORT ?? '20000'}`).replace(/\/+$/, ''),
         {
-          startupTimeoutMs: Number(env.INTERNAL_AGENT_STARTUP_TIMEOUT_MS ?? '120000'),
+          startupTimeoutMs: Number(env.INTERNAL_AGENT_STARTUP_TIMEOUT_MS ?? '300000'),
         },
       )
     : undefined;

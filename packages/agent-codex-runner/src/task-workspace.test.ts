@@ -110,6 +110,7 @@ describe('task-workspace', () => {
       homeDir: '/workspace/task_1',
       codexDir: '/workspace/task_1/.codex',
       artifactsDir: '/workspace/task_1/.artifacts',
+      mbosDir: '/workspace/task_1/.mbos',
       credentialDir: expect.stringContaining('/agentsmith-runner-state/docker_external/_workspace_task_1/credentials'),
       skillsDir: '/workspace/task_1/.agents/skills',
     });
@@ -220,6 +221,7 @@ describe('task-workspace', () => {
     expect(resolved.source).toBe('file_library_mount');
     expect(resolved.paths.homeDir).toBe('/workspace/task_1');
     expect(resolved.paths.codexDir).toBe('/workspace/task_1/.codex');
+    expect(resolved.paths.mbosDir).toBe('/workspace/task_1/.mbos');
     expect(resolved.paths.credentialDir).toContain('/agentsmith-runner-state/docker_external/_workspace_task_1/credentials');
   });
 
@@ -238,6 +240,7 @@ describe('task-workspace', () => {
     expect(resolved.cwd).toBe('/workspace/task_internal');
     expect(resolved.source).toBe('workspace_path');
     expect(resolved.paths.codexDir).toBe('/workspace/task_internal/.codex');
+    expect(resolved.paths.mbosDir).toBe('/workspace/task_internal/.mbos');
     expect(resolved.paths.skillsDir).toBe('/workspace/task_internal/.agents/skills');
   });
 

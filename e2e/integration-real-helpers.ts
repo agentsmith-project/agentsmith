@@ -1053,6 +1053,8 @@ export async function requestTaskWorkspaceAccess(args: {
   filesystem_name: string;
   metadata_url: string;
   storage_bucket_url?: string;
+  container_workspace_path?: string | null;
+  library_root_path?: string | null;
   task_root_path?: string;
   recommended_mount_path?: string;
   created_at?: string;
@@ -1075,10 +1077,45 @@ export async function requestTaskWorkspaceAccess(args: {
     filesystem_name: string;
     metadata_url: string;
     storage_bucket_url?: string;
+    container_workspace_path?: string | null;
+    library_root_path?: string | null;
     task_root_path?: string;
     recommended_mount_path?: string;
     created_at?: string;
   };
+}
+
+export function resolveWorkspaceLibraryRootPath(input: {
+  libraryRootPath?: string | null;
+  taskRootPath?: string | null;
+}): string {
+  const value = input.libraryRootPath ?? input.taskRootPath ?? '.';
+  const normalized = String(value).trim();
+  return normalized.length > 0 ? normalized : '.';
+}
+
+export function resolveMountedTaskRoot(mountPath: string, input?: {
+  libraryRootPath?: string | null;
+  taskRootPath?: string | null;
+}): string {
+  const libraryRootPath = resolveWorkspaceLibraryRootPath({
+    libraryRootPath: input?.libraryRootPath,
+    taskRootPath: input?.taskRootPath,
+  });
+  if (libraryRootPath === '.') return mountPath;
+  return path.join(mountPath, libraryRootPath);
+}
+
+export function resolveLibraryObjectPath(relativePath: string, input?: {
+  libraryRootPath?: string | null;
+  taskRootPath?: string | null;
+}): string {
+  const libraryRootPath = resolveWorkspaceLibraryRootPath({
+    libraryRootPath: input?.libraryRootPath,
+    taskRootPath: input?.taskRootPath,
+  });
+  if (libraryRootPath === '.') return relativePath;
+  return `${libraryRootPath.replace(/^\/+|\/+$/g, '')}/${relativePath}`;
 }
 
 export async function collectInternalTaskFailureContext(args: {

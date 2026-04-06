@@ -8,6 +8,7 @@ else
 fi
 source "${ROOT_DIR}/scripts/lib/common.sh"
 source "${ROOT_DIR}/scripts/lib/preset-common.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 
 load_agentsmith_presets "${ROOT_DIR}"
 load_release_env
@@ -37,6 +38,18 @@ RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROO
 VERIFY_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_verify_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 DEMO_COMPOSE_PROJECT_NAME="${DEMO_COMPOSE_PROJECT_NAME:-agentsmith-demo}"
 EXTERNAL_RUNNER_CONTAINER_NAME="${EXTERNAL_RUNNER_CONTAINER_NAME:-${DEMO_COMPOSE_PROJECT_NAME}-external-runner-1}"
+VERIFY_EVIDENCE_DIR="${REPORT_DIR}/verify-artifacts/evidence"
+mkdir -p "${VERIFY_EVIDENCE_DIR}"
+resolve_public_runtime_addresses \
+  "${PUBLIC_WEB_BASE_URL}" \
+  "${PUBLIC_API_BASE_URL}" \
+  "${PUBLIC_KEYCLOAK_BASE_URL}" \
+  "${HOST_LOCAL_WEB_BASE_URL}" \
+  "${HOST_LOCAL_API_BASE_URL}" \
+  "${HOST_LOCAL_KEYCLOAK_BASE_URL}"
+gate_evidence_init "${VERIFY_EVIDENCE_DIR}" "demo_deploy_verify"
+gate_write_runtime_descriptor "${VERIFY_EVIDENCE_DIR}" "demo_deploy_verify"
+gate_write_resolved_env "${VERIFY_EVIDENCE_DIR}"
 
 cleanup_verify_artifacts() {
   mkdir -p "${REPORT_DIR}/verify-artifacts"
@@ -55,15 +68,18 @@ trap cleanup_verify_artifacts EXIT
 wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
 wait_tcp "127.0.0.1" "${API_PORT:-20000}" 240
 wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
+gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "host_local_stack" "passed" "web/api/keycloak ready"
 if demo_mode_is_full; then
   wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240
   kubectl get csidriver csi.juicefs.com >/dev/null
   kubectl get deploy sandbox-manager -n agentsmith-sandbox >/dev/null
   kubectl get cronjob sandbox-manager-cleaner -n agentsmith-sandbox >/dev/null
+  gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "internal_control_plane" "passed" "sandbox manager and csi ready"
 fi
 docker inspect -f '{{.State.Running}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | grep -q true || die "preset verify failed: external-runner not running"
 docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 | grep -q '\[agent-codex-runner\] connected' || die "preset verify failed: external-runner not connected"
 docker_compose ps --status running universal-proxy | grep -q universal-proxy || die "preset verify failed: universal-proxy not running"
+gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "external_runner" "passed" "${EXTERNAL_RUNNER_CONTAINER_NAME}"
 
 token_json="$(
   curl -fsS "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
@@ -196,3 +212,4 @@ docker run --rm \
 
 state_set release.phase verify_completed
 log "verify ok"
+gate_record_success "${VERIFY_EVIDENCE_DIR}" "demo_verify"

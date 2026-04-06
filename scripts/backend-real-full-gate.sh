@@ -6,6 +6,7 @@ unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 load_backend_real_env "${ROOT_DIR}/.env.backend-real"
 export_backend_real_endpoint_env
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
@@ -21,12 +22,17 @@ WEB_PORT="${PORT_WEB:-3001}"
 RUN_ID="${RELEASE_REAL_VISUAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/${RUN_ID}}"
 LOCAL_READY_LOG_DIR="${RELEASE_REAL_READY_LOG_DIR:-${ROOT_DIR}/artifacts/backend-real/current/release-ready}"
+gate_evidence_init "${LOCAL_READY_LOG_DIR}" "release_backend_real"
+resolve_loopback_runtime_addresses "${API_PORT}" "${WEB_PORT}" 18080
+gate_write_runtime_descriptor "${LOCAL_READY_LOG_DIR}" "release_backend_real"
+gate_write_resolved_env "${LOCAL_READY_LOG_DIR}"
 API_LOG="${LOCAL_READY_LOG_DIR}/api.log"
 WEB_LOG="${LOCAL_READY_LOG_DIR}/web.log"
 LOCAL_API_PID=""
 LOCAL_WEB_PID=""
 
 if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+  gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "endpoint_env" "Missing PRESET_ENDPOINT_API_KEY"
   echo "[backend-real-full-gate] Missing PRESET_ENDPOINT_API_KEY." >&2
   echo "[backend-real-full-gate] Export PRESET_ENDPOINT_API_KEY before running this gate." >&2
   exit 1
@@ -150,13 +156,17 @@ ensure_local_release_stack() {
   fi
 
   wait_for_http "local API" "http://localhost:${API_PORT}/api/v1/workspaces" || {
+    gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "api_ready" "local API did not become ready"
     tail -n 120 "${API_LOG}" >&2 || true
     exit 1
   }
+  gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "api_ready" "passed" "http://localhost:${API_PORT}/api/v1/workspaces"
   wait_for_http "local Web" "http://localhost:${WEB_PORT}/api/public/workspaces" || {
+    gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "web_ready" "local Web did not become ready"
     tail -n 120 "${WEB_LOG}" >&2 || true
     exit 1
   }
+  gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "web_ready" "passed" "http://localhost:${WEB_PORT}/api/public/workspaces"
 }
 
 cleanup() {
@@ -191,12 +201,16 @@ run_real_cmd() {
 }
 
 run_cmd "npm run gate:default"
+gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "default_gate" "passed" "npm run gate:default"
 run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"
+gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_bootstrap" "passed" "backend-real bootstrap completed"
 ensure_local_release_stack
 run_cmd "API_BASE='http://localhost:${API_PORT}' BASE_URL='http://localhost:${WEB_PORT}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
+gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_ready" "passed" "backend-real ready"
 run_real_cmd 20050 3051 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' npm run backend-real:run"
 run_real_cmd 20080 3081 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' npm run test:visual:backend-real:review"
 run_cmd "npm run backend-real:report"
 
 info "release-grade real verification passed"
 info "artifacts written to ${ARTIFACT_DIR}"
+gate_record_success "${LOCAL_READY_LOG_DIR}" "release_backend_real"

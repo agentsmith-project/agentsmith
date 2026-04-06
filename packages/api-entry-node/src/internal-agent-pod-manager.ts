@@ -154,7 +154,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     private readonly wsBaseUrl: string,
     options?: InternalAgentPodManagerOptions,
   ) {
-    this.startupTimeoutMs = Math.max(10_000, options?.startupTimeoutMs ?? 120_000);
+    this.startupTimeoutMs = Math.max(10_000, options?.startupTimeoutMs ?? 300_000);
     this.phasePollIntervalMs = Math.max(200, options?.phasePollIntervalMs ?? 2_000);
     this.onlinePollIntervalMs = Math.max(100, options?.onlinePollIntervalMs ?? 500);
     this.sleep = options?.sleep ?? defaultSleep;
@@ -295,6 +295,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         await this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
           image: config.image,
           env: {
+            ...(workspaceMount?.mountPath ? { WORKSPACE_PATH: workspaceMount.mountPath } : {}),
             MBOS_AGENT_WS_URL: wsUrl,
             MBOS_AGENT_KEY: config.rawKey,
             MBOS_RUNNER_MODE: 'k8s_internal',

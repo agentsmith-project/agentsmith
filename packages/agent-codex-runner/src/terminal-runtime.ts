@@ -135,6 +135,7 @@ export async function prepareTerminalWorkspace(input: {
   await Promise.all([
     mkdir(cwd, { recursive: true }),
     mkdir(taskPaths.codexDir, { recursive: true }),
+    mkdir(taskPaths.mbosDir, { recursive: true }),
     mkdir(taskPaths.credentialDir, { recursive: true }),
     mkdir(taskPaths.skillsDir, { recursive: true }),
   ]);
@@ -149,7 +150,7 @@ export async function prepareTerminalWorkspace(input: {
     sourceDir: builtinSkillsResult.sourceDir,
     skills: builtinSkillsResult.available,
     targetDir: taskPaths.skillsDir,
-    manifestDir: taskPaths.credentialDir,
+    manifestDir: taskPaths.mbosDir,
   });
 
   const isNotebookMode = executionContext.notebook_mode === true;

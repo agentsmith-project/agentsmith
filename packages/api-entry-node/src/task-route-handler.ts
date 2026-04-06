@@ -766,6 +766,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     json(res, 200, {
       task_id: task.id,
       workspace_binding_mode: 'file_library',
+      container_workspace_path: agent?.mode === 'internal' ? `/workspace/${task.id}` : null,
+      library_root_path: '.',
       task_root_path: '.',
       workspace_dir_name: workspaceFileLibrary.filesystem_name,
       file_library_id: workspaceFileLibrary.id,

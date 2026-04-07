@@ -110,14 +110,14 @@ That means:
   - Agent config UI (`Notebook Endpoint ID`) and backend validation.
   - OpenAPI/AsyncAPI/Protocol docs updates.
   - Integration keycloak redirect auto-fix for custom web ports.
-  - Responses-to-chat compatibility translation in endpoint proxy (including streaming SSE translation).
+  - Responses-to-chat protocol translation in endpoint proxy (including streaming SSE translation on canonical proxy paths).
   - Codex runner per-task watchdog timeout and task auto-close protections.
   - Codex runner uses the workspace root directly for editing and `.artifacts/`, while task-scoped Codex runtime state lives under `CODEX_HOME` and a stable root `AGENTS.md` remains available to the session.
   - Internal-k8s notebook execution path using JuiceFS CSI pre-mounted `/workspace`.
   - Internal lazy start / reclaim / resume on the same JuiceFS CSI-backed workspace binding.
 - Verified:
   - `packages/api-entry-node/src/http-utils.test.ts` (responses/chat translation) passing.
-  - End-to-end Notebook external agent pipeline with a real provider-compatible endpoint returns `turn.completed`.
+  - End-to-end Notebook external agent pipeline with a real endpoint configured on canonical proxy access returns `turn.completed`.
   - Internal notebook workspace real gate writes artifacts into `.artifacts/` inside the selected file library root and resumes after workload reclaim.
 
 ## 3. End-to-End Flow

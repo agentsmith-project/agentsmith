@@ -243,7 +243,7 @@ Use canonical project tokens in all new code:
 - `project:endpoint:use`
 - `project:agent:manage`
 - `project:agent:public`
-- `project:manage`
+- `project:files:update`
 
 Only canonical permission tokens are valid in current code and tests.
 

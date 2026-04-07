@@ -654,7 +654,7 @@ See also:
 ### Scope (What this workline covered)
 
 - Notebook task execution via external agent execution (`agent-codex-runner`, Codex script mode)
-- Endpoint proxy compatibility for OpenAI Responses -> chat/completions fallback and streaming translation
+- Endpoint proxy protocol bridging for OpenAI Responses and streaming translation on canonical proxy paths
 - Notebook message bubble execution details UI (expandable trace panel)
 - Trace storage/query/replay path (`trace_event` SSE + `/tasks/:taskId/traces`)
 - Production-readiness for notebook task execution:

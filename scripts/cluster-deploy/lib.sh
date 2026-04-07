@@ -105,9 +105,6 @@ ensure_operator_kubeconfig() {
       die "missing kubeconfig in operator files, shared config, and release examples"
     fi
   fi
-  if ! kubeconfig_ready "${SHARED_KUBECONFIG}" && local_kind_kubeconfig_ready; then
-    cp "${LOCAL_KIND_KUBECONFIG}" "${SHARED_KUBECONFIG}"
-  fi
   cp "${SHARED_KUBECONFIG}" "${RELEASE_ROOT}/env/kubeconfig"
   export KUBECONFIG="${SHARED_KUBECONFIG}"
 }
@@ -128,9 +125,6 @@ ensure_operator_admin_kubeconfig() {
     else
       die "missing admin-kubeconfig in operator files, shared config, and release examples"
     fi
-  fi
-  if ! kubeconfig_ready "${SHARED_ADMIN_KUBECONFIG}" && local_kind_kubeconfig_ready; then
-    cp "${LOCAL_KIND_KUBECONFIG}" "${SHARED_ADMIN_KUBECONFIG}"
   fi
   cp "${SHARED_ADMIN_KUBECONFIG}" "${RELEASE_ROOT}/env/admin-kubeconfig"
 }

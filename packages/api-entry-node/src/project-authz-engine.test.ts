@@ -80,7 +80,7 @@ describe('project-authz-engine', () => {
     expect(permissions.has('project:agent:manage')).toBe(true);
     expect(permissions.has('project:agent:public')).toBe(true);
     expect(permissions.has('project:governance:update')).toBe(true);
-    expect(permissions.has('project:governance:update')).toBe(true);
+    expect(permissions.has('project:files:update')).toBe(true);
   });
 
   it('denies all required permissions when membership is suspended', async () => {
@@ -118,7 +118,7 @@ describe('project-authz-engine', () => {
     ).toEqual([]);
   });
 
-  it('implies terminal use for older permission snapshots that already allow notebook and agent use', async () => {
+  it('grants terminal access only from explicit permission sources', async () => {
     const docStore = new InMemoryJsonDocStore();
     const workspaceId = `ws_${Date.now()}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
@@ -154,7 +154,8 @@ describe('project-authz-engine', () => {
       requiredPermissions: ['project:terminal:use'],
     });
     expect(evaluation.decisions[0]?.granted).toBe(true);
-    expect(['granted_by_member_governance', 'granted_by_terminal_compatibility']).toContain(evaluation.decisions[0]?.reason);
+    expect(evaluation.decisions[0]?.reason).toBe('granted_by_member_governance');
+    expect(evaluation.decisions[0]?.source_detail?.type).not.toBe('compat_implied');
   });
 
   it('evaluates resource policy allow-list for user and group subjects', async () => {
@@ -259,6 +260,7 @@ describe('project-authz-engine', () => {
     expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.audit.view' })).toBe('project:audit:read');
     expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.member.view' })).toBe('project:membership:update');
     expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.governance.credentials.update' })).toBe('project:governance:update');
-    expect(mapAuthorizationRequestToPermission({ resourceType: 'file_library', action: 'file_library.upload' })).toBe('project:endpoint:use');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'file_library', action: 'file_library.list' })).toBe('project:endpoint:use');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'file_library', action: 'file_library.upload' })).toBe('project:files:update');
   });
 });

@@ -36,11 +36,7 @@ export type ProjectAuthzPermissionSource =
     type: 'member_custom';
     permission: string;
   }
-  | {
-    type: 'compat_implied';
-    permission: string;
-    implied_by: string[];
-  };
+  ;
 
 export type ProjectPermissionDecision = {
   permission: string;
@@ -93,12 +89,6 @@ function addPermissionSource(
   if (!target.has(source.permission)) {
     target.set(source.permission, source);
   }
-}
-
-function shouldImplyTerminalUse(permissions: readonly string[]): boolean {
-  return permissions.includes('project:endpoint:use')
-    && permissions.includes('project:agent:use')
-    && !permissions.includes('project:terminal:use');
 }
 
 function templateMap(
@@ -180,9 +170,6 @@ async function collectPermissionSources(args: {
   }
 
   const effectivePermissions = [...byPermission.keys()];
-  if (shouldImplyTerminalUse(effectivePermissions)) {
-    effectivePermissions.push('project:terminal:use');
-  }
 
   return {
     membership_status: membershipStatus,
@@ -229,23 +216,6 @@ export async function evaluateProjectPermissions(args: {
         reason: 'granted_by_member_governance',
         source: 'permission',
         source_detail: sourceDetail,
-        membership_status: snapshot.membership_status,
-      };
-    }
-    if (
-      permission === 'project:terminal:use'
-      && shouldImplyTerminalUse(snapshot.effective_permissions)
-    ) {
-      return {
-        permission,
-        granted: true,
-        reason: 'granted_by_terminal_compatibility',
-        source: 'permission' as const,
-        source_detail: {
-          type: 'compat_implied',
-          permission,
-          implied_by: ['project:endpoint:use', 'project:agent:use'],
-        },
         membership_status: snapshot.membership_status,
       };
     }
@@ -358,7 +328,9 @@ function mapResourceActionToPermission(resourceType: Exclude<ResourceType, 'proj
       : 'project:governance:update';
   }
   if (resourceType === 'file_library') {
-    return 'project:endpoint:use';
+    return /read|list|browse|download|meta|mount|credential|exchange/i.test(action)
+      ? 'project:endpoint:use'
+      : 'project:files:update';
   }
   if (/public|publish|unpublish/i.test(action)) {
     return 'project:agent:public';

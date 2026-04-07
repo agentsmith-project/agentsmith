@@ -730,7 +730,7 @@ describe('use-permissions hooks', () => {
           visibility: 'public' as const,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
-          permissions: ['project:endpoint:use'],
+          permissions: ['project:endpoint:use', 'project:files:update'],
         },
         isLoading: false,
       });
@@ -741,6 +741,31 @@ describe('use-permissions hooks', () => {
 
       expect(result.current.canRead).toBe(true);
       expect(result.current.canManage).toBe(true);
+      expect(result.current.canExchangeCredentials).toBe(true);
+    });
+
+    it('useFilesPageCapabilities should keep files mutations disabled without project:files:update', () => {
+      mockUseProject.mockReturnValue({
+        data: {
+          id: 'proj_001',
+          workspace_id: 'ws_default',
+          name: 'Test Project',
+          owner_id: 'user_001',
+          status: 'active' as const,
+          visibility: 'public' as const,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          permissions: ['project:endpoint:use'],
+        },
+        isLoading: false,
+      });
+
+      const { result } = renderHook(() => useFilesPageCapabilities(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.canRead).toBe(true);
+      expect(result.current.canManage).toBe(false);
       expect(result.current.canExchangeCredentials).toBe(true);
     });
 

@@ -1,6 +1,19 @@
 import type { ProjectsRoute } from '../projects-route-match.js';
 import { isAgentRoute, isTaskRoute } from './route-kind-guards.js';
 
+function isFileLibraryReadRoute(route: ProjectsRoute, method: string): boolean {
+  return (
+    (route.kind === 'fileLibraries' && method === 'GET')
+    || (route.kind === 'fileLibraryItem' && method === 'GET')
+    || (route.kind === 'fileLibraryBackend' && method === 'GET')
+    || (route.kind === 'fileLibraryEntries' && method === 'GET')
+    || (route.kind === 'fileLibraryDownload' && method === 'GET')
+    || (route.kind === 'fileLibraryMeta' && method === 'GET')
+    || route.kind === 'fileLibraryStorageCredentialExchange'
+    || route.kind === 'fileLibraryDesktopMountAccess'
+  );
+}
+
 export function requiredProjectPermissions(route: ProjectsRoute, method: string): string[] {
   if (route.kind === 'projectAuthorize') {
     return [];
@@ -61,6 +74,24 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
 
   if (route.kind === 'projectResourcePolicy') {
     return ['project:governance:update'];
+  }
+
+  if (
+    route.kind === 'fileLibraries'
+    || route.kind === 'fileLibraryItem'
+    || route.kind === 'fileLibraryBackend'
+    || route.kind === 'fileLibraryStorageCredentialExchange'
+    || route.kind === 'fileLibraryDesktopMountAccess'
+    || route.kind === 'fileLibraryEntries'
+    || route.kind === 'fileLibraryFolders'
+    || route.kind === 'fileLibraryDelete'
+    || route.kind === 'fileLibraryMove'
+    || route.kind === 'fileLibraryUpload'
+    || route.kind === 'fileLibraryDownload'
+    || route.kind === 'fileLibraryMeta'
+    || route.kind === 'fileLibraryShareLink'
+  ) {
+    return isFileLibraryReadRoute(route, method) ? ['project:endpoint:use'] : ['project:files:update'];
   }
 
   if (isAgentRoute(route)) {

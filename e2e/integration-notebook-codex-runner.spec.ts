@@ -21,6 +21,12 @@ import {
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
+function expectRelativeLibraryRootPath(value: string | null | undefined): void {
+  expect(value).toBeTruthy();
+  expect(value?.startsWith('/')).toBe(false);
+  expect(value?.includes('..')).toBe(false);
+}
+
 async function expectTaskRuntimeStatePersisted(args: {
   mountPath: string;
   artifactName: string;
@@ -293,6 +299,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       };
       expect(workspaceAccessBody.workspace_dir_name).toBeTruthy();
       expect(workspaceAccessBody.metadata_url).toBeTruthy();
+      expectRelativeLibraryRootPath(workspaceAccessBody.library_root_path);
 
       await openFileLibraryRoot({
         page,
@@ -408,6 +415,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         library_root_path?: string | null;
       };
       expect(workspaceAccessBody.metadata_url).toBeTruthy();
+      expectRelativeLibraryRootPath(workspaceAccessBody.library_root_path);
 
       await runner.stop();
       runnerStopped = true;

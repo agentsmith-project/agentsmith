@@ -51,6 +51,66 @@ resolve_public_runtime_addresses() {
     RUNTIME_BROWSER_KEYCLOAK_BASE_URL
 }
 
+resolve_runtime_identity_env() {
+  local default_keycloak_base_url="$1"
+  local default_keycloak_realm="${2:-mbos}"
+  local default_keycloak_client_id="${3:-agentsmith}"
+
+  KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-${default_keycloak_base_url}}"
+  KEYCLOAK_REALM="${KEYCLOAK_REALM:-${default_keycloak_realm}}"
+  KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-${default_keycloak_client_id}}"
+  KEYCLOAK_URL="${KEYCLOAK_URL:-${KEYCLOAK_BASE_URL%/}/realms}"
+  PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
+  INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
+  KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL:-${PUBLIC_KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REALM}}"
+
+  export \
+    KEYCLOAK_BASE_URL \
+    KEYCLOAK_REALM \
+    KEYCLOAK_CLIENT_ID \
+    KEYCLOAK_URL \
+    PUBLIC_KEYCLOAK_BASE_URL \
+    INTERNAL_KEYCLOAK_BASE_URL \
+    KEYCLOAK_ISSUER_URL
+}
+
+resolve_loopback_runtime_stack() {
+  local api_port="$1"
+  local web_port="$2"
+  local keycloak_port="$3"
+  local default_keycloak_realm="${4:-mbos}"
+  local default_keycloak_client_id="${5:-agentsmith}"
+
+  resolve_loopback_runtime_addresses "${api_port}" "${web_port}" "${keycloak_port}"
+  resolve_runtime_identity_env \
+    "${RUNTIME_BROWSER_KEYCLOAK_BASE_URL}" \
+    "${default_keycloak_realm}" \
+    "${default_keycloak_client_id}"
+}
+
+resolve_public_runtime_stack() {
+  local public_web="$1"
+  local public_api="$2"
+  local public_keycloak="$3"
+  local host_web="$4"
+  local host_api="$5"
+  local host_keycloak="$6"
+  local default_keycloak_realm="${7:-mbos}"
+  local default_keycloak_client_id="${8:-agentsmith}"
+
+  resolve_public_runtime_addresses \
+    "${public_web}" \
+    "${public_api}" \
+    "${public_keycloak}" \
+    "${host_web}" \
+    "${host_api}" \
+    "${host_keycloak}"
+  resolve_runtime_identity_env \
+    "${RUNTIME_BROWSER_KEYCLOAK_BASE_URL}" \
+    "${default_keycloak_realm}" \
+    "${default_keycloak_client_id}"
+}
+
 gate_evidence_init() {
   local evidence_dir="$1"
   local line_kind="$2"

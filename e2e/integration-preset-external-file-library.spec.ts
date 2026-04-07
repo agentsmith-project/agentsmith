@@ -8,6 +8,12 @@ const DEMO_EXTERNAL_AGENT_NAME = 'demo-external-agent';
 const EXPECTED_TOKEN = `PRESET_EXTERNAL_FILE_LIBRARY_OK_${Date.now()}`;
 const CREATE_NEW_TASK_REQUEST_TIMEOUT_MS = 60_000;
 
+function expectRelativeLibraryRootPath(value: string | null | undefined): void {
+  expect(value).toBeTruthy();
+  expect(value?.startsWith('/')).toBe(false);
+  expect(value?.includes('..')).toBe(false);
+}
+
 async function resolveDemoProjectAndAgent(page: Page): Promise<{ projectId: string; agentId: string }> {
   const token = await readStoredAuthToken(page);
   const projectsResponse = await page.request.get(
@@ -89,9 +95,13 @@ async function expectRunnerSafeWorkspaceAccess(page: Page, projectId: string, ta
   const payload = (await response.json()) as {
     metadata_url?: string;
     storage_bucket_url?: string;
+    container_workspace_path?: string | null;
+    library_root_path?: string | null;
   };
   expect(payload.metadata_url).toContain('@postgres:5432/');
   expect(payload.storage_bucket_url).toContain('http://minio:9000/');
+  expectRelativeLibraryRootPath(payload.library_root_path);
+  expect(payload.container_workspace_path ?? null).toBeNull();
 }
 
 async function sendNotebookMessage(page: Page, content: string): Promise<void> {

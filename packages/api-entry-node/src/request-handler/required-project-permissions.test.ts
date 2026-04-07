@@ -28,4 +28,41 @@ describe('requiredProjectPermissions', () => {
       ),
     ).toEqual(['project:terminal:use']);
   });
+
+  it('requires project:files:update for file-library writes and project:endpoint:use for reads', () => {
+    expect(
+      requiredProjectPermissions(
+        { kind: 'fileLibraries', workspaceId: 'ws_default', projectId: 'proj_1' },
+        'GET',
+      ),
+    ).toEqual(['project:endpoint:use']);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'fileLibraries', workspaceId: 'ws_default', projectId: 'proj_1' },
+        'POST',
+      ),
+    ).toEqual(['project:files:update']);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'fileLibraryUpload', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' },
+        'POST',
+      ),
+    ).toEqual(['project:files:update']);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'fileLibraryStorageCredentialExchange', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' },
+        'POST',
+      ),
+    ).toEqual(['project:endpoint:use']);
+
+    expect(
+      requiredProjectPermissions(
+        { kind: 'fileLibraryDesktopMountAccess', workspaceId: 'ws_default', projectId: 'proj_1', libraryId: 'lib_1' },
+        'POST',
+      ),
+    ).toEqual(['project:endpoint:use']);
+  });
 });

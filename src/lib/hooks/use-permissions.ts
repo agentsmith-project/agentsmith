@@ -166,7 +166,7 @@ export function useUsagePageCapabilities() {
 
 export function useFilesPageCapabilities() {
   const canRead = useHasPermission('project:endpoint:use');
-  const canManage = canRead;
+  const canManage = useHasPermission('project:files:update');
   const canExchangeCredentials = canRead;
 
   return useMemo(() => ({

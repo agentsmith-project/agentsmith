@@ -44,6 +44,7 @@ const PROJECT_OWNER_TEMPLATE_PERMISSIONS = [
   'project:membership:update',
   'project:admins:update',
   'project:lifecycle:update',
+  'project:files:update',
 ] as const;
 
 const PROJECT_ADMIN_TEMPLATE_PERMISSIONS = [
@@ -56,6 +57,7 @@ const PROJECT_ADMIN_TEMPLATE_PERMISSIONS = [
   'project:governance:update',
   'project:membership:update',
   'project:admins:update',
+  'project:files:update',
 ] as const;
 
 const PROJECT_MEMBER_TEMPLATE_PERMISSIONS = [

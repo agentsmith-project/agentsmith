@@ -1,6 +1,6 @@
 # Frontend-Backend Gating Matrix (Page/Operation Level)
 
-Last updated: 2026-03-08
+Last updated: 2026-04-07
 Owner: Frontend
 Audience: Backend auth team, QA, FE
 
@@ -18,6 +18,8 @@ Backend enforces `401/403`; frontend applies route/component gates.
 ## Canonical Project Permissions (MVP)
 
 - `project:endpoint:use`
+- `project:agent:use`
+- `project:terminal:use`
 - `project:agent:manage`
 - `project:agent:public`
 - `project:audit:read`
@@ -37,8 +39,8 @@ Backend enforces `401/403`; frontend applies route/component gates.
 | chat | access chat page and stream completion | `project:endpoint:use` | `/chat/sessions`, `/messages`, `/attachments`, stream routes | page-level permission denied |
 | notebook list/detail | access notebook page and task operations | `project:endpoint:use` | `GET/POST/PATCH/DELETE /tasks*`, `GET /tasks/{id}/events` | page-level permission denied |
 | files | view/use project file libraries | `project:endpoint:use` | `GET /file-libraries*` | page-level permission denied |
-| files | create/update/delete file or library | `project:files:update` | `POST/PATCH/DELETE /file-libraries*` | mutating controls disabled |
-| agents | view/use visible agents | `project:agent:manage` | `GET /agents*`, `GET /agents/{id}/execution-config`, `GET /agents/{id}/connection-info` | page-level permission denied |
+| files | create/update/delete/move/upload/share file or library | `project:files:update` | `POST/PATCH/DELETE /file-libraries*`, `POST /file-libraries/*/(folders|move|upload|share-link)` | mutating controls disabled |
+| agents | view/use visible agents | `project:agent:use` or `project:agent:manage` | `GET /agents*`, `GET /agents/{id}/execution-config`, `GET /agents/{id}/connection-info` | page-level permission denied |
 | agents | create/update/delete own agent and keys | `project:agent:manage` | `POST/PATCH/DELETE /agents*`, `POST/DELETE /agents/{id}/keys*` | mutating controls disabled |
 | agents | publish/unpublish agent to project | `project:agent:public` | `PATCH /agents/{id}` (visibility/public flags) | publish controls disabled |
 | endpoints | view/use endpoints | `project:endpoint:use` | `GET /endpoints*` | page-level permission denied |
@@ -65,7 +67,7 @@ Backend enforces `401/403`; frontend applies route/component gates.
 8. Files default path now runs on JuiceFS-backed project `file-libraries`.
    New Files frontend or backend work must target `file-libraries`.
 
-## Target Migration (Accepted)
+## Current Split-Permission Status
 
 - `project:governance:update`
   - endpoints governance writes
@@ -73,6 +75,7 @@ Backend enforces `401/403`; frontend applies route/component gates.
   - resource policy
 - `project:files:update`
   - file and library mutations
+  - file-library move/upload/share-link writes
 - `project:membership:update`
   - join requests
   - membership state changes

@@ -20,6 +20,7 @@ export const OWNER_PROJECT_PERMISSIONS = [
   'project:membership:update',
   'project:admins:update',
   'project:lifecycle:update',
+  'project:files:update',
 ] as const;
 
 export const PROJECT_ADMIN_PROJECT_PERMISSIONS = [
@@ -30,6 +31,7 @@ export const PROJECT_ADMIN_PROJECT_PERMISSIONS = [
   'project:agent:public',
   'project:audit:read',
   'project:governance:update',
+  'project:files:update',
 ] as const;
 
 const OPERATOR_PROJECT_PERMISSIONS = [

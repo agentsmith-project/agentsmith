@@ -17,6 +17,8 @@ Clarify the boundary between authentication data and authorization enforcement t
 - Source of truth: `src/lib/constants/permissions.ts`.
 - Current project-level permissions in MVP are:
   - `project:endpoint:use`
+  - `project:agent:use`
+  - `project:terminal:use`
   - `project:agent:manage`
   - `project:agent:public`
   - `project:audit:read`
@@ -24,7 +26,7 @@ Clarify the boundary between authentication data and authorization enforcement t
   - `project:membership:update`
   - `project:admins:update`
   - `project:lifecycle:update`
-  - `project:manage`
+  - `project:files:update`
 
 3. `Frontend permission gate`
 - Uses permission points to drive UX states (show/hide/disable/error state).
@@ -112,11 +114,11 @@ Clarify the boundary between authentication data and authorization enforcement t
 - Cannot transfer ownership.
 - Does not gain workspace or system authority.
 
-## Target Permission Refactor (Accepted, Implementation Pending)
+## Target Permission Refactor Status
 
-The current implementation is moving from a simplified `project:manage` model toward a split project-scope permission model.
+The current implementation uses a split project-scope permission model for active route and mutation gates.
 
-The accepted target model is:
+Current project-scope model:
 
 1. `workspace:project:create`
 - Can be held by workspace admins and by explicitly delegated project creators.
@@ -128,18 +130,20 @@ The accepted target model is:
 3. `project admin`
 - Holds governance authority but not ownership authority.
 
-4. Accepted target project-scope permissions
+4. Active project-scope permissions
 - `project:governance:update`
+- `project:files:update`
 - `project:membership:update`
 - `project:admins:update`
 - `project:lifecycle:update`
 
-Current migration intent:
-- `project:governance:update` covers credentials, resource policy, and similar governance surfaces
+Current split-token scope:
+- `project:terminal:use` covers notebook task terminal access and must be granted explicitly
+- `project:governance:update` covers credentials, resource policy, endpoint governance, and similar governance surfaces
+- `project:files:update` covers file-library create/update/delete/move/upload/share-link writes
 - `project:membership:update` covers join requests, member lifecycle writes, templates, and groups
 - `project:admins:update` covers assigning or revoking project admins
 - `project:lifecycle:update` covers delete, owner transfer, and other lifecycle actions
-- `project:manage` remains a temporary umbrella gate while page and route checks are migrated to the split model
 
 Practical effect:
 
@@ -152,7 +156,7 @@ Practical effect:
 - manage project governance surfaces
 - but cannot manage lifecycle or delegate management
 
-This section is authoritative for upcoming refactor work even where current code still temporarily treats `project admin` and `owner` as equivalent or still relies on role labels too directly.
+This section is authoritative for current permission boundaries and any remaining cleanup work.
 
 ## Capability Boundary (Accepted Target)
 

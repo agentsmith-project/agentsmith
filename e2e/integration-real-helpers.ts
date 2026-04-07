@@ -1054,7 +1054,7 @@ export async function requestTaskWorkspaceAccess(args: {
   metadata_url: string;
   storage_bucket_url?: string;
   container_workspace_path?: string | null;
-  library_root_path?: string | null;
+  library_root_path: string;
   recommended_mount_path?: string;
   created_at?: string;
 }> {
@@ -1077,7 +1077,7 @@ export async function requestTaskWorkspaceAccess(args: {
     metadata_url: string;
     storage_bucket_url?: string;
     container_workspace_path?: string | null;
-    library_root_path?: string | null;
+    library_root_path: string;
     recommended_mount_path?: string;
     created_at?: string;
   };

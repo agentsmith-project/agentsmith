@@ -9,23 +9,18 @@ source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 load_backend_real_env "${ROOT_DIR}/.env.backend-real"
 export_backend_real_endpoint_env
-KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
-KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
-KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
-PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
-INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
-KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL:-${PUBLIC_KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REALM}}"
 MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
 MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 API_PORT="${PORT_API:-20000}"
 WEB_PORT="${PORT_WEB:-3001}"
+KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
 RUN_ID="${RELEASE_REAL_VISUAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/${RUN_ID}}"
 LOCAL_READY_LOG_DIR="${RELEASE_REAL_READY_LOG_DIR:-${ROOT_DIR}/artifacts/backend-real/current/release-ready}"
 gate_evidence_init "${LOCAL_READY_LOG_DIR}" "release_backend_real"
 export RUNTIME_LINE_ID="${RUN_ID}"
 export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host}"
-resolve_loopback_runtime_addresses "${API_PORT}" "${WEB_PORT}" 18080
+resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "mbos" "agentsmith"
 gate_write_runtime_descriptor "${LOCAL_READY_LOG_DIR}" "release_backend_real"
 gate_write_resolved_env "${LOCAL_READY_LOG_DIR}"
 gate_record_task_summary "${LOCAL_READY_LOG_DIR}" "{\"line_kind\":\"release_backend_real\",\"run_id\":\"${RUN_ID}\",\"api_port\":\"${API_PORT}\",\"web_port\":\"${WEB_PORT}\"}"
@@ -151,20 +146,20 @@ ensure_local_release_stack() {
     )"
   fi
 
-  gate_wait_for_http "${LOCAL_READY_LOG_DIR}" "http://localhost:${API_PORT}/api/v1/workspaces" 120 infra_dependency_unready api_ready || {
+  gate_wait_for_http "${LOCAL_READY_LOG_DIR}" "${RUNTIME_HOST_API_BASE_URL}/api/v1/workspaces" 120 infra_dependency_unready api_ready || {
     gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "api_ready" "local API did not become ready"
     tail -n 120 "${API_LOG}" >&2 || true
     exit 1
   }
-  gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "api_ready" "passed" "http://localhost:${API_PORT}/api/v1/workspaces"
-  record_service api ready "http://localhost:${API_PORT}/api/v1/workspaces"
-  gate_wait_for_http "${LOCAL_READY_LOG_DIR}" "http://localhost:${WEB_PORT}/api/public/workspaces" 120 infra_dependency_unready web_ready || {
+  gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "api_ready" "passed" "${RUNTIME_HOST_API_BASE_URL}/api/v1/workspaces"
+  record_service api ready "${RUNTIME_HOST_API_BASE_URL}/api/v1/workspaces"
+  gate_wait_for_http "${LOCAL_READY_LOG_DIR}" "${RUNTIME_HOST_WEB_BASE_URL}/api/public/workspaces" 120 infra_dependency_unready web_ready || {
     gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "web_ready" "local Web did not become ready"
     tail -n 120 "${WEB_LOG}" >&2 || true
     exit 1
   }
-  gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "web_ready" "passed" "http://localhost:${WEB_PORT}/api/public/workspaces"
-  record_service web ready "http://localhost:${WEB_PORT}/api/public/workspaces"
+  gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "web_ready" "passed" "${RUNTIME_HOST_WEB_BASE_URL}/api/public/workspaces"
+  record_service web ready "${RUNTIME_HOST_WEB_BASE_URL}/api/public/workspaces"
 }
 
 cleanup() {
@@ -203,9 +198,9 @@ gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "default_gate" "passed" "np
 run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_bootstrap" "passed" "backend-real bootstrap completed"
 ensure_local_release_stack
-ACCESS_TOKEN="$(gate_run_auth_preflight "${LOCAL_READY_LOG_DIR}" "${KEYCLOAK_BASE_URL}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}" "${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" "${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" "http://localhost:${API_PORT}/api/v1/me/profile" "failed to obtain release-ready token" "release-ready token missing access_token" "authenticated /api/v1/me/profile unavailable")" || exit 1
+ACCESS_TOKEN="$(gate_run_auth_preflight "${LOCAL_READY_LOG_DIR}" "${KEYCLOAK_BASE_URL}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}" "${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" "${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" "${RUNTIME_HOST_API_BASE_URL}/api/v1/me/profile" "failed to obtain release-ready token" "release-ready token missing access_token" "authenticated /api/v1/me/profile unavailable")" || exit 1
 record_service auth ready "release-ready dev-admin token bootstrap"
-run_cmd "API_BASE='http://localhost:${API_PORT}' BASE_URL='http://localhost:${WEB_PORT}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
+run_cmd "API_BASE='${RUNTIME_HOST_API_BASE_URL}' BASE_URL='${RUNTIME_BROWSER_WEB_BASE_URL}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_ready" "passed" "backend-real ready"
 record_service backend_ready ready "backend-real ready"
 run_real_cmd 20050 3051 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' npm run backend-real:run"

@@ -31,6 +31,12 @@ const DEMO_DEPLOY_MODE = process.env.INTEGRATION_DEMO_DEPLOY_MODE?.trim() || 'fu
 const DEMO_MODE_IS_FULL = DEMO_DEPLOY_MODE === 'full';
 const CREATE_NEW_TASK_RESPONSE_TIMEOUT_MS = 60_000;
 
+function expectRelativeLibraryRootPath(value: string | null | undefined): void {
+  expect(value).toBeTruthy();
+  expect(value?.startsWith('/')).toBe(false);
+  expect(value?.includes('..')).toBe(false);
+}
+
 function requireRealLaneApiKey(): string {
   const value = BACKEND_REAL_API_KEY?.trim();
   if (!value) {
@@ -622,9 +628,13 @@ async function expectExternalTaskWorkspaceAccessReachable(args: {
   const workspaceAccess = (await response.json()) as {
     metadata_url: string;
     storage_bucket_url?: string;
+    container_workspace_path?: string | null;
+    library_root_path?: string | null;
   };
   const expectedHost = externalExecutionHost();
   expect(matchesAllowedExternalWorkspaceHost(new URL(workspaceAccess.metadata_url).hostname, expectedHost)).toBe(true);
+  expectRelativeLibraryRootPath(workspaceAccess.library_root_path);
+  expect(workspaceAccess.container_workspace_path ?? null).toBeNull();
   if (workspaceAccess.storage_bucket_url) {
     expect(matchesAllowedExternalWorkspaceHost(new URL(workspaceAccess.storage_bucket_url).hostname, expectedHost)).toBe(
       true,

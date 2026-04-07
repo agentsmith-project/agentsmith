@@ -12,7 +12,7 @@
  * - project:membership:update
  * - project:admins:update
  * - project:lifecycle:update
- * - project:manage (legacy compatibility token, not primary authz truth)
+ * - project:files:update
  */
 
 export const PLATFORM_PERMISSIONS = {
@@ -28,6 +28,7 @@ export const PLATFORM_PERMISSIONS = {
     'project:membership:update',
     'project:admins:update',
     'project:lifecycle:update',
+    'project:files:update',
   ] as const,
 } as const;
 
@@ -50,7 +51,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'project:membership:update': 'Manage project memberships, templates, groups, and join requests',
   'project:admins:update': 'Assign or revoke project administrators',
   'project:lifecycle:update': 'Manage project lifecycle settings such as owner transfer and deletion',
-  'project:manage': 'Transitional umbrella permission for project governance and lifecycle gates during refactor',
+  'project:files:update': 'Create, update, move, and delete project file libraries and objects',
 };
 
 export const PLATFORM_PERMISSIONS_GROUPED = [
@@ -77,6 +78,7 @@ export const PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS = {
     'project:membership:update',
     'project:admins:update',
     'project:lifecycle:update',
+    'project:files:update',
   ],
   admin: [
     'project:endpoint:use',
@@ -85,6 +87,7 @@ export const PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS = {
     'project:agent:manage',
     'project:audit:read',
     'project:governance:update',
+    'project:files:update',
   ],
   operator: ['project:endpoint:use', 'project:agent:use', 'project:terminal:use'],
   member: ['project:endpoint:use', 'project:agent:use', 'project:terminal:use'],
@@ -109,7 +112,7 @@ export const HIGH_RISK_PERMISSIONS = [
   'project:membership:update',
   'project:admins:update',
   'project:lifecycle:update',
-  'project:manage',
+  'project:files:update',
 ] as const;
 
 export type PlatformPermission = (typeof ALL_PLATFORM_PERMISSIONS)[number];

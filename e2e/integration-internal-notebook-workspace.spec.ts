@@ -405,6 +405,7 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
     };
     expect(workspaceAccessBody.metadata_url).toBeTruthy();
     expect(workspaceAccessBody.container_workspace_path).toBe(`/workspace/${taskId}`);
+    expect(workspaceAccessBody.library_root_path).toBe('.');
 
     const localMount = await mountFileLibraryLocally(
       workspaceAccessBody.metadata_url,

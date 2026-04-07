@@ -20,6 +20,12 @@ const MEMBER_EMAIL = 'integration-member@example.com';
 const PROJECT_CREATOR_EMAIL = 'integration-user@example.com';
 const NOTEBOOK_EXPECTED_TOKEN = `MAINLINE_REAL_NOTEBOOK_OK_${Date.now()}`;
 
+function expectRelativeLibraryRootPath(value: string | null | undefined): void {
+  expect(value).toBeTruthy();
+  expect(value?.startsWith('/')).toBe(false);
+  expect(value?.includes('..')).toBe(false);
+}
+
 function executionHostForExternalWorkspaceAccess(apiBase: string): string {
   const explicitMetaHost = process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
   if (explicitMetaHost) {
@@ -768,6 +774,8 @@ async function runNotebookTask(
       workspaceAccess = (await workspaceAccessResponse.json()) as {
         metadata_url: string;
         storage_bucket_url?: string;
+        container_workspace_path?: string | null;
+        library_root_path?: string | null;
       };
       lastWorkspaceAccessError = '';
       break;
@@ -781,6 +789,8 @@ async function runNotebookTask(
   }
 
   const expectedHost = executionHostForExternalWorkspaceAccess(apiBase);
+  expectRelativeLibraryRootPath(workspaceAccess.library_root_path);
+  expect(workspaceAccess.container_workspace_path ?? null).toBeNull();
   const metadataHost = new URL(workspaceAccess.metadata_url).hostname;
   if (isLoopbackHost(expectedHost)) {
     expect(isLoopbackHost(metadataHost)).toBeTruthy();

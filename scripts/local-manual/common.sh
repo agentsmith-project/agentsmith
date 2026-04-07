@@ -120,16 +120,25 @@ setup_local_manual_runtime_evidence() {
   public_api_url="http://localhost:${PORT_API}/api/v1"
   host_api_url="http://127.0.0.1:${PORT_API}/api/v1"
   keycloak_host_url="${INTERNAL_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
+  LOCAL_MANUAL_PUBLIC_WEB_URL="${LOCAL_MANUAL_PUBLIC_WEB_URL:-${public_web_url}}"
+  LOCAL_MANUAL_HOST_WEB_URL="${LOCAL_MANUAL_HOST_WEB_URL:-${host_web_url}}"
+  LOCAL_MANUAL_PUBLIC_API_URL="${LOCAL_MANUAL_PUBLIC_API_URL:-${public_api_url}}"
+  LOCAL_MANUAL_HOST_API_URL="${LOCAL_MANUAL_HOST_API_URL:-${host_api_url}}"
+  LOCAL_MANUAL_HOST_KEYCLOAK_URL="${LOCAL_MANUAL_HOST_KEYCLOAK_URL:-${keycloak_host_url}}"
 
   export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-local-manual}"
   export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-$(resolve_local_manual_runner_modes)}"
-  resolve_public_runtime_addresses \
-    "${public_web_url}" \
-    "${public_api_url}" \
+  KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
+  KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
+  resolve_public_runtime_stack \
+    "${LOCAL_MANUAL_PUBLIC_WEB_URL}" \
+    "${LOCAL_MANUAL_PUBLIC_API_URL}" \
     "${PUBLIC_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}" \
-    "${host_web_url}" \
-    "${host_api_url}" \
-    "${keycloak_host_url}"
+    "${LOCAL_MANUAL_HOST_WEB_URL}" \
+    "${LOCAL_MANUAL_HOST_API_URL}" \
+    "${LOCAL_MANUAL_HOST_KEYCLOAK_URL}" \
+    "${KEYCLOAK_REALM}" \
+    "${KEYCLOAK_CLIENT_ID}"
 
   if [[ ! -f "${LOCAL_MANUAL_EVIDENCE_DIR}/preflight.json" || "${LOCAL_MANUAL_RESET_EVIDENCE:-0}" == "1" ]]; then
     gate_evidence_init "${LOCAL_MANUAL_EVIDENCE_DIR}" "local_manual"

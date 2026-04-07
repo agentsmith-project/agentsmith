@@ -18,9 +18,9 @@ check_http() {
 }
 
 check_http "http://127.0.0.1:${PROXY_PORT}/admin/state" "proxy" "infra_preflight_proxy"
-check_http "http://localhost:${PORT_API}/api/v1/openapi.json" "api" "infra_preflight_api"
-check_http "http://localhost:${PORT_WEB}/${LOCALE}/login/workspace" "web" "infra_preflight_web_login"
-check_http "http://localhost:${PORT_WEB}/api/public/workspaces" "public_workspaces" "infra_preflight_web_public"
+check_http "${RUNTIME_HOST_API_BASE_URL}/openapi.json" "api" "infra_preflight_api"
+check_http "${RUNTIME_BROWSER_WEB_BASE_URL}/${LOCALE}/login/workspace" "web" "infra_preflight_web_login"
+check_http "${RUNTIME_HOST_WEB_BASE_URL}/api/public/workspaces" "public_workspaces" "infra_preflight_web_public"
 gate_write_mount_tree "${LOCAL_MANUAL_EVIDENCE_DIR}" "${LOCAL_MANUAL_ROOT}"
 gate_record_success "${LOCAL_MANUAL_EVIDENCE_DIR}" "verify"
 info "platform verify passed"

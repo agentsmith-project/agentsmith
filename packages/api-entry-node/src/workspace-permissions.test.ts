@@ -6,7 +6,11 @@ const registryModule = vi.hoisted(() => ({
 
 vi.mock('./workspace-registry.js', () => registryModule);
 
-import { buildWorkspaceRecords } from './workspace-permissions.js';
+import {
+  buildWorkspaceRecords,
+  OWNER_PROJECT_PERMISSIONS,
+  PROJECT_ADMIN_PROJECT_PERMISSIONS,
+} from './workspace-permissions.js';
 
 describe('buildWorkspaceRecords', () => {
   const envBackup = {
@@ -61,6 +65,11 @@ describe('buildWorkspaceRecords', () => {
       created_at: '2026-03-11T00:00:00.000Z',
       updated_at: '2026-03-12T00:00:00.000Z',
     });
+  });
+
+  it('grants project:files:update to owner and project admin built-in permission sets', () => {
+    expect(OWNER_PROJECT_PERMISSIONS).toContain('project:files:update');
+    expect(PROJECT_ADMIN_PROJECT_PERMISSIONS).toContain('project:files:update');
   });
 
 });

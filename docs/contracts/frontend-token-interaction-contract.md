@@ -1,6 +1,6 @@
 # Frontend Token & Interaction Contract (MVP)
 
-Last updated: 2026-03-03
+Last updated: 2026-04-07
 Owner: Frontend
 Audience: Frontend, Backend Auth, QA
 
@@ -33,6 +33,8 @@ Related docs:
 
 ### Project
 - `project:endpoint:use`
+- `project:agent:use`
+- `project:terminal:use`
 - `project:agent:manage`
 - `project:agent:public`
 - `project:audit:read`
@@ -48,9 +50,10 @@ Related docs:
 - Project overview: `project:endpoint:use`
 - Chat: `project:endpoint:use`
 - Notebook list/detail: `project:endpoint:use`
+- Notebook terminal session use: `project:terminal:use`
 - Files: `project:endpoint:use`
 - Endpoints: `project:endpoint:use`
-- Agents: `project:agent:manage`
+- Agents: `project:agent:use` or `project:agent:manage`
 - Members: `project:membership:update`
 - Credentials: `project:governance:update`
 - Resource Policy: `project:governance:update`
@@ -58,13 +61,15 @@ Related docs:
 - Audit: `project:audit:read`
 - Usage: `project:endpoint:use`
 
-Target migration:
-- Credentials: `project:governance:update`
-- Resource Policy: `project:governance:update`
-- Members governance writes: `project:membership:update`
-- Project owner / admin assignment: `project:admins:update`
-- Project lifecycle settings and delete: `project:lifecycle:update`
-- Audit read: `project:audit:read`
+Current split-token status:
+- Files mutations are now governed by `project:files:update` end to end.
+- Notebook terminal session use remains on `project:terminal:use`.
+- Credentials remain on `project:governance:update`.
+- Resource Policy remains on `project:governance:update`.
+- Members governance writes remain on `project:membership:update`.
+- Project owner/admin assignment remains on `project:admins:update`.
+- Project lifecycle settings and delete remain on `project:lifecycle:update`.
+- Audit read remains on `project:audit:read`.
 
 ## Action-Level Permission Gate Contract
 
@@ -76,8 +81,9 @@ Target migration:
 - Agent create/update/delete/key issue/key revoke: `project:agent:manage`
 - Agent publish/unpublish visibility changes: `project:agent:public`
 
-Target migration:
+Current action split status:
 - Endpoint governance writes: `project:governance:update`
+- File/library create/update/delete/move/upload/share-link: `project:files:update`
 - Credential create/rotate/delete: `project:governance:update`
 - Resource policy save: `project:governance:update`
 - Member/template/group management and join request decisions: `project:membership:update`

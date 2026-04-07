@@ -32,13 +32,15 @@ VERIFY_EVIDENCE_DIR="${REPORT_DIR}/verify-artifacts/evidence"
 mkdir -p "${VERIFY_EVIDENCE_DIR}"
 export RUNTIME_LINE_ID="${RELEASE_ID}"
 export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host,internal_k8s}"
-resolve_public_runtime_addresses \
+resolve_public_runtime_stack \
   "${PUBLIC_WEB_BASE_URL}" \
   "${PUBLIC_API_BASE_URL}" \
   "${PUBLIC_KEYCLOAK_BASE_URL}" \
   "${HOST_LOCAL_WEB_BASE_URL}" \
   "${HOST_LOCAL_API_BASE_URL}" \
-  "${HOST_LOCAL_KEYCLOAK_BASE_URL}"
+  "${HOST_LOCAL_KEYCLOAK_BASE_URL}" \
+  "${KEYCLOAK_REALM}" \
+  "${KEYCLOAK_CLIENT_ID}"
 gate_evidence_init "${VERIFY_EVIDENCE_DIR}" "cluster_deploy_verify"
 gate_write_runtime_descriptor "${VERIFY_EVIDENCE_DIR}" "cluster_deploy_verify"
 gate_write_resolved_env "${VERIFY_EVIDENCE_DIR}"

@@ -10,5 +10,5 @@ nodes:
     image: kindest/node:v1.32.2
     extraPortMappings:
       - containerPort: 30080
-        hostPort: 29080
+        hostPort: 29180
         protocol: TCP

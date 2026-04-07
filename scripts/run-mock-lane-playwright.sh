@@ -238,8 +238,10 @@ start_mock_server() {
       exec env \
         MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
         MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+        NEXT_MAX_OLD_SPACE_SIZE="${NEXT_MAX_OLD_SPACE_SIZE:-6144}" \
         NEXT_PUBLIC_USE_MSW=true \
         AGENTSMITH_ENABLE_TEST_ROUTES=true \
+        SYSTEM_WORKSPACE_REGISTRY_MODE=memory \
         SYSTEM_WORKSPACE_PROVISIONING_PATH="${MOCK_WORKSPACE_PROVISIONING_PATH}" \
         npm run dev:test -- --port "${PORT_WEB}"
     ) >>"${LOG_FILE}" 2>&1 &

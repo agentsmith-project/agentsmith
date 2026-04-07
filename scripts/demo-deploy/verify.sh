@@ -103,8 +103,8 @@ gate_wait_for_http "${VERIFY_EVIDENCE_DIR}" "${HOST_LOCAL_WEB_BASE_URL}/api/publ
 record_service web ready "${HOST_LOCAL_WEB_BASE_URL}"
 gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "host_local_stack" "passed" "web/api/keycloak ready"
 if demo_mode_is_full; then
-  gate_wait_for_http "${VERIFY_EVIDENCE_DIR}" "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240 sandbox_startup_failed infra_preflight_sandbox
-  record_service sandbox_manager ready "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz"
+  gate_wait_for_http "${VERIFY_EVIDENCE_DIR}" "http://localhost:${SANDBOX_HOST_PORT:-29180}/readyz" 240 sandbox_startup_failed infra_preflight_sandbox
+  record_service sandbox_manager ready "http://localhost:${SANDBOX_HOST_PORT:-29180}/readyz"
   gate_require_command "${VERIFY_EVIDENCE_DIR}" "kubectl get csidriver csi.juicefs.com >/dev/null" sandbox_startup_failed infra_preflight_csi "csi.juicefs.com missing"
   gate_require_command "${VERIFY_EVIDENCE_DIR}" "kubectl get deploy sandbox-manager -n agentsmith-sandbox >/dev/null" sandbox_startup_failed infra_preflight_sandbox "sandbox-manager deploy missing"
   gate_require_command "${VERIFY_EVIDENCE_DIR}" "kubectl get cronjob sandbox-manager-cleaner -n agentsmith-sandbox >/dev/null" sandbox_startup_failed infra_preflight_sandbox "sandbox-manager-cleaner missing"

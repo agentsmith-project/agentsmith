@@ -13,7 +13,7 @@ run_cmd() {
   (cd "${ROOT_DIR}" && eval "$*")
 }
 
-run_cmd "npm test -- \
+run_cmd "npm run test:run -- \
   packages/api-entry-node/src/__integration__/project-file-libraries.integration.test.ts \
   packages/api-entry-node/src/__integration__/agent-permissions.integration.test.ts \
   packages/api-entry-node/src/audit-usage-route-handler.test.ts \

@@ -386,8 +386,8 @@ EOF
 
   kubectl apply -f "${DEMO_DEPLOY_ROOT}/state/sandbox-manager.yaml" >/dev/null
   kubectl rollout status deployment/sandbox-manager -n agentsmith-sandbox --timeout=240s >/dev/null
-  wait_tcp "127.0.0.1" "${SANDBOX_HOST_PORT:-29080}" 240
-  wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240
+  wait_tcp "127.0.0.1" "${SANDBOX_HOST_PORT:-29180}" 240
+  wait_http "http://localhost:${SANDBOX_HOST_PORT:-29180}/readyz" 240
 
   ensure_demo_external_runner_slot_available
   release_app_up
@@ -400,7 +400,7 @@ state_set release.id "${RELEASE_ID}"
 state_set deploy.mode "${DEMO_DEPLOY_MODE}"
 if demo_mode_is_full; then
   state_set kind.cluster agentsmith
-  state_set sandbox.url "http://localhost:${SANDBOX_HOST_PORT:-29080}"
+  state_set sandbox.url "http://localhost:${SANDBOX_HOST_PORT:-29180}"
 else
   state_set kind.cluster skipped
   state_set sandbox.url skipped

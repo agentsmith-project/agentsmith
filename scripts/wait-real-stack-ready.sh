@@ -24,6 +24,83 @@ CSI_DAEMONSET="${CSI_DAEMONSET:-juicefs-csi-node}"
 
 info() { echo "[wait-real-stack-ready] $*"; }
 
+is_port_listening() {
+  local port="$1"
+  if command -v lsof >/dev/null 2>&1 && lsof -iTCP:"${port}" -sTCP:LISTEN -Pn >/dev/null 2>&1; then
+    return 0
+  fi
+  if command -v ss >/dev/null 2>&1 && ss -ltn | grep -qE "[\[\]:*]${port}[[:space:]]"; then
+    return 0
+  fi
+  if command -v fuser >/dev/null 2>&1 && fuser -n tcp "${port}" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+start_background_job() {
+  local log_file="$1"
+  shift
+  mkdir -p "$(dirname "${log_file}")"
+  "$@" >"${log_file}" 2>&1 &
+  echo $!
+}
+
+run_clean() {
+  env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
+}
+
+ensure_local_release_stack() {
+  local state_dir api_log web_log api_pid web_pid
+  state_dir="$(backend_real_state_root)/release-ready"
+  api_log="${state_dir}/api.log"
+  web_log="${state_dir}/web.log"
+  mkdir -p "${state_dir}"
+
+  if ! is_port_listening "${API_PORT}"; then
+    info "starting local API on :${API_PORT} for readiness"
+    api_pid="$(
+      PORT="${API_PORT}" \
+      KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+      PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
+      INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
+      KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
+      KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+      DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
+      MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
+      MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+      REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
+      MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
+      MINIO_PORT="${MINIO_PORT:-19000}" \
+      MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
+      MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
+      MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
+      MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
+      start_background_job "${api_log}" run_clean npm run api:node:dev
+    )"
+    state_set_string services.local_api_pid "${api_pid}"
+  fi
+
+  if ! is_port_listening "${WEB_PORT}"; then
+    info "starting local Web on :${WEB_PORT} for readiness"
+    web_pid="$(
+      MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
+      MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+      NEXT_PUBLIC_USE_MSW=false \
+      AGENTSMITH_ENABLE_TEST_ROUTES=true \
+      NEXT_PUBLIC_API_BASE="http://localhost:${API_PORT}/api/v1" \
+      NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_BASE_URL}/realms" \
+      NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+      KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+      PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
+      INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
+      start_background_job "${web_log}" run_clean npm run dev:test -- --port "${WEB_PORT}"
+    )"
+    state_set_string services.local_web_pid "${web_pid}"
+  fi
+}
+
 deadline=$((SECONDS + TIMEOUT_SEC))
 
 wait_http() {
@@ -57,6 +134,8 @@ wait_http_auth() {
   done
   info "${name} ready"
 }
+
+ensure_local_release_stack
 
 wait_http "keycloak oidc discovery" "${KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REALM:-mbos}/.well-known/openid-configuration"
 wait_http "api docs" "${API_BASE%/}/api/v1/openapi.json"

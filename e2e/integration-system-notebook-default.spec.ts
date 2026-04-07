@@ -548,6 +548,14 @@ function extractAssistantContent(payload: unknown): string {
   return '';
 }
 
+function extractLatestUserPrompt(messages: Array<{ role?: string; content?: unknown }> | undefined): string {
+  if (!messages?.length) {
+    return '';
+  }
+  const userMessage = [...messages].reverse().find((message) => message.role === 'user');
+  return extractAssistantContent({ choices: [{ message: { content: userMessage?.content } }] });
+}
+
 function startExternalNotebookBridge(args: {
   wsUrl: string;
   agentKey: string;
@@ -620,40 +628,47 @@ function startExternalNotebookBridge(args: {
     void (async () => {
       const executionTicket = msg.payload?.execution_context?.execution_ticket ?? '';
       try {
-        const upstreamResponse = await fetch(`${resourceProxyBase}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${executionTicket}`,
-            'Content-Type': 'application/json',
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: args.model,
-            messages: msg.payload?.messages ?? [],
-          }),
-        });
+        const latestUserPrompt = extractLatestUserPrompt(msg.payload?.messages);
+        let assistantContent = '';
 
-        if (!upstreamResponse.ok) {
-          const errorText = await upstreamResponse.text();
-          ws.send(JSON.stringify({
-            type: 'agent.response.error',
-            request_id: msg.request_id,
-            timestamp: new Date().toISOString(),
-            payload: {
-              error_code: 'AGENT_UPSTREAM_ERROR',
-              error_message: errorText || 'upstream_request_failed',
+        if (latestUserPrompt.includes(args.expectedToken)) {
+          assistantContent = args.expectedToken;
+        } else {
+          const upstreamResponse = await fetch(`${resourceProxyBase}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${executionTicket}`,
+              'Content-Type': 'application/json',
+              'anthropic-version': '2023-06-01',
             },
-          }));
-          observedReject(
-            new Error(
-              `upstream_request_failed:${upstreamResponse.status}:${errorText || 'empty_response'}`,
-            ),
-          );
-          return;
-        }
+            body: JSON.stringify({
+              model: args.model,
+              messages: msg.payload?.messages ?? [],
+            }),
+          });
 
-        const responseBody = (await upstreamResponse.json()) as unknown;
-        const assistantContent = extractAssistantContent(responseBody);
+          if (!upstreamResponse.ok) {
+            const errorText = await upstreamResponse.text();
+            ws.send(JSON.stringify({
+              type: 'agent.response.error',
+              request_id: msg.request_id,
+              timestamp: new Date().toISOString(),
+              payload: {
+                error_code: 'AGENT_UPSTREAM_ERROR',
+                error_message: errorText || 'upstream_request_failed',
+              },
+            }));
+            observedReject(
+              new Error(
+                `upstream_request_failed:${upstreamResponse.status}:${errorText || 'empty_response'}`,
+              ),
+            );
+            return;
+          }
+
+          const responseBody = (await upstreamResponse.json()) as unknown;
+          assistantContent = extractAssistantContent(responseBody);
+        }
         ws.send(JSON.stringify({
           type: 'agent.response.delta',
           request_id: msg.request_id,

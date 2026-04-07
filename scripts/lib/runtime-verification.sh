@@ -75,9 +75,9 @@ resolve_runtime_identity_env() {
 }
 
 resolve_loopback_runtime_stack() {
-  local api_port="$1"
-  local web_port="$2"
-  local keycloak_port="$3"
+  local api_port="${1:-${API_PORT:-20000}}"
+  local web_port="${2:-${WEB_PORT:-3001}}"
+  local keycloak_port="${3:-${KEYCLOAK_PORT:-18080}}"
   local default_keycloak_realm="${4:-mbos}"
   local default_keycloak_client_id="${5:-agentsmith}"
 

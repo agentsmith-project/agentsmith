@@ -28,6 +28,7 @@ async function seedGuestNotifications(page: Page, notifications: Array<{
 test.describe('Projects Join Governance', () => {
   test('guest sees only public projects and can submit a join request from project entry', async ({ guestPage }) => {
     await goTo(guestPage, projectsPath);
+    await expect(guestPage.getByTestId('projects__page')).toBeVisible({ timeout: 30000 });
 
     await expect(guestPage.getByText('AI Assistant Project')).toBeVisible();
     await expect(guestPage.getByText('Customer Support Bot')).toBeVisible();
@@ -44,6 +45,7 @@ test.describe('Projects Join Governance', () => {
 
   test('guest can directly join public open project from project entry', async ({ guestPage }) => {
     await goTo(guestPage, projectsPath);
+    await expect(guestPage.getByTestId('projects__page')).toBeVisible({ timeout: 30000 });
 
     await guestPage.getByRole('button', { name: 'Customer Support Bot' }).click();
     await expect(guestPage.getByTestId('projects__join-now-dialog')).toBeVisible();
@@ -86,6 +88,7 @@ test.describe('Projects Join Governance', () => {
 
   test('guest notification center shows join request outcome notifications', async ({ guestPage }) => {
     await goTo(guestPage, projectsPath);
+    await expect(guestPage.getByTestId('projects__page')).toBeVisible({ timeout: 30000 });
 
     const seeded = await seedGuestNotifications(guestPage, [
       {

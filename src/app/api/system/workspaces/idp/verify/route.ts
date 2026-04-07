@@ -22,18 +22,12 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => null)) as VerifyIdpBody | null;
-  const legacyBody = body as VerifyIdpBody & {
-    idp_url?: string;
-    idp_realm?: string;
-    idp_client_id?: string;
-    idp_client_secret?: string;
-  };
   const workspaceId = body?.workspace_id?.trim() ?? '';
-  const idpUrl = body?.login_idp_url?.trim() ?? legacyBody?.idp_url?.trim() ?? '';
-  const idpRealm = body?.login_idp_realm?.trim() ?? legacyBody?.idp_realm?.trim() ?? '';
-  const loginClientId = body?.login_client_id?.trim() ?? legacyBody?.idp_client_id?.trim() ?? '';
-  const requestedDirectoryClientId = body?.directory_client_id?.trim() ?? legacyBody?.idp_client_id?.trim() ?? '';
-  const providedClientSecret = body?.directory_client_secret?.trim() ?? legacyBody?.idp_client_secret?.trim() ?? '';
+  const idpUrl = body?.login_idp_url?.trim() ?? '';
+  const idpRealm = body?.login_idp_realm?.trim() ?? '';
+  const loginClientId = body?.login_client_id?.trim() ?? '';
+  const requestedDirectoryClientId = body?.directory_client_id?.trim() ?? '';
+  const providedClientSecret = body?.directory_client_secret?.trim() ?? '';
   const persisted = workspaceId ? await getSystemWorkspace(workspaceId) : null;
   const directoryClientId = requestedDirectoryClientId || (providedClientSecret ? loginClientId : (persisted?.directory_idp?.client_id?.trim() ?? ''));
   const idpClientSecret = providedClientSecret || persisted?.directory_idp?.client_secret?.trim() || '';

@@ -35,10 +35,10 @@ describe('/api/system/workspaces/idp/verify', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          idp_url: 'https://login.example.com',
-          idp_realm: 'alpha',
-          idp_client_id: 'alpha-client',
-          idp_client_secret: 'secret-1',
+          login_idp_url: 'https://login.example.com',
+          login_idp_realm: 'alpha',
+          login_client_id: 'alpha-client',
+          directory_client_secret: 'secret-1',
         }),
       }),
     );
@@ -51,33 +51,28 @@ describe('/api/system/workspaces/idp/verify', () => {
     });
   });
 
-  it('allows verification without client secret', async () => {
+  it('returns directory advice when directory client credentials are not provided', async () => {
     sessionModule.isSystemAdminAuthenticated.mockResolvedValue(true);
     keycloakDirectoryModule.verifyKeycloakLoginIdentityProvider.mockResolvedValue(undefined);
-    keycloakDirectoryModule.verifyKeycloakIdentityProvider.mockResolvedValue({
-      idp_ok: true,
-      directory_search_supported: false,
-      advice_code: 'DIRECTORY_PERMISSION_RECOMMENDED',
-    });
 
     const response = await POST(
       new Request('http://localhost/api/system/workspaces/idp/verify', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          idp_url: 'https://login.example.com',
-          idp_realm: 'alpha',
-          idp_client_id: 'alpha-client',
+          login_idp_url: 'https://login.example.com',
+          login_idp_realm: 'alpha',
+          login_client_id: 'alpha-client',
         }),
       }),
     );
 
     expect(response.status).toBe(200);
-    expect(keycloakDirectoryModule.verifyKeycloakIdentityProvider).toHaveBeenCalledWith({
-      idpUrl: 'https://login.example.com',
-      realm: 'alpha',
-      clientId: 'alpha-client',
-      clientSecret: undefined,
+    await expect(response.json()).resolves.toEqual({
+      idp_ok: true,
+      directory_search_supported: false,
+      advice_code: 'DIRECTORY_PERMISSION_RECOMMENDED',
     });
+    expect(keycloakDirectoryModule.verifyKeycloakIdentityProvider).not.toHaveBeenCalled();
   });
 });

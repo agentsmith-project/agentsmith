@@ -19,7 +19,6 @@ const DOC_INDEX_EXPECTATIONS: Array<{ file: string; includes: string[] }> = [
 ];
 
 const CURRENT_HISTORICAL_DOC_ALLOWLIST = new Set([
-  'docs/contracts/endpoint-upstream-protocol-refactor-handoff-v1.md',
   'docs/user-guides/usage-limits-naming-refactor-task.md',
 ]);
 

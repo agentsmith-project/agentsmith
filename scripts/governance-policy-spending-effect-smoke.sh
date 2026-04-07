@@ -82,7 +82,7 @@ main() {
     err "endpoint lookup failed (HTTP ${endpoint_code}); stale backend-real state? run init-resources"
     exit 1
   fi
-  endpoint_protocol="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.protocol||"openai_chat_completions"))')"
+  endpoint_protocol="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.upstream_protocol||"openai_chat_completions"))')"
   endpoint_base_url="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.base_url||""))')"
   endpoint_credential_ref="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.credential_ref||""))')"
   if [[ -z "${endpoint_base_url}" || -z "${endpoint_credential_ref}" ]]; then
@@ -112,7 +112,7 @@ main() {
         -H "Content-Type: application/json" \
         --data "{
           \"name\":\"${temp_endpoint_name}-${candidate_model//./-}\",
-          \"protocol\":\"${endpoint_protocol}\",
+          \"upstream_protocol\":\"${endpoint_protocol}\",
           \"base_url\":\"${endpoint_base_url}\",
           \"model\":\"${candidate_model}\",
           \"credential_ref\":\"${endpoint_credential_ref}\",
@@ -153,7 +153,7 @@ main() {
       -H "Content-Type: application/json" \
       --data "{
         \"name\":\"${temp_endpoint_name}-${temp_model//./-}\",
-        \"protocol\":\"${endpoint_protocol}\",
+        \"upstream_protocol\":\"${endpoint_protocol}\",
         \"base_url\":\"${endpoint_base_url}\",
         \"model\":\"${temp_model}\",
         \"credential_ref\":\"${endpoint_credential_ref}\",

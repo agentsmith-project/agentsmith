@@ -1,9 +1,9 @@
 /**
  * CustomEndpointWizard Component
  *
- * Three-step wizard for creating custom OpenAI/Anthropic compatible endpoints.
+ * Three-step wizard for creating custom endpoints with explicit upstream protocols.
  *
- * Step 1: Basic Info - Name, Protocol Type, Base URL
+ * Step 1: Basic Info - Name, Upstream Protocol, Base URL
  * Step 2: Model Config - Model ID, Capability, Credential
  * Step 3: Validate & Create - Check connection, create endpoint
  *

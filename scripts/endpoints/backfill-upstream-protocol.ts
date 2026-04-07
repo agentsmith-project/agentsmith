@@ -1,8 +1,8 @@
 import { MongoClient } from 'mongodb';
-import { migrateLegacyEndpointRecord } from '../../packages/api-entry-node/src/endpoint-migration.js';
 import { resolveWorkspaceScopedCollection } from '../../packages/api-entry-node/src/workspace-tenant-collections.js';
 import type { WorkspaceRecord } from '../../packages/api-entry-node/src/resource-models.js';
 
+import { migrateLegacyType, migrateLegacyUpstreamProtocol } from './backfill-upstream-protocol-utils.js';
 type StoredEndpointRecord = {
   _id?: string;
   id?: string;
@@ -70,7 +70,10 @@ async function main(): Promise<void> {
 
       for (const doc of docs) {
         inspected += 1;
-        const migrated = migrateLegacyEndpointRecord(doc as never);
+        const migrated = {
+          upstream_protocol: migrateLegacyUpstreamProtocol(doc),
+          type: migrateLegacyType(doc),
+        };
         const needsBackfill =
           doc.upstream_protocol !== migrated.upstream_protocol
           || doc.type !== migrated.type

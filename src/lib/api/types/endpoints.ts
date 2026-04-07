@@ -14,7 +14,7 @@ import type { EndpointCapabilityType, EndpointUpstreamProtocol } from './index';
 // ============================================================
 
 /**
- * Custom endpoint protocol types.
+ * Custom endpoint upstream protocol types.
  * OpenAI Chat Completions: follows chat/completions upstreams
  * OpenAI Responses: follows responses upstreams
  * Anthropic Messages: follows Anthropic Messages upstreams
@@ -26,7 +26,7 @@ export type CustomEndpointUpstreamProtocol = EndpointUpstreamProtocol;
  * Used when provider_family is 'custom'.
  */
 export interface CustomEndpointConfig {
-  /** Protocol type for the custom endpoint */
+  /** Upstream protocol for the custom endpoint */
   upstreamProtocol: CustomEndpointUpstreamProtocol;
   /** Base URL for the API endpoint (e.g., "https://api.openai.com/v1") */
   baseUrl: string;

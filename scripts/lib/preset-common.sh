@@ -4,17 +4,16 @@ set -euo pipefail
 normalize_endpoint_upstream_protocol() {
   local value="${1:-}"
   case "${value}" in
-    openai_compatible)
-      printf '%s\n' "openai_chat_completions"
-      ;;
-    anthropic_compatible)
-      printf '%s\n' "anthropic_messages"
-      ;;
     openai_chat_completions|openai_responses|anthropic_messages)
       printf '%s\n' "${value}"
       ;;
+    openai_compatible|anthropic_compatible)
+      echo "[preset-common] unsupported legacy endpoint protocol: ${value}. Use canonical upstream protocol names." >&2
+      return 1
+      ;;
     *)
-      printf '%s\n' "${value}"
+      echo "[preset-common] unsupported endpoint protocol: ${value}" >&2
+      return 1
       ;;
   esac
 }

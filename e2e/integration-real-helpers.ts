@@ -584,7 +584,6 @@ export async function createEndpointViaApi(
     endpointType?: 'catalog' | 'custom';
     providerFamily?: 'openai' | 'anthropic' | 'deepseek' | 'minimax' | 'kimi' | 'google' | 'glm' | 'alibaba' | 'custom';
     upstreamProtocol?: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
-    protocol?: 'openai_compatible' | 'anthropic_compatible';
     modelProfile?: {
       max_context_tokens: number;
       max_output_tokens?: number;
@@ -606,13 +605,9 @@ export async function createEndpointViaApi(
   };
   const normalizedBaseUrl = args.upstreamBaseUrl.trim().toLowerCase();
   const upstreamProtocol = args.upstreamProtocol
-    ?? (args.protocol === 'anthropic_compatible'
+    ?? (normalizedBaseUrl.includes('/anthropic') || normalizedBaseUrl.includes('api.anthropic.com')
       ? 'anthropic_messages'
-      : args.protocol === 'openai_compatible'
-        ? 'openai_chat_completions'
-        : (normalizedBaseUrl.includes('/anthropic') || normalizedBaseUrl.includes('api.anthropic.com')
-          ? 'anthropic_messages'
-          : 'openai_chat_completions'));
+      : 'openai_chat_completions');
   const endpointType = args.endpointType ?? 'custom';
   const providerFamily = args.providerFamily
     ?? (endpointType === 'custom'

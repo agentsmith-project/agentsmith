@@ -35,7 +35,7 @@
 - `backend-storage-maturity-checklist.md`（后端数据持久化成熟度改进清单）
 - `cluster-deployment-spec-v1.md`（真实集群发布线：registry + install bundle + compose/k8s 边界）
 - `substrate-governance-and-runtime-lines-v1.md`（substrate / app / scenario 运行线治理合同）
-- `endpoint-upstream-protocol-refactor-handoff-v1.md`（endpoint 上游协议模型与 universal proxy 对齐的重构交接文档；保留 legacy -> current 术语映射用于历史上下文）
+- `../archive/handoff/endpoint-upstream-protocol-refactor-handoff-v1.md`（已归档的 endpoint 上游协议历史交接文档；仅保留 legacy -> current 术语映射作为历史上下文）
 
 ## 模块合同
 

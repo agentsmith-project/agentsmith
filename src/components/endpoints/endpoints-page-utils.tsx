@@ -30,7 +30,7 @@ export function buildEndpointsExportPayload(
       credential_ref: endpoint.credential_ref,
       limits: endpoint.limits,
     })),
-    openai_compatible_template: {
+    bulk_import_template_examples: {
       reranker: {
         model: '',
         api_base: '',

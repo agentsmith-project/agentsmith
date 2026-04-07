@@ -106,12 +106,12 @@ echo "[init] creating endpoint..."
 endpoint_resp="$(api_curl -X POST "${PROJECT_BASE}/endpoints" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], protocol:process.argv[2], base_url:process.argv[3], model:process.argv[4], credential_ref:process.argv[5], model_profile:{max_context_tokens:Number(process.argv[6]), max_output_tokens:Number(process.argv[7]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' \
+  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], type:"custom", upstream_protocol:process.argv[2], base_url:process.argv[3], model:process.argv[4], credential_ref:process.argv[5], model_profile:{max_context_tokens:Number(process.argv[6]), max_output_tokens:Number(process.argv[7]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' \
       "${ENDPOINT_NAME}" "${PRESET_ANTHROPIC_ENDPOINT_PROTOCOL}" "${PRESET_ANTHROPIC_ENDPOINT_BASE_URL}" "${PRESET_ENDPOINT_MODEL}" "${CRED_ID}" "${MODEL_MAX_CONTEXT_TOKENS}" "${MODEL_MAX_OUTPUT_TOKENS}")")"
 ENDPOINT_ID="$(printf '%s' "${endpoint_resp}" | json_get id)"
 state_set_string endpoint.id "${ENDPOINT_ID}"
 state_set_string endpoint.name "${ENDPOINT_NAME}"
-state_set_string endpoint.protocol "${PRESET_ANTHROPIC_ENDPOINT_PROTOCOL}"
+state_set_string endpoint.upstream_protocol "${PRESET_ANTHROPIC_ENDPOINT_PROTOCOL}"
 state_set_string endpoint.base_url "${PRESET_ANTHROPIC_ENDPOINT_BASE_URL}"
 state_set_string endpoint.model "${PRESET_ENDPOINT_MODEL}"
 echo "[init] endpoint_id=${ENDPOINT_ID}"

@@ -278,7 +278,7 @@ run_playwright_once() {
   set +e
   (
     cd "${ROOT_DIR}"
-    env BASE_URL="${BASE_URL}" NEXT_PUBLIC_USE_MSW=true npx playwright test "$@"
+    env PW_EXCLUDE_LANE_REAL=true BASE_URL="${BASE_URL}" NEXT_PUBLIC_USE_MSW=true npx playwright test "$@"
   ) 2>&1 | tee "${LAST_PLAYWRIGHT_LOG}"
   local exit_code=${PIPESTATUS[0]}
   set -e

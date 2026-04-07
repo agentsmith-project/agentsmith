@@ -48,16 +48,24 @@ test.describe('Files Page (file library browser)', () => {
   });
 
   test('opens local mount access dialog for a file library', async ({ authedPage }) => {
-    await authedPage.getByTestId('files__library-mount-access--lib_shared_default').click();
+    await authedPage.getByTestId('files__library-desktop-access--lib_shared_default').click();
 
-    const dialog = authedPage.getByTestId('files__dialog__library-mount-access');
+    const dialog = authedPage.getByTestId('files__dialog__desktop-mount-access');
     await expect(dialog).toBeVisible();
-    await expect(authedPage.getByTestId('files__library-mount__filesystem-name')).toBeVisible();
-    await expect(authedPage.getByTestId('files__library-mount__path')).toBeVisible();
-    await expect(authedPage.getByTestId('files__library-mount__metadata-url')).toHaveValue('••••••••••••••••••••');
+    await expect(dialog.getByTestId('files__desktop-mount__deployment-url')).toBeVisible();
+    await expect(dialog.getByTestId('files__desktop-setup__download')).toBeVisible();
+    await expect(dialog.getByTestId('files__desktop-setup__platform-linux')).toBeVisible();
+    await expect(dialog.getByTestId('files__desktop-setup__platform-macos')).toBeVisible();
+    await expect(dialog.getByTestId('files__desktop-setup__platform-windows')).toBeVisible();
+
+    await dialog.getByTestId('files__desktop-setup__debug-toggle').click();
+    await expect(dialog.getByTestId('files__desktop-setup__debug-panel')).toBeVisible();
+    await expect(dialog.getByTestId('files__library-mount__filesystem-name')).toBeVisible();
+    await expect(dialog.getByTestId('files__library-mount__path')).toBeVisible();
+    await expect(dialog.getByTestId('files__library-mount__metadata-url')).toHaveValue('••••••••••••••••••••');
 
     await dialog.getByRole('button', { name: /reveal|显示/i }).click();
-    await expect(authedPage.getByTestId('files__library-mount__metadata-url')).not.toHaveValue(
+    await expect(dialog.getByTestId('files__library-mount__metadata-url')).not.toHaveValue(
       '••••••••••••••••••••',
     );
     await expect(dialog.getByTestId('files__library-mount__copy-command')).toBeVisible();
@@ -188,21 +196,15 @@ test.describe('Files Page (file library browser)', () => {
 
   test('handles large directory pagination and search responsiveness', async ({ authedPage }) => {
     await activateLibrary(authedPage, 'lib_large_bench');
-    await expect(authedPage.getByTestId('files__load-more')).toBeVisible();
+    const loadMoreButton = authedPage.getByTestId('files__load-more');
     const targetRow = authedPage.getByTestId('files__object-row').filter({ hasText: 'bulk-0250.txt' }).first();
+
     for (let attempt = 0; attempt < 12; attempt += 1) {
       if (await targetRow.isVisible().catch(() => false)) break;
-      const loadMoreButton = authedPage.getByTestId('files__load-more');
       if (!await loadMoreButton.isVisible().catch(() => false)) break;
       const rowCountBefore = await authedPage.getByTestId('files__object-row').count();
       await expect(loadMoreButton).toBeEnabled();
-      try {
-        await loadMoreButton.click();
-      } catch {
-        await authedPage.waitForTimeout(200);
-        await expect(authedPage.getByTestId('files__load-more')).toBeEnabled();
-        await authedPage.getByTestId('files__load-more').click();
-      }
+      await loadMoreButton.click();
       await expect
         .poll(async () => authedPage.getByTestId('files__object-row').count(), { timeout: 5000 })
         .toBeGreaterThan(rowCountBefore);

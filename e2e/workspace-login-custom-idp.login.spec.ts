@@ -39,6 +39,7 @@ const seededWorkspaceRecord = {
 test('workspace login page uses the workspace-specific keycloak config in mock mode', async ({ page, request }) => {
   const seedResponse = await request.post('/api/test/system/workspaces/seed', {
     data: { records: [seededWorkspaceRecord] },
+    timeout: 30_000,
   });
   expect(seedResponse.ok()).toBeTruthy();
 

@@ -1097,8 +1097,8 @@ test.describe('@lane-real integration visual review', () => {
       await page.reload();
     }
     await expect(visualLibrary).toBeVisible({ timeout: 30_000 });
-    await visualLibrary.locator('[data-testid^="files__library-mount-access--"]').first().click();
-    await expect(page.getByTestId('files__dialog__library-mount-access')).toBeVisible({ timeout: 30_000 });
+    await visualLibrary.locator('[data-testid^="files__library-desktop-access--"]').first().click();
+    await expect(page.getByTestId('files__dialog__desktop-mount-access')).toBeVisible({ timeout: 30_000 });
     await settlePage(page);
     await capturePage(page, captures, {
       name: 'dialog-file-library-mount-access-real',
@@ -1106,7 +1106,7 @@ test.describe('@lane-real integration visual review', () => {
       notes: '真实文件库本地挂载说明对话框',
     });
     await page.keyboard.press('Escape');
-    await expect(page.getByTestId('files__dialog__library-mount-access')).toBeHidden({ timeout: 10_000 });
+    await expect(page.getByTestId('files__dialog__desktop-mount-access')).toBeHidden({ timeout: 10_000 });
 
     const runner = await startCodexRunnerProcess({
       wsUrl: connectionInfo.wsUrl,
@@ -1144,7 +1144,7 @@ test.describe('@lane-real integration visual review', () => {
       }
 
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
-      const mountDialog = page.getByTestId('files__dialog__library-mount-access');
+      const mountDialog = page.getByTestId('files__dialog__desktop-mount-access');
       if (await mountDialog.isVisible().catch(() => false)) {
         await page.keyboard.press('Escape');
         await expect(mountDialog).toBeHidden({ timeout: 10_000 });

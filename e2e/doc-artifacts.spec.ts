@@ -289,8 +289,8 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
   await expect(authedPage.getByTestId('files__dialog__library-create')).toHaveCount(0);
 
   await dismissOpenDialogs(authedPage);
-  await authedPage.getByTestId('files__library-mount-access--lib_shared_default').click();
-  await expect(authedPage.getByTestId('files__dialog__library-mount-access')).toBeVisible();
+  await authedPage.getByTestId('files__library-desktop-access--lib_shared_default').click();
+  await expect(authedPage.getByTestId('files__dialog__desktop-mount-access')).toBeVisible();
   await writeDocArtifact(authedPage, manifest, {
     id: 'dialog-file-library-mount-access',
     title: '文件库本地挂载说明',
@@ -309,7 +309,7 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     ],
   });
   await dismissOpenDialogs(authedPage);
-  await expect(authedPage.getByTestId('files__dialog__library-mount-access')).toHaveCount(0);
+  await expect(authedPage.getByTestId('files__dialog__desktop-mount-access')).toHaveCount(0);
   await authedPage.getByTestId('files__library-delete-btn--lib_shared_default').click();
   await expect(authedPage.getByTestId('files__dialog__library-delete')).toBeVisible();
   await writeDocArtifact(authedPage, manifest, {

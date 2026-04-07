@@ -2043,10 +2043,10 @@ export async function openMountAccessAndRevealMountDetails(
   await dismissOpenDialog();
   const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: libraryName }).first();
   await expect(libraryItem).toBeVisible({ timeout: 30_000 });
-  const mountButton = libraryItem.locator('[data-testid^="files__library-mount-access--"]').first();
+  const mountButton = libraryItem.locator('[data-testid^="files__library-desktop-access--"]').first();
   await expect(mountButton).toBeVisible({ timeout: 15_000 });
   await mountButton.click();
-  const dialog = page.getByTestId('files__dialog__library-mount-access');
+  const dialog = page.getByTestId('files__dialog__desktop-mount-access');
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   await dialog.getByRole('button', { name: /reveal|显示|show/i }).click();
   const metadataInput = dialog.getByTestId('files__library-mount__metadata-url');

@@ -10,6 +10,7 @@ import { defineConfig, devices } from '@playwright/test';
  */
 const baseURL = process.env.BASE_URL || 'http://localhost:3001';
 const useManagedDevServer = !process.env.BASE_URL;
+const excludeLaneReal = useManagedDevServer || process.env.PW_EXCLUDE_LANE_REAL === 'true';
 /** Local worker count; override with PW_WORKERS (e.g. PW_WORKERS=12). */
 const localWorkers = Number(process.env.PW_WORKERS ?? 6);
 const isCI = !!process.env.CI;
@@ -45,7 +46,7 @@ const defaultE2ESpecMatch = [
 
 export default defineConfig({
   testDir: './e2e',
-  grepInvert: useManagedDevServer ? /@lane-real/ : undefined,
+  grepInvert: excludeLaneReal ? /@lane-real/ : undefined,
   globalSetup: useManagedDevServer ? './e2e/mock-global-setup.ts' : undefined,
   fullyParallel: true,
   forbidOnly: isCI,

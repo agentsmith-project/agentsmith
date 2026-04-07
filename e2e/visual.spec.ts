@@ -67,7 +67,7 @@ async function stableNavigate(page: Page, path: string) {
 }
 
 async function dismissFilesOverlayIfPresent(page: Page) {
-  const mountDialog = page.getByTestId('files__dialog__library-mount-access');
+  const mountDialog = page.getByTestId('files__dialog__desktop-mount-access');
   if (await mountDialog.isVisible().catch(() => false)) {
     await page.keyboard.press('Escape').catch(() => {});
     await expect(mountDialog).toHaveCount(0, { timeout: 5_000 });
@@ -486,7 +486,7 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage.getByTestId('project-workbench__heading')).toContainText('Files');
     await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
     await expect(authedPage.getByTestId('files__library-item--lib_shared_default')).toBeVisible();
-    await expect(authedPage.getByTestId('files__library-mount-access--lib_shared_default')).toBeVisible();
+    await expect(authedPage.getByTestId('files__library-desktop-access--lib_shared_default')).toBeVisible();
     await authedPage.waitForTimeout(1500);
     await expect(authedPage).toHaveScreenshot('files.png', { fullPage: true });
   });
@@ -686,8 +686,8 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
     await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
     await authedPage.waitForTimeout(1500);
-    await authedPage.getByTestId('files__library-mount-access--lib_shared_default').click();
-    await expect(authedPage.getByTestId('files__dialog__library-mount-access')).toBeVisible();
+    await authedPage.getByTestId('files__library-desktop-access--lib_shared_default').click();
+    await expect(authedPage.getByTestId('files__dialog__desktop-mount-access')).toBeVisible();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('dialog-files-mount-access.png');
   });

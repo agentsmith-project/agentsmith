@@ -237,7 +237,7 @@ async function openFileLibraryRoot(args: {
   await dismissFilesDialogs(page);
   await libraryItem.click();
   await expect(page.getByTestId('files__objects-table')).toBeVisible({ timeout: 30_000 });
-  const mountAccessDialog = page.getByTestId('files__dialog__library-mount-access');
+  const mountAccessDialog = page.getByTestId('files__dialog__desktop-mount-access');
   if (await mountAccessDialog.isVisible().catch(() => false)) {
     await page.keyboard.press('Escape').catch(() => undefined);
     await expect(mountAccessDialog).toBeHidden({ timeout: 10_000 });

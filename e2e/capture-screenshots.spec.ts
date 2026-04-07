@@ -253,11 +253,11 @@ test.describe('Screenshot Capture', () => {
       await page.keyboard.press('Escape');
       await page.waitForTimeout(300);
     }
-    const mountAccessBtn = page.locator('[data-testid^="files__library-mount-access--"]').first();
+    const mountAccessBtn = page.locator('[data-testid^="files__library-desktop-access--"]').first();
     if (await mountAccessBtn.isVisible().catch(() => false)) {
       await mountAccessBtn.click();
       await page.waitForTimeout(500);
-      if (await page.getByTestId('files__dialog__library-mount-access').isVisible().catch(() => false)) {
+      if (await page.getByTestId('files__dialog__desktop-mount-access').isVisible().catch(() => false)) {
         await page.screenshot({ path: path.join(BASE, '12-files', 'library-mount-access-dialog.png'), fullPage: true });
       }
       await page.keyboard.press('Escape');

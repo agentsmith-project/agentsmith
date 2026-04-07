@@ -66,9 +66,6 @@ export interface MemberDetailDrawerProps {
 function resolveMemberAccessLabel(member: Member): string {
   return getMemberAccessGroupLabel({
     groups: member.groups,
-    fallback: Array.isArray(member.permissions) && member.permissions.includes('project:governance:update')
-      ? 'manager'
-      : 'member',
   });
 }
 

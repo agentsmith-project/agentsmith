@@ -117,4 +117,22 @@ describe('MemberDetailDrawer', () => {
       '/en-US/workspaces/ws_1/projects/proj_1/resource-policy?resource_type=endpoint&resource_id=endpoint_1&explain_subject_type=user&explain_subject_id=u_1&explain_action=invoke',
     );
   });
+
+  it('does not infer access group from governance permissions when groups are absent', () => {
+    render(
+      <MemberDetailDrawer
+        open
+        onOpenChange={() => {}}
+        member={{
+          ...baseMember,
+          groups: [],
+          permissions: ['project:governance:update'],
+        }}
+        permissions={{ platform_permissions: ['project:governance:update'] }}
+      />
+    );
+
+    expect(screen.getByText('table.access_group: -')).toBeInTheDocument();
+    expect(screen.getByText('effective_access.no_permissions')).toBeInTheDocument();
+  });
 });

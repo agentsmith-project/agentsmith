@@ -182,13 +182,20 @@ describe('api-entry-node project routes integration', () => {
     const membersRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/members', 'owner-token');
     expect(membersRes.status).toBe(200);
     const membersBody = (await membersRes.json()) as {
-      items: Array<{ user_id: string; permissions: string[] }>;
+      items: Array<{
+        user_id: string;
+        permissions: string[];
+        groups?: Array<{ id: string; system_key?: string }>;
+      }>;
     };
     expect(membersBody.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           user_id: 'user_alt',
           permissions: expect.arrayContaining(['workspace:project:create']),
+          groups: expect.arrayContaining([
+            expect.objectContaining({ id: 'grp_workspace_project_creators', system_key: 'project_creators' }),
+          ]),
         }),
       ]),
     );

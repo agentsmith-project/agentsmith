@@ -96,16 +96,12 @@ export function getMemberAccessGroupLabel(args: {
 
 export function getWorkspaceAccessGroupLabel(args: {
   groups?: MemberGroupSummary[];
-  permissions?: readonly string[];
 }): 'owner' | 'project_creator' | 'member' {
   const groups = args.groups ?? [];
   if (groups.some((group) => group.id === WORKSPACE_BUILT_IN_GROUP_IDS.owner || group.system_key === 'owner')) {
     return 'owner';
   }
-  if (
-    groups.some((group) => group.id === WORKSPACE_BUILT_IN_GROUP_IDS.projectCreators || group.system_key === 'project_creators')
-    || (args.permissions ?? []).includes('workspace:project:create')
-  ) {
+  if (groups.some((group) => group.id === WORKSPACE_BUILT_IN_GROUP_IDS.projectCreators || group.system_key === 'project_creators')) {
     return 'project_creator';
   }
   return 'member';

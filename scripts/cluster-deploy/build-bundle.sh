@@ -53,6 +53,14 @@ copy_source_tree() {
     -cf - . | tar -C "${dst}" -xf -
 }
 
+copy_bundle_file() {
+  local source_file="$1"
+  local target_file="$2"
+  rm -rf "${target_file}"
+  mkdir -p "$(dirname "${target_file}")"
+  cp "${source_file}" "${target_file}"
+}
+
 mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/scripts/cluster-deploy" "${BUNDLE_DIR}/scripts/lib" "${BUNDLE_DIR}/docs/contracts" "${BUNDLE_DIR}/docs/user-guides" "${BUNDLE_DIR}/infra/deploy/cluster/admin-examples" "${BUNDLE_DIR}/infra/runtime" "${BUNDLE_DIR}/addons/ingress-nginx" "${BUNDLE_DIR}/addons/juicefs-csi" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/universal-proxy" "${BUNDLE_DIR}/e2e" "${BUNDLE_DIR}/sources/agentsmith" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service" "${BUNDLE_DIR}/sources/llm-universal-proxy"
 cp "${ROOT_DIR}/infra/deploy/cluster/docker-compose.yml" "${BUNDLE_DIR}/compose/docker-compose.yml"
 cp "${ROOT_DIR}/infra/deploy/cluster/deployment.manifest.json" "${BUNDLE_DIR}/deployment.manifest.json"
@@ -80,6 +88,7 @@ cp "${ROOT_DIR}/scripts/lib/release-stage-common.sh" "${BUNDLE_DIR}/scripts/lib/
 cp "${ROOT_DIR}/scripts/lib/bootstrap-common.sh" "${BUNDLE_DIR}/scripts/lib/bootstrap-common.sh"
 cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${BUNDLE_DIR}/scripts/lib/k8s-external-services.sh"
 cp "${ROOT_DIR}/scripts/lib/preset-common.sh" "${BUNDLE_DIR}/scripts/lib/preset-common.sh"
+cp "${ROOT_DIR}/scripts/lib/runtime-verification.sh" "${BUNDLE_DIR}/scripts/lib/runtime-verification.sh"
 mkdir -p "${BUNDLE_DIR}/scripts/substrate"
 cp "${ROOT_DIR}/scripts/substrate/deploy-common.sh" "${BUNDLE_DIR}/scripts/substrate/deploy-common.sh"
 mkdir -p "${BUNDLE_DIR}/scripts/app"
@@ -87,13 +96,14 @@ cp "${ROOT_DIR}/scripts/app/deploy-common.sh" "${BUNDLE_DIR}/scripts/app/deploy-
 cp "${ROOT_DIR}/infra/runtime/presets.env" "${BUNDLE_DIR}/infra/runtime/presets.env"
 cp -R "${ROOT_DIR}/infra/deploy/cluster/addons/ingress-nginx/." "${BUNDLE_DIR}/addons/ingress-nginx/"
 cp -R "${ROOT_DIR}/infra/deploy/cluster/addons/juicefs-csi/." "${BUNDLE_DIR}/addons/juicefs-csi/"
-cp "${ROOT_DIR}/e2e/integration-real-helpers.ts" "${BUNDLE_DIR}/e2e/integration-real-helpers.ts"
-cp "${ROOT_DIR}/e2e/integration-files.spec.ts" "${BUNDLE_DIR}/e2e/integration-files.spec.ts"
-cp "${ROOT_DIR}/e2e/integration-workspace-access.ts" "${BUNDLE_DIR}/e2e/integration-workspace-access.ts"
-cp "${ROOT_DIR}/e2e/integration-workspace-entry.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-entry.spec.ts"
-cp "${ROOT_DIR}/e2e/integration-workspace-publish-usable.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-publish-usable.spec.ts"
-cp "${ROOT_DIR}/e2e/integration-preset-external-file-library.spec.ts" "${BUNDLE_DIR}/e2e/integration-preset-external-file-library.spec.ts"
-cp "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts" "${BUNDLE_DIR}/e2e/integration-release-user-story.spec.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-real-helpers.ts" "${BUNDLE_DIR}/e2e/integration-real-helpers.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-files.spec.ts" "${BUNDLE_DIR}/e2e/integration-files.spec.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/notebook-execution-outcome.ts" "${BUNDLE_DIR}/e2e/notebook-execution-outcome.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-access.ts" "${BUNDLE_DIR}/e2e/integration-workspace-access.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-entry.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-entry.spec.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-publish-usable.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-publish-usable.spec.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-preset-external-file-library.spec.ts" "${BUNDLE_DIR}/e2e/integration-preset-external-file-library.spec.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts" "${BUNDLE_DIR}/e2e/integration-release-user-story.spec.ts"
 cp "${ROOT_DIR}/docs/user-guides/cluster-admin-runbook.md" "${BUNDLE_DIR}/docs/user-guides/cluster-admin-runbook.md"
 cp "${ROOT_DIR}/docs/contracts/cluster-deployment-spec-v1.md" "${BUNDLE_DIR}/docs/contracts/cluster-deployment-spec-v1.md"
 cp "${ROOT_DIR}/docs/user-guides/cluster-deploy-operations.md" "${BUNDLE_DIR}/docs/user-guides/cluster-deploy-operations.md"

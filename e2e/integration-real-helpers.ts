@@ -1715,9 +1715,27 @@ export async function startCodexRunnerDockerProcess(args: {
   const workspaceRoot = path.join(tmpdir(), `agentsmith-codex-docker-workspaces-${Date.now()}`);
   await mkdir(workspaceRoot, { recursive: true });
   const containerName = `agentsmith-codex-runner-${Date.now()}`;
-  const runnerLogDir = process.env.INTEGRATION_RUNNER_LOG_DIR?.trim() || path.join(process.cwd(), 'test-results', 'runner-logs');
-  await mkdir(runnerLogDir, { recursive: true });
-  const runnerLogPath = path.join(runnerLogDir, `${containerName}.log`);
+  const requestedRunnerLogDir = process.env.INTEGRATION_RUNNER_LOG_DIR?.trim() || path.join(process.cwd(), 'test-results', 'runner-logs');
+  let runnerLogDir = requestedRunnerLogDir;
+  try {
+    await mkdir(runnerLogDir, { recursive: true });
+  } catch {
+    runnerLogDir = path.join(tmpdir(), 'agentsmith-runner-logs');
+    await mkdir(runnerLogDir, { recursive: true });
+  }
+  const writeRunnerLog = async (body: string): Promise<void> => {
+    const requestedPath = path.join(runnerLogDir, `${containerName}.log`);
+    try {
+      await writeFile(requestedPath, body, 'utf-8');
+      return;
+    } catch {
+      const fallbackDir = path.join(tmpdir(), 'agentsmith-runner-logs');
+      await mkdir(fallbackDir, { recursive: true });
+      const fallbackPath = path.join(fallbackDir, `${containerName}.log`);
+      await writeFile(fallbackPath, body, 'utf-8');
+      console.warn(`[integration-real-helpers] runner log fallback: ${requestedPath} -> ${fallbackPath}`);
+    }
+  };
   const preserveRunnerLogs = async (): Promise<void> => {
     const logs = await spawnAndCapture('docker', ['logs', containerName]).catch(() => ({
       code: 1,
@@ -1726,9 +1744,9 @@ export async function startCodexRunnerDockerProcess(args: {
     }));
     const logBody = `${logs.stdout}${logs.stdout && logs.stderr ? '\n' : ''}${logs.stderr}`.trim();
     if (logBody.length > 0) {
-      await writeFile(runnerLogPath, `${logBody}\n`, 'utf-8');
+      await writeRunnerLog(`${logBody}\n`);
     } else {
-      await writeFile(runnerLogPath, '[runner log unavailable]\n', 'utf-8');
+      await writeRunnerLog('[runner log unavailable]\n');
     }
   };
   const runArgs = [

@@ -21,6 +21,8 @@ DEMO_DEPLOY_MODE="$(demo_deploy_mode)"
 
 HOST_LOCAL_WEB_BASE_URL="${HOST_LOCAL_WEB_BASE_URL:-http://127.0.0.1:${WEB_PORT:-3001}}"
 HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}"
+DEMO_COMPOSE_PROJECT_NAME="${DEMO_COMPOSE_PROJECT_NAME:-agentsmith-demo}"
+DEMO_EXTERNAL_RUNNER_CONTAINER_NAME="${EXTERNAL_RUNNER_CONTAINER_NAME:-${DEMO_COMPOSE_PROJECT_NAME}-external-runner-1}"
 
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
@@ -64,6 +66,36 @@ kind_cluster_healthy() {
   kubectl --context "${KIND_CONTEXT}" version --request-timeout=5s >/dev/null 2>&1 || return 1
 }
 
+kind_cluster_incompatible_with_demo_full() {
+  kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}" || return 1
+  local sandbox_node_port="30080"
+  local conflicting_services
+  conflicting_services="$(
+    kubectl --context "${KIND_CONTEXT}" get svc -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}{range .spec.ports[*]}{.nodePort}{" "}{end}{"\n"}{end}' 2>/dev/null \
+      | awk -v port="${sandbox_node_port}" 'NF >= 3 && $3 ~ ("(^| )" port "( |$)") && !($1 == "agentsmith-sandbox" && $2 == "sandbox-manager-nodeport") { print $1 "/" $2 }'
+  )"
+  [[ -n "${conflicting_services}" ]] || return 1
+  log "demo full mode found conflicting kind services on nodePort ${sandbox_node_port}: ${conflicting_services//$'\n'/, }"
+  return 0
+}
+
+recreate_kind_cluster_for_demo() {
+  local reason="$1"
+  log "recreating kind cluster for demo full mode: ${reason}"
+  kind delete cluster --name "${KIND_CLUSTER_NAME}" >/dev/null || true
+  sleep 2
+  kind create cluster --name "${KIND_CLUSTER_NAME}" --config "${KIND_CONFIG_PATH}"
+}
+
+ensure_demo_external_runner_slot_available() {
+  if ! docker ps -a --format '{{.Names}}' | grep -qx "${DEMO_EXTERNAL_RUNNER_CONTAINER_NAME}"; then
+    return 0
+  fi
+
+  log "removing pre-existing external-runner container ${DEMO_EXTERNAL_RUNNER_CONTAINER_NAME} so demo deploy can recreate it deterministically"
+  docker rm -f "${DEMO_EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
+}
+
 if demo_mode_is_full; then
   if kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}" && ! kind_cluster_healthy; then
     log "recreating unhealthy kind cluster"
@@ -80,6 +112,10 @@ if demo_mode_is_full; then
     fi
   fi
   kind export kubeconfig --name "${KIND_CLUSTER_NAME}" >/dev/null
+  if kind_cluster_incompatible_with_demo_full; then
+    recreate_kind_cluster_for_demo "found ingress-nginx full-auto prereqs that reserve the demo sandbox node port"
+    kind export kubeconfig --name "${KIND_CLUSTER_NAME}" >/dev/null
+  fi
 
   JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
   for image in "${RUNNER_IMAGE}" "${SANDBOX_MANAGER_IMAGE}" "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}" "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}" "juicedata/mount:ce-v1.3.1" "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0" "registry.k8s.io/sig-storage/csi-resizer:v1.9.0" "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0" "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"; do
@@ -104,6 +140,7 @@ bash "${RELEASE_SCRIPT_DIR}/render-env.sh"
 load_release_env
 
 release_substrate_up
+ensure_demo_external_runner_slot_available
 release_app_up
 wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
 wait_tcp "127.0.0.1" "${API_PORT}" 240
@@ -352,6 +389,7 @@ EOF
   wait_tcp "127.0.0.1" "${SANDBOX_HOST_PORT:-29080}" 240
   wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240
 
+  ensure_demo_external_runner_slot_available
   release_app_up
   wait_tcp "127.0.0.1" "${API_PORT}" 240
   wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
@@ -362,7 +400,7 @@ state_set release.id "${RELEASE_ID}"
 state_set deploy.mode "${DEMO_DEPLOY_MODE}"
 if demo_mode_is_full; then
   state_set kind.cluster agentsmith
-  state_set sandbox.url "http://localhost:29080"
+  state_set sandbox.url "http://localhost:${SANDBOX_HOST_PORT:-29080}"
 else
   state_set kind.cluster skipped
   state_set sandbox.url skipped

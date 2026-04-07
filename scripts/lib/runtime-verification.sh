@@ -192,6 +192,36 @@ fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`);
 NODE
 }
 
+gate_resolve_verify_source_file() {
+  local evidence_dir="$1"
+  local line_label="$2"
+  local release_root="$3"
+  local workspace_root="$4"
+  local relative_path="$5"
+
+  case "${relative_path}" in
+    ""|/*|../*|*/../*|..)
+      gate_record_failure "${evidence_dir}" "scenario_assertion_failed" "scenario_gate_verify_assets" "invalid verify asset path ${relative_path}"
+      return 1
+      ;;
+  esac
+
+  local release_candidate="${release_root%/}/${relative_path}"
+  local workspace_candidate="${workspace_root%/}/${relative_path}"
+  if [[ -f "${release_candidate}" ]]; then
+    printf '%s\n' "${release_candidate}"
+    return 0
+  fi
+  if [[ -f "${workspace_candidate}" ]]; then
+    printf '[%s] verify asset fallback to workspace copy: %s\n' "${line_label}" "${relative_path}" >&2
+    gate_record_preflight_check "${evidence_dir}" "verify_asset_fallback" "warning" "${relative_path}"
+    printf '%s\n' "${workspace_candidate}"
+    return 0
+  fi
+  gate_record_failure "${evidence_dir}" "scenario_assertion_failed" "scenario_gate_verify_assets" "missing verify asset ${relative_path}"
+  return 1
+}
+
 gate_record_failure() {
   local evidence_dir="$1"
   local classification="$2"
@@ -293,4 +323,27 @@ gate_write_mount_tree() {
       echo "missing:${root_path}"
     fi
   } > "${output_file}"
+}
+
+
+gate_wait_for_external_runner_connection() {
+  local evidence_dir="$1"
+  local container_name="$2"
+  local timeout_seconds="${3:-60}"
+  local started now runner_logs
+  started="$(date +%s)"
+  while true; do
+    if docker inspect -f '{{.State.Running}}' "${container_name}" 2>/dev/null | grep -q true; then
+      runner_logs="$(docker logs "${container_name}" 2>&1 || true)"
+      if grep -q '\[agent-codex-runner\] connected' <<<"${runner_logs}"; then
+        return 0
+      fi
+    fi
+    now="$(date +%s)"
+    if (( now - started >= timeout_seconds )); then
+      gate_record_failure "${evidence_dir}" "runner_launch_failed" "infra_preflight_external_runner" "external-runner not connected"
+      return 1
+    fi
+    sleep 2
+  done
 }

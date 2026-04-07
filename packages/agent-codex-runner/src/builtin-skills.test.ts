@@ -27,6 +27,41 @@ describe('builtin-skills', () => {
     }
   });
 
+  it('treats an explicit empty skill list as no optional builtin skills', () => {
+    const previousSkills = process.env.MBOS_AGENT_BUILTIN_SKILLS;
+    const previousRequired = process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED;
+    delete process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR;
+    process.env.MBOS_AGENT_BUILTIN_SKILLS = '';
+    process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED = '0';
+    try {
+      const config = resolveBuiltinSkillsConfig();
+      expect(config.required).toBe(false);
+      expect(config.skills).toEqual([]);
+    } finally {
+      if (previousSkills === undefined) delete process.env.MBOS_AGENT_BUILTIN_SKILLS;
+      else process.env.MBOS_AGENT_BUILTIN_SKILLS = previousSkills;
+      if (previousRequired === undefined) delete process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED;
+      else process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED = previousRequired;
+    }
+  });
+
+  it('treats a sanitized-empty explicit skill list as empty instead of restoring defaults', () => {
+    const previousSkills = process.env.MBOS_AGENT_BUILTIN_SKILLS;
+    const previousRequired = process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED;
+    process.env.MBOS_AGENT_BUILTIN_SKILLS = ', , ###';
+    process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED = '0';
+    try {
+      const config = resolveBuiltinSkillsConfig();
+      expect(config.required).toBe(false);
+      expect(config.skills).toEqual([]);
+    } finally {
+      if (previousSkills === undefined) delete process.env.MBOS_AGENT_BUILTIN_SKILLS;
+      else process.env.MBOS_AGENT_BUILTIN_SKILLS = previousSkills;
+      if (previousRequired === undefined) delete process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED;
+      else process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED = previousRequired;
+    }
+  });
+
   it('inspects builtin skills from a configured source dir', async () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
     try {

@@ -334,6 +334,37 @@ patches:
       kind: Service
       name: ingress-nginx-controller
     path: service-patch.json
+EOF
+
+if [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]]; then
+cat >> "${PREREQ_DIR}/ingress-nginx/kustomization.yaml" <<EOF
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: ingress-nginx-controller
+    path: image-pull-secret-patch.yaml
+  - target:
+      version: v1
+      kind: Job
+      name: ingress-nginx-admission-create
+    path: image-pull-secret-patch.yaml
+  - target:
+      version: v1
+      kind: Job
+      name: ingress-nginx-admission-patch
+    path: image-pull-secret-patch.yaml
+EOF
+
+cat > "${PREREQ_DIR}/ingress-nginx/image-pull-secret-patch.yaml" <<EOF
+- op: add
+  path: /spec/template/spec/imagePullSecrets
+  value:
+    - name: ${REGISTRY_SECRET_NAME}
+EOF
+fi
+
+cat >> "${PREREQ_DIR}/ingress-nginx/kustomization.yaml" <<EOF
 images:
   - name: registry.k8s.io/ingress-nginx/controller
     newName: $(image_name_from_ref "${K8S_INGRESS_NGINX_CONTROLLER_IMAGE}")

@@ -68,18 +68,12 @@ record_task_summary() {
 
 resolve_verify_source_file() {
   local relative_path="$1"
-  local release_candidate="${RELEASE_ROOT}/${relative_path}"
-  local workspace_candidate="${ROOT_DIR}/${relative_path}"
-  if [[ -f "${workspace_candidate}" ]]; then
-    printf '%s\n' "${workspace_candidate}"
-    return 0
-  fi
-  if [[ -f "${release_candidate}" ]]; then
-    printf '%s\n' "${release_candidate}"
-    return 0
-  fi
-  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "scenario_assertion_failed" "scenario_gate_verify_assets" "missing verify asset ${relative_path}"
-  exit 1
+  gate_resolve_verify_source_file \
+    "${VERIFY_EVIDENCE_DIR}" \
+    "demo-deploy" \
+    "${RELEASE_ROOT}" \
+    "${ROOT_DIR}" \
+    "${relative_path}"
 }
 
 wait_http_or_fail() {
@@ -172,7 +166,9 @@ if demo_mode_is_full; then
   gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "internal_control_plane" "passed" "sandbox manager and csi ready"
 fi
 require_command "docker inspect -f '{{.State.Running}}' '${EXTERNAL_RUNNER_CONTAINER_NAME}' 2>/dev/null | grep -q true" runner_launch_failed infra_preflight_external_runner "external-runner not running"
-require_command "docker logs '${EXTERNAL_RUNNER_CONTAINER_NAME}' 2>&1 | grep -q '\\[agent-codex-runner\\] connected'" runner_launch_failed infra_preflight_external_runner "external-runner not connected"
+if ! gate_wait_for_external_runner_connection "${VERIFY_EVIDENCE_DIR}" "${EXTERNAL_RUNNER_CONTAINER_NAME}" 60; then
+  exit 1
+fi
 require_command "docker_compose ps --status running universal-proxy | grep -q universal-proxy" infra_dependency_unready infra_preflight_proxy "universal-proxy not running"
 record_service external_runner ready "${EXTERNAL_RUNNER_CONTAINER_NAME}"
 record_service universal_proxy ready "docker compose"
@@ -342,8 +338,8 @@ docker run --rm \
   -e INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_CODEX_RUNNER_EMBEDDED=1 \
-  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS= \
-  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED=0 \
+  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS:-feishu-docs,jira-ops}" \
+  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED:-1}" \
   -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR=/etc/codex/skills \
   -e INTEGRATION_CODEX_RUNNER_MOUNT_READY_TIMEOUT_MS="${MBOS_AGENT_JUICEFS_MOUNT_READY_TIMEOUT_MS:-120000}" \
   -e INTEGRATION_RUNNER_LOG_DIR=/app/test-results/runner-logs \

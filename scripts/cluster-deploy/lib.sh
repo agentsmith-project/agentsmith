@@ -31,6 +31,12 @@ local_kind_kubeconfig_ready() {
   kubectl --kubeconfig "${LOCAL_KIND_KUBECONFIG}" config get-contexts "${LOCAL_KIND_CONTEXT_NAME}" >/dev/null 2>&1
 }
 
+kubeconfig_ready() {
+  local kubeconfig_path="$1"
+  [[ -f "${kubeconfig_path}" ]] || return 1
+  kubectl --kubeconfig "${kubeconfig_path}" version --request-timeout=5s >/dev/null 2>&1
+}
+
 cluster_deploy_mode() {
   printf '%s\n' "${CLUSTER_DEPLOY_MODE:-semi-auto}"
 }
@@ -99,6 +105,9 @@ ensure_operator_kubeconfig() {
       die "missing kubeconfig in operator files, shared config, and release examples"
     fi
   fi
+  if ! kubeconfig_ready "${SHARED_KUBECONFIG}" && local_kind_kubeconfig_ready; then
+    cp "${LOCAL_KIND_KUBECONFIG}" "${SHARED_KUBECONFIG}"
+  fi
   cp "${SHARED_KUBECONFIG}" "${RELEASE_ROOT}/env/kubeconfig"
   export KUBECONFIG="${SHARED_KUBECONFIG}"
 }
@@ -119,6 +128,9 @@ ensure_operator_admin_kubeconfig() {
     else
       die "missing admin-kubeconfig in operator files, shared config, and release examples"
     fi
+  fi
+  if ! kubeconfig_ready "${SHARED_ADMIN_KUBECONFIG}" && local_kind_kubeconfig_ready; then
+    cp "${LOCAL_KIND_KUBECONFIG}" "${SHARED_ADMIN_KUBECONFIG}"
   fi
   cp "${SHARED_ADMIN_KUBECONFIG}" "${RELEASE_ROOT}/env/admin-kubeconfig"
 }
@@ -151,6 +163,12 @@ load_registry_env() {
         export "${key}=${value}"
       done < "${RELEASE_ROOT}/env/registry.env"
   export K8S_REGISTRY_HOST="${K8S_REGISTRY_HOST:-${REGISTRY_HOST:-}}"
+  if [[ -z "${K8S_REGISTRY_HOST:-}" || "${K8S_REGISTRY_HOST}" == "${REGISTRY_HOST:-}" ]]; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'kind-registry'; then
+      K8S_REGISTRY_HOST="kind-registry:5000"
+      export K8S_REGISTRY_HOST
+    fi
+  fi
 }
 
 load_kubeconfig() {
@@ -169,6 +187,9 @@ read_version_value() {
 }
 
 require_version_images() {
+  if [[ -z "${REGISTRY_HOST:-}" || -z "${K8S_REGISTRY_HOST:-}" ]]; then
+    load_registry_env
+  fi
   APP_IMAGE="$(read_version_value agentsmith_app_image)"
   RUNNER_IMAGE="$(read_version_value agentsmith_runner_image)"
   K8S_RUNNER_IMAGE="$(read_version_value agentsmith_runner_k8s_image)"
@@ -188,15 +209,15 @@ require_version_images() {
   local image_var image_value k8s_var_name k8s_value
   if [[ -z "${K8S_RUNNER_IMAGE}" ]]; then
     K8S_RUNNER_IMAGE="${RUNNER_IMAGE}"
-    if [[ -n "${K8S_REGISTRY_HOST:-}" && -n "${REGISTRY_HOST:-}" && "${RUNNER_IMAGE}" == "${REGISTRY_HOST}/"* ]]; then
-      K8S_RUNNER_IMAGE="${K8S_REGISTRY_HOST}/${RUNNER_IMAGE#${REGISTRY_HOST}/}"
-    fi
+  fi
+  if [[ -n "${K8S_REGISTRY_HOST:-}" && -n "${REGISTRY_HOST:-}" && "${K8S_RUNNER_IMAGE}" == "${REGISTRY_HOST}/"* ]]; then
+    K8S_RUNNER_IMAGE="${K8S_REGISTRY_HOST}/${K8S_RUNNER_IMAGE#${REGISTRY_HOST}/}"
   fi
   if [[ -z "${K8S_SANDBOX_MANAGER_IMAGE}" ]]; then
     K8S_SANDBOX_MANAGER_IMAGE="${SANDBOX_MANAGER_IMAGE}"
-    if [[ -n "${K8S_REGISTRY_HOST:-}" && -n "${REGISTRY_HOST:-}" && "${SANDBOX_MANAGER_IMAGE}" == "${REGISTRY_HOST}/"* ]]; then
-      K8S_SANDBOX_MANAGER_IMAGE="${K8S_REGISTRY_HOST}/${SANDBOX_MANAGER_IMAGE#${REGISTRY_HOST}/}"
-    fi
+  fi
+  if [[ -n "${K8S_REGISTRY_HOST:-}" && -n "${REGISTRY_HOST:-}" && "${K8S_SANDBOX_MANAGER_IMAGE}" == "${REGISTRY_HOST}/"* ]]; then
+    K8S_SANDBOX_MANAGER_IMAGE="${K8S_REGISTRY_HOST}/${K8S_SANDBOX_MANAGER_IMAGE#${REGISTRY_HOST}/}"
   fi
   for image_var in \
     JUICEFS_MOUNT_IMAGE \

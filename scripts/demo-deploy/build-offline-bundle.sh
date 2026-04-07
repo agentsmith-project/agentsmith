@@ -211,6 +211,15 @@ done
 
 mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/kind" "${BUNDLE_DIR}/scripts" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/k8s" "${BUNDLE_DIR}/e2e" "${BUNDLE_DIR}/infra/runtime"
 mkdir -p "${BUNDLE_DIR}/universal-proxy"
+
+copy_bundle_file() {
+  local source_file="$1"
+  local target_file="$2"
+  rm -rf "${target_file}"
+  mkdir -p "$(dirname "${target_file}")"
+  cp "${source_file}" "${target_file}"
+}
+
 cp "${ROOT_DIR}/infra/deploy/demo/docker-compose.yml" "${BUNDLE_DIR}/compose/docker-compose.yml"
 cp "${ROOT_DIR}/infra/deploy/demo/deployment.manifest.json" "${BUNDLE_DIR}/deployment.manifest.json"
 cp "${ROOT_DIR}/infra/deploy/demo/env/site.env.example" "${BUNDLE_DIR}/env/site.env.example"
@@ -232,16 +241,21 @@ cp "${ROOT_DIR}/scripts/lib/release-stage-common.sh" "${BUNDLE_DIR}/scripts/lib/
 cp "${ROOT_DIR}/scripts/lib/bootstrap-common.sh" "${BUNDLE_DIR}/scripts/lib/bootstrap-common.sh"
 cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${BUNDLE_DIR}/scripts/lib/k8s-external-services.sh"
 cp "${ROOT_DIR}/scripts/lib/preset-common.sh" "${BUNDLE_DIR}/scripts/lib/preset-common.sh"
+cp "${ROOT_DIR}/scripts/lib/runtime-verification.sh" "${BUNDLE_DIR}/scripts/lib/runtime-verification.sh"
 mkdir -p "${BUNDLE_DIR}/scripts/substrate"
 cp "${ROOT_DIR}/scripts/substrate/deploy-common.sh" "${BUNDLE_DIR}/scripts/substrate/deploy-common.sh"
 mkdir -p "${BUNDLE_DIR}/scripts/app"
 cp "${ROOT_DIR}/scripts/app/deploy-common.sh" "${BUNDLE_DIR}/scripts/app/deploy-common.sh"
 cp "${ROOT_DIR}/infra/runtime/presets.env" "${BUNDLE_DIR}/infra/runtime/presets.env"
 chmod +x "${BUNDLE_DIR}"/scripts/*.sh "${BUNDLE_DIR}/scripts/lib/"*.sh
-cp "${ROOT_DIR}/e2e/integration-real-helpers.ts" "${BUNDLE_DIR}/e2e/integration-real-helpers.ts"
-cp "${ROOT_DIR}/e2e/integration-files.spec.ts" "${BUNDLE_DIR}/e2e/integration-files.spec.ts"
-cp "${ROOT_DIR}/e2e/integration-workspace-access.ts" "${BUNDLE_DIR}/e2e/integration-workspace-access.ts"
-cp "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts" "${BUNDLE_DIR}/e2e/integration-release-user-story.spec.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-real-helpers.ts" "${BUNDLE_DIR}/e2e/integration-real-helpers.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-files.spec.ts" "${BUNDLE_DIR}/e2e/integration-files.spec.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/notebook-execution-outcome.ts" "${BUNDLE_DIR}/e2e/notebook-execution-outcome.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-access.ts" "${BUNDLE_DIR}/e2e/integration-workspace-access.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-entry.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-entry.spec.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-publish-usable.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-publish-usable.spec.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-preset-external-file-library.spec.ts" "${BUNDLE_DIR}/e2e/integration-preset-external-file-library.spec.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts" "${BUNDLE_DIR}/e2e/integration-release-user-story.spec.ts"
 mkdir -p "${BUNDLE_DIR}/docs/contracts"
 cp "${ROOT_DIR}/docs/contracts/deployment-spec-v1.md" "${BUNDLE_DIR}/docs/contracts/deployment-spec-v1.md"
 mkdir -p "${BUNDLE_DIR}/docs/user-guides"

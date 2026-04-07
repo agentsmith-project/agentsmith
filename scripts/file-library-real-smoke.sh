@@ -91,6 +91,28 @@ is_loopback_or_special_host() {
   return 1
 }
 
+is_client_local_alias_host() {
+  local host="${1,,}"
+  [[ -z "${host}" ]] && return 1
+  case "${host}" in
+    localhost|127.*|::1|host.docker.internal)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+is_container_only_host() {
+  local host="${1,,}"
+  [[ -z "${host}" ]] && return 1
+  case "${host}" in
+    postgres|minio|api|keycloak|universal-proxy|*.svc|*.svc.cluster.local)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 is_private_ipv4() {
   python3 - "${1}" <<'PY'
 import ipaddress
@@ -152,25 +174,32 @@ validate_client_mount_access() {
     done < <(printf '%s' "${FILE_LIBRARY_VERIFY_FORBIDDEN_HOSTS}" | tr ', ' '\n\n' | sed '/^$/d')
   fi
 
-  if ! is_loopback_or_special_host "${public_web_host}"; then
+  if ! is_client_local_alias_host "${public_web_host}"; then
     if is_loopback_or_special_host "${metadata_host}" || is_loopback_or_special_host "${storage_host}"; then
       err "client mount access leaked a loopback or internal-only host: metadata=${metadata_host} storage=${storage_host}"
       exit 1
     fi
   fi
-  if ! is_loopback_or_special_host "${public_web_host}"; then
-    for forbidden in "${forbidden_hosts[@]}"; do
-      [[ -z "${forbidden}" ]] && continue
-      if [[ "${metadata_host}" == "${forbidden}" || "${storage_host}" == "${forbidden}" ]]; then
-        err "client mount access leaked an internal deployment address: ${forbidden}"
-        exit 1
-      fi
-    done
+
+  if is_container_only_host "${metadata_host}" || is_container_only_host "${storage_host}"; then
+    err "client mount access leaked a container-only host: metadata=${metadata_host} storage=${storage_host}"
+    exit 1
   fi
+
+  for forbidden in "${forbidden_hosts[@]}"; do
+    [[ -z "${forbidden}" ]] && continue
+    if is_client_local_alias_host "${public_web_host}" && is_client_local_alias_host "${forbidden}"; then
+      continue
+    fi
+    if [[ "${metadata_host}" == "${forbidden}" || "${storage_host}" == "${forbidden}" ]]; then
+      err "client mount access leaked an internal deployment address: ${forbidden}"
+      exit 1
+    fi
+  done
 
   if [[ "${FILE_LIBRARY_VERIFY_ALLOW_PRIVATE_CLIENT_IPS_WITH_PUBLIC_WEB}" != "1" ]] \
     && [[ -n "${public_web_host}" ]] \
-    && ! is_loopback_or_special_host "${public_web_host}" \
+    && ! is_client_local_alias_host "${public_web_host}" \
     && ! is_private_ipv4 "${public_web_host}" >/dev/null 2>&1; then
     if is_private_ipv4 "${metadata_host}" || is_private_ipv4 "${storage_host}"; then
       err "client mount access uses a private IP while PUBLIC_WEB_BASE_URL is not private; this usually means client-facing storage addresses are wrong"

@@ -499,16 +499,24 @@ async function waitForAgentReply(args: {
   expectedToken: string;
   minAgentMessages: number;
 }): Promise<void> {
-  const token = await readStoredAuthToken(args.page);
   await expect.poll(async () => {
-    const response = await args.page.request.get(`${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!response.ok()) return false;
-    const messages = (await response.json()) as Array<{ role?: string; content?: string }>;
-    const agentMessages = messages.filter((item) => item.role === 'agent');
-    if (agentMessages.length < args.minAgentMessages) return false;
-    return agentMessages.some((item) => item.content?.includes(args.expectedToken));
+    const token = await readStoredAuthToken(args.page);
+    const activeTaskId = args.page.url().match(/\/tasks\/([^/?#]+)/)?.[1]?.trim() || null;
+    const candidateTaskIds = Array.from(new Set([activeTaskId, args.taskId].filter((value): value is string => Boolean(value))));
+    for (const taskId of candidateTaskIds) {
+      const response = await args.page.request.get(`${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${taskId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok()) continue;
+      const payload = (await response.json()) as Array<{ role?: string; content?: string }> | { messages?: Array<{ role?: string; content?: string }> };
+      const messages = Array.isArray(payload) ? payload : payload.messages ?? [];
+      const agentMessages = messages.filter((item) => item.role === 'agent');
+      if (agentMessages.length < args.minAgentMessages) continue;
+      if (agentMessages.some((item) => item.content?.includes(args.expectedToken))) {
+        return true;
+      }
+    }
+    return false;
   }, { timeout: 300_000, intervals: [1_000, 2_000, 5_000] }).toBe(true);
 }
 

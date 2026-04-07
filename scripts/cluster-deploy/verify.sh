@@ -57,18 +57,12 @@ record_task_summary() {
 
 resolve_verify_source_file() {
   local relative_path="$1"
-  local release_candidate="${RELEASE_ROOT}/${relative_path}"
-  local workspace_candidate="${ROOT_DIR}/${relative_path}"
-  if [[ -f "${workspace_candidate}" ]]; then
-    printf '%s\n' "${workspace_candidate}"
-    return 0
-  fi
-  if [[ -f "${release_candidate}" ]]; then
-    printf '%s\n' "${release_candidate}"
-    return 0
-  fi
-  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "scenario_assertion_failed" "scenario_gate_verify_assets" "missing verify asset ${relative_path}"
-  exit 1
+  gate_resolve_verify_source_file \
+    "${VERIFY_EVIDENCE_DIR}" \
+    "cluster-deploy" \
+    "${RELEASE_ROOT}" \
+    "${ROOT_DIR}" \
+    "${relative_path}"
 }
 
 wait_http_or_fail() {
@@ -144,9 +138,7 @@ gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "host_local_stack" "passed"
 require_command "kubectl get deploy sandbox-manager -n '${INTERNAL_AGENT_K8S_NAMESPACE}' >/dev/null" sandbox_startup_failed infra_preflight_sandbox "sandbox-manager deploy missing"
 require_command "kubectl get cronjob sandbox-manager-cleaner -n '${INTERNAL_AGENT_K8S_NAMESPACE}' >/dev/null" sandbox_startup_failed infra_preflight_sandbox "sandbox-manager-cleaner missing"
 require_command "docker inspect -f '{{.State.Running}}' '${EXTERNAL_RUNNER_CONTAINER_NAME}' 2>/dev/null | grep -q true" runner_launch_failed infra_preflight_external_runner "external-runner not running"
-runner_logs="$(docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 || true)"
-if ! grep -q '\[agent-codex-runner\] connected' <<<"${runner_logs}"; then
-  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "runner_launch_failed" "infra_preflight_external_runner" "external-runner not connected"
+if ! gate_wait_for_external_runner_connection "${VERIFY_EVIDENCE_DIR}" "${EXTERNAL_RUNNER_CONTAINER_NAME}" 60; then
   exit 1
 fi
 require_command "docker_compose ps --status running universal-proxy | grep -q universal-proxy" infra_dependency_unready infra_preflight_proxy "universal-proxy not running"
@@ -259,8 +251,8 @@ docker run --rm \
   -e INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_INTERNAL_AGENT_IMAGE="${K8S_RUNNER_IMAGE}" \
   -e INTEGRATION_CODEX_RUNNER_EMBEDDED=1 \
-  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS= \
-  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED=0 \
+  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS:-feishu-docs,jira-ops}" \
+  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED:-1}" \
   -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR=/etc/codex/skills \
   -e INTEGRATION_RUNNER_LOG_DIR=/app/test-results/runner-logs \
   -e RESET_FIRST=0 \

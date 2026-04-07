@@ -30,13 +30,14 @@ function isSafeSkillName(name: string): boolean {
 }
 
 function parseSkillList(input: string | undefined): string[] {
-  if (typeof input !== 'string' || !input.trim()) return [...DEFAULT_BUILTIN_SKILLS];
+  if (typeof input !== 'string') return [...DEFAULT_BUILTIN_SKILLS];
+  if (!input.trim()) return [];
   const skills = input
     .split(',')
     .map((item) => item.trim())
     .filter((item) => item.length > 0)
     .filter((item) => isSafeSkillName(item));
-  if (skills.length === 0) return [...DEFAULT_BUILTIN_SKILLS];
+  if (skills.length === 0) return [];
   return Array.from(new Set(skills));
 }
 

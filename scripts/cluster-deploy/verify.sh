@@ -65,106 +65,31 @@ resolve_verify_source_file() {
     "${relative_path}"
 }
 
-wait_http_or_fail() {
-  local url="$1"
-  local timeout="${2:-240}"
-  local classification="$3"
-  local stage="$4"
-  local started
-  started="$(date +%s)"
-  until curl -fsS "${url}" >/dev/null 2>&1; do
-    if (( "$(date +%s)" - started > timeout )); then
-      gate_record_failure "${VERIFY_EVIDENCE_DIR}" "${classification}" "${stage}" "unreachable ${url}"
-      exit 1
-    fi
-    sleep 2
-  done
-}
 
-wait_tcp_or_fail() {
-  local host="$1"
-  local port="$2"
-  local timeout="${3:-240}"
-  local classification="$4"
-  local stage="$5"
-  local started
-  started="$(date +%s)"
-  until python3 - "$host" "$port" <<'PY'
-import socket
-import sys
 
-host = sys.argv[1]
-port = int(sys.argv[2])
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.settimeout(1)
-try:
-    sock.connect((host, port))
-except OSError:
-    sys.exit(1)
-else:
-    sock.close()
-    sys.exit(0)
-PY
-  do
-    if (( "$(date +%s)" - started > timeout )); then
-      gate_record_failure "${VERIFY_EVIDENCE_DIR}" "${classification}" "${stage}" "tcp ${host}:${port} unavailable"
-      exit 1
-    fi
-    sleep 2
-  done
-}
 
-require_command() {
-  local command="$1"
-  local classification="$2"
-  local stage="$3"
-  local message="$4"
-  if ! eval "${command}"; then
-    gate_record_failure "${VERIFY_EVIDENCE_DIR}" "${classification}" "${stage}" "${message}"
-    exit 1
-  fi
-}
-
-wait_http_or_fail "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240 infra_dependency_unready infra_preflight_keycloak
+gate_wait_for_http "${VERIFY_EVIDENCE_DIR}" "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240 infra_dependency_unready infra_preflight_keycloak
 record_service keycloak ready "${HOST_LOCAL_KEYCLOAK_BASE_URL}"
-wait_tcp_or_fail "127.0.0.1" "${API_PORT:-20000}" 240 infra_dependency_unready infra_preflight_api_port
+gate_wait_for_tcp "${VERIFY_EVIDENCE_DIR}" "127.0.0.1" "${API_PORT:-20000}" 240 infra_dependency_unready infra_preflight_api_port
 record_service api_port ready "127.0.0.1:${API_PORT:-20000}"
-wait_http_or_fail "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240 infra_dependency_unready infra_preflight_web
+gate_wait_for_http "${VERIFY_EVIDENCE_DIR}" "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240 infra_dependency_unready infra_preflight_web
 record_service web ready "${HOST_LOCAL_WEB_BASE_URL}"
-wait_http_or_fail "${SANDBOX_MANAGER_PUBLIC_BASE_URL}/readyz" 240 sandbox_startup_failed infra_preflight_sandbox
+gate_wait_for_http "${VERIFY_EVIDENCE_DIR}" "${SANDBOX_MANAGER_PUBLIC_BASE_URL}/readyz" 240 sandbox_startup_failed infra_preflight_sandbox
 record_service sandbox_manager ready "${SANDBOX_MANAGER_PUBLIC_BASE_URL}"
 gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "host_local_stack" "passed" "web/api/keycloak/sandbox ready"
 
-require_command "kubectl get deploy sandbox-manager -n '${INTERNAL_AGENT_K8S_NAMESPACE}' >/dev/null" sandbox_startup_failed infra_preflight_sandbox "sandbox-manager deploy missing"
-require_command "kubectl get cronjob sandbox-manager-cleaner -n '${INTERNAL_AGENT_K8S_NAMESPACE}' >/dev/null" sandbox_startup_failed infra_preflight_sandbox "sandbox-manager-cleaner missing"
-require_command "docker inspect -f '{{.State.Running}}' '${EXTERNAL_RUNNER_CONTAINER_NAME}' 2>/dev/null | grep -q true" runner_launch_failed infra_preflight_external_runner "external-runner not running"
+gate_require_command "${VERIFY_EVIDENCE_DIR}" "kubectl get deploy sandbox-manager -n '${INTERNAL_AGENT_K8S_NAMESPACE}' >/dev/null" sandbox_startup_failed infra_preflight_sandbox "sandbox-manager deploy missing"
+gate_require_command "${VERIFY_EVIDENCE_DIR}" "kubectl get cronjob sandbox-manager-cleaner -n '${INTERNAL_AGENT_K8S_NAMESPACE}' >/dev/null" sandbox_startup_failed infra_preflight_sandbox "sandbox-manager-cleaner missing"
+gate_require_command "${VERIFY_EVIDENCE_DIR}" "docker inspect -f '{{.State.Running}}' '${EXTERNAL_RUNNER_CONTAINER_NAME}' 2>/dev/null | grep -q true" runner_launch_failed infra_preflight_external_runner "external-runner not running"
 if ! gate_wait_for_external_runner_connection "${VERIFY_EVIDENCE_DIR}" "${EXTERNAL_RUNNER_CONTAINER_NAME}" 60; then
   exit 1
 fi
-require_command "docker_compose ps --status running universal-proxy | grep -q universal-proxy" infra_dependency_unready infra_preflight_proxy "universal-proxy not running"
+gate_require_command "${VERIFY_EVIDENCE_DIR}" "docker_compose ps --status running universal-proxy | grep -q universal-proxy" infra_dependency_unready infra_preflight_proxy "universal-proxy not running"
 record_service external_runner ready "${EXTERNAL_RUNNER_CONTAINER_NAME}"
 record_service universal_proxy ready "docker compose"
 gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "external_runner" "passed" "${EXTERNAL_RUNNER_CONTAINER_NAME}"
 
-token_json="$(
-  curl -fsS "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
-    -H 'content-type: application/x-www-form-urlencoded' \
-    --data-urlencode 'grant_type=password' \
-    --data-urlencode "client_id=${KEYCLOAK_CLIENT_ID}" \
-    --data-urlencode "username=${INTEGRATION_DEV_ADMIN_USERNAME}" \
-    --data-urlencode "password=${INTEGRATION_DEV_ADMIN_PASSWORD}" \
-    --data-urlencode 'scope=openid profile email'
-)"
-ACCESS_TOKEN="$(printf '%s' "${token_json}" | json_extract access_token)"
-if [[ -z "${ACCESS_TOKEN}" ]]; then
-  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "identity_bootstrap_failed" "auth_preflight_token" "failed to obtain dev-admin token during verify"
-  exit 1
-fi
-if ! curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/me/profile" -H "Authorization: Bearer ${ACCESS_TOKEN}" >/dev/null; then
-  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "identity_bootstrap_failed" "auth_preflight_profile" "authenticated /api/v1/me/profile unavailable"
-  exit 1
-fi
-gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "auth_preflight" "passed" "token issued and /api/v1/me/profile accessible"
+ACCESS_TOKEN="$(gate_run_auth_preflight   "${VERIFY_EVIDENCE_DIR}"   "${HOST_LOCAL_KEYCLOAK_BASE_URL}"   "${KEYCLOAK_REALM}"   "${KEYCLOAK_CLIENT_ID}"   "${INTEGRATION_DEV_ADMIN_USERNAME}"   "${INTEGRATION_DEV_ADMIN_PASSWORD}"   "${HOST_LOCAL_API_BASE_URL}/api/v1/me/profile"   "failed to obtain dev-admin token during verify"   "verify token missing access_token"   "authenticated /api/v1/me/profile unavailable")" || exit 1
 record_service auth ready "dev-admin token bootstrap"
 
 PROJECTS_JSON="$(

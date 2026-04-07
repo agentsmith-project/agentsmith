@@ -25,7 +25,9 @@
 2. `local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用这套底座。
 3. 同一时间只允许一条工作线处于 active。
 4. 切换工作线前，先把当前工作线停掉。
-5. 本地 rehearsal 默认使用同一个 `kind-agentsmith` 集群和同一个本地 registry。
+5. `local-manual` 只保留自己的 app 端口，默认读取共享 substrate 的连接文件；如果共享 substrate 端口已被别的工作线占用，会直接失败并给出冲突提示。
+6. `backend-real` / `integration-full` 默认使用独立 support-service 端口，不复用共享 substrate 的 `15432/17017/16379/19000/18080`。
+7. 本地 rehearsal 默认使用同一个 `kind-agentsmith` 集群和同一个本地 registry。
 
 ## 先管底座
 
@@ -94,6 +96,16 @@ make substrate-reseed
 make local-manual-up
 make local-manual-seed-notebook
 ```
+
+默认端口约定：
+
+```bash
+PORT_API=21000
+PORT_WEB=3101
+PROXY_PORT=39080
+```
+
+如果 `local-manual-up` 直接提示共享 substrate 端口被占用，说明当前机器上还有别的工作线占着共享底座；先执行对应的 `*-down` 或 `*-reset`，不要强行并跑。
 
 如果要在本机补 internal notebook / sandbox / JuiceFS 验证，再执行：
 
@@ -215,6 +227,11 @@ make substrate-reset
 - 要对真实目标主机发布
   - 不用这份文档
   - 看 `demo-deploy-operations.md` 或 `cluster-deploy-operations.md`
+
+- 要跑 `backend-real` / `run-integration-e2e-full`
+  - 默认走独立 support-service 端口
+  - 当前基线是 `25432 / 27027 / 26379 / 29000 / 29001 / 28081`
+  - 这条线不需要先停共享 substrate，但仍然要避开同名 `mbos-*` integration 容器残留
 
 ## 出问题先看哪里
 

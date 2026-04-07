@@ -347,3 +347,121 @@ gate_wait_for_external_runner_connection() {
     sleep 2
   done
 }
+
+
+gate_wait_for_http() {
+  local evidence_dir="$1"
+  local url="$2"
+  local timeout_seconds="$3"
+  local classification="$4"
+  local stage="$5"
+  local accepted_codes="${6:-200,307,308,401,403}"
+  local started last_code allowed_code
+  started="$(date +%s)"
+  while true; do
+    last_code="$(curl -s -o /dev/null -w "%{http_code}" "${url}" || true)"
+    IFS=',' read -r -a allowed <<< "${accepted_codes}"
+    for allowed_code in "${allowed[@]}"; do
+      if [[ "${last_code}" == "${allowed_code}" ]]; then
+        return 0
+      fi
+    done
+    if (( $(date +%s) - started >= timeout_seconds )); then
+      gate_record_failure "${evidence_dir}" "${classification}" "${stage}" "unreachable ${url} (last status: ${last_code:-n/a})"
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+gate_wait_for_tcp() {
+  local evidence_dir="$1"
+  local host="$2"
+  local port="$3"
+  local timeout_seconds="$4"
+  local classification="$5"
+  local stage="$6"
+  local started
+  started="$(date +%s)"
+  while true; do
+    if python3 - "$host" "$port" <<'PY_TCP'
+import socket
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(1)
+try:
+    sock.connect((host, port))
+except OSError:
+    sys.exit(1)
+else:
+    sock.close()
+    sys.exit(0)
+PY_TCP
+    then
+      return 0
+    fi
+    if (( $(date +%s) - started >= timeout_seconds )); then
+      gate_record_failure "${evidence_dir}" "${classification}" "${stage}" "tcp ${host}:${port} unavailable"
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+gate_require_command() {
+  local evidence_dir="$1"
+  local command="$2"
+  local classification="$3"
+  local stage="$4"
+  local message="$5"
+  if ! eval "${command}"; then
+    gate_record_failure "${evidence_dir}" "${classification}" "${stage}" "${message}"
+    return 1
+  fi
+}
+
+
+gate_run_auth_preflight() {
+  local evidence_dir="$1"
+  local keycloak_base_url="$2"
+  local keycloak_realm="$3"
+  local keycloak_client_id="$4"
+  local username="$5"
+  local password="$6"
+  local api_profile_url="$7"
+  local token_failure_message="${8:-failed to obtain integration token}"
+  local missing_token_message="${9:-integration token missing access_token}"
+  local profile_failure_message="${10:-authenticated profile endpoint unavailable}"
+
+  local token_json
+  token_json="$({
+    curl -fsS "${keycloak_base_url}/realms/${keycloak_realm}/protocol/openid-connect/token" \
+      -H 'content-type: application/x-www-form-urlencoded' \
+      --data-urlencode 'grant_type=password' \
+      --data-urlencode "client_id=${keycloak_client_id}" \
+      --data-urlencode "username=${username}" \
+      --data-urlencode "password=${password}" \
+      --data-urlencode 'scope=openid profile email'
+  })" || {
+    gate_record_failure "${evidence_dir}" "identity_bootstrap_failed" "auth_preflight_token" "${token_failure_message}"
+    return 1
+  }
+
+  local access_token
+  access_token="$(printf '%s' "${token_json}" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("access_token") or "").strip())')"
+  if [[ -z "${access_token}" ]]; then
+    gate_record_failure "${evidence_dir}" "identity_bootstrap_failed" "auth_preflight_token" "${missing_token_message}"
+    return 1
+  fi
+
+  if ! curl -fsS "${api_profile_url}" -H "Authorization: Bearer ${access_token}" >/dev/null; then
+    gate_record_failure "${evidence_dir}" "identity_bootstrap_failed" "auth_preflight_profile" "${profile_failure_message}"
+    return 1
+  fi
+
+  gate_record_preflight_check "${evidence_dir}" "auth_preflight" "passed" "token issued and ${api_profile_url} accessible"
+  printf '%s\n' "${access_token}"
+}

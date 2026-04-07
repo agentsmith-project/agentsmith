@@ -3,20 +3,24 @@ set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_local_manual_env
+LOCAL_MANUAL_RESET_EVIDENCE=1
+setup_local_manual_runtime_evidence
 
 check_http() {
   local url="$1"
   local label="$2"
-  local code
-  code="$(curl -sS -o /dev/null -w '%{http_code}' "${url}" || true)"
-  if [[ "${code}" != "200" && "${code}" != "307" && "${code}" != "308" ]]; then
-    err "${label} check failed (${url}) status=${code}"
+  local stage="$3"
+  if ! gate_wait_for_http "${LOCAL_MANUAL_EVIDENCE_DIR}" "${url}" 30 infra_dependency_unready "${stage}" "200,307,308"; then
+    err "${label} check failed (${url})"
     exit 1
   fi
+  gate_record_service_status "${LOCAL_MANUAL_EVIDENCE_DIR}" "${label}" ready "${url}"
 }
 
-check_http "http://127.0.0.1:${PROXY_PORT}/admin/state" "proxy"
-check_http "http://localhost:${PORT_API}/api/v1/openapi.json" "api"
-check_http "http://localhost:${PORT_WEB}/${LOCALE}/login/workspace" "web"
-check_http "http://localhost:${PORT_WEB}/api/public/workspaces" "public workspaces"
+check_http "http://127.0.0.1:${PROXY_PORT}/admin/state" "proxy" "infra_preflight_proxy"
+check_http "http://localhost:${PORT_API}/api/v1/openapi.json" "api" "infra_preflight_api"
+check_http "http://localhost:${PORT_WEB}/${LOCALE}/login/workspace" "web" "infra_preflight_web_login"
+check_http "http://localhost:${PORT_WEB}/api/public/workspaces" "public_workspaces" "infra_preflight_web_public"
+gate_write_mount_tree "${LOCAL_MANUAL_EVIDENCE_DIR}" "${LOCAL_MANUAL_ROOT}"
+gate_record_success "${LOCAL_MANUAL_EVIDENCE_DIR}" "verify"
 info "platform verify passed"

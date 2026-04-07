@@ -3,6 +3,9 @@ set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_local_manual_env
+LOCAL_MANUAL_RESET_EVIDENCE=1
+setup_local_manual_runtime_evidence
+local_manual_assert_shared_substrate_available
 acquire_scenario_lock local-manual
 arm_scenario_lock_cleanup local-manual
 
@@ -16,6 +19,7 @@ SUBSTRATE_ENV_FILE="${ENV_FILE}" SUBSTRATE="${SUBSTRATE}" bash "${ROOT_DIR}/scri
 load_local_manual_substrate_env
 
 APP_MODE=local-manual SUBSTRATE="${SUBSTRATE}" ENV_FILE="${ENV_FILE}" bash "${ROOT_DIR}/scripts/app/up.sh"
+gate_write_mount_tree "${LOCAL_MANUAL_EVIDENCE_DIR}" "${LOCAL_MANUAL_ROOT}"
 
 info "ready"
 info "Web: http://localhost:${PORT_WEB}/${LOCALE}/login/workspace"

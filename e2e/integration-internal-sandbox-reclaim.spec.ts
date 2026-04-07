@@ -89,7 +89,7 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       maxLifetimeSec: 3600,
     });
 
-    await waitForJuicefsCsiReady();
+    await waitForJuicefsCsiReady({ namespace: process.env.JUICEFS_CSI_NAMESPACE?.trim() || "kube-system" });
 
     const taskId1 = await createNotebookTaskViaApi({
       page,
@@ -146,7 +146,7 @@ test.describe('@lane-real internal sandbox reclaim', () => {
     await waitForWorkloadPodPresent({ namespace, workloadId: workloadId1, timeoutMs: 10_000 });
     await waitForWorkloadPodDeleted({ namespace, workloadId: workloadId1, timeoutMs: 330_000 });
 
-    await waitForJuicefsCsiReady();
+    await waitForJuicefsCsiReady({ namespace: process.env.JUICEFS_CSI_NAMESPACE?.trim() || "kube-system" });
 
     const restartFileLibraryId = await createFileLibraryViaUi(
       page,

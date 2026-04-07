@@ -28,6 +28,7 @@ export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host}"
 resolve_loopback_runtime_addresses "${API_PORT}" "${WEB_PORT}" 18080
 gate_write_runtime_descriptor "${LOCAL_READY_LOG_DIR}" "release_backend_real"
 gate_write_resolved_env "${LOCAL_READY_LOG_DIR}"
+gate_record_task_summary "${LOCAL_READY_LOG_DIR}" "{\"line_kind\":\"release_backend_real\",\"run_id\":\"${RUN_ID}\",\"api_port\":\"${API_PORT}\",\"web_port\":\"${WEB_PORT}\"}"
 API_LOG="${LOCAL_READY_LOG_DIR}/api.log"
 WEB_LOG="${LOCAL_READY_LOG_DIR}/web.log"
 LOCAL_API_PID=""
@@ -40,36 +41,6 @@ record_service() {
   gate_record_service_status "${LOCAL_READY_LOG_DIR}" "${service_name}" "${status}" "${detail}"
 }
 
-run_auth_preflight() {
-  local token_json
-  token_json="$(
-    curl -fsS "${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
-      -H 'content-type: application/x-www-form-urlencoded' \
-      --data-urlencode 'grant_type=password' \
-      --data-urlencode "client_id=${KEYCLOAK_CLIENT_ID}" \
-      --data-urlencode "username=${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" \
-      --data-urlencode "password=${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" \
-      --data-urlencode 'scope=openid profile email'
-  )" || {
-    gate_record_failure "${LOCAL_READY_LOG_DIR}" "identity_bootstrap_failed" "auth_preflight_token" "failed to obtain release-ready token"
-    return 1
-  }
-
-  local access_token
-  access_token="$(printf '%s' "${token_json}" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("access_token") or "").strip())')"
-  if [[ -z "${access_token}" ]]; then
-    gate_record_failure "${LOCAL_READY_LOG_DIR}" "identity_bootstrap_failed" "auth_preflight_token" "release-ready token missing access_token"
-    return 1
-  fi
-
-  if ! curl -fsS "http://localhost:${API_PORT}/api/v1/me/profile" -H "Authorization: Bearer ${access_token}" >/dev/null; then
-    gate_record_failure "${LOCAL_READY_LOG_DIR}" "identity_bootstrap_failed" "auth_preflight_profile" "authenticated /api/v1/me/profile unavailable"
-    return 1
-  fi
-
-  gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "auth_preflight" "passed" "token issued and /api/v1/me/profile accessible"
-  record_service auth ready "release-ready dev-admin token bootstrap"
-}
 
 if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
   gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "endpoint_env" "Missing PRESET_ENDPOINT_API_KEY"
@@ -135,21 +106,6 @@ stop_background_job() {
   kill -KILL "${pid}" >/dev/null 2>&1 || true
 }
 
-wait_for_http() {
-  local name="$1"
-  local url="$2"
-  local timeout="${3:-120}"
-  local last_code=""
-  for _ in $(seq 1 "${timeout}"); do
-    last_code="$(curl -s -o /dev/null -w "%{http_code}" "${url}" || true)"
-    if [[ "${last_code}" == "200" || "${last_code}" == "307" || "${last_code}" == "308" || "${last_code}" == "401" || "${last_code}" == "403" ]]; then
-      return 0
-    fi
-    sleep 1
-  done
-  info "${name} did not become ready (last status: ${last_code:-n/a})"
-  return 1
-}
 
 ensure_local_release_stack() {
   mkdir -p "${LOCAL_READY_LOG_DIR}"
@@ -195,14 +151,14 @@ ensure_local_release_stack() {
     )"
   fi
 
-  wait_for_http "local API" "http://localhost:${API_PORT}/api/v1/workspaces" || {
+  gate_wait_for_http "${LOCAL_READY_LOG_DIR}" "http://localhost:${API_PORT}/api/v1/workspaces" 120 infra_dependency_unready api_ready || {
     gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "api_ready" "local API did not become ready"
     tail -n 120 "${API_LOG}" >&2 || true
     exit 1
   }
   gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "api_ready" "passed" "http://localhost:${API_PORT}/api/v1/workspaces"
   record_service api ready "http://localhost:${API_PORT}/api/v1/workspaces"
-  wait_for_http "local Web" "http://localhost:${WEB_PORT}/api/public/workspaces" || {
+  gate_wait_for_http "${LOCAL_READY_LOG_DIR}" "http://localhost:${WEB_PORT}/api/public/workspaces" 120 infra_dependency_unready web_ready || {
     gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "web_ready" "local Web did not become ready"
     tail -n 120 "${WEB_LOG}" >&2 || true
     exit 1
@@ -247,7 +203,8 @@ gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "default_gate" "passed" "np
 run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_bootstrap" "passed" "backend-real bootstrap completed"
 ensure_local_release_stack
-run_auth_preflight || exit 1
+ACCESS_TOKEN="$(gate_run_auth_preflight "${LOCAL_READY_LOG_DIR}" "${KEYCLOAK_BASE_URL}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}" "${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" "${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" "http://localhost:${API_PORT}/api/v1/me/profile" "failed to obtain release-ready token" "release-ready token missing access_token" "authenticated /api/v1/me/profile unavailable")" || exit 1
+record_service auth ready "release-ready dev-admin token bootstrap"
 run_cmd "API_BASE='http://localhost:${API_PORT}' BASE_URL='http://localhost:${WEB_PORT}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_ready" "passed" "backend-real ready"
 record_service backend_ready ready "backend-real ready"

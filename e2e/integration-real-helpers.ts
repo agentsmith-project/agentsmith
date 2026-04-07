@@ -1272,6 +1272,11 @@ async function readJuicefsCsiStatus(namespace: string): Promise<{
 }
 
 async function detectJuicefsCsiNamespace(): Promise<string> {
+  const configuredNamespace = process.env.JUICEFS_CSI_NAMESPACE?.trim() || process.env.INTERNAL_AGENT_JUICEFS_CSI_NAMESPACE?.trim();
+  if (configuredNamespace) {
+    return configuredNamespace;
+  }
+
   const [controllerNamespace, nodeNamespace] = await Promise.all([
     spawnAndCapture(
       'kubectl',
@@ -1285,23 +1290,30 @@ async function detectJuicefsCsiNamespace(): Promise<string> {
     ),
   ]);
 
-  const fromController = (controllerNamespace.stdout || '')
+  const preferredNamespace = 'kube-system';
+  const hasController = (controllerNamespace.stdout || '')
     .split('\n')
     .map((line) => line.trim())
-    .find((line) => line.split(/\s+/)[1] === 'juicefs-csi-controller');
-  if (fromController) {
-    return fromController.split(/\s+/)[0] || 'juicefs-system';
+    .some((line) => {
+      const [namespace, name] = line.split(/\s+/);
+      return namespace === preferredNamespace && name === 'juicefs-csi-controller';
+    });
+  if (hasController) {
+    return preferredNamespace;
   }
 
-  const fromNode = (nodeNamespace.stdout || '')
+  const hasNode = (nodeNamespace.stdout || '')
     .split('\n')
     .map((line) => line.trim())
-    .find((line) => line.split(/\s+/)[1] === 'juicefs-csi-node');
-  if (fromNode) {
-    return fromNode.split(/\s+/)[0] || 'juicefs-system';
+    .some((line) => {
+      const [namespace, name] = line.split(/\s+/);
+      return namespace === preferredNamespace && name === 'juicefs-csi-node';
+    });
+  if (hasNode) {
+    return preferredNamespace;
   }
 
-  return 'juicefs-system';
+  return preferredNamespace;
 }
 
 export async function waitForJuicefsCsiReady(args?: {

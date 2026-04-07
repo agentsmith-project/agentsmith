@@ -10,12 +10,14 @@ LOCAL_MANUAL_INTERNAL_ENV_FILE="${LOCAL_MANUAL_INTERNAL_ENV_FILE:-${ROOT_DIR}/in
 
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-config.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
 source "${ROOT_DIR}/scripts/substrate/common.sh"
 ensure_backend_real_state
 
 LOCAL_MANUAL_ROOT="$(backend_real_state_root)/local-manual"
 mkdir -p "${LOCAL_MANUAL_ROOT}"
+LOCAL_MANUAL_EVIDENCE_DIR="${LOCAL_MANUAL_ROOT}/evidence"
 
 API_PID_FILE="${LOCAL_MANUAL_ROOT}/api.pid"
 WEB_PID_FILE="${LOCAL_MANUAL_ROOT}/web.pid"
@@ -99,6 +101,69 @@ init_local_manual_env() {
 
   FILE_LIBRARY_CLIENT_POSTGRES_HOST="${FILE_LIBRARY_CLIENT_POSTGRES_HOST:-$(detect_local_manual_file_library_client_postgres_host)}"
   FILE_LIBRARY_CLIENT_POSTGRES_PORT="${FILE_LIBRARY_CLIENT_POSTGRES_PORT:-15432}"
+}
+
+
+
+resolve_local_manual_runner_modes() {
+  if [[ "${LOCAL_MANUAL_ENABLE_INTERNAL}" == "1" ]]; then
+    printf 'external_host,internal_k8s\n'
+  else
+    printf 'external_host\n'
+  fi
+}
+
+setup_local_manual_runtime_evidence() {
+  local keycloak_host_url public_api_url host_api_url host_web_url public_web_url
+  public_web_url="http://localhost:${PORT_WEB}"
+  host_web_url="http://127.0.0.1:${PORT_WEB}"
+  public_api_url="http://localhost:${PORT_API}/api/v1"
+  host_api_url="http://127.0.0.1:${PORT_API}/api/v1"
+  keycloak_host_url="${INTERNAL_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
+
+  export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-local-manual}"
+  export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-$(resolve_local_manual_runner_modes)}"
+  resolve_public_runtime_addresses \
+    "${public_web_url}" \
+    "${public_api_url}" \
+    "${PUBLIC_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}" \
+    "${host_web_url}" \
+    "${host_api_url}" \
+    "${keycloak_host_url}"
+
+  if [[ ! -f "${LOCAL_MANUAL_EVIDENCE_DIR}/preflight.json" || "${LOCAL_MANUAL_RESET_EVIDENCE:-0}" == "1" ]]; then
+    gate_evidence_init "${LOCAL_MANUAL_EVIDENCE_DIR}" "local_manual"
+  fi
+  gate_write_runtime_descriptor "${LOCAL_MANUAL_EVIDENCE_DIR}" "local_manual"
+  gate_write_resolved_env "${LOCAL_MANUAL_EVIDENCE_DIR}"
+  gate_record_task_summary "${LOCAL_MANUAL_EVIDENCE_DIR}" "{\"line_kind\":\"local_manual\",\"workspace_id\":\"${WORKSPACE_ID}\",\"internal_enabled\":\"${LOCAL_MANUAL_ENABLE_INTERNAL}\",\"api_port\":\"${PORT_API}\",\"web_port\":\"${PORT_WEB}\"}"
+}
+
+
+local_manual_assert_shared_substrate_available() {
+  local ports labels expected_name existing_name line
+  ports=("${SUBSTRATE_POSTGRES_PORT}" "${SUBSTRATE_MONGO_PORT}" "${SUBSTRATE_REDIS_PORT}" "${SUBSTRATE_MINIO_API_PORT}" "${SUBSTRATE_KEYCLOAK_PORT}")
+  labels=(postgres mongo redis minio keycloak)
+  expected_name="${SUBSTRATE_COMPOSE_PROJECT_NAME:-mbos-integration-deps}"
+
+  local i=0
+  for port in "${ports[@]}"; do
+    [[ -n "${port}" ]] || continue
+    line="$(docker ps --format '{{.Names}} {{.Ports}}' | awk -v target=":${port}->" '$0 ~ target { print; exit }')"
+    if [[ -z "${line}" ]]; then
+      i=$((i + 1))
+      continue
+    fi
+    existing_name="${line%% *}"
+    if [[ "${existing_name}" == mbos-* || "${existing_name}" == ${expected_name}* ]]; then
+      i=$((i + 1))
+      continue
+    fi
+    gate_record_failure "${LOCAL_MANUAL_EVIDENCE_DIR}" "infra_dependency_unready" "shared_substrate_conflict" "${labels[$i]} port ${port} is occupied by ${existing_name}"
+    err "shared substrate port ${port} (${labels[$i]}) is occupied by ${existing_name}"
+    err "stop the other line first, or switch back after running its *-down / *-reset"
+    exit 1
+  done
 }
 
 require_preset_endpoint_env() {

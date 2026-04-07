@@ -32,6 +32,8 @@ MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}"
 MOUNT_IMAGE_OVERRIDE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}"
 JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-juicedata/mount:ce-v1.3.1}"
 JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
+JUICEFS_CSI_MANIFEST_PATH="${JUICEFS_CSI_MANIFEST_PATH:-${ROOT_DIR}/infra/deploy/cluster/addons/juicefs-csi/upstream-manifest.yaml}"
+JUICEFS_CSI_NAMESPACE="${JUICEFS_CSI_NAMESPACE:-kube-system}"
 EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-127.0.0.1}"
 EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-15432}"
 EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:19000}"
@@ -96,9 +98,19 @@ ensure_local_image() {
   docker pull "${image}" >/dev/null
 }
 
+wait_for_juicefs_ready() {
+  local namespace="$1"
+  kubectl wait --for=condition=Ready pod -l app=juicefs-csi-controller -n "${namespace}" --timeout=600s >/dev/null
+  kubectl wait --for=condition=Ready pod -l app=juicefs-csi-node -n "${namespace}" --timeout=600s >/dev/null
+}
+
 ensure_juicefs_csi() {
   info "reconciling JuiceFS CSI driver ${CSI_DRIVER}"
-  kubectl apply --validate=false -f https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml >/dev/null
+  local csi_manifest="${JUICEFS_CSI_MANIFEST_PATH}"
+  if [[ ! -f "${csi_manifest}" ]]; then
+    csi_manifest="https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml"
+  fi
+  kubectl apply --validate=false -f "${csi_manifest}" >/dev/null
 
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
     local cluster_name="${CONTEXT_NAME#kind-}"
@@ -113,13 +125,12 @@ ensure_juicefs_csi() {
     ensure_kind_image "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0"
     ensure_kind_image "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
 
-    kubectl scale statefulset/juicefs-csi-controller -n kube-system --replicas=1 >/dev/null || true
-    kubectl delete pod -n kube-system -l app=juicefs-csi-controller >/dev/null 2>&1 || true
-    kubectl delete pod -n kube-system -l app=juicefs-csi-node >/dev/null 2>&1 || true
+    kubectl scale statefulset/juicefs-csi-controller -n "${JUICEFS_CSI_NAMESPACE}" --replicas=1 >/dev/null || true
+    kubectl delete pod -n "${JUICEFS_CSI_NAMESPACE}" -l app=juicefs-csi-controller >/dev/null 2>&1 || true
+    kubectl delete pod -n "${JUICEFS_CSI_NAMESPACE}" -l app=juicefs-csi-node >/dev/null 2>&1 || true
   fi
 
-  kubectl rollout status statefulset/juicefs-csi-controller -n kube-system --timeout=180s >/dev/null
-  kubectl rollout status daemonset/juicefs-csi-node -n kube-system --timeout=180s >/dev/null
+  wait_for_juicefs_ready "${JUICEFS_CSI_NAMESPACE}"
 }
 
 kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply --validate=false -f - >/dev/null

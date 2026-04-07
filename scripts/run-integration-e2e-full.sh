@@ -45,10 +45,19 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 
 API_PORT="${INTEGRATION_API_PORT:-20000}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3001}"
-KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
+POSTGRES_PORT="${POSTGRES_PORT:-${INTEGRATION_POSTGRES_PORT:-25432}}"
+MONGO_PORT="${MONGO_PORT:-${INTEGRATION_MONGO_PORT:-27027}}"
+REDIS_PORT="${REDIS_PORT:-${INTEGRATION_REDIS_PORT:-26379}}"
+MINIO_API_PORT="${MINIO_API_PORT:-${INTEGRATION_MINIO_API_PORT:-29000}}"
+MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-${INTEGRATION_MINIO_CONSOLE_PORT:-29001}}"
+KEYCLOAK_PORT="${KEYCLOAK_PORT:-${INTEGRATION_KEYCLOAK_PORT:-28081}}"
 export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-$(basename "${INTEGRATION_LOG_DIR:-integration}")}"
 export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-$([[ -n "${SANDBOX_MANAGER_URL:-}" ]] && printf 'external_host,internal_k8s' || printf 'external_host')}"
 resolve_loopback_runtime_addresses "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}"
+# Use 127.0.0.1 for the isolated integration Keycloak lane so browser cookies do not collide
+# with any other localhost-scoped Keycloak session already running on this machine.
+export RUNTIME_BROWSER_KEYCLOAK_BASE_URL="http://127.0.0.1:${KEYCLOAK_PORT}"
+export RUNTIME_HOST_KEYCLOAK_BASE_URL="http://127.0.0.1:${KEYCLOAK_PORT}"
 PLAYWRIGHT_BASE_URL="${INTEGRATION_BASE_URL:-${RUNTIME_BROWSER_WEB_BASE_URL}}"
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-${RUNTIME_HOST_API_BASE_URL}}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-${RUNTIME_BROWSER_KEYCLOAK_BASE_URL}}"
@@ -58,6 +67,7 @@ KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
 INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
 KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL:-${PUBLIC_KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REALM}}"
+export KEYCLOAK_BASE_URL KEYCLOAK_REALM KEYCLOAK_URL KEYCLOAK_CLIENT_ID PUBLIC_KEYCLOAK_BASE_URL INTERNAL_KEYCLOAK_BASE_URL KEYCLOAK_ISSUER_URL
 INTEGRATION_LOCALE="${INTEGRATION_LOCALE:-en-US}"
 
 BOOTSTRAP_DEPS="${INTEGRATION_BOOTSTRAP_DEPS:-true}"
@@ -69,6 +79,7 @@ mkdir -p "${INTEGRATION_LOG_DIR}"
 gate_evidence_init "${INTEGRATION_LOG_DIR}" "backend_real"
 gate_write_runtime_descriptor "${INTEGRATION_LOG_DIR}" "backend_real"
 gate_write_resolved_env "${INTEGRATION_LOG_DIR}"
+gate_record_task_summary "${INTEGRATION_LOG_DIR}" "{\"line_kind\":\"backend_real\",\"spec_file\":\"${SPEC_FILE}\",\"api_port\":\"${API_PORT}\",\"web_port\":\"${WEB_PORT}\"}"
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
 API_PID=""
@@ -85,36 +96,6 @@ record_service() {
   gate_record_service_status "${INTEGRATION_LOG_DIR}" "${service_name}" "${status}" "${detail}"
 }
 
-run_auth_preflight() {
-  local token_json
-  token_json="$(
-    curl -fsS "${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
-      -H 'content-type: application/x-www-form-urlencoded' \
-      --data-urlencode 'grant_type=password' \
-      --data-urlencode "client_id=${KEYCLOAK_CLIENT_ID}" \
-      --data-urlencode "username=${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" \
-      --data-urlencode "password=${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" \
-      --data-urlencode 'scope=openid profile email'
-  )" || {
-    gate_record_failure "${INTEGRATION_LOG_DIR}" "identity_bootstrap_failed" "auth_preflight_token" "failed to obtain integration token"
-    return 1
-  }
-
-  local access_token
-  access_token="$(printf '%s' "${token_json}" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("access_token") or "").strip())')"
-  if [[ -z "${access_token}" ]]; then
-    gate_record_failure "${INTEGRATION_LOG_DIR}" "identity_bootstrap_failed" "auth_preflight_token" "integration token missing access_token"
-    return 1
-  fi
-
-  if ! curl -fsS "${INTEGRATION_API_BASE}/api/v1/me/profile" -H "Authorization: Bearer ${access_token}" >/dev/null; then
-    gate_record_failure "${INTEGRATION_LOG_DIR}" "identity_bootstrap_failed" "auth_preflight_profile" "authenticated /api/v1/me/profile unavailable"
-    return 1
-  fi
-
-  gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "auth_preflight" "passed" "token issued and /api/v1/me/profile accessible"
-  record_service auth ready "integration dev-admin token bootstrap"
-}
 
 run_clean() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
@@ -133,12 +114,12 @@ run_clean_with_integration_env() {
     PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
     INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
     KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
-    DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
-    MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
+    DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
+    MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}" \
     MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
-    REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
+    REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
     MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
-    MINIO_PORT="${MINIO_PORT:-19000}" \
+    MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
     MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
     MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
     MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
@@ -240,21 +221,6 @@ port_in_use() {
   return 1
 }
 
-wait_for_http() {
-  local name="$1"
-  local url="$2"
-  local timeout="${3:-120}"
-  local last_code=""
-  for _ in $(seq 1 "${timeout}"); do
-    last_code="$(curl -s -o /dev/null -w "%{http_code}" "${url}" || true)"
-    if [[ "${last_code}" == "200" || "${last_code}" == "307" || "${last_code}" == "308" || "${last_code}" == "401" || "${last_code}" == "403" ]]; then
-      return 0
-    fi
-    sleep 1
-  done
-  echo "[integration-e2e-full] ${name} did not become ready (last status: ${last_code:-n/a})" >&2
-  return 1
-}
 
 ensure_universal_proxy() {
   if [[ -n "${MBOS_UNIVERSAL_PROXY_BASE_URL:-}" ]]; then
@@ -298,7 +264,7 @@ EOF_PROXY
   PROXY_PID="$(
     start_background_job "${proxy_log}" run_clean "${proxy_root}/target/debug/llm-universal-proxy" --config "${proxy_config}"
   )"
-  if ! wait_for_http "universal proxy" "${proxy_base}/admin/state" 60; then
+  if ! gate_wait_for_http "${INTEGRATION_LOG_DIR}" "${proxy_base}/admin/state" 60 infra_dependency_unready proxy_ready; then
     echo "--- Universal Proxy log tail ---" >&2
     tail -n 120 "${proxy_log}" >&2 || true
     return 1
@@ -308,7 +274,7 @@ EOF_PROXY
 
 if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
   run_clean_with_integration_env npm run integration:deps:up
-  run_clean make deps-ready
+  run_clean_with_integration_env make deps-ready
   gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "integration_deps" "passed" "integration dependencies bootstrapped"
   record_service integration_deps ready "docker compose dependencies bootstrapped"
 fi
@@ -354,12 +320,12 @@ API_PID="$(
     INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
     KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
     KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-    DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
-    MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
+    DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:${POSTGRES_PORT}/mbos}" \
+    MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}" \
     MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
-    REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
+    REDIS_URL="${REDIS_URL:-redis://localhost:${REDIS_PORT}}" \
     MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
-    MINIO_PORT="${MINIO_PORT:-19000}" \
+    MINIO_PORT="${MINIO_PORT:-${MINIO_API_PORT}}" \
     MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
     MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
     MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
@@ -370,8 +336,8 @@ API_PID="$(
     INTERNAL_AGENT_JUICEFS_CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-}" \
     INTERNAL_AGENT_WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-}" \
     EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-127.0.0.1}" \
-    EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-15432}" \
-    EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:19000}" \
+    EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-${POSTGRES_PORT}}" \
+    EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:${MINIO_API_PORT}}" \
     INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-}" \
     INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-}" \
     JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT:-}" \
@@ -381,7 +347,7 @@ API_PID="$(
 
 WEB_PID="$(
   start_background_job "${WEB_LOG}" run_clean env \
-    MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
+    MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}" \
     MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
     NEXT_PUBLIC_USE_MSW=false \
     AGENTSMITH_ENABLE_TEST_ROUTES=true \
@@ -453,7 +419,8 @@ fi
 gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "web_ready" "passed" "${PLAYWRIGHT_BASE_URL}"
 record_service web ready "${PLAYWRIGHT_BASE_URL}"
 
-run_auth_preflight || exit 1
+ACCESS_TOKEN="$(gate_run_auth_preflight "${INTEGRATION_LOG_DIR}" "${KEYCLOAK_BASE_URL}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}" "${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" "${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" "${INTEGRATION_API_BASE}/api/v1/me/profile" "failed to obtain integration token" "integration token missing access_token" "authenticated /api/v1/me/profile unavailable")" || exit 1
+record_service auth ready "integration dev-admin token bootstrap"
 
 echo "[integration-e2e-full] warming key routes before Playwright..." >&2
 try_warm_route "/${INTEGRATION_LOCALE}/login"

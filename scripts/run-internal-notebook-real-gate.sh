@@ -39,6 +39,8 @@ MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}"
 MOUNT_IMAGE_OVERRIDE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}"
 JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-juicedata/mount:ce-v1.3.1}"
 JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
+JUICEFS_CSI_MANIFEST_PATH="${JUICEFS_CSI_MANIFEST_PATH:-${ROOT_DIR}/infra/deploy/cluster/addons/juicefs-csi/upstream-manifest.yaml}"
+JUICEFS_CSI_NAMESPACE="${JUICEFS_CSI_NAMESPACE:-kube-system}"
 ensure_backend_real_state
 INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR:-$(backend_real_tmp_file internal)}"
 mkdir -p "${INTERNAL_REAL_DIR}"
@@ -163,29 +165,24 @@ ensure_local_image() {
   docker pull "${image}" >/dev/null
 }
 
+wait_for_juicefs_ready() {
+  local namespace="$1"
+  kubectl wait --for=condition=Ready pod -l app=juicefs-csi-controller -n "${namespace}" --timeout=600s >/dev/null
+  kubectl wait --for=condition=Ready pod -l app=juicefs-csi-node -n "${namespace}" --timeout=600s >/dev/null
+}
+
 ensure_juicefs_csi() {
   local csi_namespace
   local csi_manifest
   info "reconciling JuiceFS CSI driver ${CSI_DRIVER}"
-  csi_manifest="$(mktemp "${INTERNAL_REAL_DIR}/juicefs-csi.XXXXXX.yaml")"
-  curl -fsSL --max-time 30 "https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml" -o "${csi_manifest}"
+  csi_manifest="${JUICEFS_CSI_MANIFEST_PATH}"
+  if [[ ! -f "${csi_manifest}" ]]; then
+    csi_manifest="$(mktemp "${INTERNAL_REAL_DIR}/juicefs-csi.XXXXXX.yaml")"
+    curl -fsSL --max-time 30 "https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml" -o "${csi_manifest}"
+  fi
   kubectl apply --validate=false --request-timeout=30s -f "${csi_manifest}" >/dev/null
 
-  csi_namespace="$(
-    kubectl get statefulset -A --no-headers 2>/dev/null \
-      | awk '$2=="juicefs-csi-controller"{print $1; exit}' \
-      | tr -d '[:space:]'
-  )"
-  if [[ -z "${csi_namespace}" ]]; then
-    csi_namespace="$(
-      kubectl get daemonset -A --no-headers 2>/dev/null \
-        | awk '$2=="juicefs-csi-node"{print $1; exit}' \
-        | tr -d '[:space:]'
-    )"
-  fi
-  if [[ -z "${csi_namespace}" ]]; then
-    csi_namespace="juicefs-system"
-  fi
+  csi_namespace="${JUICEFS_CSI_NAMESPACE}"
 
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
     info "loading CSI images into kind node ${KIND_NODE_NAME}"
@@ -204,8 +201,7 @@ ensure_juicefs_csi() {
   fi
 
   info "waiting for JuiceFS CSI readiness"
-  kubectl rollout status statefulset/juicefs-csi-controller -n "${csi_namespace}" --timeout=180s >/dev/null
-  kubectl rollout status daemonset/juicefs-csi-node -n "${csi_namespace}" --timeout=180s >/dev/null
+  wait_for_juicefs_ready "${csi_namespace}"
 }
 
 kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply --validate=false -f - >/dev/null

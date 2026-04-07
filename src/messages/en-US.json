@@ -1313,14 +1313,14 @@
     "hero": {
       "badge": "Advanced Access",
       "title": "Connect your local agent to AgentSmith-managed inference access.",
-      "description": "Use this page when you want Codex CLI, Claude Code, or another locally running agent to call AgentSmith directly. The selected endpoint, the access permission, and the quota checks all stay under AgentSmith governance.",
+      "description": "Use this page when you want Codex CLI, Claude Code, or another locally running agent to call AgentSmith directly. The selected endpoint, the access permission, and the rate limit checks all stay under AgentSmith governance.",
       "local_agent": {
         "title": "Local agent access",
         "description": "These examples are for advanced users who run local tools such as Codex CLI or Claude Code and want to connect them to a project endpoint."
       },
       "governance": {
         "title": "AgentSmith still governs usage",
-        "description": "Even when a local agent calls the endpoint directly, AgentSmith still enforces access, quota, audit, and project-level policy before the request reaches the upstream model."
+        "description": "Even when a local agent calls the endpoint directly, AgentSmith still enforces access, rate limits, audit, and project-level policy before the request reaches the upstream model."
       }
     },
     "readiness": {

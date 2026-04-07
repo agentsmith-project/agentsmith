@@ -214,8 +214,14 @@ describe('task-route-handler workspace access', () => {
   });
 
   it('rewrites client-visible mount access for docker-manual external runner execution', () => {
+    const previousDockerManualHost = process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
+    const previousDockerManualPort = process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
+    const previousDockerManualEndpoint = process.env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
     const previousClientPgPort = process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT;
     const previousMinioApiPort = process.env.MINIO_API_PORT;
+    process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE = 'host.docker.internal';
+    process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE = '15432';
+    process.env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://host.docker.internal:19000';
     process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT = '15432';
     process.env.MINIO_API_PORT = '19000';
     try {
@@ -233,6 +239,12 @@ describe('task-route-handler workspace access', () => {
         storageBucketUrl: 'http://host.docker.internal:19000/jfs-lib-demo',
       });
     } finally {
+      if (previousDockerManualHost === undefined) delete process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
+      else process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE = previousDockerManualHost;
+      if (previousDockerManualPort === undefined) delete process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
+      else process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE = previousDockerManualPort;
+      if (previousDockerManualEndpoint === undefined) delete process.env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
+      else process.env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = previousDockerManualEndpoint;
       if (previousClientPgPort === undefined) delete process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT;
       else process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT = previousClientPgPort;
       if (previousMinioApiPort === undefined) delete process.env.MINIO_API_PORT;

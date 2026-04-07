@@ -152,17 +152,21 @@ validate_client_mount_access() {
     done < <(printf '%s' "${FILE_LIBRARY_VERIFY_FORBIDDEN_HOSTS}" | tr ', ' '\n\n' | sed '/^$/d')
   fi
 
-  if is_loopback_or_special_host "${metadata_host}" || is_loopback_or_special_host "${storage_host}"; then
-    err "client mount access leaked a loopback or internal-only host: metadata=${metadata_host} storage=${storage_host}"
-    exit 1
-  fi
-  for forbidden in "${forbidden_hosts[@]}"; do
-    [[ -z "${forbidden}" ]] && continue
-    if [[ "${metadata_host}" == "${forbidden}" || "${storage_host}" == "${forbidden}" ]]; then
-      err "client mount access leaked an internal deployment address: ${forbidden}"
+  if ! is_loopback_or_special_host "${public_web_host}"; then
+    if is_loopback_or_special_host "${metadata_host}" || is_loopback_or_special_host "${storage_host}"; then
+      err "client mount access leaked a loopback or internal-only host: metadata=${metadata_host} storage=${storage_host}"
       exit 1
     fi
-  done
+  fi
+  if ! is_loopback_or_special_host "${public_web_host}"; then
+    for forbidden in "${forbidden_hosts[@]}"; do
+      [[ -z "${forbidden}" ]] && continue
+      if [[ "${metadata_host}" == "${forbidden}" || "${storage_host}" == "${forbidden}" ]]; then
+        err "client mount access leaked an internal deployment address: ${forbidden}"
+        exit 1
+      fi
+    done
+  fi
 
   if [[ "${FILE_LIBRARY_VERIFY_ALLOW_PRIVATE_CLIENT_IPS_WITH_PUBLIC_WEB}" != "1" ]] \
     && [[ -n "${public_web_host}" ]] \

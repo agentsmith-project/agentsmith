@@ -290,7 +290,6 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         metadata_url: string;
         storage_bucket_url?: string;
         library_root_path?: string | null;
-        task_root_path?: string;
       };
       expect(workspaceAccessBody.workspace_dir_name).toBeTruthy();
       expect(workspaceAccessBody.metadata_url).toBeTruthy();
@@ -317,7 +316,6 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         await expectTaskRuntimeStatePersisted({
           mountPath: resolveMountedTaskRoot(localMount.mountPath, {
             libraryRootPath: workspaceAccessBody.library_root_path,
-            taskRootPath: workspaceAccessBody.task_root_path,
           }),
           artifactName,
           artifactToken: replyToken,
@@ -408,7 +406,6 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         metadata_url: string;
         storage_bucket_url?: string;
         library_root_path?: string | null;
-        task_root_path?: string;
       };
       expect(workspaceAccessBody.metadata_url).toBeTruthy();
 
@@ -423,7 +420,6 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         await expectTaskRuntimeStatePersisted({
           mountPath: resolveMountedTaskRoot(localMount.mountPath, {
             libraryRootPath: workspaceAccessBody.library_root_path,
-            taskRootPath: workspaceAccessBody.task_root_path,
           }),
           artifactName,
           artifactToken: replyToken,

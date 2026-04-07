@@ -8,6 +8,7 @@ const mockSetAuth = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ locale: 'en-US', workspace: 'ws_alpha' }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/lib/i18n/routing', () => ({

@@ -30,9 +30,52 @@ write_release_report() {
   local report_json="$2"
   local report_md="$3"
   local extra_lines="${4:-}"
+  local evidence_dir="${REPORT_DIR}/verify-artifacts/evidence"
 
   ensure_state
-  cp "$(state_file)" "${report_json}"
+  python3 - <<'PY' "$(state_file)" "${evidence_dir}" "${report_json}" "${title}" "${RELEASE_ID}"
+import json
+import pathlib
+import sys
+
+state_path = pathlib.Path(sys.argv[1])
+evidence_dir = pathlib.Path(sys.argv[2])
+report_path = pathlib.Path(sys.argv[3])
+title = sys.argv[4]
+release_id = sys.argv[5]
+
+state = json.loads(state_path.read_text(encoding='utf-8'))
+
+def load_json(name: str):
+    path = evidence_dir / name
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+
+evidence = {
+    "dir": str(evidence_dir),
+    "runtime": load_json("runtime.json"),
+    "resolved_env": load_json("resolved-env.json"),
+    "preflight": load_json("preflight.json"),
+    "failure_classification": load_json("failure-classification.json"),
+    "workspace_access": load_json("workspace-access.json"),
+    "service_status": load_json("service-status.json"),
+    "task_summary": load_json("task-summary.json"),
+    "mount_tree_path": str(evidence_dir / "mount-tree.txt") if (evidence_dir / "mount-tree.txt").exists() else None,
+}
+
+report = dict(state)
+report["report"] = {
+    "title": title,
+    "release_id": release_id,
+    "state_path": str(state_path),
+    "evidence": evidence,
+}
+report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+PY
   cat > "${report_md}" <<EOF
 # ${title}
 
@@ -40,10 +83,11 @@ write_release_report() {
 - current: ${CURRENT_LINK}
 - compose: ${RELEASE_ROOT}/compose/docker-compose.yml
 ${extra_lines}- state: $(state_file)
+- evidence: ${evidence_dir}
 - generated_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 \`\`\`json
-$(cat "$(state_file)")
+$(cat "${report_json}")
 \`\`\`
 EOF
   log "report ok: ${report_md}"

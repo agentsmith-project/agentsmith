@@ -390,7 +390,6 @@ describe('api-entry-node notebook task routes', () => {
       workspace_binding_mode: 'file_library',
       container_workspace_path: `/workspace/${task.id}`,
       library_root_path: '.',
-      task_root_path: '.',
       workspace_dir_name: workspaceLibrary.filesystem_name,
       file_library_id: workspaceLibrary.id,
       file_library_name: workspaceLibrary.name,
@@ -489,6 +488,67 @@ describe('api-entry-node notebook task routes', () => {
     expect(badScopeRes.status).toBe(403);
     await expect(badScopeRes.json()).resolves.toMatchObject({
       error_code: 'INTERNAL_TICKET_SCOPE_MISMATCH',
+    });
+  });
+
+  it('returns task-bound workspace access for create_new notebook workspaces owned by the task creator', async () => {
+    const { baseUrl, deps } = startServer();
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'external-notebook-agent-create-new',
+      mode: 'external',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        _external_key_source: 'generated',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_external',
+          wire_api: 'responses',
+          model: 'placeholder-model',
+        },
+      },
+    });
+    await deps.agentResourceService.markAgentConnected(agent.id, {
+      remote_ip: '127.0.0.1',
+      protocol_version: '1.0',
+      last_pong_at: new Date().toISOString(),
+    });
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Create New Workspace Access Task',
+          agent_id: agent.id,
+          workspace_mode: 'create_new',
+          workspace_name: 'Create New Workspace Access',
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string; workspace_file_library_id: string };
+    expect(task.workspace_file_library_id).toBeTruthy();
+
+    const workspaceAccessRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/workspace-access`,
+      { method: 'POST' },
+    );
+    expect(workspaceAccessRes.status).toBe(200);
+    await expect(workspaceAccessRes.json()).resolves.toMatchObject({
+      task_id: task.id,
+      workspace_binding_mode: 'file_library',
+      container_workspace_path: null,
+      library_root_path: '.',
+      file_library_id: task.workspace_file_library_id,
+      metadata_url: expect.any(String),
+      created_at: expect.any(String),
     });
   });
 

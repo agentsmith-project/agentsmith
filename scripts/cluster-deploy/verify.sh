@@ -8,6 +8,7 @@ source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 
 load_agentsmith_presets "${ROOT_DIR}"
 load_release_env
+apply_non_environment_preset_defaults
 apply_preset_endpoint_defaults
 load_kubeconfig
 require_version_images
@@ -29,6 +30,8 @@ COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-agentsmith-cluster}"
 EXTERNAL_RUNNER_CONTAINER_NAME="${EXTERNAL_RUNNER_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME}-external-runner-1}"
 VERIFY_EVIDENCE_DIR="${REPORT_DIR}/verify-artifacts/evidence"
 mkdir -p "${VERIFY_EVIDENCE_DIR}"
+export RUNTIME_LINE_ID="${RELEASE_ID}"
+export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host,internal_k8s}"
 resolve_public_runtime_addresses \
   "${PUBLIC_WEB_BASE_URL}" \
   "${PUBLIC_API_BASE_URL}" \
@@ -40,18 +43,115 @@ gate_evidence_init "${VERIFY_EVIDENCE_DIR}" "cluster_deploy_verify"
 gate_write_runtime_descriptor "${VERIFY_EVIDENCE_DIR}" "cluster_deploy_verify"
 gate_write_resolved_env "${VERIFY_EVIDENCE_DIR}"
 
-wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
-wait_tcp "127.0.0.1" "${API_PORT:-20000}" 240
-wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
-wait_http "${SANDBOX_MANAGER_PUBLIC_BASE_URL}/readyz" 240
+record_service() {
+  local service_name="$1"
+  local status="$2"
+  local detail="${3:-}"
+  gate_record_service_status "${VERIFY_EVIDENCE_DIR}" "${service_name}" "${status}" "${detail}"
+}
+
+record_task_summary() {
+  local summary_json="$1"
+  gate_record_task_summary "${VERIFY_EVIDENCE_DIR}" "${summary_json}"
+}
+
+resolve_verify_source_file() {
+  local relative_path="$1"
+  local release_candidate="${RELEASE_ROOT}/${relative_path}"
+  local workspace_candidate="${ROOT_DIR}/${relative_path}"
+  if [[ -f "${workspace_candidate}" ]]; then
+    printf '%s\n' "${workspace_candidate}"
+    return 0
+  fi
+  if [[ -f "${release_candidate}" ]]; then
+    printf '%s\n' "${release_candidate}"
+    return 0
+  fi
+  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "scenario_assertion_failed" "scenario_gate_verify_assets" "missing verify asset ${relative_path}"
+  exit 1
+}
+
+wait_http_or_fail() {
+  local url="$1"
+  local timeout="${2:-240}"
+  local classification="$3"
+  local stage="$4"
+  local started
+  started="$(date +%s)"
+  until curl -fsS "${url}" >/dev/null 2>&1; do
+    if (( "$(date +%s)" - started > timeout )); then
+      gate_record_failure "${VERIFY_EVIDENCE_DIR}" "${classification}" "${stage}" "unreachable ${url}"
+      exit 1
+    fi
+    sleep 2
+  done
+}
+
+wait_tcp_or_fail() {
+  local host="$1"
+  local port="$2"
+  local timeout="${3:-240}"
+  local classification="$4"
+  local stage="$5"
+  local started
+  started="$(date +%s)"
+  until python3 - "$host" "$port" <<'PY'
+import socket
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(1)
+try:
+    sock.connect((host, port))
+except OSError:
+    sys.exit(1)
+else:
+    sock.close()
+    sys.exit(0)
+PY
+  do
+    if (( "$(date +%s)" - started > timeout )); then
+      gate_record_failure "${VERIFY_EVIDENCE_DIR}" "${classification}" "${stage}" "tcp ${host}:${port} unavailable"
+      exit 1
+    fi
+    sleep 2
+  done
+}
+
+require_command() {
+  local command="$1"
+  local classification="$2"
+  local stage="$3"
+  local message="$4"
+  if ! eval "${command}"; then
+    gate_record_failure "${VERIFY_EVIDENCE_DIR}" "${classification}" "${stage}" "${message}"
+    exit 1
+  fi
+}
+
+wait_http_or_fail "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240 infra_dependency_unready infra_preflight_keycloak
+record_service keycloak ready "${HOST_LOCAL_KEYCLOAK_BASE_URL}"
+wait_tcp_or_fail "127.0.0.1" "${API_PORT:-20000}" 240 infra_dependency_unready infra_preflight_api_port
+record_service api_port ready "127.0.0.1:${API_PORT:-20000}"
+wait_http_or_fail "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240 infra_dependency_unready infra_preflight_web
+record_service web ready "${HOST_LOCAL_WEB_BASE_URL}"
+wait_http_or_fail "${SANDBOX_MANAGER_PUBLIC_BASE_URL}/readyz" 240 sandbox_startup_failed infra_preflight_sandbox
+record_service sandbox_manager ready "${SANDBOX_MANAGER_PUBLIC_BASE_URL}"
 gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "host_local_stack" "passed" "web/api/keycloak/sandbox ready"
 
-kubectl get deploy sandbox-manager -n "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null
-kubectl get cronjob sandbox-manager-cleaner -n "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null
-docker inspect -f '{{.State.Running}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | grep -q true || die "verify failed: external-runner not running"
+require_command "kubectl get deploy sandbox-manager -n '${INTERNAL_AGENT_K8S_NAMESPACE}' >/dev/null" sandbox_startup_failed infra_preflight_sandbox "sandbox-manager deploy missing"
+require_command "kubectl get cronjob sandbox-manager-cleaner -n '${INTERNAL_AGENT_K8S_NAMESPACE}' >/dev/null" sandbox_startup_failed infra_preflight_sandbox "sandbox-manager-cleaner missing"
+require_command "docker inspect -f '{{.State.Running}}' '${EXTERNAL_RUNNER_CONTAINER_NAME}' 2>/dev/null | grep -q true" runner_launch_failed infra_preflight_external_runner "external-runner not running"
 runner_logs="$(docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 || true)"
-grep -q '\[agent-codex-runner\] connected' <<<"${runner_logs}" || die "verify failed: external-runner not connected"
-docker_compose ps --status running universal-proxy | grep -q universal-proxy || die "verify failed: universal-proxy not running"
+if ! grep -q '\[agent-codex-runner\] connected' <<<"${runner_logs}"; then
+  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "runner_launch_failed" "infra_preflight_external_runner" "external-runner not connected"
+  exit 1
+fi
+require_command "docker_compose ps --status running universal-proxy | grep -q universal-proxy" infra_dependency_unready infra_preflight_proxy "universal-proxy not running"
+record_service external_runner ready "${EXTERNAL_RUNNER_CONTAINER_NAME}"
+record_service universal_proxy ready "docker compose"
 gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "external_runner" "passed" "${EXTERNAL_RUNNER_CONTAINER_NAME}"
 
 token_json="$(
@@ -64,7 +164,16 @@ token_json="$(
     --data-urlencode 'scope=openid profile email'
 )"
 ACCESS_TOKEN="$(printf '%s' "${token_json}" | json_extract access_token)"
-[[ -n "${ACCESS_TOKEN}" ]] || die "failed to obtain dev-admin token during verify"
+if [[ -z "${ACCESS_TOKEN}" ]]; then
+  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "identity_bootstrap_failed" "auth_preflight_token" "failed to obtain dev-admin token during verify"
+  exit 1
+fi
+if ! curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/me/profile" -H "Authorization: Bearer ${ACCESS_TOKEN}" >/dev/null; then
+  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "identity_bootstrap_failed" "auth_preflight_profile" "authenticated /api/v1/me/profile unavailable"
+  exit 1
+fi
+gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "auth_preflight" "passed" "token issued and /api/v1/me/profile accessible"
+record_service auth ready "dev-admin token bootstrap"
 
 PROJECTS_JSON="$(
   curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/ws_default/projects?page=1&page_size=100" \
@@ -72,7 +181,20 @@ PROJECTS_JSON="$(
 )"
 PRESET_PROJECT_NAME_VALUE="${PRESET_PROJECT_NAME:-Demo Project}"
 PRESET_PROJECT_ID="$(printf '%s' "${PROJECTS_JSON}" | json_find_named_id "${PRESET_PROJECT_NAME_VALUE}")"
-[[ -n "${PRESET_PROJECT_ID}" ]] || die "verify failed: preset project missing in ws_default"
+if [[ -z "${PRESET_PROJECT_ID}" ]]; then
+  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "scenario_assertion_failed" "scenario_gate_preset_project" "preset project missing in ws_default"
+  exit 1
+fi
+record_task_summary "{\"workspace_id\":\"ws_default\",\"project_id\":\"${PRESET_PROJECT_ID}\",\"line_kind\":\"cluster_deploy_verify\"}"
+
+WORKSPACE_ACCESS_EVIDENCE_FILE="${VERIFY_EVIDENCE_DIR}/workspace-access-external.json" \
+bash "${ROOT_DIR}/scripts/check-preset-external-file-library.sh" || {
+  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "workspace_contract_failed" "scenario_gate_workspace_access" "preset external file-library verification failed"
+  exit 1
+}
+if [[ -f "${VERIFY_EVIDENCE_DIR}/workspace-access-external.json" ]]; then
+  gate_record_workspace_access "${VERIFY_EVIDENCE_DIR}" "external" "${VERIFY_EVIDENCE_DIR}/workspace-access-external.json"
+fi
 
 API_BASE="${HOST_LOCAL_API_BASE_URL}" \
 KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL}" \
@@ -84,9 +206,20 @@ HOST_LOCAL_POSTGRES_HOST="${HOST_LOCAL_POSTGRES_HOST:-127.0.0.1}" \
 HOST_LOCAL_MINIO_ENDPOINT="${HOST_LOCAL_MINIO_ENDPOINT:-http://127.0.0.1:${MINIO_API_PORT:-19000}}" \
 PROJECT_ID="${PRESET_PROJECT_ID}" \
 FILE_LIBRARY_VERIFY_ENFORCE_DEPLOY_CLIENT_TRUTH=1 \
-bash "${ROOT_DIR}/scripts/file-library-real-smoke.sh"
+bash "${ROOT_DIR}/scripts/file-library-real-smoke.sh" || {
+  gate_record_failure "${VERIFY_EVIDENCE_DIR}" "workspace_contract_failed" "scenario_gate_file_library" "file-library-real-smoke failed"
+  exit 1
+}
 
 mkdir -p "${REPORT_DIR}/verify-artifacts"
+VERIFY_INTEGRATION_REAL_HELPERS="$(resolve_verify_source_file "e2e/integration-real-helpers.ts")"
+VERIFY_INTEGRATION_FILES_SPEC="$(resolve_verify_source_file "e2e/integration-files.spec.ts")"
+VERIFY_NOTEBOOK_EXECUTION_OUTCOME="$(resolve_verify_source_file "e2e/notebook-execution-outcome.ts")"
+VERIFY_INTEGRATION_WORKSPACE_ACCESS="$(resolve_verify_source_file "e2e/integration-workspace-access.ts")"
+VERIFY_INTEGRATION_WORKSPACE_ENTRY_SPEC="$(resolve_verify_source_file "e2e/integration-workspace-entry.spec.ts")"
+VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC="$(resolve_verify_source_file "e2e/integration-workspace-publish-usable.spec.ts")"
+VERIFY_INTEGRATION_PRESET_FILELIB_SPEC="$(resolve_verify_source_file "e2e/integration-preset-external-file-library.spec.ts")"
+VERIFY_INTEGRATION_RELEASE_USER_STORY_SPEC="$(resolve_verify_source_file "e2e/integration-release-user-story.spec.ts")"
 docker run --rm \
   --network host \
   --ipc host \
@@ -95,13 +228,14 @@ docker run --rm \
   --security-opt apparmor:unconfined \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "${REPORT_DIR}/verify-artifacts:/app/test-results" \
-  -v "${RELEASE_ROOT}/e2e/integration-real-helpers.ts:/app/e2e/integration-real-helpers.ts:ro" \
-  -v "${RELEASE_ROOT}/e2e/integration-files.spec.ts:/app/e2e/integration-files.spec.ts:ro" \
-  -v "${RELEASE_ROOT}/e2e/integration-workspace-access.ts:/app/e2e/integration-workspace-access.ts:ro" \
-  -v "${RELEASE_ROOT}/e2e/integration-workspace-entry.spec.ts:/app/e2e/integration-workspace-entry.spec.ts:ro" \
-  -v "${RELEASE_ROOT}/e2e/integration-workspace-publish-usable.spec.ts:/app/e2e/integration-workspace-publish-usable.spec.ts:ro" \
-  -v "${RELEASE_ROOT}/e2e/integration-preset-external-file-library.spec.ts:/app/e2e/integration-preset-external-file-library.spec.ts:ro" \
-  -v "${RELEASE_ROOT}/e2e/integration-release-user-story.spec.ts:/app/e2e/integration-release-user-story.spec.ts:ro" \
+  -v "${VERIFY_INTEGRATION_REAL_HELPERS}:/app/e2e/integration-real-helpers.ts:ro" \
+  -v "${VERIFY_INTEGRATION_FILES_SPEC}:/app/e2e/integration-files.spec.ts:ro" \
+  -v "${VERIFY_NOTEBOOK_EXECUTION_OUTCOME}:/app/e2e/notebook-execution-outcome.ts:ro" \
+  -v "${VERIFY_INTEGRATION_WORKSPACE_ACCESS}:/app/e2e/integration-workspace-access.ts:ro" \
+  -v "${VERIFY_INTEGRATION_WORKSPACE_ENTRY_SPEC}:/app/e2e/integration-workspace-entry.spec.ts:ro" \
+  -v "${VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC}:/app/e2e/integration-workspace-publish-usable.spec.ts:ro" \
+  -v "${VERIFY_INTEGRATION_PRESET_FILELIB_SPEC}:/app/e2e/integration-preset-external-file-library.spec.ts:ro" \
+  -v "${VERIFY_INTEGRATION_RELEASE_USER_STORY_SPEC}:/app/e2e/integration-release-user-story.spec.ts:ro" \
   -e BASE_URL="${HOST_LOCAL_WEB_BASE_URL}" \
   -e INTEGRATION_API_BASE="${HOST_LOCAL_API_BASE_URL}" \
   -e EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL="${PUBLIC_API_BASE_URL}" \
@@ -125,6 +259,8 @@ docker run --rm \
   -e INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_INTERNAL_AGENT_IMAGE="${K8S_RUNNER_IMAGE}" \
   -e INTEGRATION_CODEX_RUNNER_EMBEDDED=1 \
+  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS= \
+  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED=0 \
   -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR=/etc/codex/skills \
   -e INTEGRATION_RUNNER_LOG_DIR=/app/test-results/runner-logs \
   -e RESET_FIRST=0 \
@@ -137,7 +273,12 @@ docker run --rm \
     e2e/integration-preset-external-file-library.spec.ts \
     e2e/integration-release-user-story.spec.ts \
     --project=chromium \
-    --workers=1
+    --workers=1 || {
+      gate_record_failure "${VERIFY_EVIDENCE_DIR}" "scenario_assertion_failed" "scenario_gate_playwright" "deploy verify playwright failed"
+      exit 1
+    }
+
+gate_write_mount_tree "${VERIFY_EVIDENCE_DIR}" "${REPORT_DIR}/verify-artifacts"
 
 state_set release.phase verify_completed
 log "verify ok"

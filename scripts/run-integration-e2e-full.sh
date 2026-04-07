@@ -46,6 +46,8 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 API_PORT="${INTEGRATION_API_PORT:-20000}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3001}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
+export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-$(basename "${INTEGRATION_LOG_DIR:-integration}")}"
+export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-$([[ -n "${SANDBOX_MANAGER_URL:-}" ]] && printf 'external_host,internal_k8s' || printf 'external_host')}"
 resolve_loopback_runtime_addresses "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}"
 PLAYWRIGHT_BASE_URL="${INTEGRATION_BASE_URL:-${RUNTIME_BROWSER_WEB_BASE_URL}}"
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-${RUNTIME_HOST_API_BASE_URL}}"
@@ -75,6 +77,44 @@ PROXY_PID=""
 PLAYWRIGHT_PID=""
 PLAYWRIGHT_STATUS=0
 KEEP_FAILED_ENV="${INTEGRATION_KEEP_FAILED_ENV:-0}"
+
+record_service() {
+  local service_name="$1"
+  local status="$2"
+  local detail="${3:-}"
+  gate_record_service_status "${INTEGRATION_LOG_DIR}" "${service_name}" "${status}" "${detail}"
+}
+
+run_auth_preflight() {
+  local token_json
+  token_json="$(
+    curl -fsS "${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+      -H 'content-type: application/x-www-form-urlencoded' \
+      --data-urlencode 'grant_type=password' \
+      --data-urlencode "client_id=${KEYCLOAK_CLIENT_ID}" \
+      --data-urlencode "username=${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" \
+      --data-urlencode "password=${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" \
+      --data-urlencode 'scope=openid profile email'
+  )" || {
+    gate_record_failure "${INTEGRATION_LOG_DIR}" "identity_bootstrap_failed" "auth_preflight_token" "failed to obtain integration token"
+    return 1
+  }
+
+  local access_token
+  access_token="$(printf '%s' "${token_json}" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("access_token") or "").strip())')"
+  if [[ -z "${access_token}" ]]; then
+    gate_record_failure "${INTEGRATION_LOG_DIR}" "identity_bootstrap_failed" "auth_preflight_token" "integration token missing access_token"
+    return 1
+  fi
+
+  if ! curl -fsS "${INTEGRATION_API_BASE}/api/v1/me/profile" -H "Authorization: Bearer ${access_token}" >/dev/null; then
+    gate_record_failure "${INTEGRATION_LOG_DIR}" "identity_bootstrap_failed" "auth_preflight_profile" "authenticated /api/v1/me/profile unavailable"
+    return 1
+  fi
+
+  gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "auth_preflight" "passed" "token issued and /api/v1/me/profile accessible"
+  record_service auth ready "integration dev-admin token bootstrap"
+}
 
 run_clean() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
@@ -270,12 +310,14 @@ if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
   run_clean_with_integration_env npm run integration:deps:up
   run_clean make deps-ready
   gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "integration_deps" "passed" "integration dependencies bootstrapped"
+  record_service integration_deps ready "docker compose dependencies bootstrapped"
 fi
 
 if [[ "${INIT_DEPS}" == "true" ]]; then
   run_clean_with_integration_env npm run integration:deps:init:postgres
   run_clean_with_integration_env npm run integration:deps:init:keycloak
   gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "integration_identity_seed" "passed" "postgres and keycloak initialized"
+  record_service keycloak_seed ready "postgres and keycloak initialized"
 fi
 
 if [[ "${INTEGRATION_ENSURE_DEFAULT_WORKSPACE:-true}" == "true" ]]; then
@@ -288,6 +330,7 @@ if ! ensure_universal_proxy; then
   exit 1
 fi
 gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "universal_proxy" "passed" "${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"
+record_service universal_proxy ready "${MBOS_UNIVERSAL_PROXY_BASE_URL:-}"
 
 if port_in_use "${API_PORT}"; then
   gate_record_failure "${INTEGRATION_LOG_DIR}" "infra_dependency_unready" "api_port" "api port already in use"
@@ -388,6 +431,7 @@ if [[ "${api_ready}" -ne 1 ]]; then
   exit 1
 fi
 gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "api_ready" "passed" "${INTEGRATION_API_BASE}"
+record_service api ready "${INTEGRATION_API_BASE}"
 
 web_ready=0
 for _ in $(seq 1 120); do
@@ -407,6 +451,9 @@ if [[ "${web_ready}" -ne 1 ]]; then
   exit 1
 fi
 gate_record_preflight_check "${INTEGRATION_LOG_DIR}" "web_ready" "passed" "${PLAYWRIGHT_BASE_URL}"
+record_service web ready "${PLAYWRIGHT_BASE_URL}"
+
+run_auth_preflight || exit 1
 
 echo "[integration-e2e-full] warming key routes before Playwright..." >&2
 try_warm_route "/${INTEGRATION_LOCALE}/login"

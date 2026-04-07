@@ -130,7 +130,6 @@ test.describe('@lane-real internal sandbox reclaim', () => {
         token: token1,
         artifactPath: path.join(resolveMountedTaskRoot(localMount1.mountPath, {
           libraryRootPath: workspaceAccess1.library_root_path,
-          taskRootPath: workspaceAccess1.task_root_path,
         }),
           '.artifacts',
           firstArtifactName,

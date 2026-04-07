@@ -402,7 +402,6 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
       storage_bucket_url?: string;
       container_workspace_path?: string | null;
       library_root_path?: string | null;
-      task_root_path?: string;
     };
     expect(workspaceAccessBody.metadata_url).toBeTruthy();
     expect(workspaceAccessBody.container_workspace_path).toBe(`/workspace/${taskId}`);
@@ -417,7 +416,6 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
       await expectTaskRuntimeStatePersisted({
         mountPath: resolveMountedTaskRoot(localMount.mountPath, {
           libraryRootPath: workspaceAccessBody.library_root_path,
-          taskRootPath: workspaceAccessBody.task_root_path,
         }),
         artifactName: firstArtifact,
         artifactToken: firstToken,
@@ -483,7 +481,6 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
             path.join(
               resolveMountedTaskRoot(localMount.mountPath, {
                 libraryRootPath: workspaceAccessBody.library_root_path,
-                taskRootPath: workspaceAccessBody.task_root_path,
               }),
               '.artifacts',
               secondArtifact,
@@ -504,16 +501,12 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
       projectId,
       libraryName: workspaceLibraryName,
     });
-    if (workspaceAccessBody.task_root_path && workspaceAccessBody.task_root_path !== '.') {
-      await openFolderByName(page, workspaceAccessBody.task_root_path);
-    }
     await openFolderByName(page, '.artifacts');
     const firstArtifactRow = page.getByTestId('files__object-row').filter({ hasText: firstArtifact }).first();
     await expect(firstArtifactRow).toBeVisible({ timeout: 30_000 });
     const downloadResponse = await page.request.get(
       `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/file-libraries/${fileLibraryId}/download?path=${encodeURIComponent(resolveLibraryObjectPath(`.artifacts/${firstArtifact}`, {
         libraryRootPath: workspaceAccessBody.library_root_path,
-        taskRootPath: workspaceAccessBody.task_root_path,
       }))}`,
       { headers: { Authorization: `Bearer ${authToken}` } },
     );

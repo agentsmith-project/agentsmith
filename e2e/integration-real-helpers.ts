@@ -1055,7 +1055,6 @@ export async function requestTaskWorkspaceAccess(args: {
   storage_bucket_url?: string;
   container_workspace_path?: string | null;
   library_root_path?: string | null;
-  task_root_path?: string;
   recommended_mount_path?: string;
   created_at?: string;
 }> {
@@ -1079,7 +1078,6 @@ export async function requestTaskWorkspaceAccess(args: {
     storage_bucket_url?: string;
     container_workspace_path?: string | null;
     library_root_path?: string | null;
-    task_root_path?: string;
     recommended_mount_path?: string;
     created_at?: string;
   };
@@ -1087,20 +1085,17 @@ export async function requestTaskWorkspaceAccess(args: {
 
 export function resolveWorkspaceLibraryRootPath(input: {
   libraryRootPath?: string | null;
-  taskRootPath?: string | null;
 }): string {
-  const value = input.libraryRootPath ?? input.taskRootPath ?? '.';
+  const value = input.libraryRootPath ?? '.';
   const normalized = String(value).trim();
   return normalized.length > 0 ? normalized : '.';
 }
 
 export function resolveMountedTaskRoot(mountPath: string, input?: {
   libraryRootPath?: string | null;
-  taskRootPath?: string | null;
 }): string {
   const libraryRootPath = resolveWorkspaceLibraryRootPath({
     libraryRootPath: input?.libraryRootPath,
-    taskRootPath: input?.taskRootPath,
   });
   if (libraryRootPath === '.') return mountPath;
   return path.join(mountPath, libraryRootPath);
@@ -1108,11 +1103,9 @@ export function resolveMountedTaskRoot(mountPath: string, input?: {
 
 export function resolveLibraryObjectPath(relativePath: string, input?: {
   libraryRootPath?: string | null;
-  taskRootPath?: string | null;
 }): string {
   const libraryRootPath = resolveWorkspaceLibraryRootPath({
     libraryRootPath: input?.libraryRootPath,
-    taskRootPath: input?.taskRootPath,
   });
   if (libraryRootPath === '.') return relativePath;
   return `${libraryRootPath.replace(/^\/+|\/+$/g, '')}/${relativePath}`;
@@ -1679,6 +1672,8 @@ export async function startCodexRunnerDockerProcess(args: {
   const embeddedRunner = process.env.INTEGRATION_CODEX_RUNNER_EMBEDDED?.trim() === '1';
   const rebuildBaseImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE?.trim() !== '0';
   const rebuildRunnerImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE?.trim() !== '0';
+  const builtinSkillsList = process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS?.trim() ?? 'feishu-docs,jira-ops';
+  const builtinSkillsRequired = process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED?.trim() ?? '1';
   const builtinSkillsDir = embeddedRunner
     ? process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR?.trim() || '/etc/codex/skills'
     : '/etc/codex/skills';
@@ -1767,9 +1762,9 @@ export async function startCodexRunnerDockerProcess(args: {
     '--env',
     `MBOS_AGENT_BUILTIN_SKILLS_DIR=${builtinSkillsDir}`,
     '--env',
-    'MBOS_AGENT_BUILTIN_SKILLS=feishu-docs,jira-ops',
+    `MBOS_AGENT_BUILTIN_SKILLS=${builtinSkillsList}`,
     '--env',
-    'MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=1',
+    `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=${builtinSkillsRequired}`,
     '--volume',
     `${workspaceRoot}:/workspace:rshared`,
   ];

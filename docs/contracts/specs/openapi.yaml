@@ -2392,6 +2392,40 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/terminal/sessions:
+    post:
+      tags:
+        - Notebook
+      operationId: createTaskTerminalSession
+      responses:
+        "200":
+          description: Terminal session created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/terminal/sessions/{terminalSessionId}:
+    get:
+      tags:
+        - Notebook
+      operationId: getTaskTerminalSession
+      responses:
+        "200":
+          description: Terminal session stream
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/download:
     get:
       tags:

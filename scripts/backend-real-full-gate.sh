@@ -23,6 +23,8 @@ RUN_ID="${RELEASE_REAL_VISUAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/${RUN_ID}}"
 LOCAL_READY_LOG_DIR="${RELEASE_REAL_READY_LOG_DIR:-${ROOT_DIR}/artifacts/backend-real/current/release-ready}"
 gate_evidence_init "${LOCAL_READY_LOG_DIR}" "release_backend_real"
+export RUNTIME_LINE_ID="${RUN_ID}"
+export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host}"
 resolve_loopback_runtime_addresses "${API_PORT}" "${WEB_PORT}" 18080
 gate_write_runtime_descriptor "${LOCAL_READY_LOG_DIR}" "release_backend_real"
 gate_write_resolved_env "${LOCAL_READY_LOG_DIR}"
@@ -30,6 +32,44 @@ API_LOG="${LOCAL_READY_LOG_DIR}/api.log"
 WEB_LOG="${LOCAL_READY_LOG_DIR}/web.log"
 LOCAL_API_PID=""
 LOCAL_WEB_PID=""
+
+record_service() {
+  local service_name="$1"
+  local status="$2"
+  local detail="${3:-}"
+  gate_record_service_status "${LOCAL_READY_LOG_DIR}" "${service_name}" "${status}" "${detail}"
+}
+
+run_auth_preflight() {
+  local token_json
+  token_json="$(
+    curl -fsS "${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+      -H 'content-type: application/x-www-form-urlencoded' \
+      --data-urlencode 'grant_type=password' \
+      --data-urlencode "client_id=${KEYCLOAK_CLIENT_ID}" \
+      --data-urlencode "username=${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" \
+      --data-urlencode "password=${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" \
+      --data-urlencode 'scope=openid profile email'
+  )" || {
+    gate_record_failure "${LOCAL_READY_LOG_DIR}" "identity_bootstrap_failed" "auth_preflight_token" "failed to obtain release-ready token"
+    return 1
+  }
+
+  local access_token
+  access_token="$(printf '%s' "${token_json}" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("access_token") or "").strip())')"
+  if [[ -z "${access_token}" ]]; then
+    gate_record_failure "${LOCAL_READY_LOG_DIR}" "identity_bootstrap_failed" "auth_preflight_token" "release-ready token missing access_token"
+    return 1
+  fi
+
+  if ! curl -fsS "http://localhost:${API_PORT}/api/v1/me/profile" -H "Authorization: Bearer ${access_token}" >/dev/null; then
+    gate_record_failure "${LOCAL_READY_LOG_DIR}" "identity_bootstrap_failed" "auth_preflight_profile" "authenticated /api/v1/me/profile unavailable"
+    return 1
+  fi
+
+  gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "auth_preflight" "passed" "token issued and /api/v1/me/profile accessible"
+  record_service auth ready "release-ready dev-admin token bootstrap"
+}
 
 if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
   gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "endpoint_env" "Missing PRESET_ENDPOINT_API_KEY"
@@ -161,12 +201,14 @@ ensure_local_release_stack() {
     exit 1
   }
   gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "api_ready" "passed" "http://localhost:${API_PORT}/api/v1/workspaces"
+  record_service api ready "http://localhost:${API_PORT}/api/v1/workspaces"
   wait_for_http "local Web" "http://localhost:${WEB_PORT}/api/public/workspaces" || {
     gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "web_ready" "local Web did not become ready"
     tail -n 120 "${WEB_LOG}" >&2 || true
     exit 1
   }
   gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "web_ready" "passed" "http://localhost:${WEB_PORT}/api/public/workspaces"
+  record_service web ready "http://localhost:${WEB_PORT}/api/public/workspaces"
 }
 
 cleanup() {
@@ -205,8 +247,10 @@ gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "default_gate" "passed" "np
 run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_bootstrap" "passed" "backend-real bootstrap completed"
 ensure_local_release_stack
+run_auth_preflight || exit 1
 run_cmd "API_BASE='http://localhost:${API_PORT}' BASE_URL='http://localhost:${WEB_PORT}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_ready" "passed" "backend-real ready"
+record_service backend_ready ready "backend-real ready"
 run_real_cmd 20050 3051 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' npm run backend-real:run"
 run_real_cmd 20080 3081 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' npm run test:visual:backend-real:review"
 run_cmd "npm run backend-real:report"

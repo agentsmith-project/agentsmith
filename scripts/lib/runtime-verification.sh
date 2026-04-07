@@ -57,6 +57,10 @@ gate_evidence_init() {
   mkdir -p "${evidence_dir}" "${evidence_dir}/logs" "${evidence_dir}/runner" "${evidence_dir}/playwright"
   printf '{\n  "line_kind": "%s",\n  "checks": []\n}\n' "${line_kind}" > "${evidence_dir}/preflight.json"
   printf '{\n  "classification": "pending",\n  "stage": "bootstrap",\n  "message": ""\n}\n' > "${evidence_dir}/failure-classification.json"
+  printf '{\n  "samples": []\n}\n' > "${evidence_dir}/workspace-access.json"
+  printf '{\n  "services": []\n}\n' > "${evidence_dir}/service-status.json"
+  printf '{\n  "tasks": []\n}\n' > "${evidence_dir}/task-summary.json"
+  : > "${evidence_dir}/mount-tree.txt"
 }
 
 gate_write_runtime_descriptor() {
@@ -64,10 +68,23 @@ gate_write_runtime_descriptor() {
   local line_kind="$2"
   node - <<'NODE' "${evidence_dir}/runtime.json" "${line_kind}"
 const fs = require('node:fs');
+const path = require('node:path');
 const [file, lineKind] = process.argv.slice(2);
 const env = process.env;
+const lineId =
+  (env.RUNTIME_LINE_ID && env.RUNTIME_LINE_ID.trim())
+  || (env.RELEASE_ID && env.RELEASE_ID.trim())
+  || path.basename(path.dirname(file));
+function splitCsv(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 const runtime = {
+  line_id: lineId,
   line_kind: lineKind,
+  runner_modes: splitCsv(env.RUNTIME_RUNNER_MODES || env.MBOS_RUNNER_MODE),
   browser_urls: {
     web: env.RUNTIME_BROWSER_WEB_BASE_URL ?? null,
     keycloak: env.RUNTIME_BROWSER_KEYCLOAK_BASE_URL ?? null,
@@ -87,21 +104,27 @@ const runtime = {
     websocket_base: env.AGENT_EXECUTION_WS_BASE_URL ?? null,
     sandbox_manager: env.SANDBOX_MANAGER_URL ?? null,
   },
+  container_or_pod_urls: {
+    websocket_callback: env.AGENT_EXECUTION_WS_BASE_URL ?? null,
+    sandbox_callback: env.SANDBOX_MANAGER_URL ?? null,
+  },
   ports: {
     api: env.INTEGRATION_API_PORT ?? env.PORT_API ?? env.API_PORT ?? null,
     web: env.INTEGRATION_WEB_PORT ?? env.PORT_WEB ?? env.WEB_PORT ?? null,
     keycloak: env.INTEGRATION_KEYCLOAK_PORT ?? env.KEYCLOAK_PORT ?? null,
     sandbox: env.INTERNAL_SANDBOX_MANAGER_PORT ?? env.SANDBOX_HOST_PORT ?? null,
   },
-  images: {
+  image_refs: {
     runner: env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE ?? env.INTEGRATION_INTERNAL_AGENT_IMAGE ?? env.RUNNER_IMAGE ?? null,
     verify: env.VERIFY_RUNNER_IMAGE ?? null,
     sandbox_manager: env.SANDBOX_MANAGER_IMAGE ?? env.K8S_SANDBOX_MANAGER_IMAGE ?? null,
   },
-  workspace: {
+  workspace_model: {
     runner_mode: env.MBOS_RUNNER_MODE ?? null,
+    library_root_semantics: env.RUNTIME_LIBRARY_ROOT_SEMANTICS ?? 'file-library relative root',
+    container_workspace_semantics: env.RUNTIME_CONTAINER_WORKSPACE_SEMANTICS ?? 'runner cwd inside bound workspace',
     host_workspace_root: env.HOME ? `${env.HOME}/ags-workspace` : null,
-    container_workspace_root: '/workspace',
+    container_workspace_root: env.RUNTIME_CONTAINER_WORKSPACE_ROOT ?? '/workspace',
   },
 };
 fs.writeFileSync(file, `${JSON.stringify(runtime, null, 2)}\n`);
@@ -115,6 +138,8 @@ const fs = require('node:fs');
 const [file] = process.argv.slice(2);
 const env = process.env;
 const keys = [
+  'RUNTIME_LINE_ID',
+  'RUNTIME_RUNNER_MODES',
   'INTEGRATION_API_PORT',
   'INTEGRATION_WEB_PORT',
   'INTEGRATION_BASE_URL',
@@ -130,6 +155,17 @@ const keys = [
   'INTERNAL_AGENT_K8S_NAMESPACE',
   'INTEGRATION_INTERNAL_AGENT_IMAGE',
   'INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE',
+  'RUNTIME_PUBLIC_WEB_BASE_URL',
+  'RUNTIME_PUBLIC_API_BASE_URL',
+  'RUNTIME_PUBLIC_KEYCLOAK_BASE_URL',
+  'RUNTIME_HOST_WEB_BASE_URL',
+  'RUNTIME_HOST_API_BASE_URL',
+  'RUNTIME_HOST_KEYCLOAK_BASE_URL',
+  'RUNTIME_BROWSER_WEB_BASE_URL',
+  'RUNTIME_BROWSER_KEYCLOAK_BASE_URL',
+  'RUNTIME_LIBRARY_ROOT_SEMANTICS',
+  'RUNTIME_CONTAINER_WORKSPACE_SEMANTICS',
+  'RUNTIME_CONTAINER_WORKSPACE_ROOT',
 ];
 const data = Object.fromEntries(keys.map((key) => [key, env[key] ?? null]));
 fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
@@ -161,9 +197,11 @@ gate_record_failure() {
   local classification="$2"
   local stage="$3"
   local message="${4:-}"
+  mkdir -p "${evidence_dir}"
   node - <<'NODE' "${evidence_dir}/failure-classification.json" "${classification}" "${stage}" "${message}"
 const fs = require('node:fs');
 const [file, classification, stage, message] = process.argv.slice(2);
+fs.mkdirSync(require('node:path').dirname(file), { recursive: true });
 fs.writeFileSync(file, `${JSON.stringify({
   classification,
   stage,
@@ -177,4 +215,82 @@ gate_record_success() {
   local evidence_dir="$1"
   local stage="${2:-complete}"
   gate_record_failure "${evidence_dir}" "none" "${stage}" "ok"
+}
+
+gate_record_workspace_access() {
+  local evidence_dir="$1"
+  local sample_kind="$2"
+  local file_path="$3"
+  node - <<'NODE' "${evidence_dir}/workspace-access.json" "${sample_kind}" "${file_path}"
+const fs = require('node:fs');
+const [targetFile, sampleKind, sampleFile] = process.argv.slice(2);
+const payload = JSON.parse(fs.readFileSync(targetFile, 'utf8'));
+payload.samples = Array.isArray(payload.samples) ? payload.samples : [];
+let sample = null;
+try {
+  sample = JSON.parse(fs.readFileSync(sampleFile, 'utf8'));
+} catch {}
+payload.samples.push({
+  kind: sampleKind,
+  captured_at: new Date().toISOString(),
+  sample,
+});
+fs.writeFileSync(targetFile, `${JSON.stringify(payload, null, 2)}\n`);
+NODE
+}
+
+gate_record_service_status() {
+  local evidence_dir="$1"
+  local service_name="$2"
+  local status="$3"
+  local detail="${4:-}"
+  node - <<'NODE' "${evidence_dir}/service-status.json" "${service_name}" "${status}" "${detail}"
+const fs = require('node:fs');
+const [targetFile, serviceName, status, detail] = process.argv.slice(2);
+const payload = JSON.parse(fs.readFileSync(targetFile, 'utf8'));
+payload.services = Array.isArray(payload.services) ? payload.services : [];
+payload.services.push({
+  service: serviceName,
+  status,
+  detail,
+  recorded_at: new Date().toISOString(),
+});
+fs.writeFileSync(targetFile, `${JSON.stringify(payload, null, 2)}\n`);
+NODE
+}
+
+gate_record_task_summary() {
+  local evidence_dir="$1"
+  local summary_json="$2"
+  node - <<'NODE' "${evidence_dir}/task-summary.json" "${summary_json}"
+const fs = require('node:fs');
+const [targetFile, summaryJson] = process.argv.slice(2);
+const payload = JSON.parse(fs.readFileSync(targetFile, 'utf8'));
+payload.tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+let summary = {};
+try {
+  summary = JSON.parse(summaryJson);
+} catch {}
+payload.tasks.push({
+  ...summary,
+  recorded_at: new Date().toISOString(),
+});
+fs.writeFileSync(targetFile, `${JSON.stringify(payload, null, 2)}\n`);
+NODE
+}
+
+gate_write_mount_tree() {
+  local evidence_dir="$1"
+  local root_path="$2"
+  local output_file="${evidence_dir}/mount-tree.txt"
+  mkdir -p "${evidence_dir}"
+  {
+    echo "# mount tree"
+    echo "# root=${root_path}"
+    if [[ -d "${root_path}" ]]; then
+      find "${root_path}" -maxdepth 4 \( -type d -o -type f \) | sort
+    else
+      echo "missing:${root_path}"
+    fi
+  } > "${output_file}"
 }

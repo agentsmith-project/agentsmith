@@ -739,7 +739,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       route.projectId,
       task.workspace_file_library_id,
     );
-    if (!workspaceFileLibrary || workspaceFileLibrary.created_by_user_id !== user.id) {
+    if (!workspaceFileLibrary || workspaceFileLibrary.created_by_user_id !== effectiveUserId) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
       return true;
     }
@@ -768,7 +768,6 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       workspace_binding_mode: 'file_library',
       container_workspace_path: agent?.mode === 'internal' ? `/workspace/${task.id}` : null,
       library_root_path: '.',
-      task_root_path: '.',
       workspace_dir_name: workspaceFileLibrary.filesystem_name,
       file_library_id: workspaceFileLibrary.id,
       file_library_name: workspaceFileLibrary.name,

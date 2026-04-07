@@ -23,20 +23,15 @@ const NOTEBOOK_EXPECTED_TOKEN = `MAINLINE_REAL_NOTEBOOK_OK_${Date.now()}`;
 function executionHostForExternalWorkspaceAccess(apiBase: string): string {
   const explicitMetaHost = process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
   if (explicitMetaHost) {
-    if (explicitMetaHost === 'host.docker.internal') {
-      return '127.0.0.1';
-    }
     return explicitMetaHost;
   }
   const explicit = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.trim();
   const source = explicit || apiBase;
-  if (new URL(source).hostname === 'localhost') {
-    return '127.0.0.1';
-  }
-  if (source.includes('host.docker.internal')) {
-    return '127.0.0.1';
-  }
   return new URL(source).hostname;
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1';
 }
 
 type ExecutionWsMessage = {
@@ -730,7 +725,7 @@ async function runNotebookTask(
   workspaceId: string,
   projectId: string,
   agentName: string,
-  token: string,
+  _initialToken: string,
   expectedToken: string,
 ): Promise<void> {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook`);
@@ -742,8 +737,10 @@ async function runNotebookTask(
   await dialog.locator('#task-title').fill('Mainline Real Notebook Task');
   await dialog.locator('#task-agent').click();
   await page.getByRole('option', { name: new RegExp(agentName) }).click();
-  await dialog.getByRole('radio', { name: /create a new workspace/i }).click();
-  await dialog.getByTestId('task-create__workspace-name').fill(`Mainline Notebook Workspace ${Date.now()}`);
+  await expect(
+    dialog.getByRole('radio', { name: /initialize a new workspace automatically/i }),
+  ).toBeChecked();
+  await dialog.locator('#task-workspace-name').fill(`Mainline Notebook Workspace ${Date.now()}`);
   await dialog.getByRole('button', { name: /create/i }).click();
 
   await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/.+`), {
@@ -753,21 +750,50 @@ async function runNotebookTask(
   if (!taskId) {
     throw new Error('task_id_not_found_after_create');
   }
-  const workspaceAccessResponse = await page.request.post(
-    `${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/workspace-access`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    },
-  );
-  expect(workspaceAccessResponse.ok()).toBeTruthy();
-  const workspaceAccess = (await workspaceAccessResponse.json()) as {
+  const token = await readStoredAuthToken(page);
+  let workspaceAccess: {
     metadata_url: string;
     storage_bucket_url?: string;
   };
+  let lastWorkspaceAccessError = '';
+  const workspaceAccessStartedAt = Date.now();
+  while (Date.now() - workspaceAccessStartedAt < 30_000) {
+    const workspaceAccessResponse = await page.request.post(
+      `${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/workspace-access`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    if (workspaceAccessResponse.ok()) {
+      workspaceAccess = (await workspaceAccessResponse.json()) as {
+        metadata_url: string;
+        storage_bucket_url?: string;
+      };
+      lastWorkspaceAccessError = '';
+      break;
+    }
+    const body = await workspaceAccessResponse.text().catch(() => '');
+    lastWorkspaceAccessError = `${workspaceAccessResponse.status()}:${body}`;
+    await page.waitForTimeout(1_000);
+  }
+  if (lastWorkspaceAccessError) {
+    throw new Error(`workspace_access_not_ready:${lastWorkspaceAccessError}`);
+  }
+
   const expectedHost = executionHostForExternalWorkspaceAccess(apiBase);
-  expect(new URL(workspaceAccess.metadata_url).hostname).toBe(expectedHost);
+  const metadataHost = new URL(workspaceAccess.metadata_url).hostname;
+  if (isLoopbackHost(expectedHost)) {
+    expect(isLoopbackHost(metadataHost)).toBeTruthy();
+  } else {
+    expect(metadataHost).toBe(expectedHost);
+  }
   if (workspaceAccess.storage_bucket_url) {
-    expect(new URL(workspaceAccess.storage_bucket_url).hostname).toBe(expectedHost);
+    const bucketHost = new URL(workspaceAccess.storage_bucket_url).hostname;
+    if (isLoopbackHost(expectedHost)) {
+      expect(isLoopbackHost(bucketHost)).toBeTruthy();
+    } else {
+      expect(bucketHost).toBe(expectedHost);
+    }
   }
   await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
 

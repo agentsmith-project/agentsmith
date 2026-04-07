@@ -120,4 +120,13 @@ describe('UseGuidePage route', () => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
   });
+
+  it('shows permission_denied_title when project endpoint use is forbidden', async () => {
+    mockUseEndpointPageCapabilities.mockReturnValue({ canUse: false, canManage: false, canRead: false });
+
+    render(<UseGuidePage params={Promise.resolve({ workspace: 'ws_1', project: 'proj_1', locale: 'en' })} />);
+    await waitFor(() => {
+      expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+    });
+  });
 });

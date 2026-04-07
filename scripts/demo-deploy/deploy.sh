@@ -117,6 +117,7 @@ if demo_mode_is_full; then
   kubectl create namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
   ensure_kind_nodes_on_network "${EXTERNAL_DEPS_NETWORK_NAME:-agentsmith-demo-deps}" "${KIND_CLUSTER_NAME}"
+  JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT:-http://$(k8s_external_minio_fqdn "${INTERNAL_AGENT_K8S_NAMESPACE}"):9000}"
 
   KIND_POSTGRES_TARGET_IP="${EXTERNAL_DEPS_POSTGRES_IP:-172.29.0.10}"
   KIND_MINIO_TARGET_IP="${EXTERNAL_DEPS_MINIO_IP:-172.29.0.11}"

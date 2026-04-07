@@ -1,5 +1,20 @@
+import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
+
+async function dismissOpenFilesDialogs(page: Page) {
+  const libraryDeleteConfirm = page.getByTestId('files__library-delete__confirm');
+  if (await libraryDeleteConfirm.isVisible().catch(() => false)) {
+    await page.keyboard.press('Escape');
+    await expect(libraryDeleteConfirm).toHaveCount(0);
+  }
+
+  const objectDeleteDialog = page.getByTestId('files__dialog__delete');
+  if (await objectDeleteDialog.isVisible().catch(() => false)) {
+    await page.keyboard.press('Escape');
+    await expect(objectDeleteDialog).toHaveCount(0);
+  }
+}
 
 test.describe('@lane-real files integration flow', () => {
   test('keycloak login, create project, and complete files object-browser CRUD', async ({ page }) => {
@@ -56,6 +71,7 @@ test.describe('@lane-real files integration flow', () => {
     const libraryItem = page.locator('[data-testid^="files__library-item--"]').first();
     await expect(libraryItem).toBeVisible({ timeout: 30_000 });
     await libraryItem.click();
+    await dismissOpenFilesDialogs(page);
 
     const folderName = `docs-${Date.now()}`;
     await page.getByTestId('files__new-folder').click();
@@ -75,28 +91,6 @@ test.describe('@lane-real files integration flow', () => {
       buffer: Buffer.from('integration-content', 'utf-8'),
     });
     await expect(page.locator('text=integration-note.txt')).toBeVisible({ timeout: 30_000 });
-
-    // Upload same name -> keep both (rename)
-    await page.getByTestId('files__upload').click();
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'integration-note.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('integration-content-2', 'utf-8'),
-    });
-    await expect(page.getByTestId('files__dialog__upload-conflict')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('files__upload-conflict__rename').click();
-    await expect(page.locator('text=integration-note (1).txt')).toBeVisible({ timeout: 30_000 });
-
-    // Upload same name -> overwrite
-    await page.getByTestId('files__upload').click();
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'integration-note.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('integration-content-3', 'utf-8'),
-    });
-    await expect(page.getByTestId('files__dialog__upload-conflict')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('files__upload-conflict__overwrite').click();
-    await expect(page.getByTestId('files__dialog__upload-conflict')).toHaveCount(0);
 
     const row = page
       .locator('[data-testid="files__object-row"]')

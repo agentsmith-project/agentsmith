@@ -43,6 +43,8 @@ ensure_backend_real_state
 INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR:-$(backend_real_tmp_file internal)}"
 mkdir -p "${INTERNAL_REAL_DIR}"
 INTERNAL_REAL_DIR="$(realpath -m "${INTERNAL_REAL_DIR}")"
+export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-$(basename "${INTERNAL_REAL_DIR}")}"
+export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host,internal_k8s}"
 resolve_loopback_runtime_addresses "${API_PORT}" "${WEB_PORT}" "${INTEGRATION_KEYCLOAK_PORT}"
 gate_evidence_init "${INTERNAL_REAL_DIR}" "internal_backend_real"
 gate_write_runtime_descriptor "${INTERNAL_REAL_DIR}" "internal_backend_real"
@@ -77,6 +79,13 @@ MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${INTEGRATION
 MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 
 info() { echo "[internal-real-gate] $*"; }
+
+record_service() {
+  local service_name="$1"
+  local status="$2"
+  local detail="${3:-}"
+  gate_record_service_status "${INTERNAL_REAL_DIR}" "${service_name}" "${status}" "${detail}"
+}
 
 if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
   gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "endpoint_env" "Missing PRESET_ENDPOINT_API_KEY"
@@ -113,6 +122,7 @@ ensure_kind_cluster() {
 
 ensure_kind_cluster
 gate_record_preflight_check "${INTERNAL_REAL_DIR}" "kind_cluster" "passed" "${KIND_CLUSTER_NAME}"
+record_service kind_cluster ready "${KIND_CLUSTER_NAME}"
 
 if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
   if ! docker image inspect "${RUNNER_BASE_IMAGE}" >/dev/null 2>&1; then
@@ -208,6 +218,7 @@ fi
 
 ensure_juicefs_csi
 gate_record_preflight_check "${INTERNAL_REAL_DIR}" "juicefs_csi" "passed" "${CSI_DRIVER}"
+record_service juicefs_csi ready "${CSI_DRIVER}"
 
 KIND_GATEWAY=""
 if docker network inspect kind >/dev/null 2>&1; then
@@ -243,6 +254,7 @@ render_k8s_external_dependency_services \
   "${INTEGRATION_MINIO_API_PORT}"
 kubectl apply -f "${EXTERNAL_DEPS_MANIFEST}" >/dev/null
 gate_record_preflight_check "${INTERNAL_REAL_DIR}" "external_dependency_services" "passed" "${EXTERNAL_DEPS_MANIFEST}"
+record_service external_dependency_services ready "${EXTERNAL_DEPS_MANIFEST}"
 
 cat > "${CONFIG_PATH}" <<EOF
 version: 1

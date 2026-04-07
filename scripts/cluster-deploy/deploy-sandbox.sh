@@ -74,18 +74,16 @@ EOF
 fi
 
 RUNTIME_MANAGER_KUBECONFIG="${STATE_DIR}/manager-kubeconfig.runtime"
-KUBERNETES_SERVICE_CLUSTER_IP="$(
-  kubectl get svc kubernetes -o jsonpath='{.spec.clusterIP}'
-)"
-python3 - "${SHARED_MANAGER_KUBECONFIG}" "${RUNTIME_MANAGER_KUBECONFIG}" "${KUBERNETES_SERVICE_CLUSTER_IP}" <<'PY'
+KUBERNETES_SERVICE_DNS_NAME="kubernetes.default.svc"
+python3 - "${SHARED_MANAGER_KUBECONFIG}" "${RUNTIME_MANAGER_KUBECONFIG}" "${KUBERNETES_SERVICE_DNS_NAME}" <<'PY'
 import sys
 from pathlib import Path
 
 src = Path(sys.argv[1])
 dst = Path(sys.argv[2])
-cluster_ip = sys.argv[3].strip()
-if not cluster_ip:
-    raise SystemExit("failed to resolve kubernetes service clusterIP")
+cluster_host = sys.argv[3].strip()
+if not cluster_host:
+    raise SystemExit("failed to resolve kubernetes service DNS host")
 
 lines = src.read_text(encoding="utf-8").splitlines()
 rewritten = []
@@ -93,7 +91,7 @@ replaced = False
 for line in lines:
     if line.strip().startswith("server: https://"):
         indent = line[: len(line) - len(line.lstrip())]
-        rewritten.append(f"{indent}server: https://{cluster_ip}:443")
+        rewritten.append(f"{indent}server: https://{cluster_host}:443")
         replaced = True
     else:
         rewritten.append(line)

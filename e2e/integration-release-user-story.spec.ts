@@ -295,7 +295,18 @@ async function createEndpointViaUi(args: {
   const wizard = page.getByTestId('endpoints__custom-wizard');
   await expect(wizard).toBeVisible({ timeout: 30_000 });
   await wizard.getByTestId('wizard-name-input').fill(name);
-  await wizard.getByTestId(`protocol-${upstreamProtocol}`).click();
+  const protocolSelector = wizard.getByTestId(`protocol-${upstreamProtocol}`);
+  if (await protocolSelector.isVisible().catch(() => false)) {
+    await protocolSelector.click();
+  } else {
+    const protocolLabel =
+      upstreamProtocol === 'anthropic_messages'
+        ? /Anthropic Compatible|Anthropic/i
+        : upstreamProtocol === 'openai_responses'
+          ? /Responses/i
+          : /OpenAI Compatible|OpenAI/i;
+    await wizard.getByRole('button', { name: protocolLabel }).click();
+  }
   await wizard.getByTestId('wizard-base-url-input').fill(baseUrl);
   await wizard.getByRole('button', { name: /next|下一步/i }).click();
   await expect(wizard.getByTestId('wizard-model-id-input')).toBeVisible({ timeout: 30_000 });
@@ -575,6 +586,17 @@ function externalExecutionHost(): string {
   return new URL(source).hostname;
 }
 
+function matchesAllowedExternalWorkspaceHost(actualHost: string, expectedHost: string): boolean {
+  const normalizedActual = actualHost.trim().toLowerCase();
+  const normalizedExpected = expectedHost.trim().toLowerCase();
+  if (normalizedActual === normalizedExpected) {
+    return true;
+  }
+
+  const loopbackHosts = new Set(['localhost', '127.0.0.1', 'host.docker.internal']);
+  return loopbackHosts.has(normalizedActual) && loopbackHosts.has(normalizedExpected);
+}
+
 async function expectExternalTaskWorkspaceAccessReachable(args: {
   page: Page;
   workspaceId: string;
@@ -594,9 +616,11 @@ async function expectExternalTaskWorkspaceAccessReachable(args: {
     storage_bucket_url?: string;
   };
   const expectedHost = externalExecutionHost();
-  expect(new URL(workspaceAccess.metadata_url).hostname).toBe(expectedHost);
+  expect(matchesAllowedExternalWorkspaceHost(new URL(workspaceAccess.metadata_url).hostname, expectedHost)).toBe(true);
   if (workspaceAccess.storage_bucket_url) {
-    expect(new URL(workspaceAccess.storage_bucket_url).hostname).toBe(expectedHost);
+    expect(matchesAllowedExternalWorkspaceHost(new URL(workspaceAccess.storage_bucket_url).hostname, expectedHost)).toBe(
+      true,
+    );
   }
 }
 

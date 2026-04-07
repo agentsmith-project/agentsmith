@@ -16,6 +16,7 @@ INTEGRATION_DEV_ADMIN_PASSWORD="${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 PRESET_PROJECT_NAME_VALUE="${PRESET_PROJECT_NAME:-Demo Project}"
 PRESET_EXTERNAL_AGENT_NAME_VALUE="${PRESET_EXTERNAL_AGENT_NAME:-demo-external-agent}"
+WORKSPACE_ACCESS_EVIDENCE_FILE="${WORKSPACE_ACCESS_EVIDENCE_FILE:-}"
 
 BODY_FILE="$(mktemp)"
 cleanup() {
@@ -99,6 +100,10 @@ while (( $(date +%s) < READY_DEADLINE )); do
     LAST_STATUS="${ACCESS_STATUS}"
     LAST_BODY="$(cat "${BODY_FILE}")"
     if [[ "${ACCESS_STATUS}" == "200" ]]; then
+      if [[ -n "${WORKSPACE_ACCESS_EVIDENCE_FILE}" ]]; then
+        mkdir -p "$(dirname "${WORKSPACE_ACCESS_EVIDENCE_FILE}")"
+        cp "${BODY_FILE}" "${WORKSPACE_ACCESS_EVIDENCE_FILE}"
+      fi
       METADATA_URL="$(cat "${BODY_FILE}" | json_extract metadata_url)"
       STORAGE_BUCKET_URL="$(cat "${BODY_FILE}" | json_extract storage_bucket_url)"
       if [[ "${METADATA_URL}" == *"@postgres:5432/"* && "${STORAGE_BUCKET_URL}" == *"http://minio:9000/"* ]]; then

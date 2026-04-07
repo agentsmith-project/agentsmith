@@ -131,8 +131,6 @@ export function ProjectsTable({
           <span className="text-primary">
             {getMemberAccessGroupLabel({
               groups: row.original.groups,
-              permissions: row.original.permissions,
-              fallback: row.original.permissions?.length ? 'member' : undefined,
             })}
           </span>
         ),

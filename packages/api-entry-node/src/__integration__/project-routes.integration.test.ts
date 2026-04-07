@@ -392,9 +392,19 @@ describe('api-entry-node project routes integration', () => {
 
     const getRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`);
     expect(getRes.status).toBe(200);
-    const got = (await getRes.json()) as { owner_id: string; admin_member_ids?: string[]; permissions: string[] };
+    const got = (await getRes.json()) as {
+      owner_id: string;
+      admin_member_ids?: string[];
+      groups?: Array<{ id: string; system_key?: string }>;
+      permissions: string[];
+    };
     expect(got.owner_id).toBe('user_external');
     expect(got.admin_member_ids).toContain('user_test');
+    expect(got.groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'grp_project_admins', system_key: 'admins' }),
+      ]),
+    );
     expect(got.permissions).toContain('project:endpoint:use');
     expect(got.permissions).toContain('project:agent:manage');
     expect(got.permissions).toContain('project:governance:update');
@@ -402,10 +412,20 @@ describe('api-entry-node project routes integration', () => {
     const listRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects');
     expect(listRes.status).toBe(200);
     const listBody = (await listRes.json()) as {
-      items: Array<{ id: string; admin_member_ids?: string[]; permissions: string[] }>;
+      items: Array<{
+        id: string;
+        admin_member_ids?: string[];
+        groups?: Array<{ id: string; system_key?: string }>;
+        permissions: string[];
+      }>;
     };
     const listed = listBody.items.find((item) => item.id === created.id);
     expect(listed?.admin_member_ids).toContain('user_test');
+    expect(listed?.groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'grp_project_admins', system_key: 'admins' }),
+      ]),
+    );
     expect(listed?.permissions).toContain('project:governance:update');
   });
 

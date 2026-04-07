@@ -16,6 +16,7 @@ import {
   resolveWorkspacePermissions,
 } from './workspace-permissions.js';
 import { listProjectGroups, setProjectAdminGroupMembersPersisted } from './project-member-governance-persistence.js';
+import type { ProjectGroupRecord } from './project-member-governance-types.js';
 import { PROJECT_BUILT_IN_GROUP_IDS } from './project-governance-model.js';
 
 async function readProjectAdminMemberIds(
@@ -28,6 +29,25 @@ async function readProjectAdminMemberIds(
     (group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins,
   );
   return adminGroup ? [...adminGroup.member_ids] : [];
+}
+
+async function readProjectActorGroups(args: {
+  deps: ProjectRouteContext['deps'];
+  workspaceId: string;
+  projectId: string;
+  ownerId: string;
+  actorUserId: string;
+}): Promise<Array<Pick<ProjectGroupRecord, 'id' | 'name' | 'permission_template_id' | 'built_in' | 'system_key'>>> {
+  const groups = await listProjectGroups(args.deps.docStore, args.workspaceId, args.projectId, args.ownerId);
+  return groups
+    .filter((group) => group.member_ids.includes(args.actorUserId))
+    .map((group) => ({
+      id: group.id,
+      name: group.name,
+      permission_template_id: group.permission_template_id,
+      built_in: group.built_in,
+      system_key: group.system_key,
+    }));
 }
 
 export async function handleProjectCrudRoutes(context: ProjectRouteContext): Promise<boolean> {
@@ -61,6 +81,13 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
       return {
         ...item,
         admin_member_ids: await readProjectAdminMemberIds(deps, workspaceId, item.id, item.owner_id),
+        groups: await readProjectActorGroups({
+          deps,
+          workspaceId,
+          projectId: item.id,
+          ownerId: item.owner_id,
+          actorUserId: user.id,
+        }),
         permissions: [
           ...await resolveVisibleProjectPermissionsForActor({
             docStore: deps.docStore,
@@ -149,6 +176,13 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
     json(res, 200, {
       ...found,
       admin_member_ids: await readProjectAdminMemberIds(deps, route.workspaceId, route.projectId, found.owner_id),
+      groups: await readProjectActorGroups({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        ownerId: found.owner_id,
+        actorUserId: user.id,
+      }),
       permissions: [
         ...await resolveVisibleProjectPermissionsForActor({
           docStore: deps.docStore,

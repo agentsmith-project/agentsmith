@@ -128,6 +128,39 @@ deploy verify 不再成为另一套平行的测试逻辑，而应组合标准 ga
 
 每条运行线都必须输出标准化证据，支持失败分类和报告生成。
 
+### 3.6 Fallback 必须分级治理
+
+统一 helper 可以降低脚本心智负担，但不能通过隐式回退改变目标环境。
+
+硬约束：
+
+- 显式传入值永远高于自动推导。
+- 允许低风险 fallback，但必须写入 evidence。
+- 禁止高影响 fallback，尤其是会改变目标环境、目标集群、目标发布物、目标镜像源的自动回退。
+
+可接受 fallback 示例：
+
+- verify 资产缺失时回退到 workspace 文件，并在 evidence / preflight 中明确记录。
+- runner 日志目录不可写时回退到临时目录，并明确记录 fallback 路径。
+
+禁止 fallback 示例：
+
+- 共享 kubeconfig 暂时不可达时自动切换到本地 kind。
+- demo deploy 清理逻辑误作用到 cluster compose project。
+- deploy verify 因本地 checkout 存在而默认验证 workspace 代码而不是 release bundle。
+
+### 3.7 Environment Isolation 优先于共享便捷性
+
+共享实现必须建立在环境隔离清晰的前提下。
+
+硬约束：
+
+- cleanup、bootstrap、deploy、verify、report 必须显式绑定当前环境标识。
+- compose 相关逻辑必须绑定当前 `COMPOSE_PROJECT_NAME`。
+- 集群相关逻辑必须绑定当前 `KUBECONFIG` / `admin-kubeconfig`。
+- release 相关逻辑必须绑定当前 `RELEASE_ROOT`。
+- 共享 helper 不得硬编码其它环境名，也不得跨环境操作。
+
 ---
 
 ## 4. 目标架构
@@ -180,6 +213,8 @@ deploy verify 不再成为另一套平行的测试逻辑，而应组合标准 ga
 - container / pod callback 地址必须显式定义
 - public URL 和 host-local URL 必须分开
 - deploy verify 使用 public URL 进行最终访问验证，使用 host-local URL 做本机 readiness 和 API 校验
+- 所有显式传入 env 都必须优先于模式默认值
+- resolver 可以统一推导低风险默认值，但不得替操作者切换目标集群、目标 release、目标 compose project 或目标 registry
 
 ### 4.3 重构 Workspace Access 协议
 
@@ -238,6 +273,11 @@ deploy verify 不再成为另一套平行的测试逻辑，而应组合标准 ga
 - `service-status.json`
 
 deploy verify / rehearsal report 统一消费这套结构。
+
+补充约束：
+
+- 任何 fallback、降级、资产来源切换都必须留下标准化 evidence。
+- 如果行为会改变目标环境或目标发布物，则不得以 fallback 方式继续执行，必须显式失败。
 
 ---
 
@@ -451,13 +491,28 @@ deploy verify / rehearsal report 统一消费这套结构。
 
 否则脚本改一半时会出现大量临时态漂移。
 
-### 8.4 保持 local-manual、rehearsal、deploy 的语义清晰
+### 8.4 共享 helper 不得替操作者做目标选择
+
+共享 helper 的职责是统一 contract、默认值、evidence 和失败分类，不是替操作者猜测目标。
+
+明确禁止：
+
+- 因本地 kind 可用而自动改投 kind
+- 因本地 workspace 文件存在而默认验证 workspace 而不是 release bundle
+- 因共享清理逻辑而误删其它 compose project 的容器
+
+### 8.5 保持 local-manual、rehearsal、deploy 的语义清晰
 
 - `local-manual` 是日常真实开发手测线
 - `rehearsal` 是部署排演线
 - `deploy verify` 是最终目标环境验证线
 
 三者可以复用实现，但不能混淆职责。
+
+额外要求：
+
+- 复用实现时必须保留各自的环境边界，不得跨环境读写共享状态。
+- 任何跨环境资源操作都必须显式绑定环境标识，而不能靠默认值猜测。
 
 ---
 
@@ -485,3 +540,5 @@ deploy verify / rehearsal report 统一消费这套结构。
 - deploy verify 与 rehearsal 复用标准 gate
 - evidence bundle 结构统一
 - 所有关键真实链路能稳定复跑并提供一致证据
+- 统一后的 helper / gate 不得静默切换目标环境、目标集群、目标发布物
+- cleanup / deploy / verify 不得跨 compose project 或跨 kubeconfig 误操作

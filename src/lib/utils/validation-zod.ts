@@ -12,15 +12,23 @@ import { z } from 'zod';
 // Zod Schema Validation for ProjectWithMembership
 // ============================================================
 
+const MemberGroupSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  permission_template_id: z.string(),
+  built_in: z.boolean().optional(),
+  system_key: z.string().optional(),
+});
+
 /**
  * Zod schema for ProjectWithMembership validation
  *
  * Validates that:
  * - All Project fields are present and valid
- * - permissions is an array of strings (optional)
+ * - membership_status is explicit
+ * - permissions and groups are shaped for project access rendering
  */
 export const ProjectWithMembershipSchema = z.object({
-  // Base Project fields
   id: z.string(),
   workspace_id: z.string(),
   name: z.string(),
@@ -35,43 +43,18 @@ export const ProjectWithMembershipSchema = z.object({
   admin_member_ids: z.array(z.string()).optional(),
   created_at: z.string(),
   updated_at: z.string(),
-
-  // Optional membership fields
-  permissions: z.array(z.string()).optional(),
-  groups: z.array(z.object({
-    id: z.string(),
-    name: z.string(),
-    permission_template_id: z.string(),
-    built_in: z.boolean().optional(),
-    system_key: z.string().optional(),
-  })).optional(),
+  permissions: z.array(z.string()),
+  groups: z.array(MemberGroupSummarySchema).optional(),
+  membership_status: z.enum(['active', 'pending', 'suspended', 'none']),
 });
 
-/**
- * Type for validated ProjectWithMembership
- */
 export type ProjectWithMembership = z.infer<typeof ProjectWithMembershipSchema>;
 
-/**
- * Validate and cast unknown data to ProjectWithMembership
- *
- * This function performs schema validation using a Zod schema.
- * Returns null if validation fails, preventing type assertions.
- *
- * @param data - Unknown data to validate
- * @returns Validated ProjectWithMembership or null if invalid
- */
 export function validateProjectWithMembership(data: unknown): ProjectWithMembership | null {
   const result = ProjectWithMembershipSchema.safeParse(data);
   return result.success ? result.data : null;
 }
 
-/**
- * Check if data is a valid ProjectWithMembership
- *
- * @param data - Data to check
- * @returns true if valid, false otherwise
- */
 export function isValidProjectWithMembership(data: unknown): data is ProjectWithMembership {
   return ProjectWithMembershipSchema.safeParse(data).success;
 }

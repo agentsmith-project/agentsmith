@@ -404,6 +404,7 @@ describe('api-entry-node project routes integration', () => {
       admin_member_ids?: string[];
       groups?: Array<{ id: string; system_key?: string }>;
       permissions: string[];
+      membership_status: 'active' | 'pending' | 'suspended' | 'none';
     };
     expect(got.owner_id).toBe('user_external');
     expect(got.admin_member_ids).toContain('user_test');
@@ -415,6 +416,7 @@ describe('api-entry-node project routes integration', () => {
     expect(got.permissions).toContain('project:endpoint:use');
     expect(got.permissions).toContain('project:agent:manage');
     expect(got.permissions).toContain('project:governance:update');
+    expect(got.membership_status).toBe('active');
 
     const listRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects');
     expect(listRes.status).toBe(200);
@@ -424,6 +426,7 @@ describe('api-entry-node project routes integration', () => {
         admin_member_ids?: string[];
         groups?: Array<{ id: string; system_key?: string }>;
         permissions: string[];
+        membership_status: 'active' | 'pending' | 'suspended' | 'none';
       }>;
     };
     const listed = listBody.items.find((item) => item.id === created.id);
@@ -434,6 +437,7 @@ describe('api-entry-node project routes integration', () => {
       ]),
     );
     expect(listed?.permissions).toContain('project:governance:update');
+    expect(listed?.membership_status).toBe('active');
   });
 
   it('returns validation error for invalid payload', async () => {

@@ -42,7 +42,7 @@ export function BasicInfoStep(args: {
 
       <div className="space-y-2">
         <label className="text-sm font-medium text-foreground">
-          {t('protocol')} <span className="text-error">*</span>
+          {t('upstream_protocol')} <span className="text-error">*</span>
         </label>
         <div className="grid grid-cols-2 gap-3">
           {CUSTOM_PROTOCOL_OPTIONS.map((option) => (

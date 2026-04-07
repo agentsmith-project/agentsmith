@@ -5,6 +5,7 @@ import {
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import {
   canActorDiscoverProject,
+  resolveProjectAuthorizationSnapshot,
   resolveVisibleProjectPermissionsForActor,
 } from './project-authz-engine.js';
 import type { ProjectRouteContext } from './project-route-types.js';
@@ -78,26 +79,29 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
       if (!discoverable) {
         return null;
       }
+      const authorization = await resolveProjectAuthorizationSnapshot({
+        docStore: deps.docStore,
+        workspaceId,
+        projectId: item.id,
+        projectOwnerId: item.owner_id,
+        projectGovernance: item.governance_json,
+        actorUserId: user.id,
+      });
+      const groups = authorization.membership_status === 'active'
+        ? await readProjectActorGroups({
+            deps,
+            workspaceId,
+            projectId: item.id,
+            ownerId: item.owner_id,
+            actorUserId: user.id,
+          })
+        : [];
       return {
         ...item,
         admin_member_ids: await readProjectAdminMemberIds(deps, workspaceId, item.id, item.owner_id),
-        groups: await readProjectActorGroups({
-          deps,
-          workspaceId,
-          projectId: item.id,
-          ownerId: item.owner_id,
-          actorUserId: user.id,
-        }),
-        permissions: [
-          ...await resolveVisibleProjectPermissionsForActor({
-            docStore: deps.docStore,
-            workspaceId,
-            projectId: item.id,
-            projectOwnerId: item.owner_id,
-            projectGovernance: item.governance_json,
-            actorUserId: user.id,
-          }),
-        ],
+        groups,
+        permissions: [...authorization.effective_permissions],
+        membership_status: authorization.membership_status,
       };
     }));
     const items = visibleItems.filter((item) => item !== null);
@@ -173,26 +177,29 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'project_not_found' });
       return true;
     }
+    const authorization = await resolveProjectAuthorizationSnapshot({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      projectOwnerId: found.owner_id,
+      projectGovernance: found.governance_json,
+      actorUserId: user.id,
+    });
+    const groups = authorization.membership_status === 'active'
+      ? await readProjectActorGroups({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          ownerId: found.owner_id,
+          actorUserId: user.id,
+        })
+      : [];
     json(res, 200, {
       ...found,
       admin_member_ids: await readProjectAdminMemberIds(deps, route.workspaceId, route.projectId, found.owner_id),
-      groups: await readProjectActorGroups({
-        deps,
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        ownerId: found.owner_id,
-        actorUserId: user.id,
-      }),
-      permissions: [
-        ...await resolveVisibleProjectPermissionsForActor({
-          docStore: deps.docStore,
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          projectOwnerId: found.owner_id,
-          projectGovernance: found.governance_json,
-          actorUserId: user.id,
-        }),
-      ],
+      groups,
+      permissions: [...authorization.effective_permissions],
+      membership_status: authorization.membership_status,
     });
     return true;
   }

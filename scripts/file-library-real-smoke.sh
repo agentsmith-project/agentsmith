@@ -4,9 +4,11 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-API_PORT="${INTEGRATION_API_PORT:-20000}"
-API_BASE="${API_BASE:-http://localhost:${API_PORT}}"
-KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
+source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
+resolve_loopback_runtime_stack
+API_PORT="${INTEGRATION_API_PORT:-${API_PORT:-20000}}"
+API_BASE="${API_BASE:-${RUNTIME_HOST_API_BASE_URL}}"
+KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-${KEYCLOAK_URL:-${RUNTIME_HOST_KEYCLOAK_BASE_URL}}}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 MBOS_DEV_USERNAME="${MBOS_DEV_USERNAME:-dev-admin}"

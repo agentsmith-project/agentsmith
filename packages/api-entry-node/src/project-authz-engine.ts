@@ -178,6 +178,17 @@ async function collectPermissionSources(args: {
   };
 }
 
+export async function resolveProjectAuthorizationSnapshot(args: {
+  docStore: JsonDocStorePort;
+  workspaceId: string;
+  projectId: string;
+  projectOwnerId: string;
+  projectGovernance?: unknown;
+  actorUserId: string;
+}): Promise<ProjectAuthorizationSnapshot> {
+  return collectPermissionSources(args);
+}
+
 export async function evaluateProjectPermissions(args: {
   docStore: JsonDocStorePort;
   workspaceId: string;

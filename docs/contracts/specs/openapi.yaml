@@ -84,9 +84,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Project"
+                $ref: "#/components/schemas/ProjectListResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
@@ -1468,8 +1466,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/ProjectWithMembership"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -4974,12 +4971,41 @@ components:
           type: string
         name:
           type: string
+    MemberGroupSummary:
+      type: object
+      required:
+        - id
+        - name
+        - permission_template_id
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        permission_template_id:
+          type: string
+        built_in:
+          type: boolean
+        system_key:
+          type: string
+    ProjectMembershipStatus:
+      type: string
+      enum:
+        - active
+        - pending
+        - suspended
+        - none
     Project:
       type: object
       required:
         - id
         - workspace_id
         - name
+        - visibility
+        - owner_id
+        - status
+        - created_at
+        - updated_at
       properties:
         id:
           type: string
@@ -4987,6 +5013,70 @@ components:
           type: string
         name:
           type: string
+        description:
+          type: string
+        visibility:
+          type: string
+          enum:
+            - public
+            - private
+        join_policy:
+          type: string
+          enum:
+            - approval_required
+            - open
+        owner_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - archived
+            - deleted
+        governance_json:
+          type: object
+          additionalProperties: true
+        execution_preferences_json:
+          type: object
+          additionalProperties: true
+        limits_json:
+          type: object
+          additionalProperties: true
+        admin_member_ids:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+        updated_at:
+          type: string
+    ProjectWithMembership:
+      allOf:
+        - $ref: "#/components/schemas/Project"
+        - type: object
+          required:
+            - permissions
+            - membership_status
+          properties:
+            groups:
+              type: array
+              items:
+                $ref: "#/components/schemas/MemberGroupSummary"
+            permissions:
+              type: array
+              items:
+                type: string
+            membership_status:
+              $ref: "#/components/schemas/ProjectMembershipStatus"
+    ProjectListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectWithMembership"
     CreateProjectRequest:
       type: object
       required:

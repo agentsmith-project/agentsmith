@@ -2897,6 +2897,13 @@ export interface components {
             next_continuation_token: string | null;
             path: string;
         };
+        MemberGroupSummary: {
+            built_in?: boolean;
+            id: string;
+            name: string;
+            permission_template_id: string;
+            system_key?: string;
+        };
         ModelCatalogEntry: {
             capabilities: string[];
             context_window?: number;
@@ -3044,8 +3051,28 @@ export interface components {
             to_path: string;
         };
         Project: {
+            admin_member_ids?: string[];
+            created_at: string;
+            description?: string;
+            execution_preferences_json?: {
+                [key: string]: unknown;
+            };
+            governance_json?: {
+                [key: string]: unknown;
+            };
             id: string;
+            /** @enum {string} */
+            join_policy?: "approval_required" | "open";
+            limits_json?: {
+                [key: string]: unknown;
+            };
             name: string;
+            owner_id: string;
+            /** @enum {string} */
+            status: "active" | "archived" | "deleted";
+            updated_at: string;
+            /** @enum {string} */
+            visibility: "public" | "private";
             workspace_id: string;
         };
         ProjectLimitSummary: {
@@ -3054,10 +3081,20 @@ export interface components {
             project_usage_pct: number;
             project_used: number;
         };
+        ProjectListResponse: {
+            items: components["schemas"]["ProjectWithMembership"][];
+        };
+        /** @enum {string} */
+        ProjectMembershipStatus: "active" | "pending" | "suspended" | "none";
         ProjectPricingMap: {
             [key: string]: {
                 [key: string]: components["schemas"]["ModelCatalogPricing"];
             };
+        };
+        ProjectWithMembership: components["schemas"]["Project"] & {
+            groups?: components["schemas"]["MemberGroupSummary"][];
+            membership_status: components["schemas"]["ProjectMembershipStatus"];
+            permissions: string[];
         };
         ResourceCostBreakdown: {
             /** @description Estimated cost in USD */
@@ -4112,7 +4149,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Project"][];
+                    "application/json": components["schemas"]["ProjectListResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -4161,9 +4198,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ProjectWithMembership"];
                 };
             };
             401: components["responses"]["Unauthorized"];

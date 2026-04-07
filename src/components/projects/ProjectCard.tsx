@@ -6,7 +6,7 @@ import { FolderOpen, Globe, Lock, Pin, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import type { Project } from '@/lib/projects/project-view';
-import { canRequestProjectJoin, canSelfJoinProject, hasAnyProjectPermission } from '@/lib/projects/project-view';
+import { canRequestProjectJoin, canSelfJoinProject, hasAnyProjectPermission, isPendingProjectMembership } from '@/lib/projects/project-view';
 
 export function ProjectCard({
   project,
@@ -34,6 +34,8 @@ export function ProjectCard({
   ]);
   const canRequestJoin = canRequestProjectJoin(project) && !!onJoinRequest;
   const canSelfJoin = canSelfJoinProject(project) && !!onJoinRequest;
+  const membershipPending = isPendingProjectMembership(project);
+  const joinRequestPending = membershipPending || isJoinRequestPending;
   return (
     <div
       onClick={onClick}
@@ -96,19 +98,32 @@ export function ProjectCard({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {canRequestJoin ? (
+          {membershipPending && !canSelfJoin ? (
             <Button
               type="button"
-              variant={isJoinRequestPending ? 'outline' : 'primary'}
+              variant="outline"
               size="sm"
               onClick={(e) => {
                 e.stopPropagation();
                 onJoinRequest?.();
               }}
-              disabled={isJoinRequestPending}
+              disabled={joinRequestPending}
               data-testid={`projects__join-request-btn--${project.id}`}
             >
-              {isJoinRequestPending ? t('join_request.pending') : t('join_request.action')}
+              {t('join_request.pending')}
+            </Button>
+          ) : canRequestJoin ? (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onJoinRequest?.();
+              }}
+              data-testid={`projects__join-request-btn--${project.id}`}
+            >
+              {t('join_request.action')}
             </Button>
           ) : canSelfJoin ? (
             <Button
@@ -119,10 +134,10 @@ export function ProjectCard({
                 e.stopPropagation();
                 onJoinRequest?.();
               }}
-              disabled={isJoinRequestPending}
+              disabled={joinRequestPending}
               data-testid={`projects__join-project-btn--${project.id}`}
             >
-              {isJoinRequestPending ? t('join_request.joining') : t('join_request.join_now')}
+              {joinRequestPending ? t('join_request.joining') : t('join_request.join_now')}
             </Button>
           ) : null}
           <StatusBadge status={project.status === 'active' ? 'active' : 'paused'}>{project.status}</StatusBadge>

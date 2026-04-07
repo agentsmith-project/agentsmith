@@ -6,14 +6,16 @@ unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 ensure_backend_real_state
 
-KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
+resolve_loopback_runtime_stack
+KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-${KEYCLOAK_URL:-${RUNTIME_HOST_KEYCLOAK_BASE_URL}}}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
 MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
-PORT_WEB="${PORT_WEB:-3001}"
+PORT_WEB="${PORT_WEB:-${WEB_PORT:-3001}}"
 
 info() { echo "[backend-real-bootstrap] $*"; }
 
@@ -59,7 +61,7 @@ info "ensuring default workspace"
 (cd "${ROOT_DIR}" && MONGO_URL="${MONGO_URL}" MONGO_DB_NAME="${MONGO_DB_NAME}" KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" KEYCLOAK_REALM="${KEYCLOAK_REALM}" KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" npx tsx scripts/ensure-default-workspace.ts >/dev/null)
 
 info "refreshing notebook token"
-(cd "${ROOT_DIR}" && REFRESH_TOKEN_FORCE_PASSWORD_GRANT=1 BASE_URL="http://localhost:${PORT_WEB}" make notebook-agent-refresh-token >/dev/null)
+(cd "${ROOT_DIR}" && REFRESH_TOKEN_FORCE_PASSWORD_GRANT=1 BASE_URL="${RUNTIME_BROWSER_WEB_BASE_URL}" make notebook-agent-refresh-token >/dev/null)
 
 state_set_string release.phase "bootstrap_completed"
 state_set_string workspace.id "ws_default"

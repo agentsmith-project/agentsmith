@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 
 SPEC_FILE="${1:-}"
 if [[ -z "${SPEC_FILE}" ]]; then
@@ -13,9 +14,12 @@ fi
 shift
 
 API_PORT="${INTEGRATION_API_PORT:-20010}"
-WEB_BASE_URL="${BASE_URL:-http://localhost:3001}"
-KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
+KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
+WEB_PORT="${INTEGRATION_WEB_PORT:-3001}"
+KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
+resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}"
+WEB_BASE_URL="${BASE_URL:-${RUNTIME_BROWSER_WEB_BASE_URL}}"
 ensure_backend_real_state
 INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-$(backend_real_tmp_file integration)}"
 mkdir -p "${INTEGRATION_LOG_DIR}"
@@ -39,7 +43,7 @@ trap cleanup EXIT
 
 ready=0
 for _ in $(seq 1 60); do
-  code="$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${API_PORT}/api/v1/workspaces" || true)"
+  code="$(curl -s -o /dev/null -w "%{http_code}" "${RUNTIME_HOST_API_BASE_URL}/api/v1/workspaces" || true)"
   if [[ "${code}" == "200" || "${code}" == "401" || "${code}" == "403" ]]; then
     ready=1
     break
@@ -68,7 +72,7 @@ if [[ "${web_ready}" -ne 1 ]]; then
   exit 1
 fi
 
-INTEGRATION_API_BASE="http://localhost:${API_PORT}" \
+INTEGRATION_API_BASE="${RUNTIME_HOST_API_BASE_URL}" \
 BASE_URL="${WEB_BASE_URL}" \
 env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 npx playwright test --config playwright.config.integration.ts "${SPEC_FILE}" --project=chromium --workers=1 "$@"

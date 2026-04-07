@@ -404,6 +404,10 @@ export default function SettingsPage({ params }: SettingsPageProps) {
           visibility: currentProject.visibility,
           owner_id: currentProject.owner_id,
           status: currentProject.status,
+          admin_member_ids: currentProject.admin_member_ids,
+          groups: currentProject.groups,
+          permissions: currentProject.permissions,
+          membership_status: currentProject.membership_status,
           created_at: currentProject.created_at,
           updated_at: currentProject.updated_at,
         } : null}

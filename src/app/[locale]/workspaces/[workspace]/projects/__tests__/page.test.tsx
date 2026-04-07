@@ -14,6 +14,7 @@ type MockProject = {
   permissions: string[];
   admin_member_ids?: string[];
   status: 'active';
+  membership_status: 'active' | 'pending' | 'suspended' | 'none';
   created_at: string;
   updated_at: string;
 };
@@ -30,6 +31,7 @@ let mockProjectsData: MockProject[] = [
     permissions: ['project:endpoint:use', 'project:governance:update'],
     admin_member_ids: ['user_1'],
     status: 'active' as const,
+    membership_status: 'active' as const,
     created_at: '2026-02-01T00:00:00Z',
     updated_at: '2026-02-01T00:00:00Z',
   },
@@ -158,6 +160,7 @@ describe('ProjectsPage route', () => {
         permissions: ['project:endpoint:use', 'project:governance:update'],
         admin_member_ids: ['user_1'],
         status: 'active' as const,
+        membership_status: 'active' as const,
         created_at: '2026-02-01T00:00:00Z',
         updated_at: '2026-02-01T00:00:00Z',
       },
@@ -224,6 +227,7 @@ describe('ProjectsPage route', () => {
         permissions: ['project:endpoint:use'],
         admin_member_ids: ['user_1'],
         status: 'active' as const,
+        membership_status: 'active' as const,
         created_at: '2026-02-01T00:00:00Z',
         updated_at: '2026-02-01T00:00:00Z',
       },
@@ -326,6 +330,7 @@ describe('ProjectsPage route', () => {
         join_policy: 'approval_required',
         owner_id: 'owner_1',
         permissions: [],
+        membership_status: 'none' as const,
         status: 'active' as const,
         created_at: '2026-02-01T00:00:00Z',
         updated_at: '2026-02-01T00:00:00Z',
@@ -357,6 +362,7 @@ describe('ProjectsPage route', () => {
         join_policy: 'approval_required',
         owner_id: 'owner_1',
         permissions: [],
+        membership_status: 'none' as const,
         status: 'active' as const,
         created_at: '2026-02-01T00:00:00Z',
         updated_at: '2026-02-01T00:00:00Z',
@@ -388,6 +394,7 @@ describe('ProjectsPage route', () => {
         join_policy: 'open',
         owner_id: 'owner_1',
         permissions: [],
+        membership_status: 'none' as const,
         status: 'active' as const,
         created_at: '2026-02-01T00:00:00Z',
         updated_at: '2026-02-01T00:00:00Z',
@@ -408,6 +415,37 @@ describe('ProjectsPage route', () => {
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith('/en/workspaces/ws_1/projects/proj_open/overview');
     });
+  });
+
+  it('shows pending join state for public approval-required projects with pending membership', async () => {
+    mockProjectsData = [
+      {
+        id: 'proj_pending',
+        workspace_id: 'ws_1',
+        name: 'Pending Access',
+        visibility: 'public',
+        join_policy: 'approval_required',
+        owner_id: 'owner_1',
+        permissions: [],
+        membership_status: 'pending',
+        status: 'active' as const,
+        created_at: '2026-02-01T00:00:00Z',
+        updated_at: '2026-02-01T00:00:00Z',
+      },
+    ];
+
+    render(<ProjectsPage />);
+
+    const pendingButton = await screen.findByTestId('projects__join-request-btn--proj_pending');
+    expect(pendingButton).toHaveTextContent('join_request.pending');
+    expect(pendingButton).toBeDisabled();
+
+    const row = await screen.findByTestId('projects__table__row');
+    fireEvent.click(row);
+
+    expect(await screen.findByText('join_request.confirm_title')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'join_request.pending' })).toBeDisabled();
+    expect(mockCreateJoinRequestMutateAsync).not.toHaveBeenCalled();
   });
 
   it('keeps loading while authenticated workspace membership is still resolving', async () => {

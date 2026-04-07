@@ -60,6 +60,8 @@ export interface WorkspaceFeishuOAuthCompleteResponse {
   redirect_path: string;
 }
 
+export type ProjectMembershipStatus = 'active' | 'pending' | 'suspended' | 'none';
+
 export interface Project {
   id: string;
   workspace_id: string;
@@ -77,11 +79,22 @@ export interface Project {
   updated_at: string;
 }
 
+export interface ProjectWithMembership extends Project {
+  admin_member_ids?: string[];
+  groups?: MemberGroupSummary[];
+  permissions: string[];
+  membership_status: ProjectMembershipStatus;
+}
+
+export interface ProjectListResponse {
+  items: ProjectWithMembership[];
+}
+
 export interface ProjectMembership {
   project_id: string;
   user_id: string;
   groups?: MemberGroupSummary[];
   permissions: string[];
-  status: 'active' | 'removed';
+  status: 'active' | 'pending' | 'suspended' | 'removed';
   joined_at: string;
 }

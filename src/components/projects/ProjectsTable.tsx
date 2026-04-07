@@ -30,7 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { canRequestProjectJoin, canSelfJoinProject } from '@/lib/projects/project-view';
+import { canRequestProjectJoin, canSelfJoinProject, isPendingProjectMembership } from '@/lib/projects/project-view';
 
 const columnHelper = createColumnHelper<Project>();
 
@@ -155,10 +155,11 @@ export function ProjectsTable({
           ]);
           const canRequestJoin = canRequestProjectJoin(row.original);
           const canSelfJoin = canSelfJoinProject(row.original);
-          const joinRequestPending = pendingJoinRequestIds.has(row.original.id);
+          const membershipPending = isPendingProjectMembership(row.original);
+          const joinRequestPending = membershipPending || pendingJoinRequestIds.has(row.original.id);
           return (
             <div className="flex items-center gap-1">
-              {canRequestJoin ? (
+              {joinRequestPending && !canSelfJoin ? (
                 <Button
                   type="button"
                   variant={joinRequestPending ? 'outline' : 'primary'}
@@ -170,7 +171,20 @@ export function ProjectsTable({
                   disabled={joinRequestPending}
                   data-testid={`projects__join-request-btn--${row.original.id}`}
                 >
-                  {joinRequestPending ? t('join_request.pending') : t('join_request.action')}
+                  {t('join_request.pending')}
+                </Button>
+              ) : canRequestJoin ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onJoinRequest(row.original);
+                  }}
+                  data-testid={`projects__join-request-btn--${row.original.id}`}
+                >
+                  {t('join_request.action')}
                 </Button>
               ) : canSelfJoin ? (
                 <Button

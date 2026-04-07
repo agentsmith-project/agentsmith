@@ -58,6 +58,7 @@ import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import {
   buildProjectAdminSummary,
   canSelfJoinProject,
+  isPendingProjectMembership,
   requiresProjectJoinFlow,
   type Project,
 } from '@/lib/projects/project-view';
@@ -256,7 +257,9 @@ export function WorkspaceProjectsEntryPage({
 
   const pinnedProjects = filteredProjects.filter((p) => p.pinned);
   const unpinnedProjects = filteredProjects.filter((p) => !p.pinned);
-  const isJoinDialogPending = joinDialogProject ? pendingJoinRequestIds.has(joinDialogProject.id) : false;
+  const isJoinDialogPending = joinDialogProject
+    ? pendingJoinRequestIds.has(joinDialogProject.id) || isPendingProjectMembership(joinDialogProject)
+    : false;
   const isJoinDialogBusy = joinDialogProject ? joiningProjectIds.has(joinDialogProject.id) : false;
   const joinDialogMode = joinDialogProject
     ? (canSelfJoinProject(joinDialogProject) ? 'open' : 'approval_required')

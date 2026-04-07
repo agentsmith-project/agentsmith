@@ -26,23 +26,33 @@ function getRequestUserId(request: Request): string {
 }
 
 function getProjectMembershipForUser(projectId: string, userId: string) {
-  return membershipsSource.find((m) => m.project_id === projectId && m.user_id === userId && m.status === 'active');
+  return membershipsSource.find((m) => m.project_id === projectId && m.user_id === userId);
+}
+
+function getMembershipStatus(project: Project, userId: string): 'active' | 'pending' | 'suspended' | 'none' {
+  if (project.owner_id === userId) return 'active';
+  const membership = getProjectMembershipForUser(project.id, userId);
+  if (!membership || membership.status === 'removed') return 'none';
+  if (membership.status === 'pending' || membership.status === 'suspended') return membership.status;
+  return 'active';
 }
 
 function isProjectVisibleToUser(project: Project, userId: string): boolean {
   if (project.visibility === 'public') return true;
   if (project.owner_id === userId) return true;
-  return Boolean(getProjectMembershipForUser(project.id, userId));
+  return getMembershipStatus(project, userId) === 'active';
 }
 
 function buildProjectResponse(project: Project, userId: string) {
   const membership = getProjectMembershipForUser(project.id, userId);
   const isOwner = project.owner_id === userId;
+  const membershipStatus = getMembershipStatus(project, userId);
+  const isActiveMember = membershipStatus === 'active';
   return {
     ...project,
     permissions: isOwner
       ? [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner]
-      : membership?.permissions ?? [],
+      : (isActiveMember ? (membership?.permissions ?? []) : []),
     groups: isOwner
       ? [{
           id: PROJECT_BUILT_IN_GROUP_IDS.owner,
@@ -51,7 +61,8 @@ function buildProjectResponse(project: Project, userId: string) {
           built_in: true,
           system_key: 'owner',
         }]
-      : membership?.groups ?? [],
+      : (isActiveMember ? (membership?.groups ?? []) : []),
+    membership_status: membershipStatus,
     admin_member_ids: membershipsSource
       .filter((m) => m.project_id === project.id && m.status === 'active')
       .filter((m) => m.groups?.some((group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins))

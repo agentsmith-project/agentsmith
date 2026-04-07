@@ -5,14 +5,18 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 ensure_backend_real_state
 
-API_BASE="${API_BASE:-http://localhost:20000}"
-WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
-TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
-KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
+API_PORT="${API_PORT:-${INTEGRATION_API_PORT:-20000}}"
+WEB_PORT="${WEB_PORT:-${INTEGRATION_WEB_PORT:-3001}}"
+KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
+resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}"
+API_BASE="${API_BASE:-${RUNTIME_HOST_API_BASE_URL}}"
+WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
+TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
 MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 

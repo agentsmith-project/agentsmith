@@ -10,26 +10,38 @@ export function hasAnyProjectPermission(project: Project, permissions: readonly 
   return permissions.some((permission) => hasProjectPermission(project, permission));
 }
 
-function isNonMemberProject(project: Pick<ProjectWithMembership, 'permissions'>): boolean {
-  return !(Array.isArray(project.permissions) && project.permissions.length > 0);
+export function isPendingProjectMembership(
+  project: Pick<ProjectWithMembership, 'membership_status'>,
+): boolean {
+  return project.membership_status === 'pending';
 }
 
-export function canRequestProjectJoin(project: Pick<ProjectWithMembership, 'permissions' | 'visibility' | 'join_policy' | 'status'>): boolean {
-  return isNonMemberProject(project)
+function isJoinEligibleNonMemberProject(
+  project: Pick<ProjectWithMembership, 'membership_status' | 'visibility' | 'status'>,
+): boolean {
+  return project.membership_status === 'none'
     && project.visibility === 'public'
-    && project.join_policy === 'approval_required'
     && project.status === 'active';
 }
 
-export function canSelfJoinProject(project: Pick<ProjectWithMembership, 'permissions' | 'visibility' | 'join_policy' | 'status'>): boolean {
-  return isNonMemberProject(project)
-    && project.visibility === 'public'
-    && project.join_policy === 'open'
-    && project.status === 'active';
+export function canRequestProjectJoin(
+  project: Pick<ProjectWithMembership, 'membership_status' | 'visibility' | 'join_policy' | 'status'>,
+): boolean {
+  return isJoinEligibleNonMemberProject(project)
+    && project.join_policy === 'approval_required';
 }
 
-export function requiresProjectJoinFlow(project: Pick<ProjectWithMembership, 'permissions' | 'visibility' | 'join_policy' | 'status'>): boolean {
-  return canRequestProjectJoin(project) || canSelfJoinProject(project);
+export function canSelfJoinProject(
+  project: Pick<ProjectWithMembership, 'membership_status' | 'visibility' | 'join_policy' | 'status'>,
+): boolean {
+  return isJoinEligibleNonMemberProject(project)
+    && project.join_policy === 'open';
+}
+
+export function requiresProjectJoinFlow(
+  project: Pick<ProjectWithMembership, 'membership_status' | 'visibility' | 'join_policy' | 'status'>,
+): boolean {
+  return isPendingProjectMembership(project) || canRequestProjectJoin(project) || canSelfJoinProject(project);
 }
 
 export function buildProjectAdminSummary(

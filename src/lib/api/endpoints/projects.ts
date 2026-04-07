@@ -4,7 +4,7 @@
  * Typed API functions for project operations.
  */
 
-import type { Project, PaginationParams, PaginatedResponse } from '../types';
+import type { Project, ProjectListResponse, ProjectWithMembership, PaginationParams } from '../types';
 import type { ApiClient } from '../client';
 
 export interface CreateProjectRequest {
@@ -29,10 +29,7 @@ export interface UpdateProjectRequest {
 export class ProjectAPI {
   constructor(private client: ApiClient) {}
 
-  /**
-   * List projects in a workspace
-   */
-  async list(workspaceId: string, params?: PaginationParams): Promise<PaginatedResponse<Project>> {
+  async list(workspaceId: string, params?: PaginationParams): Promise<ProjectListResponse> {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set('page', params.page.toString());
     if (params?.page_size) searchParams.set('page_size', params.page_size.toString());
@@ -41,33 +38,21 @@ export class ProjectAPI {
 
     const query = searchParams.toString();
     const path = `/workspaces/${workspaceId}/projects${query ? `?${query}` : ''}`;
-    return this.client.get<PaginatedResponse<Project>>(path);
+    return this.client.get<ProjectListResponse>(path);
   }
 
-  /**
-   * Get a project by ID
-   */
-  async get(workspaceId: string, projectId: string): Promise<Project> {
-    return this.client.get<Project>(`/workspaces/${workspaceId}/projects/${projectId}`);
+  async get(workspaceId: string, projectId: string): Promise<ProjectWithMembership> {
+    return this.client.get<ProjectWithMembership>(`/workspaces/${workspaceId}/projects/${projectId}`);
   }
 
-  /**
-   * Create a new project
-   */
   async create(workspaceId: string, data: CreateProjectRequest): Promise<Project> {
     return this.client.post<Project>(`/workspaces/${workspaceId}/projects`, data);
   }
 
-  /**
-   * Update a project
-   */
   async update(workspaceId: string, projectId: string, data: UpdateProjectRequest): Promise<Project> {
     return this.client.patch<Project>(`/workspaces/${workspaceId}/projects/${projectId}`, data);
   }
 
-  /**
-   * Delete a project
-   */
   async delete(workspaceId: string, projectId: string): Promise<void> {
     return this.client.delete<void>(`/workspaces/${workspaceId}/projects/${projectId}`);
   }

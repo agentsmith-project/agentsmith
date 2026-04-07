@@ -53,6 +53,24 @@ export function startOpenAICompatibleUpstreamServer(): {
       body = text ? JSON.parse(text) : {};
 
       if (req.url?.includes('/chat/completions')) {
+        const request = body as { stream?: boolean };
+        if (request.stream) {
+          res.statusCode = 200;
+          res.setHeader('content-type', 'text/event-stream');
+          res.write(
+            'data: {"id":"chatcmpl_test","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}\n\n',
+          );
+          res.write(
+            'data: {"id":"chatcmpl_test","object":"chat.completion.chunk","choices":[{"delta":{"content":" from upstream."},"finish_reason":null}]}\n\n',
+          );
+          res.write(
+            'data: {"id":"chatcmpl_test","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+          );
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+
         res.statusCode = 200;
         res.setHeader('content-type', 'application/json');
         res.end(
@@ -399,10 +417,14 @@ export async function createChatSession(baseUrl: string, endpointBaseUrl: string
       body: JSON.stringify({
         name: 'chat-endpoint',
         model: 'deepseek-chat',
-        type: 'openai',
-        mode: 'openai',
+        type: 'custom',
         base_url: endpointBaseUrl,
         credential_ref: credential.id,
+        provider_family: 'openai',
+        upstream_protocol: 'openai_chat_completions',
+        capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'deepseek-chat' }],
+        models: [{ capability: 'chat_completion', model_id: 'deepseek-chat' }],
+        defaults: { chat_model_id: 'deepseek-chat' },
       }),
     },
   );

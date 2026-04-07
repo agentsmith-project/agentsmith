@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { apiFetch, startServer } from './test-support.js';
+import { createDefaultNodeApiDeps } from '../index.js';
+import { UniversalProxyService } from '../universal-proxy-service.js';
+import { apiFetch, startServer, startServerWithDeps } from './test-support.js';
 import {
   cleanupChatUpstreamServers,
   parseSseEventPayload,
   startOpenAICompatibleUpstreamServer,
+  startUniversalProxyChatServer,
 } from './chat-test-support.js';
 
 afterEach(async () => {
@@ -39,10 +42,14 @@ async function createChatEndpointAndSession(baseUrl: string, endpointBaseUrl: st
       body: JSON.stringify({
         name: 'chat-endpoint',
         model: 'deepseek-chat',
-        type: 'openai',
-        mode: 'openai',
+        type: 'custom',
         base_url: endpointBaseUrl,
         credential_ref: credential.id,
+        provider_family: 'openai',
+        upstream_protocol: 'openai_chat_completions',
+        capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'deepseek-chat' }],
+        models: [{ capability: 'chat_completion', model_id: 'deepseek-chat' }],
+        defaults: { chat_model_id: 'deepseek-chat' },
       }),
     },
   );
@@ -122,8 +129,10 @@ describe('api-entry-node chat session routes', () => {
   });
 
   it('supports user revision and assistant variants for chat branching', async () => {
-    const { baseUrl } = startServer();
-    const upstream = startOpenAICompatibleUpstreamServer();
+    const upstream = startUniversalProxyChatServer();
+    const deps = createDefaultNodeApiDeps();
+    deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
+    const { baseUrl } = startServerWithDeps(deps);
     const { endpointId, sessionId } = await createChatEndpointAndSession(baseUrl, upstream.baseUrl);
 
     const userMsgRes = await apiFetch(

@@ -141,7 +141,12 @@ describe('UsagePage', () => {
   it('enables 15 second auto refresh for limits summary', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
-    const [, , options] = useLimitsSummaryMock.mock.calls.at(-1) as [string, string, { refetchInterval: number }];
+    const [, , , options] = useLimitsSummaryMock.mock.calls.at(-1) as [
+      string,
+      string,
+      { end_user_id?: string },
+      { refetchInterval: number },
+    ];
     expect(options.refetchInterval).toBe(15000);
   });
 
@@ -158,11 +163,15 @@ describe('UsagePage', () => {
   });
 
   it('fills the trend chart to 30 daily bars', () => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+
     render(
       <UsageView
         trendPoints={[
-          { time_bucket: '2026-03-01', requests: 2, errors: 0 },
-          { time_bucket: '2026-03-02', requests: 4, errors: 0 },
+          { time_bucket: yesterday.toISOString(), requests: 2, errors: 0 },
+          { time_bucket: today.toISOString(), requests: 4, errors: 0 },
         ]}
         endpointOptions={[{ id: 'ep_1', name: 'Endpoint 1' }]}
         selectedEndpointId="ep_1"

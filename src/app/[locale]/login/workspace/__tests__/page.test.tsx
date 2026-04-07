@@ -11,6 +11,7 @@ const mockUseWorkspaces = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush, replace: mockReplace }),
   useParams: () => ({ locale: 'en-US' }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/lib/hooks/use-workspaces', () => ({

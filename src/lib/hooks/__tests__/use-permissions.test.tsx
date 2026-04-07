@@ -47,6 +47,26 @@ const setMockAuthState = (state: { isAuthenticated: boolean }) => {
   mockAuthState = state;
 };
 
+function buildProject(overrides: Partial<{
+  role: 'owner' | 'developer';
+  permissions: string[];
+  membership_status: 'active' | 'pending' | 'suspended' | 'none';
+}>) {
+  return {
+    id: 'proj_001',
+    workspace_id: 'ws_default',
+    name: 'Test Project',
+    owner_id: 'user_001',
+    status: 'active' as const,
+    visibility: 'public' as const,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    permissions: [],
+    membership_status: 'active' as const,
+    ...overrides,
+  };
+}
+
 function createWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -68,18 +88,10 @@ describe('use-permissions hooks', () => {
 
   describe('useCurrentPermissions', () => {
     it('should return permissions from validated project', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        role: 'owner' as const,
+      const mockProject = buildProject({
+        role: 'owner',
         permissions: ['project:endpoint:use', 'project:governance:update'],
-      };
+      });
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
@@ -91,16 +103,10 @@ describe('use-permissions hooks', () => {
     });
 
     it('should return empty permissions for project without membership', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-      };
+      const mockProject = buildProject({
+        permissions: [],
+        membership_status: 'none',
+      });
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
@@ -122,18 +128,10 @@ describe('use-permissions hooks', () => {
     });
 
     it('should return empty permissions when explicit permissions are empty', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        role: 'developer' as const,
+      const mockProject = buildProject({
+        role: 'developer',
         permissions: [],
-      };
+      });
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
@@ -156,6 +154,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use', 'project:governance:update'],
       };
 
@@ -178,6 +177,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use'],
       };
 
@@ -200,6 +200,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:invoke'],
       };
 
@@ -224,6 +225,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use'],
       };
 
@@ -246,6 +248,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use'],
       };
 
@@ -268,6 +271,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use', 'project:terminal:use'],
       };
 
@@ -290,6 +294,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:invoke'],
       };
 
@@ -312,6 +317,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use', 'project:agent:use'],
       };
 
@@ -359,6 +365,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use'],
       };
 
@@ -382,6 +389,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use'],
       };
 
@@ -405,6 +413,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use'],
       };
 
@@ -440,6 +449,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use', 'project:write', 'project:governance:update'],
       };
 
@@ -463,6 +473,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use'],
       };
 
@@ -486,6 +497,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use'],
       };
 
@@ -521,6 +533,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: [],
       };
 
@@ -543,6 +556,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:endpoint:use'],
       };
 
@@ -573,6 +587,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        membership_status: 'active' as const,
         permissions: ['project:audit:read'],
       };
 
@@ -598,6 +613,7 @@ describe('use-permissions hooks', () => {
           visibility: 'public' as const,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
+          membership_status: 'active' as const,
           permissions: ['project:agent:use', 'project:agent:manage', 'project:agent:public'],
         },
         isLoading: false,
@@ -625,6 +641,7 @@ describe('use-permissions hooks', () => {
           visibility: 'public' as const,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
+          membership_status: 'active' as const,
           permissions: ['project:governance:update'],
         },
         isLoading: false,
@@ -650,6 +667,7 @@ describe('use-permissions hooks', () => {
           visibility: 'public' as const,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
+          membership_status: 'active' as const,
           permissions: [
             'project:endpoint:use',
             'project:membership:update',
@@ -683,6 +701,7 @@ describe('use-permissions hooks', () => {
           visibility: 'public' as const,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
+          membership_status: 'active' as const,
           permissions: ['project:audit:read'],
         },
         isLoading: false,
@@ -707,6 +726,7 @@ describe('use-permissions hooks', () => {
           visibility: 'public' as const,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
+          membership_status: 'active' as const,
           permissions: ['project:endpoint:use'],
         },
         isLoading: false,
@@ -730,6 +750,7 @@ describe('use-permissions hooks', () => {
           visibility: 'public' as const,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
+          membership_status: 'active' as const,
           permissions: ['project:endpoint:use', 'project:files:update'],
         },
         isLoading: false,
@@ -755,6 +776,7 @@ describe('use-permissions hooks', () => {
           visibility: 'public' as const,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
+          membership_status: 'active' as const,
           permissions: ['project:endpoint:use'],
         },
         isLoading: false,
@@ -780,6 +802,7 @@ describe('use-permissions hooks', () => {
           visibility: 'public' as const,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
+          membership_status: 'active' as const,
           permissions: ['project:membership:update'],
         },
         isLoading: false,
@@ -804,6 +827,7 @@ describe('use-permissions hooks', () => {
           visibility: 'public' as const,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
+          membership_status: 'active' as const,
           permissions: [
             'project:governance:update',
             'project:membership:update',

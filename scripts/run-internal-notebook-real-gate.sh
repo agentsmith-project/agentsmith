@@ -165,9 +165,28 @@ ensure_local_image() {
   docker pull "${image}" >/dev/null
 }
 
+wait_for_juicefs_pods() {
+  local namespace="$1"
+  local selector="$2"
+  local timeout_seconds="${3:-120}"
+  local started
+  started="$(date +%s)"
+  while true; do
+    if kubectl get pod -n "${namespace}" -l "${selector}" --no-headers 2>/dev/null | grep -q .; then
+      return 0
+    fi
+    if (( $(date +%s) - started >= timeout_seconds )); then
+      return 1
+    fi
+    sleep 2
+  done
+}
+
 wait_for_juicefs_ready() {
   local namespace="$1"
+  wait_for_juicefs_pods "${namespace}" 'app=juicefs-csi-controller'
   kubectl wait --for=condition=Ready pod -l app=juicefs-csi-controller -n "${namespace}" --timeout=600s >/dev/null
+  wait_for_juicefs_pods "${namespace}" 'app=juicefs-csi-node'
   kubectl wait --for=condition=Ready pod -l app=juicefs-csi-node -n "${namespace}" --timeout=600s >/dev/null
 }
 

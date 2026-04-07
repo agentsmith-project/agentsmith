@@ -355,7 +355,7 @@ gate_wait_for_http() {
   local timeout_seconds="$3"
   local classification="$4"
   local stage="$5"
-  local accepted_codes="${6:-200,307,308,401,403}"
+  local accepted_codes="${6:-200,307,308}"
   local started last_code allowed_code
   started="$(date +%s)"
   while true; do

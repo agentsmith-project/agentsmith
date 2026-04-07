@@ -24,7 +24,7 @@ Current status:
   - `DELETE /api/v1/workspaces/:ws/projects/:prj/credentials/:credentialId`
   - `GET/POST /api/v1/workspaces/:ws/projects/:prj/endpoints`
   - `GET/PUT/DELETE /api/v1/workspaces/:ws/projects/:prj/endpoints/:endpointId`
-  - `POST /api/v1/workspaces/:ws/projects/:prj/endpoints/import-openai-compatible`
+  - `POST /api/v1/workspaces/:ws/projects/:prj/endpoints/import-bulk`
   - `POST /api/v1/workspaces/:ws/projects/:prj/endpoints/:endpointId/proxy/{openai_path}`
     (example: `chat/completions`, `embeddings`)
   - `POST /api/v1/workspaces/:ws/projects/:prj/llm-gateway/{path}`

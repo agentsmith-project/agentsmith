@@ -1,5 +1,5 @@
 import type {
-  CustomEndpointProtocol,
+  CustomEndpointUpstreamProtocol,
   EndpointHealthErrorCategory,
   ValidateEndpointResponse,
 } from '@/lib/api/types/endpoints';
@@ -14,7 +14,7 @@ export interface ValidationError {
 
 export interface CustomEndpointWizardFormState {
   name: string;
-  protocol: CustomEndpointProtocol;
+  upstreamProtocol: CustomEndpointUpstreamProtocol;
   baseUrl: string;
   modelId: string;
   capability: EndpointCapabilityType;

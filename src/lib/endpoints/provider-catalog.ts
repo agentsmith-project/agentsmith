@@ -1,6 +1,6 @@
 import modelCatalog from './models-catalog.config.json';
 import type { CreateEndpointRequest } from '@/lib/api/endpoints/endpoints';
-import type { EndpointCapabilityType, EndpointProviderFamily, CustomEndpointProtocol } from '@/lib/api/types';
+import type { EndpointCapabilityType, EndpointProviderFamily, CustomEndpointUpstreamProtocol } from '@/lib/api/types';
 
 export type ProviderOption =
   | 'openai'
@@ -33,13 +33,13 @@ export interface ProviderCatalogOption {
  * Custom endpoint protocol options for user selection.
  * When user selects "Custom" provider, they must choose a protocol type.
  */
-export type CustomProtocolOption = CustomEndpointProtocol;
+export type CustomProtocolOption = CustomEndpointUpstreamProtocol;
 
 /**
  * Configuration for custom endpoint protocols.
  */
 export interface CustomProtocolConfig {
-  protocol: CustomEndpointProtocol;
+  upstreamProtocol: CustomEndpointUpstreamProtocol;
   display_name: string;
   default_base_url: string;
   description?: string;
@@ -144,19 +144,19 @@ export const CUSTOM_PROVIDER_OPTION: ProviderCatalogOption = {
  */
 export const CUSTOM_PROTOCOL_OPTIONS: CustomProtocolConfig[] = [
   {
-    protocol: 'openai_chat_completions',
+    upstreamProtocol: 'openai_chat_completions',
     display_name: 'OpenAI Chat Completions',
     default_base_url: 'https://api.openai.com/v1',
     description: 'Upstreams that speak the OpenAI chat/completions format',
   },
   {
-    protocol: 'openai_responses',
+    upstreamProtocol: 'openai_responses',
     display_name: 'OpenAI Responses',
     default_base_url: 'https://api.openai.com/v1',
     description: 'Upstreams that natively expose the OpenAI responses format',
   },
   {
-    protocol: 'anthropic_messages',
+    upstreamProtocol: 'anthropic_messages',
     display_name: 'Anthropic Messages',
     default_base_url: 'https://api.anthropic.com',
     description: 'Upstreams that speak the Anthropic Messages format',
@@ -171,8 +171,8 @@ export function getProviderOption(provider: ProviderOption): ProviderCatalogOpti
 /**
  * Get custom protocol configuration by protocol type.
  */
-export function getCustomProtocolConfig(protocol: CustomEndpointProtocol): CustomProtocolConfig | undefined {
-  return CUSTOM_PROTOCOL_OPTIONS.find((option) => option.protocol === protocol);
+export function getCustomProtocolConfig(upstreamProtocol: CustomEndpointUpstreamProtocol): CustomProtocolConfig | undefined {
+  return CUSTOM_PROTOCOL_OPTIONS.find((option) => option.upstreamProtocol === upstreamProtocol);
 }
 
 /**

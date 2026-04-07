@@ -319,8 +319,8 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/llm-gateway/{proxyPath}",
     "method": "post"
   },
-  "endpointImportOpenAICompatible": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/import-openai-compatible",
+  "endpointImportBulk": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/import-bulk",
     "method": "post"
   },
   "credentials": {

@@ -6,7 +6,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getApiClient, EndpointAPI } from '@/lib/api';
 import type { Endpoint } from '@/lib/api/types';
 
-import type { ImportOpenAICompatiblePayload } from './types';
+import type { EndpointBulkImportPayload } from './types';
 
 interface UseEndpointsMutationsInput {
   workspaceId: string;
@@ -39,8 +39,8 @@ export function useEndpointsMutations({
     onSuccess: invalidateEndpoints,
   });
 
-  const importOpenAICompatibleMutation = useMutation<{ items: Endpoint[] }, unknown, ImportOpenAICompatiblePayload>({
-    mutationFn: (payload) => endpointAPI.importOpenAICompatible(workspaceId, projectId, payload),
+  const importBulkMutation = useMutation<{ items: Endpoint[] }, unknown, EndpointBulkImportPayload>({
+    mutationFn: (payload) => endpointAPI.importBulk(workspaceId, projectId, payload),
     onSuccess: () => {
       invalidateEndpoints();
       onImportSuccess?.();
@@ -54,6 +54,6 @@ export function useEndpointsMutations({
     invalidateEndpoints,
     deleteEndpointMutation,
     updateEndpointMutation,
-    importOpenAICompatibleMutation,
+    importBulkMutation,
   };
 }

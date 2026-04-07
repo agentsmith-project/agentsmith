@@ -199,7 +199,7 @@ export function ModelConfigStep(args: {
         <p className="font-medium text-foreground">{t('summary_title')}</p>
         <p className="text-tertiary">{t('summary_name')}: {form.name}</p>
         <p className="text-tertiary">
-          {t('summary_protocol')}: {getProtocolI18nLabel(t, form.protocol, getProtocolFallbackLabel(form.protocol))}
+          {t('summary_protocol')}: {getProtocolI18nLabel(t, form.upstreamProtocol, getProtocolFallbackLabel(form.upstreamProtocol))}
         </p>
         <p className="text-tertiary">{t('summary_base_url')}: {form.baseUrl}</p>
         <p className="text-tertiary">{t('summary_capability')}: {t(`capabilities.${form.capability}`)}</p>

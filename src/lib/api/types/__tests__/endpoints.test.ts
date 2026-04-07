@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type {
-  CustomEndpointProtocol,
+  CustomEndpointUpstreamProtocol,
   CustomEndpointConfig,
   EndpointHealthCheck,
   EndpointHealthErrorCategory,
@@ -21,21 +21,21 @@ import type {
   ValidateEndpointResponse,
 } from '../endpoints';
 
-describe('CustomEndpointProtocol', () => {
+describe('CustomEndpointUpstreamProtocol', () => {
   it('should accept openai_chat_completions protocol', () => {
-    const protocol: CustomEndpointProtocol = 'openai_chat_completions';
-    expect(protocol).toBe('openai_chat_completions');
+    const upstreamProtocol: CustomEndpointUpstreamProtocol = 'openai_chat_completions';
+    expect(upstreamProtocol).toBe('openai_chat_completions');
   });
 
   it('should accept openai_responses and anthropic_messages protocol', () => {
-    const responses: CustomEndpointProtocol = 'openai_responses';
-    const anthropic: CustomEndpointProtocol = 'anthropic_messages';
+    const responses: CustomEndpointUpstreamProtocol = 'openai_responses';
+    const anthropic: CustomEndpointUpstreamProtocol = 'anthropic_messages';
     expect(responses).toBe('openai_responses');
     expect(anthropic).toBe('anthropic_messages');
   });
 
   it('should have exactly three protocol options', () => {
-    const protocols: CustomEndpointProtocol[] = [
+    const protocols: CustomEndpointUpstreamProtocol[] = [
       'openai_chat_completions',
       'openai_responses',
       'anthropic_messages',
@@ -47,14 +47,14 @@ describe('CustomEndpointProtocol', () => {
 describe('CustomEndpointConfig', () => {
   it('should create valid openai_chat_completions config', () => {
     const config: CustomEndpointConfig = {
-      protocol: 'openai_chat_completions',
+      upstreamProtocol: 'openai_chat_completions',
       baseUrl: 'https://api.openai.com/v1',
       modelName: 'gpt-4o',
       capability: 'chat_completion',
       credentialRef: 'cred-123',
     };
 
-    expect(config.protocol).toBe('openai_chat_completions');
+    expect(config.upstreamProtocol).toBe('openai_chat_completions');
     expect(config.baseUrl).toBe('https://api.openai.com/v1');
     expect(config.modelName).toBe('gpt-4o');
     expect(config.capability).toBe('chat_completion');
@@ -63,14 +63,14 @@ describe('CustomEndpointConfig', () => {
 
   it('should create valid anthropic_messages config', () => {
     const config: CustomEndpointConfig = {
-      protocol: 'anthropic_messages',
+      upstreamProtocol: 'anthropic_messages',
       baseUrl: 'https://api.anthropic.com',
       modelName: 'claude-3-5-sonnet-20241022',
       capability: 'multimodal_completion',
       credentialRef: 'cred-456',
     };
 
-    expect(config.protocol).toBe('anthropic_messages');
+    expect(config.upstreamProtocol).toBe('anthropic_messages');
     expect(config.modelName).toBe('claude-3-5-sonnet-20241022');
     expect(config.capability).toBe('multimodal_completion');
   });
@@ -263,12 +263,12 @@ describe('ValidateEndpointRequest', () => {
   it('should create validation request for openai_chat_completions', () => {
     const request: ValidateEndpointRequest = {
       baseUrl: 'https://api.openai.com/v1',
-      protocol: 'openai_chat_completions',
+      upstreamProtocol: 'openai_chat_completions',
       credentialRef: 'cred-123',
       model: 'gpt-4o',
     };
 
-    expect(request.protocol).toBe('openai_chat_completions');
+    expect(request.upstreamProtocol).toBe('openai_chat_completions');
     expect(request.baseUrl).toBe('https://api.openai.com/v1');
     expect(request.model).toBe('gpt-4o');
   });
@@ -276,7 +276,7 @@ describe('ValidateEndpointRequest', () => {
   it('should create validation request without optional model', () => {
       const request: ValidateEndpointRequest = {
       baseUrl: 'https://api.anthropic.com',
-      protocol: 'anthropic_messages',
+      upstreamProtocol: 'anthropic_messages',
       credentialRef: 'cred-456',
     };
 
@@ -317,7 +317,7 @@ describe('Type Safety - No Any Types', () => {
     // This test ensures type safety - if compilation fails,
     // it means the type is properly defined (not 'any')
     const config: CustomEndpointConfig = {
-      protocol: 'openai_chat_completions',
+      upstreamProtocol: 'openai_chat_completions',
       baseUrl: 'https://api.example.com/v1',
       modelName: 'test-model',
       capability: 'chat_completion',
@@ -328,7 +328,7 @@ describe('Type Safety - No Any Types', () => {
     const ensureNoAny: <T>(value: T) => T = (value) => value;
     const typedConfig = ensureNoAny<CustomEndpointConfig>(config);
 
-    expect(typedConfig.protocol).toBeDefined();
+    expect(typedConfig.upstreamProtocol).toBeDefined();
   });
 
   it('should have strictly typed error categories', () => {

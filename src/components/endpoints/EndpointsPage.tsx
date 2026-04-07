@@ -20,7 +20,7 @@ import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route'
 import { toast } from '@/components/ui/toast';
 import { useEndpointsData } from '@/lib/endpoints/use-endpoints-data';
 import { useEndpointsMutations } from '@/lib/endpoints/use-endpoints-mutations';
-import type { ImportOpenAICompatiblePayload } from '@/lib/endpoints/types';
+import type { EndpointBulkImportPayload } from '@/lib/endpoints/types';
 import { useEndpointsTableColumns } from '@/lib/endpoints/use-endpoints-table-columns';
 import { ModelConfigAPI, getApiClient } from '@/lib/api';
 import { EndpointsContent } from '@/components/endpoints/endpoints-page/EndpointsContent';
@@ -65,7 +65,7 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
   const activeCount = endpoints.filter((endpoint) => endpoint.status === 'active').length;
   const disabledCount = endpoints.filter((endpoint) => endpoint.status === 'disabled').length;
 
-  const { invalidateEndpoints, deleteEndpointMutation, updateEndpointMutation, importOpenAICompatibleMutation } = useEndpointsMutations({
+  const { invalidateEndpoints, deleteEndpointMutation, updateEndpointMutation, importBulkMutation } = useEndpointsMutations({
     workspaceId,
     projectId,
     onImportSuccess: () => {
@@ -148,7 +148,7 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
       toast.error(t('import_invalid_json'));
       return;
     }
-    importOpenAICompatibleMutation.mutate(parsed as ImportOpenAICompatiblePayload);
+    importBulkMutation.mutate(parsed as EndpointBulkImportPayload);
   };
 
   const endpointColumns = useEndpointsTableColumns({
@@ -248,7 +248,7 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
           editDialogOpen={editDialogOpen}
           endpointToDelete={endpointToDelete}
           importDialogOpen={importDialogOpen}
-          importOpenAICompatiblePending={importOpenAICompatibleMutation.isPending}
+          importBulkPending={importBulkMutation.isPending}
           importPayloadText={importPayloadText}
           projectId={projectId}
           selectedEndpoint={selectedEndpoint}

@@ -3,7 +3,7 @@ import type { ApiClient } from '@/lib/api/client';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
 
 describe('EndpointAPI', () => {
-  it('imports openai-compatible endpoint payload', async () => {
+  it('imports endpoint bundle payload', async () => {
     const mockPost = vi.fn().mockResolvedValue({ items: [] });
     const client: ApiClient = {
       setToken: () => undefined,
@@ -39,10 +39,10 @@ describe('EndpointAPI', () => {
       },
     };
 
-    await api.importOpenAICompatible('ws_1', 'proj_1', payload);
+    await api.importBulk('ws_1', 'proj_1', payload);
 
     expect(mockPost).toHaveBeenCalledWith(
-      '/workspaces/ws_1/projects/proj_1/endpoints/import-openai-compatible',
+      '/workspaces/ws_1/projects/proj_1/endpoints/import-bulk',
       payload,
     );
   });

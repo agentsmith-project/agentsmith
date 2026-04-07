@@ -133,7 +133,7 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
     || route.kind === 'endpointVideoGenerationCancel'
     || route.kind === 'endpointProxy'
     || route.kind === 'llmGatewayProxy'
-    || route.kind === 'endpointImportOpenAICompatible'
+    || route.kind === 'endpointImportBulk'
   ) {
     if (
       route.kind === 'endpointRerank'

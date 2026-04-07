@@ -28,8 +28,8 @@ export type { CreateAgentRequest, UpdateAgentRequest } from './agents';
 export type {
   CreateEndpointRequest,
   UpdateEndpointRequest,
-  OpenAICompatibleImportItem,
-  ImportOpenAICompatibleRequest,
+  EndpointBulkImportItem,
+  EndpointBulkImportRequest,
 } from './endpoints';
 export type { JoinRequest, Member } from './members';
 export type { CreateUserKeyRequest } from './user-keys';

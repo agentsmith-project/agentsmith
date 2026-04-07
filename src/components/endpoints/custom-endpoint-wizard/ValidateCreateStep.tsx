@@ -38,7 +38,7 @@ export function ValidateCreateStep(args: {
             label={t('summary_protocol')}
             value={
               <span className="font-medium text-foreground">
-                {getProtocolI18nLabel(t, form.protocol, getProtocolFallbackLabel(form.protocol))}
+                {getProtocolI18nLabel(t, form.upstreamProtocol, getProtocolFallbackLabel(form.upstreamProtocol))}
               </span>
             }
           />

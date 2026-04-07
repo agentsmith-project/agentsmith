@@ -1,6 +1,6 @@
 import type { CreateEndpointRequest } from '@/lib/api/endpoints/endpoints';
 import type {
-  CustomEndpointProtocol,
+  CustomEndpointUpstreamProtocol,
   EndpointHealthErrorCategory,
   ValidateEndpointResponse,
 } from '@/lib/api/types/endpoints';
@@ -14,7 +14,7 @@ import type {
 
 export const DEFAULT_WIZARD_FORM_STATE: CustomEndpointWizardFormState = {
   name: '',
-  protocol: 'openai_chat_completions',
+  upstreamProtocol: 'openai_chat_completions',
   baseUrl: '',
   modelId: '',
   capability: 'chat_completion',
@@ -53,19 +53,19 @@ export function isValidHttpsUrl(value: string): boolean {
 
 export function getProtocolI18nLabel(
   t: WizardTranslator,
-  protocol: CustomEndpointProtocol,
+  upstreamProtocol: CustomEndpointUpstreamProtocol,
   fallback: string,
 ): string {
-  const value = t(`protocol_options.${protocol}.name`);
-  return value === `protocol_options.${protocol}.name` ? fallback : value;
+  const value = t(`protocol_options.${upstreamProtocol}.name`);
+  return value === `protocol_options.${upstreamProtocol}.name` ? fallback : value;
 }
 
 export function getProtocolI18nDescription(
   t: WizardTranslator,
-  protocol: CustomEndpointProtocol,
+  upstreamProtocol: CustomEndpointUpstreamProtocol,
   fallback?: string,
 ): string | undefined {
-  const key = `protocol_options.${protocol}.description`;
+  const key = `protocol_options.${upstreamProtocol}.description`;
   const value = t(key);
   if (value === key) return fallback;
   return value;
@@ -211,7 +211,7 @@ export function buildCreateEndpointRequest(form: CustomEndpointWizardFormState):
     type: 'custom',
     base_url: form.baseUrl.trim(),
     provider_family: 'custom',
-    upstream_protocol: form.protocol,
+    upstream_protocol: form.upstreamProtocol,
     credential_ref: form.credentialRef,
     capabilities: [{ type: form.capability, enabled: true, default_model_id: form.modelId.trim() }],
     models: [{ capability: form.capability, model_id: form.modelId.trim(), display_name: form.modelId.trim() }],
@@ -249,6 +249,6 @@ export function getErrorCategoryMessage(
   return message !== key ? message : tErrors('unknown');
 }
 
-export function getProtocolFallbackLabel(protocol: CustomEndpointProtocol): string {
-  return CUSTOM_PROTOCOL_OPTIONS.find((option) => option.protocol === protocol)?.display_name ?? protocol;
+export function getProtocolFallbackLabel(upstreamProtocol: CustomEndpointUpstreamProtocol): string {
+  return CUSTOM_PROTOCOL_OPTIONS.find((option) => option.upstreamProtocol === upstreamProtocol)?.display_name ?? upstreamProtocol;
 }

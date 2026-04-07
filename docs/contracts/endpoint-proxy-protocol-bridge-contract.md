@@ -2,36 +2,34 @@
 
 ## Scope
 
-This contract defines how the single endpoint proxy egress handles protocol negotiation and conversion for:
+This contract defines the project-scoped endpoint proxy and llm-gateway proxy behavior for canonical protocol-prefixed client paths.
 
-- `openai_completion` (`/proxy/chat/completions`)
-- `openai_responses` (`/proxy/responses`)
-- `anthropic` (`/proxy/messages`)
+Supported client paths:
 
-The proxy entrypoint remains:
+- `openai/chat/completions`
+- `openai/responses`
+- `anthropic/messages`
+- `anthropic/messages/count_tokens`
+
+The proxy entrypoints remain:
 
 - `POST /api/v1/workspaces/{workspace}/projects/{project}/endpoints/{endpointId}/proxy/{proxyPath}`
+- `POST /api/v1/workspaces/{workspace}/projects/{project}/llm-gateway/{proxyPath}`
 
 ## Runtime Truth
 
-- Endpoint record is authoritative for target protocol.
-- Endpoint must persist `protocol` and `meta.compatibility_interface`.
-- `meta.compatibility_interface` is derived from protocol:
-  - `anthropic_messages` -> `anthropic_compatible`
-  - all others -> `openai_compatible`
+- `endpoint.upstream_protocol` is the only protocol truth on the endpoint record.
+- `meta.compatibility_interface` is a derived display field only.
+- Canonical protocol-prefixed client paths are the only supported public proxy ingress paths.
+- Bare paths such as `chat/completions`, `responses`, `messages`, and `messages/count_tokens` are not supported.
+- Alias client paths such as `openai/v1/...` and `anthropic/v1/...` are not supported.
 
 ## Negotiation Rules
 
-1. Source wire protocol is inferred from `proxyPath`:
-   - `chat/completions` -> `openai_completion`
-   - `responses` -> `openai_responses`
-   - `messages` -> `anthropic`
-2. Target wire protocol is derived from endpoint protocol:
-   - endpoint `anthropic_messages` -> target `anthropic`
-   - endpoint `openai_responses` -> target `openai_responses`
-   - otherwise target `openai_completion` except passthrough where source already matches
-3. Requests are normalized through canonical chat semantics before target encoding.
-4. Responses are converted back to source protocol when source != target.
+1. Source wire protocol is inferred from the canonical client `proxyPath`.
+2. Target wire protocol is derived from `endpoint.upstream_protocol`.
+3. Requests are normalized through the bridge plan before upstream encoding.
+4. Responses are converted back to the canonical client protocol when source and target differ.
 
 ## Supported Conversion Matrix
 
@@ -54,6 +52,11 @@ Unsupported stream conversions return `422` with:
 - `source_protocol`
 - `target_protocol`
 
+## Error Semantics
+
+- llm-gateway invalid client path: `422 VALIDATION_ERROR: gateway_proxy_path_not_supported`
+- endpoint-scoped invalid client path: `422 VALIDATION_ERROR: endpoint_proxy_path_not_supported`
+
 ## Transparency Headers
 
 Each proxy response includes:
@@ -64,22 +67,21 @@ Each proxy response includes:
 
 ## Governance Requirements
 
-- Frontend endpoint creation/editing must always submit `protocol` explicitly.
-- Provider and custom endpoint flows must expose compatibility interface in UI.
-- Endpoint table must display compatibility interface for auditability.
-- Regression tests must cover unified proxy cross-protocol flows.
+- Frontend endpoint creation and edit flows must submit `upstream_protocol` explicitly.
+- Compatibility interface may be shown in UI as a derived label, but it must not be treated as the protocol truth.
+- Regression tests must cover canonical proxy paths and rejection of bare-path ingress.
 
 ## Evidence
 
 Primary implementation:
 
+- `packages/api-entry-node/src/endpoint-route-handler.ts`
 - `packages/api-entry-node/src/protocol-bridge.ts`
 - `packages/api-entry-node/src/http-utils.ts`
-- `packages/api-entry-node/src/anthropic-sse-translate.ts`
+- `packages/api-entry-node/src/universal-proxy-service.ts`
 
 Primary tests:
 
-- `packages/api-entry-node/src/protocol-bridge.test.ts`
-- `packages/api-entry-node/src/http-utils.test.ts`
-- `packages/api-entry-node/src/anthropic-sse-translate.test.ts`
-- `packages/api-entry-node/src/index.test.ts`
+- `packages/api-entry-node/src/endpoint-route-handler.test.ts`
+- `packages/api-entry-node/src/__integration__/endpoint-proxy-bridges.integration.test.ts`
+- `packages/api-entry-node/src/__integration__/user-api-keys.integration.test.ts`

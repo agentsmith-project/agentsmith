@@ -1017,22 +1017,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints:import-openai-compatible": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["post_endpointImportOpenAICompatible"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}": {
         parameters: {
             query?: never;
@@ -1213,7 +1197,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/import-openai-compatible": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/import-bulk": {
         parameters: {
             query?: never;
             header?: never;
@@ -1222,7 +1206,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["post_endpointImportOpenAICompatible_2"];
+        post: operations["post_endpointImportBulk"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5585,36 +5569,6 @@ export interface operations {
             };
         };
     };
-    post_endpointImportOpenAICompatible: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
     getEndpoint: {
         parameters: {
             query?: never;
@@ -5977,7 +5931,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    post_endpointImportOpenAICompatible_2: {
+    post_endpointImportBulk: {
         parameters: {
             query?: never;
             header?: never;

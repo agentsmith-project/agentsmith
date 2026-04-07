@@ -230,6 +230,59 @@ describe('api-entry-node endpoint proxy and llm-gateway routing', () => {
     expect((universalProxy.namespaceRequests()[0]?.body as { model?: string }).model).toBe('placeholder-model');
   });
 
+  it('rejects legacy endpoint proxy chat paths without protocol prefix', async () => {
+    const { baseUrl } = startServer();
+
+    const credentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'bridge-legacy-key', type: 'api_key', value: 'sk-legacy' }),
+      },
+    );
+    expect(credentialRes.status).toBe(201);
+    const credential = (await credentialRes.json()) as { id: string };
+
+    const endpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'bridge-legacy-endpoint',
+          model: 'placeholder-model',
+          type: 'catalog',
+          base_url: 'https://openai-compatible.provider.example/v1',
+          credential_ref: credential.id,
+          provider_family: 'openai',
+          upstream_protocol: 'openai_chat_completions',
+        }),
+      },
+    );
+    expect(endpointRes.status).toBe(201);
+    const endpoint = (await endpointRes.json()) as { id: string };
+
+    const proxyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'ignored-client-model',
+          messages: [{ role: 'user', content: 'hello' }],
+        }),
+      },
+    );
+    expect(proxyRes.status).toBe(422);
+    await expect(proxyRes.json()).resolves.toEqual(
+      expect.objectContaining({ message: 'endpoint_proxy_path_not_supported' }),
+    );
+  });
+
   it('routes llm-gateway requests by model through universal proxy while keeping endpoint resolution intact', async () => {
     const universalProxy = startUniversalProxyMockServer();
     process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;

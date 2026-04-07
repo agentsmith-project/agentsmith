@@ -15,14 +15,12 @@ without adding execution-path feature switches.
 
 ## Endpoint Entity
 
-`Endpoint` uses the current capability-first fields only.
+`Endpoint` uses capability-first fields and `upstream_protocol` as the only protocol truth.
 
-- Legacy compatibility:
 - `model`
 - `type`
-- Capability-first:
 - `provider_family`: `openai | anthropic | deepseek | minimax | kimi | google | glm | alibaba | custom`
-- `protocol`: `openai_chat_completions | openai_responses | anthropic_messages | google_gemini | glm_native | dashscope_native`
+- `upstream_protocol`: `openai_chat_completions | openai_responses | anthropic_messages`
 - `capabilities[]`: enabled capability + default model binding per capability
 - `models[]`: model records bound to capability
 - `defaults`: default model for each capability
@@ -32,10 +30,11 @@ without adding execution-path feature switches.
 
 Project-scoped endpoint routes:
 
+- `POST /api/v1/workspaces/{ws}/projects/{prj}/endpoints/import-bulk`
 - `POST /api/v1/workspaces/{ws}/projects/{prj}/endpoints/{id}/rerank`
 - `POST /api/v1/workspaces/{ws}/projects/{prj}/endpoints/{id}/images/generations`
 - `POST /api/v1/workspaces/{ws}/projects/{prj}/endpoints/{id}/videos/generations`
-- `POST /api/v1/workspaces/{ws}/projects/{prj}/endpoints/{id}/videos/generations/{jobId}`
+- `GET /api/v1/workspaces/{ws}/projects/{prj}/endpoints/{id}/videos/generations/{jobId}`
 - `POST /api/v1/workspaces/{ws}/projects/{prj}/endpoints/{id}/videos/generations/{jobId}/cancel`
 
 These routes proxy through the configured endpoint with auth credential resolution and model selection by capability defaults.
@@ -43,17 +42,16 @@ These routes proxy through the configured endpoint with auth credential resoluti
 ## Protocol Routing Baseline
 
 - Runtime uses a protocol-aware router (`endpoint-protocol-router`) to resolve capability -> upstream path.
-- Current baseline routes OpenAI-family providers through `openai_chat_completions` or `openai_responses`, and Anthropic-family providers through `anthropic_messages`.
-- Provider-native path variants are added in the same router without changing route contracts.
+- Runtime uses `endpoint.upstream_protocol` to select the upstream wire format.
+- Provider-native path variants are handled inside the router and bridge logic without changing public route contracts.
 - If a requested capability is not enabled on the endpoint, API fails fast with:
-- `422 VALIDATION_ERROR: endpoint_capability_not_enabled`
+  - `422 VALIDATION_ERROR: endpoint_capability_not_enabled`
 
-## Import Payload
+## Bulk Import Payload
 
-OpenAI-compatible bulk import supports:
+Bulk import supports:
 
 - `completion`
-- `multimodal_completion` (reserved; currently unified with chat route)
 - `embedding`
 - `reranker`
 - `image_generation`
@@ -85,9 +83,9 @@ Output:
 
 ## Verification
 
-- Unit/route tests:
-- `npm run -w @mbos/api-entry-node test -- src/index.test.ts src/endpoint-protocol-router.test.ts src/projects-route-match.test.ts`
+- Unit and route tests:
+  - `npm run test:run -- packages/api-entry-node/src/endpoint-route-handler.test.ts packages/api-entry-node/src/projects-route-match.test.ts packages/api-entry-node/src/endpoint-resource-service.test.ts`
 - Frontend API tests:
-- `npm run test -- src/lib/api/__tests__/endpoints-api.test.ts`
-- Integration E2E (real backend):
-- `npm run test:e2e:integration:endpoints-capabilities:with-api`
+  - `npm run test:run -- src/lib/api/__tests__/endpoints-api.test.ts src/lib/endpoints/__tests__/use-endpoints-mutations.test.tsx`
+- Integration tests:
+  - `npm run test:run -- packages/api-entry-node/src/__integration__/endpoint-capabilities.integration.test.ts packages/api-entry-node/src/__integration__/endpoint-proxy-bridges.integration.test.ts packages/api-entry-node/src/__integration__/user-api-keys.integration.test.ts`

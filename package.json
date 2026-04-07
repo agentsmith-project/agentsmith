@@ -149,6 +149,7 @@
     "openapi:changelog": "tsx scripts/openapi/generate-changelog.ts",
     "governance:report": "node --import tsx scripts/governance/verify-governance-report.ts",
     "models:sync-catalog": "tsx scripts/models/sync-catalog.ts",
+    "endpoints:backfill-upstream-protocol": "tsx scripts/endpoints/backfill-upstream-protocol.ts",
     "agent:test-runner": "tsx packages/api-entry-node/examples/external-agent-test-runner.ts",
     "agent:codex-runner": "npm run dev -w @mbos/agent-codex-runner",
     "agent:external:dev": "bash scripts/run-external-runner-dev.sh",

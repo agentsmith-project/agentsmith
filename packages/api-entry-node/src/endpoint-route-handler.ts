@@ -1,7 +1,7 @@
 import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AuthenticatedUser } from './auth.js';
-import type { EndpointImportPayload, EndpointRecord } from './resource-models.js';
+import type { EndpointBulkImportPayload, EndpointRecord } from './resource-models.js';
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import {
@@ -78,6 +78,13 @@ interface EndpointHandlerArgs {
   ) => Promise<{ upstream_status: number; tokens_total?: number }>;
 }
 
+const SUPPORTED_CANONICAL_PROXY_PATHS = new Set([
+  'openai/chat/completions',
+  'openai/responses',
+  'anthropic/messages',
+  'anthropic/messages/count_tokens',
+]);
+
 export function resolveEffectiveEndpointProxyPath(
   action: EndpointTaskAction,
   originalProxyPath: string,
@@ -86,68 +93,18 @@ export function resolveEffectiveEndpointProxyPath(
   const normalizedOriginal = originalProxyPath
     .trim()
     .replace(/^\/+/, '')
-    .replace(/^v1\//i, '')
     .replace(/\/+$/, '');
-  const preserveClientWirePath = action === 'chat' && new Set([
-    'openai/chat/completions',
-    'openai/v1/chat/completions',
-    'openai/responses',
-    'openai/v1/responses',
-    'messages/count_tokens',
-    'anthropic/messages',
-    'anthropic/v1/messages',
-    'anthropic/messages/count_tokens',
-    'anthropic/v1/messages/count_tokens',
-  ]).has(normalizedOriginal);
+  const preserveClientWirePath = action === 'chat' && SUPPORTED_CANONICAL_PROXY_PATHS.has(normalizedOriginal);
 
   return preserveClientWirePath ? normalizedOriginal : (resolvedProxyPath || originalProxyPath);
-}
-
-function legacyBridgeProxyPath(proxyPath: string): string {
-  const normalized = proxyPath
-    .trim()
-    .replace(/^\/+/, '')
-    .replace(/^v1\//i, '')
-    .replace(/^(openai|anthropic)\/v1\//i, '$1/')
-    .replace(/\/+$/, '');
-  if (normalized === 'openai/chat/completions') return 'chat/completions';
-  if (normalized === 'openai/responses') return 'responses';
-  if (normalized === 'anthropic/messages') return 'messages';
-  if (normalized === 'anthropic/messages/count_tokens') return 'messages/count_tokens';
-  return normalized;
 }
 
 function canonicalUniversalProxyPath(proxyPath: string): string | null {
   const normalized = proxyPath
     .trim()
     .replace(/^\/+/, '')
-    .replace(/^v1\//i, '')
-    .replace(/^(openai|anthropic)\/v1\//i, '$1/')
     .replace(/\/+$/, '');
-  if (
-    normalized === 'openai/chat/completions'
-    || normalized === 'openai/responses'
-    || normalized === 'anthropic/messages'
-    || normalized === 'anthropic/messages/count_tokens'
-  ) {
-    return normalized;
-  }
-  if (normalized === 'chat/completions' || normalized === 'responses') {
-    return `openai/${normalized}`;
-  }
-  if (normalized === 'messages' || normalized === 'messages/count_tokens') {
-    return `anthropic/${normalized}`;
-  }
-  return null;
-}
-
-function isCanonicalProtocolProxyPath(proxyPath: string): boolean {
-  const normalized = proxyPath
-    .trim()
-    .replace(/^\/+/, '')
-    .replace(/^v1\//i, '')
-    .replace(/\/+$/, '');
-  return normalized.startsWith('openai/') || normalized.startsWith('anthropic/');
+  return SUPPORTED_CANONICAL_PROXY_PATHS.has(normalized) ? normalized : null;
 }
 
 export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<boolean> {
@@ -332,6 +289,13 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     try {
       const normalizedOriginalProxyPath = normalizeGatewayProxyPath(proxyPath);
       const universalProxyService = deps.universalProxyService;
+      if (action === 'chat' && !canonicalUniversalProxyPath(normalizedOriginalProxyPath)) {
+        json(res, 422, {
+          error_code: 'VALIDATION_ERROR',
+          message: 'endpoint_proxy_path_not_supported',
+        });
+        return true;
+      }
       const effectiveProxyPath = resolveEffectiveEndpointProxyPath(
         action,
         normalizedOriginalProxyPath,
@@ -341,17 +305,6 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         action === 'chat'
           ? canonicalUniversalProxyPath(effectiveProxyPath)
           : null;
-      if (
-        action === 'chat'
-        && universalProxyPath
-        && !isCanonicalProtocolProxyPath(normalizedOriginalProxyPath)
-      ) {
-        json(res, 422, {
-          error_code: 'VALIDATION_ERROR',
-          message: 'gateway_proxy_path_requires_protocol_prefix',
-        });
-        return true;
-      }
       const requiresUniversalProxyForLlm = Boolean(universalProxyPath);
       if (requiresUniversalProxyForLlm && !universalProxyService) {
         json(res, 503, {
@@ -392,7 +345,6 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         typeof requestBody !== 'undefined'
           ? requestBody
           : (method !== 'GET' && method !== 'HEAD' ? await readBody(req) : {});
-      const legacyProxyPath = legacyBridgeProxyPath(effectiveProxyPath);
       const targetUpstreamProxyPath =
         normalizedOriginalProxyPath === 'anthropic/messages/count_tokens'
           ? 'messages/count_tokens'
@@ -422,7 +374,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
           ),
           apiKey,
           endpointProtocol: endpoint.upstream_protocol,
-          proxyPath: legacyProxyPath,
+          proxyPath: resolved.proxyPath,
           model: resolvedModel,
           timeoutSeconds: endpoint.limits?.timeout_seconds,
           requestBody: resolvedRequestBody,
@@ -716,9 +668,9 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     return true;
   }
 
-  if (route.kind === 'endpointImportOpenAICompatible' && method === 'POST' && route.workspaceId && route.projectId) {
-    const raw = (await readBody(req)) as EndpointImportPayload;
-    const imported = await deps.endpointResourceService.importOpenAICompatible(
+  if (route.kind === 'endpointImportBulk' && method === 'POST' && route.workspaceId && route.projectId) {
+    const raw = (await readBody(req)) as EndpointBulkImportPayload;
+    const imported = await deps.endpointResourceService.importBulk(
       route.workspaceId,
       route.projectId,
       raw,

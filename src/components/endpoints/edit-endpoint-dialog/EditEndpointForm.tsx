@@ -177,17 +177,17 @@ export function EditEndpointForm({
           <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
             {CUSTOM_PROTOCOL_OPTIONS.map((option) => (
               <button
-                key={option.protocol}
+                key={option.upstreamProtocol}
                 type="button"
-                onClick={() => onUpstreamProtocolChange(option.protocol)}
+                onClick={() => onUpstreamProtocolChange(option.upstreamProtocol)}
                 className={`rounded-md border px-3 py-3 text-left transition-colors ${
-                  upstreamProtocol === option.protocol
+                  upstreamProtocol === option.upstreamProtocol
                     ? 'border-accent bg-accent/5'
                     : 'border-subtle hover:bg-surface-low'
                 }`}
               >
                 <div className="text-sm font-medium text-foreground">
-                  {resolveEndpointProtocolLabel(t, option.protocol)}
+                  {resolveEndpointProtocolLabel(t, option.upstreamProtocol)}
                 </div>
                 {option.description ? (
                   <div className="mt-1 text-xs text-tertiary">{option.description}</div>

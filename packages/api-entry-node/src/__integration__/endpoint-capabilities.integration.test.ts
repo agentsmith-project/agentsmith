@@ -64,11 +64,11 @@ function startUpstreamServer(): {
 }
 
 describe('api-entry-node endpoint capability routes', () => {
-  it('imports openai-compatible endpoint config in one request', async () => {
+  it('imports endpoint capability bundle in one request', async () => {
     const { baseUrl } = startServer();
     const importRes = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/import-openai-compatible',
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/import-bulk',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

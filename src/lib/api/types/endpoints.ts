@@ -19,7 +19,7 @@ import type { EndpointCapabilityType, EndpointUpstreamProtocol } from './index';
  * OpenAI Responses: follows responses upstreams
  * Anthropic Messages: follows Anthropic Messages upstreams
  */
-export type CustomEndpointProtocol = EndpointUpstreamProtocol;
+export type CustomEndpointUpstreamProtocol = EndpointUpstreamProtocol;
 
 /**
  * Custom endpoint configuration for creating custom provider endpoints.
@@ -27,7 +27,7 @@ export type CustomEndpointProtocol = EndpointUpstreamProtocol;
  */
 export interface CustomEndpointConfig {
   /** Protocol type for the custom endpoint */
-  protocol: CustomEndpointProtocol;
+  upstreamProtocol: CustomEndpointUpstreamProtocol;
   /** Base URL for the API endpoint (e.g., "https://api.openai.com/v1") */
   baseUrl: string;
   /** Model identifier (e.g., "gpt-4o", "claude-3-5-sonnet") */
@@ -166,7 +166,7 @@ export interface ValidateEndpointRequest {
   /** Base URL to validate */
   baseUrl: string;
   /** Protocol type */
-  protocol: CustomEndpointProtocol;
+  upstreamProtocol: CustomEndpointUpstreamProtocol;
   /** Credential reference to use for validation */
   credentialRef: string;
   /** Optional model to test with */

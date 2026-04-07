@@ -13,7 +13,7 @@ vi.mock('@/lib/api', () => ({
     return {
       delete: mockDelete,
       update: mockUpdate,
-      importOpenAICompatible: mockImport,
+      importBulk: mockImport,
     };
   }),
 }));
@@ -54,7 +54,7 @@ describe('useEndpointsMutations', () => {
       { wrapper: createWrapper() },
     );
 
-    result.current.importOpenAICompatibleMutation.mutate({
+    result.current.importBulkMutation.mutate({
       completion: { model: 'm', api_base: 'https://x', api_key: 'k' },
     });
 
@@ -65,7 +65,7 @@ describe('useEndpointsMutations', () => {
     mockImport.mockRejectedValueOnce(new Error('import failed'));
     rerender();
 
-    result.current.importOpenAICompatibleMutation.mutate({
+    result.current.importBulkMutation.mutate({
       completion: { model: 'm2', api_base: 'https://y', api_key: 'k2' },
     });
 

@@ -8,7 +8,7 @@ import {
   getCustomProtocolConfig,
   getCustomProtocolByIndex,
 } from '@/lib/endpoints/provider-catalog';
-import type { CustomEndpointProtocol } from '@/lib/api/types';
+import type { CustomEndpointUpstreamProtocol } from '@/lib/api/types';
 
 describe('provider-catalog', () => {
   it('contains default provider set for endpoint creation', () => {
@@ -55,7 +55,7 @@ describe('provider-catalog', () => {
 
     it('should have openai_chat_completions as first option', () => {
       const openaiChat = CUSTOM_PROTOCOL_OPTIONS[0];
-      expect(openaiChat.protocol).toBe('openai_chat_completions');
+      expect(openaiChat.upstreamProtocol).toBe('openai_chat_completions');
       expect(openaiChat.display_name).toBe('OpenAI Chat Completions');
       expect(openaiChat.default_base_url).toBe('https://api.openai.com/v1');
       expect(openaiChat.description).toBeDefined();
@@ -63,7 +63,7 @@ describe('provider-catalog', () => {
 
     it('should have openai_responses as second option', () => {
       const responses = CUSTOM_PROTOCOL_OPTIONS[1];
-      expect(responses.protocol).toBe('openai_responses');
+      expect(responses.upstreamProtocol).toBe('openai_responses');
       expect(responses.display_name).toBe('OpenAI Responses');
       expect(responses.default_base_url).toBe('https://api.openai.com/v1');
       expect(responses.description).toBeDefined();
@@ -71,7 +71,7 @@ describe('provider-catalog', () => {
 
     it('should have anthropic_messages as third option', () => {
       const anthropicMessages = CUSTOM_PROTOCOL_OPTIONS[2];
-      expect(anthropicMessages.protocol).toBe('anthropic_messages');
+      expect(anthropicMessages.upstreamProtocol).toBe('anthropic_messages');
       expect(anthropicMessages.display_name).toBe('Anthropic Messages');
       expect(anthropicMessages.default_base_url).toBe('https://api.anthropic.com');
       expect(anthropicMessages.description).toBeDefined();
@@ -82,26 +82,26 @@ describe('provider-catalog', () => {
     it('should return openai_chat_completions config', () => {
       const config = getCustomProtocolConfig('openai_chat_completions');
       expect(config).toBeDefined();
-      expect(config?.protocol).toBe('openai_chat_completions');
+      expect(config?.upstreamProtocol).toBe('openai_chat_completions');
       expect(config?.display_name).toBe('OpenAI Chat Completions');
     });
 
     it('should return openai_responses config', () => {
       const config = getCustomProtocolConfig('openai_responses');
       expect(config).toBeDefined();
-      expect(config?.protocol).toBe('openai_responses');
+      expect(config?.upstreamProtocol).toBe('openai_responses');
       expect(config?.display_name).toBe('OpenAI Responses');
     });
 
     it('should return anthropic_messages config', () => {
       const config = getCustomProtocolConfig('anthropic_messages');
       expect(config).toBeDefined();
-      expect(config?.protocol).toBe('anthropic_messages');
+      expect(config?.upstreamProtocol).toBe('anthropic_messages');
       expect(config?.display_name).toBe('Anthropic Messages');
     });
 
     it('should return undefined for invalid protocol', () => {
-      const config = getCustomProtocolConfig('invalid' as CustomEndpointProtocol);
+      const config = getCustomProtocolConfig('invalid' as CustomEndpointUpstreamProtocol);
       expect(config).toBeUndefined();
     });
   });
@@ -110,13 +110,13 @@ describe('provider-catalog', () => {
     it('should return first protocol at index 0', () => {
       const config = getCustomProtocolByIndex(0);
       expect(config).toBeDefined();
-      expect(config?.protocol).toBe('openai_chat_completions');
+      expect(config?.upstreamProtocol).toBe('openai_chat_completions');
     });
 
     it('should return second protocol at index 1', () => {
       const config = getCustomProtocolByIndex(1);
       expect(config).toBeDefined();
-      expect(config?.protocol).toBe('openai_responses');
+      expect(config?.upstreamProtocol).toBe('openai_responses');
     });
 
     it('should return undefined for out of range index', () => {

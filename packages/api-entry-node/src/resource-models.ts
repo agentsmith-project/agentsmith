@@ -115,19 +115,19 @@ export interface EndpointHealth {
   last_error?: string;
 }
 
-export interface EndpointImportItem {
+export interface EndpointBulkImportItem {
   model: string;
   api_base: string;
   api_key: string;
   mode?: 'openai';
 }
 
-export interface EndpointImportPayload {
-  reranker?: EndpointImportItem;
-  embedding?: EndpointImportItem;
-  completion?: EndpointImportItem;
-  image_generation?: EndpointImportItem;
-  video_generation?: EndpointImportItem;
+export interface EndpointBulkImportPayload {
+  reranker?: EndpointBulkImportItem;
+  embedding?: EndpointBulkImportItem;
+  completion?: EndpointBulkImportItem;
+  image_generation?: EndpointBulkImportItem;
+  video_generation?: EndpointBulkImportItem;
 }
 
 export interface ChatSessionRecord {

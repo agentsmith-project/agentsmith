@@ -6,13 +6,12 @@ import type {
   EndpointCapability,
   EndpointCapabilityType,
   EndpointDefaults,
-  EndpointImportItem,
-  EndpointImportPayload,
+  EndpointBulkImportItem,
+  EndpointBulkImportPayload,
   EndpointModelBinding,
   EndpointModelProfile,
   EndpointRecord,
 } from './resource-models.js';
-import { migrateLegacyEndpointRecord } from './endpoint-migration.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 export class EndpointResourceService {
@@ -322,7 +321,7 @@ export class EndpointResourceService {
       workspace_id: workspaceId,
       project_id: projectId,
     });
-    return endpoints.map((endpoint) => migrateLegacyEndpointRecord(endpoint));
+    return endpoints;
   }
 
   async getEndpoint(
@@ -340,7 +339,7 @@ export class EndpointResourceService {
     if (endpoint.workspace_id !== workspaceId || endpoint.project_id !== projectId) {
       return null;
     }
-    return migrateLegacyEndpointRecord(endpoint);
+    return endpoint;
   }
 
   async createEndpoint(
@@ -442,15 +441,15 @@ export class EndpointResourceService {
     return true;
   }
 
-  async importOpenAICompatible(
+  async importBulk(
     workspaceId: string,
     projectId: string,
-    payload: EndpointImportPayload,
+    payload: EndpointBulkImportPayload,
   ): Promise<{ items: EndpointRecord[] }> {
     const pairs: Array<{
       name: string;
       capability: EndpointCapabilityType;
-      item: EndpointImportItem | undefined;
+      item: EndpointBulkImportItem | undefined;
       type: EndpointRecord['type'];
     }> = [
       { name: 'reranker', capability: 'rerank', item: payload.reranker, type: 'custom' },

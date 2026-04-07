@@ -23,7 +23,7 @@ interface EndpointsDialogsProps {
   editDialogOpen: boolean;
   endpointToDelete: Endpoint | null;
   importDialogOpen: boolean;
-  importOpenAICompatiblePending: boolean;
+  importBulkPending: boolean;
   importPayloadText: string;
   projectId: string;
   selectedEndpoint: Endpoint | null;
@@ -46,7 +46,7 @@ export function EndpointsDialogs({
   editDialogOpen,
   endpointToDelete,
   importDialogOpen,
-  importOpenAICompatiblePending,
+  importBulkPending,
   importPayloadText,
   projectId,
   selectedEndpoint,
@@ -135,7 +135,7 @@ export function EndpointsDialogs({
                 event.preventDefault();
                 onImport();
               }}
-              disabled={importOpenAICompatiblePending}
+              disabled={importBulkPending}
               data-testid="endpoints__import-confirm"
             >
               {t('import_confirm')}

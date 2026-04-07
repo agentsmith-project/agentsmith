@@ -47,22 +47,22 @@ export function BasicInfoStep(args: {
         <div className="grid grid-cols-2 gap-3">
           {CUSTOM_PROTOCOL_OPTIONS.map((option) => (
             <button
-              key={option.protocol}
+              key={option.upstreamProtocol}
               type="button"
-              onClick={() => onChange('protocol', option.protocol)}
+              onClick={() => onChange('upstreamProtocol', option.upstreamProtocol)}
               className={`flex flex-col items-start gap-1 rounded-md border p-3 text-left transition-colors ${
-                form.protocol === option.protocol
+                form.upstreamProtocol === option.upstreamProtocol
                   ? 'border-accent bg-accent/5'
                   : 'border-subtle hover:bg-surface-low'
               }`}
-              data-testid={`protocol-${option.protocol}`}
+              data-testid={`protocol-${option.upstreamProtocol}`}
             >
               <span className="font-medium">
-                {getProtocolI18nLabel(t, option.protocol, getProtocolFallbackLabel(option.protocol))}
+                {getProtocolI18nLabel(t, option.upstreamProtocol, getProtocolFallbackLabel(option.upstreamProtocol))}
               </span>
-              {getProtocolI18nDescription(t, option.protocol, option.description) && (
+              {getProtocolI18nDescription(t, option.upstreamProtocol, option.description) && (
                 <span className="text-xs text-tertiary">
-                  {getProtocolI18nDescription(t, option.protocol, option.description)}
+                  {getProtocolI18nDescription(t, option.upstreamProtocol, option.description)}
                 </span>
               )}
             </button>
@@ -75,10 +75,10 @@ export function BasicInfoStep(args: {
           <label htmlFor="wizard-base-url" className="text-sm font-medium text-foreground">
             {t('base_url')} <span className="text-error">*</span>
           </label>
-          {getCustomProtocolConfig(form.protocol)?.default_base_url && (
+          {getCustomProtocolConfig(form.upstreamProtocol)?.default_base_url && (
             <button
               type="button"
-              onClick={() => onChange('baseUrl', getCustomProtocolConfig(form.protocol)?.default_base_url || '')}
+              onClick={() => onChange('baseUrl', getCustomProtocolConfig(form.upstreamProtocol)?.default_base_url || '')}
               className="text-xs text-accent hover:underline"
               data-testid="wizard-use-default-url"
             >

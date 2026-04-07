@@ -62,19 +62,19 @@ export interface UpdateEndpointRequest {
   };
 }
 
-export interface OpenAICompatibleImportItem {
+export interface EndpointBulkImportItem {
   model: string;
   api_base: string;
   api_key: string;
   mode?: 'openai';
 }
 
-export interface ImportOpenAICompatibleRequest {
-  reranker?: OpenAICompatibleImportItem;
-  embedding?: OpenAICompatibleImportItem;
-  completion?: OpenAICompatibleImportItem;
-  image_generation?: OpenAICompatibleImportItem;
-  video_generation?: OpenAICompatibleImportItem;
+export interface EndpointBulkImportRequest {
+  reranker?: EndpointBulkImportItem;
+  embedding?: EndpointBulkImportItem;
+  completion?: EndpointBulkImportItem;
+  image_generation?: EndpointBulkImportItem;
+  video_generation?: EndpointBulkImportItem;
 }
 
 export class EndpointAPI {
@@ -127,13 +127,13 @@ export class EndpointAPI {
   /**
    * Import reranker/embedding/completion endpoint config in one request
    */
-  async importOpenAICompatible(
+  async importBulk(
     workspaceId: string,
     projectId: string,
-    payload: ImportOpenAICompatibleRequest,
+    payload: EndpointBulkImportRequest,
   ): Promise<{ items: Endpoint[] }> {
     return this.client.post<{ items: Endpoint[] }>(
-      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/import-openai-compatible`,
+      `/workspaces/${workspaceId}/projects/${projectId}/endpoints/import-bulk`,
       payload,
     );
   }

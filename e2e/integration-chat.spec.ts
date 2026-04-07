@@ -287,7 +287,7 @@ async function getAuthTokenFromStorage(page: import('@playwright/test').Page): P
   return token!;
 }
 
-async function importOpenAICompatibleViaApi(
+async function importBulkViaApi(
   page: import('@playwright/test').Page,
   projectId: string,
   payload: ReturnType<typeof loadOpenAICompatiblePayloadForE2E>,
@@ -295,7 +295,7 @@ async function importOpenAICompatibleViaApi(
   const token = await getAuthTokenFromStorage(page);
   const apiBase = process.env.INTEGRATION_API_BASE || 'http://localhost:20010';
   const response = await page.request.post(
-    `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/import-openai-compatible`,
+    `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/import-bulk`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -1993,7 +1993,7 @@ test.describe('@lane-real integration chat flow', () => {
 
       await keycloakLogin(page, locale, username, password);
       const projectId = await createProjectFromUi(page, locale);
-      await importOpenAICompatibleViaApi(page, projectId, payload);
+      await importBulkViaApi(page, projectId, payload);
       await openChatAndSendExpectAssistantAny(
         page,
         locale,

@@ -1893,30 +1893,6 @@ paths:
           description: No Content
         "401":
           $ref: "#/components/responses/Unauthorized"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints:import-openai-compatible:
-    post:
-      tags:
-        - Endpoints
-      operationId: post_endpointImportOpenAICompatible
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials:
     get:
       tags:
@@ -2131,11 +2107,11 @@ paths:
             schema:
               type: object
               additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/import-openai-compatible:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/import-bulk:
     post:
       tags:
         - Endpoints
-      operationId: post_endpointImportOpenAICompatible_2
+      operationId: post_endpointImportBulk
       responses:
         "200":
           description: OK

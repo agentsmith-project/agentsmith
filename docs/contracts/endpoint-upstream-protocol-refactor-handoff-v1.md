@@ -1,3 +1,7 @@
+# Historical Note
+
+This handoff captures the original staged refactor discussion. The active code path has already hard-cut to `upstream_protocol` as the only protocol truth, canonical protocol-prefixed proxy paths as the only supported client ingress, and `/endpoints/import-bulk` as the active bulk import route. Treat this file as historical context, not the active contract.
+
 # Endpoint Upstream Protocol Refactor Handoff v1
 
 ## 摘要

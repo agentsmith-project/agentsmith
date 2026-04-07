@@ -106,11 +106,11 @@ export function CustomEndpointWizard({
 
   // Update base URL when protocol changes
   React.useEffect(() => {
-    const config = getCustomProtocolConfig(form.protocol);
+    const config = getCustomProtocolConfig(form.upstreamProtocol);
     if (config && !form.baseUrl) {
       setForm((prev) => ({ ...prev, baseUrl: config.default_base_url }));
     }
-  }, [form.baseUrl, form.protocol]);
+  }, [form.baseUrl, form.upstreamProtocol]);
 
   const resetForm = () => {
     setStep(1);

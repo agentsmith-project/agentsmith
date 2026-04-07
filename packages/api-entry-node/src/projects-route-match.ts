@@ -113,7 +113,7 @@ export type ProjectsRoute =
     projectId: string;
     proxyPath: string;
   }
-  | { kind: 'endpointImportOpenAICompatible'; workspaceId: string; projectId: string }
+  | { kind: 'endpointImportBulk'; workspaceId: string; projectId: string }
   | { kind: 'llmUnifiedChat'; workspaceId: string; projectId: string }
   | { kind: 'projectPricing'; workspaceId: string; projectId: string }
   | { kind: 'modelCatalogProviders'; workspaceId: string; projectId: string }
@@ -921,11 +921,11 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
   }
 
   const endpointImportMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/endpoints\/import-openai-compatible\/?$/,
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/endpoints\/import-bulk\/?$/,
   );
   if (endpointImportMatched) {
     return {
-      kind: 'endpointImportOpenAICompatible',
+      kind: 'endpointImportBulk',
       workspaceId: decodeURIComponent(endpointImportMatched[1]),
       projectId: decodeURIComponent(endpointImportMatched[2]),
     };

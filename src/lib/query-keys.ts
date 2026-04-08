@@ -112,6 +112,8 @@ export const queryKeys = {
   /** Files */
   files: {
     _def: ['files'] as const,
+    scope: (workspaceId: string, projectId: string) =>
+      ['files', workspaceId, projectId] as const,
     list: (workspaceId: string, projectId: string, params?: object) =>
       ['files', workspaceId, projectId, params] as const,
     detail: (workspaceId: string, projectId: string, fileId: string) =>
@@ -188,6 +190,8 @@ export const queryKeys = {
   /** Audit logs */
   audit: {
     _def: ['audit'] as const,
+    scope: (workspaceId: string, projectId: string) =>
+      ['audit', workspaceId, projectId] as const,
     list: (workspaceId: string, projectId: string, params?: object) =>
       ['audit', workspaceId, projectId, params] as const,
   },
@@ -195,6 +199,8 @@ export const queryKeys = {
   /** Usage stats */
   usage: {
     _def: ['usage'] as const,
+    scope: (workspaceId: string, projectId: string) =>
+      ['usage', workspaceId, projectId] as const,
     list: (workspaceId: string, projectId: string, params?: object) =>
       ['usage', workspaceId, projectId, params] as const,
     facts: (workspaceId: string, projectId: string, params?: object) =>

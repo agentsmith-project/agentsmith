@@ -62,6 +62,8 @@ release_check_require_files "missing_rendered_env" \
   "${RELEASE_ROOT}/env/runner.env" \
   "${RELEASE_ROOT}/env/runtime-addresses.env"
 
+release_check_require_exact_line "${RELEASE_ROOT}/env/site.env" 'SANDBOX_HOST_PORT=29180' 'rendered_env_mismatch:site.env:SANDBOX_HOST_PORT'
+
 release_check_require_exact_line "${RELEASE_ROOT}/env/web.env" 'NEXT_PUBLIC_API_BASE=http://localhost:20000' 'rendered_env_mismatch:web.env:NEXT_PUBLIC_API_BASE'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'KEYCLOAK_ISSUER_URL=http://localhost:18080/realms/mbos' 'rendered_env_mismatch:api.env:KEYCLOAK_ISSUER_URL'
 release_check_require_exact_line "${RELEASE_ROOT}/env/runner.env" 'MBOS_API_BASE=http://api:20000' 'rendered_env_mismatch:runner.env:MBOS_API_BASE'

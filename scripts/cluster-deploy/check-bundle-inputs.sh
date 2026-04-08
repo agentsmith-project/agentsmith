@@ -135,4 +135,9 @@ for required in "${full_auto_cluster_scope_files[@]}"; do
   }
 done
 
+if ! rg -F -- "--exclude='target'" "${ROOT_DIR}/scripts/cluster-deploy/build-bundle.sh" >/dev/null; then
+  echo "cluster bundle source copy must exclude target directories" >&2
+  exit 1
+fi
+
 echo "[cluster-bundle-inputs] ok"

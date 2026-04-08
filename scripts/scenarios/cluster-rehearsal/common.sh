@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
+source "${ROOT_DIR}/scripts/lib/preset-common.sh"
 
 CLUSTER_REHEARSAL_NAME="cluster-rehearsal"
 CLUSTER_REHEARSAL_ROOT_DEFAULT="${ROOT_DIR}/artifacts/runtime/scenario/${CLUSTER_REHEARSAL_NAME}"
@@ -46,6 +47,23 @@ ensure_cluster_rehearsal_site_env() {
     fi
   fi
   apply_flow_site_env_overrides "${site_env}"
+  validate_cluster_rehearsal_site_env "${site_env}"
+}
+
+validate_cluster_rehearsal_site_env() {
+  local site_env="$1"
+  local anthropic_protocol
+  local openai_protocol
+
+  anthropic_protocol="$(awk -F= '$1=="PRESET_ANTHROPIC_ENDPOINT_PROTOCOL"{print $2}' "${site_env}" | tail -n1 | tr -d "\"'[:space:]")"
+  openai_protocol="$(awk -F= '$1=="PRESET_OPENAI_ENDPOINT_PROTOCOL"{print $2}' "${site_env}" | tail -n1 | tr -d "\"'[:space:]")"
+
+  if [[ -n "${anthropic_protocol}" ]]; then
+    normalize_endpoint_upstream_protocol "${anthropic_protocol}" >/dev/null || return 1
+  fi
+  if [[ -n "${openai_protocol}" ]]; then
+    normalize_endpoint_upstream_protocol "${openai_protocol}" >/dev/null || return 1
+  fi
 }
 
 ensure_cluster_rehearsal_release_bundle() {

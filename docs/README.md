@@ -51,6 +51,8 @@
 - [Endpoint Upstream Protocol Refactor Handoff](./archive/handoff/endpoint-upstream-protocol-refactor-handoff-v1.md)
   - Historical handoff only. Use active contracts for the current endpoint truth, canonical proxy paths, and bulk import route.
 - [产品研发与治理方法论](./design/agentsmith-product-engineering-governance-methodology-v1.md)
+- [Runtime / Rehearsal Hardening Retro (2026-04-08)](./design/runtime-rehearsal-hardening-retro-2026-04-08.md)
+  - One clean-room validation pass from reset to backend-real, demo rehearsal, and cluster rehearsal, with the concrete failures and their fixes.
 - `UXUI/`（设计系统与交互规范）
 - [User Guides Index](./user-guides/README.md)
 - [Usage Limits Summary Backend Alignment Checklist](./user-guides/usage-limits-summary-backend-alignment-checklist.md)

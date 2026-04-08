@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
   buildFileLibraryRecord,
@@ -35,11 +36,17 @@ export function mapFileLibraryInfraError(error: unknown): {
   };
 }
 
-export function buildFilesystemName(workspaceId: string, projectId: string, libraryName: string): string {
+export function buildFilesystemName(
+  workspaceId: string,
+  projectId: string,
+  libraryName: string,
+  uniqueSeed: string,
+): string {
   const ws = workspaceId.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 12) || 'ws';
   const proj = projectId.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 12) || 'project';
-  const slug = libraryName.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'filelib';
-  return `flib-${ws}-${proj}-${slug}`.slice(0, 63).replace(/-+$/g, '');
+  const slug = libraryName.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 20) || 'filelib';
+  const unique = uniqueSeed.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(-8) || 'library';
+  return `flib-${ws}-${proj}-${slug}-${unique}`.slice(0, 63).replace(/-+$/g, '');
 }
 
 export async function createAndProvisionProjectFileLibrary(input: {
@@ -58,8 +65,10 @@ export async function createAndProvisionProjectFileLibrary(input: {
   const backendRepo = new JsonDocProjectFileLibraryBackendRepo(input.deps.docStore);
   const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(input.deps.docStore);
 
-  const filesystemName = buildFilesystemName(input.workspaceId, input.projectId, input.name);
+  const libraryId = `flib_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  const filesystemName = buildFilesystemName(input.workspaceId, input.projectId, input.name, libraryId);
   const created = buildFileLibraryRecord({
+    id: libraryId,
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     name: input.name,

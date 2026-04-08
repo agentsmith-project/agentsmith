@@ -552,6 +552,112 @@ describe('api-entry-node notebook task routes', () => {
     });
   });
 
+  it('creates distinct workspace filesystems for different users even when create_new notebook task names match', async () => {
+    const { baseUrl, deps } = startServer();
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'external-notebook-agent-same-title',
+      mode: 'external',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        _external_key_source: 'generated',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_external',
+          wire_api: 'responses',
+          model: 'placeholder-model',
+        },
+      },
+    });
+    await deps.agentResourceService.markAgentConnected(agent.id, {
+      remote_ip: '127.0.0.1',
+      protocol_version: '1.0',
+      last_pong_at: new Date().toISOString(),
+    });
+
+    const createTaskBody = JSON.stringify({
+      title: 'Collision Probe',
+      agent_id: agent.id,
+      workspace_mode: 'create_new',
+      workspace_name: 'Collision Probe Workspace',
+    });
+
+    const ownerTaskRes = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      'test-token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: createTaskBody,
+      },
+    );
+    expect(ownerTaskRes.status).toBe(201);
+    const ownerTask = await ownerTaskRes.json() as {
+      id: string;
+      workspace_file_library_id: string;
+      workspace_file_library_name: string;
+    };
+
+    const otherTaskRes = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      'owner-token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: createTaskBody,
+      },
+    );
+    expect(otherTaskRes.status).toBe(201);
+    const otherTask = await otherTaskRes.json() as {
+      id: string;
+      workspace_file_library_id: string;
+      workspace_file_library_name: string;
+    };
+
+    expect(ownerTask.workspace_file_library_id).not.toBe(otherTask.workspace_file_library_id);
+    expect(ownerTask.workspace_file_library_name).toBe('Collision Probe Workspace');
+    expect(otherTask.workspace_file_library_name).toBe('Collision Probe Workspace');
+
+    const ownerAccessRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${ownerTask.id}/workspace-access`,
+      'test-token',
+      { method: 'POST' },
+    );
+    expect(ownerAccessRes.status).toBe(200);
+    const ownerAccess = await ownerAccessRes.json() as {
+      file_library_id: string;
+      workspace_dir_name: string;
+      metadata_url: string;
+      storage_bucket_url?: string;
+    };
+
+    const otherAccessRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${otherTask.id}/workspace-access`,
+      'owner-token',
+      { method: 'POST' },
+    );
+    expect(otherAccessRes.status).toBe(200);
+    const otherAccess = await otherAccessRes.json() as {
+      file_library_id: string;
+      workspace_dir_name: string;
+      metadata_url: string;
+      storage_bucket_url?: string;
+    };
+
+    expect(ownerAccess.file_library_id).toBe(ownerTask.workspace_file_library_id);
+    expect(otherAccess.file_library_id).toBe(otherTask.workspace_file_library_id);
+    expect(ownerAccess.workspace_dir_name).not.toBe(otherAccess.workspace_dir_name);
+    expect(ownerAccess.metadata_url).not.toBe(otherAccess.metadata_url);
+    expect(ownerAccess.storage_bucket_url).not.toBe(otherAccess.storage_bucket_url);
+  });
+
   it('rewrites task workspace mount access for external runner containers', async () => {
     const previousExternalExecutionBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
     process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://172.18.0.1:20000';

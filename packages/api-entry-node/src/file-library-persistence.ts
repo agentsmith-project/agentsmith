@@ -41,6 +41,7 @@ export function normalizeFileLibraryMetadataUrl(metadataUrl: string): string {
 }
 
 export function buildFileLibraryRecord(input: {
+  id?: string;
   workspaceId: string;
   projectId: string;
   name: string;
@@ -52,7 +53,7 @@ export function buildFileLibraryRecord(input: {
 }): FileLibraryRecord {
   const now = input.now ?? new Date().toISOString();
   return {
-    id: `flib_${randomUUID().replace(/-/g, '').slice(0, 12)}`,
+    id: input.id ?? `flib_${randomUUID().replace(/-/g, '').slice(0, 12)}`,
     workspace_id: input.workspaceId,
     project_id: input.projectId,
     name: input.name,

@@ -79,9 +79,9 @@ export function useCreateTask() {
       projectId: string;
       data: CreateTaskRequest;
     }) => taskAPI.create(workspaceId, projectId, data),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.list(variables.workspaceId, variables.projectId),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.tasks.scope(variables.workspaceId, variables.projectId),
       });
       toast.success(t('create_success'));
     },
@@ -111,12 +111,12 @@ export function useUpdateTask() {
       taskId: string;
       data: UpdateTaskRequest;
     }) => taskAPI.update(workspaceId, projectId, taskId, data),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({
         queryKey: queryKeys.tasks.detail(variables.workspaceId, variables.projectId, variables.taskId),
       });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.list(variables.workspaceId, variables.projectId),
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.tasks.scope(variables.workspaceId, variables.projectId),
       });
       toast.success(t('update_success'));
     },
@@ -144,9 +144,9 @@ export function useDeleteTask() {
       projectId: string;
       taskId: string;
     }) => taskAPI.delete(workspaceId, projectId, taskId),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.list(variables.workspaceId, variables.projectId),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.tasks.scope(variables.workspaceId, variables.projectId),
       });
       toast.success(t('delete_success'));
     },

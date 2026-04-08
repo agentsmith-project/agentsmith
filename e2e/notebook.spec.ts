@@ -167,6 +167,22 @@ test.describe('Notebook Page', () => {
       await expect(authedPage.getByTestId('notebook__task-list')).toBeVisible();
     });
 
+    test('should remove deleted task from list immediately after returning from detail', async ({ authedPage }) => {
+      const deletedTaskTitle = 'Product Documentation Analysis';
+
+      await expect(authedPage.getByRole('heading', { name: deletedTaskTitle })).toBeVisible();
+
+      await authedPage.getByRole('button', { name: /delete task|^delete$/i }).click();
+
+      const dialog = authedPage.getByRole('alertdialog');
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole('button', { name: /delete task|^delete$/i }).click();
+
+      await authedPage.waitForURL(/\/notebook$/);
+      await expect(authedPage.getByTestId('notebook__task-list')).toBeVisible();
+      await expect(authedPage.getByText(deletedTaskTitle)).not.toBeVisible();
+    });
+
     test('should navigate to files page from task detail header', async ({ authedPage }) => {
       await authedPage.getByTestId('notebook-task__open-files').click();
       await authedPage.waitForURL(/\/files$/, { timeout: 10000 });

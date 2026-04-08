@@ -137,6 +137,8 @@ export const queryKeys = {
   /** Tasks (notebook) */
   tasks: {
     _def: ['tasks'] as const,
+    scope: (workspaceId: string, projectId: string) =>
+      ['tasks', workspaceId, projectId] as const,
     list: (workspaceId: string, projectId: string, params?: object) =>
       ['tasks', workspaceId, projectId, params] as const,
     detail: (workspaceId: string, projectId: string, taskId: string) =>

@@ -10,6 +10,14 @@ import {
   type WorkspaceFeishuIntegrationRecord,
   upsertWorkspaceFeishuIntegration,
 } from './workspace-feishu-settings-store.js';
+import {
+  buildFeishuMissingScopesError,
+  findMissingFeishuDocsScopes,
+  getFeishuOAuthScopePolicy,
+  getRequestedFeishuOAuthScopes,
+  getRequiredFeishuDocsScopes,
+  normalizeFeishuScopeString,
+} from './feishu-oauth-scopes.js';
 
 type WorkspaceFeishuOAuthIntent = 'admin_verify' | 'user_connect';
 
@@ -65,11 +73,9 @@ function getFeishuEndpoints() {
     tokenUrl:
       process.env.FEISHU_OAUTH_TOKEN_URL?.trim()
       || 'https://open.feishu.cn/open-apis/authen/v2/oauth/token',
-    scopes:
-      (process.env.FEISHU_OAUTH_SCOPES?.trim() || 'offline_access')
-        .split(/[,\s]+/)
-        .map((item) => item.trim())
-        .filter(Boolean),
+    scopePolicy: getFeishuOAuthScopePolicy(),
+    scopes: getRequestedFeishuOAuthScopes(),
+    requiredScopes: getRequiredFeishuDocsScopes(),
   };
 }
 
@@ -374,9 +380,9 @@ async function completeWorkspaceFeishuOAuthInternal(args: {
   const expiresAt = token.expires_in && token.expires_in > 0
     ? new Date(Date.now() + token.expires_in * 1000).toISOString()
     : null;
-  const scopes = token.scope
-    ? token.scope.split(/[,\s]+/).map((item) => item.trim()).filter(Boolean)
-    : endpoints.scopes;
+  const scopes = normalizeFeishuScopeString(token.scope) ?? endpoints.scopes;
+  const missingScopes = findMissingFeishuDocsScopes(scopes);
+  const missingScopesError = buildFeishuMissingScopesError(missingScopes);
   const connection = await upsertUserExternalConnectionByProvider(args.docStore, {
     user_id: session.userId,
     workspace_id: args.workspaceId,
@@ -385,7 +391,6 @@ async function completeWorkspaceFeishuOAuthInternal(args: {
     custom_domain: null,
     display_name: 'Feishu',
     note: null,
-    status: 'active',
     fields: [
       {
         key: 'access_token',
@@ -410,7 +415,10 @@ async function completeWorkspaceFeishuOAuthInternal(args: {
     expires_at: expiresAt,
     last_refreshed_at: new Date().toISOString(),
     last_used_at: null,
-    last_error: null,
+    last_error: missingScopesError,
+    reauth_reason: missingScopesError ? 'missing_scopes' : null,
+    missing_scopes: missingScopes.length > 0 ? missingScopes : null,
+    status: missingScopesError ? 'reauth_required' : 'active',
   });
   await writeWorkspaceFeishuOAuthResult(args.cache, state, {
     userId: session.userId,
@@ -455,23 +463,54 @@ export async function refreshWorkspaceFeishuOAuth(args: {
   }
   const refreshToken = connection.fields.find((field) => field.key === 'refresh_token')?.value ?? '';
   if (!refreshToken) {
-    throw new Error('feishu_refresh_token_missing');
+    return upsertUserExternalConnectionByProvider(args.docStore, {
+      ...connection,
+      status: 'reauth_required',
+      reauth_reason: 'refresh_token_missing',
+      missing_scopes: null,
+      last_error: 'feishu_refresh_token_missing',
+    });
   }
   if (connection.workspace_id) {
-    const record = assertFeishuConfigured(await getWorkspaceFeishuIntegration(args.docStore, connection.workspace_id));
+    const workspaceRecord = await getWorkspaceFeishuIntegration(args.docStore, connection.workspace_id);
+    if (!workspaceRecord || !workspaceRecord.app_id.trim() || !workspaceRecord.app_secret?.trim() || !workspaceRecord.redirect_uri.trim()) {
+      return upsertUserExternalConnectionByProvider(args.docStore, {
+        ...connection,
+        status: 'reauth_required',
+        reauth_reason: 'oauth_not_configured',
+        missing_scopes: null,
+        last_error: 'workspace_feishu_not_configured',
+      });
+    }
+    const record = assertFeishuConfigured(workspaceRecord);
     const endpoints = getFeishuEndpoints();
-    const token = await exchangeFeishuToken({
-      tokenUrl: endpoints.tokenUrl,
-      appId: record.app_id,
-      appSecret: record.app_secret ?? '',
-      body: {
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-      },
-    });
+    let token: FeishuTokenPayload;
+    try {
+      token = await exchangeFeishuToken({
+        tokenUrl: endpoints.tokenUrl,
+        appId: record.app_id,
+        appSecret: record.app_secret ?? '',
+        body: {
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'feishu_refresh_failed';
+      return upsertUserExternalConnectionByProvider(args.docStore, {
+        ...connection,
+        status: 'reauth_required',
+        reauth_reason: 'refresh_failed',
+        missing_scopes: null,
+        last_error: message,
+      });
+    }
     const expiresAt = token.expires_in && token.expires_in > 0
       ? new Date(Date.now() + token.expires_in * 1000).toISOString()
       : connection.expires_at ?? null;
+    const scopes = normalizeFeishuScopeString(token.scope) ?? connection.scopes ?? [];
+    const missingScopes = findMissingFeishuDocsScopes(scopes);
+    const missingScopesError = buildFeishuMissingScopesError(missingScopes);
     return upsertUserExternalConnectionByProvider(args.docStore, {
       ...connection,
       fields: [
@@ -493,10 +532,13 @@ export async function refreshWorkspaceFeishuOAuth(args: {
           secret: true,
         }]),
       ],
-      status: 'active',
+      status: missingScopesError ? 'reauth_required' : 'active',
+      reauth_reason: missingScopesError ? 'missing_scopes' : null,
+      missing_scopes: missingScopes.length > 0 ? missingScopes : null,
+      scopes,
       expires_at: expiresAt,
       last_refreshed_at: new Date().toISOString(),
-      last_error: null,
+      last_error: missingScopesError,
     });
   }
   throw new Error('feishu_workspace_context_required');

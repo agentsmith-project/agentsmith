@@ -6,6 +6,7 @@ import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en-US' }));
 const mockGetFeishuIntegration = vi.fn();
 const mockListConnections = vi.fn();
+const mockGetProviderConfig = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useParams: () => mockUseParams(),
@@ -33,6 +34,7 @@ vi.mock('@/lib/api', () => ({
   },
   UserExternalConnectionsAPI: class {
     list = mockListConnections;
+    getProviderConfig = mockGetProviderConfig;
     refresh = vi.fn();
   },
 }));
@@ -77,6 +79,17 @@ describe('WorkspaceConnectionsPage', () => {
       has_app_secret: false,
     });
     mockListConnections.mockResolvedValue([]);
+    mockGetProviderConfig.mockResolvedValue({
+      provider: 'feishu',
+      interactive_login_required: true,
+      refresh_supported: true,
+      auth_configured: true,
+      callback_uri: 'http://localhost/callback',
+      auth_url: 'https://accounts.feishu.cn/open-apis/authen/v1/authorize',
+      scope_policy: 'full',
+      requested_scopes: ['offline_access', 'search:docs:read', 'wiki:wiki', 'wiki:wiki:readonly', 'wiki:node:retrieve'],
+      required_scopes: ['search:docs:read', 'wiki:wiki', 'wiki:wiki:readonly', 'wiki:node:retrieve'],
+    });
   });
 
   it('renders Feishu card as disabled when workspace is not configured', async () => {
@@ -88,5 +101,85 @@ describe('WorkspaceConnectionsPage', () => {
 
     expect(screen.getByTestId('workspace-connections__feishu-connect')).toBeDisabled();
     expect(screen.getByText('workspace_feishu_disabled_description')).toBeInTheDocument();
+  });
+
+  it('shows a reauthorization warning when Feishu is missing required scopes', async () => {
+    mockGetFeishuIntegration.mockResolvedValue({
+      id: 'workspace_feishu:ws_1',
+      workspace_id: 'ws_1',
+      provider: 'feishu',
+      status: 'enabled',
+      app_id: 'app_123',
+      redirect_uri: 'http://localhost/callback',
+      verified_at: null,
+      verified_by_user_id: null,
+      verified_by_email: null,
+      last_error: null,
+      created_at: '2026-03-19T00:00:00.000Z',
+      updated_at: '2026-03-19T00:00:00.000Z',
+      has_app_secret: true,
+    });
+    mockListConnections.mockResolvedValue([
+      {
+        id: 'uec_1',
+        provider: 'feishu',
+        workspace_id: 'ws_1',
+        status: 'reauth_required',
+        reauth_reason: 'missing_scopes',
+        missing_scopes: ['search:docs:read', 'wiki:wiki'],
+        last_error: 'feishu_missing_required_scopes:search:docs:read,wiki:wiki',
+        account_identity: null,
+        last_refreshed_at: null,
+      },
+    ]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('workspace_feishu_reauth_required_title')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/workspace_feishu_missing_scopes_label: search:docs:read, wiki:wiki/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'refresh_connection' })).toBeDisabled();
+  });
+
+  it('keeps refresh available for generic refresh failures', async () => {
+    mockGetFeishuIntegration.mockResolvedValue({
+      id: 'workspace_feishu:ws_1',
+      workspace_id: 'ws_1',
+      provider: 'feishu',
+      status: 'enabled',
+      app_id: 'app_123',
+      redirect_uri: 'http://localhost/callback',
+      verified_at: null,
+      verified_by_user_id: null,
+      verified_by_email: null,
+      last_error: null,
+      created_at: '2026-03-19T00:00:00.000Z',
+      updated_at: '2026-03-19T00:00:00.000Z',
+      has_app_secret: true,
+    });
+    mockListConnections.mockResolvedValue([
+      {
+        id: 'uec_2',
+        provider: 'feishu',
+        workspace_id: 'ws_1',
+        status: 'reauth_required',
+        reauth_reason: 'refresh_failed',
+        missing_scopes: null,
+        last_error: 'feishu_token_exchange_failed',
+        account_identity: null,
+        last_refreshed_at: null,
+      },
+    ]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('workspace_feishu_refresh_failed_title')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('workspace_feishu_reauth_required_title')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'refresh_connection' })).not.toBeDisabled();
   });
 });

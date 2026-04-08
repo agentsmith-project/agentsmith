@@ -12,6 +12,7 @@ import { PageState } from '@/components/layout/PageState';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { SectionHeading } from '@/components/ui/section-heading';
 import { APIError, UserExternalConnectionsAPI, WorkspaceAPI, getApiClient, handleErrorForToast } from '@/lib/api';
+import { persistFeishuOAuthFlow } from '@/lib/feishu-oauth-flow';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { useWorkspace } from '@/lib/hooks/use-workspaces';
 import { cn } from '@/lib/utils';
@@ -41,11 +42,20 @@ export default function WorkspaceConnectionsPage() {
     queryFn: () => connectionsApi.list(),
     enabled: Boolean(workspaceId && canReadWorkspace),
   });
+  const { data: feishuConfig } = useQuery({
+    queryKey: ['me', 'external-connections', 'providers', 'feishu'],
+    queryFn: () => connectionsApi.getProviderConfig('feishu'),
+    enabled: Boolean(workspaceId && canReadWorkspace),
+  });
 
   const feishuConnection = React.useMemo(
     () => connections.find((item) => item.provider === 'feishu' && item.workspace_id === workspaceId) ?? null,
     [connections, workspaceId],
   );
+  const missingFeishuScopes = feishuConnection?.missing_scopes ?? [];
+  const feishuReauthReason = feishuConnection?.reauth_reason ?? null;
+  const feishuNeedsScopeReauth = feishuConnection?.status === 'reauth_required' && feishuReauthReason === 'missing_scopes';
+  const requestedScopes = feishuConfig?.requested_scopes ?? [];
 
   const startMutation = useMutation({
     mutationFn: async () => workspaceApi.startWorkspaceFeishuAuth(
@@ -53,6 +63,13 @@ export default function WorkspaceConnectionsPage() {
       `/${locale}/workspaces/${workspaceId}/connections?provider=feishu&connected=1`,
     ),
     onSuccess: (result) => {
+      if (workspaceId) {
+        persistFeishuOAuthFlow({
+          workspaceId,
+          intent: 'user_connect',
+          redirectPath: `/${locale}/workspaces/${workspaceId}/connections?provider=feishu&connected=1`,
+        });
+      }
       window.location.assign(result.authorization_url);
     },
     onError: (mutationError) => handleErrorForToast(mutationError),
@@ -65,6 +82,10 @@ export default function WorkspaceConnectionsPage() {
     },
     onError: (mutationError) => handleErrorForToast(mutationError),
   });
+  const refreshDisabled = refreshMutation.isPending
+    || feishuReauthReason === 'missing_scopes'
+    || feishuReauthReason === 'refresh_token_missing'
+    || feishuReauthReason === 'oauth_not_configured';
 
   if (!workspaceId) {
     return (
@@ -186,13 +207,76 @@ export default function WorkspaceConnectionsPage() {
                       type="button"
                       variant="outline"
                       onClick={() => refreshMutation.mutate(feishuConnection.id)}
-                      disabled={refreshMutation.isPending}
+                      disabled={refreshDisabled}
                     >
                       <RefreshCw className="mr-2 h-4 w-4" />
                       {t('refresh_connection')}
                     </Button>
                   ) : null}
                 </div>
+
+                {feishuConfig ? (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="rounded-[18px] border border-subtle bg-background/70 p-4">
+                      <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_feishu_scope_policy_label')}</div>
+                      <div className="mt-2 text-sm font-medium text-foreground">
+                        {feishuConfig.scope_policy === 'custom'
+                          ? t('workspace_feishu_scope_policy_custom')
+                          : t('workspace_feishu_scope_policy_full')}
+                      </div>
+                    </div>
+                    <div className="rounded-[18px] border border-subtle bg-background/70 p-4">
+                      <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_feishu_requested_scope_count_label')}</div>
+                      <div className="mt-2 text-sm font-medium text-foreground">
+                        {t('workspace_feishu_requested_scope_count_value', { count: requestedScopes.length })}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {requestedScopes.length > 0 ? (
+                  <details className="mt-4 rounded-[18px] border border-subtle bg-background/70 p-4 text-sm">
+                    <summary className="cursor-pointer font-medium text-foreground">
+                      {t('workspace_feishu_requested_scopes_label')}
+                    </summary>
+                    <p className="mt-2 break-all text-tertiary">{requestedScopes.join(', ')}</p>
+                  </details>
+                ) : null}
+
+                {feishuConnection?.status === 'reauth_required' ? (
+                  <div className="mt-4 rounded-[18px] border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
+                    <div className="font-medium text-foreground">
+                      {feishuReauthReason === 'missing_scopes'
+                        ? t('workspace_feishu_reauth_required_title')
+                        : feishuReauthReason === 'refresh_failed'
+                          ? t('workspace_feishu_refresh_failed_title')
+                          : feishuReauthReason === 'refresh_token_missing'
+                            ? t('workspace_feishu_refresh_token_missing_title')
+                            : feishuReauthReason === 'oauth_not_configured'
+                              ? t('workspace_feishu_oauth_not_configured_title')
+                              : t('workspace_feishu_generic_reauth_title')}
+                    </div>
+                    <p className="mt-1 text-secondary">
+                      {feishuReauthReason === 'missing_scopes'
+                        ? t('workspace_feishu_reauth_required_description')
+                        : feishuReauthReason === 'refresh_failed'
+                          ? t('workspace_feishu_refresh_failed_description')
+                          : feishuReauthReason === 'refresh_token_missing'
+                            ? t('workspace_feishu_refresh_token_missing_description')
+                            : feishuReauthReason === 'oauth_not_configured'
+                              ? t('workspace_feishu_oauth_not_configured_description')
+                              : t('workspace_feishu_generic_reauth_description')}
+                    </p>
+                    {feishuNeedsScopeReauth && missingFeishuScopes.length > 0 ? (
+                      <p className="mt-2 break-all text-tertiary">
+                        {t('workspace_feishu_missing_scopes_label')}: {missingFeishuScopes.join(', ')}
+                      </p>
+                    ) : null}
+                    {!feishuNeedsScopeReauth && feishuConnection.last_error ? (
+                      <p className="mt-2 break-all text-tertiary">{feishuConnection.last_error}</p>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {!isEnabled ? (
                   <p className="mt-4 text-sm text-tertiary">{t('workspace_feishu_disabled_hint')}</p>

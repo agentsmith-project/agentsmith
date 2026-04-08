@@ -19,6 +19,13 @@ export type UserExternalConnectionKind = 'oauth_account' | 'secret_bundle' | 'ss
 
 export type UserExternalConnectionStatus = 'active' | 'expired' | 'reauth_required' | 'error';
 
+export type UserExternalConnectionReauthReason =
+  | 'missing_scopes'
+  | 'refresh_failed'
+  | 'refresh_token_missing'
+  | 'oauth_not_configured'
+  | 'unknown';
+
 export interface UserExternalConnectionField {
   key: string;
   description?: string | null;
@@ -57,6 +64,8 @@ export interface UserExternalConnection {
   last_refreshed_at?: string | null;
   last_used_at?: string | null;
   last_error?: string | null;
+  reauth_reason?: UserExternalConnectionReauthReason | null;
+  missing_scopes?: string[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -73,6 +82,8 @@ export interface CreateUserExternalConnectionRequest {
   scopes?: string[];
   expires_at?: string | null;
   last_error?: string | null;
+  reauth_reason?: UserExternalConnectionReauthReason | null;
+  missing_scopes?: string[] | null;
 }
 
 export interface UpdateUserExternalConnectionRequest {
@@ -85,6 +96,8 @@ export interface UpdateUserExternalConnectionRequest {
   scopes?: string[] | null;
   expires_at?: string | null;
   last_error?: string | null;
+  reauth_reason?: UserExternalConnectionReauthReason | null;
+  missing_scopes?: string[] | null;
 }
 
 export interface UserExternalConnectionProviderConfig {
@@ -94,6 +107,9 @@ export interface UserExternalConnectionProviderConfig {
   auth_configured?: boolean;
   callback_uri?: string | null;
   auth_url?: string | null;
+  scope_policy?: 'full' | 'custom';
+  requested_scopes?: string[];
+  required_scopes?: string[];
 }
 
 export interface UserExternalConnectionOAuthStartResponse {

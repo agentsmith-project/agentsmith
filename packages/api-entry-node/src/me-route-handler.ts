@@ -21,6 +21,7 @@ import {
   getUserExternalConnection,
   isUserExternalConnectionKind,
   type UserExternalConnectionAccountIdentity,
+  isUserExternalConnectionReauthReason,
   isUserExternalConnectionProvider,
   isUserExternalConnectionStatus,
   listUserExternalConnections,
@@ -59,6 +60,9 @@ function getProviderConfig(provider: 'feishu' | 'jira' | 'github' | 'gitee' | 'c
       callback_uri: feishu.redirectUri,
       auth_url: feishu.authorizeUrl,
       auth_configured: feishu.configured,
+      scope_policy: feishu.scopePolicy,
+      requested_scopes: feishu.scopes,
+      required_scopes: feishu.requiredScopes,
     };
   }
   return {
@@ -68,6 +72,9 @@ function getProviderConfig(provider: 'feishu' | 'jira' | 'github' | 'gitee' | 'c
     callback_uri: null,
     auth_url: null,
     auth_configured: false,
+    scope_policy: undefined,
+    requested_scopes: [],
+    required_scopes: [],
   };
 }
 
@@ -269,6 +276,8 @@ export async function handleMeRoute(args: {
         last_refreshed_at: null,
         last_used_at: null,
         last_error: typeof body.last_error === 'string' ? body.last_error : null,
+        reauth_reason: isUserExternalConnectionReauthReason(body.reauth_reason) ? body.reauth_reason : null,
+        missing_scopes: normalizeStringArray(body.missing_scopes) ?? null,
       });
       json(res, 201, presentUserExternalConnection(record));
       return true;
@@ -336,6 +345,14 @@ export async function handleMeRoute(args: {
           : typeof body.last_error === 'string'
             ? body.last_error
             : null,
+        reauth_reason: body?.reauth_reason === undefined
+          ? existing.reauth_reason
+          : isUserExternalConnectionReauthReason(body.reauth_reason)
+            ? body.reauth_reason
+            : null,
+        missing_scopes: body?.missing_scopes === undefined
+          ? existing.missing_scopes
+          : normalizeStringArray(body.missing_scopes) ?? null,
       });
       json(res, 200, presentUserExternalConnection(nextRecord ?? existing));
       return true;

@@ -5,6 +5,12 @@ import { decryptSecretValue, encryptSecretValue } from './secret-crypto.js';
 export type UserExternalConnectionProvider = 'feishu' | 'jira' | 'github' | 'gitee' | 'custom';
 export type UserExternalConnectionKind = 'oauth_account' | 'secret_bundle' | 'ssh_keypair';
 export type UserExternalConnectionStatus = 'active' | 'expired' | 'reauth_required' | 'error';
+export type UserExternalConnectionReauthReason =
+  | 'missing_scopes'
+  | 'refresh_failed'
+  | 'refresh_token_missing'
+  | 'oauth_not_configured'
+  | 'unknown';
 
 export type UserExternalConnectionFieldRecord = {
   key: string;
@@ -44,6 +50,8 @@ export type UserExternalConnectionRecord = {
   last_refreshed_at?: string | null;
   last_used_at?: string | null;
   last_error?: string | null;
+  reauth_reason?: UserExternalConnectionReauthReason | null;
+  missing_scopes?: string[] | null;
   created_at: string;
   updated_at: string;
 };
@@ -73,6 +81,14 @@ export function isUserExternalConnectionStatus(value: unknown): value is UserExt
     || value === 'expired'
     || value === 'reauth_required'
     || value === 'error';
+}
+
+export function isUserExternalConnectionReauthReason(value: unknown): value is UserExternalConnectionReauthReason {
+  return value === 'missing_scopes'
+    || value === 'refresh_failed'
+    || value === 'refresh_token_missing'
+    || value === 'oauth_not_configured'
+    || value === 'unknown';
 }
 
 export function normalizeStringArray(value: unknown): string[] | null | undefined {

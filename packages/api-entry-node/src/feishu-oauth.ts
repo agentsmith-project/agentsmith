@@ -1,9 +1,20 @@
 import type { JsonDocStorePort } from '@mbos/ports';
 import {
   getUserExternalConnection,
+  type UserExternalConnectionReauthReason,
   type UserExternalConnectionRecord,
+  upsertUserExternalConnectionByProvider,
 } from './user-external-connections-store.js';
 import { refreshWorkspaceFeishuOAuth } from './workspace-feishu-oauth.js';
+import {
+  buildFeishuMissingScopesError,
+  findMissingFeishuDocsScopes,
+  getCanonicalFeishuOAuthScopes,
+  getFeishuOAuthScopePolicy,
+  getRequestedFeishuOAuthScopes,
+  getRequiredFeishuDocsScopes,
+  normalizeFeishuScopeString,
+} from './feishu-oauth-scopes.js';
 
 type FeishuTokenPayload = {
   access_token: string;
@@ -34,12 +45,7 @@ export function getFeishuOAuthConfig() {
     || 'http://127.0.0.1:18181/callback';
   const authorizeUrl = process.env.FEISHU_OAUTH_AUTHORIZE_URL?.trim() || 'https://accounts.feishu.cn/open-apis/authen/v1/authorize';
   const tokenUrl = process.env.FEISHU_OAUTH_TOKEN_URL?.trim() || 'https://open.feishu.cn/open-apis/authen/v2/oauth/token';
-  const scopesRaw = process.env.FEISHU_OAUTH_SCOPES?.trim()
-    || 'offline_access';
-  const scopes = scopesRaw
-    .split(/[,\s]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const scopes = getRequestedFeishuOAuthScopes();
   return {
     configured: Boolean(clientId && clientSecret),
     clientId,
@@ -47,7 +53,9 @@ export function getFeishuOAuthConfig() {
     redirectUri,
     authorizeUrl,
     tokenUrl,
+    scopePolicy: getFeishuOAuthScopePolicy(),
     scopes,
+    requiredScopes: getRequiredFeishuDocsScopes(),
   };
 }
 
@@ -93,6 +101,25 @@ async function exchangeFeishuToken(body: Record<string, unknown>): Promise<Feish
   return parseFeishuTokenResponse(payload);
 }
 
+function buildReauthPatch(
+  connection: UserExternalConnectionRecord,
+  reason: UserExternalConnectionReauthReason,
+  options?: {
+    lastError?: string | null;
+    missingScopes?: string[] | null;
+    scopes?: string[] | null;
+  },
+): Omit<UserExternalConnectionRecord, 'id' | 'created_at' | 'updated_at'> {
+  return {
+    ...connection,
+    status: 'reauth_required',
+    reauth_reason: reason,
+    last_error: options?.lastError ?? connection.last_error ?? null,
+    missing_scopes: options?.missingScopes ?? null,
+    scopes: options?.scopes ?? connection.scopes ?? null,
+  };
+}
+
 export async function refreshFeishuOAuth(args: {
   docStore: JsonDocStorePort;
   userId: string;
@@ -107,17 +134,36 @@ export async function refreshFeishuOAuth(args: {
   }
   const refreshToken = connection.fields.find((field) => field.key === 'refresh_token')?.value ?? '';
   if (!refreshToken) {
-    throw new Error('feishu_refresh_token_missing');
+    return upsertUserExternalConnectionByProvider(
+      args.docStore,
+      buildReauthPatch(connection, 'refresh_token_missing', {
+        lastError: 'feishu_refresh_token_missing',
+      }),
+    );
   }
-  const token = await exchangeFeishuToken({
-    grant_type: 'refresh_token',
-    client_id: getRequiredEnv('FEISHU_APP_ID'),
-    client_secret: getRequiredEnv('FEISHU_APP_SECRET'),
-    refresh_token: refreshToken,
-  });
+  let token: FeishuTokenPayload;
+  try {
+    token = await exchangeFeishuToken({
+      grant_type: 'refresh_token',
+      client_id: getRequiredEnv('FEISHU_APP_ID'),
+      client_secret: getRequiredEnv('FEISHU_APP_SECRET'),
+      refresh_token: refreshToken,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'feishu_refresh_failed';
+    return upsertUserExternalConnectionByProvider(
+      args.docStore,
+      buildReauthPatch(connection, 'refresh_failed', {
+        lastError: message,
+      }),
+    );
+  }
   const expiresAt = token.expires_in && token.expires_in > 0
     ? new Date(Date.now() + token.expires_in * 1000).toISOString()
     : connection.expires_at ?? null;
+  const scopes = normalizeFeishuScopeString(token.scope) ?? connection.scopes ?? getCanonicalFeishuOAuthScopes();
+  const missingScopes = findMissingFeishuDocsScopes(scopes);
+  const missingScopesError = buildFeishuMissingScopesError(missingScopes);
   return upsertUserExternalConnectionByProvider(args.docStore, {
     ...connection,
     fields: [
@@ -139,10 +185,13 @@ export async function refreshFeishuOAuth(args: {
         secret: true,
       }]),
     ],
-    status: 'active',
+    status: missingScopesError ? 'reauth_required' : 'active',
+    reauth_reason: missingScopesError ? 'missing_scopes' : null,
+    missing_scopes: missingScopes.length > 0 ? missingScopes : null,
+    scopes,
     expires_at: expiresAt,
     last_refreshed_at: new Date().toISOString(),
-    last_error: null,
+    last_error: missingScopesError,
   });
 }
 
@@ -167,6 +216,8 @@ export async function refreshExpiringFeishuConnections(docStore: JsonDocStorePor
       await upsertUserExternalConnectionByProvider(docStore, {
         ...item,
         status: 'reauth_required',
+        reauth_reason: 'unknown',
+        missing_scopes: null,
         last_error: message,
       });
     }

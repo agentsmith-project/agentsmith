@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SectionHeading } from '@/components/ui/section-heading';
 import { APIError, WorkspaceAPI, getApiClient, handleErrorForToast } from '@/lib/api';
+import { persistFeishuOAuthFlow } from '@/lib/feishu-oauth-flow';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { useWorkspace } from '@/lib/hooks/use-workspaces';
 import { cn } from '@/lib/utils';
@@ -86,6 +87,13 @@ export default function WorkspaceFeishuSettingsPage() {
       `/${locale}/workspaces/${workspaceId}/settings/feishu?step=enable&verified=1`,
     ),
     onSuccess: (result) => {
+      if (workspaceId) {
+        persistFeishuOAuthFlow({
+          workspaceId,
+          intent: 'admin_verify',
+          redirectPath: `/${locale}/workspaces/${workspaceId}/settings/feishu?step=enable&verified=1`,
+        });
+      }
       window.location.assign(result.authorization_url);
     },
     onError: (mutationError) => handleErrorForToast(mutationError),

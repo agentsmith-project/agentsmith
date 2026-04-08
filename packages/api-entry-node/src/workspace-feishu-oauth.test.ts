@@ -195,4 +195,81 @@ describe('workspace Feishu oauth', () => {
     expect(completed.connection?.user_id).toBe('user_789');
     expect(completed.connection?.workspace_id).toBe('ws_3');
   });
+
+  it('requests the configured Feishu scopes and stores them on successful user connect', async () => {
+    const cache = new InMemoryCache();
+    const docStore = new InMemoryJsonDocStore();
+
+    process.env.FEISHU_OAUTH_SCOPES = 'offline_access search:docs:read wiki:wiki wiki:wiki:readonly wiki:node:retrieve';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          access_token: 'token_456',
+          refresh_token: 'refresh_456',
+          expires_in: 3600,
+          scope: 'offline_access search:docs:read wiki:wiki wiki:wiki:readonly wiki:node:retrieve',
+          token_type: 'Bearer',
+          union_id: 'union_456',
+          name: 'Scoped Feishu User',
+          email: 'scoped.feishu.user@example.com',
+        }),
+      })),
+    );
+
+    await upsertWorkspaceFeishuIntegration(docStore, {
+      id: 'workspace_feishu:ws_4',
+      workspace_id: 'ws_4',
+      provider: 'feishu',
+      status: 'enabled',
+      app_id: 'app_123',
+      app_secret: 'secret_123',
+      redirect_uri: 'http://localhost:3001/workspaces/ws_4/feishu/callback',
+      verified_at: null,
+      verified_by_user_id: null,
+      verified_by_email: null,
+      last_error: null,
+      created_at: '2026-03-19T00:00:00.000Z',
+      updated_at: '2026-03-19T00:00:00.000Z',
+    });
+
+    const started = await startWorkspaceFeishuOAuth({
+      cache,
+      docStore,
+      workspaceId: 'ws_4',
+      userId: 'user_456',
+      userEmail: 'user456@example.com',
+      intent: 'user_connect',
+      postRedirectPath: '/en-US/workspaces/ws_4/connections?provider=feishu',
+      requireEnabled: true,
+    });
+
+    const authUrl = new URL(started.authorization_url);
+    expect(authUrl.searchParams.get('scope')).toBe(
+      'offline_access search:docs:read wiki:wiki wiki:wiki:readonly wiki:node:retrieve',
+    );
+
+    const completed = await completeWorkspaceFeishuOAuth({
+      cache,
+      docStore,
+      workspaceId: 'ws_4',
+      userId: 'user_456',
+      userEmail: 'user456@example.com',
+      code: 'code_456',
+      state: started.state,
+    });
+
+    expect(completed.connection?.status).toBe('active');
+    expect(completed.connection?.last_error).toBeNull();
+    expect(completed.connection?.reauth_reason).toBeNull();
+    expect(completed.connection?.missing_scopes).toBeNull();
+    expect(completed.connection?.scopes).toEqual([
+      'offline_access',
+      'search:docs:read',
+      'wiki:wiki',
+      'wiki:wiki:readonly',
+      'wiki:node:retrieve',
+    ]);
+  });
 });

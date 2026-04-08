@@ -119,8 +119,19 @@ export function TaskPage({
     retry: false,
   });
   const { data: messages } = useTaskMessages(workspaceId, projectId, taskId);
-  const { data: artifacts } = useTaskArtifacts(workspaceId, projectId, taskId);
   const sendMessage = useSendMessage();
+  const artifactsRefreshInterval = (
+    task?.run_state === "running" || sendMessage.isPending || isAgentTurnRunning
+  ) ? 5000 : false;
+  const {
+    data: artifacts,
+    refetch: refetchArtifacts,
+    isRefetching: artifactsRefreshing,
+  } = useTaskArtifacts(workspaceId, projectId, taskId, {
+    refetchInterval: artifactsRefreshInterval,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
   const updateTask = useUpdateTask();
   const cancelActiveRun = useMutation({
     mutationFn: () => taskAPI.cancelRun(workspaceId, projectId, taskId),
@@ -780,6 +791,7 @@ export function TaskPage({
         agentIsBusy={agentIsBusy}
         activeAgentMessageId={streamingMessageId ?? (agentIsBusy ? latestAgentMessageId : null)}
         artifacts={artifacts || []}
+        artifactsRefreshing={artifactsRefreshing}
         canUpdateTask={canUpdateTask}
         connectionErrorCode={realtimeFailureCode}
         connectionErrorMessage={realtimeFailureMessage}
@@ -793,6 +805,9 @@ export function TaskPage({
         handleCancelActiveRun={handleCancelActiveRun}
         handleDownloadArtifact={handleDownloadArtifact}
         handlePendingRemove={handlePendingRemove}
+        handleRefreshArtifacts={async () => {
+          await refetchArtifacts();
+        }}
         handlePendingUpdate={handlePendingUpdate}
         handleSendMessage={handleSendMessage}
         handleViewArtifact={handleViewArtifact}

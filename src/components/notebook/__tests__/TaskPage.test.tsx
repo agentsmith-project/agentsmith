@@ -21,9 +21,12 @@ const {
   mockHandleError,
   mockToastError,
   mockToastInfo,
+  mockTaskArtifactsRefetch,
+  mockTaskArtifactsIsRefetching,
   latestTaskSseOptionsRef,
   latestConversationPanelPropsRef,
   latestTaskHeaderPropsRef,
+  latestUseTaskArtifactsArgsRef,
   mockTaskApiCancelRun,
 } = vi.hoisted(() => ({
   mockSendMessageMutateAsync: vi.fn(),
@@ -31,9 +34,12 @@ const {
   mockHandleError: vi.fn(),
   mockToastError: vi.fn(),
   mockToastInfo: vi.fn(),
+  mockTaskArtifactsRefetch: vi.fn(),
+  mockTaskArtifactsIsRefetching: { value: false },
   latestTaskSseOptionsRef: { current: null as any },
   latestConversationPanelPropsRef: { current: null as any },
   latestTaskHeaderPropsRef: { current: null as any },
+  latestUseTaskArtifactsArgsRef: { current: null as any },
   mockTaskApiCancelRun: vi.fn(),
 }));
 
@@ -78,10 +84,15 @@ vi.mock('@/lib/hooks/use-task', () => ({
     data: mockTaskHookState.messages,
     isLoading: false,
   }),
-  useTaskArtifacts: () => ({
+  useTaskArtifacts: (...args: any[]) => {
+    latestUseTaskArtifactsArgsRef.current = args;
+    return ({
     data: mockTaskHookState.artifacts,
     isLoading: false,
-  }),
+    isRefetching: mockTaskArtifactsIsRefetching.value,
+    refetch: mockTaskArtifactsRefetch,
+    });
+  },
   useTaskTraces: () => ({
     data: { items: [], total: 0 },
     isLoading: false,
@@ -182,10 +193,12 @@ vi.mock('../ConversationPanel', () => ({
 }));
 
 vi.mock('../ArtifactsPanel', () => ({
-  ArtifactsPanel: ({ onView, onDownload, disabled }: any) => (
+  ArtifactsPanel: ({ onView, onDownload, onRefresh, refreshing, disabled }: any) => (
     <div data-testid="artifacts-panel">
       <button onClick={() => onView(mockArtifacts[0])}>View Artifact</button>
       <button onClick={() => onDownload(mockArtifacts[0])}>Download Artifact</button>
+      <button onClick={() => onRefresh?.()} disabled={refreshing}>Refresh Artifacts</button>
+      <div data-testid="artifacts-refreshing">{String(!!refreshing)}</div>
       {disabled && <div data-disabled>disabled</div>}
     </div>
   ),
@@ -282,10 +295,14 @@ describe('TaskPage', () => {
       request_id: 'req-1',
     });
     mockToastInfo.mockReset();
+    mockTaskArtifactsRefetch.mockReset();
+    mockTaskArtifactsRefetch.mockResolvedValue({ data: mockArtifacts });
+    mockTaskArtifactsIsRefetching.value = false;
     mockSendMessageIsPending.value = false;
     latestTaskSseOptionsRef.current = null;
     latestConversationPanelPropsRef.current = null;
     latestTaskHeaderPropsRef.current = null;
+    latestUseTaskArtifactsArgsRef.current = null;
   });
 
   const renderComponent = () => {
@@ -360,6 +377,26 @@ describe('TaskPage', () => {
       renderComponent();
 
       expect(screen.getByTestId('artifacts-panel')).toBeInTheDocument();
+    });
+
+    it('uses slower artifact auto refresh interval while task is idle', () => {
+      renderComponent();
+
+      expect(latestUseTaskArtifactsArgsRef.current[3]).toMatchObject({
+        refetchInterval: false,
+        refetchIntervalInBackground: false,
+        refetchOnWindowFocus: true,
+      });
+    });
+
+    it('uses faster artifact auto refresh interval while a run is active', () => {
+      mockTaskHookState.task = { ...mockTask, run_state: 'running' };
+
+      renderComponent();
+
+      expect(latestUseTaskArtifactsArgsRef.current[3]).toMatchObject({
+        refetchInterval: 5000,
+      });
     });
 
     it('opens and closes terminal panel from task header action', async () => {
@@ -683,6 +720,22 @@ describe('TaskPage', () => {
       // Verify the mock constructor was called (the async download chain is tested via the API mock)
       const { TaskAPI } = await import('@/lib/api');
       expect(TaskAPI).toHaveBeenCalled();
+    });
+
+    it('refreshes artifacts when the panel refresh action is triggered', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.click(screen.getByText('Refresh Artifacts'));
+
+      expect(mockTaskArtifactsRefetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes artifact refresh loading state into the panel', () => {
+      mockTaskArtifactsIsRefetching.value = true;
+      renderComponent();
+
+      expect(screen.getByTestId('artifacts-refreshing')).toHaveTextContent('true');
     });
   });
 

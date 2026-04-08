@@ -67,6 +67,7 @@ describe('ArtifactsPanel', () => {
 
   const mockOnView = vi.fn();
   const mockOnDownload = vi.fn();
+  const mockOnRefresh = vi.fn();
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -77,6 +78,7 @@ describe('ArtifactsPanel', () => {
           artifacts={mockArtifacts}
           onView={mockOnView}
           onDownload={mockOnDownload}
+          onRefresh={mockOnRefresh}
           {...props}
       />
     );
@@ -202,6 +204,33 @@ describe('ArtifactsPanel', () => {
       renderComponent();
 
       expect(screen.getByText('Artifacts')).toBeInTheDocument();
+    });
+
+    it('renders refresh button when refresh handler is provided', () => {
+      renderComponent();
+
+      expect(screen.getByTestId('notebook__artifacts-refresh')).toBeInTheDocument();
+    });
+
+    it('calls refresh handler when refresh button is clicked', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.click(screen.getByTestId('notebook__artifacts-refresh'));
+
+      expect(mockOnRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('disables refresh button while refreshing', () => {
+      renderComponent({ refreshing: true });
+
+      expect(screen.getByTestId('notebook__artifacts-refresh')).toBeDisabled();
+    });
+
+    it('disables refresh button when the panel is disabled', () => {
+      renderComponent({ disabled: true });
+
+      expect(screen.getByTestId('notebook__artifacts-refresh')).toBeDisabled();
     });
   });
 

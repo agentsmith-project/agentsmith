@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import { useTranslations } from "next-intl";
+import { Loader2, RefreshCw } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -8,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { ArtifactCard } from "./ArtifactCard";
 import { EmptyState } from "@/components/ui/loading";
 import type { Artifact, ArtifactType } from "@/lib/types/task";
@@ -16,6 +18,8 @@ export interface ArtifactsPanelProps {
   artifacts: Artifact[];
   onView?: (artifact: Artifact) => void;
   onDownload?: (artifact: Artifact) => void;
+  onRefresh?: () => void | Promise<void>;
+  refreshing?: boolean;
   disabled?: boolean;
 }
 
@@ -23,9 +27,12 @@ export function ArtifactsPanel({
   artifacts,
   onView,
   onDownload,
+  onRefresh,
+  refreshing = false,
   disabled = false,
 }: ArtifactsPanelProps) {
   const t = useTranslations("notebook.artifacts");
+  const tCommon = useTranslations("common");
   const [filterType, setFilterType] = React.useState<ArtifactType | "all">(
     "all",
   );
@@ -42,9 +49,30 @@ export function ArtifactsPanel({
           <h2 className="text-sm font-semibold text-foreground">
             {t("title")}
           </h2>
-          <span className="rounded-full bg-surface-high/40 px-1.5 py-0.5 text-[10px] text-tertiary">
-            {artifacts.length}
-          </span>
+          <div className="flex items-center gap-1.5">
+            {onRefresh ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 text-tertiary hover:text-primary"
+                onClick={() => void onRefresh()}
+                disabled={refreshing || disabled}
+                data-testid="notebook__artifacts-refresh"
+                title={tCommon("refresh")}
+                aria-label={tCommon("refresh")}
+              >
+                {refreshing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            ) : null}
+            <span className="rounded-full bg-surface-high/40 px-1.5 py-0.5 text-[10px] text-tertiary">
+              {artifacts.length}
+            </span>
+          </div>
         </div>
         <Select
           value={filterType}

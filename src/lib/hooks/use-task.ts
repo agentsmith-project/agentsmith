@@ -211,6 +211,11 @@ export function useTaskArtifacts(
   workspaceId: string,
   projectId: string,
   taskId: string,
+  options?: {
+    refetchInterval?: number | false;
+    refetchIntervalInBackground?: boolean;
+    refetchOnWindowFocus?: boolean;
+  },
 ) {
   const taskAPI = new TaskAPI(getApiClient());
 
@@ -219,6 +224,9 @@ export function useTaskArtifacts(
     queryFn: () => taskAPI.listArtifacts(workspaceId, projectId, taskId),
     enabled: !!workspaceId && !!projectId && !!taskId,
     staleTime: 5000, // 5 seconds
+    refetchInterval: options?.refetchInterval,
+    refetchIntervalInBackground: options?.refetchIntervalInBackground,
+    refetchOnWindowFocus: options?.refetchOnWindowFocus,
   });
 }
 

@@ -10,6 +10,7 @@ interface TaskPageContentProps {
   agentIsBusy: boolean;
   activeAgentMessageId: string | null;
   artifacts: Artifact[];
+  artifactsRefreshing: boolean;
   canUpdateTask: boolean;
   connectionErrorCode: React.ComponentProps<
     typeof ConversationPanel
@@ -33,6 +34,7 @@ interface TaskPageContentProps {
   handleCancelActiveRun: () => void;
   handleDownloadArtifact: (artifact: Artifact) => Promise<void>;
   handlePendingRemove: (id: string) => void;
+  handleRefreshArtifacts: () => Promise<void>;
   handlePendingUpdate: (id: string, content: string) => void;
   handleSendMessage: (content: string) => Promise<void>;
   handleViewArtifact: (artifact: Artifact) => void;
@@ -78,6 +80,7 @@ export function TaskPageContent({
   agentIsBusy,
   activeAgentMessageId,
   artifacts,
+  artifactsRefreshing,
   canUpdateTask,
   connectionErrorCode,
   connectionErrorMessage,
@@ -91,6 +94,7 @@ export function TaskPageContent({
   handleCancelActiveRun,
   handleDownloadArtifact,
   handlePendingRemove,
+  handleRefreshArtifacts,
   handlePendingUpdate,
   handleSendMessage,
   handleViewArtifact,
@@ -163,6 +167,8 @@ export function TaskPageContent({
             artifacts={artifacts}
             onView={handleViewArtifact}
             onDownload={handleDownloadArtifact}
+            onRefresh={handleRefreshArtifacts}
+            refreshing={artifactsRefreshing}
             disabled={isDisabled || !canUpdateTask}
           />
         </div>

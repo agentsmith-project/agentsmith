@@ -1,23 +1,28 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockRedirect = vi.fn((path: string) => {
-  throw new Error(`REDIRECT:${path}`);
-});
 const mockFetch = vi.fn();
+const mockReplace = vi.fn();
 
 vi.mock('next/navigation', () => ({
-  redirect: mockRedirect,
+  useParams: () => ({ workspace: 'ws_default' }),
+  useSearchParams: () => new URLSearchParams('code=test_code&state=test_state'),
 }));
+
+Object.defineProperty(window, 'location', {
+  value: { replace: mockReplace },
+  writable: true,
+});
 
 describe('WorkspaceFeishuCallbackPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     global.fetch = mockFetch as unknown as typeof fetch;
     window.sessionStorage.clear();
   });
 
-  it('completes admin verify on the server and redirects to settings', async () => {
+  it('completes admin verify via same-origin public callback route and redirects to settings', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -27,24 +32,23 @@ describe('WorkspaceFeishuCallbackPage', () => {
     });
 
     const Page = (await import('../page')).default;
+    render(<Page />);
 
-    await expect(
-      Page({
-        params: Promise.resolve({ workspace: 'ws_default' }),
-        searchParams: Promise.resolve({ code: 'test_code', state: 'test_state' }),
-      }),
-    ).rejects.toThrow('REDIRECT:/zh-CN/workspaces/ws_default/settings/feishu?step=enable&verified=1');
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/public/workspaces/ws_default/feishu/oauth/complete',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
+    });
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'http://localhost:3000/api/public/workspaces/ws_default/feishu/oauth/complete',
-      expect.objectContaining({
-        method: 'POST',
-        cache: 'no-store',
-      }),
-    );
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith('/zh-CN/workspaces/ws_default/settings/feishu?step=enable&verified=1');
+    });
   });
 
-  it('completes user connect on the server and redirects to connections', async () => {
+  it('completes user connect via same-origin public callback route and redirects to connections', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -54,13 +58,11 @@ describe('WorkspaceFeishuCallbackPage', () => {
     });
 
     const Page = (await import('../page')).default;
+    render(<Page />);
 
-    await expect(
-      Page({
-        params: Promise.resolve({ workspace: 'ws_default' }),
-        searchParams: Promise.resolve({ code: 'test_code', state: 'test_state' }),
-      }),
-    ).rejects.toThrow('REDIRECT:/zh-CN/workspaces/ws_default/connections?provider=feishu&connected=1');
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith('/zh-CN/workspaces/ws_default/connections?provider=feishu&connected=1');
+    });
   });
 
   it('shows admin fallback navigation when callback completion fails', async () => {
@@ -78,11 +80,7 @@ describe('WorkspaceFeishuCallbackPage', () => {
     });
 
     const Page = (await import('../page')).default;
-    const view = await Page({
-      params: Promise.resolve({ workspace: 'ws_default' }),
-      searchParams: Promise.resolve({ code: 'test_code', state: 'test_state' }),
-    });
-    render(view);
+    render(<Page />);
 
     expect(await screen.findByText('Feishu verification failed')).toBeInTheDocument();
     expect(await screen.findByRole('link', { name: 'Return to Feishu setup' })).toHaveAttribute(
@@ -106,11 +104,7 @@ describe('WorkspaceFeishuCallbackPage', () => {
     });
 
     const Page = (await import('../page')).default;
-    const view = await Page({
-      params: Promise.resolve({ workspace: 'ws_default' }),
-      searchParams: Promise.resolve({ code: 'test_code', state: 'test_state' }),
-    });
-    render(view);
+    render(<Page />);
 
     expect(await screen.findByText('Feishu authorization failed')).toBeInTheDocument();
     expect(await screen.findByRole('link', { name: 'Open workspace connections' })).toHaveAttribute(
@@ -119,7 +113,8 @@ describe('WorkspaceFeishuCallbackPage', () => {
     );
   });
 
-  it('shows an admin timeout fallback when server-side completion times out', async () => {
+  it('shows an admin timeout fallback when callback completion hangs', async () => {
+    vi.useFakeTimers();
     window.sessionStorage.setItem(
       'agentsmith:feishu-oauth-flow:ws_default',
       JSON.stringify({
@@ -128,17 +123,23 @@ describe('WorkspaceFeishuCallbackPage', () => {
         storedAt: Date.now(),
       }),
     );
-    mockFetch.mockRejectedValueOnce(new DOMException('Aborted', 'AbortError'));
+    mockFetch.mockImplementationOnce(
+      (_input: RequestInfo | URL, init?: RequestInit) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      }),
+    );
 
     const Page = (await import('../page')).default;
-    const view = await Page({
-      params: Promise.resolve({ workspace: 'ws_default' }),
-      searchParams: Promise.resolve({ code: 'test_code', state: 'test_state' }),
-    });
-    render(view);
+    render(<Page />);
 
-    expect(await screen.findByText('Feishu verification is taking longer than expected')).toBeInTheDocument();
-    expect(await screen.findByRole('link', { name: 'Return to Feishu setup' })).toHaveAttribute(
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7000);
+    });
+
+    expect(screen.getByText('Feishu verification is taking longer than expected')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Return to Feishu setup' })).toHaveAttribute(
       'href',
       '/en-US/workspaces/ws_default/settings/feishu?step=enable',
     );

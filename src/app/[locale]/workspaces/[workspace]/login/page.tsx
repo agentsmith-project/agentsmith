@@ -15,6 +15,9 @@ import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
 import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 import { ArrowRight } from 'lucide-react';
 
+const WORKSPACE_CONFIG_RETRY_ATTEMPTS = 3;
+const WORKSPACE_CONFIG_RETRY_DELAY_MS = 100;
+
 type WorkspaceLoginConfig = {
   id: string;
   name: string;
@@ -55,13 +58,19 @@ export default function WorkspaceLoginPage() {
       setIsLoadingConfig(true);
       setConfigError(null);
       try {
-        const response = await fetch(`/api/public/workspaces/${workspaceId}`, { cache: 'no-store' });
-        if (!response.ok) {
-          throw new Error('workspace_not_found');
-        }
-        const payload = (await response.json()) as WorkspaceLoginConfig;
-        if (!cancelled) {
-          setConfig(payload);
+        for (let attempt = 0; attempt < WORKSPACE_CONFIG_RETRY_ATTEMPTS; attempt += 1) {
+          const response = await fetch(`/api/public/workspaces/${workspaceId}`, { cache: 'no-store' });
+          if (response.ok) {
+            const payload = (await response.json()) as WorkspaceLoginConfig;
+            if (!cancelled) {
+              setConfig(payload);
+            }
+            return;
+          }
+          if (response.status !== 404 || attempt === WORKSPACE_CONFIG_RETRY_ATTEMPTS - 1) {
+            throw new Error('workspace_not_found');
+          }
+          await new Promise((resolve) => setTimeout(resolve, WORKSPACE_CONFIG_RETRY_DELAY_MS));
         }
       } catch (error) {
         if (!cancelled) {

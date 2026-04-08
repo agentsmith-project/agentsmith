@@ -116,6 +116,21 @@ describe('WorkspaceLoginPage', () => {
   it('shows not found state when workspace login config is unavailable', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: false,
+      status: 404,
+      json: async () => ({
+        error_code: 'WORKSPACE_NOT_FOUND',
+        error_message: 'workspace_not_found',
+      }),
+    }).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => ({
+        error_code: 'WORKSPACE_NOT_FOUND',
+        error_message: 'workspace_not_found',
+      }),
+    }).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
       json: async () => ({
         error_code: 'WORKSPACE_NOT_FOUND',
         error_message: 'workspace_not_found',
@@ -126,6 +141,38 @@ describe('WorkspaceLoginPage', () => {
 
     expect(await screen.findByTestId('workspace-login__error')).toBeInTheDocument();
     expect(screen.getByText('workspace_not_found')).toBeInTheDocument();
+  });
+
+  it('retries transient workspace-not-found responses before showing the login button', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({
+          error_code: 'WORKSPACE_NOT_FOUND',
+          error_message: 'workspace_not_found',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 'ws_alpha',
+          name: 'Alpha Workspace',
+          login_idp: {
+            kind: 'keycloak',
+            url: 'https://login.example.com',
+            realm: 'alpha',
+            client_id: 'alpha-client',
+          },
+        }),
+      });
+
+    render(<WorkspaceLoginPage />);
+
+    expect(await screen.findByTestId('workspace-login__keycloak-btn')).toBeInTheDocument();
+    expect(screen.queryByTestId('workspace-login__error')).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('keeps only a back link to workspace selection on the direct workspace login page', async () => {

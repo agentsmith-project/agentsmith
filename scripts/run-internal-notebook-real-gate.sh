@@ -69,6 +69,7 @@ CLEANER_INTERVAL_SECONDS="${INTERNAL_SANDBOX_CLEANER_INTERVAL_SECONDS:-15}"
 INTERNAL_VISUAL_ARTIFACT_DIR="${INTERNAL_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/internal-$(date +%Y%m%d-%H%M%S)}"
 KEEP_FAILED_ENV="${INTERNAL_REAL_KEEP_FAILED_ENV:-0}"
 GATE_STATUS=0
+CURRENT_SANDBOX_STATE_FILE=""
 CONTEXT_NAME="$(kubectl config current-context 2>/dev/null || true)"
 DEFAULT_KIND_CLUSTER_NAME="agentsmith"
 if [[ -z "${INTERNAL_AGENT_KIND_CLUSTER_NAME:-}" ]] && kind get clusters 2>/dev/null | grep -qx 'mbos'; then
@@ -384,48 +385,42 @@ EOF
 cleanup() {
   if [[ "${KEEP_FAILED_ENV}" == "1" && "${GATE_STATUS}" -ne 0 ]]; then
     info "keeping failed sandbox manager environment for inspection"
-    info "sandbox_log=${SANDBOX_LOG}"
-    info "cleaner_log=${CLEANER_LOG}"
-    info "state_file=${STATE_FILE}"
+    if [[ -n "${CURRENT_SANDBOX_STATE_FILE}" && -f "${CURRENT_SANDBOX_STATE_FILE}" ]]; then
+      # shellcheck disable=SC1090
+      source "${CURRENT_SANDBOX_STATE_FILE}"
+      info "sandbox_log=${SANDBOX_LOG}"
+      info "cleaner_log=${CLEANER_LOG}"
+      info "state_file=${CURRENT_SANDBOX_STATE_FILE}"
+    else
+      info "sandbox_log=${SANDBOX_LOG}"
+      info "cleaner_log=${CLEANER_LOG}"
+      info "state_file=${STATE_FILE}"
+    fi
     info "visual_artifacts=${INTERNAL_VISUAL_ARTIFACT_DIR}"
     return 0
   fi
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
-  INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+  if [[ -n "${CURRENT_SANDBOX_STATE_FILE}" ]]; then
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${CURRENT_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${CURRENT_SANDBOX_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 
-INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
-INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
-kubectl delete pod -n "${K8S_NAMESPACE}" -l app=managed-workload --ignore-not-found --wait=true >/dev/null 2>&1 || true
-kubectl delete pod -n "${K8S_NAMESPACE}" -l app=sandbox --ignore-not-found --wait=true >/dev/null 2>&1 || true
-
-existing_sandbox_pid="$(lsof -tiTCP:${SANDBOX_PORT} -sTCP:LISTEN -n -P 2>/dev/null | head -n1 || true)"
-if [[ -n "${existing_sandbox_pid}" ]]; then
-  info "terminating stale sandbox manager on :${SANDBOX_PORT} (pid=${existing_sandbox_pid})"
-  kill "${existing_sandbox_pid}" >/dev/null 2>&1 || true
-  for _ in $(seq 1 20); do
-    if ! kill -0 "${existing_sandbox_pid}" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 1
-  done
-  if kill -0 "${existing_sandbox_pid}" >/dev/null 2>&1; then
-    echo "[internal-real-gate] failed to stop stale sandbox manager on :${SANDBOX_PORT}" >&2
-    exit 1
-  fi
-fi
-
-cat > "${STATE_FILE}" <<EOF
+write_sandbox_state_file() {
+  local state_file="$1"
+  local config_path="$2"
+  local sandbox_log="$3"
+  local cleaner_log="$4"
+  cat > "${state_file}" <<EOF
 ROOT_DIR="${ROOT_DIR}"
 SANDBOX_ROOT="${SANDBOX_ROOT}"
 INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR}"
-CONFIG_PATH="${CONFIG_PATH}"
+CONFIG_PATH="${config_path}"
 SANDBOX_PORT="${SANDBOX_PORT}"
 SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY_VALUE}"
 K8S_NAMESPACE="${K8S_NAMESPACE}"
-SANDBOX_LOG="${SANDBOX_LOG}"
-CLEANER_LOG="${CLEANER_LOG}"
+SANDBOX_LOG="${sandbox_log}"
+CLEANER_LOG="${cleaner_log}"
 CLEANER_INTERVAL_SECONDS="${CLEANER_INTERVAL_SECONDS}"
 JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE="${JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT_VALUE}"
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
@@ -433,12 +428,57 @@ MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
 MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
 KUBECONFIG="${KUBECONFIG:-}"
 EOF
+}
 
-info "starting local sandbox manager on :${SANDBOX_PORT}"
-INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" bash "${CONTROL_SCRIPT}" start-manager
-info "starting local sandbox cleaner loop"
-INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" bash "${CONTROL_SCRIPT}" start-cleaner
-gate_record_preflight_check "${INTERNAL_REAL_DIR}" "sandbox_manager" "passed" "port ${SANDBOX_PORT}"
+reset_sandbox_runtime() {
+  local state_file="$1"
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${state_file}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${state_file}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+  kubectl delete pod -n "${K8S_NAMESPACE}" -l app=managed-workload --ignore-not-found --wait=true >/dev/null 2>&1 || true
+  kubectl delete pod -n "${K8S_NAMESPACE}" -l app=sandbox --ignore-not-found --wait=true >/dev/null 2>&1 || true
+
+  local existing_sandbox_pid
+  existing_sandbox_pid="$(lsof -tiTCP:${SANDBOX_PORT} -sTCP:LISTEN -n -P 2>/dev/null | head -n1 || true)"
+  if [[ -n "${existing_sandbox_pid}" ]]; then
+    info "terminating stale sandbox manager on :${SANDBOX_PORT} (pid=${existing_sandbox_pid})"
+    kill "${existing_sandbox_pid}" >/dev/null 2>&1 || true
+    for _ in $(seq 1 20); do
+      if ! kill -0 "${existing_sandbox_pid}" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+    if kill -0 "${existing_sandbox_pid}" >/dev/null 2>&1; then
+      echo "[internal-real-gate] failed to stop stale sandbox manager on :${SANDBOX_PORT}" >&2
+      exit 1
+    fi
+  fi
+}
+
+prepare_internal_spec_runtime() {
+  local spec_slug="$1"
+  local cleaner_mode="$2"
+  local spec_runtime_dir spec_state_file spec_config_path spec_sandbox_log spec_cleaner_log
+  spec_runtime_dir="${INTERNAL_REAL_DIR}/${spec_slug}"
+  mkdir -p "${spec_runtime_dir}"
+  spec_state_file="${spec_runtime_dir}/sandbox-control.env"
+  spec_config_path="${spec_runtime_dir}/sandbox-manager.yaml"
+  spec_sandbox_log="${spec_runtime_dir}/sandbox-manager.log"
+  spec_cleaner_log="${spec_runtime_dir}/sandbox-cleaner.log"
+
+  cp "${CONFIG_PATH}" "${spec_config_path}"
+  write_sandbox_state_file "${spec_state_file}" "${spec_config_path}" "${spec_sandbox_log}" "${spec_cleaner_log}"
+  reset_sandbox_runtime "${spec_state_file}"
+
+  echo "[internal-real-gate] starting isolated sandbox manager for ${spec_slug} on :${SANDBOX_PORT}" >&2
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" start-manager 1>&2
+  if [[ "${cleaner_mode}" == "with-cleaner" ]]; then
+    echo "[internal-real-gate] starting isolated sandbox cleaner for ${spec_slug}" >&2
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" bash "${CONTROL_SCRIPT}" start-cleaner 1>&2
+  fi
+  CURRENT_SANDBOX_STATE_FILE="${spec_state_file}"
+  printf '%s\n' "${spec_state_file}"
+}
 
 info "running internal notebook workspace real integration"
 info "internal screenshots and review artifacts will be written to:"
@@ -447,6 +487,7 @@ run_internal_spec() {
   local spec="$1"
   local spec_api_port="$2"
   local spec_web_port="$3"
+  local spec_state_file="$4"
   local spec_slug
   local spec_agent_execution_ws_base_url
   spec_slug="$(basename "${spec}" .spec.ts)"
@@ -481,7 +522,7 @@ run_internal_spec() {
       INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
       AGENT_EXECUTION_WS_BASE_URL="${spec_agent_execution_ws_base_url}" \
       INTERNAL_REAL_VISUAL_ARTIFACT_DIR="${INTERNAL_VISUAL_ARTIFACT_DIR}" \
-      INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" \
+      INTERNAL_SANDBOX_REAL_STATE_FILE="${spec_state_file}" \
       INTEGRATION_KEEP_FAILED_ENV="${KEEP_FAILED_ENV}" \
       POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
       MONGO_PORT="${INTEGRATION_MONGO_PORT}" \
@@ -499,19 +540,34 @@ run_internal_spec() {
 }
 
 set +e
-run_internal_spec e2e/integration-internal-notebook-workspace.spec.ts "${API_PORT}" "${WEB_PORT}"
+WORKSPACE_STATE_FILE="$(prepare_internal_spec_runtime "integration-internal-notebook-workspace" "with-cleaner")"
+gate_record_preflight_check "${INTERNAL_REAL_DIR}" "workspace_spec_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
+run_internal_spec e2e/integration-internal-notebook-workspace.spec.ts "${API_PORT}" "${WEB_PORT}" "${WORKSPACE_STATE_FILE}"
 WORKSPACE_STATUS=$?
+RECLAIM_STATUS=0
 if [[ "${WORKSPACE_STATUS}" -eq 0 ]]; then
   gate_record_preflight_check "${INTERNAL_REAL_DIR}" "workspace_spec" "passed" "integration-internal-notebook-workspace"
 else
   gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "workspace_spec" "integration-internal-notebook-workspace failed with status ${WORKSPACE_STATUS}"
 fi
-run_internal_spec e2e/integration-internal-sandbox-reclaim.spec.ts "$((API_PORT + 1))" "$((WEB_PORT + 1))"
-RECLAIM_STATUS=$?
-if [[ "${RECLAIM_STATUS}" -eq 0 ]]; then
-  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec" "passed" "integration-internal-sandbox-reclaim"
-elif [[ "${WORKSPACE_STATUS}" -eq 0 ]]; then
-  gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${RECLAIM_STATUS}"
+if [[ "${WORKSPACE_STATUS}" -eq 0 ]]; then
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${WORKSPACE_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${WORKSPACE_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+
+  RECLAIM_STATE_FILE="$(prepare_internal_spec_runtime "integration-internal-sandbox-reclaim" "with-cleaner")"
+  gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec_sandbox_manager" "passed" "port ${SANDBOX_PORT}"
+  run_internal_spec e2e/integration-internal-sandbox-reclaim.spec.ts "$((API_PORT + 1))" "$((WEB_PORT + 1))" "${RECLAIM_STATE_FILE}"
+  RECLAIM_STATUS=$?
+  if [[ "${RECLAIM_STATUS}" -eq 0 ]]; then
+    gate_record_preflight_check "${INTERNAL_REAL_DIR}" "reclaim_spec" "passed" "integration-internal-sandbox-reclaim"
+  else
+    gate_record_failure "${INTERNAL_REAL_DIR}" "scenario_assertion_failed" "reclaim_spec" "integration-internal-sandbox-reclaim failed with status ${RECLAIM_STATUS}"
+  fi
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${RECLAIM_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${RECLAIM_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
+elif [[ "${KEEP_FAILED_ENV}" != "1" ]]; then
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${WORKSPACE_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${WORKSPACE_STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
 fi
 set -e
 

@@ -50,6 +50,7 @@ copy_source_tree() {
     --exclude='coverage' \
     --exclude='playwright-report' \
     --exclude='test-results' \
+    --exclude='target' \
     -cf - . | tar -C "${dst}" -xf -
 }
 

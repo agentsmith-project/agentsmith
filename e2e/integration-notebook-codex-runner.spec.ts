@@ -399,7 +399,8 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         projectId,
         taskId,
         content: [
-          'Use the `mbos-context` builtin skill to read the task context key `notes.current_task`.',
+          'Run this exact shell command and use its stdout value in your final reply:',
+          '`python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope task --key notes.current_task`',
           'Reply with exactly one line in this format and no extra text:',
           '`CTX_TASK::<note>`',
         ].join(' '),

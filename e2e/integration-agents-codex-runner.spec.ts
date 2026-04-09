@@ -278,7 +278,9 @@ test.describe('@lane-real external agent codex-runner integration', () => {
       const composer = page.getByTestId('chat__composer').locator('textarea');
       await composer.fill(
         [
-          'Use the `mbos-context` builtin skill to read the member context keys `credentials.jira_base_url` and `credentials.jira_token`.',
+          'Run these exact shell commands and use their stdout values in your final reply:',
+          '`python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope member --key credentials.jira_base_url`',
+          '`python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope member --key credentials.jira_token`',
           'Reply with exactly one line in this format and no extra text:',
           '`CTX_CONTEXT::<jira_base_url>::<jira_token>`',
         ].join(' '),

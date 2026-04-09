@@ -49,6 +49,8 @@
     "test:member-isolation:default": "bash scripts/member-isolation-default-gate.sh",
     "test:backend-real:core": "bash scripts/workspace-project-default-gate.sh --with-backend-real",
     "test:e2e:integration:member-isolation": "bash scripts/member-isolation-backend-real-gate.sh",
+    "test:skills:fast": "bash scripts/skills-runtime-fast-gate.sh",
+    "test:skills:backend-real": "bash scripts/skills-runtime-backend-real-gate.sh",
     "test:internal:backend-real:ownership": "bash scripts/internal-ownership-backend-real-gate.sh",
     "test:feishu:real:credential": "bash scripts/feishu-real-credential-gate.sh",
     "test:api-key-endpoint-access": "bash scripts/api-key-endpoint-access-gate.sh",

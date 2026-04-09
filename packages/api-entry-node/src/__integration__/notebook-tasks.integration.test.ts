@@ -1763,6 +1763,7 @@ describe('api-entry-node notebook task routes', () => {
     );
     expect(createTerminalRes.status).toBe(201);
     expect(capturedExecutionContext).toBeTruthy();
+    expect(capturedExecutionContext?.task_id).toBe(task.id);
     expect(capturedExecutionContext?.workspace_binding_mode).toBe('file_library');
     expect(capturedExecutionContext?.workspace_path).toBeUndefined();
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
@@ -1865,6 +1866,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(ensuredWorkspaceTaskId).toBe(task.id);
     expect(ensuredWorkspaceMountPath).toBe(`/workspace/${task.id}`);
     expect(capturedExecutionContext).toBeTruthy();
+    expect(capturedExecutionContext?.task_id).toBe(task.id);
     expect(capturedExecutionContext?.workspace_binding_mode).toBe('pre_mounted');
     expect(capturedExecutionContext?.workspace_path).toBe(`/workspace/${task.id}`);
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);

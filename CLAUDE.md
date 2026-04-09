@@ -88,6 +88,10 @@ make bootstrap / api-dev / web / e2e / deps-down
 **unit**: Vitest, jsdom, 40% coverage, `**/__tests__/**/*.test.*`
 **e2e**: Playwright, projects: smoke (26), chromium (146), visual (29), fixtures: `e2e/fixtures/test-base.ts`
 **执行**: 不让 Playwright 管理服务启动, 手动启动后用 `BASE_URL` 运行, 清理代理环境变量, UI 变更需跑 visual e2e
+**skill runtime gate**:
+- 改 builtin skills、runner skill env、Context Store route/store、managed credential resolution 时，至少跑 `npm run test:skills:fast`
+- 改 chat/notebook/terminal execution context、agent ticket scope、Context Store ownership 时，再加跑 `npm run test:skills:backend-real`
+- `test:skills:*` 覆盖的是 builtin skills + runner runtime + Context Store 主链，不替代共享 context UI、治理、files 等业务 gate
 
 ## 测试 ID 规范
 **format**: `scope__element__state` (e.g., `login__submit`, `projects__create-button`)
@@ -122,6 +126,7 @@ make bootstrap / api-dev / web / e2e / deps-down
 - AgentSmith 的成员/任务级上下文、简单 credentials、共享说明通过 `mbos-context` builtin skill 和 AgentSmith Context Store 获取，不应假设它们存在于 workspace 文件树中。
 - Context Store 的正式 scopes 是 `member / task / project / workspace`：`member` 表示当前 workspace 内成员私有上下文，`task` 表示当前成员拥有的任务上下文，`project/workspace` 表示共享上下文。
 - 复杂 OAuth 凭据（例如 Feishu）通过只读 context 视图暴露，例如 `managed_credentials.feishu`；不要尝试在 workspace 中查找或持久化这类凭据文件。
+- skill runtime 的正式主链覆盖 chat / notebook / terminal 三条执行路径；如果改动影响 skill env、ticket scope 或 Context Store 路由，必须把对应 `test:skills:*` gate 一起更新或回归验证。
 - Codex 运行时状态位于 `~/.codex`；runner 自己的 task 元数据位于 `~/.mbos`；用户可见输出放在 `~/.artifacts`。
 - 如果需要安装 Python / Node / Rust 环境或库，只能使用 user 模式并安装到 home 下：
   - Python: `python3 -m pip install --user ...`

@@ -7,6 +7,7 @@ import {
   KEYCLOAK_DEV_ADMIN_USERNAME,
   BACKEND_REAL_ANTHROPIC_BASE_URL,
   BACKEND_REAL_MODEL,
+  createTerminalSessionViaApi,
   createCredentialViaUi,
   createEndpointViaApi,
   createExternalCodexAgentBundle,
@@ -18,6 +19,7 @@ import {
   mountFileLibraryLocally,
   putContextEntryViaApi,
   resolveMountedTaskRoot,
+  runTerminalCommandViaWs,
   sendTaskMessage,
   startCodexRunnerProcess,
   startCodexRunnerDockerProcess,
@@ -497,6 +499,141 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         content: contextValue,
         task_id: taskId,
       }));
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  test('reads task context through mbos-context inside a real notebook terminal session', async ({ page }) => {
+    test.setTimeout(720_000);
+    const providerApiKey = requireRealLaneApiKey();
+
+    await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Notebook Terminal Context');
+    const workspaceLibraryName = `Notebook Terminal Context Workspace ${Date.now()}`;
+    const fileLibraryId = await createFileLibraryViaUi(page, 'ws_default', projectId, workspaceLibraryName);
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName: `Provider Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    const agentBundle = await createExternalCodexAgentBundle(page, {
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      title: 'codex-notebook-terminal-context',
+    });
+
+    const runner = await startCodexRunnerProcess({
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    });
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+
+    try {
+      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+      const taskId = await createNotebookTaskViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        title: `Notebook Terminal Context ${Date.now()}`,
+        agentId: agentBundle.agentId,
+        fileLibraryId,
+      });
+
+      const taskNote = `TERM_TASK_CTX_${Date.now()}`;
+      const doneMarker = `TERM_CTX_DONE_${Date.now()}`;
+      await putContextEntryViaApi({
+        page,
+        scope: 'task',
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        key: 'notes.current_task',
+        content: taskNote,
+      });
+
+      const terminalSession = await createTerminalSessionViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        shell: '/usr/bin/bash',
+      });
+
+      const output = await runTerminalCommandViaWs({
+        wsUrl: terminalSession.wsUrl,
+        command: `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope task --key notes.current_task; printf '${doneMarker}\\n'`,
+        waitFor: [taskNote, doneMarker],
+      });
+
+      expect(output).toContain(taskNote);
+      expect(output).toContain(doneMarker);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  test('rejects shared workspace context writes inside a real notebook terminal session', async ({ page }) => {
+    test.setTimeout(720_000);
+    const providerApiKey = requireRealLaneApiKey();
+
+    await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Notebook Terminal Shared Read Only');
+    const workspaceLibraryName = `Notebook Terminal Shared Workspace ${Date.now()}`;
+    const fileLibraryId = await createFileLibraryViaUi(page, 'ws_default', projectId, workspaceLibraryName);
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName: `Provider Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    const agentBundle = await createExternalCodexAgentBundle(page, {
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      title: 'codex-notebook-terminal-shared-ro',
+    });
+
+    const runner = await startCodexRunnerProcess({
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    });
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+
+    try {
+      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+      const taskId = await createNotebookTaskViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        title: `Notebook Terminal Shared Read Only ${Date.now()}`,
+        agentId: agentBundle.agentId,
+        fileLibraryId,
+      });
+
+      const doneMarker = `TERM_SHARED_DONE_${Date.now()}`;
+      const terminalSession = await createTerminalSessionViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        shell: '/usr/bin/bash',
+      });
+
+      const output = await runTerminalCommandViaWs({
+        wsUrl: terminalSession.wsUrl,
+        command: `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py put --scope workspace --key shared.terminal_attempt --content denied 2>&1 || true; printf '${doneMarker}\\n'`,
+        waitFor: ['context_scope_read_only_for_agent', doneMarker],
+      });
+
+      expect(output.toLowerCase()).toContain('context_scope_read_only_for_agent');
+      expect(output).toContain(doneMarker);
     } finally {
       await runner.stop();
     }

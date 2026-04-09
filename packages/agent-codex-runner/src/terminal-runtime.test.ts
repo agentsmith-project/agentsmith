@@ -176,6 +176,32 @@ describe('terminal-runtime', () => {
     expect(nodePtyKillMock).toHaveBeenCalledWith('SIGTERM');
   });
 
+  it('leaves MBOS_AGENT_TASK_ID empty when terminal execution context has no task', async () => {
+    await startTerminalProcess({
+      executionContext: {
+        api_base: 'http://localhost:20000',
+        execution_ticket: 'ticket_chat',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+      },
+      shell: '/usr/bin/bash',
+    });
+
+    expect(nodePtySpawnMock).toHaveBeenCalledWith(
+      '/usr/bin/bash',
+      ['-i'],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          MBOS_AGENT_API_BASE: 'http://localhost:20000',
+          MBOS_AGENT_EXECUTION_TICKET: 'ticket_chat',
+          MBOS_AGENT_WORKSPACE_ID: 'ws_default',
+          MBOS_AGENT_PROJECT_ID: 'proj_1',
+          MBOS_AGENT_TASK_ID: '',
+        }),
+      }),
+    );
+  });
+
   it('tracks exit code from node-pty exit events', async () => {
     let onExitHandler: ((event: { exitCode: number; signal?: number }) => void) | undefined;
     nodePtyOnExitMock.mockImplementation((handler: (event: { exitCode: number; signal?: number }) => void) => {

@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test';
 import {
+  API_BASE,
+  BACKEND_REAL_ANTHROPIC_BASE_URL,
+  BACKEND_REAL_MODEL,
+  createCredentialViaUi,
+  createEndpointViaApi,
+  createExternalCodexAgentBundle,
+  createFileLibraryViaUi,
+  createNotebookTaskViaApi,
+  createProjectInWorkspace,
   ensureIntegrationKeycloakUsers,
   getContextEntryViaApi,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
@@ -8,7 +17,18 @@ import {
   KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
   keycloakLoginToWorkspace,
   putContextEntryViaApi,
+  startCodexRunnerProcess,
+  waitForAgentPresenceOnline,
 } from './integration-real-helpers';
+import { readStoredAuthToken } from './integration-workspace-access';
+
+function requireRealLaneApiKey(): string {
+  const value = process.env.BACKEND_REAL_API_KEY?.trim();
+  if (!value) {
+    throw new Error('missing_BACKEND_REAL_API_KEY');
+  }
+  return value;
+}
 
 test.describe('@lane-real context store isolation', () => {
   test('member context stays private between workspace members', async ({ browser, page }) => {
@@ -112,6 +132,93 @@ test.describe('@lane-real context store isolation', () => {
       }));
     } finally {
       await memberContext.close();
+    }
+  });
+
+  test('task context stays private to the task owner within the same workspace', async ({ browser, page }) => {
+    test.setTimeout(720_000);
+    const providerApiKey = requireRealLaneApiKey();
+
+    await ensureIntegrationKeycloakUsers();
+    await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Context Store Task Isolation');
+    const fileLibraryId = await createFileLibraryViaUi(page, 'ws_default', projectId, `Task Isolation Workspace ${Date.now()}`);
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName: `Provider Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    const agentBundle = await createExternalCodexAgentBundle(page, {
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      title: `task-isolation-${Date.now()}`,
+    });
+
+    const runner = await startCodexRunnerProcess({
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    });
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+
+    try {
+      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+
+      const taskId = await createNotebookTaskViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        title: `Task Isolation ${Date.now()}`,
+        agentId: agentBundle.agentId,
+        fileLibraryId,
+      });
+
+      const contextKey = `notes.task_private_${Date.now()}`;
+      const contextValue = `task_private_${Date.now()}`;
+      await putContextEntryViaApi({
+        page,
+        scope: 'task',
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        key: contextKey,
+        content: contextValue,
+      });
+
+      const memberContext = await browser.newContext();
+      const memberPage = await memberContext.newPage();
+      try {
+        await keycloakLoginToWorkspace(
+          memberPage,
+          'ws_default',
+          KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
+          KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
+        );
+
+        const memberToken = await readStoredAuthToken(memberPage);
+        const params = new URLSearchParams({
+          scope: 'task',
+          key: contextKey,
+          workspace_id: 'ws_default',
+          project_id: projectId,
+          task_id: taskId,
+        });
+        const response = await memberPage.request.get(
+          `${API_BASE}/api/v1/context?${params.toString()}`,
+          { headers: { Authorization: `Bearer ${memberToken}` } },
+        );
+        expect([403, 404]).toContain(response.status());
+        const body = (await response.json().catch(() => null)) as { error_code?: string; message?: string } | null;
+        expect(body?.message).toBe('context_task_not_found');
+        expect(['FORBIDDEN', 'NOT_FOUND']).toContain(body?.error_code ?? '');
+      } finally {
+        await memberContext.close();
+      }
+    } finally {
+      await runner.stop();
     }
   });
 });

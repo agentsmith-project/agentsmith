@@ -2,6 +2,7 @@ import { access, appendFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { WebSocket } from 'ws';
 import { expect, type Page } from '@playwright/test';
 import {
   evaluateNotebookExecutionSnapshot,
@@ -983,6 +984,127 @@ export async function sendTaskMessage(args: {
     },
   );
   expect(response.ok()).toBeTruthy();
+}
+
+export async function createTerminalSessionViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  cols?: number;
+  rows?: number;
+  shell?: string;
+}): Promise<{ sessionId: string; wsUrl: string }> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/terminal/sessions`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        cols: args.cols ?? 120,
+        rows: args.rows ?? 40,
+        ...(args.shell?.trim() ? { shell: args.shell.trim() } : {}),
+      },
+    },
+  );
+  if (!response.ok()) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`create_terminal_session_failed:${response.status()}:${body}`);
+  }
+  const payload = (await response.json().catch(() => null)) as { session_id?: string; ws_url?: string } | null;
+  const sessionId = payload?.session_id?.trim();
+  const wsUrl = payload?.ws_url?.trim();
+  if (!sessionId || !wsUrl) {
+    throw new Error('terminal_session_payload_incomplete');
+  }
+  return { sessionId, wsUrl };
+}
+
+export async function runTerminalCommandViaWs(args: {
+  wsUrl: string;
+  command: string;
+  waitFor: string[];
+  timeoutMs?: number;
+}): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const ws = new WebSocket(args.wsUrl);
+    const timeout = setTimeout(() => {
+      if (done) return;
+      done = true;
+      ws.close();
+      reject(new Error(`terminal_ws_timeout:${args.waitFor.join(',')}`));
+    }, args.timeoutMs ?? 120_000);
+    let output = '';
+    let done = false;
+
+    const finish = (value: string) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timeout);
+      try {
+        ws.close();
+      } catch {
+        // ignore close races
+      }
+      resolve(value);
+    };
+
+    ws.on('open', () => {
+      ws.send(JSON.stringify({ type: 'terminal.resize', cols: 120, rows: 40 }));
+    });
+
+    ws.on('message', (raw) => {
+      let payload: { type?: string; chunk?: string; error_message?: string } | null = null;
+      try {
+        payload = JSON.parse(raw.toString('utf-8')) as { type?: string; chunk?: string; error_message?: string };
+      } catch {
+        return;
+      }
+      if (!payload) return;
+      if (payload.type === 'started') {
+        if (done) return;
+        ws.send(JSON.stringify({ type: 'terminal.stdin', data: `${args.command}\n` }));
+        return;
+      }
+      if (payload.type === 'output' && typeof payload.chunk === 'string') {
+        if (done) return;
+        output += payload.chunk;
+        if (args.waitFor.every((needle) => output.includes(needle))) {
+          finish(output);
+        }
+        return;
+      }
+      if (payload.type === 'error') {
+        if (done) return;
+        done = true;
+        clearTimeout(timeout);
+        reject(new Error(`terminal_ws_error:${payload.error_message ?? 'unknown'}`));
+      }
+    });
+
+    ws.on('error', (error) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timeout);
+      reject(error);
+    });
+
+    ws.on('close', () => {
+      if (done) return;
+      if (args.waitFor.every((needle) => output.includes(needle))) {
+        done = true;
+        clearTimeout(timeout);
+        resolve(output);
+        return;
+      }
+      done = true;
+      clearTimeout(timeout);
+      reject(new Error(`terminal_ws_closed_before_match:${args.waitFor.join(',')}`));
+    });
+  });
 }
 
 export async function waitForAssistantToken(args: {

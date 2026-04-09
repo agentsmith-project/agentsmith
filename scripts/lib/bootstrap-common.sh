@@ -87,7 +87,7 @@ run_deploy_bootstrap() {
   external_runner_connected() {
     local runner_logs
     runner_logs="$(docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 || true)"
-    grep -q '\[agent-codex-runner\] connected' <<<"${runner_logs}"
+    grep -q '\[notebook-codex-runner\] connected' <<<"${runner_logs}"
   }
 
   external_runner_has_expected_no_proxy() {
@@ -332,7 +332,7 @@ run_deploy_bootstrap() {
       curl -sS -X POST "${PROJECT_BASE}/agents" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[3], mode:"external", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' "${ANTHROPIC_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}" "${PRESET_EXTERNAL_AGENT_NAME}")"
+        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[3], mode:"external", interaction_kind:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' "${ANTHROPIC_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}" "${PRESET_EXTERNAL_AGENT_NAME}")"
     )"
     EXTERNAL_AGENT_ID="$(printf '%s' "${external_agent_resp}" | json_extract id)"
   fi
@@ -340,7 +340,7 @@ run_deploy_bootstrap() {
   curl -sS -X PATCH "${PROJECT_BASE}/agents/${EXTERNAL_AGENT_ID}" \
     -H "Authorization: Bearer ${TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}}))' "${ANTHROPIC_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}")" >/dev/null
+      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}}))' "${ANTHROPIC_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}")" >/dev/null
 
   EXTERNAL_AGENT_KEY="${MBOS_AGENT_KEY:-}"
   if [[ -z "${EXTERNAL_AGENT_KEY}" ]]; then
@@ -367,7 +367,7 @@ run_deploy_bootstrap() {
         curl -sS -X POST "${PROJECT_BASE}/agents" \
           -H "Authorization: Bearer ${TOKEN}" \
           -H 'Content-Type: application/json' \
-          -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[6], mode:"internal", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{image:process.argv[3], endpoint_id:process.argv[1], cpu_request:"500m", cpu_limit:"2", memory_request:"512Mi", memory_limit:"4Gi", idle_timeout_sec:Number(process.argv[4]), max_lifetime_sec:Number(process.argv[5])}, capabilities:{streaming_completion:true}}))' "${ANTHROPIC_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}" "${INTERNAL_AGENT_IMAGE}" "${PRESET_INTERNAL_AGENT_IDLE_TIMEOUT_SECONDS}" "${PRESET_INTERNAL_AGENT_MAX_LIFETIME_SECONDS}" "${PRESET_INTERNAL_AGENT_NAME}")"
+          -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[6], mode:"internal", interaction_kind:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{image:process.argv[3], endpoint_id:process.argv[1], cpu_request:"500m", cpu_limit:"2", memory_request:"512Mi", memory_limit:"4Gi", idle_timeout_sec:Number(process.argv[4]), max_lifetime_sec:Number(process.argv[5])}, capabilities:{streaming_completion:true}}))' "${ANTHROPIC_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}" "${INTERNAL_AGENT_IMAGE}" "${PRESET_INTERNAL_AGENT_IDLE_TIMEOUT_SECONDS}" "${PRESET_INTERNAL_AGENT_MAX_LIFETIME_SECONDS}" "${PRESET_INTERNAL_AGENT_NAME}")"
       )"
       INTERNAL_AGENT_ID="$(printf '%s' "${internal_agent_resp}" | json_extract id)"
     fi

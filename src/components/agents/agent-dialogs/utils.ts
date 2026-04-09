@@ -1,6 +1,6 @@
 import type { CreateAgentRequest } from '@/lib/api/endpoints/agents';
 
-import type { AgentInteractionMode, AgentMode, EnvEntry } from './types';
+import type { AgentInteractionKind, AgentMode, EnvEntry } from './types';
 
 export function endpointLabel(endpoint: {
   name: string;
@@ -17,20 +17,20 @@ export function buildCreateAgentPayload(params: {
   cpuRequest: string;
   description: string;
   envEntries: EnvEntry[];
+  executionEndpointId: string;
   externalAcceptedMimeTypes: string;
   externalMaxFileCount: string;
   externalMaxTotalBytes: string;
   externalMultimodal: boolean;
   idleTimeoutSec: string;
   image: string;
-  interactionMode: AgentInteractionMode;
+  interactionKind: AgentInteractionKind;
   maxConcurrentSessions: string;
   maxLifetimeSec: string;
   memoryLimit: string;
   memoryRequest: string;
   mode: AgentMode;
   name: string;
-  notebookEndpointId: string;
 }): CreateAgentRequest {
   const parsedMaxFileCount = Number.parseInt(params.externalMaxFileCount, 10);
   const parsedMaxTotalBytes = Number.parseInt(params.externalMaxTotalBytes, 10);
@@ -39,7 +39,7 @@ export function buildCreateAgentPayload(params: {
     name: params.name.trim(),
     description: params.description.trim() || undefined,
     mode: params.mode,
-    interaction_mode: params.interactionMode,
+    interaction_kind: params.interactionKind,
     capabilities: {
       streaming_completion: true,
       multimodal_completion: params.mode === 'external' ? params.externalMultimodal : false,
@@ -55,6 +55,24 @@ export function buildCreateAgentPayload(params: {
     },
   };
 
+  const endpointId = params.executionEndpointId.trim();
+  const executionPreferences =
+    params.interactionKind === 'chat'
+        ? {
+            chat: {
+              executor: 'llm_passthrough',
+              endpoint_id: endpointId,
+              wire_api: 'chat',
+            },
+          }
+      : {
+          notebook: {
+            executor: 'codex_cli',
+            endpoint_id: endpointId,
+            wire_api: params.mode === 'internal' ? 'responses' : 'chat',
+          },
+        };
+
   if (params.mode === 'internal') {
     const env: Record<string, string> = {};
     params.envEntries.forEach(({ key, value }) => {
@@ -64,7 +82,6 @@ export function buildCreateAgentPayload(params: {
     const parsedMaxLifetimeSec = Number.parseInt(params.maxLifetimeSec, 10);
     data.config = {
       image: params.image.trim(),
-      endpoint_id: params.notebookEndpointId.trim(),
       cpu_request: params.cpuRequest.trim() || undefined,
       cpu_limit: params.cpuLimit.trim() || undefined,
       memory_request: params.memoryRequest.trim() || undefined,
@@ -76,24 +93,8 @@ export function buildCreateAgentPayload(params: {
         ? Number.parseInt(params.maxConcurrentSessions, 10)
         : undefined,
     };
-    data.execution_preferences = {
-      notebook: {
-        executor: 'codex_cli',
-        endpoint_id: params.notebookEndpointId.trim(),
-        wire_api: 'responses',
-      },
-    };
   }
 
-  if (params.mode === 'external' && (params.interactionMode === 'notebook' || params.interactionMode === 'both')) {
-    data.execution_preferences = {
-      notebook: {
-        executor: 'codex_cli',
-        endpoint_id: params.notebookEndpointId.trim(),
-        wire_api: 'chat',
-      },
-    };
-  }
-
+  data.execution_preferences = executionPreferences;
   return data;
 }

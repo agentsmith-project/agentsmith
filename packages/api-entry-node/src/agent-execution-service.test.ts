@@ -10,6 +10,7 @@ const servers: Server[] = [];
 const sockets: WebSocket[] = [];
 
 afterEach(async () => {
+  delete process.env.PUBLIC_API_BASE_URL;
   for (const ws of sockets) {
     try {
       ws.close();
@@ -29,7 +30,7 @@ afterEach(async () => {
   servers.length = 0;
 });
 
-async function setupExecutionService(options?: { endpointId?: string }) {
+async function setupExecutionService(options?: { endpointId?: string; interactionKind?: 'chat' | 'notebook' }) {
   const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
   const executionService = new AgentExecutionService(agentResourceService);
   const server = http.createServer((_req, res) => {
@@ -45,10 +46,11 @@ async function setupExecutionService(options?: { endpointId?: string }) {
   const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
     name: 'execution-agent',
     mode: 'external',
+    ...(options?.interactionKind ? { interaction_kind: options.interactionKind } : {}),
     ...(options?.endpointId
       ? {
         execution_preferences_json: {
-          notebook: {
+          [(options?.interactionKind ?? 'notebook')]: {
             endpoint_id: options.endpointId,
           },
         },
@@ -90,7 +92,11 @@ async function setupExecutionService(options?: { endpointId?: string }) {
 
 describe('AgentExecutionService', () => {
   it('includes static resource proxy base in server.hello when agent endpoint is configured', async () => {
-    const { wsBase, helloFramePromise } = await setupExecutionService({ endpointId: 'ep_hello' });
+    process.env.PUBLIC_API_BASE_URL = 'http://trusted.example/api/v1';
+    const { helloFramePromise } = await setupExecutionService({
+      endpointId: 'ep_hello',
+      interactionKind: 'notebook',
+    });
     const hello = await helloFramePromise;
     expect(hello.type).toBe('server.hello');
     const payload = (hello.payload ?? {}) as {
@@ -101,8 +107,78 @@ describe('AgentExecutionService', () => {
     expect(payload.protocol_version).toBe('1.0');
     expect(payload.heartbeat_interval_sec).toBe(15);
     expect(payload.resource_proxy?.base_url).toBe(
-      `${wsBase.replace(/^ws:\/\//, 'http://')}`
+      'http://trusted.example'
       + `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_hello/proxy/openai`,
+    );
+  });
+
+  it('includes static resource proxy base in server.hello for chat agents using trusted configured api base', async () => {
+    process.env.PUBLIC_API_BASE_URL = 'http://trusted.example/api/v1';
+    const { helloFramePromise } = await setupExecutionService({
+      endpointId: 'ep_chat_hello',
+      interactionKind: 'chat',
+    });
+    const hello = await helloFramePromise;
+    const payload = (hello.payload ?? {}) as {
+      resource_proxy?: { base_url?: string };
+    };
+    expect(payload.resource_proxy?.base_url).toBe(
+      'http://trusted.example'
+      + '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_chat_hello/proxy/openai',
+    );
+  });
+
+  it('does not trust forwarded host headers when building server.hello resource proxy base', async () => {
+    process.env.PUBLIC_API_BASE_URL = 'http://trusted.example/api/v1';
+    const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
+    const executionService = new AgentExecutionService(agentResourceService);
+    const server = http.createServer((_req, res) => {
+      res.statusCode = 404;
+      res.end();
+    });
+    server.on('upgrade', (req, socket, head) => executionService.handleUpgrade(req, socket, head));
+    server.listen(0);
+    servers.push(server);
+    const address = server.address() as AddressInfo;
+
+    const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'secure-agent',
+      mode: 'external',
+      interaction_kind: 'chat',
+      execution_preferences_json: {
+        chat: {
+          endpoint_id: 'ep_secure',
+        },
+      },
+    });
+    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
+
+    const ws = new WebSocket(`ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`, {
+      headers: {
+        Authorization: `Bearer ${keyPair.key}`,
+        Host: 'evil.example:8443',
+        'X-Forwarded-Host': 'evil.example:8443',
+        'X-Forwarded-Proto': 'https',
+      },
+    });
+    sockets.push(ws);
+
+    const hello = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      ws.once('error', reject);
+      ws.on('message', (raw) => {
+        try {
+          const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+          if (message.type === 'server.hello') {
+            resolve(message);
+          }
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    const payload = (hello.payload ?? {}) as { resource_proxy?: { base_url?: string } };
+    expect(payload.resource_proxy?.base_url).toBe(
+      'http://trusted.example/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_secure/proxy/openai',
     );
   });
 
@@ -146,6 +222,65 @@ describe('AgentExecutionService', () => {
         executor: 'codex_cli',
         wire_api: 'chat',
       },
+    });
+  });
+
+  it('rejects runner_spec interaction_kind mismatch during agent.ready handshake', async () => {
+    const { agentResourceService, agent, ws } = await setupExecutionService();
+    await agentResourceService.updateAgent('ws_default', 'proj_1', agent.id, {
+      interaction_kind: 'chat',
+    });
+
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.on('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    ws.send(JSON.stringify({
+      type: 'agent.ready',
+      payload: {
+        runner_spec: {
+          interaction_kind: 'notebook',
+        },
+      },
+    }));
+
+    await expect(closed).resolves.toEqual({
+      code: 1008,
+      reason: 'agent_runner_spec_mismatch',
+    });
+  });
+
+  it('rejects runner_spec when notebook fields do not match the expected notebook app contract', async () => {
+    const { agentResourceService, agent, ws } = await setupExecutionService();
+    await agentResourceService.updateAgent('ws_default', 'proj_1', agent.id, {
+      interaction_kind: 'notebook',
+    });
+
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.on('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    ws.send(JSON.stringify({
+      type: 'agent.ready',
+      payload: {
+        runner_spec: {
+          interaction_kind: 'notebook',
+          app_family: 'codex_runner',
+          protocol_version: '1.0',
+          context_model: 'cli_session',
+          workspace_policy: 'persistent_task_workspace',
+          supports_terminal: false,
+        },
+      },
+    }));
+
+    await expect(closed).resolves.toEqual({
+      code: 1008,
+      reason: 'agent_runner_spec_mismatch',
     });
   });
 

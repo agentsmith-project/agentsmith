@@ -25,10 +25,10 @@ JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
 INGRESS_NGINX_VERSION="${INGRESS_NGINX_VERSION:-v1.15.1}"
 
 APP_BASE_IMAGE="agentsmith-app-base:${RELEASE_ID}"
-RUNNER_BASE_IMAGE="agentsmith-codex-runner-base:${RELEASE_ID}"
+RUNNER_BASE_IMAGE="agentsmith-notebook-codex-runner-base:${RELEASE_ID}"
 VERIFY_RUNNER_BASE_IMAGE="agentsmith-verify-runner-base:${RELEASE_ID}"
 APP_IMAGE="${IMAGE_PREFIX}/agentsmith-app:${RELEASE_ID}"
-RUNNER_IMAGE="${IMAGE_PREFIX}/agentsmith-codex-runner:${RELEASE_ID}"
+RUNNER_IMAGE="${IMAGE_PREFIX}/agentsmith-notebook-codex-runner:${RELEASE_ID}"
 VERIFY_RUNNER_IMAGE="${IMAGE_PREFIX}/agentsmith-verify-runner:${RELEASE_ID}"
 SANDBOX_MANAGER_IMAGE="${IMAGE_PREFIX}/sandbox-manager:${RELEASE_ID}"
 UNIVERSAL_PROXY_IMAGE="${IMAGE_PREFIX}/llm-universal-proxy:${RELEASE_ID}"
@@ -56,9 +56,9 @@ docker_build_local \
 docker_build_local \
   --build-arg NODE_BASE_IMAGE="${RUNNER_NODE_BASE_IMAGE}" \
   -t "${RUNNER_BASE_IMAGE}" \
-  -f "${APP_SOURCE_DIR}/infra/runner/Dockerfile.agent-codex-runner-base" \
+  -f "${APP_SOURCE_DIR}/infra/runner/Dockerfile.notebook-codex-runner-base" \
   "${APP_SOURCE_DIR}"
-docker_build_local --build-arg RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${APP_SOURCE_DIR}/infra/runner/Dockerfile.agent-codex-runner" "${APP_SOURCE_DIR}"
+docker_build_local --build-arg RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${APP_SOURCE_DIR}/infra/runner/Dockerfile.notebook-codex-runner" "${APP_SOURCE_DIR}"
 docker_build_local \
   --build-arg PLAYWRIGHT_IMAGE="${VERIFY_PLAYWRIGHT_BASE_IMAGE}" \
   --build-arg DOCKER_CLI_IMAGE="${VERIFY_DOCKER_CLI_IMAGE}" \
@@ -83,7 +83,7 @@ cat > "${RELEASE_ROOT}/VERSION" <<EOF
 release_id=${RELEASE_ID}
 agentsmith_app_image=${APP_IMAGE}
 agentsmith_runner_image=${RUNNER_IMAGE}
-agentsmith_runner_k8s_image=${K8S_REGISTRY_HOST}/${REGISTRY_PROJECT}/agentsmith-codex-runner:${RELEASE_ID}
+agentsmith_runner_k8s_image=${K8S_REGISTRY_HOST}/${REGISTRY_PROJECT}/agentsmith-notebook-codex-runner:${RELEASE_ID}
 agentsmith_verify_runner_image=${VERIFY_RUNNER_IMAGE}
 sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}
 sandbox_manager_k8s_image=${K8S_REGISTRY_HOST}/${REGISTRY_PROJECT}/sandbox-manager:${RELEASE_ID}

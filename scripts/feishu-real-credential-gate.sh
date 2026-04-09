@@ -12,7 +12,7 @@ info "checking active workspace/user Feishu connection"
 (cd "${ROOT_DIR}" && bash scripts/manual-feishu-check.sh)
 
 info "running runner-side credential regression tests"
-(cd "${ROOT_DIR}" && python3 -m unittest packages/agent-codex-runner/builtin-skills/feishu-docs/scripts/feishu_mcp_test.py)
+(cd "${ROOT_DIR}" && python3 -m unittest packages/notebook-codex-runner/builtin-skills/feishu-docs/scripts/feishu_mcp_test.py)
 (cd "${ROOT_DIR}" && npm test -- packages/api-entry-node/src/third-party-credential-files.test.ts)
 
 info "feishu real credential gate passed"

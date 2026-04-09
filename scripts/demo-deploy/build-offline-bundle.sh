@@ -91,21 +91,21 @@ APP_BASE_HASH="$(hash_files \
   "${ROOT_DIR}/package-lock.json" \
   "${ROOT_DIR}/packages/adapters-cf/package.json" \
   "${ROOT_DIR}/packages/adapters-private/package.json" \
-  "${ROOT_DIR}/packages/agent-codex-runner/package.json" \
+  "${ROOT_DIR}/packages/notebook-codex-runner/package.json" \
   "${ROOT_DIR}/packages/api-entry-cf/package.json" \
   "${ROOT_DIR}/packages/api-entry-node/package.json" \
   "${ROOT_DIR}/packages/application/package.json" \
   "${ROOT_DIR}/packages/contracts/package.json" \
   "${ROOT_DIR}/packages/domain/package.json" \
   "${ROOT_DIR}/packages/ports/package.json")"
-RUNNER_BASE_HASH="$(hash_files "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner-base")"
+RUNNER_BASE_HASH="$(hash_files "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner-base")"
 VERIFY_RUNNER_BASE_HASH="$(hash_files \
   "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-verify-runner-base" \
   "${ROOT_DIR}/package.json" \
   "${ROOT_DIR}/package-lock.json" \
   "${ROOT_DIR}/packages/adapters-cf/package.json" \
   "${ROOT_DIR}/packages/adapters-private/package.json" \
-  "${ROOT_DIR}/packages/agent-codex-runner/package.json" \
+  "${ROOT_DIR}/packages/notebook-codex-runner/package.json" \
   "${ROOT_DIR}/packages/api-entry-cf/package.json" \
   "${ROOT_DIR}/packages/api-entry-node/package.json" \
   "${ROOT_DIR}/packages/application/package.json" \
@@ -114,10 +114,10 @@ VERIFY_RUNNER_BASE_HASH="$(hash_files \
   "${ROOT_DIR}/packages/ports/package.json")"
 
 APP_BASE_IMAGE="${APP_BASE_IMAGE:-agentsmith-app-base:${APP_BASE_HASH}}"
-RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE:-agentsmith-codex-runner-base:${RUNNER_BASE_HASH}}"
+RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE:-agentsmith-notebook-codex-runner-base:${RUNNER_BASE_HASH}}"
 VERIFY_RUNNER_BASE_IMAGE="${VERIFY_RUNNER_BASE_IMAGE:-agentsmith-verify-runner-base:${VERIFY_RUNNER_BASE_HASH}}"
 APP_IMAGE="${APP_IMAGE:-agentsmith-app:${RELEASE_ID}}"
-RUNNER_IMAGE="${RUNNER_IMAGE:-agentsmith-codex-runner:${RELEASE_ID}}"
+RUNNER_IMAGE="${RUNNER_IMAGE:-agentsmith-notebook-codex-runner:${RELEASE_ID}}"
 VERIFY_RUNNER_IMAGE="${VERIFY_RUNNER_IMAGE:-agentsmith-verify-runner:${RELEASE_ID}}"
 SANDBOX_MANAGER_IMAGE="${SANDBOX_MANAGER_IMAGE:-sandbox-manager:${RELEASE_ID}}"
 UNIVERSAL_PROXY_IMAGE="${UNIVERSAL_PROXY_IMAGE:-llm-universal-proxy:${RELEASE_ID}}"
@@ -144,10 +144,10 @@ echo "[bundle] building app image ${APP_IMAGE}"
 docker_build_local "${BUILD_ARGS[@]}" --build-arg APP_BASE_IMAGE="${APP_BASE_IMAGE}" -t "${APP_IMAGE}" -f "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-app" "${ROOT_DIR}"
 
 echo "[bundle] building external runner base image ${RUNNER_BASE_IMAGE}"
-docker_build_local "${BUILD_ARGS[@]}" -t "${RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner-base" "${ROOT_DIR}"
+docker_build_local "${BUILD_ARGS[@]}" -t "${RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner-base" "${ROOT_DIR}"
 
 echo "[bundle] building external runner image ${RUNNER_IMAGE}"
-docker_build_local "${BUILD_ARGS[@]}" --build-arg RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner" "${ROOT_DIR}"
+docker_build_local "${BUILD_ARGS[@]}" --build-arg RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner" "${ROOT_DIR}"
 
 echo "[bundle] building verify runner base image ${VERIFY_RUNNER_BASE_IMAGE}"
 docker_build_local "${BUILD_ARGS[@]}" -t "${VERIFY_RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-verify-runner-base" "${ROOT_DIR}"

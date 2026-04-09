@@ -76,4 +76,4 @@ export MBOS_AGENT_KEY="${RUNNER_KEY}"
 export MBOS_RUNNER_MODE="${MBOS_RUNNER_MODE:-host_external}"
 
 cd "${ROOT_DIR}"
-exec npm run agent:codex-runner
+exec npm run agent:notebook-runner

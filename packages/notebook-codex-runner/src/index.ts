@@ -30,6 +30,7 @@ import { startTerminalProcess, type TerminalExecutionContext, type TerminalProce
 import { prepareLaunchCommand } from './child-launcher.js';
 import { buildAgentRuntimeEnv } from './agent-runtime-env.js';
 import { buildTaskUserInstallEnv } from './user-install-env.js';
+import { NOTEBOOK_RUNNER_SPEC } from '@mbos/agent-runner';
 
 type ServerStartPayload = {
   model?: string;
@@ -53,11 +54,11 @@ type ServerStartPayload = {
       supports_search_tool?: boolean;
       supports_parallel_tool_calls?: boolean;
     };
+    interaction_kind?: 'chat' | 'notebook';
     workspace_binding_mode?: 'file_library' | 'pre_mounted';
     workspace_file_library_id?: string | null;
     workspace_file_library_name?: string | null;
     workspace_dir_name?: string | null;
-    notebook_mode?: boolean;
     task_inputs?: Array<{
       kind?: 'library_object' | 'artifact' | 'url';
       library_id?: string;
@@ -103,7 +104,7 @@ const cancelKillDelayMs = (() => {
 
 if (!wsUrl || !key) {
   process.stderr.write(
-    'Usage: MBOS_AGENT_WS_URL=ws://... MBOS_AGENT_KEY=ask_xxx [CODEX_BIN=codex] npm run dev -w @mbos/agent-codex-runner\n',
+    'Usage: MBOS_AGENT_WS_URL=ws://... MBOS_AGENT_KEY=ask_xxx [CODEX_BIN=codex] npm run dev -w @mbos/notebook-codex-runner\n',
   );
   process.exit(1);
 }
@@ -244,7 +245,7 @@ function sendRunSummaryEvent(
 function debugLog(message: string, extra?: Record<string, unknown>): void {
   if (!runnerDebug) return;
   const payload = extra ? ` ${JSON.stringify(extra)}` : '';
-  process.stdout.write(`[agent-codex-runner][debug] ${message}${payload}\n`);
+  process.stdout.write(`[notebook-codex-runner][debug] ${message}${payload}\n`);
 }
 
 function closeTerminalSession(terminalSessionId: string, signal: NodeJS.Signals = 'SIGTERM'): void {
@@ -704,7 +705,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     targetDir: taskPaths.skillsDir,
     manifestDir: taskPaths.mbosDir,
   });
-  const isNotebookMode = executionContext.notebook_mode === true;
+  const interactionKind = executionContext.interaction_kind === 'chat' ? 'chat' : 'notebook';
+  const isNotebookMode = interactionKind === 'notebook';
   const resumeSession = isNotebookMode || sessionId.length > 0;
   const userPrompt = selectLatestInstruction(payload.messages);
   const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
@@ -751,7 +753,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     model: payload.model ?? executionContext.model ?? 'gpt-5-codex',
     wireApi: executionContext.wire_api ?? 'responses',
     resourceProxyBase: endpointProxyBase,
-    notebookMode: isNotebookMode,
+    interactionKind,
     modelContextWindow,
     modelAutoCompactTokenLimit,
     modelCatalogSignature: JSON.stringify({
@@ -818,7 +820,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     model_supports_search_tool: modelCatalogSupportsSearchTool,
     model_supports_parallel_tool_calls: modelCatalogSupportsParallelToolCalls,
     has_execution_ticket: Boolean(executionContext.execution_ticket && executionContext.execution_ticket.trim()),
-    notebook_mode: isNotebookMode,
+    interaction_kind: interactionKind,
     resume_session: resumeSession,
     session_id: sessionId || null,
     task_inputs_count: taskInputs.length,
@@ -895,7 +897,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       model_supports_search_tool: modelCatalogSupportsSearchTool,
       model_supports_parallel_tool_calls: modelCatalogSupportsParallelToolCalls,
       yolo: codexYolo,
-      notebook_mode: isNotebookMode,
+      interaction_kind: interactionKind,
       task_inputs_count: taskInputs.length,
       builtin_skills_count: builtinSkillsResult.available.length,
       artifacts_dir: isNotebookMode ? './.artifacts/' : null,
@@ -1219,13 +1221,14 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
 }
 
 ws.on('open', () => {
-  process.stdout.write('[agent-codex-runner] connected\n');
+  process.stdout.write('[notebook-codex-runner] connected\n');
   debugLog('websocket open', { ws_url: wsUrl });
   ws.send(
     JSON.stringify({
       type: 'agent.ready',
       timestamp: new Date().toISOString(),
       payload: {
+        runner_spec: NOTEBOOK_RUNNER_SPEC,
         capabilities: {
           streaming_completion: true,
           multimodal_completion: false,
@@ -1390,7 +1393,7 @@ ws.on('message', (raw) => {
 });
 
 ws.on('close', () => {
-  process.stdout.write('[agent-codex-runner] disconnected\n');
+  process.stdout.write('[notebook-codex-runner] disconnected\n');
   for (const child of runningByRequestId.values()) {
     if (child.exitCode === null) {
       child.kill('SIGTERM');
@@ -1410,5 +1413,5 @@ ws.on('close', () => {
 });
 
 ws.on('error', (error) => {
-  process.stderr.write(`[agent-codex-runner] error: ${error instanceof Error ? error.message : 'unknown'}\n`);
+  process.stderr.write(`[notebook-codex-runner] error: ${error instanceof Error ? error.message : 'unknown'}\n`);
 });

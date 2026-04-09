@@ -5,7 +5,7 @@ import {
   BACKEND_REAL_MODEL,
   createCredentialViaUi,
   createEndpointViaApi,
-  createExternalCodexAgentBundle,
+  createExternalRunnerAgentBundle,
   createFileLibraryViaUi,
   createNotebookTaskViaApi,
   createProjectInWorkspace,
@@ -70,7 +70,7 @@ test.describe('@lane-real ordinary members can use agents but cannot manage them
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId,
       projectId,
       endpointId,

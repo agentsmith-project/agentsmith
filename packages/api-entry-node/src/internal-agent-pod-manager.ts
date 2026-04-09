@@ -38,7 +38,7 @@ export interface InternalAgentPodManager {
     workspaceId: string;
     projectId: string;
     workloadId: string;
-    sessionId: string;
+    sessionId?: string;
     agent: AgentRecord;
     workspaceMount?: InternalAgentWorkspaceMount;
   }): Promise<void>;
@@ -164,6 +164,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     workspaceId: string;
     projectId: string;
     workloadId: string;
+    sessionId?: string;
     agent: AgentRecord;
     workspaceMount?: InternalAgentWorkspaceMount;
   }): Promise<void> {
@@ -244,8 +245,8 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     throw Object.assign(new Error('sandbox_startup_timeout'), { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' });
   }
 
-  private getOnlineState(agentId: string, sessionId: string): boolean {
-    if (typeof this.agentExecution.getAgentSessionOnlineState === 'function') {
+  private getOnlineState(agentId: string, sessionId?: string): boolean {
+    if (sessionId && typeof this.agentExecution.getAgentSessionOnlineState === 'function') {
       return this.agentExecution.getAgentSessionOnlineState(agentId, sessionId);
     }
     return this.agentExecution.getAgentOnlineState(agentId);
@@ -255,7 +256,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     workspaceId: string,
     projectId: string,
     workloadId: string,
-    sessionId: string,
+    sessionId: string | undefined,
     agent: AgentRecord,
     workspaceMount?: InternalAgentWorkspaceMount,
   ): Promise<void> {
@@ -283,7 +284,9 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       });
     }
     let status = await this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId);
-    const wsUrl = `${this.wsBaseUrl.replace(/\/+$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}&session_id=${encodeURIComponent(sessionId)}`;
+    const wsUrl = `${this.wsBaseUrl.replace(/\/+$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}${
+      sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : ''
+    }`;
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (isTerminalPodPhase(status.phase)) {
@@ -326,6 +329,10 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     }
 
     this.checkDeadline(deadline);
-    await this.waitForAgentSessionOnline(agent.id, sessionId, deadline);
+    if (sessionId) {
+      await this.waitForAgentSessionOnline(agent.id, sessionId, deadline);
+    } else {
+      await this.waitForAgentOnline(agent.id, deadline);
+    }
   }
 }

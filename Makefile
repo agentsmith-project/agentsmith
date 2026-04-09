@@ -5,7 +5,7 @@
 	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api \
 	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto \
 	e2e-int-core-local-api e2e-int-core-auto governance-core-smoke \
-	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task notebook-agent-credential-sync-smoke \
+	agent-test-runner notebook-runner chat-runner notebook-agent-refresh-token notebook-agent-smoke-task notebook-agent-credential-sync-smoke \
 	notebook-agent-engineering-smoke notebook-agent-engineering-smoke-full governance-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
 	substrate-up substrate-down substrate-reset substrate-reseed substrate-status \
 	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-config-audit-effect-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
@@ -60,7 +60,7 @@ DATABASE_URL ?= postgresql://mbos:mbos_dev_password@localhost:15432/mbos
 REDIS_URL ?= redis://localhost:16379
 MONGO_URL ?= mongodb://mbos:mbos_dev_password@localhost:17017/admin
 MONGO_DB_NAME ?= mbos
-BUILTIN_SKILLS_DIR_DEFAULT ?= $(CURDIR)/packages/agent-codex-runner/builtin-skills
+BUILTIN_SKILLS_DIR_DEFAULT ?= $(CURDIR)/packages/notebook-codex-runner/builtin-skills
 MBOS_UNIVERSAL_PROXY_BASE_URL ?= http://127.0.0.1:38080
 
 LOCALE ?= en-US
@@ -189,10 +189,11 @@ help-extended:
 	@echo ""
 	@echo "Notebook and runner operations:"
 	@echo "  make agent-test-runner  # start standalone external agent test runner (requires AGENT_WS_URL + AGENT_KEY)"
-	@echo "  make agent-codex-runner # start Codex-based external agent runner (requires AGENT_WS_URL + AGENT_KEY; auto mounts builtin skills)"
+	@echo "  make notebook-runner    # start notebook runner (requires AGENT_WS_URL + AGENT_KEY; auto mounts builtin skills)"
+	@echo "  make chat-runner        # start chat runner (requires AGENT_WS_URL + AGENT_KEY)"
 	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT into artifacts/backend-real/current/token.txt"
 	@echo "  make notebook-agent-init-resources # create project/endpoint/agent/key and write artifacts/backend-real/current/state.json"
-	@echo "  make notebook-agent-runner         # start codex runner using artifacts/backend-real/current/state.json"
+	@echo "  make notebook-agent-runner         # alias for notebook-runner using artifacts/backend-real/current/state.json"
 	@echo "  make notebook-agent-no-sandbox-smoke # verify AgentSmith works without sandbox deployment (current API/Web/Runner path + fail-fast internal paths)"
 	@echo "  make notebook-agent-smoke-task    # create notebook task, post prompt, poll final output"
 	@echo "  make notebook-agent-credential-sync-smoke # verify execution_context credential files are written under .codex/credential/"
@@ -713,11 +714,11 @@ agent-test-runner:
 	MBOS_AGENT_MODE="$(AGENT_MODE)" \
 	$(NPM) run agent:test-runner
 
-agent-codex-runner:
+notebook-runner:
 	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \
 		echo "[make] Missing AGENT_WS_URL or AGENT_KEY."; \
 		echo "[make] Example:"; \
-		echo "  make agent-codex-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'"; \
+		echo "  make notebook-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
@@ -727,7 +728,20 @@ agent-codex-runner:
 	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
 	MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-feishu-docs,jira-ops}" \
 	MBOS_AGENT_BUILTIN_SKILLS_REQUIRED="$${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}" \
-	$(NPM) run agent:codex-runner
+	$(NPM) run agent:notebook-runner
+
+chat-runner:
+	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \
+		echo "[make] Missing AGENT_WS_URL or AGENT_KEY."; \
+		echo "[make] Example:"; \
+		echo "  make chat-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'"; \
+		exit 1; \
+	fi
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	MBOS_RUNNER_MODE="$${MBOS_RUNNER_MODE:-host_external}" \
+	MBOS_AGENT_WS_URL="$(AGENT_WS_URL)" \
+	MBOS_AGENT_KEY="$(AGENT_KEY)" \
+	$(NPM) run agent:chat-runner
 
 notebook-agent-refresh-token:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
@@ -775,7 +789,7 @@ notebook-agent-runner:
 	MBOS_AGENT_RUNNER_DEBUG="$${MBOS_AGENT_RUNNER_DEBUG:-1}" \
 	MBOS_AGENT_TASK_TIMEOUT_SEC="$${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}" \
 	MBOS_AGENT_CODEX_YOLO="$${MBOS_AGENT_CODEX_YOLO:-1}" \
-	$(NPM) run agent:codex-runner
+	$(MAKE) notebook-runner
 
 substrate-up:
 	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
@@ -1019,7 +1033,7 @@ notebook-agent-smoke-full:
 	fi; \
 	echo "[make] refreshing token..."; \
 	$(MAKE) notebook-agent-refresh-token; \
-	echo "[make] starting agent-codex-runner in background..."; \
+	echo "[make] starting notebook-runner in background..."; \
 	( env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 		MBOS_RUNNER_MODE="$${MBOS_RUNNER_MODE:-host_external}" \
 		MBOS_AGENT_WS_URL="$$WS_URL" \
@@ -1030,7 +1044,7 @@ notebook-agent-smoke-full:
 		MBOS_AGENT_RUNNER_DEBUG="$${MBOS_AGENT_RUNNER_DEBUG:-1}" \
 		MBOS_AGENT_TASK_TIMEOUT_SEC="$${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}" \
 		MBOS_AGENT_CODEX_YOLO="$${MBOS_AGENT_CODEX_YOLO:-1}" \
-		$(NPM) run agent:codex-runner ) > "$$RUNNER_LOG" 2>&1 & \
+		$(NPM) run agent:notebook-runner ) > "$$RUNNER_LOG" 2>&1 & \
 	RUNNER_PID=$$!; \
 	trap 'kill $$RUNNER_PID >/dev/null 2>&1 || true' EXIT INT TERM; \
 	sleep 3; \
@@ -1041,7 +1055,7 @@ notebook-agent-smoke-full:
 	fi; \
 	echo "[make] waiting for agent runner websocket to be ready..."; \
 	for i in 1 2 3 4 5 6 7 8 9 10; do \
-		if rg -q "\\[agent-codex-runner\\] connected|websocket open" "$$RUNNER_LOG" 2>/dev/null; then \
+		if rg -q "\\[notebook-codex-runner\\] connected|websocket open" "$$RUNNER_LOG" 2>/dev/null; then \
 			break; \
 		fi; \
 		sleep 1; \

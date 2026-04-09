@@ -110,7 +110,7 @@ export async function prepareLaunchCommand(input: {
       throw new Error('bwrap_missing_for_external_runner');
     }
     if (mode === 'host_external') {
-      process.stderr.write('[agent-codex-runner][child-launcher] bwrap not found; falling back to direct launch for host_external\n');
+      process.stderr.write('[notebook-codex-runner][child-launcher] bwrap not found; falling back to direct launch for host_external\n');
       return {
         file: input.file,
         args: input.args,

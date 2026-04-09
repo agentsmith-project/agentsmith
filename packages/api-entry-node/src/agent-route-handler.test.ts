@@ -37,35 +37,35 @@ describe('normalizeInternalAgentImageForRuntime', () => {
   it('rewrites localhost registry images to the runtime k8s registry host', () => {
     expect(
       normalizeInternalAgentImageForRuntime(
-        'localhost:5001/mbos/agentsmith-codex-runner:test-release',
-        'kind-registry:5000/mbos/agentsmith-codex-runner:test-release',
+        'localhost:5001/mbos/agentsmith-notebook-codex-runner:test-release',
+        'kind-registry:5000/mbos/agentsmith-notebook-codex-runner:test-release',
       ),
-    ).toBe('kind-registry:5000/mbos/agentsmith-codex-runner:test-release');
+    ).toBe('kind-registry:5000/mbos/agentsmith-notebook-codex-runner:test-release');
   });
 
   it('leaves already-k8s-reachable images untouched', () => {
     expect(
       normalizeInternalAgentImageForRuntime(
-        'kind-registry:5000/mbos/agentsmith-codex-runner:test-release',
-        'kind-registry:5000/mbos/agentsmith-codex-runner:test-release',
+        'kind-registry:5000/mbos/agentsmith-notebook-codex-runner:test-release',
+        'kind-registry:5000/mbos/agentsmith-notebook-codex-runner:test-release',
       ),
-    ).toBe('kind-registry:5000/mbos/agentsmith-codex-runner:test-release');
+    ).toBe('kind-registry:5000/mbos/agentsmith-notebook-codex-runner:test-release');
   });
 
   it('upgrades older runtime tags to the current internal runner image', () => {
     expect(
       normalizeInternalAgentImageForRuntime(
-        'imotion-cn-beijing.cr.volces.com/mbos/agentsmith-codex-runner:20260327T223209Z',
-        'imotion-cn-beijing.cr.volces.com/mbos/agentsmith-codex-runner:20260331T234338Z',
+        'imotion-cn-beijing.cr.volces.com/mbos/agentsmith-notebook-codex-runner:20260327T223209Z',
+        'imotion-cn-beijing.cr.volces.com/mbos/agentsmith-notebook-codex-runner:20260331T234338Z',
       ),
-    ).toBe('imotion-cn-beijing.cr.volces.com/mbos/agentsmith-codex-runner:20260331T234338Z');
+    ).toBe('imotion-cn-beijing.cr.volces.com/mbos/agentsmith-notebook-codex-runner:20260331T234338Z');
   });
 
   it('does not rewrite unrelated registries', () => {
     expect(
       normalizeInternalAgentImageForRuntime(
         'ghcr.io/acme/runner:test-release',
-        'kind-registry:5000/mbos/agentsmith-codex-runner:test-release',
+        'kind-registry:5000/mbos/agentsmith-notebook-codex-runner:test-release',
       ),
     ).toBe('ghcr.io/acme/runner:test-release');
   });

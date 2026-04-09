@@ -3,16 +3,21 @@ import {
   API_BASE,
   BACKEND_REAL_ANTHROPIC_BASE_URL,
   BACKEND_REAL_MODEL,
+  createChatSessionViaApi,
+  createExternalRunnerAgentBundle,
   createCredentialViaUi,
   createEndpointViaApi,
   createProjectInWorkspace,
   ensureIntegrationKeycloakUsers,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
+  KEYCLOAK_INTEGRATION_MEMBER_EMAIL,
   KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
   KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
   keycloakLoginToWorkspace,
   LOCALE,
+  startChatRunnerProcess,
+  waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
@@ -59,7 +64,13 @@ async function createInvite(page: import('@playwright/test').Page, workspaceId: 
   return payload.invite_url ?? '';
 }
 
-async function createChatSession(page: import('@playwright/test').Page, workspaceId: string, projectId: string, endpointId: string): Promise<string> {
+async function createChatSession(
+  page: import('@playwright/test').Page,
+  workspaceId: string,
+  projectId: string,
+  endpointId: string,
+  title = `owner-session-${Date.now()}`,
+): Promise<string> {
   const token = await readStoredAuthToken(page);
   const response = await page.request.post(
     `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/chat/sessions`,
@@ -69,7 +80,7 @@ async function createChatSession(page: import('@playwright/test').Page, workspac
         'Content-Type': 'application/json',
       },
       data: {
-        title: `owner-session-${Date.now()}`,
+        title,
         model: BACKEND_REAL_MODEL,
         endpoint_id: endpointId,
       },
@@ -79,6 +90,51 @@ async function createChatSession(page: import('@playwright/test').Page, workspac
   const payload = await response.json() as { id?: string };
   expect(payload.id).toBeTruthy();
   return payload.id ?? '';
+}
+
+async function waitForAssistantToken(page: import('@playwright/test').Page, workspaceId: string, projectId: string, sessionId: string, token: string): Promise<void> {
+  const authToken = await readStoredAuthToken(page);
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(
+          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/messages`,
+          { headers: { Authorization: `Bearer ${authToken}` } },
+        );
+        if (!response.ok()) return false;
+        const payload = await response.json() as { items?: Array<{ role?: string; content?: string }> };
+        return (payload.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(token));
+      },
+      { timeout: 240_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toBe(true);
+}
+
+async function runChatStreamTurn(
+  page: import('@playwright/test').Page,
+  workspaceId: string,
+  projectId: string,
+  sessionId: string,
+  content: string,
+): Promise<string> {
+  const token = await readStoredAuthToken(page);
+  const response = await page.request.post(
+    `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/messages/stream`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        input: {
+          role: 'user',
+          content,
+        },
+      },
+    },
+  );
+  expect(response.ok()).toBeTruthy();
+  return response.text();
 }
 
 async function postChatMessage(page: import('@playwright/test').Page, workspaceId: string, projectId: string, sessionId: string, content: string): Promise<void> {
@@ -176,6 +232,116 @@ test.describe('@lane-real invite flow and chat isolation', () => {
       expect(adminIds).not.toContain(memberUserId);
     } finally {
       await memberContext.close();
+    }
+  });
+
+  test('shares one chat runner pod across owner and member sessions without leaking session content', async ({ browser, page }) => {
+    test.setTimeout(720_000);
+    const workspaceId = 'ws_default';
+    const apiKey = requireApiKey();
+    await ensureIntegrationKeycloakUsers();
+
+    await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, workspaceId, 'Invite Chat Shared Pod', {
+      visibility: 'private',
+      joinPolicy: 'approval_required',
+    });
+
+    const credentialName = `Invite Chat Shared Pod Credential ${Date.now()}`;
+    await createCredentialViaUi(page, workspaceId, projectId, credentialName, apiKey);
+    const endpointId = await createEndpointViaApi(page, workspaceId, projectId, {
+      endpointName: `Invite Chat Shared Pod Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    const chatTitle = `shared-pod-chat-${Date.now()}`;
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
+      workspaceId,
+      projectId,
+      endpointId,
+      title: chatTitle,
+      interactionKind: 'chat',
+    });
+
+    const runner = await startChatRunnerProcess({
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    });
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+
+    const invitePath = await createInvite(page, workspaceId, projectId, KEYCLOAK_INTEGRATION_MEMBER_EMAIL);
+    const ownerToken = `OWNER_CHAT_${Date.now()}`;
+    const memberToken = `MEMBER_CHAT_${Date.now()}`;
+
+    try {
+      await waitForAgentPresenceOnline(page, workspaceId, projectId, agentBundle.agentId);
+      const ownerSessionId = (await createChatSessionViaApi({
+        page,
+        workspaceId,
+        projectId,
+        externalAgentId: agentBundle.agentId,
+        title: `${chatTitle}-owner`,
+      })).id;
+      const ownerStream = await runChatStreamTurn(
+        page,
+        workspaceId,
+        projectId,
+        ownerSessionId,
+        `Reply with exactly ${ownerToken}.`,
+      );
+      expect(ownerStream).toContain(ownerToken);
+      await waitForAssistantToken(page, workspaceId, projectId, ownerSessionId, ownerToken);
+
+      const memberContext = await browser.newContext();
+      const memberPage = await memberContext.newPage();
+      try {
+        await keycloakLoginToWorkspace(memberPage, workspaceId, KEYCLOAK_INTEGRATION_MEMBER_USERNAME, KEYCLOAK_INTEGRATION_MEMBER_PASSWORD);
+        await memberPage.goto(`/${LOCALE}${invitePath}`);
+        await expect(memberPage.getByTestId('join__accept-btn')).toBeVisible({ timeout: 30_000 });
+        await memberPage.getByTestId('join__accept-btn').click();
+        await memberPage.waitForURL(/\/login\/workspace/, { timeout: 30_000 });
+
+        const memberSessionId = (await createChatSessionViaApi({
+          page: memberPage,
+          workspaceId,
+          projectId,
+          externalAgentId: agentBundle.agentId,
+          title: `${chatTitle}-member`,
+        })).id;
+        const memberStream = await runChatStreamTurn(
+          memberPage,
+          workspaceId,
+          projectId,
+          memberSessionId,
+          `Reply with exactly ${memberToken}.`,
+        );
+        expect(memberStream).toContain(memberToken);
+        await waitForAssistantToken(memberPage, workspaceId, projectId, memberSessionId, memberToken);
+
+        const ownerAuthToken = await readStoredAuthToken(page);
+        const ownerMessagesRes = await page.request.get(
+          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${ownerSessionId}/messages`,
+          { headers: { Authorization: `Bearer ${ownerAuthToken}` } },
+        );
+        expect(ownerMessagesRes.ok()).toBeTruthy();
+        const ownerMessages = await ownerMessagesRes.json() as { items?: Array<{ role?: string; content?: string }> };
+        expect((ownerMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(ownerToken))).toBe(true);
+        expect((ownerMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(memberToken))).toBe(false);
+
+        const memberMessagesRes = await memberPage.request.get(
+          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${memberSessionId}/messages`,
+          { headers: { Authorization: `Bearer ${await readStoredAuthToken(memberPage)}` } },
+        );
+        expect(memberMessagesRes.ok()).toBeTruthy();
+        const memberMessages = await memberMessagesRes.json() as { items?: Array<{ role?: string; content?: string }> };
+        expect((memberMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(memberToken))).toBe(true);
+        expect((memberMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(ownerToken))).toBe(false);
+      } finally {
+        await memberContext.close();
+      }
+    } finally {
+      await runner.stop();
     }
   });
 });

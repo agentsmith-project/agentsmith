@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import http, { type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
+import { NOTEBOOK_RUNNER_SPEC } from '@mbos/agent-runner';
 import { createDefaultNodeApiDeps } from '../index.js';
 import {
   acquireNotebookTaskRunLease,
@@ -16,6 +17,10 @@ import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from '.
 
 const upstreamServers: Server[] = [];
 const sockets: WebSocket[] = [];
+
+function normalizeApiBasePath(input: string): string {
+  return input.replace(/\/api\/v1\/api\/v1(?=\/|$)/g, '/api/v1');
+}
 
 afterEach(async () => {
   for (const socket of sockets) {
@@ -100,7 +105,7 @@ describe('api-entry-node notebook task routes', () => {
     const internalAgent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
       mode: 'internal',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         image: 'runner:v1',
@@ -117,7 +122,7 @@ describe('api-entry-node notebook task routes', () => {
     const externalAgent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'external-notebook-agent',
       mode: 'external',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       presence: 'online',
       config: {
@@ -226,7 +231,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
       mode: 'internal',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         image: 'runner:v1',
@@ -265,7 +270,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
       mode: 'internal',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         image: 'runner:v1',
@@ -306,7 +311,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'offline-external-notebook-agent',
       mode: 'external',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         _external_key_source: 'generated',
@@ -348,7 +353,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
       mode: 'internal',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         image: 'runner:v1',
@@ -405,7 +410,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
       mode: 'internal',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         image: 'runner:v1',
@@ -496,7 +501,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'external-notebook-agent-create-new',
       mode: 'external',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         _external_key_source: 'generated',
@@ -557,7 +562,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'external-notebook-agent-same-title',
       mode: 'external',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         _external_key_source: 'generated',
@@ -667,7 +672,7 @@ describe('api-entry-node notebook task routes', () => {
       const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
         name: 'external-notebook-agent',
         mode: 'external',
-        interaction_mode: 'notebook',
+        interaction_kind: 'notebook',
         status: 'enabled',
         config: {
           _external_key_source: 'generated',
@@ -730,7 +735,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
       mode: 'internal',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         image: 'runner:v1',
@@ -787,7 +792,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'restartable-internal-notebook-agent',
       mode: 'internal',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         image: 'runner:v1',
@@ -844,7 +849,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'restartable-run-coordination-agent',
       mode: 'internal',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         image: 'runner:v1',
@@ -926,7 +931,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'shared-conflict-agent',
       mode: 'internal',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         image: 'runner:v1',
@@ -1045,7 +1050,7 @@ describe('api-entry-node notebook task routes', () => {
         body: JSON.stringify({
           name: 'notebook-runner',
           mode: 'external',
-          interaction_mode: 'notebook',
+          interaction_kind: 'notebook',
           execution_preferences: {
             notebook: {
               endpoint_id: endpoint.id,
@@ -1086,7 +1091,7 @@ describe('api-entry-node notebook task routes', () => {
       endpointProxyBase: string | null;
       apiBase: string;
       executionTicket: string;
-      notebookMode: boolean | null;
+      interactionKind: string | null;
       workspaceBindingMode: string | null;
       workspacePath: string | null;
       workspaceFileLibraryId: string | null;
@@ -1114,7 +1119,7 @@ describe('api-entry-node notebook task routes', () => {
               api_base?: string;
               execution_ticket?: string;
               user_bearer_token?: string;
-              notebook_mode?: boolean;
+              interaction_kind?: string;
               workspace_binding_mode?: string;
               workspace_path?: string;
               workspace_file_library_id?: string | null;
@@ -1136,8 +1141,8 @@ describe('api-entry-node notebook task routes', () => {
           apiBase: msg.payload?.execution_context?.api_base ?? '',
           executionTicket: msg.payload?.execution_context?.execution_ticket ?? '',
           legacyUserBearerToken: msg.payload?.execution_context?.user_bearer_token ?? '',
-          notebookMode: typeof msg.payload?.execution_context?.notebook_mode === 'boolean'
-            ? msg.payload.execution_context.notebook_mode
+          interactionKind: typeof msg.payload?.execution_context?.interaction_kind === 'string'
+            ? msg.payload.execution_context.interaction_kind
             : null,
           workspaceBindingMode: typeof msg.payload?.execution_context?.workspace_binding_mode === 'string'
             ? msg.payload.execution_context.workspace_binding_mode
@@ -1212,7 +1217,10 @@ describe('api-entry-node notebook task routes', () => {
         if (msg.type !== 'server.hello') return;
         ws.send(JSON.stringify({
           type: 'agent.ready',
-          payload: { capabilities: { wire_api: 'chat' } },
+          payload: {
+            runner_spec: NOTEBOOK_RUNNER_SPEC,
+            capabilities: { wire_api: 'chat' },
+          },
         }));
         resolve();
       });
@@ -1294,14 +1302,14 @@ describe('api-entry-node notebook task routes', () => {
     expect(execution.executionTicket).toMatch(/^exec_/);
     expect(execution.legacyUserBearerToken).toBe('');
     expect(execution.apiBase).toBe(`${baseUrl}/api/v1`);
-    expect(execution.notebookMode).toBe(true);
+    expect(execution.interactionKind).toBe('notebook');
     expect(execution.workspaceBindingMode).toBe('file_library');
     expect(execution.workspacePath).toBeNull();
     expect(execution.workspaceFileLibraryId).toBe(workspaceLibrary.id);
     expect(execution.workspaceFileLibraryName).toBe(workspaceLibrary.name);
     expect(execution.workspaceDirName).toBe(workspaceLibrary.filesystem_name);
     expect(execution.taskInputsCount).toBe(0);
-    expect(execution.helloProxyBase).toBe(
+    expect(normalizeApiBasePath(execution.helloProxyBase)).toBe(
       `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai`,
     );
     expect(execution.endpointProxyBase).toBeNull();
@@ -1462,7 +1470,7 @@ describe('api-entry-node notebook task routes', () => {
         body: JSON.stringify({
           name: 'notebook-runner-offline',
           mode: 'external',
-          interaction_mode: 'notebook',
+          interaction_kind: 'notebook',
           execution_preferences: {
             notebook: {
               endpoint_id: endpoint.id,
@@ -1505,7 +1513,10 @@ describe('api-entry-node notebook task routes', () => {
         if (msg.type !== 'server.hello') return;
         ws.send(JSON.stringify({
           type: 'agent.ready',
-          payload: { capabilities: { wire_api: 'chat' } },
+          payload: {
+            runner_spec: NOTEBOOK_RUNNER_SPEC,
+            capabilities: { wire_api: 'chat' },
+          },
         }));
         resolve();
       });
@@ -1666,7 +1677,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'Metrics notebook agent',
       mode: 'internal',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         image: 'runner:v1',
@@ -1731,7 +1742,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'external-terminal-agent',
       mode: 'external',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       presence: 'online',
       config: {
@@ -1799,7 +1810,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedExecutionContext?.workspace_path).toBeUndefined();
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
     expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
-    expect(capturedExecutionContext?.notebook_mode).toBe(true);
+    expect(capturedExecutionContext?.interaction_kind).toBe('notebook');
     expect(capturedExecutionContext?.api_base).toBe(baseUrl);
     expect(capturedExecutionContext?.credential_files).toBeUndefined();
     } finally {
@@ -1856,7 +1867,7 @@ describe('api-entry-node notebook task routes', () => {
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-terminal-agent',
       mode: 'internal',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       config: {
         image: 'runner:v1',
@@ -1919,7 +1930,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedExecutionContext?.workspace_path).toBe(`/workspace/${task.id}`);
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
     expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
-    expect(capturedExecutionContext?.notebook_mode).toBe(true);
+    expect(capturedExecutionContext?.interaction_kind).toBe('notebook');
     expect(capturedExecutionContext?.api_base).toBe(`${baseUrl}/api/v1`);
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;

@@ -186,7 +186,7 @@ That means:
 ## 5. Required Configuration
 ### 5.1 Agent config
 - Agent mode: `external`
-- Interaction mode: `notebook` or `both`
+- Interaction kind: `notebook`
 - Execution preferences:
   - `execution_preferences.notebook.endpoint_id` (required)
   - optional: `wire_api` (`chat` or `responses`)
@@ -1092,7 +1092,7 @@ Notes:
 ### Sprint A (Backend/API, 2-3 days)
 - A1: execution_context correctness and request-host derived proxy base.
 - A2: task run lifecycle guards (`TASK_STREAM_CONFLICT`, finalize cleanup).
-- A3: notebook endpoint binding validation (`interaction_mode=notebook|both`).
+- A3: notebook endpoint binding validation (`interaction_kind=notebook`).
 - A4: API tests for notebook run + conflict + execution context.
 
 Dependencies:

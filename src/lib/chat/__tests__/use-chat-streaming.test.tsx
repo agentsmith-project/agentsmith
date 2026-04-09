@@ -19,6 +19,7 @@ vi.mock('@/lib/chat/stream', async () => {
 vi.mock('@/components/ui/toast', () => ({
   toast: {
     error: vi.fn(),
+    warning: vi.fn(),
     info: vi.fn(),
     success: vi.fn(),
   },
@@ -34,6 +35,7 @@ const streamMessages = {
   streamErrorAgentTimeout: 'agent timeout',
   streamErrorAgentProtocol: 'agent protocol error',
   streamErrorAgentUpstream: 'agent upstream error',
+  streamWarningSessionWorkspaceRecreated: 'workspace reclaimed',
 };
 
 beforeEach(() => {
@@ -136,6 +138,7 @@ describe('useChatStreaming attach recovery', () => {
     vi.mocked(getChatStreamAttach).mockResolvedValue(
       createSseResponse([
         { event: 'meta', data: { stream_id: 'st_1', assistant_message_id: 'm_asst' } },
+        { event: 'warning', data: { code: 'session.workspace_recreated', message: 'chat_session_workspace_recreated' } },
         { event: 'delta', data: { message_id: 'm_asst', delta: 'Hello' } },
         { event: 'delta', data: { message_id: 'm_asst', delta: ' world' } },
         { event: 'done', data: { message_id: 'm_asst' } },
@@ -199,6 +202,7 @@ describe('useChatStreaming attach recovery', () => {
       // After done, hook should settle back to idle.
       expect(result.current.streamStateBySession['s_1']?.status ?? 'idle').toBe('idle');
     });
+    expect(toast.warning).toHaveBeenCalledWith('workspace reclaimed');
   });
 
   it('silently falls back when attach returns RESOURCE_NOT_FOUND', async () => {
@@ -339,6 +343,82 @@ describe('useChatStreaming attach recovery', () => {
       expect(result.current.streamStateBySession['s_1']?.status ?? 'idle').toBe('error');
     });
     expect(toast.error).toHaveBeenCalledWith('agent protocol error');
+
+    vi.stubGlobal('fetch', originalFetch);
+  });
+
+  it('shows a workspace recreation warning during a fresh stream and continues streaming', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn().mockResolvedValue(
+      createSseResponse([
+        { event: 'meta', data: { stream_id: 'st_warning', assistant_message_id: 'm_asst' } },
+        { event: 'warning', data: { code: 'session.workspace_recreated', message: 'chat_session_workspace_recreated' } },
+        { event: 'delta', data: { message_id: 'm_asst', delta: 'Recovered' } },
+        { event: 'done', data: { message_id: 'm_asst' } },
+      ]),
+    );
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const chatAPI: Pick<ChatAPI, 'getSessionStreams' | 'stopSessionStream' | 'stopStream'> = {
+      getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'not_found_or_finished' }),
+      stopStream: vi.fn().mockResolvedValue({ success: true, stream_id: 'st_warning', state: 'stopping' }),
+    };
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+
+    const sessions: ChatSession[] = [
+      {
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+      },
+    ];
+
+    const upsertStreamAssistantToCache = vi.fn((_sessionId: string, _message: ChatMessage) => {});
+    const patchStreamAssistantInCache = vi.fn((_sessionId: string, _messageId: string, _patch: unknown) => {});
+
+    const { result } = renderHook(
+      () =>
+        useChatStreaming({
+          token: 'tkn',
+          workspaceId: 'ws_1',
+          projectId: 'p_1',
+          sessions,
+          currentSessionId: 's_1',
+          chatAPI: chatAPI as unknown as ChatAPI,
+          queryClient: qc,
+          messages: streamMessages,
+          upsertStreamAssistantToCache,
+          patchStreamAssistantInCache,
+        }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.runStream({
+        sessionId: 's_1',
+        model: 'm',
+        endpointId: 'ep_1',
+        input: { role: 'user', content: 'hello' },
+        mode: 'append',
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.streamStateBySession['s_1']?.status ?? 'idle').toBe('idle');
+    });
+    expect(toast.warning).toHaveBeenCalledWith('workspace reclaimed');
+    expect(fetchMock).toHaveBeenCalled();
 
     vi.stubGlobal('fetch', originalFetch);
   });

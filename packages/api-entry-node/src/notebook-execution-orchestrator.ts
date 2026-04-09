@@ -388,6 +388,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       model,
       messages: mapTaskMessagesForExecution(taskId, assistantMessage.id),
       executionContext: {
+        interaction_kind: 'notebook',
         workspace_id: task.workspace_id,
         project_id: task.project_id,
         task_id: task.id,
@@ -408,7 +409,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         workspace_dir_name: workspaceLibrary?.filesystem_name
           ?? sanitizeFileLibraryWorkspaceDirName(task.workspace_file_library_name, task.workspace_file_library_id),
         task_inputs: taskInputs,
-        notebook_mode: true,
       },
     });
     requestExecutionId = dispatched.requestId;

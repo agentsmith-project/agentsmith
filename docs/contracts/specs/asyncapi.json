@@ -372,8 +372,12 @@
                     "model": {
                       "type": "string"
                     },
-                    "notebook_mode": {
-                      "type": "boolean"
+                    "interaction_kind": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "notebook"
+                      ]
                     },
                     "task_inputs": {
                       "type": "array",

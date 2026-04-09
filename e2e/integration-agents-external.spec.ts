@@ -110,7 +110,7 @@ async function createExternalAgentBundle(args: {
       body: JSON.stringify({
         name: `it-external-agent-${Date.now()}`,
         mode: 'external',
-        interaction_mode: 'chat',
+        interaction_kind: 'chat',
         capabilities: {
           streaming_completion: true,
           multimodal_completion: args.multimodal,

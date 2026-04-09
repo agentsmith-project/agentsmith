@@ -29,7 +29,7 @@ runner_status() {
   local pid
   local runner_count
   pid="$(cat "${RUNNER_PID_FILE}" 2>/dev/null || true)"
-  runner_count="$(count_matching_processes 'make notebook-agent-runner')"
+  runner_count="$(count_matching_processes 'make notebook-runner')"
   if [[ -f "${RUNNER_READY_FILE}" ]]; then
     if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
       printf 'up (pid=%s)' "${pid}"

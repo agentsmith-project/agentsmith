@@ -53,7 +53,7 @@ export function TaskCreateDialog({
 
   const agents = React.useMemo(
     () => (agentsData?.items || []).filter(
-      (agent) => agent.status === 'enabled' && agent.interaction_mode !== 'chat',
+      (agent) => agent.status === 'enabled' && agent.interaction_kind === 'notebook',
     ),
     [agentsData?.items],
   );

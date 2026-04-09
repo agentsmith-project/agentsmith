@@ -22,7 +22,7 @@ SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
 SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
 CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-csi.juicefs.com}"
-RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-agentsmith-codex-runner:local}"
+RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-agentsmith-notebook-codex-runner:local}"
 BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-1}"
 WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-1Pi}"
 STORAGE_CLASS_NAME="${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}"
@@ -71,7 +71,7 @@ if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
   info "building internal runner image ${RUNNER_IMAGE}"
   docker_build_local \
     -t "${RUNNER_IMAGE}" \
-    -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner" \
+    -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner" \
     "${ROOT_DIR}" >/dev/null
 elif ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
   echo "[integration-release-user-story] runner image not found: ${RUNNER_IMAGE}" >&2

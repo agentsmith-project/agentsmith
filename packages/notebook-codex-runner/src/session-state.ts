@@ -11,7 +11,7 @@ type SessionFingerprint = {
   model: string;
   wire_api: 'chat' | 'responses';
   resource_proxy_base: string;
-  notebook_mode: boolean;
+  interaction_kind: 'chat' | 'notebook';
   model_context_window: number | null;
   model_auto_compact_token_limit: number | null;
   model_catalog_signature: string | null;
@@ -21,7 +21,7 @@ function buildSessionFingerprint(input: {
   model: string;
   wireApi: 'chat' | 'responses';
   resourceProxyBase: string;
-  notebookMode: boolean;
+  interactionKind: 'chat' | 'notebook';
   modelContextWindow?: number;
   modelAutoCompactTokenLimit?: number;
   modelCatalogSignature?: string;
@@ -32,7 +32,7 @@ function buildSessionFingerprint(input: {
     model: input.model,
     wire_api: input.wireApi,
     resource_proxy_base: input.resourceProxyBase,
-    notebook_mode: input.notebookMode,
+    interaction_kind: input.interactionKind,
     model_context_window: Number.isFinite(input.modelContextWindow) ? Math.floor(input.modelContextWindow!) : null,
     model_auto_compact_token_limit: Number.isFinite(input.modelAutoCompactTokenLimit)
       ? Math.floor(input.modelAutoCompactTokenLimit!)
@@ -58,7 +58,7 @@ export async function ensureCodexSessionStateCompatible(input: {
   model: string;
   wireApi: 'chat' | 'responses';
   resourceProxyBase: string;
-  notebookMode: boolean;
+  interactionKind: 'chat' | 'notebook';
   modelContextWindow?: number;
   modelAutoCompactTokenLimit?: number;
   modelCatalogSignature?: string;
@@ -69,7 +69,7 @@ export async function ensureCodexSessionStateCompatible(input: {
     model: input.model,
     wireApi: input.wireApi,
     resourceProxyBase: input.resourceProxyBase,
-    notebookMode: input.notebookMode,
+    interactionKind: input.interactionKind,
     modelContextWindow: input.modelContextWindow,
     modelAutoCompactTokenLimit: input.modelAutoCompactTokenLimit,
     modelCatalogSignature: input.modelCatalogSignature,

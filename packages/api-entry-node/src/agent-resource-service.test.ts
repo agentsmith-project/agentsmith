@@ -25,15 +25,27 @@ describe('AgentResourceService', () => {
     const created = await service.createAgent('ws_default', 'proj_1', {
       name: '  External Echo  ',
       mode: 'external',
+      interaction_kind: 'chat',
     });
 
     expect(created.name).toBe('External Echo');
     expect(created.mode).toBe('external');
+    expect(created.interaction_kind).toBe('chat');
     expect(created.presence).toBe('offline');
     expect(created.capabilities).toBeDefined();
     expect(created.capabilities?.streaming_completion).toBe(true);
     expect(created.capabilities?.multimodal_completion).toBe(false);
     expect(created.capabilities?.accepted_mime_types).toContain('image/png');
+  });
+
+  it('does not invent an interaction kind when callers omit it', async () => {
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+    const created = await service.createAgent('ws_default', 'proj_1', {
+      name: 'No Default Interaction Kind',
+      mode: 'external',
+    });
+
+    expect(created.interaction_kind).toBeUndefined();
   });
 
   it('builds compose-internal connection info for compose-managed external agents', async () => {
@@ -59,7 +71,7 @@ describe('AgentResourceService', () => {
     const created = await service.createAgent('ws_default', 'proj_1', {
       name: 'compose external',
       mode: 'external',
-      interaction_mode: 'notebook',
+      interaction_kind: 'notebook',
       status: 'enabled',
       visibility: 'private',
       config: {
@@ -78,7 +90,7 @@ describe('AgentResourceService', () => {
       expect.objectContaining({
         id: created.id,
         mode: 'external',
-        interaction_mode: 'notebook',
+        interaction_kind: 'notebook',
         status: 'enabled',
         visibility: 'private',
         config: expect.objectContaining({

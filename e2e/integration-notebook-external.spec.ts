@@ -244,7 +244,7 @@ test.describe('@lane-real integration notebook external execution service', () =
         body: {
           name: `it-notebook-external-${Date.now()}`,
           mode: 'external',
-          interaction_mode: 'notebook',
+          interaction_kind: 'notebook',
           execution_preferences: {
             notebook: {
               endpoint_id: endpoint.id,

@@ -42,7 +42,7 @@ info "running external codex backend-real checks"
 run_real_cmd \
   INTEGRATION_API_PORT=20064 \
   INTEGRATION_WEB_PORT=3065 \
-  npm run test:agents:backend-real:codex
+  npm run test:agents:backend-real:runner
 
 info "running file library backend-real gate"
 run_real_cmd \

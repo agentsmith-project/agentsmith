@@ -36,10 +36,12 @@ All frames are JSON objects:
     - `model: string`
     - `stream: true`
     - `messages: OpenAI-compatible message array` (supports multimodal content parts and data URLs)
-    - `execution_context?: object` (optional notebook execution metadata)
+    - `execution_context?: object` (optional agent execution metadata)
+      - `interaction_kind: "chat" | "notebook"`
       - `workspace_id: string`
       - `project_id: string`
-      - `task_id: string`
+      - `task_id?: string` (notebook only)
+      - `session_id?: string` (chat only)
       - `run_id: string`
       - `username: string`
       - `endpoint_id: string`
@@ -47,7 +49,6 @@ All frames are JSON objects:
       - `user_bearer_token: string`
       - `wire_api: \"chat\" | \"responses\"`
       - `model: string`
-      - `notebook_mode?: boolean`
       - `task_inputs?: Array<{ kind?: "library_object" | "artifact" | "url"; library_id?: string; key?: string; task_id?: string; artifact_id?: string; url?: string; filename?: string; file_type?: string; file_size?: number }>`
       - `credential_files?: Array<{ relative_path: string; content: string; description?: string }>`
         - Backend provides user third-party credential files per request.

@@ -21,6 +21,7 @@ const mockEndpointList = vi.fn().mockResolvedValue({ items: [], total: 0, page: 
 const mockListLibraries = vi.fn().mockResolvedValue({ items: [] });
 const mockListObjects = vi.fn().mockResolvedValue({ prefix: '', items: [] });
 const mockDownloadObject = vi.fn().mockResolvedValue(new Blob());
+const mockAgentList = vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 500, has_more: false });
 
 vi.mock('@/lib/api', () => ({ getApiClient: vi.fn(() => ({})) }));
 vi.mock('@/lib/api/endpoints/chat', () => ({
@@ -49,7 +50,7 @@ vi.mock('@/lib/api/endpoints/files', () => ({
   FilesAPI: vi.fn().mockImplementation(function () { return { listLibraries: mockListLibraries, listObjects: mockListObjects, downloadObject: mockDownloadObject }; }),
 }));
 vi.mock('@/lib/api/endpoints/agents', () => ({
-  AgentAPI: vi.fn().mockImplementation(function () { return { list: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 500, has_more: false }) }; }),
+  AgentAPI: vi.fn().mockImplementation(function () { return { list: mockAgentList }; }),
 }));
 vi.mock('@/lib/stores/authStore', () => ({
   useAuthStore: (selector: (state: { token: string }) => unknown) => selector({ token: 'token' }),
@@ -63,7 +64,13 @@ vi.mock('@/components/chat/ThreadsPane', () => ({
   ),
 }));
 vi.mock('@/components/chat/ChatMainPane', () => ({
-  ChatMainPane: () => <div data-testid="chat__main-pane" />,
+  ChatMainPane: ({ externalAgents }: { externalAgents?: Array<{ name: string }> }) => (
+    <div data-testid="chat__main-pane">
+      {(externalAgents ?? []).map((agent) => (
+        <span key={agent.name}>{agent.name}</span>
+      ))}
+    </div>
+  ),
 }));
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useCanAccessChat: vi.fn(() => true),
@@ -86,6 +93,7 @@ describe('ChatPage', () => {
     mockUseCanAccessChat.mockReturnValue(true);
     mockCreateSession.mockClear();
     mockDeleteSession.mockClear();
+    mockAgentList.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 500, has_more: false });
   });
 
   it('renders compact layout with new-thread action', async () => {
@@ -123,5 +131,45 @@ describe('ChatPage', () => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+  });
+
+  it('only passes enabled external chat agents to the chat pane', async () => {
+    mockAgentList.mockResolvedValue({
+      items: [
+        {
+          id: 'agent_chat',
+          name: 'Chat Agent',
+          mode: 'external',
+          status: 'enabled',
+          interaction_kind: 'chat',
+        },
+        {
+          id: 'agent_notebook',
+          name: 'Notebook Agent',
+          mode: 'external',
+          status: 'enabled',
+          interaction_kind: 'notebook',
+        },
+        {
+          id: 'agent_internal',
+          name: 'Internal Chat Agent',
+          mode: 'internal',
+          status: 'enabled',
+          interaction_kind: 'chat',
+        },
+      ],
+      total: 3,
+      page: 1,
+      page_size: 500,
+      has_more: false,
+    });
+
+    render(<ChatPage params={Promise.resolve({ workspace: 'ws_1', project: 'proj_1', locale: 'en' })} />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByText('Chat Agent')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Notebook Agent')).not.toBeInTheDocument();
+    expect(screen.queryByText('Internal Chat Agent')).not.toBeInTheDocument();
   });
 });

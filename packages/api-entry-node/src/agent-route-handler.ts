@@ -50,6 +50,32 @@ function validateNotebookEndpoint(executionPreferences: Record<string, unknown> 
   return typeof endpointId === 'string' && endpointId.trim().length > 0;
 }
 
+function validateChatEndpoint(executionPreferences: Record<string, unknown> | undefined): boolean {
+  if (!executionPreferences) return false;
+  const chat = executionPreferences.chat;
+  if (typeof chat !== 'object' || chat === null) return false;
+  const endpointId = (chat as Record<string, unknown>).endpoint_id;
+  return typeof endpointId === 'string' && endpointId.trim().length > 0;
+}
+
+function validateExecutionPreferencesForInteractionKind(
+  interactionKind: 'chat' | 'notebook',
+  executionPreferences: Record<string, unknown> | undefined,
+): boolean {
+  if (interactionKind === 'chat') return validateChatEndpoint(executionPreferences);
+  return validateNotebookEndpoint(executionPreferences);
+}
+
+function readInteractionKind(raw: Record<string, unknown>): 'chat' | 'notebook' | undefined {
+  return raw.interaction_kind === 'chat' || raw.interaction_kind === 'notebook'
+    ? raw.interaction_kind
+    : undefined;
+}
+
+function hasInteractionKindField(raw: Record<string, unknown>): boolean {
+  return Object.prototype.hasOwnProperty.call(raw, 'interaction_kind');
+}
+
 function readObject(input: unknown): Record<string, unknown> | undefined {
   return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : undefined;
 }
@@ -245,17 +271,28 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_name_required' });
       return true;
     }
+    const interactionKind = readInteractionKind(raw);
+    if (!interactionKind) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_interaction_kind_required' });
+      return true;
+    }
     const executionPreferences =
       typeof raw.execution_preferences_json === 'object' && raw.execution_preferences_json !== null
         ? (raw.execution_preferences_json as Record<string, unknown>)
         : (typeof raw.execution_preferences === 'object' && raw.execution_preferences !== null
           ? (raw.execution_preferences as Record<string, unknown>)
           : undefined);
-    if (
-      (raw.interaction_mode === 'notebook' || raw.interaction_mode === 'both')
-      && !validateNotebookEndpoint(executionPreferences)
-    ) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_notebook_endpoint_required' });
+    if (!validateExecutionPreferencesForInteractionKind(interactionKind, executionPreferences)) {
+      json(
+        res,
+        422,
+        {
+          error_code: 'VALIDATION_ERROR',
+          message: interactionKind === 'chat'
+            ? 'agent_chat_endpoint_required'
+            : 'agent_notebook_endpoint_required',
+        },
+      );
       return true;
     }
     const mode = raw.mode === 'internal' ? 'internal' : 'external';
@@ -279,10 +316,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       name,
       description: typeof raw.description === 'string' ? raw.description : undefined,
       mode,
-      interaction_mode:
-        raw.interaction_mode === 'chat' || raw.interaction_mode === 'notebook' || raw.interaction_mode === 'both'
-          ? raw.interaction_mode
-          : 'both',
+      interaction_kind: interactionKind,
       status: raw.status === 'disabled' ? 'disabled' : 'enabled',
       execution_preferences_json: executionPreferences,
       config: normalizeInternalConfig(readObject(raw.config)) as never,
@@ -357,12 +391,27 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
         : (typeof raw.execution_preferences === 'object' && raw.execution_preferences !== null
           ? (raw.execution_preferences as Record<string, unknown>)
           : undefined);
-    const requestedInteraction =
-      raw.interaction_mode === 'chat' || raw.interaction_mode === 'notebook' || raw.interaction_mode === 'both'
-        ? raw.interaction_mode
-        : undefined;
-    if ((requestedInteraction === 'notebook' || requestedInteraction === 'both') && !validateNotebookEndpoint(executionPreferences)) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_notebook_endpoint_required' });
+    const requestedInteractionKind = readInteractionKind(raw);
+    if (hasInteractionKindField(raw) && !requestedInteractionKind) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_interaction_kind_required' });
+      return true;
+    }
+    const effectiveInteractionKind = requestedInteractionKind ?? existing.interaction_kind ?? 'chat';
+    const effectiveExecutionPreferences = executionPreferences ?? readObject(existing.execution_preferences_json);
+    if (
+      (requestedInteractionKind !== undefined || executionPreferences !== undefined)
+      && !validateExecutionPreferencesForInteractionKind(effectiveInteractionKind, effectiveExecutionPreferences)
+    ) {
+      json(
+        res,
+        422,
+        {
+          error_code: 'VALIDATION_ERROR',
+          message: effectiveInteractionKind === 'chat'
+            ? 'agent_chat_endpoint_required'
+            : 'agent_notebook_endpoint_required',
+        },
+      );
       return true;
     }
     const existingConfig = readObject(existing.config) ?? {};
@@ -417,10 +466,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       name: typeof raw.name === 'string' ? raw.name : undefined,
       description: typeof raw.description === 'string' ? raw.description : undefined,
       mode: raw.mode === 'internal' || raw.mode === 'external' ? raw.mode : undefined,
-      interaction_mode:
-        raw.interaction_mode === 'chat' || raw.interaction_mode === 'notebook' || raw.interaction_mode === 'both'
-          ? raw.interaction_mode
-          : undefined,
+      interaction_kind: requestedInteractionKind,
       presence:
         raw.presence === 'online' || raw.presence === 'offline' || raw.presence === 'managed'
           ? raw.presence

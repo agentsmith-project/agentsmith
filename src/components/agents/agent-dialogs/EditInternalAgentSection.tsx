@@ -18,7 +18,8 @@ interface EditInternalAgentSectionProps {
   maxLifetimeSec: string;
   memoryLimit: string;
   memoryRequest: string;
-  notebookEndpointId: string;
+  executionEndpointId: string;
+  interactionKind: 'chat' | 'notebook';
   pending: boolean;
   t: (key: string) => string;
   onAddEnvEntry: () => void;
@@ -29,7 +30,7 @@ interface EditInternalAgentSectionProps {
   onMaxLifetimeSecChange: (value: string) => void;
   onMemoryLimitChange: (value: string) => void;
   onMemoryRequestChange: (value: string) => void;
-  onNotebookEndpointIdChange: (value: string) => void;
+  onExecutionEndpointIdChange: (value: string) => void;
   onRemoveEnvEntry: (index: number) => void;
   onUpdateEnvEntry: (index: number, field: 'key' | 'value', value: string) => void;
 }
@@ -44,7 +45,8 @@ export function EditInternalAgentSection({
   maxLifetimeSec,
   memoryLimit,
   memoryRequest,
-  notebookEndpointId,
+  executionEndpointId,
+  interactionKind,
   pending,
   t,
   onAddEnvEntry,
@@ -55,7 +57,7 @@ export function EditInternalAgentSection({
   onMaxLifetimeSecChange,
   onMemoryLimitChange,
   onMemoryRequestChange,
-  onNotebookEndpointIdChange,
+  onExecutionEndpointIdChange,
   onRemoveEnvEntry,
   onUpdateEnvEntry,
 }: EditInternalAgentSectionProps) {
@@ -67,16 +69,20 @@ export function EditInternalAgentSection({
         <Input id="edit-internal-agent-image" value={image} onChange={(event) => onImageChange(event.target.value)} disabled={pending} />
       </div>
       <div className="space-y-2">
-        <label htmlFor="edit-internal-notebook-endpoint-id" className="text-sm text-primary">{t('create_dialog.notebook_endpoint_id')}</label>
+        <label htmlFor="edit-internal-execution-endpoint-id" className="text-sm text-primary">
+          {interactionKind === 'chat' ? t('create_dialog.chat_endpoint_id') : t('create_dialog.notebook_endpoint_id')}
+        </label>
         <select
-          id="edit-internal-notebook-endpoint-id"
-          value={notebookEndpointId}
-          onChange={(event) => onNotebookEndpointIdChange(event.target.value)}
+          id="edit-internal-execution-endpoint-id"
+          value={executionEndpointId}
+          onChange={(event) => onExecutionEndpointIdChange(event.target.value)}
           disabled={pending}
           className="w-full px-3 py-2.5 rounded-md border border-border-input bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
         >
           {endpointOptions.length === 0 ? (
-            <option value="">{t('create_dialog.notebook_endpoint_empty')}</option>
+            <option value="">
+              {interactionKind === 'chat' ? t('create_dialog.chat_endpoint_empty') : t('create_dialog.notebook_endpoint_empty')}
+            </option>
           ) : null}
           {endpointOptions.map((endpoint) => (
             <option key={endpoint.id} value={endpoint.id}>

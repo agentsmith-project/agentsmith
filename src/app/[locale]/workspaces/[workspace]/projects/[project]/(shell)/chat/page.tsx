@@ -113,7 +113,7 @@ export default function ChatPage({ params }: ChatPageProps) {
         (agent) =>
           agent.mode === 'external'
           && agent.status === 'enabled'
-          && (agent.interaction_mode === 'chat' || agent.interaction_mode === 'both' || !agent.interaction_mode),
+          && agent.interaction_kind === 'chat',
       ),
     [agentData],
   );
@@ -218,6 +218,7 @@ export default function ChatPage({ params }: ChatPageProps) {
       streamErrorAgentTimeout: t('stream_error_agent_timeout'),
       streamErrorAgentProtocol: t('stream_error_agent_protocol'),
       streamErrorAgentUpstream: t('stream_error_agent_upstream'),
+      streamWarningSessionWorkspaceRecreated: t('stream_warning_session_workspace_recreated'),
     },
     upsertStreamAssistantToCache,
     patchStreamAssistantInCache,

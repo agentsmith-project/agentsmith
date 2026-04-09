@@ -300,6 +300,7 @@ async function buildTaskTerminalExecutionContext(args: {
   });
 
   return {
+    interaction_kind: 'notebook',
     workspace_id: args.task.workspace_id,
     project_id: args.task.project_id,
     task_id: args.task.id,
@@ -314,7 +315,6 @@ async function buildTaskTerminalExecutionContext(args: {
     workspace_dir_name: workspaceLibrary?.filesystem_name
       ?? sanitizeFileLibraryWorkspaceDirName(args.task.workspace_file_library_name, args.task.workspace_file_library_id),
     task_inputs: taskInputs,
-    notebook_mode: true,
   };
 }
 
@@ -464,7 +464,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
 
     const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, agentId);
-    if (!agent || agent.status !== 'enabled' || agent.interaction_mode === 'chat') {
+    if (!agent || agent.status !== 'enabled' || agent.interaction_kind === 'chat') {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found_or_not_notebook_compatible' });
       return true;
     }

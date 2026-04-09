@@ -183,17 +183,19 @@ const mockAgents = [
     mode: 'external' as const,
     presence: 'online' as const,
     status: 'enabled' as const,
+    interaction_kind: 'notebook' as const,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
     id: 'agent-2',
     project_id: 'project-1',
-    name: 'Test Agent 2',
-    description: 'Second test agent',
+    name: 'Chat Agent',
+    description: 'Chat-only agent',
     mode: 'external' as const,
     presence: 'online' as const,
     status: 'enabled' as const,
+    interaction_kind: 'chat' as const,
     created_at: '2024-01-02T00:00:00Z',
     updated_at: '2024-01-02T00:00:00Z',
   },
@@ -451,6 +453,21 @@ describe('TaskCreateDialog', () => {
 
       // Verify the select trigger is present for agent selection
       expect(screen.getAllByRole('combobox').length).toBe(1);
+    });
+
+    it('only exposes enabled notebook agents in the task agent selector', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await waitFor(() => {
+        expect(mockAgentListFn).toHaveBeenCalled();
+      });
+
+      fireEvent.click(screen.getAllByRole('combobox')[0]!);
+      expect(await screen.findByRole('option', { name: 'Test Agent 1' })).toBeInTheDocument();
+      expect(screen.queryByRole('option', { name: 'Chat Agent' })).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('option', { name: 'Test Agent 1' }));
     });
 
     it('shows loading state while fetching agents', () => {

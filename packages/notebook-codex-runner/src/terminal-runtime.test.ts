@@ -119,7 +119,7 @@ describe('terminal-runtime', () => {
     await prepareTerminalWorkspace({
       executionContext: {
         task_id: 'task_1',
-        notebook_mode: true,
+        interaction_kind: 'notebook',
       },
       shell: '/usr/bin/zsh',
     });
@@ -244,7 +244,7 @@ describe('terminal-runtime', () => {
     await prepareTerminalWorkspace({
       executionContext: {
         task_id: 'task_1',
-        notebook_mode: true,
+        interaction_kind: 'notebook',
       },
       shell: '/usr/bin/bash',
     });

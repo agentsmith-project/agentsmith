@@ -331,7 +331,7 @@ stop_local_manual_processes() {
   stop_matching_processes "npm run dev:test --port ${PORT_WEB}"
   stop_matching_processes "next dev --port ${PORT_WEB}"
   stop_matching_processes 'node .*/node_modules/.bin/tsx src/index.ts'
-  stop_matching_processes 'make notebook-agent-runner'
+  stop_matching_processes 'make notebook-runner'
 
   maybe_stop_untracked_port "${PORT_WEB}"
   maybe_stop_untracked_port "${PORT_API}"

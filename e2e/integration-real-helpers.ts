@@ -40,7 +40,7 @@ const DEFAULT_REAL_MODEL_PROFILE = {
   cache_write_discount_ratio: 0,
 } as const;
 export const DOCKER_BUILD_PROXY = process.env.INTEGRATION_DOCKER_BUILD_PROXY ?? '';
-export const INTERNAL_AGENT_IMAGE = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() || 'agentsmith-codex-runner:local';
+export const INTERNAL_AGENT_IMAGE = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() || 'agentsmith-notebook-codex-runner:local';
 export const KEYCLOAK_DEV_ADMIN_USERNAME = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
 export const KEYCLOAK_DEV_ADMIN_PASSWORD = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
 export const KEYCLOAK_DEV_ADMIN_EMAIL = process.env.INTEGRATION_KEYCLOAK_EMAIL ?? 'dev-admin@example.com';
@@ -944,13 +944,14 @@ export async function createEndpointViaApi(
   return endpointId!;
 }
 
-export async function createExternalCodexAgentBundle(
+export async function createExternalRunnerAgentBundle(
   page: Page,
   args: {
     workspaceId: string;
     projectId: string;
     endpointId: string;
     title: string;
+    interactionKind?: 'chat' | 'notebook';
     multimodal?: boolean;
     sessionModel?: string;
   },
@@ -967,19 +968,23 @@ export async function createExternalCodexAgentBundle(
       data: {
         name: agentName,
         mode: 'external',
-        interaction_mode: 'both',
-        execution_preferences: {
-          chat: {
-            endpoint_id: args.endpointId,
-            wire_api: 'responses',
-            model: BACKEND_REAL_MODEL,
-          },
-          notebook: {
-            endpoint_id: args.endpointId,
-            wire_api: 'responses',
-            model: BACKEND_REAL_MODEL,
-          },
-        },
+        interaction_kind: args.interactionKind ?? 'notebook',
+        execution_preferences:
+          (args.interactionKind ?? 'notebook') === 'chat'
+            ? {
+                chat: {
+                  endpoint_id: args.endpointId,
+                  wire_api: 'chat',
+                  model: BACKEND_REAL_MODEL,
+                },
+              }
+            : {
+                notebook: {
+                  endpoint_id: args.endpointId,
+                  wire_api: 'responses',
+                  model: BACKEND_REAL_MODEL,
+                },
+              },
         capabilities: {
           streaming_completion: true,
           multimodal_completion: args.multimodal ?? false,
@@ -1041,6 +1046,42 @@ export async function createExternalCodexAgentBundle(
   };
 }
 
+export async function createChatSessionViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  externalAgentId: string;
+  title?: string;
+  model?: string;
+}): Promise<{ id: string; title: string }> {
+  const token = await readStoredAuthToken(args.page);
+  const title = args.title?.trim() || `chat-session-${Date.now()}`;
+  const response = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/chat/sessions`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        title,
+        model: args.model ?? BACKEND_REAL_MODEL,
+        external_agent_id: args.externalAgentId,
+      },
+    },
+  );
+  if (!response.ok()) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`create_chat_session_failed:${response.status()}:${body}`);
+  }
+  const payload = (await response.json().catch(() => null)) as { id?: string } | null;
+  const id = payload?.id?.trim();
+  if (!id) {
+    throw new Error('create_chat_session_missing_id');
+  }
+  return { id, title };
+}
+
 export async function createInternalCodexAgent(
   page: Page,
   args: {
@@ -1065,7 +1106,7 @@ export async function createInternalCodexAgent(
       data: {
         name: agentName,
         mode: 'internal',
-        interaction_mode: 'notebook',
+        interaction_kind: 'notebook',
         execution_preferences: {
           notebook: {
             endpoint_id: args.endpointId,
@@ -2118,12 +2159,12 @@ export async function startCodexRunnerProcess(args: {
   stop: () => Promise<void>;
 }> {
   return new Promise((resolve, reject) => {
-    const logPath = path.join(tmpdir(), `agentsmith-codex-runner-${Date.now()}.log`);
-    const workspaceRoot = path.join(tmpdir(), `agentsmith-codex-workspaces-${Date.now()}`);
-    const builtinSkillsDir = path.resolve(__dirname, '../packages/agent-codex-runner/builtin-skills');
+    const logPath = path.join(tmpdir(), `agentsmith-notebook-runner-${Date.now()}.log`);
+    const workspaceRoot = path.join(tmpdir(), `agentsmith-notebook-workspaces-${Date.now()}`);
+    const builtinSkillsDir = path.resolve(__dirname, '../packages/notebook-codex-runner/builtin-skills');
     const proc = spawn(
       'npm',
-      ['run', 'agent:codex-runner'],
+      ['run', 'agent:notebook-runner'],
       {
         env: {
           ...process.env,
@@ -2152,7 +2193,7 @@ export async function startCodexRunnerProcess(args: {
     const onStdout = (chunk: Buffer) => {
       const text = chunk.toString('utf-8');
       void appendFile(logPath, text, 'utf-8');
-      if (!resolved && text.includes('[agent-codex-runner] connected')) {
+      if (!resolved && text.includes('[notebook-codex-runner] connected')) {
         resolved = true;
         clearTimeout(timeout);
         resolve({
@@ -2204,6 +2245,91 @@ export async function startCodexRunnerProcess(args: {
   });
 }
 
+export async function startChatRunnerProcess(args: {
+  wsUrl: string;
+  agentKey: string;
+  sessionRoot?: string;
+}): Promise<{
+  proc: ChildProcessWithoutNullStreams;
+  logPath: string;
+  stop: () => Promise<void>;
+}> {
+  return new Promise((resolve, reject) => {
+    const logPath = path.join(tmpdir(), `agentsmith-chat-runner-${Date.now()}.log`);
+    const proc = spawn(
+      'npm',
+      ['run', 'agent:chat-runner'],
+      {
+        env: {
+          ...process.env,
+          MBOS_AGENT_WS_URL: args.wsUrl,
+          MBOS_AGENT_KEY: args.agentKey,
+          MBOS_AGENT_RUNNER_DEBUG: '1',
+          ...(args.sessionRoot ? { MBOS_CHAT_SESSION_ROOT: args.sessionRoot } : {}),
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+
+    let stderr = '';
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      proc.kill('SIGTERM');
+      reject(new Error(`chat_runner_start_timeout:${stderr.slice(-500)}:log=${logPath}`));
+    }, 30_000);
+
+    const onStdout = (chunk: Buffer) => {
+      const text = chunk.toString('utf-8');
+      void appendFile(logPath, text, 'utf-8');
+      if (!resolved && text.includes('[chat-llm-runner] connected')) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve({
+          proc,
+          logPath,
+          stop: async () => {
+            if (!proc.killed && proc.exitCode === null) {
+              await killProcessTree(proc.pid, 'SIGTERM');
+              await new Promise<void>((done) => {
+                const killTimeout = setTimeout(() => {
+                  if (!proc.killed && proc.exitCode === null) {
+                    void killProcessTree(proc.pid, 'SIGKILL');
+                  }
+                  done();
+                }, 5_000);
+                proc.once('exit', () => {
+                  clearTimeout(killTimeout);
+                  done();
+                });
+              });
+            }
+          },
+        });
+      }
+    };
+
+    proc.stderr.on('data', (chunk) => {
+      const text = chunk.toString('utf-8');
+      stderr += text;
+      void appendFile(logPath, text, 'utf-8');
+    });
+
+    proc.once('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+
+    proc.once('exit', (code) => {
+      clearTimeout(timeout);
+      if (!resolved && code !== 0) {
+        reject(new Error(`chat_runner_exit_${String(code)}:${stderr.slice(-500)}:log=${logPath}`));
+      }
+    });
+
+    proc.stdout.on('data', onStdout);
+  });
+}
+
 export async function startCodexRunnerDockerProcess(args: {
   wsUrl: string;
   agentKey: string;
@@ -2214,8 +2340,8 @@ export async function startCodexRunnerDockerProcess(args: {
   imageTag: string;
   stop: () => Promise<void>;
 }> {
-  const baseImageTag = process.env.INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE?.trim() || 'agentsmith-codex-runner-base:local';
-  const imageTag = process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() || 'agentsmith-codex-runner:local';
+  const baseImageTag = process.env.INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE?.trim() || 'agentsmith-notebook-codex-runner-base:local';
+  const imageTag = process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() || 'agentsmith-notebook-codex-runner:local';
   const embeddedRunner = process.env.INTEGRATION_CODEX_RUNNER_EMBEDDED?.trim() === '1';
   const rebuildBaseImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE?.trim() !== '0';
   const rebuildRunnerImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE?.trim() !== '0';
@@ -2225,8 +2351,8 @@ export async function startCodexRunnerDockerProcess(args: {
     ? process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR?.trim() || '/etc/codex/skills'
     : '/etc/codex/skills';
   const buildContext = path.resolve(__dirname, '..');
-  const baseDockerfile = path.join(buildContext, 'infra/runner/Dockerfile.agent-codex-runner-base');
-  const dockerfile = path.join(buildContext, 'infra/runner/Dockerfile.agent-codex-runner');
+  const baseDockerfile = path.join(buildContext, 'infra/runner/Dockerfile.notebook-codex-runner-base');
+  const dockerfile = path.join(buildContext, 'infra/runner/Dockerfile.notebook-codex-runner');
   if (!embeddedRunner && rebuildBaseImage) {
     const baseBuildArgs = ['build'];
     if (DOCKER_BUILD_PROXY.trim()) {
@@ -2259,9 +2385,9 @@ export async function startCodexRunnerDockerProcess(args: {
     }
   }
 
-  const workspaceRoot = path.join(tmpdir(), `agentsmith-codex-docker-workspaces-${Date.now()}`);
+  const workspaceRoot = path.join(tmpdir(), `agentsmith-notebook-docker-workspaces-${Date.now()}`);
   await mkdir(workspaceRoot, { recursive: true });
-  const containerName = `agentsmith-codex-runner-${Date.now()}`;
+  const containerName = `agentsmith-notebook-runner-${Date.now()}`;
   const requestedRunnerLogDir = process.env.INTEGRATION_RUNNER_LOG_DIR?.trim() || path.join(process.cwd(), 'test-results', 'runner-logs');
   let runnerLogDir = requestedRunnerLogDir;
   try {
@@ -2354,7 +2480,7 @@ export async function startCodexRunnerDockerProcess(args: {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     const logs = await spawnAndCapture('docker', ['logs', containerName]);
-    if (`${logs.stdout}\n${logs.stderr}`.includes('[agent-codex-runner] connected')) {
+    if (`${logs.stdout}\n${logs.stderr}`.includes('[notebook-codex-runner] connected')) {
       await preserveRunnerLogs();
       return {
         containerName,

@@ -30,8 +30,8 @@ MOUNT_OPTIONS="${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS:-}"
 SUBDIR="${INTERNAL_AGENT_JUICEFS_SUBDIR:-}"
 MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}"
 MOUNT_IMAGE_OVERRIDE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}"
-RUNNER_IMAGE="${LOCAL_MANUAL_INTERNAL_AGENT_IMAGE:-agentsmith-codex-runner:local}"
-RUNNER_BASE_IMAGE="${LOCAL_MANUAL_INTERNAL_AGENT_BASE_IMAGE:-agentsmith-codex-runner-base:local}"
+RUNNER_IMAGE="${LOCAL_MANUAL_INTERNAL_AGENT_IMAGE:-agentsmith-notebook-codex-runner:local}"
+RUNNER_BASE_IMAGE="${LOCAL_MANUAL_INTERNAL_AGENT_BASE_IMAGE:-agentsmith-notebook-codex-runner-base:local}"
 DOCKER_BUILD_PROXY_VALUE="${LOCAL_MANUAL_INTERNAL_DOCKER_BUILD_PROXY:-${DOCKER_BUILD_PROXY:-${HTTP_PROXY:-}}}"
 REBUILD_RUNNER_IMAGE="${LOCAL_MANUAL_INTERNAL_REBUILD_RUNNER_IMAGE:-0}"
 JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-juicedata/mount:ce-v1.3.1}"
@@ -97,17 +97,17 @@ ensure_kind_image() {
 ensure_internal_runner_image() {
   if ! docker image inspect "${RUNNER_BASE_IMAGE}" >/dev/null 2>&1; then
     internal_info "building internal runner base image ${RUNNER_BASE_IMAGE}"
-    local build_args=(build -t "${RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner-base" "${ROOT_DIR}")
+    local build_args=(build -t "${RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner-base" "${ROOT_DIR}")
     if [[ -n "${DOCKER_BUILD_PROXY_VALUE}" ]]; then
-      build_args=(build --build-arg "HTTP_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "HTTPS_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "NO_PROXY=127.0.0.1,localhost,host.docker.internal" -t "${RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner-base" "${ROOT_DIR}")
+      build_args=(build --build-arg "HTTP_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "HTTPS_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "NO_PROXY=127.0.0.1,localhost,host.docker.internal" -t "${RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner-base" "${ROOT_DIR}")
     fi
     docker "${build_args[@]}" >/dev/null
   fi
   if [[ "${REBUILD_RUNNER_IMAGE}" == "1" ]] || ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
     internal_info "building internal runner image ${RUNNER_IMAGE}"
-    local build_args=(build --build-arg "RUNNER_BASE_IMAGE=${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner" "${ROOT_DIR}")
+    local build_args=(build --build-arg "RUNNER_BASE_IMAGE=${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner" "${ROOT_DIR}")
     if [[ -n "${DOCKER_BUILD_PROXY_VALUE}" ]]; then
-      build_args=(build --build-arg "HTTP_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "HTTPS_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "NO_PROXY=127.0.0.1,localhost,host.docker.internal" --build-arg "RUNNER_BASE_IMAGE=${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner" "${ROOT_DIR}")
+      build_args=(build --build-arg "HTTP_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "HTTPS_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "NO_PROXY=127.0.0.1,localhost,host.docker.internal" --build-arg "RUNNER_BASE_IMAGE=${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner" "${ROOT_DIR}")
     fi
     docker "${build_args[@]}" >/dev/null
   fi
@@ -391,7 +391,7 @@ const [endpointId, image, model] = process.argv.slice(2);
 process.stdout.write(JSON.stringify({
   name: `demo-internal-agent-${Date.now()}`,
   mode: 'internal',
-  interaction_mode: 'notebook',
+  interaction_kind: 'notebook',
   execution_preferences: {
     notebook: {
       endpoint_id: endpointId,

@@ -13,7 +13,7 @@ import {
   createTerminalSessionViaApi,
   createCredentialViaUi,
   createEndpointViaApi,
-  createExternalCodexAgentBundle,
+  createExternalRunnerAgentBundle,
   createNotebookTaskViaApi,
   createFileLibraryViaUi,
   createProjectInWorkspace,
@@ -245,7 +245,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,
@@ -367,7 +367,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,
@@ -443,7 +443,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,
@@ -526,7 +526,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,
@@ -603,7 +603,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,
@@ -680,7 +680,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,
@@ -817,7 +817,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,
@@ -892,7 +892,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,

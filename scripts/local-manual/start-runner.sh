@@ -9,7 +9,7 @@ wait_runner_connected() {
   local start
   start="$(date +%s)"
   while true; do
-    if rg -q "\\[agent-codex-runner\\] connected|websocket open" "${RUNNER_LOG}" 2>/dev/null; then
+    if rg -q "\\[notebook-codex-runner\\] connected|websocket open" "${RUNNER_LOG}" 2>/dev/null; then
       info "runner connected"
       return 0
     fi
@@ -25,7 +25,7 @@ wait_runner_connected() {
 info "ensuring a single local external runner instance"
 rm -f "${RUNNER_READY_FILE}"
 stop_pid_file_if_running "${RUNNER_PID_FILE}" "runner"
-stop_matching_processes 'make notebook-agent-runner'
+stop_matching_processes 'make notebook-runner'
 rm -f "${RUNNER_LOG}"
 
 launch_detached "${RUNNER_PID_FILE}" "${RUNNER_LOG}" "
@@ -34,7 +34,7 @@ launch_detached "${RUNNER_PID_FILE}" "${RUNNER_LOG}" "
     MBOS_AGENT_RUNNER_DEBUG='${MBOS_AGENT_RUNNER_DEBUG:-1}' \
     MBOS_AGENT_TASK_TIMEOUT_SEC='${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}' \
     MBOS_AGENT_CODEX_YOLO='${MBOS_AGENT_CODEX_YOLO:-1}' && \
-  exec make notebook-agent-runner
+  exec make notebook-runner
 "
 wait_runner_connected 60
 write_ready_file "${RUNNER_READY_FILE}"

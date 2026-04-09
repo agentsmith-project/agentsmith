@@ -71,10 +71,10 @@ export const PACKAGE_TEST_SCRIPT_NAMES = new Set([
   'test:e2e:integration:files',
   'test:e2e:integration:chat',
   'test:e2e:integration:agents',
-  'test:e2e:integration:agents:codex',
+  'test:e2e:integration:agents:chat',
   'test:e2e:integration:endpoints-capabilities',
-  'test:e2e:integration:notebook:codex',
-  'test:e2e:integration:notebook:codex:docker',
+  'test:e2e:integration:notebook',
+  'test:e2e:integration:notebook:docker',
   'test:e2e:integration:files:mount-sync',
   'test:e2e:integration:chat:real',
   'test:e2e:integration:minimal:with-api',
@@ -89,7 +89,7 @@ export const PACKAGE_TEST_SCRIPT_NAMES = new Set([
   'test:governance',
   'test:notebook:backend-real:smoke',
   'test:internal:backend-real:notebook-workspace',
-  'test:agents:backend-real:codex',
+  'test:agents:backend-real:runner',
   'test:files:backend-real:smoke',
   'test:files:backend-real:sync',
   'test:files:backend-real:ui-sync',
@@ -167,7 +167,7 @@ export const KEEP_ROOT_SCRIPTS = {
   'cluster:deploy': 'bash scripts/cluster-deploy/deploy.sh',
   'cluster:bootstrap': 'bash scripts/cluster-deploy/bootstrap.sh',
   'docker:app': 'docker build -f infra/deploy/Dockerfile.agentsmith-app-base -t agentsmith-app-base:oss . && docker build --build-arg APP_BASE_IMAGE=agentsmith-app-base:oss -f infra/deploy/Dockerfile.agentsmith-app -t agentsmith-app:oss .',
-  'docker:runner': 'docker build -f infra/runner/Dockerfile.agent-codex-runner-base -t agentsmith-codex-runner-base:oss . && docker build --build-arg RUNNER_BASE_IMAGE=agentsmith-codex-runner-base:oss -f infra/runner/Dockerfile.agent-codex-runner -t agentsmith-codex-runner:oss .',
+  'docker:runner': 'docker build -f infra/runner/Dockerfile.notebook-codex-runner-base -t agentsmith-notebook-codex-runner-base:oss . && docker build --build-arg RUNNER_BASE_IMAGE=agentsmith-notebook-codex-runner-base:oss -f infra/runner/Dockerfile.notebook-codex-runner -t agentsmith-notebook-codex-runner:oss .',
 } as const;
 
 export const REMOVE_ROOT_DEV_DEPENDENCIES = new Set([

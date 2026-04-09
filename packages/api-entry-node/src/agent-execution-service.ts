@@ -3,7 +3,11 @@ import type { Duplex } from 'node:stream';
 import { randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
+import { isMatchingRunnerSpec, type AgentRunnerSpec } from '@mbos/agent-runner';
 import type { AgentResourceService } from './agent-resource-service.js';
+import { resolveRequiredConfiguredPublicApiBase } from './agent-execution-api-base.js';
+import { readAgentExecutionPreferences } from './agent-execution-preferences.js';
+import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
 
 export interface AgentStreamEvent {
   type: 'delta' | 'done' | 'error' | 'event' | 'artifact';
@@ -155,47 +159,6 @@ function inferRemoteIp(req: http.IncomingMessage): string | undefined {
   return req.socket.remoteAddress ?? undefined;
 }
 
-function firstHeaderValue(input: string | string[] | undefined): string | null {
-  if (!input) return null;
-  const raw = Array.isArray(input) ? input[0] : input;
-  const first = raw.split(',')[0]?.trim();
-  return first && first.length > 0 ? first : null;
-}
-
-function inferRequestOrigin(req: http.IncomingMessage): string | null {
-  const host = firstHeaderValue(req.headers['x-forwarded-host'])
-    ?? firstHeaderValue(req.headers.host);
-  const proto = firstHeaderValue(req.headers['x-forwarded-proto'])
-    ?? (((req.socket as { encrypted?: boolean }).encrypted ?? false) ? 'https' : 'http');
-  if (host) {
-    return `${proto}://${host}`;
-  }
-  const wsBase = process.env.AGENT_EXECUTION_WS_BASE_URL?.trim();
-  if (wsBase) {
-    try {
-      const parsed = new URL(wsBase.replace(/^wss?:\/\//, (m) => (m === 'wss://' ? 'https://' : 'http://')));
-      return parsed.origin;
-    } catch {
-      // ignore malformed env and keep probing fallback
-    }
-  }
-  if (typeof req.socket.localPort === 'number' && req.socket.localPort > 0) {
-    return `http://localhost:${req.socket.localPort}`;
-  }
-  return null;
-}
-
-function readAgentNotebookEndpointId(agent: { execution_preferences_json?: unknown }): string | null {
-  const executionPreferences = agent.execution_preferences_json;
-  if (!isPlainRecord(executionPreferences)) return null;
-  const notebook = executionPreferences.notebook;
-  if (!isPlainRecord(notebook)) return null;
-  const endpointId = notebook.endpoint_id;
-  if (typeof endpointId !== 'string') return null;
-  const trimmed = endpointId.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 function debugExecution(message: string): void {
   if (process.env.DEBUG_AGENT_EXECUTION !== '1') return;
   process.stdout.write(`[agent-execution] ${message}\n`);
@@ -290,6 +253,13 @@ function parseArtifactPayload(input: unknown): AgentExecutionArtifactPayload | n
 
 function isPlainObject(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
+}
+
+function readRunnerSpec(input: unknown): Partial<AgentRunnerSpec> | null {
+  if (!isPlainObject(input)) return null;
+  const runnerSpec = input.runner_spec;
+  if (!isPlainObject(runnerSpec)) return null;
+  return runnerSpec as Partial<AgentRunnerSpec>;
 }
 
 function mergeExecutionPreferences(
@@ -398,12 +368,14 @@ export class AgentExecutionService {
         return;
       }
       debugExecution(`accept agent_id=${agentId} ws=${keyRecord.workspace_id} proj=${keyRecord.project_id}`);
-      const notebookEndpointId = readAgentNotebookEndpointId(agent);
-      const origin = inferRequestOrigin(req);
-      const resourceProxyBaseUrl = notebookEndpointId && origin
-        ? `${origin}/api/v1/workspaces/${encodeURIComponent(keyRecord.workspace_id)}`
+      const executionEndpointId = readAgentExecutionPreferences(agent).endpointId;
+      const executionApiBase = executionEndpointId
+        ? resolveExecutionApiBase(resolveRequiredConfiguredPublicApiBase(), agent)
+        : null;
+      const resourceProxyBaseUrl = executionEndpointId && executionApiBase
+        ? `${executionApiBase}/workspaces/${encodeURIComponent(keyRecord.workspace_id)}`
           + `/projects/${encodeURIComponent(keyRecord.project_id)}`
-          + `/endpoints/${encodeURIComponent(notebookEndpointId)}/proxy/openai`
+          + `/endpoints/${encodeURIComponent(executionEndpointId)}/proxy/openai`
         : undefined;
 
       const socketKey = buildSocketKey(agentId, sessionId);
@@ -715,6 +687,15 @@ export class AgentExecutionService {
 
     if (payload.type === 'agent.ready') {
       void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, socket.agentId).then((current) => {
+        const runnerSpec = readRunnerSpec(payload.payload);
+        const expectedInteractionKind =
+          current?.interaction_kind === 'notebook' || current?.interaction_kind === 'chat'
+            ? current.interaction_kind
+            : 'chat';
+        if (runnerSpec && !isMatchingRunnerSpec(expectedInteractionKind, runnerSpec)) {
+          socket.ws.close(1008, 'agent_runner_spec_mismatch');
+          return;
+        }
         const existing = isPlainObject(current?.execution_preferences_json)
           ? current.execution_preferences_json
           : {};

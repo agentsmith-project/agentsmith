@@ -20,7 +20,7 @@ const requiredPaths = [
   'README.md',
   'src',
   'packages',
-  'infra/runner/Dockerfile.agent-codex-runner',
+  'infra/runner/Dockerfile.notebook-codex-runner',
   'infra/deploy/Dockerfile.agentsmith-app',
   'docs/DEPLOYMENT.md',
   'docs/RUNNER_RUNTIME.md',

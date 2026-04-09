@@ -271,8 +271,11 @@ components:
                         type: boolean
                       supports_parallel_tool_calls:
                         type: boolean
-                  notebook_mode:
-                    type: boolean
+                  interaction_kind:
+                    type: string
+                    enum:
+                      - chat
+                      - notebook
                   task_inputs:
                     type: array
                     items:

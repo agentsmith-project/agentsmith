@@ -56,7 +56,7 @@ export const docAuditEvents: AuditEvent[] = [
     request_id: 'req-doc-003',
     metadata_json: {
       agent_name: '运营审计助手',
-      interaction_mode: 'both',
+      interaction_kind: 'notebook',
     },
   },
 ];
@@ -75,4 +75,3 @@ export const docUsageTopResources = [
     requests: 4180,
   },
 ];
-

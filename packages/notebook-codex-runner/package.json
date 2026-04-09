@@ -1,5 +1,5 @@
 {
-  "name": "@mbos/agent-codex-runner",
+  "name": "@mbos/notebook-codex-runner",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,6 +10,7 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
+    "@mbos/agent-runner": "0.1.0",
     "node-pty": "^1.1.0",
     "ws": "^8.18.3"
   },

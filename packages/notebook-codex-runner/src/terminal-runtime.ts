@@ -24,7 +24,7 @@ export type TerminalExecutionContext = {
   workspace_file_library_id?: string | null;
   workspace_file_library_name?: string | null;
   workspace_dir_name?: string | null;
-  notebook_mode?: boolean;
+  interaction_kind?: 'chat' | 'notebook';
   task_inputs?: Array<{
     kind?: 'library_object' | 'artifact' | 'url';
     library_id?: string;
@@ -53,7 +53,7 @@ export type TerminalProcess = {
 function debugTerminalRuntime(message: string, extra?: Record<string, unknown>): void {
   if (process.env.MBOS_AGENT_RUNNER_DEBUG !== '1') return;
   const payload = extra ? ` ${JSON.stringify(extra)}` : '';
-  process.stdout.write(`[agent-codex-runner][terminal-runtime] ${message}${payload}\n`);
+  process.stdout.write(`[notebook-codex-runner][terminal-runtime] ${message}${payload}\n`);
 }
 
 function sanitizePathPart(input: string | undefined, fallback: string): string {
@@ -114,7 +114,7 @@ export async function prepareTerminalWorkspace(input: {
     workspace_binding_mode: executionContext.workspace_binding_mode ?? null,
     workspace_path: executionContext.workspace_path ?? null,
     has_execution_ticket: typeof executionContext.execution_ticket === 'string' && executionContext.execution_ticket.length > 0,
-    notebook_mode: executionContext.notebook_mode === true,
+    interaction_kind: executionContext.interaction_kind ?? null,
   });
   const username = sanitizePathPart(executionContext.username, 'unknown_user');
   const taskId = sanitizePathPart(
@@ -152,7 +152,7 @@ export async function prepareTerminalWorkspace(input: {
     manifestDir: taskPaths.mbosDir,
   });
 
-  const isNotebookMode = executionContext.notebook_mode === true;
+  const isNotebookMode = executionContext.interaction_kind === 'notebook';
   const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
   if (isNotebookMode) {
     await prepareNotebookWorkspaceAssets({

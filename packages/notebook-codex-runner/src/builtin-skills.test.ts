@@ -14,7 +14,7 @@ describe('builtin-skills', () => {
     delete process.env.MBOS_AGENT_BUILTIN_SKILLS;
     try {
       const config = resolveBuiltinSkillsConfig();
-      expect(config.sourceDir).toMatch(/packages\/agent-codex-runner\/builtin-skills$/);
+      expect(config.sourceDir).toMatch(/packages\/notebook-codex-runner\/builtin-skills$/);
       expect(config.required).toBe(true);
       expect(config.skills).toEqual(['mbos-context', 'feishu-docs', 'jira-ops']);
     } finally {

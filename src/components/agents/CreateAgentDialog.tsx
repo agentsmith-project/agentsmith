@@ -23,7 +23,7 @@ import {
 import { AgentBasicsSection } from './agent-dialogs/AgentBasicsSection';
 import { ExternalAgentSection } from './agent-dialogs/ExternalAgentSection';
 import { InternalAgentSection } from './agent-dialogs/InternalAgentSection';
-import type { AgentInteractionMode, AgentMode, EnvEntry } from './agent-dialogs/types';
+import type { AgentInteractionKind, AgentMode, EnvEntry } from './agent-dialogs/types';
 import { buildCreateAgentPayload } from './agent-dialogs/utils';
 
 export interface CreateAgentDialogProps {
@@ -47,7 +47,7 @@ export function CreateAgentDialog({
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [mode, setMode] = React.useState<AgentMode>('external');
-  const [interactionMode, setInteractionMode] = React.useState<AgentInteractionMode>('both');
+  const [interactionKind, setInteractionKind] = React.useState<AgentInteractionKind>('chat');
   const [image, setImage] = React.useState('');
   const [envEntries, setEnvEntries] = React.useState<EnvEntry[]>([{ key: '', value: '' }]);
   const [maxConcurrentSessions, setMaxConcurrentSessions] = React.useState<string>('');
@@ -55,7 +55,7 @@ export function CreateAgentDialog({
   const [externalAcceptedMimeTypes, setExternalAcceptedMimeTypes] = React.useState('image/png,image/jpeg,image/webp,text/plain,application/pdf');
   const [externalMaxFileCount, setExternalMaxFileCount] = React.useState('8');
   const [externalMaxTotalBytes, setExternalMaxTotalBytes] = React.useState(String(60 * 1024 * 1024));
-  const [notebookEndpointId, setNotebookEndpointId] = React.useState('');
+  const [executionEndpointId, setExecutionEndpointId] = React.useState('');
   const [cpuRequest, setCpuRequest] = React.useState('500m');
   const [cpuLimit, setCpuLimit] = React.useState('2');
   const [memoryRequest, setMemoryRequest] = React.useState('512Mi');
@@ -95,7 +95,7 @@ export function CreateAgentDialog({
     setName('');
     setDescription('');
     setMode('external');
-    setInteractionMode('both');
+    setInteractionKind('chat');
     setImage('');
     setEnvEntries([{ key: '', value: '' }]);
     setMaxConcurrentSessions('');
@@ -103,7 +103,7 @@ export function CreateAgentDialog({
     setExternalAcceptedMimeTypes('image/png,image/jpeg,image/webp,text/plain,application/pdf');
     setExternalMaxFileCount('8');
     setExternalMaxTotalBytes(String(60 * 1024 * 1024));
-    setNotebookEndpointId('');
+    setExecutionEndpointId('');
     setCpuRequest('500m');
     setCpuLimit('2');
     setMemoryRequest('512Mi');
@@ -119,10 +119,10 @@ export function CreateAgentDialog({
   }, [open]);
 
   React.useEffect(() => {
-    if (notebookEndpointId) return;
+    if (executionEndpointId) return;
     if (endpointOptions.length === 0) return;
-    setNotebookEndpointId(endpointOptions[0].id);
-  }, [notebookEndpointId, endpointOptions]);
+    setExecutionEndpointId(endpointOptions[0].id);
+  }, [executionEndpointId, endpointOptions]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,17 +133,15 @@ export function CreateAgentDialog({
         toast.error(t('create_dialog.image_required'));
         return;
       }
-      if (!notebookEndpointId.trim()) {
-        toast.error(t('create_dialog.notebook_endpoint_required'));
+      if (!executionEndpointId.trim()) {
+        toast.error(interactionKind === 'chat' ? t('create_dialog.chat_endpoint_required') : t('create_dialog.notebook_endpoint_required'));
         return;
       }
     }
 
-    if (mode === 'external' && (interactionMode === 'notebook' || interactionMode === 'both')) {
-      if (!notebookEndpointId.trim()) {
-        toast.error(t('create_dialog.notebook_endpoint_required'));
-        return;
-      }
+    if (mode === 'external' && !executionEndpointId.trim()) {
+      toast.error(interactionKind === 'chat' ? t('create_dialog.chat_endpoint_required') : t('create_dialog.notebook_endpoint_required'));
+      return;
     }
 
     createMutation.mutate(buildCreateAgentPayload({
@@ -157,14 +155,14 @@ export function CreateAgentDialog({
       externalMultimodal,
       idleTimeoutSec,
       image,
-      interactionMode,
+      interactionKind,
       maxConcurrentSessions,
       maxLifetimeSec,
       memoryLimit,
       memoryRequest,
       mode,
       name,
-      notebookEndpointId,
+      executionEndpointId,
     }));
   };
 
@@ -222,16 +220,16 @@ export function CreateAgentDialog({
               createPending={createMutation.isPending}
               description={description}
               endpointOptions={endpointOptions}
-              interactionMode={interactionMode}
+              interactionKind={interactionKind}
               mode={mode}
               name={name}
-              notebookEndpointId={notebookEndpointId}
+              executionEndpointId={executionEndpointId}
               t={t}
               onDescriptionChange={setDescription}
-              onInteractionModeChange={setInteractionMode}
+              onInteractionKindChange={setInteractionKind}
               onModeChange={setMode}
               onNameChange={setName}
-              onNotebookEndpointIdChange={setNotebookEndpointId}
+              onExecutionEndpointIdChange={setExecutionEndpointId}
             />
 
             {mode === 'internal' ? (
@@ -247,8 +245,9 @@ export function CreateAgentDialog({
                 maxLifetimeSec={maxLifetimeSec}
                 memoryLimit={memoryLimit}
                 memoryRequest={memoryRequest}
-                notebookEndpointId={notebookEndpointId}
-                t={t}
+              executionEndpointId={executionEndpointId}
+              interactionKind={interactionKind}
+              t={t}
                 onAddEnvEntry={addEnvEntry}
                 onCpuLimitChange={setCpuLimit}
                 onCpuRequestChange={setCpuRequest}
@@ -258,7 +257,7 @@ export function CreateAgentDialog({
                 onMaxLifetimeSecChange={setMaxLifetimeSec}
                 onMemoryLimitChange={setMemoryLimit}
                 onMemoryRequestChange={setMemoryRequest}
-                onNotebookEndpointIdChange={setNotebookEndpointId}
+              onExecutionEndpointIdChange={setExecutionEndpointId}
                 onRemoveEnvEntry={removeEnvEntry}
                 onUpdateEnvEntry={updateEnvEntry}
               />

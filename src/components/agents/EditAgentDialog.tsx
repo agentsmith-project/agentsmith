@@ -25,7 +25,7 @@ import { EditAgentBasicsSection } from './agent-dialogs/EditAgentBasicsSection';
 import { EditExecutionPreferencesSection } from './agent-dialogs/EditExecutionPreferencesSection';
 import { EditInternalAgentSection } from './agent-dialogs/EditInternalAgentSection';
 import { ExternalAgentSection } from './agent-dialogs/ExternalAgentSection';
-import type { AgentInteractionMode, EnvEntry } from './agent-dialogs/types';
+import type { AgentInteractionKind, EnvEntry } from './agent-dialogs/types';
 import { buildUpdateAgentPayload, getEditAgentFormState } from './agent-dialogs/edit-agent-utils';
 
 export interface EditAgentDialogProps {
@@ -52,14 +52,14 @@ export function EditAgentDialog({
   const { handleError } = useApiError();
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
-  const [interactionMode, setInteractionMode] = React.useState<AgentInteractionMode>('both');
+  const [interactionKind, setInteractionKind] = React.useState<AgentInteractionKind>('chat');
   const [executionPrefsOpen, setExecutionPrefsOpen] = React.useState(false);
   const [executionPreferences, setExecutionPreferences] = React.useState({});
   const [externalMultimodal, setExternalMultimodal] = React.useState(false);
   const [externalAcceptedMimeTypes, setExternalAcceptedMimeTypes] = React.useState('');
   const [externalMaxFileCount, setExternalMaxFileCount] = React.useState('');
   const [externalMaxTotalBytes, setExternalMaxTotalBytes] = React.useState('');
-  const [notebookEndpointId, setNotebookEndpointId] = React.useState('');
+  const [executionEndpointId, setExecutionEndpointId] = React.useState('');
   const [visibility, setVisibility] = React.useState<'private' | 'public'>('private');
   const [image, setImage] = React.useState('');
   const [cpuRequest, setCpuRequest] = React.useState('500m');
@@ -102,9 +102,9 @@ export function EditAgentDialog({
       const initialState = getEditAgentFormState(agent);
       setName(initialState.name);
       setDescription(initialState.description);
-      setInteractionMode(initialState.interactionMode);
+      setInteractionKind(initialState.interactionKind);
       setExecutionPreferences(initialState.executionPreferences);
-      setNotebookEndpointId(initialState.notebookEndpointId);
+      setExecutionEndpointId(initialState.executionEndpointId);
       setImage(initialState.image);
       setCpuRequest(initialState.cpuRequest);
       setCpuLimit(initialState.cpuLimit);
@@ -122,20 +122,19 @@ export function EditAgentDialog({
   }, [open, agent]);
 
   React.useEffect(() => {
-    if (notebookEndpointId) return;
+    if (executionEndpointId) return;
     if (endpointOptions.length === 0) return;
-    setNotebookEndpointId(endpointOptions[0].id);
-  }, [notebookEndpointId, endpointOptions]);
+    setExecutionEndpointId(endpointOptions[0].id);
+  }, [executionEndpointId, endpointOptions]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!agent || !name.trim()) return;
 
     if (
-      (interactionMode === 'notebook' || interactionMode === 'both' || agent.mode === 'internal')
-      && !notebookEndpointId.trim()
+      !executionEndpointId.trim()
     ) {
-      toast.error(t('create_dialog.notebook_endpoint_required'));
+      toast.error(interactionKind === 'chat' ? t('create_dialog.chat_endpoint_required') : t('create_dialog.notebook_endpoint_required'));
       return;
     }
     if (agent.mode === 'internal' && !image.trim()) {
@@ -157,12 +156,12 @@ export function EditAgentDialog({
       externalMultimodal,
       idleTimeoutSec,
       image,
-      interactionMode,
+      interactionKind,
       maxLifetimeSec,
       memoryLimit,
       memoryRequest,
       name,
-      notebookEndpointId,
+      executionEndpointId,
       visibility,
     }));
   };
@@ -199,16 +198,16 @@ export function EditAgentDialog({
             commonT={commonT}
             description={description}
             endpointOptions={endpointOptions}
-            interactionMode={interactionMode}
+            interactionKind={interactionKind}
             name={name}
-            notebookEndpointId={notebookEndpointId}
+            executionEndpointId={executionEndpointId}
             pending={updateMutation.isPending}
             t={t}
             visibility={visibility}
             onDescriptionChange={setDescription}
-            onInteractionModeChange={setInteractionMode}
+            onInteractionKindChange={setInteractionKind}
             onNameChange={setName}
-            onNotebookEndpointIdChange={setNotebookEndpointId}
+            onExecutionEndpointIdChange={setExecutionEndpointId}
             onVisibilityChange={setVisibility}
           />
 
@@ -238,7 +237,8 @@ export function EditAgentDialog({
               maxLifetimeSec={maxLifetimeSec}
               memoryLimit={memoryLimit}
               memoryRequest={memoryRequest}
-              notebookEndpointId={notebookEndpointId}
+              executionEndpointId={executionEndpointId}
+              interactionKind={interactionKind}
               pending={updateMutation.isPending}
               t={t}
               onAddEnvEntry={addEnvEntry}
@@ -249,7 +249,7 @@ export function EditAgentDialog({
               onMaxLifetimeSecChange={setMaxLifetimeSec}
               onMemoryLimitChange={setMemoryLimit}
               onMemoryRequestChange={setMemoryRequest}
-              onNotebookEndpointIdChange={setNotebookEndpointId}
+              onExecutionEndpointIdChange={setExecutionEndpointId}
               onRemoveEnvEntry={removeEnvEntry}
               onUpdateEnvEntry={updateEnvEntry}
             />

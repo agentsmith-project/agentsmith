@@ -55,7 +55,7 @@ const mountedWorkspaceByMountPath = new Set<string>();
 function debugTaskWorkspace(message: string, extra?: Record<string, unknown>): void {
   if (process.env.MBOS_AGENT_RUNNER_DEBUG !== '1') return;
   const payload = extra ? ` ${JSON.stringify(extra)}` : '';
-  process.stdout.write(`[agent-codex-runner][task-workspace] ${message}${payload}\n`);
+  process.stdout.write(`[notebook-codex-runner][task-workspace] ${message}${payload}\n`);
 }
 
 export function shouldRetryTaskWorkspaceMount(error: unknown): boolean {

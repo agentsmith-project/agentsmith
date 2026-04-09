@@ -33,6 +33,7 @@ import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
 import { issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
 import { resolveRequiredConfiguredPublicApiBase } from './agent-execution-api-base.js';
+import { readAgentExecutionPreferences } from './agent-execution-preferences.js';
 import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
 
 interface ChatStreamHandlerArgs {
@@ -46,21 +47,6 @@ interface ChatStreamHandlerArgs {
   json: (res: http.ServerResponse, statusCode: number, body: unknown) => void;
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
   sseWrite: (res: http.ServerResponse, event: string, data: unknown) => void;
-}
-
-function readAgentNotebookEndpointId(agent: { execution_preferences_json?: unknown }): string | null {
-  const executionPreferences = agent.execution_preferences_json;
-  if (!executionPreferences || typeof executionPreferences !== 'object' || Array.isArray(executionPreferences)) {
-    return null;
-  }
-  const notebook = (executionPreferences as Record<string, unknown>).notebook;
-  if (!notebook || typeof notebook !== 'object' || Array.isArray(notebook)) {
-    return null;
-  }
-  const endpointId = (notebook as Record<string, unknown>).endpoint_id;
-  if (typeof endpointId !== 'string') return null;
-  const trimmed = endpointId.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }
 
 const MAX_ATTACHMENTS_PER_MESSAGE = 8;
@@ -165,6 +151,75 @@ async function toDataUrlFromAttachmentOrFileLibraryObject(
   } catch {
     return null;
   }
+}
+
+function buildHistoricalAttachmentText(snapshot: {
+  file_name: string;
+  file_type: string;
+  file_size: number;
+}, kind: 'image' | 'file'): { type: 'text'; text: string } {
+  const prefix = kind === 'image' ? '[attached_image]' : '[attached_file]';
+  return {
+    type: 'text',
+    text: `${prefix} ${snapshot.file_name} (${snapshot.file_type}, ${snapshot.file_size}B)`,
+  };
+}
+
+async function buildChatExecutionMessages(args: {
+  deps: ChatStreamHandlerArgs['deps'];
+  route: Pick<ChatRoute, 'workspaceId' | 'projectId' | 'sessionId'>;
+  messages: Awaited<ReturnType<ChatStreamHandlerArgs['deps']['chatResourceService']['listMessages']>>;
+  attachmentById: Map<string, ChatAttachmentRecord>;
+  currentUserMessageId: string;
+}): Promise<{ messages: Array<{ role: string; content: string | Array<Record<string, unknown>> }>; missingCurrentImageDataUrl: boolean }> {
+  let missingCurrentImageDataUrl = false;
+  const upstreamMessages = await Promise.all(args.messages.map(async (item) => {
+    if (item.role !== 'user' || !item.attachment_snapshots || item.attachment_snapshots.length === 0) {
+      return { role: item.role, content: item.content };
+    }
+    const allowInlineImages = item.id === args.currentUserMessageId;
+    const parts: Array<Record<string, unknown>> = [];
+    if (item.content.trim().length > 0) {
+      parts.push({ type: 'text', text: item.content });
+    }
+    for (const snapshot of item.attachment_snapshots) {
+      const attachment = args.attachmentById.get(snapshot.id);
+      const imageMimeType = resolveImageMimeType(snapshot.file_type, snapshot.file_name);
+      if (!imageMimeType) {
+        parts.push(buildHistoricalAttachmentText(snapshot, 'file'));
+        continue;
+      }
+      if (!allowInlineImages) {
+        parts.push(buildHistoricalAttachmentText(snapshot, 'image'));
+        continue;
+      }
+      const dataUrl = attachment
+        ? await toDataUrlFromAttachmentOrFileLibraryObject(
+            args.deps,
+            { workspaceId: args.route.workspaceId, projectId: args.route.projectId },
+            attachment,
+            imageMimeType,
+          )
+        : null;
+      if (dataUrl) {
+        parts.push({
+          type: 'image_url',
+          image_url: { url: dataUrl },
+        });
+      } else {
+        missingCurrentImageDataUrl = true;
+      }
+    }
+    if (parts.length === 0) {
+      return { role: item.role, content: item.content };
+    }
+    return { role: item.role, content: parts };
+  }));
+
+  return {
+    messages: upstreamMessages,
+    missingCurrentImageDataUrl,
+  };
 }
 
 export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promise<boolean> {
@@ -493,49 +548,18 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     }
   }
 
-  let missingImageDataUrl = false;
-  const upstreamMessages = await Promise.all(messages.map(async (item) => {
-    if (item.role !== 'user' || !item.attachment_snapshots || item.attachment_snapshots.length === 0) {
-      return { role: item.role, content: item.content };
-    }
-    const parts: Array<Record<string, unknown>> = [];
-    if (item.content.trim().length > 0) {
-      parts.push({ type: 'text', text: item.content });
-    }
-    for (const snapshot of item.attachment_snapshots) {
-      const attachment = attachmentById.get(snapshot.id);
-      const imageMimeType = resolveImageMimeType(snapshot.file_type, snapshot.file_name);
-      const dataUrl = attachment
-        ? await toDataUrlFromAttachmentOrFileLibraryObject(
-            deps,
-            { workspaceId: route.workspaceId, projectId: route.projectId },
-            attachment,
-            imageMimeType,
-          )
-        : null;
-      if (dataUrl && imageMimeType) {
-        parts.push({
-          type: 'image_url',
-          image_url: { url: dataUrl },
-        });
-      } else if (imageMimeType) {
-        missingImageDataUrl = true;
-      } else {
-        parts.push({
-          type: 'text',
-          text: `[attached_file] ${snapshot.file_name} (${snapshot.file_type}, ${snapshot.file_size}B)`,
-        });
-      }
-    }
-    if (parts.length === 0) {
-      return { role: item.role, content: item.content };
-    }
-    return { role: item.role, content: parts };
-  }));
-  if (missingImageDataUrl) {
+  const compiledExecutionMessages = await buildChatExecutionMessages({
+    deps,
+    route,
+    messages,
+    attachmentById,
+    currentUserMessageId: parentForAssistant,
+  });
+  if (compiledExecutionMessages.missingCurrentImageDataUrl) {
     json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_attachment_image_data_url_unavailable' });
     return true;
   }
+  const upstreamMessages = compiledExecutionMessages.messages;
 
   const variantMeta = await deps.chatResourceService.buildNextAssistantVariant(
     route.workspaceId,
@@ -632,12 +656,18 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     };
     try {
       const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, externalAgentId);
-      const executionEndpointId = readAgentNotebookEndpointId(agent ?? {});
+      const agentExecutionPreferences = readAgentExecutionPreferences(agent ?? {}, 'chat');
+      const executionEndpointId = agentExecutionPreferences.endpointId;
+      const executionWireApi = agentExecutionPreferences.wireApi;
+      const executionModel = (raw.model ?? session.model ?? agentExecutionPreferences.model ?? '').trim();
+      if (!executionEndpointId) {
+        throw new AgentStreamRouteError('AGENT_ENDPOINT_NOT_CONFIGURED', 'agent_endpoint_not_configured');
+      }
       if (agent?.mode === 'internal') {
         if (!deps.internalAgentPodManager) {
           throw new AgentStreamRouteError('AGENT_SANDBOX_NOT_CONFIGURED', 'agent_sandbox_not_configured');
         }
-        const workloadId = sanitizeWorkloadId(route.sessionId);
+        const workloadId = sanitizeWorkloadId(externalAgentId);
         await deps.internalAgentPodManager.ensureAgentReady({
           workspaceId: route.workspaceId,
           projectId: route.projectId,
@@ -677,18 +707,19 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         projectId: route.projectId,
         sessionId: route.sessionId,
         agentId: externalAgentId,
-        model: raw.model ?? session.model,
+        model: executionModel || 'chat-agent-model',
         messages: upstreamMessages,
         executionContext: {
+          interaction_kind: 'chat',
           workspace_id: route.workspaceId,
           project_id: route.projectId,
           session_id: route.sessionId,
           username: buildProxyUsername(user),
           execution_ticket: issuedExecutionTicket.ticket,
           api_base: resolveExecutionApiBase(resolveRequiredConfiguredPublicApiBase(), agent),
-          ...(executionEndpointId ? { endpoint_id: executionEndpointId } : {}),
-          model: raw.model ?? session.model,
-          notebook_mode: false,
+          endpoint_id: executionEndpointId,
+          wire_api: executionWireApi,
+          model: executionModel || undefined,
         },
       });
 
@@ -765,6 +796,16 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
             finishReason = event.finish_reason ?? 'stop';
             usageTokens = event.usage_tokens;
             break;
+          }
+          if (event.type === 'event') {
+            if (event.event?.category === 'warning') {
+              broadcast(streamId, 'warning', {
+                code: event.event.name,
+                message: event.event.summary,
+                details: event.event.details ?? null,
+              });
+            }
+            continue;
           }
           if (event.type === 'error') {
             messageStatus = 'failed';

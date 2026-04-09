@@ -24,6 +24,15 @@ export type ChatStreamEvent =
         message_status?: 'completed' | 'stopped' | 'failed';
       };
     }
+  | {
+      event: 'warning';
+      data: {
+        code: string;
+        message: string;
+        details?: Record<string, unknown>;
+        request_id?: string;
+      };
+    }
   | { event: 'error'; data: { error_code: string; message: string; request_id?: string } };
 
 function parseSseChunk(buffer: string) {

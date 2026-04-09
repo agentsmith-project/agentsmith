@@ -124,7 +124,7 @@ echo "[init] creating external notebook agent..."
 agent_resp="$(api_curl -X POST "${PROJECT_BASE}/agents" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], mode:"external", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[2], wire_api:process.argv[3], model:process.argv[4]}}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' \
+  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], mode:"external", interaction_kind:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[2], wire_api:process.argv[3], model:process.argv[4]}}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' \
       "${AGENT_NAME}" "${ENDPOINT_ID}" "${WIRE_API}" "${PRESET_ENDPOINT_MODEL}")")"
 AGENT_ID="$(printf '%s' "${agent_resp}" | json_get id)"
 state_set_string agent.id "${AGENT_ID}"

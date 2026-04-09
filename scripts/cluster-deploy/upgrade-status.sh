@@ -20,7 +20,7 @@ docker_compose ps --status running universal-proxy | grep -q universal-proxy \
 docker_compose ps --status running external-runner | grep -q external-runner \
   || die "upgrade-status failed: external-runner is not running"
 started="$(date +%s)"
-until docker logs "${COMPOSE_PROJECT_NAME:-agentsmith-cluster}-external-runner-1" 2>&1 | grep -q '\[agent-codex-runner\] connected'; do
+until docker logs "${COMPOSE_PROJECT_NAME:-agentsmith-cluster}-external-runner-1" 2>&1 | grep -q '\[notebook-codex-runner\] connected'; do
   if (( "$(date +%s)" - started > 120 )); then
     die "upgrade-status failed: external-runner did not reconnect in time"
   fi

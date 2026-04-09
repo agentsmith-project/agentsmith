@@ -5,7 +5,7 @@ import {
   BACKEND_REAL_MODEL,
   createCredentialViaUi,
   createEndpointViaApi,
-  createExternalCodexAgentBundle,
+  createExternalRunnerAgentBundle,
   createProjectInWorkspace,
   ensureIntegrationKeycloakUsers,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
@@ -188,7 +188,7 @@ test.describe('@lane-real external notebook task isolation by user', () => {
       credentialName,
     });
 
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId,
       projectId,
       endpointId,
@@ -333,7 +333,7 @@ test.describe('@lane-real external notebook task isolation by user', () => {
       credentialName,
     });
 
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId,
       projectId,
       endpointId,

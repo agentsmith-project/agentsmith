@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
@@ -9,13 +12,13 @@ import {
   createExternalConnectionViaApi,
   createCredentialViaUi,
   createEndpointViaApi,
-  createExternalCodexAgentBundle,
+  createExternalRunnerAgentBundle,
   createProjectInWorkspace,
   getContextEntryViaApi,
   keycloakLoginToWorkspace,
   openChatSession,
   putContextEntryViaApi,
-  startCodexRunnerProcess,
+  startChatRunnerProcess,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
@@ -32,6 +35,12 @@ async function waitForComposerReady(page: import('@playwright/test').Page): Prom
   const composer = page.getByTestId('chat__composer').locator('textarea');
   await expect(composer).toBeVisible({ timeout: 30_000 });
   await expect(composer).toBeEnabled({ timeout: 60_000 });
+}
+
+function workspaceRecreatedWarningText(): string {
+  return LOCALE === 'zh-CN'
+    ? '聊天工作区已被回收，之前生成的文件已经失效。如需使用，请让 AI 重新生成。'
+    : 'The chat workspace was reclaimed, so previously generated files are no longer available. Ask AI to regenerate them if needed.';
 }
 
 async function waitForPersistedAssistantMessages(args: {
@@ -105,8 +114,8 @@ async function waitForLatestAssistantContent(args: {
   return latestMessages;
 }
 
-test.describe('@lane-real external agent codex-runner integration', () => {
-  test('streams multi-turn chat through the real local codex runner and persists replies', async ({ page }) => {
+test.describe('@lane-real external agent chat-runner integration', () => {
+  test('streams multi-turn chat through the real local chat runner and persists replies', async ({ page }) => {
     test.setTimeout(720_000);
     const providerApiKey = requireRealLaneApiKey();
 
@@ -120,15 +129,16 @@ test.describe('@lane-real external agent codex-runner integration', () => {
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const chatTitle = `codex-runner-chat-${Date.now()}`;
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const chatTitle = `chat-runner-chat-${Date.now()}`;
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,
       title: chatTitle,
+      interactionKind: 'chat',
     });
 
-    const runner = await startCodexRunnerProcess({
+    const runner = await startChatRunnerProcess({
       wsUrl: agentBundle.wsUrl,
       agentKey: agentBundle.agentKey,
     });
@@ -166,7 +176,7 @@ test.describe('@lane-real external agent codex-runner integration', () => {
     }
   });
 
-  test('preserves session continuity across refresh with the real local codex runner', async ({ page }) => {
+  test('preserves session continuity across refresh with the real local chat runner', async ({ page }) => {
     test.setTimeout(720_000);
     const providerApiKey = requireRealLaneApiKey();
 
@@ -180,15 +190,16 @@ test.describe('@lane-real external agent codex-runner integration', () => {
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const chatTitle = `codex-runner-memory-${Date.now()}`;
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const chatTitle = `chat-runner-memory-${Date.now()}`;
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,
       title: chatTitle,
+      interactionKind: 'chat',
     });
 
-    const runner = await startCodexRunnerProcess({
+    const runner = await startChatRunnerProcess({
       wsUrl: agentBundle.wsUrl,
       agentKey: agentBundle.agentKey,
     });
@@ -228,12 +239,13 @@ test.describe('@lane-real external agent codex-runner integration', () => {
     }
   });
 
-  test('rejects task scope in chat codex-runner sessions', async ({ page }) => {
+  test('warns and recreates the session workspace when the local chat workspace has been reclaimed', async ({ page }) => {
     test.setTimeout(720_000);
     const providerApiKey = requireRealLaneApiKey();
+    const sessionRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agentsmith-chat-reclaim-'));
 
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Agent Context No Task');
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Chat Runner Reclaim');
     const credentialName = `Provider Credential ${Date.now()}`;
     await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
@@ -242,105 +254,57 @@ test.describe('@lane-real external agent codex-runner integration', () => {
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const chatTitle = `codex-runner-context-no-task-${Date.now()}`;
-    const agentBundle = await createExternalCodexAgentBundle(page, {
+    const chatTitle = `chat-runner-reclaim-${Date.now()}`;
+    const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId: 'ws_default',
       projectId,
       endpointId,
       title: chatTitle,
+      interactionKind: 'chat',
     });
 
-    const runner = await startCodexRunnerProcess({
+    const runner = await startChatRunnerProcess({
       wsUrl: agentBundle.wsUrl,
       agentKey: agentBundle.agentKey,
+      sessionRoot,
     });
-    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+    test.info().annotations.push({ type: 'chat_runner_log', description: runner.logPath });
 
     try {
       await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
       await openChatSession(page, 'ws_default', projectId, chatTitle);
 
       const composer = page.getByTestId('chat__composer').locator('textarea');
-      await composer.fill(
-        [
-          'Run this exact shell command and use its stdout in your final reply:',
-          "`zsh -lc 'output=$(python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope task --key notes.current_task 2>&1 || true); printf \"%s\\n\" \"$output\"'`",
-          'Reply with exactly one line in this format and no extra text:',
-          '`CTX_TASK_DENIED::<error>`',
-        ].join(' '),
-      );
-      await page.getByTestId('chat__send-btn').click();
+      const sendButton = page.getByTestId('chat__send-btn');
+      const firstToken = `RECLAIM_FIRST_${Date.now()}`;
+      await composer.fill(`Reply with the exact token ${firstToken}.`);
+      await sendButton.click();
+      await expect(page.getByTestId('chat__message').filter({ hasText: firstToken }).first()).toBeVisible({ timeout: 240_000 });
 
-      const messages = await waitForLatestAssistantContent({
-        page,
-        projectId,
-        sessionId: agentBundle.sessionId,
-        requiredSubstring: 'CTX_TASK_DENIED::',
-        minMessages: 2,
-      });
-      const assistantMessages = messages.filter((item) => item.role === 'assistant');
-      expect(assistantMessages.at(-1)?.content).toContain('CTX_TASK_DENIED::');
-      expect(assistantMessages.at(-1)?.content?.toLowerCase()).toContain('context_task_scope_not_available');
+      const sessionDir = path.join(sessionRoot, encodeURIComponent(agentBundle.sessionId));
+      await expect
+        .poll(async () => {
+          try {
+            await fs.stat(sessionDir);
+            return true;
+          } catch {
+            return false;
+          }
+        }, { timeout: 30_000, intervals: [250, 500, 1000] })
+        .toBe(true);
+      await fs.rm(sessionDir, { recursive: true, force: true });
+
+      await waitForComposerReady(page);
+      const secondToken = `RECLAIM_SECOND_${Date.now()}`;
+      await composer.fill(`Reply with the exact token ${secondToken}.`);
+      await sendButton.click();
+
+      await expect(page.getByText(workspaceRecreatedWarningText()).first()).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId('chat__message').filter({ hasText: secondToken }).first()).toBeVisible({ timeout: 240_000 });
     } finally {
       await runner.stop();
+      await fs.rm(sessionRoot, { recursive: true, force: true });
     }
   });
 
-  test('rejects shared workspace context writes in chat codex-runner sessions', async ({ page }) => {
-    test.setTimeout(720_000);
-    const providerApiKey = requireRealLaneApiKey();
-
-    await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Agent Context Shared Read Only');
-    const credentialName = `Provider Credential ${Date.now()}`;
-    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
-    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
-      endpointName: `Provider Endpoint ${Date.now()}`,
-      endpointModel: BACKEND_REAL_MODEL,
-      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
-      credentialName,
-    });
-    const chatTitle = `codex-runner-context-shared-ro-${Date.now()}`;
-    const agentBundle = await createExternalCodexAgentBundle(page, {
-      workspaceId: 'ws_default',
-      projectId,
-      endpointId,
-      title: chatTitle,
-    });
-
-    const runner = await startCodexRunnerProcess({
-      wsUrl: agentBundle.wsUrl,
-      agentKey: agentBundle.agentKey,
-    });
-    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
-
-    try {
-      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
-      await openChatSession(page, 'ws_default', projectId, chatTitle);
-
-      const composer = page.getByTestId('chat__composer').locator('textarea');
-      await composer.fill(
-        [
-          'Run this exact shell command and use its stdout in your final reply:',
-          "`zsh -lc 'output=$(python3 ~/.agents/skills/mbos-context/scripts/context_cli.py put --scope workspace --key shared.chat_attempt --content denied 2>&1 || true); printf \"%s\\n\" \"$output\"'`",
-          'Reply with exactly one line in this format and no extra text:',
-          '`CTX_SHARED_DENIED::<error>`',
-        ].join(' '),
-      );
-      await page.getByTestId('chat__send-btn').click();
-
-      const messages = await waitForLatestAssistantContent({
-        page,
-        projectId,
-        sessionId: agentBundle.sessionId,
-        requiredSubstring: 'CTX_SHARED_DENIED::',
-        minMessages: 2,
-      });
-      const assistantMessages = messages.filter((item) => item.role === 'assistant');
-      expect(assistantMessages.at(-1)?.content).toContain('CTX_SHARED_DENIED::');
-      expect(assistantMessages.at(-1)?.content?.toLowerCase()).toContain('context_scope_read_only_for_agent');
-    } finally {
-      await runner.stop();
-    }
-  });
 });

@@ -137,9 +137,9 @@ export function AgentsTable({
         id: 'interaction',
         header: 'Interaction',
         cell: (info) => {
-          const mode = info.row.original.interaction_mode;
+          const mode = info.row.original.interaction_kind;
           if (!mode) return <span className="text-tertiary text-xs">—</span>;
-          return <span className="text-tertiary text-xs capitalize">{mode === 'both' ? t('interaction_both') : t(`interaction_${mode}`)}</span>;
+          return <span className="text-tertiary text-xs capitalize">{mode ? t(`interaction_${mode}`) : '—'}</span>;
         },
       }),
       columnHelper.accessor('status', {

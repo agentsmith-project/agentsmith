@@ -19,7 +19,7 @@ export interface AgentDiagnostics {
   memory_mb?: number;
 }
 
-export type AgentInteractionMode = 'chat' | 'notebook' | 'both';
+export type AgentInteractionKind = 'chat' | 'notebook';
 
 export interface Agent {
   id: string;
@@ -41,7 +41,7 @@ export interface Agent {
   admin_id?: string;
   admin_name?: string;
   visibility?: 'private' | 'public';
-  interaction_mode?: AgentInteractionMode;
+  interaction_kind?: AgentInteractionKind;
   capabilities?: {
     streaming_completion?: boolean;
     multimodal_completion?: boolean;

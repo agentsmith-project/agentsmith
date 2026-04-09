@@ -7,7 +7,7 @@ describe('api-entry-node agent permissions integration', () => {
     const created = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'Managed Agent',
       mode: 'external',
-      interaction_mode: 'both',
+      interaction_kind: 'chat',
       status: 'enabled',
       owner_id: 'user_owner',
       visibility: 'public',

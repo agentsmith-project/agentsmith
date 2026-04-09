@@ -26,7 +26,7 @@ const MEMBER_EMAIL = 'integration-user@example.com';
 const INTERNAL_AGENT_IMAGE =
   process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() ||
   process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() ||
-  'agentsmith-codex-runner:local';
+  'agentsmith-notebook-codex-runner:local';
 const DEMO_DEPLOY_MODE = process.env.INTEGRATION_DEMO_DEPLOY_MODE?.trim() || 'full';
 const DEMO_MODE_IS_FULL = DEMO_DEPLOY_MODE === 'full';
 const CREATE_NEW_TASK_RESPONSE_TIMEOUT_MS = 60_000;

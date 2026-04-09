@@ -395,7 +395,7 @@ gate_wait_for_external_runner_connection() {
   while true; do
     if docker inspect -f '{{.State.Running}}' "${container_name}" 2>/dev/null | grep -q true; then
       runner_logs="$(docker logs "${container_name}" 2>&1 || true)"
-      if grep -q '\[agent-codex-runner\] connected' <<<"${runner_logs}"; then
+      if grep -q '\[notebook-codex-runner\] connected' <<<"${runner_logs}"; then
         return 0
       fi
     fi

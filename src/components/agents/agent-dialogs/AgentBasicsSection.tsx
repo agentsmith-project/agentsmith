@@ -2,41 +2,41 @@
 
 import { Input } from '@/components/ui/input';
 
-import type { AgentInteractionMode, AgentMode, AgentEndpointOption } from './types';
+import type { AgentInteractionKind, AgentMode, AgentEndpointOption } from './types';
 import { endpointLabel } from './utils';
 
 interface AgentBasicsSectionProps {
   createPending: boolean;
   description: string;
   endpointOptions: AgentEndpointOption[];
-  interactionMode: AgentInteractionMode;
+  interactionKind: AgentInteractionKind;
   mode: AgentMode;
   name: string;
-  notebookEndpointId: string;
+  executionEndpointId: string;
   commonT: (key: string) => string;
   t: (key: string) => string;
   onDescriptionChange: (value: string) => void;
-  onInteractionModeChange: (value: AgentInteractionMode) => void;
+  onInteractionKindChange: (value: AgentInteractionKind) => void;
   onModeChange: (value: AgentMode) => void;
   onNameChange: (value: string) => void;
-  onNotebookEndpointIdChange: (value: string) => void;
+  onExecutionEndpointIdChange: (value: string) => void;
 }
 
 export function AgentBasicsSection({
   createPending,
   description,
   endpointOptions,
-  interactionMode,
+  interactionKind,
   mode,
   name,
-  notebookEndpointId,
+  executionEndpointId,
   commonT,
   t,
   onDescriptionChange,
-  onInteractionModeChange,
+  onInteractionKindChange,
   onModeChange,
   onNameChange,
-  onNotebookEndpointIdChange,
+  onExecutionEndpointIdChange,
 }: AgentBasicsSectionProps) {
   return (
     <>
@@ -100,40 +100,44 @@ export function AgentBasicsSection({
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium text-foreground">{t('create_dialog.interaction_mode')}</label>
+        <label htmlFor="agent-interaction-kind" className="text-sm font-medium text-foreground">
+          {t('create_dialog.interaction_kind')}
+        </label>
         <select
-          value={interactionMode}
-          onChange={(event) => onInteractionModeChange(event.target.value as AgentInteractionMode)}
+          id="agent-interaction-kind"
+          value={interactionKind}
+          onChange={(event) => onInteractionKindChange(event.target.value as AgentInteractionKind)}
           disabled={createPending}
           className="w-full px-3 py-2.5 rounded-md border border-border-input bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
         >
           <option value="chat">{t('interaction_chat')}</option>
           <option value="notebook">{t('interaction_notebook')}</option>
-          <option value="both">{t('interaction_both')}</option>
         </select>
       </div>
 
-      {mode === 'external' && (interactionMode === 'notebook' || interactionMode === 'both') ? (
-        <div className="space-y-2">
-          <label htmlFor="notebook-endpoint-id" className="text-sm font-medium text-foreground">
-            {t('create_dialog.notebook_endpoint_id')}
-          </label>
-          <select
-            id="notebook-endpoint-id"
-            value={notebookEndpointId}
-            onChange={(event) => onNotebookEndpointIdChange(event.target.value)}
-            disabled={createPending}
-            className="w-full px-3 py-2.5 rounded-md border border-border-input bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
-          >
-            {endpointOptions.length === 0 ? <option value="">{t('create_dialog.notebook_endpoint_empty')}</option> : null}
-            {endpointOptions.map((endpoint) => (
-              <option key={endpoint.id} value={endpoint.id}>
-                {endpointLabel(endpoint)}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
+      <div className="space-y-2">
+        <label htmlFor="agent-execution-endpoint-id" className="text-sm font-medium text-foreground">
+          {interactionKind === 'chat' ? t('create_dialog.chat_endpoint_id') : t('create_dialog.notebook_endpoint_id')}
+        </label>
+        <select
+          id="agent-execution-endpoint-id"
+          value={executionEndpointId}
+          onChange={(event) => onExecutionEndpointIdChange(event.target.value)}
+          disabled={createPending}
+          className="w-full px-3 py-2.5 rounded-md border border-border-input bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+        >
+          {endpointOptions.length === 0 ? (
+            <option value="">
+              {interactionKind === 'chat' ? t('create_dialog.chat_endpoint_empty') : t('create_dialog.notebook_endpoint_empty')}
+            </option>
+          ) : null}
+          {endpointOptions.map((endpoint) => (
+            <option key={endpoint.id} value={endpoint.id}>
+              {endpointLabel(endpoint)}
+            </option>
+          ))}
+        </select>
+      </div>
     </>
   );
 }

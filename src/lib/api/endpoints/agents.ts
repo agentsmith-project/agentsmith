@@ -4,14 +4,14 @@
  * Typed API functions for agent operations.
  */
 
-import type { Agent, AgentDiagnostics, AgentInteractionMode, AgentServiceKey, CreateAgentKeyResponse, PaginationParams, PaginatedResponse } from '../types';
+import type { Agent, AgentDiagnostics, AgentInteractionKind, AgentServiceKey, CreateAgentKeyResponse, PaginationParams, PaginatedResponse } from '../types';
 import type { ApiClient } from '../client';
 
 export interface CreateAgentRequest {
   name: string;
   description?: string;
   mode: 'external' | 'internal';
-  interaction_mode?: AgentInteractionMode;
+  interaction_kind: AgentInteractionKind;
   config?: {
     image?: string;
     env?: Record<string, string>;
@@ -39,7 +39,7 @@ export interface UpdateAgentRequest {
   name?: string;
   description?: string;
   mode?: 'external' | 'internal';
-  interaction_mode?: AgentInteractionMode;
+  interaction_kind?: AgentInteractionKind;
   admin_id?: string;
   presence?: 'online' | 'offline' | 'managed';
   status?: 'enabled' | 'disabled';

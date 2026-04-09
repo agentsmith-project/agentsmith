@@ -1,13 +1,10 @@
-type SharedExecutionContext = {
-  api_base?: string;
-  workspace_id?: string;
-  project_id?: string;
-  task_id?: string;
-  execution_ticket?: string;
-};
+import type { AgentExecutionContext } from './protocol.js';
 
 export function buildAgentRuntimeEnv(
-  executionContext: SharedExecutionContext,
+  executionContext: Pick<
+    AgentExecutionContext,
+    'api_base' | 'workspace_id' | 'project_id' | 'task_id' | 'execution_ticket'
+  >,
 ): Record<string, string> {
   return {
     MBOS_AGENT_API_BASE: executionContext.api_base ?? '',

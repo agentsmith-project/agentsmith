@@ -32,7 +32,7 @@ export const agentHandlers = [
       name: (body.name as string) ?? 'New Agent',
       description: (body.description as string) ?? '',
       mode: body.mode === 'internal' ? 'internal' : 'external',
-      interaction_mode: body.interaction_mode === 'chat' || body.interaction_mode === 'notebook' ? body.interaction_mode : 'both',
+      interaction_kind: body.interaction_kind === 'chat' || body.interaction_kind === 'notebook' ? body.interaction_kind : 'chat',
       presence: 'offline' as const,
       status: 'enabled' as const,
       created_at: new Date().toISOString(),

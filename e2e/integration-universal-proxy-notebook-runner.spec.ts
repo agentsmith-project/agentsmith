@@ -221,7 +221,7 @@ async function createExternalNotebookAgentBundle(args: {
       data: {
         name: agentName,
         mode: 'external',
-        interaction_mode: 'notebook',
+        interaction_kind: 'notebook',
         execution_preferences: {
           notebook: {
             endpoint_id: args.endpointId,

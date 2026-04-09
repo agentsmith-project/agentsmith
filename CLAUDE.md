@@ -92,6 +92,8 @@ make bootstrap / api-dev / web / e2e / deps-down
 - 改 builtin skills、runner skill env、Context Store route/store、managed credential resolution 时，至少跑 `npm run test:skills:fast`
 - 改 chat/notebook/terminal execution context、agent ticket scope、Context Store ownership 时，再加跑 `npm run test:skills:backend-real`
 - `test:skills:*` 覆盖的是 builtin skills + runner runtime + Context Store 主链，不替代共享 context UI、治理、files 等业务 gate
+- notebook runner 主链可直接用 `npm run test:notebook:runner:fast` / `npm run test:notebook:runner:backend-real`
+- chat runner 主链可直接用 `npm run test:chat:runner:fast` / `npm run test:chat:runner:backend-real`
 
 ## 测试 ID 规范
 **format**: `scope__element__state` (e.g., `login__submit`, `projects__create-button`)

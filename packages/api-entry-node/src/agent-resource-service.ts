@@ -146,7 +146,7 @@ export class AgentResourceService {
       name: String(input.name ?? '').trim(),
       description: input.description?.trim() || undefined,
       mode: input.mode === 'internal' ? 'internal' : 'external',
-      interaction_mode: input.interaction_mode ?? 'both',
+      interaction_kind: input.interaction_kind,
       presence: input.mode === 'internal' ? 'managed' : 'offline',
       status: input.status ?? 'enabled',
       config: input.config,

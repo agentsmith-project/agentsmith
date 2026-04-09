@@ -21,12 +21,17 @@ fi
 run_grep() {
   local spec="$1"
   local label="$2"
-  info "running ${spec} --grep ${label}"
-  (cd "${ROOT_DIR}" && bash scripts/run-integration-e2e-full.sh "${spec}" --grep "${label}")
+  if [[ -n "${label}" ]]; then
+    info "running ${spec} --grep ${label}"
+    (cd "${ROOT_DIR}" && bash scripts/run-integration-e2e-full.sh "${spec}" --grep "${label}")
+    return
+  fi
+  info "running ${spec}"
+  (cd "${ROOT_DIR}" && bash scripts/run-integration-e2e-full.sh "${spec}")
 }
 
-run_grep e2e/integration-agents-codex-runner.spec.ts "rejects task scope in chat codex-runner sessions"
-run_grep e2e/integration-agents-codex-runner.spec.ts "rejects shared workspace context writes in chat codex-runner sessions"
+run_grep e2e/integration-chat-llm-runner.spec.ts "streams multi-turn chat through the real local chat runner and persists replies"
+run_grep e2e/integration-chat-llm-runner.spec.ts "preserves session continuity across refresh with the real local chat runner"
 
 run_grep e2e/integration-notebook-codex-runner.spec.ts "reads task context through mbos-context in a real notebook codex runner task"
 run_grep e2e/integration-notebook-codex-runner.spec.ts "writes task context through mbos-context and persists it for the task owner"

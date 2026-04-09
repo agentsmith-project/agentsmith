@@ -39,8 +39,8 @@ export function AgentDetailsCard({
           <p className="text-foreground capitalize">{agent.mode}</p>
         </div>
         <div>
-          <p className="text-xs text-tertiary">{t('interaction_mode')}</p>
-          <p className="text-foreground capitalize">{agent.interaction_mode ?? '—'}</p>
+          <p className="text-xs text-tertiary">{t('interaction_kind')}</p>
+          <p className="text-foreground capitalize">{agent.interaction_kind ?? '—'}</p>
         </div>
       </div>
 

@@ -6,6 +6,6 @@ export interface EnvEntry {
 }
 
 export type AgentMode = 'external' | 'internal';
-export type AgentInteractionMode = 'chat' | 'notebook' | 'both';
+export type AgentInteractionKind = 'chat' | 'notebook';
 
 export type AgentEndpointOption = Endpoint;

@@ -173,7 +173,7 @@ export interface AgentRecord {
     max_concurrent_sessions_override?: number;
   };
   execution_preferences_json?: Record<string, unknown>;
-  interaction_mode?: 'chat' | 'notebook' | 'both';
+  interaction_kind?: 'chat' | 'notebook';
   owner_id?: string;
   admin_id?: string;
   visibility?: 'private' | 'public';

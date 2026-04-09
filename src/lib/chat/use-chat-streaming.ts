@@ -41,6 +41,7 @@ export interface UseChatStreamingArgs {
     streamErrorAgentTimeout: string;
     streamErrorAgentProtocol: string;
     streamErrorAgentUpstream: string;
+    streamWarningSessionWorkspaceRecreated: string;
   };
   upsertStreamAssistantToCache: (sessionId: string, message: ChatMessage) => void;
   patchStreamAssistantInCache: (
@@ -92,6 +93,20 @@ function mapStreamErrorMessage(error: unknown, messages: UseChatStreamingArgs['m
 function mapStreamErrorCode(error: unknown): string | null {
   if (error instanceof StreamUiError) return error.code;
   if (error instanceof ApiError) return error.errorCode ?? null;
+  return null;
+}
+
+function mapStreamWarningMessage(
+  warningCode: string | undefined,
+  warningMessage: string | undefined,
+  messages: UseChatStreamingArgs['messages'],
+): string | null {
+  if (warningCode === 'session.workspace_recreated') {
+    return messages.streamWarningSessionWorkspaceRecreated;
+  }
+  if (typeof warningMessage === 'string' && warningMessage.trim().length > 0) {
+    return warningMessage;
+  }
   return null;
 }
 
@@ -334,6 +349,14 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
                 const code = data && typeof data.error_code === 'string' ? data.error_code : 'CHAT_STREAM_ERROR';
                 const message = data && typeof data.message === 'string' ? data.message : messages.streamError;
                 throw new StreamUiError(code, message);
+              } else if (ev.event === 'warning') {
+                const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
+                const warningCode = data && typeof data.code === 'string' ? data.code : undefined;
+                const warningMessage = data && typeof data.message === 'string' ? data.message : undefined;
+                const mappedMessage = mapStreamWarningMessage(warningCode, warningMessage, messages);
+                if (mappedMessage) {
+                  toast.warning(mappedMessage);
+                }
               } else if (ev.event === 'done') {
                 break;
               }
@@ -611,6 +634,14 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
           const code = data && typeof data.error_code === 'string' ? data.error_code : 'CHAT_STREAM_ERROR';
           const message = data && typeof data.message === 'string' ? data.message : messages.streamError;
           throw new StreamUiError(code, message);
+        } else if (ev.event === 'warning') {
+          const data = (typeof ev.data === 'object' && ev.data !== null ? (ev.data as Record<string, unknown>) : null);
+          const warningCode = data && typeof data.code === 'string' ? data.code : undefined;
+          const warningMessage = data && typeof data.message === 'string' ? data.message : undefined;
+          const mappedMessage = mapStreamWarningMessage(warningCode, warningMessage, messages);
+          if (mappedMessage) {
+            toast.warning(mappedMessage);
+          }
         } else if (ev.event === 'done') {
           break;
         }

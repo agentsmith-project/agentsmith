@@ -209,9 +209,9 @@ export const docAgentFixtures: Agent[] = [
     mode: 'external',
     presence: 'online',
     status: 'enabled',
-    interaction_mode: 'both',
+    interaction_kind: 'notebook',
     config: {
-      image: 'codex-runner:stable',
+      image: 'notebook-codex-runner:stable',
       env: {
         MODEL: 'placeholder-model',
         LANG: 'zh-CN',

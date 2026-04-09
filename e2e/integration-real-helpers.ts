@@ -575,6 +575,68 @@ export async function putContextEntryViaApi(args: {
   }
 }
 
+export async function getContextEntryViaApi(args: {
+  page: Page;
+  scope: 'member' | 'task' | 'project' | 'workspace';
+  key: string;
+  workspaceId: string;
+  projectId?: string;
+  taskId?: string;
+  expectedStatus?: number;
+}): Promise<{ status: number; body: unknown }> {
+  const token = await readStoredAuthToken(args.page);
+  const params = new URLSearchParams({
+    scope: args.scope,
+    key: args.key,
+    workspace_id: args.workspaceId,
+  });
+  if (args.projectId) params.set('project_id', args.projectId);
+  if (args.taskId) params.set('task_id', args.taskId);
+  const response = await args.page.request.get(`${API_BASE}/api/v1/context?${params.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const status = response.status();
+  const body = await response.json().catch(async () => response.text().catch(() => null));
+  if (args.expectedStatus !== undefined) {
+    expect(status).toBe(args.expectedStatus);
+  } else {
+    expect(response.ok()).toBeTruthy();
+  }
+  return { status, body };
+}
+
+export async function createExternalAgentChatSessionViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  externalAgentId: string;
+  title: string;
+  sessionModel?: string;
+}): Promise<string> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/chat/sessions`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        title: args.title,
+        model: args.sessionModel ?? BACKEND_REAL_MODEL,
+        external_agent_id: args.externalAgentId,
+      },
+    },
+  );
+  expect(response.ok()).toBeTruthy();
+  const body = (await response.json()) as { id?: string };
+  expect(typeof body.id).toBe('string');
+  expect(body.id?.trim().length).toBeGreaterThan(0);
+  return body.id!;
+}
+
 export async function createCredentialViaUi(
   page: Page,
   workspaceId: string,

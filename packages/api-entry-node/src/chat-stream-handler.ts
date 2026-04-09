@@ -32,6 +32,8 @@ import {
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
 import { issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
+import { resolvePublicBaseUrl } from './notebook-task/task-realtime-view.js';
+import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
 
 interface ChatStreamHandlerArgs {
   route: ChatRoute;
@@ -682,6 +684,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           task_id: route.sessionId,
           username: buildProxyUsername(user),
           execution_ticket: issuedExecutionTicket.ticket,
+          api_base: resolveExecutionApiBase(resolvePublicBaseUrl(req), agent),
           ...(executionEndpointId ? { endpoint_id: executionEndpointId } : {}),
           model: raw.model ?? session.model,
           notebook_mode: false,

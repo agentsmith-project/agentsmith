@@ -10,6 +10,7 @@ import {
   createEndpointViaApi,
   createExternalCodexAgentBundle,
   createProjectInWorkspace,
+  getContextEntryViaApi,
   keycloakLoginToWorkspace,
   openChatSession,
   putContextEntryViaApi,
@@ -299,6 +300,80 @@ test.describe('@lane-real external agent codex-runner integration', () => {
       expect(assistantMessages.at(-1)?.content).toContain('CTX_CONTEXT::');
       expect(assistantMessages.at(-1)?.content).toContain(jiraBaseUrl);
       expect(assistantMessages.at(-1)?.content).toContain(jiraToken);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  test('writes member context through mbos-context and persists it for the current member', async ({ page }) => {
+    test.setTimeout(720_000);
+    const providerApiKey = requireRealLaneApiKey();
+
+    await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Agent Context Write');
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName: `Provider Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    const chatTitle = `codex-runner-context-write-${Date.now()}`;
+    const agentBundle = await createExternalCodexAgentBundle(page, {
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      title: chatTitle,
+    });
+
+    const contextKey = `notes.member_roundtrip_${Date.now()}`;
+    const contextValue = `CTX_MEMBER_VALUE_${Date.now()}`;
+    const runner = await startCodexRunnerProcess({
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    });
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+
+    try {
+      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+      await openChatSession(page, 'ws_default', projectId, chatTitle);
+
+      const composer = page.getByTestId('chat__composer').locator('textarea');
+      await composer.fill(
+        [
+          'Run these exact shell commands and use their stdout values in your final reply:',
+          `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py put --scope member --key ${contextKey} --content ${contextValue}`,
+          `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope member --key ${contextKey}`,
+          'Reply with exactly one line in this format and no extra text:',
+          '`CTX_MEMBER::<value>`',
+        ].join(' '),
+      );
+      await page.getByTestId('chat__send-btn').click();
+
+      await expect(page.getByTestId('chat__message').filter({ hasText: contextValue }).first()).toBeVisible({ timeout: 240_000 });
+      const messages = await waitForLatestAssistantContent({
+        page,
+        projectId,
+        sessionId: agentBundle.sessionId,
+        requiredSubstring: contextValue,
+        minMessages: 2,
+      });
+      const assistantMessages = messages.filter((item) => item.role === 'assistant');
+      expect(assistantMessages.at(-1)?.content).toContain('CTX_MEMBER::');
+      expect(assistantMessages.at(-1)?.content).toContain(contextValue);
+
+      const persisted = await getContextEntryViaApi({
+        page,
+        scope: 'member',
+        workspaceId: 'ws_default',
+        key: contextKey,
+      });
+      expect(persisted.body).toEqual(expect.objectContaining({
+        scope: 'member',
+        key: contextKey,
+        content: contextValue,
+      }));
     } finally {
       await runner.stop();
     }

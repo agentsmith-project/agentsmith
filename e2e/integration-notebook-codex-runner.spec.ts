@@ -13,6 +13,7 @@ import {
   createNotebookTaskViaApi,
   createFileLibraryViaUi,
   createProjectInWorkspace,
+  getContextEntryViaApi,
   keycloakLoginToWorkspace,
   mountFileLibraryLocally,
   putContextEntryViaApi,
@@ -413,6 +414,89 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         taskId,
         token: taskNote,
       });
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  test('writes task context through mbos-context and persists it for the task owner', async ({ page }) => {
+    test.setTimeout(720_000);
+    const providerApiKey = requireRealLaneApiKey();
+
+    await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Notebook Context Write');
+    const workspaceLibraryName = `Notebook Context Write Workspace ${Date.now()}`;
+    const fileLibraryId = await createFileLibraryViaUi(page, 'ws_default', projectId, workspaceLibraryName);
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName: `Provider Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    const agentBundle = await createExternalCodexAgentBundle(page, {
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      title: 'codex-notebook-context-write',
+    });
+
+    const runner = await startCodexRunnerProcess({
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    });
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+
+    try {
+      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+      const taskId = await createNotebookTaskViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        title: `Notebook Context Write ${Date.now()}`,
+        agentId: agentBundle.agentId,
+        fileLibraryId,
+      });
+
+      const contextKey = `notes.task_roundtrip_${Date.now()}`;
+      const contextValue = `CTX_TASK_VALUE_${Date.now()}`;
+      await sendTaskMessage({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        content: [
+          'Run these exact shell commands and use their stdout values in your final reply:',
+          `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py put --scope task --key ${contextKey} --content ${contextValue}`,
+          `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope task --key ${contextKey}`,
+          'Reply with exactly one line in this format and no extra text:',
+          '`CTX_TASK_WRITE::<value>`',
+        ].join(' '),
+      });
+
+      await waitForAssistantToken({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        token: contextValue,
+      });
+
+      const persisted = await getContextEntryViaApi({
+        page,
+        scope: 'task',
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        key: contextKey,
+      });
+      expect(persisted.body).toEqual(expect.objectContaining({
+        scope: 'task',
+        key: contextKey,
+        content: contextValue,
+        task_id: taskId,
+      }));
     } finally {
       await runner.stop();
     }

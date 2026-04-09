@@ -307,6 +307,7 @@ describe('api-entry-node projects routes', () => {
     });
     let observedExecutionTicket = '';
     let observedLegacyBearer = '';
+    let observedApiBase = '';
     await new Promise<void>((resolve, reject) => {
       ws.once('open', () => {
         ws.send(JSON.stringify({
@@ -324,12 +325,14 @@ describe('api-entry-node projects routes', () => {
         payload?: {
           messages?: unknown[];
           execution_context?: {
+            api_base?: string;
             execution_ticket?: string;
             user_bearer_token?: string;
           };
         };
       };
       if (msg.type !== 'server.request.start' || !msg.request_id) return;
+      observedApiBase = msg.payload?.execution_context?.api_base ?? '';
       observedExecutionTicket = msg.payload?.execution_context?.execution_ticket ?? '';
       observedLegacyBearer = msg.payload?.execution_context?.user_bearer_token ?? '';
       ws.send(JSON.stringify({
@@ -377,6 +380,7 @@ describe('api-entry-node projects routes', () => {
     expect(text).toContain('event: delta');
     expect(text).toContain('echo:');
     expect(text).toContain('event: done');
+    expect(observedApiBase).toBe(baseUrl);
     expect(observedExecutionTicket).toMatch(/^exec_/);
     expect(observedLegacyBearer).toBe('');
     ws.close();

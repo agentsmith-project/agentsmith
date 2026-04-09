@@ -326,6 +326,7 @@ describe('api-entry-node projects routes', () => {
           messages?: unknown[];
           execution_context?: {
             api_base?: string;
+            task_id?: string;
             execution_ticket?: string;
             user_bearer_token?: string;
           };
@@ -333,6 +334,7 @@ describe('api-entry-node projects routes', () => {
       };
       if (msg.type !== 'server.request.start' || !msg.request_id) return;
       observedApiBase = msg.payload?.execution_context?.api_base ?? '';
+      expect(msg.payload?.execution_context?.task_id).toBeUndefined();
       observedExecutionTicket = msg.payload?.execution_context?.execution_ticket ?? '';
       observedLegacyBearer = msg.payload?.execution_context?.user_bearer_token ?? '';
       ws.send(JSON.stringify({

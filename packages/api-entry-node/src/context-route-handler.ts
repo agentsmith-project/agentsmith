@@ -170,11 +170,12 @@ async function resolveContextAccess(args: {
     const ticketProjectId = internalTicket.project_id ?? null;
     const ticketTaskId = internalTicket.payload.task_id ?? null;
     const ticketUserId = user.id;
+    const ticketMode = internalTicket.payload.mode;
 
     if ((scope === 'project' || scope === 'task') && !ticketProjectId) {
       return { error: { status: 403, message: 'context_project_scope_not_available' } };
     }
-    if (scope === 'task' && !ticketTaskId) {
+    if (scope === 'task' && (ticketMode !== 'notebook' || !ticketTaskId)) {
       return { error: { status: 403, message: 'context_task_scope_not_available' } };
     }
     if (scope === 'member' && !ticketWorkspaceId) {

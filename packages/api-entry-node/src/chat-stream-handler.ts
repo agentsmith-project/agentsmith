@@ -662,7 +662,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         projectId: route.projectId,
         payload: {
           ...(executionEndpointId ? { endpoint_id: executionEndpointId } : {}),
-          task_id: route.sessionId,
           session_id: route.sessionId,
           agent_id: externalAgentId,
           mode: 'chat',
@@ -681,7 +680,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           workspace_id: route.workspaceId,
           project_id: route.projectId,
           session_id: route.sessionId,
-          task_id: route.sessionId,
           username: buildProxyUsername(user),
           execution_ticket: issuedExecutionTicket.ticket,
           api_base: resolveExecutionApiBase(resolvePublicBaseUrl(req), agent),

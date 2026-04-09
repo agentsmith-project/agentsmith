@@ -155,7 +155,37 @@ describe('context-route-handler', () => {
     });
   });
 
-  it('allows deleting owned task context for agent execution tickets', async () => {
+  it('rejects task scope for chat agent execution tickets', async () => {
+    const response = await executeContextRoute({
+      deps: {
+        docStore: new InMemoryJsonDocStore(),
+      } as unknown as NodeApiDeps,
+      method: 'GET',
+      reqUrl: '/api/v1/context?scope=task&key=notes.current&workspace_id=ws_default&project_id=proj_1&task_id=task_1',
+      internalTicket: {
+        ticket: 'int_test',
+        purpose: 'agent_execution',
+        user_id: 'user_1',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        expires_at: '2099-01-01T00:00:00.000Z',
+        max_uses: 1,
+        remaining_uses: 1,
+        payload: {
+          endpoint_id: 'ep_1',
+          mode: 'chat',
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.body).toEqual({
+      error_code: 'FORBIDDEN',
+      message: 'context_task_scope_not_available',
+    });
+  });
+
+  it('allows deleting owned task context for notebook agent execution tickets', async () => {
     const docStore = new InMemoryJsonDocStore();
     await putContextEntry(docStore, {
       scope: 'task' as const,
@@ -185,7 +215,7 @@ describe('context-route-handler', () => {
         payload: {
           endpoint_id: 'ep_1',
           task_id: 'task_1',
-          mode: 'chat',
+          mode: 'notebook',
         },
       },
     });
@@ -194,7 +224,7 @@ describe('context-route-handler', () => {
     expect(response.ended).toBe(true);
   });
 
-  it('lets agent tickets read task context written through authenticated ownership', async () => {
+  it('lets notebook agent tickets read task context written through authenticated ownership', async () => {
     const docStore = new InMemoryJsonDocStore();
     await putContextEntry(docStore, {
       scope: 'task',
@@ -224,7 +254,7 @@ describe('context-route-handler', () => {
         payload: {
           endpoint_id: 'ep_1',
           task_id: 'task_1',
-          mode: 'chat',
+          mode: 'notebook',
         },
       },
     });

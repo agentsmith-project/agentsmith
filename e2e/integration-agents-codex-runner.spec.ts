@@ -378,4 +378,120 @@ test.describe('@lane-real external agent codex-runner integration', () => {
       await runner.stop();
     }
   });
+
+  test('rejects task scope in chat codex-runner sessions', async ({ page }) => {
+    test.setTimeout(720_000);
+    const providerApiKey = requireRealLaneApiKey();
+
+    await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Agent Context No Task');
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName: `Provider Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    const chatTitle = `codex-runner-context-no-task-${Date.now()}`;
+    const agentBundle = await createExternalCodexAgentBundle(page, {
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      title: chatTitle,
+    });
+
+    const runner = await startCodexRunnerProcess({
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    });
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+
+    try {
+      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+      await openChatSession(page, 'ws_default', projectId, chatTitle);
+
+      const composer = page.getByTestId('chat__composer').locator('textarea');
+      await composer.fill(
+        [
+          'Run this exact shell command and use its stdout in your final reply:',
+          "`zsh -lc 'output=$(python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope task --key notes.current_task 2>&1 || true); printf \"%s\\n\" \"$output\"'`",
+          'Reply with exactly one line in this format and no extra text:',
+          '`CTX_TASK_DENIED::<error>`',
+        ].join(' '),
+      );
+      await page.getByTestId('chat__send-btn').click();
+
+      const messages = await waitForLatestAssistantContent({
+        page,
+        projectId,
+        sessionId: agentBundle.sessionId,
+        requiredSubstring: 'CTX_TASK_DENIED::',
+        minMessages: 2,
+      });
+      const assistantMessages = messages.filter((item) => item.role === 'assistant');
+      expect(assistantMessages.at(-1)?.content).toContain('CTX_TASK_DENIED::');
+      expect(assistantMessages.at(-1)?.content?.toLowerCase()).toContain('context_task_scope_not_available');
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  test('rejects shared workspace context writes in chat codex-runner sessions', async ({ page }) => {
+    test.setTimeout(720_000);
+    const providerApiKey = requireRealLaneApiKey();
+
+    await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Agent Context Shared Read Only');
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName: `Provider Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    const chatTitle = `codex-runner-context-shared-ro-${Date.now()}`;
+    const agentBundle = await createExternalCodexAgentBundle(page, {
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      title: chatTitle,
+    });
+
+    const runner = await startCodexRunnerProcess({
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    });
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+
+    try {
+      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+      await openChatSession(page, 'ws_default', projectId, chatTitle);
+
+      const composer = page.getByTestId('chat__composer').locator('textarea');
+      await composer.fill(
+        [
+          'Run this exact shell command and use its stdout in your final reply:',
+          "`zsh -lc 'output=$(python3 ~/.agents/skills/mbos-context/scripts/context_cli.py put --scope workspace --key shared.chat_attempt --content denied 2>&1 || true); printf \"%s\\n\" \"$output\"'`",
+          'Reply with exactly one line in this format and no extra text:',
+          '`CTX_SHARED_DENIED::<error>`',
+        ].join(' '),
+      );
+      await page.getByTestId('chat__send-btn').click();
+
+      const messages = await waitForLatestAssistantContent({
+        page,
+        projectId,
+        sessionId: agentBundle.sessionId,
+        requiredSubstring: 'CTX_SHARED_DENIED::',
+        minMessages: 2,
+      });
+      const assistantMessages = messages.filter((item) => item.role === 'assistant');
+      expect(assistantMessages.at(-1)?.content).toContain('CTX_SHARED_DENIED::');
+      expect(assistantMessages.at(-1)?.content?.toLowerCase()).toContain('context_scope_read_only_for_agent');
+    } finally {
+      await runner.stop();
+    }
+  });
 });

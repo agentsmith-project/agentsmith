@@ -23,20 +23,20 @@ PROXY_ENV_VARS = [
 
 
 def read_api_base() -> str | None:
-    value = os.environ.get("MBOS_NOTEBOOK_API_BASE", "").strip()
+    value = os.environ.get("MBOS_AGENT_API_BASE", "").strip()
     return value.rstrip("/") if value else None
 
 
 def read_execution_ticket() -> str | None:
-    value = os.environ.get("MBOS_NOTEBOOK_EXECUTION_TICKET", "").strip()
+    value = os.environ.get("MBOS_AGENT_EXECUTION_TICKET", "").strip()
     return value or None
 
 
 def build_context_query(scope: str, key: str) -> str:
     params = {"scope": scope, "key": key}
-    workspace_id = os.environ.get("MBOS_NOTEBOOK_WORKSPACE_ID", "").strip()
-    project_id = os.environ.get("MBOS_NOTEBOOK_PROJECT_ID", "").strip()
-    task_id = os.environ.get("MBOS_NOTEBOOK_TASK_ID", "").strip()
+    workspace_id = os.environ.get("MBOS_AGENT_WORKSPACE_ID", "").strip()
+    project_id = os.environ.get("MBOS_AGENT_PROJECT_ID", "").strip()
+    task_id = os.environ.get("MBOS_AGENT_TASK_ID", "").strip()
     if workspace_id:
         params["workspace_id"] = workspace_id
     if project_id:

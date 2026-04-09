@@ -487,6 +487,10 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
         json(res, resolved.error.status, { error_code: 'FORBIDDEN', message: resolved.error.message });
         return true;
       }
+      if (!resolved.writeAllowed) {
+        json(res, 403, { error_code: 'FORBIDDEN', message: 'context_write_forbidden' });
+        return true;
+      }
       const deleted = await deleteContextEntry(deps.docStore, resolved.target);
       if (!deleted) {
         json(res, 404, { error_code: 'NOT_FOUND', message: 'context_not_found' });

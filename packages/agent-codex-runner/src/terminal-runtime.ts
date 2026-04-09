@@ -6,6 +6,7 @@ import {
   prepareNotebookWorkspaceAssets,
 } from './notebook-assets.js';
 import { prepareTaskWorkspace, type TaskWorkspacePaths } from './task-workspace.js';
+import { buildAgentRuntimeEnv } from './agent-runtime-env.js';
 import { prepareLaunchCommand } from './child-launcher.js';
 import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
 import { buildTaskUserInstallEnv } from './user-install-env.js';
@@ -169,12 +170,8 @@ export async function prepareTerminalWorkspace(input: {
     ...process.env,
     TERM: process.env.TERM || 'xterm-256color',
     NO_COLOR: '1',
+    ...buildAgentRuntimeEnv(executionContext),
     ...(isNotebookMode ? {
-      MBOS_NOTEBOOK_API_BASE: executionContext.api_base ?? '',
-      MBOS_NOTEBOOK_WORKSPACE_ID: executionContext.workspace_id ?? '',
-      MBOS_NOTEBOOK_PROJECT_ID: executionContext.project_id ?? '',
-      MBOS_NOTEBOOK_TASK_ID: executionContext.task_id ?? '',
-      MBOS_NOTEBOOK_EXECUTION_TICKET: executionContext.execution_ticket ?? '',
       MBOS_NOTEBOOK_PREAMBLE: buildNotebookHeadlessPreamble({
         artifactsDir: taskPaths.artifactsDir,
       }),

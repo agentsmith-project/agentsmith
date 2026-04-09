@@ -21,11 +21,11 @@ class FeishuMcpTests(unittest.TestCase):
     @patch.dict(
         "os.environ",
         {
-            "MBOS_NOTEBOOK_API_BASE": "http://localhost:20000",
-            "MBOS_NOTEBOOK_EXECUTION_TICKET": "ticket_123",
-            "MBOS_NOTEBOOK_WORKSPACE_ID": "ws_default",
-            "MBOS_NOTEBOOK_PROJECT_ID": "proj_1",
-            "MBOS_NOTEBOOK_TASK_ID": "task_1",
+            "MBOS_AGENT_API_BASE": "http://localhost:20000",
+            "MBOS_AGENT_EXECUTION_TICKET": "ticket_123",
+            "MBOS_AGENT_WORKSPACE_ID": "ws_default",
+            "MBOS_AGENT_PROJECT_ID": "proj_1",
+            "MBOS_AGENT_TASK_ID": "task_1",
         },
         clear=False,
     )

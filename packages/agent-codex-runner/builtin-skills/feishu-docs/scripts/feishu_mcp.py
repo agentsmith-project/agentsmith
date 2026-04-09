@@ -21,20 +21,20 @@ MANAGED_CONTEXT_KEY = "managed_credentials.feishu"
 
 
 def read_api_base() -> str | None:
-    value = os.environ.get("MBOS_NOTEBOOK_API_BASE", "").strip()
+    value = os.environ.get("MBOS_AGENT_API_BASE", "").strip()
     return value.rstrip("/") if value else None
 
 
 def read_execution_ticket() -> str | None:
-    value = os.environ.get("MBOS_NOTEBOOK_EXECUTION_TICKET", "").strip()
+    value = os.environ.get("MBOS_AGENT_EXECUTION_TICKET", "").strip()
     return value or None
 
 
 def build_context_query(*, scope: str, key: str) -> str:
     query: dict[str, str] = {"scope": scope, "key": key}
-    workspace_id = os.environ.get("MBOS_NOTEBOOK_WORKSPACE_ID", "").strip()
-    project_id = os.environ.get("MBOS_NOTEBOOK_PROJECT_ID", "").strip()
-    task_id = os.environ.get("MBOS_NOTEBOOK_TASK_ID", "").strip()
+    workspace_id = os.environ.get("MBOS_AGENT_WORKSPACE_ID", "").strip()
+    project_id = os.environ.get("MBOS_AGENT_PROJECT_ID", "").strip()
+    task_id = os.environ.get("MBOS_AGENT_TASK_ID", "").strip()
     if workspace_id:
         query["workspace_id"] = workspace_id
     if project_id:
@@ -93,7 +93,7 @@ def load_managed_connection_from_context() -> dict[str, Any] | None:
 def refresh_managed_connection_from_context() -> dict[str, Any]:
     if not read_api_base() or not read_execution_ticket():
         raise RuntimeError("Context API is unavailable in this runner session.")
-    workspace_id = os.environ.get("MBOS_NOTEBOOK_WORKSPACE_ID", "").strip()
+    workspace_id = os.environ.get("MBOS_AGENT_WORKSPACE_ID", "").strip()
     search = f"?workspace_id={workspace_id}" if workspace_id else ""
     payload = context_api_request(
         "POST",

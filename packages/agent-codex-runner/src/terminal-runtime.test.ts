@@ -135,6 +135,10 @@ describe('terminal-runtime', () => {
     const started = await startTerminalProcess({
       executionContext: {
         task_id: 'task_1',
+        api_base: 'http://localhost:20000',
+        execution_ticket: 'ticket_123',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
       },
       shell: '/usr/bin/bash',
       cols: 140,
@@ -156,6 +160,11 @@ describe('terminal-runtime', () => {
           npm_config_prefix: '/workspace/.local',
           CARGO_HOME: '/workspace/.cargo',
           RUSTUP_HOME: '/workspace/.rustup',
+          MBOS_AGENT_API_BASE: 'http://localhost:20000',
+          MBOS_AGENT_EXECUTION_TICKET: 'ticket_123',
+          MBOS_AGENT_WORKSPACE_ID: 'ws_default',
+          MBOS_AGENT_PROJECT_ID: 'proj_1',
+          MBOS_AGENT_TASK_ID: 'task_1',
         }),
       }),
     );
@@ -182,5 +191,42 @@ describe('terminal-runtime', () => {
     expect(started.child.exitCode).toBeNull();
     onExitHandler?.({ exitCode: 7, signal: 15 });
     expect(started.child.exitCode).toBe(7);
+  });
+
+  it('only injects notebook-specific preamble for notebook terminals', async () => {
+    await prepareTerminalWorkspace({
+      executionContext: {
+        task_id: 'task_1',
+        api_base: 'http://localhost:20000',
+        execution_ticket: 'ticket_123',
+      },
+      shell: '/usr/bin/bash',
+    });
+
+    expect(prepareLaunchCommandMock).toHaveBeenCalledWith(expect.objectContaining({
+      env: expect.objectContaining({
+        MBOS_AGENT_API_BASE: 'http://localhost:20000',
+        MBOS_AGENT_EXECUTION_TICKET: 'ticket_123',
+      }),
+    }));
+    expect(prepareLaunchCommandMock).toHaveBeenCalledWith(expect.objectContaining({
+      env: expect.not.objectContaining({
+        MBOS_NOTEBOOK_PREAMBLE: expect.any(String),
+      }),
+    }));
+
+    await prepareTerminalWorkspace({
+      executionContext: {
+        task_id: 'task_1',
+        notebook_mode: true,
+      },
+      shell: '/usr/bin/bash',
+    });
+
+    expect(prepareLaunchCommandMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      env: expect.objectContaining({
+        MBOS_NOTEBOOK_PREAMBLE: 'PREAMBLE',
+      }),
+    }));
   });
 });

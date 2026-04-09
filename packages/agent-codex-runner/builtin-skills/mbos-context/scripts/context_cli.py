@@ -11,16 +11,16 @@ from urllib.request import Request, urlopen
 
 
 def read_api_base() -> str:
-    value = os.environ.get("MBOS_NOTEBOOK_API_BASE", "").strip()
+    value = os.environ.get("MBOS_AGENT_API_BASE", "").strip()
     if not value:
-        raise RuntimeError("MBOS_NOTEBOOK_API_BASE is required for mbos-context.")
+        raise RuntimeError("MBOS_AGENT_API_BASE is required for mbos-context.")
     return value.rstrip("/")
 
 
 def read_execution_ticket() -> str:
-    value = os.environ.get("MBOS_NOTEBOOK_EXECUTION_TICKET", "").strip()
+    value = os.environ.get("MBOS_AGENT_EXECUTION_TICKET", "").strip()
     if not value:
-        raise RuntimeError("MBOS_NOTEBOOK_EXECUTION_TICKET is required for mbos-context.")
+        raise RuntimeError("MBOS_AGENT_EXECUTION_TICKET is required for mbos-context.")
     return value
 
 
@@ -33,9 +33,9 @@ def build_query(args: argparse.Namespace) -> dict[str, str]:
     query: dict[str, str] = {"scope": args.scope}
     if getattr(args, "key", None):
       query["key"] = args.key
-    workspace_id = getattr(args, "workspace_id", None) or read_env_default("MBOS_NOTEBOOK_WORKSPACE_ID")
-    project_id = getattr(args, "project_id", None) or read_env_default("MBOS_NOTEBOOK_PROJECT_ID")
-    task_id = getattr(args, "task_id", None) or read_env_default("MBOS_NOTEBOOK_TASK_ID")
+    workspace_id = getattr(args, "workspace_id", None) or read_env_default("MBOS_AGENT_WORKSPACE_ID")
+    project_id = getattr(args, "project_id", None) or read_env_default("MBOS_AGENT_PROJECT_ID")
+    task_id = getattr(args, "task_id", None) or read_env_default("MBOS_AGENT_TASK_ID")
     if workspace_id:
         query["workspace_id"] = workspace_id
     if project_id:
@@ -149,8 +149,8 @@ def main() -> int:
         return 0
     if args.command == "refresh-managed-credential":
         query = {}
-        if args.workspace_id or read_env_default("MBOS_NOTEBOOK_WORKSPACE_ID"):
-            query["workspace_id"] = args.workspace_id or read_env_default("MBOS_NOTEBOOK_WORKSPACE_ID")
+        if args.workspace_id or read_env_default("MBOS_AGENT_WORKSPACE_ID"):
+            query["workspace_id"] = args.workspace_id or read_env_default("MBOS_AGENT_WORKSPACE_ID")
         response = api_request(
             "POST",
             f"/api/v1/context/managed-credentials/{args.provider}/refresh",

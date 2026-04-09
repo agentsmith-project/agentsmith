@@ -28,6 +28,7 @@ import { ensureCodexSessionStateCompatible } from './session-state.js';
 import { resolveCodexTerminalOutcome } from './terminal-outcome.js';
 import { startTerminalProcess, type TerminalExecutionContext, type TerminalProcess } from './terminal-runtime.js';
 import { prepareLaunchCommand } from './child-launcher.js';
+import { buildAgentRuntimeEnv } from './agent-runtime-env.js';
 import { buildTaskUserInstallEnv } from './user-install-env.js';
 
 type ServerStartPayload = {
@@ -847,13 +848,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     env: buildTaskUserInstallEnv(taskPaths.homeDir, {
       ...process.env,
       NO_COLOR: '1',
-      ...(isNotebookMode ? {
-        MBOS_NOTEBOOK_API_BASE: executionContext.api_base ?? '',
-        MBOS_NOTEBOOK_WORKSPACE_ID: executionContext.workspace_id ?? '',
-        MBOS_NOTEBOOK_PROJECT_ID: executionContext.project_id ?? '',
-        MBOS_NOTEBOOK_TASK_ID: executionContext.task_id ?? '',
-        MBOS_NOTEBOOK_EXECUTION_TICKET: executionContext.execution_ticket ?? '',
-      } : {}),
+      ...buildAgentRuntimeEnv(executionContext),
       ...(executionContext.execution_ticket ? {
         [proxyAuthHeaderEnvName]: `Bearer ${executionContext.execution_ticket}`,
       } : {}),

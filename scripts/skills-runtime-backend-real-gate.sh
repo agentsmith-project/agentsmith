@@ -32,6 +32,8 @@ run_grep e2e/integration-agents-codex-runner.spec.ts "rejects shared workspace c
 
 run_grep e2e/integration-notebook-codex-runner.spec.ts "reads task context through mbos-context in a real notebook codex runner task"
 run_grep e2e/integration-notebook-codex-runner.spec.ts "writes task context through mbos-context and persists it for the task owner"
+run_grep e2e/integration-notebook-codex-runner.spec.ts "uses jira-ops task context before member context inside a real notebook terminal session"
+run_grep e2e/integration-notebook-codex-runner.spec.ts "uses feishu-docs managed credential projection inside a real notebook terminal session"
 run_grep e2e/integration-notebook-codex-runner.spec.ts "reads task context through mbos-context inside a real notebook terminal session"
 run_grep e2e/integration-notebook-codex-runner.spec.ts "rejects shared workspace context writes inside a real notebook terminal session"
 

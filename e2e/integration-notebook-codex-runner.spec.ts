@@ -5,8 +5,11 @@ import {
   API_BASE,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
+  KEYCLOAK_INTEGRATION_USER_PASSWORD,
+  KEYCLOAK_INTEGRATION_USER_USERNAME,
   BACKEND_REAL_ANTHROPIC_BASE_URL,
   BACKEND_REAL_MODEL,
+  createExternalConnectionViaApi,
   createTerminalSessionViaApi,
   createCredentialViaUi,
   createEndpointViaApi,
@@ -14,6 +17,7 @@ import {
   createNotebookTaskViaApi,
   createFileLibraryViaUi,
   createProjectInWorkspace,
+  ensureIntegrationKeycloakUsers,
   getContextEntryViaApi,
   keycloakLoginToWorkspace,
   mountFileLibraryLocally,
@@ -21,6 +25,8 @@ import {
   resolveMountedTaskRoot,
   runTerminalCommandViaWs,
   sendTaskMessage,
+  startMockFeishuMcpServer,
+  startMockJiraServer,
   startCodexRunnerProcess,
   startCodexRunnerDockerProcess,
   waitForAssistantToken,
@@ -636,6 +642,212 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       expect(output).toContain(doneMarker);
     } finally {
       await runner.stop();
+    }
+  });
+
+  test('uses jira-ops task context before member context inside a real notebook terminal session', async ({ page }) => {
+    test.setTimeout(720_000);
+    const providerApiKey = requireRealLaneApiKey();
+    const memberToken = `jira_member_${Date.now()}`;
+    const taskToken = `jira_task_${Date.now()}`;
+    const memberServer = await startMockJiraServer({
+      displayName: `jira-member-${Date.now()}`,
+      expectedToken: memberToken,
+    });
+    const taskServer = await startMockJiraServer({
+      displayName: `jira-task-${Date.now()}`,
+      expectedToken: taskToken,
+    });
+
+    await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Notebook Jira Skill');
+    const workspaceLibraryName = `Notebook Jira Workspace ${Date.now()}`;
+    const fileLibraryId = await createFileLibraryViaUi(page, 'ws_default', projectId, workspaceLibraryName);
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName: `Provider Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    const agentBundle = await createExternalCodexAgentBundle(page, {
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      title: `notebook-jira-${Date.now()}`,
+    });
+
+    const runner = await startCodexRunnerProcess({
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    });
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+
+    try {
+      await createExternalConnectionViaApi({
+        page,
+        provider: 'jira',
+        kind: 'secret_bundle',
+        displayName: `member-jira-${Date.now()}`,
+        fields: [
+          { key: 'base_url', value: memberServer.baseUrl, secret: false },
+          { key: 'api_token', value: memberToken, secret: true },
+        ],
+      });
+
+      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+      const taskId = await createNotebookTaskViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        title: `Notebook Jira Task ${Date.now()}`,
+        agentId: agentBundle.agentId,
+        fileLibraryId,
+      });
+
+      await putContextEntryViaApi({
+        page,
+        scope: 'task',
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        key: 'credentials.jira_base_url',
+        content: taskServer.baseUrl,
+      });
+      await putContextEntryViaApi({
+        page,
+        scope: 'task',
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        key: 'credentials.jira_token',
+        content: taskToken,
+      });
+
+      const terminal = await createTerminalSessionViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+      });
+      const output = await runTerminalCommandViaWs({
+        wsUrl: terminal.wsUrl,
+        command: [
+          `python3 ~/.agents/skills/jira-ops/scripts/jira_ops.py myself > /tmp/jira_task_${taskId}.json`,
+          `python3 - <<'PY'`,
+          `import json`,
+          `from pathlib import Path`,
+          `payload=json.loads(Path('/tmp/jira_task_${taskId}.json').read_text())`,
+          `print('JIRA_TASK_SCOPE::' + payload['displayName'])`,
+          `PY`,
+        ].join('\n'),
+        waitFor: ['jira-task-'],
+      });
+      expect(output).toContain('JIRA_TASK_SCOPE::jira-task-');
+      expect(output).not.toContain('JIRA_TASK_SCOPE::jira-member-');
+    } finally {
+      await runner.stop();
+      await memberServer.stop();
+      await taskServer.stop();
+    }
+  });
+
+  test('uses feishu-docs managed credential projection inside a real notebook terminal session', async ({ page }) => {
+    test.setTimeout(720_000);
+    const providerApiKey = requireRealLaneApiKey();
+    const feishuToken = `feishu_mock_token_${Date.now()}`;
+    const toolName = `mock_feishu_tool_${Date.now()}`;
+    const feishuServer = await startMockFeishuMcpServer({
+      expectedToken: feishuToken,
+      toolName,
+    });
+
+    await ensureIntegrationKeycloakUsers();
+    await keycloakLoginToWorkspace(
+      page,
+      'ws_default',
+      KEYCLOAK_INTEGRATION_USER_USERNAME,
+      KEYCLOAK_INTEGRATION_USER_PASSWORD,
+      { ensureProjectCreatorAccess: true },
+    );
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Notebook Feishu Skill');
+    const workspaceLibraryName = `Notebook Feishu Workspace ${Date.now()}`;
+    const fileLibraryId = await createFileLibraryViaUi(page, 'ws_default', projectId, workspaceLibraryName);
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName: `Provider Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    const agentBundle = await createExternalCodexAgentBundle(page, {
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      title: `notebook-feishu-${Date.now()}`,
+    });
+
+    const runner = await startCodexRunnerProcess({
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    });
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+
+    try {
+      await createExternalConnectionViaApi({
+        page,
+        provider: 'feishu',
+        kind: 'oauth_account',
+        displayName: `member-feishu-${Date.now()}`,
+        fields: [
+          { key: 'access_token', value: feishuToken, secret: true },
+          { key: 'feishu_mcp_endpoint', value: feishuServer.endpoint, secret: false },
+        ],
+      });
+
+      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+      const taskId = await createNotebookTaskViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        title: `Notebook Feishu Task ${Date.now()}`,
+        agentId: agentBundle.agentId,
+        fileLibraryId,
+      });
+
+      const terminal = await createTerminalSessionViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+      });
+      const output = await runTerminalCommandViaWs({
+        wsUrl: terminal.wsUrl,
+        command: [
+          `python3 ~/.agents/skills/feishu-docs/scripts/feishu_mcp.py tools-list > /tmp/feishu_tools_${taskId}.json 2> /tmp/feishu_tools_${taskId}.err; exit_code=$?`,
+          `if [ "$exit_code" -ne 0 ]; then`,
+          `  python3 - <<'PY'`,
+          `from pathlib import Path`,
+          `print('FEISHU_ERROR::' + Path('/tmp/feishu_tools_${taskId}.err').read_text(errors='replace').strip())`,
+          `PY`,
+          `  exit 0`,
+          `fi`,
+          `python3 - <<'PY'`,
+          `import json`,
+          `from pathlib import Path`,
+          `payload=json.loads(Path('/tmp/feishu_tools_${taskId}.json').read_text())`,
+          `tools=payload['result']['tools']`,
+          `print('FEISHU_TOOLS::' + tools[0]['name'])`,
+          `PY`,
+        ].join('\n'),
+        waitFor: [toolName],
+      });
+      expect(output).toContain(`FEISHU_TOOLS::${toolName}`);
+    } finally {
+      await runner.stop();
+      await feishuServer.stop();
     }
   });
 

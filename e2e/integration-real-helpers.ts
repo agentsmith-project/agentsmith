@@ -1,4 +1,5 @@
 import { access, appendFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import http from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -666,6 +667,183 @@ export async function createCredentialViaUi(
   return credentialId!;
 }
 
+export async function createExternalConnectionViaApi(args: {
+  page: Page;
+  provider: 'jira' | 'feishu' | 'github' | 'gitee' | 'custom';
+  kind: 'oauth_account' | 'secret_bundle' | 'ssh_keypair';
+  displayName: string;
+  fields: Array<{ key: string; value: string; secret?: boolean; description?: string | null }>;
+  note?: string;
+  status?: 'active' | 'expired' | 'reauth_required' | 'error';
+  scopes?: string[];
+}): Promise<string> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.post(`${API_BASE}/api/v1/me/external-connections`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    data: {
+      provider: args.provider,
+      kind: args.kind,
+      display_name: args.displayName,
+      note: args.note ?? null,
+      status: args.status ?? 'active',
+      fields: args.fields.map((field) => ({
+        key: field.key,
+        value: field.value,
+        secret: field.secret !== false,
+        description: field.description ?? null,
+      })),
+      scopes: args.scopes ?? null,
+    },
+  });
+  if (!response.ok()) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`create_external_connection_failed:${response.status()}:${body}`);
+  }
+  const payload = (await response.json().catch(() => null)) as { id?: string } | null;
+  const connectionId = payload?.id?.trim();
+  if (!connectionId) {
+    throw new Error('external_connection_id_not_found');
+  }
+  return connectionId;
+}
+
+export async function startMockJiraServer(args: {
+  displayName: string;
+  expectedToken: string;
+}): Promise<{
+  baseUrl: string;
+  stop: () => Promise<void>;
+}> {
+  const server = http.createServer((req, res) => {
+    const auth = req.headers.authorization ?? '';
+    if (auth !== `Bearer ${args.expectedToken}`) {
+      res.statusCode = 401;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: 'unauthorized' }));
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/rest/api/2/myself') {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({
+        self: 'mock',
+        displayName: args.displayName,
+        emailAddress: `${args.displayName.replace(/\s+/g, '.').toLowerCase()}@example.com`,
+      }));
+      return;
+    }
+    res.statusCode = 404;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ error: 'not_found', method: req.method, path: req.url ?? '' }));
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve());
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('mock_jira_server_address_unavailable');
+  }
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    stop: async () => {
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+    },
+  };
+}
+
+export async function startMockFeishuMcpServer(args: {
+  expectedToken: string;
+  toolName: string;
+}): Promise<{
+  endpoint: string;
+  stop: () => Promise<void>;
+}> {
+  const server = http.createServer((req, res) => {
+    void (async () => {
+      const auth = req.headers['x-lark-mcp-uat'];
+      if (auth !== args.expectedToken) {
+        res.statusCode = 401;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const raw = Buffer.concat(chunks).toString('utf-8');
+      const payload = raw ? JSON.parse(raw) as { id?: number | string | null; method?: string } : {};
+      const id = payload.id ?? 1;
+      if (payload.method === 'initialize') {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            protocolVersion: '2025-03-26',
+            capabilities: {},
+            serverInfo: { name: 'mock-feishu-mcp', version: '1.0.0' },
+          },
+        }));
+        return;
+      }
+      if (payload.method === 'tools/list') {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            tools: [
+              {
+                name: args.toolName,
+                description: 'Mock Feishu MCP tool',
+                inputSchema: { type: 'object', properties: {} },
+              },
+            ],
+          },
+        }));
+        return;
+      }
+      res.statusCode = 404;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32601, message: 'method not found' } }));
+    })().catch((error: unknown) => {
+      res.statusCode = 500;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: String(error) }));
+    });
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve());
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('mock_feishu_server_address_unavailable');
+  }
+
+  return {
+    endpoint: `http://127.0.0.1:${address.port}/mcp`,
+    stop: async () => {
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+    },
+  };
+}
+
 export async function createEndpointViaApi(
   page: Page,
   workspaceId: string,
@@ -1102,7 +1280,7 @@ export async function runTerminalCommandViaWs(args: {
       }
       done = true;
       clearTimeout(timeout);
-      reject(new Error(`terminal_ws_closed_before_match:${args.waitFor.join(',')}`));
+      reject(new Error(`terminal_ws_closed_before_match:${args.waitFor.join(',')}:${output.slice(-2000)}`));
     });
   });
 }

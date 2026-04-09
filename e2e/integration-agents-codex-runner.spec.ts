@@ -6,6 +6,7 @@ import {
   API_BASE,
   BACKEND_REAL_ANTHROPIC_BASE_URL,
   BACKEND_REAL_MODEL,
+  createExternalConnectionViaApi,
   createCredentialViaUi,
   createEndpointViaApi,
   createExternalCodexAgentBundle,
@@ -378,6 +379,7 @@ test.describe('@lane-real external agent codex-runner integration', () => {
       await runner.stop();
     }
   });
+
 
   test('rejects task scope in chat codex-runner sessions', async ({ page }) => {
     test.setTimeout(720_000);

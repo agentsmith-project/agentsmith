@@ -10,13 +10,17 @@ import {
   createCredentialViaUi,
   createEndpointViaApi,
   createExternalCodexAgentBundle,
+  createNotebookTaskViaApi,
   createFileLibraryViaUi,
   createProjectInWorkspace,
   keycloakLoginToWorkspace,
   mountFileLibraryLocally,
+  putContextEntryViaApi,
   resolveMountedTaskRoot,
+  sendTaskMessage,
   startCodexRunnerProcess,
   startCodexRunnerDockerProcess,
+  waitForAssistantToken,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
@@ -335,6 +339,81 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       if (!runnerStopped) {
         await runner.stop();
       }
+    }
+  });
+
+  test('reads task context through mbos-context in a real notebook codex runner task', async ({ page }) => {
+    test.setTimeout(720_000);
+    const providerApiKey = requireRealLaneApiKey();
+
+    await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Notebook Context');
+    const workspaceLibraryName = `Notebook Context Workspace ${Date.now()}`;
+    const fileLibraryId = await createFileLibraryViaUi(page, 'ws_default', projectId, workspaceLibraryName);
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName: `Provider Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    const agentBundle = await createExternalCodexAgentBundle(page, {
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      title: 'codex-notebook-context',
+    });
+
+    const runner = await startCodexRunnerProcess({
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    });
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+
+    try {
+      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+      const taskId = await createNotebookTaskViaApi({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        title: `Notebook Context ${Date.now()}`,
+        agentId: agentBundle.agentId,
+        fileLibraryId,
+      });
+
+      const taskNote = `TASK_CTX_${Date.now()}`;
+      await putContextEntryViaApi({
+        page,
+        scope: 'task',
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        key: 'notes.current_task',
+        content: taskNote,
+      });
+
+      await sendTaskMessage({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        content: [
+          'Use the `mbos-context` builtin skill to read the task context key `notes.current_task`.',
+          'Reply with exactly one line in this format and no extra text:',
+          '`CTX_TASK::<note>`',
+        ].join(' '),
+      });
+
+      await waitForAssistantToken({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        token: taskNote,
+      });
+    } finally {
+      await runner.stop();
     }
   });
 

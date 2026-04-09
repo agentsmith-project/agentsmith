@@ -12,6 +12,7 @@ import {
   createProjectInWorkspace,
   keycloakLoginToWorkspace,
   openChatSession,
+  putContextEntryViaApi,
   startCodexRunnerProcess,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
@@ -220,6 +221,82 @@ test.describe('@lane-real external agent codex-runner integration', () => {
       const assistantMessages = sessionMessages.filter((item) => item.role === 'assistant');
       expect(assistantMessages.some((item) => item.content?.includes(rememberToken))).toBe(true);
       expect(assistantMessages.at(-1)?.content?.includes(rememberToken)).toBe(true);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  test('reads member context through mbos-context in the real local codex runner chat flow', async ({ page }) => {
+    test.setTimeout(720_000);
+    const providerApiKey = requireRealLaneApiKey();
+
+    await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Agent Context');
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName: `Provider Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    const chatTitle = `codex-runner-context-${Date.now()}`;
+    const agentBundle = await createExternalCodexAgentBundle(page, {
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      title: chatTitle,
+    });
+
+    const jiraBaseUrl = `https://ctx-${Date.now()}.example.invalid`;
+    const jiraToken = `jira_ctx_${Date.now()}`;
+    await putContextEntryViaApi({
+      page,
+      scope: 'member',
+      workspaceId: 'ws_default',
+      key: 'credentials.jira_base_url',
+      content: jiraBaseUrl,
+    });
+    await putContextEntryViaApi({
+      page,
+      scope: 'member',
+      workspaceId: 'ws_default',
+      key: 'credentials.jira_token',
+      content: jiraToken,
+    });
+
+    const runner = await startCodexRunnerProcess({
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    });
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+
+    try {
+      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+      await openChatSession(page, 'ws_default', projectId, chatTitle);
+
+      const composer = page.getByTestId('chat__composer').locator('textarea');
+      await composer.fill(
+        [
+          'Use the `mbos-context` builtin skill to read the member context keys `credentials.jira_base_url` and `credentials.jira_token`.',
+          'Reply with exactly one line in this format and no extra text:',
+          '`CTX_CONTEXT::<jira_base_url>::<jira_token>`',
+        ].join(' '),
+      );
+      await page.getByTestId('chat__send-btn').click();
+
+      await expect(page.getByTestId('chat__message').filter({ hasText: jiraBaseUrl }).first()).toBeVisible({ timeout: 240_000 });
+      const messages = await waitForLatestAssistantContent({
+        page,
+        projectId,
+        sessionId: agentBundle.sessionId,
+        requiredSubstring: jiraToken,
+        minMessages: 2,
+      });
+      const assistantMessages = messages.filter((item) => item.role === 'assistant');
+      expect(assistantMessages.at(-1)?.content).toContain('CTX_CONTEXT::');
+      expect(assistantMessages.at(-1)?.content).toContain(jiraBaseUrl);
+      expect(assistantMessages.at(-1)?.content).toContain(jiraToken);
     } finally {
       await runner.stop();
     }

@@ -543,6 +543,38 @@ export async function createProjectInWorkspace(
   return { projectId, projectName };
 }
 
+export async function putContextEntryViaApi(args: {
+  page: Page;
+  scope: 'member' | 'task' | 'project' | 'workspace';
+  key: string;
+  content: string;
+  contentType?: 'text' | 'json' | 'markdown' | 'yaml';
+  workspaceId: string;
+  projectId?: string;
+  taskId?: string;
+}): Promise<void> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.put(`${API_BASE}/api/v1/context`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    data: {
+      scope: args.scope,
+      key: args.key,
+      content: args.content,
+      content_type: args.contentType ?? 'text',
+      workspace_id: args.workspaceId,
+      project_id: args.projectId,
+      task_id: args.taskId,
+    },
+  });
+  if (!response.ok()) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`put_context_failed:${response.status()}:${body}`);
+  }
+}
+
 export async function createCredentialViaUi(
   page: Page,
   workspaceId: string,
@@ -1594,7 +1626,7 @@ export async function startCodexRunnerProcess(args: {
           MBOS_AGENT_RUNNER_DEBUG: '1',
           MBOS_AGENT_WORKSPACE_ROOT: workspaceRoot,
           MBOS_AGENT_BUILTIN_SKILLS_DIR: builtinSkillsDir,
-          MBOS_AGENT_BUILTIN_SKILLS: 'feishu-docs,jira-ops',
+          MBOS_AGENT_BUILTIN_SKILLS: 'mbos-context,feishu-docs,jira-ops',
           MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: '1',
           ...(args.codeBin ? { CODEX_BIN: args.codeBin } : {}),
         },
@@ -1679,7 +1711,7 @@ export async function startCodexRunnerDockerProcess(args: {
   const embeddedRunner = process.env.INTEGRATION_CODEX_RUNNER_EMBEDDED?.trim() === '1';
   const rebuildBaseImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE?.trim() !== '0';
   const rebuildRunnerImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE?.trim() !== '0';
-  const builtinSkillsList = process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS?.trim() ?? 'feishu-docs,jira-ops';
+  const builtinSkillsList = process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS?.trim() ?? 'mbos-context,feishu-docs,jira-ops';
   const builtinSkillsRequired = process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED?.trim() ?? '1';
   const builtinSkillsDir = embeddedRunner
     ? process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR?.trim() || '/etc/codex/skills'

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type http from 'node:http';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import type { NodeApiDeps } from './node-api-deps.js';
@@ -26,6 +26,7 @@ async function executeContextRoute(params: {
   method: string;
   reqUrl: string;
   internalTicket?: ResolvedInternalTicket | null;
+  body?: unknown;
 }): Promise<TestResponse> {
   const response: TestResponse = { statusCode: 200, ended: false };
   const res = {
@@ -53,7 +54,7 @@ async function executeContextRoute(params: {
     deps: params.deps,
     user: { id: 'user_1', email: 'u@example.com', name: 'User One' },
     internalTicket: params.internalTicket,
-    readBody: async () => null,
+    readBody: async () => params.body ?? null,
     json: (_res, status, payload) => {
       response.statusCode = status;
       response.body = payload;
@@ -64,6 +65,65 @@ async function executeContextRoute(params: {
 }
 
 describe('context-route-handler', () => {
+  beforeEach(() => {
+    refreshFeishuOAuthMock.mockReset();
+  });
+
+  it('rejects deprecated user scope for reads', async () => {
+    const response = await executeContextRoute({
+      deps: {
+        docStore: new InMemoryJsonDocStore(),
+      } as unknown as NodeApiDeps,
+      method: 'GET',
+      reqUrl: '/api/v1/context?scope=user&key=prefs.editor&workspace_id=ws_default',
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      error_code: 'INVALID_REQUEST',
+      message: 'context_scope_and_key_required',
+    });
+  });
+
+  it('rejects deprecated user scope for writes', async () => {
+    const response = await executeContextRoute({
+      deps: {
+        docStore: new InMemoryJsonDocStore(),
+      } as unknown as NodeApiDeps,
+      method: 'PUT',
+      reqUrl: '/api/v1/context',
+      body: {
+        scope: 'user',
+        key: 'prefs.editor',
+        workspace_id: 'ws_default',
+        content: 'vim',
+        content_type: 'text',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      error_code: 'INVALID_REQUEST',
+      message: 'context_scope_and_key_required',
+    });
+  });
+
+  it('rejects deprecated user scope for listings', async () => {
+    const response = await executeContextRoute({
+      deps: {
+        docStore: new InMemoryJsonDocStore(),
+      } as unknown as NodeApiDeps,
+      method: 'GET',
+      reqUrl: '/api/v1/context/list?scope=user&workspace_id=ws_default',
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      error_code: 'INVALID_REQUEST',
+      message: 'context_scope_required',
+    });
+  });
+
   it('rejects project context deletion for agent execution tickets', async () => {
     const response = await executeContextRoute({
       deps: {
@@ -260,5 +320,48 @@ describe('context-route-handler', () => {
       connectionId: workspaceConnection.id,
     }));
     expect(response.statusCode).toBe(200);
+  });
+
+  it('rejects cross-workspace managed credential refresh for agent tickets', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    await createUserExternalConnection(docStore, {
+      user_id: 'user_1',
+      workspace_id: 'ws_other',
+      provider: 'feishu',
+      kind: 'oauth_account',
+      display_name: 'other workspace feishu',
+      status: 'reauth_required',
+      fields: [{ key: 'access_token', value: 'other_token', secret: true }],
+      scopes: ['search:docs:read'],
+      reauth_reason: 'missing_scopes',
+    });
+
+    const response = await executeContextRoute({
+      deps: { docStore } as unknown as NodeApiDeps,
+      method: 'POST',
+      reqUrl: '/api/v1/context/managed-credentials/feishu/refresh?workspace_id=ws_other',
+      internalTicket: {
+        ticket: 'int_test',
+        purpose: 'agent_execution',
+        user_id: 'user_1',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        expires_at: '2099-01-01T00:00:00.000Z',
+        max_uses: 1,
+        remaining_uses: 1,
+        payload: {
+          endpoint_id: 'ep_1',
+          task_id: 'task_1',
+          mode: 'chat',
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.body).toEqual({
+      error_code: 'FORBIDDEN',
+      message: 'context_workspace_scope_mismatch',
+    });
+    expect(refreshFeishuOAuthMock).not.toHaveBeenCalled();
   });
 });

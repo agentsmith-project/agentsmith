@@ -329,6 +329,12 @@ async function handleManagedCredentialRefresh(args: {
   provider: string;
   workspaceId?: string | null;
 }): Promise<ContextEntryRecord | { error: { status: number; message: string } }> {
+  if (isAgentExecutionTicket(args.internalTicket)) {
+    const ticketWorkspaceId = args.internalTicket.workspace_id ?? null;
+    if (args.workspaceId && ticketWorkspaceId && args.workspaceId !== ticketWorkspaceId) {
+      return { error: { status: 403, message: 'context_workspace_scope_mismatch' } };
+    }
+  }
   if (args.provider !== 'feishu') {
     return { error: { status: 422, message: 'context_managed_credential_refresh_not_supported' } };
   }
@@ -532,7 +538,11 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
       workspaceId: identifiers.workspaceId ?? internalTicket?.workspace_id ?? null,
     });
     if ('error' in refreshed) {
-      json(res, refreshed.error.status, { error_code: 'INVALID_REQUEST', message: refreshed.error.message });
+      json(
+        res,
+        refreshed.error.status,
+        { error_code: refreshed.error.status === 403 ? 'FORBIDDEN' : 'INVALID_REQUEST', message: refreshed.error.message },
+      );
       return true;
     }
     json(res, 200, presentContextEntry(refreshed));

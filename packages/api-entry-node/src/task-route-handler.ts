@@ -21,6 +21,10 @@ import {
 } from './notebook-task-sse-broker.js';
 import { resolveNotebookTaskInputDetails, type NotebookTaskInputRefRecord as SharedNotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { resolveExecutionApiBase, runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestrator.js';
+import {
+  resolveConfiguredPublicApiBase,
+  resolveRequiredConfiguredPublicApiBase,
+} from './agent-execution-api-base.js';
 import { buildNotebookTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import type { ProjectsRoute } from './projects-route-match.js';
@@ -233,15 +237,20 @@ export async function hasBlockingTaskRunForTerminal(
   return true;
 }
 
-function sanitizeBaseUrl(value: string | undefined | null): string | null {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  return trimmed.replace(/\/+$/, '');
-}
-
 export function resolveTerminalWebSocketBaseUrl(req: http.IncomingMessage): string {
-  const configuredApiBase = sanitizeBaseUrl(process.env.PUBLIC_API_BASE_URL);
+  const configuredApiBase = resolveConfiguredPublicApiBase();
   const requestUrl = configuredApiBase ?? resolvePublicBaseUrl(req).replace(/\/+$/, '');
+  try {
+    const parsed = new URL(requestUrl);
+    if (parsed.protocol === 'https:') {
+      return `wss://${parsed.host}`;
+    }
+    if (parsed.protocol === 'http:') {
+      return `ws://${parsed.host}`;
+    }
+  } catch {
+    // fall through to legacy string handling below
+  }
   if (requestUrl.startsWith('https://')) {
     return `wss://${requestUrl.slice('https://'.length)}`;
   }
@@ -626,7 +635,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       task,
       user,
       agent,
-      publicBaseUrl: resolvePublicBaseUrl(req),
+      publicBaseUrl: resolveRequiredConfiguredPublicApiBase(),
     });
     const created = await deps.notebookTerminalService.createSession({
       workspaceId: task.workspace_id,
@@ -1101,7 +1110,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         assistantMessage,
         agentId: task.agent_id,
         user,
-        publicBaseUrl: resolvePublicBaseUrl(req),
+        publicBaseUrl: resolveRequiredConfiguredPublicApiBase(),
         buildRunId: () => runId ?? buildId('run'),
         buildProxyUsername: (u) => sanitizePathPart(u.email || u.name || u.id),
         mapTaskMessagesForExecution,

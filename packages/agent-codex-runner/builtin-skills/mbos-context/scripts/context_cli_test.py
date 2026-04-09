@@ -13,7 +13,7 @@ class ContextCliTests(unittest.TestCase):
     @patch.dict(
         os.environ,
         {
-            "MBOS_AGENT_API_BASE": "http://localhost:20000",
+            "MBOS_AGENT_API_BASE": "http://localhost:20000/api/v1",
             "MBOS_AGENT_EXECUTION_TICKET": "ticket_123",
             "MBOS_AGENT_WORKSPACE_ID": "ws_default",
             "MBOS_AGENT_PROJECT_ID": "proj_1",
@@ -37,7 +37,7 @@ class ContextCliTests(unittest.TestCase):
     @patch.dict(
         os.environ,
         {
-            "MBOS_AGENT_API_BASE": "http://localhost:20000",
+            "MBOS_AGENT_API_BASE": "http://localhost:20000/api/v1",
             "MBOS_AGENT_EXECUTION_TICKET": "ticket_123",
             "MBOS_AGENT_WORKSPACE_ID": "ws_default",
         },
@@ -51,13 +51,16 @@ class ContextCliTests(unittest.TestCase):
 
         payload = context_cli.api_request(
             "POST",
-            "/api/v1/context/managed-credentials/feishu/refresh",
+            "/context/managed-credentials/feishu/refresh",
             query={"workspace_id": "ws_default"},
         )
 
         self.assertEqual(payload, {"ok": True})
         req = mock_urlopen.call_args.args[0]
-        self.assertIn("workspace_id=ws_default", req.full_url)
+        self.assertEqual(
+            req.full_url,
+            "http://localhost:20000/api/v1/context/managed-credentials/feishu/refresh?workspace_id=ws_default",
+        )
         self.assertEqual(req.headers["Authorization"], "Bearer ticket_123")
 
 

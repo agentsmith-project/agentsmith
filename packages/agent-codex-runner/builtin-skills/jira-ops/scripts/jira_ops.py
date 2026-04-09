@@ -52,7 +52,7 @@ def context_api_get(scope: str, key: str) -> str | None:
     if not api_base or not ticket:
         return None
     req = urllib.request.Request(
-        f"{api_base}/api/v1/context?{build_context_query(scope, key)}",
+        f"{api_base}/context?{build_context_query(scope, key)}",
         headers={"Authorization": f"Bearer {ticket}"},
         method="GET",
     )

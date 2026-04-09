@@ -154,7 +154,7 @@ describe('task-workspace', () => {
     });
 
     const response = await fetchTaskWorkspaceAccess({
-      api_base: 'http://localhost:20000/',
+      api_base: 'http://localhost:20000/api/v1/',
       workspace_id: 'ws_default',
       project_id: 'proj_1',
       task_id: 'task_1',

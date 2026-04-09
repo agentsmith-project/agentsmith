@@ -32,7 +32,7 @@ import {
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
 import { issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
-import { resolvePublicBaseUrl } from './notebook-task/task-realtime-view.js';
+import { resolveRequiredConfiguredPublicApiBase } from './agent-execution-api-base.js';
 import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
 
 interface ChatStreamHandlerArgs {
@@ -81,7 +81,10 @@ function mapAgentDispatchError(error: unknown): AgentStreamRouteError {
   const codeCandidate = error && typeof error === 'object'
     ? (error as { code?: unknown }).code
     : undefined;
-  if (typeof codeCandidate === 'string' && codeCandidate.startsWith('AGENT_SANDBOX_')) {
+  if (
+    typeof codeCandidate === 'string'
+    && (codeCandidate.startsWith('AGENT_SANDBOX_') || codeCandidate === 'AGENT_EXECUTION_API_BASE_NOT_CONFIGURED')
+  ) {
     return new AgentStreamRouteError(codeCandidate, codeCandidate.toLowerCase());
   }
   const message = error instanceof Error ? error.message : 'agent_stream_error';
@@ -682,7 +685,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           session_id: route.sessionId,
           username: buildProxyUsername(user),
           execution_ticket: issuedExecutionTicket.ticket,
-          api_base: resolveExecutionApiBase(resolvePublicBaseUrl(req), agent),
+          api_base: resolveExecutionApiBase(resolveRequiredConfiguredPublicApiBase(), agent),
           ...(executionEndpointId ? { endpoint_id: executionEndpointId } : {}),
           model: raw.model ?? session.model,
           notebook_mode: false,
@@ -973,6 +976,8 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       if (!res.headersSent) {
         const statusCode = mappedError.code === 'UNAUTHORIZED'
           ? 401
+          : mappedError.code === 'AGENT_EXECUTION_API_BASE_NOT_CONFIGURED'
+            ? 500
           : mappedError.code === 'AGENT_SANDBOX_RATE_LIMITED'
             ? 429
             : (mappedError.code.startsWith('AGENT_SANDBOX_') ? 422 : 502);

@@ -265,7 +265,11 @@ describe('api-entry-node sse ticket routes', () => {
 
 describe('api-entry-node projects routes', () => {
   it('streams chat via external agent websocket execution channel', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    let ws: WebSocket | null = null;
+    try {
     const { baseUrl } = startServer();
+    process.env.PUBLIC_API_BASE_URL = baseUrl;
 
     const createAgentRes = await apiFetch(
       baseUrl,
@@ -302,7 +306,7 @@ describe('api-entry-node projects routes', () => {
     const connInfo = (await connInfoRes.json()) as { ws_url: string };
     const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'));
 
-    const ws = new WebSocket(wsUrl, {
+    ws = new WebSocket(wsUrl, {
       headers: { Authorization: `Bearer ${keyPayload.key}` },
     });
     let observedExecutionTicket = '';
@@ -371,7 +375,12 @@ describe('api-entry-node projects routes', () => {
       `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Host: 'evil.example',
+          'X-Forwarded-Host': 'evil.example',
+          'X-Forwarded-Proto': 'https',
+        },
         body: JSON.stringify({
           input: { role: 'user', content: 'hello' },
         }),
@@ -385,7 +394,106 @@ describe('api-entry-node projects routes', () => {
     expect(observedApiBase).toBe(baseUrl);
     expect(observedExecutionTicket).toMatch(/^exec_/);
     expect(observedLegacyBearer).toBe('');
-    ws.close();
+    } finally {
+      ws?.close();
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
+    }
+  });
+
+  it('fails fast for external chat agent execution when public api base is not configured', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    let ws: WebSocket | null = null;
+    delete process.env.PUBLIC_API_BASE_URL;
+    try {
+      const { baseUrl } = startServer();
+
+      const createAgentRes = await apiFetch(
+        baseUrl,
+        '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: 'echo-agent',
+            mode: 'external',
+            interaction_mode: 'chat',
+            capabilities: { streaming_completion: true, multimodal_completion: true },
+          }),
+        },
+      );
+      expect(createAgentRes.status).toBe(201);
+      const agent = (await createAgentRes.json()) as { id: string };
+
+      const keyRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+      );
+      expect(keyRes.status).toBe(201);
+      const keyPayload = (await keyRes.json()) as { key: string };
+
+      const connInfoRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
+      );
+      expect(connInfoRes.status).toBe(200);
+      const connInfo = (await connInfoRes.json()) as { ws_url: string };
+      const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'));
+
+      ws = new WebSocket(wsUrl, {
+        headers: { Authorization: `Bearer ${keyPayload.key}` },
+      });
+      await new Promise<void>((resolve, reject) => {
+        ws.once('open', () => {
+          ws.send(JSON.stringify({
+            type: 'agent.ready',
+            payload: { capabilities: { wire_api: 'responses', streaming_completion: true } },
+          }));
+          resolve();
+        });
+        ws.once('error', reject);
+      });
+
+      const createSessionRes = await apiFetch(
+        baseUrl,
+        '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ external_agent_id: agent.id, model: 'external-echo' }),
+        },
+      );
+      expect(createSessionRes.status).toBe(201);
+      const session = (await createSessionRes.json()) as { id: string };
+
+      const streamRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            input: { role: 'user', content: 'hello' },
+          }),
+        },
+      );
+      expect(streamRes.status).toBe(500);
+      await expect(streamRes.json()).resolves.toEqual({
+        error_code: 'AGENT_EXECUTION_API_BASE_NOT_CONFIGURED',
+        message: 'agent_execution_api_base_not_configured',
+      });
+    } finally {
+      ws?.close();
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
+    }
   });
 
   it('enforces endpoint requests_per_minute policy for chat stream preflight', async () => {
@@ -496,52 +604,62 @@ describe('api-entry-node projects routes', () => {
   });
 
   it('returns AGENT_OFFLINE when external agent session streams without active execution socket', async () => {
-    const { baseUrl } = startServer();
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    try {
+      const { baseUrl } = startServer();
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
 
-    const createAgentRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'offline-agent',
-          mode: 'external',
-          interaction_mode: 'chat',
-          capabilities: { streaming_completion: true, multimodal_completion: false },
-        }),
-      },
-    );
-    expect(createAgentRes.status).toBe(201);
-    const agent = (await createAgentRes.json()) as { id: string };
+      const createAgentRes = await apiFetch(
+        baseUrl,
+        '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: 'offline-agent',
+            mode: 'external',
+            interaction_mode: 'chat',
+            capabilities: { streaming_completion: true, multimodal_completion: false },
+          }),
+        },
+      );
+      expect(createAgentRes.status).toBe(201);
+      const agent = (await createAgentRes.json()) as { id: string };
 
-    const createSessionRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ external_agent_id: agent.id, model: 'external-echo' }),
-      },
-    );
-    expect(createSessionRes.status).toBe(201);
-    const session = (await createSessionRes.json()) as { id: string };
+      const createSessionRes = await apiFetch(
+        baseUrl,
+        '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ external_agent_id: agent.id, model: 'external-echo' }),
+        },
+      );
+      expect(createSessionRes.status).toBe(201);
+      const session = (await createSessionRes.json()) as { id: string };
 
-    const streamRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: { role: 'user', content: 'hello' },
-        }),
-      },
-    );
-    expect(streamRes.status).toBe(502);
-    const body = (await streamRes.json()) as { error_code?: string; message?: string };
-    expect(body.error_code).toBe('AGENT_OFFLINE');
-    expect(body.message).toBe('agent_offline');
+      const streamRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            input: { role: 'user', content: 'hello' },
+          }),
+        },
+      );
+      expect(streamRes.status).toBe(502);
+      const body = (await streamRes.json()) as { error_code?: string; message?: string };
+      expect(body.error_code).toBe('AGENT_OFFLINE');
+      expect(body.message).toBe('agent_offline');
+    } finally {
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
+    }
   });
 
   it('validates notebook endpoint for notebook-capable external agent', async () => {
@@ -761,57 +879,67 @@ describe('api-entry-node projects routes', () => {
     deps.agentExecutionService.dispatchStreamingRequest = dispatchStreamingRequest as typeof deps.agentExecutionService.dispatchStreamingRequest;
     const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
     const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
-    const { baseUrl } = startServerWithDeps(deps);
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
 
-    const internalAgent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
-      name: 'internal-chat-keepalive',
-      mode: 'internal',
-      interaction_mode: 'chat',
-      status: 'enabled',
-      config: {
-        image: 'runner:v1',
-        _internal_raw_key: 'ask_test',
-      } as never,
-      owner_id: 'user_test',
-      visibility: 'private',
-      execution_preferences_json: {
-        notebook: {
-          endpoint_id: 'ep_internal',
+      const internalAgent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'internal-chat-keepalive',
+        mode: 'internal',
+        interaction_mode: 'chat',
+        status: 'enabled',
+        config: {
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_test',
+        } as never,
+        owner_id: 'user_test',
+        visibility: 'private',
+        execution_preferences_json: {
+          notebook: {
+            endpoint_id: 'ep_internal',
+          },
         },
-      },
-    });
+      });
 
-    const createSessionRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ external_agent_id: internalAgent.id, model: 'gpt-5-codex' }),
-      },
-    );
-    expect(createSessionRes.status).toBe(201);
-    const session = (await createSessionRes.json()) as { id: string };
+      const createSessionRes = await apiFetch(
+        baseUrl,
+        '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ external_agent_id: internalAgent.id, model: 'gpt-5-codex' }),
+        },
+      );
+      expect(createSessionRes.status).toBe(201);
+      const session = (await createSessionRes.json()) as { id: string };
 
-    const streamRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: { role: 'user', content: 'hello internal keepalive' },
-        }),
-      },
-    );
-    expect(streamRes.status).toBe(200);
-    expect(ensureAgentReady).toHaveBeenCalledTimes(1);
-    expect(keepalive).toHaveBeenCalled();
-    expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);
-    expect(setIntervalSpy.mock.calls.some((call) => call[1] === 60_000)).toBe(true);
-    expect(clearIntervalSpy).toHaveBeenCalled();
-    setIntervalSpy.mockRestore();
-    clearIntervalSpy.mockRestore();
+      const streamRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            input: { role: 'user', content: 'hello internal keepalive' },
+          }),
+        },
+      );
+      expect(streamRes.status).toBe(200);
+      expect(ensureAgentReady).toHaveBeenCalledTimes(1);
+      expect(keepalive).toHaveBeenCalled();
+      expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);
+      expect(setIntervalSpy.mock.calls.some((call) => call[1] === 60_000)).toBe(true);
+      expect(clearIntervalSpy).toHaveBeenCalled();
+    } finally {
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
+    }
   });
 
   it('releases internal workload pod when notebook task is archived', async () => {

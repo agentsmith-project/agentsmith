@@ -79,7 +79,7 @@ def load_managed_connection_from_context() -> dict[str, Any] | None:
         )
     payload = context_api_request(
         "GET",
-        f"/api/v1/context?{build_context_query(scope='member', key=MANAGED_CONTEXT_KEY)}",
+        f"/context?{build_context_query(scope='member', key=MANAGED_CONTEXT_KEY)}",
     )
     content = payload.get("content")
     if not isinstance(content, str) or not content.strip():
@@ -97,7 +97,7 @@ def refresh_managed_connection_from_context() -> dict[str, Any]:
     search = f"?workspace_id={workspace_id}" if workspace_id else ""
     payload = context_api_request(
         "POST",
-        f"/api/v1/context/managed-credentials/feishu/refresh{search}",
+        f"/context/managed-credentials/feishu/refresh{search}",
     )
     content = payload.get("content")
     if not isinstance(content, str) or not content.strip():

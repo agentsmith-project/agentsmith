@@ -983,7 +983,10 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('runs notebook task message through external execution service and enforces single active run per task', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    try {
     const { baseUrl } = startServer();
+    process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
     const upstream = startUpstreamServer();
     const workspaceLibrary = await createFileLibrary(baseUrl);
 
@@ -1257,7 +1260,12 @@ describe('api-entry-node notebook task routes', () => {
       `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Host: 'evil.example',
+          'X-Forwarded-Host': 'evil.example',
+          'X-Forwarded-Proto': 'https',
+        },
         body: JSON.stringify({
           role: 'user',
           content: 'run this',
@@ -1285,7 +1293,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(execution.requestId).toBeTruthy();
     expect(execution.executionTicket).toMatch(/^exec_/);
     expect(execution.legacyUserBearerToken).toBe('');
-    expect(execution.apiBase).toBe(baseUrl);
+    expect(execution.apiBase).toBe(`${baseUrl}/api/v1`);
     expect(execution.notebookMode).toBe(true);
     expect(execution.workspaceBindingMode).toBe('file_library');
     expect(execution.workspacePath).toBeNull();
@@ -1386,10 +1394,17 @@ describe('api-entry-node notebook task routes', () => {
     }
     expect(secondTurnStatus).toBe(200);
     execution.close();
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
   });
 
   it('synthesizes terminal trace and closes task when notebook execution dispatch fails', async () => {
-    const { baseUrl } = startServer();
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    try {
+      const { baseUrl } = startServer();
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Offline Execution Workspace');
 
     const createCredentialRes = await apiFetch(
@@ -1553,6 +1568,10 @@ describe('api-entry-node notebook task routes', () => {
     expect(taskAfterRunRes.status).toBe(200);
     const taskAfterRun = (await taskAfterRunRes.json()) as { status: string };
     expect(taskAfterRun.status).toBe('active');
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
   });
 
   it('exposes authenticated notebook task metrics snapshot', async () => {
@@ -1695,6 +1714,8 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('builds external terminal sessions with file-library execution context and no workspace path', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    try {
     const deps = createDefaultNodeApiDeps();
     let capturedExecutionContext: Record<string, unknown> | null = null;
     deps.notebookTerminalService.createSession = async (input) => {
@@ -1733,6 +1754,7 @@ describe('api-entry-node notebook task routes', () => {
     });
 
     const { baseUrl } = startServerWithDeps(deps);
+    process.env.PUBLIC_API_BASE_URL = baseUrl;
     const workspaceLibrary = await createFileLibrary(baseUrl, 'External Terminal Workspace');
     const createTaskRes = await apiFetchWithToken(
       baseUrl,
@@ -1757,11 +1779,20 @@ describe('api-entry-node notebook task routes', () => {
       'test-token',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Host: 'evil.example',
+          'X-Forwarded-Host': 'evil.example',
+          'X-Forwarded-Proto': 'https',
+        },
         body: JSON.stringify({ cols: 120, rows: 40, shell: '/bin/zsh' }),
       },
     );
     expect(createTerminalRes.status).toBe(201);
+    const createTerminalPayload = await createTerminalRes.json() as { ws_url?: string };
+    expect(createTerminalPayload.ws_url).toBe(
+      `${baseUrl.replace('http://', 'ws://')}/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_external_terminal/terminal/ws?session_id=term_external_capture&ticket=term_ticket`,
+    );
     expect(capturedExecutionContext).toBeTruthy();
     expect(capturedExecutionContext?.task_id).toBe(task.id);
     expect(capturedExecutionContext?.workspace_binding_mode).toBe('file_library');
@@ -1769,10 +1800,17 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
     expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
     expect(capturedExecutionContext?.notebook_mode).toBe(true);
+    expect(capturedExecutionContext?.api_base).toBe(baseUrl);
     expect(capturedExecutionContext?.credential_files).toBeUndefined();
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
   });
 
   it('builds internal terminal sessions with a task-root workspace path', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    try {
     const deps = createDefaultNodeApiDeps();
     let capturedExecutionContext: Record<string, unknown> | null = null;
     let ensuredWorkspaceMountPath = '';
@@ -1834,6 +1872,7 @@ describe('api-entry-node notebook task routes', () => {
     });
 
     const { baseUrl } = startServerWithDeps(deps);
+    process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Internal Terminal Workspace');
     const createTaskRes = await apiFetchWithToken(
       baseUrl,
@@ -1858,11 +1897,20 @@ describe('api-entry-node notebook task routes', () => {
       'test-token',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Host: 'evil.example',
+          'X-Forwarded-Host': 'evil.example',
+          'X-Forwarded-Proto': 'https',
+        },
         body: JSON.stringify({ cols: 100, rows: 30 }),
       },
     );
     expect(createTerminalRes.status).toBe(201);
+    const createTerminalPayload = await createTerminalRes.json() as { ws_url?: string };
+    expect(createTerminalPayload.ws_url).toBe(
+      `${baseUrl.replace('http://', 'ws://')}/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_internal_terminal/terminal/ws?session_id=term_internal_capture&ticket=term_ticket`,
+    );
     expect(ensuredWorkspaceTaskId).toBe(task.id);
     expect(ensuredWorkspaceMountPath).toBe(`/workspace/${task.id}`);
     expect(capturedExecutionContext).toBeTruthy();
@@ -1872,5 +1920,10 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
     expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
     expect(capturedExecutionContext?.notebook_mode).toBe(true);
+    expect(capturedExecutionContext?.api_base).toBe(`${baseUrl}/api/v1`);
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
   });
 });

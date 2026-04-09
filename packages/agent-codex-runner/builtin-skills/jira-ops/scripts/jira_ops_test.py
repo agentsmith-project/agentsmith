@@ -12,7 +12,7 @@ class JiraOpsTests(unittest.TestCase):
     @patch.dict(
         "os.environ",
         {
-            "MBOS_AGENT_API_BASE": "http://localhost:20000",
+            "MBOS_AGENT_API_BASE": "http://localhost:20000/api/v1",
             "MBOS_AGENT_EXECUTION_TICKET": "ticket_123",
             "MBOS_AGENT_WORKSPACE_ID": "ws_default",
             "MBOS_AGENT_PROJECT_ID": "proj_1",
@@ -41,11 +41,21 @@ class JiraOpsTests(unittest.TestCase):
         base_url, token = jira_ops.load_simple_jira_credentials_from_context()
         self.assertEqual(base_url, "https://jira.example.com")
         self.assertEqual(token, "jira_token_123")
+        first_request = mock_urlopen.call_args_list[0].args[0]
+        second_request = mock_urlopen.call_args_list[1].args[0]
+        self.assertIn(
+            "http://localhost:20000/api/v1/context?scope=task&key=credentials.jira_base_url",
+            first_request.full_url,
+        )
+        self.assertIn(
+            "http://localhost:20000/api/v1/context?scope=task&key=credentials.jira_token",
+            second_request.full_url,
+        )
 
     @patch.dict(
         "os.environ",
         {
-            "MBOS_AGENT_API_BASE": "http://localhost:20000",
+            "MBOS_AGENT_API_BASE": "http://localhost:20000/api/v1",
             "MBOS_AGENT_EXECUTION_TICKET": "ticket_123",
             "MBOS_AGENT_WORKSPACE_ID": "ws_default",
             "MBOS_AGENT_PROJECT_ID": "proj_1",

@@ -41,6 +41,13 @@ export function mapRequestError(error: unknown): MappedErrorResponse {
     };
   }
 
+  if (message === 'agent_execution_api_base_not_configured') {
+    return {
+      status: 500,
+      body: { error_code: 'AGENT_EXECUTION_API_BASE_NOT_CONFIGURED', message },
+    };
+  }
+
   if (message === 'library_not_empty') {
     return {
       status: 409,

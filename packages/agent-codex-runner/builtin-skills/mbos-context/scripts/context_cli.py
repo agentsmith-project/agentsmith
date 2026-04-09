@@ -120,14 +120,14 @@ def read_put_content(args: argparse.Namespace) -> str:
 def main() -> int:
     args = parse_args()
     if args.command == "get":
-        response = api_request("GET", "/api/v1/context", query=build_query(args))
+        response = api_request("GET", "/context", query=build_query(args))
         if args.full:
             print(json.dumps(response, ensure_ascii=False, indent=2))
         else:
             print(response.get("content", ""), end="" if response.get("content", "").endswith("\n") else "\n")
         return 0
     if args.command == "list":
-        response = api_request("GET", "/api/v1/context/list", query=build_query(args))
+        response = api_request("GET", "/context/list", query=build_query(args))
         print(json.dumps(response.get("items", []), ensure_ascii=False, indent=2))
         return 0
     if args.command == "put":
@@ -141,11 +141,11 @@ def main() -> int:
         for name in ("workspace_id", "project_id", "task_id"):
             if name in query:
                 payload[name] = query[name]
-        response = api_request("PUT", "/api/v1/context", body=payload)
+        response = api_request("PUT", "/context", body=payload)
         print(json.dumps(response, ensure_ascii=False, indent=2))
         return 0
     if args.command == "delete":
-        api_request("DELETE", "/api/v1/context", query=build_query(args))
+        api_request("DELETE", "/context", query=build_query(args))
         return 0
     if args.command == "refresh-managed-credential":
         query = {}
@@ -153,7 +153,7 @@ def main() -> int:
             query["workspace_id"] = args.workspace_id or read_env_default("MBOS_AGENT_WORKSPACE_ID")
         response = api_request(
             "POST",
-            f"/api/v1/context/managed-credentials/{args.provider}/refresh",
+            f"/context/managed-credentials/{args.provider}/refresh",
             query=query or None,
         )
         print(json.dumps(response, ensure_ascii=False, indent=2))

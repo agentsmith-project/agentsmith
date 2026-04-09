@@ -23,7 +23,7 @@ import {
   mountFileLibraryLocally,
   putContextEntryViaApi,
   resolveMountedTaskRoot,
-  runTerminalCommandViaWs,
+  runTerminalCommandInSession,
   sendTaskMessage,
   startMockFeishuMcpServer,
   startMockJiraServer,
@@ -570,8 +570,12 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         shell: '/usr/bin/bash',
       });
 
-      const output = await runTerminalCommandViaWs({
-        wsUrl: terminalSession.wsUrl,
+      const output = await runTerminalCommandInSession({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        sessionId: terminalSession.sessionId,
         command: `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope task --key notes.current_task; printf '${doneMarker}\\n'`,
         waitFor: [taskNote, doneMarker],
       });
@@ -632,8 +636,12 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         shell: '/usr/bin/bash',
       });
 
-      const output = await runTerminalCommandViaWs({
-        wsUrl: terminalSession.wsUrl,
+      const output = await runTerminalCommandInSession({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        sessionId: terminalSession.sessionId,
         command: `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py put --scope workspace --key shared.terminal_attempt --content denied 2>&1 || true; printf '${doneMarker}\\n'`,
         waitFor: ['context_scope_read_only_for_agent', doneMarker],
       });
@@ -645,8 +653,9 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     }
   });
 
-  test('uses jira-ops task context before member context inside a real notebook terminal session', async ({ page }) => {
+  test('uses jira-ops task context before member context in a real notebook codex runner task', async ({ page }) => {
     test.setTimeout(720_000);
+    let stage = 'init';
     const providerApiKey = requireRealLaneApiKey();
     const memberToken = `jira_member_${Date.now()}`;
     const taskToken = `jira_task_${Date.now()}`;
@@ -685,18 +694,26 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
 
     try {
-      await createExternalConnectionViaApi({
+      stage = 'put_member_jira_base_url';
+      await putContextEntryViaApi({
         page,
-        provider: 'jira',
-        kind: 'secret_bundle',
-        displayName: `member-jira-${Date.now()}`,
-        fields: [
-          { key: 'base_url', value: memberServer.baseUrl, secret: false },
-          { key: 'api_token', value: memberToken, secret: true },
-        ],
+        scope: 'member',
+        workspaceId: 'ws_default',
+        key: 'credentials.jira_base_url',
+        content: memberServer.baseUrl,
+      });
+      stage = 'put_member_jira_token';
+      await putContextEntryViaApi({
+        page,
+        scope: 'member',
+        workspaceId: 'ws_default',
+        key: 'credentials.jira_token',
+        content: memberToken,
       });
 
+      stage = 'wait_agent_online';
       await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
+      stage = 'create_task';
       const taskId = await createNotebookTaskViaApi({
         page,
         workspaceId: 'ws_default',
@@ -706,6 +723,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         fileLibraryId,
       });
 
+      stage = 'put_task_jira_base_url';
       await putContextEntryViaApi({
         page,
         scope: 'task',
@@ -715,6 +733,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         key: 'credentials.jira_base_url',
         content: taskServer.baseUrl,
       });
+      stage = 'put_task_jira_token';
       await putContextEntryViaApi({
         page,
         scope: 'task',
@@ -725,27 +744,43 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         content: taskToken,
       });
 
-      const terminal = await createTerminalSessionViaApi({
+      stage = 'send_task_message';
+      await sendTaskMessage({
         page,
         workspaceId: 'ws_default',
         projectId,
         taskId,
+        content: [
+          'Run this exact shell command and use its stdout value in your final reply:',
+          '`python3 ~/.agents/skills/jira-ops/scripts/jira_ops.py myself | python3 -c "import json,sys; print(\\\'JIRA_TASK_SCOPE::\\\' + json.load(sys.stdin)[\\\'displayName\\\'])"`',
+          'Reply with exactly one line and no extra text.',
+        ].join(' '),
       });
-      const output = await runTerminalCommandViaWs({
-        wsUrl: terminal.wsUrl,
-        command: [
-          `python3 ~/.agents/skills/jira-ops/scripts/jira_ops.py myself > /tmp/jira_task_${taskId}.json`,
-          `python3 - <<'PY'`,
-          `import json`,
-          `from pathlib import Path`,
-          `payload=json.loads(Path('/tmp/jira_task_${taskId}.json').read_text())`,
-          `print('JIRA_TASK_SCOPE::' + payload['displayName'])`,
-          `PY`,
-        ].join('\n'),
-        waitFor: ['jira-task-'],
+      stage = 'wait_for_jira_task_scope';
+      await waitForAssistantToken({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        token: `JIRA_TASK_SCOPE::jira-task-`,
       });
-      expect(output).toContain('JIRA_TASK_SCOPE::jira-task-');
-      expect(output).not.toContain('JIRA_TASK_SCOPE::jira-member-');
+      stage = 'verify_not_member_token';
+      const authToken = await readStoredAuthToken(page);
+      const messagesResponse = await page.request.get(
+        `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${taskId}/messages`,
+        { headers: { Authorization: `Bearer ${authToken}` } },
+      );
+      expect(messagesResponse.ok()).toBeTruthy();
+      const messages = (await messagesResponse.json()) as Array<{ content?: string; role?: string }>;
+      const agentContent = messages
+        .filter((item) => item.role === 'agent')
+        .map((item) => item.content ?? '')
+        .join('\n');
+      expect(agentContent).toContain('JIRA_TASK_SCOPE::jira-task-');
+      expect(agentContent).not.toContain('JIRA_TASK_SCOPE::jira-member-');
+      stage = 'done';
+    } catch (error) {
+      throw new Error(`jira_task_real_smoke_failed:${stage}:${error instanceof Error ? error.message : String(error)}`);
     } finally {
       await runner.stop();
       await memberServer.stop();
@@ -753,7 +788,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     }
   });
 
-  test('uses feishu-docs managed credential projection inside a real notebook terminal session', async ({ page }) => {
+  test('uses feishu-docs managed credential projection in a real notebook codex runner task', async ({ page }) => {
     test.setTimeout(720_000);
     const providerApiKey = requireRealLaneApiKey();
     const feishuToken = `feishu_mock_token_${Date.now()}`;
@@ -817,34 +852,24 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         fileLibraryId,
       });
 
-      const terminal = await createTerminalSessionViaApi({
+      await sendTaskMessage({
         page,
         workspaceId: 'ws_default',
         projectId,
         taskId,
+        content: [
+          'Run this exact shell command and use its stdout value in your final reply:',
+          '`python3 ~/.agents/skills/feishu-docs/scripts/feishu_mcp.py tools-list | python3 -c "import json,sys; payload=json.load(sys.stdin); print(\\\'FEISHU_TOOLS::\\\' + payload[\\\'result\\\'][\\\'tools\\\'][0][\\\'name\\\'])"`',
+          'Reply with exactly one line and no extra text.',
+        ].join(' '),
       });
-      const output = await runTerminalCommandViaWs({
-        wsUrl: terminal.wsUrl,
-        command: [
-          `python3 ~/.agents/skills/feishu-docs/scripts/feishu_mcp.py tools-list > /tmp/feishu_tools_${taskId}.json 2> /tmp/feishu_tools_${taskId}.err; exit_code=$?`,
-          `if [ "$exit_code" -ne 0 ]; then`,
-          `  python3 - <<'PY'`,
-          `from pathlib import Path`,
-          `print('FEISHU_ERROR::' + Path('/tmp/feishu_tools_${taskId}.err').read_text(errors='replace').strip())`,
-          `PY`,
-          `  exit 0`,
-          `fi`,
-          `python3 - <<'PY'`,
-          `import json`,
-          `from pathlib import Path`,
-          `payload=json.loads(Path('/tmp/feishu_tools_${taskId}.json').read_text())`,
-          `tools=payload['result']['tools']`,
-          `print('FEISHU_TOOLS::' + tools[0]['name'])`,
-          `PY`,
-        ].join('\n'),
-        waitFor: [toolName],
+      await waitForAssistantToken({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        token: `FEISHU_TOOLS::${toolName}`,
       });
-      expect(output).toContain(`FEISHU_TOOLS::${toolName}`);
     } finally {
       await runner.stop();
       await feishuServer.stop();

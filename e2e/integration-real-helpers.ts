@@ -2,6 +2,7 @@ import { access, appendFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node
 import http from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { WebSocket } from 'ws';
 import { expect, type Page } from '@playwright/test';
@@ -1194,11 +1195,76 @@ export async function createTerminalSessionViaApi(args: {
   }
   const payload = (await response.json().catch(() => null)) as { session_id?: string; ws_url?: string } | null;
   const sessionId = payload?.session_id?.trim();
-  const wsUrl = payload?.ws_url?.trim();
-  if (!sessionId || !wsUrl) {
+  if (!sessionId) {
     throw new Error('terminal_session_payload_incomplete');
   }
+  const sessionUrl =
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}`
+    + `/projects/${args.projectId}`
+    + `/tasks/${args.taskId}`
+    + `/terminal/sessions/${sessionId}`;
+
+  let wsUrl = payload?.ws_url?.trim() || null;
+  if (!wsUrl) {
+    wsUrl = await getTerminalSessionWsUrlViaApi({
+      page: args.page,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      taskId: args.taskId,
+      sessionId,
+      authToken: token,
+    });
+  }
+
+  if (!wsUrl) {
+    throw new Error('terminal_session_ws_url_unavailable');
+  }
   return { sessionId, wsUrl };
+}
+
+export async function getTerminalSessionWsUrlViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  sessionId: string;
+  authToken?: string;
+}): Promise<string> {
+  const token = args.authToken ?? (await readStoredAuthToken(args.page));
+  const sessionUrl =
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}`
+    + `/projects/${args.projectId}`
+    + `/tasks/${args.taskId}`
+    + `/terminal/sessions/${args.sessionId}`;
+
+  let wsUrl: string | null = null;
+  await expect
+    .poll(
+      async () => {
+        const sessionResponse = await args.page.request.get(sessionUrl, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!sessionResponse.ok()) {
+          return false;
+        }
+        const sessionPayload = (await sessionResponse.json().catch(() => null)) as { ws_url?: string | null } | null;
+        const currentWsUrl = sessionPayload?.ws_url?.trim();
+        if (currentWsUrl) {
+          wsUrl = currentWsUrl;
+          return true;
+        }
+        return false;
+      },
+      { timeout: 30_000, intervals: [500, 1_000, 2_000] },
+    )
+    .toBe(true);
+
+  if (!wsUrl) {
+    throw new Error('terminal_session_ws_url_unavailable');
+  }
+  return wsUrl;
 }
 
 export async function runTerminalCommandViaWs(args: {
@@ -1207,16 +1273,23 @@ export async function runTerminalCommandViaWs(args: {
   waitFor: string[];
   timeoutMs?: number;
 }): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
+  const timeoutMs = args.timeoutMs ?? 120_000;
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+  let lastRetryableError: string | null = null;
+
+  const runOnce = async (): Promise<string> => new Promise<string>((resolve, reject) => {
     const ws = new WebSocket(args.wsUrl);
+    const remainingMs = Math.max(1_000, deadline - Date.now());
     const timeout = setTimeout(() => {
       if (done) return;
       done = true;
       ws.close();
       reject(new Error(`terminal_ws_timeout:${args.waitFor.join(',')}`));
-    }, args.timeoutMs ?? 120_000);
+    }, remainingMs);
     let output = '';
     let done = false;
+    let started = false;
 
     const finish = (value: string) => {
       if (done) return;
@@ -1244,6 +1317,7 @@ export async function runTerminalCommandViaWs(args: {
       if (!payload) return;
       if (payload.type === 'started') {
         if (done) return;
+        started = true;
         ws.send(JSON.stringify({ type: 'terminal.stdin', data: `${args.command}\n` }));
         return;
       }
@@ -1265,9 +1339,18 @@ export async function runTerminalCommandViaWs(args: {
 
     ws.on('error', (error) => {
       if (done) return;
+      if (args.waitFor.every((needle) => output.includes(needle))) {
+        finish(output);
+        return;
+      }
       done = true;
       clearTimeout(timeout);
-      reject(error);
+      const detail = error instanceof Error ? error.message : String(error);
+      if (!started) {
+        reject(new Error(`terminal_ws_not_ready:${detail}`));
+        return;
+      }
+      reject(new Error(`terminal_ws_client_error:${detail}:${output.slice(-2000)}`));
     });
 
     ws.on('close', () => {
@@ -1280,9 +1363,72 @@ export async function runTerminalCommandViaWs(args: {
       }
       done = true;
       clearTimeout(timeout);
+      if (!started) {
+        reject(new Error('terminal_ws_not_ready:closed_before_started'));
+        return;
+      }
       reject(new Error(`terminal_ws_closed_before_match:${args.waitFor.join(',')}:${output.slice(-2000)}`));
     });
   });
+
+  while (Date.now() < deadline) {
+    try {
+      return await runOnce();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      if (!detail.startsWith('terminal_ws_not_ready:')) {
+        throw error;
+      }
+      lastRetryableError = detail;
+      attempt += 1;
+      await setTimeoutPromise(Math.min(2_000, 250 * attempt));
+    }
+  }
+
+  throw new Error(`terminal_ws_retry_exhausted:${lastRetryableError ?? 'unknown'}`);
+}
+
+export async function runTerminalCommandInSession(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  sessionId: string;
+  command: string;
+  waitFor: string[];
+  timeoutMs?: number;
+}): Promise<string> {
+  const deadline = Date.now() + (args.timeoutMs ?? 120_000);
+  let attempt = 0;
+  let lastError: string | null = null;
+
+  while (Date.now() < deadline) {
+    const wsUrl = await getTerminalSessionWsUrlViaApi({
+      page: args.page,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      taskId: args.taskId,
+      sessionId: args.sessionId,
+    });
+    try {
+      return await runTerminalCommandViaWs({
+        wsUrl,
+        command: args.command,
+        waitFor: args.waitFor,
+        timeoutMs: Math.max(1_000, deadline - Date.now()),
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      if (!detail.startsWith('terminal_ws_retry_exhausted:terminal_ws_not_ready:')) {
+        throw error;
+      }
+      lastError = detail;
+      attempt += 1;
+      await setTimeoutPromise(Math.min(2_000, 250 * attempt));
+    }
+  }
+
+  throw new Error(`terminal_session_command_retry_exhausted:${lastError ?? 'unknown'}`);
 }
 
 export async function waitForAssistantToken(args: {

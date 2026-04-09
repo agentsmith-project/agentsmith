@@ -298,7 +298,7 @@ export async function fetchTaskWorkspaceAccess(
   });
 
   const response = await fetch(
-    `${apiBase}/api/v1/workspaces/${encodeURIComponent(workspaceId)}`
+    `${apiBase}/workspaces/${encodeURIComponent(workspaceId)}`
       + `/projects/${encodeURIComponent(projectId)}`
       + `/tasks/${encodeURIComponent(taskId)}/workspace-access`,
     {

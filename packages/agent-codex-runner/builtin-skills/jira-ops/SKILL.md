@@ -7,7 +7,7 @@ description: Operate Jira with a bearer token for common issue workflows such as
 
 ## Overview
 
-Use a local helper script to perform common Jira REST operations with Bearer token auth. The helper reads `credentials.jira_base_url` and `credentials.jira_token` from AgentSmith Context Store, and clears proxy environment variables before every request.
+Use a local helper script to perform common Jira REST operations with Bearer token auth. The helper reads `credentials.jira_base_url` and `credentials.jira_token` from AgentSmith Context Store task/member context, and clears proxy environment variables before every request.
 
 ## Quick Start
 
@@ -21,7 +21,7 @@ python ~/.agents/skills/jira-ops/scripts/jira_ops.py \
 ## Workflow
 
 1. Read [common.md](references/common.md) first.
-2. Read `credentials.jira_base_url` and `credentials.jira_token` from `mbos-context` first. If they are missing, fail fast and ask the user or agent to set them explicitly.
+2. Read `credentials.jira_base_url` and `credentials.jira_token` from `mbos-context` first. Check `task` context before `member` context. If they are missing, fail fast and ask the user or agent to set them explicitly.
 3. If the issue key is unknown, use [jql.md](references/jql.md) and search before mutating.
 4. If the user wants a common action, follow [workflows.md](references/workflows.md).
 5. Before field edits, inspect `editmeta` if field names or allowed values are unclear.

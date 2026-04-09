@@ -9,13 +9,14 @@ import {
 } from './context-store.js';
 
 describe('context-store', () => {
-  it('stores, retrieves, lists, and deletes encrypted context entries', async () => {
+  it('stores, retrieves, lists, and deletes encrypted member context entries', async () => {
     const docStore = new InMemoryJsonDocStore();
 
     const saved = await putContextEntry(docStore, {
-      scope: 'user',
+      scope: 'member',
       key: 'credentials.github_token',
       user_id: 'user_1',
+      workspace_id: 'ws_default',
       content: 'ghp_secret_123',
       content_type: 'text',
       updated_by: 'user_1',
@@ -28,32 +29,72 @@ describe('context-store', () => {
     expect(raw?.content).not.toContain('ghp_secret_123');
 
     const loaded = await getContextEntry(docStore, {
-      scope: 'user',
+      scope: 'member',
       key: 'credentials.github_token',
       user_id: 'user_1',
+      workspace_id: 'ws_default',
     });
     expect(loaded?.content).toBe('ghp_secret_123');
 
     const listed = await listContextEntries(docStore, {
-      scope: 'user',
+      scope: 'member',
       user_id: 'user_1',
+      workspace_id: 'ws_default',
     });
     expect(listed).toHaveLength(1);
     expect(listed[0]?.key).toBe('credentials.github_token');
 
     const deleted = await deleteContextEntry(docStore, {
-      scope: 'user',
+      scope: 'member',
       key: 'credentials.github_token',
       user_id: 'user_1',
+      workspace_id: 'ws_default',
     });
     expect(deleted).toBe(true);
     expect(
       await getContextEntry(docStore, {
-        scope: 'user',
+        scope: 'member',
         key: 'credentials.github_token',
         user_id: 'user_1',
+        workspace_id: 'ws_default',
       }),
     ).toBeNull();
+  });
+
+  it('keeps task context keyed by workspace, project, task, and owner user', async () => {
+    const docStore = new InMemoryJsonDocStore();
+
+    await putContextEntry(docStore, {
+      scope: 'task',
+      key: 'notes.current',
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      task_id: 'task_1',
+      content: 'remember this',
+      content_type: 'text',
+      updated_by: 'user_1',
+    });
+
+    const matching = await getContextEntry(docStore, {
+      scope: 'task',
+      key: 'notes.current',
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      task_id: 'task_1',
+    });
+    const mismatchedUser = await getContextEntry(docStore, {
+      scope: 'task',
+      key: 'notes.current',
+      user_id: 'user_2',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      task_id: 'task_1',
+    });
+
+    expect(matching?.content).toBe('remember this');
+    expect(mismatchedUser).toBeNull();
   });
 
   it('normalizes and trims context keys', () => {

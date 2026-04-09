@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import type { JsonDocStorePort } from '@mbos/ports';
 import { decryptSecretValue, encryptSecretValue } from './secret-crypto.js';
 
-export type ContextScope = 'user' | 'task' | 'project' | 'workspace';
+export type ContextScope = 'member' | 'task' | 'project' | 'workspace';
 export type ContextContentType = 'text' | 'json' | 'markdown' | 'yaml';
+export type ContextOwnership = 'member_owned' | 'shared';
 
 export type ContextEntryRecord = {
   id: string;
@@ -35,8 +36,25 @@ export type ContextTarget = {
 
 const COLLECTION = 'context_store_entries';
 
+const CONTEXT_SCOPE_DEFINITIONS: Record<ContextScope, {
+  ownership: ContextOwnership;
+}> = {
+  member: {
+    ownership: 'member_owned',
+  },
+  task: {
+    ownership: 'member_owned',
+  },
+  project: {
+    ownership: 'shared',
+  },
+  workspace: {
+    ownership: 'shared',
+  },
+};
+
 export function isContextScope(value: unknown): value is ContextScope {
-  return value === 'user' || value === 'task' || value === 'project' || value === 'workspace';
+  return value === 'member' || value === 'task' || value === 'project' || value === 'workspace';
 }
 
 export function isContextContentType(value: unknown): value is ContextContentType {
@@ -51,28 +69,58 @@ export function normalizeContextKey(value: unknown): string | null {
 }
 
 function buildContextId(target: ContextTarget): string {
+  const normalized = normalizeTarget(target);
   const digest = createHash('sha256')
     .update([
-      target.scope,
-      target.key,
-      target.user_id ?? '',
-      target.task_id ?? '',
-      target.project_id ?? '',
-      target.workspace_id ?? '',
+      normalized.scope,
+      normalized.key,
+      normalized.user_id ?? '',
+      normalized.task_id ?? '',
+      normalized.project_id ?? '',
+      normalized.workspace_id ?? '',
     ].join('|'))
     .digest('hex')
     .slice(0, 32);
   return `ctx_${digest}`;
 }
 
-function normalizeTarget(target: ContextTarget): ContextTarget {
-  return {
+export function isMemberOwnedContextScope(scope: ContextScope): boolean {
+  return CONTEXT_SCOPE_DEFINITIONS[scope].ownership === 'member_owned';
+}
+
+export function normalizeTarget(target: ContextTarget): ContextTarget {
+  const base = {
     scope: target.scope,
     key: target.key,
     user_id: target.user_id ?? null,
     task_id: target.task_id ?? null,
     project_id: target.project_id ?? null,
     workspace_id: target.workspace_id ?? null,
+  };
+  if (target.scope === 'member') {
+    return {
+      ...base,
+      task_id: null,
+      project_id: null,
+    };
+  }
+  if (target.scope === 'task') {
+    return {
+      ...base,
+    };
+  }
+  if (target.scope === 'project') {
+    return {
+      ...base,
+      user_id: null,
+      task_id: null,
+    };
+  }
+  return {
+    ...base,
+    user_id: null,
+    task_id: null,
+    project_id: null,
   };
 }
 

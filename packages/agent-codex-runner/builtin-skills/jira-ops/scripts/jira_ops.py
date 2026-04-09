@@ -72,7 +72,7 @@ def context_api_get(scope: str, key: str) -> str | None:
 
 
 def load_simple_jira_credentials_from_context() -> tuple[str | None, str | None]:
-    for scope in ("task", "user"):
+    for scope in ("task", "member"):
         base_url = (
             context_api_get(scope, "credentials.jira_base_url")
             or context_api_get(scope, "credentials.jira_url")

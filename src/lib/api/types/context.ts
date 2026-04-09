@@ -1,4 +1,4 @@
-export type ContextScope = 'user' | 'task' | 'project' | 'workspace';
+export type ContextScope = 'member' | 'task' | 'project' | 'workspace';
 export type ContextContentType = 'text' | 'json' | 'markdown' | 'yaml';
 
 export interface ContextEntry {

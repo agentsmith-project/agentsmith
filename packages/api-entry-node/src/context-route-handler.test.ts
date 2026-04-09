@@ -1,10 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type http from 'node:http';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import type { NodeApiDeps } from './node-api-deps.js';
+import { createUserExternalConnection } from './user-external-connections-store.js';
 import { handleContextRoute } from './context-route-handler.js';
 import type { ResolvedInternalTicket } from './internal-ticket-store.js';
 import { putContextEntry } from './context-store.js';
+
+const { refreshFeishuOAuthMock } = vi.hoisted(() => ({
+  refreshFeishuOAuthMock: vi.fn(),
+}));
+
+vi.mock('./feishu-oauth.js', () => ({
+  refreshFeishuOAuth: refreshFeishuOAuthMock,
+}));
 
 type TestResponse = {
   statusCode: number;
@@ -93,6 +102,7 @@ describe('context-route-handler', () => {
       key: 'notes.current',
       content: 'hello',
       content_type: 'text',
+      user_id: 'user_1',
       workspace_id: 'ws_default',
       project_id: 'proj_1',
       task_id: 'task_1',
@@ -122,5 +132,133 @@ describe('context-route-handler', () => {
 
     expect(response.statusCode).toBe(204);
     expect(response.ended).toBe(true);
+  });
+
+  it('lets agent tickets read task context written through authenticated ownership', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    await putContextEntry(docStore, {
+      scope: 'task',
+      key: 'notes.current',
+      content: 'hello from user path',
+      content_type: 'text',
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      task_id: 'task_1',
+      updated_by: 'user_1',
+    });
+
+    const response = await executeContextRoute({
+      deps: { docStore } as unknown as NodeApiDeps,
+      method: 'GET',
+      reqUrl: '/api/v1/context?scope=task&key=notes.current&workspace_id=ws_default&project_id=proj_1&task_id=task_1',
+      internalTicket: {
+        ticket: 'int_test',
+        purpose: 'agent_execution',
+        user_id: 'user_1',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        expires_at: '2099-01-01T00:00:00.000Z',
+        max_uses: 1,
+        remaining_uses: 1,
+        payload: {
+          endpoint_id: 'ep_1',
+          task_id: 'task_1',
+          mode: 'chat',
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual(expect.objectContaining({
+      scope: 'task',
+      key: 'notes.current',
+      content: 'hello from user path',
+      user_id: 'user_1',
+    }));
+  });
+
+  it('prefers workspace-scoped managed credentials even when reauth is required', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    await createUserExternalConnection(docStore, {
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      provider: 'feishu',
+      kind: 'oauth_account',
+      display_name: 'workspace feishu',
+      status: 'reauth_required',
+      fields: [{ key: 'access_token', value: 'workspace_token', secret: true }],
+      scopes: ['search:docs:read'],
+      reauth_reason: 'missing_scopes',
+    });
+    await createUserExternalConnection(docStore, {
+      user_id: 'user_1',
+      workspace_id: null,
+      provider: 'feishu',
+      kind: 'oauth_account',
+      display_name: 'global feishu',
+      status: 'active',
+      fields: [{ key: 'access_token', value: 'global_token', secret: true }],
+      scopes: ['search:docs:read'],
+    });
+
+    const response = await executeContextRoute({
+      deps: { docStore } as unknown as NodeApiDeps,
+      method: 'GET',
+      reqUrl: '/api/v1/context?scope=member&key=managed_credentials.feishu&workspace_id=ws_default',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual(expect.objectContaining({
+      scope: 'member',
+      key: 'managed_credentials.feishu',
+    }));
+    const content = JSON.parse((response.body as { content: string }).content);
+    expect(content.display_name).toBe('workspace feishu');
+    expect(content.status).toBe('reauth_required');
+    expect(content.fields.access_token).toBe('workspace_token');
+  });
+
+  it('refreshes the workspace-scoped managed credential instead of a fallback active one', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const workspaceConnection = await createUserExternalConnection(docStore, {
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      provider: 'feishu',
+      kind: 'oauth_account',
+      display_name: 'workspace feishu',
+      status: 'reauth_required',
+      fields: [{ key: 'access_token', value: 'workspace_token', secret: true }],
+      scopes: ['search:docs:read'],
+      reauth_reason: 'missing_scopes',
+    });
+    await createUserExternalConnection(docStore, {
+      user_id: 'user_1',
+      workspace_id: null,
+      provider: 'feishu',
+      kind: 'oauth_account',
+      display_name: 'global feishu',
+      status: 'active',
+      fields: [{ key: 'access_token', value: 'global_token', secret: true }],
+      scopes: ['search:docs:read'],
+    });
+    refreshFeishuOAuthMock.mockResolvedValueOnce({
+      ...workspaceConnection,
+      status: 'active',
+      updated_at: '2026-04-08T00:00:00.000Z',
+      fields: [{ key: 'access_token', value: 'workspace_refreshed', secret: true }],
+    });
+
+    const response = await executeContextRoute({
+      deps: { docStore } as unknown as NodeApiDeps,
+      method: 'POST',
+      reqUrl: '/api/v1/context/managed-credentials/feishu/refresh?workspace_id=ws_default',
+    });
+
+    expect(refreshFeishuOAuthMock).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'user_1',
+      connectionId: workspaceConnection.id,
+    }));
+    expect(response.statusCode).toBe(200);
   });
 });

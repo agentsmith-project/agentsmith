@@ -11,11 +11,11 @@ python3 ~/.agents/skills/feishu-docs/scripts/feishu_mcp.py call-tool <tool-name>
 Notebook tasks now expose the current user's managed Feishu connection through AgentSmith Context Store:
 
 ```text
-scope=user
+scope=member
 key=managed_credentials.feishu
 ```
 
-The helper script reads that managed connection automatically through the notebook execution API.
+The helper script reads that managed connection automatically through the execution API as the current workspace member's managed credential projection.
 
 ## Credential Contract
 

@@ -6,8 +6,10 @@ import {
   getContextEntry,
   isContextContentType,
   isContextScope,
+  isMemberOwnedContextScope,
   listContextEntries,
   normalizeContextKey,
+  normalizeTarget,
   putContextEntry,
   type ContextContentType,
   type ContextEntryRecord,
@@ -54,7 +56,7 @@ function selectProjectedConnection(args: {
   const candidates = args.connections.filter((item) => item.provider === args.provider);
   if (candidates.length === 0) return null;
   if (args.workspaceId) {
-    const scoped = candidates.find((item) => item.workspace_id === args.workspaceId && item.status === 'active');
+    const scoped = candidates.find((item) => item.workspace_id === args.workspaceId);
     if (scoped) return scoped;
   }
   return candidates.find((item) => item.status === 'active')
@@ -67,7 +69,7 @@ function buildManagedCredentialProjection(
 ): ContextEntryRecord {
   return {
     id: `ctx_managed_${connection.provider}_${connection.id}`,
-    scope: 'user',
+    scope: 'member',
     key: `managed_credentials.${connection.provider}`,
     content: `${JSON.stringify({
       connection_id: connection.id,
@@ -167,6 +169,7 @@ async function resolveContextAccess(args: {
     const ticketWorkspaceId = internalTicket.workspace_id ?? null;
     const ticketProjectId = internalTicket.project_id ?? null;
     const ticketTaskId = internalTicket.payload.task_id ?? null;
+    const ticketUserId = user.id;
 
     if ((scope === 'project' || scope === 'task') && !ticketProjectId) {
       return { error: { status: 403, message: 'context_project_scope_not_available' } };
@@ -174,7 +177,10 @@ async function resolveContextAccess(args: {
     if (scope === 'task' && !ticketTaskId) {
       return { error: { status: 403, message: 'context_task_scope_not_available' } };
     }
-    if (writeIntent && (scope === 'project' || scope === 'workspace')) {
+    if (scope === 'member' && !ticketWorkspaceId) {
+      return { error: { status: 403, message: 'context_member_scope_not_available' } };
+    }
+    if (writeIntent && !isMemberOwnedContextScope(scope)) {
       return { error: { status: 403, message: 'context_scope_read_only_for_agent' } };
     }
 
@@ -189,26 +195,31 @@ async function resolveContextAccess(args: {
     }
 
     return {
-      target: {
+      target: normalizeTarget({
         scope,
         key,
-        user_id: scope === 'user' ? user.id : null,
-        workspace_id: scope === 'workspace' || scope === 'project' || scope === 'task' ? ticketWorkspaceId : null,
+        user_id: scope === 'member' || scope === 'task' ? ticketUserId : null,
+        workspace_id: scope === 'member' || scope === 'workspace' || scope === 'project' || scope === 'task' ? ticketWorkspaceId : null,
         project_id: scope === 'project' || scope === 'task' ? ticketProjectId : null,
         task_id: scope === 'task' ? ticketTaskId : null,
-      },
-      writeAllowed: scope === 'user' || scope === 'task',
-      includeManagedCredentialProjections: scope === 'user',
+      }),
+      writeAllowed: isMemberOwnedContextScope(scope),
+      includeManagedCredentialProjections: scope === 'member',
     };
   }
 
-  if (scope === 'user') {
+  if (scope === 'member') {
+    const workspaceId = identifiers.workspaceId ?? null;
+    if (!workspaceId) {
+      return { error: { status: 400, message: 'context_member_scope_requires_workspace_id' } };
+    }
     return {
-      target: {
+      target: normalizeTarget({
         scope,
         key,
         user_id: user.id,
-      },
+        workspace_id: workspaceId,
+      }),
       writeAllowed: true,
       includeManagedCredentialProjections: true,
     };
@@ -232,14 +243,14 @@ async function resolveContextAccess(args: {
       return { error: { status: 404, message: 'context_task_not_found' } };
     }
     return {
-      target: {
+      target: normalizeTarget({
         scope,
         key,
         user_id: user.id,
         workspace_id: workspaceId,
         project_id: projectId,
         task_id: taskId,
-      },
+      }),
       writeAllowed: true,
       includeManagedCredentialProjections: false,
     };
@@ -265,12 +276,12 @@ async function resolveContextAccess(args: {
       return { error: { status: 403, message: 'context_project_forbidden' } };
     }
     return {
-      target: {
+      target: normalizeTarget({
         scope,
         key,
         workspace_id: workspaceId,
         project_id: projectId,
-      },
+      }),
       writeAllowed: true,
       includeManagedCredentialProjections: false,
     };
@@ -289,11 +300,11 @@ async function resolveContextAccess(args: {
     return { error: { status: 403, message: 'context_workspace_forbidden' } };
   }
   return {
-    target: {
+    target: normalizeTarget({
       scope,
       key,
       workspace_id: workspaceId,
-    },
+    }),
     writeAllowed: true,
     includeManagedCredentialProjections: false,
   };
@@ -407,7 +418,7 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
         json(res, resolved.error.status, { error_code: 'FORBIDDEN', message: resolved.error.message });
         return true;
       }
-      if (scope === 'user' && key.startsWith('managed_credentials.')) {
+      if (scope === 'member' && key.startsWith('managed_credentials.')) {
         const provider = key.slice('managed_credentials.'.length);
         const projected = (await buildManagedCredentialEntries({
           deps,

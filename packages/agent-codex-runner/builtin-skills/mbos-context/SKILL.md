@@ -1,26 +1,26 @@
 ---
 name: mbos-context
-description: Use to read or write AgentSmith Context Store entries for user or task scope, and to read shared project/workspace context or managed credential projections. Trigger when the user asks to save preferences, notes, secrets, task memory, shared guidance, or to inspect credentials without browsing local files.
+description: Use to read or write AgentSmith Context Store entries for member or task scope, and to read shared project/workspace context or managed credential projections. Trigger when the user asks to save preferences, notes, secrets, task memory, shared guidance, or to inspect credentials without browsing local files.
 ---
 
 # MBOS Context
 
 ## Overview
 
-Use the local helper script to talk to the AgentSmith Context Store over the notebook execution API. This is the primary way to read or write user/task context, simple credentials, and shared project/workspace guidance.
+Use the local helper script to talk to the AgentSmith Context Store over the notebook execution API. This is the primary way to read or write member/task context, simple credentials, and shared project/workspace guidance.
 
 ## Quick Start
 
 ```bash
-python3 ~/.agents/skills/mbos-context/scripts/context_cli.py list --scope user
-python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope user --key prefs.editor
+python3 ~/.agents/skills/mbos-context/scripts/context_cli.py list --scope member
+python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope member --key prefs.editor
 ```
 
 ## Workflow
 
 1. Prefer `mbos-context` over searching workspace files for preferences, notes, or credentials.
-2. Use `scope=user` for user-specific memory, prefs, and simple credentials.
-3. Use `scope=task` for task-local notes, scratch state, and temporary secrets.
+2. Use `scope=member` for current-workspace member memory, prefs, and simple credentials.
+3. Use `scope=task` for task-local notes, scratch state, and temporary secrets owned by the current member.
 4. Use `scope=project` or `scope=workspace` only for reads; those scopes are manually maintained in AgentSmith.
 5. Keys under `managed_credentials.*` are read-only projections for managed OAuth connections such as Feishu.
 
@@ -29,13 +29,13 @@ python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope user --
 List visible entries:
 
 ```bash
-python3 ~/.agents/skills/mbos-context/scripts/context_cli.py list --scope user
+python3 ~/.agents/skills/mbos-context/scripts/context_cli.py list --scope member
 ```
 
 Read one entry:
 
 ```bash
-python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope user --key credentials.github_token
+python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope member --key credentials.github_token
 ```
 
 Write one entry:
@@ -58,9 +58,9 @@ python3 ~/.agents/skills/mbos-context/scripts/context_cli.py refresh-managed-cre
 
 ## Key Conventions
 
-- `prefs.*`: user preferences
+- `prefs.*`: member preferences within the current workspace
 - `notes.*`: free-form notes
-- `memory.*`: longer-lived user or task memory
+- `memory.*`: longer-lived member or task memory
 - `credentials.*`: simple writable credentials such as API keys or bearer tokens
 - `managed_credentials.*`: read-only projections from managed external connections
 - `shared.*`: human-maintained shared context in project/workspace scope

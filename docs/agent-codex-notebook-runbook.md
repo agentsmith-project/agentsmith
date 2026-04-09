@@ -74,7 +74,7 @@ Notes:
 | `cwd` | workspace truth | source files, notebook inputs, user-visible outputs, `.artifacts/`, task-local home | shared host home, system-level mutable state |
 | `CODEX_HOME` | Codex runtime | `config.toml`, `catalog.json`, session state, sqlite state, shell snapshots, tmp | user project files, notebook deliverables |
 | `HOME` | child-process runtime | Codex user-scope discovery paths such as `~/.agents/skills`, tool caches, home-relative installs | `/etc`, `/usr/local`, `/opt`, `cwd`-external mutable state |
-| AgentSmith Context Store | AgentSmith control plane | user/task/project/workspace context, simple credentials, managed credential projections | user workspace files |
+| AgentSmith Context Store | AgentSmith control plane | member/task/project/workspace context, simple credentials, managed credential projections | user workspace files |
 | `~/.mbos` | runner runtime | runner manifests and non-sensitive runtime metadata | secrets, user deliverables outside runner-owned metadata |
 
 ### 1.3 Builtin Skills Discovery Rules

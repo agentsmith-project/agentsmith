@@ -79,7 +79,7 @@ def load_managed_connection_from_context() -> dict[str, Any] | None:
         )
     payload = context_api_request(
         "GET",
-        f"/api/v1/context?{build_context_query(scope='user', key=MANAGED_CONTEXT_KEY)}",
+        f"/api/v1/context?{build_context_query(scope='member', key=MANAGED_CONTEXT_KEY)}",
     )
     content = payload.get("content")
     if not isinstance(content, str) or not content.strip():

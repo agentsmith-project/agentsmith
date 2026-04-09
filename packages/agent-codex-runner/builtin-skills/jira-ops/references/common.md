@@ -5,7 +5,7 @@
 Use Bearer token auth. Prefer reading simple Jira credentials from AgentSmith Context Store:
 
 ```text
-scope=task or user
+scope=task or member
 key=credentials.jira_base_url
 key=credentials.jira_token
 ```

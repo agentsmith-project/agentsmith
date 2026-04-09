@@ -77,7 +77,7 @@ def parse_args() -> argparse.Namespace:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_scope_args(target: argparse.ArgumentParser, *, needs_key: bool) -> None:
-        target.add_argument("--scope", required=True, choices=["user", "task", "project", "workspace"])
+        target.add_argument("--scope", required=True, choices=["member", "task", "project", "workspace"])
         if needs_key:
             target.add_argument("--key", required=True)
         else:

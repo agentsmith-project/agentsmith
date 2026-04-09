@@ -42,6 +42,34 @@ class JiraOpsTests(unittest.TestCase):
         self.assertEqual(base_url, "https://jira.example.com")
         self.assertEqual(token, "jira_token_123")
 
+    @patch.dict(
+        "os.environ",
+        {
+            "MBOS_AGENT_API_BASE": "http://localhost:20000",
+            "MBOS_AGENT_EXECUTION_TICKET": "ticket_123",
+            "MBOS_AGENT_WORKSPACE_ID": "ws_default",
+            "MBOS_AGENT_PROJECT_ID": "proj_1",
+            "MBOS_AGENT_TASK_ID": "task_1",
+        },
+        clear=False,
+    )
+    @patch("jira_ops.context_api_get")
+    def test_prefers_task_context_before_member_context(self, mock_context_api_get: MagicMock) -> None:
+        def side_effect(scope: str, key: str) -> str | None:
+            mapping = {
+                ("task", "credentials.jira_base_url"): "https://task-jira.example.com",
+                ("task", "credentials.jira_token"): "task_token",
+                ("member", "credentials.jira_base_url"): "https://member-jira.example.com",
+                ("member", "credentials.jira_token"): "member_token",
+            }
+            return mapping.get((scope, key))
+
+        mock_context_api_get.side_effect = side_effect
+
+        base_url, token = jira_ops.load_simple_jira_credentials_from_context()
+        self.assertEqual(base_url, "https://task-jira.example.com")
+        self.assertEqual(token, "task_token")
+
 
 if __name__ == "__main__":
     unittest.main()

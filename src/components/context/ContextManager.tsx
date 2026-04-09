@@ -219,7 +219,7 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
           <div className="flex flex-wrap items-center gap-3">
             <Button
               variant="primary"
-              onClick={() => void saveMutation.mutateAsync()}
+              onClick={() => saveMutation.mutate()}
               disabled={saveDisabled}
               data-testid="context-store__save"
             >
@@ -227,7 +227,7 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
             </Button>
             <Button
               variant="outline"
-              onClick={() => void deleteMutation.mutateAsync()}
+              onClick={() => deleteMutation.mutate()}
               disabled={deleteDisabled}
               data-testid="context-store__delete"
             >

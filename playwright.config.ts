@@ -32,6 +32,7 @@ const defaultE2ESpecMatch = [
   /agents\.spec\.ts$/,
   /audit\.spec\.ts$/,
   /chat\.spec\.ts$/,
+  /context-store\.spec\.ts$/,
   /credentials\.spec\.ts$/,
   /endpoints\.spec\.ts$/,
   /files\.spec\.ts$/,

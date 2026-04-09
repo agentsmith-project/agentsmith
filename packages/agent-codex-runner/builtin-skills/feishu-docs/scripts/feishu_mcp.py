@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
@@ -16,6 +17,95 @@ DEFAULT_ALLOWED_TOOLS = (
     "fetch-doc,update-doc,list-docs,get-comments,add-comments"
 )
 OAUTH_TOKEN_ENDPOINT = "https://open.feishu.cn/open-apis/authen/v2/oauth/token"
+MANAGED_CONTEXT_KEY = "managed_credentials.feishu"
+
+
+def read_api_base() -> str | None:
+    value = os.environ.get("MBOS_NOTEBOOK_API_BASE", "").strip()
+    return value.rstrip("/") if value else None
+
+
+def read_execution_ticket() -> str | None:
+    value = os.environ.get("MBOS_NOTEBOOK_EXECUTION_TICKET", "").strip()
+    return value or None
+
+
+def build_context_query(*, scope: str, key: str) -> str:
+    query: dict[str, str] = {"scope": scope, "key": key}
+    workspace_id = os.environ.get("MBOS_NOTEBOOK_WORKSPACE_ID", "").strip()
+    project_id = os.environ.get("MBOS_NOTEBOOK_PROJECT_ID", "").strip()
+    task_id = os.environ.get("MBOS_NOTEBOOK_TASK_ID", "").strip()
+    if workspace_id:
+        query["workspace_id"] = workspace_id
+    if project_id:
+        query["project_id"] = project_id
+    if task_id:
+        query["task_id"] = task_id
+    return urlencode(query)
+
+
+def context_api_request(method: str, path: str) -> dict[str, Any]:
+    api_base = read_api_base()
+    ticket = read_execution_ticket()
+    if not api_base or not ticket:
+        raise RuntimeError("Context API is unavailable in this runner session.")
+
+    req = Request(
+        f"{api_base}{path}",
+        headers={"Authorization": f"Bearer {ticket}"},
+        method=method,
+    )
+    try:
+        with urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Context API HTTP {exc.code}: {detail}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"Context API network error: {exc}") from exc
+
+    if not raw.strip():
+        return {}
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise RuntimeError("Context API returned an unexpected payload.")
+    return payload
+
+
+def load_managed_connection_from_context() -> dict[str, Any] | None:
+    if not read_api_base() or not read_execution_ticket():
+        raise RuntimeError(
+            "Managed Feishu credentials are unavailable. This skill requires AgentSmith Context Store access in notebook or terminal runner sessions."
+        )
+    payload = context_api_request(
+        "GET",
+        f"/api/v1/context?{build_context_query(scope='user', key=MANAGED_CONTEXT_KEY)}",
+    )
+    content = payload.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("Managed Feishu credential projection is empty.")
+    projected = json.loads(content)
+    if not isinstance(projected, dict):
+        raise RuntimeError("Managed Feishu credential projection is invalid.")
+    return projected
+
+
+def refresh_managed_connection_from_context() -> dict[str, Any]:
+    if not read_api_base() or not read_execution_ticket():
+        raise RuntimeError("Context API is unavailable in this runner session.")
+    workspace_id = os.environ.get("MBOS_NOTEBOOK_WORKSPACE_ID", "").strip()
+    search = f"?workspace_id={workspace_id}" if workspace_id else ""
+    payload = context_api_request(
+        "POST",
+        f"/api/v1/context/managed-credentials/feishu/refresh{search}",
+    )
+    content = payload.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("Managed Feishu credential refresh returned empty content.")
+    projected = json.loads(content)
+    if not isinstance(projected, dict):
+        raise RuntimeError("Managed Feishu credential refresh returned invalid content.")
+    return projected
 
 
 def resolve_explicit_credential_dir(candidate: Path, anchor: Path | None = None) -> Path | None:
@@ -46,14 +136,14 @@ def find_credential_dir(start: Path | None = None) -> Path:
 
     current = Path.cwd().resolve()
     for base in [current, *current.parents]:
-        root = base / ".codex" / "credential"
-        if not root.is_dir():
-            continue
-        feishu_subdir = root / "feishu"
-        if feishu_subdir.is_dir():
-            return feishu_subdir
-        return root
-    raise FileNotFoundError("Could not find .codex/credential in the current directory or its parents.")
+        for root in (base / ".mbos" / "credentials", base / ".codex" / "credential"):
+            if not root.is_dir():
+                continue
+            feishu_subdir = root / "feishu"
+            if feishu_subdir.is_dir():
+                return feishu_subdir
+            return root
+    raise FileNotFoundError("Could not find .mbos/credentials or .codex/credential in the current directory or its parents.")
 
 
 def load_connections_document(credential_dir: Path) -> tuple[Path, dict[str, Any]]:
@@ -61,7 +151,7 @@ def load_connections_document(credential_dir: Path) -> tuple[Path, dict[str, Any
     if not path.is_file():
         raise FileNotFoundError(
             f"Feishu credential file not found at {path}. "
-            "AgentSmith should generate .codex/credential/feishu/connections.json."
+            "AgentSmith should generate .mbos/credentials/feishu/connections.json."
         )
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -129,6 +219,24 @@ def get_connection_field(connection: dict[str, Any], *keys: str) -> str | None:
     return None
 
 
+def get_projected_connection_field(connection: dict[str, Any], *keys: str) -> str | None:
+    fields = connection.get("fields")
+    if not isinstance(fields, dict):
+        return None
+    for key in keys:
+        value = fields.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def resolve_managed_connection() -> dict[str, Any]:
+    managed = load_managed_connection_from_context()
+    if managed is None:
+        raise RuntimeError("Managed Feishu credentials are unavailable.")
+    return managed
+
+
 def get_access_token(credential_dir: Path) -> str:
     _path, _payload, connection = load_active_connection(credential_dir)
     token = get_connection_field(connection, "access_token", "uat", "token")
@@ -154,8 +262,11 @@ def get_oauth_token_endpoint(connection: dict[str, Any]) -> str:
     )
 
 
-def build_headers(credential_dir: Path, allowed_tools: str) -> dict[str, str]:
-    token = get_access_token(credential_dir)
+def build_headers(allowed_tools: str) -> dict[str, str]:
+    connection = resolve_managed_connection()
+    token = get_projected_connection_field(connection, "access_token", "uat", "token")
+    if not token:
+        raise RuntimeError("Active Feishu connection is missing access_token.")
 
     return {
         "Content-Type": "application/json",
@@ -164,8 +275,8 @@ def build_headers(credential_dir: Path, allowed_tools: str) -> dict[str, str]:
     }
 
 
-def rpc_call(method: str, params: dict, allowed_tools: str, credential_dir: Path) -> dict:
-    _path, _payload, connection = load_active_connection(credential_dir)
+def rpc_call(method: str, params: dict, allowed_tools: str) -> dict:
+    connection = resolve_managed_connection()
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -174,9 +285,13 @@ def rpc_call(method: str, params: dict, allowed_tools: str, credential_dir: Path
     }
     data = json.dumps(payload).encode("utf-8")
     req = Request(
-        get_mcp_endpoint(connection),
+        (
+            os.environ.get("FEISHU_MCP_ENDPOINT", "").strip()
+            or get_projected_connection_field(connection, "feishu_mcp_endpoint")
+            or ENDPOINT
+        ),
         data=data,
-        headers=build_headers(credential_dir, allowed_tools),
+        headers=build_headers(allowed_tools),
         method="POST",
     )
 
@@ -294,7 +409,6 @@ def refresh_token(credential_dir: Path) -> dict:
 
 
 def cmd_initialize(args: argparse.Namespace) -> int:
-    credential_dir = find_credential_dir(args.credential_dir)
     result = rpc_call(
         "initialize",
         {
@@ -303,21 +417,18 @@ def cmd_initialize(args: argparse.Namespace) -> int:
             "clientInfo": {"name": "feishu-docs-skill", "version": "1.0.0"},
         },
         args.allowed_tools,
-        credential_dir,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 
 def cmd_tools_list(args: argparse.Namespace) -> int:
-    credential_dir = find_credential_dir(args.credential_dir)
-    result = rpc_call("tools/list", {}, args.allowed_tools, credential_dir)
+    result = rpc_call("tools/list", {}, args.allowed_tools)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 
 def cmd_call_tool(args: argparse.Namespace) -> int:
-    credential_dir = find_credential_dir(args.credential_dir)
     tool_name = args.tool_name
     params = parse_json_arg(args.params)
     allowed_tools = args.allowed_tools or tool_name
@@ -328,54 +439,39 @@ def cmd_call_tool(args: argparse.Namespace) -> int:
             "arguments": params,
         },
         allowed_tools,
-        credential_dir,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 
 def cmd_refresh_token(args: argparse.Namespace) -> int:
-    credential_dir = find_credential_dir(args.credential_dir)
-    refreshed = refresh_token(credential_dir)
+    refreshed = refresh_managed_connection_from_context()
     summary = {
-        "token_type": refreshed.get("token_type"),
-        "expires_in": refreshed.get("expires_in"),
-        "refresh_token_expires_in": refreshed.get("refresh_token_expires_in"),
-        "scope": refreshed.get("scope"),
-        "credential_dir": str(credential_dir),
-        "saved_path": refreshed.get("_saved_path"),
+        "provider": refreshed.get("provider"),
+        "status": refreshed.get("status"),
+        "expires_at": refreshed.get("expires_at"),
+        "scopes": refreshed.get("scopes"),
+        "mode": "managed_context",
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 
 
-def add_credential_dir_arg(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--credential-dir",
-        type=Path,
-        default=None,
-        help="Optional path to credential files (for example .codex/credential or .codex/credential/feishu). Defaults to searching from the current directory upward.",
-    )
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Call Feishu remote MCP over HTTP using credentials from the current workspace."
+        description="Call Feishu remote MCP over HTTP using AgentSmith-managed credentials from Context Store."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_parser = subparsers.add_parser("initialize")
-    add_credential_dir_arg(init_parser)
     init_parser.add_argument("--allowed-tools", default=DEFAULT_ALLOWED_TOOLS)
     init_parser.set_defaults(func=cmd_initialize)
 
     list_parser = subparsers.add_parser("tools-list")
-    add_credential_dir_arg(list_parser)
     list_parser.add_argument("--allowed-tools", default=DEFAULT_ALLOWED_TOOLS)
     list_parser.set_defaults(func=cmd_tools_list)
 
     call_parser = subparsers.add_parser("call-tool")
-    add_credential_dir_arg(call_parser)
     call_parser.add_argument("tool_name")
     call_parser.add_argument("--params", default="{}")
     call_parser.add_argument(
@@ -386,7 +482,6 @@ def build_parser() -> argparse.ArgumentParser:
     call_parser.set_defaults(func=cmd_call_tool)
 
     refresh_parser = subparsers.add_parser("refresh-token")
-    add_credential_dir_arg(refresh_parser)
     refresh_parser.set_defaults(func=cmd_refresh_token)
 
     return parser

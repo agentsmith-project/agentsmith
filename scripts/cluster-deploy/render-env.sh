@@ -46,9 +46,6 @@ source "${SITE_ENV}"
 apply_non_environment_preset_defaults
 apply_preset_endpoint_defaults
 MBOS_AGENT_JUICEFS_MOUNT_OPTIONS="${MBOS_AGENT_JUICEFS_MOUNT_OPTIONS:-}"
-if [[ -z "${MBOS_AGENT_BUILTIN_SKILLS_DIR:-}" || "${MBOS_AGENT_BUILTIN_SKILLS_DIR}" == "/opt/agent-runner/builtin-skills" ]]; then
-  MBOS_AGENT_BUILTIN_SKILLS_DIR=/etc/codex/skills
-fi
 if [[ -z "${SYSTEM_ADMIN_SESSION_COOKIE_SECURE:-}" ]]; then
   if [[ "${PUBLIC_WEB_BASE_URL}" == https://* ]]; then
     SYSTEM_ADMIN_SESSION_COOKIE_SECURE=true

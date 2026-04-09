@@ -1090,8 +1090,6 @@ describe('api-entry-node notebook task routes', () => {
       workspaceFileLibraryName: string | null;
       workspaceDirName: string | null;
       taskInputsCount: number | null;
-      credentialFilesCount: number | null;
-      hasCredentialIndexFile: boolean;
       legacyUserBearerToken: string;
       close: () => void;
     }>((resolve) => {
@@ -1120,7 +1118,6 @@ describe('api-entry-node notebook task routes', () => {
               workspace_file_library_name?: string | null;
               workspace_dir_name?: string | null;
               task_inputs?: unknown[];
-              credential_files?: Array<{ relative_path?: string }>;
             };
           };
         };
@@ -1157,15 +1154,6 @@ describe('api-entry-node notebook task routes', () => {
           taskInputsCount: Array.isArray(msg.payload?.execution_context?.task_inputs)
             ? msg.payload.execution_context.task_inputs.length
             : null,
-          credentialFilesCount: Array.isArray(msg.payload?.execution_context?.credential_files)
-            ? msg.payload.execution_context.credential_files.length
-            : null,
-          hasCredentialIndexFile: Array.isArray(msg.payload?.execution_context?.credential_files)
-            ? msg.payload.execution_context.credential_files.some((item) => {
-              const relativePath = typeof item?.relative_path === 'string' ? item.relative_path : '';
-              return relativePath === '.codex/credential/index.json';
-            })
-            : false,
           close: () => ws.close(),
         });
         void holdExecution.then(() => {
@@ -1305,8 +1293,6 @@ describe('api-entry-node notebook task routes', () => {
     expect(execution.workspaceFileLibraryName).toBe(workspaceLibrary.name);
     expect(execution.workspaceDirName).toBe(workspaceLibrary.filesystem_name);
     expect(execution.taskInputsCount).toBe(0);
-    expect(execution.credentialFilesCount).toBeGreaterThan(0);
-    expect(execution.hasCredentialIndexFile).toBe(true);
     expect(execution.helloProxyBase).toBe(
       `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai`,
     );
@@ -1782,7 +1768,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
     expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
     expect(capturedExecutionContext?.notebook_mode).toBe(true);
-    expect(Array.isArray(capturedExecutionContext?.credential_files)).toBe(true);
+    expect(capturedExecutionContext?.credential_files).toBeUndefined();
   });
 
   it('builds internal terminal sessions with a task-root workspace path', async () => {

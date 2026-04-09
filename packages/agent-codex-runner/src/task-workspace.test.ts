@@ -103,7 +103,7 @@ describe('task-workspace', () => {
 
   it('builds task-root-scoped runtime paths under the task directory', () => {
     const paths = buildTaskWorkspacePaths('/workspace/task_1', 'docker_external');
-    expect(paths).toEqual({
+    expect(paths).toMatchObject({
       mode: 'docker_external',
       mountRoot: '/workspace/task_1',
       taskRoot: '/workspace/task_1',
@@ -111,10 +111,8 @@ describe('task-workspace', () => {
       codexDir: '/workspace/task_1/.codex',
       artifactsDir: '/workspace/task_1/.artifacts',
       mbosDir: '/workspace/task_1/.mbos',
-      credentialDir: expect.stringContaining('/agentsmith-runner-state/docker_external/_workspace_task_1/credentials'),
       skillsDir: '/workspace/task_1/.agents/skills',
     });
-    expect(paths.credentialDir.startsWith(paths.taskRoot)).toBe(false);
   });
 
   it('prefers an explicit workspace path for pre-mounted internal runs', () => {
@@ -222,7 +220,6 @@ describe('task-workspace', () => {
     expect(resolved.paths.homeDir).toBe('/workspace/task_1');
     expect(resolved.paths.codexDir).toBe('/workspace/task_1/.codex');
     expect(resolved.paths.mbosDir).toBe('/workspace/task_1/.mbos');
-    expect(resolved.paths.credentialDir).toContain('/agentsmith-runner-state/docker_external/_workspace_task_1/credentials');
   });
 
   it('uses the explicit internal task path for pre-mounted workspaces', async () => {

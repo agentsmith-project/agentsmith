@@ -22,6 +22,70 @@ PROXY_ENV_VARS = [
 ]
 
 
+def read_api_base() -> str | None:
+    value = os.environ.get("MBOS_NOTEBOOK_API_BASE", "").strip()
+    return value.rstrip("/") if value else None
+
+
+def read_execution_ticket() -> str | None:
+    value = os.environ.get("MBOS_NOTEBOOK_EXECUTION_TICKET", "").strip()
+    return value or None
+
+
+def build_context_query(scope: str, key: str) -> str:
+    params = {"scope": scope, "key": key}
+    workspace_id = os.environ.get("MBOS_NOTEBOOK_WORKSPACE_ID", "").strip()
+    project_id = os.environ.get("MBOS_NOTEBOOK_PROJECT_ID", "").strip()
+    task_id = os.environ.get("MBOS_NOTEBOOK_TASK_ID", "").strip()
+    if workspace_id:
+        params["workspace_id"] = workspace_id
+    if project_id:
+        params["project_id"] = project_id
+    if task_id:
+        params["task_id"] = task_id
+    return urllib.parse.urlencode(params)
+
+
+def context_api_get(scope: str, key: str) -> str | None:
+    api_base = read_api_base()
+    ticket = read_execution_ticket()
+    if not api_base or not ticket:
+        return None
+    req = urllib.request.Request(
+        f"{api_base}/api/v1/context?{build_context_query(scope, key)}",
+        headers={"Authorization": f"Bearer {ticket}"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Context API HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Context API network error: {exc}") from exc
+    payload = json.loads(raw)
+    content = payload.get("content")
+    return content if isinstance(content, str) else None
+
+
+def load_simple_jira_credentials_from_context() -> tuple[str | None, str | None]:
+    for scope in ("task", "user"):
+        base_url = (
+            context_api_get(scope, "credentials.jira_base_url")
+            or context_api_get(scope, "credentials.jira_url")
+        )
+        token = (
+            context_api_get(scope, "credentials.jira_token")
+            or context_api_get(scope, "credentials.jira_api_token")
+        )
+        if base_url or token:
+            return (base_url.strip() if isinstance(base_url, str) else None, token.strip() if isinstance(token, str) else None)
+    return None, None
+
+
 def clear_proxy_env() -> None:
     for key in PROXY_ENV_VARS:
         os.environ.pop(key, None)
@@ -51,11 +115,14 @@ def find_credential_dir(start: Path | None = None) -> Path:
 
     current = (start or Path.cwd()).resolve()
     for base in [current, *current.parents]:
-        candidate = base / ".codex" / "credential" / "jira"
-        if candidate.is_dir():
-            return candidate
+        for candidate in (
+            base / ".mbos" / "credentials" / "jira",
+            base / ".codex" / "credential" / "jira",
+        ):
+            if candidate.is_dir():
+                return candidate
     raise FileNotFoundError(
-        "Could not find .codex/credential/jira in the current directory or its parents."
+        "Could not find .mbos/credentials/jira or .codex/credential/jira in the current directory or its parents."
     )
 
 
@@ -128,19 +195,19 @@ def resolve_auth(args) -> tuple[str, str]:
     if args.base_url and args.token:
         return args.base_url, args.token
 
-    credential_dir = find_credential_dir(args.credential_dir)
-    discovered = discover_credentials(credential_dir)
-
-    base_url = args.base_url or (discovered["base_url_candidates"][0] if discovered["base_url_candidates"] else None)
-    token = args.token or (discovered["token_candidates"][0] if discovered["token_candidates"] else None)
+    context_base_url, context_token = load_simple_jira_credentials_from_context()
+    base_url = args.base_url or context_base_url
+    token = args.token or context_token
+    if base_url and token:
+        return base_url, token
 
     if not base_url:
         raise RuntimeError(
-            "Jira base URL not found. Pass --base-url or inspect files under .codex/credential/jira and add a self-describing URL entry."
+            "Jira base URL not found. Set credentials.jira_base_url in mbos-context or pass --base-url."
         )
     if not token:
         raise RuntimeError(
-            "Jira token not found. Pass --token or inspect files under .codex/credential/jira and add a self-describing token entry."
+            "Jira token not found. Set credentials.jira_token in mbos-context or pass --token."
         )
     return base_url, token
 
@@ -292,16 +359,10 @@ def cmd_edit_fields(args):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Common Jira operations over REST API with Bearer token auth and proxy env cleared."
+        description="Common Jira operations over REST API with Bearer token auth from AgentSmith Context Store."
     )
     parser.add_argument("--base-url", default=None, help="Jira base URL, for example https://jira.example.com")
     parser.add_argument("--token", default=None, help="Bearer token")
-    parser.add_argument(
-        "--credential-dir",
-        type=Path,
-        default=None,
-        help="Optional path to .codex/credential/jira. Defaults to searching from the current directory upward.",
-    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("myself")

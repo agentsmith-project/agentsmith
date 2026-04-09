@@ -4,9 +4,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_SKILLS_DIR = '/etc/codex/skills';
 const FALLBACK_DEV_SKILLS_DIR = resolve(MODULE_DIR, '../builtin-skills');
-const DEFAULT_BUILTIN_SKILLS = ['feishu-docs', 'jira-ops'];
+const DEFAULT_BUILTIN_SKILLS = ['mbos-context', 'feishu-docs', 'jira-ops'];
 const MANIFEST_FILENAME = 'builtin-skills-manifest.json';
 
 type BuiltinSkillManifest = {
@@ -44,7 +43,6 @@ function parseSkillList(input: string | undefined): string[] {
 function resolveSkillsSourceDir(): string {
   const explicit = (process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR ?? '').trim();
   if (explicit) return explicit;
-  if (existsSync(DEFAULT_SKILLS_DIR)) return DEFAULT_SKILLS_DIR;
   return FALLBACK_DEV_SKILLS_DIR;
 }
 

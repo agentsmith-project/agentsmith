@@ -6,9 +6,9 @@ import {
   prepareNotebookWorkspaceAssets,
 } from './notebook-assets.js';
 import { prepareTaskWorkspace, type TaskWorkspacePaths } from './task-workspace.js';
-import { applyExecutionContextFiles, type ExecutionContextFileItem } from './execution-context-files.js';
 import { prepareLaunchCommand } from './child-launcher.js';
 import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
+import { buildTaskUserInstallEnv } from './user-install-env.js';
 
 export type TerminalExecutionContext = {
   workspace_id?: string;
@@ -38,7 +38,6 @@ export type TerminalExecutionContext = {
     file_type?: string;
     file_size?: number;
   }>;
-  credential_files?: ExecutionContextFileItem[];
 };
 
 export type TerminalProcess = {
@@ -136,7 +135,6 @@ export async function prepareTerminalWorkspace(input: {
     mkdir(cwd, { recursive: true }),
     mkdir(taskPaths.codexDir, { recursive: true }),
     mkdir(taskPaths.mbosDir, { recursive: true }),
-    mkdir(taskPaths.credentialDir, { recursive: true }),
     mkdir(taskPaths.skillsDir, { recursive: true }),
   ]);
   await primeShellDotfiles(taskPaths.homeDir, input.shell);
@@ -167,33 +165,21 @@ export async function prepareTerminalWorkspace(input: {
       artifacts_dir: taskPaths.artifactsDir,
     });
   }
-  const credentialFiles = Array.isArray(executionContext.credential_files)
-    ? executionContext.credential_files
-    : [];
-  await applyExecutionContextFiles(cwd, credentialFiles, {
-    credentialDir: taskPaths.credentialDir,
-  });
-  debugTerminalRuntime('prepare_workspace_credentials_ready', {
-    cwd,
-    credential_files_count: credentialFiles.length,
-  });
-
-  const env: NodeJS.ProcessEnv = {
+  const env = buildTaskUserInstallEnv(taskPaths.homeDir, {
     ...process.env,
-    HOME: taskPaths.homeDir,
     TERM: process.env.TERM || 'xterm-256color',
     NO_COLOR: '1',
-    MBOS_TASK_CREDENTIAL_DIR: taskPaths.credentialDir,
     ...(isNotebookMode ? {
       MBOS_NOTEBOOK_API_BASE: executionContext.api_base ?? '',
       MBOS_NOTEBOOK_WORKSPACE_ID: executionContext.workspace_id ?? '',
       MBOS_NOTEBOOK_PROJECT_ID: executionContext.project_id ?? '',
+      MBOS_NOTEBOOK_TASK_ID: executionContext.task_id ?? '',
       MBOS_NOTEBOOK_EXECUTION_TICKET: executionContext.execution_ticket ?? '',
       MBOS_NOTEBOOK_PREAMBLE: buildNotebookHeadlessPreamble({
         artifactsDir: taskPaths.artifactsDir,
       }),
     } : {}),
-  };
+  });
   const interactiveCommand = buildInteractiveCommand(input.shell);
   const launchCommand = await prepareLaunchCommand({
     file: interactiveCommand.file,

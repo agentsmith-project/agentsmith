@@ -56,7 +56,6 @@ import {
 } from './notebook-task/task-models.js';
 import { createAndProvisionProjectFileLibrary, mapFileLibraryInfraError } from './project-file-library-service.js';
 import { isAgentExecutionTicket, issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
-import { buildThirdPartyCredentialFiles } from './third-party-credential-files.js';
 import {
   buildTaskRealtimeView,
   mapTaskMessagesForExecution,
@@ -267,11 +266,6 @@ async function buildTaskTerminalExecutionContext(args: {
     attachedInputs: args.task.attached_inputs as NotebookTaskInputRefRecord[],
     debugLog: debugNotebookExecution,
   });
-  const credentialFiles = await buildThirdPartyCredentialFiles(
-    args.deps.docStore,
-    args.user.id,
-    { taskId: args.task.id, workspaceId: args.task.workspace_id },
-  );
   const workspaceLibrary = args.task.workspace_file_library_id
     ? await new JsonDocProjectFileLibraryCatalogRepo(args.deps.docStore).getById(
       args.task.workspace_id,
@@ -311,7 +305,6 @@ async function buildTaskTerminalExecutionContext(args: {
     workspace_dir_name: workspaceLibrary?.filesystem_name
       ?? sanitizeFileLibraryWorkspaceDirName(args.task.workspace_file_library_name, args.task.workspace_file_library_id),
     task_inputs: taskInputs,
-    credential_files: credentialFiles,
     notebook_mode: true,
   };
 }

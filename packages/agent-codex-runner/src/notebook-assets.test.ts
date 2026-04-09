@@ -19,6 +19,7 @@ describe('prepareNotebookWorkspaceAssets', () => {
       });
 
       expect(readFileSync(join(cwd, 'AGENTS.md'), 'utf8')).toBe('existing-agents');
+      expect(readFileSync(join(cwd, '.mbos', 'RUNNER_RUNTIME.md'), 'utf8')).toContain('HOME == cwd');
       expect(() => readFileSync(join(cwd, '.mbos', 'task-inputs.json'), 'utf8')).toThrow();
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -36,6 +37,7 @@ describe('prepareNotebookWorkspaceAssets', () => {
       });
 
       expect(readFileSync(join(cwd, 'AGENTS.md'), 'utf8')).toContain('This workspace root is the persistent notebook environment');
+      expect(readFileSync(join(cwd, '.mbos', 'RUNNER_RUNTIME.md'), 'utf8')).toContain('mbos-context');
       expect(() => readFileSync(join(cwd, '.mbos', 'task-inputs.json'), 'utf8')).toThrow();
     } finally {
       rmSync(cwd, { recursive: true, force: true });

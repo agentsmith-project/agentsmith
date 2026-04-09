@@ -1,7 +1,6 @@
 import { execFile as execFileCallback, spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
@@ -48,7 +47,6 @@ export type TaskWorkspacePaths = {
   codexDir: string;
   artifactsDir: string;
   mbosDir: string;
-  credentialDir: string;
   skillsDir: string;
 };
 
@@ -247,12 +245,7 @@ export function buildTaskWorkspaceMountPath(input: {
 }
 
 export function buildTaskWorkspacePaths(taskRoot: string, mode: RunnerMode): TaskWorkspacePaths {
-  const taskStateRoot = join(
-    process.env.MBOS_AGENT_RUNNER_STATE_ROOT?.trim() || tmpdir(),
-    'agentsmith-runner-state',
-    sanitizePathPart(mode, 'runner-mode'),
-    sanitizePathPart(taskRoot, 'task-root'),
-  );
+  const mbosDir = join(taskRoot, '.mbos');
   return {
     mode,
     mountRoot: taskRoot,
@@ -260,8 +253,7 @@ export function buildTaskWorkspacePaths(taskRoot: string, mode: RunnerMode): Tas
     homeDir: taskRoot,
     codexDir: join(taskRoot, '.codex'),
     artifactsDir: join(taskRoot, '.artifacts'),
-    mbosDir: join(taskRoot, '.mbos'),
-    credentialDir: join(taskStateRoot, 'credentials'),
+    mbosDir,
     skillsDir: join(taskRoot, '.agents', 'skills'),
   };
 }

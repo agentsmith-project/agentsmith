@@ -1,29 +1,29 @@
 ---
 name: jira-ops
-description: Operate Jira with a bearer token for common issue workflows such as searching issues, reading issue details, adding comments, editing fields, and transitioning status. Use when the user wants to work with a Jira site over HTTP API, especially when the current notebook task or workspace stores Jira credentials under MBOS_TASK_CREDENTIAL_DIR/jira or .codex/credential/jira and requests must clear proxy environment variables before access.
+description: Operate Jira with a bearer token for common issue workflows such as searching issues, reading issue details, adding comments, editing fields, and transitioning status. Use when the user wants to work with a Jira site over HTTP API and the current runner session stores simple Jira credentials in AgentSmith Context Store.
 ---
 
 # Jira Ops
 
 ## Overview
 
-Use a local helper script to perform common Jira REST operations with Bearer token auth. Default to inspecting Jira credentials from `MBOS_TASK_CREDENTIAL_DIR/jira` when present, otherwise from the current workspace under `.codex/credential/jira`, and clear proxy environment variables before every request.
+Use a local helper script to perform common Jira REST operations with Bearer token auth. The helper reads `credentials.jira_base_url` and `credentials.jira_token` from AgentSmith Context Store, and clears proxy environment variables before every request.
 
 ## Quick Start
 
 Validate auth:
 
 ```bash
-python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
+python ~/.agents/skills/jira-ops/scripts/jira_ops.py \
   myself
 ```
 
 ## Workflow
 
-1. Read [common.md](/etc/codex/skills/jira-ops/references/common.md) first.
-2. Inspect `MBOS_TASK_CREDENTIAL_DIR/jira/` or `.codex/credential/jira/` in the current workspace. Do not assume fixed file names or formats; read the files and use their self-describing contents to identify the Jira token and, if present, the base URL.
-3. If the issue key is unknown, use [jql.md](/etc/codex/skills/jira-ops/references/jql.md) and search before mutating.
-4. If the user wants a common action, follow [workflows.md](/etc/codex/skills/jira-ops/references/workflows.md).
+1. Read [common.md](references/common.md) first.
+2. Read `credentials.jira_base_url` and `credentials.jira_token` from `mbos-context` first. If they are missing, fail fast and ask the user or agent to set them explicitly.
+3. If the issue key is unknown, use [jql.md](references/jql.md) and search before mutating.
+4. If the user wants a common action, follow [workflows.md](references/workflows.md).
 5. Before field edits, inspect `editmeta` if field names or allowed values are unclear.
 6. Before transitions, inspect transitions with expanded field metadata.
 7. Before mutating, prefer reading the issue or narrowing the search so the target is unambiguous.
@@ -42,7 +42,7 @@ python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
 ## Safety Rules
 
 - Always clear proxy environment variables before Jira access
-- Prefer inspecting task/workspace credentials in `MBOS_TASK_CREDENTIAL_DIR/jira` or `.codex/credential/jira` over hard-coded tokens in commands
+- Prefer reading `credentials.jira_base_url` and `credentials.jira_token` through `mbos-context` over hard-coded tokens in commands
 - Search first if the issue key is uncertain
 - Read transitions with `--expand-fields` before transitioning an issue
 - Read `editmeta` before editing unfamiliar fields or custom fields

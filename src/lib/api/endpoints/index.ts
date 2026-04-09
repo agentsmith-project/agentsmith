@@ -21,6 +21,7 @@ export { AlertAPI } from './alerts';
 export { ModelConfigAPI } from './model-config';
 export { GovernanceExplainabilityAPI } from './governance-explainability';
 export { FileLibrariesAPI } from './file-libraries';
+export { ContextAPI } from './context';
 
 // Re-export types
 export type { CreateProjectRequest, UpdateProjectRequest } from './projects';
@@ -67,6 +68,13 @@ export type {
   ModelRequestErrorResponse,
   ModelRequestExecutionResult,
 } from './model-config';
+export type {
+  ContextEntry,
+  ContextScope,
+  ContextContentType,
+  PutContextEntryRequest,
+  ContextQuery,
+} from '../types';
 export type {
   GovernanceAuthorizationRequest,
   GovernanceAuthorizationResponse,

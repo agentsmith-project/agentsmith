@@ -31,11 +31,11 @@ Allowed element types:
 Plain text comment:
 
 ```bash
-python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool add-comments --params '{"doc_id":"docx123","elements":[{"type":"text","text":"请确认这里的结论"}]}'
+python3 ~/.agents/skills/feishu-docs/scripts/feishu_mcp.py call-tool add-comments --params '{"doc_id":"docx123","elements":[{"type":"text","text":"请确认这里的结论"}]}'
 ```
 
 Mention + link:
 
 ```bash
-python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool add-comments --params '{"doc_id":"docx123","elements":[{"type":"text","text":"请查看 "},{"type":"mention","open_id":"ou_xxx"},{"type":"link","url":"https://example.com"}]}'
+python3 ~/.agents/skills/feishu-docs/scripts/feishu_mcp.py call-tool add-comments --params '{"doc_id":"docx123","elements":[{"type":"text","text":"请查看 "},{"type":"mention","open_id":"ou_xxx"},{"type":"link","url":"https://example.com"}]}'
 ```

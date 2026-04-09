@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mkdirMock, writeFileMock, prepareTaskWorkspaceMock, prepareNotebookWorkspaceAssetsMock, applyExecutionContextFilesMock } = vi.hoisted(() => ({
+const { mkdirMock, writeFileMock, prepareTaskWorkspaceMock, prepareNotebookWorkspaceAssetsMock } = vi.hoisted(() => ({
   mkdirMock: vi.fn(),
   writeFileMock: vi.fn(),
   prepareTaskWorkspaceMock: vi.fn(),
   prepareNotebookWorkspaceAssetsMock: vi.fn(),
-  applyExecutionContextFilesMock: vi.fn(),
 }));
 
 const { prepareLaunchCommandMock } = vi.hoisted(() => ({
@@ -51,10 +50,6 @@ vi.mock('./notebook-assets.js', () => ({
   prepareNotebookWorkspaceAssets: prepareNotebookWorkspaceAssetsMock,
 }));
 
-vi.mock('./execution-context-files.js', () => ({
-  applyExecutionContextFiles: applyExecutionContextFilesMock,
-}));
-
 vi.mock('./child-launcher.js', () => ({
   prepareLaunchCommand: prepareLaunchCommandMock,
 }));
@@ -92,12 +87,10 @@ describe('terminal-runtime', () => {
         codexDir: '/workspace/.codex',
         artifactsDir: '/workspace/.artifacts',
         mbosDir: '/workspace/.mbos',
-        credentialDir: '/tmp/agentsmith-runner-state/docker_external/_workspace/credentials',
         skillsDir: '/workspace/.agents/skills',
       },
     });
     prepareNotebookWorkspaceAssetsMock.mockResolvedValue(undefined);
-    applyExecutionContextFilesMock.mockResolvedValue({ writtenFiles: [] });
     inspectBuiltinSkillsMock.mockResolvedValue({
       sourceDir: '/seed-skills',
       available: ['feishu-docs'],
@@ -158,7 +151,11 @@ describe('terminal-runtime', () => {
         name: expect.any(String),
         env: expect.objectContaining({
           HOME: '/workspace',
-          MBOS_TASK_CREDENTIAL_DIR: '/tmp/agentsmith-runner-state/docker_external/_workspace/credentials',
+          PYTHONUSERBASE: '/workspace/.local',
+          PIP_USER: '1',
+          npm_config_prefix: '/workspace/.local',
+          CARGO_HOME: '/workspace/.cargo',
+          RUSTUP_HOME: '/workspace/.rustup',
         }),
       }),
     );

@@ -298,6 +298,13 @@ export default function WorkspaceSettingsPage() {
                 >
                   {t('workspace_open_projects')}
                 </Link>
+                <Link
+                  href={`${workspaceBasePath}/settings/context`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="ws-settings__open-context"
+                >
+                  {t('workspace_open_context')}
+                </Link>
               </div>
             </section>
 

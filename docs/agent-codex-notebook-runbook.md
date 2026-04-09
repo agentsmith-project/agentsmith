@@ -52,13 +52,15 @@ Notebook external/internal agent execution has three practical runtime modes tod
 - `cwd` is always the task-scoped JuiceFS workdir for the current task.
 - `HOME` is the same task directory as `cwd`.
 - Codex runtime state lives under task-local `~/.codex`.
+- runner-owned mutable state lives under task-local `~/.mbos`.
+- builtin skills are installed into task-local `~/.agents/skills`.
 - notebook deliverables still belong in workspace-relative `./.artifacts/`.
 
-| Runtime mode | Typical use | `workspace_binding_mode` | Runner process location | `cwd` used by Codex | `CODEX_HOME` | `HOME` | Artifacts dir | Credential files dir |
+| Runtime mode | Typical use | `workspace_binding_mode` | Runner process location | `cwd` used by Codex | `CODEX_HOME` | `HOME` | Artifacts dir | Agent context / credentials |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| External bare | local-manual, host development, direct host runner | `file_library` | host machine | `$HOME/ags-workspace/<task_id>/` | `<cwd>/.codex/` | same as `cwd` | `<cwd>/.artifacts/` | `<cwd>/.mbos/` |
-| External docker | demo deploy, cluster deploy, dockerized external runner | `file_library` | runner container | `/workspace/<task_id>/` | `<cwd>/.codex/` | same as `cwd` | `<cwd>/.artifacts/` | `<cwd>/.mbos/` |
-| Internal k8s | internal notebook workload pod, pre-mounted JuiceFS workspace | `pre_mounted` | workload container | `/workspace/<task_id>/` | `<cwd>/.codex/` | same as `cwd` | `<cwd>/.artifacts/` | `<cwd>/.mbos/` |
+| External bare | local-manual, host development, direct host runner | `file_library` | host machine | `$HOME/ags-workspace/<task_id>/` | `<cwd>/.codex/` | same as `cwd` | `<cwd>/.artifacts/` | AgentSmith Context Store via `mbos-context`; managed OAuth credentials exposed as read-only context projections |
+| External docker | demo deploy, cluster deploy, dockerized external runner | `file_library` | runner container | `/workspace/<task_id>/` | `<cwd>/.codex/` | same as `cwd` | `<cwd>/.artifacts/` | AgentSmith Context Store via `mbos-context`; managed OAuth credentials exposed as read-only context projections |
+| Internal k8s | internal notebook workload pod, pre-mounted JuiceFS workspace | `pre_mounted` | workload container | `/workspace/<task_id>/` | `<cwd>/.codex/` | same as `cwd` | `<cwd>/.artifacts/` | AgentSmith Context Store via `mbos-context`; managed OAuth credentials exposed as read-only context projections |
 
 Notes:
 - the mounted task path itself is the real editable workspace for the current task
@@ -69,11 +71,11 @@ Notes:
 
 | Path | Owner | What it is used for | What must not be written there |
 | --- | --- | --- | --- |
-| `cwd` | workspace truth | source files, notebook inputs, user-visible outputs, `.artifacts/` | Codex session sqlite state, task-scoped runner home |
+| `cwd` | workspace truth | source files, notebook inputs, user-visible outputs, `.artifacts/`, task-local home | shared host home, system-level mutable state |
 | `CODEX_HOME` | Codex runtime | `config.toml`, `catalog.json`, session state, sqlite state, shell snapshots, tmp | user project files, notebook deliverables |
-| `HOME` | child-process runtime | Codex user-scope discovery paths such as `~/.agents/skills`, tool caches, home-relative state | shared host home, workspace files |
-| credentials dir | runner injection | task-scoped third-party credentials exposed through `MBOS_TASK_CREDENTIAL_DIR` | model provider auth token persistence |
-| `/etc/codex/skills` | image/admin scope | container-scoped builtin skills for Codex discovery | task-scoped mutable state |
+| `HOME` | child-process runtime | Codex user-scope discovery paths such as `~/.agents/skills`, tool caches, home-relative installs | `/etc`, `/usr/local`, `/opt`, `cwd`-external mutable state |
+| AgentSmith Context Store | AgentSmith control plane | user/task/project/workspace context, simple credentials, managed credential projections | user workspace files |
+| `~/.mbos` | runner runtime | runner manifests and non-sensitive runtime metadata | secrets, user deliverables outside runner-owned metadata |
 
 ### 1.3 Builtin Skills Discovery Rules
 
@@ -81,16 +83,16 @@ AgentSmith runner and Codex do not use the same discovery path list.
 
 | Layer | Who reads it | Current path | When it exists | Purpose |
 | --- | --- | --- | --- | --- |
-| Admin builtin skills | Codex | `/etc/codex/skills` | containerized runner images | packaged builtin skills such as `feishu-docs`, `jira-ops` |
+| Builtin skills (installed) | Codex | `$HOME/.agents/skills` | every task runtime | task-local builtin skills such as `feishu-docs`, `jira-ops` |
 | User skills | Codex | `$HOME/.agents/skills` | depends on the runner child-process `HOME` | user-scoped skill discovery inside the current task runtime |
 | Deprecated compatibility path | Codex | `$CODEX_HOME/skills` | compatibility only; not the current preferred path | backward compatibility |
 | Repo skills | Codex | `<project-root>/.agents/skills` | only if the workspace/repo provides them | repo-scoped skills loaded from the current project |
-| Runner builtin-skill inspection | runner only | `MBOS_AGENT_BUILTIN_SKILLS_DIR` or repo fallback `packages/agent-codex-runner/builtin-skills` | always | fail-fast validation that required builtin skills exist before spawn |
+| Runner builtin-skill source inspection | runner only | `MBOS_AGENT_BUILTIN_SKILLS_DIR` or repo fallback `packages/agent-codex-runner/builtin-skills` | always | fail-fast validation plus task-local install seed source |
 
 Important consequence:
 - a builtin skill being present in the repository or passing runner validation does not automatically mean Codex will enumerate it in the current session.
 - Codex only lists skills that it actually discovers from its runtime skill roots for that process.
-- in containerized runner modes, `feishu-docs` and `jira-ops` are discovered from `/etc/codex/skills`.
+- in all runner modes, builtin skills are installed into the current task home under `$HOME/.agents/skills`.
 - in external bare host development, Codex sees whatever is discoverable from the host-style runtime layout for that task; this is intentionally different from the container image filesystem.
 
 ### 1.4 What the Agent Means When It Says “Available Skills”
@@ -98,7 +100,7 @@ Important consequence:
 When the agent answers “what skills can you use”, it is reporting the skills that Codex discovered for that specific session, not the full set of builtin skills that the AgentSmith repository knows about.
 
 That means:
-- containerized sessions usually report packaged admin skills from `/etc/codex/skills`.
+- containerized sessions usually report builtin skills from `$HOME/.agents/skills`.
 - host-run local-manual sessions may report a different set if the host runtime does not provide the same Codex-visible skill roots.
 - this difference is expected unless the host development environment is intentionally aligned with the container skill filesystem.
 
@@ -197,7 +199,7 @@ That means:
 - `MBOS_AGENT_TASK_TIMEOUT_SEC` (optional; task watchdog, default currently 55s in code)
 - `MBOS_AGENT_RUNNER_DEBUG=1` (optional; logs spawn args/workdir/timeout)
 - `MBOS_AGENT_CODEX_YOLO=1` (optional; run codex with `--dangerously-bypass-approvals-and-sandbox`)
-- `MBOS_AGENT_BUILTIN_SKILLS_DIR` (optional; default `/etc/codex/skills`)
+- `MBOS_AGENT_BUILTIN_SKILLS_DIR` (optional; builtin skill source dir used for task-local install)
 - `MBOS_AGENT_BUILTIN_SKILLS` (optional; default `feishu-docs,jira-ops`)
 - `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED` (optional; default `1`, fail-fast when builtin skill missing)
 - `MBOS_AGENT_WORKSPACE_ROOT` (optional; base directory for mounted notebook workspaces)
@@ -216,12 +218,12 @@ That means:
 
 | Item | External bare | External docker | Internal |
 | --- | --- | --- | --- |
-| Workspace root (`cwd`) | `${MBOS_AGENT_WORKSPACE_ROOT:-$HOST_HOME/ags-workspaces}/<workspace_dir_name>/` | `${MBOS_AGENT_WORKSPACE_ROOT:-/workspace/ags-workspaces}/<workspace_dir_name>/` | `/workspace/` |
-| Task-scoped Codex state (`CODEX_HOME`) | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/` |
-| Task-scoped runner home (`HOME`) | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/home/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/home/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/home/` |
-| Task credential injection root | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/` |
-| Notebook artifacts root | `<cwd>/.artifacts/` | `<cwd>/.artifacts/` | `/workspace/.artifacts/` |
-| Builtin skills visible to Codex by default | host-dependent Codex-visible roots | `/etc/codex/skills` | `/etc/codex/skills` |
+| Workspace root (`cwd`) | `${MBOS_AGENT_WORKSPACE_ROOT:-$HOST_HOME/ags-workspace}/<task_id>/` | `${MBOS_AGENT_WORKSPACE_ROOT:-/workspace}/<task_id>/` | `/workspace/<task_id>/` |
+| Task-scoped Codex state (`CODEX_HOME`) | `<cwd>/.codex/` | `<cwd>/.codex/` | `<cwd>/.codex/` |
+| Task-scoped runner home (`HOME`) | `<cwd>/` | `<cwd>/` | `<cwd>/` |
+| Agent context / credentials | AgentSmith Context Store via `mbos-context` | AgentSmith Context Store via `mbos-context` | AgentSmith Context Store via `mbos-context` |
+| Notebook artifacts root | `<cwd>/.artifacts/` | `<cwd>/.artifacts/` | `<cwd>/.artifacts/` |
+| Builtin skills visible to Codex by default | `<cwd>/.agents/skills/` | `<cwd>/.agents/skills/` | `<cwd>/.agents/skills/` |
 
 Resume rule:
 - notebook follow-up turns resume only within the same `task_id` because `CODEX_HOME` is task-scoped
@@ -323,16 +325,16 @@ npm run test:notebook:backend-real:terminal
 
 | Question | Current behavior |
 | --- | --- |
-| Where are builtin skills stored in runner images? | `/etc/codex/skills` |
+| Where are builtin skills installed for Codex sessions? | `<task_home>/.agents/skills` |
 | Which builtin skills are enabled by default? | `feishu-docs`, `jira-ops` |
 | Does the runner copy builtin skills into the workspace? | No. Workspace `.codex` is reserved for task-scoped Codex state and credentials. |
 | What does the runner validate before spawn? | It checks that the configured builtin skills exist under `MBOS_AGENT_BUILTIN_SKILLS_DIR` or the repo fallback source. |
-| What does Codex itself enumerate in-session? | Only skills discovered from the current session's Codex-visible roots such as `/etc/codex/skills`, `$HOME/.agents/skills`, `$CODEX_HOME/skills`, and repo `.agents/skills`. |
-| Why can local-manual host runs differ from docker runs? | Host runs do not automatically inherit the container image filesystem, so `/etc/codex/skills` may differ even when the repository builtin skills are present. |
+| What does Codex itself enumerate in-session? | Only skills discovered from the current session's Codex-visible roots such as `$HOME/.agents/skills`, `$CODEX_HOME/skills`, and repo `.agents/skills`. |
+| Why can local-manual host runs differ from docker runs? | Host runs and docker runs may seed builtin-skill sources from different image/repo locations even though Codex always reads the task-local installed copy under `$HOME/.agents/skills`. |
 
 Default policy:
 - fail-fast if required builtin skills are missing (`MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=1`)
-- do not copy builtin skills into the workspace just to make them visible
+- seed builtin skills into the current task home so pod/container restarts can recover from the persistent workspace root
 - treat “skill configured in repo” and “skill discovered by the current Codex session” as related but not identical facts
 
 ### 5.3.2 Unified Env Switch Reference (quick lookup)

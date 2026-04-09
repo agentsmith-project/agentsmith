@@ -13,7 +13,6 @@ import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store
 import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
-import { buildThirdPartyCredentialFiles } from './third-party-credential-files.js';
 import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
 import { isComposeManagedExternalAgent } from './agent-runner-profile.js';
 import { issueInternalTicket } from './internal-ticket-store.js';
@@ -358,11 +357,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       attachedInputs: task.attached_inputs as NotebookTaskInputRefRecord[],
       debugLog,
     });
-    const thirdPartyCredentialFiles = await buildThirdPartyCredentialFiles(
-      deps.docStore,
-      user.id,
-      { taskId: task.id, workspaceId: task.workspace_id },
-    );
     const workspaceLibrary = task.workspace_file_library_id
       ? await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).getById(
         task.workspace_id,
@@ -414,7 +408,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         workspace_dir_name: workspaceLibrary?.filesystem_name
           ?? sanitizeFileLibraryWorkspaceDirName(task.workspace_file_library_name, task.workspace_file_library_id),
         task_inputs: taskInputs,
-        credential_files: thirdPartyCredentialFiles,
         notebook_mode: true,
       },
     });

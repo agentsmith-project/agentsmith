@@ -177,7 +177,7 @@ function shouldSkipWorkspaceEntry(relPath: string, entry: Dirent): boolean {
   const parts = normalized.split('/').filter(Boolean);
   if (parts.length === 0) return true;
   const top = parts[0]!;
-  if (top === '.codex' || top === '.artifacts') return true;
+  if (top === '.codex' || top === '.artifacts' || top === '.mbos') return true;
   if (top === '.git' || top === 'node_modules') return true;
   if (entry.name.startsWith('.DS_Store')) return true;
   return false;

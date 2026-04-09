@@ -1,0 +1,73 @@
+---
+name: mbos-context
+description: Use to read or write AgentSmith Context Store entries for user or task scope, and to read shared project/workspace context or managed credential projections. Trigger when the user asks to save preferences, notes, secrets, task memory, shared guidance, or to inspect credentials without browsing local files.
+---
+
+# MBOS Context
+
+## Overview
+
+Use the local helper script to talk to the AgentSmith Context Store over the notebook execution API. This is the primary way to read or write user/task context, simple credentials, and shared project/workspace guidance.
+
+## Quick Start
+
+```bash
+python3 ~/.agents/skills/mbos-context/scripts/context_cli.py list --scope user
+python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope user --key prefs.editor
+```
+
+## Workflow
+
+1. Prefer `mbos-context` over searching workspace files for preferences, notes, or credentials.
+2. Use `scope=user` for user-specific memory, prefs, and simple credentials.
+3. Use `scope=task` for task-local notes, scratch state, and temporary secrets.
+4. Use `scope=project` or `scope=workspace` only for reads; those scopes are manually maintained in AgentSmith.
+5. Keys under `managed_credentials.*` are read-only projections for managed OAuth connections such as Feishu.
+
+## Commands
+
+List visible entries:
+
+```bash
+python3 ~/.agents/skills/mbos-context/scripts/context_cli.py list --scope user
+```
+
+Read one entry:
+
+```bash
+python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope user --key credentials.github_token
+```
+
+Write one entry:
+
+```bash
+python3 ~/.agents/skills/mbos-context/scripts/context_cli.py put --scope task --key notes.current_task --content 'Remember to summarize the schema changes.'
+```
+
+Delete one entry:
+
+```bash
+python3 ~/.agents/skills/mbos-context/scripts/context_cli.py delete --scope task --key notes.current_task
+```
+
+Refresh a managed credential projection when supported:
+
+```bash
+python3 ~/.agents/skills/mbos-context/scripts/context_cli.py refresh-managed-credential --provider feishu
+```
+
+## Key Conventions
+
+- `prefs.*`: user preferences
+- `notes.*`: free-form notes
+- `memory.*`: longer-lived user or task memory
+- `credentials.*`: simple writable credentials such as API keys or bearer tokens
+- `managed_credentials.*`: read-only projections from managed external connections
+- `shared.*`: human-maintained shared context in project/workspace scope
+
+## Safety Rules
+
+- Do not copy secrets from Context Store into workspace files unless the user explicitly asks for that.
+- Prefer `credentials.*` for simple tokens and API keys.
+- Do not try to overwrite `managed_credentials.*`; those stay on dedicated provider flows.
+- If an entry is JSON or YAML text, read and parse the content instead of assuming a fixed schema.

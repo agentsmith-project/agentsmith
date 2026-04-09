@@ -61,7 +61,7 @@ All frames are JSON objects:
         | `HOME` | same as task root | same as task root | same as task root |
         | Codex state | `<task_root>/.codex/` | `<task_root>/.codex/` | `<task_root>/.codex/` |
         | skills | `<task_root>/.agents/skills/` | `<task_root>/.agents/skills/` | `<task_root>/.agents/skills/` |
-        | credentials | `<task_root>/.mbos/` via `MBOS_TASK_CREDENTIAL_DIR` | `<task_root>/.mbos/` via `MBOS_TASK_CREDENTIAL_DIR` | `<task_root>/.mbos/` via `MBOS_TASK_CREDENTIAL_DIR` |
+        | agent context / credentials | AgentSmith Context Store via `mbos-context`; managed OAuth credentials are read-only context projections | AgentSmith Context Store via `mbos-context`; managed OAuth credentials are read-only context projections | AgentSmith Context Store via `mbos-context`; managed OAuth credentials are read-only context projections |
 
         Notes:
         - the task mount point is the real JuiceFS-backed working directory for the current task

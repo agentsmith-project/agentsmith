@@ -18,6 +18,40 @@ def write_connections_file(root: Path, payload: dict) -> Path:
 
 
 class FeishuMcpTests(unittest.TestCase):
+    @patch.dict(
+        "os.environ",
+        {
+            "MBOS_NOTEBOOK_API_BASE": "http://localhost:20000",
+            "MBOS_NOTEBOOK_EXECUTION_TICKET": "ticket_123",
+            "MBOS_NOTEBOOK_WORKSPACE_ID": "ws_default",
+            "MBOS_NOTEBOOK_PROJECT_ID": "proj_1",
+            "MBOS_NOTEBOOK_TASK_ID": "task_1",
+        },
+        clear=False,
+    )
+    @patch("feishu_mcp.urlopen")
+    def test_loads_managed_connection_from_context(self, mock_urlopen: MagicMock) -> None:
+        response = MagicMock()
+        response.read.return_value = json.dumps(
+            {
+                "content": json.dumps(
+                    {
+                        "provider": "feishu",
+                        "status": "active",
+                        "fields": {
+                            "access_token": "token_from_context",
+                            "feishu_mcp_endpoint": "https://mcp.feishu.cn/mcp",
+                        },
+                    },
+                    ensure_ascii=False,
+                )
+            }
+        ).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = response
+
+        connection = feishu_mcp.load_managed_connection_from_context()
+        self.assertEqual(connection["fields"]["access_token"], "token_from_context")
+
     def test_uses_single_active_connection_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             credential_dir = write_connections_file(

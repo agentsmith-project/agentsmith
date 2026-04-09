@@ -67,7 +67,6 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/site.env" 'SANDBOX_HOST_PO
 release_check_require_exact_line "${RELEASE_ROOT}/env/web.env" 'NEXT_PUBLIC_API_BASE=http://localhost:20000' 'rendered_env_mismatch:web.env:NEXT_PUBLIC_API_BASE'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'KEYCLOAK_ISSUER_URL=http://localhost:18080/realms/mbos' 'rendered_env_mismatch:api.env:KEYCLOAK_ISSUER_URL'
 release_check_require_exact_line "${RELEASE_ROOT}/env/runner.env" 'MBOS_API_BASE=http://api:20000' 'rendered_env_mismatch:runner.env:MBOS_API_BASE'
-release_check_require_exact_line "${RELEASE_ROOT}/env/runner.env" 'MBOS_AGENT_BUILTIN_SKILLS_DIR=/etc/codex/skills' 'rendered_env_mismatch:runner.env:MBOS_AGENT_BUILTIN_SKILLS_DIR'
 release_check_require_exact_line "${RELEASE_ROOT}/env/keycloak.env" 'PUBLIC_KEYCLOAK_BASE_URL=http://localhost:18080' 'rendered_env_mismatch:keycloak.env:PUBLIC_KEYCLOAK_BASE_URL'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL=http://runner.internal.test:20000' 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'AGENT_EXECUTION_HTTP_BASE_URL=http://10.88.0.1:20000' 'rendered_env_mismatch:api.env:AGENT_EXECUTION_HTTP_BASE_URL'

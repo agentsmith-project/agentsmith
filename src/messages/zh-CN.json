@@ -1485,6 +1485,8 @@
     "workspace_open_project": "打开项目",
     "workspace_open_project_members": "打开项目成员",
     "workspace_open_project_settings": "打开项目设置",
+    "workspace_open_context": "打开工作区上下文",
+    "open_context": "打开上下文",
     "workspace_project_creators_title": "项目创建者",
     "workspace_project_creators_description": "控制谁可以在这个工作区里直接创建新项目，而不需要更广泛的管理权限调整。",
     "workspace_project_creators_field": "允许在此工作区创建项目的用户",
@@ -1879,6 +1881,29 @@
         "requests_per_minute": "主体每分钟请求数上限"
       }
     }
+  },
+  "context_store": {
+    "workspace_title": "工作区上下文",
+    "workspace_subtitle": "维护 agent 可读取的工作区共享说明和上下文。",
+    "project_title": "项目上下文",
+    "project_subtitle": "维护 agent 可读取的项目共享说明和上下文。",
+    "list_title": "条目",
+    "list_description": "每个条目都会以文本形式存储，并绑定到当前工作区或项目。",
+    "empty_title": "还没有上下文条目",
+    "empty_description": "先创建第一条共享上下文，让 agent 能复用这些说明。",
+    "new_entry": "新建条目",
+    "create_entry": "创建上下文条目",
+    "edit_entry": "编辑上下文条目",
+    "editor_description": "建议使用稳定 key，并把内容保存为纯文本、JSON、Markdown 或 YAML。",
+    "key_label": "Key",
+    "key_placeholder": "shared.data_dictionary",
+    "content_type_label": "内容类型",
+    "content_label": "内容",
+    "content_placeholder": "在这里填写共享上下文内容。",
+    "save": "保存条目",
+    "saving": "保存中...",
+    "delete": "删除条目",
+    "deleting": "删除中..."
   },
   "members": {
     "title": "成员",

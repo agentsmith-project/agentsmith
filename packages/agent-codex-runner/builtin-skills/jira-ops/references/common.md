@@ -2,35 +2,19 @@
 
 ## Authentication
 
-Use Bearer token auth. Prefer inspecting credentials from the current notebook workspace credential root when available:
+Use Bearer token auth. Prefer reading simple Jira credentials from AgentSmith Context Store:
 
 ```text
-MBOS_TASK_CREDENTIAL_DIR/jira/
+scope=task or user
+key=credentials.jira_base_url
+key=credentials.jira_token
 ```
-
-Otherwise inspect the shared workspace credential root:
-
-```text
-.codex/credential/jira/
-```
-
-Do not assume fixed file names or fixed formats.
 
 Rules:
 
-- inspect the files actually present in `MBOS_TASK_CREDENTIAL_DIR/jira/` or `.codex/credential/jira/`
-- treat the contents as self-describing
-- locate the Jira token from the file contents
-- locate the Jira base URL from the file contents if present
-- if the base URL is not present in credentials, pass `--base-url` explicitly
-
-If needed, override discovery with:
-
-```bash
-python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
-  --credential-dir /abs/path/to/.codex/credential/jira \
-  myself
-```
+- read `credentials.jira_base_url` and `credentials.jira_token` through `mbos-context`
+- if the base URL is not present in context, pass `--base-url` explicitly
+- if the token is not present in context, set it first through `mbos-context`
 
 ## Proxy Rule
 
@@ -62,7 +46,7 @@ Only use that against trusted internal Jira sites.
 
 ## Weak-Model Guidance
 
-- inspect `MBOS_TASK_CREDENTIAL_DIR/jira/` or `.codex/credential/jira/` before assuming auth inputs
+- inspect `credentials.jira_base_url` and `credentials.jira_token` through `mbos-context` before assuming auth inputs
 - If the issue key is unknown, search first
 - If editing fields, inspect `editmeta` first
 - If transitioning, inspect transitions with field expansion first

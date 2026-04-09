@@ -1483,6 +1483,8 @@
     "workspace_open_project": "Open project",
     "workspace_open_project_members": "Open project members",
     "workspace_open_project_settings": "Open project settings",
+    "workspace_open_context": "Open workspace context",
+    "open_context": "Open context",
     "workspace_project_creators_title": "Project creators",
     "workspace_project_creators_description": "Control who can open new projects inside this workspace without broader administration changes.",
     "workspace_project_creators_field": "Users who can create projects in this workspace",
@@ -1877,6 +1879,29 @@
         "requests_per_minute": "subject requests per minute"
       }
     }
+  },
+  "context_store": {
+    "workspace_title": "Workspace Context",
+    "workspace_subtitle": "Maintain shared workspace guidance and context that agents can read.",
+    "project_title": "Project Context",
+    "project_subtitle": "Maintain shared project guidance and context that agents can read.",
+    "list_title": "Entries",
+    "list_description": "Each entry is stored as text and scoped to the current workspace or project.",
+    "empty_title": "No context entries yet",
+    "empty_description": "Create the first shared context entry to give agents reusable guidance.",
+    "new_entry": "New entry",
+    "create_entry": "Create context entry",
+    "edit_entry": "Edit context entry",
+    "editor_description": "Use stable keys and store plain text, JSON, Markdown, or YAML content.",
+    "key_label": "Key",
+    "key_placeholder": "shared.data_dictionary",
+    "content_type_label": "Content type",
+    "content_label": "Content",
+    "content_placeholder": "Add the shared context content here.",
+    "save": "Save entry",
+    "saving": "Saving...",
+    "delete": "Delete entry",
+    "deleting": "Deleting..."
   },
   "members": {
     "title": "Members",

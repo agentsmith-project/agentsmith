@@ -21,7 +21,6 @@ import {
   scanWorkspaceFilesSnapshot,
 } from './artifact-scan.js';
 import { prepareTaskWorkspace } from './task-workspace.js';
-import { applyExecutionContextFiles, type ExecutionContextFileItem } from './execution-context-files.js';
 import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
 import { selectLatestInstruction } from './prompt-selection.js';
 import { resolveRunnerSuccessPolicy } from './run-result-policy.js';
@@ -29,6 +28,7 @@ import { ensureCodexSessionStateCompatible } from './session-state.js';
 import { resolveCodexTerminalOutcome } from './terminal-outcome.js';
 import { startTerminalProcess, type TerminalExecutionContext, type TerminalProcess } from './terminal-runtime.js';
 import { prepareLaunchCommand } from './child-launcher.js';
+import { buildTaskUserInstallEnv } from './user-install-env.js';
 
 type ServerStartPayload = {
   model?: string;
@@ -71,7 +71,6 @@ type ServerStartPayload = {
       file_type?: string;
       file_size?: number;
     }>;
-    credential_files?: ExecutionContextFileItem[];
   };
 };
 
@@ -684,7 +683,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     mkdir(cwd, { recursive: true }),
     mkdir(taskPaths.codexDir, { recursive: true }),
     mkdir(taskPaths.mbosDir, { recursive: true }),
-    mkdir(taskPaths.credentialDir, { recursive: true }),
     mkdir(taskPaths.skillsDir, { recursive: true }),
   ]);
   const builtinSkillsConfig = resolveBuiltinSkillsConfig();
@@ -709,9 +707,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const resumeSession = isNotebookMode || sessionId.length > 0;
   const userPrompt = selectLatestInstruction(payload.messages);
   const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
-  const credentialFiles = Array.isArray(executionContext.credential_files)
-    ? executionContext.credential_files
-    : [];
   let artifactsDir = taskPaths.artifactsDir;
   if (isNotebookMode) {
     debugLog('preparing notebook workspace assets', { request_id: requestId, cwd });
@@ -724,13 +719,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     });
     artifactsDir = preparedAssets.artifactsDir;
   }
-  debugLog('writing execution context files', {
-    request_id: requestId,
-    credential_files_count: credentialFiles.length,
-  });
-  const executionFilesResult = await applyExecutionContextFiles(cwd, credentialFiles, {
-    credentialDir: taskPaths.credentialDir,
-  });
   const prompt = isNotebookMode
     ? `${buildNotebookHeadlessPreamble({
       artifactsDir,
@@ -833,13 +821,10 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     resume_session: resumeSession,
     session_id: sessionId || null,
     task_inputs_count: taskInputs.length,
-    credential_files_count: executionFilesResult.written,
-    credential_files_bytes: executionFilesResult.totalBytes,
     builtin_skills_source_dir: builtinSkillsResult.sourceDir,
     builtin_skills_runtime_dir: builtinSkillsRuntime.targetDir,
     builtin_skills_mounted: builtinSkillsRuntime.seeded,
     artifacts_dir: isNotebookMode ? artifactsDir : null,
-    credential_dir: taskPaths.credentialDir,
     cwd_source: cwdResult.source,
   });
 
@@ -859,21 +844,20 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     file: codexBin,
     args: codexArgs,
     cwd,
-    env: {
+    env: buildTaskUserInstallEnv(taskPaths.homeDir, {
       ...process.env,
-      HOME: taskPaths.homeDir,
       NO_COLOR: '1',
-      MBOS_TASK_CREDENTIAL_DIR: taskPaths.credentialDir,
       ...(isNotebookMode ? {
         MBOS_NOTEBOOK_API_BASE: executionContext.api_base ?? '',
         MBOS_NOTEBOOK_WORKSPACE_ID: executionContext.workspace_id ?? '',
         MBOS_NOTEBOOK_PROJECT_ID: executionContext.project_id ?? '',
+        MBOS_NOTEBOOK_TASK_ID: executionContext.task_id ?? '',
         MBOS_NOTEBOOK_EXECUTION_TICKET: executionContext.execution_ticket ?? '',
       } : {}),
       ...(executionContext.execution_ticket ? {
         [proxyAuthHeaderEnvName]: `Bearer ${executionContext.execution_ticket}`,
       } : {}),
-    },
+    }),
   });
   const child = spawn(
     childCommand.file,
@@ -918,7 +902,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       yolo: codexYolo,
       notebook_mode: isNotebookMode,
       task_inputs_count: taskInputs.length,
-      credential_files_count: executionFilesResult.written,
       builtin_skills_count: builtinSkillsResult.available.length,
       artifacts_dir: isNotebookMode ? './.artifacts/' : null,
     },

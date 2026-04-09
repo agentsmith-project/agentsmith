@@ -31,7 +31,6 @@ import {
 } from './chat-input-refs.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
-import { buildThirdPartyCredentialFiles } from './third-party-credential-files.js';
 import { issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
 
 interface ChatStreamHandlerArgs {
@@ -653,11 +652,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           ).catch(() => undefined);
         }, INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS * 1000);
       }
-      const thirdPartyCredentialFiles = await buildThirdPartyCredentialFiles(
-        deps.docStore,
-        user.id,
-        { workspaceId: route.workspaceId },
-      );
       const issuedExecutionTicket = await issueInternalTicket(deps.cache, {
         purpose: 'agent_execution',
         userId: user.id,
@@ -689,7 +683,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           username: buildProxyUsername(user),
           execution_ticket: issuedExecutionTicket.ticket,
           ...(executionEndpointId ? { endpoint_id: executionEndpointId } : {}),
-          credential_files: thirdPartyCredentialFiles,
           model: raw.model ?? session.model,
           notebook_mode: false,
         },

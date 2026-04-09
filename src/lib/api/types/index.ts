@@ -2,6 +2,7 @@ export * from './agents';
 export * from './audit-usage';
 export * from './chat';
 export * from './common';
+export * from './context';
 export * from './endpoints';
 export * from './endpoints-core';
 export * from './files';

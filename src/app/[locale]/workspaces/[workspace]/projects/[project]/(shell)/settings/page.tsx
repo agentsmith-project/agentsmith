@@ -10,6 +10,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
+import Link from 'next/link';
 import { ProjectAPI, getApiClient } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -313,6 +314,11 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {settingsT('workspace_project_owner_label')}: {ownerDisplayName}
             </div>
+            <Button asChild variant="outline" size="sm" data-testid="settings__open-context">
+              <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/context`}>
+                {settingsT('open_context')}
+              </Link>
+            </Button>
           </div>
 
           <GovernanceSection

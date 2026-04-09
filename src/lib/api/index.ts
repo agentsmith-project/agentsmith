@@ -57,6 +57,7 @@ export {
   ModelConfigAPI,
   GovernanceExplainabilityAPI,
   FileLibrariesAPI,
+  ContextAPI,
 } from './endpoints';
 
 export type {
@@ -84,6 +85,11 @@ export type {
   Task,
   TaskMessage,
   Artifact,
+  ContextEntry,
+  ContextScope,
+  ContextContentType,
+  PutContextEntryRequest,
+  ContextQuery,
   CreateTaskRequest,
   UpdateTaskRequest,
   SendMessageRequest,

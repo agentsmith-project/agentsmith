@@ -5,30 +5,23 @@
 Use:
 
 ```bash
-python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool <tool-name> --params '<json object>'
+python3 ~/.agents/skills/feishu-docs/scripts/feishu_mcp.py call-tool <tool-name> --params '<json object>'
 ```
 
-Notebook tasks now expose the workspace credential root through:
+Notebook tasks now expose the current user's managed Feishu connection through AgentSmith Context Store:
 
-```bash
-MBOS_TASK_CREDENTIAL_DIR=./.codex/credential
+```text
+scope=user
+key=managed_credentials.feishu
 ```
 
-The helper script prefers that directory automatically. If the environment variable is absent and the workspace does not contain `.codex/credential`, pass:
-
-```bash
---credential-dir /abs/path/to/.codex/credential
-```
+The helper script reads that managed connection automatically through the notebook execution API.
 
 ## Credential Contract
 
-- Inspect files under `MBOS_TASK_CREDENTIAL_DIR` or `.codex/credential` directly; do not assume fixed file names or formats.
 - `tools-list` / `call-tool` need an access token for `X-Lark-MCP-UAT`.
-- `refresh-token` needs three values discoverable from file content:
-  - refresh token
-  - app id (for example `FEISHU_APP_ID` / `client_id`)
-  - app secret (for example `FEISHU_APP_SECRET` / `client_secret`)
-- If values are missing, update the credential files with self-describing keys.
+- `refresh-token` refreshes the managed Feishu connection through AgentSmith.
+- If required values are missing, reconnect or repair the managed Feishu connection in AgentSmith instead of editing workspace files.
 
 ## Return Format
 
@@ -52,7 +45,7 @@ When consuming `tools/call` results in code:
 If a call contract is unclear, inspect the live schema first:
 
 ```bash
-python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py tools-list
+python3 ~/.agents/skills/feishu-docs/scripts/feishu_mcp.py tools-list
 ```
 
 Read the tool-specific reference file before calling any complex mutation tool.

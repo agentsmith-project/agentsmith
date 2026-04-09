@@ -111,3 +111,18 @@ make bootstrap / api-dev / web / e2e / deps-down
 ## 常见问题 & 开发注意
 **SSE**: 检查 console EventSource, 验证 token | **测试失败**: 检查 mock, 验证 test ID, 用 waitFor
 **注意**: Turbopack 快速启动, MSW 快速登录, Storybook 组件开发, 优先编辑现有文件, 发布前移除过时 payload paths
+
+## Runner Home 约定
+
+当你是在 AgentSmith notebook / terminal runner 的 task workspace 里工作时，必须遵守以下运行时约定：
+
+- `HOME == cwd`，当前工作目录就是 task 的持久 home。
+- 动态配置、缓存、安装产物、用户态工具链、认证文件都必须写在当前 home 下，不能写到 `/etc`、`/usr/local`、`/opt`、`/var/tmp` 等系统级目录。
+- builtin skills 的运行时可见路径是 `~/.agents/skills`。
+- AgentSmith 的用户/任务级上下文、简单 credentials、共享说明通过 `mbos-context` builtin skill 和 AgentSmith Context Store 获取，不应假设它们存在于 workspace 文件树中。
+- 复杂 OAuth 凭据（例如 Feishu）通过只读 context 视图暴露，例如 `managed_credentials.feishu`；不要尝试在 workspace 中查找或持久化这类凭据文件。
+- Codex 运行时状态位于 `~/.codex`；runner 自己的 task 元数据位于 `~/.mbos`；用户可见输出放在 `~/.artifacts`。
+- 如果需要安装 Python / Node / Rust 环境或库，只能使用 user 模式并安装到 home 下：
+  - Python: `python3 -m pip install --user ...`
+  - Node: 使用 user prefix，例如 `npm_config_prefix=$HOME/.local`
+  - Rust: 使用 `CARGO_HOME=$HOME/.cargo`、`RUSTUP_HOME=$HOME/.rustup`

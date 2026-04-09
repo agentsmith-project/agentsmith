@@ -62,7 +62,15 @@ describe('child-launcher', () => {
       file: 'codex',
       args: ['exec', 'hello'],
       cwd: '/workspace/task_1',
-      env: { HOME: '/workspace/task_1', PATH: '/usr/bin:/bin' },
+      env: {
+        HOME: '/workspace/task_1',
+        PATH: '/workspace/task_1/.local/bin:/workspace/task_1/.cargo/bin:/usr/bin:/bin',
+        PYTHONUSERBASE: '/workspace/task_1/.local',
+        PIP_USER: '1',
+        npm_config_prefix: '/workspace/task_1/.local',
+        CARGO_HOME: '/workspace/task_1/.cargo',
+        RUSTUP_HOME: '/workspace/task_1/.rustup',
+      },
     });
     expect(result.file).toBe('/usr/bin/bwrap');
     expect(result.args).toEqual(expect.arrayContaining([
@@ -71,6 +79,11 @@ describe('child-launcher', () => {
       '--bind', '/workspace/task_1', '/workspace/task_1',
       '--chdir', '/workspace/task_1',
       '--setenv', 'HOME', '/workspace/task_1',
+      '--setenv', 'PYTHONUSERBASE', '/workspace/task_1/.local',
+      '--setenv', 'PIP_USER', '1',
+      '--setenv', 'npm_config_prefix', '/workspace/task_1/.local',
+      '--setenv', 'CARGO_HOME', '/workspace/task_1/.cargo',
+      '--setenv', 'RUSTUP_HOME', '/workspace/task_1/.rustup',
       '--',
       'codex',
       'exec',

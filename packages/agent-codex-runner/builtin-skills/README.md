@@ -9,7 +9,7 @@ Current builtin set:
 
 Runtime behavior:
 
-- image install path: `/etc/codex/skills`
-- runner checks skill availability from `MBOS_AGENT_BUILTIN_SKILLS_DIR` (default `/etc/codex/skills`)
+- task-local install path visible to Codex: `$HOME/.agents/skills`
+- runner checks builtin skill source availability from `MBOS_AGENT_BUILTIN_SKILLS_DIR` (optional) or the packaged repo fallback
 - fail-fast when required builtin skills are missing (`MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=1`)
 - builtin skills are container-scoped admin skills; they are no longer copied into workspace `.codex/skills`

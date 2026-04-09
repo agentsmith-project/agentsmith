@@ -22,6 +22,7 @@ import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
 import { handleMeRoute } from './me-route-handler.js';
 import { handleUserKeyRoute } from './user-key-route-handler.js';
+import { handleContextRoute } from './context-route-handler.js';
 import {
   handleTaskRoute,
 } from './task-route-handler.js';
@@ -174,11 +175,16 @@ export async function handleRequest(
     const route = matchProjectsRoute(req.url ?? '');
     if (isAgentExecutionTicket(internalTicket)) {
       const agentExecutionRouteAllowed =
-        route !== null
-        && (
-          (route.kind === 'endpointProxy' && method === 'POST')
-          || (route.kind === 'taskWorkspaceAccess' && method === 'POST')
-        );
+        (
+          route !== null
+          && (
+            (route.kind === 'endpointProxy' && method === 'POST')
+            || (route.kind === 'taskWorkspaceAccess' && method === 'POST')
+          )
+        )
+        || requestUrl.pathname === '/api/v1/context'
+        || requestUrl.pathname === '/api/v1/context/list'
+        || /^\/api\/v1\/context\/managed-credentials\/[^/]+\/refresh$/.test(requestUrl.pathname);
       if (!agentExecutionRouteAllowed) {
         json(res, 403, {
           error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
@@ -213,6 +219,19 @@ export async function handleRequest(
       cache: deps.cache,
       docStore: deps.docStore,
       governanceIncidentsDir: deps.governanceIncidentsDir,
+    })) {
+      return;
+    }
+    if (await handleContextRoute({
+      req,
+      res,
+      method,
+      requestUrl,
+      deps,
+      user,
+      internalTicket,
+      json,
+      readBody,
     })) {
       return;
     }

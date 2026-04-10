@@ -513,6 +513,157 @@ describe("api-entry-node projects routes", () => {
     }
   });
 
+  it("stops an external agent chat stream by propagating cancel to the runner", async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    let ws: WebSocket | null = null;
+    try {
+      const { baseUrl } = startServer();
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
+
+      const createAgentRes = await apiFetch(
+        baseUrl,
+        "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: "cancel-agent",
+            mode: "external",
+            interaction_kind: "chat",
+            execution_preferences: buildChatExecutionPreferences(),
+            capabilities: {
+              streaming_completion: true,
+              multimodal_completion: true,
+            },
+          }),
+        },
+      );
+      expect(createAgentRes.status).toBe(201);
+      const agent = (await createAgentRes.json()) as { id: string };
+
+      const keyRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        },
+      );
+      expect(keyRes.status).toBe(201);
+      const keyPayload = (await keyRes.json()) as { key: string };
+
+      const connInfoRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
+      );
+      expect(connInfoRes.status).toBe(200);
+      const connInfo = (await connInfoRes.json()) as { ws_url: string };
+      const wsUrl = connInfo.ws_url.replace(
+        "ws://localhost:20000",
+        baseUrl.replace("http://", "ws://"),
+      );
+
+      ws = new WebSocket(wsUrl, {
+        headers: { Authorization: `Bearer ${keyPayload.key}` },
+      });
+      let activeRequestId = "";
+      let cancelObserved = false;
+      await new Promise<void>((resolve, reject) => {
+        ws.once("open", () => {
+          ws?.send(
+            JSON.stringify({
+              type: "agent.ready",
+              payload: {
+                runner_spec: CHAT_RUNNER_SPEC,
+                capabilities: {
+                  wire_api: "chat",
+                  streaming_completion: true,
+                },
+              },
+            }),
+          );
+          resolve();
+        });
+        ws.once("error", reject);
+      });
+      ws.on("message", (raw) => {
+        const msg = JSON.parse(raw.toString("utf-8")) as {
+          type?: string;
+          request_id?: string;
+        };
+        if (msg.type === "server.request.start" && msg.request_id) {
+          activeRequestId = msg.request_id;
+          return;
+        }
+        if (msg.type === "server.request.cancel" && msg.request_id === activeRequestId) {
+          cancelObserved = true;
+          ws?.send(
+            JSON.stringify({
+              type: "agent.response.done",
+              request_id: msg.request_id,
+              payload: { finish_reason: "cancelled", usage_tokens: 0 },
+            }),
+          );
+        }
+      });
+
+      const createSessionRes = await apiFetch(
+        baseUrl,
+        "/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: "cancel-session",
+            endpoint_id: "",
+            external_agent_id: agent.id,
+            model: "external-cancel",
+          }),
+        },
+      );
+      expect(createSessionRes.status).toBe(201);
+      const session = (await createSessionRes.json()) as { id: string };
+
+      const streamRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            input: { role: "user", content: "stop me" },
+          }),
+        },
+      );
+      expect(streamRes.status).toBe(200);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const stopRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/stop`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      expect(stopRes.status).toBe(202);
+      const streamText = await streamRes.text();
+      expect(cancelObserved).toBe(true);
+      expect(streamText).toContain('event: done');
+      expect(streamText).toContain('"message_status":"stopped"');
+      expect(streamText).toContain('"finish_reason":"cancelled"');
+    } finally {
+      ws?.close();
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
+    }
+  });
+
   it("filters historical chat image data urls before dispatching external agent requests", async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     let ws: WebSocket | null = null;

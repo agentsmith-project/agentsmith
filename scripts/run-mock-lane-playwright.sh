@@ -7,6 +7,7 @@ unset no_proxy NO_PROXY
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/lane-run-state.sh"
+source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 
 MOCK_RUN_ID="${MOCK_RUN_ID:-$(lane_generate_run_id mock)}"
 MOCK_RUN_ROOT="${MOCK_RUN_ROOT:-$(lane_prepare_run_root mock-lane "${MOCK_RUN_ID}" current)}"
@@ -29,6 +30,8 @@ KEEP_FAILED_RUN="${MOCK_LANE_KEEP_FAILED:-1}"
 PRUNE_KEEP_COUNT="${MOCK_LANE_KEEP_RECENT:-5}"
 PRUNE_STALE_HOURS="${MOCK_LANE_PRUNE_STALE_HOURS:-24}"
 RUN_SUCCEEDED=0
+NEXT_GENERATED_ROOT_STATE_DIR="${MOCK_RUN_ROOT}/next-generated-root"
+next_generated_root_snapshot "${NEXT_GENERATED_ROOT_STATE_DIR}"
 
 info() { echo "[mock-lane] $*"; }
 err() { echo "[mock-lane] ERROR: $*" >&2; }
@@ -51,6 +54,7 @@ cleanup() {
     fi
     rm -f "${PID_FILE}"
   fi
+  next_generated_root_restore "${NEXT_GENERATED_ROOT_STATE_DIR}"
   rm -rf "${ROOT_DIR}/${MOCK_WORKSPACE_PROVISIONING_PATH}"
   if [[ "${RUN_SUCCEEDED}" == "1" ]]; then
     lane_mark_status "${MOCK_RUN_ROOT}" success

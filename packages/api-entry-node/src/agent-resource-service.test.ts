@@ -5,6 +5,7 @@ import {
   upsertPersistedSystemWorkspace,
 } from '../../../src/lib/system-admin/workspace-registry/persistence.js';
 import { AgentResourceService } from './agent-resource-service.js';
+import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 describe('AgentResourceService', () => {
   beforeEach(() => {
@@ -46,6 +47,69 @@ describe('AgentResourceService', () => {
     });
 
     expect(created.interaction_kind).toBeUndefined();
+  });
+
+  it('backfills a legacy interaction_mode when loading an existing agent', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const service = new AgentResourceService(docStore);
+    await docStore.upsert(resolveWorkspaceScopedCollection('agents', 'ws_default'), 'ag_legacy_chat', {
+      id: 'ag_legacy_chat',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'legacy-chat-agent',
+      mode: 'external',
+      interaction_mode: 'chat',
+      execution_preferences_json: {
+        chat: {
+          endpoint_id: 'ep_legacy_chat',
+        },
+      },
+      status: 'enabled',
+      created_at: '2026-04-09T00:00:00.000Z',
+      updated_at: '2026-04-09T00:00:00.000Z',
+    });
+
+    const loaded = await service.getAgent('ws_default', 'proj_1', 'ag_legacy_chat');
+    expect(loaded?.interaction_kind).toBe('chat');
+    expect(loaded).not.toHaveProperty('interaction_mode');
+
+    const stored = await docStore.get<Record<string, unknown>>(
+      resolveWorkspaceScopedCollection('agents', 'ws_default'),
+      'ag_legacy_chat',
+    );
+    expect(stored?.interaction_kind).toBe('chat');
+    expect(stored).not.toHaveProperty('interaction_mode');
+  });
+
+  it('infers a missing interaction kind from a single scoped execution preference during migration', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const service = new AgentResourceService(docStore);
+    await docStore.upsert(resolveWorkspaceScopedCollection('agents', 'ws_default'), 'ag_pref_backfill', {
+      id: 'ag_pref_backfill',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'pref-backfill-agent',
+      mode: 'external',
+      interaction_mode: 'both',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_pref_notebook',
+        },
+      },
+      status: 'enabled',
+      created_at: '2026-04-09T00:00:00.000Z',
+      updated_at: '2026-04-09T00:00:00.000Z',
+    });
+
+    const loaded = await service.getAgent('ws_default', 'proj_1', 'ag_pref_backfill');
+    expect(loaded?.interaction_kind).toBe('notebook');
+
+    const stored = await docStore.get<Record<string, unknown>>(
+      resolveWorkspaceScopedCollection('agents', 'ws_default'),
+      'ag_pref_backfill',
+    );
+    expect(stored?.interaction_kind).toBe('notebook');
+    expect(stored).not.toHaveProperty('interaction_mode');
   });
 
   it('builds compose-internal connection info for compose-managed external agents', async () => {

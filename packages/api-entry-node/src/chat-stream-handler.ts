@@ -726,6 +726,9 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
             break;
           }
         }
+        if (streamAbortController.signal.aborted || finishReason === 'cancelled') {
+          messageStatus = 'stopped';
+        }
       } catch (error) {
         if (streamAbortController.signal.aborted) {
           messageStatus = 'stopped';

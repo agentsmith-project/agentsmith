@@ -6,7 +6,11 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { isMatchingRunnerSpec, type AgentRunnerSpec } from '@mbos/agent-runner';
 import type { AgentResourceService } from './agent-resource-service.js';
 import { resolveRequiredConfiguredPublicApiBase } from './agent-execution-api-base.js';
-import { readAgentExecutionPreferences, resolveAgentInteractionKind } from './agent-execution-preferences.js';
+import {
+  readAgentExecutionPreferences,
+  resolveAgentInteractionKind,
+  resolveAgentInteractionKindError,
+} from './agent-execution-preferences.js';
 import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
 
 export interface AgentStreamEvent {
@@ -351,13 +355,14 @@ export class AgentExecutionService {
       debugExecution(`accept agent_id=${agentId} ws=${keyRecord.workspace_id} proj=${keyRecord.project_id}`);
       const interactionKind = resolveAgentInteractionKind(agent);
       if (!interactionKind) {
-        debugExecution(`reject interaction_kind_required agent_id=${agentId}`);
+        const interactionKindError = resolveAgentInteractionKindError(agent as typeof agent & Record<string, unknown>);
+        debugExecution(`reject interaction_kind_required agent_id=${agentId} code=${interactionKindError}`);
         await this.agentResourceService.updateAgentRuntimeState(
           keyRecord.workspace_id,
           keyRecord.project_id,
           agentId,
           {
-            last_error: 'agent_interaction_kind_required',
+            last_error: interactionKindError,
             last_error_at: new Date().toISOString(),
           },
         );
@@ -687,16 +692,17 @@ export class AgentExecutionService {
       void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, socket.agentId).then((current) => {
         const interactionKind = current ? resolveAgentInteractionKind(current) : null;
         if (!interactionKind) {
+          const interactionKindError = resolveAgentInteractionKindError((current ?? {}) as Record<string, unknown>);
           void this.agentResourceService.updateAgentRuntimeState(
             socket.workspaceId,
             socket.projectId,
             socket.agentId,
             {
-              last_error: 'agent_interaction_kind_required',
+              last_error: interactionKindError,
               last_error_at: new Date().toISOString(),
             },
           );
-          socket.ws.close(1008, 'agent_interaction_kind_required');
+          socket.ws.close(1008, interactionKindError);
           return;
         }
 

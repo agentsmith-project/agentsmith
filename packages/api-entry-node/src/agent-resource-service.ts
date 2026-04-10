@@ -12,6 +12,56 @@ interface AgentConnectionState {
   protocol_version?: string;
 }
 
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return typeof input === 'object' && input !== null && !Array.isArray(input);
+}
+
+function normalizeLegacyInteractionMode(
+  agent: AgentRecord & Record<string, unknown>,
+): 'chat' | 'notebook' | null {
+  if (agent.interaction_kind === 'chat' || agent.interaction_kind === 'notebook') {
+    return agent.interaction_kind;
+  }
+  const legacyMode = typeof agent.interaction_mode === 'string' ? agent.interaction_mode.trim() : '';
+  if (legacyMode === 'chat' || legacyMode === 'notebook') {
+    return legacyMode;
+  }
+  if (!legacyMode) {
+    return null;
+  }
+  const executionPreferences = isRecord(agent.execution_preferences_json)
+    ? agent.execution_preferences_json
+    : null;
+  const hasChat = executionPreferences ? isRecord(executionPreferences.chat) : false;
+  const hasNotebook = executionPreferences ? isRecord(executionPreferences.notebook) : false;
+  if (hasChat !== hasNotebook) {
+    return hasChat ? 'chat' : 'notebook';
+  }
+  return null;
+}
+
+function normalizeAgentRecord(
+  agent: AgentRecord & Record<string, unknown>,
+): { record: AgentRecord; migrated: boolean } {
+  const normalizedInteractionKind = normalizeLegacyInteractionMode(agent);
+  const hadLegacyField = Object.hasOwn(agent, 'interaction_mode');
+  if (!normalizedInteractionKind) {
+    return {
+      record: agent,
+      migrated: false,
+    };
+  }
+  const { interaction_mode: _legacyInteractionMode, ...rest } = agent;
+  const normalized = {
+    ...rest,
+    interaction_kind: normalizedInteractionKind,
+  } as AgentRecord;
+  return {
+    record: normalized,
+    migrated: hadLegacyField || agent.interaction_kind !== normalizedInteractionKind,
+  };
+}
+
 export interface AgentRuntimeState {
   agent_id: string;
   workspace_id: string;
@@ -96,6 +146,18 @@ export class AgentResourceService {
     private readonly cache?: CachePort,
   ) {}
 
+  private async hydrateAgentRecord(
+    workspaceId: string,
+    raw: (AgentRecord & Record<string, unknown>) | null,
+  ): Promise<AgentRecord | null> {
+    if (!raw) return null;
+    const normalized = normalizeAgentRecord(raw);
+    if (normalized.migrated) {
+      await this.docStore.upsert(this.agentsCollection(workspaceId), normalized.record.id, normalized.record);
+    }
+    return normalized.record;
+  }
+
   private agentsCollection(workspaceId: string): string {
     return resolveWorkspaceScopedCollection(AgentResourceService.agentsCollection, workspaceId);
   }
@@ -121,11 +183,12 @@ export class AgentResourceService {
   }
 
   async listAgents(workspaceId: string, projectId: string): Promise<AgentRecord[]> {
-    const items = await this.docStore.list<AgentRecord>(this.agentsCollection(workspaceId), {
+    const items = await this.docStore.list<AgentRecord & Record<string, unknown>>(this.agentsCollection(workspaceId), {
       workspace_id: workspaceId,
       project_id: projectId,
     });
-    const hydrated = await Promise.all(items.map((item) => this.hydratePresence(item)));
+    const normalized = await Promise.all(items.map((item) => this.hydrateAgentRecord(workspaceId, item)));
+    const hydrated = await Promise.all(normalized.filter(Boolean).map((item) => this.hydratePresence(item)));
     return hydrated.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   }
 
@@ -141,10 +204,11 @@ export class AgentResourceService {
   }
 
   async getAgent(workspaceId: string, projectId: string, agentId: string): Promise<AgentRecord | null> {
-    const item = await this.docStore.get<AgentRecord>(this.agentsCollection(workspaceId), agentId);
+    const item = await this.docStore.get<AgentRecord & Record<string, unknown>>(this.agentsCollection(workspaceId), agentId);
     if (!item) return null;
     if (item.workspace_id !== workspaceId || item.project_id !== projectId) return null;
-    return this.hydratePresence(item);
+    const normalized = await this.hydrateAgentRecord(workspaceId, item);
+    return normalized ? this.hydratePresence(normalized) : null;
   }
 
   async createAgent(

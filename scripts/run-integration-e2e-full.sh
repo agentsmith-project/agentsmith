@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/lane-run-state.sh"
+source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 
 SPEC_FILE="${1:-e2e/integration-chat.spec.ts}"
@@ -84,6 +85,8 @@ gate_record_task_summary "${INTEGRATION_LOG_DIR}" "{\"line_kind\":\"backend_real
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
 NEXT_DIST_DIR="${INTEGRATION_NEXT_DIST_DIR:-artifacts/backend-real/runs/${INTEGRATION_RUN_ID}/next-dist}"
+NEXT_GENERATED_ROOT_STATE_DIR="${INTEGRATION_RUN_ROOT}/next-generated-root"
+next_generated_root_snapshot "${NEXT_GENERATED_ROOT_STATE_DIR}"
 API_PID=""
 WEB_PID=""
 PROXY_PID=""
@@ -385,6 +388,7 @@ cleanup() {
   wait "${PROXY_PID}" >/dev/null 2>&1 || true
   wait "${WEB_PID}" >/dev/null 2>&1 || true
   wait "${API_PID}" >/dev/null 2>&1 || true
+  next_generated_root_restore "${NEXT_GENERATED_ROOT_STATE_DIR}"
   if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" success
     rm -rf "${INTEGRATION_RUN_ROOT}"

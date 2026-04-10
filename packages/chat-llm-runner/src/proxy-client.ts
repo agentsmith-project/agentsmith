@@ -9,6 +9,7 @@ type RequestArgs = {
   messages: AgentServerStartPayload['messages'];
   executionContext: ExecutionContext;
   model?: string;
+  signal?: AbortSignal;
 };
 
 function stringifyTextPart(content: unknown): string {
@@ -129,6 +130,7 @@ export async function requestChatProxyCompletion(args: RequestArgs): Promise<{
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
+    signal: args.signal,
   });
   const text = await response.text();
   const parsed = text ? JSON.parse(text) as unknown : {};

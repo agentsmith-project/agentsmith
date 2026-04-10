@@ -22,13 +22,14 @@ const ws = new WebSocket(wsUrl, {
   headers: { Authorization: `Bearer ${key}` },
 });
 const sessionWorkspaceManager = new ChatSessionWorkspaceManager();
+const inFlightRequests = new Map<string, AbortController>();
 
-function sendDone(requestId: string, usage: number) {
+function sendDone(requestId: string, usage: number, finishReason: string = 'stop') {
   ws.send(JSON.stringify({
     type: 'agent.response.done',
     request_id: requestId,
     timestamp: new Date().toISOString(),
-    payload: { finish_reason: 'stop', usage_tokens: usage },
+    payload: { finish_reason: finishReason, usage_tokens: usage },
   }));
 }
 
@@ -63,6 +64,17 @@ function sendWarningEvent(requestId: string, args: { name: string; summary: stri
   }));
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function abortAllInFlightRequests(): void {
+  for (const controller of inFlightRequests.values()) {
+    controller.abort();
+  }
+  inFlightRequests.clear();
+}
+
 ws.on('open', () => {
   process.stdout.write('[chat-llm-runner] connected\n');
   ws.send(JSON.stringify({
@@ -95,9 +107,17 @@ ws.on('message', async (raw) => {
     return;
   }
 
+  if (message.type === 'server.request.cancel' && message.request_id) {
+    const controller = inFlightRequests.get(message.request_id);
+    controller?.abort();
+    return;
+  }
+
   if (message.type !== 'server.request.start' || !message.request_id) return;
 
   const payload = (message.payload ?? {}) as AgentServerStartPayload;
+  const abortController = new AbortController();
+  inFlightRequests.set(message.request_id, abortController);
   try {
     const executionContext = assertChatExecutionContext(payload.execution_context);
     const sessionId = executionContext.session_id;
@@ -117,10 +137,15 @@ ws.on('message', async (raw) => {
         });
       }
     }
+    if (abortController.signal.aborted) {
+      sendDone(message.request_id, 0, 'cancelled');
+      return;
+    }
     const completion = await requestChatProxyCompletion({
       model: payload.model,
       messages: payload.messages,
       executionContext,
+      signal: abortController.signal,
     });
     if (completion.text.length > 0) {
       ws.send(JSON.stringify({
@@ -130,17 +155,29 @@ ws.on('message', async (raw) => {
         payload: { delta: completion.text },
       }));
     }
-    sendDone(message.request_id, completion.usageTokens ?? completion.text.length);
+    sendDone(
+      message.request_id,
+      completion.usageTokens ?? completion.text.length,
+      abortController.signal.aborted ? 'cancelled' : 'stop',
+    );
   } catch (error) {
+    if (abortController.signal.aborted || isAbortError(error)) {
+      sendDone(message.request_id, 0, 'cancelled');
+      return;
+    }
     sendError(message.request_id, error);
+  } finally {
+    inFlightRequests.delete(message.request_id);
   }
 });
 
 ws.on('close', () => {
+  abortAllInFlightRequests();
   sessionWorkspaceManager.close();
   process.stdout.write('[chat-llm-runner] disconnected\n');
 });
 
 ws.on('error', (error) => {
+  abortAllInFlightRequests();
   process.stderr.write(`[chat-llm-runner] error: ${error instanceof Error ? error.message : 'unknown'}\n`);
 });

@@ -141,7 +141,7 @@
     "contracts:check-limit-naming": "tsx scripts/contracts/check-limit-naming-boundary.ts",
     "contracts:check-current-workflows": "npm run current-workflow:check && tsx scripts/contracts/check-current-workflows.ts",
     "contracts:check-engineering-governance": "tsx scripts/contracts/check-engineering-governance.ts",
-    "contracts:check": "npm run contracts:check-limit-naming && npm run contracts:check-current-workflows && npm run contracts:check-engineering-governance && tsx scripts/contracts/check-permission-gates.ts",
+    "contracts:check": "npm run contracts:check-limit-naming && npm run contracts:check-current-workflows && npm run contracts:check-engineering-governance && tsx scripts/contracts/check-next-dist-types.ts && tsx scripts/contracts/check-permission-gates.ts",
     "contracts:check-doc-governance": "tsx scripts/contracts/check-doc-governance.ts",
     "contracts:check-openapi-core": "tsx scripts/contracts/check-openapi-core-coverage.ts",
     "contracts:check-openapi-route-kinds": "tsx scripts/contracts/check-openapi-route-kind-coverage.ts",

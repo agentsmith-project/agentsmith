@@ -16,6 +16,8 @@ run_cmd() {
 run_cmd "npx tsc --noEmit"
 
 run_cmd "npm run test:run -- \
+  scripts/lib/next-generated-root-state.test.ts \
+  scripts/run-next-dev-safe.test.ts \
   packages/agent-runner/src/runner-spec.test.ts \
   packages/agent-runner/src/runtime-env.test.ts \
   packages/api-entry-node/src/chat-execution-messages.test.ts \

@@ -4,21 +4,6 @@ next_generated_root_repo_dir() {
   printf '%s\n' "${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 }
 
-next_generated_root_state_dir() {
-  local state_dir="${1:-${NEXT_GENERATED_ROOT_STATE_DIR:-}}"
-  if [[ -n "${state_dir}" ]]; then
-    printf '%s\n' "${state_dir}"
-    return 0
-  fi
-
-  local repo_dir temp_dir temp_root
-  repo_dir="$(next_generated_root_repo_dir)"
-  temp_root="${repo_dir}/artifacts/runtime"
-  mkdir -p "${temp_root}"
-  temp_dir="$(mktemp -d "${temp_root}/next-root-state.XXXXXX")"
-  printf '%s\n' "${temp_dir}"
-}
-
 next_generated_root_canonical_next_env() {
   cat <<'EOF'
 /// <reference types="next" />
@@ -29,37 +14,50 @@ next_generated_root_canonical_next_env() {
 EOF
 }
 
-next_generated_root_snapshot() {
-  local state_dir="$1"
-  local repo_dir snapshot_dir
+next_generated_root_normalize() {
+  local repo_dir
   repo_dir="$(next_generated_root_repo_dir)"
-  snapshot_dir="${state_dir}/root-files"
-  mkdir -p "${snapshot_dir}"
 
-  cp "${repo_dir}/tsconfig.json" "${snapshot_dir}/tsconfig.json"
-  if [[ -f "${repo_dir}/next-env.d.ts" ]]; then
-    cp "${repo_dir}/next-env.d.ts" "${snapshot_dir}/next-env.d.ts"
-    rm -f "${snapshot_dir}/next-env.absent"
-  else
-    rm -f "${snapshot_dir}/next-env.d.ts"
-    : > "${snapshot_dir}/next-env.absent"
-  fi
+  node - <<'NODE' "${repo_dir}/tsconfig.json"
+const fs = require('node:fs');
+const tsconfigPath = process.argv[2];
+const config = JSON.parse(fs.readFileSync(tsconfigPath, 'utf8'));
+const originalInclude = Array.isArray(config.include)
+  ? config.include.filter((entry) => typeof entry === 'string')
+  : [];
+
+const requiredPatterns = [
+  '.next*/types/**/*.ts',
+  'artifacts/backend-real/runs/*/next-dist/types/**/*.ts',
+  'artifacts/mock-lane/runs/*/next-dist/types/**/*.ts',
+];
+
+const managedEntryPattern =
+  /(?:^|\/)(?:mock|integration)-\d{8}T\d{6}Z-\d+-\d+(?:\/|$)|\.next-backend-real-|\.next-mock-|\/next-dist\/types\//;
+
+const filtered = originalInclude.filter((entry) => !managedEntryPattern.test(entry));
+const deduped = [];
+for (const entry of filtered) {
+  if (!deduped.includes(entry)) {
+    deduped.push(entry);
+  }
 }
 
-next_generated_root_restore() {
-  local state_dir="$1"
-  local repo_dir snapshot_dir
-  repo_dir="$(next_generated_root_repo_dir)"
-  snapshot_dir="${state_dir}/root-files"
-  [[ -d "${snapshot_dir}" ]] || return 0
+const normalizedInclude = [];
+for (const pattern of requiredPatterns) {
+  if (!normalizedInclude.includes(pattern)) {
+    normalizedInclude.push(pattern);
+  }
+}
+for (const entry of deduped) {
+  if (!normalizedInclude.includes(entry)) {
+    normalizedInclude.push(entry);
+  }
+}
 
-  if [[ -f "${snapshot_dir}/tsconfig.json" ]]; then
-    cp "${snapshot_dir}/tsconfig.json" "${repo_dir}/tsconfig.json"
-  fi
+config.include = normalizedInclude;
+fs.writeFileSync(tsconfigPath, `${JSON.stringify(config, null, 2)}\n`);
+NODE
 
-  if [[ -f "${snapshot_dir}/next-env.d.ts" ]]; then
-    cp "${snapshot_dir}/next-env.d.ts" "${repo_dir}/next-env.d.ts"
-  else
-    next_generated_root_canonical_next_env > "${repo_dir}/next-env.d.ts"
-  fi
+  next_generated_root_canonical_next_env > "${repo_dir}/next-env.d.ts"
 }

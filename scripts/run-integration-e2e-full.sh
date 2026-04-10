@@ -85,8 +85,7 @@ gate_record_task_summary "${INTEGRATION_LOG_DIR}" "{\"line_kind\":\"backend_real
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
 NEXT_DIST_DIR="${INTEGRATION_NEXT_DIST_DIR:-artifacts/backend-real/runs/${INTEGRATION_RUN_ID}/next-dist}"
-NEXT_GENERATED_ROOT_STATE_DIR="${INTEGRATION_RUN_ROOT}/next-generated-root"
-next_generated_root_snapshot "${NEXT_GENERATED_ROOT_STATE_DIR}"
+next_generated_root_normalize
 API_PID=""
 WEB_PID=""
 PROXY_PID=""
@@ -359,6 +358,7 @@ WEB_PID="$(
     MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}" \
     MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
     NEXT_DIST_DIR="${NEXT_DIST_DIR}" \
+    NEXT_GENERATED_ROOT_MANAGED=1 \
     NEXT_PUBLIC_USE_MSW=false \
     AGENTSMITH_ENABLE_TEST_ROUTES=true \
     NEXT_PUBLIC_API_BASE="${INTEGRATION_API_BASE}/api/v1" \
@@ -388,7 +388,7 @@ cleanup() {
   wait "${PROXY_PID}" >/dev/null 2>&1 || true
   wait "${WEB_PID}" >/dev/null 2>&1 || true
   wait "${API_PID}" >/dev/null 2>&1 || true
-  next_generated_root_restore "${NEXT_GENERATED_ROOT_STATE_DIR}"
+  next_generated_root_normalize
   if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" success
     rm -rf "${INTEGRATION_RUN_ROOT}"

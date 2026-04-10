@@ -251,6 +251,7 @@ API_PID="$(
 WEB_PID="$(
   MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
   MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+  NEXT_GENERATED_ROOT_MANAGED=1 \
   NEXT_PUBLIC_USE_MSW=false \
   AGENTSMITH_ENABLE_TEST_ROUTES=true \
   NEXT_PUBLIC_API_BASE="${INTEGRATION_API_BASE}/api/v1" \

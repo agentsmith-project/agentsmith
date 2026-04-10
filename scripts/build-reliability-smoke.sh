@@ -58,6 +58,7 @@ ensure_web() {
   info "starting managed real-backend frontend on ${BASE_URL}"
   nohup env \
     -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+    NEXT_GENERATED_ROOT_MANAGED=1 \
     NEXT_PUBLIC_USE_MSW=false \
     NEXT_PUBLIC_API_BASE="${BUILD_WEB_API_BASE}" \
     NEXT_PUBLIC_KEYCLOAK_URL="${NEXT_PUBLIC_KEYCLOAK_URL:-http://localhost:18080/realms}" \

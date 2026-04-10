@@ -133,6 +133,7 @@ ensure_local_release_stack() {
     LOCAL_WEB_PID="$(
       MONGO_URL="${MONGO_URL}" \
       MONGO_DB_NAME="${MONGO_DB_NAME}" \
+      NEXT_GENERATED_ROOT_MANAGED=1 \
       NEXT_PUBLIC_USE_MSW=false \
       AGENTSMITH_ENABLE_TEST_ROUTES=true \
       NEXT_PUBLIC_API_BASE="http://localhost:${API_PORT}/api/v1" \

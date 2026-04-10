@@ -88,6 +88,7 @@ ensure_local_release_stack() {
       MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
       NEXT_PUBLIC_USE_MSW=false \
       AGENTSMITH_ENABLE_TEST_ROUTES=true \
+      NEXT_GENERATED_ROOT_MANAGED=1 \
       NEXT_PUBLIC_API_BASE="http://localhost:${API_PORT}/api/v1" \
       NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_BASE_URL}/realms" \
       NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \

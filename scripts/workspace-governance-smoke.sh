@@ -55,6 +55,7 @@ ensure_web() {
   info "starting managed MSW frontend on ${BASE_URL}"
   nohup env \
     -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+    NEXT_GENERATED_ROOT_MANAGED=1 \
     NEXT_PUBLIC_USE_MSW=true \
     npm run dev:test -- --port "${web_port}" >"${WORKSPACE_WEB_LOG}" 2>&1 &
   WEB_PID=$!

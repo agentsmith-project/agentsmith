@@ -2,9 +2,10 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 DEFAULT_MAX_OLD_SPACE_SIZE="${NEXT_MAX_OLD_SPACE_SIZE:-4096}"
+NEXT_GENERATED_ROOT_MANAGED="${NEXT_GENERATED_ROOT_MANAGED:-0}"
 
 if [[ -n "${NODE_OPTIONS:-}" ]]; then
   export NODE_OPTIONS="${NODE_OPTIONS} --max-old-space-size=${DEFAULT_MAX_OLD_SPACE_SIZE}"
@@ -43,9 +44,6 @@ if [[ -n "${NEXT_DEV_PORT_FILE:-}" && -n "${NEXT_DEV_PORT:-}" ]]; then
   printf '%s\n' "${NEXT_DEV_PORT}" > "${NEXT_DEV_PORT_FILE}"
 fi
 
-NEXT_GENERATED_ROOT_STATE_DIR="$(next_generated_root_state_dir "${NEXT_GENERATED_ROOT_STATE_DIR:-}")"
-next_generated_root_snapshot "${NEXT_GENERATED_ROOT_STATE_DIR}"
-
 NEXT_DEV_CHILD_PID=""
 
 cleanup() {
@@ -57,15 +55,17 @@ cleanup() {
     wait "${NEXT_DEV_CHILD_PID}" >/dev/null 2>&1 || true
   fi
 
-  next_generated_root_restore "${NEXT_GENERATED_ROOT_STATE_DIR}"
-
-  if [[ -d "${NEXT_GENERATED_ROOT_STATE_DIR}" ]]; then
-    rm -rf "${NEXT_GENERATED_ROOT_STATE_DIR}"
+  if [[ "${NEXT_GENERATED_ROOT_MANAGED}" == "1" ]]; then
+    next_generated_root_normalize
   fi
 
   exit "${status}"
 }
 trap cleanup EXIT INT TERM
+
+if [[ "${NEXT_GENERATED_ROOT_MANAGED}" == "1" ]]; then
+  next_generated_root_normalize
+fi
 
 next dev "$@" &
 NEXT_DEV_CHILD_PID=$!

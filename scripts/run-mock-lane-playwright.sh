@@ -30,8 +30,7 @@ KEEP_FAILED_RUN="${MOCK_LANE_KEEP_FAILED:-1}"
 PRUNE_KEEP_COUNT="${MOCK_LANE_KEEP_RECENT:-5}"
 PRUNE_STALE_HOURS="${MOCK_LANE_PRUNE_STALE_HOURS:-24}"
 RUN_SUCCEEDED=0
-NEXT_GENERATED_ROOT_STATE_DIR="${MOCK_RUN_ROOT}/next-generated-root"
-next_generated_root_snapshot "${NEXT_GENERATED_ROOT_STATE_DIR}"
+next_generated_root_normalize
 
 info() { echo "[mock-lane] $*"; }
 err() { echo "[mock-lane] ERROR: $*" >&2; }
@@ -54,7 +53,7 @@ cleanup() {
     fi
     rm -f "${PID_FILE}"
   fi
-  next_generated_root_restore "${NEXT_GENERATED_ROOT_STATE_DIR}"
+  next_generated_root_normalize
   rm -rf "${ROOT_DIR}/${MOCK_WORKSPACE_PROVISIONING_PATH}"
   if [[ "${RUN_SUCCEEDED}" == "1" ]]; then
     lane_mark_status "${MOCK_RUN_ROOT}" success
@@ -288,6 +287,7 @@ start_mock_server() {
         MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
         NEXT_MAX_OLD_SPACE_SIZE="${NEXT_MAX_OLD_SPACE_SIZE:-6144}" \
         NEXT_DIST_DIR="${NEXT_DIST_DIR}" \
+        NEXT_GENERATED_ROOT_MANAGED=1 \
         NEXT_PUBLIC_USE_MSW=true \
         AGENTSMITH_ENABLE_TEST_ROUTES=true \
         SYSTEM_WORKSPACE_REGISTRY_MODE=memory \

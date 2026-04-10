@@ -16,7 +16,7 @@ function runBash(script: string, rootDir: string): string {
 }
 
 describe('next-generated-root-state', () => {
-  it('restores tsconfig and next-env snapshots after a lane mutates them', () => {
+  it('normalizes run-specific tsconfig includes back to wildcard patterns', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-'));
     const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
     const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
@@ -25,33 +25,31 @@ describe('next-generated-root-state', () => {
     runBash(
       `
         cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
-{"include":[".next*/types/**/*.ts","next-env.d.ts","src/**/*.ts"]}
+{"include":["artifacts/backend-real/runs/integration-20260410T062839Z-3559213-15947/next-dist/types/**/*.ts",".next*/types/**/*.ts","src/**/*.ts","custom/**/*.ts"]}
 EOF_TSCONFIG
         cat > "${nextEnvPath}" <<'EOF_NEXT_ENV'
-/// <reference types="next" />
-/// <reference types="next/image-types/global" />
+/// <reference path="./artifacts/backend-real/runs/integration-20260410T062839Z-3559213-15947/next-dist/types/routes.d.ts" />
 EOF_NEXT_ENV
         source "${helper}"
-        state_dir="$(next_generated_root_state_dir)"
-        next_generated_root_snapshot "\${state_dir}"
-        cat > "${tsconfigPath}" <<'EOF_MUTATED_TSCONFIG'
-{"include":["artifacts/backend-real/runs/integration-20260410T062839Z-3559213-15947/next-dist/types/**/*.ts","next-env.d.ts"]}
-EOF_MUTATED_TSCONFIG
-        cat > "${nextEnvPath}" <<'EOF_MUTATED_NEXT_ENV'
-/// <reference path="./artifacts/backend-real/runs/integration-20260410T062839Z-3559213-15947/next-dist/types/routes.d.ts" />
-EOF_MUTATED_NEXT_ENV
-        next_generated_root_restore "\${state_dir}"
+        next_generated_root_normalize
       `,
       tempRoot,
     );
 
-    expect(readFileSync(tsconfigPath, 'utf8')).toContain('.next*/types/**/*.ts');
-    expect(readFileSync(tsconfigPath, 'utf8')).not.toContain('/integration-20260410T062839Z-3559213-15947/');
-    expect(readFileSync(nextEnvPath, 'utf8')).not.toContain('/integration-20260410T062839Z-3559213-15947/');
+    const tsconfig = readFileSync(tsconfigPath, 'utf8');
+    expect(tsconfig).toContain('.next*/types/**/*.ts');
+    expect(tsconfig).toContain('artifacts/backend-real/runs/*/next-dist/types/**/*.ts');
+    expect(tsconfig).toContain('artifacts/mock-lane/runs/*/next-dist/types/**/*.ts');
+    expect(tsconfig).toContain('custom/**/*.ts');
+    expect(tsconfig).not.toContain('/integration-20260410T062839Z-3559213-15947/');
+
+    const nextEnv = readFileSync(nextEnvPath, 'utf8');
+    expect(nextEnv).toContain('reference types="next"');
+    expect(nextEnv).not.toContain('/integration-20260410T062839Z-3559213-15947/');
   });
 
-  it('writes a clean canonical next-env file when no snapshot existed', () => {
-    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-canonical-'));
+  it('preserves existing non-managed include entries while deduplicating managed patterns', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-preserve-'));
     const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
     const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
     const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
@@ -59,22 +57,22 @@ EOF_MUTATED_NEXT_ENV
     runBash(
       `
         cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
-{"include":[".next*/types/**/*.ts","next-env.d.ts","src/**/*.ts"]}
+{"include":["src/**/*.ts","artifacts/mock-lane/runs/mock-20260410T032507Z-3268716-702/next-dist/types/**/*.ts","src/**/*.tsx","artifacts/mock-lane/runs/*/next-dist/types/**/*.ts"]}
 EOF_TSCONFIG
-        rm -f "${nextEnvPath}"
+        : > "${nextEnvPath}"
         source "${helper}"
-        state_dir="$(next_generated_root_state_dir)"
-        next_generated_root_snapshot "\${state_dir}"
-        cat > "${nextEnvPath}" <<'EOF_MUTATED_NEXT_ENV'
-/// <reference path="./artifacts/mock-lane/runs/mock-20260410T032507Z-3268716-702/next-dist/types/routes.d.ts" />
-EOF_MUTATED_NEXT_ENV
-        next_generated_root_restore "\${state_dir}"
+        next_generated_root_normalize
       `,
       tempRoot,
     );
 
-    const nextEnv = readFileSync(nextEnvPath, 'utf8');
-    expect(nextEnv).toContain('reference types="next"');
-    expect(nextEnv).not.toContain('/mock-20260410T032507Z-3268716-702/');
+    const tsconfig = JSON.parse(readFileSync(tsconfigPath, 'utf8')) as { include: string[] };
+    expect(tsconfig.include).toEqual([
+      '.next*/types/**/*.ts',
+      'artifacts/backend-real/runs/*/next-dist/types/**/*.ts',
+      'artifacts/mock-lane/runs/*/next-dist/types/**/*.ts',
+      'src/**/*.ts',
+      'src/**/*.tsx',
+    ]);
   });
 });

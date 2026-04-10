@@ -12,9 +12,11 @@ const SIDEBAR_NAV_ITEMS = [
   'chat',
   'notebook',
   'files',
+  'use-guide',
   'agents',
   'endpoints',
   'resource_policy',
+  'context',
   'credentials',
   'members',
   'usage',
@@ -48,12 +50,14 @@ test.describe('Sidebar', () => {
     const sidebar = authedPage.getByTestId('sidebar');
     await expect(sidebar).toBeVisible({ timeout: 10000 });
 
-    const sectionsToTest = ['chat', 'resource_policy', 'agents', 'members', 'settings'] as const;
+    const sectionsToTest = ['chat', 'use-guide', 'resource_policy', 'context', 'agents', 'members', 'settings'] as const;
 
     for (const section of sectionsToTest) {
       const navItem = authedPage.getByTestId(`sidebar__nav-item--${section}`);
       const expectedPath = section === 'resource_policy'
         ? '/resource-policy'
+        : section === 'use-guide'
+          ? '/use-guide'
         : `/${section}`;
       await expect(navItem).toHaveAttribute('href', new RegExp(`${expectedPath}$`));
       const targetHref = await navItem.getAttribute('href');

@@ -116,7 +116,7 @@
     },
     "user_menu": {
       "profile": "个人资料",
-      "third_party_accounts": "第三方账户",
+      "third_party_accounts": "个人连接",
       "api_keys": "API 密钥",
       "language": "语言",
       "logout": "退出登录",
@@ -158,7 +158,7 @@
     }
   },
   "nav": {
-    "overview": "项目入口",
+    "overview": "概览",
     "execution": "执行",
     "chat": "聊天",
     "notebook": "Notebook",
@@ -166,13 +166,13 @@
     "agents": "智能体",
     "endpoints": "端点",
     "alerts": "告警",
-    "resource_policy": "资源策略",
+    "resource_policy": "策略",
     "access_control": "访问控制",
-    "credentials": "凭据",
+    "credentials": "项目密钥",
     "members": "成员",
     "audit": "审计",
     "usage": "用量",
-    "api_access_guide": "API 接入手册",
+    "api_access_guide": "接入指南",
     "settings": "设置",
     "go_to_projects": "前往项目列表",
     "view_all_projects": "查看所有项目",
@@ -423,7 +423,8 @@
       "send": "发送",
       "hotkey_edit": "Enter 保存 · Shift+Enter 换行",
       "hotkey_compose": "Enter 发送 · Shift+Enter 换行",
-      "attach_from_library": "从文件库添加"
+      "attach_from_library": "从文件库添加",
+      "attach_from_project_library": "从项目文件库添加"
     },
     "header": {
       "status_generating": "生成中...",
@@ -436,9 +437,16 @@
       "switch_to_ultrawide": "切换到超宽布局",
       "rename_thread": "重命名会话",
       "default_title": "聊天",
-      "no_active_thread_hint": "请先创建或选择会话，然后再选择模型并发送消息",
-      "select_model": "选择模型",
-      "models": "模型",
+      "no_active_thread_hint": "请先创建或选择会话，然后再选择执行目标并发送消息",
+      "execution_target": "执行目标",
+      "select_execution_target": "选择执行目标",
+      "execution_targets": "执行目标",
+      "endpoints": "端点",
+      "agents": "智能体",
+      "no_execution_targets": "暂无执行目标",
+      "agent_execution_target_hint": "由 Runner 管理的执行目标",
+      "select_model": "选择执行目标",
+      "models": "执行目标",
       "external_agent": "外部 Agent",
       "no_endpoints": "暂无端点",
       "disabled": "已禁用"
@@ -482,8 +490,8 @@
     "stream_diagnostics_audit": "打开审计",
     "stream_diagnostics_agent": "打开 Agent 诊断",
     "library_picker": {
-      "title": "从文件库选择文件",
-      "select_library": "选择文件库",
+      "title": "从项目文件库选择文件",
+      "select_library": "选择项目文件库",
       "search_placeholder": "搜索文件名",
       "name_column": "名称",
       "items_count": "{count} 项",
@@ -838,6 +846,13 @@
     "admin": "维护人",
     "interaction_chat": "聊天",
     "interaction_notebook": "Notebook",
+    "agent_kind": "智能体类型",
+    "execution_target": "执行目标",
+    "execution_target_chat_help": "选择这个聊天智能体用于推理的端点。",
+    "execution_target_notebook_help": "选择这个 Notebook 智能体用于任务执行的端点。",
+    "product_step_description": "先确定智能体面向的产品形态，再配置部署细节。",
+    "deployment_step_description": "在产品形态明确后，再设置镜像、资源限制和环境变量。",
+    "back_to_product_setup": "返回产品定义",
     "diagnostics_backoff": "等待重试",
     "diagnostics_last_error_at": "最近一次错误记录于 {value}",
     "diagnostics_runner_spec_mismatch_title": "Runner 应用与当前智能体不匹配",
@@ -864,8 +879,8 @@
     "delete_confirm_action": "删除"
   },
   "credentials": {
-    "title": "凭据",
-    "subtitle": "管理端点使用的 API 密钥和密钥",
+    "title": "项目密钥",
+    "subtitle": "管理项目内供端点和智能体使用的共享密钥。",
     "open_members": "打开成员",
     "open_resource_policy": "打开资源策略",
     "open_audit": "打开审计",
@@ -903,8 +918,8 @@
       "deleting": "删除中..."
     },
     "empty": {
-      "title": "暂无凭据",
-      "description": "创建凭据以配合端点使用"
+      "title": "暂无项目密钥",
+      "description": "创建项目密钥，供端点和智能体使用。"
     }
   },
   "pricing": {
@@ -1321,7 +1336,7 @@
     }
   },
   "use_guide": {
-    "title": "API 接入手册",
+    "title": "接入指南",
     "subtitle": "面向高级用户：把 Codex CLI、Claude Code 或其他本地运行 Agent 直接接到 AgentSmith 推理接入能力。",
     "hero": {
       "badge": "高级接入",
@@ -1497,7 +1512,7 @@
     "workspace_open_project_members": "打开项目成员",
     "workspace_open_project_settings": "打开项目设置",
     "workspace_open_context": "打开工作区上下文",
-    "open_context": "打开上下文",
+    "open_context": "打开共享上下文",
     "workspace_project_creators_title": "项目创建者",
     "workspace_project_creators_description": "控制谁可以在这个工作区里直接创建新项目，而不需要更广泛的管理权限调整。",
     "workspace_project_creators_field": "允许在此工作区创建项目的用户",
@@ -1894,9 +1909,9 @@
     }
   },
   "context_store": {
-    "workspace_title": "工作区上下文",
+    "workspace_title": "工作区共享上下文",
     "workspace_subtitle": "维护 agent 可读取的工作区共享说明和上下文。",
-    "project_title": "项目上下文",
+    "project_title": "共享上下文",
     "project_subtitle": "维护 agent 可读取的项目共享说明和上下文。",
     "list_title": "条目",
     "list_description": "每个条目都会以文本形式存储，并绑定到当前工作区或项目。",
@@ -2573,8 +2588,8 @@
     "saved": "资料已保存"
   },
   "third_party_accounts": {
-    "title": "第三方账户",
-    "description": "管理用户级外部身份、Token 和 SSH 凭据，供后续工具链和 MCP 集成使用。",
+    "title": "个人连接",
+    "description": "管理你自己的外部身份、Token 和 SSH 凭据，供后续工具链和 MCP 集成使用。",
     "summary_badge": "工具访问准备",
     "summary_intro": "把外部账户和敏感信息集中保存在这里，让后续工具所需的访问入口、刷新状态和归属范围都一目了然。",
     "summary_active_label": "可用连接",
@@ -2717,7 +2732,8 @@
   },
   "files": {
     "title": "文件",
-    "subtitle": "在一个文件操作视图中浏览项目文件库、目录和对象。",
+    "subtitle": "在一个文件操作视图中浏览项目共享文件库、目录和对象。",
+    "project_library_label": "项目文件库",
     "open_chat": "打开聊天",
     "open_notebook": "打开 Notebook",
     "open_endpoints": "打开 Endpoints",

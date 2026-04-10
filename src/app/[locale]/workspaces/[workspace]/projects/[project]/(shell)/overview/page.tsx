@@ -11,7 +11,6 @@ import { PageState } from '@/components/layout/PageState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useProjectOverviewCapabilities } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
-import { OverviewLinkSection } from './_components/OverviewLinkSection';
 import {
   buildGovernanceLinks,
   buildOverviewPaths,
@@ -37,6 +36,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
   const tNav = useTranslations('nav');
   const tOverview = useTranslations('overview');
   const tWorkspace = useTranslations('workspace');
+  const tContextStore = useTranslations('context_store');
   const tProjects = useTranslations('projects');
   const tErrors = useTranslations('errors');
   const {
@@ -79,7 +79,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
 
   const { basePath, workspaceBasePath } = buildOverviewPaths(locale, workspaceId, projectId);
   const workLinks = buildWorkLinks(tNav, basePath);
-  const governanceLinks = buildGovernanceLinks(tNav, basePath, {
+  const governanceLinks = buildGovernanceLinks(tNav, tContextStore, basePath, {
     canManageAgents,
     canManageGovernance,
     canManageMembership,
@@ -117,7 +117,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
                 {tWorkspace('workspace_home_next_steps_description')}
               </p>
             </CardHeader>
-            <CardContent className="space-y-6" data-testid="project-hub__quick-links">
+            <CardContent className="space-y-6" data-testid="project-hub__summary">
               <div className="grid gap-3 md:grid-cols-3">
                 <OverviewSummaryCard
                   icon={<Workflow className="h-4 w-4" />}
@@ -139,19 +139,17 @@ export default function OverviewPage({ params }: OverviewPageProps) {
                 />
               </div>
 
-              <OverviewLinkSection
-                items={workLinks}
-                testId="project-hub__work-links"
+              <OverviewSummaryList
+                items={workLinks.map((item) => item.label)}
+                testId="project-hub__use-summary"
                 title={tWorkspace('workspace_home_projects_title')}
               />
 
-              {governanceLinks.length > 0 ? (
-                <OverviewLinkSection
-                  items={governanceLinks}
-                  testId="project-hub__governance-links"
-                  title={tWorkspace('workspace_home_admin_title')}
-                />
-              ) : null}
+              <OverviewSummaryList
+                items={governanceLinks.map((item) => item.label)}
+                testId="project-hub__governance-summary"
+                title={tWorkspace('workspace_home_admin_title')}
+              />
             </CardContent>
           </Card>
         </div>
@@ -179,6 +177,38 @@ function OverviewSummaryCard({
       </div>
       <div className="mt-3 text-lg font-semibold tracking-tight text-foreground">{value}</div>
       <div className="mt-1 text-sm text-secondary">{helper}</div>
+    </div>
+  );
+}
+
+function OverviewSummaryList({
+  items,
+  testId,
+  title,
+}: {
+  items: string[];
+  testId: string;
+  title: string;
+}) {
+  return (
+    <div className="space-y-3" data-testid={testId}>
+      <div className="text-sm font-medium text-foreground">{title}</div>
+      {items.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {items.map((item) => (
+            <div
+              key={item}
+              className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-xs text-secondary"
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-[18px] border border-dashed border-white/8 bg-white/[0.02] px-4 py-3 text-sm text-tertiary">
+          {title}
+        </div>
+      )}
     </div>
   );
 }

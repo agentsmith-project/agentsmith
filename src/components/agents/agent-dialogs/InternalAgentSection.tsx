@@ -5,14 +5,12 @@ import { INTERNAL_AGENT_IDLE_TIMEOUT_MIN_SECONDS, INTERNAL_AGENT_MAX_LIFETIME_MI
 
 import { Input } from '@/components/ui/input';
 
-import type { AgentEndpointOption, EnvEntry } from './types';
-import { endpointLabel } from './utils';
+import type { EnvEntry } from './types';
 
 interface InternalAgentSectionProps {
   cpuLimit: string;
   cpuRequest: string;
   createPending: boolean;
-  endpointOptions: AgentEndpointOption[];
   envEntries: EnvEntry[];
   idleTimeoutSec: string;
   image: string;
@@ -20,8 +18,6 @@ interface InternalAgentSectionProps {
   maxLifetimeSec: string;
   memoryLimit: string;
   memoryRequest: string;
-  executionEndpointId: string;
-  interactionKind: 'chat' | 'notebook';
   t: (key: string) => string;
   onAddEnvEntry: () => void;
   onCpuLimitChange: (value: string) => void;
@@ -32,7 +28,6 @@ interface InternalAgentSectionProps {
   onMaxLifetimeSecChange: (value: string) => void;
   onMemoryLimitChange: (value: string) => void;
   onMemoryRequestChange: (value: string) => void;
-  onExecutionEndpointIdChange: (value: string) => void;
   onRemoveEnvEntry: (index: number) => void;
   onUpdateEnvEntry: (index: number, field: 'key' | 'value', value: string) => void;
 }
@@ -41,7 +36,6 @@ export function InternalAgentSection({
   cpuLimit,
   cpuRequest,
   createPending,
-  endpointOptions,
   envEntries,
   idleTimeoutSec,
   image,
@@ -49,8 +43,6 @@ export function InternalAgentSection({
   maxLifetimeSec,
   memoryLimit,
   memoryRequest,
-  executionEndpointId,
-  interactionKind,
   t,
   onAddEnvEntry,
   onCpuLimitChange,
@@ -61,7 +53,6 @@ export function InternalAgentSection({
   onMaxLifetimeSecChange,
   onMemoryLimitChange,
   onMemoryRequestChange,
-  onExecutionEndpointIdChange,
   onRemoveEnvEntry,
   onUpdateEnvEntry,
 }: InternalAgentSectionProps) {
@@ -81,30 +72,6 @@ export function InternalAgentSection({
           disabled={createPending}
           className="font-mono text-sm"
         />
-      </div>
-
-      <div className="space-y-2">
-        <label htmlFor="internal-execution-endpoint-id" className="text-sm text-primary">
-          {interactionKind === 'chat' ? t('create_dialog.chat_endpoint_id') : t('create_dialog.notebook_endpoint_id')} <span className="text-error">*</span>
-        </label>
-        <select
-          id="internal-execution-endpoint-id"
-          value={executionEndpointId}
-          onChange={(event) => onExecutionEndpointIdChange(event.target.value)}
-          disabled={createPending}
-          className="w-full px-3 py-2.5 rounded-md border border-border-input bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
-        >
-          {endpointOptions.length === 0 ? (
-            <option value="">
-              {interactionKind === 'chat' ? t('create_dialog.chat_endpoint_empty') : t('create_dialog.notebook_endpoint_empty')}
-            </option>
-          ) : null}
-          {endpointOptions.map((endpoint) => (
-            <option key={endpoint.id} value={endpoint.id}>
-              {endpointLabel(endpoint)}
-            </option>
-          ))}
-        </select>
       </div>
 
       <div className="space-y-2">

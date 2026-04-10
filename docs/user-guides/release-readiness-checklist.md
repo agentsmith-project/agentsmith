@@ -49,6 +49,11 @@ npm run backend-real:report
 npm run gate:release
 ```
 
+说明：
+
+1. `npm run gate:default` 只覆盖默认业务链与治理门禁，以及它们各自内嵌的 targeted visual。
+2. `npm run lane:visual` 是唯一 full visual 验证通道，不能被 `gate:default` 代替。
+
 `npm run gate:release` 会基于当前发布状态机校验发布级工程门禁、真实 notebook 主线、Feishu 人工步骤完成状态，以及真实环境截图巡检。
 
 真实截图默认输出到：

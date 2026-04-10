@@ -3,7 +3,7 @@
 import { useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Copy, KeyRound, LinkIcon, ServerCog, ShieldCheck, TerminalSquare } from 'lucide-react';
+import { Copy, KeyRound, ServerCog, ShieldCheck, TerminalSquare } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -360,10 +360,6 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
                   <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/endpoints`} className="inline-flex items-center gap-2 rounded-full border border-subtle px-4 py-2 text-foreground transition hover:border-strong hover:bg-bg-base/60" data-testid="use-guide__link-endpoints">
                     <ServerCog className="h-4 w-4 text-secondary" />
                     {t('quick_links.endpoints')}
-                  </Link>
-                  <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy`} className="inline-flex items-center gap-2 rounded-full border border-subtle px-4 py-2 text-foreground transition hover:border-strong hover:bg-bg-base/60" data-testid="use-guide__link-resource-policy">
-                    <LinkIcon className="h-4 w-4 text-secondary" />
-                    {t('quick_links.resource_policy')}
                   </Link>
                 </div>
               </div>

@@ -92,6 +92,7 @@ describe('UseGuidePage route', () => {
     expect(screen.getByTestId('use-guide__tab-anthropic')).toBeEnabled();
     expect(screen.getByTestId('use-guide__openai-base-url__copy')).toBeInTheDocument();
     expect(screen.getByTestId('use-guide__codex-sample__copy')).toBeInTheDocument();
+    expect(screen.queryByTestId('use-guide__link-resource-policy')).not.toBeInTheDocument();
   });
 
   it('falls back to guidance-only mode when endpoint list is not readable', async () => {

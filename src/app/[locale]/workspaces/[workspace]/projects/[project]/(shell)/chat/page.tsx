@@ -37,7 +37,7 @@ import { useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
 import { ChatMainPane } from '@/components/chat/ChatMainPane';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { ProjectWorkbenchBar, ProjectWorkbenchSwitcher } from '@/components/layout/ProjectWorkbenchBar';
+import { ProjectWorkbenchBar } from '@/components/layout/ProjectWorkbenchBar';
 import { PageState } from '@/components/layout/PageState';
 import { useCanAccessChat } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
@@ -378,8 +378,6 @@ export default function ChatPage({ params }: ChatPageProps) {
   }
 
   const composerValue = currentSessionId ? composerBySession[currentSessionId] || '' : '';
-  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
-
   return (
     <PageState state="success">
       <PageLayout
@@ -395,33 +393,6 @@ export default function ChatPage({ params }: ChatPageProps) {
                 <span className="text-tertiary">{t('threads_title')} {sessions.length}</span>
                 {activeEndpoint ? <span className="truncate text-tertiary">{activeEndpoint.name}</span> : null}
               </div>
-            )}
-            switcher={(
-              <ProjectWorkbenchSwitcher
-                items={[
-                  {
-                    href: `${basePath}/chat`,
-                    label: t('title'),
-                    testId: 'chat__open-chat',
-                    active: true,
-                  },
-                  {
-                    href: `${basePath}/notebook`,
-                    label: t('open_notebook'),
-                    testId: 'chat__open-notebook',
-                  },
-                  {
-                    href: `${basePath}/endpoints`,
-                    label: t('open_endpoints'),
-                    testId: 'chat__open-endpoints',
-                  },
-                  {
-                    href: `${basePath}/files`,
-                    label: t('open_files'),
-                    testId: 'chat__open-files',
-                  },
-                ]}
-              />
             )}
           />
 

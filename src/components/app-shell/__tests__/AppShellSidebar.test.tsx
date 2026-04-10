@@ -23,14 +23,17 @@ vi.mock('next-intl', () => ({
         notebook: 'Notebook',
         files: 'Files',
         usage: 'Usage',
-        api_access_guide: 'API Access Guide',
+        api_access_guide: 'Access guide',
         agents: 'Agents',
         endpoints: 'Endpoints',
-        resource_policy: 'Resource Policy',
-        credentials: 'Credentials',
+        resource_policy: 'Policy',
+        credentials: 'Project secrets',
         members: 'Members',
         audit: 'Audit',
         settings: 'Settings',
+      },
+      context_store: {
+        project_title: 'Shared context',
       },
       sidebar: {
         home: 'Home',
@@ -150,7 +153,8 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     expect(within(useSection).getByTestId('sidebar__nav-item--notebook')).toBeInTheDocument();
     expect(within(useSection).getByTestId('sidebar__nav-item--files')).toBeInTheDocument();
     expect(within(useSection).getByTestId('sidebar__nav-item--usage')).toBeInTheDocument();
-    expect(within(useSection).getByTestId('sidebar__nav-item--api_access_guide')).toBeInTheDocument();
+    expect(within(useSection).getByTestId('sidebar__nav-item--use-guide')).toBeInTheDocument();
+    expect(within(useSection).getByText('Access guide')).toBeInTheDocument();
   });
 
   it('does not place usage in Govern section', () => {
@@ -221,11 +225,15 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     render(<AppShellSidebar />, { wrapper });
 
     const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
-    expect(within(governSection).getByTestId('sidebar__nav-item--resource_policy')).toBeInTheDocument();
+    expect(within(governSection).getByTestId('sidebar__nav-item--resource-policy')).toBeInTheDocument();
+    expect(within(governSection).getByTestId('sidebar__nav-item--context')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--credentials')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--members')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--audit')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--settings')).toBeInTheDocument();
+    expect(within(governSection).getByText('Policy')).toBeInTheDocument();
+    expect(within(governSection).getByText('Shared context')).toBeInTheDocument();
+    expect(within(governSection).getByText('Project secrets')).toBeInTheDocument();
   });
 
   it('shows only governance resource links for governance-only users', () => {
@@ -242,7 +250,8 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     render(<AppShellSidebar />, { wrapper });
 
     const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
-    expect(within(governSection).getByTestId('sidebar__nav-item--resource_policy')).toBeInTheDocument();
+    expect(within(governSection).getByTestId('sidebar__nav-item--resource-policy')).toBeInTheDocument();
+    expect(within(governSection).getByTestId('sidebar__nav-item--context')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--credentials')).toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--audit')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--members')).not.toBeInTheDocument();
@@ -265,7 +274,8 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
     expect(within(governSection).getByTestId('sidebar__nav-item--members')).toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--audit')).not.toBeInTheDocument();
-    expect(within(governSection).queryByTestId('sidebar__nav-item--resource_policy')).not.toBeInTheDocument();
+    expect(within(governSection).queryByTestId('sidebar__nav-item--resource-policy')).not.toBeInTheDocument();
+    expect(within(governSection).queryByTestId('sidebar__nav-item--context')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--credentials')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
   });

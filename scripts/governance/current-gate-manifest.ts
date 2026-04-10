@@ -1,0 +1,158 @@
+export const CURRENT_GATE_DOCUMENT_FILES = [
+  'README.md',
+  'DEVELOPMENT.md',
+  'docs/current-engineering-governance-model.md',
+  'docs/contracts/current-gate-manifest-contract.md',
+  'docs/contracts/README.md',
+  'docs/user-guides/workspace-project-default-engineering-gate-checklist.md',
+  'docs/user-guides/governance-default-engineering-gate-checklist.md',
+  'docs/user-guides/release-readiness-checklist.md',
+  '.github/workflows/quality-gates.yml',
+  '.github/workflows/contracts-check.yml',
+  'scripts/workspace-project-default-gate.sh',
+  'scripts/governance-default-gate.sh',
+  'scripts/backend-real-full-gate.sh',
+  'scripts/contracts/check-current-gates.ts',
+  'scripts/contracts/check-engineering-governance.ts',
+  'scripts/governance/current-gate-manifest.ts',
+] as const;
+
+export type CurrentGateKind = 'test' | 'gate' | 'lane';
+export type CurrentGateVisualPolicy = 'none' | 'targeted' | 'full';
+export type CurrentGateBackendRealPolicy = 'none' | 'optional' | 'required';
+export type CurrentGateRequirement = 'default' | 'release' | 'visual';
+
+export interface CurrentGateDefinition {
+  id: string;
+  npmScript: string;
+  command: string;
+  description: string;
+  kind: CurrentGateKind;
+  visualPolicy: CurrentGateVisualPolicy;
+  backendRealPolicy: CurrentGateBackendRealPolicy;
+  ciJob?: string;
+  checklistDocs: readonly string[];
+  requiredFor: readonly CurrentGateRequirement[];
+}
+
+export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
+  {
+    id: 'workspace-project-default',
+    npmScript: 'test:default-e2e',
+    command: 'bash scripts/workspace-project-default-gate.sh',
+    description: 'run the workspace/project default engineering gate bundle with targeted visual coverage only',
+    kind: 'test',
+    visualPolicy: 'targeted',
+    backendRealPolicy: 'optional',
+    checklistDocs: ['docs/user-guides/workspace-project-default-engineering-gate-checklist.md'],
+    requiredFor: ['default', 'release'],
+  },
+  {
+    id: 'governance-default',
+    npmScript: 'test:governance',
+    command: 'bash scripts/governance-default-gate.sh',
+    description: 'run the governance default engineering gate bundle with targeted visual coverage only',
+    kind: 'test',
+    visualPolicy: 'targeted',
+    backendRealPolicy: 'none',
+    checklistDocs: ['docs/user-guides/governance-default-engineering-gate-checklist.md'],
+    requiredFor: ['default', 'release'],
+  },
+  {
+    id: 'visual-lane-command',
+    npmScript: 'test:visual',
+    command: 'bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual --workers=1',
+    description: 'run the full visual verification lane',
+    kind: 'test',
+    visualPolicy: 'full',
+    backendRealPolicy: 'none',
+    checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
+    requiredFor: ['visual', 'release'],
+  },
+  {
+    id: 'gate-fast',
+    npmScript: 'gate:fast',
+    command: 'npm run contracts:check && npx tsc --noEmit && npm run test:e2e:lane:mock:smoke',
+    description: 'run the fast engineering gate',
+    kind: 'gate',
+    visualPolicy: 'none',
+    backendRealPolicy: 'none',
+    ciJob: 'gate-fast',
+    checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
+    requiredFor: ['default', 'release'],
+  },
+  {
+    id: 'gate-default',
+    npmScript: 'gate:default',
+    command: 'npm run test:default-e2e && npm run test:governance',
+    description: 'run the default engineering gate without the full visual lane',
+    kind: 'gate',
+    visualPolicy: 'targeted',
+    backendRealPolicy: 'none',
+    ciJob: 'gate-default',
+    checklistDocs: [
+      'docs/user-guides/workspace-project-default-engineering-gate-checklist.md',
+      'docs/user-guides/governance-default-engineering-gate-checklist.md',
+      'docs/user-guides/release-readiness-checklist.md',
+    ],
+    requiredFor: ['default', 'release'],
+  },
+  {
+    id: 'lane-visual',
+    npmScript: 'lane:visual',
+    command: 'npm run test:visual',
+    description: 'run the full visual verification channel',
+    kind: 'lane',
+    visualPolicy: 'full',
+    backendRealPolicy: 'none',
+    ciJob: 'lane-visual',
+    checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
+    requiredFor: ['visual', 'release'],
+  },
+  {
+    id: 'lane-backend-real-core',
+    npmScript: 'lane:backend-real:core',
+    command: 'npm run backend-real:run',
+    description: 'run the core backend-real verification channel',
+    kind: 'lane',
+    visualPolicy: 'none',
+    backendRealPolicy: 'required',
+    ciJob: 'lane-backend-real-core',
+    checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
+    requiredFor: [],
+  },
+  {
+    id: 'gate-release',
+    npmScript: 'gate:release',
+    command: 'npm run lane:backend-real:release',
+    description: 'run the release-grade engineering gate after full visual and backend-real preparation',
+    kind: 'gate',
+    visualPolicy: 'none',
+    backendRealPolicy: 'required',
+    checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
+    requiredFor: ['release'],
+  },
+  {
+    id: 'lane-backend-real-release',
+    npmScript: 'lane:backend-real:release',
+    command: 'bash scripts/backend-real-full-gate.sh',
+    description: 'run the full backend-real release verification channel',
+    kind: 'lane',
+    visualPolicy: 'none',
+    backendRealPolicy: 'required',
+    checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
+    requiredFor: ['release'],
+  },
+] as const;
+
+export function listCurrentGateDefinitions(): readonly CurrentGateDefinition[] {
+  return CURRENT_GATE_MANIFEST;
+}
+
+export function listCurrentGateDefinitionsByKind(kind: CurrentGateKind): readonly CurrentGateDefinition[] {
+  return CURRENT_GATE_MANIFEST.filter((definition) => definition.kind === kind);
+}
+
+export function findCurrentGateDefinition(npmScript: string): CurrentGateDefinition | undefined {
+  return CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === npmScript);
+}

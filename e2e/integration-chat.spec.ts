@@ -458,10 +458,10 @@ async function ensureComposerEnabled(page: import('@playwright/test').Page) {
   await expect(textarea).toBeVisible({ timeout: 15_000 });
   if (await textarea.isEditable().catch(() => false)) return;
 
-  const modelTrigger = page.getByTestId('chat__model-trigger');
+  const modelTrigger = page.getByTestId('chat__execution-target-trigger');
   await expect(modelTrigger).toBeVisible({ timeout: 15_000 });
   await modelTrigger.click();
-  const modelItems = page.locator('[data-testid^="chat__model-item--"]');
+  const modelItems = page.locator('[data-testid^="chat__execution-target-endpoint--"]');
   const count = await modelItems.count();
   for (let i = 0; i < count; i += 1) {
     const item = modelItems.nth(i);
@@ -640,8 +640,8 @@ async function selectEndpointInChat(
     /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+$/.test(res.url()) &&
     res.status() === 200,
   );
-  await page.getByTestId('chat__model-trigger').click();
-  await page.getByTestId(`chat__model-item--${endpointId}`).click();
+  await page.getByTestId('chat__execution-target-trigger').click();
+  await page.getByTestId(`chat__execution-target-endpoint--${endpointId}`).click();
   const updateRes = await updateSessionResponse;
   const json = (await updateRes.json().catch(() => null)) as { endpoint_id?: string } | null;
   expect(json?.endpoint_id).toBe(endpointId);

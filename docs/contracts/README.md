@@ -15,6 +15,7 @@
 - 机器可读规范中的字段命名可能包含后端内部或历史兼容术语，不单独构成前端产品能力承诺。
 - 标题包含 `handoff` / `refactor` / `migration` 的合同文档，允许保留旧术语、兼容映射与迁移前后对照；current 决策应以其余现行合同为准。
 - 文档治理检查默认要求这类文档进入 `docs/archive/`；只有被 current index 显式保留的少量迁移参考文档允许留在现行目录。
+- `product-terminology.md` 是当前产品对象、正式命名、IA 边界的真相源；涉及 `Execution target`、`Files`、`Shared context`、`Project secrets`、`Access guide` 等正式名称时，应先以该合同为准。
 
 ## 核心合同
 
@@ -25,6 +26,7 @@
 5. `usage-limits-summary-contract.md`
 6. `route-gate-test-checklist.md`
 7. `product-terminology.md`
+8. `current-gate-manifest-contract.md`
 
 ## 参考与专题合同
 

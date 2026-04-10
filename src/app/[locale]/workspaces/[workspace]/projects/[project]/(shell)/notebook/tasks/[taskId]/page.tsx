@@ -2,10 +2,7 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { PageLayout } from "@/components/layout/PageLayout";
-import {
-  ProjectWorkbenchBar,
-  ProjectWorkbenchSwitcher,
-} from "@/components/layout/ProjectWorkbenchBar";
+import { ProjectWorkbenchBar } from "@/components/layout/ProjectWorkbenchBar";
 import { PageState } from "@/components/layout/PageState";
 import { PageLoading } from "@/components/ui/loading";
 import { TaskPage } from "@/components/notebook/TaskPage";
@@ -130,28 +127,6 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
                 <div className="text-sm text-secondary">
                   {tNotebook("subtitle")}
                 </div>
-              }
-              switcher={
-                <ProjectWorkbenchSwitcher
-                  items={[
-                    {
-                      href: `${basePath}/notebook`,
-                      label: tNotebook("title"),
-                      testId: "notebook-task__open-list",
-                      active: true,
-                    },
-                    {
-                      href: `${basePath}/chat`,
-                      label: tNotebook("open_chat"),
-                      testId: "notebook-task__open-chat",
-                    },
-                    {
-                      href: `${basePath}/files`,
-                      label: tNotebook("open_files"),
-                      testId: "notebook-task__open-files",
-                    },
-                  ]}
-                />
               }
             />
           </div>

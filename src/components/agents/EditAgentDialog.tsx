@@ -230,15 +230,12 @@ export function EditAgentDialog({
             <EditInternalAgentSection
               cpuLimit={cpuLimit}
               cpuRequest={cpuRequest}
-              endpointOptions={endpointOptions}
               envEntries={envEntries}
               idleTimeoutSec={idleTimeoutSec}
               image={image}
               maxLifetimeSec={maxLifetimeSec}
               memoryLimit={memoryLimit}
               memoryRequest={memoryRequest}
-              executionEndpointId={executionEndpointId}
-              interactionKind={interactionKind}
               pending={updateMutation.isPending}
               t={t}
               onAddEnvEntry={addEnvEntry}
@@ -249,7 +246,6 @@ export function EditAgentDialog({
               onMaxLifetimeSecChange={setMaxLifetimeSec}
               onMemoryLimitChange={setMemoryLimit}
               onMemoryRequestChange={setMemoryRequest}
-              onExecutionEndpointIdChange={setExecutionEndpointId}
               onRemoveEnvEntry={removeEnvEntry}
               onUpdateEnvEntry={updateEnvEntry}
             />

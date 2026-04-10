@@ -130,6 +130,7 @@ export const PACKAGE_TEST_SCRIPT_NAMES = new Set([
   'integration:test:adapters',
   'contracts:check-limit-naming',
   'contracts:check-current-workflows',
+  'contracts:check-current-gates',
   'contracts:check-engineering-governance',
   'contracts:check',
   'contracts:check-doc-governance',

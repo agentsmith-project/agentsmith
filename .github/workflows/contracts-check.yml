@@ -48,5 +48,9 @@ jobs:
       - name: Run permission contract drift check
         run: npm run contracts:check
 
-      - name: Run engineering baseline sync check
-        run: npm run contracts:check-engineering-sync
+      - name: Run engineering governance manifest checks
+        run: |
+          set -euo pipefail
+          npm run contracts:check-current-workflows
+          npm run contracts:check-current-gates
+          npm run contracts:check-engineering-governance

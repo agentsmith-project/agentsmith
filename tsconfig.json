@@ -48,6 +48,7 @@
     ".next*/types/**/*.ts",
     "artifacts/backend-real/runs/*/next-dist/types/**/*.ts",
     "artifacts/mock-lane/runs/*/next-dist/types/**/*.ts",
+    ".next/types/**/*.ts",
     "next-env.d.ts",
     "src/**/*.ts",
     "src/**/*.tsx"

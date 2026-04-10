@@ -24,7 +24,6 @@ const mockMessages = {
       mode: "Mode",
       mode_external: "External",
       mode_internal: "Internal",
-      interaction_kind: "Agent Type",
       config_title: "Internal Agent Config",
       image: "Image",
       image_required: "Image required",
@@ -58,10 +57,18 @@ const mockMessages = {
     },
     interaction_chat: "Chat",
     interaction_notebook: "Notebook",
+    agent_kind: "Agent kind",
+    execution_target: "Execution target",
+    execution_target_chat_help: "Choose the endpoint this chat agent will use for inference.",
+    execution_target_notebook_help: "Choose the endpoint this notebook agent will use for task execution.",
+    product_step_description: "Define the agent surface first, then configure deployment details.",
+    deployment_step_description: "Set image, limits, and environment after the product shape is clear.",
+    back_to_product_setup: "Back to product setup",
   },
   common: {
     cancel: "Cancel",
     create: "Create",
+    next: "Next",
     save: "Save",
     private: "Private",
     public: "Public",
@@ -86,6 +93,7 @@ function resolveTranslation(path: string): string {
 vi.mock("next-intl", () => ({
   useTranslations: (namespace: string) => (key: string) =>
     resolveTranslation(`${namespace}.${key}`),
+  useLocale: () => "en-US",
   NextIntlClientProvider: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>
   ),
@@ -170,7 +178,7 @@ describe("Agent dialogs", () => {
     fireEvent.change(nameInput, { target: { value: "agent-a" } });
 
     const endpointSelect = screen.getByLabelText(
-      "Chat Endpoint",
+      "Execution target",
     ) as HTMLSelectElement;
     await waitFor(() => {
       expect(endpointSelect.value).toBe("ep_active_1");
@@ -183,6 +191,7 @@ describe("Agent dialogs", () => {
       screen.queryByText("Disabled (openai/gpt-4o-mini)"),
     ).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
@@ -219,12 +228,13 @@ describe("Agent dialogs", () => {
     );
 
     const endpointSelect = screen.getByLabelText(
-      "Notebook Endpoint",
+      "Execution target",
     ) as HTMLSelectElement;
     await waitFor(() => {
       expect(endpointSelect.value).toBe("ep_active_1");
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
@@ -345,7 +355,7 @@ describe("Agent dialogs", () => {
       { target: { value: "chat" } },
     );
     const endpointSelect = screen.getByLabelText(
-      "Chat Endpoint",
+      "Execution target",
     ) as HTMLSelectElement;
     fireEvent.change(endpointSelect, { target: { value: "ep_active_1" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -371,7 +381,11 @@ describe("Agent dialogs", () => {
       />,
     );
 
+    fireEvent.change(await screen.findByLabelText("Name"), {
+      target: { value: "agent-internal" },
+    });
     fireEvent.click(await screen.findByLabelText("Internal"));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
     const idleTimeoutInput = screen.getByLabelText(
       "Idle Timeout (sec)",
@@ -401,14 +415,19 @@ describe("Agent dialogs", () => {
       />,
     );
 
-    expect(await screen.findByLabelText("Chat Endpoint")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Execution target")).toBeInTheDocument();
+    expect(
+      screen.getByText("Choose the endpoint this chat agent will use for inference."),
+    ).toBeInTheDocument();
 
     fireEvent.change(
       document.getElementById("agent-interaction-kind") as HTMLSelectElement,
       { target: { value: "notebook" } },
     );
 
-    expect(screen.getByLabelText("Notebook Endpoint")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Chat Endpoint")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Execution target")).toBeInTheDocument();
+    expect(
+      screen.getByText("Choose the endpoint this notebook agent will use for task execution."),
+    ).toBeInTheDocument();
   });
 });

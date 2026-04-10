@@ -14,10 +14,10 @@ async function ensureComposerEnabled(page: import('@playwright/test').Page) {
   const disabled = await input.isDisabled().catch(() => false);
   if (!disabled) return;
 
-  const trigger = page.getByTestId('chat__model-trigger');
+  const trigger = page.getByTestId('chat__execution-target-trigger');
   await expect(trigger).toBeVisible({ timeout: 10000 });
   await trigger.click();
-  const firstModel = page.locator('[data-testid^="chat__model-item--"]').first();
+  const firstModel = page.locator('[data-testid^="chat__execution-target-endpoint--"]').first();
   await expect(firstModel).toBeVisible({ timeout: 10000 });
   await firstModel.click();
   await expect(input).toBeEnabled({ timeout: 10000 });
@@ -57,10 +57,13 @@ test.describe('Chat Page', () => {
     await expect(newThreadBtn).toBeEnabled();
   });
 
-  test('should show build header actions', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('chat__open-notebook')).toHaveAttribute('href', /\/notebook$/);
-    await expect(authedPage.getByTestId('chat__open-endpoints')).toHaveAttribute('href', /\/endpoints$/);
-    await expect(authedPage.getByTestId('chat__open-files')).toHaveAttribute('href', /\/files$/);
+  test('should rely on sidebar navigation instead of header cross-links', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('chat__open-notebook')).toHaveCount(0);
+    await expect(authedPage.getByTestId('chat__open-endpoints')).toHaveCount(0);
+    await expect(authedPage.getByTestId('chat__open-files')).toHaveCount(0);
+    await expect(authedPage.getByTestId('sidebar__nav-item--notebook')).toHaveAttribute('href', /\/notebook$/);
+    await expect(authedPage.getByTestId('sidebar__nav-item--files')).toHaveAttribute('href', /\/files$/);
+    await expect(authedPage.getByTestId('sidebar__nav-item--endpoints')).toHaveAttribute('href', /\/endpoints$/);
   });
 
   test('does not render stream diagnostics banner in chat pane', async ({ authedPage }) => {
@@ -70,14 +73,9 @@ test.describe('Chat Page', () => {
     await expect(authedPage.getByTestId('chat__stream-error-banner')).toHaveCount(0);
   });
 
-  test('should render thread search and model selector controls', async ({ authedPage }) => {
+  test('should render thread search and execution target controls', async ({ authedPage }) => {
     await expect(authedPage.getByPlaceholder(/search threads/i)).toBeVisible({ timeout: 10000 });
-    await expect(
-      authedPage
-        .locator('[data-testid="chat__main-pane"] button')
-        .filter({ hasText: /select model/i })
-        .first()
-    ).toBeVisible();
+    await expect(authedPage.getByTestId('chat__execution-target-trigger')).toBeVisible();
   });
 
   test('should select a thread and display chat area', async ({ authedPage }) => {

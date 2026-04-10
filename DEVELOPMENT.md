@@ -10,6 +10,12 @@ Repo version files:
 - `package.json` `engines.node`
 - `package.json` `packageManager` (`npm@11.11.0`)
 
+## Product Terminology Guardrails
+
+- [`docs/contracts/product-terminology.md`](./docs/contracts/product-terminology.md) is the authoritative source for product-facing object names and IA boundaries.
+- Use `Execution target`, `Project secrets`, `Shared context`, `Access guide`, and `Files` in user-facing product descriptions, UI copy, and product docs.
+- Do not collapse `Endpoint` and `Agent` into a generic model-source concept in product-facing docs, UI copy, or test narratives.
+
 ## Current Engineering Workflow
 
 <!-- current-workflow:development:start -->
@@ -24,6 +30,7 @@ Repo version files:
 权威定义：
 - [docs/current-engineering-governance-model.md](./docs/current-engineering-governance-model.md)
 - machine-readable source: [`scripts/governance/current-workflow-manifest.ts`](./scripts/governance/current-workflow-manifest.ts)
+- machine-readable gate source: [`scripts/governance/current-gate-manifest.ts`](./scripts/governance/current-gate-manifest.ts)
 
 命令命名约定：
 - `npm run` 是 current canonical entrypoint

@@ -8,20 +8,22 @@ test.describe('Workspace Settings Page', () => {
     await goTo(authedPage, wsSettingsPath);
   });
 
-  test('shows workspace administration summary and project actions', async ({ authedPage }) => {
-    await expect(
-      authedPage.getByRole('heading', { name: /Workspace Settings/i }),
-    ).toBeVisible();
-    await expect(authedPage.getByTestId('ws-settings__workspace')).toBeVisible();
-    await expect(authedPage.getByTestId('ws-settings__projects')).toBeVisible();
+test('shows workspace administration summary and project entry links', async ({ authedPage }) => {
+  await expect(
+    authedPage.getByRole('heading', { name: /Workspace Settings/i }),
+  ).toBeVisible();
+  await expect(authedPage.getByTestId('ws-settings__workspace')).toBeVisible();
+  await expect(authedPage.getByTestId('ws-settings__projects')).toBeVisible();
     await expect(authedPage.getByTestId('ws-settings__name')).toBeVisible();
-    await expect(authedPage.getByTestId('ws-settings__open-projects')).toBeVisible();
-    await expect(authedPage.getByTestId('ws-settings__create-project')).toBeVisible();
-    await expect(authedPage.getByTestId('ws-settings__project-creators')).toBeVisible();
-    await expect(authedPage.getByTestId('ws-settings__project-open-overview--proj_001')).toBeVisible();
-    await expect(authedPage.getByTestId('ws-settings__project-open-members--proj_001')).toBeVisible();
-    await expect(authedPage.getByTestId('ws-settings__project-open-settings--proj_001')).toBeVisible();
-  });
+  await expect(authedPage.getByTestId('ws-settings__open-projects')).toBeVisible();
+  await expect(authedPage.getByTestId('ws-settings__create-project')).toBeVisible();
+  await expect(authedPage.getByTestId('ws-settings__project-creators')).toBeVisible();
+  await expect(authedPage.getByTestId('ws-settings__project-open-overview--proj_001')).toBeVisible();
+  await expect(authedPage.getByTestId('ws-settings__project-open-members--proj_001')).toHaveCount(0);
+  await expect(authedPage.getByTestId('ws-settings__project-open-settings--proj_001')).toHaveCount(0);
+  await expect(authedPage.getByTestId('ws-settings__project-owner-select--proj_001')).toHaveCount(0);
+  await expect(authedPage.getByTestId('ws-settings__project-owner-save--proj_001')).toHaveCount(0);
+});
 
   test('workspace manager can open create project dialog and create a project', async ({ authedPage }) => {
     await authedPage.getByTestId('ws-settings__create-project').click();
@@ -39,22 +41,16 @@ test.describe('Workspace Settings Page', () => {
     await expect(authedPage.getByTestId('ws-settings__project-creators-input')).toHaveValue('user_alt');
   });
 
-  test('workspace manager can transfer project ownership', async ({ authedPage }) => {
-    const projectCard = authedPage.getByTestId('ws-settings__project--proj_001');
-    const ownerSelect = authedPage.getByTestId('ws-settings__project-owner-select--proj_001');
-    await expect(projectCard).toBeVisible();
-    await expect(ownerSelect).toBeVisible();
-    const optionValues = await ownerSelect.locator('option').evaluateAll((options) =>
-      options.map((option) => ({ value: option.getAttribute('value') ?? '', label: option.textContent ?? '' })),
-    );
-    const currentValue = await ownerSelect.inputValue();
-    const nextOwner = optionValues.find((option) => option.value && option.value !== currentValue);
-    expect(nextOwner).toBeTruthy();
+test('workspace manager does not manage project ownership from workspace settings', async ({ authedPage }) => {
+  const projectCard = authedPage.getByTestId('ws-settings__project--proj_001');
 
-    await ownerSelect.selectOption(nextOwner!.value);
-    await authedPage.getByTestId('ws-settings__project-owner-save--proj_001').click();
-    await expect(projectCard.getByText(new RegExp(`Current owner:.*${nextOwner!.label.trim()}`, 'i'))).toBeVisible();
-  });
+  await expect(projectCard).toBeVisible();
+  await expect(projectCard.getByTestId('ws-settings__project-open-overview--proj_001')).toBeVisible();
+  await expect(authedPage.getByTestId('ws-settings__project-owner-select--proj_001')).toHaveCount(0);
+  await expect(authedPage.getByTestId('ws-settings__project-owner-save--proj_001')).toHaveCount(0);
+  await expect(authedPage.getByTestId('ws-settings__project-open-members--proj_001')).toHaveCount(0);
+  await expect(authedPage.getByTestId('ws-settings__project-open-settings--proj_001')).toHaveCount(0);
+});
 
   test('project creators can create projects without workspace administration access', async ({ page }) => {
     await withAuth(page, WS_ID, 'dev2@corp.com', 'u_2');

@@ -188,7 +188,7 @@ This section is authoritative for current permission boundaries and any remainin
 | `home` | Overview and landing | Overview |
 | `use` | End-user daily AI tools | Chat, Notebook, Files |
 | `develop` | Developer agent building | Agents |
-| `govern` | Configuration and policy | Endpoints, Resource Policy, Credentials, Members, Usage, Audit, Settings |
+| `govern` | Configuration and policy | Endpoints, Policy, Shared context, Project secrets, Members, Audit, Settings |
 | `operate` | Execution-related backend operations | Internal execution/configuration routes only; user-facing review goes through Audit |
 
 ## Contract Guidance

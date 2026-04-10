@@ -26,7 +26,6 @@ import { DeleteCredentialDialog } from '@/components/credentials/DeleteCredentia
 import { useCanAccessCredentials } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { CredentialsContent } from './_components/CredentialsContent';
-import { CredentialsHeaderActions } from './_components/CredentialsHeaderActions';
 import { createCredentialColumns } from './credentials-table';
 
 interface CredentialsPageProps {
@@ -45,8 +44,6 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
-  const locale = resolvedParams?.locale ?? 'en-US';
-  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const credentialsAPI = new CredentialsAPI(getApiClient());
   const queryClient = useQueryClient();
@@ -140,14 +137,6 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
             title={t('title')}
             subtitle={t('subtitle')}
             variant="compact"
-            actions={(
-              <CredentialsHeaderActions
-                basePath={basePath}
-                openMembersLabel={t('open_members')}
-                openResourcePolicyLabel={t('open_resource_policy')}
-                openAuditLabel={t('open_audit')}
-              />
-            )}
           />
         )}
         toolbar={(

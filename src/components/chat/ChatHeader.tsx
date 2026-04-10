@@ -21,6 +21,28 @@ import {
   getStreamStatusText,
 } from '@/components/chat/chat-header/utils';
 
+function renderExecutionTargetLabel({
+  session,
+  currentEndpoint,
+  currentAgent,
+  selectExecutionTargetLabel,
+  externalAgentLabel,
+}: {
+  session: ChatSession | null;
+  currentEndpoint: Endpoint | null | undefined;
+  currentAgent: Agent | null | undefined;
+  selectExecutionTargetLabel: string;
+  externalAgentLabel: string;
+}) {
+  if (!session) {
+    return selectExecutionTargetLabel;
+  }
+  if (session.external_agent_id) {
+    return currentAgent?.name ?? externalAgentLabel;
+  }
+  return currentEndpoint?.name || session.endpoint_id || selectExecutionTargetLabel;
+}
+
 export function ChatHeader({
   session,
   endpoints,
@@ -47,10 +69,9 @@ export function ChatHeader({
   layoutMode?: ChatLayoutMode;
 }) {
   const t = useTranslations('chat');
-  // `layoutMode` is used for content width alignment only.
   const [editing, setEditing] = React.useState(false);
   const [draftTitle, setDraftTitle] = React.useState(session?.title || '');
-  const [modelOpen, setModelOpen] = React.useState(false);
+  const [executionTargetOpen, setExecutionTargetOpen] = React.useState(false);
   const contentWidthClass = getChatContentWidthClass(layoutMode);
 
   React.useEffect(() => {
@@ -59,10 +80,10 @@ export function ChatHeader({
   }, [session?.id, session?.title]);
 
   const currentEndpoint = React.useMemo(() => {
-    return findCurrentEndpoint(session, endpoints);
+    return findCurrentEndpoint(session, endpoints) ?? undefined;
   }, [endpoints, session]);
   const currentAgent = React.useMemo(() => {
-    return findCurrentExternalAgent(session, externalAgents ?? []);
+    return findCurrentExternalAgent(session, externalAgents ?? []) ?? undefined;
   }, [externalAgents, session]);
   const usingExternalAgent = !!session?.external_agent_id;
 
@@ -74,7 +95,6 @@ export function ChatHeader({
     const title = draftTitle.trim();
     setEditing(false);
     if (!title) {
-      // Restore the original title so the next edit starts correctly
       setDraftTitle(session?.title || '');
       return;
     }
@@ -104,18 +124,6 @@ export function ChatHeader({
             onStartEditing={() => setEditing(true)}
           />
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-tertiary">
-            <span
-              className={cn(
-                'rounded-full border px-1.5 py-0.5 font-medium',
-                streamStatus === 'error'
-                  ? 'border-error/30 bg-error/10 text-error'
-                  : streamStatus === 'streaming'
-                    ? 'border-accent/30 bg-accent/10 text-accent'
-                    : 'border-white/8 bg-white/[0.04] text-secondary',
-              )}
-            >
-              {statusText}
-            </span>
             {session ? (
               usingExternalAgent ? (
                 <span className="truncate">
@@ -138,123 +146,84 @@ export function ChatHeader({
 
         <div className="flex items-center gap-1.5 pt-0.5">
           {session ? (
-            usingExternalAgent ? (
-              <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2" data-testid="chat__model-trigger">
-                    <span className="max-w-[220px] truncate">
-                      {currentAgent?.name ?? t('header.external_agent')}
-                    </span>
-                    <ChevronDown className="w-4 h-4 text-icon-default" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[18rem]">
-                  <div className="px-3 py-2 text-xs text-tertiary">{t('header.models')}</div>
-                  <DropdownMenuSeparator />
-                  {endpoints.map((e) => {
-                    const disabled = e.status === 'disabled';
-                    return (
-                      <DropdownMenuItem
-                        key={e.id}
-                        data-disabled={disabled ? '' : undefined}
-                        onSelect={(ev) => {
-                          ev.preventDefault();
-                          setModelOpen(false);
-                          if (disabled) return;
-                          onSelectEndpoint(e);
-                        }}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className={cn('text-sm truncate', disabled ? 'text-tertiary' : 'text-primary')}>
-                            {e.name}
-                          </div>
-                          <div className="text-xs text-tertiary truncate">{e.model}</div>
-                        </div>
-                        {disabled && <span className="text-xs text-tertiary">{t('header.disabled')}</span>}
-                      </DropdownMenuItem>
-                    );
-                  })}
-                  {(externalAgents ?? []).length > 0 && endpoints.length > 0 && <DropdownMenuSeparator />}
-                  {(externalAgents ?? []).map((agent) => (
-                    <DropdownMenuItem
-                      key={agent.id}
-                      onSelect={(ev) => {
-                        ev.preventDefault();
-                        setModelOpen(false);
-                        onSelectExternalAgent?.(agent);
-                      }}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm truncate">{agent.name}</div>
-                        <div className="text-xs text-tertiary truncate">{t('header.external_agent')}</div>
-                      </div>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
-            <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>
+            <DropdownMenu open={executionTargetOpen} onOpenChange={setExecutionTargetOpen}>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2" data-testid="chat__model-trigger">
+                <Button variant="outline" size="sm" className="gap-2" data-testid="chat__execution-target-trigger">
                   <span className="max-w-[220px] truncate">
-                    {currentEndpoint?.name || session?.endpoint_id || t('header.select_model')}
+                    {renderExecutionTargetLabel({
+                      session,
+                      currentEndpoint,
+                      currentAgent,
+                      selectExecutionTargetLabel: t('header.select_execution_target'),
+                      externalAgentLabel: t('header.external_agent'),
+                    })}
                   </span>
-                  <ChevronDown className="w-4 h-4 text-icon-default" />
+                  <ChevronDown className="h-4 w-4 text-icon-default" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[18rem]">
-                <div className="px-3 py-2 text-xs text-tertiary">{t('header.models')}</div>
+                <div className="px-3 py-2 text-xs text-tertiary">{t('header.execution_target')}</div>
                 <DropdownMenuSeparator />
+                <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">
+                  {t('header.endpoints')}
+                </div>
                 {endpoints.length === 0 && (externalAgents ?? []).length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-tertiary">{t('header.no_endpoints')}</div>
+                  <div className="px-3 py-2 text-sm text-tertiary">{t('header.no_execution_targets')}</div>
                 ) : (
-                  endpoints.map((e) => {
-                    const disabled = e.status === 'disabled';
-                    const active = session?.endpoint_id === e.id;
+                  endpoints.map((endpoint) => {
+                    const disabled = endpoint.status === 'disabled';
+                    const active = session.endpoint_id === endpoint.id;
                     return (
                       <DropdownMenuItem
-                        key={e.id}
-                        data-testid={`chat__model-item--${e.id}`}
+                        key={endpoint.id}
+                        data-testid={`chat__execution-target-endpoint--${endpoint.id}`}
                         data-disabled={disabled ? '' : undefined}
-                        onSelect={(ev) => {
-                          ev.preventDefault();
-                          setModelOpen(false);
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          setExecutionTargetOpen(false);
                           if (disabled) return;
-                          onSelectEndpoint(e);
+                          onSelectEndpoint(endpoint);
                         }}
                         className={cn(active && 'bg-hover')}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className={cn('text-sm truncate', disabled ? 'text-tertiary' : 'text-primary')}>
-                            {e.name}
+                          <div className={cn('truncate text-sm', disabled ? 'text-tertiary' : 'text-primary')}>
+                            {endpoint.name}
                           </div>
-                          <div className="text-xs text-tertiary truncate">{e.model}</div>
+                          <div className="truncate text-xs text-tertiary">{endpoint.model}</div>
                         </div>
-                        {disabled && <span className="text-xs text-tertiary">{t('header.disabled')}</span>}
+                        {disabled ? <span className="text-xs text-tertiary">{t('header.disabled')}</span> : null}
                       </DropdownMenuItem>
                     );
                   })
                 )}
-                {(externalAgents ?? []).length > 0 && <DropdownMenuSeparator />}
-                {(externalAgents ?? []).map((agent) => (
-                  <DropdownMenuItem
-                    key={agent.id}
-                    onSelect={(ev) => {
-                      ev.preventDefault();
-                      setModelOpen(false);
-                      onSelectExternalAgent?.(agent);
-                    }}
-                    className={cn(session?.external_agent_id === agent.id && 'bg-hover')}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm truncate">{agent.name}</div>
-                      <div className="text-xs text-tertiary truncate">{t('header.external_agent')}</div>
+                {(externalAgents ?? []).length > 0 ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">
+                      {t('header.agents')}
                     </div>
-                  </DropdownMenuItem>
-                ))}
+                    {(externalAgents ?? []).map((agent) => (
+                      <DropdownMenuItem
+                        key={agent.id}
+                        data-testid={`chat__execution-target-agent--${agent.id}`}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          setExecutionTargetOpen(false);
+                          onSelectExternalAgent?.(agent);
+                        }}
+                        className={cn(session.external_agent_id === agent.id && 'bg-hover')}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm">{agent.name}</div>
+                          <div className="truncate text-xs text-tertiary">{t('header.agent_execution_target_hint')}</div>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
-            )
           ) : (
             <Button
               variant="outline"
@@ -264,7 +233,7 @@ export function ChatHeader({
               onClick={() => onCreateThread?.()}
               data-testid="chat__header-create-thread"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="h-4 w-4" />
               {t('new_thread')}
             </Button>
           )}

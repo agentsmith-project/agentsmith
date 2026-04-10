@@ -230,8 +230,8 @@ export function Composer({
                   data-testid="chat__attach-library-btn"
                   onClick={onPickFromLibrary}
                   disabled={disabled || streaming}
-                  aria-label={t('composer.attach_from_library')}
-                  title={t('composer.attach_from_library')}
+                  aria-label={t('composer.attach_from_project_library')}
+                  title={t('composer.attach_from_project_library')}
                 >
                   <FolderOpen className="w-4 h-4" />
                 </Button>

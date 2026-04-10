@@ -8,18 +8,13 @@ on:
       - master
   workflow_dispatch:
     inputs:
-      run_l2:
-        description: "Run mock functional lane"
-        required: false
-        default: true
-        type: boolean
-      run_l3:
-        description: "Run core backend-real checks (requires BACKEND_REAL_API_KEY secret)"
+      run_backend_real_core:
+        description: "Run the core backend-real lane (requires BACKEND_REAL_API_KEY secret)"
         required: false
         default: false
         type: boolean
-      run_visual:
-        description: "Run manual visual lane (non-blocking baseline workflow)"
+      run_visual_lane:
+        description: "Run the full visual lane"
         required: false
         default: false
         type: boolean
@@ -47,10 +42,10 @@ jobs:
         run: npm ci
 
       - name: Run gate-fast
-        run: make gate-fast
+        run: npm run gate:fast
 
-  lane-mock:
-    name: lane-mock
+  gate-default:
+    name: gate-default
     needs: gate-fast
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -67,17 +62,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright (chromium)
+      - name: Install Playwright
         run: npx playwright install --with-deps chromium
 
-      - name: Run lane-mock
-        run: make lane-mock
+      - name: Run gate-default
+        run: npm run gate:default
 
-      - name: Upload smoke artifacts
+      - name: Upload default gate artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: l1-mock-smoke-artifacts
+          name: gate-default-artifacts
           if-no-files-found: ignore
           path: |
             test-results/**
@@ -85,8 +80,8 @@ jobs:
 
   lane-visual:
     name: lane-visual
-    needs: lane-mock
-    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.run_l2) }}
+    needs: gate-default
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.run_visual_lane) }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -102,46 +97,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright (chromium)
+      - name: Install Playwright
         run: npx playwright install --with-deps chromium
 
       - name: Run lane-visual
-        run: make lane-visual
-
-      - name: Upload visual artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: lane-visual-artifacts
-          if-no-files-found: ignore
-          path: |
-            test-results/**
-            playwright-report/**
-
-  visual-manual:
-    name: visual-manual
-    needs: lane-mock
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_visual }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.14.1
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Playwright (chromium)
-        run: npx playwright install --with-deps chromium
-
-      - name: Run visual lane (manual, non-blocking)
-        run: make lane-visual
+        run: npm run lane:visual
 
       - name: Upload visual artifacts
         if: always()
@@ -153,10 +113,10 @@ jobs:
             test-results/**
             playwright-report/**
 
-  lane-real-core:
-    name: lane-real-core
+  lane-backend-real-core:
+    name: lane-backend-real-core
     needs: gate-fast
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_l3 }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_backend_real_core }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -178,7 +138,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${BACKEND_REAL_API_KEY:-}" ]]; then
-            echo "BACKEND_REAL_API_KEY secret is required for the L3 backend-real checks." >&2
+            echo "BACKEND_REAL_API_KEY secret is required for the core backend-real lane." >&2
             exit 1
           fi
 
@@ -187,16 +147,14 @@ jobs:
           set -euo pipefail
           make bootstrap
 
-      - name: Run lane-real-core
-        run: |
-          set -euo pipefail
-          make lane-real-core
+      - name: Run lane-backend-real-core
+        run: npm run lane:backend-real:core
 
-      - name: Upload L3 artifacts
+      - name: Upload backend-real core artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: l3-backend-real-artifacts
+          name: lane-backend-real-core-artifacts
           if-no-files-found: ignore
           path: |
             artifacts/backend-real/current/**

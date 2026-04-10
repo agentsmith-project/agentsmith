@@ -20,6 +20,38 @@ import {
 
 import { vi } from 'vitest';
 
+vi.mock('next-intl', () => ({
+  useTranslations: (namespace: string) => (key: string) => {
+    const translations: Record<string, Record<string, string>> = {
+      files: {
+        title: 'Files',
+        subtitle: 'Browse the shared project library, folders, and objects with a single file operations view.',
+        project_library_label: 'Project library',
+        upload: 'Upload',
+        upload_files: 'Upload Files',
+        search_placeholder: 'Search files...',
+        open_chat: 'Open Chat',
+        open_notebook: 'Open Notebook',
+        open_endpoints: 'Open Endpoints',
+        'file_manager.root': 'Root',
+        'file_manager.items': 'items',
+        'file_manager.libraries': 'Libraries',
+        'file_manager.library_create': 'Create library',
+        'file_manager.library_status_failed': 'Failed',
+        'file_manager.library_status_reason_failed': 'Library provisioning failed.',
+      },
+      errors: {
+        validation_error: 'Validation error',
+        permission_denied_title: 'Permission denied',
+        permission_denied_hint: 'Permission denied hint',
+        badRequest: 'Bad request',
+      },
+      common: {},
+    };
+    return translations[namespace]?.[key] ?? key;
+  },
+}));
+
 const {
   mockUseFileObjectsInfinite,
   mockUseFileObjects,
@@ -166,6 +198,7 @@ describe('FilesPage (object browser)', () => {
 
     expect(await screen.findByTestId('files__library-list')).toBeInTheDocument();
     expect(screen.getByTestId('files__objects-table')).toBeInTheDocument();
+    expect(screen.getByText('Project library')).toBeInTheDocument();
   });
 
   it('selects the first library by default and only shows active-library actions', async () => {
@@ -199,9 +232,9 @@ describe('FilesPage (object browser)', () => {
 
     await user.click(await screen.findByTestId('files__library-item--lib_failed'));
 
-    expect(screen.getByTestId('files__library-status--lib_failed')).toHaveTextContent('file_manager.library_status_failed');
+    expect(screen.getByTestId('files__library-status--lib_failed')).toHaveTextContent('Failed');
     expect(screen.getByTestId('files__library-status-reason--lib_failed')).toHaveTextContent(
-      'file_manager.library_status_reason_failed',
+      'Library provisioning failed.',
     );
     expect(screen.getByTestId('files__library-desktop-access--lib_failed')).toBeDisabled();
   });

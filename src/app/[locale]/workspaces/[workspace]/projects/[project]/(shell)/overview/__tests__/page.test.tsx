@@ -34,6 +34,21 @@ vi.mock('@/lib/hooks/use-resolved-project-route', () => ({
   })),
 }));
 
+vi.mock('next-intl', () => ({
+  useTranslations: (namespace: string) => (key: string) => {
+    const translations: Record<string, Record<string, string>> = {
+      nav: {
+        resource_policy: 'Policy',
+        credentials: 'Project secrets',
+      },
+      context_store: {
+        project_title: 'Shared context',
+      },
+    };
+    return translations[namespace]?.[key] || key;
+  },
+}));
+
 describe('OverviewPage', () => {
 const mockUseProjectOverviewCapabilities = vi.mocked(useProjectOverviewCapabilities);
 const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
@@ -57,7 +72,7 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
     });
   });
 
-  it('renders project hub quick links and workspace return link', () => {
+  it('renders project health summary and workspace return link', () => {
     render(<OverviewPage />);
 
     expect(screen.getByTestId('project-hub__page')).toBeInTheDocument();
@@ -65,13 +80,12 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
       'href',
       '/en-US/workspaces/ws_default',
     );
-    expect(screen.getByTestId('project-hub__quick-links')).toBeInTheDocument();
-    expect(screen.getByTestId('project-hub__work-links')).toBeInTheDocument();
-    expect(screen.getByTestId('project-hub__governance-links')).toBeInTheDocument();
-    expect(screen.queryByTestId('project-hub__getting-started')).not.toBeInTheDocument();
+    expect(screen.getByTestId('project-hub__summary')).toBeInTheDocument();
+    expect(screen.getByTestId('project-hub__use-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('project-hub__governance-summary')).toBeInTheDocument();
   });
 
-  it('hides governance links that require project management permissions', () => {
+  it('shows an empty governance summary when management surfaces are unavailable', () => {
     mockUseProjectOverviewCapabilities.mockReturnValue({
       canUseProject: true,
       canUseAgents: false,
@@ -84,11 +98,12 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
 
     render(<OverviewPage />);
 
-    expect(screen.getByTestId('project-hub__work-links')).toBeInTheDocument();
-    expect(screen.queryByTestId('project-hub__governance-links')).not.toBeInTheDocument();
+    expect(screen.getByTestId('project-hub__use-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('project-hub__governance-summary')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'resource_policy' })).not.toBeInTheDocument();
   });
 
-  it('shows governance resource links for governance managers without ownership actions', () => {
+  it('shows governance resource summary for governance managers without ownership actions', () => {
     mockUseProjectOverviewCapabilities.mockReturnValue({
       canUseProject: true,
       canUseAgents: false,
@@ -101,16 +116,17 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
 
     render(<OverviewPage />);
 
-    const governance = screen.getByTestId('project-hub__governance-links');
+    const governance = screen.getByTestId('project-hub__governance-summary');
     expect(governance).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'resource_policy' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'credentials' })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'audit' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'members' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'settings' })).not.toBeInTheDocument();
+    expect(governance).toHaveTextContent('Policy');
+    expect(governance).toHaveTextContent('Shared context');
+    expect(governance).toHaveTextContent('Project secrets');
+    expect(governance).not.toHaveTextContent('audit');
+    expect(governance).not.toHaveTextContent('members');
+    expect(governance).not.toHaveTextContent('settings');
   });
 
-  it('shows members link for membership managers without owner-only settings', () => {
+  it('shows members in governance summary for membership managers without owner-only settings', () => {
     mockUseProjectOverviewCapabilities.mockReturnValue({
       canUseProject: true,
       canUseAgents: false,
@@ -123,16 +139,16 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
 
     render(<OverviewPage />);
 
-    const governance = screen.getByTestId('project-hub__governance-links');
+    const governance = screen.getByTestId('project-hub__governance-summary');
     expect(governance).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'members' })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'audit' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'resource_policy' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'credentials' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'settings' })).not.toBeInTheDocument();
+    expect(governance).toHaveTextContent('members');
+    expect(governance).not.toHaveTextContent('audit');
+    expect(governance).not.toHaveTextContent('resource_policy');
+    expect(governance).not.toHaveTextContent('credentials');
+    expect(governance).not.toHaveTextContent('settings');
   });
 
-  it('shows audit link only for users with audit read permission', () => {
+  it('shows audit in the governance summary for users with audit read permission', () => {
     mockUseProjectOverviewCapabilities.mockReturnValue({
       canUseProject: true,
       canUseAgents: false,
@@ -145,9 +161,9 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
 
     render(<OverviewPage />);
 
-    const governance = screen.getByTestId('project-hub__governance-links');
+    const governance = screen.getByTestId('project-hub__governance-summary');
     expect(governance).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'audit' })).toBeInTheDocument();
+    expect(governance).toHaveTextContent('audit');
   });
 
   it('shows invalid parameter error for unsafe route params', () => {

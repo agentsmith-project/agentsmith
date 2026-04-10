@@ -3,7 +3,7 @@
 AgentSmith is the enterprise control plane for the Microservices-Based Agent System (MBOS). It is used to:
 
 - operate AI agents through project-scoped Chat and Notebook workflows
-- manage AI resources such as files, endpoints, credentials, and agents
+- manage AI resources such as files, endpoints, project secrets, and agents
 - govern project resource configuration, usage, and cost with project-scoped policy evidence
 
 Core product positioning:
@@ -11,6 +11,11 @@ Core product positioning:
 - enterprise AI agent usage and management platform
 - AI resource governance platform
 - project-scoped usage and audit control plane
+
+Current product terminology:
+- [`docs/contracts/product-terminology.md`](./docs/contracts/product-terminology.md) is the authoritative source for product-facing object names and IA boundaries.
+- Use `Execution target`, `Project secrets`, `Shared context`, `Access guide`, and `Files` in user-facing product descriptions.
+- Do not collapse `Endpoint` and `Agent` into a generic model-source concept in product-facing docs or UI copy.
 
 ## Tech Stack
 
@@ -68,6 +73,7 @@ Current workflow model:
 Authoritative definition:
 - [Current Engineering Governance Model](./docs/current-engineering-governance-model.md)
 - Machine-readable source: [`scripts/governance/current-workflow-manifest.ts`](./scripts/governance/current-workflow-manifest.ts)
+- Machine-readable gate source: [`scripts/governance/current-gate-manifest.ts`](./scripts/governance/current-gate-manifest.ts)
 
 Command naming rule:
 - `npm run` names are the canonical current entrypoints

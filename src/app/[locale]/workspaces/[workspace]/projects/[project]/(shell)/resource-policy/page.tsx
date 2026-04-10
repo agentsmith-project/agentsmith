@@ -51,7 +51,6 @@ import {
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 import type { GovernanceAuthorizationResponse } from '@/lib/api/endpoints/governance-explainability';
-import { ResourcePolicyHeaderActions } from './_components/ResourcePolicyHeaderActions';
 import { ResourcePolicyEditor } from './_components/ResourcePolicyEditor';
 import type { EditableSubject } from './resource-policy-page-types';
 import { getDefaultActionForResourceType } from './resource-policy-page-utils';
@@ -416,14 +415,6 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
               title={tNav('resource_policy')}
               subtitle={tResource('subtitle')}
               variant="compact"
-              actions={(
-                <ResourcePolicyHeaderActions
-                  basePath={basePath}
-                  openMembersLabel={tResource('open_members')}
-                  openCredentialsLabel={tResource('open_credentials')}
-                  openAuditLabel={tResource('open_audit')}
-                />
-              )}
             />
           )}
         >
@@ -451,14 +442,6 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
             title={tNav('resource_policy')}
             subtitle={tResource('subtitle')}
             variant="compact"
-            actions={(
-              <ResourcePolicyHeaderActions
-                basePath={basePath}
-                openMembersLabel={tResource('open_members')}
-                openCredentialsLabel={tResource('open_credentials')}
-                openAuditLabel={tResource('open_audit')}
-              />
-            )}
           />
         )}
       >

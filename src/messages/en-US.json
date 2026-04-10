@@ -116,7 +116,7 @@
     },
     "user_menu": {
       "profile": "Profile",
-      "third_party_accounts": "Third-Party Accounts",
+      "third_party_accounts": "Personal Connections",
       "api_keys": "API Keys",
       "language": "Language",
       "logout": "Logout",
@@ -156,7 +156,7 @@
     }
   },
   "nav": {
-    "overview": "Project Hub",
+    "overview": "Overview",
     "execution": "Execution",
     "chat": "Chat",
     "notebook": "Notebook",
@@ -164,13 +164,13 @@
     "agents": "Agents",
     "endpoints": "Endpoints",
     "alerts": "Alerts",
-    "resource_policy": "Resource Policy",
+    "resource_policy": "Policy",
     "access_control": "Access Control",
-    "credentials": "Credentials",
+    "credentials": "Project Secrets",
     "members": "Members",
     "audit": "Audit",
     "usage": "Usage",
-    "api_access_guide": "API Access Guide",
+    "api_access_guide": "Access Guide",
     "settings": "Settings",
     "go_to_projects": "Go to Projects",
     "view_all_projects": "View All Projects",
@@ -421,7 +421,8 @@
       "send": "Send",
       "hotkey_edit": "Enter to save · Shift+Enter for newline",
       "hotkey_compose": "Enter to send · Shift+Enter for newline",
-      "attach_from_library": "Attach from library"
+      "attach_from_library": "Attach from library",
+      "attach_from_project_library": "Attach from project library"
     },
     "header": {
       "status_generating": "Generating...",
@@ -434,9 +435,16 @@
       "switch_to_ultrawide": "Switch to ultrawide layout",
       "rename_thread": "Rename thread",
       "default_title": "Chat",
-      "no_active_thread_hint": "Create or select a thread first, then choose a model and send messages",
-      "select_model": "Select model",
-      "models": "Models",
+      "no_active_thread_hint": "Create or select a thread first, then choose an execution target and send messages",
+      "execution_target": "Execution target",
+      "select_execution_target": "Select execution target",
+      "execution_targets": "Execution targets",
+      "endpoints": "Endpoints",
+      "agents": "Agents",
+      "no_execution_targets": "No execution targets",
+      "agent_execution_target_hint": "Runner-managed execution target",
+      "select_model": "Select execution target",
+      "models": "Execution targets",
       "external_agent": "External Agent",
       "no_endpoints": "No endpoints",
       "disabled": "Disabled"
@@ -480,8 +488,8 @@
     "stream_diagnostics_audit": "Open Audit",
     "stream_diagnostics_agent": "Open Agent Diagnostics",
     "library_picker": {
-      "title": "Select file from library",
-      "select_library": "Select library",
+      "title": "Select file from project library",
+      "select_library": "Select project library",
       "search_placeholder": "Search file name",
       "name_column": "Name",
       "items_count": "{count} items",
@@ -836,6 +844,13 @@
     "admin": "Admin",
     "interaction_chat": "Chat",
     "interaction_notebook": "Notebook",
+    "agent_kind": "Agent kind",
+    "execution_target": "Execution target",
+    "execution_target_chat_help": "Choose the endpoint this chat agent will use for inference.",
+    "execution_target_notebook_help": "Choose the endpoint this notebook agent will use for task execution.",
+    "product_step_description": "Define the agent surface first, then configure deployment details.",
+    "deployment_step_description": "Set image, limits, and environment after the product shape is clear.",
+    "back_to_product_setup": "Back to product setup",
     "diagnostics_backoff": "Backing off",
     "diagnostics_last_error_at": "Last error recorded at {value}",
     "diagnostics_runner_spec_mismatch_title": "Runner app does not match this agent",
@@ -862,8 +877,8 @@
     "delete_confirm_action": "Delete"
   },
   "credentials": {
-    "title": "Credentials",
-    "subtitle": "Manage API keys and secrets for endpoints",
+    "title": "Project Secrets",
+    "subtitle": "Manage project-scoped secrets used by endpoints and agents.",
     "open_members": "Open Members",
     "open_resource_policy": "Open Resource Policy",
     "open_audit": "Open Audit",
@@ -901,8 +916,8 @@
       "deleting": "Deleting..."
     },
     "empty": {
-      "title": "No credentials yet",
-      "description": "Create credentials to use with your endpoints"
+      "title": "No project secrets yet",
+      "description": "Create project secrets to use with your endpoints and agents."
     }
   },
   "pricing": {
@@ -1319,7 +1334,7 @@
     }
   },
   "use_guide": {
-    "title": "API Access Guide",
+    "title": "Access Guide",
     "subtitle": "For advanced users who want to connect Codex CLI, Claude Code, or other local agents directly to AgentSmith inference access.",
     "hero": {
       "badge": "Advanced Access",
@@ -1495,7 +1510,7 @@
     "workspace_open_project_members": "Open project members",
     "workspace_open_project_settings": "Open project settings",
     "workspace_open_context": "Open workspace context",
-    "open_context": "Open context",
+    "open_context": "Open shared context",
     "workspace_project_creators_title": "Project creators",
     "workspace_project_creators_description": "Control who can open new projects inside this workspace without broader administration changes.",
     "workspace_project_creators_field": "Users who can create projects in this workspace",
@@ -1892,9 +1907,9 @@
     }
   },
   "context_store": {
-    "workspace_title": "Workspace Context",
+    "workspace_title": "Workspace Shared Context",
     "workspace_subtitle": "Maintain shared workspace guidance and context that agents can read.",
-    "project_title": "Project Context",
+    "project_title": "Shared Context",
     "project_subtitle": "Maintain shared project guidance and context that agents can read.",
     "list_title": "Entries",
     "list_description": "Each entry is stored as text and scoped to the current workspace or project.",
@@ -2570,8 +2585,8 @@
     "saved": "Profile saved"
   },
   "third_party_accounts": {
-    "title": "Third-Party Accounts",
-    "description": "Manage user-scoped external identities, tokens, and SSH credentials for downstream tools and MCP integrations.",
+    "title": "Personal Connections",
+    "description": "Manage your personal external identities, tokens, and SSH credentials for downstream tools and MCP integrations.",
     "summary_badge": "Tool access setup",
     "summary_intro": "Store the external accounts and secrets that downstream tools need, while keeping setup, refresh, and ownership visible in one place.",
     "summary_active_label": "Active connections",
@@ -2714,7 +2729,8 @@
   },
   "files": {
     "title": "Files",
-    "subtitle": "Browse project libraries, folders, and objects with a single file operations view.",
+    "subtitle": "Browse the shared project library, folders, and objects with a single file operations view.",
+    "project_library_label": "Project library",
     "open_chat": "Open Chat",
     "open_notebook": "Open Notebook",
     "open_endpoints": "Open Endpoints",

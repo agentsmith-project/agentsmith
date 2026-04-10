@@ -9,7 +9,7 @@
 import { useTranslations } from 'next-intl';
 import { TaskList } from '@/components/notebook/TaskList';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { ProjectWorkbenchBar, ProjectWorkbenchSwitcher } from '@/components/layout/ProjectWorkbenchBar';
+import { ProjectWorkbenchBar } from '@/components/layout/ProjectWorkbenchBar';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { useCanAccessNotebook } from '@/lib/hooks/use-permissions';
@@ -57,9 +57,6 @@ export default function NotebookPage({ params }: NotebookPageProps) {
     );
   }
 
-  const locale = resolvedParams.locale ?? 'en-US';
-  const basePath = `/${locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}`;
-
   return (
     <PageState state="success">
       <PageLayout
@@ -70,33 +67,6 @@ export default function NotebookPage({ params }: NotebookPageProps) {
           <ProjectWorkbenchBar
             title={t('title')}
             meta={<div className="text-sm text-secondary">{t('subtitle')}</div>}
-            switcher={(
-              <ProjectWorkbenchSwitcher
-                items={[
-                  {
-                    href: `${basePath}/notebook`,
-                    label: t('title'),
-                    testId: 'notebook__open-list',
-                    active: true,
-                  },
-                  {
-                    href: `${basePath}/chat`,
-                    label: t('open_chat'),
-                    testId: 'notebook__open-chat',
-                  },
-                  {
-                    href: `${basePath}/files`,
-                    label: t('open_files'),
-                    testId: 'notebook__open-files',
-                  },
-                  {
-                    href: `${basePath}/agents`,
-                    label: t('open_agents'),
-                    testId: 'notebook__open-agents',
-                  },
-                ]}
-              />
-            )}
           />
 
           <TaskList

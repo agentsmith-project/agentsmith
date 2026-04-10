@@ -4,7 +4,7 @@ import Link from 'next/link';
 import * as React from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { FolderOpen, Link2, Plus, Settings as SettingsIcon, Users } from 'lucide-react';
+import { FolderOpen, Link2, Plus, Settings as SettingsIcon } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -20,7 +20,7 @@ import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { buildProjectAdminSummary } from '@/lib/projects/project-view';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ProjectAPI, getApiClient, WorkspaceAPI } from '@/lib/api';
+import { getApiClient, WorkspaceAPI } from '@/lib/api';
 import { APIError } from '@/lib/api/errors';
 import type { WorkspaceDirectoryUser } from '@/lib/api/types';
 
@@ -32,7 +32,6 @@ export default function WorkspaceSettingsPage() {
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const queryClient = useQueryClient();
-  const projectAPI = React.useMemo(() => new ProjectAPI(getApiClient()), []);
   const workspaceAPI = React.useMemo(() => new WorkspaceAPI(getApiClient()), []);
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
   const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
@@ -61,8 +60,6 @@ export default function WorkspaceSettingsPage() {
   const [projectCreatorSearchResults, setProjectCreatorSearchResults] = React.useState<WorkspaceDirectoryUser[]>([]);
   const [projectCreatorSearchLoading, setProjectCreatorSearchLoading] = React.useState(false);
   const [projectCreatorSearchError, setProjectCreatorSearchError] = React.useState<string | null>(null);
-  const [ownerDraftByProject, setOwnerDraftByProject] = React.useState<Record<string, string>>({});
-  const [ownerSavingByProject, setOwnerSavingByProject] = React.useState<Record<string, boolean>>({});
 
   const memberNameById = React.useMemo(
     () => new Map(members.map((member) => [member.user_id, member.name || member.email || member.user_id])),
@@ -79,16 +76,6 @@ export default function WorkspaceSettingsPage() {
       projectCreators.some((creator) => creator.user_id === creator.email || creator.email.endsWith('@workspace.local')),
     [projectCreators],
   );
-
-  React.useEffect(() => {
-    setOwnerDraftByProject((current) => {
-      const next = { ...current };
-      for (const project of projects) {
-        next[project.id] = next[project.id] ?? project.owner_id;
-      }
-      return next;
-    });
-  }, [projects]);
 
   const handleCreateProjectSuccess = React.useCallback(async () => {
     await queryClient.invalidateQueries({
@@ -179,21 +166,6 @@ export default function WorkspaceSettingsPage() {
   const handleRemoveProjectCreator = React.useCallback((userId: string) => {
     setProjectCreators((current) => current.filter((item) => item.user_id !== userId));
   }, []);
-
-  const handleSaveProjectOwner = React.useCallback(async (projectId: string) => {
-    if (!workspaceId) return;
-    const project = projects.find((item) => item.id === projectId);
-    const nextOwnerId = ownerDraftByProject[projectId]?.trim();
-    if (!project || !nextOwnerId || nextOwnerId === project.owner_id) return;
-    setOwnerSavingByProject((current) => ({ ...current, [projectId]: true }));
-    try {
-      await projectAPI.update(workspaceId, projectId, { owner_id: nextOwnerId });
-      await queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'projects'] });
-      await queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'projects', projectId] });
-    } finally {
-      setOwnerSavingByProject((current) => ({ ...current, [projectId]: false }));
-    }
-  }, [ownerDraftByProject, projectAPI, projects, queryClient, workspaceId]);
 
   if (!workspaceId) {
     return (
@@ -391,45 +363,11 @@ export default function WorkspaceSettingsPage() {
                           <p className="mt-1 text-sm text-foreground">
                             {buildProjectAdminSummary(project, memberNameById)}
                           </p>
-                          <div className="mt-3 space-y-2">
-                            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-tertiary">
-                              {t('workspace_project_owner_label')}
-                            </label>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <select
-                                value={ownerDraftByProject[project.id] ?? project.owner_id}
-                                onChange={(event) =>
-                                  setOwnerDraftByProject((current) => ({ ...current, [project.id]: event.target.value }))
-                                }
-                                className="min-w-[220px] rounded-sm border border-subtle bg-surface px-3 py-2 text-sm text-foreground"
-                                data-testid={`ws-settings__project-owner-select--${project.id}`}
-                              >
-                                {members.map((member) => (
-                                  <option key={member.id} value={member.user_id}>
-                                    {member.name || member.email || member.user_id}
-                                  </option>
-                                ))}
-                              </select>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => void handleSaveProjectOwner(project.id)}
-                                disabled={
-                                  ownerSavingByProject[project.id] === true ||
-                                  (ownerDraftByProject[project.id] ?? project.owner_id) === project.owner_id
-                                }
-                                data-testid={`ws-settings__project-owner-save--${project.id}`}
-                              >
-                                {ownerSavingByProject[project.id] ? t('workspace_project_owner_saving') : t('workspace_project_owner_save')}
-                              </Button>
-                            </div>
-                            <p className="text-xs text-tertiary">
-                              {t('workspace_project_owner_current', {
-                                owner: memberNameById.get(project.owner_id) || project.owner_id,
-                              })}
-                            </p>
-                          </div>
+                          <p className="mt-3 text-xs text-tertiary">
+                            {t('workspace_project_owner_current', {
+                              owner: memberNameById.get(project.owner_id) || project.owner_id,
+                            })}
+                          </p>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <Link
@@ -439,22 +377,6 @@ export default function WorkspaceSettingsPage() {
                           >
                             <FolderOpen className="mr-2 h-4 w-4" />
                             {t('workspace_open_project')}
-                          </Link>
-                          <Link
-                            href={`${workspaceBasePath}/projects/${project.id}/members`}
-                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                            data-testid={`ws-settings__project-open-members--${project.id}`}
-                          >
-                            <Users className="mr-2 h-4 w-4" />
-                            {t('workspace_open_project_members')}
-                          </Link>
-                          <Link
-                            href={`${workspaceBasePath}/projects/${project.id}/settings`}
-                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                            data-testid={`ws-settings__project-open-settings--${project.id}`}
-                          >
-                            <SettingsIcon className="mr-2 h-4 w-4" />
-                            {t('workspace_open_project_settings')}
                           </Link>
                         </div>
                       </div>

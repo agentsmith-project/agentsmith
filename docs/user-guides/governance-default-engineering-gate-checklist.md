@@ -53,6 +53,7 @@ Expected:
 4. Mock lane governance E2E passes.
 5. Targeted visual baselines pass for governance pages and overlays.
 6. Governance data does not silently disappear after API restart.
+7. Full visual verification remains in `npm run lane:visual`, not in this governance gate.
 
 ## 4. Covered Mock Lane Workflow
 
@@ -65,6 +66,8 @@ The default governance gate validates this business flow:
 5. Return to `Members` with the same subject/resource context preserved.
 
 ## 5. Visual Coverage
+
+This gate owns targeted visual coverage only. Full visual verification belongs to `npm run lane:visual`.
 
 The governance gate also runs targeted visual coverage for:
 

@@ -363,7 +363,7 @@ describe('Composer', () => {
       );
 
       expect(screen.queryByTitle('Attach files')).not.toBeInTheDocument();
-      expect(screen.queryByTitle('Attach from library')).not.toBeInTheDocument();
+      expect(screen.queryByTitle('Attach from project library')).not.toBeInTheDocument();
       expect(screen.getAllByText('Current endpoint only supports text.').length).toBeGreaterThan(0);
     });
 

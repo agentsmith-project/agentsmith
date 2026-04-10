@@ -48,6 +48,7 @@ Expected:
 2. Default-route component and route tests pass.
 3. Backend permission and workspace governance tests pass.
 4. Mock lane E2E and targeted visual both pass.
+5. Full visual verification remains in `npm run lane:visual`, not in this default gate.
 
 ## 4. Default E2E Coverage
 
@@ -63,6 +64,8 @@ Expected:
 3. Project creation lands in project overview.
 
 ## 5. Visual Coverage
+
+This gate owns targeted visual coverage only. Full visual verification belongs to `npm run lane:visual`.
 
 The default gate also runs targeted visual coverage for the default entry pages:
 

@@ -101,7 +101,7 @@ export function AgentBasicsSection({
 
       <div className="space-y-2">
         <label htmlFor="agent-interaction-kind" className="text-sm font-medium text-foreground">
-          {t('create_dialog.interaction_kind')}
+          {t('agent_kind')}
         </label>
         <select
           id="agent-interaction-kind"
@@ -117,7 +117,7 @@ export function AgentBasicsSection({
 
       <div className="space-y-2">
         <label htmlFor="agent-execution-endpoint-id" className="text-sm font-medium text-foreground">
-          {interactionKind === 'chat' ? t('create_dialog.chat_endpoint_id') : t('create_dialog.notebook_endpoint_id')}
+          {t('execution_target')}
         </label>
         <select
           id="agent-execution-endpoint-id"
@@ -137,6 +137,11 @@ export function AgentBasicsSection({
             </option>
           ))}
         </select>
+        <p className="text-xs text-tertiary">
+          {interactionKind === 'chat'
+            ? t('execution_target_chat_help')
+            : t('execution_target_notebook_help')}
+        </p>
       </div>
     </>
   );

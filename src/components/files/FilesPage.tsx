@@ -13,7 +13,7 @@ import * as React from 'react';
 import { useTranslations } from 'next-intl';
 
 import { PageLayout } from '@/components/layout/PageLayout';
-import { ProjectWorkbenchBar, ProjectWorkbenchSwitcher } from '@/components/layout/ProjectWorkbenchBar';
+import { ProjectWorkbenchBar } from '@/components/layout/ProjectWorkbenchBar';
 import { toast } from '@/components/ui/toast';
 import { DesktopAccessDialog } from '@/components/files/files-page/DesktopAccessDialog';
 import { FilesPageContent } from '@/components/files/files-page/FilesPageContent';
@@ -72,7 +72,7 @@ export interface FilesPageProps {
   locale?: string;
 }
 
-export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPageProps) {
+export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }: FilesPageProps) {
   const t = useTranslations('files');
   const tErrors = useTranslations('errors');
   const authHydrated = useAuthStoreHydration();
@@ -96,7 +96,6 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
   const authReady = authHydrated && isAuthenticated && !!token && apiClientAuthReady;
   const { canManage, canExchangeCredentials } = useFilesPageCapabilities();
   const { layoutMode } = useProjectLayoutMode();
-  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const { data: librariesData, isLoading: libsLoading } = useFileLibraries(workspaceId, projectId, {
     enabled: authReady,
@@ -415,39 +414,15 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
         title={t('title')}
         meta={(
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-secondary">
+            <span className="rounded-full border border-subtle bg-surface-high/60 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.12em] text-tertiary">
+              {t('project_library_label')}
+            </span>
             <span className="font-medium text-foreground">{selectedLibrary?.name ?? t('file_manager.no_libraries')}</span>
             <span className="truncate text-tertiary">{prefix || t('file_manager.root')}</span>
             <span className="text-tertiary">{filteredItems.length} {t('file_manager.items')}</span>
           </div>
         )}
         className="mb-4"
-        switcher={(
-          <ProjectWorkbenchSwitcher
-            items={[
-              {
-                href: `${basePath}/files`,
-                label: t('title'),
-                testId: 'files__open-files',
-                active: true,
-              },
-              {
-                href: `${basePath}/chat`,
-                label: t('open_chat'),
-                testId: 'files__open-chat',
-              },
-              {
-                href: `${basePath}/notebook`,
-                label: t('open_notebook'),
-                testId: 'files__open-notebook',
-              },
-              {
-                href: `${basePath}/endpoints`,
-                label: t('open_endpoints'),
-                testId: 'files__open-endpoints',
-              },
-            ]}
-          />
-        )}
       />
       <input
         ref={fileInputRef}

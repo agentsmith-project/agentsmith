@@ -3,11 +3,21 @@
 Last updated: 2026-03-30  
 Status: `authoritative`
 
-This document defines the current engineering governance model for AgentSmith. README, DEVELOPMENT, Make help, workflow checks, and current runbooks must follow this document and the machine-readable manifest in `scripts/governance/current-workflow-manifest.ts`.
+This document defines the current engineering governance model for AgentSmith. README, DEVELOPMENT, Make help, workflow checks, and current runbooks must follow this document and the machine-readable manifests in `scripts/governance/current-workflow-manifest.ts` and `scripts/governance/current-gate-manifest.ts`.
+
+Product terminology alignment:
+- `docs/contracts/product-terminology.md` is the authoritative source for product-facing object names and IA boundaries.
+- Engineering docs and tests must use `Execution target`, `Project secrets`, `Shared context`, `Access guide`, and `Files` when referring to the current product surfaces.
+- Do not collapse `Endpoint` and `Agent` into a generic model-source concept in product-facing explanations, UI narratives, or verification language.
 
 Canonical entrypoint rule:
 - `npm run` names are the authoritative current command names.
 - `make` targets may wrap them for convenience, but they are not a second naming model.
+
+Current gate truth:
+- `scripts/governance/current-gate-manifest.ts` is the machine-readable source for gate composition, visual ownership, backend-real ownership, and CI/checklist alignment.
+- `gate:default` does not own the full visual lane.
+- `lane:visual` is the only current command that owns full visual verification.
 
 For the current runtime-line methodology and the shared-substrate model, use:
 
@@ -167,6 +177,10 @@ Important:
 - Default engineering gates do not fail solely because visual baselines are missing.
 - The visual verification lane fails when visual checks fail.
 - Release-grade visual review requirements must be stated explicitly in release guidance.
+
+5. Ownership rule
+- `gate:default` may contain targeted visual checks inside domain gates.
+- `lane:visual` is the only current full visual lane.
 
 ## 6. Current configuration language
 

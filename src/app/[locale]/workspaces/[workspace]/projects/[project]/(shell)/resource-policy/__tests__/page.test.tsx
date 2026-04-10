@@ -68,13 +68,13 @@ describe('ResourcePolicyPage', () => {
     });
   });
 
-  it('renders governance header actions', async () => {
+  it('keeps the header focused on policy details instead of governance cross-links', async () => {
     render(<ResourcePolicyPage params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })} />, { wrapper: createWrapper() });
     await waitFor(() => {
       expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
     });
     const header = screen.getByTestId('page-layout__header');
-    expect(within(header).getByTestId('resource-policy__open-members')).toHaveAttribute('href', '/en-US/workspaces/ws_1/projects/prj_1/members');
+    expect(within(header).queryByTestId('resource-policy__open-members')).not.toBeInTheDocument();
   });
 
   it('shows permission denied without policy permission', async () => {

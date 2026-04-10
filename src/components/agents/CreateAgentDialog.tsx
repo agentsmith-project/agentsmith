@@ -62,6 +62,7 @@ export function CreateAgentDialog({
   const [memoryLimit, setMemoryLimit] = React.useState('4Gi');
   const [idleTimeoutSec, setIdleTimeoutSec] = React.useState(String(INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS));
   const [maxLifetimeSec, setMaxLifetimeSec] = React.useState(String(INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS));
+  const [step, setStep] = React.useState<'product' | 'deployment'>('product');
 
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
   const endpointAPI = React.useMemo(() => new EndpointAPI(getApiClient()), []);
@@ -110,6 +111,7 @@ export function CreateAgentDialog({
     setMemoryLimit('4Gi');
     setIdleTimeoutSec(String(INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS));
     setMaxLifetimeSec(String(INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS));
+    setStep('product');
   };
 
   React.useEffect(() => {
@@ -181,6 +183,7 @@ export function CreateAgentDialog({
     );
 
   const canSubmit = name.trim().length > 0 && !createMutation.isPending;
+  const canContinueToDeployment = canSubmit && executionEndpointId.trim().length > 0;
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
@@ -207,76 +210,88 @@ export function CreateAgentDialog({
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-foreground">{t('create_dialog.title')}</p>
                   <p className="text-sm leading-6 text-secondary">
-                    {mode === 'internal'
-                      ? t('edit_dialog.description')
-                      : t('detail_general')}
+                    {step === 'product'
+                      ? t('product_step_description')
+                      : t('deployment_step_description')}
                   </p>
                 </div>
               </div>
             </div>
 
-            <AgentBasicsSection
-              commonT={commonT}
-              createPending={createMutation.isPending}
-              description={description}
-              endpointOptions={endpointOptions}
-              interactionKind={interactionKind}
-              mode={mode}
-              name={name}
-              executionEndpointId={executionEndpointId}
-              t={t}
-              onDescriptionChange={setDescription}
-              onInteractionKindChange={setInteractionKind}
-              onModeChange={setMode}
-              onNameChange={setName}
-              onExecutionEndpointIdChange={setExecutionEndpointId}
-            />
-
-            {mode === 'internal' ? (
-              <InternalAgentSection
-                cpuLimit={cpuLimit}
-                cpuRequest={cpuRequest}
+            {step === 'product' ? (
+              <AgentBasicsSection
+                commonT={commonT}
                 createPending={createMutation.isPending}
+                description={description}
                 endpointOptions={endpointOptions}
-                envEntries={envEntries}
-                idleTimeoutSec={idleTimeoutSec}
-                image={image}
-                maxConcurrentSessions={maxConcurrentSessions}
-                maxLifetimeSec={maxLifetimeSec}
-                memoryLimit={memoryLimit}
-                memoryRequest={memoryRequest}
-              executionEndpointId={executionEndpointId}
-              interactionKind={interactionKind}
-              t={t}
-                onAddEnvEntry={addEnvEntry}
-                onCpuLimitChange={setCpuLimit}
-                onCpuRequestChange={setCpuRequest}
-                onIdleTimeoutSecChange={setIdleTimeoutSec}
-                onImageChange={setImage}
-                onMaxConcurrentSessionsChange={setMaxConcurrentSessions}
-                onMaxLifetimeSecChange={setMaxLifetimeSec}
-                onMemoryLimitChange={setMemoryLimit}
-                onMemoryRequestChange={setMemoryRequest}
-              onExecutionEndpointIdChange={setExecutionEndpointId}
-                onRemoveEnvEntry={removeEnvEntry}
-                onUpdateEnvEntry={updateEnvEntry}
-              />
-            ) : null}
-
-            {mode === 'external' ? (
-              <ExternalAgentSection
-                createPending={createMutation.isPending}
-                externalAcceptedMimeTypes={externalAcceptedMimeTypes}
-                externalMaxFileCount={externalMaxFileCount}
-                externalMaxTotalBytes={externalMaxTotalBytes}
-                externalMultimodal={externalMultimodal}
+                interactionKind={interactionKind}
+                mode={mode}
+                name={name}
+                executionEndpointId={executionEndpointId}
                 t={t}
-                onExternalAcceptedMimeTypesChange={setExternalAcceptedMimeTypes}
-                onExternalMaxFileCountChange={setExternalMaxFileCount}
-                onExternalMaxTotalBytesChange={setExternalMaxTotalBytes}
-                onExternalMultimodalChange={setExternalMultimodal}
+                onDescriptionChange={setDescription}
+                onInteractionKindChange={setInteractionKind}
+                onModeChange={setMode}
+                onNameChange={setName}
+                onExecutionEndpointIdChange={setExecutionEndpointId}
               />
-            ) : null}
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4" data-testid="agents__create-dialog__product-summary">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <SummaryField label={t('create_dialog.name')} value={name.trim()} />
+                    <SummaryField label={t('agent_kind')} value={interactionKind === 'chat' ? t('interaction_chat') : t('interaction_notebook')} />
+                    <SummaryField label={t('create_dialog.mode')} value={mode === 'internal' ? t('create_dialog.mode_internal') : t('create_dialog.mode_external')} />
+                    <SummaryField
+                      label={t('execution_target')}
+                      value={endpointOptions.find((endpoint) => endpoint.id === executionEndpointId)?.name ?? executionEndpointId}
+                    />
+                  </div>
+                </div>
+
+                {mode === 'internal' ? (
+                  <InternalAgentSection
+                    cpuLimit={cpuLimit}
+                    cpuRequest={cpuRequest}
+                    createPending={createMutation.isPending}
+                    envEntries={envEntries}
+                    idleTimeoutSec={idleTimeoutSec}
+                    image={image}
+                    maxConcurrentSessions={maxConcurrentSessions}
+                    maxLifetimeSec={maxLifetimeSec}
+                    memoryLimit={memoryLimit}
+                    memoryRequest={memoryRequest}
+                    t={t}
+                    onAddEnvEntry={addEnvEntry}
+                    onCpuLimitChange={setCpuLimit}
+                    onCpuRequestChange={setCpuRequest}
+                    onIdleTimeoutSecChange={setIdleTimeoutSec}
+                    onImageChange={setImage}
+                    onMaxConcurrentSessionsChange={setMaxConcurrentSessions}
+                    onMaxLifetimeSecChange={setMaxLifetimeSec}
+                    onMemoryLimitChange={setMemoryLimit}
+                    onMemoryRequestChange={setMemoryRequest}
+                    onRemoveEnvEntry={removeEnvEntry}
+                    onUpdateEnvEntry={updateEnvEntry}
+                  />
+                ) : null}
+
+                {mode === 'external' ? (
+                  <ExternalAgentSection
+                    createPending={createMutation.isPending}
+                    externalAcceptedMimeTypes={externalAcceptedMimeTypes}
+                    externalMaxFileCount={externalMaxFileCount}
+                    externalMaxTotalBytes={externalMaxTotalBytes}
+                    externalMultimodal={externalMultimodal}
+                    t={t}
+                    onExternalAcceptedMimeTypesChange={setExternalAcceptedMimeTypes}
+                    onExternalMaxFileCountChange={setExternalMaxFileCount}
+                    onExternalMaxTotalBytesChange={setExternalMaxTotalBytes}
+                    onExternalMultimodalChange={setExternalMultimodal}
+                  />
+                ) : null}
+              </div>
+            )}
 
           </div>
 
@@ -289,16 +304,46 @@ export function CreateAgentDialog({
             >
               {commonT('cancel')}
             </Button>
-            <Button type="submit" variant="primary" disabled={!canSubmit}>
-              {createMutation.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                commonT('create')
-              )}
-            </Button>
+            {step === 'deployment' ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setStep('product')}
+                disabled={createMutation.isPending}
+              >
+                {t('back_to_product_setup')}
+              </Button>
+            ) : null}
+            {step === 'product' ? (
+              <Button
+                type="button"
+                variant="primary"
+                disabled={!canContinueToDeployment}
+                onClick={() => setStep('deployment')}
+              >
+                {commonT('next')}
+              </Button>
+            ) : (
+              <Button type="submit" variant="primary" disabled={!canSubmit}>
+                {createMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  commonT('create')
+                )}
+              </Button>
+            )}
           </div>
         </form>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function SummaryField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-1">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</div>
+      <div className="text-sm text-foreground">{value}</div>
+    </div>
   );
 }

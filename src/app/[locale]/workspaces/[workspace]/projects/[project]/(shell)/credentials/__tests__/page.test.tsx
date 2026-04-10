@@ -193,9 +193,9 @@ describe('CredentialsPage', () => {
 
       const header = screen.getByTestId('page-layout__header');
       expect(within(header).getByRole('heading', { level: 1, name: 'Credentials' })).toBeInTheDocument();
-      expect(within(header).getByTestId('credentials__open-members')).toHaveAttribute('href', '/en/workspaces/ws_test/projects/proj_001/members');
-      expect(within(header).getByTestId('credentials__open-resource-policy')).toHaveAttribute('href', '/en/workspaces/ws_test/projects/proj_001/resource-policy');
-      expect(within(header).getByTestId('credentials__open-audit')).toHaveAttribute('href', '/en/workspaces/ws_test/projects/proj_001/audit');
+      expect(within(header).queryByTestId('credentials__open-members')).not.toBeInTheDocument();
+      expect(within(header).queryByTestId('credentials__open-resource-policy')).not.toBeInTheDocument();
+      expect(within(header).queryByTestId('credentials__open-audit')).not.toBeInTheDocument();
       const toolbar = screen.getByTestId('page-layout__toolbar');
       expect(within(toolbar).getByRole('button', { name: /create credential/i })).toBeInTheDocument();
     });

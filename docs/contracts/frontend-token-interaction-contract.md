@@ -55,16 +55,19 @@ Related docs:
 - Endpoints: `project:endpoint:use`
 - Agents: `project:agent:use` or `project:agent:manage`
 - Members: `project:membership:update`
-- Credentials: `project:governance:update`
+- Shared context: `project:governance:update`
+- Project secrets: `project:governance:update`
 - Resource Policy: `project:governance:update`
 - Settings: `project:governance:update` or `project:admins:update` or `project:lifecycle:update`
 - Audit: `project:audit:read`
 - Usage: `project:endpoint:use`
+- Access guide: `project:endpoint:use`
 
 Current split-token status:
 - Files mutations are now governed by `project:files:update` end to end.
 - Notebook terminal session use remains on `project:terminal:use`.
-- Credentials remain on `project:governance:update`.
+- Shared context remains on `project:governance:update`.
+- Project secrets remain on `project:governance:update`.
 - Resource Policy remains on `project:governance:update`.
 - Members governance writes remain on `project:membership:update`.
 - Project owner/admin assignment remains on `project:admins:update`.
@@ -75,7 +78,7 @@ Current split-token status:
 
 - Endpoint create/update/delete: `project:governance:update`
 - File/library create/update/delete: `project:files:update`
-- Credential create/rotate/delete: `project:governance:update`
+- Project secret create/rotate/delete: `project:governance:update`
 - Resource policy save: `project:governance:update`
 - Member/template/group management and join request decisions: `project:membership:update`
 - Agent create/update/delete/key issue/key revoke: `project:agent:manage`
@@ -84,7 +87,7 @@ Current split-token status:
 Current action split status:
 - Endpoint governance writes: `project:governance:update`
 - File/library create/update/delete/move/upload/share-link: `project:files:update`
-- Credential create/rotate/delete: `project:governance:update`
+- Project secret create/rotate/delete: `project:governance:update`
 - Resource policy save: `project:governance:update`
 - Member/template/group management and join request decisions: `project:membership:update`
 - Project admin assignment: `project:admins:update`

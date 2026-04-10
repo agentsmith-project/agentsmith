@@ -29,14 +29,22 @@ export const CURRENT_WORKFLOW_DOCUMENT_FILES = [
   'Makefile',
   'docs/CURRENT_BASELINE.md',
   'docs/current-engineering-governance-model.md',
+  'docs/contracts/current-gate-manifest-contract.md',
   'docs/troubleshooting-guide-v1.md',
+  'docs/user-guides/workspace-project-default-engineering-gate-checklist.md',
+  'docs/user-guides/governance-default-engineering-gate-checklist.md',
+  'docs/user-guides/release-readiness-checklist.md',
   // Notebook Codex Runner runbook (current operational truth; file path remains the current file name).
   'docs/notebook-codex-runbook.md',
   'docs/UXUI/01-通用规范/visual-baseline-policy-v1.md',
+  '.github/workflows/quality-gates.yml',
+  '.github/workflows/contracts-check.yml',
   'scripts/local-manual/common.sh',
   'scripts/notebook-agent-init-resources.sh',
   'scripts/contracts/check-current-workflows.ts',
+  'scripts/contracts/check-current-gates.ts',
   'scripts/contracts/check-engineering-governance.ts',
+  'scripts/governance/current-gate-manifest.ts',
 ] as const;
 
 export const CURRENT_WORKFLOW_MANIFEST: readonly CurrentWorkflowSection[] = [

@@ -11,6 +11,7 @@ import {
 } from '@/lib/hooks/use-permissions';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { Button } from '@/components/ui/button';
+import { listSidebarProjectRoutePolicies } from '@/lib/routes/project-route-policy-manifest';
 import {
   LayoutDashboard,
   LucideIcon,
@@ -29,6 +30,7 @@ import {
   Shield,
   BarChart3,
   SlidersHorizontal,
+  ScrollText,
 } from 'lucide-react';
 
 interface AppShellSidebarProps {
@@ -42,39 +44,11 @@ type ProjectMenuSection = 'home' | 'use' | 'develop' | 'govern' | 'operate';
 type ProjectMenuItem = {
   icon: LucideIcon;
   labelKey: string;
+  labelNamespace: 'nav' | 'context_store';
   href: string;
-  // Permission is a contract token from src/lib/constants/permissions.ts
-  // Use '__multi__' for items that require multiple permission checks (handled in filter logic)
-  permission:
-    | 'project:endpoint:use'
-    | 'project:agent:use'
-    | 'project:agent:manage'
-    | 'project:audit:read'
-    | 'project:governance:update'
-    | 'project:membership:update'
-    | '__multi__';
   section: ProjectMenuSection;
+  navOrder: number;
 };
-
-const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
-  // Home section
-  { icon: LayoutDashboard, labelKey: 'overview', href: 'overview', permission: 'project:endpoint:use', section: 'home' },
-  // Use section
-  { icon: MessageSquare, labelKey: 'chat', href: 'chat', permission: 'project:endpoint:use', section: 'use' },
-  { icon: Wrench, labelKey: 'notebook', href: 'notebook', permission: 'project:endpoint:use', section: 'use' },
-  { icon: FolderOpen, labelKey: 'files', href: 'files', permission: 'project:endpoint:use', section: 'use' },
-  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:endpoint:use', section: 'use' },
-  { icon: BookOpen, labelKey: 'api_access_guide', href: 'use-guide', permission: 'project:endpoint:use', section: 'use' },
-  // Develop section
-  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:use', section: 'develop' },
-  // Govern section
-  { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:use', section: 'govern' },
-  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:governance:update', section: 'govern' },
-  { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:governance:update', section: 'govern' },
-  { icon: Users, labelKey: 'members', href: 'members', permission: 'project:membership:update', section: 'govern' },
-  { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:read', section: 'govern' },
-  { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: '__multi__', section: 'govern' },
-];
 
 const PROJECT_MENU_SECTIONS: Array<{ id: ProjectMenuSection; labelKey: string }> = [
   { id: 'home', labelKey: 'sidebar.home' },
@@ -83,6 +57,23 @@ const PROJECT_MENU_SECTIONS: Array<{ id: ProjectMenuSection; labelKey: string }>
   { id: 'govern', labelKey: 'sidebar.govern' },
   { id: 'operate', labelKey: 'sidebar.operate' },
 ];
+
+const PROJECT_MENU_ICON_BY_HREF: Record<string, LucideIcon> = {
+  overview: LayoutDashboard,
+  chat: MessageSquare,
+  notebook: Wrench,
+  files: FolderOpen,
+  usage: BarChart3,
+  'use-guide': BookOpen,
+  agents: Bot,
+  endpoints: Server,
+  'resource-policy': SlidersHorizontal,
+  context: ScrollText,
+  credentials: Key,
+  members: Users,
+  audit: Shield,
+  settings: SettingsIcon,
+};
 
 type WorkspaceMenuItem = {
   icon: LucideIcon;
@@ -99,7 +90,8 @@ export function AppShellSidebar({
 }: AppShellSidebarProps) {
   const params = useParams();
   const pathname = usePathname();
-  const t = useTranslations('nav');
+  const tNav = useTranslations('nav');
+  const tContextStore = useTranslations('context_store');
   const [collapsed, setCollapsed] = React.useState(false);
   const {
     canUseProject,
@@ -118,26 +110,45 @@ export function AppShellSidebar({
   const locale = params?.locale as string | undefined;
   const { data: currentProject } = useProject(workspaceId || '', projectId || '');
 
+  const routePolicies = React.useMemo(
+    () => listSidebarProjectRoutePolicies(),
+    [],
+  );
+
   const projectMenuItems = currentProject
-    ? PROJECT_MENU_ITEMS.filter((item) => {
-        if (item.permission === 'project:endpoint:use') {
-          return canUseProject;
-        }
-        if (item.permission === 'project:agent:use') return canUseAgents || canManageAgents;
-        if (item.permission === 'project:agent:manage') return canManageAgents;
-        if (item.permission === 'project:audit:read') return canReadAudit;
-        if (item.permission === 'project:governance:update') return canManageGovernance;
-        if (item.permission === 'project:membership:update') return canManageMembership;
-        if (item.href === 'settings') {
-          return canReadProjectSettings;
-        }
-        return true;
-      })
+    ? routePolicies
+        .filter((policy) => {
+          if (policy.href === 'overview') return canUseProject;
+          if (policy.href === 'chat' || policy.href === 'notebook' || policy.href === 'files' || policy.href === 'usage' || policy.href === 'use-guide') {
+            return canUseProject;
+          }
+          if (policy.href === 'agents') return canUseAgents || canManageAgents;
+          if (policy.href === 'endpoints') return canUseProject || canManageGovernance;
+          if (policy.href === 'resource-policy' || policy.href === 'context' || policy.href === 'credentials') {
+            return canManageGovernance;
+          }
+          if (policy.href === 'members') return canManageMembership;
+          if (policy.href === 'audit') return canReadAudit;
+          if (policy.href === 'settings') {
+            return canReadProjectSettings;
+          }
+          return true;
+        })
+        .map((policy) => ({
+          icon: PROJECT_MENU_ICON_BY_HREF[policy.href] ?? LayoutDashboard,
+          labelKey: policy.navLabelKey,
+          labelNamespace: policy.navLabelNamespace,
+          href: policy.href,
+          section: policy.navSection,
+          navOrder: policy.navOrder,
+        }))
     : [];
   const groupedProjectMenuItems = PROJECT_MENU_SECTIONS
     .map((section) => ({
       ...section,
-      items: projectMenuItems.filter((item) => item.section === section.id),
+      items: projectMenuItems
+        .filter((item) => item.section === section.id)
+        .sort((left, right) => left.navOrder - right.navOrder),
     }))
     .filter((section) => section.items.length > 0);
   const workspaceMenuItems: WorkspaceMenuItem[] = [
@@ -227,18 +238,20 @@ export function AppShellSidebar({
               <div key={section.id} data-testid={`sidebar__section--${section.id}`}>
                 {!collapsed ? (
                   <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-tertiary/90">
-                    {t(section.labelKey)}
+                    {tNav(section.labelKey)}
                   </div>
                 ) : null}
                 <div className="space-y-1">
                   {section.items.map((item) => {
                     const isActive = pathname?.split('/').includes(item.href);
-                    const label = t(item.labelKey);
+                    const label = item.labelNamespace === 'context_store'
+                      ? tContextStore(item.labelKey)
+                      : tNav(item.labelKey);
                     return (
                       <Link
                         key={item.href}
                         href={resolveItemHref(item.href)}
-                        data-testid={`sidebar__nav-item--${item.labelKey.replace('sidebar.', '')}`}
+                        data-testid={`sidebar__nav-item--${item.href}`}
                         title={collapsed ? label : undefined}
                         className={cn(
                           'relative flex items-center h-10 rounded-xl text-sm transition-colors duration-200',
@@ -270,7 +283,7 @@ export function AppShellSidebar({
               const isActive = currentProject
                 ? pathname?.split('/').includes(item.href)
                 : item.isActive(pathname, baseWorkspacePath);
-              const label = t(item.labelKey);
+              const label = tNav(item.labelKey);
               return (
                 <Link
                   key={item.href}
@@ -309,8 +322,8 @@ export function AppShellSidebar({
           data-testid="sidebar__collapse-btn"
           onClick={toggleCollapsed}
           className={cn('h-10 w-10 rounded-xl text-icon-default hover:bg-white/6 hover:text-foreground')}
-          aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
-          title={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
+          aria-label={collapsed ? tNav('sidebar.expand') : tNav('sidebar.collapse')}
+          title={collapsed ? tNav('sidebar.expand') : tNav('sidebar.collapse')}
         >
           {collapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
         </Button>

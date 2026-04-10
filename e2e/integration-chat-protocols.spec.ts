@@ -180,8 +180,8 @@ async function selectEndpoint(page: Page, endpointId: string): Promise<void> {
     /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+$/.test(res.url()) &&
     res.status() === 200,
   );
-  await page.getByTestId('chat__model-trigger').click();
-  await page.getByTestId(`chat__model-item--${endpointId}`).click();
+  await page.getByTestId('chat__execution-target-trigger').click();
+  await page.getByTestId(`chat__execution-target-endpoint--${endpointId}`).click();
   const response = await updateSessionResponse;
   const body = (await response.json().catch(() => null)) as { endpoint_id?: string } | null;
   expect(body?.endpoint_id).toBe(endpointId);

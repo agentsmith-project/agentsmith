@@ -289,6 +289,9 @@ test.describe('Visual - Workspace Pages', () => {
 
   test('workspace settings', async ({ authedPage }) => {
     await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/settings`);
+    await expect(authedPage.getByTestId('ws-settings__workspace')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-creators')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-owner-save--proj_001')).toHaveCount(0);
     await expect(authedPage).toHaveScreenshot('workspace-settings.png', { fullPage: true });
   });
 
@@ -411,18 +414,23 @@ test.describe('Visual - System Pages', () => {
 test.describe('Visual - Project Pages', () => {
   test('overview', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('overview'));
+    await expect(authedPage.getByTestId('project-hub__summary')).toBeVisible();
+    await expect(authedPage.getByTestId('project-hub__use-summary')).toBeVisible();
+    await expect(authedPage.getByTestId('project-hub__governance-summary')).toBeVisible();
     await expect(authedPage).toHaveScreenshot('overview.png', { fullPage: true });
   });
 
   test('chat - standard', async ({ authedPage }) => {
     await authedPage.setViewportSize({ width: 1440, height: 900 });
     await stableNavigate(authedPage, projectPath('chat'));
+    await expect(authedPage.getByTestId('chat__execution-target-trigger')).toBeVisible();
     await expect(authedPage).toHaveScreenshot('chat-standard.png', { fullPage: true });
   });
 
   test('chat - ultrawide', async ({ authedPage }) => {
     await authedPage.setViewportSize({ width: 2200, height: 1200 });
     await stableNavigate(authedPage, projectPath('chat'));
+    await expect(authedPage.getByTestId('chat__execution-target-trigger')).toBeVisible();
     await expect(authedPage).toHaveScreenshot('chat-ultrawide.png', { fullPage: true });
   });
 
@@ -484,6 +492,7 @@ test.describe('Visual - Project Pages', () => {
     await stableNavigate(authedPage, projectPath('files'));
     await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
     await expect(authedPage.getByTestId('project-workbench__heading')).toContainText('Files');
+    await expect(authedPage.getByText('Project library')).toBeVisible();
     await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
     await expect(authedPage.getByTestId('files__library-item--lib_shared_default')).toBeVisible();
     await expect(authedPage.getByTestId('files__library-desktop-access--lib_shared_default')).toBeVisible();
@@ -501,7 +510,7 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('usage.png', { fullPage: true });
   });
 
-  test('use guide', async ({ authedPage }) => {
+  test('access guide', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('use-guide'));
     await expect(authedPage.getByTestId('use-guide__page')).toBeVisible();
     await expect(authedPage).toHaveScreenshot('use-guide.png', { fullPage: true });

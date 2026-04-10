@@ -75,7 +75,10 @@ vi.mock('@/components/chat/ChatMainPane', () => ({
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useCanAccessChat: vi.fn(() => true),
 }));
-vi.mock('next-intl', () => ({ useTranslations: () => (key: string) => key }));
+vi.mock('next-intl', () => ({
+  useLocale: () => 'en',
+  useTranslations: () => (key: string) => key,
+}));
 
 import ChatPage from '../page';
 

@@ -40,6 +40,7 @@ export function buildWorkLinks(
 
 export function buildGovernanceLinks(
   tNav: ReturnType<typeof useTranslations<'nav'>>,
+  tContext: ReturnType<typeof useTranslations<'context_store'>>,
   basePath: string,
   permissions: OverviewPermissions,
 ): OverviewLinkItem[] {
@@ -49,6 +50,7 @@ export function buildGovernanceLinks(
     ...(permissions.canManageGovernance
       ? [
           { label: tNav('resource_policy'), href: `${basePath}/resource-policy` },
+          { label: tContext('project_title'), href: `${basePath}/context` },
           { label: tNav('credentials'), href: `${basePath}/credentials` },
         ]
       : []),

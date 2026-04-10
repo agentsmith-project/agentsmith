@@ -55,9 +55,9 @@ describe('NotebookTaskDetailPage route', () => {
       expect(screen.getByTestId('notebook__task-detail-route')).toBeInTheDocument();
     });
     expect(screen.getByText('ws_1:proj_1:task_1:true:true:true:true')).toBeInTheDocument();
-    expect(screen.getByTestId('notebook-task__open-list')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/notebook');
-    expect(screen.getByTestId('notebook-task__open-chat')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/chat');
-    expect(screen.getByTestId('notebook-task__open-files')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/files');
+    expect(screen.queryByTestId('notebook-task__open-list')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('notebook-task__open-chat')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('notebook-task__open-files')).not.toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe taskId', async () => {

@@ -66,6 +66,27 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
 
   if (route.kind === 'collection' && method === 'GET' && route.workspaceId) {
     const workspaceId = route.workspaceId;
+    const requestUrl = new URL(req.url ?? '/', 'http://localhost');
+    const visibilityScope = requestUrl.searchParams.get('visibility_scope');
+    const actorWorkspacePermissions =
+      visibilityScope === 'workspace_governance'
+        ? await resolveWorkspacePermissions({
+            workspaceId,
+            actorId: user.id,
+            actorEmail: user.email,
+            defaultWorkspaceId: defaultWorkspace?.id,
+          })
+        : [];
+    if (
+      visibilityScope === 'workspace_governance' &&
+      !actorWorkspacePermissions.includes('workspace:governance:update')
+    ) {
+      json(res, 403, {
+        error_code: 'PERMISSION_DENIED',
+        message: 'workspace_governance_update_required',
+      });
+      return true;
+    }
     const listed = await deps.listProjectsUseCase.execute(route.workspaceId);
     const visibleItems = await Promise.all(listed.items.map(async (item) => {
       const discoverable = await canActorDiscoverProject({
@@ -75,6 +96,7 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
         projectOwnerId: item.owner_id,
         projectVisibility: item.visibility,
         actorUserId: user.id,
+        actorWorkspacePermissions,
       });
       if (!discoverable) {
         return null;

@@ -267,8 +267,12 @@ export async function canActorDiscoverProject(args: {
   projectOwnerId: string;
   projectVisibility: 'public' | 'private';
   actorUserId: string;
+  actorWorkspacePermissions?: readonly string[];
 }): Promise<boolean> {
   if (args.projectVisibility === 'public') {
+    return true;
+  }
+  if (args.actorWorkspacePermissions?.includes('workspace:governance:update')) {
     return true;
   }
   if (args.projectOwnerId === args.actorUserId) {

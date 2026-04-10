@@ -53,7 +53,9 @@ export default function WorkspaceSettingsPage() {
     data: projects = [],
     isError: isProjectsError,
     error: projectsError,
-  } = useProjects(workspaceId ?? '');
+  } = useProjects(workspaceId ?? '', {
+    visibilityScope: canManageWorkspaceGovernance ? 'workspace_governance' : 'discoverable',
+  });
   const [createProjectOpen, setCreateProjectOpen] = React.useState(false);
   const [projectCreators, setProjectCreators] = React.useState<Array<{ id: string; user_id: string; name: string | null; email: string }>>([]);
   const [projectCreatorsLoading, setProjectCreatorsLoading] = React.useState(false);

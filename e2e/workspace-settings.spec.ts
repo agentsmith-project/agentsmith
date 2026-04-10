@@ -43,6 +43,7 @@ test('shows workspace administration summary and project entry links', async ({ 
 
 test('workspace manager can manage project governance from workspace settings', async ({ authedPage }) => {
   const projectCard = authedPage.getByTestId('ws-settings__project--proj_001');
+  const governanceOnlyProjectCard = authedPage.getByTestId('ws-settings__project--proj_004');
 
   await expect(projectCard).toBeVisible();
   await expect(projectCard.getByTestId('ws-settings__project-open-overview--proj_001')).toBeVisible();
@@ -50,6 +51,14 @@ test('workspace manager can manage project governance from workspace settings', 
   await expect(authedPage.getByTestId('ws-settings__project-owner-save--proj_001')).toBeVisible();
   await expect(authedPage.getByTestId('ws-settings__project-open-members--proj_001')).toBeVisible();
   await expect(authedPage.getByTestId('ws-settings__project-open-settings--proj_001')).toBeVisible();
+
+  await expect(governanceOnlyProjectCard).toBeVisible();
+  await expect(governanceOnlyProjectCard.getByTestId('ws-settings__project-owner-select--proj_004')).toBeVisible();
+  await expect(governanceOnlyProjectCard.getByTestId('ws-settings__project-owner-save--proj_004')).toBeVisible();
+  await expect(governanceOnlyProjectCard.getByText('Current owner: Charlie Wilson')).toBeVisible();
+  await expect(governanceOnlyProjectCard.getByTestId('ws-settings__project-open-overview--proj_004')).toHaveCount(0);
+  await expect(governanceOnlyProjectCard.getByTestId('ws-settings__project-open-members--proj_004')).toHaveCount(0);
+  await expect(governanceOnlyProjectCard.getByTestId('ws-settings__project-open-settings--proj_004')).toHaveCount(0);
 });
 
 test('workspace manager can transfer project ownership without leaving workspace settings', async ({ authedPage }) => {

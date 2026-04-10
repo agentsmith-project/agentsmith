@@ -7,6 +7,7 @@ import { docProjectFixtures, docProjectMembershipFixtures } from '../doc-fixture
 import type { Project } from '@/lib/api/types';
 import { PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS } from '@/lib/constants/permissions';
 import { PROJECT_BUILT_IN_GROUP_IDS, PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
+import { readWorkspacePermissionsForUser } from './workspace';
 
 export const projects = DOC_FIXTURES_ENABLED
   ? [...docProjectFixtures]
@@ -43,6 +44,11 @@ function isProjectVisibleToUser(project: Project, userId: string): boolean {
   return getMembershipStatus(project, userId) === 'active';
 }
 
+function isProjectGovernanceVisibleToUser(project: Project, userId: string): boolean {
+  if (isProjectVisibleToUser(project, userId)) return true;
+  return readWorkspacePermissionsForUser(userId).includes('workspace:governance:update');
+}
+
 function buildProjectResponse(project: Project, userId: string) {
   const membership = getProjectMembershipForUser(project.id, userId);
   const isOwner = project.owner_id === userId;
@@ -74,9 +80,25 @@ export const projectHandlers = [
   http.get('/api/v1/workspaces/:ws/projects', ({ params, request }) => {
     const userId = getRequestUserId(request);
     const workspaceId = params.ws as string;
+    const requestUrl = new URL(request.url);
+    const visibilityScope = requestUrl.searchParams.get('visibility_scope');
+    const workspacePermissions = readWorkspacePermissionsForUser(userId);
+    if (
+      visibilityScope === 'workspace_governance' &&
+      !workspacePermissions.includes('workspace:governance:update')
+    ) {
+      return HttpResponse.json(
+        { error_code: 'PERMISSION_DENIED', message: 'workspace_governance_update_required' },
+        { status: 403 },
+      );
+    }
     const items = projects
       .filter((project) => project.workspace_id === workspaceId)
-      .filter((project) => isProjectVisibleToUser(project, userId))
+      .filter((project) => (
+        visibilityScope === 'workspace_governance'
+          ? isProjectGovernanceVisibleToUser(project, userId)
+          : isProjectVisibleToUser(project, userId)
+      ))
       .map((project) => buildProjectResponse(project, userId));
     return HttpResponse.json({ items });
   }),

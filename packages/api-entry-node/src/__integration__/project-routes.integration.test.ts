@@ -440,6 +440,60 @@ describe('api-entry-node project routes integration', () => {
     expect(listed?.membership_status).toBe('active');
   });
 
+  it('lets workspace governance admins list private non-member projects through the governance visibility scope', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const created = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_secret',
+      input: {
+        name: 'Governance Recovery Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const discoverableRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/projects', 'owner-token');
+    expect(discoverableRes.status).toBe(200);
+    const discoverableBody = (await discoverableRes.json()) as { items: Array<{ id: string }> };
+    expect(discoverableBody.items.find((item) => item.id === created.id)).toBeUndefined();
+
+    const governanceRes = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects?visibility_scope=workspace_governance',
+      'owner-token',
+    );
+    expect(governanceRes.status).toBe(200);
+    const governanceBody = (await governanceRes.json()) as {
+      items: Array<{ id: string; owner_id: string; permissions: string[]; membership_status: string }>;
+    };
+    expect(governanceBody.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: created.id,
+          owner_id: 'user_secret',
+          permissions: [],
+          membership_status: 'none',
+        }),
+      ]),
+    );
+  });
+
+  it('rejects governance visibility scope for actors without workspace governance permission', async () => {
+    const { baseUrl } = startServer();
+
+    const res = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects?visibility_scope=workspace_governance',
+      'member-token',
+    );
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toEqual({
+      error_code: 'PERMISSION_DENIED',
+      message: 'workspace_governance_update_required',
+    });
+  });
+
   it('returns validation error for invalid payload', async () => {
     const { baseUrl } = startServer();
 

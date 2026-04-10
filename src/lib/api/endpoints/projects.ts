@@ -7,6 +7,8 @@
 import type { Project, ProjectListResponse, ProjectWithMembership, PaginationParams } from '../types';
 import type { ApiClient } from '../client';
 
+export type ProjectListVisibilityScope = 'discoverable' | 'workspace_governance';
+
 export interface CreateProjectRequest {
   workspace_id: string;
   name: string;
@@ -29,12 +31,18 @@ export interface UpdateProjectRequest {
 export class ProjectAPI {
   constructor(private client: ApiClient) {}
 
-  async list(workspaceId: string, params?: PaginationParams): Promise<ProjectListResponse> {
+  async list(
+    workspaceId: string,
+    params?: PaginationParams & { visibility_scope?: ProjectListVisibilityScope },
+  ): Promise<ProjectListResponse> {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set('page', params.page.toString());
     if (params?.page_size) searchParams.set('page_size', params.page_size.toString());
     if (params?.sort_by) searchParams.set('sort_by', params.sort_by);
     if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
+    if (params?.visibility_scope && params.visibility_scope !== 'discoverable') {
+      searchParams.set('visibility_scope', params.visibility_scope);
+    }
 
     const query = searchParams.toString();
     const path = `/workspaces/${workspaceId}/projects${query ? `?${query}` : ''}`;

@@ -69,6 +69,21 @@ export const projectFixtures: Project[] = [
     created_at: '2026-01-18T08:00:00Z',
     updated_at: '2026-01-28T16:45:00Z',
   },
+  {
+    id: 'proj_004',
+    workspace_id: 'ws_default',
+    name: 'Governance Recovery Project',
+    description: 'Private project reserved for workspace governance recovery flows',
+    visibility: 'private',
+    join_policy: 'approval_required',
+    owner_id: 'user_003',
+    status: 'active',
+    governance_json: defaultGovernance,
+    execution_preferences_json: {},
+    limits_json: {},
+    created_at: '2026-01-22T12:00:00Z',
+    updated_at: '2026-01-29T09:15:00Z',
+  },
 ];
 
 export const projectMembershipFixtures: ProjectMembership[] = [
@@ -171,6 +186,21 @@ export const projectMembershipFixtures: ProjectMembership[] = [
     permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin],
     status: 'active',
     joined_at: '2026-01-12T09:00:00Z',
+  },
+  // proj_004 members
+  {
+    project_id: 'proj_004',
+    user_id: 'user_003',
+    groups: [{
+      id: PROJECT_BUILT_IN_GROUP_IDS.owner,
+      name: 'Project owner',
+      permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+      built_in: true,
+      system_key: 'owner',
+    }],
+    permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner],
+    status: 'active',
+    joined_at: '2026-01-22T12:00:00Z',
   },
 ];
 

@@ -10,6 +10,7 @@ import {
 import { upsertProjectResourcePolicy } from './project-resource-policy-store.js';
 import { PROJECT_BUILT_IN_GROUP_IDS } from './project-governance-model.js';
 import {
+  canActorDiscoverProject,
   evaluateProjectPermissions,
   evaluateResourcePolicyAuthorization,
   mapAuthorizationRequestToPermission,
@@ -156,6 +157,30 @@ describe('project-authz-engine', () => {
     expect(evaluation.decisions[0]?.granted).toBe(true);
     expect(evaluation.decisions[0]?.reason).toBe('granted_by_member_governance');
     expect(evaluation.decisions[0]?.source_detail?.type).not.toBe('compat_implied');
+  });
+
+  it('allows workspace governance admins to discover private projects without project membership', async () => {
+    const docStore = new InMemoryJsonDocStore();
+
+    await expect(canActorDiscoverProject({
+      docStore,
+      workspaceId: 'ws_test',
+      projectId: 'proj_hidden',
+      projectOwnerId: 'user_owner',
+      projectVisibility: 'private',
+      actorUserId: 'user_admin',
+      actorWorkspacePermissions: ['workspace:governance:update'],
+    })).resolves.toBe(true);
+
+    await expect(canActorDiscoverProject({
+      docStore,
+      workspaceId: 'ws_test',
+      projectId: 'proj_hidden',
+      projectOwnerId: 'user_owner',
+      projectVisibility: 'private',
+      actorUserId: 'user_regular',
+      actorWorkspacePermissions: ['workspace:read'],
+    })).resolves.toBe(false);
   });
 
   it('evaluates resource policy allow-list for user and group subjects', async () => {

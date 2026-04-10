@@ -102,6 +102,7 @@ const workspaceMembers = (() => {
   };
 
   ensureSeededMember('user_002', 'bob.smith@example.com', 'Bob Smith');
+  ensureSeededMember('user_003', 'charlie@example.com', 'Charlie Wilson');
   ensureSeededMember('user_009', 'guest@example.com', 'Guest User');
 
   return fromP0;
@@ -132,6 +133,11 @@ function withDerivedWorkspacePermissions() {
       permissions: [...nextPermissions],
     };
   });
+}
+
+export function readWorkspacePermissionsForUser(userId: string): string[] {
+  const member = withDerivedWorkspacePermissions().find((item) => item.user_id === userId);
+  return member ? [...member.permissions] : [];
 }
 
 export function ensureWorkspaceMember(member: {

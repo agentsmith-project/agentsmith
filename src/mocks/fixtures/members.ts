@@ -179,6 +179,20 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
     status: 'active',
     joined_at: '2026-01-12T09:00:00Z',
   },
+  {
+    project_id: 'proj_004',
+    user_id: 'user_003',
+    groups: [{
+      id: PROJECT_BUILT_IN_GROUP_IDS.owner,
+      name: 'Project owner',
+      permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+      built_in: true,
+      system_key: 'owner',
+    }],
+    permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner],
+    status: 'active',
+    joined_at: '2026-01-22T12:00:00Z',
+  },
 ];
 
 export const joinRequestFixtures: JoinRequest[] = [

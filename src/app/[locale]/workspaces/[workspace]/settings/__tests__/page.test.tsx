@@ -60,6 +60,22 @@ const STABLE_PROJECTS = [
     created_at: '2026-03-01T00:00:00Z',
     updated_at: '2026-03-01T00:00:00Z',
   },
+  {
+    id: 'proj_3',
+    workspace_id: 'ws_1',
+    name: 'Governance-only Project',
+    owner_id: 'u_2',
+    permissions: [],
+    membership_status: 'none',
+    visibility: 'private',
+    join_policy: 'approval_required',
+    status: 'active',
+    governance_json: {},
+    execution_preferences_json: {},
+    limits_json: {},
+    created_at: '2026-03-02T00:00:00Z',
+    updated_at: '2026-03-02T00:00:00Z',
+  },
 ];
 
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en' }));
@@ -110,7 +126,7 @@ vi.mock('@/lib/hooks/use-workspaces', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
-  useProjects: () => mockUseProjects(),
+  useProjects: (...args: Parameters<typeof mockUseProjects>) => mockUseProjects(...args),
 }));
 
 vi.mock('@/components/app-shell/Topbar', () => ({
@@ -248,6 +264,7 @@ describe('WorkspaceSettingsPage', () => {
       'href',
       '/en/workspaces/ws_1/projects/proj_1/settings',
     );
+    expect(screen.getByTestId('ws-settings__project--proj_3')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__create-project')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-creators')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-owner-select--proj_1')).toBeInTheDocument();
@@ -386,6 +403,20 @@ describe('WorkspaceSettingsPage', () => {
     expect(screen.queryByTestId('ws-settings__project-open-overview--proj_2')).not.toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-open-members--proj_2')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-open-settings--proj_2')).toBeInTheDocument();
+
+    expect(screen.queryByTestId('ws-settings__project-open-overview--proj_3')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ws-settings__project-open-members--proj_3')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ws-settings__project-open-settings--proj_3')).not.toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-owner-select--proj_3')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-owner-save--proj_3')).toBeDisabled();
+  });
+
+  it('requests the workspace governance project listing scope', async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(mockUseProjects).toHaveBeenCalledWith('ws_1', { visibilityScope: 'workspace_governance' });
+    });
   });
 
   it('lets workspace governance admins transfer project ownership without leaving workspace settings', async () => {

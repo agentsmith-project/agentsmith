@@ -291,7 +291,7 @@ test.describe('Visual - Workspace Pages', () => {
     await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/settings`);
     await expect(authedPage.getByTestId('ws-settings__workspace')).toBeVisible();
     await expect(authedPage.getByTestId('ws-settings__project-creators')).toBeVisible();
-    await expect(authedPage.getByTestId('ws-settings__project-owner-save--proj_001')).toHaveCount(0);
+    await expect(authedPage.getByTestId('ws-settings__project-owner-save--proj_001')).toBeVisible();
     await expect(authedPage).toHaveScreenshot('workspace-settings.png', { fullPage: true });
   });
 

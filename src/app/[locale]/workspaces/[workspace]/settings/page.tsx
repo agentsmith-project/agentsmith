@@ -4,7 +4,7 @@ import Link from 'next/link';
 import * as React from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { FolderOpen, Link2, Plus, Settings as SettingsIcon } from 'lucide-react';
+import { FolderOpen, Link2, Loader2, Plus, Settings as SettingsIcon, ShieldCheck, Users } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -18,11 +18,12 @@ import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
-import { buildProjectAdminSummary } from '@/lib/projects/project-view';
+import { buildProjectAdminSummary, getWorkspaceSettingsProjectActions } from '@/lib/projects/project-view';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getApiClient, WorkspaceAPI } from '@/lib/api';
+import { getApiClient, ProjectAPI, WorkspaceAPI } from '@/lib/api';
 import { APIError } from '@/lib/api/errors';
 import type { WorkspaceDirectoryUser } from '@/lib/api/types';
+import { queryKeys } from '@/lib/query-keys';
 
 export default function WorkspaceSettingsPage() {
   const params = useParams();
@@ -33,6 +34,7 @@ export default function WorkspaceSettingsPage() {
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const queryClient = useQueryClient();
   const workspaceAPI = React.useMemo(() => new WorkspaceAPI(getApiClient()), []);
+  const projectAPI = React.useMemo(() => new ProjectAPI(getApiClient()), []);
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
   const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
   useSyncAuthFromUrl();
@@ -60,6 +62,9 @@ export default function WorkspaceSettingsPage() {
   const [projectCreatorSearchResults, setProjectCreatorSearchResults] = React.useState<WorkspaceDirectoryUser[]>([]);
   const [projectCreatorSearchLoading, setProjectCreatorSearchLoading] = React.useState(false);
   const [projectCreatorSearchError, setProjectCreatorSearchError] = React.useState<string | null>(null);
+  const [selectedProjectOwners, setSelectedProjectOwners] = React.useState<Record<string, string>>({});
+  const [savingProjectOwnerId, setSavingProjectOwnerId] = React.useState<string | null>(null);
+  const previousProjectOwnersRef = React.useRef<Record<string, string>>({});
 
   const memberNameById = React.useMemo(
     () => new Map(members.map((member) => [member.user_id, member.name || member.email || member.user_id])),
@@ -166,6 +171,67 @@ export default function WorkspaceSettingsPage() {
   const handleRemoveProjectCreator = React.useCallback((userId: string) => {
     setProjectCreators((current) => current.filter((item) => item.user_id !== userId));
   }, []);
+
+  React.useEffect(() => {
+    const nextProjectOwners = Object.fromEntries(projects.map((project) => [project.id, project.owner_id]));
+
+    setSelectedProjectOwners((current) => {
+      const next = { ...current };
+      let changed = false;
+
+      for (const project of projects) {
+        const previousOwnerId = previousProjectOwnersRef.current[project.id];
+        if (!(project.id in next) || previousOwnerId !== project.owner_id) {
+          next[project.id] = project.owner_id;
+          changed = true;
+        }
+      }
+
+      for (const projectId of Object.keys(next)) {
+        if (!(projectId in nextProjectOwners)) {
+          delete next[projectId];
+          changed = true;
+        }
+      }
+
+      previousProjectOwnersRef.current = nextProjectOwners;
+      return changed ? next : current;
+    });
+  }, [projects]);
+
+  const handleProjectOwnerChange = React.useCallback((projectId: string, ownerId: string) => {
+    setSelectedProjectOwners((current) => ({
+      ...current,
+      [projectId]: ownerId,
+    }));
+  }, []);
+
+  const handleSaveProjectOwner = React.useCallback(async (projectId: string) => {
+    if (!workspaceId || !canManageWorkspaceGovernance) return;
+    const currentProject = projects.find((project) => project.id === projectId);
+    const nextOwnerId = selectedProjectOwners[projectId]?.trim();
+    if (!currentProject || !nextOwnerId || nextOwnerId === currentProject.owner_id) return;
+
+    setSavingProjectOwnerId(projectId);
+    try {
+      await projectAPI.update(workspaceId, projectId, { owner_id: nextOwnerId });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'projects'] }),
+        queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'projects', projectId] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projectGroups.list(workspaceId, projectId) }),
+      ]);
+    } finally {
+      setSavingProjectOwnerId(null);
+    }
+  }, [
+    canManageWorkspaceGovernance,
+    projects,
+    queryClient,
+    selectedProjectOwners,
+    projectAPI,
+    workspaceId,
+  ]);
 
   if (!workspaceId) {
     return (
@@ -349,8 +415,13 @@ export default function WorkspaceSettingsPage() {
                       className="rounded-[20px] border border-subtle bg-bg-base/20 p-4 shadow-[0_12px_26px_rgba(0,0,0,0.12)]"
                       data-testid={`ws-settings__project--${project.id}`}
                     >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
+                      {(() => {
+                        const actions = getWorkspaceSettingsProjectActions(project);
+                        const selectedOwnerId = selectedProjectOwners[project.id] ?? project.owner_id;
+                        const isSavingProjectOwner = savingProjectOwnerId === project.id;
+                        return (
+                          <div className="flex flex-wrap items-start justify-between gap-5">
+                            <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-foreground">{project.name}</p>
                             <StatusBadge status={project.status === 'archived' ? 'info' : 'ready'}>
@@ -368,18 +439,89 @@ export default function WorkspaceSettingsPage() {
                               owner: memberNameById.get(project.owner_id) || project.owner_id,
                             })}
                           </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Link
-                            href={`${workspaceBasePath}/projects/${project.id}/overview`}
-                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                            data-testid={`ws-settings__project-open-overview--${project.id}`}
-                          >
-                            <FolderOpen className="mr-2 h-4 w-4" />
-                            {t('workspace_open_project')}
-                          </Link>
-                        </div>
-                      </div>
+                              {canManageWorkspaceGovernance ? (
+                                <div className="mt-4 rounded-[18px] border border-subtle bg-surface/60 p-3">
+                                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
+                                    <ShieldCheck className="h-3.5 w-3.5 text-icon-default" />
+                                    {t('workspace_project_governance_override')}
+                                  </div>
+                                  <p className="mt-2 text-sm text-secondary">{t('workspace_project_owner_override_help')}</p>
+                                  <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-end">
+                                    <label className="min-w-0 flex-1 space-y-2">
+                                      <span className="text-sm font-medium text-foreground">{t('workspace_project_owner_label')}</span>
+                                      <select
+                                        value={selectedOwnerId}
+                                        onChange={(event) => handleProjectOwnerChange(project.id, event.target.value)}
+                                        disabled={isSavingProjectOwner}
+                                        className="h-10 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                                        data-testid={`ws-settings__project-owner-select--${project.id}`}
+                                      >
+                                        {members.map((member) => (
+                                          <option key={member.user_id} value={member.user_id}>
+                                            {member.name || member.email || member.user_id}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={() => void handleSaveProjectOwner(project.id)}
+                                      disabled={isSavingProjectOwner || selectedOwnerId === project.owner_id}
+                                      data-testid={`ws-settings__project-owner-save--${project.id}`}
+                                    >
+                                      {isSavingProjectOwner ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        t('workspace_project_owner_save')
+                                      )}
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="flex min-w-[220px] flex-col gap-3">
+                              <div className="space-y-2">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
+                                  {t('workspace_project_open_actions_title')}
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {actions.canOpenOverview ? (
+                                    <Link
+                                      href={`${workspaceBasePath}/projects/${project.id}/overview`}
+                                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                                      data-testid={`ws-settings__project-open-overview--${project.id}`}
+                                    >
+                                      <FolderOpen className="mr-2 h-4 w-4" />
+                                      {t('workspace_open_project')}
+                                    </Link>
+                                  ) : null}
+                                  {actions.canOpenMembers ? (
+                                    <Link
+                                      href={`${workspaceBasePath}/projects/${project.id}/members`}
+                                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                                      data-testid={`ws-settings__project-open-members--${project.id}`}
+                                    >
+                                      <Users className="mr-2 h-4 w-4" />
+                                      {t('workspace_open_project_members')}
+                                    </Link>
+                                  ) : null}
+                                  {actions.canOpenSettings ? (
+                                    <Link
+                                      href={`${workspaceBasePath}/projects/${project.id}/settings`}
+                                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                                      data-testid={`ws-settings__project-open-settings--${project.id}`}
+                                    >
+                                      <SettingsIcon className="mr-2 h-4 w-4" />
+                                      {t('workspace_open_project_settings')}
+                                    </Link>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>

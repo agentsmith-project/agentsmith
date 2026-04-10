@@ -32,6 +32,8 @@ const STABLE_PROJECTS = [
     workspace_id: 'ws_1',
     name: 'Open Project',
     owner_id: 'u_1',
+    permissions: ['project:endpoint:use', 'project:membership:update', 'project:lifecycle:update'],
+    membership_status: 'active',
     visibility: 'public',
     join_policy: 'open',
     status: 'active',
@@ -47,6 +49,8 @@ const STABLE_PROJECTS = [
     workspace_id: 'ws_1',
     name: 'Archived Project',
     owner_id: 'u_2',
+    permissions: ['project:membership:update', 'project:governance:update'],
+    membership_status: 'active',
     visibility: 'private',
     join_policy: 'approval_required',
     status: 'archived',
@@ -236,9 +240,18 @@ describe('WorkspaceSettingsPage', () => {
       'href',
       '/en/workspaces/ws_1/projects/proj_1/overview',
     );
+    expect(screen.getByTestId('ws-settings__project-open-members--proj_1')).toHaveAttribute(
+      'href',
+      '/en/workspaces/ws_1/projects/proj_1/members',
+    );
+    expect(screen.getByTestId('ws-settings__project-open-settings--proj_1')).toHaveAttribute(
+      'href',
+      '/en/workspaces/ws_1/projects/proj_1/settings',
+    );
     expect(screen.getByTestId('ws-settings__create-project')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-creators')).toBeInTheDocument();
-    expect(screen.queryByTestId('ws-settings__project-owner-select--proj_1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-owner-select--proj_1')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-owner-save--proj_1')).toBeDisabled();
   });
 
   it('opens create project dialog and creates a project', async () => {
@@ -359,14 +372,35 @@ describe('WorkspaceSettingsPage', () => {
     );
   });
 
-  it('keeps project ownership as read-only context inside workspace settings', async () => {
+  it('shows only reachable project actions for each project card', async () => {
     renderPage();
 
     await waitFor(() => {
       expect(screen.getByTestId('ws-settings__projects')).toBeInTheDocument();
     });
 
-    expect(screen.getAllByText('workspace_project_owner_current')).toHaveLength(2);
-    expect(screen.queryByTestId('ws-settings__project-owner-save--proj_1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-open-overview--proj_1')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-open-members--proj_1')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-open-settings--proj_1')).toBeInTheDocument();
+
+    expect(screen.queryByTestId('ws-settings__project-open-overview--proj_2')).not.toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-open-members--proj_2')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-open-settings--proj_2')).toBeInTheDocument();
+  });
+
+  it('lets workspace governance admins transfer project ownership without leaving workspace settings', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__project-owner-select--proj_1')).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByTestId('ws-settings__project-owner-select--proj_1'), 'u_2');
+    await user.click(screen.getByTestId('ws-settings__project-owner-save--proj_1'));
+
+    await waitFor(() => {
+      expect(mockProjectUpdate).toHaveBeenCalledWith('ws_1', 'proj_1', { owner_id: 'u_2' });
+    });
   });
 });

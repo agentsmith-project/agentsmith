@@ -1,6 +1,32 @@
-import type { ProjectWithMembership } from '@/lib/hooks/use-permissions';
+import type { ProjectWithMembership } from '@/lib/api/types';
 
 export type Project = ProjectWithMembership & { pinned: boolean };
+
+const PROJECT_SETTINGS_ROUTE_PERMISSIONS = [
+  'project:governance:update',
+  'project:admins:update',
+  'project:lifecycle:update',
+] as const;
+
+export interface WorkspaceSettingsProjectActions {
+  canOpenOverview: boolean;
+  canOpenMembers: boolean;
+  canOpenSettings: boolean;
+}
+
+function hasPermission(
+  project: Pick<ProjectWithMembership, 'permissions'>,
+  permission: string,
+): boolean {
+  return Array.isArray(project.permissions) && project.permissions.includes(permission);
+}
+
+function hasAnyPermission(
+  project: Pick<ProjectWithMembership, 'permissions'>,
+  permissions: readonly string[],
+): boolean {
+  return permissions.some((permission) => hasPermission(project, permission));
+}
 
 export function hasProjectPermission(project: Project, permission: string): boolean {
   return Array.isArray(project.permissions) && project.permissions.includes(permission);
@@ -8,6 +34,16 @@ export function hasProjectPermission(project: Project, permission: string): bool
 
 export function hasAnyProjectPermission(project: Project, permissions: readonly string[]): boolean {
   return permissions.some((permission) => hasProjectPermission(project, permission));
+}
+
+export function getWorkspaceSettingsProjectActions(
+  project: Pick<ProjectWithMembership, 'permissions'>,
+): WorkspaceSettingsProjectActions {
+  return {
+    canOpenOverview: hasPermission(project, 'project:endpoint:use'),
+    canOpenMembers: hasPermission(project, 'project:membership:update'),
+    canOpenSettings: hasAnyPermission(project, PROJECT_SETTINGS_ROUTE_PERMISSIONS),
+  };
 }
 
 export function isPendingProjectMembership(

@@ -43,6 +43,7 @@ const agentResourceService = readText('packages/api-entry-node/src/agent-resourc
 const agentExecutionPreferences = readText('packages/api-entry-node/src/agent-execution-preferences.ts');
 const agentExecutionService = readText('packages/api-entry-node/src/agent-execution-service.ts');
 const internalChatIntegrationSpec = readText('e2e/integration-internal-chat-runner.spec.ts');
+const internalChatRealGate = readText('scripts/run-internal-chat-real-gate.sh');
 
 function requireMatch(content: string, pattern: RegExp, message: string): void {
   if (!pattern.test(content)) {
@@ -178,6 +179,8 @@ if (/test\.skip\(!namespace/.test(internalChatIntegrationSpec)) {
 }
 
 requireMatch(chatRuntimeBackendRealGate, /run-internal-chat-real-gate\.sh/, 'scripts/chat-runtime-backend-real-gate.sh must delegate internal chat coverage to scripts/run-internal-chat-real-gate.sh');
+requireMatch(internalChatRealGate, /source "\$\{ROOT_DIR\}\/scripts\/lib\/backend-real-gate-ports\.sh"/, 'scripts/run-internal-chat-real-gate.sh must source backend-real-gate-ports.sh');
+requireMatch(internalChatRealGate, /cleanup_gate_ports "\$\{API_PORT\}" "\$\{WEB_PORT\}" "\$\{SPEC_PATH\}"/, 'scripts/run-internal-chat-real-gate.sh must clean stale ports before running the internal chat spec');
 
 if (developmentDoc.includes('agent-codex-runner')) {
   failures.push('DEVELOPMENT.md must not reference legacy agent-codex-runner naming');

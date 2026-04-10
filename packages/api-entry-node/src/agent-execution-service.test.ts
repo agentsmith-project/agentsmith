@@ -30,7 +30,10 @@ afterEach(async () => {
   servers.length = 0;
 });
 
-async function setupExecutionService(options?: { endpointId?: string; interactionKind?: 'chat' | 'notebook' }) {
+async function setupExecutionService(options?: {
+  endpointId?: string;
+  interactionKind?: 'chat' | 'notebook' | null;
+}) {
   const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
   const executionService = new AgentExecutionService(agentResourceService);
   const server = http.createServer((_req, res) => {
@@ -42,15 +45,18 @@ async function setupExecutionService(options?: { endpointId?: string; interactio
   servers.push(server);
   const address = server.address() as AddressInfo;
   const wsBase = `ws://127.0.0.1:${address.port}`;
+  const persistedInteractionKind = options?.interactionKind === undefined
+    ? 'chat'
+    : options.interactionKind;
 
   const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
     name: 'execution-agent',
     mode: 'external',
-    ...(options?.interactionKind ? { interaction_kind: options.interactionKind } : {}),
+    ...(persistedInteractionKind ? { interaction_kind: persistedInteractionKind } : {}),
     ...(options?.endpointId
       ? {
         execution_preferences_json: {
-          [(options?.interactionKind ?? 'notebook')]: {
+          [((persistedInteractionKind ?? 'notebook'))]: {
             endpoint_id: options.endpointId,
           },
         },
@@ -182,8 +188,8 @@ describe('AgentExecutionService', () => {
     );
   });
 
-  it('merges agent.ready payload into execution preferences without dropping notebook config', async () => {
-    const { agentResourceService, agent, ws } = await setupExecutionService();
+  it('stores agent.ready runtime metadata separately without mutating execution preferences', async () => {
+    const { agentResourceService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
     await agentResourceService.updateAgent('ws_default', 'proj_1', agent.id, {
       execution_preferences_json: {
         notebook: {
@@ -204,6 +210,9 @@ describe('AgentExecutionService', () => {
           executor: 'codex_cli',
           wire_api: 'chat',
         },
+        request_details: {
+          cwd: '/tmp/task-home',
+        },
       },
     }));
 
@@ -214,15 +223,125 @@ describe('AgentExecutionService', () => {
         endpoint_id: 'ep_keep',
         wire_api: 'chat',
       },
-      capabilities: {
-        streaming_completion: true,
-        multimodal_completion: false,
+    });
+    expect(await agentResourceService.getAgentRuntimeState('ws_default', 'proj_1', agent.id)).toEqual(
+      expect.objectContaining({
+        agent_id: agent.id,
+        metadata: expect.objectContaining({
+          capabilities: {
+            streaming_completion: true,
+            multimodal_completion: false,
+          },
+          execution_context: {
+            executor: 'codex_cli',
+            wire_api: 'chat',
+          },
+          request_details: {
+            cwd: '/tmp/task-home',
+          },
+          ready_at: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it('records runner_spec mismatch in diagnostics without mutating execution preferences', async () => {
+    process.env.PUBLIC_API_BASE_URL = 'http://trusted.example/api/v1';
+    const { agentResourceService, agent, ws } = await setupExecutionService({
+      interactionKind: 'chat',
+      endpointId: 'ep_chat',
+    });
+
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.on('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    ws.send(JSON.stringify({
+      type: 'agent.ready',
+      payload: {
+        runner_spec: {
+          interaction_kind: 'notebook',
+          app_family: 'codex_runner',
+          protocol_version: '1.0',
+          context_model: 'cli_session',
+          workspace_policy: 'persistent_task_workspace',
+          supports_terminal: true,
+        },
       },
-      execution_context: {
-        executor: 'codex_cli',
-        wire_api: 'chat',
+    }));
+
+    await expect(closed).resolves.toEqual({
+      code: 1008,
+      reason: 'agent_runner_spec_mismatch',
+    });
+
+    const updated = await agentResourceService.getAgent('ws_default', 'proj_1', agent.id);
+    expect(updated?.execution_preferences_json).toEqual({
+      chat: {
+        endpoint_id: 'ep_chat',
       },
     });
+    await expect(
+      agentResourceService.getDiagnostics('ws_default', 'proj_1', agent.id),
+    ).resolves.toEqual(expect.objectContaining({
+      last_error: 'agent_runner_spec_mismatch',
+      last_error_at: expect.any(String),
+      runner_spec_mismatch: {
+        expected_interaction_kind: 'chat',
+        actual_runner_spec: {
+          interaction_kind: 'notebook',
+          app_family: 'codex_runner',
+          protocol_version: '1.0',
+          context_model: 'cli_session',
+          workspace_policy: 'persistent_task_workspace',
+          supports_terminal: true,
+        },
+      },
+    }));
+  });
+
+  it('rejects agent.ready when the persisted agent is missing interaction_kind and records diagnostics', async () => {
+    const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
+    const executionService = new AgentExecutionService(agentResourceService);
+    const server = http.createServer((_req, res) => {
+      res.statusCode = 404;
+      res.end();
+    });
+    server.on('upgrade', (req, socket, head) => executionService.handleUpgrade(req, socket, head));
+    server.listen(0);
+    servers.push(server);
+    const address = server.address() as AddressInfo;
+
+    const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'missing-kind-agent',
+      mode: 'external',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_missing_kind',
+        },
+      },
+    });
+    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
+    const ws = new WebSocket(
+      `ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`,
+      { headers: { Authorization: `Bearer ${keyPair.key}` } },
+    );
+    sockets.push(ws);
+
+    const error = await new Promise<Error>((resolve) => {
+      ws.once('error', (event) => resolve(event as Error));
+    });
+
+    expect(error.message).toContain('Unexpected server response: 403');
+
+    await expect(
+      agentResourceService.getDiagnostics('ws_default', 'proj_1', agent.id),
+    ).resolves.toEqual(expect.objectContaining({
+      last_error: 'agent_interaction_kind_required',
+      last_error_at: expect.any(String),
+    }));
   });
 
   it('rejects runner_spec interaction_kind mismatch during agent.ready handshake', async () => {

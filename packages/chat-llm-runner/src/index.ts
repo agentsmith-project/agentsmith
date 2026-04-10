@@ -1,10 +1,10 @@
 import { WebSocket } from 'ws';
 import {
+  assertChatExecutionContext,
   CHAT_RUNNER_SPEC,
   type AgentEnvelope,
   type AgentServerStartPayload,
 } from '@mbos/agent-runner';
-import { selectLatestUserText } from './message-selection.js';
 import { requestChatProxyCompletion } from './proxy-client.js';
 import { ChatSessionWorkspaceManager, isChatConversationContinuation } from './session-workdir.js';
 
@@ -99,9 +99,8 @@ ws.on('message', async (raw) => {
 
   const payload = (message.payload ?? {}) as AgentServerStartPayload;
   try {
-    const sessionId = typeof payload.execution_context?.session_id === 'string'
-      ? payload.execution_context.session_id
-      : '';
+    const executionContext = assertChatExecutionContext(payload.execution_context);
+    const sessionId = executionContext.session_id;
     if (sessionId) {
       const workspaceState = await sessionWorkspaceManager.ensureSessionWorkspace(
         sessionId,
@@ -121,16 +120,17 @@ ws.on('message', async (raw) => {
     const completion = await requestChatProxyCompletion({
       model: payload.model,
       messages: payload.messages,
-      executionContext: (payload.execution_context ?? {}) as NonNullable<AgentServerStartPayload['execution_context']>,
+      executionContext,
     });
-    const response = completion.text || selectLatestUserText(payload.messages) || 'chat runner ready';
-    ws.send(JSON.stringify({
-      type: 'agent.response.delta',
-      request_id: message.request_id,
-      timestamp: new Date().toISOString(),
-      payload: { delta: response },
-    }));
-    sendDone(message.request_id, completion.usageTokens ?? response.length);
+    if (completion.text.length > 0) {
+      ws.send(JSON.stringify({
+        type: 'agent.response.delta',
+        request_id: message.request_id,
+        timestamp: new Date().toISOString(),
+        payload: { delta: completion.text },
+      }));
+    }
+    sendDone(message.request_id, completion.usageTokens ?? completion.text.length);
   } catch (error) {
     sendError(message.request_id, error);
   }

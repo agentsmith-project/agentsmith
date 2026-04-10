@@ -8,6 +8,9 @@ const nextConfig: NextConfig = {
   // Prevent Next.js from inferring an incorrect workspace root when multiple
   // lockfiles exist on the machine, which can break output tracing/build workers.
   outputFileTracingRoot: __dirname,
+  // Allow isolated dev/test lanes to use separate build artifacts so concurrent
+  // Next dev servers do not corrupt each other's vendor chunks.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   // Disable dev indicators for clean visual baselines.
   devIndicators: false,
   eslint: {

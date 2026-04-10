@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -18,15 +22,59 @@
         "name": "next"
       }
     ],
-    "types": ["vitest/globals", "@testing-library/jest-dom"],
+    "types": [
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ],
     "paths": {
-      "@/*": ["./src/*"],
-      "@/components/*": ["./src/components/*"],
-      "@/lib/*": ["./src/lib/*"],
-      "@/app/*": ["./src/app/*"],
-      "@/types/*": ["./src/types/*"]
+      "@/*": [
+        "./src/*"
+      ],
+      "@/components/*": [
+        "./src/components/*"
+      ],
+      "@/lib/*": [
+        "./src/lib/*"
+      ],
+      "@/app/*": [
+        "./src/app/*"
+      ],
+      "@/types/*": [
+        "./src/types/*"
+      ]
     }
   },
-  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "e2e", "playwright.config.ts"]
+  "include": [
+    ".next*/types/**/*.ts",
+    ".next-backend-real-chat-3062/types/**/*.ts",
+    ".next-backend-real-chat-3063/types/**/*.ts",
+    ".next-backend-real-chat-3064/types/**/*.ts",
+    ".next-backend-real-chat-3065/types/**/*.ts",
+    ".next-backend-real-chat-3066/types/**/*.ts",
+    ".next-backend-real-notebook/types/**/*.ts",
+    ".next-backend-real-skill-3041/types/**/*.ts",
+    ".next-backend-real-skill-3051/types/**/*.ts",
+    ".next-backend-real-skill-3061/types/**/*.ts",
+    ".next-backend-real-skill-3066/types/**/*.ts",
+    ".next-backend-real-skill-3069/types/**/*.ts",
+    ".next-backend-real-skill-3070/types/**/*.ts",
+    ".next-backend-real-skill-3071/types/**/*.ts",
+    ".next-backend-real-skill-3081/types/**/*.ts",
+    ".next-backend-real-skill-3091/types/**/*.ts",
+    ".next-backend-real-skill-3101/types/**/*.ts",
+    ".next-backend-real/types/**/*.ts",
+    "artifacts/mock-lane/runs/mock-20260410T032507Z-3268716-702/next-dist/types/**/*.ts",
+    "artifacts/mock-lane/runs/mock-20260410T032534Z-3269592-4216/next-dist/types/**/*.ts",
+    "artifacts/mock-lane/runs/mock-20260410T032654Z-3272312-8891/next-dist/types/**/*.ts",
+    "artifacts/mock-lane/runs/mock-20260410T041122Z-3336736-1412/next-dist/types/**/*.ts",
+    "next-env.d.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "artifacts/backend-real/runs/integration-20260410T043630Z-3395168-2554/next-dist/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "e2e",
+    "playwright.config.ts"
+  ]
 }

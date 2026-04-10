@@ -1,11 +1,10 @@
 import type http from 'node:http';
-import { Readable } from 'node:stream';
 import type { ChatRoute } from './chat-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AuthenticatedUser } from './auth.js';
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
-import { resolveImageMimeType, toImageDataUrl } from './chat-image-utils.js';
+import { buildChatExecutionMessages } from './chat-execution-messages.js';
 import {
   ACTIVE_CHAT_STREAMS,
   STREAM_REGISTRY_FINAL_TTL_SECONDS,
@@ -103,10 +102,6 @@ function endpointSupportsMultimodal(endpoint: { capabilities?: Array<{ type: str
   );
 }
 
-function toDataUrl(attachment: ChatAttachmentRecord, mimeType: string | null): string | null {
-  return toImageDataUrl(attachment.content_base64, mimeType);
-}
-
 function buildProxyUsername(user: AuthenticatedUser): string {
   const base = (user.email || user.id || 'unknown').toLowerCase();
   return base.replace(/[^a-z0-9._-]/g, '_').slice(0, 64) || 'unknown';
@@ -124,102 +119,6 @@ function readAttachmentIdsFromInput(rawAttachments: unknown): string[] | null {
     out.push(item);
   }
   return out;
-}
-
-async function toDataUrlFromAttachmentOrFileLibraryObject(
-  deps: ChatStreamHandlerArgs['deps'],
-  route: { workspaceId: string; projectId: string },
-  attachment: ChatAttachmentRecord,
-  mimeType: string | null,
-): Promise<string | null> {
-  const inline = toDataUrl(attachment, mimeType);
-  if (inline) return inline;
-  if (!mimeType || !attachment.file_library_id || !attachment.source_object_key) return null;
-  try {
-    const downloaded = await deps.downloadFileLibraryObjectUseCase.execute({
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      libraryId: attachment.file_library_id,
-      key: attachment.source_object_key,
-    });
-    const nodeStream = Readable.fromWeb(downloaded.body as unknown as Parameters<typeof Readable.fromWeb>[0]);
-    const chunks: Buffer[] = [];
-    for await (const chunk of nodeStream) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    return `data:${mimeType};base64,${Buffer.concat(chunks).toString('base64')}`;
-  } catch {
-    return null;
-  }
-}
-
-function buildHistoricalAttachmentText(snapshot: {
-  file_name: string;
-  file_type: string;
-  file_size: number;
-}, kind: 'image' | 'file'): { type: 'text'; text: string } {
-  const prefix = kind === 'image' ? '[attached_image]' : '[attached_file]';
-  return {
-    type: 'text',
-    text: `${prefix} ${snapshot.file_name} (${snapshot.file_type}, ${snapshot.file_size}B)`,
-  };
-}
-
-async function buildChatExecutionMessages(args: {
-  deps: ChatStreamHandlerArgs['deps'];
-  route: Pick<ChatRoute, 'workspaceId' | 'projectId' | 'sessionId'>;
-  messages: Awaited<ReturnType<ChatStreamHandlerArgs['deps']['chatResourceService']['listMessages']>>;
-  attachmentById: Map<string, ChatAttachmentRecord>;
-  currentUserMessageId: string;
-}): Promise<{ messages: Array<{ role: string; content: string | Array<Record<string, unknown>> }>; missingCurrentImageDataUrl: boolean }> {
-  let missingCurrentImageDataUrl = false;
-  const upstreamMessages = await Promise.all(args.messages.map(async (item) => {
-    if (item.role !== 'user' || !item.attachment_snapshots || item.attachment_snapshots.length === 0) {
-      return { role: item.role, content: item.content };
-    }
-    const allowInlineImages = item.id === args.currentUserMessageId;
-    const parts: Array<Record<string, unknown>> = [];
-    if (item.content.trim().length > 0) {
-      parts.push({ type: 'text', text: item.content });
-    }
-    for (const snapshot of item.attachment_snapshots) {
-      const attachment = args.attachmentById.get(snapshot.id);
-      const imageMimeType = resolveImageMimeType(snapshot.file_type, snapshot.file_name);
-      if (!imageMimeType) {
-        parts.push(buildHistoricalAttachmentText(snapshot, 'file'));
-        continue;
-      }
-      if (!allowInlineImages) {
-        parts.push(buildHistoricalAttachmentText(snapshot, 'image'));
-        continue;
-      }
-      const dataUrl = attachment
-        ? await toDataUrlFromAttachmentOrFileLibraryObject(
-            args.deps,
-            { workspaceId: args.route.workspaceId, projectId: args.route.projectId },
-            attachment,
-            imageMimeType,
-          )
-        : null;
-      if (dataUrl) {
-        parts.push({
-          type: 'image_url',
-          image_url: { url: dataUrl },
-        });
-      } else {
-        missingCurrentImageDataUrl = true;
-      }
-    }
-    if (parts.length === 0) {
-      return { role: item.role, content: item.content };
-    }
-    return { role: item.role, content: parts };
-  }));
-
-  return {
-    messages: upstreamMessages,
-    missingCurrentImageDataUrl,
-  };
 }
 
 export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promise<boolean> {
@@ -549,7 +448,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   }
 
   const compiledExecutionMessages = await buildChatExecutionMessages({
-    deps,
+    downloadFileLibraryObject: (input) => deps.downloadFileLibraryObjectUseCase.execute(input),
     route,
     messages,
     attachmentById,

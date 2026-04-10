@@ -18,12 +18,28 @@ export function AgentDiagnosticsPanel({ diagnostics, loading }: AgentDiagnostics
     return <div className="text-sm text-tertiary">{t('detail_diagnostics_empty')}</div>;
   }
 
+  const runnerSpecMismatch = diagnostics.last_error === 'agent_runner_spec_mismatch';
+
   return (
     <div className="space-y-3">
       {diagnostics.last_error && (
         <div className="rounded-md border border-subtle bg-surface-high p-3">
           <p className="text-xs text-tertiary mb-1">{t('detail_diagnostics')}</p>
-          <p className="text-sm text-foreground">{diagnostics.last_error}</p>
+          {runnerSpecMismatch && (
+            <div className="mb-3 space-y-1">
+              <p className="text-sm font-medium text-foreground">{t('diagnostics_runner_spec_mismatch_title')}</p>
+              <p className="text-sm text-tertiary">{t('diagnostics_runner_spec_mismatch_description')}</p>
+            </div>
+          )}
+          <div className="space-y-1">
+            <p className="text-xs text-tertiary">{t('diagnostics_raw_error')}</p>
+            <p className="text-sm text-foreground">{diagnostics.last_error}</p>
+          </div>
+          {diagnostics.last_error_at && (
+            <p className="mt-2 text-xs text-tertiary">
+              {t('diagnostics_last_error_at', { value: diagnostics.last_error_at })}
+            </p>
+          )}
         </div>
       )}
       <div className="grid grid-cols-2 gap-3 text-xs text-tertiary">
@@ -33,16 +49,16 @@ export function AgentDiagnosticsPanel({ diagnostics, loading }: AgentDiagnostics
           </div>
         )}
         {diagnostics.queue_depth != null && (
-          <div>Queue Depth: {diagnostics.queue_depth}</div>
+          <div>{t('diagnostics_queue_depth')}: {diagnostics.queue_depth}</div>
         )}
         {diagnostics.restarts != null && (
-          <div>Restarts: {diagnostics.restarts}</div>
+          <div>{t('diagnostics_restarts')}: {diagnostics.restarts}</div>
         )}
         {diagnostics.cpu_percent != null && (
-          <div>CPU: {diagnostics.cpu_percent}%</div>
+          <div>{t('diagnostics_cpu_percent')}: {diagnostics.cpu_percent}%</div>
         )}
         {diagnostics.memory_mb != null && (
-          <div>Memory: {diagnostics.memory_mb} MB</div>
+          <div>{t('diagnostics_memory_mb')}: {diagnostics.memory_mb} MB</div>
         )}
       </div>
     </div>

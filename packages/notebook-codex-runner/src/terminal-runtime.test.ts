@@ -135,6 +135,7 @@ describe('terminal-runtime', () => {
     const started = await startTerminalProcess({
       executionContext: {
         task_id: 'task_1',
+        interaction_kind: 'notebook',
         api_base: 'http://localhost:20000',
         execution_ticket: 'ticket_123',
         workspace_id: 'ws_default',
@@ -176,30 +177,34 @@ describe('terminal-runtime', () => {
     expect(nodePtyKillMock).toHaveBeenCalledWith('SIGTERM');
   });
 
-  it('leaves MBOS_AGENT_TASK_ID empty when terminal execution context has no task', async () => {
-    await startTerminalProcess({
+  it('rejects terminal execution context when task_id is missing', async () => {
+    await expect(startTerminalProcess({
       executionContext: {
+        interaction_kind: 'notebook',
         api_base: 'http://localhost:20000',
         execution_ticket: 'ticket_chat',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
       },
       shell: '/usr/bin/bash',
-    });
+    })).rejects.toThrowError('notebook_terminal_execution_context_invalid');
+    expect(nodePtySpawnMock).not.toHaveBeenCalled();
+  });
 
-    expect(nodePtySpawnMock).toHaveBeenCalledWith(
-      '/usr/bin/bash',
-      ['-i'],
-      expect.objectContaining({
-        env: expect.objectContaining({
-          MBOS_AGENT_API_BASE: 'http://localhost:20000',
-          MBOS_AGENT_EXECUTION_TICKET: 'ticket_chat',
-          MBOS_AGENT_WORKSPACE_ID: 'ws_default',
-          MBOS_AGENT_PROJECT_ID: 'proj_1',
-          MBOS_AGENT_TASK_ID: '',
-        }),
-      }),
-    );
+  it('rejects chat execution context for notebook terminals', async () => {
+    await expect(startTerminalProcess({
+      executionContext: {
+        interaction_kind: 'chat',
+        // @ts-expect-error intentional invalid runtime input
+        session_id: 'sess_chat',
+        api_base: 'http://localhost:20000',
+        execution_ticket: 'ticket_chat',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+      },
+      shell: '/usr/bin/bash',
+    })).rejects.toThrowError('notebook_terminal_execution_context_invalid');
+    expect(nodePtySpawnMock).not.toHaveBeenCalled();
   });
 
   it('tracks exit code from node-pty exit events', async () => {
@@ -211,6 +216,7 @@ describe('terminal-runtime', () => {
     const started = await startTerminalProcess({
       executionContext: {
         task_id: 'task_1',
+        interaction_kind: 'notebook',
       },
     });
 
@@ -219,10 +225,11 @@ describe('terminal-runtime', () => {
     expect(started.child.exitCode).toBe(7);
   });
 
-  it('only injects notebook-specific preamble for notebook terminals', async () => {
+  it('injects notebook-specific preamble for notebook terminals', async () => {
     await prepareTerminalWorkspace({
       executionContext: {
         task_id: 'task_1',
+        interaction_kind: 'notebook',
         api_base: 'http://localhost:20000',
         execution_ticket: 'ticket_123',
       },
@@ -233,11 +240,7 @@ describe('terminal-runtime', () => {
       env: expect.objectContaining({
         MBOS_AGENT_API_BASE: 'http://localhost:20000',
         MBOS_AGENT_EXECUTION_TICKET: 'ticket_123',
-      }),
-    }));
-    expect(prepareLaunchCommandMock).toHaveBeenCalledWith(expect.objectContaining({
-      env: expect.not.objectContaining({
-        MBOS_NOTEBOOK_PREAMBLE: expect.any(String),
+        MBOS_NOTEBOOK_PREAMBLE: 'PREAMBLE',
       }),
     }));
 

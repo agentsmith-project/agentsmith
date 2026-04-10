@@ -11,6 +11,7 @@ source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
+source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 ensure_backend_real_state
 
 load_backend_real_env "${ROOT_DIR}/.env.backend-real"
@@ -22,8 +23,11 @@ SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
 SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
 CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-csi.juicefs.com}"
-RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-agentsmith-notebook-codex-runner:local}"
+RUNNER_KIND="${INTEGRATION_INTERNAL_AGENT_RUNNER_KIND:-notebook}"
+RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}"
+RUNNER_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-$(runner_default_base_image "${RUNNER_KIND}")}"
 BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-1}"
+DOCKER_BUILD_PROXY_VALUE="${INTEGRATION_DOCKER_BUILD_PROXY:-${DOCKER_BUILD_PROXY:-}}"
 WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-1Pi}"
 STORAGE_CLASS_NAME="${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}"
 MOUNT_OPTIONS="${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS:-}"
@@ -69,10 +73,7 @@ CONFIG_PATH="${INTEGRATION_SANDBOX_CONFIG:-${INTEGRATION_DIR}/sandbox-manager.ya
 
 if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
   info "building internal runner image ${RUNNER_IMAGE}"
-  docker_build_local \
-    -t "${RUNNER_IMAGE}" \
-    -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner" \
-    "${ROOT_DIR}" >/dev/null
+  build_runner_image "${RUNNER_KIND}" "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY_VALUE}" "1" "1" "${ROOT_DIR}"
 elif ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
   echo "[integration-release-user-story] runner image not found: ${RUNNER_IMAGE}" >&2
   exit 1

@@ -11,6 +11,7 @@ KIND_CONFIG_PATH="${ROOT_DIR}/infra/deploy/demo/kind/config.yaml"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 load_backend_real_env
 export_backend_real_endpoint_env
@@ -27,8 +28,9 @@ SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
 SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
 CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-csi.juicefs.com}"
-RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-agentsmith-notebook-codex-runner:local}"
-RUNNER_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-agentsmith-notebook-codex-runner-base:local}"
+RUNNER_KIND="${INTEGRATION_INTERNAL_AGENT_RUNNER_KIND:-notebook}"
+RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-$(runner_default_image "${RUNNER_KIND}")}"
+RUNNER_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-$(runner_default_base_image "${RUNNER_KIND}")}"
 BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-1}"
 DOCKER_BUILD_PROXY_VALUE="${INTEGRATION_DOCKER_BUILD_PROXY:-${DOCKER_BUILD_PROXY:-}}"
 WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-1Pi}"
@@ -127,20 +129,8 @@ gate_record_preflight_check "${INTERNAL_REAL_DIR}" "kind_cluster" "passed" "${KI
 record_service kind_cluster ready "${KIND_CLUSTER_NAME}"
 
 if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
-  if ! docker image inspect "${RUNNER_BASE_IMAGE}" >/dev/null 2>&1; then
-    info "building internal runner base image ${RUNNER_BASE_IMAGE}"
-    BUILD_ARGS=(build -t "${RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner-base" "${ROOT_DIR}")
-  if [[ -n "${DOCKER_BUILD_PROXY_VALUE}" ]]; then
-      BUILD_ARGS=(build --build-arg "HTTP_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "HTTPS_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "NO_PROXY=127.0.0.1,localhost,host.docker.internal" -t "${RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner-base" "${ROOT_DIR}")
-  fi
-    docker "${BUILD_ARGS[@]}" >/dev/null
-  fi
   info "building internal runner image ${RUNNER_IMAGE} from current workspace"
-  BUILD_ARGS=(build --build-arg "RUNNER_BASE_IMAGE=${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner" "${ROOT_DIR}")
-  if [[ -n "${DOCKER_BUILD_PROXY_VALUE}" ]]; then
-    BUILD_ARGS=(build --build-arg "HTTP_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "HTTPS_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "NO_PROXY=127.0.0.1,localhost,host.docker.internal" --build-arg "RUNNER_BASE_IMAGE=${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner" "${ROOT_DIR}")
-  fi
-  docker "${BUILD_ARGS[@]}" >/dev/null
+  build_runner_image "${RUNNER_KIND}" "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY_VALUE}" "0" "1"
 elif ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
   echo "[internal-real-gate] runner image not found: ${RUNNER_IMAGE}" >&2
   echo "[internal-real-gate] build it first or leave INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=1." >&2

@@ -41,6 +41,7 @@ const DEFAULT_REAL_MODEL_PROFILE = {
 } as const;
 export const DOCKER_BUILD_PROXY = process.env.INTEGRATION_DOCKER_BUILD_PROXY ?? '';
 export const INTERNAL_AGENT_IMAGE = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() || 'agentsmith-notebook-codex-runner:local';
+export const INTERNAL_CHAT_AGENT_IMAGE = process.env.INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE?.trim() || 'agentsmith-chat-llm-runner:local';
 export const KEYCLOAK_DEV_ADMIN_USERNAME = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
 export const KEYCLOAK_DEV_ADMIN_PASSWORD = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
 export const KEYCLOAK_DEV_ADMIN_EMAIL = process.env.INTEGRATION_KEYCLOAK_EMAIL ?? 'dev-admin@example.com';
@@ -185,7 +186,7 @@ function withoutProxyEnv(baseEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 async function clearAppState(page: Page, workspaceId: string): Promise<void> {
   await page.context().clearCookies();
-  await page.goto(`/${LOCALE}/workspaces/${workspaceId}/login`);
+  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/login`);
   await page.evaluate(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -193,7 +194,7 @@ async function clearAppState(page: Page, workspaceId: string): Promise<void> {
 }
 
 async function gotoWithRetry(page: Page, path: string): Promise<void> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
       await page.goto(path, { waitUntil: 'domcontentloaded' });
       await page.waitForFunction(() => document.readyState === 'interactive' || document.readyState === 'complete');
@@ -207,10 +208,17 @@ async function gotoWithRetry(page: Page, path: string): Promise<void> {
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if ((!message.includes('ERR_ABORTED') && !message.includes('blank_navigation') && !message.includes('empty_document')) || attempt === 2) {
+      const retryable =
+        message.includes('ERR_ABORTED')
+        || message.includes('ERR_CONNECTION_REFUSED')
+        || message.includes('ERR_CONNECTION_RESET')
+        || message.includes('ERR_FAILED')
+        || message.includes('blank_navigation')
+        || message.includes('empty_document');
+      if (!retryable || attempt === 4) {
         throw error;
       }
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(500 * (attempt + 1));
     }
   }
 }
@@ -1126,6 +1134,64 @@ export async function createInternalCodexAgent(
         },
         capabilities: {
           streaming_completion: true,
+        },
+      },
+    },
+  );
+  expect(createAgentRes.ok()).toBeTruthy();
+  const createdAgent = (await createAgentRes.json()) as { id: string };
+  expect(createdAgent.id).toBeTruthy();
+  return {
+    agentId: createdAgent.id,
+    agentName,
+  };
+}
+
+export async function createInternalChatAgent(
+  page: Page,
+  args: {
+    workspaceId: string;
+    projectId: string;
+    endpointId: string;
+    title: string;
+    image?: string;
+    idleTimeoutSec?: number;
+    maxLifetimeSec?: number;
+  },
+): Promise<{ agentId: string; agentName: string }> {
+  const token = await readStoredAuthToken(page);
+  const agentName = `${args.title}-${Date.now()}`;
+  const createAgentRes = await page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/agents`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        name: agentName,
+        mode: 'internal',
+        interaction_kind: 'chat',
+        execution_preferences: {
+          chat: {
+            endpoint_id: args.endpointId,
+            wire_api: 'chat',
+            model: BACKEND_REAL_MODEL,
+          },
+        },
+        config: {
+          image: args.image?.trim() || INTERNAL_CHAT_AGENT_IMAGE,
+          endpoint_id: args.endpointId,
+          cpu_request: '250m',
+          cpu_limit: '1',
+          memory_request: '256Mi',
+          memory_limit: '2Gi',
+          idle_timeout_sec: args.idleTimeoutSec ?? 300,
+          max_lifetime_sec: args.maxLifetimeSec ?? 3600,
+        },
+        capabilities: {
+          streaming_completion: true,
+          multimodal_completion: true,
         },
       },
     },
@@ -2330,6 +2396,32 @@ export async function startChatRunnerProcess(args: {
   });
 }
 
+export async function ensureInternalChatRunnerImage(): Promise<string> {
+  const baseImageTag = process.env.INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE?.trim() || 'agentsmith-chat-llm-runner-base:local';
+  const imageTag = process.env.INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE?.trim() || INTERNAL_CHAT_AGENT_IMAGE;
+  const rebuildBaseImage = process.env.INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE?.trim() !== '0';
+  const rebuildRunnerImage = process.env.INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE?.trim() !== '0';
+  const buildContext = path.resolve(__dirname, '..');
+  const buildResult = await spawnAndCapture(
+    'bash',
+    [path.join(buildContext, 'scripts/build-runner-image.sh'), 'chat', baseImageTag, imageTag, buildContext],
+    {
+      cwd: buildContext,
+      env: {
+        ...process.env,
+        RUNNER_IMAGE_DOCKER_BUILD_PROXY: DOCKER_BUILD_PROXY.trim(),
+        RUNNER_IMAGE_BUILD_BASE: rebuildBaseImage ? '1' : '0',
+        RUNNER_IMAGE_REBUILD: rebuildRunnerImage ? '1' : '0',
+      },
+    },
+  );
+  if (buildResult.code !== 0) {
+    throw new Error(`docker_chat_runner_image_build_failed:${(buildResult.stderr || buildResult.stdout).slice(-800)}`);
+  }
+
+  return imageTag;
+}
+
 export async function startCodexRunnerDockerProcess(args: {
   wsUrl: string;
   agentKey: string;
@@ -2351,37 +2443,26 @@ export async function startCodexRunnerDockerProcess(args: {
     ? process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR?.trim() || '/etc/codex/skills'
     : '/etc/codex/skills';
   const buildContext = path.resolve(__dirname, '..');
-  const baseDockerfile = path.join(buildContext, 'infra/runner/Dockerfile.notebook-codex-runner-base');
-  const dockerfile = path.join(buildContext, 'infra/runner/Dockerfile.notebook-codex-runner');
-  if (!embeddedRunner && rebuildBaseImage) {
-    const baseBuildArgs = ['build'];
-    if (DOCKER_BUILD_PROXY.trim()) {
-      baseBuildArgs.push('--build-arg', `HTTP_PROXY=${DOCKER_BUILD_PROXY.trim()}`);
-      baseBuildArgs.push('--build-arg', `HTTPS_PROXY=${DOCKER_BUILD_PROXY.trim()}`);
-      baseBuildArgs.push('--build-arg', `NO_PROXY=127.0.0.1,localhost,host.docker.internal`);
-    }
-    baseBuildArgs.push('-f', baseDockerfile, '-t', baseImageTag, '.');
-    const baseBuildResult = await spawnAndCapture('docker', baseBuildArgs, { cwd: buildContext });
-    if (baseBuildResult.code !== 0) {
-      throw new Error(`docker_runner_base_image_build_failed:${baseBuildResult.stderr.slice(-800)}`);
-    }
-  }
   const inspectResult = await spawnAndCapture('docker', ['image', 'inspect', imageTag]);
   if (inspectResult.code !== 0 || (!embeddedRunner && rebuildRunnerImage)) {
     if (embeddedRunner) {
       throw new Error(`docker_runner_image_missing:${imageTag}`);
     }
-    const buildArgs = ['build'];
-    if (DOCKER_BUILD_PROXY.trim()) {
-      buildArgs.push('--build-arg', `HTTP_PROXY=${DOCKER_BUILD_PROXY.trim()}`);
-      buildArgs.push('--build-arg', `HTTPS_PROXY=${DOCKER_BUILD_PROXY.trim()}`);
-      buildArgs.push('--build-arg', `NO_PROXY=127.0.0.1,localhost,host.docker.internal`);
-    }
-    buildArgs.push('--build-arg', `RUNNER_BASE_IMAGE=${baseImageTag}`);
-    buildArgs.push('-f', dockerfile, '-t', imageTag, '.');
-    const buildResult = await spawnAndCapture('docker', buildArgs, { cwd: buildContext });
+    const buildResult = await spawnAndCapture(
+      'bash',
+      [path.join(buildContext, 'scripts/build-runner-image.sh'), 'notebook', baseImageTag, imageTag, buildContext],
+      {
+        cwd: buildContext,
+        env: {
+          ...process.env,
+          RUNNER_IMAGE_DOCKER_BUILD_PROXY: DOCKER_BUILD_PROXY.trim(),
+          RUNNER_IMAGE_BUILD_BASE: rebuildBaseImage ? '1' : '0',
+          RUNNER_IMAGE_REBUILD: rebuildRunnerImage ? '1' : '0',
+        },
+      },
+    );
     if (buildResult.code !== 0) {
-      throw new Error(`docker_runner_image_build_failed:${buildResult.stderr.slice(-800)}`);
+      throw new Error(`docker_runner_image_build_failed:${(buildResult.stderr || buildResult.stdout).slice(-800)}`);
     }
   }
 

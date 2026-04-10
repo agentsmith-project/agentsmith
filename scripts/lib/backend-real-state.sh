@@ -33,6 +33,98 @@ backend_real_tmp_file() {
   printf '%s/%s\n' "$(backend_real_state_root)" "$1"
 }
 
+backend_real_runs_root() {
+  local root_dir="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+  printf '%s\n' "${BACKEND_REAL_RUNS_DIR:-${root_dir}/artifacts/backend-real/runs}"
+}
+
+backend_real_generate_run_id() {
+  local prefix="${1:-run}"
+  printf '%s-%s-%s-%s\n' "${prefix}" "$(date -u +%Y%m%dT%H%M%SZ)" "$$" "${RANDOM}"
+}
+
+backend_real_new_run_dir() {
+  local prefix="${1:-run}"
+  local runs_root run_id run_dir
+  runs_root="$(backend_real_runs_root)"
+  run_id="${BACKEND_REAL_RUN_ID:-$(backend_real_generate_run_id "${prefix}")}"
+  run_dir="${runs_root}/${run_id}"
+  mkdir -p "${run_dir}"
+  printf '%s\n' "${run_dir}"
+}
+
+backend_real_run_status_file() {
+  local run_dir="$1"
+  printf '%s/.status\n' "${run_dir}"
+}
+
+backend_real_mark_run_status() {
+  local run_dir="$1"
+  local status="$2"
+  printf '%s\n' "${status}" > "$(backend_real_run_status_file "${run_dir}")"
+}
+
+backend_real_read_run_status() {
+  local run_dir="$1"
+  cat "$(backend_real_run_status_file "${run_dir}")" 2>/dev/null || printf 'incomplete'
+}
+
+backend_real_prune_run_dirs() {
+  local keep_failed_count="${1:-5}"
+  local stale_hours="${2:-24}"
+  local runs_root dir stale_cutoff now
+  runs_root="$(backend_real_runs_root)"
+  mkdir -p "${runs_root}"
+
+  if ! [[ "${keep_failed_count}" =~ ^[0-9]+$ ]] || [[ "${keep_failed_count}" -lt 0 ]]; then
+    keep_failed_count=5
+  fi
+  if ! [[ "${stale_hours}" =~ ^[0-9]+$ ]] || [[ "${stale_hours}" -lt 0 ]]; then
+    stale_hours=24
+  fi
+
+  now="$(date +%s)"
+  stale_cutoff="$((now - (stale_hours * 3600)))"
+
+  while IFS= read -r dir; do
+    [[ -n "${dir}" ]] || continue
+    case "$(backend_real_read_run_status "${dir}")" in
+      success)
+        rm -rf "${dir}"
+        ;;
+      incomplete)
+        if [[ "$(stat -c '%Y' "${dir}" 2>/dev/null || printf '0')" -lt "${stale_cutoff}" ]]; then
+          rm -rf "${dir}"
+        fi
+        ;;
+    esac
+  done < <(find "${runs_root}" -mindepth 1 -maxdepth 1 -type d | sort)
+
+  if [[ "${keep_failed_count}" -eq 0 ]]; then
+    find "${runs_root}" -mindepth 1 -maxdepth 1 -type d \
+      -exec sh -c '[ "$(cat "$1/.status" 2>/dev/null || printf incomplete)" = "failed" ] && rm -rf "$1"' sh {} \;
+    return 0
+  fi
+
+  local failed_dirs=()
+  while IFS= read -r dir; do
+    [[ -n "${dir}" ]] || continue
+    failed_dirs+=("${dir}")
+  done < <(
+    find "${runs_root}" -mindepth 1 -maxdepth 1 -type d \
+      -exec sh -c '[ "$(cat "$1/.status" 2>/dev/null || printf incomplete)" = "failed" ] && printf "%s\n" "$1"' sh {} \; \
+      | xargs -r ls -1dt 2>/dev/null || true
+  )
+
+  local index=0
+  for dir in "${failed_dirs[@]}"; do
+    index=$((index + 1))
+    if [[ "${index}" -gt "${keep_failed_count}" ]]; then
+      rm -rf "${dir}"
+    fi
+  done
+}
+
 ensure_backend_real_state() {
   local dir file
   dir="$(backend_real_state_root)"

@@ -17,6 +17,14 @@ export interface AgentDiagnostics {
   queue_depth?: number;
   cpu_percent?: number;
   memory_mb?: number;
+  source_ip?: string;
+  connected_at?: string;
+  last_pong_at?: string;
+  runner_spec_mismatch?: {
+    expected_interaction_kind?: AgentInteractionKind;
+    actual_runner_spec?: Record<string, unknown>;
+  };
+  runtime_metadata?: Record<string, unknown>;
 }
 
 export type AgentInteractionKind = 'chat' | 'notebook';

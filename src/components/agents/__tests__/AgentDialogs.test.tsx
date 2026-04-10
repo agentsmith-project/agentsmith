@@ -24,7 +24,7 @@ const mockMessages = {
       mode: "Mode",
       mode_external: "External",
       mode_internal: "Internal",
-      interaction_kind: "Interaction Kind",
+      interaction_kind: "Agent Type",
       config_title: "Internal Agent Config",
       image: "Image",
       image_required: "Image required",
@@ -39,11 +39,11 @@ const mockMessages = {
       idle_timeout_sec: "Idle Timeout (sec)",
       max_lifetime_sec: "Max Lifetime (sec)",
       capabilities_title: "Execution Capabilities",
-      chat_endpoint_id: "Chat Endpoint ID",
-      chat_endpoint_required: "Chat endpoint required",
+      chat_endpoint_id: "Chat Endpoint",
+      chat_endpoint_required: "Select a chat endpoint",
       chat_endpoint_empty: "No active chat endpoints available",
-      notebook_endpoint_id: "Notebook Endpoint ID",
-      notebook_endpoint_required: "Notebook endpoint required",
+      notebook_endpoint_id: "Notebook Endpoint",
+      notebook_endpoint_required: "Select a notebook endpoint",
       notebook_endpoint_empty: "No active endpoints available",
       multimodal_enabled: "Enable multimodal input",
       accepted_mime_types: "Accepted MIME types",
@@ -170,7 +170,7 @@ describe("Agent dialogs", () => {
     fireEvent.change(nameInput, { target: { value: "agent-a" } });
 
     const endpointSelect = screen.getByLabelText(
-      "Chat Endpoint ID",
+      "Chat Endpoint",
     ) as HTMLSelectElement;
     await waitFor(() => {
       expect(endpointSelect.value).toBe("ep_active_1");
@@ -219,7 +219,7 @@ describe("Agent dialogs", () => {
     );
 
     const endpointSelect = screen.getByLabelText(
-      "Notebook Endpoint ID",
+      "Notebook Endpoint",
     ) as HTMLSelectElement;
     await waitFor(() => {
       expect(endpointSelect.value).toBe("ep_active_1");
@@ -345,7 +345,7 @@ describe("Agent dialogs", () => {
       { target: { value: "chat" } },
     );
     const endpointSelect = screen.getByLabelText(
-      "Chat Endpoint ID",
+      "Chat Endpoint",
     ) as HTMLSelectElement;
     fireEvent.change(endpointSelect, { target: { value: "ep_active_1" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -389,5 +389,26 @@ describe("Agent dialogs", () => {
     expect(maxLifetimeInput.value).toBe(
       String(INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS),
     );
+  });
+
+  it("CreateAgentDialog updates endpoint wording when switching agent type", async () => {
+    renderWithProviders(
+      <CreateAgentDialog
+        open
+        onOpenChange={vi.fn()}
+        workspaceId="ws_1"
+        projectId="proj_1"
+      />,
+    );
+
+    expect(await screen.findByLabelText("Chat Endpoint")).toBeInTheDocument();
+
+    fireEvent.change(
+      document.getElementById("agent-interaction-kind") as HTMLSelectElement,
+      { target: { value: "notebook" } },
+    );
+
+    expect(screen.getByLabelText("Notebook Endpoint")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Chat Endpoint")).not.toBeInTheDocument();
   });
 });

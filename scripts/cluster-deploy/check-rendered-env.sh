@@ -20,6 +20,8 @@ release_id=test-release
 agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release
 agentsmith_runner_image=localhost:5001/mbos/agentsmith-notebook-codex-runner:test-release
 agentsmith_runner_k8s_image=kind-registry:5000/mbos/agentsmith-notebook-codex-runner:test-release
+agentsmith_chat_runner_image=localhost:5001/mbos/agentsmith-chat-llm-runner:test-release
+agentsmith_chat_runner_k8s_image=kind-registry:5000/mbos/agentsmith-chat-llm-runner:test-release
 agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:test-release
 sandbox_manager_image=localhost:5001/mbos/sandbox-manager:test-release
 sandbox_manager_k8s_image=kind-registry:5000/mbos/sandbox-manager:test-release
@@ -87,6 +89,8 @@ text = text.replace("COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=", "COMPOSE_INTER
             "agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release",
             "agentsmith_runner_image=localhost:5001/mbos/agentsmith-notebook-codex-runner:test-release",
             "agentsmith_runner_k8s_image=kind-registry:5000/mbos/agentsmith-notebook-codex-runner:test-release",
+            "agentsmith_chat_runner_image=localhost:5001/mbos/agentsmith-chat-llm-runner:test-release",
+            "agentsmith_chat_runner_k8s_image=kind-registry:5000/mbos/agentsmith-chat-llm-runner:test-release",
             "agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:test-release",
             "sandbox_manager_image=localhost:5001/mbos/sandbox-manager:test-release",
             "sandbox_manager_k8s_image=kind-registry:5000/mbos/sandbox-manager:test-release",

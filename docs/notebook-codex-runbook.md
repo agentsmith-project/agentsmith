@@ -1,4 +1,4 @@
-# AgentSmith Notebook External Agent (Codex) Runbook
+# Notebook Codex Runner Runbook
 
 术语边界：本文出现的 `release` / `engineering gate` 命令名是仓库内工程脚本命名（smoke、验收、诊断）；`permission gate` 仅表示产品权限门禁语义，不表示 AgentSmith 平台提供 DevOps 发布编排功能。
 
@@ -43,7 +43,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 ## 1. Scope
 - Target: notebook task execution with persistent file-library workspaces.
 - Executor: OpenAI Codex CLI (`codex exec`, script/non-interactive mode).
-- Execution path: AgentSmith task message -> MBOS external-agent execution websocket -> `agent-codex-runner` -> endpoint proxy -> LLM.
+- Execution path: AgentSmith task message -> MBOS external-agent execution websocket -> `notebook-codex-runner` -> endpoint proxy -> LLM.
 
 ### 1.1 Runtime Modes and Path Model
 
@@ -87,7 +87,7 @@ AgentSmith runner and Codex do not use the same discovery path list.
 | User skills | Codex | `$HOME/.agents/skills` | depends on the runner child-process `HOME` | user-scoped skill discovery inside the current task runtime |
 | Deprecated compatibility path | Codex | `$CODEX_HOME/skills` | compatibility only; not the current preferred path | backward compatibility |
 | Repo skills | Codex | `<project-root>/.agents/skills` | only if the workspace/repo provides them | repo-scoped skills loaded from the current project |
-| Runner builtin-skill source inspection | runner only | `MBOS_AGENT_BUILTIN_SKILLS_DIR` or repo fallback `packages/agent-codex-runner/builtin-skills` | always | fail-fast validation plus task-local install seed source |
+| Runner builtin-skill source inspection | runner only | `MBOS_AGENT_BUILTIN_SKILLS_DIR` or repo fallback `packages/notebook-codex-runner/builtin-skills` | always | fail-fast validation plus task-local install seed source |
 
 Important consequence:
 - a builtin skill being present in the repository or passing runner validation does not automatically mean Codex will enumerate it in the current session.
@@ -108,7 +108,7 @@ That means:
 - Implemented:
   - Notebook task message streaming execution in API node backend.
   - `execution_context` protocol extension for external execution service.
-  - External runner package `@mbos/agent-codex-runner`.
+  - External runner package `@mbos/notebook-codex-runner`.
   - Agent config UI (`Notebook Endpoint ID`) and backend validation.
   - OpenAPI/AsyncAPI/Protocol docs updates.
   - Integration keycloak redirect auto-fix for custom web ports.
@@ -130,7 +130,7 @@ That means:
    - normal chat payload (`messages`, `model`, etc.)
    - `execution_context` (`workspace_id/project_id/task_id/run_id/username/user_bearer_token/wire_api/model`)
    - static proxy config comes from `server.hello.resource_proxy.base_url`
-5. `agent-codex-runner`:
+5. `notebook-codex-runner`:
    - resolves task workspace access from AgentSmith;
    - in persistent workspace mode, mounts the task-bound JuiceFS file library root;
    - uses the mounted workspace as cwd;
@@ -154,8 +154,8 @@ That means:
 
 ### Track B: External Runner
 - Files:
-  - `packages/agent-codex-runner/src/index.ts`
-  - `Makefile` target `agent-codex-runner`
+  - `packages/notebook-codex-runner/src/index.ts`
+  - `Makefile` target `notebook-runner`
 - Responsibilities:
   - websocket session management, cancel semantics.
   - codex process management and output chunk streaming.
@@ -338,7 +338,7 @@ Default policy:
 - treat “skill configured in repo” and “skill discovered by the current Codex session” as related but not identical facts
 
 ### 5.3.2 Unified Env Switch Reference (quick lookup)
-- Runner (`agent-codex-runner`)
+- Runner (`notebook-codex-runner`)
   - `MBOS_AGENT_WS_URL`, `MBOS_AGENT_KEY`, `CODEX_BIN`
   - `MBOS_AGENT_TASK_TIMEOUT_SEC`
   - `MBOS_AGENT_RUNNER_DEBUG`
@@ -397,12 +397,12 @@ DEBUG_NOTEBOOK_EXECUTION=1 \
 npm run dev -w @mbos/api-entry-node
 
 # Start external codex runner (default YOLO/script mode)
-make agent-codex-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'
+make notebook-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'
 
 # Start external codex runner in YOLO mode
 MBOS_AGENT_CODEX_YOLO=1 \
 MBOS_AGENT_TASK_TIMEOUT_SEC=120 \
-make agent-codex-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'
+make notebook-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'
 
 # External agent integration e2e (auto deps + api + web)
 make e2e-int-agent-auto PORT_API=20030 PORT_WEB=3011
@@ -468,7 +468,7 @@ make local-manual-seed-notebook
 ```
 - This keeps platform startup and notebook demo seeding separate:
   - `local-manual-up` starts/reuses API, Web, and universal-proxy
-  - `local-manual-seed-notebook` refreshes token, initializes notebook resources, and starts a managed external `agent-codex-runner`
+  - `local-manual-seed-notebook` refreshes token, initializes notebook resources, and starts a managed external `notebook-codex-runner`
 - Stop the managed local-manual processes with:
 ```bash
 make local-manual-down
@@ -598,7 +598,7 @@ npm run test:internal:backend-real:notebook-workspace
 ## 7.2 Debug Log Correlation (Recommended)
 - `notebook-execution` logs (`DEBUG_NOTEBOOK_EXECUTION=1`)
   - carries `task_id`, `run_id`, `request_id`, `agent_id`, `endpoint_id`
-- `agent-codex-runner` debug logs (`MBOS_AGENT_RUNNER_DEBUG=1`)
+- `notebook-codex-runner` debug logs (`MBOS_AGENT_RUNNER_DEBUG=1`)
   - carries same `request_id`, codex argv, cancellation signal, exit code
 - `endpoint-proxy` logs (`DEBUG_ENDPOINT_PROXY=1`)
   - request summary, upstream response mode, SSE translation counters/terminal reason
@@ -792,7 +792,7 @@ groups:
   - confirm trace retention/limits behave as expected
   - capture latency distribution (`avg/p50/p95/p99`) and failure samples
 - Preconditions:
-  - API + Web + external `agent-codex-runner` are running
+  - API + Web + external `notebook-codex-runner` are running
   - token refreshed (`make notebook-agent-refresh-token`)
   - test resources initialized (`make notebook-agent-init-resources`)
   - runner connected (`make notebook-agent-runner`)
@@ -1047,7 +1047,7 @@ make notebook-agent-benchmark-archive
 
 ## 8.4 Notebook Headless Execution and Artifact Convention
 
-Notebook tasks executed by `@mbos/agent-codex-runner` use a runner-enforced headless policy:
+Notebook tasks executed by `@mbos/notebook-codex-runner` use a runner-enforced headless policy:
 
 - treat execution as headless (no visible GUI on the client)
 - avoid interactive display calls (for example `matplotlib.pyplot.show()`)

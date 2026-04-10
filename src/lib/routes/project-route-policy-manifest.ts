@@ -14,6 +14,9 @@ export const PROJECT_ROUTE_POLICY_MANIFEST = {
   'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat/page.tsx': createProjectRoutePolicy({
     permissions: ['project:endpoint:use'],
   }),
+  'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/context/page.tsx': createProjectRoutePolicy({
+    permissions: ['project:governance:update'],
+  }),
   'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/credentials/page.tsx': createProjectRoutePolicy({
     permissions: ['project:governance:update'],
   }),

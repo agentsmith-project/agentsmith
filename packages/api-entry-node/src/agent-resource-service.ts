@@ -12,6 +12,19 @@ interface AgentConnectionState {
   protocol_version?: string;
 }
 
+export interface AgentRuntimeState {
+  agent_id: string;
+  workspace_id: string;
+  project_id: string;
+  metadata?: Record<string, unknown>;
+  last_error?: string;
+  last_error_at?: string;
+  runner_spec_mismatch?: {
+    expected_interaction_kind: 'chat' | 'notebook';
+    actual_runner_spec?: Record<string, unknown>;
+  };
+}
+
 const AGENT_PRESENCE_TTL_SECONDS = 45;
 
 function agentPresenceKey(agentId: string): string {
@@ -76,6 +89,7 @@ export class AgentResourceService {
   private static readonly agentsCollection = 'agents';
   private static readonly agentKeysCollection = 'agent_service_keys';
   private readonly agentConnectionState = new Map<string, AgentConnectionState>();
+  private readonly agentRuntimeState = new Map<string, AgentRuntimeState>();
 
   constructor(
     private readonly docStore: JsonDocStorePort,
@@ -210,6 +224,7 @@ export class AgentResourceService {
       await this.docStore.delete(this.agentKeysCollection(workspaceId), key.id);
     }
     this.agentConnectionState.delete(agentId);
+    this.agentRuntimeState.delete(agentId);
     if (this.cache) {
       await this.cache.del(agentPresenceKey(agentId));
     }
@@ -332,6 +347,45 @@ export class AgentResourceService {
     }
   }
 
+  async updateAgentRuntimeState(
+    workspaceId: string,
+    projectId: string,
+    agentId: string,
+    patch: Partial<AgentRuntimeState>,
+  ): Promise<AgentRuntimeState | null> {
+    const agent = await this.getAgent(workspaceId, projectId, agentId);
+    if (!agent) return null;
+    const existing = this.agentRuntimeState.get(agentId);
+    const metadataPatch = patch.metadata;
+    const next: AgentRuntimeState = {
+      agent_id: agentId,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      ...existing,
+      ...patch,
+      ...(metadataPatch !== undefined
+        ? {
+          metadata: {
+            ...(existing?.metadata ?? {}),
+            ...metadataPatch,
+          },
+        }
+        : {}),
+    };
+    this.agentRuntimeState.set(agentId, next);
+    return next;
+  }
+
+  async getAgentRuntimeState(
+    workspaceId: string,
+    projectId: string,
+    agentId: string,
+  ): Promise<AgentRuntimeState | null> {
+    const agent = await this.getAgent(workspaceId, projectId, agentId);
+    if (!agent) return null;
+    return this.agentRuntimeState.get(agentId) ?? null;
+  }
+
   async touchAgentPresence(
     workspaceId: string,
     projectId: string,
@@ -382,15 +436,18 @@ export class AgentResourceService {
     const agent = await this.getAgent(workspaceId, projectId, agentId);
     if (!agent) return {};
     const conn = await this.getConnectionInfo(agentId);
+    const runtime = await this.getAgentRuntimeState(workspaceId, projectId, agentId);
     return {
-      last_error: undefined,
-      last_error_at: undefined,
+      last_error: runtime?.last_error,
+      last_error_at: runtime?.last_error_at,
       queue_depth: 0,
       restarts: 0,
       source_ip: conn?.remote_ip,
       connected_at: conn?.connected_at,
       last_pong_at: conn?.last_pong_at,
       presence: agent.presence,
+      ...(runtime?.runner_spec_mismatch ? { runner_spec_mismatch: runtime.runner_spec_mismatch } : {}),
+      ...(runtime?.metadata ? { runtime_metadata: runtime.metadata } : {}),
     };
   }
 

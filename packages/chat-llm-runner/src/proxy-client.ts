@@ -1,6 +1,6 @@
-import type { AgentServerStartPayload } from '@mbos/agent-runner';
+import type { AgentServerStartPayload, ChatExecutionContext } from '@mbos/agent-runner';
 
-type ExecutionContext = NonNullable<AgentServerStartPayload['execution_context']> & {
+type ExecutionContext = ChatExecutionContext & {
   wire_api?: 'chat' | 'responses';
   model?: string;
 };

@@ -30,51 +30,13 @@ import { startTerminalProcess, type TerminalExecutionContext, type TerminalProce
 import { prepareLaunchCommand } from './child-launcher.js';
 import { buildAgentRuntimeEnv } from './agent-runtime-env.js';
 import { buildTaskUserInstallEnv } from './user-install-env.js';
-import { NOTEBOOK_RUNNER_SPEC } from '@mbos/agent-runner';
+import {
+  assertNotebookExecutionContext,
+  NOTEBOOK_RUNNER_SPEC,
+  type AgentServerStartPayload,
+} from '@mbos/agent-runner';
 
-type ServerStartPayload = {
-  model?: string;
-  messages?: Array<{ role?: string; content?: unknown }>;
-  execution_context?: {
-    workspace_id?: string;
-    project_id?: string;
-    task_id?: string;
-    run_id?: string;
-    username?: string;
-    session_id?: string;
-    api_base?: string;
-    execution_ticket?: string;
-    workspace_path?: string;
-    wire_api?: 'chat' | 'responses';
-    model?: string;
-    model_context_window?: number;
-    model_auto_compact_token_limit?: number;
-    model_catalog?: {
-      input_modalities?: string[];
-      supports_search_tool?: boolean;
-      supports_parallel_tool_calls?: boolean;
-    };
-    interaction_kind?: 'chat' | 'notebook';
-    workspace_binding_mode?: 'file_library' | 'pre_mounted';
-    workspace_file_library_id?: string | null;
-    workspace_file_library_name?: string | null;
-    workspace_dir_name?: string | null;
-    task_inputs?: Array<{
-      kind?: 'library_object' | 'artifact' | 'url';
-      library_id?: string;
-      key?: string;
-      task_id?: string;
-      artifact_id?: string;
-      task_relative_path?: string;
-      url?: string;
-      imported_library_id?: string;
-      imported_key?: string;
-      filename?: string;
-      file_type?: string;
-      file_size?: number;
-    }>;
-  };
-};
+type ServerStartPayload = AgentServerStartPayload;
 
 type ServerHelloPayload = {
   resource_proxy?: {
@@ -666,12 +628,9 @@ function flushCodexStdoutBuffer(requestId: string, buffer: string): string {
 }
 
 async function runCodexRequest(requestId: string, payload: ServerStartPayload): Promise<void> {
-  const executionContext = payload.execution_context ?? {};
-  const sessionId = sanitizePathPart(executionContext.session_id, '');
-  const taskId = sanitizePathPart(
-    executionContext.task_id,
-    sessionId || `task_${requestId.slice(0, 8)}`,
-  );
+  const executionContext = assertNotebookExecutionContext(payload.execution_context);
+  const taskId = sanitizePathPart(executionContext.task_id, `task_${requestId.slice(0, 8)}`);
+  const sessionId = sanitizePathPart(executionContext.session_id, taskId);
   const username = sanitizePathPart(executionContext.username, 'unknown_user');
   debugLog('preparing task workspace', { request_id: requestId, task_id: taskId });
   const cwdResult = await prepareTaskWorkspace({
@@ -705,28 +664,22 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     targetDir: taskPaths.skillsDir,
     manifestDir: taskPaths.mbosDir,
   });
-  const interactionKind = executionContext.interaction_kind === 'chat' ? 'chat' : 'notebook';
-  const isNotebookMode = interactionKind === 'notebook';
-  const resumeSession = isNotebookMode || sessionId.length > 0;
+  const interactionKind = 'notebook';
+  const resumeSession = sessionId.length > 0;
   const userPrompt = selectLatestInstruction(payload.messages);
   const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
-  let artifactsDir = taskPaths.artifactsDir;
-  if (isNotebookMode) {
-    debugLog('preparing notebook workspace assets', { request_id: requestId, cwd });
-    const preparedAssets = await prepareNotebookWorkspaceAssets({
-      cwd,
-      paths: taskPaths,
-      executionContext,
-      taskInputs,
-      debugLog,
-    });
-    artifactsDir = preparedAssets.artifactsDir;
-  }
-  const prompt = isNotebookMode
-    ? `${buildNotebookHeadlessPreamble({
-      artifactsDir,
-    })}User request:\n${userPrompt}`
-    : userPrompt;
+  debugLog('preparing notebook workspace assets', { request_id: requestId, cwd });
+  const preparedAssets = await prepareNotebookWorkspaceAssets({
+    cwd,
+    paths: taskPaths,
+    executionContext,
+    taskInputs,
+    debugLog,
+  });
+  const artifactsDir = preparedAssets.artifactsDir;
+  const prompt = `${buildNotebookHeadlessPreamble({
+    artifactsDir,
+  })}User request:\n${userPrompt}`;
   const endpointProxyBase = connectedResourceProxyBase;
   if (!endpointProxyBase) {
     throw new Error('resource_proxy_base_missing');
@@ -827,7 +780,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     builtin_skills_source_dir: builtinSkillsResult.sourceDir,
     builtin_skills_runtime_dir: builtinSkillsRuntime.targetDir,
     builtin_skills_mounted: builtinSkillsRuntime.seeded,
-    artifacts_dir: isNotebookMode ? artifactsDir : null,
+    artifacts_dir: artifactsDir,
     cwd_source: cwdResult.source,
   });
 
@@ -900,25 +853,23 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       interaction_kind: interactionKind,
       task_inputs_count: taskInputs.length,
       builtin_skills_count: builtinSkillsResult.available.length,
-      artifacts_dir: isNotebookMode ? './.artifacts/' : null,
+      artifacts_dir: './.artifacts/',
     },
   });
-  if (isNotebookMode) {
-    sendTraceEvent(requestId, {
-      category: 'progress',
-      phase: 'start',
-        status: 'running',
-        name: 'runner.policy',
-        summary: 'Notebook headless execution policy applied',
-        details: {
-          artifacts_dir: './.artifacts/',
-        },
-      });
-  }
+  sendTraceEvent(requestId, {
+    category: 'progress',
+    phase: 'start',
+    status: 'running',
+    name: 'runner.policy',
+    summary: 'Notebook headless execution policy applied',
+    details: {
+      artifacts_dir: './.artifacts/',
+    },
+  });
 
   let stdoutBuffer = '';
-  const workspaceBeforeSnapshot = isNotebookMode ? await scanWorkspaceFilesSnapshot(cwd) : null;
-  const artifactsBeforeRun = isNotebookMode ? await scanArtifactsDirectory(cwd, taskId) : [];
+  const workspaceBeforeSnapshot = await scanWorkspaceFilesSnapshot(cwd);
+  const artifactsBeforeRun = await scanArtifactsDirectory(cwd, taskId);
   if (artifactsBeforeRun.length > 0) {
     rememberArtifactsForRun(reportedArtifactsByRequestId, requestId, artifactsBeforeRun);
   }
@@ -992,7 +943,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     runningByRequestId.delete(requestId);
     cancelRequestedByRequestId.delete(requestId);
     void (async () => {
-      if (isNotebookMode && workspaceBeforeSnapshot) {
+      if (workspaceBeforeSnapshot) {
         try {
           const workspaceAfterSnapshot = await scanWorkspaceFilesSnapshot(cwd);
           const changes = diffWorkspaceFileSnapshots(workspaceBeforeSnapshot, workspaceAfterSnapshot);
@@ -1016,9 +967,11 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
           });
         }
       }
-      const artifacts = isNotebookMode
-        ? filterNewArtifactsForRun(reportedArtifactsByRequestId, requestId, await scanArtifactsDirectory(cwd, taskId))
-        : [];
+      const artifacts = filterNewArtifactsForRun(
+        reportedArtifactsByRequestId,
+        requestId,
+        await scanArtifactsDirectory(cwd, taskId),
+      );
       for (const artifact of artifacts) {
         sendTraceEvent(requestId, {
           category: 'artifact',

@@ -5,27 +5,38 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-MOCK_STATE_DIR="${ROOT_DIR}/artifacts/mock-lane/current"
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/scripts/lib/lane-run-state.sh"
+
+MOCK_RUN_ID="${MOCK_RUN_ID:-$(lane_generate_run_id mock)}"
+MOCK_RUN_ROOT="${MOCK_RUN_ROOT:-$(lane_prepare_run_root mock-lane "${MOCK_RUN_ID}" current)}"
+MOCK_STATE_DIR="${MOCK_STATE_DIR:-${MOCK_RUN_ROOT}}"
 mkdir -p "${MOCK_STATE_DIR}"
 PORT_WEB="${PORT_WEB:-3001}"
+NEXT_DIST_DIR="${MOCK_NEXT_DIST_DIR:-artifacts/mock-lane/runs/${MOCK_RUN_ID}/next-dist}"
 BASE_URL="http://127.0.0.1:${PORT_WEB}"
 HEALTH_URL="${BASE_URL}/zh-CN/login"
 WARM_URLS_DEFAULT=$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default/projects/proj_001/files'
 
 PID_FILE="${MOCK_STATE_DIR}/web.pid"
 LOG_FILE="${MOCK_STATE_DIR}/web.log"
-MOCK_WORKSPACE_PROVISIONING_PATH="artifacts/system-workspace-provisioning.mock"
+MOCK_WORKSPACE_PROVISIONING_PATH="${MOCK_WORKSPACE_PROVISIONING_PATH:-artifacts/mock-lane/runs/${MOCK_RUN_ID}/system-workspace-provisioning.mock}"
 STARTED_BY_SCRIPT=0
 LAST_PLAYWRIGHT_LOG=""
 MAX_ATTEMPTS="${MOCK_LANE_MAX_ATTEMPTS:-3}"
+KEEP_SUCCESS_RUN="${MOCK_LANE_KEEP_SUCCESS:-0}"
+KEEP_FAILED_RUN="${MOCK_LANE_KEEP_FAILED:-1}"
+PRUNE_KEEP_COUNT="${MOCK_LANE_KEEP_RECENT:-5}"
+PRUNE_STALE_HOURS="${MOCK_LANE_PRUNE_STALE_HOURS:-24}"
+RUN_SUCCEEDED=0
 
 info() { echo "[mock-lane] $*"; }
 err() { echo "[mock-lane] ERROR: $*" >&2; }
 
 reset_next_dev_artifacts_if_corrupt() {
   if grep -q "Cannot find module './vendor-chunks/next.js'" "${LOG_FILE}" 2>/dev/null; then
-    info "detected corrupted Next.js dev artifacts; clearing .next before retry"
-    rm -rf "${ROOT_DIR}/.next"
+    info "detected corrupted Next.js dev artifacts; clearing ${NEXT_DIST_DIR} before retry"
+    rm -rf "${ROOT_DIR}/${NEXT_DIST_DIR}"
   fi
 }
 
@@ -41,6 +52,19 @@ cleanup() {
     rm -f "${PID_FILE}"
   fi
   rm -rf "${ROOT_DIR}/${MOCK_WORKSPACE_PROVISIONING_PATH}"
+  if [[ "${RUN_SUCCEEDED}" == "1" ]]; then
+    lane_mark_status "${MOCK_RUN_ROOT}" success
+  else
+    lane_mark_status "${MOCK_RUN_ROOT}" failed
+  fi
+  if [[ "${RUN_SUCCEEDED}" == "1" && "${KEEP_SUCCESS_RUN}" != "1" ]]; then
+    rm -rf "${MOCK_RUN_ROOT}"
+    lane_remove_current_link_if_matches mock-lane "${MOCK_RUN_ROOT}" current
+  elif [[ "${RUN_SUCCEEDED}" != "1" && "${KEEP_FAILED_RUN}" != "1" ]]; then
+    rm -rf "${MOCK_RUN_ROOT}"
+    lane_remove_current_link_if_matches mock-lane "${MOCK_RUN_ROOT}" current
+  fi
+  lane_prune_runs mock-lane "${PRUNE_KEEP_COUNT}" "${PRUNE_STALE_HOURS}"
 }
 trap cleanup EXIT
 
@@ -88,30 +112,54 @@ is_port_listening_value() {
   return 1
 }
 
-kill_port_listeners() {
-  local pids=""
-  local lsof_pids=""
-  local fuser_pids=""
-  if command -v lsof >/dev/null 2>&1; then
-    lsof_pids="$(lsof -tiTCP:${PORT_WEB} -sTCP:LISTEN -Pn 2>/dev/null || true)"
-  fi
-  if command -v fuser >/dev/null 2>&1; then
-    fuser_pids="$(fuser -n tcp "${PORT_WEB}" 2>/dev/null | tr ' ' '\n' || true)"
-  fi
-  pids="$(printf '%s\n%s\n' "${lsof_pids}" "${fuser_pids}" | awk 'NF && !seen[$0]++')"
-  if [[ -z "${pids}" ]]; then
+stop_owned_server() {
+  if [[ ! -f "${PID_FILE}" ]]; then
     return 0
   fi
-  info "stopping existing listener(s) on :${PORT_WEB}: ${pids//$'\n'/ }"
-  while IFS= read -r pid; do
-    [[ -z "${pid}" ]] && continue
+  local pid=""
+  pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+  if [[ -z "${pid}" ]]; then
+    return 0
+  fi
+  if kill -0 "${pid}" >/dev/null 2>&1; then
+    info "stopping owned mock lane server pid ${pid}"
     kill "${pid}" >/dev/null 2>&1 || true
-  done <<< "${pids}"
-  sleep 1
-  while IFS= read -r pid; do
-    [[ -z "${pid}" ]] && continue
+    sleep 1
     kill -9 "${pid}" >/dev/null 2>&1 || true
-  done <<< "${pids}"
+  fi
+  rm -f "${PID_FILE}"
+}
+
+cleanup_stale_mock_processes() {
+  local pid_file pid cmd run_root run_status stale_cutoff
+  stale_cutoff="$(( $(date +%s) - (PRUNE_STALE_HOURS * 3600) ))"
+  while IFS= read -r pid_file; do
+    [[ -n "${pid_file}" ]] || continue
+    run_root="$(dirname "${pid_file}")"
+    run_status="$(lane_read_status "${run_root}")"
+    if [[ "${run_status}" != "incomplete" ]]; then
+      continue
+    fi
+    if [[ "$(stat -c '%Y' "${run_root}" 2>/dev/null || printf '0')" -ge "${stale_cutoff}" ]]; then
+      continue
+    fi
+    pid="$(cat "${pid_file}" 2>/dev/null || true)"
+    [[ -n "${pid}" ]] || continue
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      rm -f "${pid_file}"
+      continue
+    fi
+    cmd="$(ps -p "${pid}" -o command= 2>/dev/null || true)"
+    if [[ "${cmd}" == *"npm run dev:test"* || "${cmd}" == *"run-next-dev-safe.sh"* || "${cmd}" == *"next dev"* ]]; then
+      info "stopping stale mock-lane web process ${pid}"
+      kill "${pid}" >/dev/null 2>&1 || true
+      sleep 1
+      kill -9 "${pid}" >/dev/null 2>&1 || true
+      rm -f "${pid_file}"
+    fi
+  done < <(find "$(lane_runs_root mock-lane)" -mindepth 2 -maxdepth 2 -type f -name 'web.pid' 2>/dev/null | sort)
+
+  lane_prune_runs mock-lane "${PRUNE_KEEP_COUNT}" "${PRUNE_STALE_HOURS}"
 }
 
 pick_free_port() {
@@ -216,12 +264,7 @@ start_mock_server() {
     rm -rf "${ROOT_DIR}/${MOCK_WORKSPACE_PROVISIONING_PATH}"
 
     if is_port_listening; then
-      info "mock lane requires deterministic MSW mode; restarting :${PORT_WEB}"
-      kill_port_listeners
-    fi
-
-    if is_port_listening; then
-      info "port :${PORT_WEB} is still busy after cleanup; finding an alternate free port"
+      info "port :${PORT_WEB} is busy; finding an alternate free port for this mock lane"
       fallback_port="$(pick_free_port || true)"
       if [[ -z "${fallback_port}" ]]; then
         err "failed to find a free port for mock lane"
@@ -233,12 +276,14 @@ start_mock_server() {
 
     info "starting mock web server on :${PORT_WEB} (log: ${LOG_FILE}) [attempt ${launch_attempt}/3]"
     : > "${LOG_FILE}"
+    rm -rf "${ROOT_DIR}/${NEXT_DIST_DIR}"
     (
       cd "${ROOT_DIR}"
       exec env \
         MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
         MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
         NEXT_MAX_OLD_SPACE_SIZE="${NEXT_MAX_OLD_SPACE_SIZE:-6144}" \
+        NEXT_DIST_DIR="${NEXT_DIST_DIR}" \
         NEXT_PUBLIC_USE_MSW=true \
         AGENTSMITH_ENABLE_TEST_ROUTES=true \
         SYSTEM_WORKSPACE_REGISTRY_MODE=memory \
@@ -268,8 +313,7 @@ start_mock_server() {
 
     info "mock web server failed to become ready; restarting lane bootstrap (${launch_attempt}/3)"
     reset_next_dev_artifacts_if_corrupt
-    kill_port_listeners
-    rm -f "${PID_FILE}"
+    stop_owned_server
     sleep 2
     launch_attempt=$((launch_attempt + 1))
   done
@@ -292,11 +336,13 @@ is_transient_playwright_failure() {
     'ERR_CONNECTION_REFUSED|ERR_EMPTY_RESPONSE|ECONNRESET|EPIPE|socket hang up|Target closed' \
     "${LAST_PLAYWRIGHT_LOG}"
 }
+cleanup_stale_mock_processes
 start_mock_server
 
 attempt=1
 while [[ "${attempt}" -le "${MAX_ATTEMPTS}" ]]; do
   if run_playwright_once "$@"; then
+    RUN_SUCCEEDED=1
     exit 0
   fi
 
@@ -306,7 +352,7 @@ while [[ "${attempt}" -le "${MAX_ATTEMPTS}" ]]; do
 
   if is_transient_playwright_failure || ! is_server_alive; then
     info "detected transient web/execution-service failure; restarting mock lane and retrying (${attempt}/${MAX_ATTEMPTS})"
-    kill_port_listeners
+    stop_owned_server
     start_mock_server
     attempt=$((attempt + 1))
     continue

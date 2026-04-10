@@ -12,25 +12,13 @@ function asNonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function inferInteractionKindFromPreferences(
-  executionPreferences: ExecutionPreferencesRecord,
-): 'chat' | 'notebook' {
-  const hasNotebook = isRecord(executionPreferences.notebook);
-  const hasChat = isRecord(executionPreferences.chat);
-  if (hasNotebook && !hasChat) return 'notebook';
-  return 'chat';
-}
-
 export function resolveAgentInteractionKind(
   agent: Pick<AgentRecord, 'interaction_kind' | 'execution_preferences_json'>,
-): 'chat' | 'notebook' {
+): 'chat' | 'notebook' | null {
   if (agent.interaction_kind === 'chat' || agent.interaction_kind === 'notebook') {
     return agent.interaction_kind;
   }
-  const executionPreferences = isRecord(agent.execution_preferences_json)
-    ? agent.execution_preferences_json
-    : {};
-  return inferInteractionKindFromPreferences(executionPreferences);
+  return null;
 }
 
 export function readAgentExecutionPreferences(
@@ -47,6 +35,9 @@ export function readAgentExecutionPreferences(
     ? agent.execution_preferences_json
     : {};
   const interactionKind = kindOverride ?? resolveAgentInteractionKind(agent);
+  if (!interactionKind) {
+    throw new Error('agent_interaction_kind_required');
+  }
   const scoped = isRecord(executionPreferences[interactionKind])
     ? executionPreferences[interactionKind] as ExecutionPreferencesRecord
     : {};

@@ -366,7 +366,7 @@ Agent mode and runner runtime are separate truths.
 
 The deployment seed must create the preset external agent with `runner_runtime=compose_managed`.
 
-Except for `dev_direct`, every runner mode must use the same runner image. Different behavior must come from runtime env and runtime access contracts, not from image forks.
+Except for `dev_direct`, runner behavior must still be controlled by runtime env and runtime access contracts, but notebook and chat may use different runner images when they are different runner apps.
 
 Task workspace access and connection info must branch on `runner_runtime`, not on host-specific address guesses.
 

@@ -64,7 +64,7 @@ Agent 的业务语义仍然只有两种：
 规则：
 - external 可运行在 `dev_direct` / `docker_manual` / `compose_managed`
 - internal 固定运行在 `k8s_internal`
-- 除 `dev_direct` 外，所有 runner 必须使用同一个 runner image
+- 除 `dev_direct` 外，runner 仍必须受统一的地址解析、workspace access 与运行时合约约束，但 notebook/chat 作为不同 runner app 时可以使用不同 runner image
 - 地址解析、workspace access、file library access 都必须按 `runner_runtime` 分流，而不是靠“是不是 external”去猜
 
 ### 5. Email 选人，ID 落库

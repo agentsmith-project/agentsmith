@@ -1,32 +1,47 @@
 export type AgentInteractionKind = 'chat' | 'notebook';
 
-export type AgentExecutionContext = {
-  interaction_kind?: AgentInteractionKind;
+export type AgentExecutionModelCatalog = {
+  input_modalities?: string[];
+  supports_search_tool?: boolean;
+  supports_parallel_tool_calls?: boolean;
+};
+
+export type AgentTaskInput = Record<string, unknown>;
+
+export type AgentExecutionContextBase = {
   api_base?: string;
   workspace_id?: string;
   project_id?: string;
-  task_id?: string;
-  session_id?: string;
   execution_ticket?: string;
   endpoint_id?: string;
   wire_api?: 'chat' | 'responses';
   model?: string;
   username?: string;
   run_id?: string;
+  model_context_window?: number;
+  model_auto_compact_token_limit?: number;
+  model_catalog?: AgentExecutionModelCatalog;
+};
+
+export type ChatExecutionContext = AgentExecutionContextBase & {
+  interaction_kind: 'chat';
+  session_id: string;
+  task_id?: never;
+};
+
+export type NotebookExecutionContext = AgentExecutionContextBase & {
+  interaction_kind: 'notebook';
+  task_id: string;
+  session_id?: string;
   workspace_path?: string;
   workspace_binding_mode?: 'file_library' | 'pre_mounted';
   workspace_file_library_id?: string | null;
   workspace_file_library_name?: string | null;
   workspace_dir_name?: string | null;
-  model_context_window?: number;
-  model_auto_compact_token_limit?: number;
-  model_catalog?: {
-    input_modalities?: string[];
-    supports_search_tool?: boolean;
-    supports_parallel_tool_calls?: boolean;
-  };
-  task_inputs?: Array<Record<string, unknown>>;
+  task_inputs?: AgentTaskInput[];
 };
+
+export type AgentExecutionContext = ChatExecutionContext | NotebookExecutionContext;
 
 export type AgentServerStartPayload = {
   model?: string;
@@ -51,3 +66,40 @@ export type AgentEnvelope = {
   timestamp?: string;
   payload?: unknown;
 };
+
+function isPlainObject(input: unknown): input is Record<string, unknown> {
+  return typeof input === 'object' && input !== null && !Array.isArray(input);
+}
+
+function hasTrimmedStringField(input: Record<string, unknown>, key: string): boolean {
+  return typeof input[key] === 'string' && input[key].trim().length > 0;
+}
+
+export function isChatExecutionContext(input: unknown): input is ChatExecutionContext {
+  if (!isPlainObject(input)) return false;
+  if (input.interaction_kind !== 'chat') return false;
+  if (!hasTrimmedStringField(input, 'session_id')) return false;
+  if (input.task_id !== undefined) return false;
+  return true;
+}
+
+export function isNotebookExecutionContext(input: unknown): input is NotebookExecutionContext {
+  if (!isPlainObject(input)) return false;
+  if (input.interaction_kind !== 'notebook') return false;
+  if (!hasTrimmedStringField(input, 'task_id')) return false;
+  return true;
+}
+
+export function assertChatExecutionContext(input: unknown): ChatExecutionContext {
+  if (!isChatExecutionContext(input)) {
+    throw new Error('chat_execution_context_invalid');
+  }
+  return input;
+}
+
+export function assertNotebookExecutionContext(input: unknown): NotebookExecutionContext {
+  if (!isNotebookExecutionContext(input)) {
+    throw new Error('notebook_execution_context_invalid');
+  }
+  return input;
+}

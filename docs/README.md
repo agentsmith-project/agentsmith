@@ -61,7 +61,7 @@
 
 ## 运行与协作
 
-- [Agent Codex Notebook Runbook](./agent-codex-notebook-runbook.md)
+- [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
 - [CI Integration Troubleshooting](./ci-integration-troubleshooting.md)
 
 ## 说明

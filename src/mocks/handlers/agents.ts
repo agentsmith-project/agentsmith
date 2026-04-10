@@ -26,13 +26,16 @@ export const agentHandlers = [
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/agents', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    if (body.interaction_kind !== 'chat' && body.interaction_kind !== 'notebook') {
+      return HttpResponse.json({ message: 'agent_interaction_kind_required' }, { status: 422 });
+    }
     const created: Agent = {
       id: `agent_${Date.now()}`,
       project_id: 'proj_001',
       name: (body.name as string) ?? 'New Agent',
       description: (body.description as string) ?? '',
       mode: body.mode === 'internal' ? 'internal' : 'external',
-      interaction_kind: body.interaction_kind === 'chat' || body.interaction_kind === 'notebook' ? body.interaction_kind : 'chat',
+      interaction_kind: body.interaction_kind,
       presence: 'offline' as const,
       status: 'enabled' as const,
       created_at: new Date().toISOString(),

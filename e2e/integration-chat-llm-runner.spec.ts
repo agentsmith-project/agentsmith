@@ -214,6 +214,13 @@ test.describe('@lane-real external agent chat-runner integration', () => {
       await composer.fill(`Remember this token for our session: ${rememberToken}. Make sure your reply includes the token.`);
       await page.getByTestId('chat__send-btn').click();
       await expect(page.getByTestId('chat__message').filter({ hasText: rememberToken }).first()).toBeVisible({ timeout: 240_000 });
+      await waitForLatestAssistantContent({
+        page,
+        projectId,
+        sessionId: agentBundle.sessionId,
+        requiredSubstring: rememberToken,
+        minMessages: 2,
+      });
 
       await page.reload();
       await openChatSession(page, 'ws_default', projectId, chatTitle);

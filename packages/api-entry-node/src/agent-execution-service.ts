@@ -6,7 +6,7 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { isMatchingRunnerSpec, type AgentRunnerSpec } from '@mbos/agent-runner';
 import type { AgentResourceService } from './agent-resource-service.js';
 import { resolveRequiredConfiguredPublicApiBase } from './agent-execution-api-base.js';
-import { readAgentExecutionPreferences } from './agent-execution-preferences.js';
+import { readAgentExecutionPreferences, resolveAgentInteractionKind } from './agent-execution-preferences.js';
 import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
 
 export interface AgentStreamEvent {
@@ -262,25 +262,6 @@ function readRunnerSpec(input: unknown): Partial<AgentRunnerSpec> | null {
   return runnerSpec as Partial<AgentRunnerSpec>;
 }
 
-function mergeExecutionPreferences(
-  existing: Record<string, unknown> | undefined,
-  incoming: Record<string, unknown> | undefined,
-): Record<string, unknown> {
-  if (!existing) return incoming ?? {};
-  if (!incoming) return existing;
-
-  const merged: Record<string, unknown> = { ...existing };
-  for (const [key, incomingValue] of Object.entries(incoming)) {
-    const existingValue = merged[key];
-    if (isPlainObject(existingValue) && isPlainObject(incomingValue)) {
-      merged[key] = mergeExecutionPreferences(existingValue, incomingValue);
-      continue;
-    }
-    merged[key] = incomingValue;
-  }
-  return merged;
-}
-
 export class AgentExecutionService {
   private readonly wsServer: WebSocketServer;
   private readonly socketsByKey = new Map<string, AgentSocketState>();
@@ -368,7 +349,24 @@ export class AgentExecutionService {
         return;
       }
       debugExecution(`accept agent_id=${agentId} ws=${keyRecord.workspace_id} proj=${keyRecord.project_id}`);
-      const executionEndpointId = readAgentExecutionPreferences(agent).endpointId;
+      const interactionKind = resolveAgentInteractionKind(agent);
+      if (!interactionKind) {
+        debugExecution(`reject interaction_kind_required agent_id=${agentId}`);
+        await this.agentResourceService.updateAgentRuntimeState(
+          keyRecord.workspace_id,
+          keyRecord.project_id,
+          agentId,
+          {
+            last_error: 'agent_interaction_kind_required',
+            last_error_at: new Date().toISOString(),
+          },
+        );
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      const executionEndpointId = readAgentExecutionPreferences(agent, interactionKind).endpointId;
       const executionApiBase = executionEndpointId
         ? resolveExecutionApiBase(resolveRequiredConfiguredPublicApiBase(), agent)
         : null;
@@ -687,22 +685,59 @@ export class AgentExecutionService {
 
     if (payload.type === 'agent.ready') {
       void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, socket.agentId).then((current) => {
+        const interactionKind = current ? resolveAgentInteractionKind(current) : null;
+        if (!interactionKind) {
+          void this.agentResourceService.updateAgentRuntimeState(
+            socket.workspaceId,
+            socket.projectId,
+            socket.agentId,
+            {
+              last_error: 'agent_interaction_kind_required',
+              last_error_at: new Date().toISOString(),
+            },
+          );
+          socket.ws.close(1008, 'agent_interaction_kind_required');
+          return;
+        }
+
         const runnerSpec = readRunnerSpec(payload.payload);
-        const expectedInteractionKind =
-          current?.interaction_kind === 'notebook' || current?.interaction_kind === 'chat'
-            ? current.interaction_kind
-            : 'chat';
-        if (runnerSpec && !isMatchingRunnerSpec(expectedInteractionKind, runnerSpec)) {
+        if (runnerSpec && !isMatchingRunnerSpec(interactionKind, runnerSpec)) {
+          void this.agentResourceService.updateAgentRuntimeState(
+            socket.workspaceId,
+            socket.projectId,
+            socket.agentId,
+            {
+              last_error: 'agent_runner_spec_mismatch',
+              last_error_at: new Date().toISOString(),
+              runner_spec_mismatch: {
+                expected_interaction_kind: interactionKind,
+                actual_runner_spec: runnerSpec as Record<string, unknown>,
+              },
+            },
+          );
           socket.ws.close(1008, 'agent_runner_spec_mismatch');
           return;
         }
-        const existing = isPlainObject(current?.execution_preferences_json)
-          ? current.execution_preferences_json
-          : {};
+
         const incoming = isPlainObject(payload.payload) ? payload.payload : {};
-        return this.agentResourceService.updateAgent(socket.workspaceId, socket.projectId, socket.agentId, {
-          execution_preferences_json: mergeExecutionPreferences(existing, incoming),
-        });
+        const metadata = Object.fromEntries(
+          Object.entries(incoming).filter(([key]) => key !== 'runner_spec'),
+        );
+        return this.agentResourceService.updateAgentRuntimeState(
+          socket.workspaceId,
+          socket.projectId,
+          socket.agentId,
+          {
+            last_error: undefined,
+            last_error_at: undefined,
+            metadata: {
+              ...metadata,
+              ready_at: new Date().toISOString(),
+              ...(runnerSpec ? { runner_spec: runnerSpec as Record<string, unknown> } : {}),
+            },
+            ...(runnerSpec ? { runner_spec_mismatch: undefined } : {}),
+          },
+        );
       });
       return;
     }

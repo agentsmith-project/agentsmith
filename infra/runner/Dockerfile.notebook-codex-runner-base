@@ -51,33 +51,22 @@ RUN --mount=type=cache,target=/root/.npm \
   npm install -g "@openai/codex@${CODEX_VERSION}"; \
   unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY no_proxy
 
-WORKDIR /opt/agent-runner
+WORKDIR /opt/agentsmith
+
+COPY package.json package-lock.json ./
+COPY packages/agent-runner/package.json packages/agent-runner/package.json
+COPY packages/agent-runner/tsconfig.json packages/agent-runner/tsconfig.json
+COPY packages/notebook-codex-runner/package.json packages/notebook-codex-runner/package.json
+COPY packages/notebook-codex-runner/tsconfig.json packages/notebook-codex-runner/tsconfig.json
 
 RUN --mount=type=cache,target=/root/.npm \
   set -eux; \
-  printf '%s\n' \
-    '{' \
-    '  "name": "notebook-codex-runner-image",' \
-    '  "private": true,' \
-    '  "type": "module",' \
-    '  "scripts": {' \
-    '    "start": "tsx src/index.ts"' \
-    '  },' \
-    '  "dependencies": {' \
-    '    "node-pty": "^1.1.0",' \
-    '    "ws": "^8.18.3"' \
-    '  },' \
-    '  "devDependencies": {' \
-    '    "tsx": "^4.20.6"' \
-    '  }' \
-    '}' \
-    > /opt/agent-runner/package.json; \
-  npm install --no-audit --no-fund; \
+  npm ci --workspace @mbos/agent-runner --workspace @mbos/notebook-codex-runner --include-workspace-root=false --include=dev --no-audit --no-fund; \
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
-    'cd /opt/agent-runner' \
-    'exec npm run start -- "$@"' \
+    'cd /opt/agentsmith' \
+    'exec npm run dev -w @mbos/notebook-codex-runner -- "$@"' \
     > /usr/local/bin/agent-runner; \
   chmod +x /usr/local/bin/agent-runner
 

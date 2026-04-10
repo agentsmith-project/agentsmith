@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+source "${ROOT_DIR}/scripts/lib/lane-run-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 
 SPEC_FILE="${1:-e2e/integration-chat.spec.ts}"
@@ -51,8 +52,12 @@ REDIS_PORT="${REDIS_PORT:-${INTEGRATION_REDIS_PORT:-26379}}"
 MINIO_API_PORT="${MINIO_API_PORT:-${INTEGRATION_MINIO_API_PORT:-29000}}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-${INTEGRATION_MINIO_CONSOLE_PORT:-29001}}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-${INTEGRATION_KEYCLOAK_PORT:-28081}}"
-export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-$(basename "${INTEGRATION_LOG_DIR:-integration}")}"
 export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-$([[ -n "${SANDBOX_MANAGER_URL:-}" ]] && printf 'external_host,internal_k8s' || printf 'external_host')}"
+ensure_backend_real_state
+INTEGRATION_RUN_ID="${INTEGRATION_RUN_ID:-$(lane_generate_run_id integration)}"
+INTEGRATION_RUN_ROOT="${INTEGRATION_RUN_ROOT:-$(lane_prepare_run_root backend-real "${INTEGRATION_RUN_ID}" current-run)}"
+INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-${INTEGRATION_RUN_ROOT}/integration}"
+export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-$(basename "${INTEGRATION_RUN_ROOT}")}"
 resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "mbos" "agentsmith"
 # Use 127.0.0.1 for the isolated integration Keycloak lane so browser cookies do not collide
 # with any other localhost-scoped Keycloak session already running on this machine.
@@ -70,21 +75,22 @@ INTEGRATION_LOCALE="${INTEGRATION_LOCALE:-en-US}"
 BOOTSTRAP_DEPS="${INTEGRATION_BOOTSTRAP_DEPS:-true}"
 INIT_DEPS="${INTEGRATION_INIT_DEPS:-true}"
 
-ensure_backend_real_state
-INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-$(backend_real_tmp_file integration)}"
 mkdir -p "${INTEGRATION_LOG_DIR}"
+lane_prepare_alias_link "${INTEGRATION_LOG_DIR}" "$(backend_real_state_root)/integration"
 gate_evidence_init "${INTEGRATION_LOG_DIR}" "backend_real"
 gate_write_runtime_descriptor "${INTEGRATION_LOG_DIR}" "backend_real"
 gate_write_resolved_env "${INTEGRATION_LOG_DIR}"
 gate_record_task_summary "${INTEGRATION_LOG_DIR}" "{\"line_kind\":\"backend_real\",\"spec_file\":\"${SPEC_FILE}\",\"api_port\":\"${API_PORT}\",\"web_port\":\"${WEB_PORT}\"}"
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
+NEXT_DIST_DIR="${INTEGRATION_NEXT_DIST_DIR:-artifacts/backend-real/runs/${INTEGRATION_RUN_ID}/next-dist}"
 API_PID=""
 WEB_PID=""
 PROXY_PID=""
 PLAYWRIGHT_PID=""
 PLAYWRIGHT_STATUS=0
 KEEP_FAILED_ENV="${INTEGRATION_KEEP_FAILED_ENV:-0}"
+BACKEND_REAL_KEEP_RUNS="${BACKEND_REAL_KEEP_RUNS:-5}"
 
 record_service() {
   local service_name="$1"
@@ -307,6 +313,8 @@ if port_in_use "${WEB_PORT}"; then
   exit 1
 fi
 
+rm -rf "${ROOT_DIR}/${NEXT_DIST_DIR}"
+
 API_PID="$(
   start_background_job "${API_LOG}" run_clean env \
     PORT="${API_PORT}" \
@@ -347,6 +355,7 @@ WEB_PID="$(
   start_background_job "${WEB_LOG}" run_clean env \
     MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${MONGO_PORT}/admin}" \
     MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+    NEXT_DIST_DIR="${NEXT_DIST_DIR}" \
     NEXT_PUBLIC_USE_MSW=false \
     AGENTSMITH_ENABLE_TEST_ROUTES=true \
     NEXT_PUBLIC_API_BASE="${INTEGRATION_API_BASE}/api/v1" \
@@ -358,12 +367,14 @@ WEB_PID="$(
 
 cleanup() {
   if [[ "${KEEP_FAILED_ENV}" == "1" && "${PLAYWRIGHT_STATUS}" -ne 0 ]]; then
+    lane_mark_status "${INTEGRATION_RUN_ROOT}" failed
     echo "[integration-e2e-full] keeping failed integration environment for inspection" >&2
     echo "[integration-e2e-full] api_log=${API_LOG}" >&2
     echo "[integration-e2e-full] web_log=${WEB_LOG}" >&2
     echo "[integration-e2e-full] playwright_base_url=${PLAYWRIGHT_BASE_URL}" >&2
     echo "[integration-e2e-full] api_base=${INTEGRATION_API_BASE}" >&2
     echo "[integration-e2e-full] test_results=${ROOT_DIR}/test-results" >&2
+    lane_prune_runs backend-real "${BACKEND_REAL_KEEP_RUNS}"
     return 0
   fi
   stop_background_job "${PLAYWRIGHT_PID}"
@@ -374,6 +385,17 @@ cleanup() {
   wait "${PROXY_PID}" >/dev/null 2>&1 || true
   wait "${WEB_PID}" >/dev/null 2>&1 || true
   wait "${API_PID}" >/dev/null 2>&1 || true
+  if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
+    lane_mark_status "${INTEGRATION_RUN_ROOT}" success
+    rm -rf "${INTEGRATION_RUN_ROOT}"
+    lane_remove_current_link_if_matches backend-real "${INTEGRATION_RUN_ROOT}" current-run
+    if [[ -L "$(backend_real_state_root)/integration" ]] && [[ "$(realpath -m "$(backend_real_state_root)/integration")" == "$(realpath -m "${INTEGRATION_LOG_DIR}")" ]]; then
+      rm -f "$(backend_real_state_root)/integration"
+    fi
+  else
+    lane_mark_status "${INTEGRATION_RUN_ROOT}" failed
+  fi
+  lane_prune_runs backend-real "${BACKEND_REAL_KEEP_RUNS}"
 }
 trap cleanup EXIT
 

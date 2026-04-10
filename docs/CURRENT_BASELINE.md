@@ -139,7 +139,7 @@
 
 ## 7. 运行操作文档（按需）
 
-1. [Agent Codex Notebook Runbook](./agent-codex-notebook-runbook.md)
+1. [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
 2. [CI Integration Troubleshooting](./ci-integration-troubleshooting.md)
 
 ## 8. 执行规则

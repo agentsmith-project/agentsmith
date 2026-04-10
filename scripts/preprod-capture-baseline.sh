@@ -120,7 +120,7 @@ docker run -d --name "$RUNNER_CONTAINER" --restart unless-stopped --network host
 sleep 6
 curl -sS -o /dev/null -w "[rollback] API openapi HTTP %{http_code}\n" http://localhost:20000/api/v1/openapi.json
 curl -sS -o /dev/null -w "[rollback] Web login HTTP %{http_code}\n" http://localhost:3001/zh-CN/login
-docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" | grep -E "agentsmith-preprod-(api|web|agent-codex)"
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" | grep -E "agentsmith-preprod-(api|web|notebook-runner)"
 EOT
 chmod +x "\$DEPLOY_DIR/rollback-to-\${OUT_BASENAME}.sh"
 

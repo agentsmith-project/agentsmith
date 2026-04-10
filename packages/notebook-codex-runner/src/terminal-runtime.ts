@@ -10,36 +10,9 @@ import { buildAgentRuntimeEnv } from './agent-runtime-env.js';
 import { prepareLaunchCommand } from './child-launcher.js';
 import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
 import { buildTaskUserInstallEnv } from './user-install-env.js';
+import type { NotebookExecutionContext } from '@mbos/agent-runner';
 
-export type TerminalExecutionContext = {
-  workspace_id?: string;
-  project_id?: string;
-  task_id?: string;
-  username?: string;
-  session_id?: string;
-  api_base?: string;
-  execution_ticket?: string;
-  workspace_path?: string;
-  workspace_binding_mode?: 'file_library' | 'pre_mounted';
-  workspace_file_library_id?: string | null;
-  workspace_file_library_name?: string | null;
-  workspace_dir_name?: string | null;
-  interaction_kind?: 'chat' | 'notebook';
-  task_inputs?: Array<{
-    kind?: 'library_object' | 'artifact' | 'url';
-    library_id?: string;
-    key?: string;
-    task_id?: string;
-    artifact_id?: string;
-    task_relative_path?: string;
-    url?: string;
-    imported_library_id?: string;
-    imported_key?: string;
-    filename?: string;
-    file_type?: string;
-    file_size?: number;
-  }>;
-};
+export type TerminalExecutionContext = NotebookExecutionContext;
 
 export type TerminalProcess = {
   readonly exitCode: number | null;
@@ -109,6 +82,12 @@ export async function prepareTerminalWorkspace(input: {
   env: NodeJS.ProcessEnv;
 }> {
   const executionContext = input.executionContext;
+  if (executionContext.interaction_kind !== 'notebook') {
+    throw new Error('notebook_terminal_execution_context_invalid');
+  }
+  if (typeof executionContext.task_id !== 'string' || executionContext.task_id.trim().length === 0) {
+    throw new Error('notebook_terminal_execution_context_invalid');
+  }
   debugTerminalRuntime('prepare_workspace_start', {
     task_id: executionContext.task_id ?? null,
     workspace_binding_mode: executionContext.workspace_binding_mode ?? null,
@@ -117,10 +96,7 @@ export async function prepareTerminalWorkspace(input: {
     interaction_kind: executionContext.interaction_kind ?? null,
   });
   const username = sanitizePathPart(executionContext.username, 'unknown_user');
-  const taskId = sanitizePathPart(
-    executionContext.task_id,
-    sanitizePathPart(executionContext.session_id, 'terminal-task'),
-  );
+  const taskId = sanitizePathPart(executionContext.task_id, 'terminal-task');
   const cwdResult = await prepareTaskWorkspace({
     executionContext,
     username,
@@ -152,30 +128,25 @@ export async function prepareTerminalWorkspace(input: {
     manifestDir: taskPaths.mbosDir,
   });
 
-  const isNotebookMode = executionContext.interaction_kind === 'notebook';
   const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
-  if (isNotebookMode) {
-    await prepareNotebookWorkspaceAssets({
-      cwd,
-      paths: taskPaths,
-      executionContext,
-      taskInputs,
-    });
-    debugTerminalRuntime('prepare_workspace_assets_ready', {
-      cwd,
-      artifacts_dir: taskPaths.artifactsDir,
-    });
-  }
+  await prepareNotebookWorkspaceAssets({
+    cwd,
+    paths: taskPaths,
+    executionContext,
+    taskInputs,
+  });
+  debugTerminalRuntime('prepare_workspace_assets_ready', {
+    cwd,
+    artifacts_dir: taskPaths.artifactsDir,
+  });
   const env = buildTaskUserInstallEnv(taskPaths.homeDir, {
     ...process.env,
     TERM: process.env.TERM || 'xterm-256color',
     NO_COLOR: '1',
     ...buildAgentRuntimeEnv(executionContext),
-    ...(isNotebookMode ? {
-      MBOS_NOTEBOOK_PREAMBLE: buildNotebookHeadlessPreamble({
-        artifactsDir: taskPaths.artifactsDir,
-      }),
-    } : {}),
+    MBOS_NOTEBOOK_PREAMBLE: buildNotebookHeadlessPreamble({
+      artifactsDir: taskPaths.artifactsDir,
+    }),
   });
   const interactiveCommand = buildInteractiveCommand(input.shell);
   const launchCommand = await prepareLaunchCommand({

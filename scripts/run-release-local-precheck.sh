@@ -7,6 +7,7 @@ unset no_proxy NO_PROXY
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+source "${ROOT_DIR}/scripts/lib/lane-run-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 ensure_backend_real_state
 
@@ -32,13 +33,16 @@ INTEGRATION_DEV_ADMIN_PASSWORD="${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}
 BOOTSTRAP_DEPS="${INTEGRATION_BOOTSTRAP_DEPS:-true}"
 INIT_DEPS="${INTEGRATION_INIT_DEPS:-true}"
 
-INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-$(backend_real_tmp_file release-local-precheck)}"
+INTEGRATION_RUN_ID="${INTEGRATION_RUN_ID:-$(lane_generate_run_id release-local-precheck)}"
+INTEGRATION_RUN_ROOT="${INTEGRATION_RUN_ROOT:-$(lane_prepare_run_root backend-real "${INTEGRATION_RUN_ID}" current-release-precheck)}"
+INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-${INTEGRATION_RUN_ROOT}/release-local-precheck}"
 mkdir -p "${INTEGRATION_LOG_DIR}"
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
 API_PID=""
 WEB_PID=""
 PLAYWRIGHT_PID=""
+PLAYWRIGHT_STATUS=1
 
 info() {
   echo "[release-local-precheck] $*"
@@ -169,6 +173,14 @@ cleanup() {
   wait "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
   wait "${WEB_PID}" >/dev/null 2>&1 || true
   wait "${API_PID}" >/dev/null 2>&1 || true
+  if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
+    lane_mark_status "${INTEGRATION_RUN_ROOT}" success
+    rm -rf "${INTEGRATION_RUN_ROOT}"
+    lane_remove_current_link_if_matches backend-real "${INTEGRATION_RUN_ROOT}" current-release-precheck
+  else
+    lane_mark_status "${INTEGRATION_RUN_ROOT}" failed
+  fi
+  lane_prune_runs backend-real "${BACKEND_REAL_KEEP_RUNS:-5}"
 }
 trap cleanup EXIT
 
@@ -330,6 +342,12 @@ run_clean npx playwright test \
   --project=chromium \
   --workers=1 &
 PLAYWRIGHT_PID=$!
+set +e
 wait "${PLAYWRIGHT_PID}"
+PLAYWRIGHT_STATUS=$?
+set -e
+if [[ "${PLAYWRIGHT_STATUS}" -ne 0 ]]; then
+  exit "${PLAYWRIGHT_STATUS}"
+fi
 
 info "release local precheck passed"

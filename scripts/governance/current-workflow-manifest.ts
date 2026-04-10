@@ -30,7 +30,8 @@ export const CURRENT_WORKFLOW_DOCUMENT_FILES = [
   'docs/CURRENT_BASELINE.md',
   'docs/current-engineering-governance-model.md',
   'docs/troubleshooting-guide-v1.md',
-  'docs/agent-codex-notebook-runbook.md',
+  // Notebook Codex Runner runbook (current operational truth; file path remains the current file name).
+  'docs/notebook-codex-runbook.md',
   'docs/UXUI/01-通用规范/visual-baseline-policy-v1.md',
   'scripts/local-manual/common.sh',
   'scripts/notebook-agent-init-resources.sh',

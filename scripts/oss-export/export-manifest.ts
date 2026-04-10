@@ -167,7 +167,7 @@ export const KEEP_ROOT_SCRIPTS = {
   'cluster:deploy': 'bash scripts/cluster-deploy/deploy.sh',
   'cluster:bootstrap': 'bash scripts/cluster-deploy/bootstrap.sh',
   'docker:app': 'docker build -f infra/deploy/Dockerfile.agentsmith-app-base -t agentsmith-app-base:oss . && docker build --build-arg APP_BASE_IMAGE=agentsmith-app-base:oss -f infra/deploy/Dockerfile.agentsmith-app -t agentsmith-app:oss .',
-  'docker:runner': 'docker build -f infra/runner/Dockerfile.notebook-codex-runner-base -t agentsmith-notebook-codex-runner-base:oss . && docker build --build-arg RUNNER_BASE_IMAGE=agentsmith-notebook-codex-runner-base:oss -f infra/runner/Dockerfile.notebook-codex-runner -t agentsmith-notebook-codex-runner:oss .',
+  'docker:runner': 'bash scripts/build-runner-image.sh notebook agentsmith-notebook-codex-runner-base:oss agentsmith-notebook-codex-runner:oss . && bash scripts/build-runner-image.sh chat agentsmith-chat-llm-runner-base:oss agentsmith-chat-llm-runner:oss .',
 } as const;
 
 export const REMOVE_ROOT_DEV_DEPENDENCIES = new Set([

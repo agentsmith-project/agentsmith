@@ -6,6 +6,7 @@ SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
 UNIVERSAL_PROXY_ROOT="$(cd "${ROOT_DIR}/../llm-universal-proxy" && pwd)"
 source "${ROOT_DIR}/scripts/lib/ensure-juicefs-vendor.sh"
 source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
+source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 OUT_DIR="${OUT_DIR:-${HOME}/agentsmith/deploy/uploads}"
 RELEASE_ID="${RELEASE_ID:-$(git -C "${ROOT_DIR}" rev-parse --short HEAD)-$(date -u +%Y%m%dT%H%M%SZ)}"
 BUNDLE_DIR="${OUT_DIR}/agentsmith-${RELEASE_ID}"
@@ -98,7 +99,18 @@ APP_BASE_HASH="$(hash_files \
   "${ROOT_DIR}/packages/contracts/package.json" \
   "${ROOT_DIR}/packages/domain/package.json" \
   "${ROOT_DIR}/packages/ports/package.json")"
-RUNNER_BASE_HASH="$(hash_files "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner-base")"
+RUNNER_BASE_HASH="$(hash_files \
+  "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner-base" \
+  "${ROOT_DIR}/package.json" \
+  "${ROOT_DIR}/package-lock.json" \
+  "${ROOT_DIR}/packages/agent-runner/package.json" \
+  "${ROOT_DIR}/packages/notebook-codex-runner/package.json")"
+CHAT_RUNNER_BASE_HASH="$(hash_files \
+  "${ROOT_DIR}/infra/runner/Dockerfile.chat-llm-runner-base" \
+  "${ROOT_DIR}/package.json" \
+  "${ROOT_DIR}/package-lock.json" \
+  "${ROOT_DIR}/packages/agent-runner/package.json" \
+  "${ROOT_DIR}/packages/chat-llm-runner/package.json")"
 VERIFY_RUNNER_BASE_HASH="$(hash_files \
   "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-verify-runner-base" \
   "${ROOT_DIR}/package.json" \
@@ -115,9 +127,11 @@ VERIFY_RUNNER_BASE_HASH="$(hash_files \
 
 APP_BASE_IMAGE="${APP_BASE_IMAGE:-agentsmith-app-base:${APP_BASE_HASH}}"
 RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE:-agentsmith-notebook-codex-runner-base:${RUNNER_BASE_HASH}}"
+CHAT_RUNNER_BASE_IMAGE="${CHAT_RUNNER_BASE_IMAGE:-agentsmith-chat-llm-runner-base:${CHAT_RUNNER_BASE_HASH}}"
 VERIFY_RUNNER_BASE_IMAGE="${VERIFY_RUNNER_BASE_IMAGE:-agentsmith-verify-runner-base:${VERIFY_RUNNER_BASE_HASH}}"
 APP_IMAGE="${APP_IMAGE:-agentsmith-app:${RELEASE_ID}}"
 RUNNER_IMAGE="${RUNNER_IMAGE:-agentsmith-notebook-codex-runner:${RELEASE_ID}}"
+CHAT_RUNNER_IMAGE="${CHAT_RUNNER_IMAGE:-agentsmith-chat-llm-runner:${RELEASE_ID}}"
 VERIFY_RUNNER_IMAGE="${VERIFY_RUNNER_IMAGE:-agentsmith-verify-runner:${RELEASE_ID}}"
 SANDBOX_MANAGER_IMAGE="${SANDBOX_MANAGER_IMAGE:-sandbox-manager:${RELEASE_ID}}"
 UNIVERSAL_PROXY_IMAGE="${UNIVERSAL_PROXY_IMAGE:-llm-universal-proxy:${RELEASE_ID}}"
@@ -144,10 +158,12 @@ echo "[bundle] building app image ${APP_IMAGE}"
 docker_build_local "${BUILD_ARGS[@]}" --build-arg APP_BASE_IMAGE="${APP_BASE_IMAGE}" -t "${APP_IMAGE}" -f "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-app" "${ROOT_DIR}"
 
 echo "[bundle] building external runner base image ${RUNNER_BASE_IMAGE}"
-docker_build_local "${BUILD_ARGS[@]}" -t "${RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner-base" "${ROOT_DIR}"
+RUNNER_IMAGE_DOCKER_BUILD_PROXY="${DOCKER_BUILD_PROXY:-${HTTP_PROXY:-}}"
+export RUNNER_IMAGE_DOCKER_BUILD_PROXY
+build_runner_image notebook "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${RUNNER_IMAGE_DOCKER_BUILD_PROXY}" "1" "1" "${ROOT_DIR}"
 
-echo "[bundle] building external runner image ${RUNNER_IMAGE}"
-docker_build_local "${BUILD_ARGS[@]}" --build-arg RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.notebook-codex-runner" "${ROOT_DIR}"
+echo "[bundle] building chat runner base image ${CHAT_RUNNER_BASE_IMAGE}"
+build_runner_image chat "${CHAT_RUNNER_BASE_IMAGE}" "${CHAT_RUNNER_IMAGE}" "${RUNNER_IMAGE_DOCKER_BUILD_PROXY}" "1" "1" "${ROOT_DIR}"
 
 echo "[bundle] building verify runner base image ${VERIFY_RUNNER_BASE_IMAGE}"
 docker_build_local "${BUILD_ARGS[@]}" -t "${VERIFY_RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-verify-runner-base" "${ROOT_DIR}"
@@ -188,6 +204,8 @@ BUILT_IMAGES=(
   "${APP_IMAGE}"
   "${RUNNER_BASE_IMAGE}"
   "${RUNNER_IMAGE}"
+  "${CHAT_RUNNER_BASE_IMAGE}"
+  "${CHAT_RUNNER_IMAGE}"
   "${VERIFY_RUNNER_BASE_IMAGE}"
   "${VERIFY_RUNNER_IMAGE}"
   "${SANDBOX_MANAGER_IMAGE}"
@@ -276,6 +294,8 @@ agentsmith_app_base_image=${APP_BASE_IMAGE}
 agentsmith_app_image=${APP_IMAGE}
 agentsmith_runner_base_image=${RUNNER_BASE_IMAGE}
 agentsmith_runner_image=${RUNNER_IMAGE}
+agentsmith_chat_runner_base_image=${CHAT_RUNNER_BASE_IMAGE}
+agentsmith_chat_runner_image=${CHAT_RUNNER_IMAGE}
 agentsmith_verify_runner_base_image=${VERIFY_RUNNER_BASE_IMAGE}
 agentsmith_verify_runner_image=${VERIFY_RUNNER_IMAGE}
 sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}

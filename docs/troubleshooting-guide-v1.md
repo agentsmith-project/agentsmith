@@ -38,7 +38,7 @@ make local-manual-status
 
 4. 再看对应 lane 的正式入口  
 - Notebook / external agent / benchmark / traces：  
-  [agent-codex-notebook-runbook.md](./agent-codex-notebook-runbook.md)
+  [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
 - CI / integration 环境问题：  
   [ci-integration-troubleshooting.md](./ci-integration-troubleshooting.md)
 
@@ -180,7 +180,7 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 2. [Current Baseline (Whitelist)](./CURRENT_BASELINE.md)
 3. [Development Guide](../DEVELOPMENT.md)
 4. [User Guides Index](./user-guides/README.md)
-5. [Agent Codex Notebook Runbook](./agent-codex-notebook-runbook.md)
+5. [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
 6. [File Library Client Mount](./user-guides/file-library-local-mount.md)
 
 ## Files / Desktop Mount Issues

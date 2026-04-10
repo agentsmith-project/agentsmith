@@ -653,7 +653,7 @@ See also:
 
 ### Scope (What this workline covered)
 
-- Notebook task execution via external agent execution (`agent-codex-runner`, Codex script mode)
+- Notebook task execution via external agent execution (`notebook-codex-runner`, Codex script mode)
 - Endpoint proxy protocol bridging for OpenAI Responses and streaming translation on canonical proxy paths
 - Notebook message bubble execution details UI (expandable trace panel)
 - Trace storage/query/replay path (`trace_event` SSE + `/tasks/:taskId/traces`)
@@ -672,7 +672,7 @@ See also:
 - Notebook task no longer auto-closes after a single external-agent turn (multi-turn behavior fixed).
 
 Primary files (implemented across this workline):
-- `packages/agent-codex-runner/src/index.ts`
+- `packages/notebook-codex-runner/src/index.ts`
 - `packages/api-entry-node/src/task-route-handler.ts`
 - `packages/api-entry-node/src/agent-execution-service.ts`
 
@@ -745,8 +745,8 @@ Added tooling and Make targets for:
 
 ### Delivered (Docs / Contracts / Specs)
 
-- Runbook (authoritative operational workflow for this workline):
-  - `docs/agent-codex-notebook-runbook.md`
+- Notebook Codex Runner Runbook (authoritative operational workflow for this workline):
+  - `docs/notebook-codex-runbook.md`
 - Execution protocol contract:
   - `docs/contracts/agent-execution-protocol.md`
 - Notebook module/contract mapping docs updated:
@@ -762,7 +762,7 @@ Added tooling and Make targets for:
 ### Validation Summary (What was actually tested)
 
 #### Real Chain (Repeatedly)
-- API (`:20000`) + Web (`:3001`) + external `agent-codex-runner`
+- API (`:20000`) + Web (`:3001`) + external `notebook-codex-runner`
 - real local Keycloak auth
 - real provider-compatible endpoint via endpoint proxy
 - notebook smoke tasks complete successfully and return final responses (`chain ok`)
@@ -826,11 +826,11 @@ Added tooling and Make targets for:
 ### Where to Continue
 
 If this workline is resumed later, start from:
-1. `docs/agent-codex-notebook-runbook.md` (current operational truth)
+1. `Notebook Codex Runner Runbook` (`docs/notebook-codex-runbook.md`) (current operational truth)
 2. benchmark/compare/archive scripts in `scripts/`
 3. notebook trace execution implementation in:
    - `packages/api-entry-node/src/task-route-handler.ts`
-   - `packages/agent-codex-runner/src/index.ts`
+   - `packages/notebook-codex-runner/src/index.ts`
    - `src/components/notebook/TaskPage.tsx`
    - `src/components/notebook/MessageItem.tsx`
 

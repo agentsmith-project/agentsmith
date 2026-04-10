@@ -4,6 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
+source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 
 ensure_operator_registry_env
 load_registry_env
@@ -25,10 +26,12 @@ JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
 INGRESS_NGINX_VERSION="${INGRESS_NGINX_VERSION:-v1.15.1}"
 
 APP_BASE_IMAGE="agentsmith-app-base:${RELEASE_ID}"
-RUNNER_BASE_IMAGE="agentsmith-notebook-codex-runner-base:${RELEASE_ID}"
+RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE:-$(runner_release_base_image notebook "${RELEASE_ID}")}"
+CHAT_RUNNER_BASE_IMAGE="${CHAT_RUNNER_BASE_IMAGE:-$(runner_release_base_image chat "${RELEASE_ID}")}"
 VERIFY_RUNNER_BASE_IMAGE="agentsmith-verify-runner-base:${RELEASE_ID}"
 APP_IMAGE="${IMAGE_PREFIX}/agentsmith-app:${RELEASE_ID}"
-RUNNER_IMAGE="${IMAGE_PREFIX}/agentsmith-notebook-codex-runner:${RELEASE_ID}"
+RUNNER_IMAGE="${RUNNER_IMAGE:-$(runner_release_image notebook "${RELEASE_ID}" "${IMAGE_PREFIX}")}"
+CHAT_RUNNER_IMAGE="${CHAT_RUNNER_IMAGE:-$(runner_release_image chat "${RELEASE_ID}" "${IMAGE_PREFIX}")}"
 VERIFY_RUNNER_IMAGE="${IMAGE_PREFIX}/agentsmith-verify-runner:${RELEASE_ID}"
 SANDBOX_MANAGER_IMAGE="${IMAGE_PREFIX}/sandbox-manager:${RELEASE_ID}"
 UNIVERSAL_PROXY_IMAGE="${IMAGE_PREFIX}/llm-universal-proxy:${RELEASE_ID}"
@@ -53,12 +56,8 @@ docker_build_local \
   -t "${APP_IMAGE}" \
   -f "${APP_SOURCE_DIR}/infra/deploy/Dockerfile.agentsmith-app" \
   "${APP_SOURCE_DIR}"
-docker_build_local \
-  --build-arg NODE_BASE_IMAGE="${RUNNER_NODE_BASE_IMAGE}" \
-  -t "${RUNNER_BASE_IMAGE}" \
-  -f "${APP_SOURCE_DIR}/infra/runner/Dockerfile.notebook-codex-runner-base" \
-  "${APP_SOURCE_DIR}"
-docker_build_local --build-arg RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${APP_SOURCE_DIR}/infra/runner/Dockerfile.notebook-codex-runner" "${APP_SOURCE_DIR}"
+build_runner_image notebook "${RUNNER_BASE_IMAGE}" "${RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY:-}" "1" "1" "${APP_SOURCE_DIR}"
+build_runner_image chat "${CHAT_RUNNER_BASE_IMAGE}" "${CHAT_RUNNER_IMAGE}" "${DOCKER_BUILD_PROXY:-}" "1" "1" "${APP_SOURCE_DIR}"
 docker_build_local \
   --build-arg PLAYWRIGHT_IMAGE="${VERIFY_PLAYWRIGHT_BASE_IMAGE}" \
   --build-arg DOCKER_CLI_IMAGE="${VERIFY_DOCKER_CLI_IMAGE}" \
@@ -84,6 +83,8 @@ release_id=${RELEASE_ID}
 agentsmith_app_image=${APP_IMAGE}
 agentsmith_runner_image=${RUNNER_IMAGE}
 agentsmith_runner_k8s_image=${K8S_REGISTRY_HOST}/${REGISTRY_PROJECT}/agentsmith-notebook-codex-runner:${RELEASE_ID}
+agentsmith_chat_runner_image=${CHAT_RUNNER_IMAGE}
+agentsmith_chat_runner_k8s_image=${K8S_REGISTRY_HOST}/${REGISTRY_PROJECT}/agentsmith-chat-llm-runner:${RELEASE_ID}
 agentsmith_verify_runner_image=${VERIFY_RUNNER_IMAGE}
 sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}
 sandbox_manager_k8s_image=${K8S_REGISTRY_HOST}/${REGISTRY_PROJECT}/sandbox-manager:${RELEASE_ID}

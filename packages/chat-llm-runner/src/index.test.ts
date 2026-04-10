@@ -202,6 +202,249 @@ describe('chat-llm-runner', () => {
     expect(stderr.join('')).not.toContain('error');
   }, 30_000);
 
+  it('rejects notebook execution context instead of treating it like chat', async () => {
+    const server = http.createServer();
+    servers.push(server);
+    const wss = new WebSocketServer({ noServer: true });
+
+    let connection: WebSocket | null = null;
+    let readyPayload: Record<string, unknown> | null = null;
+    let errorPayload: Record<string, unknown> | null = null;
+
+    wss.on('connection', (ws) => {
+      connection = ws;
+      ws.send(JSON.stringify({
+        type: 'server.hello',
+        timestamp: new Date().toISOString(),
+        payload: {
+          protocol_version: '1.0',
+          heartbeat_interval_sec: 15,
+        },
+      }));
+      ws.once('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as {
+          type?: string;
+          payload?: Record<string, unknown>;
+        };
+        expect(message.type).toBe('agent.ready');
+        readyPayload = message.payload ?? {};
+        ws.send(JSON.stringify({
+          type: 'server.request.start',
+          request_id: 'req_chat_invalid_context',
+          timestamp: new Date().toISOString(),
+          payload: {
+            messages: [{ role: 'user', content: 'hello notebook' }],
+            execution_context: {
+              interaction_kind: 'notebook',
+              task_id: 'task_should_fail',
+              session_id: 'session_should_fail',
+              workspace_id: 'ws_test',
+              project_id: 'proj_test',
+              endpoint_id: 'ep_test',
+              execution_ticket: 'exec_test',
+              api_base: 'http://127.0.0.1:65535/api/v1',
+              username: 'tester',
+            },
+          },
+        }));
+      });
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as {
+          type?: string;
+          payload?: Record<string, unknown>;
+        };
+        if (message.type === 'agent.response.error') {
+          errorPayload = message.payload ?? {};
+        }
+      });
+    });
+
+    server.on('upgrade', (req, socket, head) => {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => resolve());
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('chat_runner_test_server_missing_address');
+    }
+
+    const runner = spawn(
+      'node_modules/.bin/tsx',
+      [path.resolve('packages/chat-llm-runner/src/index.ts')],
+      {
+        env: {
+          ...process.env,
+          MBOS_AGENT_WS_URL: `ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_id=ag_chat_test`,
+          MBOS_AGENT_KEY: 'ask_test',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    children.push(runner);
+
+    await expect
+      .poll(
+        () => readyPayload?.runner_spec,
+        { timeout: 30_000, intervals: [250, 500, 1000] },
+      )
+      .toMatchObject({
+        interaction_kind: 'chat',
+        app_family: 'llm_runner',
+      });
+
+    await expect
+      .poll(
+        () => errorPayload?.error_message,
+        { timeout: 30_000, intervals: [250, 500, 1000] },
+      )
+      .toBe('chat_execution_context_invalid');
+
+    await new Promise<void>((resolve) => {
+      if (!connection) {
+        resolve();
+        return;
+      }
+      connection.once('close', () => resolve());
+      connection.close();
+    });
+    await new Promise<void>((resolve) => {
+      runner.once('exit', () => resolve());
+      runner.kill('SIGTERM');
+      setTimeout(() => resolve(), 2_000);
+    });
+  }, 30_000);
+
+  it('does not synthesize a fallback reply when the upstream returns no text', async () => {
+    const server = http.createServer();
+    servers.push(server);
+    const wss = new WebSocketServer({ noServer: true });
+    const upstreamServer = http.createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        choices: [{ message: { content: '' }, finish_reason: 'stop' }],
+        usage: { total_tokens: 3 },
+      }));
+    });
+    servers.push(upstreamServer);
+    await new Promise<void>((resolve, reject) => {
+      upstreamServer.once('error', reject);
+      upstreamServer.listen(0, '127.0.0.1', () => resolve());
+    });
+    const upstreamAddress = upstreamServer.address();
+    if (!upstreamAddress || typeof upstreamAddress === 'string') {
+      throw new Error('chat_runner_test_upstream_missing_address');
+    }
+    const upstreamBaseUrl = `http://127.0.0.1:${upstreamAddress.port}/api/v1`;
+
+    let connection: WebSocket | null = null;
+    let donePayload: Record<string, unknown> | null = null;
+    let deltaCount = 0;
+
+    wss.on('connection', (ws) => {
+      connection = ws;
+      ws.send(JSON.stringify({
+        type: 'server.hello',
+        timestamp: new Date().toISOString(),
+        payload: {
+          protocol_version: '1.0',
+          heartbeat_interval_sec: 15,
+        },
+      }));
+      ws.once('message', () => {
+        ws.send(JSON.stringify({
+          type: 'server.request.start',
+          request_id: 'req_chat_empty_response',
+          timestamp: new Date().toISOString(),
+          payload: {
+            messages: [{ role: 'user', content: 'should stay empty' }],
+            execution_context: {
+              interaction_kind: 'chat',
+              session_id: 'session_chat_empty',
+              workspace_id: 'ws_test',
+              project_id: 'proj_test',
+              endpoint_id: 'ep_test',
+              execution_ticket: 'exec_test',
+              api_base: upstreamBaseUrl,
+              username: 'tester',
+            },
+          },
+        }));
+      });
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as {
+          type?: string;
+          payload?: Record<string, unknown>;
+        };
+        if (message.type === 'agent.response.delta') {
+          deltaCount += 1;
+        }
+        if (message.type === 'agent.response.done') {
+          donePayload = message.payload ?? {};
+        }
+      });
+    });
+
+    server.on('upgrade', (req, socket, head) => {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => resolve());
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('chat_runner_test_server_missing_address');
+    }
+
+    const runner = spawn(
+      'node_modules/.bin/tsx',
+      [path.resolve('packages/chat-llm-runner/src/index.ts')],
+      {
+        env: {
+          ...process.env,
+          MBOS_AGENT_WS_URL: `ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_id=ag_chat_test`,
+          MBOS_AGENT_KEY: 'ask_test',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    children.push(runner);
+
+    await expect
+      .poll(
+        () => donePayload,
+        { timeout: 30_000, intervals: [250, 500, 1000] },
+      )
+      .toEqual({
+        finish_reason: 'stop',
+        usage_tokens: 3,
+      });
+    expect(deltaCount).toBe(0);
+
+    await new Promise<void>((resolve) => {
+      if (!connection) {
+        resolve();
+        return;
+      }
+      connection.once('close', () => resolve());
+      connection.close();
+    });
+    await new Promise<void>((resolve) => {
+      runner.once('exit', () => resolve());
+      runner.kill('SIGTERM');
+      setTimeout(() => resolve(), 2_000);
+    });
+  }, 30_000);
+
   it('emits a reclaim warning when a continuation session workspace is missing', async () => {
     const server = http.createServer();
     servers.push(server);

@@ -81,6 +81,7 @@ test.describe("Agents Page", () => {
     await expect(dialog.locator("#agent-interaction-kind option")).toHaveCount(
       2,
     );
+    await expect(dialog.getByLabel("Chat Endpoint")).toBeVisible();
   });
 
   test("edit dialog opens when clicking edit on a row", async ({
@@ -295,7 +296,7 @@ test.describe("Agents Page", () => {
     await expect(firstRow).toBeVisible();
   });
 
-  test("edit agent submits updated interaction mode", async ({
+  test("edit agent submits updated interaction kind", async ({
     authedPage,
   }) => {
     await expect(authedPage.getByTestId("agents__table")).toBeVisible({
@@ -325,6 +326,24 @@ test.describe("Agents Page", () => {
     const request = await updateRequestPromise;
     const payload = request.postDataJSON() as { interaction_kind?: string };
     expect(payload.interaction_kind).toBe("chat");
+  });
+
+  test("create dialog switches endpoint wording with agent type selection", async ({
+    authedPage,
+  }) => {
+    await expect(authedPage.getByTestId("agents__table")).toBeVisible({
+      timeout: 10000,
+    });
+
+    await authedPage.getByTestId("agents__create-btn").click();
+    const dialog = authedPage.getByTestId("agents__create-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Chat Endpoint")).toBeVisible();
+
+    await dialog.locator("#agent-interaction-kind").selectOption("notebook");
+
+    await expect(dialog.getByLabel("Notebook Endpoint")).toBeVisible();
+    await expect(dialog.getByLabel("Chat Endpoint")).toHaveCount(0);
   });
 
   test("external agent keys flow opens create key dialog result", async ({

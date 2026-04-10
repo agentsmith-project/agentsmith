@@ -396,7 +396,11 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_interaction_kind_required' });
       return true;
     }
-    const effectiveInteractionKind = requestedInteractionKind ?? existing.interaction_kind ?? 'chat';
+    const effectiveInteractionKind = requestedInteractionKind ?? existing.interaction_kind;
+    if (!effectiveInteractionKind) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_interaction_kind_required' });
+      return true;
+    }
     const effectiveExecutionPreferences = executionPreferences ?? readObject(existing.execution_preferences_json);
     if (
       (requestedInteractionKind !== undefined || executionPreferences !== undefined)

@@ -59,4 +59,22 @@ describe('ProjectContextPage', () => {
     );
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
   });
+
+  it('shows validation error for invalid parameters', () => {
+    mockResolvedRoute.mockReturnValueOnce({
+      workspace: '',
+      project: '',
+      locale: 'en',
+      isReady: true,
+      isValid: false,
+    });
+
+    render(
+      <ProjectContextPage
+        params={Promise.resolve({ workspace: 'bad ws', project: 'bad proj', locale: 'en' })}
+      />,
+    );
+
+    expect(screen.getByText('validation_error')).toBeInTheDocument();
+  });
 });

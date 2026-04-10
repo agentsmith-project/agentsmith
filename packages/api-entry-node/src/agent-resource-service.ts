@@ -12,54 +12,32 @@ interface AgentConnectionState {
   protocol_version?: string;
 }
 
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return typeof input === 'object' && input !== null && !Array.isArray(input);
-}
-
-function normalizeLegacyInteractionMode(
-  agent: AgentRecord & Record<string, unknown>,
-): 'chat' | 'notebook' | null {
-  if (agent.interaction_kind === 'chat' || agent.interaction_kind === 'notebook') {
-    return agent.interaction_kind;
-  }
-  const legacyMode = typeof agent.interaction_mode === 'string' ? agent.interaction_mode.trim() : '';
-  if (legacyMode === 'chat' || legacyMode === 'notebook') {
-    return legacyMode;
-  }
-  if (!legacyMode) {
-    return null;
-  }
-  const executionPreferences = isRecord(agent.execution_preferences_json)
-    ? agent.execution_preferences_json
-    : null;
-  const hasChat = executionPreferences ? isRecord(executionPreferences.chat) : false;
-  const hasNotebook = executionPreferences ? isRecord(executionPreferences.notebook) : false;
-  if (hasChat !== hasNotebook) {
-    return hasChat ? 'chat' : 'notebook';
-  }
-  return null;
-}
-
-function normalizeAgentRecord(
-  agent: AgentRecord & Record<string, unknown>,
-): { record: AgentRecord; migrated: boolean } {
-  const normalizedInteractionKind = normalizeLegacyInteractionMode(agent);
-  const hadLegacyField = Object.hasOwn(agent, 'interaction_mode');
-  if (!normalizedInteractionKind) {
-    return {
-      record: agent,
-      migrated: false,
-    };
-  }
-  const { interaction_mode: _legacyInteractionMode, ...rest } = agent;
-  const normalized = {
-    ...rest,
-    interaction_kind: normalizedInteractionKind,
-  } as AgentRecord;
-  return {
-    record: normalized,
-    migrated: hadLegacyField || agent.interaction_kind !== normalizedInteractionKind,
+function sanitizeAgentRecord(agent: AgentRecord & Record<string, unknown>): AgentRecord {
+  const sanitized: AgentRecord = {
+    id: agent.id,
+    workspace_id: agent.workspace_id,
+    project_id: agent.project_id,
+    name: agent.name,
+    mode: agent.mode,
+    status: agent.status,
+    created_at: agent.created_at,
+    updated_at: agent.updated_at,
   };
+
+  if (agent.description !== undefined) sanitized.description = agent.description;
+  if (agent.presence !== undefined) sanitized.presence = agent.presence;
+  if (agent.config !== undefined) sanitized.config = agent.config;
+  if (agent.execution_preferences_json !== undefined) {
+    sanitized.execution_preferences_json = agent.execution_preferences_json;
+  }
+  if (agent.interaction_kind !== undefined) sanitized.interaction_kind = agent.interaction_kind;
+  if (agent.owner_id !== undefined) sanitized.owner_id = agent.owner_id;
+  if (agent.admin_id !== undefined) sanitized.admin_id = agent.admin_id;
+  if (agent.visibility !== undefined) sanitized.visibility = agent.visibility;
+  if (agent.capabilities !== undefined) sanitized.capabilities = agent.capabilities;
+  if (agent.last_seen_at !== undefined) sanitized.last_seen_at = agent.last_seen_at;
+
+  return sanitized;
 }
 
 export interface AgentRuntimeState {
@@ -147,15 +125,10 @@ export class AgentResourceService {
   ) {}
 
   private async hydrateAgentRecord(
-    workspaceId: string,
     raw: (AgentRecord & Record<string, unknown>) | null,
   ): Promise<AgentRecord | null> {
     if (!raw) return null;
-    const normalized = normalizeAgentRecord(raw);
-    if (normalized.migrated) {
-      await this.docStore.upsert(this.agentsCollection(workspaceId), normalized.record.id, normalized.record);
-    }
-    return normalized.record;
+    return sanitizeAgentRecord(raw);
   }
 
   private agentsCollection(workspaceId: string): string {
@@ -187,7 +160,7 @@ export class AgentResourceService {
       workspace_id: workspaceId,
       project_id: projectId,
     });
-    const normalized = await Promise.all(items.map((item) => this.hydrateAgentRecord(workspaceId, item)));
+    const normalized = await Promise.all(items.map((item) => this.hydrateAgentRecord(item)));
     const hydrated = await Promise.all(normalized.filter(Boolean).map((item) => this.hydratePresence(item)));
     return hydrated.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   }
@@ -207,7 +180,7 @@ export class AgentResourceService {
     const item = await this.docStore.get<AgentRecord & Record<string, unknown>>(this.agentsCollection(workspaceId), agentId);
     if (!item) return null;
     if (item.workspace_id !== workspaceId || item.project_id !== projectId) return null;
-    const normalized = await this.hydrateAgentRecord(workspaceId, item);
+    const normalized = await this.hydrateAgentRecord(item);
     return normalized ? this.hydratePresence(normalized) : null;
   }
 

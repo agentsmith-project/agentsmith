@@ -21,19 +21,6 @@ export function resolveAgentInteractionKind(
   return null;
 }
 
-export function resolveAgentInteractionKindError(
-  agent: Pick<AgentRecord, 'interaction_kind' | 'execution_preferences_json'> & Record<string, unknown>,
-): 'agent_interaction_kind_required' | 'agent_interaction_kind_migration_required' {
-  if (resolveAgentInteractionKind(agent)) {
-    return 'agent_interaction_kind_required';
-  }
-  const legacyMode = asNonEmptyString(agent.interaction_mode);
-  if (legacyMode) {
-    return 'agent_interaction_kind_migration_required';
-  }
-  return 'agent_interaction_kind_required';
-}
-
 export function readAgentExecutionPreferences(
   agent: Pick<AgentRecord, 'interaction_kind' | 'execution_preferences_json'>,
   kindOverride?: 'chat' | 'notebook',
@@ -49,7 +36,7 @@ export function readAgentExecutionPreferences(
     : {};
   const interactionKind = kindOverride ?? resolveAgentInteractionKind(agent);
   if (!interactionKind) {
-    throw new Error(resolveAgentInteractionKindError(agent as typeof agent & Record<string, unknown>));
+    throw new Error('agent_interaction_kind_required');
   }
   const scoped = isRecord(executionPreferences[interactionKind])
     ? executionPreferences[interactionKind] as ExecutionPreferencesRecord

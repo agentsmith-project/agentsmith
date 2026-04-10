@@ -18,15 +18,18 @@ import {
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
-function resolveInternalSandboxNamespace(): string | null {
+function requireInternalSandboxNamespace(): string {
   if (!process.env.SANDBOX_MANAGER_URL?.trim()) {
-    return null;
+    throw new Error('missing_SANDBOX_MANAGER_URL');
   }
   if (!process.env.SANDBOX_SERVICE_KEY?.trim()) {
-    return null;
+    throw new Error('missing_SANDBOX_SERVICE_KEY');
   }
   const namespace = process.env.INTERNAL_AGENT_K8S_NAMESPACE?.trim();
-  return namespace && namespace.length > 0 ? namespace : null;
+  if (!namespace) {
+    throw new Error('missing_INTERNAL_AGENT_K8S_NAMESPACE');
+  }
+  return namespace;
 }
 
 function requireRealLaneApiKey(): string {
@@ -104,8 +107,7 @@ async function waitForAssistantToken(args: {
 test.describe('@lane-real internal chat runner integration', () => {
   test('starts one shared internal chat pod and keeps session transcripts isolated across sessions', async ({ page }) => {
     test.setTimeout(720_000);
-    const namespace = resolveInternalSandboxNamespace();
-    test.skip(!namespace, 'internal chat sandbox manager environment is not configured for this lane');
+    const namespace = requireInternalSandboxNamespace();
     const providerApiKey = requireRealLaneApiKey();
 
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);

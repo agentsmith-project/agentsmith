@@ -345,8 +345,7 @@ describe('AgentExecutionService', () => {
     }));
   });
 
-  it('backfills legacy interaction_mode records during websocket upgrade so existing agents can reconnect', async () => {
-    process.env.PUBLIC_API_BASE_URL = 'http://trusted.example/api/v1';
+  it('rejects unsupported interaction_mode records with interaction_kind_required', async () => {
     const docStore = new InMemoryJsonDocStore();
     const agentResourceService = new AgentResourceService(docStore);
     const executionService = new AgentExecutionService(agentResourceService);
@@ -359,89 +358,26 @@ describe('AgentExecutionService', () => {
     servers.push(server);
     const address = server.address() as AddressInfo;
 
-    await docStore.upsert(resolveWorkspaceScopedCollection('agents', 'ws_default'), 'ag_legacy_upgrade', {
-      id: 'ag_legacy_upgrade',
+    await docStore.upsert(resolveWorkspaceScopedCollection('agents', 'ws_default'), 'ag_legacy_chat', {
+      id: 'ag_legacy_chat',
       workspace_id: 'ws_default',
       project_id: 'proj_1',
-      name: 'legacy-upgrade-agent',
+      name: 'legacy-chat-agent',
       mode: 'external',
       interaction_mode: 'chat',
       execution_preferences_json: {
         chat: {
-          endpoint_id: 'ep_legacy_upgrade',
-        },
-      },
-      status: 'enabled',
-      created_at: '2026-04-09T00:00:00.000Z',
-      updated_at: '2026-04-09T00:00:00.000Z',
-    });
-    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', 'ag_legacy_upgrade');
-
-    const ws = new WebSocket(
-      `ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_id=ag_legacy_upgrade`,
-      { headers: { Authorization: `Bearer ${keyPair.key}` } },
-    );
-    sockets.push(ws);
-
-    const hello = await new Promise<Record<string, unknown>>((resolve, reject) => {
-      ws.once('error', reject);
-      ws.on('message', (raw) => {
-        try {
-          const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
-          if (message.type === 'server.hello') {
-            resolve(message);
-          }
-        } catch (error) {
-          reject(error);
-        }
-      });
-    });
-
-    expect(hello.type).toBe('server.hello');
-    const stored = await docStore.get<Record<string, unknown>>(
-      resolveWorkspaceScopedCollection('agents', 'ws_default'),
-      'ag_legacy_upgrade',
-    );
-    expect(stored?.interaction_kind).toBe('chat');
-    expect(stored).not.toHaveProperty('interaction_mode');
-  });
-
-  it('rejects ambiguous legacy interaction_mode records with a migration-required error', async () => {
-    const docStore = new InMemoryJsonDocStore();
-    const agentResourceService = new AgentResourceService(docStore);
-    const executionService = new AgentExecutionService(agentResourceService);
-    const server = http.createServer((_req, res) => {
-      res.statusCode = 404;
-      res.end();
-    });
-    server.on('upgrade', (req, socket, head) => executionService.handleUpgrade(req, socket, head));
-    server.listen(0);
-    servers.push(server);
-    const address = server.address() as AddressInfo;
-
-    await docStore.upsert(resolveWorkspaceScopedCollection('agents', 'ws_default'), 'ag_legacy_both', {
-      id: 'ag_legacy_both',
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
-      name: 'legacy-both-agent',
-      mode: 'external',
-      interaction_mode: 'both',
-      execution_preferences_json: {
-        chat: {
           endpoint_id: 'ep_chat_legacy',
         },
-        notebook: {
-          endpoint_id: 'ep_notebook_legacy',
-        },
       },
       status: 'enabled',
       created_at: '2026-04-09T00:00:00.000Z',
       updated_at: '2026-04-09T00:00:00.000Z',
     });
-    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', 'ag_legacy_both');
+    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', 'ag_legacy_chat');
 
     const ws = new WebSocket(
-      `ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_id=ag_legacy_both`,
+      `ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_id=ag_legacy_chat`,
       { headers: { Authorization: `Bearer ${keyPair.key}` } },
     );
     sockets.push(ws);
@@ -452,9 +388,9 @@ describe('AgentExecutionService', () => {
 
     expect(error.message).toContain('Unexpected server response: 403');
     await expect(
-      agentResourceService.getDiagnostics('ws_default', 'proj_1', 'ag_legacy_both'),
+      agentResourceService.getDiagnostics('ws_default', 'proj_1', 'ag_legacy_chat'),
     ).resolves.toEqual(expect.objectContaining({
-      last_error: 'agent_interaction_kind_migration_required',
+      last_error: 'agent_interaction_kind_required',
       last_error_at: expect.any(String),
     }));
   });

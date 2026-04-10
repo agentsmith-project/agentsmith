@@ -9,7 +9,6 @@ import { resolveRequiredConfiguredPublicApiBase } from './agent-execution-api-ba
 import {
   readAgentExecutionPreferences,
   resolveAgentInteractionKind,
-  resolveAgentInteractionKindError,
 } from './agent-execution-preferences.js';
 import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
 
@@ -355,14 +354,13 @@ export class AgentExecutionService {
       debugExecution(`accept agent_id=${agentId} ws=${keyRecord.workspace_id} proj=${keyRecord.project_id}`);
       const interactionKind = resolveAgentInteractionKind(agent);
       if (!interactionKind) {
-        const interactionKindError = resolveAgentInteractionKindError(agent as typeof agent & Record<string, unknown>);
-        debugExecution(`reject interaction_kind_required agent_id=${agentId} code=${interactionKindError}`);
+        debugExecution(`reject interaction_kind_required agent_id=${agentId}`);
         await this.agentResourceService.updateAgentRuntimeState(
           keyRecord.workspace_id,
           keyRecord.project_id,
           agentId,
           {
-            last_error: interactionKindError,
+            last_error: 'agent_interaction_kind_required',
             last_error_at: new Date().toISOString(),
           },
         );
@@ -692,17 +690,16 @@ export class AgentExecutionService {
       void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, socket.agentId).then((current) => {
         const interactionKind = current ? resolveAgentInteractionKind(current) : null;
         if (!interactionKind) {
-          const interactionKindError = resolveAgentInteractionKindError((current ?? {}) as Record<string, unknown>);
           void this.agentResourceService.updateAgentRuntimeState(
             socket.workspaceId,
             socket.projectId,
             socket.agentId,
             {
-              last_error: interactionKindError,
+              last_error: 'agent_interaction_kind_required',
               last_error_at: new Date().toISOString(),
             },
           );
-          socket.ws.close(1008, interactionKindError);
+          socket.ws.close(1008, 'agent_interaction_kind_required');
           return;
         }
 

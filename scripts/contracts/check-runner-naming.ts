@@ -39,6 +39,10 @@ const buildRunnerImageScript = readText('scripts/build-runner-image.sh');
 const integrationRealHelpers = readText('e2e/integration-real-helpers.ts');
 const deploymentSpec = readText('docs/contracts/deployment-spec-v1.md');
 const releaseGovernanceSpec = readText('docs/contracts/address-truth-and-release-governance-v1.md');
+const agentResourceService = readText('packages/api-entry-node/src/agent-resource-service.ts');
+const agentExecutionPreferences = readText('packages/api-entry-node/src/agent-execution-preferences.ts');
+const agentExecutionService = readText('packages/api-entry-node/src/agent-execution-service.ts');
+const internalChatIntegrationSpec = readText('e2e/integration-internal-chat-runner.spec.ts');
 
 function requireMatch(content: string, pattern: RegExp, message: string): void {
   if (!pattern.test(content)) {
@@ -60,6 +64,10 @@ if (rootPackage.scripts?.['agent:notebook-runner'] !== 'npm run dev -w @mbos/not
 
 if (rootPackage.scripts?.['agent:chat-runner'] !== 'npm run dev -w @mbos/chat-llm-runner') {
   failures.push('package.json agent:chat-runner must point to @mbos/chat-llm-runner');
+}
+
+if (rootPackage.scripts?.['test:internal:backend-real:chat'] !== 'bash scripts/run-internal-chat-real-gate.sh') {
+  failures.push('package.json test:internal:backend-real:chat must point to scripts/run-internal-chat-real-gate.sh');
 }
 
 if (rootPackage.scripts?.['agent:codex-runner'] !== undefined) {
@@ -156,6 +164,20 @@ requireMatch(mockLaneScript, /artifacts\/mock-lane\/runs\/\$\{MOCK_RUN_ID\}/, 'm
 if (mockLaneScript.includes('MOCK_NEXT_DIST_DIR:-.next-mock')) {
   failures.push('mock lane script must not default NEXT_DIST_DIR to shared .next-mock');
 }
+
+if (agentResourceService.includes('interaction_mode')) {
+  failures.push('packages/api-entry-node/src/agent-resource-service.ts must not retain interaction_mode compatibility logic');
+}
+
+if (agentExecutionPreferences.includes('migration_required') || agentExecutionService.includes('migration_required')) {
+  failures.push('agent execution runtime must not retain migration_required legacy error paths');
+}
+
+if (/test\.skip\(!namespace/.test(internalChatIntegrationSpec)) {
+  failures.push('e2e/integration-internal-chat-runner.spec.ts must not skip when sandbox env is missing');
+}
+
+requireMatch(chatRuntimeBackendRealGate, /run-internal-chat-real-gate\.sh/, 'scripts/chat-runtime-backend-real-gate.sh must delegate internal chat coverage to scripts/run-internal-chat-real-gate.sh');
 
 if (developmentDoc.includes('agent-codex-runner')) {
   failures.push('DEVELOPMENT.md must not reference legacy agent-codex-runner naming');

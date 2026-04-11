@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { PROJECT_SETTINGS_READ_PERMISSIONS } from '@/lib/projects/project-settings-access';
 import {
   findProjectRoutePolicyByHref,
   listProjectGovernanceRoutePolicies,
@@ -46,5 +47,11 @@ describe('project route policy manifest', () => {
     const overviewPolicy = findProjectRoutePolicyByHref('overview');
 
     expect(overviewPolicy?.permissions).toEqual(['project:endpoint:use']);
+  });
+
+  it('keeps settings aligned with the shared settings-read permission contract', () => {
+    const settingsPolicy = findProjectRoutePolicyByHref('settings');
+
+    expect(settingsPolicy?.permissions).toEqual([...PROJECT_SETTINGS_READ_PERMISSIONS]);
   });
 });

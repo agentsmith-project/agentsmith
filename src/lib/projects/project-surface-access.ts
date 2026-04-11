@@ -107,6 +107,12 @@ export function resolveDefaultProjectSurfaceHref(
   return first?.href ?? null;
 }
 
+export function hasReachableDefaultProjectSurface(
+  value: ProjectPermissionCarrier | readonly string[] | null | undefined,
+): boolean {
+  return resolveDefaultProjectSurfaceHref(value) !== null;
+}
+
 export function resolveWorkspaceGovernanceProjectActions(
   value: ProjectPermissionCarrier | readonly string[] | null | undefined,
 ): WorkspaceGovernanceProjectActions {
@@ -126,7 +132,7 @@ export function shouldUseGovernableProjectSwitcher<T extends ProjectIdentity>(pa
   return !params.discoverableProjects.some((project) => project.id === params.currentProject?.id);
 }
 
-export function listSwitchableProjects<T extends ProjectIdentity>(params: {
+export function listSwitchableProjects<T extends ProjectIdentity & ProjectPermissionCarrier>(params: {
   discoverableProjects: readonly T[];
   governableProjects?: readonly T[];
   currentProject?: T | null;
@@ -136,15 +142,13 @@ export function listSwitchableProjects<T extends ProjectIdentity>(params: {
     ? dedupeProjectsById([...(params.discoverableProjects ?? []), ...(params.governableProjects ?? [])])
     : [...(params.discoverableProjects ?? [])];
 
-  if (!params.currentProject) {
-    return baseProjects;
-  }
+  const combinedProjects = !params.currentProject
+    ? baseProjects
+    : baseProjects.some((project) => project.id === params.currentProject?.id)
+      ? baseProjects
+      : [params.currentProject, ...baseProjects];
 
-  if (baseProjects.some((project) => project.id === params.currentProject?.id)) {
-    return baseProjects;
-  }
-
-  return [params.currentProject, ...baseProjects];
+  return combinedProjects.filter((project) => hasReachableDefaultProjectSurface(project));
 }
 
 export function buildProjectSurfacePath(

@@ -1,4 +1,5 @@
 import { createProjectRoutePolicy } from './project-route-policy';
+import { PROJECT_SETTINGS_READ_PERMISSIONS } from '@/lib/projects/project-settings-access';
 
 export const PROJECT_ROUTE_POLICY_MANIFEST = {
   'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/agents/page.tsx': createProjectRoutePolicy({
@@ -107,13 +108,7 @@ export const PROJECT_ROUTE_POLICY_MANIFEST = {
     relatedHrefs: ['context', 'credentials', 'members', 'audit', 'settings'],
   }),
   'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/settings/page.tsx': createProjectRoutePolicy({
-    permissions: [
-      'project:governance:update',
-      'project:membership:update',
-      'project:audit:read',
-      'project:admins:update',
-      'project:lifecycle:update',
-    ],
+    permissions: PROJECT_SETTINGS_READ_PERMISSIONS,
     href: 'settings',
     navLabelKey: 'settings',
     navSection: 'govern',

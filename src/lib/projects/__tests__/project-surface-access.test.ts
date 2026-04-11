@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildProjectSurfacePath,
   canAccessProjectSurfaceHref,
+  hasReachableDefaultProjectSurface,
   listAccessibleSidebarProjectRoutePolicies,
   listSwitchableProjects,
   resolveDefaultProjectSurfaceHref,
@@ -53,12 +54,12 @@ describe('project-surface-access', () => {
     expect(resolveWorkspaceGovernanceProjectActions({ permissions: ['project:membership:update'] })).toEqual({
       canOpenOverview: false,
       canOpenMembers: true,
-      canOpenSettings: true,
+      canOpenSettings: false,
     });
     expect(resolveWorkspaceGovernanceProjectActions({ permissions: ['project:audit:read'] })).toEqual({
       canOpenOverview: false,
       canOpenMembers: false,
-      canOpenSettings: true,
+      canOpenSettings: false,
     });
   });
 
@@ -88,12 +89,23 @@ describe('project-surface-access', () => {
   it('builds switchable projects from discoverable and governable sets without duplicates', () => {
     expect(
       listSwitchableProjects({
-        discoverableProjects: [{ id: 'proj_1' }, { id: 'proj_2' }],
-        governableProjects: [{ id: 'proj_2' }, { id: 'proj_3' }],
-        currentProject: { id: 'proj_4' },
+        discoverableProjects: [
+          { id: 'proj_1', permissions: ['project:endpoint:use'] },
+          { id: 'proj_2', permissions: ['project:membership:update'] },
+        ],
+        governableProjects: [
+          { id: 'proj_2', permissions: ['project:membership:update'] },
+          { id: 'proj_3', permissions: [] },
+        ],
+        currentProject: { id: 'proj_4', permissions: ['project:governance:update'] },
         includeGovernableProjects: true,
       }).map((project) => project.id),
-    ).toEqual(['proj_4', 'proj_1', 'proj_2', 'proj_3']);
+    ).toEqual(['proj_4', 'proj_1', 'proj_2']);
+  });
+
+  it('treats projects without any reachable sidebar surface as non-switchable', () => {
+    expect(hasReachableDefaultProjectSurface({ permissions: [] })).toBe(false);
+    expect(hasReachableDefaultProjectSurface({ permissions: ['project:audit:read'] })).toBe(true);
   });
 
   it('builds locale-aware project surface paths', () => {

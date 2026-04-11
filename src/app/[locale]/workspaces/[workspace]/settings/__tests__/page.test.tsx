@@ -76,6 +76,22 @@ const STABLE_PROJECTS = [
     created_at: '2026-03-02T00:00:00Z',
     updated_at: '2026-03-02T00:00:00Z',
   },
+  {
+    id: 'proj_4',
+    workspace_id: 'ws_1',
+    name: 'Members-only Project',
+    owner_id: 'u_2',
+    permissions: ['project:membership:update'],
+    membership_status: 'active',
+    visibility: 'private',
+    join_policy: 'approval_required',
+    status: 'active',
+    governance_json: {},
+    execution_preferences_json: {},
+    limits_json: {},
+    created_at: '2026-03-03T00:00:00Z',
+    updated_at: '2026-03-03T00:00:00Z',
+  },
 ];
 
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en' }));
@@ -431,6 +447,10 @@ describe('WorkspaceSettingsPage', () => {
     expect(screen.queryByTestId('ws-settings__project-open-settings--proj_3')).not.toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-owner-select--proj_3')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-owner-save--proj_3')).toBeDisabled();
+
+    expect(screen.queryByTestId('ws-settings__project-open-overview--proj_4')).not.toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-open-members--proj_4')).toBeInTheDocument();
+    expect(screen.queryByTestId('ws-settings__project-open-settings--proj_4')).not.toBeInTheDocument();
   });
 
   it('requests the dedicated governable projects listing for workspace governance admins', async () => {

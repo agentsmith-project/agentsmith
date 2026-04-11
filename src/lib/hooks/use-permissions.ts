@@ -9,6 +9,7 @@ import { useParams } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { validateProjectWithMembership, type ProjectWithMembership as ValidationProjectWithMembership } from '@/lib/utils/validation-zod';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
+import { PROJECT_SETTINGS_READ_PERMISSIONS } from '@/lib/projects/project-settings-access';
 
 export type ProjectWithMembership = ValidationProjectWithMembership;
 
@@ -73,11 +74,7 @@ export function useHasAllPermissions(permissions: string[]): boolean {
 }
 
 export function useCanReadProjectSettings(): boolean {
-  return useHasAnyPermission([
-    'project:governance:update',
-    'project:admins:update',
-    'project:lifecycle:update',
-  ]);
+  return useHasAnyPermission([...PROJECT_SETTINGS_READ_PERMISSIONS]);
 }
 
 export function useCanReadAudit(): boolean {

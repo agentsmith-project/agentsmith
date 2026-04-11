@@ -180,7 +180,7 @@ describe('Topbar', () => {
     expect(screen.getAllByText('Governance Project').length).toBeGreaterThan(1);
   });
 
-  it('expands the switcher with governable projects only for governance-only project contexts', () => {
+  it('expands the switcher with governable projects only when they have a reachable surface', () => {
     canManageWorkspaceGovernance = true;
     mockProjects = [
       {
@@ -198,7 +198,7 @@ describe('Topbar', () => {
       {
         id: 'proj_private_2',
         name: 'Private Governable Project',
-        permissions: ['project:membership:update'],
+        permissions: [],
       },
     ];
     mockCurrentProject = {
@@ -214,6 +214,6 @@ describe('Topbar', () => {
     fireEvent.click(menuTrigger);
 
     expect(screen.getByText('Visible Project')).toBeInTheDocument();
-    expect(screen.getByText('Private Governable Project')).toBeInTheDocument();
+    expect(screen.queryByText('Private Governable Project')).not.toBeInTheDocument();
   });
 });

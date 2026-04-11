@@ -1,7 +1,9 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useProjectOverviewCapabilities } from '@/lib/hooks/use-permissions';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { useCurrentPermissions, useProjectOverviewCapabilities } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
+
 import OverviewPage from '../page';
 
 vi.mock('next/navigation', () => ({
@@ -13,6 +15,16 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
+  useCurrentPermissions: vi.fn(() => [
+    'project:endpoint:use',
+    'project:agent:use',
+    'project:agent:manage',
+    'project:governance:update',
+    'project:membership:update',
+    'project:audit:read',
+    'project:admins:update',
+    'project:lifecycle:update',
+  ]),
   useProjectOverviewCapabilities: vi.fn(() => ({
     canUseProject: true,
     canUseAgents: true,
@@ -38,22 +50,67 @@ vi.mock('next-intl', () => ({
   useTranslations: (namespace: string) => (key: string) => {
     const translations: Record<string, Record<string, string>> = {
       nav: {
+        overview: 'Overview',
+        chat: 'Chat',
+        notebook: 'Notebook',
+        files: 'Files',
+        usage: 'Usage',
+        api_access_guide: 'Access guide',
+        agents: 'Agents',
+        endpoints: 'Endpoints',
+        audit: 'Audit',
+        members: 'Members',
+        settings: 'Settings',
         resource_policy: 'Policy',
         credentials: 'Project secrets',
       },
       context_store: {
         project_title: 'Shared context',
       },
+      overview: {
+        title: 'Project readiness',
+        subtitle: 'Project surface summary',
+        'signals.execution_title': 'Execution readiness',
+        'signals.governance_title': 'Governance reach',
+        'signals.develop_title': 'Develop surfaces',
+        'signals.ready': 'Ready',
+        'signals.available': 'Available',
+        'signals.limited': 'Limited',
+        'signals.not_available': 'Not available',
+      },
+      workspace: {
+        workspace_home_next_steps_description: 'Next steps',
+      },
+      projects: {
+        back_to_workspace: 'Back to workspace',
+      },
+      errors: {
+        validation_error: 'Validation error',
+        'badRequest.description': 'Bad request description',
+        permission_denied_title: 'Permission denied',
+        permission_denied_hint: 'Permission denied hint',
+      },
     };
-    return translations[namespace]?.[key] || key;
+    return translations[namespace]?.[key] ?? key;
   },
 }));
 
 describe('OverviewPage', () => {
-const mockUseProjectOverviewCapabilities = vi.mocked(useProjectOverviewCapabilities);
-const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
+  const mockUseCurrentPermissions = vi.mocked(useCurrentPermissions);
+  const mockUseProjectOverviewCapabilities = vi.mocked(useProjectOverviewCapabilities);
+  const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
 
   beforeEach(() => {
+    mockUseCurrentPermissions.mockReturnValue([
+      'project:endpoint:use',
+      'project:agent:use',
+      'project:agent:manage',
+      'project:governance:update',
+      'project:membership:update',
+      'project:audit:read',
+      'project:admins:update',
+      'project:lifecycle:update',
+    ]);
     mockUseProjectOverviewCapabilities.mockReturnValue({
       canUseProject: true,
       canUseAgents: true,
@@ -72,7 +129,7 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
     });
   });
 
-  it('renders project health summary and workspace return link', () => {
+  it('renders readiness summaries and the workspace return link', () => {
     render(<OverviewPage />);
 
     expect(screen.getByTestId('project-hub__page')).toBeInTheDocument();
@@ -83,87 +140,36 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
     expect(screen.getByTestId('project-hub__summary')).toBeInTheDocument();
     expect(screen.getByTestId('project-hub__use-summary')).toBeInTheDocument();
     expect(screen.getByTestId('project-hub__governance-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('project-hub__develop-summary')).toBeInTheDocument();
   });
 
-  it('shows an empty governance summary when management surfaces are unavailable', () => {
-    mockUseProjectOverviewCapabilities.mockReturnValue({
-      canUseProject: true,
-      canUseAgents: false,
-      canReadAudit: false,
-      canManageGovernance: false,
-      canManageMembership: false,
-      canReadProjectSettings: false,
-      canManageAgents: false,
-    });
+  it('derives use, governance, and develop summaries from accessible surfaces', () => {
+    render(<OverviewPage />);
+
+    const useSummary = screen.getByTestId('project-hub__use-summary');
+    const governanceSummary = screen.getByTestId('project-hub__governance-summary');
+    const developSummary = screen.getByTestId('project-hub__develop-summary');
+
+    expect(useSummary).toHaveTextContent('Chat');
+    expect(useSummary).toHaveTextContent('Notebook');
+    expect(useSummary).toHaveTextContent('Files');
+    expect(governanceSummary).toHaveTextContent('Endpoints');
+    expect(governanceSummary).toHaveTextContent('Policy');
+    expect(governanceSummary).toHaveTextContent('Shared context');
+    expect(governanceSummary).toHaveTextContent('Project secrets');
+    expect(governanceSummary).toHaveTextContent('Members');
+    expect(governanceSummary).toHaveTextContent('Audit');
+    expect(governanceSummary).toHaveTextContent('Settings');
+    expect(developSummary).toHaveTextContent('Agents');
+  });
+
+  it('shows empty governance and develop readiness chips when only use surfaces are reachable', () => {
+    mockUseCurrentPermissions.mockReturnValue(['project:endpoint:use']);
 
     render(<OverviewPage />);
 
-    expect(screen.getByTestId('project-hub__use-summary')).toBeInTheDocument();
-    expect(screen.getByTestId('project-hub__governance-summary')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'resource_policy' })).not.toBeInTheDocument();
-  });
-
-  it('shows governance resource summary for governance managers without ownership actions', () => {
-    mockUseProjectOverviewCapabilities.mockReturnValue({
-      canUseProject: true,
-      canUseAgents: false,
-      canReadAudit: false,
-      canManageGovernance: true,
-      canManageMembership: false,
-      canReadProjectSettings: false,
-      canManageAgents: false,
-    });
-
-    render(<OverviewPage />);
-
-    const governance = screen.getByTestId('project-hub__governance-summary');
-    expect(governance).toBeInTheDocument();
-    expect(governance).toHaveTextContent('Policy');
-    expect(governance).toHaveTextContent('Shared context');
-    expect(governance).toHaveTextContent('Project secrets');
-    expect(governance).not.toHaveTextContent('audit');
-    expect(governance).not.toHaveTextContent('members');
-    expect(governance).not.toHaveTextContent('settings');
-  });
-
-  it('shows members in governance summary for membership managers without owner-only settings', () => {
-    mockUseProjectOverviewCapabilities.mockReturnValue({
-      canUseProject: true,
-      canUseAgents: false,
-      canReadAudit: false,
-      canManageGovernance: false,
-      canManageMembership: true,
-      canReadProjectSettings: false,
-      canManageAgents: false,
-    });
-
-    render(<OverviewPage />);
-
-    const governance = screen.getByTestId('project-hub__governance-summary');
-    expect(governance).toBeInTheDocument();
-    expect(governance).toHaveTextContent('members');
-    expect(governance).not.toHaveTextContent('audit');
-    expect(governance).not.toHaveTextContent('resource_policy');
-    expect(governance).not.toHaveTextContent('credentials');
-    expect(governance).not.toHaveTextContent('settings');
-  });
-
-  it('shows audit in the governance summary for users with audit read permission', () => {
-    mockUseProjectOverviewCapabilities.mockReturnValue({
-      canUseProject: true,
-      canUseAgents: false,
-      canReadAudit: true,
-      canManageGovernance: false,
-      canManageMembership: false,
-      canReadProjectSettings: false,
-      canManageAgents: false,
-    });
-
-    render(<OverviewPage />);
-
-    const governance = screen.getByTestId('project-hub__governance-summary');
-    expect(governance).toBeInTheDocument();
-    expect(governance).toHaveTextContent('audit');
+    expect(screen.getByTestId('project-hub__governance-summary')).toHaveTextContent('Governance reach');
+    expect(screen.getByTestId('project-hub__develop-summary')).toHaveTextContent('Develop surfaces');
   });
 
   it('shows invalid parameter error for unsafe route params', () => {
@@ -178,10 +184,10 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
     render(<OverviewPage />);
 
     expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
-    expect(screen.getByText('validation_error')).toBeInTheDocument();
+    expect(screen.getByText('Validation error')).toBeInTheDocument();
   });
 
-  it('shows permission denied when user lacks project read permission', () => {
+  it('shows permission denied when user lacks project use permission', () => {
     mockUseProjectOverviewCapabilities.mockReturnValue({
       canUseProject: false,
       canUseAgents: false,
@@ -195,6 +201,6 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
     render(<OverviewPage />);
 
     expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
-    expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+    expect(screen.getByText('Permission denied')).toBeInTheDocument();
   });
 });

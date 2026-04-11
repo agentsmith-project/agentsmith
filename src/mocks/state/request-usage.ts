@@ -1,4 +1,5 @@
 import type { UsageFactRecord, UsageRecord } from '@/lib/api/types';
+import { getMswReferenceNow } from '@/lib/mock-time';
 
 type UsageFilters = {
   startTime?: string | null;
@@ -19,7 +20,7 @@ declare global {
 
 function buildSeededRequestUsageFacts(): UsageFactRecord[] {
   const facts: UsageFactRecord[] = [];
-  const base = new Date();
+  const base = getMswReferenceNow();
   base.setUTCHours(12, 0, 0, 0);
 
   for (let offset = 0; offset < 30; offset += 1) {

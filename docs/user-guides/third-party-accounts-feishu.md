@@ -1,16 +1,16 @@
-# Third-Party Accounts & Workspace Feishu
+# Personal Connections & Workspace Feishu
 
 This guide reflects the current baseline:
 
-- `Third-Party Accounts` is the user-owned credential center for Jira, GitHub, Gitee, and custom secret bundles.
+- `Personal connections` is the user-owned credential center for Jira, GitHub, Gitee, and custom secret bundles.
 - `Feishu` is no longer configured or connected from that page.
 - `Feishu` is now a **workspace-level integration** that users connect from the current workspace after a workspace administrator enables it.
 
 ## Scope
 
-Use `Third-Party Accounts` for user-owned external credentials that agents or downstream tools may use on your behalf.
+Use `Personal connections` for user-owned external credentials that agents or downstream tools may use on your behalf.
 
-Current provider types in `Third-Party Accounts`:
+Current provider types in `Personal connections`:
 
 - `Jira` via API token bundle
 - `GitHub` via token bundle or SSH keypair
@@ -84,7 +84,7 @@ The system distinguishes the flow internally through `state.intent`.
 
 ### Jira
 
-1. Open `User -> Third-Party Accounts`
+1. Open `User -> Personal connections`
 2. Create a `Jira` connection
 3. Fill:
    - display name
@@ -96,7 +96,7 @@ The system distinguishes the flow internally through `state.intent`.
 
 ### GitHub SSH
 
-1. Open `User -> Third-Party Accounts`
+1. Open `User -> Personal connections`
 2. Create a `GitHub` connection
 3. Select `SSH Keypair`
 4. Fill:
@@ -110,5 +110,5 @@ The system distinguishes the flow internally through `state.intent`.
 ## Notes
 
 - Feishu is not part of the generic create dialog anymore.
-- `Third-Party Accounts` remains the right entry for Jira, GitHub, Gitee, and custom secret bundles.
+- `Personal connections` remains the right entry for Jira, GitHub, Gitee, and custom secret bundles.
 - `Custom` should only be used for simple secret bundles in MVP. It is not a custom OAuth provider system.

@@ -57,8 +57,8 @@ function renderCurrentWorkflowDocBlock(): string {
     '- Machine-readable gate source: [`scripts/governance/current-gate-manifest.ts`](./scripts/governance/current-gate-manifest.ts)',
     '',
     'Command naming rule:',
-    '- `npm run` names are the canonical current entrypoints',
-    '- `make` targets are convenience wrappers for the same paths',
+    '- `make` is the canonical entrypoint for environment and rehearsal orchestration',
+    '- `npm run` is the canonical entrypoint for tests, gates, verification lanes, and release validation',
     '',
     ...recommendedSections.flatMap((section, index) => {
       const block = renderCommandList(section).split('\n');
@@ -81,8 +81,8 @@ function renderDevelopmentWorkflowBlock(): string {
     '- machine-readable gate source: [`scripts/governance/current-gate-manifest.ts`](./scripts/governance/current-gate-manifest.ts)',
     '',
     '命令命名约定：',
-    '- `npm run` 是 current canonical entrypoint',
-    '- `make` 只作为同一路径的便捷包装',
+    '- `make` 是环境与排演编排的 current canonical entrypoint',
+    '- `npm run` 是测试、门禁、验证通道与发布验证的 current canonical entrypoint',
     '',
     ...recommendedSections.flatMap((section, index) => {
       const block = renderCommandList(section).split('\n');
@@ -108,7 +108,7 @@ function renderMakeHelpExtendedBlock(): string {
     '\t@echo "Current path (lowest cognitive load):"',
     '\t@echo "  make quick-help     # show only the recommended day-to-day commands"',
     '\t@echo "  make help-glossary  # explain common testing/engineering terms in plain language"',
-    '\t@echo "  note: npm script names are canonical; make targets below are convenience wrappers"',
+    '\t@echo "  note: make owns environment/rehearsal orchestration; npm run owns tests, gates, lanes, and release verification"',
     '\t@echo ""',
   ];
 
@@ -142,7 +142,7 @@ function renderMakeQuickHelpBlock(): string {
     'quick-help:',
     '\t@echo "MBOS Recommended Commands"',
     '\t@echo ""',
-    '\t@echo "  note: make is the convenience layer; canonical names live under npm run"',
+    '\t@echo "  note: make owns environment/rehearsal orchestration; npm run owns tests, gates, lanes, and release verification"',
     '\t@echo ""',
   ];
 

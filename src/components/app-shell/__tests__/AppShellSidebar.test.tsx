@@ -54,18 +54,19 @@ vi.mock('next-intl', () => ({
 const mockUseHasWorkspacePermission = vi.fn(
   (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
 );
-const mockUseProjectOverviewCapabilities = vi.fn(() => ({
-  canUseProject: true,
-  canManageAgents: true,
-  canManageGovernance: true,
-  canManageMembership: true,
-  canReadAudit: true,
-  canReadProjectSettings: true,
-}));
+const mockProjectPermissions = vi.fn<() => string[]>(() => [
+  'project:endpoint:use',
+  'project:agent:use',
+  'project:agent:manage',
+  'project:governance:update',
+  'project:membership:update',
+  'project:audit:read',
+  'project:admins:update',
+  'project:lifecycle:update',
+]);
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasWorkspacePermission: (permission: string) => mockUseHasWorkspacePermission(permission),
-  useProjectOverviewCapabilities: () => mockUseProjectOverviewCapabilities(),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
@@ -75,6 +76,7 @@ vi.mock('@/lib/hooks/use-projects-queries', () => ({
           id: 'proj_001',
           name: 'Test Project',
           visibility: 'private',
+          permissions: mockProjectPermissions(),
         }
       : null,
   }),
@@ -119,14 +121,16 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
       project: 'proj_001',
       locale: 'en-US',
     });
-    mockUseProjectOverviewCapabilities.mockReturnValue({
-      canUseProject: true,
-      canManageAgents: true,
-      canManageGovernance: true,
-      canManageMembership: true,
-      canReadAudit: true,
-      canReadProjectSettings: true,
-    });
+    mockProjectPermissions.mockReturnValue([
+      'project:endpoint:use',
+      'project:agent:use',
+      'project:agent:manage',
+      'project:governance:update',
+      'project:membership:update',
+      'project:audit:read',
+      'project:admins:update',
+      'project:lifecycle:update',
+    ]);
     mockUseHasWorkspacePermission.mockImplementation(
       (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
     );
@@ -213,14 +217,14 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
 
   it('shows governance project links for project admins', () => {
     const wrapper = createWrapper();
-    mockUseProjectOverviewCapabilities.mockReturnValue({
-      canUseProject: true,
-      canManageAgents: false,
-      canManageGovernance: true,
-      canManageMembership: true,
-      canReadAudit: true,
-      canReadProjectSettings: true,
-    });
+    mockProjectPermissions.mockReturnValue([
+      'project:endpoint:use',
+      'project:governance:update',
+      'project:membership:update',
+      'project:audit:read',
+      'project:admins:update',
+      'project:lifecycle:update',
+    ]);
 
     render(<AppShellSidebar />, { wrapper });
 
@@ -236,16 +240,12 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     expect(within(governSection).getByText('Project secrets')).toBeInTheDocument();
   });
 
-  it('shows only governance resource links for governance-only users', () => {
+  it('shows governance links according to the reachable sidebar surfaces', () => {
     const wrapper = createWrapper();
-    mockUseProjectOverviewCapabilities.mockReturnValue({
-      canUseProject: true,
-      canManageAgents: false,
-      canManageGovernance: true,
-      canManageMembership: false,
-      canReadAudit: false,
-      canReadProjectSettings: false,
-    });
+    mockProjectPermissions.mockReturnValue([
+      'project:endpoint:use',
+      'project:governance:update',
+    ]);
 
     render(<AppShellSidebar />, { wrapper });
 
@@ -253,47 +253,40 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     expect(within(governSection).getByTestId('sidebar__nav-item--resource-policy')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--context')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--credentials')).toBeInTheDocument();
+    expect(within(governSection).getByTestId('sidebar__nav-item--settings')).toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--audit')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--members')).not.toBeInTheDocument();
-    expect(within(governSection).queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
   });
 
-  it('shows members for membership managers without owner-only settings', () => {
+  it('shows members and settings for membership managers because both surfaces are reachable', () => {
     const wrapper = createWrapper();
-    mockUseProjectOverviewCapabilities.mockReturnValue({
-      canUseProject: true,
-      canManageAgents: false,
-      canManageGovernance: false,
-      canManageMembership: true,
-      canReadAudit: false,
-      canReadProjectSettings: false,
-    });
+    mockProjectPermissions.mockReturnValue([
+      'project:endpoint:use',
+      'project:membership:update',
+    ]);
 
     render(<AppShellSidebar />, { wrapper });
 
     const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
     expect(within(governSection).getByTestId('sidebar__nav-item--members')).toBeInTheDocument();
+    expect(within(governSection).getByTestId('sidebar__nav-item--settings')).toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--audit')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--resource-policy')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--context')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--credentials')).not.toBeInTheDocument();
-    expect(within(governSection).queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
   });
 
-  it('shows audit only for users with project audit read permission', () => {
+  it('shows audit and settings for audit readers because settings remains reachable', () => {
     const wrapper = createWrapper();
-    mockUseProjectOverviewCapabilities.mockReturnValue({
-      canUseProject: true,
-      canManageAgents: false,
-      canManageGovernance: false,
-      canManageMembership: false,
-      canReadAudit: true,
-      canReadProjectSettings: false,
-    });
+    mockProjectPermissions.mockReturnValue([
+      'project:endpoint:use',
+      'project:audit:read',
+    ]);
 
     render(<AppShellSidebar />, { wrapper });
 
     const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
     expect(within(governSection).getByTestId('sidebar__nav-item--audit')).toBeInTheDocument();
+    expect(within(governSection).getByTestId('sidebar__nav-item--settings')).toBeInTheDocument();
   });
 });

@@ -1,70 +1,165 @@
 # Documentation Index
 
-当前仅保留可执行、可维护、与现行产品结构一致的文档。
+当前文档入口只做一件事：
 
-术语边界：文档中的 `release` / `engineering gate` 相关命令名若出现，默认是本项目工程校验与验收流程命名；`permission gate` 则是产品权限门禁语义。两者均不代表 AgentSmith 提供 DevOps 发布管理能力。
+- 帮你快速找到“当前真相该看哪里”
 
-历史迁移说明边界：
-
-- 标题包含 `handoff` / `refactor` / `migration` 的文档，默认用于保留阶段性交接、兼容背景与重构上下文。
-- 这类文档可以保留旧字段名、旧协议名或迁移前后的对照描述，不直接覆盖 current baseline。
-- 如需判断“当前应该怎么做”，优先看 `CURRENT_BASELINE.md`、各 index、以及不带 `handoff` / `refactor` / `migration` 的现行合同与 runbook。
+它不是第二份产品定义，也不是第二份工程命令说明。
 
 先读：
 
 - [Current Baseline (Whitelist)](./CURRENT_BASELINE.md)
 
-## 核心
+## 1. 当前真相从哪里读
+
+### 产品边界与治理主线
 
 - [项目宪法](./项目宪法.md)
-- [Usage / Audit MVP 职责边界](./UXUI/01-通用规范/usage-audit-职责边界-v1.md)
-- [Usage / Audit MVP 功能与 UX 定义](./UXUI/01-通用规范/usage-audit-mvp-功能与uxui-v1.md)
-- [System / Workspace Identity & Entry MVP](./UXUI/01-通用规范/system-workspace-identity-entry-mvp-v1.md)
-- [System / Workspace Provisioning MVP Analysis](./UXUI/01-通用规范/system-workspace-provisioning-mvp-analysis-v1.md)
-- [System Visual State Coverage TODO](./UXUI/01-通用规范/system-visual-state-coverage-todo-v1.md)
-- [Usage / Audit MVP Engineering Checklist](./user-guides/usage-audit-engineering-checklist.md)
-- [Workspace / Project Default Engineering Gate Checklist](./user-guides/workspace-project-default-engineering-gate-checklist.md)
-- [Governance Default Engineering Gate Checklist](./user-guides/governance-default-engineering-gate-checklist.md)
-- [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
-- [Local Runtime Flows](./user-guides/local-runtime-flows.md)
-  - One shared local substrate, one active flow at a time, and the shortest command path for `local-manual` / `demo-rehearsal` / `cluster-rehearsal`.
-- [Runtime Lines Matrix](./user-guides/runtime-lines-matrix.md)
-  - One-page matrix for current runtime lines, deploy lines, rehearsal lines, mode boundaries, and the shared-substrate model.
-- [Demo Deploy Operations](./user-guides/demo-deploy-operations.md)
-  - Demo / single-host release line. Compose + local `kind` sandbox simulation.
-- [Cluster Deploy Operations](./user-guides/cluster-deploy-operations.md)
-  - Real-cluster release line. Compose on the target host, sandbox execution on a real Kubernetes cluster.
-- [Cluster Upgrade Operations](./user-guides/cluster-upgrade-operations.md)
-  - Existing production install version-update line. Upgrade app services and namespaced sandbox resources without touching substrate or data.
-- [Cluster Admin Runbook](./user-guides/cluster-admin-runbook.md)
-  - Cluster-scope prerequisites for the real-cluster line only.
-- Real visual review artifacts are generated locally under `artifacts/backend-real-visual/<run-id>/`
-- [Test & Evidence Directory Model](./user-guides/test-and-evidence-directory-model.md)
-- [File Library Client Mount](./user-guides/file-library-local-mount.md)
-- [Product Doc Artifacts](./user-guides/product-doc-artifacts.md)
-- [Marketing Assets](../marketing/README.md)
-- [Visual Baseline Policy](./UXUI/01-通用规范/visual-baseline-policy-v1.md)
+
+用途：
+
+- 产品定位
+- 范围边界
+- 禁止漂移项
+- 权限与治理原则
+
+### 当前产品对象名与页面 IA
+
+- [Product Terminology Contract](./contracts/product-terminology.md)
+
+用途：
+
+- 当前正式产品面
+- 当前正式治理对象
+- 页面命名
+- IA 边界
+- 用户可见术语
+
+### 当前工程命令、门禁与验证通道
+
+- [Current Engineering Governance Model](./current-engineering-governance-model.md)
+- machine-readable workflow source: [`scripts/governance/current-workflow-manifest.ts`](../scripts/governance/current-workflow-manifest.ts)
+- machine-readable gate source: [`scripts/governance/current-gate-manifest.ts`](../scripts/governance/current-gate-manifest.ts)
+
+用途：
+
+- 当前命令模型
+- gate / lane 语义
+- visual / backend-real / release 验证边界
+
+## 2. 按任务找入口
+
+### 我想理解当前产品和页面结构
+
+读：
+
+1. [项目宪法](./项目宪法.md)
+2. [Product Terminology Contract](./contracts/product-terminology.md)
+3. [Contracts Index](./contracts/README.md)
+
+### 我想实现或评审功能
+
+读：
+
+1. [Contracts Index](./contracts/README.md)
+2. [Product Terminology Contract](./contracts/product-terminology.md)
+3. [Current Engineering Governance Model](./current-engineering-governance-model.md)
+
+### 我想运行、排障、发布或做排演
+
+读：
+
+1. [User Guides Index](./user-guides/README.md)
+2. [Troubleshooting Guide](./troubleshooting-guide-v1.md)
+3. [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
+
+## 3. 当前文档分区
+
+### Current truth
+
+- [Current Baseline (Whitelist)](./CURRENT_BASELINE.md)
+- [项目宪法](./项目宪法.md)
+- [Current Engineering Governance Model](./current-engineering-governance-model.md)
 - [Contracts Index](./contracts/README.md)
-- [Demo Deployment Spec](./contracts/deployment-spec-v1.md)
-- [Cluster Deployment Spec](./contracts/cluster-deployment-spec-v1.md)
-- [Substrate Governance And Runtime Lines](./contracts/substrate-governance-and-runtime-lines-v1.md)
-- [Endpoint Upstream Protocol Refactor Handoff](./archive/handoff/endpoint-upstream-protocol-refactor-handoff-v1.md)
-  - Historical handoff only. Use active contracts for the current endpoint truth, canonical proxy paths, and bulk import route.
-- [产品研发与治理方法论](./design/agentsmith-product-engineering-governance-methodology-v1.md)
-- [Runtime / Rehearsal Hardening Retro (2026-04-08)](./design/runtime-rehearsal-hardening-retro-2026-04-08.md)
-  - One clean-room validation pass from reset to backend-real, demo rehearsal, and cluster rehearsal, with the concrete failures and their fixes.
-- `UXUI/`（设计系统与交互规范）
 - [User Guides Index](./user-guides/README.md)
-- [Usage Limits Summary Backend Alignment Checklist](./user-guides/usage-limits-summary-backend-alignment-checklist.md)
-- [Usage Limits Naming Refactor Task](./user-guides/usage-limits-naming-refactor-task.md)
+
+### Contracts and specs
+
+- [Contracts Index](./contracts/README.md)
+- OpenAPI / AsyncAPI specs are listed there
+
+### User guides and operations
+
+- [User Guides Index](./user-guides/README.md)
 - [Troubleshooting Guide](./troubleshooting-guide-v1.md)
-
-## 运行与协作
-
 - [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
 - [CI Integration Troubleshooting](./ci-integration-troubleshooting.md)
 
-## 说明
+### UX and design system
 
-1. 历史方案、过程评审、阶段计划、旧版发布资料已迁入 `docs/archive/`。
-2. 当前治理结构以“项目级 + LLM endpoint 统一约束链路”为唯一主线。
+- `docs/UXUI/`
+
+说明：
+
+- 这里是设计系统、交互规范与视觉基线策略
+- 产品当前对象名与页面边界仍以 terminology contract 为准
+
+### Background / design / history
+
+- [产品研发与治理方法论](./design/agentsmith-product-engineering-governance-methodology-v1.md)
+- `docs/design/`
+- `docs/archive/`
+
+说明：
+
+- `design/` 里可能包含方法论文档、提案、复盘或阶段性 checklist
+- `archive/` 只保留历史 handoff / refactor / env-specific 示例
+- 这些文档用于背景理解，不直接覆盖 current 真相
+
+## 4. Runtime / Deploy / Rehearsal 快速入口
+
+如果你关心的是运行链路而不是页面合同，直接从这里走：
+
+<!-- current-runtime-lines:docs-index:start -->
+- [Local Runtime Flows](./user-guides/local-runtime-flows.md)
+  - 由 `scripts/governance/current-runtime-line-manifest.ts` 生成；当前本机最短运行手册。
+- [Runtime Lines Matrix](./user-guides/runtime-lines-matrix.md)
+  - 当前 local / rehearsal / deploy 运行线总表。
+- [Demo Deploy Operations](./user-guides/demo-deploy-operations.md)
+  - 目标主机上的 demo 发布线，不再承担本机 rehearsal 真相说明。
+- [Cluster Deploy Operations](./user-guides/cluster-deploy-operations.md)
+  - 目标主机上的 real-cluster 发布线，不再承担本机 rehearsal 真相说明。
+<!-- current-runtime-lines:docs-index:end -->
+
+- [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
+- [Cluster Upgrade Operations](./user-guides/cluster-upgrade-operations.md)
+- [Cluster Admin Runbook](./user-guides/cluster-admin-runbook.md)
+
+### Notebook / Runner / 排障
+
+- [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
+- [Troubleshooting Guide](./troubleshooting-guide-v1.md)
+- [CI Integration Troubleshooting](./ci-integration-troubleshooting.md)
+
+## 5. 什么不应该再当 current 入口
+
+下面这些文档类型默认不是 current 真相入口：
+
+- `handoff`
+- `refactor`
+- `migration`
+- `retro`
+- `todo`
+- 一次性 task / phase / temporary checklist
+
+如果需要判断“当前到底该怎么做”，不要从这些文档开始。  
+先回到：
+
+1. [Current Baseline (Whitelist)](./CURRENT_BASELINE.md)
+2. [Product Terminology Contract](./contracts/product-terminology.md)
+3. [Current Engineering Governance Model](./current-engineering-governance-model.md)
+
+## 6. 相关入口
+
+- [Archive Index](./archive/README.md)
+- [Marketing Assets](../marketing/README.md)

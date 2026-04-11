@@ -7,11 +7,10 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import {
   useHasWorkspacePermission,
-  useProjectOverviewCapabilities,
 } from '@/lib/hooks/use-permissions';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { Button } from '@/components/ui/button';
-import { listSidebarProjectRoutePolicies } from '@/lib/routes/project-route-policy-manifest';
+import { listAccessibleSidebarProjectRoutePolicies } from '@/lib/projects/project-surface-access';
 import {
   LayoutDashboard,
   LucideIcon,
@@ -93,15 +92,6 @@ export function AppShellSidebar({
   const tNav = useTranslations('nav');
   const tContextStore = useTranslations('context_store');
   const [collapsed, setCollapsed] = React.useState(false);
-  const {
-    canUseProject,
-    canUseAgents,
-    canManageAgents,
-    canReadAudit,
-    canManageGovernance,
-    canManageMembership,
-    canReadProjectSettings,
-  } = useProjectOverviewCapabilities();
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
   const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
 
@@ -110,29 +100,8 @@ export function AppShellSidebar({
   const locale = params?.locale as string | undefined;
   const { data: currentProject } = useProject(workspaceId || '', projectId || '');
 
-  const routePolicies = React.useMemo(
-    () => listSidebarProjectRoutePolicies(),
-    [],
-  );
-
   const projectMenuItems = currentProject
-    ? routePolicies
-        .filter((policy) => {
-          if (policy.href === 'chat' || policy.href === 'notebook' || policy.href === 'files' || policy.href === 'usage' || policy.href === 'use-guide' || policy.href === 'overview') {
-            return canUseProject;
-          }
-          if (policy.href === 'agents') return canUseAgents || canManageAgents;
-          if (policy.href === 'endpoints') return canUseProject || canManageGovernance;
-          if (policy.href === 'resource-policy' || policy.href === 'context' || policy.href === 'credentials') {
-            return canManageGovernance;
-          }
-          if (policy.href === 'members') return canManageMembership;
-          if (policy.href === 'audit') return canReadAudit;
-          if (policy.href === 'settings') {
-            return canReadProjectSettings;
-          }
-          return true;
-        })
+    ? listAccessibleSidebarProjectRoutePolicies(currentProject)
         .map((policy) => ({
           icon: PROJECT_MENU_ICON_BY_HREF[policy.href] ?? LayoutDashboard,
           labelKey: policy.navLabelKey,

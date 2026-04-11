@@ -82,7 +82,7 @@ help-extended:
 	@echo "Current path (lowest cognitive load):"
 	@echo "  make quick-help     # show only the recommended day-to-day commands"
 	@echo "  make help-glossary  # explain common testing/engineering terms in plain language"
-	@echo "  note: npm script names are canonical; make targets below are convenience wrappers"
+	@echo "  note: make owns environment/rehearsal orchestration; npm run owns tests, gates, lanes, and release verification"
 	@echo ""
 	@echo "Environment:"
 	@echo "  make substrate-up  # start the local managed substrate"
@@ -262,7 +262,7 @@ help-extended:
 quick-help:
 	@echo "MBOS Recommended Commands"
 	@echo ""
-	@echo "  note: make is the convenience layer; canonical names live under npm run"
+	@echo "  note: make owns environment/rehearsal orchestration; npm run owns tests, gates, lanes, and release verification"
 	@echo ""
 	@echo "  make substrate-up"
 	@echo "    Start the local managed substrate."

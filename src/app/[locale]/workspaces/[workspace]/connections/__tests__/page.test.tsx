@@ -96,7 +96,7 @@ describe('WorkspaceConnectionsPage', () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText('workspace_connections_title')).toBeInTheDocument();
+      expect(screen.getAllByText('workspace_integrations_title').length).toBeGreaterThan(0);
     });
 
     expect(screen.getByTestId('workspace-connections__feishu-connect')).toBeDisabled();

@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UsagePage } from '../UsagePage';
 import { UsageView } from '../UsageView';
+import { MSW_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 
 const invalidateQueries = vi.fn();
 const useUsageTimeseriesMock = vi.fn();
@@ -47,7 +48,10 @@ vi.mock('@/components/ui/toast', () => ({
 }));
 
 describe('UsagePage', () => {
+  const originalUseMsw = process.env.NEXT_PUBLIC_USE_MSW;
+
   beforeEach(() => {
+    process.env.NEXT_PUBLIC_USE_MSW = originalUseMsw;
     invalidateQueries.mockClear();
     useUsageTimeseriesMock.mockReturnValue({
       data: {
@@ -122,6 +126,10 @@ describe('UsagePage', () => {
     });
   });
 
+  afterEach(() => {
+    process.env.NEXT_PUBLIC_USE_MSW = originalUseMsw;
+  });
+
   it('requests rolling 30 day timeseries for the current end user', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
@@ -136,6 +144,19 @@ describe('UsagePage', () => {
     expect(params.granularity).toBe('day');
     expect(params.metric).toBe('requests');
     expect(params.end_user_id).toBe('user_001');
+  });
+
+  it('uses the fixed mock reference clock when MSW mode is enabled', () => {
+    process.env.NEXT_PUBLIC_USE_MSW = 'true';
+
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+
+    const [, , params] = useUsageTimeseriesMock.mock.calls.at(-1) as [string, string, {
+      start_time: string;
+      end_time: string;
+    }];
+    expect(params.end_time).toBe(MSW_REFERENCE_NOW_ISO);
+    expect(params.start_time).toBe('2026-03-12T07:00:00.000Z');
   });
 
   it('enables 15 second auto refresh for limits summary', () => {

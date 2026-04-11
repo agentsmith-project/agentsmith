@@ -12,6 +12,7 @@ import {
 
 interface UserMenuItem {
   id: string;
+  labelKey: 'profile' | 'workspace_integrations' | 'personal_connections' | 'api_keys';
   icon: LucideIcon;
   onClick?: () => void;
   disabled?: boolean;
@@ -30,7 +31,8 @@ interface UserMenuProps {
     avatar?: string;
   } | null;
   onProfile?: () => void;
-  onThirdPartyAccounts?: () => void;
+  onWorkspaceIntegrations?: () => void;
+  onPersonalConnections?: () => void;
   onApiKeys?: () => void;
   onLanguageSwitch?: (locale: string) => void;
   onLogout?: () => void;
@@ -38,16 +40,11 @@ interface UserMenuProps {
   currentLocale?: string;
 }
 
-const defaultItems: Omit<UserMenuItem, 'label'>[] = [
-  { id: 'profile', icon: User },
-  { id: 'third_party_accounts', icon: Settings },
-  { id: 'api_keys', icon: Settings },
-];
-
 export function UserMenu({
   user,
   onProfile,
-  onThirdPartyAccounts,
+  onWorkspaceIntegrations,
+  onPersonalConnections,
   onApiKeys,
   onLanguageSwitch,
   onLogout,
@@ -56,17 +53,37 @@ export function UserMenu({
 }: UserMenuProps) {
   const t = useTranslations('common.user_menu');
   const commonT = useTranslations('common');
+  const items = React.useMemo<UserMenuItem[]>(
+    () => [
+      ...(onProfile
+        ? [{ id: 'profile', labelKey: 'profile', icon: User, onClick: onProfile }] satisfies UserMenuItem[]
+        : []),
+      ...(onWorkspaceIntegrations
+        ? [{ id: 'workspace_integrations', labelKey: 'workspace_integrations', icon: Settings, onClick: onWorkspaceIntegrations }] satisfies UserMenuItem[]
+        : []),
+      ...(onPersonalConnections
+        ? [{ id: 'personal_connections', labelKey: 'personal_connections', icon: Settings, onClick: onPersonalConnections }] satisfies UserMenuItem[]
+        : []),
+      ...(onApiKeys
+        ? [{ id: 'api_keys', labelKey: 'api_keys', icon: Settings, onClick: onApiKeys }] satisfies UserMenuItem[]
+        : []),
+    ],
+    [onApiKeys, onPersonalConnections, onProfile, onWorkspaceIntegrations],
+  );
 
   const handleClick = (itemId: string) => {
     switch (itemId) {
       case 'profile':
         onProfile?.();
         break;
+      case 'workspace_integrations':
+        onWorkspaceIntegrations?.();
+        break;
+      case 'personal_connections':
+        onPersonalConnections?.();
+        break;
       case 'api_keys':
         onApiKeys?.();
-        break;
-      case 'third_party_accounts':
-        onThirdPartyAccounts?.();
         break;
       case 'logout':
         onLogout?.();
@@ -115,7 +132,7 @@ export function UserMenu({
 
           <DropdownMenuSeparator />
 
-          {defaultItems.map((item) => (
+          {items.map((item) => (
             <DropdownMenuItem
               key={item.id}
               data-testid={`user-menu__${item.id === 'api_keys' ? 'api-keys' : item.id}`}
@@ -123,7 +140,7 @@ export function UserMenu({
               className="gap-3"
             >
               <item.icon className="w-4 h-4 text-icon-default" />
-              <span>{t(item.id as 'profile' | 'api_keys' | 'third_party_accounts')}</span>
+              <span>{t(item.labelKey)}</span>
             </DropdownMenuItem>
           ))}
 

@@ -136,10 +136,10 @@ export default function WorkspaceConnectionsPage() {
                 <div className="space-y-2">
                   <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
                     <Link2 className="h-3.5 w-3.5" />
-                    {t('workspace_connections_badge')}
+                    {settingsT('workspace_integrations_title')}
                   </div>
                   <SectionHeading
-                    title={t('workspace_connections_title')}
+                    title={settingsT('workspace_integrations_title')}
                     subtitle={t('workspace_connections_description', { workspace: workspace?.name ?? workspaceId })}
                   />
                 </div>

@@ -19,6 +19,7 @@ import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useGovernableProjects, useProjects } from '@/lib/hooks/use-projects-queries';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { buildProjectAdminSummary, getWorkspaceSettingsProjectActions } from '@/lib/projects/project-view';
+import { buildProjectSurfacePath, resolveDefaultProjectSurfaceHref } from '@/lib/projects/project-surface-access';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getApiClient, ProjectAPI, WorkspaceAPI } from '@/lib/api';
 import { APIError } from '@/lib/api/errors';
@@ -428,10 +429,14 @@ export default function WorkspaceSettingsPage() {
                       data-testid={`ws-settings__project--${project.id}`}
                     >
                       {(() => {
-                        const actions = getWorkspaceSettingsProjectActions(project);
-                        const selectedOwnerId = selectedProjectOwners[project.id] ?? project.owner_id;
-                        const isSavingProjectOwner = savingProjectOwnerId === project.id;
-                        return (
+                          const actions = getWorkspaceSettingsProjectActions(project);
+                          const defaultProjectHref = resolveDefaultProjectSurfaceHref(project);
+                          const defaultProjectPath = defaultProjectHref
+                            ? buildProjectSurfacePath(locale, workspaceId ?? '', project.id, defaultProjectHref)
+                            : `${workspaceBasePath}/projects/${project.id}/overview`;
+                          const selectedOwnerId = selectedProjectOwners[project.id] ?? project.owner_id;
+                          const isSavingProjectOwner = savingProjectOwnerId === project.id;
+                          return (
                           <div className="flex flex-wrap items-start justify-between gap-5">
                             <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -500,7 +505,7 @@ export default function WorkspaceSettingsPage() {
                                 <div className="flex flex-wrap gap-2">
                                   {actions.canOpenOverview ? (
                                     <Link
-                                      href={`${workspaceBasePath}/projects/${project.id}/overview`}
+                                      href={defaultProjectPath}
                                       className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
                                       data-testid={`ws-settings__project-open-overview--${project.id}`}
                                     >

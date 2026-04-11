@@ -33,8 +33,8 @@ Repo version files:
 - machine-readable gate source: [`scripts/governance/current-gate-manifest.ts`](./scripts/governance/current-gate-manifest.ts)
 
 命令命名约定：
-- `npm run` 是 current canonical entrypoint
-- `make` 只作为同一路径的便捷包装
+- `make` 是环境与排演编排的 current canonical entrypoint
+- `npm run` 是测试、门禁、验证通道与发布验证的 current canonical entrypoint
 
 ### 环境
 
@@ -78,6 +78,27 @@ npm run backend-real:run
 npm run backend-real:report
 ```
 <!-- current-workflow:development:end -->
+
+## Current Runtime Lines
+
+<!-- current-runtime-lines:development:start -->
+当前 runtime-line 真相：
+- 人类入口：[`Runtime Lines Matrix`](./docs/user-guides/runtime-lines-matrix.md) 与 [`Local Runtime Flows`](./docs/user-guides/local-runtime-flows.md)
+- machine-readable source: [`scripts/governance/current-runtime-line-manifest.ts`](./scripts/governance/current-runtime-line-manifest.ts)
+
+当前本机基线：
+- 本机共享一套 substrate，`local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用它。
+- 同一时间只允许一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。
+- `demo-rehearsal` 和 `cluster-rehearsal` 都拥有自己的 scenario-owned local kind world 与 local registry，不再共用一个泛化本地集群。
+- rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。
+
+当前本机工作线：
+- `local-manual` — 日常开发、真实后端手测、notebook / runner 主链手测。
+- `demo-rehearsal` — demo 发布线的本机排演入口，使用 `agentsmith-demo` / `agentsmith-demo-registry`。
+- `cluster-rehearsal` — cluster 发布线的本机排演入口，使用 `agentsmith-cluster` / `agentsmith-cluster-registry`。
+
+本文件只保留开发/排障入口；具体运行线拓扑与切换规则统一看 runtime-line 文档。
+<!-- current-runtime-lines:development:end -->
 
 ### Focused Helpers
 

@@ -1,19 +1,12 @@
 import type { ComponentProps } from 'react';
 
+import type { ProjectRoutePolicy } from '@/lib/routes/project-route-policy';
 import type { useTranslations } from 'next-intl';
 
-export interface OverviewLinkItem {
-  href: string;
-  label: string;
-}
-
-export interface OverviewPermissions {
-  canManageAgents: boolean;
-  canManageGovernance: boolean;
-  canManageMembership: boolean;
-  canReadAudit: boolean;
-  canReadProjectSettings: boolean;
-  canUseProject: boolean;
+export interface OverviewSurfaceSummary {
+  useLabels: string[];
+  developLabels: string[];
+  governLabels: string[];
 }
 
 export function buildOverviewPaths(locale: string, workspaceId: string, projectId: string) {
@@ -24,39 +17,27 @@ export function buildOverviewPaths(locale: string, workspaceId: string, projectI
   };
 }
 
-export function buildWorkLinks(
-  tNav: ReturnType<typeof useTranslations<'nav'>>,
-  basePath: string,
-): OverviewLinkItem[] {
-  return [
-    { label: tNav('chat'), href: `${basePath}/chat` },
-    { label: tNav('notebook'), href: `${basePath}/notebook` },
-    { label: tNav('files'), href: `${basePath}/files` },
-    { label: tNav('endpoints'), href: `${basePath}/endpoints` },
-    { label: tNav('usage'), href: `${basePath}/usage` },
-    { label: tNav('api_access_guide'), href: `${basePath}/use-guide` },
-  ];
-}
-
-export function buildGovernanceLinks(
+export function buildOverviewSurfaceSummary(
+  policies: readonly ProjectRoutePolicy[],
   tNav: ReturnType<typeof useTranslations<'nav'>>,
   tContext: ReturnType<typeof useTranslations<'context_store'>>,
-  basePath: string,
-  permissions: OverviewPermissions,
-): OverviewLinkItem[] {
-  return [
-    ...(permissions.canManageAgents ? [{ label: tNav('agents'), href: `${basePath}/agents` }] : []),
-    ...(permissions.canReadAudit ? [{ label: tNav('audit'), href: `${basePath}/audit` }] : []),
-    ...(permissions.canManageGovernance
-      ? [
-          { label: tNav('resource_policy'), href: `${basePath}/resource-policy` },
-          { label: tContext('project_title'), href: `${basePath}/context` },
-          { label: tNav('credentials'), href: `${basePath}/credentials` },
-        ]
-      : []),
-    ...(permissions.canManageMembership ? [{ label: tNav('members'), href: `${basePath}/members` }] : []),
-    ...(permissions.canReadProjectSettings ? [{ label: tNav('settings'), href: `${basePath}/settings` }] : []),
-  ];
+): OverviewSurfaceSummary {
+  const labelFor = (policy: ProjectRoutePolicy) =>
+    policy.navLabelNamespace === 'context_store'
+      ? tContext(policy.navLabelKey)
+      : tNav(policy.navLabelKey);
+
+  return {
+    useLabels: policies
+      .filter((policy) => policy.navSection === 'use')
+      .map(labelFor),
+    developLabels: policies
+      .filter((policy) => policy.navSection === 'develop')
+      .map(labelFor),
+    governLabels: policies
+      .filter((policy) => policy.navSection === 'govern' || policy.navSection === 'operate')
+      .map(labelFor),
+  };
 }
 
 export function createOverviewErrorContent(

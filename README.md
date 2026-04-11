@@ -76,8 +76,8 @@ Authoritative definition:
 - Machine-readable gate source: [`scripts/governance/current-gate-manifest.ts`](./scripts/governance/current-gate-manifest.ts)
 
 Command naming rule:
-- `npm run` names are the canonical current entrypoints
-- `make` targets are convenience wrappers for the same paths
+- `make` is the canonical entrypoint for environment and rehearsal orchestration
+- `npm run` is the canonical entrypoint for tests, gates, verification lanes, and release validation
 
 ### 环境
 
@@ -124,56 +124,24 @@ npm run backend-real:report
 
 ## Local Runtime In Plain Words
 
-For daily development and rehearsal on one host, use this simple model:
+<!-- current-runtime-lines:readme:start -->
+Current runtime-line truth:
+- Human guides: [Runtime Lines Matrix](./docs/user-guides/runtime-lines-matrix.md) and [Local Runtime Flows](./docs/user-guides/local-runtime-flows.md)
+- Machine-readable source: [`scripts/governance/current-runtime-line-manifest.ts`](./scripts/governance/current-runtime-line-manifest.ts)
 
-- `substrate`
-  - one shared local dependency stack
-  - postgres, mongo, redis, minio, keycloak, and universal-proxy
-- `flow`
-  - one complete working line such as `local-manual`, `demo-rehearsal`, or `cluster-rehearsal`
+Current local runtime baseline:
+- One shared local substrate backs local-manual, demo-rehearsal, and cluster-rehearsal on a development host.
+- Only one local flow should be active at a time; switch flows by stopping or resetting the current one first.
+- Demo and cluster rehearsal each own their local kind world and registry identity instead of sharing one generic local cluster.
+- Rehearsal lines validate release paths on a development host; deploy lines operate on target-host release roots.
 
-Rules:
+Current local flows:
+- `local-manual` — Daily development, real-backend manual validation, and notebook / runner checks.
+- `demo-rehearsal` — Local rehearsal of the demo deploy flow on a development host. Uses `agentsmith-demo` / `agentsmith-demo-registry`.
+- `cluster-rehearsal` — Local rehearsal of the real-cluster deployment flow on a development host. Uses `agentsmith-cluster` / `agentsmith-cluster-registry`.
 
-- on one host, start the shared substrate once
-- only run one flow at a time
-- before switching flows, run the current flow's `down` or `reset`
-- local rehearsal uses the same local `kind-agentsmith` cluster and local registry defaults
-
-Typical local sequence:
-
-```bash
-make substrate-up
-make substrate-reseed
-make local-manual-up
-```
-
-If you need the full local internal notebook / sandbox path, enable it explicitly on top of `local-manual`:
-
-```bash
-make local-manual-internal-up
-make local-manual-internal-status
-```
-
-Switch to a rehearsal flow:
-
-```bash
-make local-manual-down
-make demo-rehearsal-up
-```
-
-Current configuration names:
-
-- local-manual: `PRESET_ENDPOINT_*`
-- backend-real secrets: `PRESET_*` in `.env.backend-real`, with `BACKEND_REAL_*` aliases used only by some wrapper scripts
-- deploy presets: `PRESET_*`
-
-Templates:
-
-- local-manual: `.env.local-manual.example`
-- backend-real: `.env.backend-real.example`
-- demo deploy: `infra/deploy/demo/env/site.env.example`
-
-Old names and old demo commands are removed. Current entrypoints use `PRESET_*`.
+Use `Local Runtime Flows` for local commands and switching. Use the deploy runbooks for target-host release steps.
+<!-- current-runtime-lines:readme:end -->
 
 ### No-Sandbox Deployment Baseline
 
@@ -275,7 +243,7 @@ src/
 - [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
 - [User Guides Index](./docs/user-guides/README.md) — 用户手册总入口（MVP-first）
 - [MVP Core Smoke Runbook](./docs/user-guides/mvp-core-smoke-runbook.md) — 真实后端 MVP 核心回归执行手册
-- [Third-Party Accounts & Feishu OAuth](./docs/user-guides/third-party-accounts-feishu.md) — 用户级第三方账户、Feishu OAuth、回调模式与手动验收说明
+- [Personal Connections & Workspace Feishu](./docs/user-guides/third-party-accounts-feishu.md) — 用户级个人连接、Feishu OAuth、回调模式与手动验收说明
 - [File Library Client Mount](./docs/user-guides/file-library-local-mount.md) — 本地挂载 project file library 与双向同步校验
 - [Product Doc Artifacts](./docs/user-guides/product-doc-artifacts.md) — 生成产品说明截图与配套 Markdown 产物
 - [Marketing Assets](./marketing/README.md) — 刷新 marketing 截图资产

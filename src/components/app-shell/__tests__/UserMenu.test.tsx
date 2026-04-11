@@ -10,7 +10,8 @@ vi.mock('next-intl', () => ({
       },
       'common.user_menu': {
         profile: 'Profile',
-        third_party_accounts: 'Third-Party Accounts',
+        workspace_integrations: 'Workspace integrations',
+        personal_connections: 'Personal connections',
         api_keys: 'API Keys',
         language: 'Language',
         logout: 'Logout',
@@ -31,13 +32,19 @@ describe('UserMenu', () => {
     render(
       <UserMenu
         user={{ name: 'Alice Doe', email: 'alice@example.com' }}
+        onProfile={() => undefined}
+        onWorkspaceIntegrations={() => undefined}
+        onPersonalConnections={() => undefined}
+        onApiKeys={() => undefined}
       />,
     );
 
     openUserMenu();
 
     expect(await screen.findByText('Profile')).toBeInTheDocument();
-    expect(screen.getByText('Third-Party Accounts')).toBeInTheDocument();
+    expect(screen.getByText('Workspace integrations')).toBeInTheDocument();
+    expect(screen.getByText('Personal connections')).toBeInTheDocument();
+    expect(screen.getByText('API Keys')).toBeInTheDocument();
     expect(screen.queryByTestId('user-menu__permission-tokens')).not.toBeInTheDocument();
   });
 });

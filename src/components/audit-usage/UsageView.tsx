@@ -22,6 +22,7 @@ export interface UsageViewProps {
   endpointOptions?: Array<{ id: string; name: string }>;
   selectedEndpointId?: string;
   onEndpointChange?: (endpointId: string) => void;
+  referenceNow?: string;
   limitsOverview?: {
     endpoints?: Array<{
       endpointId: string;
@@ -85,9 +86,9 @@ function formatValue(value: number, unit: 'requests' | 'usd'): string {
   return new Intl.NumberFormat().format(Math.round(value));
 }
 
-function buildLastThirtyDayBuckets(points: UsageDataPoint[]): UsageDataPoint[] {
+function buildLastThirtyDayBuckets(points: UsageDataPoint[], referenceNow?: string): UsageDataPoint[] {
   const byBucket = new Map(points.map((item) => [item.time_bucket.slice(0, 10), item]));
-  const today = new Date();
+  const today = referenceNow ? new Date(referenceNow) : new Date();
   const items: UsageDataPoint[] = [];
 
   for (let offset = 29; offset >= 0; offset -= 1) {
@@ -144,6 +145,7 @@ export function UsageView({
   endpointOptions = [],
   selectedEndpointId = 'all',
   onEndpointChange,
+  referenceNow,
   limitsOverview,
 }: UsageViewProps) {
   const t = useTranslations('usage');
@@ -179,7 +181,10 @@ export function UsageView({
     ];
   }, [selectedEndpoint]);
 
-  const normalizedTrend = React.useMemo(() => buildLastThirtyDayBuckets(trendPoints), [trendPoints]);
+  const normalizedTrend = React.useMemo(
+    () => buildLastThirtyDayBuckets(trendPoints, referenceNow),
+    [referenceNow, trendPoints],
+  );
   const maxRequests = React.useMemo(
     () => Math.max(1, ...normalizedTrend.map((item) => item.requests ?? 0)),
     [normalizedTrend],

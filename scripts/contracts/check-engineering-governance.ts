@@ -20,12 +20,6 @@ const constitution = read('docs/项目宪法.md');
 const visualPolicy = read('docs/UXUI/01-通用规范/visual-baseline-policy-v1.md');
 const contractsIndex = read('docs/contracts/README.md');
 const productTerminology = read('docs/contracts/product-terminology.md');
-const runtimeLinesMatrix = read('docs/user-guides/runtime-lines-matrix.md');
-const localRuntimeFlows = read('docs/user-guides/local-runtime-flows.md');
-const demoDeployOperations = read('docs/user-guides/demo-deploy-operations.md');
-const clusterDeployOperations = read('docs/user-guides/cluster-deploy-operations.md');
-const demoRehearsalFlow = read('infra/flows/demo-rehearsal.env');
-const clusterRehearsalFlow = read('infra/flows/cluster-rehearsal.env');
 const demoDeployReset = read('scripts/demo-deploy/reset.sh');
 const clusterDeployReset = read('scripts/cluster-deploy/reset.sh');
 const clusterRehearsalReset = read('scripts/scenarios/cluster-rehearsal/reset.sh');
@@ -57,6 +51,9 @@ requireMatch(baseline, /current-engineering-governance-model\.md/, 'CURRENT_BASE
 requireMatch(readme, /current-workflow-manifest\.ts/, 'README is missing the current workflow manifest reference');
 requireMatch(development, /current-workflow-manifest\.ts/, 'DEVELOPMENT is missing the current workflow manifest reference');
 requireMatch(governanceModel, /current-workflow-manifest\.ts/, 'current engineering governance model is missing the workflow manifest reference');
+requireMatch(readme, /current-runtime-line-manifest\.ts/, 'README is missing the current runtime-line manifest reference');
+requireMatch(development, /current-runtime-line-manifest\.ts/, 'DEVELOPMENT is missing the current runtime-line manifest reference');
+requireMatch(governanceModel, /current-runtime-line-manifest\.ts/, 'current engineering governance model is missing the runtime-line manifest reference');
 requireMatch(readme, /current-gate-manifest\.ts/, 'README is missing the current gate manifest reference');
 requireMatch(development, /current-gate-manifest\.ts/, 'DEVELOPMENT is missing the current gate manifest reference');
 requireMatch(governanceModel, /current-gate-manifest\.ts/, 'current engineering governance model is missing the gate manifest reference');
@@ -151,21 +148,6 @@ requireMatch(
   'release-local-precheck must pass a trusted PUBLIC_API_BASE_URL when starting the local API for agent websocket/resource proxy flows',
 );
 
-requireMatch(demoRehearsalFlow, /^LOCAL_KIND_CLUSTER_NAME=agentsmith-demo$/m, 'demo-rehearsal flow must use a scenario-owned local kind cluster name',);
-requireMatch(demoRehearsalFlow, /^LOCAL_KIND_REGISTRY_NAME=agentsmith-demo-registry$/m, 'demo-rehearsal flow must use a scenario-owned local registry name',);
-requireMatch(demoRehearsalFlow, /^LOCAL_KIND_REGISTRY_HOST_PORT=5001$/m, 'demo-rehearsal flow must keep its dedicated local registry port',);
-requireMatch(clusterRehearsalFlow, /^LOCAL_KIND_CLUSTER_NAME=agentsmith-cluster$/m, 'cluster-rehearsal flow must use a scenario-owned local kind cluster name',);
-requireMatch(clusterRehearsalFlow, /^LOCAL_KIND_REGISTRY_NAME=agentsmith-cluster-registry$/m, 'cluster-rehearsal flow must use a scenario-owned local registry name',);
-requireMatch(clusterRehearsalFlow, /^LOCAL_KIND_REGISTRY_HOST_PORT=5002$/m, 'cluster-rehearsal flow must keep a registry port distinct from demo-rehearsal',);
-requireMatch(clusterRehearsalFlow, /^CLUSTER_REHEARSAL_K8S_REGISTRY_HOST=agentsmith-cluster-registry:5000$/m, 'cluster-rehearsal flow must keep its in-cluster registry host aligned with the local registry name',);
-forbidMatch(localRuntimeFlows, /同一个 `kind-agentsmith` 集群和同一个本地 registry/, 'local-runtime-flows must not describe demo and cluster rehearsal as sharing one local kind cluster/registry',);
-requireMatch(localRuntimeFlows, /`agentsmith-demo`/, 'local-runtime-flows must document the demo rehearsal local cluster identity',);
-requireMatch(localRuntimeFlows, /`agentsmith-cluster`/, 'local-runtime-flows must document the cluster rehearsal local cluster identity',);
-requireMatch(runtimeLinesMatrix, /`agentsmith-demo`/, 'runtime-lines-matrix must document the demo rehearsal local cluster identity',);
-requireMatch(runtimeLinesMatrix, /`agentsmith-cluster`/, 'runtime-lines-matrix must document the cluster rehearsal local cluster identity',);
-requireMatch(demoDeployOperations, /`agentsmith-demo`/, 'demo-deploy operations must document the demo rehearsal local cluster identity',);
-requireMatch(clusterDeployOperations, /`agentsmith-cluster`/, 'cluster-deploy operations must document the cluster rehearsal local cluster identity',);
-requireMatch(clusterDeployOperations, /state\/generated/, 'cluster-deploy operations must document rehearsal-generated handoff state under state/generated',);
 requireMatch(clusterDeployReset, /kubernetes resources were left untouched/, 'cluster-deploy reset must keep its non-destructive target-host semantics',);
 requireMatch(clusterRehearsalReset, /scenario_local_kind_cleanup/, 'cluster-rehearsal reset must destroy its scenario-owned local kind world before delegating to cluster-deploy reset',);
 requireMatch(clusterRehearsalCommon, /CLUSTER_REHEARSAL_GENERATED_DIR="\$\{CLUSTER_REHEARSAL_ROOT\}\/state\/generated"/, 'cluster-rehearsal common must keep its generated-state root under state/generated',);

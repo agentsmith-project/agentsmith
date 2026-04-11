@@ -4,19 +4,19 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArrowLeft, ShieldCheck, Sparkles, Workflow, Wrench } from 'lucide-react';
+import { ArrowLeft, Bot, ShieldCheck, Sparkles, Workflow } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useProjectOverviewCapabilities } from '@/lib/hooks/use-permissions';
+import { useCurrentPermissions, useProjectOverviewCapabilities } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import {
-  buildGovernanceLinks,
   buildOverviewPaths,
-  buildWorkLinks,
+  buildOverviewSurfaceSummary,
   createOverviewErrorContent,
 } from './overview-page-utils';
+import { listAccessibleSidebarProjectRoutePolicies } from '@/lib/projects/project-surface-access';
 
 interface OverviewPageProps {
   params?: Promise<{ workspace: string; project: string; locale: string }>;
@@ -39,13 +39,9 @@ export default function OverviewPage({ params }: OverviewPageProps) {
   const tContextStore = useTranslations('context_store');
   const tProjects = useTranslations('projects');
   const tErrors = useTranslations('errors');
+  const currentPermissions = useCurrentPermissions();
   const {
     canUseProject,
-    canReadAudit,
-    canManageGovernance,
-    canManageMembership,
-    canReadProjectSettings,
-    canManageAgents,
   } = useProjectOverviewCapabilities();
   const workspaceId = resolvedParams.workspace;
   const projectId = resolvedParams.project;
@@ -77,16 +73,20 @@ export default function OverviewPage({ params }: OverviewPageProps) {
     );
   }
 
-  const { basePath, workspaceBasePath } = buildOverviewPaths(locale, workspaceId, projectId);
-  const workLinks = buildWorkLinks(tNav, basePath);
-  const governanceLinks = buildGovernanceLinks(tNav, tContextStore, basePath, {
-    canManageAgents,
-    canManageGovernance,
-    canManageMembership,
-    canReadAudit,
-    canReadProjectSettings,
-    canUseProject,
-  });
+  const { workspaceBasePath } = buildOverviewPaths(locale, workspaceId, projectId);
+  const accessiblePolicies = listAccessibleSidebarProjectRoutePolicies(currentPermissions);
+  const surfaceSummary = buildOverviewSurfaceSummary(accessiblePolicies, tNav, tContextStore);
+  const governanceReadiness = surfaceSummary.governLabels.length > 0;
+  const developReadiness = surfaceSummary.developLabels.length > 0;
+  const useSummary = surfaceSummary.useLabels.length > 0
+    ? surfaceSummary.useLabels.join(', ')
+    : tOverview('signals.not_available');
+  const developSummary = surfaceSummary.developLabels.length > 0
+    ? surfaceSummary.developLabels.join(', ')
+    : tOverview('signals.not_available');
+  const governSummary = surfaceSummary.governLabels.length > 0
+    ? surfaceSummary.governLabels.join(', ')
+    : tOverview('signals.not_available');
 
   return (
     <PageState state="success">
@@ -121,34 +121,40 @@ export default function OverviewPage({ params }: OverviewPageProps) {
               <div className="grid gap-3 md:grid-cols-3">
                 <OverviewSummaryCard
                   icon={<Workflow className="h-4 w-4" />}
-                  label={tWorkspace('workspace_home_projects_title')}
-                  value={String(workLinks.length)}
-                  helper={tOverview('subtitle')}
+                  label={tOverview('signals.execution_title')}
+                  value={tOverview('signals.ready')}
+                  helper={useSummary}
                 />
                 <OverviewSummaryCard
                   icon={<ShieldCheck className="h-4 w-4" />}
-                  label={tWorkspace('workspace_home_admin_title')}
-                  value={String(governanceLinks.length)}
-                  helper={governanceLinks.length > 0 ? tWorkspace('workspace_home_open_settings') : tErrors('permission_denied_hint')}
+                  label={tOverview('signals.governance_title')}
+                  value={governanceReadiness ? tOverview('signals.available') : tOverview('signals.limited')}
+                  helper={governSummary}
                 />
                 <OverviewSummaryCard
-                  icon={<Wrench className="h-4 w-4" />}
-                  label={tNav('overview')}
-                  value={projectId}
-                  helper={workspaceId}
+                  icon={<Bot className="h-4 w-4" />}
+                  label={tOverview('signals.develop_title')}
+                  value={developReadiness ? tOverview('signals.available') : tOverview('signals.not_available')}
+                  helper={developSummary}
                 />
               </div>
 
               <OverviewSummaryList
-                items={workLinks.map((item) => item.label)}
+                items={surfaceSummary.useLabels}
                 testId="project-hub__use-summary"
-                title={tWorkspace('workspace_home_projects_title')}
+                title={tOverview('signals.execution_title')}
               />
 
               <OverviewSummaryList
-                items={governanceLinks.map((item) => item.label)}
+                items={surfaceSummary.governLabels}
                 testId="project-hub__governance-summary"
-                title={tWorkspace('workspace_home_admin_title')}
+                title={tOverview('signals.governance_title')}
+              />
+
+              <OverviewSummaryList
+                items={surfaceSummary.developLabels}
+                testId="project-hub__develop-summary"
+                title={tOverview('signals.develop_title')}
               />
             </CardContent>
           </Card>

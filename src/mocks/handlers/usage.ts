@@ -3,6 +3,7 @@ import p0 from '../fixtures/p0.json';
 import { buildRequestUsageRecords, listRequestUsageFacts } from '../state/request-usage';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import { docUsageTopResources } from '../doc-fixtures/audit-usage';
+import { getMswReferenceNow } from '@/lib/mock-time';
 
 type ResourceType = 'endpoint' | 'file_library' | 'agent';
 
@@ -94,8 +95,9 @@ function buildUsageOperationsSummary(facts: RequestFactLike[]) {
 export const usageHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage', ({ request }) => {
     const url = new URL(request.url);
-    const start = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const end = url.searchParams.get('end_time') ?? new Date().toISOString();
+    const mockNow = getMswReferenceNow();
+    const start = url.searchParams.get('start_time') ?? new Date(mockNow.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const end = url.searchParams.get('end_time') ?? mockNow.toISOString();
     const resourceType = url.searchParams.get('resource_type');
     const resourceId = url.searchParams.get('resource_id');
     const endUserId = url.searchParams.get('end_user_id');
@@ -131,8 +133,9 @@ export const usageHandlers = [
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/timeseries', ({ request }) => {
     const url = new URL(request.url);
-    const start = url.searchParams.get('start_time') ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const end = url.searchParams.get('end_time') ?? new Date().toISOString();
+    const mockNow = getMswReferenceNow();
+    const start = url.searchParams.get('start_time') ?? new Date(mockNow.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const end = url.searchParams.get('end_time') ?? mockNow.toISOString();
     const resourceType = url.searchParams.get('resource_type');
     const resourceId = url.searchParams.get('resource_id');
     const endUserId = url.searchParams.get('end_user_id');
@@ -167,8 +170,9 @@ export const usageHandlers = [
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/operations-summary', ({ request }) => {
     const url = new URL(request.url);
-    const start = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const end = url.searchParams.get('end_time') ?? new Date().toISOString();
+    const mockNow = getMswReferenceNow();
+    const start = url.searchParams.get('start_time') ?? new Date(mockNow.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const end = url.searchParams.get('end_time') ?? mockNow.toISOString();
     const resourceType = url.searchParams.get('resource_type');
     const resourceId = url.searchParams.get('resource_id');
     const endUserId = url.searchParams.get('end_user_id');
@@ -232,7 +236,7 @@ export const usageHandlers = [
       resource_type: ResourceType;
       requests: number;
     }>;
-    const now = new Date();
+    const now = getMswReferenceNow();
     const resetAt = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
     const endpoints = resources
       .filter((item) => item.resource_type === 'endpoint')

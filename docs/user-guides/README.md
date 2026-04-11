@@ -1,45 +1,113 @@
 # User Guides
 
-仅保留当前有效的用户操作指南。
+这里的内容只保留两类文档：
 
-术语边界：若出现 `release` / `engineering gate` 命令命名，默认是工程验收与排障脚本；`permission gate` 仅表示产品权限门禁语义，不代表产品 DevOps 能力。
+1. 当前有效的操作指南
+2. 当前有效的工程检查与运行入口说明
 
-基线入口：
+如果你要找的是“产品对象名、页面 IA、权限合同、接口合同”，先回到：
 
 - [Current Baseline (Whitelist)](../CURRENT_BASELINE.md)
+- [Product Terminology Contract](../contracts/product-terminology.md)
+- [Contracts Index](../contracts/README.md)
 
-| Guide | Description |
-|-------|-------------|
-| [MVP Core Smoke Runbook](./mvp-core-smoke-runbook.md) | Real-backend MVP core regression path (chat/notebook/endpoint policy). |
-| [Workspace / Project Default Engineering Gate Checklist](./workspace-project-default-engineering-gate-checklist.md) | Default engineering gate for `system 管理侧 -> 工作区发布 -> 用户访问入口 -> 项目创建`. |
-| [Governance Default Engineering Gate Checklist](./governance-default-engineering-gate-checklist.md) | Default governance gate for `members -> resource policy -> audit/alerts`. |
-| [Backend Persistent State Boundary](../contracts/backend-persistent-state-boundary.md) | Which backend data must survive API restarts, and which state is allowed to stay in memory. |
-| [Backend Storage Architecture Matrix](../contracts/backend-storage-architecture-matrix.md) | Current backend module, interface, storage mode, and maturity matrix for product-grade persistence review. |
-| [Backend Storage Maturity Checklist](../contracts/backend-storage-maturity-checklist.md) | Next-step improvement checklist after main data truth has been productized. |
-| [Release Readiness Checklist](./release-readiness-checklist.md) | Final release verification order for contracts, default gates, real notebook flow, and full visual coverage. |
-| [Local Runtime Flows](./local-runtime-flows.md) | The shortest local runbook: one shared substrate, one active flow at a time, and how to switch between `local-manual`, `demo-rehearsal`, and `cluster-rehearsal`. |
-| [Runtime Lines Matrix](./runtime-lines-matrix.md) | One-page matrix for current runtime lines, deploy lines, rehearsal lines, mode boundaries, and the shared-substrate model. |
-| [Demo Deploy Operations](./demo-deploy-operations.md) | Demo / single-host deployment line: host deployment root, lifecycle commands, address model, and local `kind` sandbox verification flow. |
-| [Cluster Deploy Operations](./cluster-deploy-operations.md) | Real-cluster deployment line: registry-backed bundle release, target-host install flow, manager ingress, and namespace-only automation model. |
-| [Cluster Upgrade Operations](./cluster-upgrade-operations.md) | Existing production install version-update line: upgrade app services and namespaced sandbox resources without touching substrate or data. |
-| [Cluster Admin Runbook](./cluster-admin-runbook.md) | Cluster-scope prerequisites for the real-cluster line only: namespace, JuiceFS CSI, storage class, manager runtime kubeconfig, and ingress preparation. |
-| Real Visual Review Artifacts | Generated locally under `artifacts/backend-real-visual/<run-id>/` by `npm run test:visual:backend-real:review`. |
-| [Identity & Permission Model](./identity-and-permission-model.md) | Current identity model baseline: email for selection, `user_id` for persisted permissions. |
-| [Workspace Isolation Model](./workspace-isolation-model.md) | Current MVP workspace isolation baseline: shared infrastructure with namespace and scope boundaries. |
-| [Test & Evidence Directory Model](./test-and-evidence-directory-model.md) | Directory contract for test code, temporary test output, mock visual baselines, and long-term release evidence. |
-| [Audit & Usage](./audit-usage-reports.md) | Audit review and usage workflows under the current Usage/Audit MVP baseline. |
-| [Alert Center](./alert-center.md) | Alert rules and notification operations. |
-| [Usage Limits Summary Backend Alignment Checklist](./usage-limits-summary-backend-alignment-checklist.md) | Contract-to-implementation checklist for `/limits/summary` endpoint matrix payload. |
-| [Third-Party Accounts & Workspace Feishu](./third-party-accounts-feishu.md) | Current split between personal third-party credentials and workspace-scoped Feishu integration. |
-| [File Library Client Mount](./file-library-local-mount.md) | Local JuiceFS mount instructions and sync validation path for project file libraries. |
-| [Product Doc Artifacts](./product-doc-artifacts.md) | Generate screenshot + Markdown bundles for product-facing documentation artifacts. |
-| [Marketing Assets](../../marketing/README.md) | Generate and refresh marketing screenshot assets under `marketing/screenshots/`. |
+术语边界：
 
-Archived environment-specific examples:
+- `release` / `engineering gate` 命令名默认指向项目工程验收与排障流程
+- `permission gate` 只表示产品权限门禁语义
+- 这些命名都不代表 AgentSmith 提供 DevOps 发布管理能力
+
+## 1. 从这里开始
+
+### 默认工程门禁与发布验收
+
+- [Workspace / Project Default Engineering Gate Checklist](./workspace-project-default-engineering-gate-checklist.md)
+  - 默认业务链 gate
+- [Governance Default Engineering Gate Checklist](./governance-default-engineering-gate-checklist.md)
+  - 默认治理链 gate
+- [Release Readiness Checklist](./release-readiness-checklist.md)
+  - 发布前完整执行顺序
+
+### 日常排障
+
+- [Troubleshooting Guide](../troubleshooting-guide-v1.md)
+- [CI Integration Troubleshooting](../ci-integration-troubleshooting.md)
+
+### Notebook / Runner 主链
+
+- [Notebook Codex Runner Runbook](../notebook-codex-runbook.md)
+
+## 2. Runtime / Deploy / Rehearsal
+
+<!-- current-runtime-lines:user-guides-index:start -->
+- [Local Runtime Flows](./local-runtime-flows.md)
+  - 由 `scripts/governance/current-runtime-line-manifest.ts` 生成；共享 substrate + 一次只跑一条本地工作线的最短手册。
+- [Runtime Lines Matrix](./runtime-lines-matrix.md)
+  - 当前 runtime / deploy / rehearsal 线与 mode 边界的总表。
+- [Demo Deploy Operations](./demo-deploy-operations.md)
+  - 目标主机上的 demo 发布线：release root、生命周期命令，以及 `full` 模式下的 local `kind` sandbox 仿真。
+- [Cluster Deploy Operations](./cluster-deploy-operations.md)
+  - 目标主机上的 real-cluster 发布线：registry-backed bundle release、target-host install flow、namespace-only automation model。
+<!-- current-runtime-lines:user-guides-index:end -->
+
+- [Cluster Upgrade Operations](./cluster-upgrade-operations.md)
+- [Cluster Admin Runbook](./cluster-admin-runbook.md)
+
+## 3. Product Operations
+
+### 治理与身份
+
+- [Identity & Permission Model](./identity-and-permission-model.md)
+- [Workspace Isolation Model](./workspace-isolation-model.md)
+- [Audit & Usage](./audit-usage-reports.md)
+- [Alert Center](./alert-center.md)
+- [Personal Connections & Workspace Feishu](./third-party-accounts-feishu.md)
+
+### Files / Libraries
+
+- [File Library Client Mount](./file-library-local-mount.md)
+
+## 4. Evidence And Review
+
+- [Test & Evidence Directory Model](./test-and-evidence-directory-model.md)
+  - 测试源码、临时结果、mock visual baseline、长期证据的目录合同
+- [Product Doc Artifacts](./product-doc-artifacts.md)
+  - 生成产品文档截图与 Markdown 包
+
+说明：
+
+- 真实后端截图巡检产物默认在 `artifacts/backend-real-visual/<run-id>/`
+- 这是 evidence 入口，不是单独的 guide 文档
+
+## 5. Related Engineering References
+
+下面这些内容和 user guides 强相关，但它们不是操作指南本体：
+
+### Contract references
+
+- [Contracts Index](../contracts/README.md)
+- [Backend Persistent State Boundary](../contracts/backend-persistent-state-boundary.md)
+- [Backend Storage Architecture Matrix](../contracts/backend-storage-architecture-matrix.md)
+- [Backend Storage Maturity Checklist](../contracts/backend-storage-maturity-checklist.md)
+
+### Product and doc-support outputs
+
+- [Marketing Assets](../../marketing/README.md)
+
+## 6. What Does Not Belong Here
+
+下面这些内容不应再被理解为 current user guide：
+
+- handoff / refactor / migration / retro 文档
+- 一次性 task 文档
+- 机器可读接口规范
+- archive 内的环境特定示例
+
+当前 archived example：
 
 - [mbos.imotion.ai Demo Deploy Runbook](../archive/env-specific/demo-deploy-mbos-imotion-ai.md)
 
-Quick links:
+## 7. Quick links
 
 - [Documentation Index](../README.md)
-- [Troubleshooting](../troubleshooting-guide-v1.md)
+- [Current Baseline (Whitelist)](../CURRENT_BASELINE.md)

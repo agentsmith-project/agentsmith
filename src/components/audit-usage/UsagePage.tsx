@@ -15,6 +15,8 @@ import { ErrorState } from '@/components/ui/error-state';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import { useEndpointsData } from '@/lib/endpoints/use-endpoints-data';
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
+import { getMswReferenceNow } from '@/lib/mock-time';
 
 export interface UsagePageProps {
   workspaceId: string;
@@ -36,9 +38,12 @@ export function UsagePage({
   const { canRead: canReadUsage } = useUsagePageCapabilities();
   const effectiveEndUserId = defaultEndUserId ?? currentUserId;
   const [selectedEndpointId, setSelectedEndpointId] = React.useState<string>('all');
+  const referenceNow = React.useMemo(() => {
+    return getPublicRuntimeConfig().useMsw ? getMswReferenceNow() : new Date();
+  }, []);
 
   const trendRange = React.useMemo(() => {
-    const end = new Date();
+    const end = new Date(referenceNow);
     const start = new Date(end);
     start.setDate(start.getDate() - 29);
     start.setHours(0, 0, 0, 0);
@@ -46,7 +51,7 @@ export function UsagePage({
       start_time: start.toISOString(),
       end_time: end.toISOString(),
     };
-  }, []);
+  }, [referenceNow]);
 
   const timeseriesParams = React.useMemo(
     () => ({
@@ -213,6 +218,7 @@ export function UsagePage({
           endpointOptions={endpointOptions}
           selectedEndpointId={selectedEndpointId}
           onEndpointChange={setSelectedEndpointId}
+          referenceNow={trendRange.end_time}
           limitsOverview={limitsOverview}
         />
       </div>

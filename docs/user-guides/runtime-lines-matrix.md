@@ -11,17 +11,24 @@
 
 如果你只想记住当前方法论，这一页就是总入口；其它 runbook 只负责展开具体步骤。
 
+<!-- current-runtime-lines:runtime-matrix:start -->
 ## 核心方法论
 
-当前工程基线只有这些规则：
+1. 本机共享一套 substrate，`local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用它。
+2. 同一时间只允许一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。
+3. `demo-rehearsal` 和 `cluster-rehearsal` 都拥有自己的 scenario-owned local kind world 与 local registry，不再共用一个泛化本地集群。
+4. rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。
 
-1. 本机共享一套 `substrate`。
-2. `local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用这套底座。
-3. 同一时间只允许一条 active scenario。
-4. `scenario` 只负责编排，不自己实现 substrate 生命周期。
-5. deploy 线与 rehearsal 线使用同一套 contract，但职责不同：
-   - rehearsal 用来本机排演
-   - deploy 用来正式目标环境发布
+## 运行线矩阵
+
+| 运行线 | 当前正式命名 | 主要用途 | external 路径 | internal 路径 | substrate | 备注 |
+|-------|-------------|---------|--------------|--------------|----------|------|
+| 本地真实手测线 | `local-manual` | 日常开发、真实后端手测、notebook / runner 手测 | 默认启用 | 通过 `local-manual-internal-up` 显式开启 | 共享本地 substrate | 当前推荐本机真实手测入口 |
+| demo 本机排演线 | `demo-rehearsal` | 本机排演 demo 发布线 | `DEMO_DEPLOY_MODE=simple` 时 external-only | `DEMO_DEPLOY_MODE=full` 时启用，运行在本地 `kind` | 共享本地 substrate | 使用 scenario-owned `agentsmith-demo` 与 `agentsmith-demo-registry` |
+| demo 正式发布线 | `demo-deploy` | 单机 / demo 环境发布 | `simple` | `full` | 目标主机上的 compose substrate | 目标主机 release 线，不是本机 rehearsal 入口 |
+| cluster 本机排演线 | `cluster-rehearsal` | 本机排演真实集群发布线 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 共享本地 substrate | 使用 scenario-owned `agentsmith-cluster` 与 `agentsmith-cluster-registry` |
+| cluster 正式发布线 | `cluster-deploy` | 真实集群发布 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 目标主机上的 compose substrate | mode 描述自动化边界，不是 external/internal 能力差异 |
+<!-- current-runtime-lines:runtime-matrix:end -->
 
 ## 词典
 
@@ -43,16 +50,6 @@
 正式 contract 见：
 
 - [Substrate Governance And Runtime Lines](/home/percy/works/mbos-v1/agentsmith/docs/contracts/substrate-governance-and-runtime-lines-v1.md)
-
-## 运行线矩阵
-
-| 运行线 | 当前正式命名 | 主要用途 | external 路径 | internal 路径 | substrate | 备注 |
-|-------|-------------|---------|--------------|--------------|----------|------|
-| 本地真实手测线 | `local-manual` | 日常开发、真实后端手测、notebook / runner 手测 | 默认启用 | 通过 `local-manual-internal-up` 显式开启 | 共享本地 substrate | 当前推荐本机真实手测入口 |
-| demo 本机排演线 | `demo-rehearsal` | 本机排演 demo 发布线 | `DEMO_DEPLOY_MODE=simple` 时 external-only | `DEMO_DEPLOY_MODE=full` 时启用，运行在本地 `kind` | 共享本地 substrate | 使用 scenario-owned `agentsmith-demo` 与 `agentsmith-demo-registry` |
-| demo 正式发布线 | `demo-deploy` | 单机 / demo 环境发布 | `simple` | `full` | 目标主机上的 compose substrate | `full` 使用本地 `kind` 模拟 internal 执行面 |
-| cluster 本机排演线 | `cluster-rehearsal` | 本机排演真实集群发布线 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 共享本地 substrate | 用 scenario-owned `agentsmith-cluster` 与 `agentsmith-cluster-registry` 模拟真实 k8s 环境 |
-| cluster 正式发布线 | `cluster-deploy` | 真实集群发布 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 目标主机上的 compose substrate | mode 区分 `semi-auto` / `full-auto`，不是 external/internal 能力差异 |
 
 ## mode 解释
 

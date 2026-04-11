@@ -2,35 +2,32 @@
 
 这份文档只讲本机开发和 rehearsal 怎么跑，尽量保持最简单的心智模型。
 
+<!-- current-runtime-lines:local-runtime-flows:start -->
 运行线职责、mode 边界、shared substrate 方法论以
-[Runtime Lines Matrix](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/runtime-lines-matrix.md)
-为唯一总入口；这份文档只展开本机操作顺序。
+[Runtime Lines Matrix](./runtime-lines-matrix.md)
+为总入口；这份文档只展开本机操作顺序。
+
+Machine-readable source:
+
+- `scripts/governance/current-runtime-line-manifest.ts`
 
 ## 一句话规则
 
 先起共享底座，再跑一条工作线；同一时间只跑一条。
 
-这里的两个词只表示：
-
-- `substrate`
-  - 本机共享底座
-  - 包含 postgres、mongo、redis、minio、keycloak、universal-proxy
-- `flow`
-  - 一条完整工作线
-  - 当前本机常用的是 `local-manual`、`demo-rehearsal`、`cluster-rehearsal`
-
 ## 固定规则
 
-1. 本机只有一套共享底座。
-2. `local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用这套底座。
-3. 同一时间只允许一条工作线处于 active。
-4. 切换工作线前，先把当前工作线停掉。
-5. `local-manual` 只保留自己的 app 端口，默认读取共享 substrate 的连接文件；如果共享 substrate 端口已被别的工作线占用，会直接失败并给出冲突提示。
-6. `backend-real` / `integration-full` 默认使用独立 support-service 端口，不复用共享 substrate 的 `15432/17017/16379/19000/18080`。
-7. 本地 rehearsal 使用 scenario-owned local kind world：
-   - `demo-rehearsal` 默认使用 `agentsmith-demo` / `agentsmith-demo-registry`
-   - `cluster-rehearsal` 默认使用 `agentsmith-cluster` / `agentsmith-cluster-registry`
-8. `*-reset` 会把对应 rehearsal 的本地 kind world 清回干净状态；`*-down` 只负责停当前运行态。
+1. 本机共享一套 substrate，`local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用它。
+2. 同一时间只允许一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。
+3. `demo-rehearsal` 和 `cluster-rehearsal` 都拥有自己的 scenario-owned local kind world 与 local registry，不再共用一个泛化本地集群。
+4. rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。
+
+## 当前本机工作线
+
+- `local-manual` — 日常开发、真实后端手测、notebook / runner 主链手测。
+- `demo-rehearsal` — demo 发布线的本机排演入口，使用 `agentsmith-demo` / `agentsmith-demo-registry`。
+- `cluster-rehearsal` — cluster 发布线的本机排演入口，使用 `agentsmith-cluster` / `agentsmith-cluster-registry`。
+<!-- current-runtime-lines:local-runtime-flows:end -->
 
 ## 先管底座
 

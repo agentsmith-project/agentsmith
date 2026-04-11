@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
 import { useProjects, useProject } from '@/lib/hooks/use-projects-queries';
 import { broadcastProjectLayoutMode, useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
+import { buildProjectSurfacePath, resolveDefaultProjectSurfaceHref } from '@/lib/projects/project-surface-access';
 import {
   Tooltip,
   TooltipContent,
@@ -41,6 +42,13 @@ export function Topbar({ className = '' }: TopbarProps) {
   const { data: projects } = useProjects(workspaceId || '');
   const { data: currentProject } = useProject(workspaceId || '', projectId || '');
   const { layoutMode, showLayoutToggle } = useProjectLayoutMode();
+  const switchableProjects = React.useMemo(() => {
+    if (!currentProject) return projects ?? [];
+    if (!projects?.some((project) => project.id === currentProject.id)) {
+      return [currentProject, ...(projects ?? [])];
+    }
+    return projects ?? [];
+  }, [currentProject, projects]);
 
   // Get current workspace from workspaces list
   const currentWorkspace = React.useMemo(() => {
@@ -54,9 +62,13 @@ export function Topbar({ className = '' }: TopbarProps) {
 
   const handleProjectChange = (newProjectId: string) => {
     if (!workspaceId) return;
-
-    // Navigate to the new project's overview
-    router.push(`/workspaces/${workspaceId}/projects/${newProjectId}/overview`);
+    const nextProject = switchableProjects.find((project) => project.id === newProjectId);
+    const defaultHref = resolveDefaultProjectSurfaceHref(nextProject);
+    if (!defaultHref) {
+      router.push(`/workspaces/${workspaceId}`);
+      return;
+    }
+    router.push(buildProjectSurfacePath(locale, workspaceId, newProjectId, defaultHref));
   };
 
   const handleGoToProjects = () => {
@@ -83,11 +95,12 @@ export function Topbar({ className = '' }: TopbarProps) {
     router.push(`/user/api-keys`);
   };
 
-  const handleThirdPartyAccounts = () => {
-    if (workspaceId) {
-      router.push(`/workspaces/${workspaceId}/connections`);
-      return;
-    }
+  const handleWorkspaceIntegrations = () => {
+    if (!workspaceId) return;
+    router.push(`/workspaces/${workspaceId}/connections`);
+  };
+
+  const handlePersonalConnections = () => {
     router.push(`/user/third-party-accounts`);
   };
 
@@ -182,12 +195,15 @@ export function Topbar({ className = '' }: TopbarProps) {
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="p-2 h-11 rounded-xl hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors">
-                    <ChevronDown className="w-4 h-4 text-tertiary" />
-                  </DropdownMenuTrigger>
+	                <DropdownMenu>
+	                  <DropdownMenuTrigger
+	                    data-testid="topbar__project-switcher-menu"
+	                    className="p-2 h-11 rounded-xl hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors"
+	                  >
+	                    <ChevronDown className="w-4 h-4 text-tertiary" />
+	                  </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
-                  {projects?.map((proj) => (
+                  {switchableProjects.map((proj) => (
                     <DropdownMenuItem key={proj.id} onSelect={() => handleProjectChange(proj.id)}>
                       {proj.name}
                     </DropdownMenuItem>
@@ -229,7 +245,8 @@ export function Topbar({ className = '' }: TopbarProps) {
         <UserMenu
           user={user}
           onProfile={handleProfile}
-          onThirdPartyAccounts={handleThirdPartyAccounts}
+          onWorkspaceIntegrations={workspaceId ? handleWorkspaceIntegrations : undefined}
+          onPersonalConnections={handlePersonalConnections}
           onApiKeys={handleApiKeys}
           onLanguageSwitch={handleLanguageSwitch}
           currentLocale={locale}

@@ -78,7 +78,7 @@ const mockUseProjects = vi.fn<
   isLoading: false,
   isError: false,
   error: null,
-  refetch: vi.fn(),
+  refetch: vi.fn(async () => ({ data: mockProjectsData })),
   }));
 const mockCreateJoinRequestMutateAsync = vi.fn().mockResolvedValue({ outcome: 'pending' });
 
@@ -191,7 +191,7 @@ describe('ProjectsPage route', () => {
       isLoading: false,
       isError: false,
       error: null,
-      refetch: vi.fn(),
+      refetch: vi.fn(async () => ({ data: mockProjectsData })),
     }));
   });
 
@@ -212,6 +212,33 @@ describe('ProjectsPage route', () => {
     fireEvent.click(row);
 
     expect(mockPush).toHaveBeenCalledWith('/en/workspaces/ws_1/projects/proj_1/overview');
+  });
+
+  it('navigates to the first reachable governance surface when overview is not reachable', async () => {
+    mockProjectsData = [
+      {
+        id: 'proj_members',
+        workspace_id: 'ws_1',
+        name: 'Project Members Only',
+        visibility: 'private',
+        join_policy: 'approval_required' as const,
+        owner_id: 'owner_1',
+        groups: [],
+        permissions: ['project:membership:update'],
+        admin_member_ids: ['user_1'],
+        status: 'active' as const,
+        membership_status: 'active' as const,
+        created_at: '2026-02-01T00:00:00Z',
+        updated_at: '2026-02-01T00:00:00Z',
+      },
+    ];
+
+    render(<ProjectsPage />);
+
+    const row = await screen.findByTestId('projects__table__row');
+    fireEvent.click(row);
+
+    expect(mockPush).toHaveBeenCalledWith('/en/workspaces/ws_1/projects/proj_members/members');
   });
 
   it('hides settings action when project lacks settings manage permission', async () => {
@@ -400,6 +427,21 @@ describe('ProjectsPage route', () => {
         updated_at: '2026-02-01T00:00:00Z',
       },
     ];
+    mockUseProjects.mockImplementation(() => ({
+      data: mockProjectsData,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(async () => ({
+        data: [
+          {
+            ...mockProjectsData[0],
+            permissions: ['project:endpoint:use'],
+            membership_status: 'active' as const,
+          },
+        ],
+      })),
+    }));
 
     render(<ProjectsPage />);
 

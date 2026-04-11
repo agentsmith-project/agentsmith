@@ -62,6 +62,10 @@ import {
   requiresProjectJoinFlow,
   type Project,
 } from '@/lib/projects/project-view';
+import {
+  buildProjectSurfacePath,
+  resolveDefaultProjectSurfaceHref,
+} from '@/lib/projects/project-surface-access';
 import { useCreateJoinRequest } from '@/lib/hooks/use-join-requests';
 
 interface WorkspaceProjectsEntryPageProps {
@@ -146,7 +150,9 @@ export function WorkspaceProjectsEntryPage({
       setJoinDialogProject(project);
       return;
     }
-    router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/overview`);
+    const defaultHref = resolveDefaultProjectSurfaceHref(project);
+    if (!defaultHref || !workspaceId) return;
+    router.push(buildProjectSurfacePath(locale, workspaceId, project.id, defaultHref));
   };
 
   const handleSettingsClick = (project: Project) => {
@@ -194,7 +200,14 @@ export function WorkspaceProjectsEntryPage({
           next.delete(project.id);
           return next;
         });
-        router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/overview`);
+        const refreshed = await refetchProjects();
+        const nextProject = refreshed.data?.find((item) => item.id === project.id) ?? project;
+        const defaultHref = resolveDefaultProjectSurfaceHref(nextProject);
+        if (!defaultHref) {
+          router.push(`/${locale}/workspaces/${workspaceId}`);
+        } else {
+          router.push(buildProjectSurfacePath(locale, workspaceId, project.id, defaultHref));
+        }
       }
       setJoinDialogProject(null);
     } catch {
@@ -237,7 +250,12 @@ export function WorkspaceProjectsEntryPage({
       return;
     }
 
-    router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/overview`);
+    const defaultHref = resolveDefaultProjectSurfaceHref(createdProject);
+    if (!defaultHref) {
+      router.push(`/${locale}/workspaces/${workspaceId}`);
+      return;
+    }
+    router.push(buildProjectSurfacePath(locale, workspaceId, projectId, defaultHref));
   };
 
   const memberNameById = useMemo(() => {

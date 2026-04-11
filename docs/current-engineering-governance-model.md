@@ -3,7 +3,7 @@
 Last updated: 2026-03-30  
 Status: `authoritative`
 
-This document defines the current engineering governance model for AgentSmith. README, DEVELOPMENT, Make help, workflow checks, and current runbooks must follow this document and the machine-readable manifests in `scripts/governance/current-workflow-manifest.ts` and `scripts/governance/current-gate-manifest.ts`.
+This document defines the current engineering governance model for AgentSmith. README, DEVELOPMENT, Make help, workflow checks, and current runbooks must follow this document and the machine-readable manifests in `scripts/governance/current-workflow-manifest.ts`, `scripts/governance/current-gate-manifest.ts`, and `scripts/governance/current-runtime-line-manifest.ts`.
 
 Product terminology alignment:
 - `docs/contracts/product-terminology.md` is the authoritative source for product-facing object names and IA boundaries.
@@ -11,17 +11,28 @@ Product terminology alignment:
 - Do not collapse `Endpoint` and `Agent` into a generic model-source concept in product-facing explanations, UI narratives, or verification language.
 
 Canonical entrypoint rule:
-- `npm run` names are the authoritative current command names.
-- `make` targets may wrap them for convenience, but they are not a second naming model.
+- `make` is the authoritative entrypoint for environment and rehearsal orchestration.
+- `npm run` is the authoritative entrypoint for tests, gates, verification lanes, and release validation.
+- `make` and `npm run` are both current command surfaces, but they must not describe the same path with conflicting semantics.
 
 Current gate truth:
 - `scripts/governance/current-gate-manifest.ts` is the machine-readable source for gate composition, visual ownership, backend-real ownership, and CI/checklist alignment.
 - `gate:default` does not own the full visual lane.
 - `lane:visual` is the only current command that owns full visual verification.
 
-For the current runtime-line methodology and the shared-substrate model, use:
+<!-- current-runtime-lines:governance-model:start -->
+For current runtime-line methodology and release/rehearsal topology, use:
 
 - [Runtime Lines Matrix](./user-guides/runtime-lines-matrix.md)
+- [Local Runtime Flows](./user-guides/local-runtime-flows.md)
+- Machine-readable source: `scripts/governance/current-runtime-line-manifest.ts`
+
+Current local baseline:
+- One shared local substrate backs local-manual, demo-rehearsal, and cluster-rehearsal on a development host.
+- Only one local flow should be active at a time; switch flows by stopping or resetting the current one first.
+- Demo and cluster rehearsal each own their local kind world and registry identity instead of sharing one generic local cluster.
+- Rehearsal lines validate release paths on a development host; deploy lines operate on target-host release roots.
+<!-- current-runtime-lines:governance-model:end -->
 
 ## 1. Allowed top-level terms
 

@@ -2,6 +2,10 @@
 
 `docs/contracts/deployment-spec-v1.md` is the deployment contract. This guide is the short operator runbook for the current demo deployment flow.
 
+Current runtime-line methodology, local rehearsal boundaries, and the shared-substrate model are summarized in:
+
+- [Runtime Lines Matrix](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/runtime-lines-matrix.md)
+
 ## Scope
 
 `demo-deploy` is the demo / single-host deployment line.

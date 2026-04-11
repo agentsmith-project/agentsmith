@@ -344,6 +344,7 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
     selectedLibraryId,
     prefix,
     selectedForMove,
+    refreshCurrentListing: objectsQuery.refetch,
     createFolder: createFolder.mutateAsync,
     moveObject: moveObject.mutateAsync,
     clearSelection,

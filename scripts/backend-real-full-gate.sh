@@ -6,6 +6,7 @@ unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+source "${ROOT_DIR}/scripts/lib/port-utils.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
@@ -51,20 +52,6 @@ info() { echo "[backend-real-full-gate] $*"; }
 
 run_clean() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
-}
-
-is_port_listening() {
-  local port="$1"
-  if command -v lsof >/dev/null 2>&1 && lsof -iTCP:"${port}" -sTCP:LISTEN -Pn >/dev/null 2>&1; then
-    return 0
-  fi
-  if command -v ss >/dev/null 2>&1 && ss -ltn | grep -qE "[\\[\\]:*]${port}[[:space:]]"; then
-    return 0
-  fi
-  if command -v fuser >/dev/null 2>&1 && fuser -n tcp "${port}" >/dev/null 2>&1; then
-    return 0
-  fi
-  return 1
 }
 
 start_background_job() {

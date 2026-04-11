@@ -135,6 +135,7 @@
 - registry 推送与镜像引用
 - target-host compose + k8s 分层
 - sandbox deploy / bootstrap / verify / report
+- generated handoff artifacts under `state/generated/`, so rehearsal `reset` can return to a clean-room starting point
 
 顺序是：
 

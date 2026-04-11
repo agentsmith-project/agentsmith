@@ -12,10 +12,13 @@ ensure_cluster_rehearsal_registry_env
 ensure_cluster_rehearsal_release_bundle
 mark_scenario_world_changed
 ensure_local_kind_cluster
+cleanup_cluster_rehearsal_legacy_generated_state
 kind_kubeconfig="$(scenario_kind_kubeconfig_path)"
-cp "${kind_kubeconfig}" "${CLUSTER_REHEARSAL_CONFIG_DIR}/kubeconfig"
-cp "${kind_kubeconfig}" "${CLUSTER_REHEARSAL_CONFIG_DIR}/admin-kubeconfig"
-rm -f "${CLUSTER_REHEARSAL_CONFIG_DIR}/manager-kubeconfig"
+mkdir -p "${CLUSTER_REHEARSAL_GENERATED_DIR}"
+cp "${kind_kubeconfig}" "${CLUSTER_DEPLOY_SHARED_KUBECONFIG}"
+cp "${kind_kubeconfig}" "${CLUSTER_DEPLOY_SHARED_ADMIN_KUBECONFIG}"
+rm -f "${CLUSTER_DEPLOY_SHARED_MANAGER_KUBECONFIG}" "${CLUSTER_DEPLOY_SHARED_ADMIN_READY_ENV}"
+rm -rf "${CLUSTER_DEPLOY_ADMIN_HANDOFF_DIR}"
 clear_local_dev_substrate
 
 bash "${ROOT_DIR}/scripts/cluster-deploy/prepare.sh"

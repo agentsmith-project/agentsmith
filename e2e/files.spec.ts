@@ -255,6 +255,11 @@ test.describe('Files Page (file library browser)', () => {
     // Creating a folder auto-enters it.
     await expect(authedPage.getByTestId('files__go-up')).toBeVisible();
     await expect(authedPage.getByTestId('files__breadcrumb--1')).toContainText(name);
+
+    await authedPage.getByTestId('files__breadcrumb-root').click();
+    await expect(
+      authedPage.getByTestId('files__object-row').filter({ hasText: name }).first(),
+    ).toBeVisible();
   });
 
   test('upload object and rename it', async ({ authedPage }) => {

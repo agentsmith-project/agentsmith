@@ -160,6 +160,7 @@ make demo-rehearsal-report
 
 - 在本机验证 cluster deploy 这条完整工作线
 - 用本地 `agentsmith-cluster` 模拟 cluster 侧执行
+- handoff package、`admin-ready.env`、rehearsal kubeconfig 等生成物统一落在 `artifacts/runtime/scenario/cluster-rehearsal/state/generated/`
 - `up` 只推进到 environment-ready
 - `bootstrap` 负责 admin handoff 后续动作、cluster prerequisites、sandbox deploy 和 bootstrap
 - `verify` / `report` 分阶段执行

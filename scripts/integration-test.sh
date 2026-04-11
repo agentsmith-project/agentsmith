@@ -5,6 +5,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/port-utils.sh"
 
 # Configuration
 BASE_URL="${BASE_URL:-http://localhost:3000}"
@@ -80,34 +81,9 @@ parse_loopback_port() {
   return 1
 }
 
-is_port_listening() {
-  local port="$1"
-  if command -v lsof >/dev/null 2>&1 && lsof -iTCP:"${port}" -sTCP:LISTEN -Pn >/dev/null 2>&1; then
-    return 0
-  fi
-  if command -v ss >/dev/null 2>&1 && ss -ltn | grep -qE "[\\[\\]:*]${port}[[:space:]]"; then
-    return 0
-  fi
-  if command -v fuser >/dev/null 2>&1 && fuser -n tcp "${port}" >/dev/null 2>&1; then
-    return 0
-  fi
-  return 1
-}
-
 pick_free_port() {
   local preferred_port="$1"
-  local candidate
-  if ! is_port_listening "${preferred_port}"; then
-    printf '%s\n' "${preferred_port}"
-    return 0
-  fi
-  for candidate in $(seq 3010 3099); do
-    if ! is_port_listening "${candidate}"; then
-      printf '%s\n' "${candidate}"
-      return 0
-    fi
-  done
-  return 1
+  port_pick_free "${preferred_port}" 3010 3099
 }
 
 ensure_base_url_ready() {

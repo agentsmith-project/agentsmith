@@ -16,6 +16,7 @@ SANDBOX_HOST_PORT="${SANDBOX_HOST_PORT:-29180}"
 printf 'Scenario: %s\n' "cluster-rehearsal"
 printf 'Active scenario: %s\n' "$(current_active_scenario || true)"
 printf 'Deploy root: %s\n' "${CLUSTER_REHEARSAL_ROOT}"
+printf 'Generated state: %s\n' "${CLUSTER_REHEARSAL_GENERATED_DIR}"
 printf 'Local kind cluster: %s (%s)\n' "$(scenario_kind_cluster_name)" "$(local_kind_cluster_exists "$(scenario_kind_cluster_name)" && printf 'present' || printf 'absent')"
 printf 'Local registry: %s @ %s:%s (%s)\n' \
   "$(scenario_kind_registry_name)" \
@@ -41,6 +42,8 @@ else
   printf 'Verify: pending\n'
 fi
 printf 'Release ID: %s\n' "$(cluster_release_id)"
+printf 'Admin handoff: %s\n' "${CLUSTER_DEPLOY_ADMIN_HANDOFF_DIR}"
+printf 'Admin ready marker: %s\n' "${CLUSTER_DEPLOY_SHARED_ADMIN_READY_ENV}"
 printf 'Web: %s\n' "$(scenario_service_status "cluster-rehearsal" "http://127.0.0.1:${WEB_PORT}/api/public/workspaces")"
 printf 'API: %s\n' "$(scenario_service_status "cluster-rehearsal" "http://127.0.0.1:${API_PORT}/api/public/workspaces")"
 printf 'Keycloak: %s\n' "$(scenario_service_status "cluster-rehearsal" "http://127.0.0.1:${KEYCLOAK_PORT}/realms/mbos/.well-known/openid-configuration")"

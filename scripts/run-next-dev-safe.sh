@@ -52,7 +52,7 @@ cleanup() {
   trap - EXIT INT TERM
 
   if [[ -n "${NEXT_DEV_CHILD_PID}" ]] && kill -0 "${NEXT_DEV_CHILD_PID}" >/dev/null 2>&1; then
-    kill -TERM "${NEXT_DEV_CHILD_PID}" >/dev/null 2>&1 || true
+    next_generated_root_stop_pid_tree_gracefully "${NEXT_DEV_CHILD_PID}" 5
     wait "${NEXT_DEV_CHILD_PID}" >/dev/null 2>&1 || true
   fi
 

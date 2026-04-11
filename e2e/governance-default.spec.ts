@@ -11,7 +11,7 @@ test.describe('Governance Mainline', () => {
       authedPage.getByText(/approved with project administration access/i).first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    await authedPage.getByRole('link', { name: 'Settings' }).click();
+    await authedPage.getByTestId('sidebar__nav-item--settings').click();
     await expect(authedPage).toHaveURL(new RegExp(`${projectUrl('settings').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
     const projectAdminOption = authedPage.getByTestId('settings__project-admin-option--user_006');
     await expect(projectAdminOption).toBeVisible({ timeout: 10_000 });

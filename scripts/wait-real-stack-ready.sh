@@ -6,6 +6,7 @@ unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+source "${ROOT_DIR}/scripts/lib/port-utils.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 
 API_PORT="${API_PORT:-${INTEGRATION_API_PORT:-20000}}"
@@ -24,20 +25,6 @@ CSI_NAMESPACE="${CSI_NAMESPACE:-kube-system}"
 CSI_DAEMONSET="${CSI_DAEMONSET:-juicefs-csi-node}"
 
 info() { echo "[wait-real-stack-ready] $*"; }
-
-is_port_listening() {
-  local port="$1"
-  if command -v lsof >/dev/null 2>&1 && lsof -iTCP:"${port}" -sTCP:LISTEN -Pn >/dev/null 2>&1; then
-    return 0
-  fi
-  if command -v ss >/dev/null 2>&1 && ss -ltn | grep -qE "[\[\]:*]${port}[[:space:]]"; then
-    return 0
-  fi
-  if command -v fuser >/dev/null 2>&1 && fuser -n tcp "${port}" >/dev/null 2>&1; then
-    return 0
-  fi
-  return 1
-}
 
 start_background_job() {
   local log_file="$1"

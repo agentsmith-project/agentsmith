@@ -8,6 +8,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/lane-run-state.sh"
 source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
+source "${ROOT_DIR}/scripts/lib/port-utils.sh"
 
 MOCK_RUN_ID="${MOCK_RUN_ID:-$(lane_generate_run_id mock)}"
 MOCK_RUN_ROOT="${MOCK_RUN_ROOT:-$(lane_prepare_run_root mock-lane "${MOCK_RUN_ID}" current)}"
@@ -47,15 +48,7 @@ stop_pid_gracefully() {
     return 0
   fi
   info "stopping ${label} pid ${pid}"
-  kill "${pid}" >/dev/null 2>&1 || true
-  local _i
-  for _i in $(seq 1 "${wait_seconds}"); do
-    if ! kill -0 "${pid}" >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 1
-  done
-  kill -9 "${pid}" >/dev/null 2>&1 || true
+  next_generated_root_stop_pid_tree_gracefully "${pid}" "${wait_seconds}"
 }
 
 reset_next_dev_artifacts_if_corrupt() {
@@ -97,46 +90,19 @@ trap cleanup EXIT
 
 is_server_alive() {
   if [[ ! -f "${PID_FILE}" ]]; then
-    is_port_listening
+    port_is_listening "${PORT_WEB}"
     return $?
   fi
   local pid
   pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
   if [[ -z "${pid}" ]]; then
-    is_port_listening
+    port_is_listening "${PORT_WEB}"
     return $?
   fi
   if kill -0 "${pid}" >/dev/null 2>&1; then
     return 0
   fi
-  is_port_listening
-}
-
-is_port_listening() {
-  if command -v lsof >/dev/null 2>&1 && lsof -iTCP:"${PORT_WEB}" -sTCP:LISTEN -Pn >/dev/null 2>&1; then
-    return 0
-  fi
-  if command -v ss >/dev/null 2>&1 && ss -ltn | grep -qE "[\\[\\]:*]${PORT_WEB}[[:space:]]"; then
-    return 0
-  fi
-  if command -v fuser >/dev/null 2>&1 && fuser -n tcp "${PORT_WEB}" >/dev/null 2>&1; then
-    return 0
-  fi
-  return 1
-}
-
-is_port_listening_value() {
-  local port="$1"
-  if command -v lsof >/dev/null 2>&1 && lsof -iTCP:"${port}" -sTCP:LISTEN -Pn >/dev/null 2>&1; then
-    return 0
-  fi
-  if command -v ss >/dev/null 2>&1 && ss -ltn | grep -qE "[\\[\\]:*]${port}[[:space:]]"; then
-    return 0
-  fi
-  if command -v fuser >/dev/null 2>&1 && fuser -n tcp "${port}" >/dev/null 2>&1; then
-    return 0
-  fi
-  return 1
+  port_is_listening "${PORT_WEB}"
 }
 
 stop_owned_server() {
@@ -189,13 +155,13 @@ cleanup_stale_mock_processes() {
 
 pick_free_port() {
   local candidate="${PORT_WEB}"
-  if ! is_port_listening_value "${candidate}"; then
+  if port_is_bindable "${candidate}"; then
     echo "${candidate}"
     return 0
   fi
 
   for candidate in $(seq 3010 3099); do
-    if ! is_port_listening_value "${candidate}"; then
+    if port_is_bindable "${candidate}"; then
       echo "${candidate}"
       return 0
     fi
@@ -217,7 +183,7 @@ wait_http_ok() {
     if [[ "${STARTED_BY_SCRIPT}" == "1" ]] && [[ -f "${PID_FILE}" ]]; then
       local pid
       pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
-      if [[ -n "${pid}" ]] && ! kill -0 "${pid}" >/dev/null 2>&1 && ! is_port_listening; then
+      if [[ -n "${pid}" ]] && ! kill -0 "${pid}" >/dev/null 2>&1 && ! port_is_listening "${PORT_WEB}"; then
         return 1
       fi
     fi
@@ -289,7 +255,7 @@ start_mock_server() {
   while [[ "${launch_attempt}" -le 3 ]]; do
     rm -rf "${ROOT_DIR}/${MOCK_WORKSPACE_PROVISIONING_PATH}"
 
-    if is_port_listening; then
+    if ! port_is_bindable "${PORT_WEB}"; then
       info "port :${PORT_WEB} is busy; finding an alternate free port for this mock lane"
       fallback_port="$(pick_free_port || true)"
       if [[ -z "${fallback_port}" ]]; then
@@ -301,7 +267,10 @@ start_mock_server() {
     fi
 
     info "starting mock web server on :${PORT_WEB} (log: ${LOG_FILE}) [attempt ${launch_attempt}/3]"
-    : > "${LOG_FILE}"
+    if [[ "${launch_attempt}" -eq 1 ]]; then
+      : > "${LOG_FILE}"
+    fi
+    printf '\n[mock-lane] ===== launch attempt %s/%s on :%s =====\n' "${launch_attempt}" "3" "${PORT_WEB}" >> "${LOG_FILE}"
     rm -rf "${ROOT_DIR}/${NEXT_DIST_DIR}"
     (
       cd "${ROOT_DIR}"
@@ -343,7 +312,16 @@ start_mock_server() {
     info "mock web server failed to become ready; restarting lane bootstrap (${launch_attempt}/3)"
     stop_owned_server
     reset_next_dev_artifacts_if_corrupt
-    sleep 2
+    if ! port_wait_for_release "${PORT_WEB}" 15; then
+      info "port :${PORT_WEB} did not release after stop; finding a fallback port for the retry"
+      fallback_port="$(pick_free_port || true)"
+      if [[ -z "${fallback_port}" ]]; then
+        err "failed to find a free port for mock lane after restart cleanup"
+        exit 1
+      fi
+      rebind_urls_for_port "${fallback_port}"
+      info "using fallback port :${PORT_WEB} after restart cleanup"
+    fi
     launch_attempt=$((launch_attempt + 1))
   done
 }

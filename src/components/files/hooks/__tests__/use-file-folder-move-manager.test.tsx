@@ -30,6 +30,7 @@ describe('useFileFolderMoveManager', () => {
 
   it('creates folder and navigates into it', async () => {
     const createFolder = vi.fn().mockResolvedValue(undefined);
+    const refreshCurrentListing = vi.fn().mockResolvedValue(undefined);
     const navigateToPrefix = vi.fn();
 
     const { result } = renderHook(() =>
@@ -39,6 +40,7 @@ describe('useFileFolderMoveManager', () => {
         selectedLibraryId: 'lib_a',
         prefix: 'docs/',
         selectedForMove: null,
+        refreshCurrentListing,
         createFolder,
         moveObject: vi.fn(),
         clearSelection: vi.fn(),
@@ -62,8 +64,55 @@ describe('useFileFolderMoveManager', () => {
       libraryId: 'lib_a',
       prefix: 'docs/reports/',
     });
+    expect(refreshCurrentListing).toHaveBeenCalledTimes(1);
     expect(navigateToPrefix).toHaveBeenCalledWith('docs/reports/');
     expect(mockToast.success).toHaveBeenCalled();
+  });
+
+  it('waits for the current listing to refresh before navigating into a new folder', async () => {
+    const createFolder = vi.fn().mockResolvedValue(undefined);
+    let refreshResolved = false;
+    const refreshCurrentListing = vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            refreshResolved = true;
+            resolve();
+          }, 0);
+        }),
+    );
+    const navigateToPrefix = vi.fn(() => {
+      expect(refreshResolved).toBe(true);
+    });
+
+    const { result } = renderHook(() =>
+      useFileFolderMoveManager({
+        workspaceId: 'ws_default',
+        projectId: 'proj_001',
+        selectedLibraryId: 'lib_a',
+        prefix: '',
+        selectedForMove: null,
+        refreshCurrentListing,
+        createFolder,
+        moveObject: vi.fn(),
+        clearSelection: vi.fn(),
+        navigateToPrefix,
+        t,
+        tErrors,
+      }),
+    );
+
+    act(() => {
+      result.current.setFolderName('docs');
+    });
+
+    await act(async () => {
+      await result.current.handleCreateFolder();
+    });
+
+    expect(createFolder).toHaveBeenCalledTimes(1);
+    expect(refreshCurrentListing).toHaveBeenCalledTimes(1);
+    expect(navigateToPrefix).toHaveBeenCalledWith('docs/');
   });
 
   it('opens move conflict dialog when destination exists', async () => {
@@ -76,6 +125,7 @@ describe('useFileFolderMoveManager', () => {
         selectedLibraryId: 'lib_a',
         prefix: '',
         selectedForMove: { kind: 'object', key: 'a.txt' },
+        refreshCurrentListing: vi.fn(),
         createFolder: vi.fn(),
         moveObject,
         clearSelection: vi.fn(),

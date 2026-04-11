@@ -9,12 +9,12 @@ export DEPLOY_LOG_PREFIX="${DEPLOY_LOG_PREFIX:-cluster-deploy}"
 source "${ROOT_DIR}/scripts/lib/deploy-common.sh"
 
 CLUSTER_DEPLOY_ROOT="${DEPLOY_ROOT}"
-SHARED_REGISTRY_ENV="${CONFIG_DIR}/registry.env"
-SHARED_KUBECONFIG="${CONFIG_DIR}/kubeconfig"
-SHARED_ADMIN_KUBECONFIG="${CONFIG_DIR}/admin-kubeconfig"
-SHARED_MANAGER_KUBECONFIG="${CONFIG_DIR}/manager-kubeconfig"
-SHARED_ADMIN_READY_ENV="${CONFIG_DIR}/admin-ready.env"
-ADMIN_HANDOFF_DIR="${DEPLOY_ROOT}/admin-handoff"
+SHARED_REGISTRY_ENV="${CLUSTER_DEPLOY_SHARED_REGISTRY_ENV:-${CONFIG_DIR}/registry.env}"
+SHARED_KUBECONFIG="${CLUSTER_DEPLOY_SHARED_KUBECONFIG:-${CONFIG_DIR}/kubeconfig}"
+SHARED_ADMIN_KUBECONFIG="${CLUSTER_DEPLOY_SHARED_ADMIN_KUBECONFIG:-${CONFIG_DIR}/admin-kubeconfig}"
+SHARED_MANAGER_KUBECONFIG="${CLUSTER_DEPLOY_SHARED_MANAGER_KUBECONFIG:-${CONFIG_DIR}/manager-kubeconfig}"
+SHARED_ADMIN_READY_ENV="${CLUSTER_DEPLOY_SHARED_ADMIN_READY_ENV:-${CONFIG_DIR}/admin-ready.env}"
+ADMIN_HANDOFF_DIR="${CLUSTER_DEPLOY_ADMIN_HANDOFF_DIR:-${DEPLOY_ROOT}/admin-handoff}"
 OPERATOR_CLUSTER_DIR="${ROOT_DIR}/.infra/cluster-deploy"
 OPERATOR_SITE_ENV="${OPERATOR_CLUSTER_DIR}/site.env"
 OPERATOR_REGISTRY_ENV="${OPERATOR_CLUSTER_DIR}/registry.env"
@@ -26,6 +26,17 @@ export CLUSTER_DEPLOY_ROOT SHARED_REGISTRY_ENV SHARED_KUBECONFIG SHARED_ADMIN_KU
 LOCAL_KIND_CLUSTER_NAME="${LOCAL_KIND_CLUSTER_NAME:-agentsmith}"
 LOCAL_KIND_CONTEXT_NAME="kind-${LOCAL_KIND_CLUSTER_NAME}"
 LOCAL_KIND_KUBECONFIG="${LOCAL_KIND_KUBECONFIG:-${CLUSTER_DEPLOY_ROOT}/state/local-kind/${LOCAL_KIND_CONTEXT_NAME}.kubeconfig}"
+
+ensure_cluster_deploy_shared_dirs() {
+  ensure_dirs
+  mkdir -p \
+    "$(dirname "${SHARED_REGISTRY_ENV}")" \
+    "$(dirname "${SHARED_KUBECONFIG}")" \
+    "$(dirname "${SHARED_ADMIN_KUBECONFIG}")" \
+    "$(dirname "${SHARED_MANAGER_KUBECONFIG}")" \
+    "$(dirname "${SHARED_ADMIN_READY_ENV}")" \
+    "$(dirname "${ADMIN_HANDOFF_DIR}")"
+}
 
 local_kind_kubeconfig_ready() {
   [[ -f "${LOCAL_KIND_KUBECONFIG}" ]] || return 1
@@ -72,7 +83,7 @@ ensure_operator_site_env() {
 }
 
 ensure_operator_registry_env() {
-  ensure_dirs
+  ensure_cluster_deploy_shared_dirs
   mkdir -p "${RELEASE_ROOT}/env"
   if [[ ! -f "${SHARED_REGISTRY_ENV}" ]]; then
     if [[ -f "${OPERATOR_REGISTRY_ENV}" ]]; then
@@ -90,7 +101,7 @@ ensure_operator_registry_env() {
 }
 
 ensure_operator_kubeconfig() {
-  ensure_dirs
+  ensure_cluster_deploy_shared_dirs
   mkdir -p "${RELEASE_ROOT}/env"
   if [[ ! -f "${SHARED_KUBECONFIG}" ]]; then
     if [[ -f "${OPERATOR_KUBECONFIG}" ]]; then
@@ -111,7 +122,7 @@ ensure_operator_kubeconfig() {
 }
 
 ensure_operator_admin_kubeconfig() {
-  ensure_dirs
+  ensure_cluster_deploy_shared_dirs
   mkdir -p "${RELEASE_ROOT}/env"
   if [[ ! -f "${SHARED_ADMIN_KUBECONFIG}" ]]; then
     if [[ -f "${OPERATOR_ADMIN_KUBECONFIG}" ]]; then
@@ -131,7 +142,7 @@ ensure_operator_admin_kubeconfig() {
 }
 
 ensure_operator_manager_kubeconfig() {
-  ensure_dirs
+  ensure_cluster_deploy_shared_dirs
   mkdir -p "${RELEASE_ROOT}/env"
   if [[ ! -f "${SHARED_MANAGER_KUBECONFIG}" ]]; then
     if [[ -f "${OPERATOR_MANAGER_KUBECONFIG}" ]]; then
@@ -398,7 +409,7 @@ ensure_admin_ready() {
 }
 
 render_admin_handoff() {
-  ensure_dirs
+  ensure_cluster_deploy_shared_dirs
   mkdir -p "${ADMIN_HANDOFF_DIR}/examples" "${ADMIN_HANDOFF_DIR}/scripts"
   cp "${SHARED_SITE_ENV}" "${ADMIN_HANDOFF_DIR}/site.env.todo"
   cp "${ROOT_DIR}/infra/deploy/cluster/admin-examples/"*.yaml "${ADMIN_HANDOFF_DIR}/examples/"
@@ -431,18 +442,20 @@ EOF
   cat > "${ADMIN_HANDOFF_DIR}/scripts/final-verification.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-CONFIG_DIR="${CONFIG_DIR}"
+SITE_ENV_PATH="${SHARED_SITE_ENV}"
+DEPLOY_KUBECONFIG_PATH="${SHARED_KUBECONFIG}"
+MANAGER_KUBECONFIG_PATH="${SHARED_MANAGER_KUBECONFIG}"
 
-[[ -f "\${CONFIG_DIR}/site.env" ]] || { echo "missing \${CONFIG_DIR}/site.env" >&2; exit 1; }
-[[ -f "\${CONFIG_DIR}/kubeconfig" ]] || { echo "missing \${CONFIG_DIR}/kubeconfig" >&2; exit 1; }
-[[ -f "\${CONFIG_DIR}/manager-kubeconfig" ]] || { echo "missing \${CONFIG_DIR}/manager-kubeconfig" >&2; exit 1; }
+[[ -f "\${SITE_ENV_PATH}" ]] || { echo "missing \${SITE_ENV_PATH}" >&2; exit 1; }
+[[ -f "\${DEPLOY_KUBECONFIG_PATH}" ]] || { echo "missing \${DEPLOY_KUBECONFIG_PATH}" >&2; exit 1; }
+[[ -f "\${MANAGER_KUBECONFIG_PATH}" ]] || { echo "missing \${MANAGER_KUBECONFIG_PATH}" >&2; exit 1; }
 
 set -a
-source "\${CONFIG_DIR}/site.env"
+source "\${SITE_ENV_PATH}"
 set +a
 
 [[ -n "\${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}" ]] || {
-  echo "missing INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME in \${CONFIG_DIR}/site.env" >&2
+  echo "missing INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME in \${SITE_ENV_PATH}" >&2
   exit 1
 }
 
@@ -450,20 +463,20 @@ kubectl get namespace ${INTERNAL_AGENT_K8S_NAMESPACE}
 kubectl get csidriver csi.juicefs.com
 kubectl get secret -n ${INTERNAL_AGENT_K8S_NAMESPACE} juicefs-csi-secret
 kubectl get storageclass "\${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME}"
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create deployments -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "deploy kubeconfig missing: create deployments -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create services -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "deploy kubeconfig missing: create services -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create endpoints -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "deploy kubeconfig missing: create endpoints -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create configmaps -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "deploy kubeconfig missing: create configmaps -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "deploy kubeconfig missing: create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create ingresses.networking.k8s.io -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "deploy kubeconfig missing: create ingresses.networking.k8s.io -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${DEPLOY_KUBECONFIG_PATH}" kubectl auth can-i create deployments -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "deploy kubeconfig missing: create deployments -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${DEPLOY_KUBECONFIG_PATH}" kubectl auth can-i create services -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "deploy kubeconfig missing: create services -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${DEPLOY_KUBECONFIG_PATH}" kubectl auth can-i create endpoints -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "deploy kubeconfig missing: create endpoints -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${DEPLOY_KUBECONFIG_PATH}" kubectl auth can-i create configmaps -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "deploy kubeconfig missing: create configmaps -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${DEPLOY_KUBECONFIG_PATH}" kubectl auth can-i create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "deploy kubeconfig missing: create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${DEPLOY_KUBECONFIG_PATH}" kubectl auth can-i create ingresses.networking.k8s.io -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "deploy kubeconfig missing: create ingresses.networking.k8s.io -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
 
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i create persistentvolumeclaims -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: create persistentvolumeclaims -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i create pods -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: create pods -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i get persistentvolumes 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: get persistentvolumes" >&2; exit 1; }
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i create persistentvolumes 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: create persistentvolumes" >&2; exit 1; }
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i update persistentvolumes 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: update persistentvolumes" >&2; exit 1; }
-[[ "\$(KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i delete persistentvolumes 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: delete persistentvolumes" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${MANAGER_KUBECONFIG_PATH}" kubectl auth can-i create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${MANAGER_KUBECONFIG_PATH}" kubectl auth can-i create persistentvolumeclaims -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: create persistentvolumeclaims -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${MANAGER_KUBECONFIG_PATH}" kubectl auth can-i create pods -n ${INTERNAL_AGENT_K8S_NAMESPACE} 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: create pods -n ${INTERNAL_AGENT_K8S_NAMESPACE}" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${MANAGER_KUBECONFIG_PATH}" kubectl auth can-i get persistentvolumes 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: get persistentvolumes" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${MANAGER_KUBECONFIG_PATH}" kubectl auth can-i create persistentvolumes 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: create persistentvolumes" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${MANAGER_KUBECONFIG_PATH}" kubectl auth can-i update persistentvolumes 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: update persistentvolumes" >&2; exit 1; }
+[[ "\$(KUBECONFIG="\${MANAGER_KUBECONFIG_PATH}" kubectl auth can-i delete persistentvolumes 2>/dev/null || true)" == "yes" ]] || { echo "manager kubeconfig missing: delete persistentvolumes" >&2; exit 1; }
 EOF
 
   chmod +x "${ADMIN_HANDOFF_DIR}/scripts/"*.sh
@@ -485,10 +498,10 @@ EOF
      - \`bash scripts/apply-deploy-rbac.sh\`
      - \`bash scripts/apply-manager-rbac.sh\`
 5. Review and finalize \`site.env.todo\`.
-6. Deliver these files into \`${CONFIG_DIR}\`:
-   - \`site.env\`
-   - \`kubeconfig\`
-   - \`manager-kubeconfig\`
+6. Deliver these files into their shared paths:
+   - \`${SHARED_SITE_ENV}\`
+   - \`${SHARED_KUBECONFIG}\`
+   - \`${SHARED_MANAGER_KUBECONFIG}\`
 7. Run:
    - \`bash scripts/final-verification.sh\`
    - or the equivalent final verification commands from \`RUNBOOK.md\`
@@ -505,7 +518,10 @@ EOF
 
 - release: ${RELEASE_ID}
 - target namespace: ${INTERNAL_AGENT_K8S_NAMESPACE}
-- config dir: ${CONFIG_DIR}
+- shared site env: ${SHARED_SITE_ENV}
+- shared deploy kubeconfig: ${SHARED_KUBECONFIG}
+- shared manager kubeconfig: ${SHARED_MANAGER_KUBECONFIG}
+- admin handoff dir: ${ADMIN_HANDOFF_DIR}
 - admin ready marker: ${SHARED_ADMIN_READY_ENV}
 - public web: ${PUBLIC_WEB_BASE_URL}
 - public api: ${PUBLIC_API_BASE_URL}

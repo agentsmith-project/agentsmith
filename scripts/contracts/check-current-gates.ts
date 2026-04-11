@@ -104,6 +104,7 @@ requireMatch(gateContract, /gate:release:full/, 'current gate manifest contract 
 requireMatch(gateContract, /full visual/, 'current gate manifest contract must explain full visual ownership', failures);
 requireMatch(gateContract, /targeted visual/, 'current gate manifest contract must explain targeted visual ownership', failures);
 requireMatch(gateContract, /scenario-owned local clean reset/, 'current gate manifest contract must require clean-reset semantics for rehearsal lanes', failures);
+requireMatch(gateContract, /generated handoff state/, 'current gate manifest contract must describe rehearsal-generated handoff state ownership', failures);
 
 requireMatch(workspaceDefaultChecklist, /npm run test:default-e2e/, 'workspace/project checklist must keep test:default-e2e as its canonical gate command', failures);
 requireMatch(workspaceDefaultChecklist, /targeted visual/, 'workspace/project checklist must explain that its visual coverage is targeted', failures);

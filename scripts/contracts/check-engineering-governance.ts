@@ -29,6 +29,8 @@ const clusterRehearsalFlow = read('infra/flows/cluster-rehearsal.env');
 const demoDeployReset = read('scripts/demo-deploy/reset.sh');
 const clusterDeployReset = read('scripts/cluster-deploy/reset.sh');
 const clusterRehearsalReset = read('scripts/scenarios/cluster-rehearsal/reset.sh');
+const clusterRehearsalCommon = read('scripts/scenarios/cluster-rehearsal/common.sh');
+const clusterRehearsalUp = read('scripts/scenarios/cluster-rehearsal/up.sh');
 const releaseLocalPrecheck = read('scripts/run-release-local-precheck.sh');
 const playwrightConfig = read('playwright.config.ts');
 const makefile = read('Makefile');
@@ -163,8 +165,13 @@ requireMatch(runtimeLinesMatrix, /`agentsmith-demo`/, 'runtime-lines-matrix must
 requireMatch(runtimeLinesMatrix, /`agentsmith-cluster`/, 'runtime-lines-matrix must document the cluster rehearsal local cluster identity',);
 requireMatch(demoDeployOperations, /`agentsmith-demo`/, 'demo-deploy operations must document the demo rehearsal local cluster identity',);
 requireMatch(clusterDeployOperations, /`agentsmith-cluster`/, 'cluster-deploy operations must document the cluster rehearsal local cluster identity',);
+requireMatch(clusterDeployOperations, /state\/generated/, 'cluster-deploy operations must document rehearsal-generated handoff state under state/generated',);
 requireMatch(clusterDeployReset, /kubernetes resources were left untouched/, 'cluster-deploy reset must keep its non-destructive target-host semantics',);
 requireMatch(clusterRehearsalReset, /scenario_local_kind_cleanup/, 'cluster-rehearsal reset must destroy its scenario-owned local kind world before delegating to cluster-deploy reset',);
+requireMatch(clusterRehearsalCommon, /CLUSTER_REHEARSAL_GENERATED_DIR="\$\{CLUSTER_REHEARSAL_ROOT\}\/state\/generated"/, 'cluster-rehearsal common must keep its generated-state root under state/generated',);
+requireMatch(clusterRehearsalCommon, /CLUSTER_DEPLOY_SHARED_ADMIN_READY_ENV="\$\{CLUSTER_REHEARSAL_GENERATED_DIR\}\/admin-ready\.env"/, 'cluster-rehearsal common must route the admin-ready marker into generated state',);
+requireMatch(clusterRehearsalCommon, /CLUSTER_DEPLOY_ADMIN_HANDOFF_DIR="\$\{CLUSTER_REHEARSAL_GENERATED_DIR\}\/admin-handoff"/, 'cluster-rehearsal common must route the handoff package into generated state',);
+requireMatch(clusterRehearsalUp, /CLUSTER_DEPLOY_SHARED_ADMIN_READY_ENV/, 'cluster-rehearsal up must operate on the generated admin-ready path',);
 requireMatch(demoDeployReset, /local_kind_world_destroy/, 'demo-deploy reset must reuse the shared local kind world cleanup helper',);
 forbidMatch(demoDeployReset, /kind delete cluster --name agentsmith|grep -qx 'agentsmith'/, 'demo-deploy reset must not hardcode the local kind cluster name',);
 

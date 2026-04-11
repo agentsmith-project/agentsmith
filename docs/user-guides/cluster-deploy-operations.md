@@ -45,6 +45,8 @@ Do not use it to replace the current demo deployment line.
 
 For local rehearsal on a development host, use the `cluster-rehearsal` commands instead of this runbook.
 
+In `cluster-rehearsal`, generated handoff artifacts do not live under the shared operator config root. They are written under `artifacts/runtime/scenario/cluster-rehearsal/state/generated/` so rehearsal reset can return to a clean-room starting point without changing the target-host contract.
+
 Important:
 
 - the current stage baseline is the split command set: `prepare`, `publish-images`, `deploy-substrate`, `deploy-app`, `prepare-admin-handoff`, `apply-cluster-prereqs`, `deploy-sandbox`, `bootstrap`, `verify`, `report`

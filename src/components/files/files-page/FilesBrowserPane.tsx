@@ -132,6 +132,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
 
   const isMultiMode = selectionMode === 'multi';
   const selectedLibraryUnavailable = selectedLibraryStatus !== null && selectedLibraryStatus !== 'ready';
+  const libraryActionsDisabled = !selectedLibraryId || selectedLibraryUnavailable;
 
   return (
     <div
@@ -196,7 +197,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
               variant="ghost"
               className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 text-tertiary hover:text-primary"
               onClick={onRefresh}
-              disabled={!selectedLibraryId}
+              disabled={libraryActionsDisabled}
               data-testid="files__refresh"
               title={t('file_manager.refresh')}
               aria-label={t('file_manager.refresh')}
@@ -204,11 +205,11 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <Button type="button" variant="outline" onClick={onCreateFolder} disabled={!selectedLibraryId} data-testid="files__new-folder">
+          <Button type="button" variant="outline" onClick={onCreateFolder} disabled={libraryActionsDisabled} data-testid="files__new-folder">
             <FolderPlus className="h-4 w-4 mr-2" />
             {t('file_manager.new_folder')}
           </Button>
-          <Button type="button" onClick={onUploadClick} disabled={!selectedLibraryId || uploadInProgress} data-testid="files__upload">
+          <Button type="button" onClick={onUploadClick} disabled={libraryActionsDisabled || uploadInProgress} data-testid="files__upload">
             <Upload className="h-4 w-4 mr-2" />
             {t('file_manager.upload')}
           </Button>

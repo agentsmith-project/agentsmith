@@ -237,6 +237,9 @@ describe('FilesPage (object browser)', () => {
       'Library provisioning failed.',
     );
     expect(screen.getByTestId('files__library-desktop-access--lib_failed')).toBeDisabled();
+    expect(screen.getByTestId('files__new-folder')).toBeDisabled();
+    expect(screen.getByTestId('files__upload')).toBeDisabled();
+    expect(screen.getByTestId('files__refresh')).toBeDisabled();
   });
 
   it('shows a governance empty state instead of normal loading for degraded libraries', async () => {

@@ -13,6 +13,7 @@ type UseSourceFolderMoveManagerParams = {
   selectedLibraryId: string | null;
   prefix: string;
   selectedForMove: SelectedMoveTarget | null;
+  refreshCurrentListing: () => Promise<unknown>;
   createFolder: (input: { workspaceId: string; projectId: string; libraryId: string; prefix: string }) => Promise<unknown>;
   moveObject: (input: {
     workspaceId: string;
@@ -54,6 +55,7 @@ export function useFileFolderMoveManager({
   selectedLibraryId,
   prefix,
   selectedForMove,
+  refreshCurrentListing,
   createFolder,
   moveObject,
   clearSelection,
@@ -93,6 +95,7 @@ export function useFileFolderMoveManager({
     const nextPrefix = `${prefix}${name}/`;
     try {
       await createFolder({ workspaceId, projectId, libraryId: selectedLibraryId, prefix: nextPrefix });
+      await refreshCurrentListing();
       setCreateFolderOpen(false);
       setFolderName('');
       toast.success(t('file_manager.folder_created'));
@@ -101,7 +104,7 @@ export function useFileFolderMoveManager({
       const msg = getOperationErrorDetail(err, tErrors, t('file_manager.folder_create_failed'));
       toast.error(`${t('file_manager.folder_create_failed')}: ${msg}`);
     }
-  }, [createFolder, folderName, navigateToPrefix, prefix, projectId, selectedLibraryId, t, tErrors, workspaceId]);
+  }, [createFolder, folderName, navigateToPrefix, prefix, projectId, refreshCurrentListing, selectedLibraryId, t, tErrors, workspaceId]);
 
   const handleMove = React.useCallback(
     async (overwriteOverride?: boolean) => {

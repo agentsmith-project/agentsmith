@@ -120,4 +120,52 @@ while true; do sleep 1; done
     expect(tsconfig).not.toContain('/mock-20260411T011449Z-1305939-19002/');
     expect(nextEnv).not.toContain('/mock-20260411T011449Z-1305939-19002/');
   });
+
+  it('stops the spawned Next process tree when the wrapper exits', async () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const childPidFile = path.join(rootDir, 'child.pid');
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+sleep 300 &
+child_pid=$!
+printf '%s\\n' "\${child_pid}" > "${childPidFile}"
+trap 'exit 0' TERM INT
+while true; do sleep 1; done
+`,
+      { mode: 0o755 },
+    );
+
+    const child = spawn('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        ROOT_DIR: rootDir,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+      },
+      stdio: 'pipe',
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const spawnedChildPid = Number.parseInt(readFileSync(childPidFile, 'utf8').trim(), 10);
+    expect(Number.isNaN(spawnedChildPid)).toBe(false);
+
+    child.kill('SIGTERM');
+    await new Promise<number>((resolve, reject) => {
+      child.on('exit', (code) => resolve(code ?? 0));
+      child.on('error', reject);
+    });
+
+    let childStillAlive = false;
+    try {
+      process.kill(spawnedChildPid, 0);
+      childStillAlive = true;
+    } catch {
+      childStillAlive = false;
+    }
+
+    expect(childStillAlive).toBe(false);
+  });
 });

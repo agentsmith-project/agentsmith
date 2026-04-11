@@ -53,6 +53,7 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - release-only deployment rehearsal lanes
 - consume the same release bundles that target hosts consume
 - start from their own scenario-owned local clean reset
+- keep rehearsal-generated handoff state under scenario-owned generated paths instead of shared operator config roots
 - are not part of the default CI path, but are part of release evidence
 
 6. `gate:release:full`

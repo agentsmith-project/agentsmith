@@ -21,9 +21,6 @@ export interface CurrentRuntimeLineDefinition {
 }
 
 export const CURRENT_RUNTIME_LINE_DOCUMENT_FILES = [
-  'README.md',
-  'DEVELOPMENT.md',
-  'docs/README.md',
   'docs/current-engineering-governance-model.md',
   'docs/user-guides/README.md',
   'docs/user-guides/local-runtime-flows.md',

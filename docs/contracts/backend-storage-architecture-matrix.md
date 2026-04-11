@@ -173,4 +173,3 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 
 对应完整清单见：
 
-- [backend-storage-maturity-checklist.md](./backend-storage-maturity-checklist.md)

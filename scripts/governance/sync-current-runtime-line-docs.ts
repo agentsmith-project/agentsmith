@@ -201,10 +201,7 @@ function main(): void {
   const mode: Mode = process.argv.includes('--check') ? 'check' : 'write';
   const mismatches: string[] = [];
   const files = [
-    ['README.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:readme:start -->', '<!-- current-runtime-lines:readme:end -->', renderReadmeRuntimeBlock())],
-    ['DEVELOPMENT.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:development:start -->', '<!-- current-runtime-lines:development:end -->', renderDevelopmentRuntimeBlock())],
     ['docs/current-engineering-governance-model.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:governance-model:start -->', '<!-- current-runtime-lines:governance-model:end -->', renderGovernanceRuntimeBlock())],
-    ['docs/README.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:docs-index:start -->', '<!-- current-runtime-lines:docs-index:end -->', renderDocsIndexRuntimeBlock())],
     ['docs/user-guides/README.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:user-guides-index:start -->', '<!-- current-runtime-lines:user-guides-index:end -->', renderUserGuidesRuntimeBlock())],
     ['docs/user-guides/local-runtime-flows.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:local-runtime-flows:start -->', '<!-- current-runtime-lines:local-runtime-flows:end -->', renderLocalRuntimeFlowsBlock())],
     ['docs/user-guides/runtime-lines-matrix.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:runtime-matrix:start -->', '<!-- current-runtime-lines:runtime-matrix:end -->', renderRuntimeLinesMatrixBlock())],

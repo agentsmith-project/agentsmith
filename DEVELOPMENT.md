@@ -527,7 +527,7 @@ Notes:
 - `artifacts/`
 - 其中长期结构约定为：
   - `artifacts/backend-real-visual/`
-  - `artifacts/backend-real/current/`
+  - `artifacts/backend-real/runs/<run-id>/...`
   - `artifacts/release-runs/`
   - `artifacts/release-reports/`
   - `artifacts/release-escalations/`
@@ -537,7 +537,7 @@ Notes:
 1. 日常失败排查看 `test-results/`
 2. mock visual 基线看 `e2e/__screenshots__/`
 3. 真实后端人工界面审查看 `artifacts/backend-real-visual/<run-id>/`
-4. notebook / integration 当前运行态日志与状态优先看 `artifacts/backend-real/current/`
+4. notebook / integration 当前运行态日志与状态优先看 `artifacts/backend-real/runs/<run-id>/...`
 5. 不再新增泛化的 `tests/` 目录承载主测试代码
 6. `artifacts/system-workspace-provisioning/` 仍是当前工作区发布/初始化尝试记录输出路径，不要按新目录约定直接重命名或手工迁走
 
@@ -546,7 +546,7 @@ Notes:
 When the current work touches
 
 1. `Members`
-2. `Resource Policy`
+2. `Policy`
 3. `Audit`
 4. `Alerts`
 5. governance explainability or drilldown links
@@ -672,18 +672,19 @@ This section records the recent notebook external-agent workline (Codex runner +
 
 ### Internal Release Scope Clarification (Product Governance Pages)
 
-The current internal baseline no longer treats `Members` and `Resource Policy` as page-only or mock-backed governance surfaces. In local real-backend mode:
+The current internal baseline no longer treats `Members` and `Policy` as page-only or mock-backed governance surfaces. In local real-backend mode:
 
 - `Audit` and `Usage` are fully backed by persisted `api-entry-node` routes
 - `Members` supports real lifecycle effects (`suspend / restore / revoke`) and downstream cleanup
-- `Resource Policy` supports real allow-list / rate / limit effects on the currently supported resource paths
+- `Policy` supports real allow-list / rate / limit effects on the currently supported resource paths
 - project route authorization is driven by the shared backend authz engine and explainable `/authorize` decisions
 
-The important constraint is no longer "partial page support", but **scoped enforcement coverage**. For exact supported effects and current boundaries, use the current baseline and MVP smoke runbook as sources of truth.
+The important constraint is no longer "partial page support", but **scoped enforcement coverage**. For exact supported effects and current boundaries, use the current baseline, current contracts, and current user guides as sources of truth.
 
 See also:
 - `docs/CURRENT_BASELINE.md`
-- `docs/user-guides/mvp-core-smoke-runbook.md`
+- `docs/contracts/product-terminology.md`
+- `docs/user-guides/README.md`
 
 ### Scope (What this workline covered)
 
@@ -911,7 +912,7 @@ When business logic changes are large, run this manual flow once before freeze:
 
 For step-by-step details and engineering verification workflow, see:
 - `docs/CURRENT_BASELINE.md`
-- `docs/user-guides/mvp-core-smoke-runbook.md`
+- `docs/user-guides/release-readiness-checklist.md`
 
 ## Project Shell Page Contract
 

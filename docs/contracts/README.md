@@ -1,21 +1,17 @@
 # Contracts Index
 
-当前目录以现行合同与规范为主；少量 `handoff` / `refactor` 文档保留阶段性交接与迁移背景。
+本目录只保留 current contracts、协议说明和 machine-readable specs 的导航入口。
 
 基线入口：
-
 - [Current Baseline (Whitelist)](../CURRENT_BASELINE.md)
 
 术语边界：
-
-- `release` 命名默认指向项目研发治理流程，不等于产品 DevOps 功能。
-- `gate` 在本目录有两种语义，必须按上下文区分：
-  - `permission gate`：前端路由/交互权限门禁（产品内能力约束）。
-  - `engineering gate`：项目工程验收/检查门禁（研发流程约束）。
-- 机器可读规范中的字段命名可能包含后端内部或历史兼容术语，不单独构成前端产品能力承诺。
-- 标题包含 `handoff` / `refactor` / `migration` 的合同文档，允许保留旧术语、兼容映射与迁移前后对照；current 决策应以其余现行合同为准。
-- 文档治理检查默认要求这类文档进入 `docs/archive/`；只有被 current index 显式保留的少量迁移参考文档允许留在现行目录。
-- `product-terminology.md` 是当前产品对象、正式命名、IA 边界的真相源；涉及 `Execution target`、`Files`、`Shared context`、`Project secrets`、`Access guide` 等正式名称时，应先以该合同为准。
+- `release` 默认指向项目研发治理流程，不等于产品 DevOps 功能。
+- `gate` 在本目录里有两类语义：
+  - `permission gate`：产品权限门禁
+  - `engineering gate`：工程验收门禁
+- `product-terminology.md` 是当前产品对象、正式命名、IA 边界的真相源。
+- 当前产品文档与 UI 统一使用 `Execution target` 作为执行目标表述，并使用 `Shared context` 作为共享上下文对象名。
 
 ## 核心合同
 
@@ -30,14 +26,12 @@
 
 ## 参考与专题合同
 
-- `API_GUIDE.md`（API 导航入口；具体接口以 OpenAPI/AsyncAPI 为准）
-- `model-catalog-project-pricing-contract.md`（模型目录能力启用时适用）
-- `backend-persistent-state-boundary.md`（后端主数据、共享运行态与进程内瞬态的边界）
-- `backend-storage-architecture-matrix.md`（全系统后端数据真相、接口模块与存储模式总表）
-- `backend-storage-maturity-checklist.md`（后端数据持久化成熟度改进清单）
-- `cluster-deployment-spec-v1.md`（真实集群发布线：registry + install bundle + compose/k8s 边界）
-- `substrate-governance-and-runtime-lines-v1.md`（substrate / app / scenario 运行线治理合同）
-- `../archive/handoff/endpoint-upstream-protocol-refactor-handoff-v1.md`（已归档的 endpoint 上游协议历史交接文档；仅保留 legacy -> current 术语映射作为历史上下文）
+- `API_GUIDE.md`
+- `model-catalog-project-pricing-contract.md`
+- `backend-persistent-state-boundary.md`
+- `backend-storage-architecture-matrix.md`
+- `cluster-deployment-spec-v1.md`
+- `substrate-governance-and-runtime-lines-v1.md`
 
 ## 模块合同
 

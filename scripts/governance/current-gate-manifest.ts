@@ -1,9 +1,6 @@
 export const CURRENT_GATE_DOCUMENT_FILES = [
-  'README.md',
-  'DEVELOPMENT.md',
   'docs/current-engineering-governance-model.md',
   'docs/contracts/current-gate-manifest-contract.md',
-  'docs/contracts/README.md',
   'docs/user-guides/workspace-project-default-engineering-gate-checklist.md',
   'docs/user-guides/governance-default-engineering-gate-checklist.md',
   'docs/user-guides/release-readiness-checklist.md',

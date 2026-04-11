@@ -9,8 +9,7 @@ Does not define: `global tokens / route truth / engineering gates`
 
 ## 1. 目标
 
-在不扩展 MVP 功能边界的前提下，降低用户心智负担，明确两类页面的角色分工：
-
+在不扩展产品范围的前提下，降低用户心智负担，明确两类页面的角色分工：
 1. `Audit`：管理员治理与处置工作台
 2. `Usage`：用户自助用量视图
 
@@ -23,53 +22,19 @@ Does not define: `global tokens / route truth / engineering gates`
 
 ## 3. 角色化信息架构
 
-### 3.1 Audit（管理员）
+### Audit
+- 标题和副标题强调治理与审计，不强调“个人用量”
+- 默认显示治理高频列：`request_id`、`decision_id`、`trace_ref`
+- 详情抽屉动作顺序：`Policy` -> `Members` -> `Usage`
 
-主任务：识别风险 -> 验证证据 -> 执行处置
+### Usage
+- 标题和副标题强调“我的用量”
+- 固定使用单一用量视图
+- 不展示审计/排障跳转动作；管理员分析统一走 `Audit`
+- 限制区按 endpoint 分组，固定显示 `rate limit` 与 `spending limit`
 
-页面要求：
+## 4. 文案要求
 
-1. 标题/副标题强调治理与审计，不强调“个人用量”。
-2. 默认显示治理高频列：`request_id`、`decision_id`、`trace_ref`。
-3. 详情抽屉动作固定顺序：`Resource Policy` -> `Members` -> `Usage`。
-
-### 3.2 Usage（用户）
-
-主任务：查看消耗 -> 判断是否接近限制 -> 必要时联系管理员
-
-页面要求：
-
-1. 标题/副标题强调“我的使用”。
-2. 固定使用单一用量视图，不提供模式切换。
-3. 不展示审计/排障跳转动作；管理员分析统一走独立 `Audit` 页面。
-4. 限制区采用 endpoint 分组卡片；每卡固定 `rate limit` 与 `spending limit` 分组，并按窗口行展示。
-
-## 4. 文案映射（v1）
-
-| 场景 | 旧语义 | 新语义 | 备注 |
-| --- | --- | --- | --- |
-| `audit.subtitle` | 审计事件与合规日志 | 管理员治理证据与处置追踪 | 管理员语义 |
-| `usage.subtitle` | 用量统计与资源消耗 | 我的用量 | 用户语义 |
-| `common.investigation_context_title` | 调查锚点 | 保持不变 | 两端复用 |
-| `usage.view.limits_title` | 剩余额度 | 剩余限制 | 统一 limit 术语 |
-
-## 5. 动作映射（v1）
-
-| 页面 | 主动作（显示） | 次动作（下沉） |
-| --- | --- | --- |
-| Audit | 刷新、列设置、查看详情 | 复制 ID、跳转 Usage |
-| Usage | 刷新、切换 7/30 天 | 无 |
-
-## 6. 执行步骤
-
-1. 先改 i18n 文案与按钮标签，不改 API 与数据结构。
-2. 检查页面主动作数量（顶部最多 2 个主动作）。
-3. 验证空状态是否提供下一步动作。
-4. 跑组件测试与类型检查，避免回归。
-
-## 7. 验收标准
-
-1. 用户不需要理解治理内部术语即可完成 Usage 主流程。
-2. 管理员在 Audit 中 3 步内可到达处置入口。
-3. request/decision/trace 锚点跨页仍可复现调查上下文。
-4. 不引入任何 MVP 外能力叙事。
+- `usage.subtitle` 使用“我的用量”语义
+- `audit.subtitle` 使用治理证据与处置追踪语义
+- 所有治理对象使用当前正式产品名

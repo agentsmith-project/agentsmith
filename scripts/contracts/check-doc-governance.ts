@@ -9,18 +9,18 @@ const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'artifacts', 'marketing']
 
 const DOC_INDEX_EXPECTATIONS: Array<{ file: string; includes: string[] }> = [
   {
-    file: 'docs/user-guides/README.md',
-    includes: ['file-library-local-mount.md', 'product-doc-artifacts.md'],
+    file: 'docs/README.md',
+    includes: ['CURRENT_BASELINE.md', 'contracts/README.md', 'user-guides/README.md'],
   },
   {
-    file: 'docs/README.md',
-    includes: ['file-library-local-mount.md', 'product-doc-artifacts.md'],
+    file: 'docs/user-guides/README.md',
+    includes: ['local-runtime-flows.md', 'test-and-evidence-directory-model.md'],
+  },
+  {
+    file: 'docs/testing/README.md',
+    includes: ['visual-baseline-policy-v1.md', '2026-02-05-前端-testid-规范.md'],
   },
 ];
-
-const CURRENT_HISTORICAL_DOC_ALLOWLIST = new Set([
-  'docs/user-guides/usage-limits-naming-refactor-task.md',
-]);
 
 type Violation = {
   file: string;
@@ -50,6 +50,23 @@ const BANNED_RULES: Array<{ rule: string; regex: RegExp; detail: string; current
     rule: 'removed-legacy-design-truth',
     regex: /视觉设计系统-v1\.md/,
     detail: 'Legacy visual design truth must not be referenced by current docs; use `DESIGN.md` instead.',
+    currentOnly: true,
+  },
+  {
+    rule: 'removed-doc-archive-path',
+    regex: /docs\/archive\//,
+    detail: 'Current docs must not reference docs/archive/.',
+    currentOnly: true,
+  },
+  {
+    rule: 'removed-redirect-doc-model',
+    regex: /Status:\s*`redirect`/,
+    detail: 'Redirect/tombstone docs are no longer allowed in the current documentation tree.',
+  },
+  {
+    rule: 'archive-index-leaked-into-current-docs',
+    regex: /\bArchive Index\b|archived example/i,
+    detail: 'Current docs must not advertise archive/example navigation.',
     currentOnly: true,
   },
   {
@@ -121,21 +138,54 @@ function collectMarkdownFiles(target: string): string[] {
   return out;
 }
 
+function isHistoricalDoc(relativePath: string, content: string): boolean {
+  const normalized = relativePath.toLowerCase();
+  const basename = path.basename(normalized);
+  const titleLine = content.split('\n', 1)[0]?.toLowerCase() ?? '';
+  const historicalMarkers = ['handoff', 'refactor', 'migration', 'retro', 'todo', 'phase', 'task'];
+
+  return (
+    normalized.startsWith('docs/archive/')
+    || /Status:\s*`redirect`/.test(content)
+    || historicalMarkers.some((marker) => basename.includes(marker))
+    || historicalMarkers.some((marker) => titleLine.includes(marker))
+    || /Historical handoff note/i.test(content)
+  );
+}
+
 function findViolations(filePath: string, content: string): Violation[] {
   const violations: Violation[] = [];
   const lines = content.split('\n');
+  const relativePath = toRel(filePath);
+  const isHistorical = isHistoricalDoc(relativePath, content);
+
+  if (relativePath.startsWith('docs/archive/')) {
+    violations.push({
+      file: relativePath,
+      line: 1,
+      rule: 'archive-doc-present',
+      detail: 'docs/archive/ is not part of the current documentation model. Delete historical docs instead of keeping them in-tree.',
+    });
+  }
+
+  if (/Status:\s*`redirect`/.test(content)) {
+    violations.push({
+      file: relativePath,
+      line: 1,
+      rule: 'redirect-doc-present',
+      detail: 'Redirect/tombstone docs are no longer allowed. Delete the file and update references directly.',
+    });
+  }
+
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    const relativePath = toRel(filePath);
-    const isArchiveDoc = relativePath.startsWith('docs/archive/');
-    const isRedirectDoc = /Status:\s*`redirect`/.test(content);
     for (const rule of BANNED_RULES) {
-      if (rule.currentOnly && (isArchiveDoc || isRedirectDoc)) {
+      if (rule.currentOnly && isHistorical) {
         continue;
       }
       if (rule.regex.test(line)) {
         violations.push({
-          file: toRel(filePath),
+          file: relativePath,
           line: i + 1,
           rule: rule.rule,
           detail: `${rule.detail} Found: ${line.trim()}`,
@@ -148,23 +198,18 @@ function findViolations(filePath: string, content: string): Violation[] {
 
 function isExternalLink(link: string): boolean {
   return (
-    link.startsWith('http://') ||
-    link.startsWith('https://') ||
-    link.startsWith('mailto:') ||
-    link.startsWith('file:') ||
-    link.startsWith('#')
+    link.startsWith('http://')
+    || link.startsWith('https://')
+    || link.startsWith('mailto:')
+    || link.startsWith('file:')
+    || link.startsWith('#')
   );
 }
 
 function checkMarkdownLinks(filePath: string, content: string): Violation[] {
-  const relativePath = toRel(filePath);
-  if (relativePath.startsWith('docs/archive/') || /Status:\s*`redirect`/.test(content)) {
-    return [];
-  }
-
   const violations: Violation[] = [];
   const lines = content.split('\n');
-  const linkRegex = /\[[^\]]+]\(([^)]+)\)/g;
+  const linkRegex = /\[[^\]]+\]\(([^)]+)\)/g;
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
@@ -192,36 +237,19 @@ function checkMarkdownLinks(filePath: string, content: string): Violation[] {
 
 function checkHistoricalDocsPlacement(filePath: string, content: string): Violation[] {
   const relativePath = toRel(filePath);
-  if (relativePath.startsWith('docs/archive/')) {
-    return [];
-  }
-  if (CURRENT_HISTORICAL_DOC_ALLOWLIST.has(relativePath)) {
+  if (!isHistoricalDoc(relativePath, content)) {
     return [];
   }
 
-  const violations: Violation[] = [];
-  const basename = path.basename(relativePath).toLowerCase();
-  const historicalMarkers = ['handoff', 'refactor-note', 'refactor-task', 'migration'];
-  if (historicalMarkers.some((marker) => basename.includes(marker))) {
-    violations.push({
+  return [
+    {
       file: relativePath,
       line: 1,
-      rule: 'historical-doc-outside-archive',
+      rule: 'historical-doc-present',
       detail:
-        'Historical handoff/refactor/migration docs must live under docs/archive/ unless explicitly allowlisted as a current migration reference.',
-    });
-  }
-
-  if (/Historical handoff note/i.test(content)) {
-    violations.push({
-      file: relativePath,
-      line: 1,
-      rule: 'historical-doc-outside-archive',
-      detail: 'Docs marked as historical handoff notes must live under docs/archive/.',
-    });
-  }
-
-  return violations;
+        'Historical task/refactor/migration/retro/todo docs must not remain in the current documentation tree. Delete them instead of keeping compatibility material.',
+    },
+  ];
 }
 
 function checkIndexExpectations(): Violation[] {

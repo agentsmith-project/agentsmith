@@ -1,24 +1,23 @@
 # Governance Default Engineering Gate Checklist
 
-Last updated: 2026-03-14  
+Last updated: 2026-04-11  
 Owner: Frontend
 
 ## 1. Scope
 
-This checklist documents the default engineering gate for the current project governance judgment chain:
+This checklist documents the default engineering gate for the current project governance chain:
 
 1. `Members` can show effective access for a selected member.
 2. Admins can run an authorization check for an endpoint action.
-3. `Resource Policy` can validate the same subject/resource/action combination.
+3. `Policy` can validate the same subject/resource/action combination.
 4. `Audit` keeps governance drilldown links to the correct management page.
 5. Alerts and notifications keep the same governance action wording and do not leak raw keys.
 
 This gate does not add a new product surface.  
-It validates the current governance workflow already present in `members / resource policy / audit / alerts`.
+It validates the current governance workflow already present in `members / policy / audit / alerts`.
 
 Persistence baseline:
-
-- member governance, resource policy, join request, and notifications are backend-owned persisted truth
+- member governance, policy, join request, and notifications are backend-owned persisted truth
 - this workflow must remain stable across API restart
 
 ## 2. Contract Gate
@@ -32,7 +31,6 @@ npm run openapi:check-generated
 ```
 
 Expected:
-
 1. Permission gates remain aligned.
 2. OpenAPI coverage stays green.
 3. Generated frontend API types are in sync.
@@ -46,22 +44,20 @@ npm run test:governance
 ```
 
 Expected:
+1. Targeted unit and integration tests pass for members, policy, audit, alerts, and explainability helpers.
+2. Backend authorization explainability tests remain green.
+3. Mock lane governance E2E passes.
+4. Targeted visual baselines pass for governance pages and overlays.
+5. Governance data does not silently disappear after API restart.
+6. Full visual verification remains in `npm run lane:visual`, not in this governance gate.
 
-1. Lint + typecheck pass for explainability surfaces.
-2. Targeted unit tests pass for members, resource policy, audit, alerts, and explainability helpers.
-3. Backend authorization explainability tests remain green.
-4. Mock lane governance E2E passes.
-5. Targeted visual baselines pass for governance pages and overlays.
-6. Governance data does not silently disappear after API restart.
-7. Full visual verification remains in `npm run lane:visual`, not in this governance gate.
-
-## 4. Covered Mock Lane Workflow
+## 4. Covered Workflow
 
 The default governance gate validates this business flow:
 
 1. Open a member from `Members`.
 2. Run an endpoint authorization check.
-3. Move into `Resource Policy` with the same subject/resource context.
+3. Move into `Policy` with the same subject/resource context.
 4. Validate the decision again after policy changes.
 5. Return to `Members` with the same subject/resource context preserved.
 
@@ -70,11 +66,8 @@ The default governance gate validates this business flow:
 This gate owns targeted visual coverage only. Full visual verification belongs to `npm run lane:visual`.
 
 The governance gate also runs targeted visual coverage for:
-
 1. members
-2. members - effective access drawer
-3. resource policy
+2. members effective-access drawer
+3. policy
 4. audit detail drawer
-5. alerts - notifications tab
-
-If the UI intentionally changes, update those baselines and rerun the same command without snapshot updates.
+5. alerts notifications tab

@@ -248,8 +248,7 @@ src/
 - [Current Baseline (Whitelist)](./docs/CURRENT_BASELINE.md) — 当前唯一白名单入口
 - [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
 - [User Guides Index](./docs/user-guides/README.md) — 用户手册总入口（MVP-first）
-- [MVP Core Smoke Runbook](./docs/user-guides/mvp-core-smoke-runbook.md) — 真实后端 MVP 核心回归执行手册
-- [Personal Connections & Workspace Feishu](./docs/user-guides/third-party-accounts-feishu.md) — 用户级个人连接、Feishu OAuth、回调模式与手动验收说明
+- [Personal Connections & Workspace Integrations](./docs/user-guides/third-party-accounts-feishu.md) — 用户级个人连接、workspace integrations 与 Feishu 连接说明
 - [File Library Client Mount](./docs/user-guides/file-library-local-mount.md) — 本地挂载 project file library 与双向同步校验
 - [Product Doc Artifacts](./docs/user-guides/product-doc-artifacts.md) — 生成产品说明截图与配套 Markdown 产物
 - [Marketing Assets](./marketing/README.md) — 刷新 marketing 截图资产
@@ -257,4 +256,3 @@ src/
 - [UI Constitution](./DESIGN.md)
 - [Development Guide](./DEVELOPMENT.md)
 - [Documentation Index](./docs/README.md) — current docs index, contracts, UXUI, engineering, testing
-- [i18n Internal Guide](./docs/engineering/2026-02-03-i18n-内部指南-v1.md)

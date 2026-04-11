@@ -59,6 +59,7 @@ INTEGRATION_RUN_ID="${INTEGRATION_RUN_ID:-$(lane_generate_run_id integration)}"
 INTEGRATION_RUN_ROOT="${INTEGRATION_RUN_ROOT:-$(lane_prepare_run_root backend-real "${INTEGRATION_RUN_ID}" current-run)}"
 INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-${INTEGRATION_RUN_ROOT}/integration}"
 export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-$(basename "${INTEGRATION_RUN_ROOT}")}"
+clear_runtime_stack_env
 resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "mbos" "agentsmith"
 # Use 127.0.0.1 for the isolated integration Keycloak lane so browser cookies do not collide
 # with any other localhost-scoped Keycloak session already running on this machine.
@@ -84,6 +85,7 @@ gate_write_resolved_env "${INTEGRATION_LOG_DIR}"
 gate_record_task_summary "${INTEGRATION_LOG_DIR}" "{\"line_kind\":\"backend_real\",\"spec_file\":\"${SPEC_FILE}\",\"api_port\":\"${API_PORT}\",\"web_port\":\"${WEB_PORT}\"}"
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
+NEXT_WEB_PID_FILE="${INTEGRATION_RUN_ROOT}/next-dev.pid"
 NEXT_DIST_DIR="${INTEGRATION_NEXT_DIST_DIR:-artifacts/backend-real/runs/${INTEGRATION_RUN_ID}/next-dist}"
 next_generated_root_normalize
 API_PID=""
@@ -359,13 +361,14 @@ WEB_PID="$(
     MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
     NEXT_DIST_DIR="${NEXT_DIST_DIR}" \
     NEXT_GENERATED_ROOT_MANAGED=1 \
+    NEXT_DEV_PID_FILE="${NEXT_WEB_PID_FILE}" \
     NEXT_PUBLIC_USE_MSW=false \
     AGENTSMITH_ENABLE_TEST_ROUTES=true \
     NEXT_PUBLIC_API_BASE="${INTEGRATION_API_BASE}/api/v1" \
     NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_URL}" \
     NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
     NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-    npm run dev:test -- --port "${WEB_PORT}"
+    bash scripts/run-next-dev-safe.sh --port "${WEB_PORT}"
 )"
 
 cleanup() {
@@ -382,6 +385,7 @@ cleanup() {
   fi
   stop_background_job "${PLAYWRIGHT_PID}"
   stop_background_job "${PROXY_PID}"
+  stop_background_job "$(cat "${NEXT_WEB_PID_FILE}" 2>/dev/null || true)"
   stop_background_job "${WEB_PID}"
   stop_background_job "${API_PID}"
   wait "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
@@ -389,16 +393,17 @@ cleanup() {
   wait "${WEB_PID}" >/dev/null 2>&1 || true
   wait "${API_PID}" >/dev/null 2>&1 || true
   next_generated_root_normalize
+  rm -f "${NEXT_WEB_PID_FILE}"
   if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" success
     rm -rf "${INTEGRATION_RUN_ROOT}"
-    lane_remove_current_link_if_matches backend-real "${INTEGRATION_RUN_ROOT}" current-run
     if [[ -L "$(backend_real_state_root)/integration" ]] && [[ "$(realpath -m "$(backend_real_state_root)/integration")" == "$(realpath -m "${INTEGRATION_LOG_DIR}")" ]]; then
       rm -f "$(backend_real_state_root)/integration"
     fi
   else
     lane_mark_status "${INTEGRATION_RUN_ROOT}" failed
   fi
+  lane_remove_current_link_if_matches backend-real "${INTEGRATION_RUN_ROOT}" current-run
   lane_prune_runs backend-real "${BACKEND_REAL_KEEP_RUNS}"
 }
 trap cleanup EXIT

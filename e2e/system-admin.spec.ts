@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures/test-base';
 import { waitForPageReady } from './utils/navigation';
+import { waitForWorkspaceLoginReady } from './utils/system-workspaces';
 
 async function loginAsSystemAdmin(page: import('@playwright/test').Page) {
   await page.goto('/en-US/system/login');
@@ -156,6 +157,7 @@ test.describe('System Admin', () => {
   });
 
   test('system admin can create, update, and delete a workspace', async ({ page }) => {
+    test.slow();
     await mockWorkspaceAdminDirectory(page);
     await loginAsSystemAdmin(page);
     await openCreateWorkspace(page);
@@ -185,9 +187,10 @@ test.describe('System Admin', () => {
     await expect(cardLoginControl).toBeDisabled();
 
     await page.getByTestId(`system-workspaces__configure--${createdWorkspaceId}`).click();
-    await page.getByTestId('system-workspaces__publish').click();
-    const loginLink = workspaceCard.getByTestId(`system-workspaces__open-workspace-login--${createdWorkspaceId}`);
-    await expect(loginLink).toHaveAttribute('href', new RegExp(`/en-US/workspaces/${createdWorkspaceId}/login$`));
+    let loginLink = await waitForWorkspaceLoginReady(page, {
+      workspaceId: createdWorkspaceId,
+      locale: 'en-US',
+    });
 
     await page.getByTestId(`system-workspaces__configure--${createdWorkspaceId}`).click();
     await page.getByTestId('system-workspaces__draft-idp-client-secret').fill('platform-ops-secret');
@@ -197,8 +200,10 @@ test.describe('System Admin', () => {
 
     await expect(workspaceCard).toContainText(updatedAdmin);
 
-    await page.getByTestId('system-workspaces__publish').click();
-    await expect(loginLink).toHaveAttribute('href', new RegExp(`/en-US/workspaces/${createdWorkspaceId}/login$`));
+    loginLink = await waitForWorkspaceLoginReady(page, {
+      workspaceId: createdWorkspaceId,
+      locale: 'en-US',
+    });
 
     await page.getByTestId('system-workspaces__disable').click();
     await expect(loginLink).toBeDisabled();

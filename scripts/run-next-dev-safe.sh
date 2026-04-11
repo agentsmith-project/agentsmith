@@ -6,6 +6,7 @@ ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 DEFAULT_MAX_OLD_SPACE_SIZE="${NEXT_MAX_OLD_SPACE_SIZE:-4096}"
 NEXT_GENERATED_ROOT_MANAGED="${NEXT_GENERATED_ROOT_MANAGED:-0}"
+export PATH="${ROOT_DIR}/node_modules/.bin:${PATH}"
 
 if [[ -n "${NODE_OPTIONS:-}" ]]; then
   export NODE_OPTIONS="${NODE_OPTIONS} --max-old-space-size=${DEFAULT_MAX_OLD_SPACE_SIZE}"

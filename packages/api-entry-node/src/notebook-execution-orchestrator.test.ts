@@ -268,7 +268,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     expect(dispatchStreamingRequest).toHaveBeenCalledWith(
       expect.objectContaining({
         executionContext: expect.objectContaining({
-          api_base: 'http://172.19.0.1:20072',
+          api_base: 'http://172.19.0.1:20072/api/v1',
           execution_ticket: expect.stringMatching(/^exec_/),
           model_context_window: 256000,
           model_auto_compact_token_limit: 230400,
@@ -403,7 +403,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     expect(dispatchStreamingRequest).toHaveBeenCalledWith(
       expect.objectContaining({
         executionContext: expect.objectContaining({
-          api_base: 'http://api:20000',
+          api_base: 'http://api:20000/api/v1',
           execution_ticket: expect.stringMatching(/^exec_/),
           model_catalog: {
             input_modalities: ['text', 'image'],
@@ -536,7 +536,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           endpoint_id: 'ep_anthropic',
           wire_api: 'responses',
           model: 'placeholder-model',
-          api_base: 'http://api:20000',
+          api_base: 'http://api:20000/api/v1',
         }),
       }),
     );

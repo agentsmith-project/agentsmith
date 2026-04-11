@@ -5,6 +5,8 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/backend-real-gate-ports.sh"
+source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 WITH_REAL_LANE=0
 
 while [[ $# -gt 0 ]]; do
@@ -26,6 +28,8 @@ run_cmd() {
   info "$*"
   (cd "${ROOT_DIR}" && eval "$*")
 }
+
+next_generated_root_prepare_for_validation
 
 run_cmd "npm run contracts:check"
 run_cmd "npm run contracts:check-openapi"
@@ -73,30 +77,46 @@ run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
   'packages/api-entry-node/src/file-library-runtime.test.ts' \
   'packages/api-entry-node/src/task-route-handler.test.ts'"
 
-run_cmd "MOCK_LANE_WARM_URLS=\$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default\n/en-US/workspaces/ws_default/settings\n/en-US/workspaces/ws_default/projects/proj_001/overview' \
-bash scripts/run-mock-lane-playwright.sh \
-  e2e/system-workspace-default.spec.ts \
-  e2e/projects-join-governance.spec.ts \
-  e2e/workspace-settings.spec.ts \
-  --project=chromium \
-  --workers=1"
+info "running workspace/project chromium mock lane"
+(
+  cd "${ROOT_DIR}"
+  MOCK_LANE_WARM_URLS=$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default\n/en-US/workspaces/ws_default/settings\n/en-US/workspaces/ws_default/projects/proj_001/overview' \
+  bash scripts/run-mock-lane-playwright.sh \
+    e2e/system-workspace-default.spec.ts \
+    e2e/projects-join-governance.spec.ts \
+    e2e/workspace-settings.spec.ts \
+    --project=chromium \
+    --workers=1
+)
 
-run_cmd "MOCK_LANE_WARM_URLS=\$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default\n/en-US/workspaces/ws_default/login\n/en-US/workspaces/ws_default/projects\n/en-US/workspaces/ws_test/projects\n/en-US/workspaces/ws_default/settings\n/en-US/workspaces/ws_default/projects/proj_001/overview' \
-bash scripts/run-mock-lane-playwright.sh \
-  e2e/visual.spec.ts \
-  --project=visual \
-  --workers=1 \
-  --grep 'workspace selection|workspace login|workspace home|workspace home - project creator|projects list|projects list public discovery|project join request dialog|project join now dialog|notification center join request outcome|projects empty state|workspace settings|workspace settings create project dialog|overview'"
+info "running workspace/project visual mock lane"
+(
+  cd "${ROOT_DIR}"
+  MOCK_LANE_WARM_URLS=$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default\n/en-US/workspaces/ws_default/login\n/en-US/workspaces/ws_default/projects\n/en-US/workspaces/ws_test/projects\n/en-US/workspaces/ws_default/settings\n/en-US/workspaces/ws_default/projects/proj_001/overview' \
+  bash scripts/run-mock-lane-playwright.sh \
+    e2e/visual.spec.ts \
+    --project=visual \
+    --workers=1 \
+    --grep 'workspace selection|workspace login|workspace home|workspace home - project creator|projects list|projects list public discovery|project join request dialog|project join now dialog|notification center join request outcome|projects empty state|workspace settings|workspace settings create project dialog|overview'
+)
 
 if [[ "${WITH_REAL_LANE}" == "1" ]]; then
+  real_api_port="${INTEGRATION_API_PORT:-20040}"
+  real_web_port="${INTEGRATION_WEB_PORT:-3041}"
+  real_spec="e2e/integration-minimal.spec.ts"
+  cleanup_gate_ports "${real_api_port}" "${real_web_port}" "${real_spec}"
   info "backend-real enabled"
-  run_cmd "INTEGRATION_API_PORT=\${INTEGRATION_API_PORT:-20040} \
-INTEGRATION_WEB_PORT=\${INTEGRATION_WEB_PORT:-3041} \
-KEYCLOAK_BASE_URL=\${KEYCLOAK_BASE_URL:-http://localhost:18080} \
-KEYCLOAK_REALM=\${KEYCLOAK_REALM:-mbos} \
-KEYCLOAK_URL=\${KEYCLOAK_URL:-http://localhost:18080/realms} \
-KEYCLOAK_CLIENT_ID=\${KEYCLOAK_CLIENT_ID:-agentsmith} \
-bash scripts/run-integration-e2e-full.sh e2e/integration-minimal.spec.ts"
+  info "running workspace/project backend-real lane"
+  (
+    cd "${ROOT_DIR}"
+    INTEGRATION_API_PORT="${real_api_port}" \
+    INTEGRATION_WEB_PORT="${real_web_port}" \
+    KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}" \
+    KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}" \
+    KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:18080/realms}" \
+    KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}" \
+    bash scripts/run-integration-e2e-full.sh "${real_spec}"
+  )
 fi
 
 info "workspace / project default gate passed"

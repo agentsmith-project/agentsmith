@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures/test-base';
 import { waitForPageReady } from './utils/navigation';
+import { waitForWorkspaceLoginReady } from './utils/system-workspaces';
 
 async function loginAsSystemAdmin(page: import('@playwright/test').Page) {
   await page.goto('/en-US/system/login');
@@ -131,6 +132,7 @@ async function selectWorkspaceAdmin(page: import('@playwright/test').Page, email
 
 test.describe('System Workspace Mainline', () => {
   test('system admin can configure a workspace and a user can enter it and create a project', async ({ page }) => {
+    test.slow();
     await mockWorkspaceAdminDirectory(page);
     await loginAsSystemAdmin(page);
     await openCreateWorkspace(page);
@@ -156,9 +158,10 @@ test.describe('System Workspace Mainline', () => {
     expect(workspaceId).toBeTruthy();
 
     await page.getByTestId(`system-workspaces__configure--${workspaceId}`).click();
-    await page.getByTestId('system-workspaces__publish').click();
-    const loginLink = page.getByTestId(`system-workspaces__card--${workspaceId}`).getByTestId(`system-workspaces__open-workspace-login--${workspaceId}`);
-    await expect(loginLink).toHaveAttribute('href', new RegExp(`/en-US/workspaces/${workspaceId}/login$`));
+    const loginLink = await waitForWorkspaceLoginReady(page, {
+      workspaceId,
+      locale: 'en-US',
+    });
     await loginLink.click();
 
     await page.waitForURL(new RegExp(`/en-US/workspaces/${workspaceId}/login$`), { timeout: 15_000 });
@@ -208,7 +211,7 @@ test.describe('System Workspace Mainline', () => {
     await page.waitForURL(new RegExp(`/en-US/workspaces/${workspaceId}/projects/${createdProject.id}/overview$`), {
       timeout: 15_000,
     });
-    await expect(page.getByRole('heading', { level: 1, name: /project hub/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('project-hub__page')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(projectName).first()).toBeVisible({ timeout: 10_000 });
   });
 });

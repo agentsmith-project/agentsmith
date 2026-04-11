@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('check-next-dist-types contract', () => {
-  it('requires wildcard Next dist includes for run-scoped lanes', () => {
+  it('requires stable current-lane Next dist includes', () => {
     const tsxCli = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
 
     expect(() =>

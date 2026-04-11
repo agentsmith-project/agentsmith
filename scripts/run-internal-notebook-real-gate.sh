@@ -13,6 +13,8 @@ source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/scripts/scenarios/common.sh"
 load_backend_real_env
 export_backend_real_endpoint_env
 
@@ -51,6 +53,7 @@ export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-$(basename "${INTERNAL_REAL_DIR}")}"
 export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host,internal_k8s}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
+clear_runtime_stack_env
 resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${INTEGRATION_KEYCLOAK_PORT}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}"
 gate_evidence_init "${INTERNAL_REAL_DIR}" "internal_backend_real"
 gate_write_runtime_descriptor "${INTERNAL_REAL_DIR}" "internal_backend_real"
@@ -113,13 +116,10 @@ if ! command -v kind >/dev/null 2>&1; then
 fi
 
 ensure_kind_cluster() {
-  if kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}"; then
-    info "using existing kind cluster ${KIND_CLUSTER_NAME}"
-  else
-    info "creating kind cluster ${KIND_CLUSTER_NAME}"
-    kind create cluster --name "${KIND_CLUSTER_NAME}" --config "${KIND_CONFIG_PATH}" >/dev/null
-  fi
-
+  LOCAL_KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
+  LOCAL_KIND_CONFIG_PATH="${KIND_CONFIG_PATH}" \
+  LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${KIND_CLUSTER_NAME}-control-plane" \
+    ensure_local_kind_cluster
   kubectl config use-context "${KIND_CONTEXT_NAME}" >/dev/null
   CONTEXT_NAME="${KIND_CONTEXT_NAME}"
 }

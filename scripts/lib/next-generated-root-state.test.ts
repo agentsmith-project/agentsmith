@@ -16,7 +16,7 @@ function runBash(script: string, rootDir: string): string {
 }
 
 describe('next-generated-root-state', () => {
-  it('normalizes run-specific tsconfig includes back to wildcard patterns', () => {
+  it('normalizes run-specific tsconfig includes back to stable lane aliases', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-'));
     const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
     const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
@@ -38,8 +38,8 @@ EOF_NEXT_ENV
 
     const tsconfig = readFileSync(tsconfigPath, 'utf8');
     expect(tsconfig).toContain('.next*/types/**/*.ts');
-    expect(tsconfig).toContain('artifacts/backend-real/runs/*/next-dist/types/**/*.ts');
-    expect(tsconfig).toContain('artifacts/mock-lane/runs/*/next-dist/types/**/*.ts');
+    expect(tsconfig).toContain('artifacts/backend-real/current-run/next-dist/types/**/*.ts');
+    expect(tsconfig).toContain('artifacts/mock-lane/current/next-dist/types/**/*.ts');
     expect(tsconfig).toContain('custom/**/*.ts');
     expect(tsconfig).not.toContain('/integration-20260410T062839Z-3559213-15947/');
 
@@ -69,10 +69,81 @@ EOF_TSCONFIG
     const tsconfig = JSON.parse(readFileSync(tsconfigPath, 'utf8')) as { include: string[] };
     expect(tsconfig.include).toEqual([
       '.next*/types/**/*.ts',
-      'artifacts/backend-real/runs/*/next-dist/types/**/*.ts',
-      'artifacts/mock-lane/runs/*/next-dist/types/**/*.ts',
+      'artifacts/backend-real/current-run/next-dist/types/**/*.ts',
+      'artifacts/mock-lane/current/next-dist/types/**/*.ts',
       'src/**/*.ts',
       'src/**/*.tsx',
     ]);
+  });
+
+  it('stops leftover lane web processes before normalizing root files for validation', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-preflight-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+    const lanePidFile = path.join(
+      tempRoot,
+      'artifacts/mock-lane/runs/mock-20260411T011449Z-1305939-19002/web.pid',
+    );
+    const nextPidFile = path.join(
+      tempRoot,
+      'artifacts/mock-lane/runs/mock-20260411T011449Z-1305939-19002/next-dev.pid',
+    );
+    const currentLink = path.join(tempRoot, 'artifacts/mock-lane/current');
+
+    const output = runBash(
+      `
+        mkdir -p "$(dirname "${lanePidFile}")"
+        cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
+{"include":["src/**/*.ts","artifacts/mock-lane/runs/mock-20260411T011449Z-1305939-19002/next-dist/types/**/*.ts"]}
+EOF_TSCONFIG
+        : > "${nextEnvPath}"
+        bash -lc 'exec -a "npm run dev:test -- --port 3001" sleep 300' &
+        lane_pid=$!
+        bash -lc 'exec -a "next dev --port 3001" sleep 300' &
+        next_pid=$!
+        printf '%s\\n' "\${lane_pid}" > "${lanePidFile}"
+        printf '%s\\n' "\${next_pid}" > "${nextPidFile}"
+        ln -sfn "$(dirname "${lanePidFile}")" "${currentLink}"
+        source "${helper}"
+        next_generated_root_prepare_for_validation
+        if kill -0 "\${lane_pid}" >/dev/null 2>&1; then
+          echo "lane_process=alive"
+        else
+          echo "lane_process=stopped"
+        fi
+        if kill -0 "\${next_pid}" >/dev/null 2>&1; then
+          echo "next_process=alive"
+        else
+          echo "next_process=stopped"
+        fi
+        if [[ -f "${lanePidFile}" ]]; then
+          echo "pid_file=present"
+        else
+          echo "pid_file=removed"
+        fi
+        if [[ -f "${nextPidFile}" ]]; then
+          echo "next_pid_file=present"
+        else
+          echo "next_pid_file=removed"
+        fi
+        if [[ -L "${currentLink}" ]]; then
+          echo "current_link=present"
+        else
+          echo "current_link=removed"
+        fi
+      `,
+      tempRoot,
+    );
+
+    expect(output).toContain('lane_process=stopped');
+    expect(output).toContain('next_process=stopped');
+    expect(output).toContain('pid_file=removed');
+    expect(output).toContain('next_pid_file=removed');
+    expect(output).toContain('current_link=removed');
+
+    const tsconfig = readFileSync(tsconfigPath, 'utf8');
+    expect(tsconfig).toContain('artifacts/mock-lane/current/next-dist/types/**/*.ts');
+    expect(tsconfig).not.toContain('/mock-20260411T011449Z-1305939-19002/');
   });
 });

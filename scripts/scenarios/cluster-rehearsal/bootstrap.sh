@@ -5,8 +5,11 @@ init_cluster_rehearsal_env
 current="$(current_active_scenario || true)"
 [[ "${current}" == "${CLUSTER_REHEARSAL_NAME}" ]] || { echo "[scenario] ERROR: cluster-rehearsal is not the active scenario." >&2; exit 1; }
 cluster_require_phase bootstrap
+acquire_scenario_command_lock "${CLUSTER_REHEARSAL_NAME}" bootstrap
+arm_scenario_command_lock_cleanup "${CLUSTER_REHEARSAL_NAME}" bootstrap
 bash "${ROOT_DIR}/scripts/cluster-deploy/prepare-admin-handoff.sh"
 mark_cluster_rehearsal_admin_ready
 bash "${ROOT_DIR}/scripts/cluster-deploy/apply-cluster-prereqs.sh"
 bash "${ROOT_DIR}/scripts/cluster-deploy/deploy-sandbox.sh"
 run_stage bootstrap
+disarm_scenario_command_lock_cleanup

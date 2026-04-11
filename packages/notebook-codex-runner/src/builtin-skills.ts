@@ -1,10 +1,11 @@
-import { existsSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const FALLBACK_DEV_SKILLS_DIR = resolve(MODULE_DIR, '../builtin-skills');
+const PACKAGED_IMAGE_SKILLS_DIR = '/etc/codex/skills';
 const DEFAULT_BUILTIN_SKILLS = ['mbos-context', 'feishu-docs', 'jira-ops'];
 const MANIFEST_FILENAME = 'builtin-skills-manifest.json';
 
@@ -40,9 +41,10 @@ function parseSkillList(input: string | undefined): string[] {
   return Array.from(new Set(skills));
 }
 
-function resolveSkillsSourceDir(): string {
+function resolveSkillsSourceDir(fileExists: (path: string) => boolean = fs.existsSync): string {
   const explicit = (process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR ?? '').trim();
   if (explicit) return explicit;
+  if (fileExists(PACKAGED_IMAGE_SKILLS_DIR)) return PACKAGED_IMAGE_SKILLS_DIR;
   return FALLBACK_DEV_SKILLS_DIR;
 }
 
@@ -87,8 +89,15 @@ export function resolveBuiltinSkillsConfig(): {
   sourceDir: string;
   required: boolean;
   skills: string[];
+};
+export function resolveBuiltinSkillsConfig(args?: {
+  fileExists?: (path: string) => boolean;
+}): {
+  sourceDir: string;
+  required: boolean;
+  skills: string[];
 } {
-  const sourceDir = resolveSkillsSourceDir();
+  const sourceDir = resolveSkillsSourceDir(args?.fileExists);
   const required = parseBooleanFlag(process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED, true);
   const skills = parseSkillList(process.env.MBOS_AGENT_BUILTIN_SKILLS);
   return { sourceDir, required, skills };
@@ -108,7 +117,7 @@ export async function inspectBuiltinSkills(args: {
   for (const skill of args.skills) {
     const skillRoot = resolve(args.sourceDir, skill);
     const skillFile = resolve(skillRoot, 'SKILL.md');
-    if (!existsSync(skillRoot) || !existsSync(skillFile)) {
+    if (!fs.existsSync(skillRoot) || !fs.existsSync(skillFile)) {
       missing.push(skill);
       continue;
     }

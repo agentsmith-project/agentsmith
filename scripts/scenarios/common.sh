@@ -4,9 +4,15 @@ set -euo pipefail
 ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 SCENARIO_RUNTIME_ROOT="${SCENARIO_RUNTIME_ROOT:-${ROOT_DIR}/artifacts/runtime}"
 ACTIVE_SCENARIO_LOCK_FILE="${ACTIVE_SCENARIO_LOCK_FILE:-${SCENARIO_RUNTIME_ROOT}/active-scenario.lock}"
+SCENARIO_CLEANUP_TRAP_ARMED="${SCENARIO_CLEANUP_TRAP_ARMED:-0}"
 
 ensure_scenario_dirs() {
   mkdir -p "${SCENARIO_RUNTIME_ROOT}"
+}
+
+scenario_command_lock_dir() {
+  local scenario="$1"
+  printf '%s/%s.command.lock\n' "${SCENARIO_RUNTIME_ROOT}" "${scenario}"
 }
 
 current_active_scenario() {
@@ -103,18 +109,119 @@ release_scenario_lock() {
   fi
 }
 
+current_scenario_command() {
+  local scenario="$1"
+  local lock_dir
+  lock_dir="$(scenario_command_lock_dir "${scenario}")"
+  [[ -f "${lock_dir}/command" ]] || return 0
+  cat "${lock_dir}/command" 2>/dev/null || true
+}
+
+scenario_command_lock_pid() {
+  local scenario="$1"
+  local lock_dir
+  lock_dir="$(scenario_command_lock_dir "${scenario}")"
+  [[ -f "${lock_dir}/pid" ]] || return 0
+  cat "${lock_dir}/pid" 2>/dev/null || true
+}
+
+scenario_command_lock_started_at() {
+  local scenario="$1"
+  local lock_dir
+  lock_dir="$(scenario_command_lock_dir "${scenario}")"
+  [[ -f "${lock_dir}/started_at" ]] || return 0
+  cat "${lock_dir}/started_at" 2>/dev/null || true
+}
+
+release_scenario_command_lock() {
+  local scenario="$1"
+  local command="${2:-}"
+  local lock_dir
+  local current_command
+  lock_dir="$(scenario_command_lock_dir "${scenario}")"
+  [[ -d "${lock_dir}" ]] || return 0
+  current_command="$(current_scenario_command "${scenario}" || true)"
+  if [[ -n "${command}" && -n "${current_command}" && "${command}" != "${current_command}" ]]; then
+    return 0
+  fi
+  rm -rf "${lock_dir}"
+}
+
+prune_stale_scenario_command_lock() {
+  local scenario="$1"
+  local pid
+  pid="$(scenario_command_lock_pid "${scenario}" || true)"
+  [[ -n "${pid}" ]] || return 1
+  if kill -0 "${pid}" >/dev/null 2>&1; then
+    return 1
+  fi
+  release_scenario_command_lock "${scenario}"
+  return 0
+}
+
+acquire_scenario_command_lock() {
+  local scenario="$1"
+  local command="$2"
+  ensure_scenario_dirs
+  local lock_dir
+  local current_command
+  local current_pid
+  local current_started_at
+  lock_dir="$(scenario_command_lock_dir "${scenario}")"
+  if ! mkdir "${lock_dir}" 2>/dev/null; then
+    if ! prune_stale_scenario_command_lock "${scenario}"; then
+      current_command="$(current_scenario_command "${scenario}" || true)"
+      current_pid="$(scenario_command_lock_pid "${scenario}" || true)"
+      current_started_at="$(scenario_command_lock_started_at "${scenario}" || true)"
+      echo "[scenario] ERROR: ${scenario} command lock is held by ${current_command:-unknown} (pid=${current_pid:-unknown}, started_at=${current_started_at:-unknown}); wait for it to finish before starting ${command}." >&2
+      exit 1
+    fi
+    mkdir "${lock_dir}"
+  fi
+  printf '%s\n' "${scenario}" > "${lock_dir}/scenario"
+  printf '%s\n' "${command}" > "${lock_dir}/command"
+  printf '%s\n' "$$" > "${lock_dir}/pid"
+  date -u +%Y-%m-%dT%H:%M:%SZ > "${lock_dir}/started_at"
+}
+
 arm_scenario_lock_cleanup() {
   local scenario="$1"
+  ensure_scenario_cleanup_trap
   export SCENARIO_LOCK_CLEANUP_SCENARIO="${scenario}"
   export SCENARIO_LOCK_CLEANUP_ACTIVE=1
   export SCENARIO_LOCK_WORLD_CHANGED=0
-  trap 'scenario_lock_cleanup_on_exit $?' EXIT
 }
 
 disarm_scenario_lock_cleanup() {
   export SCENARIO_LOCK_CLEANUP_ACTIVE=0
   export SCENARIO_LOCK_WORLD_CHANGED=0
   export SCENARIO_LOCK_CLEANUP_SCENARIO=""
+}
+
+arm_scenario_command_lock_cleanup() {
+  local scenario="$1"
+  local command="$2"
+  ensure_scenario_cleanup_trap
+  export SCENARIO_COMMAND_LOCK_CLEANUP_SCENARIO="${scenario}"
+  export SCENARIO_COMMAND_LOCK_CLEANUP_COMMAND="${command}"
+  export SCENARIO_COMMAND_LOCK_CLEANUP_ACTIVE=1
+}
+
+disarm_scenario_command_lock_cleanup() {
+  if [[ -n "${SCENARIO_COMMAND_LOCK_CLEANUP_SCENARIO:-}" ]]; then
+    release_scenario_command_lock "${SCENARIO_COMMAND_LOCK_CLEANUP_SCENARIO}" "${SCENARIO_COMMAND_LOCK_CLEANUP_COMMAND:-}"
+  fi
+  export SCENARIO_COMMAND_LOCK_CLEANUP_ACTIVE=0
+  export SCENARIO_COMMAND_LOCK_CLEANUP_SCENARIO=""
+  export SCENARIO_COMMAND_LOCK_CLEANUP_COMMAND=""
+}
+
+ensure_scenario_cleanup_trap() {
+  if [[ "${SCENARIO_CLEANUP_TRAP_ARMED:-0}" == "1" ]]; then
+    return 0
+  fi
+  export SCENARIO_CLEANUP_TRAP_ARMED=1
+  trap 'scenario_common_cleanup_on_exit $?' EXIT
 }
 
 mark_scenario_world_changed() {
@@ -142,6 +249,19 @@ scenario_lock_cleanup_on_exit() {
   else
     release_scenario_lock "${SCENARIO_LOCK_CLEANUP_SCENARIO}"
   fi
+}
+
+scenario_command_lock_cleanup_on_exit() {
+  if [[ "${SCENARIO_COMMAND_LOCK_CLEANUP_ACTIVE:-0}" != "1" || -z "${SCENARIO_COMMAND_LOCK_CLEANUP_SCENARIO:-}" ]]; then
+    return 0
+  fi
+  release_scenario_command_lock "${SCENARIO_COMMAND_LOCK_CLEANUP_SCENARIO}" "${SCENARIO_COMMAND_LOCK_CLEANUP_COMMAND:-}"
+}
+
+scenario_common_cleanup_on_exit() {
+  local status="${1:-0}"
+  scenario_command_lock_cleanup_on_exit
+  scenario_lock_cleanup_on_exit "${status}"
 }
 
 clear_local_dev_substrate() {
@@ -183,22 +303,8 @@ ensure_local_kind_cluster() {
   local config_path="${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/demo/kind/config.yaml}"
   local kind_context="kind-${cluster_name}"
   local control_plane_node="${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-${cluster_name}-control-plane}"
-  local kind_node_image
-  kind_node_image="$(awk '/image:/ {print $2; exit}' "${config_path}")"
-  [[ -n "${kind_node_image}" ]] || {
-    echo "[scenario] ERROR: failed to resolve local kind node image from ${config_path}" >&2
-    return 1
-  }
-  if ! docker image inspect "${kind_node_image}" >/dev/null 2>&1; then
-    docker pull "${kind_node_image}" >/dev/null
-  fi
-  if ! kind get clusters 2>/dev/null | grep -qx "${cluster_name}"; then
-    kind create cluster --name "${cluster_name}" --config "${config_path}" --wait 5m >/dev/null
-  fi
+  "${ROOT_DIR}/scripts/ensure-local-kind-cluster.sh" "${cluster_name}" "${config_path}" "${control_plane_node}"
   mkdir -p "${HOME}/.kube" "${HOME}/agentsmith/cluster-deploy/config"
-  kind export kubeconfig --name "${cluster_name}" >/dev/null
-  kubectl config use-context "${kind_context}" >/dev/null || true
-  kubectl label node "${control_plane_node}" node=mbos --overwrite >/dev/null
   ensure_local_kind_registry
   cp "${HOME}/.kube/config" "${HOME}/agentsmith/cluster-deploy/config/kubeconfig"
   cp "${HOME}/.kube/config" "${HOME}/agentsmith/cluster-deploy/config/admin-kubeconfig"

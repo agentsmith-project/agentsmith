@@ -53,6 +53,10 @@ interface InternalAgentPodManagerOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
+const INTERNAL_AGENT_BUILTIN_SKILLS_DIR = process.env.INTERNAL_AGENT_BUILTIN_SKILLS_DIR?.trim() || '/etc/codex/skills';
+const INTERNAL_AGENT_BUILTIN_SKILLS = process.env.INTERNAL_AGENT_BUILTIN_SKILLS?.trim() || 'mbos-context,feishu-docs,jira-ops';
+const INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED = process.env.INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED?.trim() || '1';
+
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -305,6 +309,9 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
             MBOS_AGENT_CODEX_YOLO: '1',
             MBOS_AGENT_RUNNER_DEBUG: '1',
             MBOS_AGENT_TASK_TIMEOUT_SEC: '55',
+            MBOS_AGENT_BUILTIN_SKILLS_DIR: INTERNAL_AGENT_BUILTIN_SKILLS_DIR,
+            MBOS_AGENT_BUILTIN_SKILLS: INTERNAL_AGENT_BUILTIN_SKILLS,
+            MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED,
             ...(config.env ?? {}),
           },
           cpu_request: config.cpuRequest ?? '500m',

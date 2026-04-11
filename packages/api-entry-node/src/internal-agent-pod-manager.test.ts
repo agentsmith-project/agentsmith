@@ -80,6 +80,11 @@ describe('internal-agent-pod-manager', () => {
       'task_1',
       expect.objectContaining({
         workspace_binding_id: 'flib_demo',
+        env: expect.objectContaining({
+          MBOS_AGENT_BUILTIN_SKILLS_DIR: '/etc/codex/skills',
+          MBOS_AGENT_BUILTIN_SKILLS: 'mbos-context,feishu-docs,jira-ops',
+          MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: '1',
+        }),
       }),
     );
     expect(onlineStateStore.getAgentSessionOnlineState).toHaveBeenCalledWith('ag_1', 'task_1');

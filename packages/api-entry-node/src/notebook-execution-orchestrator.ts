@@ -94,6 +94,21 @@ function sanitizeBaseUrl(value: string | undefined | null): string | null {
   return trimmed.replace(/\/+$/, '');
 }
 
+function ensureExecutionApiBase(value: string | undefined | null): string | null {
+  const sanitized = sanitizeBaseUrl(value);
+  if (!sanitized) return null;
+  try {
+    const parsed = new URL(sanitized);
+    if (parsed.pathname === '' || parsed.pathname === '/') {
+      parsed.pathname = '/api/v1';
+      return parsed.toString().replace(/\/+$/, '');
+    }
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return sanitized.endsWith('/api/v1') ? sanitized : `${sanitized}/api/v1`;
+  }
+}
+
 function deriveHttpBaseFromWebSocketBase(value: string | undefined | null): string | null {
   const trimmed = value?.trim();
   if (!trimmed) return null;
@@ -118,23 +133,23 @@ export function resolveExecutionApiBase(
   agent: { mode: 'external' | 'internal'; config?: Record<string, unknown> | null },
 ): string {
   if (agent.mode === 'external' && isComposeManagedExternalAgent(agent)) {
-    return sanitizeBaseUrl(process.env.INTERNAL_API_BASE_URL) ?? 'http://api:20000';
+    return ensureExecutionApiBase(process.env.INTERNAL_API_BASE_URL) ?? 'http://api:20000/api/v1';
   }
-  const explicitExternalBase = sanitizeBaseUrl(process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL);
+  const explicitExternalBase = ensureExecutionApiBase(process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL);
   if (agent.mode === 'external' && explicitExternalBase) {
     return explicitExternalBase;
   }
   if (agent.mode === 'internal') {
-    const explicitInternalBase = sanitizeBaseUrl(process.env.AGENT_EXECUTION_HTTP_BASE_URL);
+    const explicitInternalBase = ensureExecutionApiBase(process.env.AGENT_EXECUTION_HTTP_BASE_URL);
     if (explicitInternalBase) {
       return explicitInternalBase;
     }
     const derivedInternalBase = deriveHttpBaseFromWebSocketBase(process.env.AGENT_EXECUTION_WS_BASE_URL);
     if (derivedInternalBase) {
-      return derivedInternalBase;
+      return ensureExecutionApiBase(derivedInternalBase) ?? derivedInternalBase;
     }
   }
-  return sanitizeBaseUrl(publicBaseUrl) ?? publicBaseUrl;
+  return ensureExecutionApiBase(publicBaseUrl) ?? publicBaseUrl;
 }
 
 function deriveNotebookModelWindow(profile: { max_context_tokens?: number } | null | undefined): {

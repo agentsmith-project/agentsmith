@@ -121,6 +121,31 @@ run_deploy_bootstrap() {
     wait_tcp "127.0.0.1" "${API_PORT:-20000}" 240
   }
 
+  wait_keycloak_admin_token_via_api_container() {
+    local started status
+    started="$(date +%s)"
+    while true; do
+      status="$(
+        docker_compose exec -T api bash -lc '
+          curl -sS -o /tmp/keycloak-admin-token.json -w "%{http_code}" \
+            "${INTERNAL_KEYCLOAK_BASE_URL}/realms/master/protocol/openid-connect/token" \
+            -H "content-type: application/x-www-form-urlencoded" \
+            --data-urlencode "grant_type=password" \
+            --data-urlencode "client_id=admin-cli" \
+            --data-urlencode "username=${KEYCLOAK_ADMIN}" \
+            --data-urlencode "password=${KEYCLOAK_ADMIN_PASSWORD}"
+        ' 2>/dev/null || true
+      )"
+      if [[ "${status}" == "200" ]]; then
+        return 0
+      fi
+      if (( "$(date +%s)" - started > 180 )); then
+        die "keycloak admin token did not become ready inside api container"
+      fi
+      sleep 2
+    done
+  }
+
   cleanup_replacement_external_runner_containers() {
     local ids
     ids="$(
@@ -211,6 +236,8 @@ run_deploy_bootstrap() {
     set -euo pipefail
     psql -U "${POSTGRES_USER:-mbos}" -d "${POSTGRES_DB:-mbos}" >/dev/null
   ' < "${RELEASE_ROOT}/postgres-init/projects.sql"
+
+  wait_keycloak_admin_token_via_api_container
 
   docker_compose exec -T api bash -lc '
     INTEGRATION_PUBLIC_WEB_BASES="'"${PUBLIC_WEB_BASE_URL}"'" \

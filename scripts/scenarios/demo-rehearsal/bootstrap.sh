@@ -7,6 +7,9 @@ current="$(current_active_scenario || true)"
 demo_require_phase bootstrap
 acquire_scenario_lock "${DEMO_REHEARSAL_NAME}"
 arm_scenario_lock_cleanup "${DEMO_REHEARSAL_NAME}"
+acquire_scenario_command_lock "${DEMO_REHEARSAL_NAME}" bootstrap
+arm_scenario_command_lock_cleanup "${DEMO_REHEARSAL_NAME}" bootstrap
 mark_scenario_world_changed
 run_stage bootstrap
+disarm_scenario_command_lock_cleanup
 disarm_scenario_lock_cleanup

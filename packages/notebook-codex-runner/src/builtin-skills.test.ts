@@ -27,6 +27,30 @@ describe('builtin-skills', () => {
     }
   });
 
+  it('prefers packaged image builtin skills when /etc/codex/skills is present', () => {
+    const previousDir = process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR;
+    const previousRequired = process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED;
+    const previousSkills = process.env.MBOS_AGENT_BUILTIN_SKILLS;
+    delete process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR;
+    delete process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED;
+    delete process.env.MBOS_AGENT_BUILTIN_SKILLS;
+    try {
+      const config = resolveBuiltinSkillsConfig({
+        fileExists: (target) => target === '/etc/codex/skills',
+      });
+      expect(config.sourceDir).toBe('/etc/codex/skills');
+      expect(config.required).toBe(true);
+      expect(config.skills).toEqual(['mbos-context', 'feishu-docs', 'jira-ops']);
+    } finally {
+      if (previousDir === undefined) delete process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR;
+      else process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR = previousDir;
+      if (previousRequired === undefined) delete process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED;
+      else process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED = previousRequired;
+      if (previousSkills === undefined) delete process.env.MBOS_AGENT_BUILTIN_SKILLS;
+      else process.env.MBOS_AGENT_BUILTIN_SKILLS = previousSkills;
+    }
+  });
+
   it('treats an explicit empty skill list as no optional builtin skills', () => {
     const previousSkills = process.env.MBOS_AGENT_BUILTIN_SKILLS;
     const previousRequired = process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED;

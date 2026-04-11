@@ -184,6 +184,15 @@ export function CreateAgentDialog({
 
   const canSubmit = name.trim().length > 0 && !createMutation.isPending;
   const canContinueToDeployment = canSubmit && executionEndpointId.trim().length > 0;
+
+  const handleAdvanceToDeployment = React.useCallback(() => {
+    // Defer the step swap until after the current click finishes so the
+    // footer CTA cannot accidentally turn into the submit action mid-click.
+    window.requestAnimationFrame(() => {
+      setStep('deployment');
+    });
+  }, []);
+
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
@@ -319,7 +328,7 @@ export function CreateAgentDialog({
                 type="button"
                 variant="primary"
                 disabled={!canContinueToDeployment}
-                onClick={() => setStep('deployment')}
+                onClick={handleAdvanceToDeployment}
               >
                 {commonT('next')}
               </Button>

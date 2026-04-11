@@ -57,6 +57,14 @@ describe('workspace foundation initializer', () => {
     expect(resource.docStore).toBeDefined();
   });
 
+  it('treats explicit file registry mode as a local-only foundation store scenario', () => {
+    const resource = createWorkspaceFoundationStoreResourceFromEnv({
+      NODE_ENV: 'production',
+      SYSTEM_WORKSPACE_REGISTRY_MODE: 'file',
+    });
+    expect(resource.docStore).toBeDefined();
+  });
+
   it('materializes all tenant-scoped foundation collections', async () => {
     const docStore = new RecordingDocStore();
 

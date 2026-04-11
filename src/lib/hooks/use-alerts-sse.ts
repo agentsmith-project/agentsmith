@@ -77,8 +77,16 @@ export function useAlertsSSE(options: UseAlertsSSEOptions = {}) {
   } = options;
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  const isMountedRef = useRef(false);
+  const connectGenerationRef = useRef(0);
   const [connected, setConnected] = useState(false);
   const addAlert = useAlertStore((state) => state.addAlert);
+
+  const safeSetConnected = useCallback((value: boolean) => {
+    if (isMountedRef.current) {
+      setConnected(value);
+    }
+  }, []);
 
   /**
    * Parse SSE alert data and add to store
@@ -113,6 +121,9 @@ export function useAlertsSSE(options: UseAlertsSSEOptions = {}) {
       return;
     }
 
+    const generation = connectGenerationRef.current + 1;
+    connectGenerationRef.current = generation;
+
     // Close existing connection
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
@@ -128,8 +139,10 @@ export function useAlertsSSE(options: UseAlertsSSEOptions = {}) {
 
       if (!token) {
         console.warn('[useAlertsSSE] No auth token available');
-        setConnected(false);
-        onError?.(new Error('No auth token available'));
+        safeSetConnected(false);
+        if (isMountedRef.current) {
+          onError?.(new Error('No auth token available'));
+        }
         return;
       }
 
@@ -141,39 +154,60 @@ export function useAlertsSSE(options: UseAlertsSSEOptions = {}) {
         API_BASE
       );
 
+      if (!isMountedRef.current || connectGenerationRef.current !== generation) {
+        eventSource.close();
+        return;
+      }
+
       // Set up event handlers
       eventSource.addEventListener('alert', (event: MessageEvent) => {
+        if (!isMountedRef.current || connectGenerationRef.current !== generation) {
+          return;
+        }
         handleAlertMessage(event.data);
       });
 
       eventSource.addEventListener('error', (event: Event) => {
+        if (!isMountedRef.current || connectGenerationRef.current !== generation) {
+          return;
+        }
         console.error('[useAlertsSSE] SSE error:', event);
-        setConnected(false);
+        safeSetConnected(false);
         onError?.(new Error('SSE connection error'));
       });
 
       eventSourceRef.current = eventSource;
-      setConnected(true);
-      onConnect?.();
+      safeSetConnected(true);
+      if (isMountedRef.current) {
+        onConnect?.();
+      }
 
     } catch (error) {
+      if (!isMountedRef.current || connectGenerationRef.current !== generation) {
+        return;
+      }
       console.error('[useAlertsSSE] Failed to connect:', error);
-      setConnected(false);
+      safeSetConnected(false);
       onError?.(error as Error);
     }
-  }, [enabled, handleAlertMessage, onConnect, onError]);
+  }, [enabled, handleAlertMessage, onConnect, onError, safeSetConnected]);
 
   /**
    * Close SSE connection
    */
   const disconnect = useCallback(() => {
+    connectGenerationRef.current += 1;
+
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
-      setConnected(false);
+    }
+
+    safeSetConnected(false);
+    if (isMountedRef.current) {
       onDisconnect?.();
     }
-  }, [onDisconnect]);
+  }, [onDisconnect, safeSetConnected]);
 
   /**
    * Reconnect to SSE (useful after token refresh)
@@ -185,9 +219,11 @@ export function useAlertsSSE(options: UseAlertsSSEOptions = {}) {
 
   // Auto-connect on mount and disconnect on unmount
   useEffect(() => {
-    connect();
+    isMountedRef.current = true;
+    void connect();
 
     return () => {
+      isMountedRef.current = false;
       disconnect();
     };
   }, [connect, disconnect]);

@@ -5,4 +5,7 @@ init_demo_rehearsal_env
 current="$(current_active_scenario || true)"
 [[ "${current}" == "${DEMO_REHEARSAL_NAME}" ]] || { echo "[scenario] ERROR: demo-rehearsal is not the active scenario." >&2; exit 1; }
 demo_require_phase verify
+acquire_scenario_command_lock "${DEMO_REHEARSAL_NAME}" verify
+arm_scenario_command_lock_cleanup "${DEMO_REHEARSAL_NAME}" verify
 run_stage verify
+disarm_scenario_command_lock_cleanup

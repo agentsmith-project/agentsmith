@@ -17,6 +17,29 @@ type FileObjectsQueryOptions = {
   refetchOnWindowFocus?: boolean;
 };
 
+function invalidateFileObjectCachesInBackground(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  projectId: string,
+) {
+  void Promise.allSettled([
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.fileObjects._def,
+    }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.fileLibraries.list(workspaceId, projectId),
+    }),
+  ]);
+}
+
+function invalidateFileObjectsOnlyInBackground(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.fileObjects._def,
+  });
+}
+
 export function useFileObjects(
   workspaceId: string,
   projectId: string,
@@ -83,13 +106,8 @@ export function useCreateFileFolder() {
       libraryId: string;
       prefix: string;
     }) => filesAPI.createFolder(vars.workspaceId, vars.projectId, vars.libraryId, vars.prefix),
-    onSuccess: async (_, vars) => {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.fileObjects._def,
-      });
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.fileLibraries.list(vars.workspaceId, vars.projectId),
-      });
+    onSuccess: (_, vars) => {
+      invalidateFileObjectCachesInBackground(queryClient, vars.workspaceId, vars.projectId);
     },
   });
 }
@@ -119,13 +137,8 @@ export function useUploadFileObject() {
         vars.signal,
         vars.onProgress,
       ),
-    onSuccess: async (_, vars) => {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.fileObjects._def,
-      });
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.fileLibraries.list(vars.workspaceId, vars.projectId),
-      });
+    onSuccess: (_, vars) => {
+      invalidateFileObjectCachesInBackground(queryClient, vars.workspaceId, vars.projectId);
     },
   });
 }
@@ -137,13 +150,8 @@ export function useDeleteFileObjects() {
   return useMutation({
     mutationFn: async (vars: { workspaceId: string; projectId: string; libraryId: string; keys: string[] }) =>
       filesAPI.deleteObjects(vars.workspaceId, vars.projectId, vars.libraryId, vars.keys),
-    onSuccess: async (_, vars) => {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.fileObjects._def,
-      });
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.fileLibraries.list(vars.workspaceId, vars.projectId),
-      });
+    onSuccess: (_, vars) => {
+      invalidateFileObjectCachesInBackground(queryClient, vars.workspaceId, vars.projectId);
     },
   });
 }
@@ -161,10 +169,8 @@ export function useMoveFileObject() {
       to_key: string;
       overwrite?: boolean;
     }) => filesAPI.moveObject(vars.workspaceId, vars.projectId, vars.libraryId, vars),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.fileObjects._def,
-      });
+    onSuccess: () => {
+      invalidateFileObjectsOnlyInBackground(queryClient);
     },
   });
 }

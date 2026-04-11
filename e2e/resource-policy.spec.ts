@@ -18,10 +18,16 @@ test.describe('Resource Policy Page', () => {
     }
   });
 
-  test('shows govern header actions', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('resource-policy__open-members')).toHaveAttribute('href', /\/members$/);
-    await expect(authedPage.getByTestId('resource-policy__open-credentials')).toHaveAttribute('href', /\/credentials$/);
-    await expect(authedPage.getByTestId('resource-policy__open-audit')).toHaveAttribute('href', /\/audit$/);
+  test('relies on sidebar navigation instead of govern header actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('resource-policy__open-members')).toHaveCount(0);
+    await expect(authedPage.getByTestId('resource-policy__open-credentials')).toHaveCount(0);
+    await expect(authedPage.getByTestId('resource-policy__open-audit')).toHaveCount(0);
+    await expect(authedPage.getByTestId('sidebar__nav-item--members')).toHaveAttribute('href', /\/members$/);
+    await expect(authedPage.getByTestId('sidebar__nav-item--credentials')).toHaveAttribute(
+      'href',
+      /\/credentials$/,
+    );
+    await expect(authedPage.getByTestId('sidebar__nav-item--audit')).toHaveAttribute('href', /\/audit$/);
   });
 
   test('renders resource policy groups', async ({ authedPage }) => {

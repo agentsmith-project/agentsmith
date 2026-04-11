@@ -452,6 +452,34 @@ describe('FetchApiClient', () => {
       }
     });
 
+    it('should handle non-JSON empty error responses without throwing SyntaxError', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 404,
+        headers: { get: () => null },
+        text: async () => '',
+      });
+
+      try {
+        await client.get('/test');
+        expect.fail('Should have thrown ApiError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).message).toContain('HTTP 404');
+      }
+    });
+
+    it('should treat empty successful responses as undefined when no body is returned', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        text: async () => '',
+      });
+
+      await expect(client.get('/test')).resolves.toBeUndefined();
+    });
+
     it('should handle network errors', async () => {
       mockFetch.mockRejectedValue(new Error('Network error'));
 

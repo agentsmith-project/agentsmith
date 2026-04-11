@@ -29,10 +29,15 @@ test.describe('Credentials Page', () => {
     await expect(authedPage.getByText('Anthropic API Key')).toBeVisible();
   });
 
-  test('shows govern header actions', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('credentials__open-members')).toHaveAttribute('href', /\/members$/);
-    await expect(authedPage.getByTestId('credentials__open-resource-policy')).toHaveAttribute('href', /\/resource-policy$/);
-    await expect(authedPage.getByTestId('credentials__open-audit')).toHaveAttribute('href', /\/audit$/);
+  test('relies on sidebar navigation instead of govern header actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('credentials__open-members')).toHaveCount(0);
+    await expect(authedPage.getByTestId('credentials__open-resource-policy')).toHaveCount(0);
+    await expect(authedPage.getByTestId('credentials__open-audit')).toHaveCount(0);
+    await expect(authedPage.getByTestId('sidebar__nav-item--members')).toHaveAttribute('href', /\/members$/);
+    await expect(
+      authedPage.getByTestId('sidebar__nav-item--resource-policy'),
+    ).toHaveAttribute('href', /\/resource-policy$/);
+    await expect(authedPage.getByTestId('sidebar__nav-item--audit')).toHaveAttribute('href', /\/audit$/);
   });
 
   test('create dialog opens with name field', async ({ authedPage }) => {

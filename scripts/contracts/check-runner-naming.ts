@@ -14,8 +14,16 @@ function readText(relativePath: string): string {
 const failures: string[] = [];
 
 const rootPackage = readJson('package.json') as { scripts?: Record<string, string> };
-const notebookPackage = readJson('packages/notebook-codex-runner/package.json') as { name?: string };
-const chatPackage = readJson('packages/chat-llm-runner/package.json') as { name?: string };
+const notebookPackage = readJson('packages/notebook-codex-runner/package.json') as {
+  name?: string;
+  scripts?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+};
+const chatPackage = readJson('packages/chat-llm-runner/package.json') as {
+  name?: string;
+  scripts?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+};
 const messagesEn = readJson('src/messages/en-US.json') as { agents?: { create_dialog?: { interaction_kind?: string } } };
 const messagesZh = readJson('src/messages/zh-CN.json') as { agents?: { create_dialog?: { interaction_kind?: string } } };
 const makefile = readText('Makefile');
@@ -57,6 +65,14 @@ if (notebookPackage.name !== '@mbos/notebook-codex-runner') {
 
 if (chatPackage.name !== '@mbos/chat-llm-runner') {
   failures.push(`packages/chat-llm-runner/package.json has unexpected name: ${chatPackage.name ?? '<missing>'}`);
+}
+
+if (notebookPackage.scripts?.dev?.includes('tsx') && !notebookPackage.devDependencies?.tsx) {
+  failures.push('packages/notebook-codex-runner/package.json must declare tsx when the dev script uses tsx');
+}
+
+if (chatPackage.scripts?.dev?.includes('tsx') && !chatPackage.devDependencies?.tsx) {
+  failures.push('packages/chat-llm-runner/package.json must declare tsx when the dev script uses tsx');
 }
 
 if (rootPackage.scripts?.['agent:notebook-runner'] !== 'npm run dev -w @mbos/notebook-codex-runner') {
@@ -137,6 +153,7 @@ if (/^agent-codex-runner:/m.test(makefile)) {
 requireMatch(notebookDockerfile, /packages\/agent-runner\/src/, 'notebook runner Dockerfile must copy agent-runner sources');
 requireMatch(notebookDockerfile, /packages\/notebook-codex-runner\/src/, 'notebook runner Dockerfile must copy notebook-codex-runner sources');
 requireMatch(notebookDockerfile, /packages\/notebook-codex-runner\/builtin-skills/, 'notebook runner Dockerfile must copy notebook-codex-runner builtin skills');
+requireMatch(notebookDockerfile, /COPY packages\/notebook-codex-runner\/builtin-skills \/etc\/codex\/skills/, 'notebook runner Dockerfile must install builtin skills into /etc/codex/skills');
 requireMatch(notebookBaseDockerfile, /COPY package\.json package-lock\.json \.\//, 'notebook runner base Dockerfile must copy workspace root manifests');
 requireMatch(notebookBaseDockerfile, /COPY packages\/agent-runner\/package\.json/, 'notebook runner base Dockerfile must copy agent-runner package metadata');
 requireMatch(notebookBaseDockerfile, /COPY packages\/notebook-codex-runner\/package\.json/, 'notebook runner base Dockerfile must copy notebook runner package metadata');

@@ -192,6 +192,52 @@ describe('use-alerts-sse: Real-time Alert Hook', () => {
 
       unmount();
     });
+
+    it('should ignore async connection failures after unmount', async () => {
+      let rejectConnection: ((error: Error) => void) | null = null;
+      const onError = vi.fn();
+
+      vi.mocked(createAuthenticatedSSEAsync).mockImplementationOnce(() => {
+        return new Promise((_resolve, reject) => {
+          rejectConnection = reject;
+        });
+      });
+
+      const { unmount } = renderHook(() => useAlertsSSE({ enabled: true, onError }));
+
+      unmount();
+
+      await act(async () => {
+        rejectConnection?.(new Error('delayed connection failure'));
+        await Promise.resolve();
+      });
+
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('should close a late connection result after unmount', async () => {
+      let resolveConnection: ((eventSource: EventSource) => void) | null = null;
+      const onConnect = vi.fn();
+      const lateEventSource = new MockEventSource('/alerts/stream', { autoConnect: false });
+
+      vi.mocked(createAuthenticatedSSEAsync).mockImplementationOnce(() => {
+        return new Promise((resolve) => {
+          resolveConnection = resolve;
+        });
+      });
+
+      const { unmount } = renderHook(() => useAlertsSSE({ enabled: true, onConnect }));
+
+      unmount();
+
+      await act(async () => {
+        resolveConnection?.(lateEventSource as unknown as EventSource);
+        await Promise.resolve();
+      });
+
+      expect(lateEventSource.readyState).toBe(MockEventSource.CLOSED);
+      expect(onConnect).not.toHaveBeenCalled();
+    });
   });
 
   describe('useProjectAlertsSSE', () => {

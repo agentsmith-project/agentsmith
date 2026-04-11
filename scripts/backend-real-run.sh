@@ -7,6 +7,7 @@ unset no_proxy NO_PROXY
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+source "${ROOT_DIR}/scripts/lib/backend-real-gate-ports.sh"
 ensure_backend_real_state
 load_backend_real_env
 export_backend_real_endpoint_env
@@ -27,18 +28,22 @@ run_real_cmd() {
 }
 
 info "running external default backend-real checks"
+cleanup_gate_ports 20040 3041 e2e/integration-minimal.spec.ts
 run_real_cmd \
   INTEGRATION_API_PORT=20040 \
   INTEGRATION_WEB_PORT=3041 \
   npm run test:backend-real:core
 
 info "running notebook backend-real smoke"
+cleanup_gate_ports 20060 3061 e2e/integration-system-notebook-default.spec.ts
 run_real_cmd \
   INTEGRATION_API_PORT=20060 \
   INTEGRATION_WEB_PORT=3061 \
   npm run test:notebook:backend-real:smoke
 
 info "running external codex backend-real checks"
+cleanup_gate_ports 20064 3065 e2e/integration-chat-llm-runner.spec.ts
+cleanup_gate_ports 20064 3065 e2e/integration-notebook-codex-runner.spec.ts
 run_real_cmd \
   INTEGRATION_API_PORT=20064 \
   INTEGRATION_WEB_PORT=3065 \

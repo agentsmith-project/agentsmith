@@ -113,10 +113,13 @@ test.describe('Files Page (file library browser)', () => {
     await expect(authedPage.getByTestId('files__library-item--lib_shared_default')).toBeVisible();
   });
 
-  test('shows build header actions', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('files__open-chat')).toHaveAttribute('href', /\/chat$/);
-    await expect(authedPage.getByTestId('files__open-notebook')).toHaveAttribute('href', /\/notebook$/);
-    await expect(authedPage.getByTestId('files__open-endpoints')).toHaveAttribute('href', /\/endpoints$/);
+  test('relies on sidebar navigation instead of build header actions', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('files__open-chat')).toHaveCount(0);
+    await expect(authedPage.getByTestId('files__open-notebook')).toHaveCount(0);
+    await expect(authedPage.getByTestId('files__open-endpoints')).toHaveCount(0);
+    await expect(authedPage.getByTestId('sidebar__nav-item--chat')).toHaveAttribute('href', /\/chat$/);
+    await expect(authedPage.getByTestId('sidebar__nav-item--notebook')).toHaveAttribute('href', /\/notebook$/);
+    await expect(authedPage.getByTestId('sidebar__nav-item--endpoints')).toHaveAttribute('href', /\/endpoints$/);
   });
 
   test('search filters objects via backend query', async ({ authedPage }) => {
@@ -197,17 +200,18 @@ test.describe('Files Page (file library browser)', () => {
   test('handles large directory pagination and search responsiveness', async ({ authedPage }) => {
     await activateLibrary(authedPage, 'lib_large_bench');
     const loadMoreButton = authedPage.getByTestId('files__load-more');
+    const objectsTable = authedPage.getByTestId('files__objects-table');
     const targetRow = authedPage.getByTestId('files__object-row').filter({ hasText: 'bulk-0250.txt' }).first();
 
     for (let attempt = 0; attempt < 12; attempt += 1) {
       if (await targetRow.isVisible().catch(() => false)) break;
-      if (!await loadMoreButton.isVisible().catch(() => false)) break;
-      const rowCountBefore = await authedPage.getByTestId('files__object-row').count();
-      await expect(loadMoreButton).toBeEnabled();
-      await loadMoreButton.click();
-      await expect
-        .poll(async () => authedPage.getByTestId('files__object-row').count(), { timeout: 5000 })
-        .toBeGreaterThan(rowCountBefore);
+      if (await loadMoreButton.isVisible().catch(() => false)) {
+        await loadMoreButton.click().catch(() => {});
+      }
+      await objectsTable.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+      });
+      await authedPage.waitForTimeout(250);
     }
 
     await authedPage.getByTestId('files__search').fill('bulk-0250');

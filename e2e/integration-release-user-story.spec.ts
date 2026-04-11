@@ -378,12 +378,15 @@ async function createAgentViaUi(args: {
   const dialog = page.getByTestId('agents__create-dialog');
   await expect(dialog).toBeVisible();
   await dialog.locator('#agent-name').fill(name);
+  await dialog.locator('#agent-interaction-kind').selectOption('notebook');
   if (mode === 'internal') {
     await dialog.locator('input[name="mode"][value="internal"]').click();
+  }
+  await dialog.locator('#agent-execution-endpoint-id').selectOption(endpointId);
+  await dialog.getByRole('button', { name: /^next$/i }).click();
+  await expect(dialog.getByTestId('agents__create-dialog__product-summary')).toBeVisible({ timeout: 30_000 });
+  if (mode === 'internal') {
     await dialog.locator('#agent-image').fill(image ?? INTERNAL_AGENT_IMAGE);
-    await dialog.locator('#internal-notebook-endpoint-id').selectOption(endpointId);
-  } else {
-    await dialog.locator('#notebook-endpoint-id').selectOption(endpointId);
   }
   const createResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'

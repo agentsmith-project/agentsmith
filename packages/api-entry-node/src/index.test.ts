@@ -498,7 +498,7 @@ describe("api-entry-node projects routes", () => {
       expect(text).toContain("event: delta");
       expect(text).toContain("echo:");
       expect(text).toContain("event: done");
-      expect(observedApiBase).toBe(baseUrl);
+      expect(observedApiBase).toBe(`${baseUrl}/api/v1`);
       expect(observedEndpointId).toBe("ep_chat_default");
       expect(observedWireApi).toBe("chat");
       expect(observedExecutionTicket).toMatch(/^exec_/);

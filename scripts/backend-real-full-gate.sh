@@ -7,6 +7,8 @@ unset no_proxy NO_PROXY
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/scripts/scenarios/common.sh"
 load_backend_real_env "${ROOT_DIR}/.env.backend-real"
 export_backend_real_endpoint_env
 MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
@@ -26,6 +28,7 @@ gate_write_resolved_env "${LOCAL_READY_LOG_DIR}"
 gate_record_task_summary "${LOCAL_READY_LOG_DIR}" "{\"line_kind\":\"release_backend_real\",\"run_id\":\"${RUN_ID}\",\"api_port\":\"${API_PORT}\",\"web_port\":\"${WEB_PORT}\"}"
 API_LOG="${LOCAL_READY_LOG_DIR}/api.log"
 WEB_LOG="${LOCAL_READY_LOG_DIR}/web.log"
+NEXT_WEB_PID_FILE="${LOCAL_READY_LOG_DIR}/next-dev.pid"
 LOCAL_API_PID=""
 LOCAL_WEB_PID=""
 
@@ -134,6 +137,7 @@ ensure_local_release_stack() {
       MONGO_URL="${MONGO_URL}" \
       MONGO_DB_NAME="${MONGO_DB_NAME}" \
       NEXT_GENERATED_ROOT_MANAGED=1 \
+      NEXT_DEV_PID_FILE="${NEXT_WEB_PID_FILE}" \
       NEXT_PUBLIC_USE_MSW=false \
       AGENTSMITH_ENABLE_TEST_ROUTES=true \
       NEXT_PUBLIC_API_BASE="http://localhost:${API_PORT}/api/v1" \
@@ -143,17 +147,17 @@ ensure_local_release_stack() {
       KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
       PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
       INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
-      start_background_job "${WEB_LOG}" run_clean npm run dev:test -- --port "${WEB_PORT}"
+      start_background_job "${WEB_LOG}" run_clean bash scripts/run-next-dev-safe.sh --port "${WEB_PORT}"
     )"
   fi
 
-  gate_wait_for_http "${LOCAL_READY_LOG_DIR}" "${RUNTIME_HOST_API_BASE_URL}/api/v1/workspaces" 120 infra_dependency_unready api_ready || {
-    gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "api_ready" "local API did not become ready"
+  gate_wait_for_tcp "${LOCAL_READY_LOG_DIR}" "127.0.0.1" "${API_PORT}" 120 infra_dependency_unready api_ready || {
+    gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "api_ready" "local API port did not become ready"
     tail -n 120 "${API_LOG}" >&2 || true
     exit 1
   }
-  gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "api_ready" "passed" "${RUNTIME_HOST_API_BASE_URL}/api/v1/workspaces"
-  record_service api ready "${RUNTIME_HOST_API_BASE_URL}/api/v1/workspaces"
+  gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "api_ready" "passed" "127.0.0.1:${API_PORT}"
+  record_service api ready "127.0.0.1:${API_PORT}"
   gate_wait_for_http "${LOCAL_READY_LOG_DIR}" "${RUNTIME_HOST_WEB_BASE_URL}/api/public/workspaces" 120 infra_dependency_unready web_ready || {
     gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "web_ready" "local Web did not become ready"
     tail -n 120 "${WEB_LOG}" >&2 || true
@@ -163,9 +167,30 @@ ensure_local_release_stack() {
   record_service web ready "${RUNTIME_HOST_WEB_BASE_URL}/api/public/workspaces"
 }
 
+prewarm_internal_kind_cluster() {
+  if ! command -v kind >/dev/null 2>&1; then
+    gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "kind_missing" "kind is required for internal notebook backend-real coverage"
+    echo "[backend-real-full-gate] kind is required for internal notebook backend-real coverage." >&2
+    exit 1
+  fi
+  if ! command -v kubectl >/dev/null 2>&1; then
+    gate_record_failure "${LOCAL_READY_LOG_DIR}" "infra_dependency_unready" "kubectl_missing" "kubectl is required for internal notebook backend-real coverage"
+    echo "[backend-real-full-gate] kubectl is required for internal notebook backend-real coverage." >&2
+    exit 1
+  fi
+
+  info "prewarming local kind cluster for internal notebook backend-real coverage"
+  LOCAL_KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}" \
+  LOCAL_KIND_CONFIG_PATH="${ROOT_DIR}/infra/deploy/demo/kind/config.yaml" \
+  LOCAL_KIND_CONTROL_PLANE_NODE_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}-control-plane" \
+    ensure_local_kind_cluster
+}
+
 cleanup() {
+  stop_background_job "$(cat "${NEXT_WEB_PID_FILE}" 2>/dev/null || true)"
   stop_background_job "${LOCAL_WEB_PID}"
   stop_background_job "${LOCAL_API_PID}"
+  rm -f "${NEXT_WEB_PID_FILE}"
 }
 trap cleanup EXIT
 
@@ -198,6 +223,8 @@ run_cmd "npm run gate:default"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "default_gate" "passed" "npm run gate:default"
 run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_bootstrap" "passed" "backend-real bootstrap completed"
+prewarm_internal_kind_cluster
+gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "kind_cluster_ready" "passed" "${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}"
 ensure_local_release_stack
 ACCESS_TOKEN="$(gate_run_auth_preflight "${LOCAL_READY_LOG_DIR}" "${KEYCLOAK_BASE_URL}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}" "${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" "${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" "${RUNTIME_HOST_API_BASE_URL}/api/v1/me/profile" "failed to obtain release-ready token" "release-ready token missing access_token" "authenticated /api/v1/me/profile unavailable")" || exit 1
 record_service auth ready "release-ready dev-admin token bootstrap"

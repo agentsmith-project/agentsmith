@@ -92,7 +92,7 @@ export function createWorkspaceFoundationStoreResourceFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): WorkspaceFoundationStoreResource {
   const explicitMode = env.SYSTEM_WORKSPACE_REGISTRY_MODE?.trim().toLowerCase();
-  if (explicitMode === 'memory') {
+  if (explicitMode === 'memory' || explicitMode === 'file') {
     return { docStore: new InMemoryJsonDocStore() };
   }
   const mongoUrl = env.MONGO_URL?.trim();

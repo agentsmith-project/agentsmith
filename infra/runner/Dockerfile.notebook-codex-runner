@@ -4,6 +4,4 @@ FROM ${RUNNER_BASE_IMAGE}
 
 COPY packages/agent-runner/src ./packages/agent-runner/src
 COPY packages/notebook-codex-runner/src ./packages/notebook-codex-runner/src
-COPY packages/notebook-codex-runner/builtin-skills/mbos-context ./packages/notebook-codex-runner/builtin-skills/mbos-context
-COPY packages/notebook-codex-runner/builtin-skills/feishu-docs ./packages/notebook-codex-runner/builtin-skills/feishu-docs
-COPY packages/notebook-codex-runner/builtin-skills/jira-ops ./packages/notebook-codex-runner/builtin-skills/jira-ops
+COPY packages/notebook-codex-runner/builtin-skills /etc/codex/skills

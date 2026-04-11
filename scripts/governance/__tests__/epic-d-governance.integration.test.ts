@@ -13,32 +13,39 @@
  */
 
 import { execSync, spawn } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, rmSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { tmpdir } from 'node:os';
+import { describe, it, expect, afterAll } from 'vitest';
 
 // Test configuration
-const TEST_OUTPUT_DIR = join(process.cwd(), 'artifacts', 'test-governance-reports');
+const TEST_OUTPUT_DIR = mkdtempSync(join(tmpdir(), 'agentsmith-governance-reports-'));
+const TEST_RUNS_OUTPUT_DIR = mkdtempSync(join(tmpdir(), 'agentsmith-governance-runs-'));
+const TEST_ESCALATIONS_OUTPUT_DIR = mkdtempSync(join(tmpdir(), 'agentsmith-governance-incidents-'));
 const SCRIPT_PATH = join(process.cwd(), 'scripts/governance/verify-governance-report.ts');
 const CLASSIFIER_SCRIPT_PATH = join(process.cwd(), 'scripts/governance/__tests__/failure-classifier.test.ts');
 // Use tsx to run TypeScript files directly
 const RUNNER = 'npx tsx';
 
 describe('Epic D: Governance Engineering - Integration Tests', () => {
-  beforeAll(() => {
-    // Clean up any previous test artifacts
-    if (existsSync(TEST_OUTPUT_DIR)) {
-      rmSync(TEST_OUTPUT_DIR, { recursive: true, force: true });
-    }
-    mkdirSync(TEST_OUTPUT_DIR, { recursive: true });
-  });
+  mkdirSync(TEST_OUTPUT_DIR, { recursive: true });
+  mkdirSync(TEST_RUNS_OUTPUT_DIR, { recursive: true });
+  mkdirSync(TEST_ESCALATIONS_OUTPUT_DIR, { recursive: true });
 
   afterAll(() => {
-    // Clean up test artifacts
     if (existsSync(TEST_OUTPUT_DIR)) {
       rmSync(TEST_OUTPUT_DIR, { recursive: true, force: true });
     }
+    if (existsSync(TEST_RUNS_OUTPUT_DIR)) {
+      rmSync(TEST_RUNS_OUTPUT_DIR, { recursive: true, force: true });
+    }
+    if (existsSync(TEST_ESCALATIONS_OUTPUT_DIR)) {
+      rmSync(TEST_ESCALATIONS_OUTPUT_DIR, { recursive: true, force: true });
+    }
   });
+
+  const buildGovernanceCommand = (reportName: string, extraArgs: string[] = []) =>
+    `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --runs-output ${TEST_RUNS_OUTPUT_DIR} --escalations-output ${TEST_ESCALATIONS_OUTPUT_DIR} --name ${reportName}${extraArgs.length > 0 ? ` ${extraArgs.join(' ')}` : ''}`;
 
   describe('verify-governance-report.ts - CLI Execution', () => {
     it('should run with --help and show usage', () => {
@@ -56,12 +63,9 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
       const outputPath = join(TEST_OUTPUT_DIR, `${reportName}.json`);
 
       // Run the script
-      const output = execSync(
-        `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --dry-run`,
-        {
-          encoding: 'utf-8',
-        }
-      );
+      const output = execSync(buildGovernanceCommand(reportName, ['--dry-run']), {
+        encoding: 'utf-8',
+      });
 
       expect(output).toContain('Generating governance report');
       expect(output).toContain('JSON:');
@@ -81,12 +85,9 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
       const jsonPath = join(TEST_OUTPUT_DIR, `${reportName}.json`);
       const mdPath = join(TEST_OUTPUT_DIR, `${reportName}.md`);
 
-      execSync(
-        `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --dry-run`,
-        {
-          encoding: 'utf-8',
-        }
-      );
+      execSync(buildGovernanceCommand(reportName, ['--dry-run']), {
+        encoding: 'utf-8',
+      });
 
       // Verify both files exist
       expect(existsSync(jsonPath)).toBe(true);
@@ -103,12 +104,9 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
       const reportName = 'test-archive';
       const archivePattern = /^report-\d{8}-\d{6}\.(json|md)$/;
 
-      execSync(
-        `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --archive --dry-run`,
-        {
-          encoding: 'utf-8',
-        }
-      );
+      execSync(buildGovernanceCommand(reportName, ['--archive', '--dry-run']), {
+        encoding: 'utf-8',
+      });
 
       // Check for archive files (timestamped)
       const files = readdirSync(TEST_OUTPUT_DIR);
@@ -121,12 +119,9 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
       const reportName = 'test-commit-range';
       const outputPath = join(TEST_OUTPUT_DIR, `${reportName}.json`);
 
-      execSync(
-        `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --commit-range HEAD~1..HEAD --dry-run`,
-        {
-          encoding: 'utf-8',
-        }
-      );
+      execSync(buildGovernanceCommand(reportName, ['--commit-range', 'HEAD~1..HEAD', '--dry-run']), {
+        encoding: 'utf-8',
+      });
 
       const report = JSON.parse(readFileSync(outputPath, 'utf-8'));
       expect(report.metadata.git).toHaveProperty('commit_range');
@@ -137,6 +132,8 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
 
       const result = spawn('npx', ['tsx', SCRIPT_PATH,
         '--output', TEST_OUTPUT_DIR,
+        '--runs-output', TEST_RUNS_OUTPUT_DIR,
+        '--escalations-output', TEST_ESCALATIONS_OUTPUT_DIR,
         '--name', reportName,
         '--dry-run',
       ]);
@@ -157,12 +154,9 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
       const reportName = 'test-structure';
       const outputPath = join(TEST_OUTPUT_DIR, `${reportName}.json`);
 
-      execSync(
-        `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --dry-run`,
-        {
-          encoding: 'utf-8',
-        }
-      );
+      execSync(buildGovernanceCommand(reportName, ['--dry-run']), {
+        encoding: 'utf-8',
+      });
 
       const report = JSON.parse(readFileSync(outputPath, 'utf-8'));
 
@@ -201,12 +195,9 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
       const reportName = 'test-environment';
       const outputPath = join(TEST_OUTPUT_DIR, `${reportName}.json`);
 
-      execSync(
-        `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --dry-run`,
-        {
-          encoding: 'utf-8',
-        }
-      );
+      execSync(buildGovernanceCommand(reportName, ['--dry-run']), {
+        encoding: 'utf-8',
+      });
 
       const report = JSON.parse(readFileSync(outputPath, 'utf-8'));
 
@@ -222,12 +213,9 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
       const reportName = 'test-git-info';
       const outputPath = join(TEST_OUTPUT_DIR, `${reportName}.json`);
 
-      execSync(
-        `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --dry-run`,
-        {
-          encoding: 'utf-8',
-        }
-      );
+      execSync(buildGovernanceCommand(reportName, ['--dry-run']), {
+        encoding: 'utf-8',
+      });
 
       const report = JSON.parse(readFileSync(outputPath, 'utf-8'));
 
@@ -245,12 +233,9 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
       const reportName = 'test-execution-stats';
       const outputPath = join(TEST_OUTPUT_DIR, `${reportName}.json`);
 
-      execSync(
-        `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --dry-run`,
-        {
-          encoding: 'utf-8',
-        }
-      );
+      execSync(buildGovernanceCommand(reportName, ['--dry-run']), {
+        encoding: 'utf-8',
+      });
 
       const report = JSON.parse(readFileSync(outputPath, 'utf-8'));
 
@@ -274,12 +259,9 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
       const reportName = 'test-md-format';
       const mdPath = join(TEST_OUTPUT_DIR, `${reportName}.md`);
 
-      execSync(
-        `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --dry-run`,
-        {
-          encoding: 'utf-8',
-        }
-      );
+      execSync(buildGovernanceCommand(reportName, ['--dry-run']), {
+        encoding: 'utf-8',
+      });
 
       const mdContent = readFileSync(mdPath, 'utf-8');
 
@@ -300,12 +282,9 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
       const reportName = 'test-md-emoji';
       const mdPath = join(TEST_OUTPUT_DIR, `${reportName}.md`);
 
-      execSync(
-        `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --dry-run`,
-        {
-          encoding: 'utf-8',
-        }
-      );
+      execSync(buildGovernanceCommand(reportName, ['--dry-run']), {
+        encoding: 'utf-8',
+      });
 
       const mdContent = readFileSync(mdPath, 'utf-8');
 
@@ -336,13 +315,10 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
 
       // Command exits with code 1 when there are failures - that's expected
       try {
-        execSync(
-          `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --mock-failure token --dry-run`,
-          {
-            encoding: 'utf-8',
-            stdio: 'pipe',
-          }
-        );
+        execSync(buildGovernanceCommand(reportName, ['--mock-failure', 'token', '--dry-run']), {
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
       } catch {
         // Expected when there are failures
       }
@@ -364,13 +340,10 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
       const outputPath = join(TEST_OUTPUT_DIR, `${reportName}.json`);
 
       try {
-        execSync(
-          `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --mock-failure network --dry-run`,
-          {
-            encoding: 'utf-8',
-            stdio: 'pipe',
-          }
-        );
+        execSync(buildGovernanceCommand(reportName, ['--mock-failure', 'network', '--dry-run']), {
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
       } catch {
         // Expected when there are failures
       }
@@ -390,13 +363,10 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
       const mdPath = join(TEST_OUTPUT_DIR, `${reportName}.md`);
 
       try {
-        execSync(
-          `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --mock-failure backend --dry-run`,
-          {
-            encoding: 'utf-8',
-            stdio: 'pipe',
-          }
-        );
+        execSync(buildGovernanceCommand(reportName, ['--mock-failure', 'backend', '--dry-run']), {
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
       } catch {
         // Expected when there are failures
       }
@@ -419,13 +389,10 @@ describe('Epic D: Governance Engineering - Integration Tests', () => {
 
       // Should still run, just won't mock failures (will treat unknown as pass)
       try {
-        execSync(
-          `${RUNNER} ${SCRIPT_PATH} --output ${TEST_OUTPUT_DIR} --name ${reportName} --mock-failure invalid --dry-run`,
-          {
-            encoding: 'utf-8',
-            stdio: 'pipe',
-          }
-        );
+        execSync(buildGovernanceCommand(reportName, ['--mock-failure', 'invalid', '--dry-run']), {
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
       } catch {
         // May exit with code 0 or 1 depending on whether any checks "fail"
       }

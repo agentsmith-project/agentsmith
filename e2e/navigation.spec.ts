@@ -15,7 +15,7 @@ const SIDEBAR_NAV_ITEMS = [
   'use-guide',
   'agents',
   'endpoints',
-  'resource_policy',
+  'resource-policy',
   'context',
   'credentials',
   'members',
@@ -50,11 +50,11 @@ test.describe('Sidebar', () => {
     const sidebar = authedPage.getByTestId('sidebar');
     await expect(sidebar).toBeVisible({ timeout: 10000 });
 
-    const sectionsToTest = ['chat', 'use-guide', 'resource_policy', 'context', 'agents', 'members', 'settings'] as const;
+    const sectionsToTest = ['chat', 'use-guide', 'resource-policy', 'context', 'agents', 'members', 'settings'] as const;
 
     for (const section of sectionsToTest) {
       const navItem = authedPage.getByTestId(`sidebar__nav-item--${section}`);
-      const expectedPath = section === 'resource_policy'
+      const expectedPath = section === 'resource-policy'
         ? '/resource-policy'
         : section === 'use-guide'
           ? '/use-guide'

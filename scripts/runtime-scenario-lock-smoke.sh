@@ -32,7 +32,28 @@ release_scenario_lock local-manual
 printf '[runtime-scenario-lock-smoke] acquiring rehearsal lock after release\n'
 acquire_scenario_lock cluster-rehearsal
 [[ "$(current_active_scenario)" == 'cluster-rehearsal' ]]
+
+printf '[runtime-scenario-lock-smoke] rejecting concurrent mutating command on same scenario\n'
+acquire_scenario_command_lock cluster-rehearsal up
+if SCENARIO_RUNTIME_ROOT="${SCENARIO_RUNTIME_ROOT}" ACTIVE_SCENARIO_LOCK_FILE="${ACTIVE_SCENARIO_LOCK_FILE}" ROOT_DIR="${ROOT_DIR}" bash -lc '
+  set -euo pipefail
+  source "'"$ROOT_DIR"'/scripts/scenarios/common.sh"
+  acquire_scenario_command_lock cluster-rehearsal verify
+'; then
+  echo '[runtime-scenario-lock-smoke] expected same-scenario command lock acquisition to fail' >&2
+  exit 1
+fi
+release_scenario_command_lock cluster-rehearsal
 release_scenario_lock cluster-rehearsal
+
+printf '[runtime-scenario-lock-smoke] pruning stale same-scenario command lock\n'
+mkdir -p "${SCENARIO_RUNTIME_ROOT}/demo-rehearsal.command.lock"
+printf 'verify\n' > "${SCENARIO_RUNTIME_ROOT}/demo-rehearsal.command.lock/command"
+printf '999999\n' > "${SCENARIO_RUNTIME_ROOT}/demo-rehearsal.command.lock/pid"
+printf '2000-01-01T00:00:00Z\n' > "${SCENARIO_RUNTIME_ROOT}/demo-rehearsal.command.lock/started_at"
+acquire_scenario_command_lock demo-rehearsal report
+[[ "$(current_scenario_command demo-rehearsal)" == 'report' ]]
+release_scenario_command_lock demo-rehearsal
 
 printf '[runtime-scenario-lock-smoke] invalid demo bootstrap must not leave a stale lock\n'
 if SCENARIO_RUNTIME_ROOT="${SCENARIO_RUNTIME_ROOT}" ACTIVE_SCENARIO_LOCK_FILE="${ACTIVE_SCENARIO_LOCK_FILE}" ROOT_DIR="${ROOT_DIR}" DEMO_REHEARSAL_ROOT="${TMP_DIR}/demo-rehearsal" bash -lc '
@@ -49,6 +70,8 @@ if SCENARIO_RUNTIME_ROOT="${SCENARIO_RUNTIME_ROOT}" ACTIVE_SCENARIO_LOCK_FILE="$
   set -euo pipefail
   source "${ROOT_DIR}/scripts/scenarios/common.sh"
   acquire_scenario_lock demo-rehearsal
+  acquire_scenario_command_lock demo-rehearsal up
+  arm_scenario_command_lock_cleanup demo-rehearsal up
   arm_scenario_lock_cleanup demo-rehearsal
   false
 '; then
@@ -62,6 +85,8 @@ if SCENARIO_RUNTIME_ROOT="${SCENARIO_RUNTIME_ROOT}" ACTIVE_SCENARIO_LOCK_FILE="$
   set -euo pipefail
   source "${ROOT_DIR}/scripts/scenarios/common.sh"
   acquire_scenario_lock demo-rehearsal
+  acquire_scenario_command_lock demo-rehearsal up
+  arm_scenario_command_lock_cleanup demo-rehearsal up
   arm_scenario_lock_cleanup demo-rehearsal
   mark_scenario_world_changed
   false
@@ -70,6 +95,7 @@ if SCENARIO_RUNTIME_ROOT="${SCENARIO_RUNTIME_ROOT}" ACTIVE_SCENARIO_LOCK_FILE="$
   exit 1
 fi
 [[ "$(current_active_scenario)" == 'demo-rehearsal' ]]
+[[ -z "$(current_scenario_command demo-rehearsal)" ]]
 release_scenario_lock demo-rehearsal
 [[ -z "$(current_active_scenario)" ]]
 

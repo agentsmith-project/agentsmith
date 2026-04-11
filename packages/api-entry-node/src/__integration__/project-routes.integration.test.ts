@@ -46,6 +46,22 @@ function workspaceRecord(args: {
 }
 
 describe('api-entry-node project routes integration', () => {
+  it('keeps integration auth hermetic when ambient keycloak env points at a different issuer', async () => {
+    process.env.KEYCLOAK_BASE_URL = 'http://127.0.0.1:18080';
+    process.env.PUBLIC_KEYCLOAK_BASE_URL = 'http://127.0.0.1:18080';
+    process.env.INTERNAL_KEYCLOAK_BASE_URL = 'http://127.0.0.1:18080';
+    process.env.KEYCLOAK_ISSUER_URL = 'http://127.0.0.1:18080/realms/mbos';
+    process.env.KEYCLOAK_REALM = 'mbos';
+    process.env.KEYCLOAK_CLIENT_ID = 'agentsmith';
+
+    const { baseUrl } = startServer();
+
+    const workspaces = await apiFetch(baseUrl, '/api/v1/workspaces');
+    expect(workspaces.status).toBe(200);
+    const workspaceBody = (await workspaces.json()) as { items: Array<{ id: string }> };
+    expect(workspaceBody.items[0]?.id).toBe('ws_default');
+  });
+
   it('returns authenticated workspace and member payload', async () => {
     const { baseUrl } = startServer();
 

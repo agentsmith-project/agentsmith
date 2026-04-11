@@ -192,6 +192,11 @@ describe("Agent dialogs", () => {
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("agents__create-dialog__product-summary"),
+      ).toBeInTheDocument();
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
@@ -235,6 +240,11 @@ describe("Agent dialogs", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("agents__create-dialog__product-summary"),
+      ).toBeInTheDocument();
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
@@ -386,6 +396,11 @@ describe("Agent dialogs", () => {
     });
     fireEvent.click(await screen.findByLabelText("Internal"));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("agents__create-dialog__product-summary"),
+      ).toBeInTheDocument();
+    });
 
     const idleTimeoutInput = screen.getByLabelText(
       "Idle Timeout (sec)",
@@ -403,6 +418,37 @@ describe("Agent dialogs", () => {
     expect(maxLifetimeInput.value).toBe(
       String(INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS),
     );
+  });
+
+  it("CreateAgentDialog does not submit while advancing from product to deployment", async () => {
+    renderWithProviders(
+      <CreateAgentDialog
+        open
+        onOpenChange={vi.fn()}
+        workspaceId="ws_1"
+        projectId="proj_1"
+      />,
+    );
+
+    fireEvent.change(await screen.findByLabelText("Name"), {
+      target: { value: "agent-transition-check" },
+    });
+
+    const endpointSelect = screen.getByLabelText(
+      "Execution target",
+    ) as HTMLSelectElement;
+    await waitFor(() => {
+      expect(endpointSelect.value).toBe("ep_active_1");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("agents__create-dialog__product-summary"),
+      ).toBeInTheDocument();
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it("CreateAgentDialog updates endpoint wording when switching agent type", async () => {

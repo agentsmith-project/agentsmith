@@ -23,6 +23,23 @@ resolve_loopback_runtime_addresses() {
     RUNTIME_HOST_KEYCLOAK_BASE_URL
 }
 
+clear_runtime_stack_env() {
+  unset \
+    RUNTIME_PUBLIC_WEB_BASE_URL \
+    RUNTIME_PUBLIC_API_BASE_URL \
+    RUNTIME_PUBLIC_KEYCLOAK_BASE_URL \
+    RUNTIME_HOST_WEB_BASE_URL \
+    RUNTIME_HOST_API_BASE_URL \
+    RUNTIME_HOST_KEYCLOAK_BASE_URL \
+    RUNTIME_BROWSER_WEB_BASE_URL \
+    RUNTIME_BROWSER_KEYCLOAK_BASE_URL \
+    KEYCLOAK_BASE_URL \
+    KEYCLOAK_URL \
+    PUBLIC_KEYCLOAK_BASE_URL \
+    INTERNAL_KEYCLOAK_BASE_URL \
+    KEYCLOAK_ISSUER_URL
+}
+
 resolve_public_runtime_addresses() {
   local public_web="${1}"
   local public_api="${2}"

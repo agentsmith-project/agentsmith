@@ -419,8 +419,12 @@ async function createProject(page: Page, workspaceId: string): Promise<ProjectCo
   await expect(page.getByTestId('projects__create-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('projects__create-btn').click();
   await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
-  await page.locator('#project-name').fill(projectName);
-  await page.getByRole('button', { name: /create|创建/i }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('#project-name').fill(projectName);
+  const selects = dialog.locator('[role="combobox"]');
+  await selects.nth(0).click();
+  await page.getByRole('option', { name: /public/i }).click();
+  await dialog.getByRole('button', { name: /create|创建/i }).click();
   await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/.+/overview`), { timeout: 30_000 });
   const match = page.url().match(/\/projects\/([^/]+)\//);
   if (!match?.[1]) {
@@ -511,9 +515,12 @@ async function createAgent(page: Page, workspaceId: string, projectId: string): 
   const dialog = page.getByTestId('agents__create-dialog');
   await expect(dialog).toBeVisible();
   await dialog.locator('#agent-name').fill(agentName);
-  const endpointSelect = dialog.locator('#notebook-endpoint-id');
+  await dialog.locator('#agent-interaction-kind').selectOption('notebook');
+  const endpointSelect = dialog.locator('#agent-execution-endpoint-id');
   await expect(endpointSelect).toBeVisible({ timeout: 30_000 });
   await endpointSelect.selectOption({ index: 0 });
+  await dialog.getByRole('button', { name: /^next$/i }).click();
+  await expect(dialog.getByTestId('agents__create-dialog__product-summary')).toBeVisible({ timeout: 30_000 });
   await dialog.getByRole('button', { name: /create/i }).click();
   await expect(page.getByText(agentName)).toBeVisible({ timeout: 30_000 });
   return agentName;

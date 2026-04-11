@@ -5,6 +5,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_cluster_rehearsal_env
 acquire_scenario_lock "${CLUSTER_REHEARSAL_NAME}"
 arm_scenario_lock_cleanup "${CLUSTER_REHEARSAL_NAME}"
+acquire_scenario_command_lock "${CLUSTER_REHEARSAL_NAME}" up
+arm_scenario_command_lock_cleanup "${CLUSTER_REHEARSAL_NAME}" up
 ensure_cluster_rehearsal_site_env
 ensure_cluster_rehearsal_registry_env
 ensure_cluster_rehearsal_release_bundle
@@ -31,4 +33,5 @@ printf '[cluster-rehearsal] Web: http://localhost:%s\n' "${WEB_PORT}"
 printf '[cluster-rehearsal] API: http://localhost:%s\n' "${API_PORT}"
 printf '[cluster-rehearsal] Stage: environment ready\n'
 printf '[cluster-rehearsal] Next steps: make cluster-rehearsal-bootstrap && make cluster-rehearsal-verify && make cluster-rehearsal-report\n'
+disarm_scenario_command_lock_cleanup
 disarm_scenario_lock_cleanup

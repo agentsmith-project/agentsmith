@@ -13,6 +13,7 @@ WEB_PORT="${WEB_PORT:-${INTEGRATION_WEB_PORT:-3001}}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
+clear_runtime_stack_env
 resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}"
 API_BASE="${API_BASE:-${RUNTIME_HOST_API_BASE_URL}}"
 WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"

@@ -5,6 +5,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_demo_rehearsal_env
 acquire_scenario_lock "${DEMO_REHEARSAL_NAME}"
 arm_scenario_lock_cleanup "${DEMO_REHEARSAL_NAME}"
+acquire_scenario_command_lock "${DEMO_REHEARSAL_NAME}" up
+arm_scenario_command_lock_cleanup "${DEMO_REHEARSAL_NAME}" up
 ensure_demo_rehearsal_site_env
 ensure_demo_rehearsal_release_bundle
 if [[ "$(demo_env_value DEMO_DEPLOY_MODE)" == "full" ]]; then
@@ -36,4 +38,5 @@ if [[ "${DEMO_DEPLOY_MODE:-full}" == "full" ]]; then
 fi
 printf '[demo-rehearsal] Stage: environment ready\n'
 printf '[demo-rehearsal] Next steps: make demo-rehearsal-bootstrap && make demo-rehearsal-verify && make demo-rehearsal-report\n'
+disarm_scenario_command_lock_cleanup
 disarm_scenario_lock_cleanup

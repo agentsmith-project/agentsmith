@@ -13,6 +13,7 @@ WEB_PORT="${WEB_PORT:-${INTEGRATION_WEB_PORT:-3001}}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
+clear_runtime_stack_env
 resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}"
 API_BASE="${API_BASE:-${RUNTIME_HOST_API_BASE_URL}}"
 WEB_BASE="${BASE_URL:-${RUNTIME_BROWSER_WEB_BASE_URL}}"
@@ -89,6 +90,7 @@ ensure_local_release_stack() {
       NEXT_PUBLIC_USE_MSW=false \
       AGENTSMITH_ENABLE_TEST_ROUTES=true \
       NEXT_GENERATED_ROOT_MANAGED=1 \
+      NEXT_DEV_PID_FILE="${state_dir}/next-dev.pid" \
       NEXT_PUBLIC_API_BASE="http://localhost:${API_PORT}/api/v1" \
       NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_BASE_URL}/realms" \
       NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
@@ -96,7 +98,7 @@ ensure_local_release_stack() {
       KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
       PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
       INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
-      start_background_job "${web_log}" run_clean npm run dev:test -- --port "${WEB_PORT}"
+      start_background_job "${web_log}" run_clean bash scripts/run-next-dev-safe.sh --port "${WEB_PORT}"
     )"
     state_set_string services.local_web_pid "${web_pid}"
   fi

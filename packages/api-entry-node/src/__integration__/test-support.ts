@@ -9,12 +9,18 @@ import {
 } from '../../../../src/lib/system-admin/workspace-registry/persistence.js';
 
 const servers: Server[] = [];
-const originalKeycloakIssuer = process.env.KEYCLOAK_ISSUER_URL;
 const originalFeishuAppId = process.env.FEISHU_APP_ID;
 const originalFeishuAppSecret = process.env.FEISHU_APP_SECRET;
 const originalFeishuRedirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI;
 const originalFeishuAuthorizeUrl = process.env.FEISHU_OAUTH_AUTHORIZE_URL;
 const originalFeishuTokenUrl = process.env.FEISHU_OAUTH_TOKEN_URL;
+const originalKeycloakIssuerUrl = process.env.KEYCLOAK_ISSUER_URL;
+const originalKeycloakBaseUrl = process.env.KEYCLOAK_BASE_URL;
+const originalPublicKeycloakBaseUrl = process.env.PUBLIC_KEYCLOAK_BASE_URL;
+const originalInternalKeycloakBaseUrl = process.env.INTERNAL_KEYCLOAK_BASE_URL;
+const originalKeycloakRealm = process.env.KEYCLOAK_REALM;
+const originalKeycloakClientId = process.env.KEYCLOAK_CLIENT_ID;
+const originalKeycloakUrl = process.env.KEYCLOAK_URL;
 
 const signingKeys = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const signingJwk = {
@@ -129,11 +135,22 @@ afterEach(async () => {
     ),
   );
   servers.length = 0;
-  if (originalKeycloakIssuer === undefined) {
-    delete process.env.KEYCLOAK_ISSUER_URL;
-  } else {
-    process.env.KEYCLOAK_ISSUER_URL = originalKeycloakIssuer;
-  }
+  // Keep api-entry-node integration auth hermetic: these tests own the full
+  // Keycloak environment and must not inherit backend-real shell settings.
+  if (originalKeycloakIssuerUrl === undefined) delete process.env.KEYCLOAK_ISSUER_URL;
+  else process.env.KEYCLOAK_ISSUER_URL = originalKeycloakIssuerUrl;
+  if (originalKeycloakBaseUrl === undefined) delete process.env.KEYCLOAK_BASE_URL;
+  else process.env.KEYCLOAK_BASE_URL = originalKeycloakBaseUrl;
+  if (originalPublicKeycloakBaseUrl === undefined) delete process.env.PUBLIC_KEYCLOAK_BASE_URL;
+  else process.env.PUBLIC_KEYCLOAK_BASE_URL = originalPublicKeycloakBaseUrl;
+  if (originalInternalKeycloakBaseUrl === undefined) delete process.env.INTERNAL_KEYCLOAK_BASE_URL;
+  else process.env.INTERNAL_KEYCLOAK_BASE_URL = originalInternalKeycloakBaseUrl;
+  if (originalKeycloakRealm === undefined) delete process.env.KEYCLOAK_REALM;
+  else process.env.KEYCLOAK_REALM = originalKeycloakRealm;
+  if (originalKeycloakClientId === undefined) delete process.env.KEYCLOAK_CLIENT_ID;
+  else process.env.KEYCLOAK_CLIENT_ID = originalKeycloakClientId;
+  if (originalKeycloakUrl === undefined) delete process.env.KEYCLOAK_URL;
+  else process.env.KEYCLOAK_URL = originalKeycloakUrl;
   resetSystemWorkspaceRegistryPersistenceForTest();
   if (originalFeishuAppId === undefined) delete process.env.FEISHU_APP_ID;
   else process.env.FEISHU_APP_ID = originalFeishuAppId;
@@ -148,7 +165,17 @@ afterEach(async () => {
   currentMockIssuer = null;
 });
 
-export function startMockKeycloakServer(): { server: Server; issuerUrl: string } {
+function applyMockKeycloakEnv(baseUrl: string, issuerUrl: string): void {
+  process.env.KEYCLOAK_BASE_URL = baseUrl;
+  process.env.PUBLIC_KEYCLOAK_BASE_URL = baseUrl;
+  process.env.INTERNAL_KEYCLOAK_BASE_URL = baseUrl;
+  process.env.KEYCLOAK_ISSUER_URL = issuerUrl;
+  process.env.KEYCLOAK_REALM = 'mbos';
+  process.env.KEYCLOAK_CLIENT_ID = 'agentsmith-web';
+  process.env.KEYCLOAK_URL = `${baseUrl}/realms`;
+}
+
+export function startMockKeycloakServer(): { server: Server; issuerUrl: string; baseUrl: string } {
   const server = http.createServer((req, res) => {
     const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
     const directoryUsers = [
@@ -218,14 +245,15 @@ export function startMockKeycloakServer(): { server: Server; issuerUrl: string }
   const port = allocateTestPort();
   server.listen(port, '127.0.0.1');
   servers.push(server);
-  const issuerUrl = `http://127.0.0.1:${port}/realms/mbos`;
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const issuerUrl = `${baseUrl}/realms/mbos`;
   currentMockIssuer = issuerUrl;
-  return { server, issuerUrl };
+  applyMockKeycloakEnv(baseUrl, issuerUrl);
+  return { server, issuerUrl, baseUrl };
 }
 
 export function startServer(): { server: Server; baseUrl: string; deps: ReturnType<typeof createDefaultNodeApiDeps> } {
   const keycloak = startMockKeycloakServer();
-  process.env.KEYCLOAK_ISSUER_URL = keycloak.issuerUrl;
   seedPersistedSystemWorkspacesForTest([
     {
       id: 'ws_default',
@@ -264,7 +292,6 @@ export function startServer(): { server: Server; baseUrl: string; deps: ReturnTy
 
 export function startServerWithDeps(deps: ReturnType<typeof createDefaultNodeApiDeps>): { server: Server; baseUrl: string } {
   const keycloak = startMockKeycloakServer();
-  process.env.KEYCLOAK_ISSUER_URL = keycloak.issuerUrl;
   seedPersistedSystemWorkspacesForTest([
     {
       id: 'ws_default',

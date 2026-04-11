@@ -32,10 +32,13 @@ test.describe('Notebook Page', () => {
       await expect(createBtn).toBeEnabled();
     });
 
-    test('should show build header actions', async ({ authedPage }) => {
-      await expect(authedPage.getByTestId('notebook__open-chat')).toHaveAttribute('href', /\/chat$/);
-      await expect(authedPage.getByTestId('notebook__open-files')).toHaveAttribute('href', /\/files$/);
-      await expect(authedPage.getByTestId('notebook__open-agents')).toHaveAttribute('href', /\/agents$/);
+    test('should rely on sidebar navigation instead of build header actions', async ({ authedPage }) => {
+      await expect(authedPage.getByTestId('notebook__open-chat')).toHaveCount(0);
+      await expect(authedPage.getByTestId('notebook__open-files')).toHaveCount(0);
+      await expect(authedPage.getByTestId('notebook__open-agents')).toHaveCount(0);
+      await expect(authedPage.getByTestId('sidebar__nav-item--chat')).toHaveAttribute('href', /\/chat$/);
+      await expect(authedPage.getByTestId('sidebar__nav-item--files')).toHaveAttribute('href', /\/files$/);
+      await expect(authedPage.getByTestId('sidebar__nav-item--agents')).toHaveAttribute('href', /\/agents$/);
     });
 
     test('should open create task dialog', async ({ authedPage }) => {
@@ -93,9 +96,12 @@ test.describe('Notebook Page', () => {
       await expect(header).toBeVisible({ timeout: 10000 });
       await expect(authedPage.getByTestId('notebook__task-header-workspace-library')).toBeVisible();
       await expect(authedPage.getByTestId('notebook__task-header-agent-mode')).toBeVisible();
-      await expect(authedPage.getByTestId('notebook-task__open-list')).toHaveAttribute('href', /\/notebook$/);
-      await expect(authedPage.getByTestId('notebook-task__open-chat')).toHaveAttribute('href', /\/chat$/);
-      await expect(authedPage.getByTestId('notebook-task__open-files')).toHaveAttribute('href', /\/files$/);
+      await expect(authedPage.getByTestId('notebook-task__open-list')).toHaveCount(0);
+      await expect(authedPage.getByTestId('notebook-task__open-chat')).toHaveCount(0);
+      await expect(authedPage.getByTestId('notebook-task__open-files')).toHaveCount(0);
+      await expect(authedPage.getByTestId('sidebar__nav-item--notebook')).toHaveAttribute('href', /\/notebook$/);
+      await expect(authedPage.getByTestId('sidebar__nav-item--chat')).toHaveAttribute('href', /\/chat$/);
+      await expect(authedPage.getByTestId('sidebar__nav-item--files')).toHaveAttribute('href', /\/files$/);
     });
 
     test('should expose diagnostics links from realtime status when status is visible', async ({ authedPage }) => {
@@ -183,8 +189,8 @@ test.describe('Notebook Page', () => {
       await expect(authedPage.getByText(deletedTaskTitle)).not.toBeVisible();
     });
 
-    test('should navigate to files page from task detail header', async ({ authedPage }) => {
-      await authedPage.getByTestId('notebook-task__open-files').click();
+    test('should navigate to files page from sidebar on task detail', async ({ authedPage }) => {
+      await authedPage.getByTestId('sidebar__nav-item--files').click();
       await authedPage.waitForURL(/\/files$/, { timeout: 10000 });
       await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
     });

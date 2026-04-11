@@ -1811,7 +1811,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedExecutionContext?.workspace_file_library_id).toBe(workspaceLibrary.id);
     expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
     expect(capturedExecutionContext?.interaction_kind).toBe('notebook');
-    expect(capturedExecutionContext?.api_base).toBe(baseUrl);
+    expect(capturedExecutionContext?.api_base).toBe(`${baseUrl}/api/v1`);
     expect(capturedExecutionContext?.credential_files).toBeUndefined();
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;

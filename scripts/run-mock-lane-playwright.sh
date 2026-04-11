@@ -17,11 +17,14 @@ PORT_WEB="${PORT_WEB:-3001}"
 NEXT_DIST_DIR="${MOCK_NEXT_DIST_DIR:-artifacts/mock-lane/runs/${MOCK_RUN_ID}/next-dist}"
 BASE_URL="http://127.0.0.1:${PORT_WEB}"
 HEALTH_URL="${BASE_URL}/zh-CN/login"
-WARM_URLS_DEFAULT=$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default/projects/proj_001/files'
+WARM_URLS_DEFAULT=$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/user/profile\n/en-US/workspaces/ws_default/projects/proj_001/files'
+WARM_ROUTE_ATTEMPTS="${MOCK_LANE_WARM_ROUTE_ATTEMPTS:-15}"
 
 PID_FILE="${MOCK_STATE_DIR}/web.pid"
+NEXT_PID_FILE="${MOCK_STATE_DIR}/next-dev.pid"
 LOG_FILE="${MOCK_STATE_DIR}/web.log"
 MOCK_WORKSPACE_PROVISIONING_PATH="${MOCK_WORKSPACE_PROVISIONING_PATH:-artifacts/mock-lane/runs/${MOCK_RUN_ID}/system-workspace-provisioning.mock}"
+MOCK_WORKSPACE_REGISTRY_FILE="${MOCK_WORKSPACE_REGISTRY_FILE:-artifacts/mock-lane/runs/${MOCK_RUN_ID}/system-workspaces.json}"
 STARTED_BY_SCRIPT=0
 LAST_PLAYWRIGHT_LOG=""
 MAX_ATTEMPTS="${MOCK_LANE_MAX_ATTEMPTS:-3}"
@@ -35,6 +38,26 @@ next_generated_root_normalize
 info() { echo "[mock-lane] $*"; }
 err() { echo "[mock-lane] ERROR: $*" >&2; }
 
+stop_pid_gracefully() {
+  local pid="$1"
+  local label="$2"
+  local wait_seconds="${3:-5}"
+  [[ -n "${pid}" ]] || return 0
+  if ! kill -0 "${pid}" >/dev/null 2>&1; then
+    return 0
+  fi
+  info "stopping ${label} pid ${pid}"
+  kill "${pid}" >/dev/null 2>&1 || true
+  local _i
+  for _i in $(seq 1 "${wait_seconds}"); do
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  kill -9 "${pid}" >/dev/null 2>&1 || true
+}
+
 reset_next_dev_artifacts_if_corrupt() {
   if grep -q "Cannot find module './vendor-chunks/next.js'" "${LOG_FILE}" 2>/dev/null; then
     info "detected corrupted Next.js dev artifacts; clearing ${NEXT_DIST_DIR} before retry"
@@ -46,12 +69,14 @@ cleanup() {
   if [[ "${STARTED_BY_SCRIPT}" == "1" ]] && [[ -f "${PID_FILE}" ]]; then
     local pid
     pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
-    if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
-      kill "${pid}" >/dev/null 2>&1 || true
-      sleep 1
-      kill -9 "${pid}" >/dev/null 2>&1 || true
-    fi
+    stop_pid_gracefully "${pid}" "mock lane web"
     rm -f "${PID_FILE}"
+  fi
+  if [[ -f "${NEXT_PID_FILE}" ]]; then
+    local next_pid
+    next_pid="$(cat "${NEXT_PID_FILE}" 2>/dev/null || true)"
+    stop_pid_gracefully "${next_pid}" "mock lane next"
+    rm -f "${NEXT_PID_FILE}"
   fi
   next_generated_root_normalize
   rm -rf "${ROOT_DIR}/${MOCK_WORKSPACE_PROVISIONING_PATH}"
@@ -62,11 +87,10 @@ cleanup() {
   fi
   if [[ "${RUN_SUCCEEDED}" == "1" && "${KEEP_SUCCESS_RUN}" != "1" ]]; then
     rm -rf "${MOCK_RUN_ROOT}"
-    lane_remove_current_link_if_matches mock-lane "${MOCK_RUN_ROOT}" current
   elif [[ "${RUN_SUCCEEDED}" != "1" && "${KEEP_FAILED_RUN}" != "1" ]]; then
     rm -rf "${MOCK_RUN_ROOT}"
-    lane_remove_current_link_if_matches mock-lane "${MOCK_RUN_ROOT}" current
   fi
+  lane_remove_current_link_if_matches mock-lane "${MOCK_RUN_ROOT}" current
   lane_prune_runs mock-lane "${PRUNE_KEEP_COUNT}" "${PRUNE_STALE_HOURS}"
 }
 trap cleanup EXIT
@@ -124,13 +148,14 @@ stop_owned_server() {
   if [[ -z "${pid}" ]]; then
     return 0
   fi
-  if kill -0 "${pid}" >/dev/null 2>&1; then
-    info "stopping owned mock lane server pid ${pid}"
-    kill "${pid}" >/dev/null 2>&1 || true
-    sleep 1
-    kill -9 "${pid}" >/dev/null 2>&1 || true
-  fi
+  stop_pid_gracefully "${pid}" "owned mock lane server"
   rm -f "${PID_FILE}"
+  if [[ -f "${NEXT_PID_FILE}" ]]; then
+    local next_pid=""
+    next_pid="$(cat "${NEXT_PID_FILE}" 2>/dev/null || true)"
+    stop_pid_gracefully "${next_pid}" "owned mock lane next"
+    rm -f "${NEXT_PID_FILE}"
+  fi
 }
 
 cleanup_stale_mock_processes() {
@@ -154,13 +179,10 @@ cleanup_stale_mock_processes() {
     fi
     cmd="$(ps -p "${pid}" -o command= 2>/dev/null || true)"
     if [[ "${cmd}" == *"npm run dev:test"* || "${cmd}" == *"run-next-dev-safe.sh"* || "${cmd}" == *"next dev"* ]]; then
-      info "stopping stale mock-lane web process ${pid}"
-      kill "${pid}" >/dev/null 2>&1 || true
-      sleep 1
-      kill -9 "${pid}" >/dev/null 2>&1 || true
+      stop_pid_gracefully "${pid}" "stale mock-lane web process"
       rm -f "${pid_file}"
     fi
-  done < <(find "$(lane_runs_root mock-lane)" -mindepth 2 -maxdepth 2 -type f -name 'web.pid' 2>/dev/null | sort)
+  done < <(find "$(lane_runs_root mock-lane)" -mindepth 2 -maxdepth 2 \( -type f -name 'web.pid' -o -type f -name 'next-dev.pid' \) 2>/dev/null | sort -u)
 
   lane_prune_runs mock-lane "${PRUNE_KEEP_COUNT}" "${PRUNE_STALE_HOURS}"
 }
@@ -232,7 +254,7 @@ wait_for_stable_health() {
 
 warm_route() {
   local route="$1"
-  local attempts="${2:-5}"
+  local attempts="${2:-${WARM_ROUTE_ATTEMPTS}}"
   local i
   for i in $(seq 1 "${attempts}"); do
     local code
@@ -242,6 +264,7 @@ warm_route() {
     fi
     sleep 1
   done
+  info "route ${route} did not warm successfully after ${attempts} attempts"
   return 1
 }
 
@@ -288,11 +311,13 @@ start_mock_server() {
         NEXT_MAX_OLD_SPACE_SIZE="${NEXT_MAX_OLD_SPACE_SIZE:-6144}" \
         NEXT_DIST_DIR="${NEXT_DIST_DIR}" \
         NEXT_GENERATED_ROOT_MANAGED=1 \
+        NEXT_DEV_PID_FILE="${NEXT_PID_FILE}" \
         NEXT_PUBLIC_USE_MSW=true \
         AGENTSMITH_ENABLE_TEST_ROUTES=true \
-        SYSTEM_WORKSPACE_REGISTRY_MODE=memory \
+        SYSTEM_WORKSPACE_REGISTRY_MODE=file \
+        SYSTEM_WORKSPACE_REGISTRY_FILE="${MOCK_WORKSPACE_REGISTRY_FILE}" \
         SYSTEM_WORKSPACE_PROVISIONING_PATH="${MOCK_WORKSPACE_PROVISIONING_PATH}" \
-        npm run dev:test -- --port "${PORT_WEB}"
+        bash scripts/run-next-dev-safe.sh --port "${PORT_WEB}"
     ) >>"${LOG_FILE}" 2>&1 &
     echo $! > "${PID_FILE}"
     STARTED_BY_SCRIPT=1
@@ -316,8 +341,8 @@ start_mock_server() {
     fi
 
     info "mock web server failed to become ready; restarting lane bootstrap (${launch_attempt}/3)"
-    reset_next_dev_artifacts_if_corrupt
     stop_owned_server
+    reset_next_dev_artifacts_if_corrupt
     sleep 2
     launch_attempt=$((launch_attempt + 1))
   done

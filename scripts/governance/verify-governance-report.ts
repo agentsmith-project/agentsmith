@@ -85,21 +85,14 @@ async function main() {
   }
 
   // Ensure output directory exists
-  if (!existsSync(args.output ?? DEFAULT_OUTPUT_DIR)) {
-    mkdirSync(args.output ?? DEFAULT_OUTPUT_DIR, { recursive: true });
-  }
-
   const outputDir = args.output ?? DEFAULT_OUTPUT_DIR;
   const runsOutputDir = args.runsOutput ?? DEFAULT_RUNS_OUTPUT_DIR;
   const escalationsOutputDir = args.escalationsOutput ?? DEFAULT_ESCALATIONS_OUTPUT_DIR;
   const reportName = args.name ?? `report-${getTimestamp()}`;
 
-  if (!existsSync(runsOutputDir)) {
-    mkdirSync(runsOutputDir, { recursive: true });
-  }
-  if (!existsSync(escalationsOutputDir)) {
-    mkdirSync(escalationsOutputDir, { recursive: true });
-  }
+  ensureDirectory(outputDir);
+  ensureDirectory(runsOutputDir);
+  ensureDirectory(escalationsOutputDir);
 
   console.log(`[verify-governance-report] Generating governance report...`);
   console.log(`[verify-governance-report] Output: ${join(outputDir, reportName)}`);
@@ -108,21 +101,25 @@ async function main() {
   const report = await generateGovernanceReport(args);
 
   // Write JSON report
+  ensureDirectory(outputDir);
   const jsonPath = join(outputDir, `${reportName}.json`);
   writeFileSync(jsonPath, JSON.stringify(report, null, 2), 'utf-8');
   console.log(`[verify-governance-report] JSON: ${jsonPath}`);
 
   // Write Markdown report
+  ensureDirectory(outputDir);
   const mdPath = join(outputDir, `${reportName}.md`);
   writeFileSync(mdPath, generateMarkdown(report), 'utf-8');
   console.log(`[verify-governance-report] Markdown: ${mdPath}`);
 
   const runHistory = buildGovernanceRunHistory(reportName, report, args);
+  ensureDirectory(runsOutputDir);
   const runPath = join(runsOutputDir, `${reportName}.json`);
   writeFileSync(runPath, JSON.stringify(runHistory, null, 2), 'utf-8');
   console.log(`[verify-governance-report] Run: ${runPath}`);
 
   const escalation = await buildGovernanceIncidentEvent(reportName, report, runHistory);
+  ensureDirectory(escalationsOutputDir);
   const escalationPath = join(escalationsOutputDir, `${reportName}.json`);
   writeFileSync(escalationPath, JSON.stringify(escalation, null, 2), 'utf-8');
   console.log(`[verify-governance-report] Escalation: ${escalationPath}`);
@@ -131,6 +128,7 @@ async function main() {
   let archivePath: string | undefined;
   if (args.archive) {
     const archiveName = `report-${getTimestamp()}`;
+    ensureDirectory(outputDir);
     const archiveJsonPath = join(outputDir, `${archiveName}.json`);
     const archiveMdPath = join(outputDir, `${archiveName}.md`);
     writeFileSync(archiveJsonPath, JSON.stringify(report, null, 2), 'utf-8');
@@ -555,10 +553,17 @@ function getGitInfo(commitRange?: string): ReportMetadata['git'] {
       commit_hash: 'unknown',
       commit_short: 'unknown',
       branch: 'unknown',
+      commit_range: commitRange,
       commit_message: 'Could not retrieve git info',
       author: 'unknown',
       date: new Date().toISOString(),
     };
+  }
+}
+
+function ensureDirectory(dir: string): void {
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
   }
 }
 

@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -73,8 +73,51 @@ describe('run-next-dev-safe', () => {
 
     const tsconfig = readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8');
     const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
-    expect(tsconfig).toContain('artifacts/backend-real/runs/*/next-dist/types/**/*.ts');
+    expect(tsconfig).toContain('artifacts/backend-real/current-run/next-dist/types/**/*.ts');
     expect(tsconfig).not.toContain('/integration-20260410T062839Z-3559213-15947/');
     expect(nextEnv).not.toContain('/integration-20260410T062839Z-3559213-15947/');
+  });
+
+  it('normalizes root files when the wrapper receives SIGTERM in managed mode', async () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+cat > "${rootDir}/tsconfig.json" <<'EOF_TSCONFIG'
+{"include":["artifacts/mock-lane/runs/mock-20260411T011449Z-1305939-19002/next-dist/types/**/*.ts","next-env.d.ts"]}
+EOF_TSCONFIG
+cat > "${rootDir}/next-env.d.ts" <<'EOF_NEXT_ENV'
+/// <reference path="./artifacts/mock-lane/runs/mock-20260411T011449Z-1305939-19002/next-dist/types/routes.d.ts" />
+EOF_NEXT_ENV
+trap 'exit 0' TERM INT
+while true; do sleep 1; done
+`,
+      { mode: 0o755 },
+    );
+
+    const child = spawn('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        ROOT_DIR: rootDir,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        NEXT_GENERATED_ROOT_MANAGED: '1',
+      },
+      stdio: 'pipe',
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    child.kill('SIGTERM');
+    await new Promise<number>((resolve, reject) => {
+      child.on('exit', (code) => resolve(code ?? 0));
+      child.on('error', reject);
+    });
+
+    const tsconfig = readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8');
+    const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
+    expect(tsconfig).toContain('artifacts/mock-lane/current/next-dist/types/**/*.ts');
+    expect(tsconfig).not.toContain('/mock-20260411T011449Z-1305939-19002/');
+    expect(nextEnv).not.toContain('/mock-20260411T011449Z-1305939-19002/');
   });
 });

@@ -40,7 +40,9 @@ const governanceDefaultChecklist = read('docs/user-guides/governance-default-eng
 const releaseChecklist = read('docs/user-guides/release-readiness-checklist.md');
 const workspaceDefaultGate = read('scripts/workspace-project-default-gate.sh');
 const governanceDefaultGate = read('scripts/governance-default-gate.sh');
+const backendRealRun = read('scripts/backend-real-run.sh');
 const backendRealFullGate = read('scripts/backend-real-full-gate.sh');
+const integrationE2EFull = read('scripts/run-integration-e2e-full.sh');
 
 const failures: string[] = [];
 
@@ -64,9 +66,16 @@ requireMatch(workspaceDefaultGate, /e2e\/visual\.spec\.ts[\s\S]*--project=visual
 requireMatch(governanceDefaultGate, /e2e\/visual\.spec\.ts[\s\S]*--project=visual[\s\S]*--grep /, 'governance default gate must keep targeted visual coverage with --grep', failures);
 forbidMatch(workspaceDefaultGate, /npm run test:visual/, 'workspace-project default gate must not delegate to the full visual lane', failures);
 forbidMatch(governanceDefaultGate, /npm run test:visual/, 'governance default gate must not delegate to the full visual lane', failures);
+requireMatch(workspaceDefaultGate, /source "\$\{ROOT_DIR\}\/scripts\/lib\/backend-real-gate-ports\.sh"/, 'workspace-project default gate must source backend-real-gate-ports when backend-real is enabled', failures);
+requireMatch(workspaceDefaultGate, /cleanup_gate_ports "\$\{real_api_port\}" "\$\{real_web_port\}" "\$\{real_spec\}"/, 'workspace-project default gate must clean stale backend-real ports before running integration-minimal', failures);
 
 requireMatch(backendRealFullGate, /npm run gate:default/, 'backend-real full gate must continue to include gate:default before release verification', failures);
 requireMatch(backendRealFullGate, /npm run test:visual:backend-real:review/, 'backend-real full gate must keep backend-real visual review as a release-only evidence step', failures);
+requireMatch(backendRealRun, /cleanup_gate_ports 20040 3041 e2e\/integration-minimal\.spec\.ts/, 'backend-real-run must clean stale ports before the external default backend-real lane', failures);
+requireMatch(backendRealRun, /cleanup_gate_ports 20060 3061 e2e\/integration-system-notebook-default\.spec\.ts/, 'backend-real-run must clean stale ports before the notebook backend-real smoke lane', failures);
+requireMatch(backendRealRun, /cleanup_gate_ports 20064 3065 e2e\/integration-chat-llm-runner\.spec\.ts/, 'backend-real-run must clean stale ports before the external chat runner backend-real lane', failures);
+requireMatch(backendRealRun, /cleanup_gate_ports 20064 3065 e2e\/integration-notebook-codex-runner\.spec\.ts/, 'backend-real-run must clean stale ports before the external notebook runner backend-real lane', failures);
+requireMatch(integrationE2EFull, /clear_runtime_stack_env[\s\S]*resolve_loopback_runtime_stack/, 'run-integration-e2e-full must clear inherited runtime stack addresses before rebuilding its isolated loopback stack', failures);
 
 requireMatch(workflow, /^  gate-fast:\n/m, 'quality-gates workflow is missing the gate-fast job', failures);
 requireMatch(workflow, /^  gate-default:\n/m, 'quality-gates workflow is missing the gate-default job', failures);

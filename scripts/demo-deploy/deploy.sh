@@ -31,6 +31,14 @@ UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-agentsmith}"
 KIND_CONTEXT="kind-${KIND_CLUSTER_NAME}"
 KIND_CONFIG_PATH="${RELEASE_ROOT}/kind/config.yaml"
+
+ensure_demo_kind_cluster() {
+  bash "${ROOT_DIR}/scripts/ensure-local-kind-cluster.sh" \
+    "${KIND_CLUSTER_NAME}" \
+    "${KIND_CONFIG_PATH}" \
+    "${KIND_CLUSTER_NAME}-control-plane"
+}
+
 if demo_mode_is_full; then
   KIND_NODE_IMAGE="$(awk '/image:/ {print $2; exit}' "${KIND_CONFIG_PATH}")"
   [[ -n "${KIND_NODE_IMAGE}" ]] || die "failed to resolve kind node image from ${KIND_CONFIG_PATH}"
@@ -59,13 +67,6 @@ for tar_file in "${image_archives[@]}"; do
   docker load -i "${tar_file}" >/dev/null
 done
 
-kind_cluster_healthy() {
-  kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}" || return 1
-  docker ps --format '{{.Names}}' | grep -qx "${KIND_CLUSTER_NAME}-control-plane" || return 1
-  docker exec "${KIND_CLUSTER_NAME}-control-plane" systemctl is-active containerd >/dev/null 2>&1 || return 1
-  kubectl --context "${KIND_CONTEXT}" version --request-timeout=5s >/dev/null 2>&1 || return 1
-}
-
 kind_cluster_incompatible_with_demo_full() {
   kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}" || return 1
   local sandbox_node_port="30080"
@@ -84,7 +85,7 @@ recreate_kind_cluster_for_demo() {
   log "recreating kind cluster for demo full mode: ${reason}"
   kind delete cluster --name "${KIND_CLUSTER_NAME}" >/dev/null || true
   sleep 2
-  kind create cluster --name "${KIND_CLUSTER_NAME}" --config "${KIND_CONFIG_PATH}"
+  ensure_demo_kind_cluster
 }
 
 ensure_demo_external_runner_slot_available() {
@@ -97,20 +98,7 @@ ensure_demo_external_runner_slot_available() {
 }
 
 if demo_mode_is_full; then
-  if kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}" && ! kind_cluster_healthy; then
-    log "recreating unhealthy kind cluster"
-    kind delete cluster --name "${KIND_CLUSTER_NAME}" >/dev/null || true
-  fi
-
-  if ! kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}"; then
-    log "creating kind cluster"
-    if ! kind create cluster --name "${KIND_CLUSTER_NAME}" --config "${KIND_CONFIG_PATH}"; then
-      log "kind cluster creation failed; deleting cluster and retrying once"
-      kind delete cluster --name "${KIND_CLUSTER_NAME}" >/dev/null || true
-      sleep 2
-      kind create cluster --name "${KIND_CLUSTER_NAME}" --config "${KIND_CONFIG_PATH}"
-    fi
-  fi
+  ensure_demo_kind_cluster
   kind export kubeconfig --name "${KIND_CLUSTER_NAME}" >/dev/null
   if kind_cluster_incompatible_with_demo_full; then
     recreate_kind_cluster_for_demo "found ingress-nginx full-auto prereqs that reserve the demo sandbox node port"

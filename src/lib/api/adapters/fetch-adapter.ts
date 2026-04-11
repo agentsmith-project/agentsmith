@@ -13,6 +13,30 @@ import { notifyUnauthorized, tryRefreshSession } from '@/lib/auth/session-recove
 export class FetchApiClient implements ApiClient {
   private token: string | null = null;
 
+  private async parseJsonBody(response: Response): Promise<unknown> {
+    if (typeof response.text !== 'function') {
+      const fallbackResponse = response as Response & { json?: () => Promise<unknown> };
+      if (typeof fallbackResponse.json === 'function') {
+        return fallbackResponse.json();
+      }
+      return undefined;
+    }
+
+    const text = await response.text();
+    if (text.trim().length === 0) {
+      return undefined;
+    }
+
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      if (response.ok) {
+        throw new ApiError('INVALID_RESPONSE', 'Invalid server response', '', response.status);
+      }
+      throw new ApiError('UNKNOWN_ERROR', `HTTP ${response.status}`, '', response.status);
+    }
+  }
+
   private buildUrl(path: string, params?: Record<string, string | number>): string {
     let url = `${API_BASE}${path}`;
     if (params) {
@@ -92,13 +116,19 @@ export class FetchApiClient implements ApiClient {
         return undefined as T;
       }
 
-      const data = await response.json();
+      const data = await this.parseJsonBody(response);
 
       if (!response.ok) {
         throw new ApiError(
-          data.error_code || 'UNKNOWN_ERROR',
-          data.message || `HTTP ${response.status}`,
-          data.request_id,
+          typeof data === 'object' && data !== null && 'error_code' in data
+            ? String((data as { error_code?: string }).error_code ?? 'UNKNOWN_ERROR')
+            : 'UNKNOWN_ERROR',
+          typeof data === 'object' && data !== null && 'message' in data
+            ? String((data as { message?: string }).message ?? `HTTP ${response.status}`)
+            : `HTTP ${response.status}`,
+          typeof data === 'object' && data !== null && 'request_id' in data
+            ? String((data as { request_id?: string }).request_id ?? '')
+            : '',
           response.status,
           typeof data === 'object' && data !== null
             ? ((data as Record<string, unknown>).details as Record<string, unknown> | undefined) ?? (data as Record<string, unknown>)
@@ -106,7 +136,7 @@ export class FetchApiClient implements ApiClient {
         );
       }
 
-      return data;
+      return data as T;
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;

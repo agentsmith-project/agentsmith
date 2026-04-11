@@ -20,6 +20,7 @@ const constitution = read('docs/项目宪法.md');
 const visualPolicy = read('docs/UXUI/01-通用规范/visual-baseline-policy-v1.md');
 const contractsIndex = read('docs/contracts/README.md');
 const productTerminology = read('docs/contracts/product-terminology.md');
+const releaseLocalPrecheck = read('scripts/run-release-local-precheck.sh');
 const playwrightConfig = read('playwright.config.ts');
 const makefile = read('Makefile');
 const governanceModel = read(governanceDoc);
@@ -79,6 +80,21 @@ for (const command of listCurrentWorkflowCommands()) {
 
 requireMatch(playwrightConfig, /\bdefaultE2ESpecMatch\b/, 'playwright.config.ts must use the defaultE2ESpecMatch name');
 forbidMatch(playwrightConfig, /\bchromiumMvpSpecMatch\b/, 'playwright.config.ts still uses chromiumMvpSpecMatch');
+requireMatch(
+  playwrightConfig,
+  /NEXT_GENERATED_ROOT_MANAGED=1/,
+  'playwright.config.ts managed dev server must normalize generated root files explicitly',
+);
+requireMatch(
+  playwrightConfig,
+  /managedMockNextDistDir = `artifacts\/mock-lane\/runs\/\$\{managedMockRunId\}\/next-dist`[\s\S]*NEXT_DIST_DIR=\$\{managedMockNextDistDir\}/,
+  'playwright.config.ts managed dev server must use an isolated mock-lane NEXT_DIST_DIR',
+);
+requireMatch(
+  playwrightConfig,
+  /reuseExistingServer:\s*false/,
+  'playwright.config.ts managed dev server must not reuse an unmanaged existing server',
+);
 
 requireMatch(visualPolicy, /整页视觉基线/, 'visual baseline policy must define full-page visual baselines');
 requireMatch(visualPolicy, /局部视觉基线/, 'visual baseline policy must define focused visual baselines');
@@ -88,6 +104,80 @@ forbidMatch(visualPolicy, /ignored by git/, 'visual baseline policy still says s
 requireMatch(readme, /lane:visual/, 'README must document lane:visual');
 requireMatch(development, /lane:visual/, 'DEVELOPMENT must document lane:visual');
 requireMatch(governanceModel, /lane:visual/, 'current engineering governance model must document lane:visual');
+
+const requiredMockLaneScripts = [
+  'test:e2e:lane:mock:smoke',
+  'test:e2e:lane:mock:chromium',
+  'test:e2e:lane:mock:visual',
+  'test:e2e:lane:mock:visual:update',
+  'test:e2e:lane:mock:full:with-visual',
+] as const;
+
+for (const scriptName of requiredMockLaneScripts) {
+  const scriptValue = packageJson.scripts?.[scriptName];
+  if (!scriptValue) {
+    failures.push(`package.json is missing required mock lane script: ${scriptName}`);
+    continue;
+  }
+  if (!/run-mock-lane-playwright\.sh/.test(scriptValue)) {
+    failures.push(`${scriptName} must use scripts/run-mock-lane-playwright.sh as the canonical mock lane launcher`);
+  }
+}
+
+requireMatch(
+  releaseLocalPrecheck,
+  /clear_runtime_stack_env[\s\S]*resolve_loopback_runtime_stack/,
+  'release-local-precheck must clear inherited runtime stack addresses before rebuilding its isolated local stack',
+);
+requireMatch(
+  releaseLocalPrecheck,
+  /cleanup_gate_ports "\$\{API_PORT\}" "\$\{WEB_PORT\}" "release-local-precheck"/,
+  'release-local-precheck must clean stale fixed ports before starting its local API/Web stack',
+);
+requireMatch(
+  releaseLocalPrecheck,
+  /PUBLIC_API_BASE_URL="\$\{PUBLIC_API_BASE_URL:-\$\{INTEGRATION_API_BASE\}\/api\/v1\}"/,
+  'release-local-precheck must pass a trusted PUBLIC_API_BASE_URL when starting the local API for agent websocket/resource proxy flows',
+);
+
+const requiredScenarioCommandLockedScripts = [
+  'scripts/scenarios/demo-rehearsal/up.sh',
+  'scripts/scenarios/demo-rehearsal/down.sh',
+  'scripts/scenarios/demo-rehearsal/reset.sh',
+  'scripts/scenarios/demo-rehearsal/bootstrap.sh',
+  'scripts/scenarios/demo-rehearsal/verify.sh',
+  'scripts/scenarios/demo-rehearsal/report.sh',
+  'scripts/scenarios/cluster-rehearsal/up.sh',
+  'scripts/scenarios/cluster-rehearsal/down.sh',
+  'scripts/scenarios/cluster-rehearsal/reset.sh',
+  'scripts/scenarios/cluster-rehearsal/bootstrap.sh',
+  'scripts/scenarios/cluster-rehearsal/verify.sh',
+  'scripts/scenarios/cluster-rehearsal/report.sh',
+] as const;
+
+for (const scriptPath of requiredScenarioCommandLockedScripts) {
+  const script = read(scriptPath);
+  requireMatch(
+    script,
+    /acquire_scenario_command_lock/,
+    `${scriptPath} must acquire a scenario command lock before mutating scenario state`,
+  );
+  requireMatch(
+    script,
+    /arm_scenario_command_lock_cleanup/,
+    `${scriptPath} must arm scenario command lock cleanup`,
+  );
+}
+
+const defaultMockE2EScript = packageJson.scripts?.['test:e2e'];
+if (!defaultMockE2EScript || !/test:e2e:lane:mock:smoke/.test(defaultMockE2EScript) || !/test:e2e:lane:mock:chromium/.test(defaultMockE2EScript)) {
+  failures.push('test:e2e must delegate to the canonical mock smoke and chromium lane scripts');
+}
+
+const fullMockE2EScript = packageJson.scripts?.['test:e2e:all'];
+if (!fullMockE2EScript || !/test:e2e\b/.test(fullMockE2EScript) || !/test:e2e:lane:mock:visual/.test(fullMockE2EScript)) {
+  failures.push('test:e2e:all must compose the canonical mock e2e script with the visual lane script');
+}
 
 requireMatch(constitution, /视觉验证属于独立证据通道/, 'constitution must describe visual verification as an independent evidence channel');
 forbidMatch(constitution, /smoke \+ chromium/, 'constitution still uses legacy smoke + chromium wording');

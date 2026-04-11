@@ -10,40 +10,25 @@
  * 3. REFACTOR: Clean up
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, rmSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const SCRIPT_PATH = join(__dirname, '../verify-governance-report.ts');
-const OUTPUT_DIR = join(tmpdir(), 'governance-reports-test');
-const RUNS_OUTPUT_DIR = join(tmpdir(), 'governance-runs-test');
-const ESCALATIONS_OUTPUT_DIR = join(tmpdir(), 'governance-incidents-test');
+let TEST_ROOT_DIR = '';
+let OUTPUT_DIR = '';
+let RUNS_OUTPUT_DIR = '';
+let ESCALATIONS_OUTPUT_DIR = '';
 
-beforeAll(() => {
-  // Create output directory
-  if (!existsSync(OUTPUT_DIR)) {
-    mkdirSync(OUTPUT_DIR, { recursive: true });
-  }
-  if (!existsSync(RUNS_OUTPUT_DIR)) {
-    mkdirSync(RUNS_OUTPUT_DIR, { recursive: true });
-  }
-  if (!existsSync(ESCALATIONS_OUTPUT_DIR)) {
-    mkdirSync(ESCALATIONS_OUTPUT_DIR, { recursive: true });
-  }
+beforeEach(() => {
+  resetTestDirectories();
 });
 
-afterAll(() => {
-  // Clean up output directory
-  if (existsSync(OUTPUT_DIR)) {
-    rmSync(OUTPUT_DIR, { recursive: true, force: true });
-  }
-  if (existsSync(RUNS_OUTPUT_DIR)) {
-    rmSync(RUNS_OUTPUT_DIR, { recursive: true, force: true });
-  }
-  if (existsSync(ESCALATIONS_OUTPUT_DIR)) {
-    rmSync(ESCALATIONS_OUTPUT_DIR, { recursive: true, force: true });
+afterEach(() => {
+  if (TEST_ROOT_DIR && existsSync(TEST_ROOT_DIR)) {
+    rmSync(TEST_ROOT_DIR, { recursive: true, force: true });
   }
 });
 
@@ -875,14 +860,14 @@ interface ScriptResult {
 
 function runScript(args: string[] = []): ScriptResult {
   try {
-    const stdout = execSync(`npx tsx ${SCRIPT_PATH} ${args.join(' ')}`, {
+    const stdout = execFileSync('npx', ['tsx', SCRIPT_PATH, ...args], {
       encoding: 'utf-8',
       cwd: process.cwd(),
     });
     return { exitCode: 0, stdout, stderr: '' };
   } catch (error: unknown) {
     return {
-      exitCode: (error as NodeJS.ErrnoException).errno || 1,
+      exitCode: (error as ExecSyncError).status ?? 1,
       stdout: (error as ExecSyncError).stdout?.toString() || '',
       stderr: (error as ExecSyncError).stderr?.toString() || '',
     };
@@ -904,6 +889,22 @@ function readdir(dir: string): string[] {
 }
 
 interface ExecSyncError extends NodeJS.ErrnoException {
+  status?: number;
   stdout?: Buffer;
   stderr?: Buffer;
+}
+
+function resetTestDirectories() {
+  if (TEST_ROOT_DIR && existsSync(TEST_ROOT_DIR)) {
+    rmSync(TEST_ROOT_DIR, { recursive: true, force: true });
+  }
+
+  TEST_ROOT_DIR = mkdtempSync(join(tmpdir(), 'governance-report-test-'));
+  OUTPUT_DIR = join(TEST_ROOT_DIR, 'reports');
+  RUNS_OUTPUT_DIR = join(TEST_ROOT_DIR, 'runs');
+  ESCALATIONS_OUTPUT_DIR = join(TEST_ROOT_DIR, 'escalations');
+
+  mkdirSync(OUTPUT_DIR, { recursive: true });
+  mkdirSync(RUNS_OUTPUT_DIR, { recursive: true });
+  mkdirSync(ESCALATIONS_OUTPUT_DIR, { recursive: true });
 }

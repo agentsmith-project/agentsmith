@@ -7,6 +7,7 @@ unset no_proxy NO_PROXY
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+source "${ROOT_DIR}/scripts/lib/backend-real-gate-ports.sh"
 source "${ROOT_DIR}/scripts/lib/lane-run-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 ensure_backend_real_state
@@ -23,6 +24,7 @@ WEB_PORT="${INTEGRATION_WEB_PORT:-3091}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
+clear_runtime_stack_env
 resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}"
 PLAYWRIGHT_BASE_URL="${INTEGRATION_BASE_URL:-${RUNTIME_BROWSER_WEB_BASE_URL}}"
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-${RUNTIME_HOST_API_BASE_URL}}"
@@ -39,6 +41,7 @@ INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-${INTEGRATION_RUN_ROOT}/release-loca
 mkdir -p "${INTEGRATION_LOG_DIR}"
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
+NEXT_WEB_PID_FILE="${INTEGRATION_RUN_ROOT}/next-dev.pid"
 API_PID=""
 WEB_PID=""
 PLAYWRIGHT_PID=""
@@ -168,6 +171,7 @@ json_extract_access_token() {
 
 cleanup() {
   stop_background_job "${PLAYWRIGHT_PID}"
+  stop_background_job "$(cat "${NEXT_WEB_PID_FILE}" 2>/dev/null || true)"
   stop_background_job "${WEB_PID}"
   stop_background_job "${API_PID}"
   wait "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
@@ -176,10 +180,11 @@ cleanup() {
   if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" success
     rm -rf "${INTEGRATION_RUN_ROOT}"
-    lane_remove_current_link_if_matches backend-real "${INTEGRATION_RUN_ROOT}" current-release-precheck
   else
     lane_mark_status "${INTEGRATION_RUN_ROOT}" failed
   fi
+  rm -f "${NEXT_WEB_PID_FILE}"
+  lane_remove_current_link_if_matches backend-real "${INTEGRATION_RUN_ROOT}" current-release-precheck
   lane_prune_runs backend-real "${BACKEND_REAL_KEEP_RUNS:-5}"
 }
 trap cleanup EXIT
@@ -208,6 +213,8 @@ if [[ "${INIT_DEPS}" == "true" ]]; then
   run_clean npm run integration:deps:init:keycloak
 fi
 
+cleanup_gate_ports "${API_PORT}" "${WEB_PORT}" "release-local-precheck"
+
 if port_in_use "${API_PORT}"; then
   echo "[release-local-precheck] API port ${API_PORT} is already in use. Stop the process or set INTEGRATION_API_PORT." >&2
   exit 1
@@ -220,6 +227,7 @@ fi
 
 API_PID="$(
   PORT="${API_PORT}" \
+  PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-${INTEGRATION_API_BASE}/api/v1}" \
   KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
   PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
   INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
@@ -252,13 +260,14 @@ WEB_PID="$(
   MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
   MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
   NEXT_GENERATED_ROOT_MANAGED=1 \
+  NEXT_DEV_PID_FILE="${NEXT_WEB_PID_FILE}" \
   NEXT_PUBLIC_USE_MSW=false \
   AGENTSMITH_ENABLE_TEST_ROUTES=true \
   NEXT_PUBLIC_API_BASE="${INTEGRATION_API_BASE}/api/v1" \
   NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_URL}" \
   NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
   NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-  start_background_job "${WEB_LOG}" run_clean npm run dev:test -- --port "${WEB_PORT}"
+  start_background_job "${WEB_LOG}" run_clean bash scripts/run-next-dev-safe.sh --port "${WEB_PORT}"
 )"
 
 api_ready=0

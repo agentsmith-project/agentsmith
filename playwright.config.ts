@@ -16,11 +16,14 @@ const localWorkers = Number(process.env.PW_WORKERS ?? 6);
 const isCI = !!process.env.CI;
 const desktopViewport = { width: 1920, height: 1080 };
 const desktopWindowArgs = ['--window-size=1920,1080'];
+const managedMockRunId = `playwright-managed-${Date.now()}-${process.pid}`;
+const managedMockNextDistDir = `artifacts/mock-lane/runs/${managedMockRunId}/next-dist`;
+const managedMockWorkspaceRegistryFile = `artifacts/mock-lane/runs/${managedMockRunId}/system-workspaces.json`;
 
 const webServerCommand = [
   'bash -lc',
   JSON.stringify(
-    'NEXT_PUBLIC_USE_MSW=true NEXT_PUBLIC_MSW_STRICT_READY=true AGENTSMITH_ENABLE_TEST_ROUTES=true SYSTEM_WORKSPACE_REGISTRY_MODE=memory npm run dev:test -- --port 3001',
+    `NEXT_PUBLIC_USE_MSW=true NEXT_PUBLIC_MSW_STRICT_READY=true AGENTSMITH_ENABLE_TEST_ROUTES=true SYSTEM_WORKSPACE_REGISTRY_MODE=file SYSTEM_WORKSPACE_REGISTRY_FILE=${managedMockWorkspaceRegistryFile} NEXT_GENERATED_ROOT_MANAGED=1 NEXT_DIST_DIR=${managedMockNextDistDir} npm run dev:test -- --port 3001`,
   ),
 ].join(' ');
 
@@ -65,7 +68,7 @@ export default defineConfig({
     ? {
         command: webServerCommand,
         url: 'http://localhost:3001',
-        reuseExistingServer: true,
+        reuseExistingServer: false,
         timeout: 120000,
       }
     : undefined,

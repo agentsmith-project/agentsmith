@@ -466,9 +466,12 @@ async function createAgent(page: Page, workspaceId: string, projectId: string): 
   const dialog = page.getByTestId('agents__create-dialog');
   await expect(dialog).toBeVisible();
   await dialog.locator('#agent-name').fill(agentName);
-  const endpointSelect = dialog.locator('#notebook-endpoint-id');
+  await dialog.locator('#agent-interaction-kind').selectOption('notebook');
+  const endpointSelect = dialog.locator('#agent-execution-endpoint-id');
   await expect(endpointSelect).toBeVisible({ timeout: 30_000 });
   await endpointSelect.selectOption({ index: 0 });
+  await dialog.getByRole('button', { name: /^next$/i }).click();
+  await expect(dialog.getByTestId('agents__create-dialog__product-summary')).toBeVisible({ timeout: 30_000 });
   await dialog.getByRole('button', { name: /create/i }).click();
 
   await expect(page.getByText(agentName)).toBeVisible({ timeout: 30_000 });

@@ -9,10 +9,19 @@ FAKE_ROOT="${TMP_DIR}/fake-root"
 mkdir -p \
   "${FAKE_ROOT}/scripts/scenarios/demo-rehearsal" \
   "${FAKE_ROOT}/scripts/scenarios/cluster-rehearsal" \
+  "${FAKE_ROOT}/scripts/lib" \
   "${FAKE_ROOT}/scripts/demo-deploy" \
   "${FAKE_ROOT}/scripts/cluster-deploy"
 
 cp "${REPO_ROOT}/scripts/scenarios/common.sh" "${FAKE_ROOT}/scripts/scenarios/common.sh"
+cat > "${FAKE_ROOT}/scripts/lib/preset-common.sh" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+normalize_endpoint_upstream_protocol() {
+  printf '%s\n' "$1"
+}
+STUB
+chmod +x "${FAKE_ROOT}/scripts/lib/preset-common.sh"
 for name in common.sh bootstrap.sh verify.sh report.sh; do
   cp "${REPO_ROOT}/scripts/scenarios/demo-rehearsal/${name}" "${FAKE_ROOT}/scripts/scenarios/demo-rehearsal/${name}"
   cp "${REPO_ROOT}/scripts/scenarios/cluster-rehearsal/${name}" "${FAKE_ROOT}/scripts/scenarios/cluster-rehearsal/${name}"

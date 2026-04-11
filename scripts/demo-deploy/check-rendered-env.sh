@@ -68,8 +68,8 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/web.env" 'NEXT_PUBLIC_API_
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'KEYCLOAK_ISSUER_URL=http://localhost:18080/realms/mbos' 'rendered_env_mismatch:api.env:KEYCLOAK_ISSUER_URL'
 release_check_require_exact_line "${RELEASE_ROOT}/env/runner.env" 'MBOS_API_BASE=http://api:20000' 'rendered_env_mismatch:runner.env:MBOS_API_BASE'
 release_check_require_exact_line "${RELEASE_ROOT}/env/keycloak.env" 'PUBLIC_KEYCLOAK_BASE_URL=http://localhost:18080' 'rendered_env_mismatch:keycloak.env:PUBLIC_KEYCLOAK_BASE_URL'
-release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL=http://runner.internal.test:20000' 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL'
-release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'AGENT_EXECUTION_HTTP_BASE_URL=http://10.88.0.1:20000' 'rendered_env_mismatch:api.env:AGENT_EXECUTION_HTTP_BASE_URL'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL=http://runner.internal.test:20000/api/v1' 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'AGENT_EXECUTION_HTTP_BASE_URL=http://10.88.0.1:20000/api/v1' 'rendered_env_mismatch:api.env:AGENT_EXECUTION_HTTP_BASE_URL'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'MBOS_UNIVERSAL_PROXY_BASE_URL=http://universal-proxy:8080' 'rendered_env_mismatch:api.env:MBOS_UNIVERSAL_PROXY_BASE_URL'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'FILE_LIBRARY_CLIENT_POSTGRES_HOST=localhost' 'rendered_env_mismatch:api.env:FILE_LIBRARY_CLIENT_POSTGRES_HOST'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'FILE_LIBRARY_CLIENT_POSTGRES_PORT=15432' 'rendered_env_mismatch:api.env:FILE_LIBRARY_CLIENT_POSTGRES_PORT'
@@ -89,7 +89,7 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'JUICEFS_BUC
 run_render simple
 
 release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'DEMO_DEPLOY_MODE=simple' 'rendered_env_mismatch:base.env:DEMO_DEPLOY_MODE'
-release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL=http://runner.internal.test:20000' 'rendered_env_mismatch:simple:api.env:EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL=http://runner.internal.test:20000/api/v1' 'rendered_env_mismatch:simple:api.env:EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE=runner.internal.test' 'rendered_env_mismatch:simple:api.env:DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://runner.internal.test:19000' 'rendered_env_mismatch:simple:api.env:DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE'
 release_check_forbid_pattern "${RELEASE_ROOT}/env/api.env" '^SANDBOX_MANAGER_URL=' 'rendered_env_unexpected:simple:api.env:SANDBOX_MANAGER_URL'

@@ -5,7 +5,26 @@
  * enable/disable toggle using MSW-provided mock data.
  */
 
+import type { Locator } from "@playwright/test";
+
 import { test, expect, goToProject } from "./fixtures/test-base";
+
+async function waitForExecutionTargetReady(dialog: Locator) {
+  const endpointSelect = dialog.locator("#agent-execution-endpoint-id");
+  await expect(endpointSelect).toBeVisible();
+  await expect.poll(async () => endpointSelect.inputValue()).not.toBe("");
+  return endpointSelect;
+}
+
+async function continueToDeployment(dialog: Locator) {
+  await waitForExecutionTargetReady(dialog);
+  const nextButton = dialog.getByRole("button", { name: /^next$/i });
+  await expect(nextButton).toBeEnabled();
+  await nextButton.click();
+  await expect(
+    dialog.getByTestId("agents__create-dialog__product-summary"),
+  ).toBeVisible();
+}
 
 test.describe("Agents Page", () => {
   test.beforeEach(async ({ authedPage }) => {
@@ -71,6 +90,7 @@ test.describe("Agents Page", () => {
 
     // Verify the dialog contains a name input
     await expect(dialog.locator("#agent-name")).toBeVisible();
+    await dialog.locator("#agent-name").fill("E2E Product Draft");
     await expect(dialog.locator("#agent-interaction-kind")).toBeVisible();
     await expect(
       dialog.locator('#agent-interaction-kind option[value="chat"]'),
@@ -81,7 +101,15 @@ test.describe("Agents Page", () => {
     await expect(dialog.locator("#agent-interaction-kind option")).toHaveCount(
       2,
     );
-    await expect(dialog.getByLabel("Chat Endpoint")).toBeVisible();
+    await waitForExecutionTargetReady(dialog);
+    await expect(dialog.getByLabel("Execution target")).toBeVisible();
+    await expect(
+      dialog.getByText("Choose the endpoint this chat agent will use for inference."),
+    ).toBeVisible();
+    const nextButton = dialog.getByRole("button", { name: /^next$/i });
+    await expect(nextButton).toBeVisible();
+    await dialog.locator("#agent-name").fill("Dialog Contract Check");
+    await expect(nextButton).toBeEnabled();
   });
 
   test("edit dialog opens when clicking edit on a row", async ({
@@ -150,22 +178,47 @@ test.describe("Agents Page", () => {
     const dialog = authedPage.getByTestId("agents__create-dialog");
     await expect(dialog).toBeVisible();
 
+    const createResponsePromise = authedPage.waitForResponse((response) => {
+      return (
+        response.request().method() === "POST" &&
+        response.status() === 201 &&
+        /\/api\/v1\/workspaces\/.*\/projects\/.*\/agents$/.test(response.url())
+      );
+    });
+
+    const createRequestPromise = authedPage.waitForRequest((req) => {
+      return (
+        req.method() === "POST" &&
+        /\/api\/v1\/workspaces\/.*\/projects\/.*\/agents$/.test(req.url())
+      );
+    });
+
     // Fill in the form
     await dialog.locator("#agent-name").fill("E2E Test Agent");
     await dialog.locator("#agent-description").fill("Created by E2E test");
-    const endpointSelect = dialog.locator("#agent-execution-endpoint-id");
-    await expect(endpointSelect).toBeVisible();
+    const endpointSelect = await waitForExecutionTargetReady(dialog);
     await endpointSelect.selectOption({ index: 0 });
+
+    await continueToDeployment(dialog);
 
     // Submit the form
     const submitBtn = dialog.getByRole("button", { name: /create/i });
+    await expect(
+      dialog.getByTestId("agents__create-dialog__product-summary"),
+    ).toBeVisible();
     await expect(submitBtn).toBeEnabled();
     await submitBtn.click();
+    await createRequestPromise;
+    await createResponsePromise;
+    await expect(dialog).toBeHidden({ timeout: 10000 });
 
     // New agent should appear in the table (dialog close animation can be delayed in dev mode)
-    await expect(authedPage.getByText("E2E Test Agent")).toBeVisible({
-      timeout: 10000,
-    });
+    await expect(
+      authedPage
+        .getByTestId("agents__table__row")
+        .filter({ hasText: "E2E Test Agent" })
+        .first(),
+    ).toBeVisible({ timeout: 10000 });
   });
 
   test("create internal agent sends config payload", async ({ authedPage }) => {
@@ -180,11 +233,11 @@ test.describe("Agents Page", () => {
     await dialog.locator("#agent-name").fill("E2E Internal Agent");
     await dialog.locator('input[name="mode"][value="internal"]').click();
     await dialog.locator("#agent-interaction-kind").selectOption("notebook");
+    const endpointSelect = await waitForExecutionTargetReady(dialog);
+    await endpointSelect.selectOption({ index: 0 });
+    await continueToDeployment(dialog);
     await dialog.locator("#agent-image").fill("ghcr.io/acme/agent:1.0.0");
     await dialog.locator("#agent-max-sessions").fill("3");
-    await dialog
-      .locator("#internal-execution-endpoint-id")
-      .selectOption({ index: 0 });
 
     const createRequestPromise = authedPage.waitForRequest((req) => {
       return (
@@ -222,10 +275,10 @@ test.describe("Agents Page", () => {
 
     await dialog.locator("#agent-name").fill("E2E Internal Agent Env");
     await dialog.locator('input[name="mode"][value="internal"]').click();
+    const endpointSelect = await waitForExecutionTargetReady(dialog);
+    await endpointSelect.selectOption({ index: 0 });
+    await continueToDeployment(dialog);
     await dialog.locator("#agent-image").fill("ghcr.io/acme/agent:2.0.0");
-    await dialog
-      .locator("#internal-execution-endpoint-id")
-      .selectOption({ index: 0 });
 
     const envInputs = dialog.locator('input[placeholder="KEY"]');
     const valInputs = dialog.locator('input[placeholder="value"]');
@@ -263,9 +316,9 @@ test.describe("Agents Page", () => {
     const dialog = authedPage.getByTestId("agents__create-dialog");
     await expect(dialog).toBeVisible();
 
-    // Submit button should be disabled when name is empty
-    const submitBtn = dialog.getByRole("button", { name: /create/i });
-    await expect(submitBtn).toBeDisabled();
+    // Product step must not advance when name is empty.
+    const nextButton = dialog.getByRole("button", { name: /^next$/i });
+    await expect(nextButton).toBeDisabled();
   });
 
   test("toggle agent status via enable/disable button", async ({
@@ -338,12 +391,17 @@ test.describe("Agents Page", () => {
     await authedPage.getByTestId("agents__create-btn").click();
     const dialog = authedPage.getByTestId("agents__create-dialog");
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByLabel("Chat Endpoint")).toBeVisible();
+    await expect(dialog.getByLabel("Execution target")).toBeVisible();
+    await expect(
+      dialog.getByText("Choose the endpoint this chat agent will use for inference."),
+    ).toBeVisible();
 
     await dialog.locator("#agent-interaction-kind").selectOption("notebook");
 
-    await expect(dialog.getByLabel("Notebook Endpoint")).toBeVisible();
-    await expect(dialog.getByLabel("Chat Endpoint")).toHaveCount(0);
+    await expect(dialog.getByLabel("Execution target")).toBeVisible();
+    await expect(
+      dialog.getByText("Choose the endpoint this notebook agent will use for task execution."),
+    ).toBeVisible();
   });
 
   test("external agent keys flow opens create key dialog result", async ({

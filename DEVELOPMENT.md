@@ -381,10 +381,10 @@ src/
 
 ## Design System Reference
 
-Current UI truth is defined in [DESIGN.md](./DESIGN.md).
+Current UI style guidance is defined in [DESIGN.md](./DESIGN.md).
 
 Use:
-- [DESIGN.md](./DESIGN.md) for the constitutional UI language and global design rules
+- [DESIGN.md](./DESIGN.md) for the official `getdesign cursor` UI design guide and global style direction
 - `docs/UXUI/` for active interaction and module-specific UX specs
 - [docs/testing/visual-baseline-policy-v1.md](./docs/testing/visual-baseline-policy-v1.md) for visual evidence policy
 

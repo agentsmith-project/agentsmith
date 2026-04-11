@@ -3,7 +3,8 @@
 术语边界：本文出现的 `release` / `engineering gate` 命令名是仓库内工程脚本命名；`permission gate` 仅表示产品权限门禁语义，不代表 AgentSmith 提供对外 DevOps 发布能力。
 
 当前 notebook runner 真相：
-- current product/object truth 以 [项目宪法](./项目宪法.md)、[DESIGN.md](../DESIGN.md)、[Product Terminology Contract](./contracts/product-terminology.md) 为准
+- current product/object truth 以 [项目宪法](./项目宪法.md) 和 [Product Terminology Contract](./contracts/product-terminology.md) 为准
+- current UI style guidance 参考 [DESIGN.md](../DESIGN.md)
 - current engineering workflow 以 [Current Engineering Governance Model](./current-engineering-governance-model.md) 为准
 - current notebook runner protocol / workspace binding / contracts 以 [Internal Agent Workspace Binding Model](./contracts/internal-agent-workspace-binding-model-v1.md) 和 [agent-execution-protocol.md](./contracts/agent-execution-protocol.md) 为准
 

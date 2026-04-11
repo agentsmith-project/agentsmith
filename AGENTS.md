@@ -12,7 +12,7 @@ AgentSmith = MBOS 企业级控制面前端。**当前职责**: AI 智能体使�
 
 ## 项目宪法（必读）
 
-> 宪法只规定思想与方法论；当前实现与体验真相看 `DEVELOPMENT.md`、`DESIGN.md`、`docs/contracts/`、`docs/UXUI/`。
+> 宪法只规定思想与方法论；当前实现与产品真相看 `DEVELOPMENT.md`、`docs/contracts/`、`docs/UXUI/`。UI 风格参考单独看 `DESIGN.md`。
 
 **定位**: 企业级控制面，非 ToC 产品，非低代码平台。**后端为唯一权威**。
 
@@ -36,11 +36,11 @@ AgentSmith = MBOS 企业级控制面前端。**当前职责**: AI 智能体使�
 
 **治理原则**: 治理是控制面，统一策略引擎，例外必须被治理，Incident 是治理主键，Ownership/SLA 是闭环。
 
-## UI 设计真相（必读）
+## UI 设计指南（必读）
 
-- [`DESIGN.md`](./DESIGN.md) 是当前唯一 UI 宪法与设计语言真相。
-- `docs/UXUI/` 只保留 active 的交互规范、状态/文案规范和模块边界补充；它们**依赖** `DESIGN.md`，不再定义平行视觉真相。
-- 当页面注释、旧设计文档与 `DESIGN.md` 冲突时，以 `DESIGN.md` 为准。
+- [`DESIGN.md`](./DESIGN.md) 是通过 `npx getdesign@latest add cursor` 安装的官方 UI design guide。
+- 它只负责 UI 风格、视觉语言、组件与页面实现偏好，不负责产品对象、IA、权限、contracts 或工程治理真相。
+- `docs/UXUI/` 只保留 active 的交互规范、状态/文案规范和模块边界补充；这些规范在实现层面参考 `DESIGN.md`。
 
 ## 术语收敛
 
@@ -71,7 +71,7 @@ make bootstrap / api-dev / web / e2e / deps-down / deps-reset
 
 ## 设计实现约束
 
-**tokens**: 当前实现 token 在 `src/app/globals.css`，新增或重构 UI 时必须同时满足 `DESIGN.md` 的原则与当前 token 约束。
+**tokens**: 当前实现 token 在 `src/app/globals.css`，新增或重构 UI 时必须同时满足 `DESIGN.md` 的风格方向与当前 token 约束。
 **约束**: 主行动色仅用于链接/高亮，AI 渐变仅用于 AI 标识，阴影仅用于浮层，新样式必须优先复用现有 token 和组件变体。
 
 ## i18n
@@ -90,12 +90,12 @@ make bootstrap / api-dev / web / e2e / deps-down / deps-reset
 ## 核心文档
 
 - `docs/项目宪法.md` - 产品定位、范围边界、治理主线
-- `DESIGN.md` - 当前唯一 UI 宪法与设计语言真相
+- `DESIGN.md` - 官方安装的 UI design guide（`getdesign cursor`）
 - `docs/design/agentsmith-product-engineering-governance-methodology-v1.md` - 治理方法论
 - `DEVELOPMENT.md` - 开发工作流与本地操作说明
 - `docs/contracts/` - 合约与接口规范
 - `docs/user-guides/` - 用户操作与排障入口
-- `docs/UXUI/` - 依赖 `DESIGN.md` 的 UX/UI 交互规范库
+- `docs/UXUI/` - 参考 `DESIGN.md` 的 UX/UI 交互规范库
 
 ## 测试
 

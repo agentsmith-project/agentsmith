@@ -10,9 +10,10 @@ Product terminology alignment:
 - Engineering docs and tests must use `Execution target`, `Project secrets`, `Shared context`, `Access guide`, and `Files` when referring to the current product surfaces.
 - Do not collapse `Endpoint` and `Agent` into a generic model-source concept in product-facing explanations, UI narratives, or verification language.
 
-UI truth alignment:
-- `DESIGN.md` is the authoritative source for the current UI language and global design rules.
-- `docs/UXUI/` only defines active interaction and module-specific UX behavior that depends on `DESIGN.md`.
+UI design guide alignment:
+- `DESIGN.md` is the current UI design guide used for style direction and global design rules.
+- It does not define product terminology, IA, permission gates, or engineering governance truth.
+- `docs/UXUI/` only defines active interaction and module-specific UX behavior that references `DESIGN.md`.
 - `docs/testing/visual-baseline-policy-v1.md` owns visual evidence policy; it does not replace `DESIGN.md`.
 
 Canonical entrypoint rule:

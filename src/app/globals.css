@@ -8,8 +8,8 @@
   :root {
     /*
       AgentSmith UI tokens
-      Global design truth: DESIGN.md
-      Implementation tokens in this file may lag behind the constitutional direction while surfaces converge
+      Global UI design guide: DESIGN.md
+      Implementation tokens in this file may lag behind the current guide while surfaces converge
 
       Tokens are RGB triplets to support alpha via:
         rgb(var(--token) / <alpha>)

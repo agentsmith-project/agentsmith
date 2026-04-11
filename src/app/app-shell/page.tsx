@@ -53,7 +53,7 @@ export default function AppShellPage() {
 
                           <div className="bg-surface border border-subtle rounded-lg p-6">
                             <h2 className="text-lg font-semibold text-primary mb-4">Design System</h2>
-                            <p className="text-sm text-secondary mb-2">Current implementation tokens live in globals.css. Constitutional UI direction lives in DESIGN.md.</p>
+                            <p className="text-sm text-secondary mb-2">Current implementation tokens live in globals.css. UI design guidance lives in DESIGN.md.</p>
                             <ul className="space-y-1 text-xs">
                               <li><code className="text-accent">--bg-base: #191919</code> - App background</li>
                               <li><code className="text-accent">--bg-panel: #1f1f1f</code> - Navigation, cards</li>

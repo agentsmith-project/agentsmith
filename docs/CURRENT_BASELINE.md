@@ -10,7 +10,7 @@
 ## 1. 当前真相源阅读顺序
 
 1. [项目宪法](./项目宪法.md)
-2. [DESIGN.md](../DESIGN.md)
+2. [DESIGN.md](../DESIGN.md)（UI design guide）
 3. [Product Terminology Contract](./contracts/product-terminology.md)
 4. [Current Engineering Governance Model](./current-engineering-governance-model.md)
 5. [Contracts Index](./contracts/README.md)
@@ -31,13 +31,13 @@ Git 历史足够承担追溯职责；current docs 只保留今天仍需要被阅
 
 ### 理解产品与 UI
 1. [项目宪法](./项目宪法.md)
-2. [DESIGN.md](../DESIGN.md)
+2. [DESIGN.md](../DESIGN.md)（UI design guide）
 3. [Product Terminology Contract](./contracts/product-terminology.md)
 
 ### 实现或评审功能
 1. [Contracts Index](./contracts/README.md)
 2. [Product Terminology Contract](./contracts/product-terminology.md)
-3. [DESIGN.md](../DESIGN.md)
+3. [DESIGN.md](../DESIGN.md)（UI design guide）
 4. [Current Engineering Governance Model](./current-engineering-governance-model.md)
 
 ### 运行、排障、发布、排演
@@ -51,11 +51,11 @@ Git 历史足够承担追溯职责；current docs 只保留今天仍需要被阅
 优先级固定为：
 1. 宪法
 2. 产品对象与合同边界
-3. `DESIGN.md`
+3. UI 风格与视觉实现指导（`DESIGN.md`）
 4. 当前工程治理模型与 machine-readable manifests
 5. 用户指南 / runbook
 
 补充说明：
 - 产品对象名、页面 IA、用户可见命名冲突时，以 [Product Terminology Contract](./contracts/product-terminology.md) 为准。
-- 全局 UI 语言与视觉边界冲突时，以 [DESIGN.md](../DESIGN.md) 为准。
+- UI 风格、视觉语言与实现偏好冲突时，以 [DESIGN.md](../DESIGN.md) 为准；产品对象与 IA 不由 `DESIGN.md` 定义。
 - 工程命令、gate、验证通道、发布流程冲突时，以 [Current Engineering Governance Model](./current-engineering-governance-model.md) 和 machine-readable manifests 为准。

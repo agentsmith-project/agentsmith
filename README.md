@@ -28,13 +28,13 @@ Current product terminology:
 - **API Mocking**: MSW (Mock Service Worker)
 - **Component Docs**: Storybook
 
-## UI Constitution
+## UI Design Guide
 
-Current UI truth is defined in [DESIGN.md](./DESIGN.md).
+Current UI style guidance is defined in [DESIGN.md](./DESIGN.md).
 
 Use:
-- [DESIGN.md](./DESIGN.md) for the constitutional UI language and global design rules
-- `docs/UXUI/` for active interaction and module-specific UX specs that depend on `DESIGN.md`
+- [DESIGN.md](./DESIGN.md) for the official `getdesign cursor` UI design guide and global style direction
+- `docs/UXUI/` for active interaction and module-specific UX specs that apply the design guide
 - [docs/testing/visual-baseline-policy-v1.md](./docs/testing/visual-baseline-policy-v1.md) for visual evidence policy
 
 
@@ -253,6 +253,6 @@ src/
 - [Product Doc Artifacts](./docs/user-guides/product-doc-artifacts.md) — 生成产品说明截图与配套 Markdown 产物
 - [Marketing Assets](./marketing/README.md) — 刷新 marketing 截图资产
 - [Product Engineering Governance Methodology](./docs/design/agentsmith-product-engineering-governance-methodology-v1.md) — 产品设计、工程交付与治理方法论基线
-- [UI Constitution](./DESIGN.md)
+- [UI Design Guide](./DESIGN.md)
 - [Development Guide](./DEVELOPMENT.md)
 - [Documentation Index](./docs/README.md) — current docs index, contracts, UXUI, engineering, testing

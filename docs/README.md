@@ -8,7 +8,7 @@
 ## 1. Current truth
 
 - [项目宪法](./项目宪法.md)
-- [DESIGN.md](../DESIGN.md)
+- [DESIGN.md](../DESIGN.md)（UI design guide）
 - [Product Terminology Contract](./contracts/product-terminology.md)
 - [Current Engineering Governance Model](./current-engineering-governance-model.md)
 
@@ -25,8 +25,9 @@
 
 ### UX and design
 - [DESIGN.md](../DESIGN.md)
+  - 官方安装的 UI design guide；只负责风格方向和实现偏好
 - `docs/UXUI/`
-  - active interaction/spec library；这里只保留依赖 `DESIGN.md` 的模块交互规范
+  - active interaction/spec library；这里只保留参考 `DESIGN.md` 的模块交互规范
 
 ### Engineering and testing reference
 - [Engineering Docs Index](./engineering/README.md)
@@ -56,6 +57,6 @@
 
 如果判断某份资料是否 still current，回到：
 1. [Current Baseline (Whitelist)](./CURRENT_BASELINE.md)
-2. [DESIGN.md](../DESIGN.md)
+2. [DESIGN.md](../DESIGN.md)（UI design guide）
 3. [Product Terminology Contract](./contracts/product-terminology.md)
 4. [Current Engineering Governance Model](./current-engineering-governance-model.md)

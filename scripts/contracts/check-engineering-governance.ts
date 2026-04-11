@@ -21,7 +21,6 @@ const docsIndex = read('docs/README.md');
 const userGuidesIndex = read('docs/user-guides/README.md');
 const testingIndex = read('docs/testing/README.md');
 const agentsDoc = read('AGENTS.md');
-const designDoc = read('DESIGN.md');
 const visualPolicy = read('docs/testing/visual-baseline-policy-v1.md');
 const contractsIndex = read('docs/contracts/README.md');
 const productTerminology = read('docs/contracts/product-terminology.md');
@@ -51,14 +50,13 @@ function forbidMatch(content: string, pattern: RegExp, message: string): void {
 }
 
 requireMatch(readme, /current-engineering-governance-model\.md/, 'README is missing the current engineering governance model reference');
-requireMatch(readme, /DESIGN\.md/, 'README must reference DESIGN.md as the UI truth source');
-requireMatch(development, /DESIGN\.md/, 'DEVELOPMENT must reference DESIGN.md as the UI truth source');
-requireMatch(baseline, /DESIGN\.md/, 'CURRENT_BASELINE must reference DESIGN.md as the UI truth source');
-requireMatch(docsIndex, /DESIGN\.md/, 'docs README must reference DESIGN.md as the UI truth source');
-requireMatch(governanceModel, /DESIGN\.md/, 'current engineering governance model must reference DESIGN.md as the UI truth source');
-requireMatch(agentsDoc, /DESIGN\.md/, 'AGENTS.md must reference DESIGN.md as the UI truth source');
-requireMatch(designDoc, /Status:\s*`authoritative`/, 'DESIGN.md must declare itself authoritative');
-requireMatch(designDoc, /docs\/UXUI/, 'DESIGN.md must explain the relationship to docs/UXUI');
+requireMatch(readme, /DESIGN\.md/, 'README must reference DESIGN.md as the UI design guide');
+requireMatch(development, /DESIGN\.md/, 'DEVELOPMENT must reference DESIGN.md as the UI design guide');
+requireMatch(baseline, /DESIGN\.md/, 'CURRENT_BASELINE must reference DESIGN.md as the UI design guide');
+requireMatch(docsIndex, /DESIGN\.md/, 'docs README must reference DESIGN.md as the UI design guide');
+requireMatch(governanceModel, /DESIGN\.md/, 'current engineering governance model must reference DESIGN.md as the UI design guide');
+requireMatch(agentsDoc, /DESIGN\.md/, 'AGENTS.md must reference DESIGN.md as the UI design guide');
+requireMatch(agentsDoc, /getdesign@latest add cursor|getdesign cursor/, 'AGENTS.md must explain that DESIGN.md comes from getdesign cursor');
 forbidMatch(readme, /视觉设计系统-v1\.md/, 'README must not treat the archived visual design system as current truth');
 forbidMatch(development, /视觉设计系统-v1\.md/, 'DEVELOPMENT must not treat the archived visual design system as current truth');
 forbidMatch(docsIndex, /视觉设计系统-v1\.md/, 'docs README must not treat the archived visual design system as current truth');
@@ -68,6 +66,10 @@ forbidMatch(contractsIndex, /docs\/archive\//, 'contracts README must not refere
 forbidMatch(contractsIndex, /handoff\s*\/\s*refactor|allow.*current.*migration/i, 'contracts README must not keep archive-era exceptions for handoff/refactor docs');
 forbidMatch(testingIndex, /system-visual-state-coverage-todo-v1/, 'testing README must not keep TODO docs in the current testing index');
 forbidMatch(agentsDoc, /CLAUDE\.md/, 'AGENTS.md must not keep the old root instruction file name');
+forbidMatch(readme, /UI Constitution|constitutional UI language/i, 'README must treat DESIGN.md as a design guide, not a constitution');
+forbidMatch(development, /UI truth|constitutional UI language/i, 'DEVELOPMENT must treat DESIGN.md as a design guide, not governance truth');
+forbidMatch(baseline, /唯一 UI 宪法|设计语言真相/, 'CURRENT_BASELINE must not describe DESIGN.md as product/governance truth');
+forbidMatch(governanceModel, /authoritative source for the current UI language/i, 'current engineering governance model must not describe DESIGN.md as governance truth');
 requireMatch(development, /current-engineering-governance-model\.md/, 'DEVELOPMENT is missing the current engineering governance model reference');
 requireMatch(baseline, /current-engineering-governance-model\.md/, 'CURRENT_BASELINE is missing the current engineering governance model reference');
 requireMatch(readme, /current-workflow-manifest\.ts/, 'README is missing the current workflow manifest reference');

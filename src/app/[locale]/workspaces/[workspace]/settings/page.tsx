@@ -18,8 +18,12 @@ import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useGovernableProjects, useProjects } from '@/lib/hooks/use-projects-queries';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
-import { buildProjectAdminSummary, getWorkspaceSettingsProjectActions } from '@/lib/projects/project-view';
-import { buildProjectSurfacePath, resolveDefaultProjectSurfaceHref } from '@/lib/projects/project-surface-access';
+import { buildProjectAdminSummary } from '@/lib/projects/project-view';
+import {
+  buildProjectSurfacePath,
+  resolveDefaultProjectSurfaceHref,
+  resolveWorkspaceGovernanceProjectActions,
+} from '@/lib/projects/project-surface-access';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getApiClient, ProjectAPI, WorkspaceAPI } from '@/lib/api';
 import { APIError } from '@/lib/api/errors';
@@ -429,7 +433,7 @@ export default function WorkspaceSettingsPage() {
                       data-testid={`ws-settings__project--${project.id}`}
                     >
                       {(() => {
-                          const actions = getWorkspaceSettingsProjectActions(project);
+                          const actions = resolveWorkspaceGovernanceProjectActions(project);
                           const defaultProjectHref = resolveDefaultProjectSurfaceHref(project);
                           const defaultProjectPath = defaultProjectHref
                             ? buildProjectSurfacePath(locale, workspaceId ?? '', project.id, defaultProjectHref)

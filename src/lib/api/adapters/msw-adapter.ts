@@ -12,6 +12,7 @@ import type { ApiClient, ApiRequestOptions, ApiUploadOptions } from '../client';
 import { API_BASE, ApiError } from '../client';
 import { createAuthenticatedSSE } from '../sse-client';
 import { notifyUnauthorized } from '@/lib/auth/session-recovery';
+import { MBOS_TEST_NOW_HEADER } from '@/lib/reference-now';
 
 export class MSWApiClient implements ApiClient {
   private token: string | null = null;
@@ -47,9 +48,15 @@ export class MSWApiClient implements ApiClient {
     if (typeof window !== 'undefined') {
       const testHeaders = (window as Window & {
         __MBOS_MSW_TEST_HEADERS__?: Record<string, string>;
+        __MBOS_TEST_NOW__?: string;
       }).__MBOS_MSW_TEST_HEADERS__;
       if (testHeaders && typeof testHeaders === 'object') {
         Object.assign(headers, testHeaders);
+      }
+
+      const testNow = window.__MBOS_TEST_NOW__?.trim();
+      if (testNow && !headers[MBOS_TEST_NOW_HEADER]) {
+        headers[MBOS_TEST_NOW_HEADER] = testNow;
       }
     }
 

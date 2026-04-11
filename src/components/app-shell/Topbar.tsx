@@ -12,9 +12,15 @@ import { useRouter, usePathname } from '@/lib/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
-import { useProjects, useProject } from '@/lib/hooks/use-projects-queries';
+import { useGovernableProjects, useProject, useProjects } from '@/lib/hooks/use-projects-queries';
+import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { broadcastProjectLayoutMode, useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
-import { buildProjectSurfacePath, resolveDefaultProjectSurfaceHref } from '@/lib/projects/project-surface-access';
+import {
+  buildProjectSurfacePath,
+  listSwitchableProjects,
+  resolveDefaultProjectSurfaceHref,
+  shouldUseGovernableProjectSwitcher,
+} from '@/lib/projects/project-surface-access';
 import {
   Tooltip,
   TooltipContent,
@@ -37,20 +43,33 @@ export function Topbar({ className = '' }: TopbarProps) {
 
   const workspaceId = params?.workspace as string | undefined;
   const projectId = params?.project as string | undefined;
+  const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
 
   const { data: workspaces } = useWorkspaces();
   const { data: projects } = useProjects(workspaceId || '');
   const { data: currentProject } = useProject(workspaceId || '', projectId || '');
+  const shouldIncludeGovernableProjects = React.useMemo(
+    () => shouldUseGovernableProjectSwitcher({
+      discoverableProjects: projects ?? [],
+      currentProject,
+      canManageWorkspaceGovernance,
+    }),
+    [canManageWorkspaceGovernance, currentProject, projects],
+  );
+  const { data: governableProjects } = useGovernableProjects(workspaceId || '', {
+    enabled: Boolean(workspaceId) && shouldIncludeGovernableProjects,
+  });
   const { layoutMode, showLayoutToggle } = useProjectLayoutMode();
-  const switchableProjects = React.useMemo(() => {
-    if (!currentProject) return projects ?? [];
-    if (!projects?.some((project) => project.id === currentProject.id)) {
-      return [currentProject, ...(projects ?? [])];
-    }
-    return projects ?? [];
-  }, [currentProject, projects]);
+  const switchableProjects = React.useMemo(
+    () => listSwitchableProjects({
+      discoverableProjects: projects ?? [],
+      governableProjects: governableProjects ?? [],
+      currentProject,
+      includeGovernableProjects: shouldIncludeGovernableProjects,
+    }),
+    [currentProject, governableProjects, projects, shouldIncludeGovernableProjects],
+  );
 
-  // Get current workspace from workspaces list
   const currentWorkspace = React.useMemo(() => {
     if (!workspaceId || !workspaces) return null;
     return workspaces.find((ws) => ws.id === workspaceId) || null;
@@ -123,7 +142,6 @@ export function Topbar({ className = '' }: TopbarProps) {
       data-testid="topbar"
       className={`h-16 flex items-center justify-between px-4 md:px-5 bg-[linear-gradient(180deg,rgba(31,33,37,0.96),rgba(26,28,31,0.92))] backdrop-blur-xl border-b border-white/6 shadow-[0_10px_28px_rgba(0,0,0,0.22)] ${className}`}
     >
-      {/* Left: Brand */}
       <div className="flex items-center gap-3">
         <button
           onClick={handleLogoClick}
@@ -134,10 +152,8 @@ export function Topbar({ className = '' }: TopbarProps) {
         </button>
       </div>
 
-      {/* Center: Workspace / Project (breadcrumb-like) */}
       <div className="flex-1 min-w-0 px-3">
         <div className="flex items-center gap-2 min-w-0">
-          {/* Workspace Switcher */}
           <DropdownMenu>
             <DropdownMenuTrigger
               data-testid="topbar__workspace-switcher"
@@ -173,7 +189,6 @@ export function Topbar({ className = '' }: TopbarProps) {
             <>
               <span className="text-tertiary">/</span>
 
-              {/* Project Switcher */}
               <div className="flex items-center gap-2 max-w-[420px]">
                 <TooltipProvider>
                   <Tooltip>
@@ -195,32 +210,31 @@ export function Topbar({ className = '' }: TopbarProps) {
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
-	                <DropdownMenu>
-	                  <DropdownMenuTrigger
-	                    data-testid="topbar__project-switcher-menu"
-	                    className="p-2 h-11 rounded-xl hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors"
-	                  >
-	                    <ChevronDown className="w-4 h-4 text-tertiary" />
-	                  </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  {switchableProjects.map((proj) => (
-                    <DropdownMenuItem key={proj.id} onSelect={() => handleProjectChange(proj.id)}>
-                      {proj.name}
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    data-testid="topbar__project-switcher-menu"
+                    className="p-2 h-11 rounded-xl hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors"
+                  >
+                    <ChevronDown className="w-4 h-4 text-tertiary" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {switchableProjects.map((proj) => (
+                      <DropdownMenuItem key={proj.id} onSelect={() => handleProjectChange(proj.id)}>
+                        {proj.name}
+                      </DropdownMenuItem>
+                    ))}
+                    <div className="h-px bg-border my-1" />
+                    <DropdownMenuItem onSelect={handleGoToProjects}>
+                      {t('view_all_projects')}
                     </DropdownMenuItem>
-                  ))}
-                  <div className="h-px bg-border my-1" />
-                  <DropdownMenuItem onSelect={handleGoToProjects}>
-                    {t('view_all_projects')}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </>
           )}
         </div>
       </div>
 
-      {/* Right: Controls */}
       <div className="flex items-center gap-3 md:gap-4">
         {workspaceId && projectId && showLayoutToggle ? (
           <Button
@@ -241,7 +255,6 @@ export function Topbar({ className = '' }: TopbarProps) {
 
         <NotificationCenter />
 
-        {/* User Menu */}
         <UserMenu
           user={user}
           onProfile={handleProfile}

@@ -15,8 +15,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import { useEndpointsData } from '@/lib/endpoints/use-endpoints-data';
-import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
-import { getMswReferenceNow } from '@/lib/mock-time';
+import { getReferenceNow } from '@/lib/reference-now';
 
 export interface UsagePageProps {
   workspaceId: string;
@@ -38,9 +37,7 @@ export function UsagePage({
   const { canRead: canReadUsage } = useUsagePageCapabilities();
   const effectiveEndUserId = defaultEndUserId ?? currentUserId;
   const [selectedEndpointId, setSelectedEndpointId] = React.useState<string>('all');
-  const referenceNow = React.useMemo(() => {
-    return getPublicRuntimeConfig().useMsw ? getMswReferenceNow() : new Date();
-  }, []);
+  const referenceNow = React.useMemo(() => getReferenceNow(), []);
 
   const trendRange = React.useMemo(() => {
     const end = new Date(referenceNow);
@@ -218,7 +215,7 @@ export function UsagePage({
           endpointOptions={endpointOptions}
           selectedEndpointId={selectedEndpointId}
           onEndpointChange={setSelectedEndpointId}
-          referenceNow={trendRange.end_time}
+          referenceNow={usageData?.time_range?.end ?? trendRange.end_time}
           limitsOverview={limitsOverview}
         />
       </div>

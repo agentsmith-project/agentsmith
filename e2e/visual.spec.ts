@@ -11,6 +11,7 @@
 import { test as base, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { withAuth } from './fixtures/authenticated';
 import { gotoAndWait, waitForPageReady } from './utils/navigation';
+import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 
 const WS_ID = 'ws_default';
 const PROJECT_ID = 'proj_001';
@@ -165,6 +166,16 @@ async function seedVisualFeishuState(
 
 function projectPath(section: string) {
   return `/en-US/workspaces/${WS_ID}/projects/${PROJECT_ID}/${section}`;
+}
+
+
+async function seedVisualTestNow(page: Page, iso = VISUAL_TEST_REFERENCE_NOW_ISO) {
+  await page.addInitScript((nextNow) => {
+    (window as Window & { __MBOS_TEST_NOW__?: string }).__MBOS_TEST_NOW__ = nextNow;
+  }, iso);
+  await page.evaluate((nextNow) => {
+    (window as Window & { __MBOS_TEST_NOW__?: string }).__MBOS_TEST_NOW__ = nextNow;
+  }, iso).catch(() => {});
 }
 
 // ─── Public Pages ───────────────────────────────────────────────────────────
@@ -506,6 +517,7 @@ test.describe('Visual - Project Pages', () => {
   });
 
   test('usage', async ({ authedPage }) => {
+    await seedVisualTestNow(authedPage);
     await stableNavigate(authedPage, projectPath('usage'));
     await expect(authedPage).toHaveScreenshot('usage.png', { fullPage: true });
   });
@@ -773,6 +785,7 @@ test.describe('Visual - Overlays', () => {
   });
 
   test('usage - endpoint switch', async ({ authedPage }) => {
+    await seedVisualTestNow(authedPage);
     await stableNavigate(authedPage, projectPath('usage'));
     await expect(authedPage.locator('[data-testid="usage__progress-card"]').first()).toBeVisible();
     const endpointTabs = authedPage.locator('[data-testid^="usage__resource-tab-"]');

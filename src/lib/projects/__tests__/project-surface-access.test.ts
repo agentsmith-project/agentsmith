@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildProjectSurfacePath,
+  canAccessProjectSurfaceHref,
   listAccessibleSidebarProjectRoutePolicies,
+  listSwitchableProjects,
   resolveDefaultProjectSurfaceHref,
+  resolveWorkspaceGovernanceProjectActions,
+  shouldUseGovernableProjectSwitcher,
 } from '../project-surface-access';
 
 describe('project-surface-access', () => {
@@ -38,6 +42,58 @@ describe('project-surface-access', () => {
       'credentials',
       'settings',
     ]);
+  });
+
+  it('derives workspace governance actions from the same route truth', () => {
+    expect(resolveWorkspaceGovernanceProjectActions({ permissions: ['project:endpoint:use'] })).toEqual({
+      canOpenOverview: true,
+      canOpenMembers: false,
+      canOpenSettings: false,
+    });
+    expect(resolveWorkspaceGovernanceProjectActions({ permissions: ['project:membership:update'] })).toEqual({
+      canOpenOverview: false,
+      canOpenMembers: true,
+      canOpenSettings: true,
+    });
+    expect(resolveWorkspaceGovernanceProjectActions({ permissions: ['project:audit:read'] })).toEqual({
+      canOpenOverview: false,
+      canOpenMembers: false,
+      canOpenSettings: true,
+    });
+  });
+
+  it('checks route reachability by href', () => {
+    expect(canAccessProjectSurfaceHref(['project:governance:update'], 'settings')).toBe(true);
+    expect(canAccessProjectSurfaceHref(['project:governance:update'], 'members')).toBe(false);
+  });
+
+  it('only enables the governable project switcher for governance-only project contexts', () => {
+    expect(
+      shouldUseGovernableProjectSwitcher({
+        discoverableProjects: [{ id: 'proj_1' }],
+        currentProject: { id: 'proj_1' },
+        canManageWorkspaceGovernance: true,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldUseGovernableProjectSwitcher({
+        discoverableProjects: [{ id: 'proj_1' }],
+        currentProject: { id: 'proj_2' },
+        canManageWorkspaceGovernance: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('builds switchable projects from discoverable and governable sets without duplicates', () => {
+    expect(
+      listSwitchableProjects({
+        discoverableProjects: [{ id: 'proj_1' }, { id: 'proj_2' }],
+        governableProjects: [{ id: 'proj_2' }, { id: 'proj_3' }],
+        currentProject: { id: 'proj_4' },
+        includeGovernableProjects: true,
+      }).map((project) => project.id),
+    ).toEqual(['proj_4', 'proj_1', 'proj_2', 'proj_3']);
   });
 
   it('builds locale-aware project surface paths', () => {

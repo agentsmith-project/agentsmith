@@ -1,5 +1,4 @@
 import type { UsageFactRecord, UsageRecord } from '@/lib/api/types';
-import { getMswReferenceNow } from '@/lib/mock-time';
 
 type UsageFilters = {
   startTime?: string | null;
@@ -13,59 +12,83 @@ type UsageFilters = {
   errorClass?: 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null;
 };
 
+type SeededUsageFactTemplate = {
+  id: string;
+  dayOffset: number;
+  workspace_id: string;
+  project_id: string;
+  resource_type: UsageFactRecord['resource_type'];
+  resource_id?: string;
+  end_user_id?: string;
+  request_id: string;
+  requests: number;
+  duration_ms: number;
+  bytes_in: number;
+  bytes_out: number;
+  tokens_in: number;
+  tokens_out: number;
+  tokens_total: number;
+  result: UsageFactRecord['result'];
+  error_code?: string;
+  request_details: NonNullable<UsageFactRecord['request_details']>;
+};
+
 declare global {
-  // Shared in the MSW process so handler modules see the same in-memory facts.
   var __MBOS_MSW_REQUEST_USAGE_FACTS__: UsageFactRecord[] | undefined;
 }
 
-function buildSeededRequestUsageFacts(): UsageFactRecord[] {
-  const facts: UsageFactRecord[] = [];
-  const base = getMswReferenceNow();
+const SEEDED_USAGE_FACT_TEMPLATES: SeededUsageFactTemplate[] = Array.from({ length: 30 }, (_, offset) => {
+  const requests = 180 + ((29 - offset) % 7) * 24;
+  const tokensTotal = requests * 820;
+  const inputTokens = Math.round(tokensTotal * 0.62);
+  const outputTokens = tokensTotal - inputTokens;
+
+  return {
+    id: `seed_usage_fact_ep1_${offset}`,
+    dayOffset: offset,
+    workspace_id: 'agentsmith',
+    project_id: 'p0',
+    resource_type: 'endpoint',
+    resource_id: 'ep_1',
+    end_user_id: 'user_001',
+    request_id: `seed_req_ep1_${offset}`,
+    requests,
+    duration_ms: 1400 + (offset % 5) * 120,
+    bytes_in: requests * 1200,
+    bytes_out: requests * 3600,
+    tokens_in: inputTokens,
+    tokens_out: outputTokens,
+    tokens_total: tokensTotal,
+    result: offset % 9 === 0 ? 'error' : 'ok',
+    error_code: offset % 9 === 0 ? 'UPSTREAM_429' : undefined,
+    request_details: {
+      provider: 'openai',
+      resolved_model: 'gpt-4.1',
+      error_class: offset % 9 === 0 ? 'provider_retryable' : undefined,
+      fallback_hops: 0,
+      estimated_cost: Number((tokensTotal / 1_000_000 * 3.2).toFixed(4)),
+      missing_price: false,
+    },
+  };
+});
+
+function buildSeededRequestUsageFacts(referenceNow: Date): UsageFactRecord[] {
+  const base = new Date(referenceNow);
   base.setUTCHours(12, 0, 0, 0);
 
-  for (let offset = 0; offset < 30; offset += 1) {
+  return SEEDED_USAGE_FACT_TEMPLATES.map((template) => {
     const timestamp = new Date(base);
-    timestamp.setUTCDate(base.getUTCDate() - offset);
-    const requests = 180 + ((29 - offset) % 7) * 24;
-    const tokensTotal = requests * 820;
-    const inputTokens = Math.round(tokensTotal * 0.62);
-    const outputTokens = tokensTotal - inputTokens;
-
-    facts.push({
-      id: `seed_usage_fact_ep1_${offset}`,
+    timestamp.setUTCDate(base.getUTCDate() - template.dayOffset);
+    return {
+      ...template,
       timestamp: timestamp.toISOString(),
-      workspace_id: 'agentsmith',
-      project_id: 'p0',
-      resource_type: 'endpoint',
-      resource_id: 'ep_1',
-      end_user_id: 'user_001',
-      request_id: `seed_req_ep1_${offset}`,
-      requests,
-      duration_ms: 1400 + (offset % 5) * 120,
-      bytes_in: requests * 1200,
-      bytes_out: requests * 3600,
-      tokens_in: inputTokens,
-      tokens_out: outputTokens,
-      tokens_total: tokensTotal,
-      result: offset % 9 === 0 ? 'error' : 'ok',
-      error_code: offset % 9 === 0 ? 'UPSTREAM_429' : undefined,
-      request_details: {
-        provider: 'openai',
-        resolved_model: 'gpt-4.1',
-        error_class: offset % 9 === 0 ? 'provider_retryable' : undefined,
-        fallback_hops: 0,
-        estimated_cost: Number((tokensTotal / 1_000_000 * 3.2).toFixed(4)),
-        missing_price: false,
-      },
-    });
-  }
-
-  return facts;
+    };
+  });
 }
 
 function requestUsageFactsStore(): UsageFactRecord[] {
   if (!globalThis.__MBOS_MSW_REQUEST_USAGE_FACTS__) {
-    globalThis.__MBOS_MSW_REQUEST_USAGE_FACTS__ = buildSeededRequestUsageFacts();
+    globalThis.__MBOS_MSW_REQUEST_USAGE_FACTS__ = [];
   }
   return globalThis.__MBOS_MSW_REQUEST_USAGE_FACTS__;
 }
@@ -108,8 +131,8 @@ export function recordRequestUsageFact(fact: UsageFactRecord) {
   requestUsageFactsStore().unshift(fact);
 }
 
-export function listRequestUsageFacts(filters: UsageFilters = {}): UsageFactRecord[] {
-  return requestUsageFactsStore()
+export function listRequestUsageFacts(filters: UsageFilters = {}, referenceNow = new Date()): UsageFactRecord[] {
+  return [...requestUsageFactsStore(), ...buildSeededRequestUsageFacts(referenceNow)]
     .filter((item) => withinRange(item, filters))
     .slice()
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -118,8 +141,9 @@ export function listRequestUsageFacts(filters: UsageFilters = {}): UsageFactReco
 export function buildRequestUsageRecords(params: {
   groupBy: 'day' | 'hour';
   filters?: UsageFilters;
+  referenceNow?: Date;
 }): UsageRecord[] {
-  const facts = listRequestUsageFacts(params.filters);
+  const facts = listRequestUsageFacts(params.filters, params.referenceNow);
   const grouped = new Map<string, UsageRecord>();
 
   for (const fact of facts) {

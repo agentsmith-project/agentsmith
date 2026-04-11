@@ -3,7 +3,7 @@ import p0 from '../fixtures/p0.json';
 import { buildRequestUsageRecords, listRequestUsageFacts } from '../state/request-usage';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import { docUsageTopResources } from '../doc-fixtures/audit-usage';
-import { getMswReferenceNow } from '@/lib/mock-time';
+import { getRequestReferenceNow } from '@/lib/reference-now';
 
 type ResourceType = 'endpoint' | 'file_library' | 'agent';
 
@@ -95,9 +95,9 @@ function buildUsageOperationsSummary(facts: RequestFactLike[]) {
 export const usageHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage', ({ request }) => {
     const url = new URL(request.url);
-    const mockNow = getMswReferenceNow();
-    const start = url.searchParams.get('start_time') ?? new Date(mockNow.getTime() - 24 * 60 * 60 * 1000).toISOString();
-    const end = url.searchParams.get('end_time') ?? mockNow.toISOString();
+    const referenceNow = getRequestReferenceNow(request);
+    const start = url.searchParams.get('start_time') ?? new Date(referenceNow.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const end = url.searchParams.get('end_time') ?? referenceNow.toISOString();
     const resourceType = url.searchParams.get('resource_type');
     const resourceId = url.searchParams.get('resource_id');
     const endUserId = url.searchParams.get('end_user_id');
@@ -110,6 +110,7 @@ export const usageHandlers = [
 
     const items = buildRequestUsageRecords({
       groupBy: 'day',
+      referenceNow,
       filters: {
         startTime: start,
         endTime: end,
@@ -133,15 +134,16 @@ export const usageHandlers = [
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/timeseries', ({ request }) => {
     const url = new URL(request.url);
-    const mockNow = getMswReferenceNow();
-    const start = url.searchParams.get('start_time') ?? new Date(mockNow.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const end = url.searchParams.get('end_time') ?? mockNow.toISOString();
+    const referenceNow = getRequestReferenceNow(request);
+    const start = url.searchParams.get('start_time') ?? new Date(referenceNow.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const end = url.searchParams.get('end_time') ?? referenceNow.toISOString();
     const resourceType = url.searchParams.get('resource_type');
     const resourceId = url.searchParams.get('resource_id');
     const endUserId = url.searchParams.get('end_user_id');
 
     const items = buildRequestUsageRecords({
       groupBy: 'day',
+      referenceNow,
       filters: {
         startTime: start,
         endTime: end,
@@ -170,9 +172,9 @@ export const usageHandlers = [
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/operations-summary', ({ request }) => {
     const url = new URL(request.url);
-    const mockNow = getMswReferenceNow();
-    const start = url.searchParams.get('start_time') ?? new Date(mockNow.getTime() - 24 * 60 * 60 * 1000).toISOString();
-    const end = url.searchParams.get('end_time') ?? mockNow.toISOString();
+    const referenceNow = getRequestReferenceNow(request);
+    const start = url.searchParams.get('start_time') ?? new Date(referenceNow.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const end = url.searchParams.get('end_time') ?? referenceNow.toISOString();
     const resourceType = url.searchParams.get('resource_type');
     const resourceId = url.searchParams.get('resource_id');
     const endUserId = url.searchParams.get('end_user_id');
@@ -190,7 +192,7 @@ export const usageHandlers = [
       model,
       result: result === 'ok' || result === 'error' ? result : null,
       errorClass: errorClass === 'provider_retryable' || errorClass === 'provider_non_retryable' || errorClass === 'system_error' ? errorClass : null,
-    });
+    }, referenceNow);
     const fixtureFactsBase: RequestFactLike[] = [
       {
         timestamp: end,
@@ -229,14 +231,14 @@ export const usageHandlers = [
     });
     return HttpResponse.json(buildUsageOperationsSummary([...requestFacts, ...fixtureFacts]));
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/limits/summary', () => {
+  http.get('/api/v1/workspaces/:ws/projects/:prj/limits/summary', ({ request }) => {
     const resources = (DOC_FIXTURES_ENABLED ? docUsageTopResources : p0.top_resources) as Array<{
       resource_id: string;
       resource_name: string;
       resource_type: ResourceType;
       requests: number;
     }>;
-    const now = getMswReferenceNow();
+    const now = getRequestReferenceNow(request);
     const resetAt = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
     const endpoints = resources
       .filter((item) => item.resource_type === 'endpoint')

@@ -15,11 +15,21 @@ let mockProjects = [
   },
 ];
 
+let mockGovernableProjects = [
+  {
+    id: 'proj_chat',
+    name: 'Chat Project',
+    permissions: ['project:endpoint:use'],
+  },
+];
+
 let mockCurrentProject: { id: string; name: string; permissions: string[] } | null = {
   id: 'proj_chat',
   name: 'Chat Project',
   permissions: ['project:endpoint:use'],
 };
+
+let canManageWorkspaceGovernance = false;
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({
@@ -74,9 +84,16 @@ vi.mock('@/lib/hooks/use-projects-queries', () => ({
   useProjects: () => ({
     data: mockProjects,
   }),
+  useGovernableProjects: () => ({
+    data: mockGovernableProjects,
+  }),
   useProject: () => ({
     data: mockCurrentProject,
   }),
+}));
+
+vi.mock('@/lib/hooks/use-permissions', () => ({
+  useHasWorkspacePermission: () => canManageWorkspaceGovernance,
 }));
 
 vi.mock('@/lib/hooks/use-project-layout-mode', () => ({
@@ -104,6 +121,7 @@ function renderTopbar() {
 describe('Topbar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    canManageWorkspaceGovernance = false;
     mockProjects = [
       {
         id: 'proj_chat',
@@ -111,6 +129,7 @@ describe('Topbar', () => {
         permissions: ['project:endpoint:use'],
       },
     ];
+    mockGovernableProjects = [...mockProjects];
     mockCurrentProject = {
       id: 'proj_chat',
       name: 'Chat Project',
@@ -126,6 +145,7 @@ describe('Topbar', () => {
         permissions: ['project:membership:update'],
       },
     ];
+    mockGovernableProjects = mockProjects;
     mockCurrentProject = {
       id: 'proj_chat',
       name: 'Chat Project',
@@ -144,6 +164,7 @@ describe('Topbar', () => {
 
   it('keeps the current project available in the switcher even when it is not in the discoverable list', () => {
     mockProjects = [];
+    mockGovernableProjects = [];
     mockCurrentProject = {
       id: 'proj_govern',
       name: 'Governance Project',
@@ -157,5 +178,42 @@ describe('Topbar', () => {
     fireEvent.click(menuTrigger);
 
     expect(screen.getAllByText('Governance Project').length).toBeGreaterThan(1);
+  });
+
+  it('expands the switcher with governable projects only for governance-only project contexts', () => {
+    canManageWorkspaceGovernance = true;
+    mockProjects = [
+      {
+        id: 'proj_visible',
+        name: 'Visible Project',
+        permissions: ['project:endpoint:use'],
+      },
+    ];
+    mockGovernableProjects = [
+      {
+        id: 'proj_govern',
+        name: 'Governance Project',
+        permissions: ['project:governance:update'],
+      },
+      {
+        id: 'proj_private_2',
+        name: 'Private Governable Project',
+        permissions: ['project:membership:update'],
+      },
+    ];
+    mockCurrentProject = {
+      id: 'proj_govern',
+      name: 'Governance Project',
+      permissions: ['project:governance:update'],
+    };
+
+    renderTopbar();
+
+    const menuTrigger = screen.getByTestId('topbar__project-switcher-menu');
+    fireEvent.pointerDown(menuTrigger, { button: 0 });
+    fireEvent.click(menuTrigger);
+
+    expect(screen.getByText('Visible Project')).toBeInTheDocument();
+    expect(screen.getByText('Private Governable Project')).toBeInTheDocument();
   });
 });

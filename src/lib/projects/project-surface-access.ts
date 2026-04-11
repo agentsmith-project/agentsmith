@@ -1,5 +1,9 @@
 import type { ProjectRoutePolicy } from '@/lib/routes/project-route-policy';
-import { PROJECT_ROUTE_POLICIES, listSidebarProjectRoutePolicies } from '@/lib/routes/project-route-policy-manifest';
+import {
+  PROJECT_ROUTE_POLICIES,
+  findProjectRoutePolicyByHref,
+  listSidebarProjectRoutePolicies,
+} from '@/lib/routes/project-route-policy-manifest';
 
 const PROJECT_SURFACE_SECTION_ORDER: Record<ProjectRoutePolicy['navSection'], number> = {
   home: 0,
@@ -13,7 +17,17 @@ type ProjectPermissionCarrier = {
   permissions?: readonly string[] | null;
 };
 
+type ProjectIdentity = {
+  id: string;
+};
+
 export type ProjectSurfaceHref = ProjectRoutePolicy['href'];
+
+export interface WorkspaceGovernanceProjectActions {
+  canOpenOverview: boolean;
+  canOpenMembers: boolean;
+  canOpenSettings: boolean;
+}
 
 function normalizePermissions(
   value: ProjectPermissionCarrier | readonly string[] | null | undefined,
@@ -41,11 +55,31 @@ function comparePolicies(left: ProjectRoutePolicy, right: ProjectRoutePolicy): n
   return left.navOrder - right.navOrder;
 }
 
+function dedupeProjectsById<T extends ProjectIdentity>(projects: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const project of projects) {
+    if (seen.has(project.id)) continue;
+    seen.add(project.id);
+    result.push(project);
+  }
+  return result;
+}
+
 export function canAccessProjectRoute(
   value: ProjectPermissionCarrier | readonly string[] | null | undefined,
   policy: ProjectRoutePolicy,
 ): boolean {
   return hasAnyRoutePermission(normalizePermissions(value), policy.permissions);
+}
+
+export function canAccessProjectSurfaceHref(
+  value: ProjectPermissionCarrier | readonly string[] | null | undefined,
+  href: ProjectSurfaceHref,
+): boolean {
+  const policy = findProjectRoutePolicyByHref(href);
+  if (!policy) return false;
+  return canAccessProjectRoute(value, policy);
 }
 
 export function listAccessibleProjectRoutePolicies(
@@ -71,6 +105,46 @@ export function resolveDefaultProjectSurfaceHref(
 ): ProjectSurfaceHref | null {
   const [first] = listAccessibleSidebarProjectRoutePolicies(value);
   return first?.href ?? null;
+}
+
+export function resolveWorkspaceGovernanceProjectActions(
+  value: ProjectPermissionCarrier | readonly string[] | null | undefined,
+): WorkspaceGovernanceProjectActions {
+  return {
+    canOpenOverview: canAccessProjectSurfaceHref(value, 'overview'),
+    canOpenMembers: canAccessProjectSurfaceHref(value, 'members'),
+    canOpenSettings: canAccessProjectSurfaceHref(value, 'settings'),
+  };
+}
+
+export function shouldUseGovernableProjectSwitcher<T extends ProjectIdentity>(params: {
+  discoverableProjects: readonly T[];
+  currentProject: T | null | undefined;
+  canManageWorkspaceGovernance: boolean;
+}): boolean {
+  if (!params.canManageWorkspaceGovernance || !params.currentProject) return false;
+  return !params.discoverableProjects.some((project) => project.id === params.currentProject?.id);
+}
+
+export function listSwitchableProjects<T extends ProjectIdentity>(params: {
+  discoverableProjects: readonly T[];
+  governableProjects?: readonly T[];
+  currentProject?: T | null;
+  includeGovernableProjects?: boolean;
+}): T[] {
+  const baseProjects = params.includeGovernableProjects
+    ? dedupeProjectsById([...(params.discoverableProjects ?? []), ...(params.governableProjects ?? [])])
+    : [...(params.discoverableProjects ?? [])];
+
+  if (!params.currentProject) {
+    return baseProjects;
+  }
+
+  if (baseProjects.some((project) => project.id === params.currentProject?.id)) {
+    return baseProjects;
+  }
+
+  return [params.currentProject, ...baseProjects];
 }
 
 export function buildProjectSurfacePath(

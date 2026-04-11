@@ -17,6 +17,12 @@ DEMO_DEPLOY_MODE="${DEMO_DEPLOY_MODE:-$(demo_env_value DEMO_DEPLOY_MODE)}"
 printf 'Scenario: %s\n' "demo-rehearsal"
 printf 'Active scenario: %s\n' "$(current_active_scenario || true)"
 printf 'Deploy root: %s\n' "${DEMO_REHEARSAL_ROOT}"
+printf 'Local kind cluster: %s (%s)\n' "$(scenario_kind_cluster_name)" "$(local_kind_cluster_exists "$(scenario_kind_cluster_name)" && printf 'present' || printf 'absent')"
+printf 'Local registry: %s @ %s:%s (%s)\n' \
+  "$(scenario_kind_registry_name)" \
+  "$(scenario_kind_registry_host)" \
+  "$(scenario_kind_registry_host_port)" \
+  "$(local_kind_registry_exists "$(scenario_kind_registry_name)" && printf 'present' || printf 'absent')"
 printf 'Mode: %s\n' "${DEMO_DEPLOY_MODE:-full}"
 printf 'Phase: %s\n' "$(demo_state_value release.phase)"
 printf 'Stage summary: %s\n' "$(demo_stage_summary)"

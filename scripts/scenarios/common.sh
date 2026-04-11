@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+source "${ROOT_DIR}/scripts/lib/local-kind-world.sh"
 SCENARIO_RUNTIME_ROOT="${SCENARIO_RUNTIME_ROOT:-${ROOT_DIR}/artifacts/runtime}"
 ACTIVE_SCENARIO_LOCK_FILE="${ACTIVE_SCENARIO_LOCK_FILE:-${SCENARIO_RUNTIME_ROOT}/active-scenario.lock}"
 SCENARIO_CLEANUP_TRAP_ARMED="${SCENARIO_CLEANUP_TRAP_ARMED:-0}"
@@ -268,6 +269,26 @@ clear_local_dev_substrate() {
   SUBSTRATE=local-dev bash "${ROOT_DIR}/scripts/substrate/down.sh" >/dev/null 2>&1 || true
 }
 
+scenario_kind_cluster_name() {
+  printf '%s\n' "${LOCAL_KIND_CLUSTER_NAME:-agentsmith}"
+}
+
+scenario_kind_context_name() {
+  printf 'kind-%s\n' "$(scenario_kind_cluster_name)"
+}
+
+scenario_kind_registry_name() {
+  printf '%s\n' "${LOCAL_KIND_REGISTRY_NAME:-kind-registry}"
+}
+
+scenario_kind_registry_host() {
+  printf '%s\n' "${LOCAL_KIND_REGISTRY_HOST:-127.0.0.1}"
+}
+
+scenario_kind_registry_host_port() {
+  printf '%s\n' "${LOCAL_KIND_REGISTRY_HOST_PORT:-5001}"
+}
+
 scenario_local_kind_state_root() {
   if [[ -n "${DEMO_DEPLOY_ROOT:-}" ]]; then
     printf '%s\n' "${DEMO_DEPLOY_ROOT}/state/local-kind"
@@ -281,8 +302,16 @@ scenario_local_kind_state_root() {
 }
 
 scenario_kind_kubeconfig_path() {
-  local cluster_name="${1:-${LOCAL_KIND_CLUSTER_NAME:-agentsmith}}"
+  local cluster_name="${1:-$(scenario_kind_cluster_name)}"
   printf '%s/%s\n' "$(scenario_local_kind_state_root)" "kind-${cluster_name}.kubeconfig"
+}
+
+scenario_local_kind_cleanup() {
+  local cluster_name="${1:-$(scenario_kind_cluster_name)}"
+  local registry_name="${2:-$(scenario_kind_registry_name)}"
+  local state_root="${3:-$(scenario_local_kind_state_root)}"
+  shift 3 || true
+  local_kind_world_destroy "${cluster_name}" "${registry_name}" "${state_root}" "$@"
 }
 
 scenario_release_tool_path() {
@@ -303,13 +332,17 @@ scenario_release_image_archive() {
 }
 
 ensure_local_kind_registry() {
-  local registry_name="${LOCAL_KIND_REGISTRY_NAME:-kind-registry}"
-  local registry_host_port="${LOCAL_KIND_REGISTRY_HOST_PORT:-5001}"
+  local registry_name
+  registry_name="$(scenario_kind_registry_name)"
+  local registry_host_port
+  registry_host_port="$(scenario_kind_registry_host_port)"
   local registry_container_port="${LOCAL_KIND_REGISTRY_CONTAINER_PORT:-5000}"
-  local registry_host="${LOCAL_KIND_REGISTRY_HOST:-127.0.0.1}"
+  local registry_host
+  registry_host="$(scenario_kind_registry_host)"
   local registry_listen="${registry_host}:${registry_host_port}"
   local registry_image="${LOCAL_KIND_REGISTRY_IMAGE:-registry:2}"
-  local cluster_name="${LOCAL_KIND_CLUSTER_NAME:-agentsmith}"
+  local cluster_name
+  cluster_name="$(scenario_kind_cluster_name)"
   local scoped_kubeconfig
   scoped_kubeconfig="$(scenario_kind_kubeconfig_path "${cluster_name}")"
   local kubectl_bin
@@ -343,13 +376,14 @@ metadata:
   namespace: kube-public
 data:
   localRegistryHosting.v1: |
-    host: "kind-registry:${registry_container_port}"
+    host: "${registry_name}:${registry_container_port}"
     help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
 EOF
 }
 
 ensure_local_kind_cluster() {
-  local cluster_name="${LOCAL_KIND_CLUSTER_NAME:-agentsmith}"
+  local cluster_name
+  cluster_name="$(scenario_kind_cluster_name)"
   local config_path="${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/demo/kind/config.yaml}"
   local state_root
   state_root="$(scenario_local_kind_state_root)"

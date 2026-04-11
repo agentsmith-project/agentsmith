@@ -24,7 +24,7 @@ For local development hosts, keep the mental model simple:
 
 - there is one shared local `substrate`
 - there is one active `flow` at a time
-- `demo-rehearsal` reuses that shared substrate and the local `kind-agentsmith` cluster
+- `demo-rehearsal` reuses that shared substrate and its scenario-owned local `agentsmith-demo` cluster
 
 In other words:
 

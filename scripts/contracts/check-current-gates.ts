@@ -103,6 +103,7 @@ requireMatch(gateContract, /lane:cluster-rehearsal/, 'current gate manifest cont
 requireMatch(gateContract, /gate:release:full/, 'current gate manifest contract must define gate:release:full', failures);
 requireMatch(gateContract, /full visual/, 'current gate manifest contract must explain full visual ownership', failures);
 requireMatch(gateContract, /targeted visual/, 'current gate manifest contract must explain targeted visual ownership', failures);
+requireMatch(gateContract, /scenario-owned local clean reset/, 'current gate manifest contract must require clean-reset semantics for rehearsal lanes', failures);
 
 requireMatch(workspaceDefaultChecklist, /npm run test:default-e2e/, 'workspace/project checklist must keep test:default-e2e as its canonical gate command', failures);
 requireMatch(workspaceDefaultChecklist, /targeted visual/, 'workspace/project checklist must explain that its visual coverage is targeted', failures);
@@ -120,6 +121,7 @@ requireMatch(releaseChecklist, /npm run lane:demo-rehearsal/, 'release checklist
 requireMatch(releaseChecklist, /npm run lane:cluster-rehearsal/, 'release checklist must require npm run lane:cluster-rehearsal', failures);
 requireMatch(releaseChecklist, /npm run gate:release:full/, 'release checklist must define npm run gate:release:full as the full release command', failures);
 requireMatch(releaseChecklist, /does not run the full visual lane|不能被 `gate:default` 代替/, 'release checklist must explain that gate:default does not run the full visual lane', failures);
+requireMatch(releaseChecklist, /clean reset/, 'release checklist must explain that rehearsal lanes begin from a clean reset', failures);
 
 for (const relativePath of CURRENT_GATE_DOCUMENT_FILES) {
   requireMatch(read(relativePath), /(gate|visual|backend-real|manifest|current)/, `${relativePath} must remain populated with current gate truth content`, failures);

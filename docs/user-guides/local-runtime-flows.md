@@ -27,7 +27,10 @@
 4. 切换工作线前，先把当前工作线停掉。
 5. `local-manual` 只保留自己的 app 端口，默认读取共享 substrate 的连接文件；如果共享 substrate 端口已被别的工作线占用，会直接失败并给出冲突提示。
 6. `backend-real` / `integration-full` 默认使用独立 support-service 端口，不复用共享 substrate 的 `15432/17017/16379/19000/18080`。
-7. 本地 rehearsal 默认使用同一个 `kind-agentsmith` 集群和同一个本地 registry。
+7. 本地 rehearsal 使用 scenario-owned local kind world：
+   - `demo-rehearsal` 默认使用 `agentsmith-demo` / `agentsmith-demo-registry`
+   - `cluster-rehearsal` 默认使用 `agentsmith-cluster` / `agentsmith-cluster-registry`
+8. `*-reset` 会把对应 rehearsal 的本地 kind world 清回干净状态；`*-down` 只负责停当前运行态。
 
 ## 先管底座
 
@@ -125,7 +128,7 @@ make local-manual-internal-down
 用途：
 
 - 在本机验证 demo deploy 这条完整工作线
-- 使用本地 `kind-agentsmith` 和本地 registry
+- 使用本地 `agentsmith-demo` kind 集群和 `agentsmith-demo-registry`
 - `up` 只推进到 environment-ready
 - `bootstrap` / `verify` / `report` 分阶段执行
 
@@ -156,7 +159,7 @@ make demo-rehearsal-report
 用途：
 
 - 在本机验证 cluster deploy 这条完整工作线
-- 用本地 `kind-agentsmith` 模拟 cluster 侧执行
+- 用本地 `agentsmith-cluster` 模拟 cluster 侧执行
 - `up` 只推进到 environment-ready
 - `bootstrap` 负责 admin handoff 后续动作、cluster prerequisites、sandbox deploy 和 bootstrap
 - `verify` / `report` 分阶段执行

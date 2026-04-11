@@ -7,6 +7,7 @@ else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 fi
 source "${ROOT_DIR}/scripts/lib/common.sh"
+source "${ROOT_DIR}/scripts/lib/local-kind-world.sh"
 source "${ROOT_DIR}/scripts/substrate/deploy-common.sh"
 
 ensure_dirs
@@ -17,6 +18,12 @@ if [[ -f "${RELEASE_ROOT}/env/site.env" ]]; then
   # shellcheck disable=SC1090
   source "${RELEASE_ROOT}/env/site.env"
 fi
+
+KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-${LOCAL_KIND_CLUSTER_NAME:-agentsmith}}"
+LOCAL_KIND_REGISTRY_NAME="${LOCAL_KIND_REGISTRY_NAME:-kind-registry}"
+DEMO_KIND_CONTEXT="kind-${KIND_CLUSTER_NAME}"
+DEMO_KIND_KUBECONFIG_PATH="${DEMO_KIND_KUBECONFIG_PATH:-${DEMO_DEPLOY_ROOT}/config/${DEMO_KIND_CONTEXT}.kubeconfig}"
+LOCAL_KIND_STATE_ROOT="${LOCAL_KIND_STATE_ROOT:-${DEMO_DEPLOY_ROOT}/state/local-kind}"
 
 cleanup_stale_demo_runtime_containers() {
   local name
@@ -41,9 +48,11 @@ fi
 cleanup_stale_demo_runtime_containers
 
 if demo_mode_is_full; then
-  if kind get clusters 2>/dev/null | grep -qx 'agentsmith'; then
-    kind delete cluster --name agentsmith || true
-  fi
+  local_kind_world_destroy \
+    "${KIND_CLUSTER_NAME}" \
+    "${LOCAL_KIND_REGISTRY_NAME}" \
+    "${LOCAL_KIND_STATE_ROOT}" \
+    "${DEMO_KIND_KUBECONFIG_PATH}"
 fi
 
 cleanup_report_dir_artifacts "${REPORT_DIR}"

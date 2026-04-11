@@ -26,8 +26,8 @@ init_cluster_rehearsal_env() {
 }
 
 ensure_cluster_rehearsal_registry_env() {
-  local registry_host="${CLUSTER_REHEARSAL_REGISTRY_HOST:-localhost:5001}"
-  local k8s_registry_host="${CLUSTER_REHEARSAL_K8S_REGISTRY_HOST:-kind-registry:5000}"
+  local registry_host="${CLUSTER_REHEARSAL_REGISTRY_HOST:-$(scenario_kind_registry_host):$(scenario_kind_registry_host_port)}"
+  local k8s_registry_host="${CLUSTER_REHEARSAL_K8S_REGISTRY_HOST:-$(scenario_kind_registry_name):5000}"
   cat > "${CLUSTER_REHEARSAL_CONFIG_DIR}/registry.env" <<EOF
 REGISTRY_HOST=${registry_host}
 REGISTRY_PROJECT=mbos
@@ -259,7 +259,8 @@ preload_cluster_rehearsal_kind_images() {
   load_registry_env
   require_version_images
 
-  local cluster_name="${LOCAL_KIND_CLUSTER_NAME:-agentsmith}"
+  local cluster_name
+  cluster_name="$(scenario_kind_cluster_name)"
   local host_images=(
     "${RUNNER_IMAGE}"
     "${SANDBOX_MANAGER_IMAGE}"

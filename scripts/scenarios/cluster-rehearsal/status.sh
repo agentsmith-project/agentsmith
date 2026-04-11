@@ -16,6 +16,12 @@ SANDBOX_HOST_PORT="${SANDBOX_HOST_PORT:-29180}"
 printf 'Scenario: %s\n' "cluster-rehearsal"
 printf 'Active scenario: %s\n' "$(current_active_scenario || true)"
 printf 'Deploy root: %s\n' "${CLUSTER_REHEARSAL_ROOT}"
+printf 'Local kind cluster: %s (%s)\n' "$(scenario_kind_cluster_name)" "$(local_kind_cluster_exists "$(scenario_kind_cluster_name)" && printf 'present' || printf 'absent')"
+printf 'Local registry: %s @ %s:%s (%s)\n' \
+  "$(scenario_kind_registry_name)" \
+  "$(scenario_kind_registry_host)" \
+  "$(scenario_kind_registry_host_port)" \
+  "$(local_kind_registry_exists "$(scenario_kind_registry_name)" && printf 'present' || printf 'absent')"
 printf 'Mode: %s\n' "${CLUSTER_DEPLOY_MODE:-full-auto}"
 printf 'Phase: %s\n' "$(cluster_state_value release.phase)"
 printf 'Stage summary: %s\n' "$(cluster_stage_summary)"

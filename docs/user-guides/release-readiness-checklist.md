@@ -56,7 +56,7 @@ npm run gate:release:full
 
 1. `npm run gate:default` 只覆盖默认业务链与治理门禁，以及它们各自内嵌的 targeted visual。
 2. `npm run lane:visual` 是唯一 full visual 验证通道，不能被 `gate:default` 代替。
-3. `npm run lane:demo-rehearsal` 与 `npm run lane:cluster-rehearsal` 是 release 级部署排演证据通道。
+3. `npm run lane:demo-rehearsal` 与 `npm run lane:cluster-rehearsal` 是 release 级部署排演证据通道；两条 lane 都必须从各自 scenario-owned local kind world 的 clean reset 开始。
 4. `npm run gate:release:full` 是完整发布验收命令；它不会替代单独排查时的分步执行，但定义了最终一键验收真相。
 
 `npm run gate:release` 会基于当前发布状态机校验发布级工程门禁、真实 notebook 主线、Feishu 人工步骤完成状态，以及真实环境截图巡检。

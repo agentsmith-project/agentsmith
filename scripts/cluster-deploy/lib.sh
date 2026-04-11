@@ -23,7 +23,8 @@ OPERATOR_ADMIN_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/admin-kubeconfig"
 OPERATOR_MANAGER_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/manager-kubeconfig"
 export CLUSTER_DEPLOY_ROOT SHARED_REGISTRY_ENV SHARED_KUBECONFIG SHARED_ADMIN_KUBECONFIG SHARED_MANAGER_KUBECONFIG SHARED_ADMIN_READY_ENV ADMIN_HANDOFF_DIR OPERATOR_CLUSTER_DIR OPERATOR_SITE_ENV OPERATOR_REGISTRY_ENV OPERATOR_KUBECONFIG OPERATOR_ADMIN_KUBECONFIG OPERATOR_MANAGER_KUBECONFIG
 
-LOCAL_KIND_CONTEXT_NAME="kind-agentsmith"
+LOCAL_KIND_CLUSTER_NAME="${LOCAL_KIND_CLUSTER_NAME:-agentsmith}"
+LOCAL_KIND_CONTEXT_NAME="kind-${LOCAL_KIND_CLUSTER_NAME}"
 LOCAL_KIND_KUBECONFIG="${LOCAL_KIND_KUBECONFIG:-${CLUSTER_DEPLOY_ROOT}/state/local-kind/${LOCAL_KIND_CONTEXT_NAME}.kubeconfig}"
 
 local_kind_kubeconfig_ready() {
@@ -158,8 +159,9 @@ load_registry_env() {
       done < "${RELEASE_ROOT}/env/registry.env"
   export K8S_REGISTRY_HOST="${K8S_REGISTRY_HOST:-${REGISTRY_HOST:-}}"
   if [[ -z "${K8S_REGISTRY_HOST:-}" || "${K8S_REGISTRY_HOST}" == "${REGISTRY_HOST:-}" ]]; then
-    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'kind-registry'; then
-      K8S_REGISTRY_HOST="kind-registry:5000"
+    local local_kind_registry_name="${LOCAL_KIND_REGISTRY_NAME:-kind-registry}"
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "${local_kind_registry_name}"; then
+      K8S_REGISTRY_HOST="${local_kind_registry_name}:5000"
       export K8S_REGISTRY_HOST
     fi
   fi

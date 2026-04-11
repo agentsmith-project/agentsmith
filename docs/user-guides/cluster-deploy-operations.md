@@ -18,7 +18,7 @@ Keep this distinction simple:
 
 - `cluster-rehearsal`
   - local rehearsal on a development host
-  - reuses the shared local substrate and local `kind-agentsmith`
+  - reuses the shared local substrate and the scenario-owned local `agentsmith-cluster`
 - `cluster-deploy`
   - real release on the target host
   - connects to a real Kubernetes cluster

@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { useWorkspace, useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
-import { useProjects } from '@/lib/hooks/use-projects-queries';
+import { useGovernableProjects, useProjects } from '@/lib/hooks/use-projects-queries';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { buildProjectAdminSummary, getWorkspaceSettingsProjectActions } from '@/lib/projects/project-view';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -50,11 +50,18 @@ export default function WorkspaceSettingsPage() {
   });
   const { data: members = [] } = useWorkspaceMembers(workspaceId ?? '');
   const {
-    data: projects = [],
-    isError: isProjectsError,
-    error: projectsError,
+    data: discoverableProjects = [],
+    isError: isDiscoverableProjectsError,
+    error: discoverableProjectsError,
   } = useProjects(workspaceId ?? '', {
-    visibilityScope: canManageWorkspaceGovernance ? 'workspace_governance' : 'discoverable',
+    enabled: !canManageWorkspaceGovernance,
+  });
+  const {
+    data: governableProjects = [],
+    isError: isGovernableProjectsError,
+    error: governableProjectsError,
+  } = useGovernableProjects(workspaceId ?? '', {
+    enabled: canManageWorkspaceGovernance,
   });
   const [createProjectOpen, setCreateProjectOpen] = React.useState(false);
   const [projectCreators, setProjectCreators] = React.useState<Array<{ id: string; user_id: string; name: string | null; email: string }>>([]);
@@ -74,6 +81,9 @@ export default function WorkspaceSettingsPage() {
   );
 
   const workspace = currentWorkspace || { id: workspaceId, name: workspaceId };
+  const projects = canManageWorkspaceGovernance ? governableProjects : discoverableProjects;
+  const isProjectsError = canManageWorkspaceGovernance ? isGovernableProjectsError : isDiscoverableProjectsError;
+  const projectsError = canManageWorkspaceGovernance ? governableProjectsError : discoverableProjectsError;
   const workspaceDisplayName: string = workspace.name ?? workspace.id ?? workspaceId ?? '';
   const workspaceDisplayId: string = workspace.id ?? workspaceId ?? '';
   const workspaceBasePath = `/${locale}/workspaces/${workspaceId}`;

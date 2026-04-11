@@ -6,6 +6,7 @@ export type ProjectsRoute =
   | { kind: 'workspaceMembers'; workspaceId: string }
   | { kind: 'workspaceProjectCreators'; workspaceId: string }
   | { kind: 'workspaceDirectoryUsers'; workspaceId: string }
+  | { kind: 'workspaceGovernableProjects'; workspaceId: string }
   | { kind: 'workspaceFeishuSettings'; workspaceId: string }
   | { kind: 'workspaceFeishuVerifyStart'; workspaceId: string }
   | { kind: 'workspaceFeishuEnable'; workspaceId: string }
@@ -158,6 +159,14 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     return {
       kind: 'workspaceDirectoryUsers',
       workspaceId: decodeURIComponent(workspaceDirectoryUsersMatched[1]),
+    };
+  }
+
+  const workspaceGovernableProjectsMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/governable-projects\/?$/);
+  if (workspaceGovernableProjectsMatched) {
+    return {
+      kind: 'workspaceGovernableProjects',
+      workspaceId: decodeURIComponent(workspaceGovernableProjectsMatched[1]),
     };
   }
 

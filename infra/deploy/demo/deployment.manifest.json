@@ -42,7 +42,13 @@
     "compose_managed",
     "k8s_internal"
   ],
-  "required_tools": [
+  "required_host_tools": [
+    "docker",
+    "curl",
+    "tar",
+    "sha256sum"
+  ],
+  "bundled_tools": [
     "kind",
     "kubectl",
     "juicefs",

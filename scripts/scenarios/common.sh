@@ -268,15 +268,65 @@ clear_local_dev_substrate() {
   SUBSTRATE=local-dev bash "${ROOT_DIR}/scripts/substrate/down.sh" >/dev/null 2>&1 || true
 }
 
+scenario_local_kind_state_root() {
+  if [[ -n "${DEMO_DEPLOY_ROOT:-}" ]]; then
+    printf '%s\n' "${DEMO_DEPLOY_ROOT}/state/local-kind"
+    return 0
+  fi
+  if [[ -n "${CLUSTER_DEPLOY_ROOT:-}" ]]; then
+    printf '%s\n' "${CLUSTER_DEPLOY_ROOT}/state/local-kind"
+    return 0
+  fi
+  printf '%s\n' "${HOME}/agentsmith/local-kind"
+}
+
+scenario_kind_kubeconfig_path() {
+  local cluster_name="${1:-${LOCAL_KIND_CLUSTER_NAME:-agentsmith}}"
+  printf '%s/%s\n' "$(scenario_local_kind_state_root)" "kind-${cluster_name}.kubeconfig"
+}
+
+scenario_release_tool_path() {
+  local tool_name="$1"
+  if [[ -n "${RELEASE_ROOT:-}" && -x "${RELEASE_ROOT}/tools/${tool_name}" ]]; then
+    printf '%s\n' "${RELEASE_ROOT}/tools/${tool_name}"
+    return 0
+  fi
+  command -v "${tool_name}"
+}
+
+scenario_release_image_archive() {
+  local image="$1"
+  [[ -n "${RELEASE_ROOT:-}" ]] || return 1
+  local archive_path="${RELEASE_ROOT}/images/$(printf '%s' "${image}" | tr '/:@' '---').tar"
+  [[ -f "${archive_path}" ]] || return 1
+  printf '%s\n' "${archive_path}"
+}
+
 ensure_local_kind_registry() {
   local registry_name="${LOCAL_KIND_REGISTRY_NAME:-kind-registry}"
   local registry_host_port="${LOCAL_KIND_REGISTRY_HOST_PORT:-5001}"
   local registry_container_port="${LOCAL_KIND_REGISTRY_CONTAINER_PORT:-5000}"
   local registry_host="${LOCAL_KIND_REGISTRY_HOST:-127.0.0.1}"
   local registry_listen="${registry_host}:${registry_host_port}"
+  local registry_image="${LOCAL_KIND_REGISTRY_IMAGE:-registry:2}"
+  local cluster_name="${LOCAL_KIND_CLUSTER_NAME:-agentsmith}"
+  local scoped_kubeconfig
+  scoped_kubeconfig="$(scenario_kind_kubeconfig_path "${cluster_name}")"
+  local kubectl_bin
+  kubectl_bin="$(scenario_release_tool_path kubectl)"
+
+  if ! docker image inspect "${registry_image}" >/dev/null 2>&1; then
+    local registry_archive=""
+    registry_archive="$(scenario_release_image_archive "${registry_image}" || true)"
+    [[ -n "${registry_archive}" ]] || {
+      echo "[scenario-kind] ERROR: missing bundled registry image ${registry_image}" >&2
+      return 1
+    }
+    docker load -i "${registry_archive}" >/dev/null
+  fi
 
   if ! docker ps -a --format '{{.Names}}' | grep -qx "${registry_name}"; then
-    docker run -d --restart=always -p "${registry_listen}:${registry_container_port}" --name "${registry_name}" registry:2 >/dev/null
+    docker run -d --restart=always -p "${registry_listen}:${registry_container_port}" --name "${registry_name}" "${registry_image}" >/dev/null
   else
     docker start "${registry_name}" >/dev/null 2>&1 || true
   fi
@@ -285,7 +335,7 @@ ensure_local_kind_registry() {
 
   curl -fsS "http://${registry_host}:${registry_host_port}/v2/_catalog" >/dev/null
 
-  kubectl apply -f - >/dev/null <<EOF
+  KUBECONFIG="${scoped_kubeconfig}" "${kubectl_bin}" apply -f - >/dev/null <<EOF
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -301,11 +351,28 @@ EOF
 ensure_local_kind_cluster() {
   local cluster_name="${LOCAL_KIND_CLUSTER_NAME:-agentsmith}"
   local config_path="${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/demo/kind/config.yaml}"
-  local kind_context="kind-${cluster_name}"
+  local state_root
+  state_root="$(scenario_local_kind_state_root)"
+  local scoped_kubeconfig
+  scoped_kubeconfig="$(scenario_kind_kubeconfig_path "${cluster_name}")"
   local control_plane_node="${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-${cluster_name}-control-plane}"
+  local kind_node_image
+  kind_node_image="$(awk '/image:/ {print $2; exit}' "${config_path}")"
+  local node_archive=""
+  if [[ -n "${kind_node_image}" ]]; then
+    node_archive="$(scenario_release_image_archive "${kind_node_image}" || true)"
+  fi
+  local kind_bin
+  local kubectl_bin
+  kind_bin="$(scenario_release_tool_path kind)"
+  kubectl_bin="$(scenario_release_tool_path kubectl)"
+  mkdir -p "${state_root}"
+  LOCAL_KIND_STATE_ROOT="${state_root}" \
+  LOCAL_KIND_FINAL_KUBECONFIG_PATH="${scoped_kubeconfig}" \
+  LOCAL_KIND_NODE_IMAGE_ARCHIVE="${node_archive}" \
+  LOCAL_KIND_BIN="${kind_bin}" \
+  LOCAL_KIND_KUBECTL_BIN="${kubectl_bin}" \
+  LOCAL_KIND_RELEASE_ROOT="${RELEASE_ROOT:-}" \
   "${ROOT_DIR}/scripts/ensure-local-kind-cluster.sh" "${cluster_name}" "${config_path}" "${control_plane_node}"
-  mkdir -p "${HOME}/.kube" "${HOME}/agentsmith/cluster-deploy/config"
   ensure_local_kind_registry
-  cp "${HOME}/.kube/config" "${HOME}/agentsmith/cluster-deploy/config/kubeconfig"
-  cp "${HOME}/.kube/config" "${HOME}/agentsmith/cluster-deploy/config/admin-kubeconfig"
 }

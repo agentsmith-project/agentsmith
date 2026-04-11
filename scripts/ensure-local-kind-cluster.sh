@@ -1,22 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
-unset no_proxy NO_PROXY
-
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/kind-cluster-bootstrap.sh"
 CLUSTER_NAME="${1:-${LOCAL_KIND_CLUSTER_NAME:-agentsmith}}"
 CONFIG_PATH="${2:-${LOCAL_KIND_CONFIG_PATH:-${ROOT_DIR}/infra/deploy/demo/kind/config.yaml}}"
 CONTROL_PLANE_NODE="${3:-${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-${CLUSTER_NAME}-control-plane}}"
 KIND_CONTEXT="kind-${CLUSTER_NAME}"
-KUBECONFIG_DIR="${LOCAL_KIND_KUBECONFIG_DIR:-${HOME}/.kube}"
-FINAL_KUBECONFIG_PATH="${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-${KUBECONFIG_DIR}/config}"
+LOCAL_KIND_STATE_ROOT="${LOCAL_KIND_STATE_ROOT:-${HOME}/agentsmith/local-kind}"
+KUBECONFIG_DIR="${LOCAL_KIND_KUBECONFIG_DIR:-${LOCAL_KIND_STATE_ROOT}/kubeconfig}"
+FINAL_KUBECONFIG_PATH="${LOCAL_KIND_FINAL_KUBECONFIG_PATH:-${KUBECONFIG_DIR}/${KIND_CONTEXT}.config}"
 EXPORT_KUBECONFIG_PATH="${LOCAL_KIND_EXPORT_KUBECONFIG_PATH:-${KUBECONFIG_DIR}/${KIND_CONTEXT}.exported.conf}"
 SUPER_ADMIN_RAW_KUBECONFIG_PATH="${LOCAL_KIND_SUPER_ADMIN_RAW_KUBECONFIG_PATH:-${KUBECONFIG_DIR}/${KIND_CONTEXT}.super-admin.raw.conf}"
 SUPER_ADMIN_KUBECONFIG_PATH="${LOCAL_KIND_SUPER_ADMIN_KUBECONFIG_PATH:-${KUBECONFIG_DIR}/${KIND_CONTEXT}.super-admin.conf}"
 HOST_DOCKER_CONFIG_DIR="${DOCKER_CONFIG:-${HOME}/.docker}"
 KIND_DOCKER_CONFIG_DIR=""
+LOCAL_KIND_BIN="${LOCAL_KIND_BIN:-$(command -v kind)}"
+LOCAL_KIND_KUBECTL_BIN="${LOCAL_KIND_KUBECTL_BIN:-$(command -v kubectl)}"
+LOCAL_KIND_NODE_IMAGE_ARCHIVE="${LOCAL_KIND_NODE_IMAGE_ARCHIVE:-}"
+
+kind_image_tar_name() {
+  printf '%s' "$1" | tr '/:@' '---'
+}
+
+kind_kubectl() {
+  "${LOCAL_KIND_KUBECTL_BIN}" "$@"
+}
 
 cleanup_kind_docker_config() {
   if [[ -n "${KIND_DOCKER_CONFIG_DIR}" ]]; then
@@ -33,7 +42,7 @@ prepare_kind_docker_config() {
 }
 
 kind_cmd() {
-  DOCKER_CONFIG="${KIND_DOCKER_CONFIG_DIR}" kind "$@"
+  DOCKER_CONFIG="${KIND_DOCKER_CONFIG_DIR}" "${LOCAL_KIND_BIN}" "$@"
 }
 
 current_api_server() {
@@ -41,18 +50,18 @@ current_api_server() {
 }
 
 write_super_admin_kubeconfig() {
-  mkdir -p "${KUBECONFIG_DIR}"
+  mkdir -p "${KUBECONFIG_DIR}" "$(dirname "${FINAL_KUBECONFIG_PATH}")"
   KUBECONFIG="${EXPORT_KUBECONFIG_PATH}" kind_cmd export kubeconfig --name "${CLUSTER_NAME}" >/dev/null
   docker cp "${CONTROL_PLANE_NODE}:/etc/kubernetes/super-admin.conf" "${SUPER_ADMIN_RAW_KUBECONFIG_PATH}" >/dev/null
 
   local cert_b64 key_b64 server cert_file key_file
   cert_b64="$(
     KUBECONFIG="${SUPER_ADMIN_RAW_KUBECONFIG_PATH}" \
-      kubectl config view --raw --minify -o jsonpath='{.users[0].user.client-certificate-data}'
+      kind_kubectl config view --raw --minify -o jsonpath='{.users[0].user.client-certificate-data}'
   )"
   key_b64="$(
     KUBECONFIG="${SUPER_ADMIN_RAW_KUBECONFIG_PATH}" \
-      kubectl config view --raw --minify -o jsonpath='{.users[0].user.client-key-data}'
+      kind_kubectl config view --raw --minify -o jsonpath='{.users[0].user.client-key-data}'
   )"
   server="$(current_api_server)"
   [[ -n "${server}" ]] || {
@@ -65,19 +74,19 @@ write_super_admin_kubeconfig() {
   printf '%s' "${cert_b64}" | base64 -d > "${cert_file}"
   printf '%s' "${key_b64}" | base64 -d > "${key_file}"
 
-  KUBECONFIG="${EXPORT_KUBECONFIG_PATH}" kubectl config set-cluster "${KIND_CONTEXT}" --server="https://${server}" >/dev/null
+  KUBECONFIG="${EXPORT_KUBECONFIG_PATH}" kind_kubectl config set-cluster "${KIND_CONTEXT}" --server="https://${server}" >/dev/null
   KUBECONFIG="${EXPORT_KUBECONFIG_PATH}" \
-    kubectl config set-credentials "${KIND_CONTEXT}-super-admin" \
+    kind_kubectl config set-credentials "${KIND_CONTEXT}-super-admin" \
       --client-certificate="${cert_file}" \
       --client-key="${key_file}" \
       --embed-certs=true \
       >/dev/null
   KUBECONFIG="${EXPORT_KUBECONFIG_PATH}" \
-    kubectl config set-context "${KIND_CONTEXT}" \
+    kind_kubectl config set-context "${KIND_CONTEXT}" \
       --cluster="${KIND_CONTEXT}" \
       --user="${KIND_CONTEXT}-super-admin" \
       >/dev/null
-  KUBECONFIG="${EXPORT_KUBECONFIG_PATH}" kubectl config use-context "${KIND_CONTEXT}" >/dev/null
+  KUBECONFIG="${EXPORT_KUBECONFIG_PATH}" kind_kubectl config use-context "${KIND_CONTEXT}" >/dev/null
 
   cp "${EXPORT_KUBECONFIG_PATH}" "${SUPER_ADMIN_KUBECONFIG_PATH}"
   cp "${EXPORT_KUBECONFIG_PATH}" "${FINAL_KUBECONFIG_PATH}"
@@ -86,9 +95,9 @@ write_super_admin_kubeconfig() {
 
 kind_cluster_ready() {
   write_super_admin_kubeconfig >/dev/null 2>&1 || return 1
-  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kubectl --context "${KIND_CONTEXT}" get --raw='/readyz' >/dev/null 2>&1 || return 1
-  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kubectl --context "${KIND_CONTEXT}" get ns >/dev/null 2>&1 || return 1
-  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kubectl --context "${KIND_CONTEXT}" get node "${CONTROL_PLANE_NODE}" >/dev/null 2>&1 || return 1
+  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl --context "${KIND_CONTEXT}" get --raw='/readyz' >/dev/null 2>&1 || return 1
+  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl --context "${KIND_CONTEXT}" get ns >/dev/null 2>&1 || return 1
+  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl --context "${KIND_CONTEXT}" get node "${CONTROL_PLANE_NODE}" >/dev/null 2>&1 || return 1
 }
 
 wait_for_kind_cluster_ready() {
@@ -116,6 +125,22 @@ create_and_sanitize_kind_cluster() {
   kind_sanitize_control_plane_proxy_env "${CONTROL_PLANE_NODE}"
 }
 
+ensure_kind_node_image_present() {
+  local kind_node_image="$1"
+  if docker image inspect "${kind_node_image}" >/dev/null 2>&1; then
+    return 0
+  fi
+  local archive_path="${LOCAL_KIND_NODE_IMAGE_ARCHIVE}"
+  if [[ -z "${archive_path}" && -n "${LOCAL_KIND_RELEASE_ROOT:-}" ]]; then
+    archive_path="${LOCAL_KIND_RELEASE_ROOT}/images/$(kind_image_tar_name "${kind_node_image}").tar"
+  fi
+  [[ -n "${archive_path}" && -f "${archive_path}" ]] || {
+    echo "[kind-bootstrap] ERROR: missing local kind node image ${kind_node_image}; expected archive at ${archive_path:-<unset>}" >&2
+    return 1
+  }
+  docker load -i "${archive_path}" >/dev/null
+}
+
 ensure_local_kind_cluster() {
   prepare_kind_docker_config
 
@@ -125,17 +150,15 @@ ensure_local_kind_cluster() {
     echo "[kind-bootstrap] ERROR: failed to resolve node image from ${CONFIG_PATH}" >&2
     return 1
   }
-  if ! docker image inspect "${kind_node_image}" >/dev/null 2>&1; then
-    docker pull "${kind_node_image}" >/dev/null
-  fi
+  ensure_kind_node_image_present "${kind_node_image}"
 
   if kind_cmd get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}" && ! kind_cluster_healthy; then
     if docker ps --format '{{.Names}}' | grep -qx "${CONTROL_PLANE_NODE}"; then
       kind_sanitize_control_plane_proxy_env "${CONTROL_PLANE_NODE}" || true
       if wait_for_kind_cluster_ready 120; then
         write_super_admin_kubeconfig >/dev/null 2>&1 || true
-        KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kubectl config use-context "${KIND_CONTEXT}" >/dev/null || true
-        KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kubectl label node "${CONTROL_PLANE_NODE}" node=mbos --overwrite >/dev/null || true
+        KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl config use-context "${KIND_CONTEXT}" >/dev/null || true
+        KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl label node "${CONTROL_PLANE_NODE}" node=mbos --overwrite >/dev/null || true
         return 0
       fi
     fi
@@ -164,8 +187,8 @@ ensure_local_kind_cluster() {
   fi
 
   wait_for_kind_cluster_ready 180
-  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kubectl config use-context "${KIND_CONTEXT}" >/dev/null || true
-  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kubectl label node "${CONTROL_PLANE_NODE}" node=mbos --overwrite >/dev/null
+  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl config use-context "${KIND_CONTEXT}" >/dev/null || true
+  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl label node "${CONTROL_PLANE_NODE}" node=mbos --overwrite >/dev/null
 }
 
 ensure_local_kind_cluster

@@ -51,6 +51,54 @@ async function readProjectActorGroups(args: {
     }));
 }
 
+async function listVisibleProjects(args: {
+  deps: ProjectRouteContext['deps'];
+  workspaceId: string;
+  actorUserId: string;
+  actorWorkspacePermissions?: readonly string[];
+  listed: Awaited<ReturnType<ProjectRouteContext['deps']['listProjectsUseCase']['execute']>>;
+}) {
+  const visibleItems = await Promise.all(args.listed.items.map(async (item) => {
+    const discoverable = await canActorDiscoverProject({
+      docStore: args.deps.docStore,
+      workspaceId: args.workspaceId,
+      projectId: item.id,
+      projectOwnerId: item.owner_id,
+      projectVisibility: item.visibility,
+      actorUserId: args.actorUserId,
+      actorWorkspacePermissions: args.actorWorkspacePermissions,
+    });
+    if (!discoverable) {
+      return null;
+    }
+    const authorization = await resolveProjectAuthorizationSnapshot({
+      docStore: args.deps.docStore,
+      workspaceId: args.workspaceId,
+      projectId: item.id,
+      projectOwnerId: item.owner_id,
+      projectGovernance: item.governance_json,
+      actorUserId: args.actorUserId,
+    });
+    const groups = authorization.membership_status === 'active'
+      ? await readProjectActorGroups({
+          deps: args.deps,
+          workspaceId: args.workspaceId,
+          projectId: item.id,
+          ownerId: item.owner_id,
+          actorUserId: args.actorUserId,
+        })
+      : [];
+    return {
+      ...item,
+      admin_member_ids: await readProjectAdminMemberIds(args.deps, args.workspaceId, item.id, item.owner_id),
+      groups,
+      permissions: [...authorization.effective_permissions],
+      membership_status: authorization.membership_status,
+    };
+  }));
+  return visibleItems.filter((item) => item !== null);
+}
+
 export async function handleProjectCrudRoutes(context: ProjectRouteContext): Promise<boolean> {
   const {
     route,
@@ -64,69 +112,42 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
     readBody,
   } = context;
 
-  if (route.kind === 'collection' && method === 'GET' && route.workspaceId) {
+  if (route.kind === 'workspaceGovernableProjects' && method === 'GET' && route.workspaceId) {
     const workspaceId = route.workspaceId;
-    const requestUrl = new URL(req.url ?? '/', 'http://localhost');
-    const visibilityScope = requestUrl.searchParams.get('visibility_scope');
-    const actorWorkspacePermissions =
-      visibilityScope === 'workspace_governance'
-        ? await resolveWorkspacePermissions({
-            workspaceId,
-            actorId: user.id,
-            actorEmail: user.email,
-            defaultWorkspaceId: defaultWorkspace?.id,
-          })
-        : [];
-    if (
-      visibilityScope === 'workspace_governance' &&
-      !actorWorkspacePermissions.includes('workspace:governance:update')
-    ) {
+    const actorWorkspacePermissions = await resolveWorkspacePermissions({
+      workspaceId,
+      actorId: user.id,
+      actorEmail: user.email,
+      defaultWorkspaceId: defaultWorkspace?.id,
+    });
+    if (!actorWorkspacePermissions.includes('workspace:governance:update')) {
       json(res, 403, {
         error_code: 'PERMISSION_DENIED',
         message: 'workspace_governance_update_required',
       });
       return true;
     }
+    const listed = await deps.listProjectsUseCase.execute(workspaceId);
+    const items = await listVisibleProjects({
+      deps,
+      workspaceId,
+      actorUserId: user.id,
+      actorWorkspacePermissions,
+      listed,
+    });
+    json(res, 200, { items });
+    return true;
+  }
+
+  if (route.kind === 'collection' && method === 'GET' && route.workspaceId) {
+    const workspaceId = route.workspaceId;
     const listed = await deps.listProjectsUseCase.execute(route.workspaceId);
-    const visibleItems = await Promise.all(listed.items.map(async (item) => {
-      const discoverable = await canActorDiscoverProject({
-        docStore: deps.docStore,
-        workspaceId,
-        projectId: item.id,
-        projectOwnerId: item.owner_id,
-        projectVisibility: item.visibility,
-        actorUserId: user.id,
-        actorWorkspacePermissions,
-      });
-      if (!discoverable) {
-        return null;
-      }
-      const authorization = await resolveProjectAuthorizationSnapshot({
-        docStore: deps.docStore,
-        workspaceId,
-        projectId: item.id,
-        projectOwnerId: item.owner_id,
-        projectGovernance: item.governance_json,
-        actorUserId: user.id,
-      });
-      const groups = authorization.membership_status === 'active'
-        ? await readProjectActorGroups({
-            deps,
-            workspaceId,
-            projectId: item.id,
-            ownerId: item.owner_id,
-            actorUserId: user.id,
-          })
-        : [];
-      return {
-        ...item,
-        admin_member_ids: await readProjectAdminMemberIds(deps, workspaceId, item.id, item.owner_id),
-        groups,
-        permissions: [...authorization.effective_permissions],
-        membership_status: authorization.membership_status,
-      };
-    }));
-    const items = visibleItems.filter((item) => item !== null);
+    const items = await listVisibleProjects({
+      deps,
+      workspaceId,
+      actorUserId: user.id,
+      listed,
+    });
     json(res, 200, {
       items,
     });

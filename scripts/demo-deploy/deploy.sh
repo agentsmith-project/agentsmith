@@ -31,22 +31,19 @@ UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-agentsmith}"
 KIND_CONTEXT="kind-${KIND_CLUSTER_NAME}"
 KIND_CONFIG_PATH="${RELEASE_ROOT}/kind/config.yaml"
+DEMO_KIND_KUBECONFIG_PATH="${DEMO_KIND_KUBECONFIG_PATH:-${DEMO_DEPLOY_ROOT}/config/${KIND_CONTEXT}.kubeconfig}"
 
 ensure_demo_kind_cluster() {
+  LOCAL_KIND_BIN="${KIND_BIN}" \
+  LOCAL_KIND_KUBECTL_BIN="${KUBECTL_BIN}" \
+  LOCAL_KIND_RELEASE_ROOT="${RELEASE_ROOT}" \
+  LOCAL_KIND_STATE_ROOT="${DEMO_DEPLOY_ROOT}/state/local-kind" \
+  LOCAL_KIND_FINAL_KUBECONFIG_PATH="${DEMO_KIND_KUBECONFIG_PATH}" \
   bash "${ROOT_DIR}/scripts/ensure-local-kind-cluster.sh" \
     "${KIND_CLUSTER_NAME}" \
     "${KIND_CONFIG_PATH}" \
     "${KIND_CLUSTER_NAME}-control-plane"
 }
-
-if demo_mode_is_full; then
-  KIND_NODE_IMAGE="$(awk '/image:/ {print $2; exit}' "${KIND_CONFIG_PATH}")"
-  [[ -n "${KIND_NODE_IMAGE}" ]] || die "failed to resolve kind node image from ${KIND_CONFIG_PATH}"
-  if ! docker image inspect "${KIND_NODE_IMAGE}" >/dev/null 2>&1; then
-    log "prefetching kind node image ${KIND_NODE_IMAGE} via docker proxy"
-    docker pull "${KIND_NODE_IMAGE}" >/dev/null
-  fi
-fi
 
 image_tar_name() {
   printf '%s' "$1" | tr '/:@' '---'
@@ -99,10 +96,10 @@ ensure_demo_external_runner_slot_available() {
 
 if demo_mode_is_full; then
   ensure_demo_kind_cluster
-  kind export kubeconfig --name "${KIND_CLUSTER_NAME}" >/dev/null
+  export KUBECONFIG="${DEMO_KIND_KUBECONFIG_PATH}"
   if kind_cluster_incompatible_with_demo_full; then
     recreate_kind_cluster_for_demo "found ingress-nginx full-auto prereqs that reserve the demo sandbox node port"
-    kind export kubeconfig --name "${KIND_CLUSTER_NAME}" >/dev/null
+    export KUBECONFIG="${DEMO_KIND_KUBECONFIG_PATH}"
   fi
 
   JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"

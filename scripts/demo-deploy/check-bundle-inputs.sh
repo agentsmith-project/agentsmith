@@ -19,6 +19,13 @@ root_dir = pathlib.Path(sys.argv[2])
 
 manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
 
+required_host_tools = manifest.get("required_host_tools")
+bundled_tools = manifest.get("bundled_tools")
+if not isinstance(required_host_tools, list) or not required_host_tools:
+    raise SystemExit("missing_required_host_tools")
+if not isinstance(bundled_tools, list) or not bundled_tools:
+    raise SystemExit("missing_bundled_tools")
+
 for relative in manifest.get("bundle_files", []):
     source = root_dir / relative if not relative.startswith("tools/") else pathlib.Path("/nonexistent")
     if relative == "scripts/lib/common.sh":
@@ -66,5 +73,19 @@ for relative in manifest.get("bundle_files", []):
     if not source.exists():
         raise SystemExit(f"missing_bundle_source:{relative}:{source}")
 PY
+
+runtime_bundle_scripts=(
+  "${ROOT_DIR}/scripts/demo-deploy/prepare.sh"
+  "${ROOT_DIR}/scripts/demo-deploy/reset.sh"
+  "${ROOT_DIR}/scripts/demo-deploy/deploy.sh"
+  "${ROOT_DIR}/scripts/demo-deploy/bootstrap.sh"
+  "${ROOT_DIR}/scripts/demo-deploy/verify.sh"
+  "${ROOT_DIR}/scripts/demo-deploy/report.sh"
+)
+
+if rg -n 'docker (pull|build)\b|npm (install|ci)\b|pnpm install\b|yarn install\b' "${runtime_bundle_scripts[@]}" >/dev/null; then
+  echo "demo runtime bundle scripts must not fetch images, rebuild, or download target-stage dependencies" >&2
+  exit 1
+fi
 
 echo "[bundle-inputs] ok"

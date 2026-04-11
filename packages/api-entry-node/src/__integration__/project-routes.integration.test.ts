@@ -456,7 +456,7 @@ describe('api-entry-node project routes integration', () => {
     expect(listed?.membership_status).toBe('active');
   });
 
-  it('lets workspace governance admins list private non-member projects through the governance visibility scope', async () => {
+  it('lets workspace governance admins list private non-member projects through the governable projects route', async () => {
     const deps = createDefaultNodeApiDeps();
     const created = await deps.createProjectUseCase.execute({
       workspaceId: 'ws_default',
@@ -476,7 +476,7 @@ describe('api-entry-node project routes integration', () => {
 
     const governanceRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects?visibility_scope=workspace_governance',
+      '/api/v1/workspaces/ws_default/governable-projects',
       'owner-token',
     );
     expect(governanceRes.status).toBe(200);
@@ -495,12 +495,12 @@ describe('api-entry-node project routes integration', () => {
     );
   });
 
-  it('rejects governance visibility scope for actors without workspace governance permission', async () => {
+  it('rejects the governable projects route for actors without workspace governance permission', async () => {
     const { baseUrl } = startServer();
 
     const res = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects?visibility_scope=workspace_governance',
+      '/api/v1/workspaces/ws_default/governable-projects',
       'member-token',
     );
     expect(res.status).toBe(403);

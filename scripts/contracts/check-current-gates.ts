@@ -57,9 +57,12 @@ const gateDefault = findCurrentGateDefinition('gate:default');
 const laneVisual = findCurrentGateDefinition('lane:visual');
 const testVisual = findCurrentGateDefinition('test:visual');
 const backendRealCore = findCurrentGateDefinition('lane:backend-real:core');
+const laneDemoRehearsal = findCurrentGateDefinition('lane:demo-rehearsal');
+const laneClusterRehearsal = findCurrentGateDefinition('lane:cluster-rehearsal');
+const gateReleaseFull = findCurrentGateDefinition('gate:release:full');
 
-if (!gateDefault || !laneVisual || !testVisual || !backendRealCore) {
-  failures.push('current gate manifest is missing required default/visual/backend-real definitions');
+if (!gateDefault || !laneVisual || !testVisual || !backendRealCore || !laneDemoRehearsal || !laneClusterRehearsal || !gateReleaseFull) {
+  failures.push('current gate manifest is missing required default/visual/backend-real/rehearsal definitions');
 }
 
 requireMatch(workspaceDefaultGate, /e2e\/visual\.spec\.ts[\s\S]*--project=visual[\s\S]*--grep /, 'workspace-project default gate must keep targeted visual coverage with --grep', failures);
@@ -95,6 +98,9 @@ for (const content of [readme, development, governanceModel]) {
 
 requireMatch(gateContract, /gate:default/, 'current gate manifest contract must define gate:default', failures);
 requireMatch(gateContract, /lane:visual/, 'current gate manifest contract must define lane:visual', failures);
+requireMatch(gateContract, /lane:demo-rehearsal/, 'current gate manifest contract must define lane:demo-rehearsal', failures);
+requireMatch(gateContract, /lane:cluster-rehearsal/, 'current gate manifest contract must define lane:cluster-rehearsal', failures);
+requireMatch(gateContract, /gate:release:full/, 'current gate manifest contract must define gate:release:full', failures);
 requireMatch(gateContract, /full visual/, 'current gate manifest contract must explain full visual ownership', failures);
 requireMatch(gateContract, /targeted visual/, 'current gate manifest contract must explain targeted visual ownership', failures);
 
@@ -110,6 +116,9 @@ forbidMatch(governanceDefaultChecklist, /npm run gate:default/, 'governance chec
 
 requireMatch(releaseChecklist, /npm run gate:default/, 'release checklist must require npm run gate:default', failures);
 requireMatch(releaseChecklist, /npm run lane:visual/, 'release checklist must require npm run lane:visual', failures);
+requireMatch(releaseChecklist, /npm run lane:demo-rehearsal/, 'release checklist must require npm run lane:demo-rehearsal', failures);
+requireMatch(releaseChecklist, /npm run lane:cluster-rehearsal/, 'release checklist must require npm run lane:cluster-rehearsal', failures);
+requireMatch(releaseChecklist, /npm run gate:release:full/, 'release checklist must define npm run gate:release:full as the full release command', failures);
 requireMatch(releaseChecklist, /does not run the full visual lane|不能被 `gate:default` 代替/, 'release checklist must explain that gate:default does not run the full visual lane', failures);
 
 for (const relativePath of CURRENT_GATE_DOCUMENT_FILES) {

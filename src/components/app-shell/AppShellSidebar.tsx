@@ -118,8 +118,7 @@ export function AppShellSidebar({
   const projectMenuItems = currentProject
     ? routePolicies
         .filter((policy) => {
-          if (policy.href === 'overview') return canUseProject;
-          if (policy.href === 'chat' || policy.href === 'notebook' || policy.href === 'files' || policy.href === 'usage' || policy.href === 'use-guide') {
+          if (policy.href === 'chat' || policy.href === 'notebook' || policy.href === 'files' || policy.href === 'usage' || policy.href === 'use-guide' || policy.href === 'overview') {
             return canUseProject;
           }
           if (policy.href === 'agents') return canUseAgents || canManageAgents;

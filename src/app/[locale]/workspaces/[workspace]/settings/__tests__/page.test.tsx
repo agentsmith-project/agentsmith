@@ -105,6 +105,17 @@ const mockUseProjects = vi.fn<
   isError: false,
   error: null,
 }));
+const mockUseGovernableProjects = vi.fn<
+  () => {
+    data: typeof STABLE_PROJECTS;
+    isError: boolean;
+    error: APIError | null;
+  }
+>(() => ({
+  data: STABLE_PROJECTS,
+  isError: false,
+  error: null,
+}));
 
 vi.mock('next/navigation', () => ({
   useParams: () => mockUseParams(),
@@ -127,6 +138,7 @@ vi.mock('@/lib/hooks/use-workspaces', () => ({
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
   useProjects: (...args: Parameters<typeof mockUseProjects>) => mockUseProjects(...args),
+  useGovernableProjects: (...args: Parameters<typeof mockUseGovernableProjects>) => mockUseGovernableProjects(...args),
 }));
 
 vi.mock('@/components/app-shell/Topbar', () => ({
@@ -215,6 +227,11 @@ describe('WorkspaceSettingsPage', () => {
       isFetched: true,
     });
     mockUseProjects.mockReturnValue({
+      data: STABLE_PROJECTS,
+      isError: false,
+      error: null,
+    });
+    mockUseGovernableProjects.mockReturnValue({
       data: STABLE_PROJECTS,
       isError: false,
       error: null,
@@ -339,6 +356,11 @@ describe('WorkspaceSettingsPage', () => {
       isError: true,
       error: new APIError('RESOURCE_NOT_FOUND', 'workspace_not_found', undefined, 404),
     });
+    mockUseGovernableProjects.mockReturnValue({
+      data: [],
+      isError: true,
+      error: new APIError('RESOURCE_NOT_FOUND', 'workspace_not_found', undefined, 404),
+    });
 
     renderPage();
 
@@ -411,11 +433,12 @@ describe('WorkspaceSettingsPage', () => {
     expect(screen.getByTestId('ws-settings__project-owner-save--proj_3')).toBeDisabled();
   });
 
-  it('requests the workspace governance project listing scope', async () => {
+  it('requests the dedicated governable projects listing for workspace governance admins', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(mockUseProjects).toHaveBeenCalledWith('ws_1', { visibilityScope: 'workspace_governance' });
+      expect(mockUseGovernableProjects).toHaveBeenCalledWith('ws_1', { enabled: true });
+      expect(mockUseProjects).toHaveBeenCalledWith('ws_1', { enabled: false });
     });
   });
 

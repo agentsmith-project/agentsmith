@@ -8,6 +8,10 @@ describe('matchProjectsRoute', () => {
       kind: 'workspaceDirectoryUsers',
       workspaceId: 'ws_default',
     });
+    expect(matchProjectsRoute('/api/v1/workspaces/ws_default/governable-projects')).toEqual({
+      kind: 'workspaceGovernableProjects',
+      workspaceId: 'ws_default',
+    });
     expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects')).toEqual({
       kind: 'collection',
       workspaceId: 'ws_default',

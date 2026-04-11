@@ -41,6 +41,20 @@ describe('current gate governance', () => {
     expect(laneVisual?.command).toBe('npm run test:visual');
   });
 
+  it('keeps release-full semantics explicit', () => {
+    const releaseFull = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'gate:release:full');
+    const demoLane = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'lane:demo-rehearsal');
+    const clusterLane = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'lane:cluster-rehearsal');
+
+    expect(releaseFull?.requiredFor).toContain('release');
+    expect(releaseFull?.command).toContain('npm run gate:release');
+    expect(releaseFull?.command).toContain('npm run lane:visual');
+    expect(releaseFull?.command).toContain('npm run lane:demo-rehearsal');
+    expect(releaseFull?.command).toContain('npm run lane:cluster-rehearsal');
+    expect(demoLane?.requiredFor).toContain('release');
+    expect(clusterLane?.requiredFor).toContain('release');
+  });
+
   it('keeps generated gate contracts in sync with the repository state', () => {
     expect(() => execSync('npm run contracts:check-current-gates', {
       cwd: process.cwd(),

@@ -40,6 +40,14 @@ path = Path(sys.argv[1])
 lines = path.read_text().splitlines(keepends=True)
 out = []
 i = 0
+proxy_names = {
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+}
 
 while i < len(lines):
     line = lines[i]
@@ -50,10 +58,29 @@ while i < len(lines):
             if nxt.startswith("    ") and not nxt.startswith("    -") and not nxt.startswith("      "):
                 break
             j += 1
-        block = "".join(lines[i:j])
-        if any(token in block for token in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy")):
-            i = j
-            continue
+        block_lines = lines[i + 1:j]
+        kept_entries = []
+        k = 0
+        while k < len(block_lines):
+            entry_start = block_lines[k]
+            if entry_start.startswith("    -"):
+                l = k + 1
+                while l < len(block_lines) and block_lines[l].startswith("      "):
+                    l += 1
+                entry = block_lines[k:l]
+                entry_text = "".join(entry)
+                remove_entry = any(f"name: {token}" in entry_text for token in proxy_names)
+                if not remove_entry:
+                    kept_entries.extend(entry)
+                k = l
+                continue
+            kept_entries.append(entry_start)
+            k += 1
+        if kept_entries:
+            out.append(line)
+            out.extend(kept_entries)
+        i = j
+        continue
     out.append(line)
     i += 1
 

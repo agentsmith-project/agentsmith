@@ -30,7 +30,14 @@
     "internal-workloads",
     "external-dependency-services"
   ],
-  "required_tools": [
+  "required_host_tools": [
+    "docker",
+    "curl",
+    "tar",
+    "sha256sum",
+    "python3"
+  ],
+  "bundled_tools": [
     "kubectl"
   ],
   "required_env": {
@@ -168,10 +175,8 @@
     "minio/init-minio.sh",
     "keycloak/realm-mbos-dev.json",
     "universal-proxy/config.yaml",
-    "scripts/cluster-deploy/build-bundle.sh",
     "scripts/cluster-deploy/check-bundle-inputs.sh",
     "scripts/cluster-deploy/check-rendered-env.sh",
-    "scripts/cluster-deploy/build-images.sh",
     "scripts/cluster-deploy/lib.sh",
     "scripts/cluster-deploy/prepare.sh",
     "scripts/cluster-deploy/publish-images.sh",
@@ -195,8 +200,6 @@
     "scripts/check-preset-external-file-library.sh",
     "scripts/file-library-real-smoke.sh",
     "scripts/notebook-agent-refresh-token.js",
-    "scripts/lib/docker-buildx-common.sh",
-    "scripts/lib/ensure-juicefs-vendor.sh",
     "scripts/lib/deploy-common.sh",
     "scripts/substrate/deploy-common.sh",
     "scripts/app/deploy-common.sh",
@@ -215,13 +218,11 @@
     "e2e/integration-workspace-publish-usable.spec.ts",
     "e2e/integration-preset-external-file-library.spec.ts",
     "e2e/integration-release-user-story.spec.ts",
-    "sources/agentsmith",
-    "sources/mbos-sandbox-v1/manager-service",
-    "sources/llm-universal-proxy",
     "docs/user-guides/cluster-admin-runbook.md",
     "docs/contracts/cluster-deployment-spec-v1.md",
     "docs/user-guides/cluster-deploy-operations.md",
     "docs/user-guides/cluster-upgrade-operations.md",
+    "tools/kubectl",
     "checksums.txt",
     "VERSION"
   ]

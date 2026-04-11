@@ -49,7 +49,16 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - depends on backend-real release verification
 - does not replace `lane:visual`
 
-5. domain gates such as `test:default-e2e` and `test:governance`
+5. `lane:demo-rehearsal` and `lane:cluster-rehearsal`
+- release-only deployment rehearsal lanes
+- consume the same release bundles that target hosts consume
+- are not part of the default CI path, but are part of release evidence
+
+6. `gate:release:full`
+- the full release acceptance command
+- combines `gate:release`, `lane:visual`, `lane:demo-rehearsal`, and `lane:cluster-rehearsal`
+
+7. domain gates such as `test:default-e2e` and `test:governance`
 - may own targeted visual checks with explicit `--grep` scopes
 - must not silently expand into the full visual lane
 

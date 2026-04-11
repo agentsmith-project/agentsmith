@@ -28,6 +28,13 @@ root_dir = pathlib.Path(sys.argv[6])
 
 manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
 
+required_host_tools = manifest.get("required_host_tools")
+bundled_tools = manifest.get("bundled_tools")
+if not isinstance(required_host_tools, list) or not required_host_tools:
+    raise SystemExit("missing_required_host_tools")
+if not isinstance(bundled_tools, list) or not bundled_tools:
+    raise SystemExit("missing_bundled_tools")
+
 if "REGISTRY_HOST" not in registry_env_path.read_text(encoding='utf-8'):
     raise SystemExit("missing_registry_host_template")
 if not kubeconfig_path.exists():
@@ -78,18 +85,36 @@ for relative in manifest.get("bundle_files", []):
     elif relative.startswith("docs/"):
         source = root_dir / relative
     elif relative.startswith("e2e/"):
-        source = root_dir / relative
-    elif relative == "sources/agentsmith":
-        source = root_dir
-    elif relative == "sources/mbos-sandbox-v1/manager-service":
-        source = root_dir.parent / "mbos-sandbox-v1" / "manager-service"
-    elif relative == "sources/llm-universal-proxy":
-        source = root_dir.parent / "llm-universal-proxy"
+      source = root_dir / relative
+    elif relative.startswith("tools/"):
+      continue
     elif relative in {"checksums.txt", "VERSION"}:
-        continue
+      continue
     if not source.exists():
         raise SystemExit(f"missing_bundle_source:{relative}:{source}")
+    if relative.startswith("sources/"):
+        raise SystemExit(f"runtime_bundle_must_not_include_sources:{relative}")
+    if relative in {"scripts/cluster-deploy/build-bundle.sh", "scripts/cluster-deploy/build-images.sh"}:
+        raise SystemExit(f"runtime_bundle_must_not_include_build_script:{relative}")
 PY
+
+runtime_bundle_scripts=(
+  "${ROOT_DIR}/scripts/cluster-deploy/prepare.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/publish-images.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/deploy-substrate.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/deploy-app.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/prepare-admin-handoff.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/deploy-sandbox.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/deploy.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/bootstrap.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/verify.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/report.sh"
+)
+
+if rg -n 'docker (pull|build)\b|npm (install|ci)\b|pnpm install\b|yarn install\b' "${runtime_bundle_scripts[@]}" >/dev/null; then
+  echo "cluster runtime bundle scripts must not fetch images, rebuild, or download target-stage dependencies" >&2
+  exit 1
+fi
 
 cluster_automation_files=(
   "${ROOT_DIR}/scripts/cluster-deploy/prepare.sh"
@@ -134,10 +159,5 @@ for required in "${full_auto_cluster_scope_files[@]}"; do
     exit 1
   }
 done
-
-if ! rg -F -- "--exclude='target'" "${ROOT_DIR}/scripts/cluster-deploy/build-bundle.sh" >/dev/null; then
-  echo "cluster bundle source copy must exclude target directories" >&2
-  exit 1
-fi
 
 echo "[cluster-bundle-inputs] ok"

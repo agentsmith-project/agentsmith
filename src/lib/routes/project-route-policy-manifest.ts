@@ -91,16 +91,7 @@ export const PROJECT_ROUTE_POLICY_MANIFEST = {
     governanceObject: false,
   }),
   'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/overview/page.tsx': createProjectRoutePolicy({
-    permissions: [
-      'project:endpoint:use',
-      'project:agent:use',
-      'project:agent:manage',
-      'project:governance:update',
-      'project:membership:update',
-      'project:audit:read',
-      'project:admins:update',
-      'project:lifecycle:update',
-    ],
+    permissions: ['project:endpoint:use'],
     href: 'overview',
     navLabelKey: 'overview',
     navSection: 'home',

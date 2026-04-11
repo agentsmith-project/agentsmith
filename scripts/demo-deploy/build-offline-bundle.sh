@@ -184,6 +184,7 @@ DEPENDENCY_IMAGES=(
   "minio/minio:latest"
   "minio/mc:latest"
   "quay.io/keycloak/keycloak:26.0"
+  "registry:2"
   "kindest/node:v1.32.2"
   "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}"
   "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}"
@@ -318,7 +319,7 @@ for relative in manifest.get("bundle_files", []):
     if not path.exists():
         raise SystemExit(f"missing_bundle_file:{relative}")
 
-for tool_name in manifest.get("required_tools", []):
+for tool_name in manifest.get("bundled_tools", []):
     path = bundle_root / "tools" / tool_name
     if not path.exists():
         raise SystemExit(f"missing_bundle_tool:{tool_name}")

@@ -193,6 +193,38 @@
         }
       }
     },
+    "/api/v1/workspaces/{workspaceId}/governable-projects": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "operationId": "listGovernableProjects",
+        "summary": "List projects visible to workspace governance admins",
+        "responses": {
+          "200": {
+            "description": "Governable project list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions": {
       "parameters": [
         {

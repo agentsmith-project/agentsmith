@@ -73,6 +73,39 @@ EOF_MANIFEST
     expect(manifest).toContain('\n    env:\n');
   });
 
+  it('removes only proxy entries from mixed env blocks', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kind-bootstrap-mixed-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
+    const manifestPath = path.join(tempRoot, 'kube-apiserver.yaml');
+
+    runBash(`
+      cat > "${manifestPath}" <<'EOF_MANIFEST'
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - command:
+    - kube-apiserver
+    env:
+    - name: HTTPS_PROXY
+      value: http://192.168.0.210:8889
+    - name: KUBE_CACHE_MUTATION_DETECTOR
+      value: "true"
+    - name: NO_PROXY
+      value: localhost,127.0.0.1
+    image: registry.k8s.io/kube-apiserver:v1.32.2
+EOF_MANIFEST
+      source "${helper}"
+      kind_manifest_strip_proxy_env_file "${manifestPath}"
+    `);
+
+    const manifest = readFileSync(manifestPath, 'utf8');
+    expect(manifest).not.toContain('HTTPS_PROXY');
+    expect(manifest).not.toContain('NO_PROXY');
+    expect(manifest).toContain('KUBE_CACHE_MUTATION_DETECTOR');
+    expect(manifest).toContain('\n    env:\n');
+  });
+
   it('writes a docker config copy without proxy defaults', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kind-bootstrap-docker-config-'));
     const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');

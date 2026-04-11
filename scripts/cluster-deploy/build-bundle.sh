@@ -36,24 +36,6 @@ mkdir -p "${OUT_DIR}"
 rm -rf "${BUNDLE_DIR}"
 mkdir -p "${BUNDLE_DIR}" "${IMAGES_DIR}" "${TOOLS_DIR}"
 
-copy_source_tree() {
-  local src="$1"
-  local dst="$2"
-  mkdir -p "${dst}"
-  tar -C "${src}" \
-    --exclude='.git' \
-    --exclude='node_modules' \
-    --exclude='.next' \
-    --exclude='artifacts' \
-    --exclude='.tmp' \
-    --exclude='.infra' \
-    --exclude='coverage' \
-    --exclude='playwright-report' \
-    --exclude='test-results' \
-    --exclude='target' \
-    -cf - . | tar -C "${dst}" -xf -
-}
-
 copy_bundle_file() {
   local source_file="$1"
   local target_file="$2"
@@ -62,7 +44,7 @@ copy_bundle_file() {
   cp "${source_file}" "${target_file}"
 }
 
-mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/scripts/cluster-deploy" "${BUNDLE_DIR}/scripts/lib" "${BUNDLE_DIR}/docs/contracts" "${BUNDLE_DIR}/docs/user-guides" "${BUNDLE_DIR}/infra/deploy/cluster/admin-examples" "${BUNDLE_DIR}/infra/runtime" "${BUNDLE_DIR}/addons/ingress-nginx" "${BUNDLE_DIR}/addons/juicefs-csi" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/universal-proxy" "${BUNDLE_DIR}/e2e" "${BUNDLE_DIR}/sources/agentsmith" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service" "${BUNDLE_DIR}/sources/llm-universal-proxy"
+mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/scripts/cluster-deploy" "${BUNDLE_DIR}/scripts/lib" "${BUNDLE_DIR}/docs/contracts" "${BUNDLE_DIR}/docs/user-guides" "${BUNDLE_DIR}/infra/deploy/cluster/admin-examples" "${BUNDLE_DIR}/infra/runtime" "${BUNDLE_DIR}/addons/ingress-nginx" "${BUNDLE_DIR}/addons/juicefs-csi" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/universal-proxy" "${BUNDLE_DIR}/e2e"
 cp "${ROOT_DIR}/infra/deploy/cluster/docker-compose.yml" "${BUNDLE_DIR}/compose/docker-compose.yml"
 cp "${ROOT_DIR}/infra/deploy/cluster/deployment.manifest.json" "${BUNDLE_DIR}/deployment.manifest.json"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${BUNDLE_DIR}/env/site.env.example"
@@ -80,10 +62,11 @@ cp "${ROOT_DIR}/scripts/check-preset-external-file-library.sh" "${BUNDLE_DIR}/sc
 cp "${ROOT_DIR}/scripts/file-library-real-smoke.sh" "${BUNDLE_DIR}/scripts/file-library-real-smoke.sh"
 cp "${ROOT_DIR}/scripts/notebook-agent-refresh-token.js" "${BUNDLE_DIR}/scripts/notebook-agent-refresh-token.js"
 cp "${ROOT_DIR}/scripts/cluster-deploy/"*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/"
+rm -f \
+  "${BUNDLE_DIR}/scripts/cluster-deploy/build-bundle.sh" \
+  "${BUNDLE_DIR}/scripts/cluster-deploy/build-images.sh"
 cp "${ROOT_DIR}/scripts/cluster-upgrade-smoke.sh" "${BUNDLE_DIR}/scripts/cluster-upgrade-smoke.sh"
 cp "${ROOT_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/cluster-deploy/lib.sh"
-cp "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh" "${BUNDLE_DIR}/scripts/lib/docker-buildx-common.sh"
-cp "${ROOT_DIR}/scripts/lib/ensure-juicefs-vendor.sh" "${BUNDLE_DIR}/scripts/lib/ensure-juicefs-vendor.sh"
 cp "${ROOT_DIR}/scripts/lib/deploy-common.sh" "${BUNDLE_DIR}/scripts/lib/deploy-common.sh"
 cp "${ROOT_DIR}/scripts/lib/release-stage-common.sh" "${BUNDLE_DIR}/scripts/lib/release-stage-common.sh"
 cp "${ROOT_DIR}/scripts/lib/bootstrap-common.sh" "${BUNDLE_DIR}/scripts/lib/bootstrap-common.sh"
@@ -112,15 +95,11 @@ cp "${ROOT_DIR}/docs/user-guides/cluster-upgrade-operations.md" "${BUNDLE_DIR}/d
 cp "$(PATH="${ORIGINAL_PATH}" type -P kubectl)" "${TOOLS_DIR}/kubectl"
 chmod +x "${BUNDLE_DIR}/scripts/check-preset-external-file-library.sh" "${BUNDLE_DIR}/scripts/cluster-upgrade-smoke.sh" "${BUNDLE_DIR}"/scripts/cluster-deploy/*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/lib/"*.sh "${TOOLS_DIR}/kubectl"
 
-copy_source_tree "${ROOT_DIR}" "${BUNDLE_DIR}/sources/agentsmith"
-copy_source_tree "${SANDBOX_ROOT}/manager-service" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service"
-copy_source_tree "${UNIVERSAL_PROXY_ROOT}" "${BUNDLE_DIR}/sources/llm-universal-proxy"
-
-JUICEFS_VENDOR_DIR="${BUNDLE_DIR}/sources/agentsmith/infra/vendor/juicefs"
-ensure_juicefs_vendor_dir "${BUNDLE_DIR}/sources/agentsmith" "${JUICEFS_VERSION}" "${JUICEFS_DOWNLOAD_BASE_URL}" >/dev/null
-
 DEPLOY_ROOT="${OUT_DIR}/.cluster-build-${RELEASE_ID}" \
 RELEASE_ROOT="${BUNDLE_DIR}" \
+APP_SOURCE_DIR_OVERRIDE="${ROOT_DIR}" \
+SANDBOX_SOURCE_DIR_OVERRIDE="${SANDBOX_ROOT}/manager-service" \
+UNIVERSAL_PROXY_SOURCE_DIR_OVERRIDE="${UNIVERSAL_PROXY_ROOT}" \
 bash "${ROOT_DIR}/scripts/cluster-deploy/build-images.sh"
 
 dep_registry_ref() {
@@ -169,6 +148,8 @@ COMPOSE_DEPENDENCY_IMAGES=(
   "minio/minio:latest"
   "minio/mc:latest"
   "quay.io/keycloak/keycloak:26.0"
+  "registry:2"
+  "kindest/node:v1.32.2"
 )
 
 CLUSTER_DEPENDENCY_SOURCE_IMAGES=(

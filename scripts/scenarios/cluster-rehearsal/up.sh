@@ -12,8 +12,9 @@ ensure_cluster_rehearsal_registry_env
 ensure_cluster_rehearsal_release_bundle
 mark_scenario_world_changed
 ensure_local_kind_cluster
-cp "${HOME}/.kube/config" "${CLUSTER_REHEARSAL_CONFIG_DIR}/kubeconfig"
-cp "${HOME}/.kube/config" "${CLUSTER_REHEARSAL_CONFIG_DIR}/admin-kubeconfig"
+kind_kubeconfig="$(scenario_kind_kubeconfig_path "${LOCAL_KIND_CLUSTER_NAME:-agentsmith}")"
+cp "${kind_kubeconfig}" "${CLUSTER_REHEARSAL_CONFIG_DIR}/kubeconfig"
+cp "${kind_kubeconfig}" "${CLUSTER_REHEARSAL_CONFIG_DIR}/admin-kubeconfig"
 rm -f "${CLUSTER_REHEARSAL_CONFIG_DIR}/manager-kubeconfig"
 clear_local_dev_substrate
 

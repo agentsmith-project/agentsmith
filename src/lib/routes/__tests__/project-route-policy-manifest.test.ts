@@ -41,4 +41,10 @@ describe('project route policy manifest', () => {
       'settings',
     ]);
   });
+
+  it('keeps overview aligned with the project use surface permission', () => {
+    const overviewPolicy = findProjectRoutePolicyByHref('overview');
+
+    expect(overviewPolicy?.permissions).toEqual(['project:endpoint:use']);
+  });
 });

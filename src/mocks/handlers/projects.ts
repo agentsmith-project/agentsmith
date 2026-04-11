@@ -80,13 +80,17 @@ export const projectHandlers = [
   http.get('/api/v1/workspaces/:ws/projects', ({ params, request }) => {
     const userId = getRequestUserId(request);
     const workspaceId = params.ws as string;
-    const requestUrl = new URL(request.url);
-    const visibilityScope = requestUrl.searchParams.get('visibility_scope');
+    const items = projects
+      .filter((project) => project.workspace_id === workspaceId)
+      .filter((project) => isProjectVisibleToUser(project, userId))
+      .map((project) => buildProjectResponse(project, userId));
+    return HttpResponse.json({ items });
+  }),
+  http.get('/api/v1/workspaces/:ws/governable-projects', ({ params, request }) => {
+    const userId = getRequestUserId(request);
+    const workspaceId = params.ws as string;
     const workspacePermissions = readWorkspacePermissionsForUser(userId);
-    if (
-      visibilityScope === 'workspace_governance' &&
-      !workspacePermissions.includes('workspace:governance:update')
-    ) {
+    if (!workspacePermissions.includes('workspace:governance:update')) {
       return HttpResponse.json(
         { error_code: 'PERMISSION_DENIED', message: 'workspace_governance_update_required' },
         { status: 403 },
@@ -94,11 +98,7 @@ export const projectHandlers = [
     }
     const items = projects
       .filter((project) => project.workspace_id === workspaceId)
-      .filter((project) => (
-        visibilityScope === 'workspace_governance'
-          ? isProjectGovernanceVisibleToUser(project, userId)
-          : isProjectVisibleToUser(project, userId)
-      ))
+      .filter((project) => isProjectGovernanceVisibleToUser(project, userId))
       .map((project) => buildProjectResponse(project, userId));
     return HttpResponse.json({ items });
   }),

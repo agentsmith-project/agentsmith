@@ -84,6 +84,29 @@ KUBECTL_BIN="$(resolve_tool "${TOOLS_DIR}/kubectl" kubectl version --client)"
 kind() { "${KIND_BIN}" "$@"; }
 kubectl() { "${KUBECTL_BIN}" "$@"; }
 
+image_tar_name() {
+  printf '%s' "$1" | tr '/:@' '---'
+}
+
+bundled_image_archive_path() {
+  local image="$1"
+  local archive_path="${RELEASE_ROOT}/images/$(image_tar_name "${image}").tar"
+  if [[ -f "${archive_path}" ]]; then
+    printf '%s\n' "${archive_path}"
+  fi
+}
+
+ensure_local_image_from_bundle() {
+  local image="$1"
+  if docker image inspect "${image}" >/dev/null 2>&1; then
+    return 0
+  fi
+  local archive_path
+  archive_path="$(bundled_image_archive_path "${image}")"
+  [[ -n "${archive_path}" ]] || die "missing bundled image archive for ${image}"
+  docker load -i "${archive_path}" >/dev/null
+}
+
 log() { printf '[%s] %s\n' "${DEPLOY_LOG_PREFIX}" "$*"; }
 die() { printf '[%s] ERROR: %s\n' "${DEPLOY_LOG_PREFIX}" "$*" >&2; exit 1; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }

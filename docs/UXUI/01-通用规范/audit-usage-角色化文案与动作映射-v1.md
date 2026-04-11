@@ -1,5 +1,10 @@
 # Audit / Usage 角色化文案与动作映射 v1
 
+Status: `active`
+Depends on: [`DESIGN.md`](../../../DESIGN.md)
+Scope: `interaction / product behavior`
+Does not define: `global tokens / route truth / engineering gates`
+
 > 边界与职责以《usage-audit-职责边界-v1》为准；本文聚焦文案与动作层级映射。
 
 ## 1. 目标

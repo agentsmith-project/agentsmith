@@ -10,6 +10,11 @@ Product terminology alignment:
 - Engineering docs and tests must use `Execution target`, `Project secrets`, `Shared context`, `Access guide`, and `Files` when referring to the current product surfaces.
 - Do not collapse `Endpoint` and `Agent` into a generic model-source concept in product-facing explanations, UI narratives, or verification language.
 
+UI truth alignment:
+- `DESIGN.md` is the authoritative source for the current UI language and global design rules.
+- `docs/UXUI/` only defines active interaction and module-specific UX behavior that depends on `DESIGN.md`.
+- `docs/testing/visual-baseline-policy-v1.md` owns visual evidence policy; it does not replace `DESIGN.md`.
+
 Canonical entrypoint rule:
 - `make` is the authoritative entrypoint for environment and rehearsal orchestration.
 - `npm run` is the authoritative entrypoint for tests, gates, verification lanes, and release validation.

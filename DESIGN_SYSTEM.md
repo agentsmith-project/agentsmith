@@ -1,11 +1,10 @@
-# Design System
+# Design System Redirect
 
-The canonical design system reference is maintained in the docs:
+Current UI design truth has been converged into [`DESIGN.md`](./DESIGN.md).
 
-- **[视觉设计系统 (Visual Design System)](./docs/UXUI/00-设计系统/视觉设计系统-v1.md)** — tokens, layout, components, and visual guardrails.
+Use:
+- [`DESIGN.md`](./DESIGN.md) for the constitutional UI language and global design rules
+- [`docs/UXUI/`](./docs/UXUI/) for active interaction and module-specific UX specs
+- [`docs/testing/visual-baseline-policy-v1.md`](./docs/testing/visual-baseline-policy-v1.md) for visual evidence and baseline governance
 
-See also:
-
-- [错误码映射表](./docs/UXUI/00-设计系统/错误码映射表-v1.md)
-- [状态与文案规范](./docs/UXUI/00-设计系统/状态与文案规范-v1.md)
-- [对话框与侧边栏使用规范](./docs/UXUI/00-设计系统/对话框与侧边栏使用规范-v1.md)
+This file is kept only as a compatibility redirect and is no longer an authoritative design source.

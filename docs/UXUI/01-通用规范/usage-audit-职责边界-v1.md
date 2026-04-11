@@ -1,5 +1,10 @@
 # Usage / Audit MVP 职责边界 v2
 
+Status: `active`
+Depends on: [`DESIGN.md`](../../../DESIGN.md)
+Scope: `interaction / product behavior`
+Does not define: `global tokens / route truth / engineering gates`
+
 ## 1. 目的
 
 将当前 MVP 的对外产品面收敛为 `Usage` 与 `Audit` 两类，并明确其目标、角色、动作和禁止事项，防止未来功能蔓延与术语漂移。

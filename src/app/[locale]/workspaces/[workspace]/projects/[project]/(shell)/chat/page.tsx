@@ -5,7 +5,7 @@
  * - Left: Threads list
  * - Right: Chat window (header + messages + composer)
  *
- * Style must follow `文档/UXUI/2026-01-31-视觉设计系统-v1.md`.
+ * Style must follow `DESIGN.md` and the active `docs/UXUI/` interaction specs.
  */
 
 'use client';

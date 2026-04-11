@@ -17,7 +17,11 @@ const readme = read('README.md');
 const development = read('DEVELOPMENT.md');
 const baseline = read('docs/CURRENT_BASELINE.md');
 const constitution = read('docs/项目宪法.md');
-const visualPolicy = read('docs/UXUI/01-通用规范/visual-baseline-policy-v1.md');
+const docsIndex = read('docs/README.md');
+const agentsDoc = read('AGENTS.md');
+const designDoc = read('DESIGN.md');
+const designSystemRedirect = read('DESIGN_SYSTEM.md');
+const visualPolicy = read('docs/testing/visual-baseline-policy-v1.md');
 const contractsIndex = read('docs/contracts/README.md');
 const productTerminology = read('docs/contracts/product-terminology.md');
 const demoDeployReset = read('scripts/demo-deploy/reset.sh');
@@ -46,6 +50,19 @@ function forbidMatch(content: string, pattern: RegExp, message: string): void {
 }
 
 requireMatch(readme, /current-engineering-governance-model\.md/, 'README is missing the current engineering governance model reference');
+requireMatch(readme, /DESIGN\.md/, 'README must reference DESIGN.md as the UI truth source');
+requireMatch(development, /DESIGN\.md/, 'DEVELOPMENT must reference DESIGN.md as the UI truth source');
+requireMatch(baseline, /DESIGN\.md/, 'CURRENT_BASELINE must reference DESIGN.md as the UI truth source');
+requireMatch(docsIndex, /DESIGN\.md/, 'docs README must reference DESIGN.md as the UI truth source');
+requireMatch(governanceModel, /DESIGN\.md/, 'current engineering governance model must reference DESIGN.md as the UI truth source');
+requireMatch(agentsDoc, /DESIGN\.md/, 'AGENTS.md must reference DESIGN.md as the UI truth source');
+requireMatch(designSystemRedirect, /DESIGN\.md/, 'DESIGN_SYSTEM redirect must point to DESIGN.md');
+requireMatch(designDoc, /Status:\s*`authoritative`/, 'DESIGN.md must declare itself authoritative');
+requireMatch(designDoc, /docs\/UXUI/, 'DESIGN.md must explain the relationship to docs/UXUI');
+forbidMatch(readme, /视觉设计系统-v1\.md/, 'README must not treat the archived visual design system as current truth');
+forbidMatch(development, /视觉设计系统-v1\.md/, 'DEVELOPMENT must not treat the archived visual design system as current truth');
+forbidMatch(docsIndex, /视觉设计系统-v1\.md/, 'docs README must not treat the archived visual design system as current truth');
+forbidMatch(agentsDoc, /CLAUDE\.md/, 'AGENTS.md must not keep the old root instruction file name');
 requireMatch(development, /current-engineering-governance-model\.md/, 'DEVELOPMENT is missing the current engineering governance model reference');
 requireMatch(baseline, /current-engineering-governance-model\.md/, 'CURRENT_BASELINE is missing the current engineering governance model reference');
 requireMatch(readme, /current-workflow-manifest\.ts/, 'README is missing the current workflow manifest reference');

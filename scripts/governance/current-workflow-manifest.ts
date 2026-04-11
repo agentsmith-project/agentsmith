@@ -36,7 +36,7 @@ export const CURRENT_WORKFLOW_DOCUMENT_FILES = [
   'docs/user-guides/release-readiness-checklist.md',
   // Notebook Codex Runner runbook (current operational truth; file path remains the current file name).
   'docs/notebook-codex-runbook.md',
-  'docs/UXUI/01-通用规范/visual-baseline-policy-v1.md',
+  'docs/testing/visual-baseline-policy-v1.md',
   '.github/workflows/quality-gates.yml',
   '.github/workflows/contracts-check.yml',
   'scripts/local-manual/common.sh',

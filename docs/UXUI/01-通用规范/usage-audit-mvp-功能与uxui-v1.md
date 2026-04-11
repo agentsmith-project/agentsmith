@@ -1,5 +1,10 @@
 # Usage / Audit MVP 功能与 UX 定义 v1
 
+Status: `active`
+Depends on: [`DESIGN.md`](../../../DESIGN.md)
+Scope: `interaction / product behavior`
+Does not define: `global tokens / route truth / engineering gates`
+
 ## 1. 目标
 
 在 MVP 范围下，将 AgentSmith 的治理相关产品面收敛为两类：

@@ -1,5 +1,10 @@
 # System / Workspace Identity & Entry MVP v1
 
+Status: `active`
+Depends on: [`DESIGN.md`](../../../DESIGN.md)
+Scope: `interaction / product behavior`
+Does not define: `global tokens / route truth / engineering gates`
+
 ## 1. 目标
 
 定义当前 MVP 的系统级管理、workspace 入口、身份边界与登录流，防止系统级管理能力与 workspace 业务面混杂。

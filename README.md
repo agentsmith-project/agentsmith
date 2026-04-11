@@ -28,9 +28,15 @@ Current product terminology:
 - **API Mocking**: MSW (Mock Service Worker)
 - **Component Docs**: Storybook
 
-## Design System
+## UI Constitution
 
-See [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) for the design system index. All UI designs must follow the in-repo [视觉设计系统](./docs/UXUI/00-设计系统/视觉设计系统-v1.md).
+Current UI truth is defined in [DESIGN.md](./DESIGN.md).
+
+Use:
+- [DESIGN.md](./DESIGN.md) for the constitutional UI language and global design rules
+- `docs/UXUI/` for active interaction and module-specific UX specs that depend on `DESIGN.md`
+- [docs/testing/visual-baseline-policy-v1.md](./docs/testing/visual-baseline-policy-v1.md) for visual evidence policy
+
 
 ## Getting Started
 
@@ -248,7 +254,7 @@ src/
 - [Product Doc Artifacts](./docs/user-guides/product-doc-artifacts.md) — 生成产品说明截图与配套 Markdown 产物
 - [Marketing Assets](./marketing/README.md) — 刷新 marketing 截图资产
 - [Product Engineering Governance Methodology](./docs/design/agentsmith-product-engineering-governance-methodology-v1.md) — 产品设计、工程交付与治理方法论基线
-- [Design System](./DESIGN_SYSTEM.md)
+- [UI Constitution](./DESIGN.md)
 - [Development Guide](./DEVELOPMENT.md)
-- [Documentation Index](./docs/README.md) — contracts, UXUI, and other docs
-- [i18n Internal Guide](./docs/UXUI/01-通用规范/2026-02-03-i18n-内部指南-v1.md)
+- [Documentation Index](./docs/README.md) — current docs index, contracts, UXUI, engineering, testing
+- [i18n Internal Guide](./docs/engineering/2026-02-03-i18n-内部指南-v1.md)

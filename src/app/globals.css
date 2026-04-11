@@ -7,8 +7,9 @@
 @layer base {
   :root {
     /*
-      MBOS v1 Visual Design System (Notebook-first workspace)
-      Source of truth: 文档/UXUI/2026-01-31-视觉设计系统-v1.md
+      AgentSmith UI tokens
+      Global design truth: DESIGN.md
+      Implementation tokens in this file may lag behind the constitutional direction while surfaces converge
 
       Tokens are RGB triplets to support alpha via:
         rgb(var(--token) / <alpha>)

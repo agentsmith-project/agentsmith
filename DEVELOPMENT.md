@@ -381,7 +381,13 @@ src/
 
 ## Design System Reference
 
-See [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) for the design system index. All UI designs must follow the in-repo [视觉设计系统](./docs/UXUI/00-设计系统/视觉设计系统-v1.md).
+Current UI truth is defined in [DESIGN.md](./DESIGN.md).
+
+Use:
+- [DESIGN.md](./DESIGN.md) for the constitutional UI language and global design rules
+- `docs/UXUI/` for active interaction and module-specific UX specs
+- [docs/testing/visual-baseline-policy-v1.md](./docs/testing/visual-baseline-policy-v1.md) for visual evidence policy
+
 
 ## API Architecture
 

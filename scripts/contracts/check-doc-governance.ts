@@ -3,7 +3,7 @@ import path from 'node:path';
 
 const ROOT = process.cwd();
 
-const SCAN_ROOTS = ['README.md', 'CLAUDE.md', 'DEVELOPMENT.md', 'docs'] as const;
+const SCAN_ROOTS = ['README.md', 'AGENTS.md', 'DESIGN.md', 'DEVELOPMENT.md', 'docs'] as const;
 
 const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'artifacts', 'marketing']);
 
@@ -29,7 +29,7 @@ type Violation = {
   detail: string;
 };
 
-const BANNED_RULES: Array<{ rule: string; regex: RegExp; detail: string }> = [
+const BANNED_RULES: Array<{ rule: string; regex: RegExp; detail: string; currentOnly?: boolean }> = [
   {
     rule: 'deprecated-doc-path',
     regex: /docs\/release\//,
@@ -39,6 +39,18 @@ const BANNED_RULES: Array<{ rule: string; regex: RegExp; detail: string }> = [
     rule: 'deprecated-doc-path',
     regex: /docs\/plans\//,
     detail: 'Deprecated docs path `docs/plans/` must not be referenced.',
+  },
+  {
+    rule: 'removed-root-instruction-name',
+    regex: /CLAUDE\.md/,
+    detail: 'Root instruction truth has been converged to `AGENTS.md`.',
+    currentOnly: true,
+  },
+  {
+    rule: 'removed-legacy-design-truth',
+    regex: /视觉设计系统-v1\.md/,
+    detail: 'Legacy visual design truth must not be referenced by current docs; use `DESIGN.md` instead.',
+    currentOnly: true,
   },
   {
     rule: 'deprecated-release-governance-doc',
@@ -114,7 +126,13 @@ function findViolations(filePath: string, content: string): Violation[] {
   const lines = content.split('\n');
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
+    const relativePath = toRel(filePath);
+    const isArchiveDoc = relativePath.startsWith('docs/archive/');
+    const isRedirectDoc = /Status:\s*`redirect`/.test(content);
     for (const rule of BANNED_RULES) {
+      if (rule.currentOnly && (isArchiveDoc || isRedirectDoc)) {
+        continue;
+      }
       if (rule.regex.test(line)) {
         violations.push({
           file: toRel(filePath),
@@ -139,6 +157,11 @@ function isExternalLink(link: string): boolean {
 }
 
 function checkMarkdownLinks(filePath: string, content: string): Violation[] {
+  const relativePath = toRel(filePath);
+  if (relativePath.startsWith('docs/archive/') || /Status:\s*`redirect`/.test(content)) {
+    return [];
+  }
+
   const violations: Violation[] = [];
   const lines = content.split('\n');
   const linkRegex = /\[[^\]]+]\(([^)]+)\)/g;

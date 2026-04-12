@@ -5,6 +5,7 @@ import {
   groupVisualBaselineCatalogByScenario,
   listVisualBaselineCatalogEntries,
   renderVisualBaselineScenarioReviewMarkdown,
+  resolveVisualBaselineStoryEvidence,
   resolveVisualBaselineStableMarkers,
   resolveVisualBaselineReviewDir,
 } from '../e2e/visual-baseline-support';
@@ -34,6 +35,9 @@ describe('visual baseline support', () => {
       expect(entry.storyId.length).toBeGreaterThan(0);
       expect(entry.scenario.length).toBeGreaterThan(0);
       expect(entry.codeRefs.length).toBeGreaterThan(0);
+      expect(entry.storyEvidencePolicy).toBe('required');
+      expect(entry.storyEvidenceKind).toBe('visual_scene_catalog');
+      expect(entry.storyEvidenceOwner).toBe('lane:visual');
       expect(entry.sourceSpec).toBe('e2e/visual.spec.ts');
     }
   });
@@ -85,6 +89,9 @@ describe('visual baseline support', () => {
     expect(markdown).toContain('- build_run_id: run-20260412-001');
     expect(markdown).toContain('- build_git_sha: abc123');
     expect(markdown).toContain('- build_fingerprint: abc123:mock-lane:visual');
+    expect(markdown).toContain('- story_evidence_policy: required');
+    expect(markdown).toContain('- story_evidence_kind: visual_scene_catalog');
+    expect(markdown).toContain('- story_evidence_owner: lane:visual');
     expect(markdown).toContain('- desktop-auth-complete-dark.png [dark]');
     expect(markdown).toContain('- desktop-auth-complete-light.png [light]');
     expect(markdown).toContain('Light and dark screenshots must be reviewed together before acceptance.');
@@ -378,6 +385,20 @@ describe('visual baseline support', () => {
     expect(script).toContain('write_visual_build_info');
     expect(script).toContain('VISUAL_BASELINE_BUILD_INFO_FILE');
     expect(script).toContain('VISUAL_BASELINE_BUILD_FINGERPRINT');
+  });
+
+  it('links every visual scene back to the lane:visual story-evidence policy', () => {
+    expect(resolveVisualBaselineStoryEvidence('workspace-select')).toEqual({
+      policy: 'required',
+      kind: 'visual_scene_catalog',
+      owner: 'lane:visual',
+    });
+
+    expect(resolveVisualBaselineStoryEvidence('credentials')).toEqual({
+      policy: 'required',
+      kind: 'visual_scene_catalog',
+      owner: 'lane:visual',
+    });
   });
 
   it('finalizes lane-local generated root state when the mock visual lane exits', async () => {

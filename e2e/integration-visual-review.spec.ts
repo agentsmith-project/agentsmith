@@ -7,6 +7,8 @@ import {
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
+import { loadStoryDefinitionSync } from './story-loader';
+import { buildTraceStoryBinding } from './story-trace-binding';
 import { createUxTraceBundleWriter } from './trace-bundle-support';
 
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
@@ -51,46 +53,25 @@ type ProjectContext = {
 type VisualReviewTraceMeta = {
   action: string;
   target: string;
+  note: string;
 };
 
-const VISUAL_REVIEW_TRACE_META: Record<string, VisualReviewTraceMeta> = {
-  'system-login': { action: 'Open system login', target: 'system-login__heading' },
-  'system-workspaces': { action: 'Review system workspaces', target: 'system-workspaces__list' },
-  'system-workspace-editor': { action: 'Review workspace editor', target: 'system-workspaces__editor' },
-  'system-info': { action: 'Open system info', target: 'system-info__shell' },
-  'workspace-login': { action: 'Open workspace login', target: 'workspace-login__heading' },
-  'workspace-home-admin': { action: 'Open workspace home', target: 'workspace-overview__heading' },
-  'workspace-settings': { action: 'Open workspace settings', target: 'ws-settings__summary-line' },
-  'workspace-projects-before-create': { action: 'Open projects list', target: 'projects__create-btn' },
-  'dialog-create-project-real': { action: 'Open create project dialog', target: 'dialog[role="dialog"]' },
-  'project-overview-initial': { action: 'Inspect project overview', target: 'project-hub__page' },
-  'projects-join-request-pending': { action: 'Request project access', target: 'projects__join-request-btn' },
-  'members-join-requests-before-approve': { action: 'Review join requests', target: 'members__join-requests-list' },
-  'members-join-requests-after-approve': { action: 'Approve join request', target: 'members__join-requests-list' },
-  'dialog-create-credential-real': { action: 'Open create credential dialog', target: 'credentials__create-dialog' },
-  'project-credentials-real': { action: 'Inspect credentials list', target: 'credentials__table' },
-  'dialog-create-endpoint-real': { action: 'Open create endpoint dialog', target: 'endpoints__create-dialog' },
-  'project-endpoints-real': { action: 'Inspect endpoints list', target: 'endpoints__table' },
-  'dialog-create-agent-real': { action: 'Open create agent dialog', target: 'agents__create-dialog' },
-  'project-agents-real': { action: 'Inspect agents list', target: 'agents__table' },
-  'dialog-agent-connection-info-real': { action: 'Open agent connection info', target: 'agents__dialog__keys' },
-  'dialog-file-library-create-real': { action: 'Open create library dialog', target: 'files__dialog__library-create' },
-  'dialog-file-library-mount-access-real': { action: 'Open mount access dialog', target: 'files__dialog__desktop-mount-access' },
-  'project-notebook-task-detail-real': { action: 'Inspect notebook task detail', target: 'notebook__task-detail' },
-  'project-notebook-trace-real': { action: 'Inspect notebook trace panel', target: 'notebook__message-trace-panel' },
-  'project-files-notebook-workspace-real': { action: 'Inspect files workspace', target: 'files__object-row' },
-  'project-notebook-task-internal-preparing-real': { action: 'Inspect internal notebook task progress', target: 'notebook__task-progress' },
-  'project-notebook-task-internal-detail-real': { action: 'Inspect internal notebook task detail', target: 'notebook__task-detail' },
-  'project-files-internal-workspace-real': { action: 'Inspect internal files workspace', target: 'files__object-row' },
-  'usage-limits-and-trend-real': { action: 'Open usage view', target: 'usage__work-surface' },
-  'audit-detail-drawer-real': { action: 'Open audit detail drawer', target: 'audit__detail-summary' },
-  'members-effective-access-real': { action: 'Open member access drawer', target: 'members__effective-access' },
-};
+const VISUAL_REVIEW_STORY = loadStoryDefinitionSync('real-backend-visual-review');
+const VISUAL_REVIEW_STORY_BINDING = buildTraceStoryBinding(VISUAL_REVIEW_STORY);
 
 function resolveVisualReviewTraceMeta(stepId: string, role: string): VisualReviewTraceMeta {
-  return VISUAL_REVIEW_TRACE_META[stepId] ?? {
-    action: `Review ${stepId}`,
-    target: role,
+  const step = VISUAL_REVIEW_STORY_BINDING.steps.find((entry) => entry.stepId === stepId);
+  if (!step) {
+    return {
+      action: `Review ${stepId}`,
+      target: role,
+      note: role,
+    };
+  }
+  return {
+    action: step.action,
+    target: step.target ?? role,
+    note: step.note ?? step.expectedFeedback,
   };
 }
 
@@ -861,19 +842,21 @@ test.describe('@lane-real integration visual review', () => {
     test.setTimeout(900_000);
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20070';
     const providerApiKey = requireRealLaneApiKey();
+    const storyBinding = VISUAL_REVIEW_STORY_BINDING;
     const trace = await createUxTraceBundleWriter({
       outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
       lane: 'backend-real',
       suite: 'integration-visual-review',
-      storyId: 'real-backend-visual-review',
-      title: 'Backend-real visual review',
-      actor: 'system 管理侧 / project owner',
-      route: `/${LOCALE}/system/login`,
+      storyId: storyBinding.storyId,
+      title: storyBinding.title,
+      actor: storyBinding.actor,
+      route: VISUAL_REVIEW_STORY.entryRoute,
       specFile: 'e2e/integration-visual-review.spec.ts',
       browser: 'chromium',
-      goal: '用真实 backend 复核系统、工作区和项目核心界面的 UX/UI 质量。',
-      preconditions: ['real backend stack is ready', 'Keycloak and provider API key are configured'],
-      seedData: ['ws_default'],
+      goal: storyBinding.goal,
+      preconditions: [...storyBinding.preconditions],
+      seedData: [...storyBinding.seedData],
+      storyBinding,
     });
     const captures: unknown[] = [];
     const capturePage = async (
@@ -889,14 +872,17 @@ test.describe('@lane-real integration visual review', () => {
         target?: string;
         note?: string;
       },
-    ) => trace.capture(targetPage, {
-      stepId: args.name,
-      action: args.action ?? resolveVisualReviewTraceMeta(args.name, args.role).action,
-      target: args.target ?? resolveVisualReviewTraceMeta(args.name, args.role).target,
-      route: args.route ?? targetPage.url(),
-      note: args.note ?? args.notes,
-      fullPage: args.fullPage,
-    });
+    ) => {
+      const storyMeta = resolveVisualReviewTraceMeta(args.name, args.role);
+      return trace.capture(targetPage, {
+        stepId: args.name,
+        action: args.action ?? storyMeta.action,
+        target: args.target ?? storyMeta.target,
+        route: args.route ?? targetPage.url(),
+        note: args.note ?? storyMeta.note ?? args.notes,
+        fullPage: args.fullPage,
+      });
+    };
     let outcome: 'pass' | 'fail' = 'fail';
 
     try {

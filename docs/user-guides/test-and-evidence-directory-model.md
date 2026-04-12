@@ -15,6 +15,11 @@
 
 这些目录表示测试代码本身，不应混入长期证据产物。
 
+补充：
+- `e2e/stories/backend-real/*.story.md` 是可执行 user story 的真相源
+- story 源文件属于测试源码，不属于运行产物
+- story 对应的 trace / review / screenshot 证据仍然进入 `artifacts/`
+
 ## 2. 测试临时结果
 
 - `test-results/`
@@ -51,6 +56,7 @@
 - `artifacts/` 是长期证据总入口
 - current docs 统一使用 run-scoped 证据路径
 - 若脚本仍保留 `current` 便捷别名，应视为兼容入口，不作为文档真相
+- `e2e/stories/` 定义“应当发生什么”，`artifacts/` 记录“实际发生了什么”
 
 ## 5. 应该看哪一份
 
@@ -81,7 +87,8 @@
    - `src/**/__tests__/`
    - `e2e/`
    - `scripts/**/__tests__/`
-2. `test-results/` 只保留临时运行结果
-3. `e2e/__screenshots__/` 只表示 mock lane visual baseline
-4. `artifacts/` 只放长期证据与审查产物
-5. 不再新增泛化的 `tests/` 目录承载主测试代码
+2. `e2e/stories/backend-real/*.story.md` 是 user story 真相源，不放运行产物
+3. `test-results/` 只保留临时运行结果
+4. `e2e/__screenshots__/` 只表示 mock lane visual baseline
+5. `artifacts/` 只放长期证据与审查产物
+6. 不再新增泛化的 `tests/` 目录承载主测试代码

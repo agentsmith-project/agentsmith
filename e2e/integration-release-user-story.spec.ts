@@ -9,6 +9,8 @@ import {
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
+import { RELEASE_USER_STORY } from './release-user-story.contract';
+import { buildTraceStoryBinding } from './story-trace-binding';
 import { createUxTraceBundleWriter } from './trace-bundle-support';
 
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
@@ -31,6 +33,39 @@ const INTERNAL_AGENT_IMAGE =
 const DEMO_DEPLOY_MODE = process.env.INTEGRATION_DEMO_DEPLOY_MODE?.trim() || 'full';
 const DEMO_MODE_IS_FULL = DEMO_DEPLOY_MODE === 'full';
 const CREATE_NEW_TASK_RESPONSE_TIMEOUT_MS = 60_000;
+const RELEASE_STORY_BINDING = buildTraceStoryBinding(RELEASE_USER_STORY.storyDefinition);
+
+type ReleaseNotebookFlowTurn = {
+  prompt: string;
+  expectedToken: string;
+  expectedArtifactPath: string;
+};
+
+type ReleaseNotebookFlow = {
+  turnOne: ReleaseNotebookFlowTurn;
+  turnTwo: ReleaseNotebookFlowTurn;
+};
+
+function resolveReleaseStoryStep(stepId: string) {
+  const step = RELEASE_STORY_BINDING.steps.find((entry) => entry.stepId === stepId);
+  if (!step) {
+    throw new Error(`unknown release story step: ${stepId}`);
+  }
+  return step;
+}
+
+function resolveReleaseStoryStepNote(stepId: string): string {
+  const step = resolveReleaseStoryStep(stepId);
+  return step.note ?? step.expectedFeedback;
+}
+
+function requireReleaseNotebookFlow(flowKey: string): ReleaseNotebookFlow {
+  const flow = RELEASE_USER_STORY.storyDefinition.runtimeData?.notebook?.[flowKey];
+  if (!flow) {
+    throw new Error(`missing_release_story_runtime_data:notebook.${flowKey}`);
+  }
+  return flow as ReleaseNotebookFlow;
+}
 
 function expectRelativeLibraryRootPath(value: string | null | undefined): void {
   expect(value).toBeTruthy();
@@ -703,21 +738,28 @@ test.describe('@lane-real release user story end-to-end', () => {
       outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
       lane: 'backend-real',
       suite: 'integration-release-user-story',
-      storyId: 'release-user-story-end-to-end',
-      title: 'Release user story end-to-end',
-      actor: 'system 管理侧 / workspace admin / project owner / member',
+      storyId: RELEASE_USER_STORY.manifest.storyId,
+      title: RELEASE_USER_STORY.manifest.title,
+      actor: RELEASE_USER_STORY.manifest.actor,
       route: `/${LOCALE}/system/login`,
       specFile: 'e2e/integration-release-user-story.spec.ts',
       browser: 'chromium',
-      goal: '用真实 backend 走完发布关键用户故事，并把关键 UI 状态写成 trace bundle。',
-      preconditions: ['backend-real stack is ready', 'Keycloak and provider API key are configured', 'sandbox manager is ready'],
-      seedData: ['ws_default'],
+      goal: RELEASE_USER_STORY.manifest.goal,
+      preconditions: [...RELEASE_USER_STORY.manifest.preconditions],
+      seedData: [...RELEASE_USER_STORY.manifest.seedData],
+      storyBinding: RELEASE_STORY_BINDING,
     });
     let outcome: 'pass' | 'fail' = 'fail';
     let externalRunner: { stop(): Promise<void> } | null = null;
 
-    const captureTrace = async (stepId: string, action: string, target: string, note: string): Promise<void> => {
-      await trace.capture(page, { stepId, action, target, note });
+    const captureTrace = async (stepId: string, action?: string, target?: string, note?: string): Promise<void> => {
+      const storyStep = resolveReleaseStoryStep(stepId);
+      await trace.capture(page, {
+        stepId,
+        action: action ?? storyStep.action,
+        target: target ?? storyStep.target,
+        note: note ?? resolveReleaseStoryStepNote(stepId),
+      });
     };
 
     try {
@@ -852,22 +894,23 @@ test.describe('@lane-real release user story end-to-end', () => {
         projectId,
         taskId: externalTaskOne.taskId,
       });
-      await sendNotebookMessage(page, 'Create notes/external_story.txt with exactly one line: external turn 1. Then reply with exactly EXT_T1_OK.');
+      const externalCreateFlow = requireReleaseNotebookFlow('external_create');
+      await sendNotebookMessage(page, externalCreateFlow.turnOne.prompt);
       await waitForAgentReply({
         page,
         workspaceId,
         projectId,
         taskId: externalTaskOne.taskId,
-        expectedToken: 'EXT_T1_OK',
+        expectedToken: externalCreateFlow.turnOne.expectedToken,
         minAgentMessages: 1,
       });
-      await sendNotebookMessage(page, 'Read notes/external_story.txt, append a second line external turn 2, create .artifacts/external_summary.md summarizing the file, then reply with exactly EXT_T2_OK.');
+      await sendNotebookMessage(page, externalCreateFlow.turnTwo.prompt);
       await waitForAgentReply({
         page,
         workspaceId,
         projectId,
         taskId: externalTaskOne.taskId,
-        expectedToken: 'EXT_T2_OK',
+        expectedToken: externalCreateFlow.turnTwo.expectedToken,
         minAgentMessages: 2,
       });
       await waitForTaskArtifacts({
@@ -875,8 +918,9 @@ test.describe('@lane-real release user story end-to-end', () => {
         workspaceId,
         projectId,
         taskId: externalTaskOne.taskId,
-        expectedPath: '.artifacts/external_summary.md',
+        expectedPath: externalCreateFlow.turnTwo.expectedArtifactPath,
       });
+      const externalSummaryName = externalCreateFlow.turnTwo.expectedArtifactPath.split('/').pop() ?? externalCreateFlow.turnTwo.expectedArtifactPath;
       await openWorkspaceFilesRoot({
         page,
         workspaceId,
@@ -884,7 +928,7 @@ test.describe('@lane-real release user story end-to-end', () => {
         workspaceName: externalTaskOne.workspaceName,
       });
       await openFolderByName(page, '.artifacts');
-      await expect(page.getByText('external_summary.md')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText(externalSummaryName)).toBeVisible({ timeout: 30_000 });
       await captureTrace('files-artifacts-external', 'Inspect generated artifacts', 'files__objects-table', 'external task 的 .artifacts 已可见');
 
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
@@ -910,22 +954,23 @@ test.describe('@lane-real release user story end-to-end', () => {
         taskId: externalTaskTwo.taskId,
       });
       expect(externalTaskTwo.workspaceName).toBe(externalTaskOne.workspaceName);
-      await sendNotebookMessage(page, 'Read notes/external_story.txt and reply with exactly EXT_REUSE_T1_OK if it still contains both lines.');
+      const externalReuseFlow = requireReleaseNotebookFlow('external_reuse');
+      await sendNotebookMessage(page, externalReuseFlow.turnOne.prompt);
       await waitForAgentReply({
         page,
         workspaceId,
         projectId,
         taskId: externalTaskTwo.taskId,
-        expectedToken: 'EXT_REUSE_T1_OK',
+        expectedToken: externalReuseFlow.turnOne.expectedToken,
         minAgentMessages: 1,
       });
-      await sendNotebookMessage(page, 'Create .artifacts/external_reuse.md that says the reused workspace is intact, then reply with exactly EXT_REUSE_T2_OK.');
+      await sendNotebookMessage(page, externalReuseFlow.turnTwo.prompt);
       await waitForAgentReply({
         page,
         workspaceId,
         projectId,
         taskId: externalTaskTwo.taskId,
-        expectedToken: 'EXT_REUSE_T2_OK',
+        expectedToken: externalReuseFlow.turnTwo.expectedToken,
         minAgentMessages: 2,
       });
       await waitForTaskArtifacts({
@@ -933,7 +978,7 @@ test.describe('@lane-real release user story end-to-end', () => {
         workspaceId,
         projectId,
         taskId: externalTaskTwo.taskId,
-        expectedPath: '.artifacts/external_reuse.md',
+        expectedPath: externalReuseFlow.turnTwo.expectedArtifactPath,
       });
       await captureTrace('notebook-task-detail-external-reuse', 'Review reused workspace task', 'notebook__task-header', 'external task B 复用 workspace 成功');
 
@@ -947,47 +992,23 @@ test.describe('@lane-real release user story end-to-end', () => {
           workspaceMode: 'create_new',
           workspaceName: `Internal Workspace ${Date.now()}`,
         });
-        await sendNotebookMessage(
-          page,
-          [
-            'Run the following shell command exactly, then reply with exactly INT_T1_OK.',
-            '```bash',
-            "mkdir -p notes && cat <<'EOF' > notes/internal_story.txt",
-            'internal turn 1',
-            'EOF',
-            '```',
-          ].join(' '),
-        );
+        const internalFlow = requireReleaseNotebookFlow('internal');
+        await sendNotebookMessage(page, internalFlow.turnOne.prompt);
         await waitForAgentReply({
           page,
           workspaceId,
           projectId,
           taskId: internalTask.taskId,
-          expectedToken: 'INT_T1_OK',
+          expectedToken: internalFlow.turnOne.expectedToken,
           minAgentMessages: 1,
         });
-        await sendNotebookMessage(
-          page,
-          [
-            'Run the following shell commands exactly, then reply with exactly INT_T2_OK.',
-            '```bash',
-            "if [ ! -f notes/internal_story.txt ]; then echo 'missing-internal-story' >&2; exit 1; fi",
-            "printf '\\ninternal turn 2\\n' >> notes/internal_story.txt",
-            'mkdir -p .artifacts',
-            "cat <<'EOF' > .artifacts/internal_summary.md",
-            '# Internal Story Summary',
-            'internal turn 1',
-            'internal turn 2',
-            'EOF',
-            '```',
-          ].join(' '),
-        );
+        await sendNotebookMessage(page, internalFlow.turnTwo.prompt);
         await waitForAgentReply({
           page,
           workspaceId,
           projectId,
           taskId: internalTask.taskId,
-          expectedToken: 'INT_T2_OK',
+          expectedToken: internalFlow.turnTwo.expectedToken,
           minAgentMessages: 2,
         });
         await waitForTaskArtifacts({
@@ -995,8 +1016,9 @@ test.describe('@lane-real release user story end-to-end', () => {
           workspaceId,
           projectId,
           taskId: internalTask.taskId,
-          expectedPath: '.artifacts/internal_summary.md',
+          expectedPath: internalFlow.turnTwo.expectedArtifactPath,
         });
+        const internalSummaryName = internalFlow.turnTwo.expectedArtifactPath.split('/').pop() ?? internalFlow.turnTwo.expectedArtifactPath;
         await openWorkspaceFilesRoot({
           page,
           workspaceId,
@@ -1004,7 +1026,7 @@ test.describe('@lane-real release user story end-to-end', () => {
           workspaceName: internalTask.workspaceName,
         });
         await openFolderByName(page, '.artifacts');
-        await expect(page.getByText('internal_summary.md')).toBeVisible({ timeout: 30_000 });
+        await expect(page.getByText(internalSummaryName)).toBeVisible({ timeout: 30_000 });
         await captureTrace('files-artifacts-internal', 'Inspect internal artifacts', 'files__objects-table', 'internal task 的 .artifacts 已可见');
 
         await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);

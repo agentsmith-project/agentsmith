@@ -51,6 +51,15 @@ for (const definition of CURRENT_GATE_MANIFEST) {
   if (actualCommand !== definition.command) {
     failures.push(`package.json script ${definition.npmScript} must equal: ${definition.command}`);
   }
+  if (definition.storyEvidencePolicy === 'required' && definition.storyEvidenceKinds.length === 0) {
+    failures.push(`${definition.npmScript} must declare at least one required story evidence kind`);
+  }
+  if (definition.storyEvidencePolicy === 'required' && definition.storyEvidenceArtifacts.length === 0) {
+    failures.push(`${definition.npmScript} must declare required story evidence artifact roots`);
+  }
+  if (definition.storyEvidenceKinds.includes('visual_scene_catalog') && !definition.storyEvidenceSceneSource) {
+    failures.push(`${definition.npmScript} must declare its visual scene source when it owns visual_scene_catalog evidence`);
+  }
 }
 
 const gateDefault = findCurrentGateDefinition('gate:default');
@@ -103,6 +112,11 @@ requireMatch(gateContract, /lane:cluster-rehearsal/, 'current gate manifest cont
 requireMatch(gateContract, /gate:release:full/, 'current gate manifest contract must define gate:release:full', failures);
 requireMatch(gateContract, /full visual/, 'current gate manifest contract must explain full visual ownership', failures);
 requireMatch(gateContract, /targeted visual/, 'current gate manifest contract must explain targeted visual ownership', failures);
+requireMatch(gateContract, /story evidence/, 'current gate manifest contract must define story evidence ownership', failures);
+requireMatch(gateContract, /visual_scene_catalog/, 'current gate manifest contract must define visual_scene_catalog evidence', failures);
+requireMatch(gateContract, /ux_trace_bundle/, 'current gate manifest contract must define ux_trace_bundle evidence', failures);
+requireMatch(gateContract, /e2e\/visual-baseline-support\.ts/, 'current gate manifest contract must identify the visual scene catalog source', failures);
+requireMatch(gateContract, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/, 'current gate manifest contract must identify backend-real ux trace bundle roots', failures);
 requireMatch(gateContract, /scenario-owned local clean reset/, 'current gate manifest contract must require clean-reset semantics for rehearsal lanes', failures);
 requireMatch(gateContract, /generated handoff state/, 'current gate manifest contract must describe rehearsal-generated handoff state ownership', failures);
 
@@ -122,6 +136,10 @@ requireMatch(releaseChecklist, /npm run lane:demo-rehearsal/, 'release checklist
 requireMatch(releaseChecklist, /npm run lane:cluster-rehearsal/, 'release checklist must require npm run lane:cluster-rehearsal', failures);
 requireMatch(releaseChecklist, /npm run gate:release:full/, 'release checklist must define npm run gate:release:full as the full release command', failures);
 requireMatch(releaseChecklist, /does not run the full visual lane|不能被 `gate:default` 代替/, 'release checklist must explain that gate:default does not run the full visual lane', failures);
+requireMatch(releaseChecklist, /visual_scene_catalog/, 'release checklist must identify visual_scene_catalog as a required release evidence kind', failures);
+requireMatch(releaseChecklist, /ux_trace_bundle/, 'release checklist must identify ux_trace_bundle as a required release evidence kind', failures);
+requireMatch(releaseChecklist, /e2e\/visual-baseline-support\.ts/, 'release checklist must identify the visual scene catalog source', failures);
+requireMatch(releaseChecklist, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/, 'release checklist must identify the backend-real ux trace bundle path', failures);
 requireMatch(releaseChecklist, /clean reset/, 'release checklist must explain that rehearsal lanes begin from a clean reset', failures);
 
 for (const relativePath of CURRENT_GATE_DOCUMENT_FILES) {

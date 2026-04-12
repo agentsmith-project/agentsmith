@@ -35,6 +35,8 @@ describe('current workflow governance', () => {
     for (const command of commands) {
       expect(command.command.length).toBeGreaterThan(0);
       expect(command.description.length).toBeGreaterThan(0);
+      expect(['none', 'required']).toContain(command.storyEvidencePolicy);
+      expect(Array.isArray(command.storyEvidenceKinds)).toBe(true);
 
       if (command.canonical === 'npm') {
         expect(command.npmScript).toBeTruthy();
@@ -48,6 +50,26 @@ describe('current workflow governance', () => {
         }
       }
     }
+  });
+
+  it('marks story-evidence-bearing workflow commands explicitly', () => {
+    const commands = listCurrentWorkflowCommands();
+    const visualTest = commands.find((command) => command.npmScript === 'test:visual');
+    const releaseGate = commands.find((command) => command.npmScript === 'gate:release');
+    const visualLane = commands.find((command) => command.npmScript === 'lane:visual');
+    const releaseLane = commands.find((command) => command.npmScript === 'lane:backend-real:release');
+
+    expect(visualTest?.storyEvidencePolicy).toBe('required');
+    expect(visualTest?.storyEvidenceKinds).toEqual(['visual_scene_catalog']);
+
+    expect(visualLane?.storyEvidencePolicy).toBe('required');
+    expect(visualLane?.storyEvidenceKinds).toEqual(['visual_scene_catalog']);
+
+    expect(releaseGate?.storyEvidencePolicy).toBe('required');
+    expect(releaseGate?.storyEvidenceKinds).toEqual(['ux_trace_bundle']);
+
+    expect(releaseLane?.storyEvidencePolicy).toBe('required');
+    expect(releaseLane?.storyEvidenceKinds).toEqual(['ux_trace_bundle']);
   });
 
   it('keeps governance check definitions complete and uniquely keyed', () => {

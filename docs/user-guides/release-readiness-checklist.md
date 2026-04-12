@@ -12,7 +12,7 @@
 1. 合约与类型检查通过
 2. 默认业务链与治理门禁通过
 3. release-grade backend-real 验证通过
-4. full visual 与两条部署排演通过
+4. full visual、machine-readable story evidence 与两条部署排演通过
 
 ## 环境前提
 
@@ -44,19 +44,33 @@ npm run gate:release:full
 
 说明：
 1. `npm run gate:default` 只覆盖默认业务链与治理门禁，以及它们自己的 targeted visual。
-2. `npm run lane:visual` 是唯一 full visual 验证通道，不能被 `gate:default` 代替。
-3. `npm run lane:demo-rehearsal` 与 `npm run lane:cluster-rehearsal` 都必须从各自 scenario-owned local kind world 的 clean reset 开始。
-4. `npm run gate:release:full` 是完整发布验收命令，也是最终 release verdict 入口。
+2. `npm run lane:visual` 是唯一 full visual 验证通道，不能被 `gate:default` 代替，并且它承担 `visual_scene_catalog` 证据所有权。
+3. `npm run gate:release` / `npm run lane:backend-real:release` 承担 `ux_trace_bundle` 证据所有权。
+4. `npm run lane:demo-rehearsal` 与 `npm run lane:cluster-rehearsal` 都必须从各自 scenario-owned local kind world 的 clean reset 开始。
+5. `npm run gate:release:full` 是完整发布验收命令，也是最终 release verdict 入口。
 
 ## 当前证据路径
 
+- full visual scene catalog：
+  - `e2e/visual-baseline-support.ts`
+  - `e2e/__screenshots__/visual.spec.ts`
 - backend-real visual review：
   - `artifacts/backend-real-visual/<run-id>/review.md`
   - `artifacts/backend-real-visual/<run-id>/ux-traces/<lane>/<suite>/<story-id>/<run-id>/review.md`
+  - `artifacts/backend-real-visual/<run-id>/ux-traces`
 - demo rehearsal report：
   - `artifacts/runtime/scenario/demo-rehearsal/reports/<timestamp>.md`
 - cluster rehearsal report：
   - `artifacts/runtime/scenario/cluster-rehearsal/reports/<timestamp>.md`
+
+## 当前 story evidence 真相
+
+- `visual_scene_catalog`
+  - owner: `test:visual`, `lane:visual`
+  - source: `e2e/visual-baseline-support.ts`
+- `ux_trace_bundle`
+  - owner: `gate:release`, `lane:backend-real:release`
+  - root: `artifacts/backend-real-visual/<run-id>/ux-traces`
 
 ## 失败时的处理原则
 

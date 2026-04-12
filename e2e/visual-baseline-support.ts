@@ -42,6 +42,9 @@ export type VisualBaselineAuthLane =
 
 export type VisualBaselineCaptureMode = 'full_page' | 'viewport';
 export type VisualBaselineBuildLane = 'mock-lane' | 'backend-real';
+export type VisualBaselineStoryEvidencePolicy = 'required';
+export type VisualBaselineStoryEvidenceKind = 'visual_scene_catalog';
+export type VisualBaselineStoryEvidenceOwner = 'lane:visual';
 
 export type VisualBaselineBuildRecord = {
   lane: VisualBaselineBuildLane;
@@ -66,6 +69,9 @@ type VisualBaselineScenarioSeed = {
   viewport?: 'default' | 'ultrawide';
   setupNotes?: readonly string[];
   stableMarkers?: readonly string[];
+  storyEvidencePolicy?: VisualBaselineStoryEvidencePolicy;
+  storyEvidenceKind?: VisualBaselineStoryEvidenceKind;
+  storyEvidenceOwner?: VisualBaselineStoryEvidenceOwner;
 };
 
 export type VisualBaselineCatalogEntry = {
@@ -84,6 +90,9 @@ export type VisualBaselineCatalogEntry = {
   viewport: 'default' | 'ultrawide';
   setupNotes: readonly string[];
   stableMarkers: readonly string[];
+  storyEvidencePolicy: VisualBaselineStoryEvidencePolicy;
+  storyEvidenceKind: VisualBaselineStoryEvidenceKind;
+  storyEvidenceOwner: VisualBaselineStoryEvidenceOwner;
   sourceSpec: 'e2e/visual.spec.ts';
 };
 
@@ -100,6 +109,9 @@ export type VisualBaselineScenarioRecord = {
   viewport: 'default' | 'ultrawide';
   setupNotes: readonly string[];
   stableMarkers: readonly string[];
+  storyEvidencePolicy: VisualBaselineStoryEvidencePolicy;
+  storyEvidenceKind: VisualBaselineStoryEvidenceKind;
+  storyEvidenceOwner: VisualBaselineStoryEvidenceOwner;
   entries: VisualBaselineCatalogEntry[];
 };
 
@@ -134,6 +146,12 @@ function single(seed: Omit<VisualBaselineScenarioSeed, 'themes'>): VisualBaselin
 function stableMarkers(...markers: string[]): readonly string[] {
   return markers;
 }
+
+const VISUAL_BASELINE_STORY_EVIDENCE = {
+  policy: 'required',
+  kind: 'visual_scene_catalog',
+  owner: 'lane:visual',
+} as const;
 
 const SCENARIOS: readonly VisualBaselineScenarioSeed[] = [
   single({
@@ -1066,6 +1084,9 @@ function expandScenario(seed: VisualBaselineScenarioSeed): VisualBaselineCatalog
     viewport: seed.viewport ?? 'default',
     setupNotes: seed.setupNotes ?? [],
     stableMarkers: seed.stableMarkers ?? [],
+    storyEvidencePolicy: seed.storyEvidencePolicy ?? VISUAL_BASELINE_STORY_EVIDENCE.policy,
+    storyEvidenceKind: seed.storyEvidenceKind ?? VISUAL_BASELINE_STORY_EVIDENCE.kind,
+    storyEvidenceOwner: seed.storyEvidenceOwner ?? VISUAL_BASELINE_STORY_EVIDENCE.owner,
     sourceSpec: 'e2e/visual.spec.ts' as const,
   };
 
@@ -1113,6 +1134,9 @@ export function groupVisualBaselineCatalogByScenario(
       viewport: entry.viewport,
       setupNotes: entry.setupNotes,
       stableMarkers: entry.stableMarkers,
+      storyEvidencePolicy: entry.storyEvidencePolicy,
+      storyEvidenceKind: entry.storyEvidenceKind,
+      storyEvidenceOwner: entry.storyEvidenceOwner,
       entries: [entry],
     });
   }
@@ -1144,6 +1168,9 @@ export function renderVisualBaselineScenarioReviewMarkdown(args: {
     `- recipe_family: ${scenario.recipeFamily}`,
     `- scenario_group: ${scenario.group}`,
     `- story_id: ${scenario.storyId}`,
+    `- story_evidence_policy: ${scenario.storyEvidencePolicy}`,
+    `- story_evidence_kind: ${scenario.storyEvidenceKind}`,
+    `- story_evidence_owner: ${scenario.storyEvidenceOwner}`,
     `- auth_lane: ${scenario.authLane}`,
     `- capture: ${scenario.capture}`,
     `- viewport: ${scenario.viewport}`,
@@ -1189,4 +1216,17 @@ export function renderVisualBaselineScenarioReviewMarkdown(args: {
 
 export function resolveVisualBaselineStableMarkers(scenarioId: string): readonly string[] {
   return SCENARIOS.find((scenario) => scenario.id === scenarioId)?.stableMarkers ?? stableMarkers();
+}
+
+export function resolveVisualBaselineStoryEvidence(scenarioId: string): {
+  policy: VisualBaselineStoryEvidencePolicy;
+  kind: VisualBaselineStoryEvidenceKind;
+  owner: VisualBaselineStoryEvidenceOwner;
+} {
+  const scenario = SCENARIOS.find((entry) => entry.id === scenarioId);
+  return {
+    policy: scenario?.storyEvidencePolicy ?? VISUAL_BASELINE_STORY_EVIDENCE.policy,
+    kind: scenario?.storyEvidenceKind ?? VISUAL_BASELINE_STORY_EVIDENCE.kind,
+    owner: scenario?.storyEvidenceOwner ?? VISUAL_BASELINE_STORY_EVIDENCE.owner,
+  };
 }

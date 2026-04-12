@@ -15,6 +15,7 @@ Use this contract when you need to answer:
 2. whether a command owns no visual, targeted visual, or full visual evidence
 3. whether a command requires backend-real infrastructure
 4. which checklist or CI job is supposed to carry that gate
+5. which machine-readable story evidence kinds and artifact roots that gate must produce
 
 ## 1. Scope
 
@@ -23,6 +24,7 @@ This contract only covers engineering-governance truth:
 - gate composition
 - visual ownership
 - backend-real ownership
+- story evidence ownership
 - CI/checklist alignment
 
 It does not redefine product permissions, route gates, or OpenAPI behavior.
@@ -43,11 +45,15 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 3. `lane:visual`
 - the only current command that owns the full visual verification lane
 - must stay separate from `gate:default`
+- owns required `visual_scene_catalog` story evidence
+- scene linkage source: `e2e/visual-baseline-support.ts`
+- committed evidence root: `e2e/__screenshots__/visual.spec.ts`
 
 4. `gate:release`
 - release-grade engineering gate
 - depends on backend-real release verification
 - does not replace `lane:visual`
+- owns required `ux_trace_bundle` story evidence through release verification
 
 5. `lane:demo-rehearsal` and `lane:cluster-rehearsal`
 - release-only deployment rehearsal lanes
@@ -59,12 +65,27 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 6. `gate:release:full`
 - the full release acceptance command
 - combines `gate:release`, `lane:visual`, `lane:demo-rehearsal`, and `lane:cluster-rehearsal`
+- requires both `visual_scene_catalog` and `ux_trace_bundle` evidence to be present in their canonical roots
 
 7. domain gates such as `test:default-e2e` and `test:governance`
 - may own targeted visual checks with explicit `--grep` scopes
 - must not silently expand into the full visual lane
+- do not become implicit owners of `visual_scene_catalog` or `ux_trace_bundle`
 
-## 3. Cognitive-load rules
+## 3. Story evidence kinds
+
+1. `visual_scene_catalog`
+- owned by `test:visual` and `lane:visual`
+- scene metadata source: `e2e/visual-baseline-support.ts`
+- baseline root: `e2e/__screenshots__/visual.spec.ts`
+
+2. `ux_trace_bundle`
+- owned by `gate:release` and `lane:backend-real:release`
+- release evidence roots:
+  - `artifacts/backend-real-visual/<run-id>/review.md`
+  - `artifacts/backend-real-visual/<run-id>/ux-traces`
+
+## 4. Cognitive-load rules
 
 1. `make` is not a second gate model.
 - Canonical gate names live under `npm run`.
@@ -79,7 +100,7 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - `gate:default` for default business/gating proof
 - `lane:visual` for full visual proof
 
-## 4. Required alignment
+## 5. Required alignment
 
 The following must stay aligned with `current-gate-manifest.ts`:
 

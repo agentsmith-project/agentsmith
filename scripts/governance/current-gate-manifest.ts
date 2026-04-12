@@ -18,6 +18,8 @@ export type CurrentGateKind = 'test' | 'gate' | 'lane';
 export type CurrentGateVisualPolicy = 'none' | 'targeted' | 'full';
 export type CurrentGateBackendRealPolicy = 'none' | 'optional' | 'required';
 export type CurrentGateRequirement = 'default' | 'release' | 'visual';
+export type CurrentGateStoryEvidencePolicy = 'none' | 'required';
+export type CurrentGateStoryEvidenceKind = 'visual_scene_catalog' | 'ux_trace_bundle';
 
 export interface CurrentGateDefinition {
   id: string;
@@ -27,13 +29,31 @@ export interface CurrentGateDefinition {
   kind: CurrentGateKind;
   visualPolicy: CurrentGateVisualPolicy;
   backendRealPolicy: CurrentGateBackendRealPolicy;
+  storyEvidencePolicy: CurrentGateStoryEvidencePolicy;
+  storyEvidenceKinds: readonly CurrentGateStoryEvidenceKind[];
+  storyEvidenceArtifacts: readonly string[];
+  storyEvidenceSceneSource?: string;
   ciJob?: string;
   checklistDocs: readonly string[];
   requiredFor: readonly CurrentGateRequirement[];
 }
 
+function defineCurrentGate(
+  definition: Omit<
+    CurrentGateDefinition,
+    'storyEvidencePolicy' | 'storyEvidenceKinds' | 'storyEvidenceArtifacts'
+  > & Partial<Pick<CurrentGateDefinition, 'storyEvidencePolicy' | 'storyEvidenceKinds' | 'storyEvidenceArtifacts'>>,
+): CurrentGateDefinition {
+  return {
+    storyEvidencePolicy: 'none',
+    storyEvidenceKinds: [],
+    storyEvidenceArtifacts: [],
+    ...definition,
+  };
+}
+
 export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
-  {
+  defineCurrentGate({
     id: 'workspace-project-default',
     npmScript: 'test:default-e2e',
     command: 'bash scripts/workspace-project-default-gate.sh',
@@ -43,8 +63,8 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     backendRealPolicy: 'optional',
     checklistDocs: ['docs/user-guides/workspace-project-default-engineering-gate-checklist.md'],
     requiredFor: ['default', 'release'],
-  },
-  {
+  }),
+  defineCurrentGate({
     id: 'governance-default',
     npmScript: 'test:governance',
     command: 'bash scripts/governance-default-gate.sh',
@@ -54,8 +74,8 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     backendRealPolicy: 'none',
     checklistDocs: ['docs/user-guides/governance-default-engineering-gate-checklist.md'],
     requiredFor: ['default', 'release'],
-  },
-  {
+  }),
+  defineCurrentGate({
     id: 'visual-lane-command',
     npmScript: 'test:visual',
     command: 'bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual --workers=1',
@@ -63,10 +83,17 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     kind: 'test',
     visualPolicy: 'full',
     backendRealPolicy: 'none',
+    storyEvidencePolicy: 'required',
+    storyEvidenceKinds: ['visual_scene_catalog'],
+    storyEvidenceArtifacts: [
+      'e2e/__screenshots__/visual.spec.ts',
+      'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
+    ],
+    storyEvidenceSceneSource: 'e2e/visual-baseline-support.ts',
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['visual', 'release'],
-  },
-  {
+  }),
+  defineCurrentGate({
     id: 'gate-fast',
     npmScript: 'gate:fast',
     command: 'npm run contracts:check && npx tsc --noEmit && npm run test:e2e:lane:mock:smoke',
@@ -77,8 +104,8 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     ciJob: 'gate-fast',
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['default', 'release'],
-  },
-  {
+  }),
+  defineCurrentGate({
     id: 'gate-default',
     npmScript: 'gate:default',
     command: 'npm run test:default-e2e && npm run test:governance',
@@ -93,8 +120,8 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
       'docs/user-guides/release-readiness-checklist.md',
     ],
     requiredFor: ['default', 'release'],
-  },
-  {
+  }),
+  defineCurrentGate({
     id: 'lane-visual',
     npmScript: 'lane:visual',
     command: 'npm run test:visual',
@@ -102,11 +129,18 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     kind: 'lane',
     visualPolicy: 'full',
     backendRealPolicy: 'none',
+    storyEvidencePolicy: 'required',
+    storyEvidenceKinds: ['visual_scene_catalog'],
+    storyEvidenceArtifacts: [
+      'e2e/__screenshots__/visual.spec.ts',
+      'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
+    ],
+    storyEvidenceSceneSource: 'e2e/visual-baseline-support.ts',
     ciJob: 'lane-visual',
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['visual', 'release'],
-  },
-  {
+  }),
+  defineCurrentGate({
     id: 'lane-backend-real-core',
     npmScript: 'lane:backend-real:core',
     command: 'npm run backend-real:run',
@@ -117,8 +151,8 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     ciJob: 'lane-backend-real-core',
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: [],
-  },
-  {
+  }),
+  defineCurrentGate({
     id: 'gate-release',
     npmScript: 'gate:release',
     command: 'npm run lane:backend-real:release',
@@ -126,10 +160,16 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     kind: 'gate',
     visualPolicy: 'none',
     backendRealPolicy: 'required',
+    storyEvidencePolicy: 'required',
+    storyEvidenceKinds: ['ux_trace_bundle'],
+    storyEvidenceArtifacts: [
+      'artifacts/backend-real-visual/<run-id>/review.md',
+      'artifacts/backend-real-visual/<run-id>/ux-traces',
+    ],
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['release'],
-  },
-  {
+  }),
+  defineCurrentGate({
     id: 'lane-demo-rehearsal',
     npmScript: 'lane:demo-rehearsal',
     command: 'bash scripts/scenarios/demo-rehearsal/reset.sh && bash scripts/scenarios/demo-rehearsal/up.sh && bash scripts/scenarios/demo-rehearsal/bootstrap.sh && bash scripts/scenarios/demo-rehearsal/verify.sh && bash scripts/scenarios/demo-rehearsal/report.sh',
@@ -139,8 +179,8 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     backendRealPolicy: 'none',
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['release'],
-  },
-  {
+  }),
+  defineCurrentGate({
     id: 'lane-cluster-rehearsal',
     npmScript: 'lane:cluster-rehearsal',
     command: 'bash scripts/scenarios/cluster-rehearsal/reset.sh && bash scripts/scenarios/cluster-rehearsal/up.sh && bash scripts/scenarios/cluster-rehearsal/bootstrap.sh && bash scripts/scenarios/cluster-rehearsal/verify.sh && bash scripts/scenarios/cluster-rehearsal/report.sh',
@@ -150,8 +190,8 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     backendRealPolicy: 'none',
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['release'],
-  },
-  {
+  }),
+  defineCurrentGate({
     id: 'lane-backend-real-release',
     npmScript: 'lane:backend-real:release',
     command: 'bash scripts/backend-real-full-gate.sh',
@@ -159,10 +199,16 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     kind: 'lane',
     visualPolicy: 'none',
     backendRealPolicy: 'required',
+    storyEvidencePolicy: 'required',
+    storyEvidenceKinds: ['ux_trace_bundle'],
+    storyEvidenceArtifacts: [
+      'artifacts/backend-real-visual/<run-id>/review.md',
+      'artifacts/backend-real-visual/<run-id>/ux-traces',
+    ],
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['release'],
-  },
-  {
+  }),
+  defineCurrentGate({
     id: 'gate-release-full',
     npmScript: 'gate:release:full',
     command: 'npm run gate:release && npm run lane:visual && npm run lane:demo-rehearsal && npm run lane:cluster-rehearsal',
@@ -170,9 +216,18 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     kind: 'gate',
     visualPolicy: 'full',
     backendRealPolicy: 'required',
+    storyEvidencePolicy: 'required',
+    storyEvidenceKinds: ['visual_scene_catalog', 'ux_trace_bundle'],
+    storyEvidenceArtifacts: [
+      'e2e/__screenshots__/visual.spec.ts',
+      'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
+      'artifacts/backend-real-visual/<run-id>/review.md',
+      'artifacts/backend-real-visual/<run-id>/ux-traces',
+    ],
+    storyEvidenceSceneSource: 'e2e/visual-baseline-support.ts',
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['release'],
-  },
+  }),
 ] as const;
 
 export function listCurrentGateDefinitions(): readonly CurrentGateDefinition[] {

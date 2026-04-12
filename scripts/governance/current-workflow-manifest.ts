@@ -15,6 +15,8 @@ export interface CurrentWorkflowCommand {
   makeTarget?: string;
   npmScript?: string;
   recommended?: boolean;
+  storyEvidencePolicy: 'none' | 'required';
+  storyEvidenceKinds: readonly ('visual_scene_catalog' | 'ux_trace_bundle')[];
 }
 
 export interface CurrentWorkflowSection {
@@ -42,7 +44,50 @@ export const CURRENT_WORKFLOW_DOCUMENT_FILES = [
   'scripts/governance/current-gate-manifest.ts',
 ] as const;
 
-export const CURRENT_WORKFLOW_MANIFEST: readonly CurrentWorkflowSection[] = [
+type RawCurrentWorkflowCommand = Omit<CurrentWorkflowCommand, 'storyEvidencePolicy' | 'storyEvidenceKinds'> &
+  Partial<Pick<CurrentWorkflowCommand, 'storyEvidencePolicy' | 'storyEvidenceKinds'>>;
+
+type RawCurrentWorkflowSection = {
+  id: string;
+  title: CurrentWorkflowTopLevelTerm;
+  commands: RawCurrentWorkflowCommand[];
+};
+
+const CURRENT_WORKFLOW_STORY_EVIDENCE_BY_SCRIPT: Partial<
+  Record<NonNullable<CurrentWorkflowCommand['npmScript']>, Pick<CurrentWorkflowCommand, 'storyEvidencePolicy' | 'storyEvidenceKinds'>>
+> = {
+  'test:visual': {
+    storyEvidencePolicy: 'required',
+    storyEvidenceKinds: ['visual_scene_catalog'],
+  },
+  'lane:visual': {
+    storyEvidencePolicy: 'required',
+    storyEvidenceKinds: ['visual_scene_catalog'],
+  },
+  'gate:release': {
+    storyEvidencePolicy: 'required',
+    storyEvidenceKinds: ['ux_trace_bundle'],
+  },
+  'lane:backend-real:release': {
+    storyEvidencePolicy: 'required',
+    storyEvidenceKinds: ['ux_trace_bundle'],
+  },
+};
+
+function hydrateCurrentWorkflowCommand(command: RawCurrentWorkflowCommand): CurrentWorkflowCommand {
+  const storyEvidence = command.npmScript
+    ? CURRENT_WORKFLOW_STORY_EVIDENCE_BY_SCRIPT[command.npmScript]
+    : undefined;
+
+  return {
+    storyEvidencePolicy: 'none',
+    storyEvidenceKinds: [],
+    ...command,
+    ...storyEvidence,
+  };
+}
+
+const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
   {
     id: 'environment',
     title: '环境',
@@ -385,6 +430,11 @@ export const CURRENT_WORKFLOW_MANIFEST: readonly CurrentWorkflowSection[] = [
     ],
   },
 ] as const;
+
+export const CURRENT_WORKFLOW_MANIFEST: readonly CurrentWorkflowSection[] = CURRENT_WORKFLOW_RAW_MANIFEST.map((section) => ({
+  ...section,
+  commands: section.commands.map(hydrateCurrentWorkflowCommand),
+}));
 
 export function listCurrentWorkflowCommands(): readonly CurrentWorkflowCommand[] {
   return CURRENT_WORKFLOW_MANIFEST.flatMap((section) => section.commands);

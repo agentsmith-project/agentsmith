@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/release-story-verify-source-set.sh"
 MANIFEST_PATH="${ROOT_DIR}/infra/deploy/cluster/deployment.manifest.json"
 SITE_ENV_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/site.env.example"
 REGISTRY_ENV_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/registry.env.example"
@@ -96,6 +97,22 @@ for relative in manifest.get("bundle_files", []):
         raise SystemExit(f"runtime_bundle_must_not_include_sources:{relative}")
     if relative in {"scripts/cluster-deploy/build-bundle.sh", "scripts/cluster-deploy/build-images.sh"}:
         raise SystemExit(f"runtime_bundle_must_not_include_build_script:{relative}")
+PY
+
+mapfile -t release_story_runtime_files < <(release_story_verify_source_set "${ROOT_DIR}")
+python3 - <<'PY' "${MANIFEST_PATH}" "${release_story_runtime_files[@]}"
+import json
+import pathlib
+import sys
+
+manifest_path = pathlib.Path(sys.argv[1])
+required_files = sys.argv[2:]
+manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+bundle_files = manifest.get("bundle_files", [])
+
+for relative_path in required_files:
+    if relative_path not in bundle_files:
+        raise SystemExit(f"missing_release_story_runtime_file:{relative_path}")
 PY
 
 runtime_bundle_scripts=(

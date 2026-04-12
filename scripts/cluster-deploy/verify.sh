@@ -4,6 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 source "${ROOT_DIR}/scripts/lib/preset-common.sh"
+source "${ROOT_DIR}/scripts/lib/release-story-verify-source-set.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 
 load_agentsmith_presets "${ROOT_DIR}"
@@ -65,6 +66,20 @@ resolve_verify_source_file() {
     "${RELEASE_ROOT}" \
     "${ROOT_DIR}" \
     "${relative_path}"
+}
+
+RELEASE_STORY_VERIFY_MOUNTS=()
+
+prepare_release_story_verify_mounts() {
+  RELEASE_STORY_VERIFY_MOUNTS=()
+  local relative_path
+  local source_path
+
+  while IFS= read -r relative_path; do
+    [[ -n "${relative_path}" ]] || continue
+    source_path="$(resolve_verify_source_file "${relative_path}")" || return 1
+    RELEASE_STORY_VERIFY_MOUNTS+=(-v "${source_path}:/app/${relative_path}:ro")
+  done < <(release_story_verify_source_set "${RELEASE_ROOT}")
 }
 
 
@@ -138,7 +153,7 @@ VERIFY_INTEGRATION_WORKSPACE_ACCESS="$(resolve_verify_source_file "e2e/integrati
 VERIFY_INTEGRATION_WORKSPACE_ENTRY_SPEC="$(resolve_verify_source_file "e2e/integration-workspace-entry.spec.ts")"
 VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC="$(resolve_verify_source_file "e2e/integration-workspace-publish-usable.spec.ts")"
 VERIFY_INTEGRATION_PRESET_FILELIB_SPEC="$(resolve_verify_source_file "e2e/integration-preset-external-file-library.spec.ts")"
-VERIFY_INTEGRATION_RELEASE_USER_STORY_SPEC="$(resolve_verify_source_file "e2e/integration-release-user-story.spec.ts")"
+prepare_release_story_verify_mounts || exit 1
 docker run --rm \
   --network host \
   --ipc host \
@@ -154,7 +169,7 @@ docker run --rm \
   -v "${VERIFY_INTEGRATION_WORKSPACE_ENTRY_SPEC}:/app/e2e/integration-workspace-entry.spec.ts:ro" \
   -v "${VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC}:/app/e2e/integration-workspace-publish-usable.spec.ts:ro" \
   -v "${VERIFY_INTEGRATION_PRESET_FILELIB_SPEC}:/app/e2e/integration-preset-external-file-library.spec.ts:ro" \
-  -v "${VERIFY_INTEGRATION_RELEASE_USER_STORY_SPEC}:/app/e2e/integration-release-user-story.spec.ts:ro" \
+  "${RELEASE_STORY_VERIFY_MOUNTS[@]}" \
   -e BASE_URL="${HOST_LOCAL_WEB_BASE_URL}" \
   -e INTEGRATION_API_BASE="${HOST_LOCAL_API_BASE_URL}" \
   -e EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL="${PUBLIC_API_BASE_URL}" \

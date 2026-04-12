@@ -2,6 +2,8 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { buildStorySourceFingerprint } from '../e2e/story-contract';
+import { loadStoryDefinition } from '../e2e/story-loader';
 import {
   createUxTraceBundleWriter,
   buildUxTraceCaptureEvent,
@@ -178,6 +180,61 @@ describe('ux trace bundle support', () => {
       await expect(readFile(path.join(bundleDir, 'manifest.json'), 'utf-8')).resolves.toContain('"story_id": "release-user-story-end-to-end"');
       await expect(readFile(path.join(bundleDir, 'events.jsonl'), 'utf-8')).resolves.toContain('"step_id":"system-login"');
       await expect(readFile(path.join(bundleDir, 'review.md'), 'utf-8')).resolves.toContain('# Release user story end-to-end');
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('records the committed markdown source fingerprint when a story binding is supplied', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-ux-traces-'));
+    try {
+      const story = await loadStoryDefinition('release-user-story-end-to-end');
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: story.storyId,
+        title: story.title,
+        actor: story.actor,
+        route: story.entryRoute,
+        specFile: 'e2e/integration-release-user-story.spec.ts',
+        browser: 'chromium',
+        runId: 'run-003',
+        startedAt: '2026-04-12T03:03:04.000Z',
+        storyBinding: {
+          storyId: story.storyId,
+          title: story.title,
+          actor: story.actor,
+          goal: story.goal,
+          preconditions: story.preconditions ?? [],
+          seedData: story.seedData ?? [],
+          storySource: story.sourceFile ?? story.filePath,
+          storyFingerprint: 'story-fingerprint',
+          stepMapFingerprint: 'step-map-fingerprint',
+          steps: story.steps,
+        },
+      });
+
+      await trace.finish({
+        outcome: 'pass',
+        finishedAt: '2026-04-12T03:04:04.000Z',
+      });
+
+      const bundleDir = resolveUxTraceBundleDir({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: story.storyId,
+        runId: 'run-003',
+      });
+
+      const manifest = JSON.parse(await readFile(path.join(bundleDir, 'manifest.json'), 'utf-8')) as {
+        story_source_fingerprint?: string;
+      };
+      expect(manifest.story_source_fingerprint).toBe(
+        buildStorySourceFingerprint(await readFile(path.resolve(story.sourceFile ?? story.filePath), 'utf-8')),
+      );
+      await expect(readFile(path.join(bundleDir, 'review.md'), 'utf-8')).resolves.toContain('- story_source_fingerprint:');
     } finally {
       await rm(rootDir, { recursive: true, force: true });
     }

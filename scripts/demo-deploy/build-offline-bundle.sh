@@ -6,6 +6,7 @@ SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
 UNIVERSAL_PROXY_ROOT="$(cd "${ROOT_DIR}/../llm-universal-proxy" && pwd)"
 source "${ROOT_DIR}/scripts/lib/ensure-juicefs-vendor.sh"
 source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
+source "${ROOT_DIR}/scripts/lib/release-story-verify-source-set.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 OUT_DIR="${OUT_DIR:-${HOME}/agentsmith/deploy/uploads}"
 RELEASE_ID="${RELEASE_ID:-$(git -C "${ROOT_DIR}" rev-parse --short HEAD)-$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -260,6 +261,7 @@ cp "${ROOT_DIR}/scripts/lib/release-stage-common.sh" "${BUNDLE_DIR}/scripts/lib/
 cp "${ROOT_DIR}/scripts/lib/bootstrap-common.sh" "${BUNDLE_DIR}/scripts/lib/bootstrap-common.sh"
 cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${BUNDLE_DIR}/scripts/lib/k8s-external-services.sh"
 cp "${ROOT_DIR}/scripts/lib/preset-common.sh" "${BUNDLE_DIR}/scripts/lib/preset-common.sh"
+cp "${ROOT_DIR}/scripts/lib/release-story-verify-source-set.sh" "${BUNDLE_DIR}/scripts/lib/release-story-verify-source-set.sh"
 cp "${ROOT_DIR}/scripts/lib/runtime-verification.sh" "${BUNDLE_DIR}/scripts/lib/runtime-verification.sh"
 mkdir -p "${BUNDLE_DIR}/scripts/substrate"
 cp "${ROOT_DIR}/scripts/substrate/deploy-common.sh" "${BUNDLE_DIR}/scripts/substrate/deploy-common.sh"
@@ -274,7 +276,10 @@ copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-access.ts" "${BUNDLE_DIR
 copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-entry.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-entry.spec.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-publish-usable.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-publish-usable.spec.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-preset-external-file-library.spec.ts" "${BUNDLE_DIR}/e2e/integration-preset-external-file-library.spec.ts"
-copy_bundle_file "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts" "${BUNDLE_DIR}/e2e/integration-release-user-story.spec.ts"
+while IFS= read -r relative_path; do
+  [[ -n "${relative_path}" ]] || continue
+  copy_bundle_file "${ROOT_DIR}/${relative_path}" "${BUNDLE_DIR}/${relative_path}"
+done < <(release_story_verify_source_set "${ROOT_DIR}")
 mkdir -p "${BUNDLE_DIR}/docs/contracts"
 cp "${ROOT_DIR}/docs/contracts/deployment-spec-v1.md" "${BUNDLE_DIR}/docs/contracts/deployment-spec-v1.md"
 mkdir -p "${BUNDLE_DIR}/docs/user-guides"

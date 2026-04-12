@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { bindTraceEventToStory, type TraceStoryBinding } from './story-trace-binding';
+import { buildStorySourceFingerprint } from './story-contract';
 
 export type UxTraceRequestSummary = {
   method: string;
@@ -14,7 +17,7 @@ export type UxTraceResponseSummary = {
 
 export type UxTraceEventInput = {
   stepId: string;
-  action: string;
+  action?: string;
   target?: string;
   input?: string;
   route?: string;
@@ -26,8 +29,8 @@ export type UxTraceEventInput = {
 
 export type UxTraceCaptureEventInput = {
   stepId: string;
-  action: string;
-  target: string;
+  action?: string;
+  target?: string;
   input?: string;
   route?: string;
   request?: UxTraceRequestSummary;
@@ -40,6 +43,7 @@ export type UxTraceCaptureEventInput = {
 export type UxTraceEventRecord = UxTraceEventInput & {
   seq: number;
   ts: string;
+  action: string;
   screenshot?: string;
 };
 
@@ -69,6 +73,10 @@ export type UxTraceScreenshotRecord = {
 export type UxTraceBundleManifest = {
   version: 1;
   story_id: string;
+  story_source?: string;
+  story_source_fingerprint?: string;
+  story_fingerprint?: string;
+  step_map_fingerprint?: string;
   title: string;
   actor: string;
   lane: string;
@@ -107,6 +115,7 @@ export type UxTraceBundleOptions = {
   goal?: string;
   preconditions?: string[];
   seedData?: string[];
+  storyBinding?: TraceStoryBinding;
   runId?: string;
   startedAt?: string;
   outputRoot?: string;
@@ -153,6 +162,17 @@ function sanitizeTraceSegment(value: string): string {
     .replace(/-{2,}/g, '-')
     .replace(/^-+|-+$/g, '');
   return normalized || 'trace';
+}
+
+function resolveStorySourceFingerprint(storySource?: string): string | undefined {
+  if (!storySource) {
+    return undefined;
+  }
+  const normalizedSource = storySource.split('#', 1)[0];
+  if (!normalizedSource.trim()) {
+    return undefined;
+  }
+  return buildStorySourceFingerprint(readFileSync(path.resolve(normalizedSource), 'utf8'));
 }
 
 function nowIso(): string {
@@ -208,6 +228,10 @@ export function renderUxTraceReviewMarkdown(args: {
     `# ${manifest.title}`,
     '',
     `- story_id: ${manifest.story_id}`,
+    `- story_source: ${manifest.story_source ?? '<unset>'}`,
+    `- story_source_fingerprint: ${manifest.story_source_fingerprint ?? '<unset>'}`,
+    `- story_fingerprint: ${manifest.story_fingerprint ?? '<unset>'}`,
+    `- step_map_fingerprint: ${manifest.step_map_fingerprint ?? '<unset>'}`,
     `- actor: ${manifest.actor}`,
     `- lane: ${manifest.lane}`,
     `- suite: ${manifest.suite}`,
@@ -260,6 +284,17 @@ export async function createUxTraceBundleWriter(options: UxTraceBundleOptions): 
   const startedAt = options.startedAt ?? nowIso();
   const events: UxTraceEventRecord[] = [];
 
+  const normalizeEvent = (event: UxTraceEventInput): UxTraceEventInput & { action: string } => {
+    const normalized = options.storyBinding ? bindTraceEventToStory(options.storyBinding, event) : event;
+    if (!normalized.action?.trim()) {
+      throw new Error(`missing trace action for step: ${normalized.stepId}`);
+    }
+    return {
+      ...normalized,
+      action: normalized.action,
+    };
+  };
+
   const writeBundle = async (manifest: UxTraceBundleManifest) => {
     await mkdir(bundleDir, { recursive: true });
     await writeFile(path.join(bundleDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf-8');
@@ -274,42 +309,44 @@ export async function createUxTraceBundleWriter(options: UxTraceBundleOptions): 
     reviewPath: path.join(bundleDir, 'review.md'),
     events: () => [...events],
     capture: async (page, event) => {
+      const normalized = normalizeEvent(event);
       const seq = events.length + 1;
-      const screenshotFile = `screenshots/${String(seq).padStart(3, '0')}-${sanitizeTraceSegment(event.stepId)}.png`;
+      const screenshotFile = `screenshots/${String(seq).padStart(3, '0')}-${sanitizeTraceSegment(normalized.stepId)}.png`;
       await page.screenshot({
         path: path.join(bundleDir, screenshotFile),
-        fullPage: event.fullPage ?? true,
+        fullPage: normalized.fullPage ?? true,
       });
       const record: UxTraceEventRecord = {
         seq,
         ts: nowIso(),
-        stepId: event.stepId,
-        action: event.action,
-        target: event.target,
-        input: event.input,
-        route: event.route ?? page.url(),
-        request: event.request,
-        response: event.response,
-        assertion: event.assertion,
-        note: event.note,
+        stepId: normalized.stepId,
+        action: normalized.action,
+        target: normalized.target,
+        input: normalized.input,
+        route: normalized.route ?? page.url(),
+        request: normalized.request,
+        response: normalized.response,
+        assertion: normalized.assertion,
+        note: normalized.note,
         screenshot: screenshotFile,
       };
       events.push(record);
       return record;
     },
     note: (event) => {
+      const normalized = normalizeEvent(event);
       const record: UxTraceEventRecord = {
         seq: events.length + 1,
         ts: nowIso(),
-        stepId: event.stepId,
-        action: event.action,
-        target: event.target,
-        input: event.input,
-        route: event.route,
-        request: event.request,
-        response: event.response,
-        assertion: event.assertion,
-        note: event.note,
+        stepId: normalized.stepId,
+        action: normalized.action,
+        target: normalized.target,
+        input: normalized.input,
+        route: normalized.route,
+        request: normalized.request,
+        response: normalized.response,
+        assertion: normalized.assertion,
+        note: normalized.note,
       };
       events.push(record);
       return record;
@@ -318,6 +355,10 @@ export async function createUxTraceBundleWriter(options: UxTraceBundleOptions): 
       const manifest: UxTraceBundleManifest = {
         version: 1,
         story_id: options.storyId,
+        story_source: options.storyBinding?.storySource,
+        story_source_fingerprint: resolveStorySourceFingerprint(options.storyBinding?.storySource),
+        story_fingerprint: options.storyBinding?.storyFingerprint,
+        step_map_fingerprint: options.storyBinding?.stepMapFingerprint,
         title: options.title,
         actor: options.actor,
         lane: options.lane,

@@ -114,6 +114,8 @@ describe('AlertCenterPage', () => {
     expect(screen.getByRole('tab', { name: /notifications/i })).toBeInTheDocument();
     expect(screen.getByTestId('alert-center-page')).toBeInTheDocument();
     expect(screen.getByTestId('alert-center__summary-meta')).toBeInTheDocument();
+    expect(screen.getByTestId('alert-center__summary-meta')).toHaveTextContent('enabled_rules');
+    expect(screen.getByTestId('alert-center__summary-meta')).not.toHaveTextContent('create_rule');
     expect(screen.getByTestId('alert-center__main-surface')).toBeInTheDocument();
     expect(screen.queryByTestId('alert-center__summary-card')).not.toBeInTheDocument();
   });

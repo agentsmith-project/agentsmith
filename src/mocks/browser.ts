@@ -21,4 +21,20 @@ export async function initMSW() {
 
   started = true;
   await worker.start({ onUnhandledRequest: 'bypass' });
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+    try {
+      await navigator.serviceWorker.ready;
+      if (!navigator.serviceWorker.controller) {
+        await new Promise<void>((resolve) => {
+          const onControllerChange = () => {
+            navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+            resolve();
+          };
+          navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+        });
+      }
+    } catch {
+      // If readiness cannot be observed, we still keep the existing mock bootstrap path.
+    }
+  }
 }

@@ -9,6 +9,7 @@ import {
 } from '../state/me-notifications';
 import {
   buildMockExternalConnectionId,
+  clearMockExternalConnections,
   createMockExternalConnection,
   deleteMockExternalConnection,
   listMockExternalConnections,
@@ -53,98 +54,100 @@ function getRequestUserId(request: Request): string {
   return rest.slice(0, separator);
 }
 
+export function resolveMockExternalConnectionsForRequest(args: {
+  request: Request;
+  storedConnections: ReturnType<typeof listMockExternalConnections>;
+}) {
+  const provider = readMockValue(args.request, 'x-mock-connection-provider', 'ags_mock_connection_provider');
+  const workspaceId = readMockValue(args.request, 'x-mock-connection-workspace', 'ags_mock_connection_workspace') ?? 'ws_default';
+  const connectedEmail = readMockValue(args.request, 'x-mock-connection-email', 'ags_mock_connection_email');
+  const connectionDisplayName = readMockValue(args.request, 'x-mock-connection-display-name', 'ags_mock_connection_display_name');
+  const connectionKind = readMockValue(args.request, 'x-mock-connection-kind', 'ags_mock_connection_kind');
+  const connectionStatus = readMockValue(args.request, 'x-mock-connection-status', 'ags_mock_connection_status');
+  const connectionNote = readMockValue(args.request, 'x-mock-connection-note', 'ags_mock_connection_note');
+  const connectionCustomDomain = readMockValue(request, 'x-mock-connection-custom-domain', 'ags_mock_connection_custom_domain');
+  const connectionFields = readMockJsonArray(args.request, 'x-mock-connection-fields');
+  const connectionScopesRaw = readMockValue(args.request, 'x-mock-connection-scopes', 'ags_mock_connection_scopes');
+  const connectionScopes = connectionScopesRaw ? (() => {
+    try {
+      const parsed = JSON.parse(connectionScopesRaw) as unknown;
+      return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : null;
+    } catch {
+      return null;
+    }
+  })() : null;
+
+  if (provider === 'feishu' && connectedEmail) {
+    return [{
+      id: 'conn_feishu_visual',
+      provider: 'feishu',
+      kind: 'oauth_account',
+      status: 'active',
+      display_name: 'Visual Feishu Connection',
+      note: null,
+      custom_domain: null,
+      fields: [],
+      account_identity: {
+        external_id: 'ou_visual_user',
+        external_name: connectedEmail.split('@')[0],
+        external_email: connectedEmail,
+      },
+      scopes: ['offline_access'],
+      expires_at: null,
+      last_refreshed_at: '2026-03-19T08:00:00.000Z',
+      last_error: null,
+      workspace_id: workspaceId,
+      created_at: '2026-03-19T08:00:00.000Z',
+      updated_at: '2026-03-19T08:00:00.000Z',
+    }];
+  }
+
+  if (provider === 'custom' && connectionDisplayName && connectionFields) {
+    const displayName = connectionDisplayName.trim();
+    const customDomain = connectionCustomDomain?.trim() || null;
+    return [{
+      id: buildMockExternalConnectionId(displayName, 'custom'),
+      provider: 'custom',
+      kind: (connectionKind === 'ssh_keypair' || connectionKind === 'oauth_account' || connectionKind === 'secret_bundle')
+        ? connectionKind
+        : 'secret_bundle',
+      status: connectionStatus === 'expired' || connectionStatus === 'reauth_required' || connectionStatus === 'error'
+        ? connectionStatus
+        : 'active',
+      display_name: displayName,
+      note: connectionNote?.trim() || null,
+      custom_domain: customDomain,
+      fields: connectionFields.map((field) => ({
+        key: typeof field.key === 'string' ? field.key : '',
+        description: typeof field.description === 'string' ? field.description : null,
+        secret: field.secret !== false,
+        masked_value: typeof field.value === 'string' && field.secret !== false ? '••••••••' : typeof field.value === 'string' ? field.value : null,
+      })).filter((field) => field.key.length > 0),
+      account_identity: null,
+      scopes: connectionScopes,
+      expires_at: null,
+      last_refreshed_at: null,
+      last_error: null,
+      workspace_id: null,
+      created_at: '2026-03-19T08:00:00.000Z',
+      updated_at: '2026-03-19T08:00:00.000Z',
+    }];
+  }
+
+  if (args.storedConnections.length > 0) {
+    return args.storedConnections;
+  }
+
+  return [];
+}
+
 export const meHandlers = [
   http.get('/api/v1/me/profile', () => HttpResponse.json(userProfileFixture)),
   http.get('/api/v1/me/external-connections', ({ request }) => {
-    const provider = readMockValue(request, 'x-mock-connection-provider', 'ags_mock_connection_provider');
-    const workspaceId = readMockValue(request, 'x-mock-connection-workspace', 'ags_mock_connection_workspace') ?? 'ws_default';
-    const connectedEmail = readMockValue(request, 'x-mock-connection-email', 'ags_mock_connection_email');
-    const connectionDisplayName = readMockValue(request, 'x-mock-connection-display-name', 'ags_mock_connection_display_name');
-    const connectionKind = readMockValue(request, 'x-mock-connection-kind', 'ags_mock_connection_kind');
-    const connectionStatus = readMockValue(request, 'x-mock-connection-status', 'ags_mock_connection_status');
-    const connectionNote = readMockValue(request, 'x-mock-connection-note', 'ags_mock_connection_note');
-    const connectionCustomDomain = readMockValue(request, 'x-mock-connection-custom-domain', 'ags_mock_connection_custom_domain');
-    const connectionFields = readMockJsonArray(request, 'x-mock-connection-fields');
-    const connectionScopesRaw = readMockValue(request, 'x-mock-connection-scopes', 'ags_mock_connection_scopes');
-    const connectionScopes = connectionScopesRaw ? (() => {
-      try {
-        const parsed = JSON.parse(connectionScopesRaw) as unknown;
-        return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : null;
-      } catch {
-        return null;
-      }
-    })() : null;
-
     const userId = getRequestUserId(request);
     const storedConnections = listMockExternalConnections(userId);
-    if (storedConnections.length > 0) {
-      return HttpResponse.json({ items: storedConnections, total: storedConnections.length });
-    }
-
-    if (provider === 'feishu' && connectedEmail) {
-      return HttpResponse.json({
-        items: [{
-          id: 'conn_feishu_visual',
-          provider: 'feishu',
-          kind: 'oauth_account',
-          status: 'active',
-          display_name: 'Visual Feishu Connection',
-          note: null,
-          custom_domain: null,
-          fields: [],
-          account_identity: {
-            external_id: 'ou_visual_user',
-            external_name: connectedEmail.split('@')[0],
-            external_email: connectedEmail,
-          },
-          scopes: ['offline_access'],
-          expires_at: null,
-          last_refreshed_at: '2026-03-19T08:00:00.000Z',
-          last_error: null,
-          workspace_id: workspaceId,
-          created_at: '2026-03-19T08:00:00.000Z',
-          updated_at: '2026-03-19T08:00:00.000Z',
-        }],
-        total: 1,
-      });
-    }
-
-    if (provider === 'custom' && connectionDisplayName && connectionFields) {
-      const displayName = connectionDisplayName.trim();
-      const customDomain = connectionCustomDomain?.trim() || null;
-      return HttpResponse.json({
-        items: [{
-          id: buildMockExternalConnectionId(displayName, 'custom'),
-          provider: 'custom',
-          kind: (connectionKind === 'ssh_keypair' || connectionKind === 'oauth_account' || connectionKind === 'secret_bundle')
-            ? connectionKind
-            : 'secret_bundle',
-          status: connectionStatus === 'expired' || connectionStatus === 'reauth_required' || connectionStatus === 'error'
-            ? connectionStatus
-            : 'active',
-          display_name: displayName,
-          note: connectionNote?.trim() || null,
-          custom_domain: customDomain,
-          fields: connectionFields.map((field) => ({
-            key: typeof field.key === 'string' ? field.key : '',
-            description: typeof field.description === 'string' ? field.description : null,
-            secret: field.secret !== false,
-            masked_value: typeof field.value === 'string' && field.secret !== false ? '••••••••' : typeof field.value === 'string' ? field.value : null,
-          })).filter((field) => field.key.length > 0),
-          account_identity: null,
-          scopes: connectionScopes,
-          expires_at: null,
-          last_refreshed_at: null,
-          last_error: null,
-          workspace_id: null,
-          created_at: '2026-03-19T08:00:00.000Z',
-          updated_at: '2026-03-19T08:00:00.000Z',
-        }],
-        total: 1,
-      });
-    }
-
-    return HttpResponse.json({ items: [], total: 0 });
+    const items = resolveMockExternalConnectionsForRequest({ request, storedConnections });
+    return HttpResponse.json({ items, total: items.length });
   }),
   http.post('/api/v1/me/external-connections', async ({ request }) => {
     const userId = getRequestUserId(request);
@@ -156,10 +159,14 @@ export const meHandlers = [
       user_id?: string;
       connections?: Array<Parameters<typeof createMockExternalConnection>[1]>;
       connection?: Parameters<typeof createMockExternalConnection>[1];
+      replace_existing?: boolean;
     };
     const userId = typeof body.user_id === 'string' && body.user_id.trim().length > 0
       ? body.user_id.trim()
       : 'user_001';
+    if (body.replace_existing === true) {
+      clearMockExternalConnections(userId);
+    }
     const connections = Array.isArray(body.connections)
       ? body.connections
       : body.connection

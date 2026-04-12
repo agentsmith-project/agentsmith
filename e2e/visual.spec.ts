@@ -500,12 +500,14 @@ const THEMED_WALKTHROUGH_PAGES = [
   },
   {
     name: 'alerts',
-    stableMarkers: ['alerts__main-surface', 'alert-center-page', 'alert-center__summary-meta', 'alerts__open-audit', 'alerts__open-usage'],
+    stableMarkers: ['alerts__main-surface', 'alert-center-page', 'alert-center__summary-meta', 'alerts__tab__rules', 'alert-rules-list__surface', 'alerts__open-audit', 'alerts__open-usage'],
     run: async (page: Page) => {
       await stableNavigate(page, projectPath('alerts'));
       await expect(page.getByTestId('alerts__main-surface')).toBeVisible();
       await expect(page.getByTestId('alert-center-page')).toBeVisible();
       await expect(page.getByTestId('alert-center__summary-meta')).toBeVisible();
+      await expect(page.getByTestId('alerts__tab__rules')).toBeVisible();
+      await expect(page.getByTestId('alert-rules-list__surface')).toBeVisible();
       await expect(page.getByTestId('alerts__open-audit')).toBeVisible();
       await expect(page.getByTestId('alerts__open-usage')).toBeVisible();
     },
@@ -770,7 +772,6 @@ const THEMED_OVERLAY_CASES = [
     requiresMockAuthLane: true,
     stableMarkers: ['third-party-accounts__sheet'],
     setup: async (page: Page) => {
-      await stableNavigate(page, '/en-US/user/third-party-accounts');
       visualThirdPartyAccountId = await seedCustomThirdPartyConnectionFixture(page);
       await stableNavigate(page, '/en-US/user/third-party-accounts');
       await expect(page.getByTestId(`third-party-accounts__row-${visualThirdPartyAccountId}`)).toBeVisible();
@@ -947,6 +948,29 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage.getByTestId('alert-notifications')).toBeVisible();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('alerts-notifications-tab.png', { fullPage: true });
+  });
+
+  test('alerts - rules tab', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('alerts'));
+    await waitForStableRecipeMarkers(authedPage, 'alerts-rules-tab');
+    await expect(authedPage.getByTestId('alerts__main-surface')).toBeVisible();
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible();
+    await expect(authedPage.getByTestId('alert-center__summary-meta')).toBeVisible();
+    await authedPage.getByTestId('alerts__tab__rules').click();
+    await expect(authedPage.getByTestId('alert-rules-list__surface')).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('alerts-rules-tab.png', { fullPage: true });
+  });
+
+  test('alerts - create rule dialog', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('alerts'));
+    await waitForStableRecipeMarkers(authedPage, 'alerts-rule-create-dialog');
+    await expect(authedPage.getByTestId('alerts__main-surface')).toBeVisible();
+    await expect(authedPage.getByTestId('alert-center-page')).toBeVisible();
+    await authedPage.getByTestId('alert-center__create-button').click();
+    await expect(authedPage.getByTestId('alert-rule-form-dialog')).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('alerts-rule-create-dialog.png', { fullPage: true });
   });
 
   test('members - effective access drawer', async ({ authedPage }) => {

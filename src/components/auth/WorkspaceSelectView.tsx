@@ -109,7 +109,7 @@ export function WorkspaceSelectView() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="divide-y divide-subtle/70" data-testid="workspace-select__list" role="list">
+                  <ul className="divide-y divide-subtle/70" data-testid="workspace-select__list">
                     {workspaces?.map((workspace) => (
                       <WorkspaceRow
                         key={workspace.id}
@@ -117,7 +117,7 @@ export function WorkspaceSelectView() {
                         onSelect={() => handleWorkspaceSelect(workspace.id)}
                       />
                     ))}
-                  </div>
+                  </ul>
                 )}
               </PublicAuthSection>
 
@@ -145,21 +145,22 @@ interface WorkspaceCardProps {
 
 function WorkspaceRow({ workspace, onSelect }: WorkspaceCardProps) {
   return (
-    <button
-      type="button"
-      role="listitem"
-      data-testid={`workspace-select__item--${workspace.id}`}
-      onClick={onSelect}
-      className="flex w-full items-center justify-between gap-4 px-0 py-3 text-left transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20"
-    >
-      <div className="flex min-w-0 items-center gap-3">
-        <Building2 className="h-4 w-4 shrink-0 text-icon-default" />
-        <div className="min-w-0">
-          <h2 className="truncate text-[15px] font-medium text-foreground">{workspace.name}</h2>
-          <p className="truncate text-xs text-tertiary">{workspace.id}</p>
+    <li className="list-none">
+      <button
+        type="button"
+        data-testid={`workspace-select__item--${workspace.id}`}
+        onClick={onSelect}
+        className="flex w-full items-center justify-between gap-4 px-0 py-3 text-left transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20"
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <Building2 className="h-4 w-4 shrink-0 text-icon-default" />
+          <div className="min-w-0">
+            <h2 className="truncate text-[15px] font-medium text-foreground">{workspace.name}</h2>
+            <p className="truncate text-xs text-tertiary">{workspace.id}</p>
+          </div>
         </div>
-      </div>
-      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-tertiary" aria-hidden="true" />
-    </button>
+        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-tertiary" aria-hidden="true" />
+      </button>
+    </li>
   );
 }

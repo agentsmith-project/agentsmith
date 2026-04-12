@@ -151,7 +151,7 @@ export function AlertCenterPage({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-tertiary" data-testid="alert-center__summary-meta">
         <span>{t('rules')} {rules.length}</span>
         <span aria-hidden="true">·</span>
-        <span>{t('create_rule')} {enabledRuleCount}</span>
+        <span>{t('enabled_rules')} {enabledRuleCount}</span>
         <span aria-hidden="true">·</span>
         <span>{t('notifications')} {unreadAlertCount}</span>
       </div>

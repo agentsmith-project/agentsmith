@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clearMockExternalConnections,
   listMockExternalConnections,
   seedMockExternalConnection,
   seedMockExternalConnections,
@@ -74,5 +75,21 @@ describe('me-external-connections state helpers', () => {
 
     expect(updated?.display_name).toBe('Visual Seed Updated');
     expect(updated?.fields).toHaveLength(2);
+  });
+
+  it('can clear stored external connections before a new visual seed is applied', () => {
+    seedMockExternalConnection('user_seed_4', {
+      id: 'uec_seed_5',
+      user_id: 'user_seed_4',
+      provider: 'jira',
+      kind: 'secret_bundle',
+      display_name: 'Stored Jira',
+      status: 'active',
+      fields: [],
+    });
+
+    expect(listMockExternalConnections('user_seed_4')).toHaveLength(1);
+    clearMockExternalConnections('user_seed_4');
+    expect(listMockExternalConnections('user_seed_4')).toHaveLength(0);
   });
 });

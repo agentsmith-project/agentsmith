@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { APIError } from '@/lib/api/errors';
 
@@ -60,9 +60,13 @@ describe('WorkspaceSelectPage', () => {
     expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
     expect(screen.queryByText('Open')).not.toBeInTheDocument();
     expect(screen.queryByTestId('workspace-select__meta')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('workspace-select__item--ws_1'));
+    const list = screen.getByRole('list');
+    const workspaceButton = within(list).getByRole('button', { name: /workspace one/i });
+    expect(workspaceButton).toHaveAttribute('data-testid', 'workspace-select__item--ws_1');
+    fireEvent.click(workspaceButton);
     expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/ws_1/login');
     expect(screen.queryByTestId('workspace-select__card--ws_1')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /workspace one/i })).toBeInTheDocument();
   });
 
   it('keeps the system 管理侧入口 as a low-emphasis footer link', () => {

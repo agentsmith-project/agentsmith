@@ -58,6 +58,10 @@ function getBucket(userId: string): UserExternalConnection[] {
   return bucket;
 }
 
+export function clearMockExternalConnections(userId: string): void {
+  connectionsByUser.set(userId, []);
+}
+
 export function listMockExternalConnections(userId: string): UserExternalConnection[] {
   return getBucket(userId).map(cloneConnection);
 }

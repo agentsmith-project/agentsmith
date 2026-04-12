@@ -27,6 +27,13 @@ vi.mock('@/lib/api', () => ({
   handleErrorForToast: vi.fn(),
 }));
 
+vi.mock('@/lib/public-runtime-config', () => ({
+  getPublicRuntimeConfig: vi.fn(() => ({
+    useMsw: true,
+    mswStrictReady: true,
+  })),
+}));
+
 import ThirdPartyAccountsPage from '../page';
 
 function createWrapper() {
@@ -259,5 +266,198 @@ describe('ThirdPartyAccountsPage', () => {
         }),
       );
     });
+  });
+
+  it('refetches the connections list on remount so newly seeded visual rows can surface', async () => {
+    mockList
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'uec_visual_custom_integration',
+          user_id: 'user_1',
+          provider: 'custom',
+          kind: 'secret_bundle',
+          display_name: 'Visual Custom Integration',
+          custom_domain: 'api.visual.example.com',
+          note: 'Visual seed',
+          status: 'active',
+          fields: [
+            {
+              key: 'base_url',
+              description: 'Base URL',
+              secret: false,
+              masked_value: 'https://api.visual.example.com',
+            },
+          ],
+          account_identity: null,
+          scopes: null,
+          expires_at: null,
+          last_refreshed_at: null,
+          last_used_at: null,
+          last_error: null,
+          created_at: '2026-03-05T00:00:00Z',
+          updated_at: '2026-03-05T00:00:00Z',
+        },
+      ]);
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    queryClient.setQueryData(['me', 'external-connections'], []);
+    const localWrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const { unmount } = render(<ThirdPartyAccountsPage />, { wrapper: localWrapper });
+
+    await waitFor(() => {
+      expect(mockList).toHaveBeenCalledTimes(1);
+    });
+
+    unmount();
+    render(<ThirdPartyAccountsPage />, { wrapper: localWrapper });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('third-party-accounts__row-uec_visual_custom_integration')).toBeInTheDocument();
+    });
+    expect(mockList).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for service worker controller takeover before issuing the initial list fetch', async () => {
+    const controllerChangeListeners = new Set<() => void>();
+    const addEventListener = vi.fn((event: string, handler: () => void) => {
+      if (event === 'controllerchange') {
+        controllerChangeListeners.add(handler);
+      }
+    });
+    const removeEventListener = vi.fn((event: string, handler: () => void) => {
+      if (event === 'controllerchange') {
+        controllerChangeListeners.delete(handler);
+      }
+    });
+    let resolveReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      resolveReady = resolve;
+    });
+    mockList.mockResolvedValue([
+      {
+        id: 'uec_visual_custom_integration',
+        user_id: 'user_1',
+        provider: 'custom',
+        kind: 'secret_bundle',
+        display_name: 'Visual Custom Integration',
+        custom_domain: 'api.visual.example.com',
+        note: 'Visual seed',
+        status: 'active',
+        fields: [
+          {
+            key: 'base_url',
+            description: 'Base URL',
+            secret: false,
+            masked_value: 'https://api.visual.example.com',
+          },
+        ],
+        account_identity: null,
+        scopes: null,
+        expires_at: null,
+        last_refreshed_at: null,
+        last_used_at: null,
+        last_error: null,
+        created_at: '2026-03-05T00:00:00Z',
+        updated_at: '2026-03-05T00:00:00Z',
+      },
+    ]);
+
+    const originalNavigator = globalThis.navigator;
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {
+        serviceWorker: {
+          ready,
+          controller: null,
+          addEventListener,
+          removeEventListener,
+        },
+      },
+    });
+
+    try {
+      render(<ThirdPartyAccountsPage />, { wrapper });
+
+      expect(mockList).not.toHaveBeenCalled();
+
+      resolveReady!();
+      await waitFor(() => {
+        expect(addEventListener).toHaveBeenCalledWith('controllerchange', expect.any(Function));
+      });
+      expect(mockList).not.toHaveBeenCalled();
+      expect(controllerChangeListeners.size).toBe(1);
+
+      Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: {
+          serviceWorker: {
+            ready,
+            controller: {},
+            addEventListener,
+            removeEventListener,
+          },
+        },
+      });
+      controllerChangeListeners.forEach((handler) => handler());
+
+      await waitFor(() => {
+        expect(mockList).toHaveBeenCalledTimes(1);
+      });
+      expect(await screen.findByTestId('third-party-accounts__row-uec_visual_custom_integration')).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: originalNavigator,
+      });
+    }
+  });
+
+  it('prefers visual seed data so the seeded edit-sheet row can render even before the list refetch settles', async () => {
+    const seededConnection = {
+      id: 'uec_visual_custom_integration',
+      user_id: 'user_1',
+      provider: 'custom',
+      kind: 'secret_bundle',
+      display_name: 'Visual Custom Integration',
+      custom_domain: 'api.visual.example.com',
+      note: 'Visual seed',
+      status: 'active',
+      fields: [
+        {
+          key: 'base_url',
+          description: 'Base URL',
+          secret: false,
+          masked_value: 'https://api.visual.example.com',
+        },
+      ],
+      account_identity: null,
+      scopes: null,
+      expires_at: null,
+      last_refreshed_at: null,
+      last_used_at: null,
+      last_error: null,
+      created_at: '2026-03-05T00:00:00Z',
+      updated_at: '2026-03-05T00:00:00Z',
+    };
+    mockList.mockResolvedValue([]);
+    const originalVisualSeed = (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__;
+    (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = [seededConnection];
+
+    try {
+      render(<ThirdPartyAccountsPage />, { wrapper });
+
+      expect(await screen.findByTestId('third-party-accounts__row-uec_visual_custom_integration')).toBeInTheDocument();
+    } finally {
+      (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = originalVisualSeed;
+    }
   });
 });

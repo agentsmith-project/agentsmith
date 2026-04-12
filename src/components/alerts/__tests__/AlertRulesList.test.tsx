@@ -77,6 +77,11 @@ describe('AlertRulesList', () => {
 
     expect(screen.getByText('High Requests Alert')).toBeInTheDocument();
     expect(screen.getByText('Limit Warning')).toBeInTheDocument();
+    expect(screen.getByTestId('alert-rules-list__surface')).toBeInTheDocument();
+    expect(screen.getByTestId('alert-rules-list__surface').className).not.toMatch(/shadow-|rounded-lg|bg-surface/);
+    expect(screen.getByTestId('alert-rule-row--rule_1')).toBeInTheDocument();
+    expect(screen.getAllByTestId(/alert-rule-row--/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByTestId('alert-rule-card')).toHaveLength(0);
   });
 
   it('renders empty state when no rules', () => {
@@ -109,8 +114,8 @@ describe('AlertRulesList', () => {
     );
 
     // Find the first card's edit trigger by data-testid
-    const firstCard = screen.getByText('High Requests Alert').closest('[data-testid="alert-rule-card"]');
-    expect(firstCard).toBeInTheDocument();
+    const firstRow = screen.getByText('High Requests Alert').closest('[data-testid="alert-rule-row--rule_1"]');
+    expect(firstRow).toBeInTheDocument();
 
     // Simulate the edit action being triggered from the child component
     // The AlertRuleCard receives onEdit={() => onEdit(rule.id)}

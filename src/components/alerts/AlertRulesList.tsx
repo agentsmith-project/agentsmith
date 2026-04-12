@@ -52,7 +52,7 @@ export function AlertRulesList({
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="h-40 rounded-lg bg-surface border border-border animate-pulse"
+            className="h-16 border-y border-subtle/60 animate-pulse"
             data-testid={`alert-rules-list__skeleton-${i}`}
           />
         ))}
@@ -64,7 +64,7 @@ export function AlertRulesList({
   if (rules.length === 0) {
     return (
       <div
-        className="flex flex-col items-center justify-center py-16 px-4 bg-surface border border-border rounded-md"
+        className="flex flex-col items-center justify-center border-y border-subtle/60 py-12 px-4"
         data-testid="alert-rules-list__empty"
       >
         <Bell className="h-12 w-12 text-tertiary mb-3" />
@@ -78,7 +78,7 @@ export function AlertRulesList({
 
   // Rules list
   return (
-    <div className="space-y-3" data-testid="alert-rules-list">
+    <div className="divide-y divide-subtle/60 border-y border-subtle/60" data-testid="alert-rules-list__surface">
       {rules.map((rule) => (
         <AlertRuleCard
           key={rule.id}

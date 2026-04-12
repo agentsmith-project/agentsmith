@@ -8,6 +8,7 @@ import {
   getApiClient,
   handleErrorForToast,
 } from '@/lib/api';
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 import type {
   CreateUserExternalConnectionRequest,
   UpdateUserExternalConnectionRequest,
@@ -26,6 +27,7 @@ import { Plus } from 'lucide-react';
 
 import { ConnectionFormFields } from './_components/ConnectionFormFields';
 import { ThirdPartyAccountsTable } from './_components/ThirdPartyAccountsTable';
+import { readVisualThirdPartyAccountsSeed } from './third-party-accounts-visual-seed';
 import {
   allowedKindsForProvider,
   createEmptyField,
@@ -38,6 +40,9 @@ export default function ThirdPartyAccountsPage() {
   const commonT = useTranslations('common');
   const queryClient = useQueryClient();
   const api = React.useMemo(() => new UserExternalConnectionsAPI(getApiClient()), []);
+  const runtimeConfig = React.useMemo(() => getPublicRuntimeConfig(), []);
+  const [mswReady, setMswReady] = React.useState(() => !runtimeConfig.useMsw);
+  const visualSeedItems = React.useMemo(() => readVisualThirdPartyAccountsSeed(), []);
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
@@ -57,9 +62,41 @@ export default function ThirdPartyAccountsPage() {
   const [sshPublicKey, setSshPublicKey] = React.useState('');
   const [sshPrivateKey, setSshPrivateKey] = React.useState('');
 
+  React.useEffect(() => {
+    if (mswReady) return;
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      setMswReady(true);
+      return;
+    }
+    let cancelled = false;
+    navigator.serviceWorker.ready.then(() => {
+      if (cancelled) return;
+      if (navigator.serviceWorker.controller) {
+        setMswReady(true);
+        return;
+      }
+      const onControllerChange = () => {
+        navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+        if (!cancelled) {
+          setMswReady(true);
+        }
+      };
+      navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+    }).catch(() => {
+      if (!cancelled) setMswReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mswReady]);
+
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['me', 'external-connections'],
     queryFn: () => api.list(),
+    initialData: visualSeedItems ?? undefined,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    enabled: mswReady,
   });
 
   const invalidate = React.useCallback(() => {

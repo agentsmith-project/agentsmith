@@ -103,8 +103,8 @@ export default function OverviewPage({ params }: OverviewPageProps) {
             {tProjects('back_to_workspace')}
           </Link>
 
-          <section className="surface-soft px-5 py-4 md:px-6" data-testid="project-hub__summary">
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.95fr)] xl:items-start">
+          <section className="border-b border-subtle pb-6" data-testid="project-hub__summary">
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] xl:items-start">
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <p className="type-caption text-tertiary">{tOverview('title')}</p>
@@ -112,7 +112,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
                     {tWorkspace('workspace_home_next_steps_description')}
                   </p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-3">
                   <OverviewSignalCard
                     icon={<Workflow className="h-4 w-4" />}
                     label={tOverview('signals.execution_title')}
@@ -139,26 +139,22 @@ export default function OverviewPage({ params }: OverviewPageProps) {
                   <p className="type-system-caption text-tertiary">{tWorkspace('workspace_home_next_steps_title')}</p>
                   <p className="type-body-ui text-secondary">{tWorkspace('workspace_home_next_steps_description')}</p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="divide-y divide-subtle border-y border-subtle">
                   {nextStepEntries.map((entry, index) => (
                     <Link
                       key={entry.href}
                       href={buildProjectSurfacePath(locale, workspaceId, projectId, entry.href)}
-                      className="surface-card group px-4 py-4 transition-colors hover:border-border hover:bg-surface-high"
+                      className="group flex items-start justify-between gap-4 px-0 py-4 transition-colors hover:text-foreground"
                       data-testid={entry.testId}
                     >
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
-                            {index === 0 ? tOverview('next_steps_primary_badge') : tOverview('next_steps_secondary_badge')}
-                          </div>
-                          <ArrowRight className="h-4 w-4 text-icon-default transition-transform group-hover:translate-x-0.5" />
+                      <div className="space-y-1">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
+                          {index === 0 ? tOverview('next_steps_primary_badge') : tOverview('next_steps_secondary_badge')}
                         </div>
-                        <div>
-                          <div className="type-system-heading text-[1rem] font-semibold text-foreground">{entry.label}</div>
-                          <p className="mt-1 text-sm leading-6 text-secondary">{entry.description}</p>
-                        </div>
+                        <div className="type-system-heading text-[1rem] font-semibold text-foreground">{entry.label}</div>
+                        <p className="text-sm leading-6 text-secondary">{entry.description}</p>
                       </div>
+                      <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-icon-default transition-transform group-hover:translate-x-0.5" />
                     </Link>
                   ))}
                 </div>
@@ -166,22 +162,22 @@ export default function OverviewPage({ params }: OverviewPageProps) {
             </div>
           </section>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)]">
-            <section className="surface-card px-5 py-5 md:px-6" data-testid="project-hub__use-summary">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)]">
+            <section className="border-t border-subtle pt-5" data-testid="project-hub__use-summary">
               <OverviewSummaryList
                 items={surfaceSummary.useLabels}
                 title={tOverview('signals.execution_title')}
               />
             </section>
 
-            <div className="space-y-4">
-              <section className="surface-card px-5 py-5 md:px-6" data-testid="project-hub__governance-summary">
+            <div className="space-y-5">
+              <section className="border-t border-subtle pt-5" data-testid="project-hub__governance-summary">
                 <OverviewSummaryList
                   items={surfaceSummary.governLabels}
                   title={tOverview('signals.governance_title')}
                 />
               </section>
-              <section className="surface-card px-5 py-5 md:px-6" data-testid="project-hub__develop-summary">
+              <section className="border-t border-subtle pt-5" data-testid="project-hub__develop-summary">
                 <OverviewSummaryList
                   items={surfaceSummary.developLabels}
                   title={tOverview('signals.develop_title')}
@@ -207,13 +203,13 @@ function OverviewSignalCard({
   helper: string;
 }) {
   return (
-    <div className="rounded-md border border-subtle bg-background px-4 py-3">
+    <div className="space-y-1 border-l border-subtle pl-3">
       <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
         {icon}
         {label}
       </div>
-      <div className="mt-3 text-base font-semibold text-foreground">{value}</div>
-      <div className="mt-1 text-sm leading-6 text-secondary">{helper}</div>
+      <div className="text-base font-semibold text-foreground">{value}</div>
+      <div className="text-sm leading-6 text-secondary">{helper}</div>
     </div>
   );
 }
@@ -229,18 +225,18 @@ function OverviewSummaryList({
     <div className="space-y-3">
       <div className="type-system-caption text-tertiary">{title}</div>
       {items.length > 0 ? (
-        <ul className="space-y-2">
+        <ul className="divide-y divide-subtle">
           {items.map((item) => (
             <li
               key={item}
-              className="rounded-md border border-subtle bg-surface-low px-3 py-2 text-sm text-secondary"
+              className="px-0 py-3 text-sm text-secondary"
             >
               {item}
             </li>
           ))}
         </ul>
       ) : (
-        <div className="rounded-md border border-dashed border-subtle bg-surface-low px-4 py-3 text-sm text-tertiary">
+        <div className="text-sm text-tertiary">
           {title}
         </div>
       )}

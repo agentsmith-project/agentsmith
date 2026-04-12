@@ -449,34 +449,20 @@ export function WorkspaceProjectsEntryPage({
                 )}
               />
 
-              <section className="surface-soft px-5 py-5 md:px-6">
+              <section className="border-b border-subtle pb-5">
                 <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-                  <div className="flex flex-wrap gap-x-10 gap-y-4">
-                    <div className="min-w-[140px] space-y-1">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="space-y-1 border-l border-subtle pl-3">
                       <p className="type-caption text-tertiary">{t('summary.total_label')}</p>
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-md border border-subtle bg-background text-icon-default">
-                          <FolderKanban className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="type-subheading text-foreground">{filteredProjects.length}</p>
-                          <p className="type-body-ui text-secondary">{t('summary.total_hint')}</p>
-                        </div>
-                      </div>
+                      <p className="type-subheading text-foreground">{filteredProjects.length}</p>
+                      <p className="type-body-ui text-secondary">{t('summary.total_hint')}</p>
                     </div>
-                    <div className="min-w-[140px] space-y-1">
+                    <div className="space-y-1 border-l border-subtle pl-3">
                       <p className="type-caption text-tertiary">{t('summary.pinned_label')}</p>
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-md border border-subtle bg-background text-icon-default">
-                          <Pin className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="type-subheading text-foreground">{pinnedProjects.length}</p>
-                          <p className="type-body-ui text-secondary">{t('summary.pinned_hint')}</p>
-                        </div>
-                      </div>
+                      <p className="type-subheading text-foreground">{pinnedProjects.length}</p>
+                      <p className="type-body-ui text-secondary">{t('summary.pinned_hint')}</p>
                     </div>
-                    <div className="min-w-[220px] space-y-1">
+                    <div className="space-y-1 border-l border-subtle pl-3">
                       <p className="type-caption text-tertiary">{t('workspace_label')}</p>
                       <p className="type-title text-foreground">{workspaceName}</p>
                       <p className="type-body-ui text-secondary">
@@ -544,7 +530,7 @@ export function WorkspaceProjectsEntryPage({
               ) : (
                 <div className="space-y-6">
                   {pinnedProjects.length > 0 ? (
-                    <section className="surface-card px-5 py-5 md:px-6 md:py-6">
+                    <section className="space-y-4 border-t border-subtle pt-5">
                       <div className="mb-5 flex items-center justify-between gap-4">
                         <div>
                           <h2 className="type-subheading flex items-center gap-2 text-foreground">
@@ -553,7 +539,7 @@ export function WorkspaceProjectsEntryPage({
                           </h2>
                           <p className="mt-1 type-body-ui text-secondary">{t('summary.pinned_section_hint')}</p>
                         </div>
-                        <div className="surface-soft rounded-full px-3 py-1.5 type-system-caption text-secondary">
+                        <div className="type-system-caption text-tertiary">
                           {pinnedProjects.length}
                         </div>
                       </div>
@@ -575,14 +561,14 @@ export function WorkspaceProjectsEntryPage({
                     </section>
                   ) : null}
 
-                  <section className="surface-card px-5 py-5 md:px-6 md:py-6">
+                  <section className="space-y-4 border-t border-subtle pt-5">
                     <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                       <div>
                         <h2 className="type-subheading text-foreground">{t('all.count', { count: unpinnedProjects.length })}</h2>
                         <p className="mt-1 type-body-ui text-secondary">{t('summary.table_hint')}</p>
                       </div>
-                      <div className="surface-soft inline-flex items-center gap-2 self-start rounded-full px-3 py-2 type-system-caption text-secondary xl:self-auto">
-                        <FolderKanban className="h-4 w-4 text-accent" />
+                      <div className="type-system-caption inline-flex items-center gap-2 self-start text-tertiary xl:self-auto">
+                        <FolderKanban className="h-4 w-4 text-icon-default" />
                         {t('workspace_label')} {workspaceName}
                       </div>
                     </div>

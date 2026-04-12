@@ -217,7 +217,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                   {attentionItems.length > 0 ? (
                     <div className="space-y-3">
                       {attentionItems.map((item) => (
-                        <div key={item.title} className="rounded-md border border-warning/25 bg-warning/10 p-4">
+                        <div key={item.title} className="border-l border-warning/35 pl-3">
                           <div className="flex items-start gap-3">
                             <item.icon className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                             <div className="space-y-1">
@@ -229,7 +229,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                       ))}
                     </div>
                   ) : (
-                    <div className="rounded-md border border-success/25 bg-success/10 p-4">
+                    <div className="border-l border-success/35 pl-3">
                       <div className="flex items-start gap-3">
                         <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                         <div className="space-y-1">
@@ -259,7 +259,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                       <KeyMetric label={t('workspace_draft_label')} value={String(provisioning.draft)} />
                       <KeyMetric label={t('workspace_disabled_label')} value={String(provisioning.disabled)} />
                     </div>
-                    <div className="space-y-2 rounded-md border border-subtle bg-background/70 p-4">
+                    <div className="space-y-2 border-t border-subtle pt-3">
                       <TimelineRow label={t('workspace_last_initialized_label')} value={formatTimestamp(provisioning.last_initialized_at, locale)} />
                       <TimelineRow label={t('workspace_last_ready_label')} value={formatTimestamp(provisioning.last_ready_at, locale)} />
                       <TimelineRow label={t('workspace_last_failed_label')} value={formatTimestamp(provisioning.last_failed_at, locale)} />
@@ -269,7 +269,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                 </SectionCard>
 
                 <section
-                  className="rounded-md border border-dashed border-subtle bg-surface-low/70 p-5"
+                  className="border-t border-dashed border-subtle pt-4"
                   data-testid="system-info__notice"
                 >
                   <p className="text-sm leading-6 text-tertiary">{t('info_notice')}</p>
@@ -282,17 +282,15 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                   icon={<Wrench className="h-4 w-4" />}
                   dataTestId="system-info__next-steps"
                 >
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="divide-y divide-subtle border-y border-subtle">
                     {quickActions.map((action) => (
-                      <Link key={action.href} href={action.href} className="group rounded-md border border-subtle bg-surface-high p-4 transition-colors hover:border-border hover:bg-background/70">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium text-foreground">{action.title}</p>
-                            <p className="text-sm leading-6 text-secondary">{action.body}</p>
-                          </div>
-                          <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-tertiary transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+                      <Link key={action.href} href={action.href} className="group flex items-start justify-between gap-4 py-4 transition-colors hover:text-foreground">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">{action.title}</p>
+                          <p className="text-sm leading-6 text-secondary">{action.body}</p>
+                          <p className="pt-1 text-xs font-semibold uppercase tracking-[0.14em] text-accent">{action.cta}</p>
                         </div>
-                        <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-accent">{action.cta}</p>
+                        <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-tertiary transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
                       </Link>
                     ))}
                   </div>
@@ -323,11 +321,11 @@ function SectionCard({
 }) {
   return (
     <section
-      className="rounded-md border border-subtle bg-background/88 p-5 shadow-card"
+      className="border-t border-subtle pt-4"
       data-testid={dataTestId}
     >
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-subtle bg-background text-icon-default">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center text-icon-default">
           {icon}
         </div>
         <div className="space-y-1">
@@ -336,7 +334,7 @@ function SectionCard({
           <p className="text-sm leading-6 text-secondary">{description}</p>
         </div>
       </div>
-      <div className="mt-5">{children}</div>
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
@@ -354,16 +352,16 @@ function SummaryTile({
 }) {
   const toneClassName = (
     tone === 'positive'
-      ? 'border-success/18 bg-success/8'
+      ? 'text-success'
       : tone === 'warning'
-        ? 'border-warning/18 bg-warning/8'
-        : 'border-subtle bg-background/75'
+        ? 'text-warning'
+        : 'text-foreground'
   );
 
   return (
-    <div className={`rounded-md border p-4 ${toneClassName}`}>
+    <div className="border-l border-subtle pl-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</p>
-      <p className="mt-2 text-xl font-semibold text-foreground">{value}</p>
+      <p className={`mt-2 text-xl font-semibold ${toneClassName}`}>{value}</p>
       <p className="mt-2 text-sm leading-5 text-secondary">{detail}</p>
     </div>
   );
@@ -379,7 +377,7 @@ function StatusLine({
   tone: 'positive' | 'warning';
 }) {
   return (
-    <div className="rounded-md border border-subtle bg-background/78 p-4">
+    <div className="border-b border-subtle py-3 last:border-b-0">
       <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{label}</p>
       <p className={`mt-2 text-base font-semibold ${tone === 'positive' ? 'text-success' : 'text-warning'}`}>{value}</p>
     </div>
@@ -394,9 +392,9 @@ function InfoGroup({
   rows: Array<{ label: string; value: string }>;
 }) {
   return (
-    <div className="rounded-md border border-subtle bg-surface-low/72 p-4">
+    <div className="border-t border-subtle pt-3">
       <p className="text-sm font-medium text-foreground">{title}</p>
-      <div className="mt-4 divide-y divide-subtle">
+      <div className="mt-3 divide-y divide-subtle">
         {rows.map((row) => (
           <div key={row.label} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
             <p className="max-w-[42%] text-[11px] uppercase tracking-[0.08em] text-tertiary">{row.label}</p>
@@ -416,7 +414,7 @@ function KeyMetric({
   value: string;
 }) {
   return (
-    <div className="rounded-md border border-subtle bg-background/78 p-4">
+    <div className="border-l border-subtle pl-3">
       <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{label}</p>
       <p className="mt-2 text-lg font-semibold text-foreground">{value}</p>
     </div>

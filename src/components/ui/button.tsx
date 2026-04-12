@@ -7,12 +7,12 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-border/60 bg-transparent text-primary hover:border-border/80 hover:bg-surface-low hover:text-foreground',
-        primary: 'border-border/80 bg-foreground text-background shadow-ambient hover:border-foreground/95 hover:bg-foreground/94 hover:text-background',
-        action: 'border-border/55 bg-surface-low text-foreground hover:border-border/75 hover:bg-surface hover:text-foreground',
-        outline: 'border-border/55 bg-transparent text-primary hover:border-border/75 hover:bg-surface-low hover:text-foreground',
-        secondary: 'border-border/50 bg-surface text-primary hover:border-border/70 hover:bg-surface-high hover:text-foreground',
-        ghost: 'border-transparent bg-transparent text-secondary hover:bg-surface-low hover:text-foreground',
+        default: 'border-border/45 bg-transparent text-primary hover:border-border/60 hover:bg-surface-low hover:text-foreground',
+        primary: 'border-border/40 bg-foreground text-background hover:border-border/40 hover:bg-foreground/92 hover:text-background',
+        action: 'border-border/40 bg-surface-low text-foreground hover:border-border/55 hover:bg-surface hover:text-foreground',
+        outline: 'border-border/40 bg-transparent text-primary hover:border-border/55 hover:bg-surface-low hover:text-foreground',
+        secondary: 'border-border/35 bg-surface-low/80 text-primary hover:border-border/50 hover:bg-surface hover:text-foreground',
+        ghost: 'border-transparent bg-transparent text-secondary hover:bg-surface-low/70 hover:text-foreground',
         link: 'border-transparent bg-transparent px-0 text-secondary hover:text-foreground',
         destructive: 'border-error/25 bg-error/8 text-error hover:bg-error/12',
       },

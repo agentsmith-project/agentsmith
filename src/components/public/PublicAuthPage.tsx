@@ -38,14 +38,14 @@ export function PublicAuthShell({ children, aside, className }: PublicAuthShellP
   return (
     <section
       className={cn(
-        'w-full overflow-hidden rounded-lg border border-border/60 bg-background/96 shadow-card',
-        aside ? 'grid gap-0 md:grid-cols-[minmax(0,1.08fr)_minmax(280px,0.92fr)]' : '',
+        'w-full',
+        aside ? 'grid gap-8 md:grid-cols-[minmax(0,1.08fr)_minmax(280px,0.92fr)] md:items-start md:gap-10' : '',
         className,
       )}
     >
-      <div className="p-6 md:p-8">{children}</div>
+      <div className="px-1 py-6 md:px-0 md:py-8">{children}</div>
       {aside ? (
-        <aside className="border-t border-border/50 bg-surface-low/70 p-6 md:border-l md:border-t-0 md:p-8">
+        <aside className="border-t border-border/45 px-1 pt-6 md:border-l md:border-t-0 md:pl-10 md:pr-0 md:pt-8">
           {aside}
         </aside>
       ) : null}
@@ -87,15 +87,15 @@ export function PublicAuthEyebrow({
 }) {
   const toneClassName =
     tone === 'success'
-      ? 'border-success/18 bg-success/8 text-success'
+      ? 'text-success'
       : tone === 'accent'
-        ? 'border-accent/18 bg-accent/8 text-accent'
-        : 'border-border/60 bg-surface-low text-secondary';
+        ? 'text-accent'
+        : 'text-secondary';
 
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-2 rounded-pill border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.16em]',
+        'inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em]',
         toneClassName,
       )}
     >
@@ -112,7 +112,7 @@ export function PublicAuthSection({
   className?: string;
 }) {
   return (
-    <div className={cn('rounded-lg border border-border/55 bg-surface-low/72 p-5', className)}>
+    <div className={cn('border-t border-subtle pt-5', className)}>
       {children}
     </div>
   );
@@ -126,7 +126,7 @@ export function PublicAuthMutedCard({
   className?: string;
 }) {
   return (
-    <div className={cn('rounded-md border border-border/45 bg-background/72 p-4', className)}>
+    <div className={cn('border-l border-subtle pl-3', className)}>
       {children}
     </div>
   );
@@ -148,7 +148,7 @@ export function PublicAuthAsideBlock({
   return (
     <div className={cn('space-y-4', className)}>
       {icon ? (
-        <div className="flex h-11 w-11 items-center justify-center rounded-md border border-border/55 bg-background/82 text-icon-default">
+        <div className="flex h-8 w-8 items-center justify-center text-icon-default">
           {icon}
         </div>
       ) : null}

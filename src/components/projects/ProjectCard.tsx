@@ -39,7 +39,7 @@ export function ProjectCard({
   return (
     <div
       onClick={onClick}
-      className="relative group cursor-pointer rounded-md border border-subtle bg-surface-low/70 p-5 transition-colors duration-200 hover:border-border hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35"
+      className="relative group cursor-pointer rounded-md border border-subtle/80 bg-background/30 p-5 transition-colors duration-200 hover:border-border/70 hover:bg-surface-low/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
     >
       <div className="absolute top-4 right-4 flex items-center gap-1">
         {canManageSettings && onSettingsClick && (
@@ -74,7 +74,7 @@ export function ProjectCard({
       </div>
 
       <div className="flex items-start gap-4 mb-4">
-        <div className="flex h-11 w-11 items-center justify-center rounded-md border border-subtle bg-background">
+        <div className="flex h-11 w-11 items-center justify-center rounded-md border border-subtle/80 bg-background/60">
           <FolderOpen className="w-5 h-5 text-icon-default" />
         </div>
         <div className="flex-1 min-w-0">
@@ -90,7 +90,7 @@ export function ProjectCard({
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-subtle pt-4">
+      <div className="flex items-center justify-between gap-3 border-t border-subtle/80 pt-4">
         <div className="min-w-0">
           <p className="text-[11px] font-medium text-tertiary uppercase tracking-wide">{t('table.project_admin')}</p>
           <p className="text-xs text-secondary truncate" title={adminSummary}>

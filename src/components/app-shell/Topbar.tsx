@@ -50,7 +50,7 @@ function resolveTopbarHomeHref(params: {
 }
 
 const quietSwitcherClassName =
-  'inline-flex h-10 items-center gap-2 rounded-pill border border-transparent bg-transparent px-3 text-left text-primary transition-[background-color,border-color,color] duration-150 hover:border-border/55 hover:bg-surface-low hover:text-foreground';
+  'inline-flex h-9 items-center gap-2 rounded-md border border-transparent bg-transparent px-2.5 text-left text-primary transition-[background-color,border-color,color] duration-150 hover:bg-surface-low/80 hover:text-foreground';
 
 export function Topbar({ className = '' }: TopbarProps) {
   const user = useAuthStore(selectCurrentUser);
@@ -157,7 +157,7 @@ export function Topbar({ className = '' }: TopbarProps) {
   return (
     <header
       data-testid='topbar'
-      className={`sticky top-0 z-30 flex h-14 items-center justify-between gap-4 border-b border-border/55 bg-background/92 px-4 backdrop-blur-md md:px-5 ${className}`}
+      className={`sticky top-0 z-30 flex h-12 items-center justify-between gap-4 border-b border-border/45 bg-background px-4 md:px-5 ${className}`}
     >
       <div className='flex min-w-0 items-center gap-3'>
         <button
@@ -197,7 +197,7 @@ export function Topbar({ className = '' }: TopbarProps) {
 
         {currentProject ? (
           <>
-            <div className='hidden h-4 w-px bg-border/45 md:block' />
+            <div className='hidden h-4 w-px bg-border/30 md:block' />
             <div className='flex min-w-0 items-center gap-2'>
               <TooltipProvider>
                 <Tooltip>
@@ -221,7 +221,7 @@ export function Topbar({ className = '' }: TopbarProps) {
               <DropdownMenu>
                 <DropdownMenuTrigger
                   data-testid='topbar__project-switcher-menu'
-                  className='inline-flex h-10 w-10 items-center justify-center rounded-pill border border-transparent bg-transparent text-tertiary transition-[background-color,border-color,color] duration-150 hover:border-border/55 hover:bg-surface-low hover:text-foreground'
+                  className='inline-flex h-9 w-9 items-center justify-center rounded-md border border-transparent bg-transparent text-tertiary transition-[background-color,border-color,color] duration-150 hover:bg-surface-low/80 hover:text-foreground'
                 >
                   <ChevronDown className='h-4 w-4' />
                 </DropdownMenuTrigger>

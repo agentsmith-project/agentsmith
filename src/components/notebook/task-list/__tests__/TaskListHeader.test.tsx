@@ -22,4 +22,10 @@ describe('TaskListHeader', () => {
     expect(shell.className).not.toMatch(/rounded-|shadow-/);
     expect(screen.getByTestId('notebook__create-task-btn')).toHaveTextContent('New Task');
   });
+
+  it('keeps the list header compact instead of presenting a second page-level description block', () => {
+    render(<TaskListHeader canCreateTask t={t} onCreate={vi.fn()} />);
+
+    expect(screen.queryByText('A calm list of agent work')).not.toBeInTheDocument();
+  });
 });

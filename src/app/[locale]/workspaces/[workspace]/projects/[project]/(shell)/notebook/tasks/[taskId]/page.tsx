@@ -219,6 +219,7 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
           <div className="mb-4 shrink-0">
             <ProjectWorkbenchBar
               title={tNotebook("title")}
+              variant="utility"
               meta={
                 <div className="text-sm text-secondary">
                   {tNotebook("subtitle")}

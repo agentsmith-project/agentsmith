@@ -8,6 +8,7 @@ import { AlertTriangle, CheckCircle2, LoaderCircle, LogIn, MonitorSmartphone } f
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
+import { Logo } from '@/components/app-shell/Logo';
 import {
   PublicAuthAsideBlock,
   PublicAuthEyebrow,
@@ -109,16 +110,11 @@ export default function DesktopAuthRequestPage() {
         <PublicAuthFrame>
           <PublicAuthShell
             aside={(
-              <PublicAuthAsideBlock
+            <PublicAuthAsideBlock
                 icon={<statusContent.icon className={statusContent.iconClassName} />}
                 title={t('desktop_auth_request_checklist_label')}
                 description={statusContent.detail}
               >
-                <div className="space-y-3 text-sm leading-6 text-secondary">
-                  <p>{t('desktop_auth_request_checklist_identity')}</p>
-                  <p>{t('desktop_auth_request_checklist_desktop')}</p>
-                  <p>{t('desktop_auth_request_checklist_followup')}</p>
-                </div>
                 {requestId ? (
                   <PublicAuthMutedCard>
                     <p className="type-caption text-tertiary">{t('desktop_auth_request_reference_label')}</p>
@@ -130,6 +126,7 @@ export default function DesktopAuthRequestPage() {
           >
             <div className="space-y-6">
               <PublicAuthHeader
+                logo={<Logo className="origin-left scale-125" />}
                 badge={(
                   <PublicAuthEyebrow tone="accent">
                     <MonitorSmartphone className="h-3.5 w-3.5" />

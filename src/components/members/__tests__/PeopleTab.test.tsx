@@ -101,6 +101,7 @@ describe('PeopleTab', () => {
     const user = userEvent.setup();
     render(<PeopleTab workspaceId="ws_1" projectId="proj_1" />);
 
+    expect(screen.queryByText('people_workbench_label')).not.toBeInTheDocument();
     expect(screen.getByTestId('members__page-info')).toHaveTextContent('1/2');
     expect(screen.getByTestId('members-table-data')).toHaveTextContent('Member 1');
     expect(screen.getByTestId('members-table-data')).toHaveTextContent('Member 20');

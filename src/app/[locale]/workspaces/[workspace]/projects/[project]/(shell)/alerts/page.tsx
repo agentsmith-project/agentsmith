@@ -6,7 +6,6 @@ import { useTranslations } from 'next-intl';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCenterPage } from '@/components/alerts/AlertCenterPage';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { buttonVariants } from '@/components/ui/button';
@@ -162,6 +161,16 @@ export default function AlertsPage({ params }: AlertsPageProps) {
     }
   }, [notifications, workspaceId, projectId]);
 
+  const refreshAlertData = useMemo(
+    () => async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['alert-rules', workspaceId, projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['alert-notifications', workspaceId, projectId] }),
+      ]);
+    },
+    [projectId, queryClient, workspaceId],
+  );
+
   if (!resolvedParams.isReady) {
     return (
       <PageState state="loading">
@@ -196,134 +205,94 @@ export default function AlertsPage({ params }: AlertsPageProps) {
   const auditHref = `${basePath}/audit${buildSharedOpsFilterQuery(timeRange)}`;
   const usageHref = `${basePath}/usage${buildSharedOpsFilterQuery(timeRange, { panel: 'usage' })}`;
 
-  const showRuleRecovery = rules.length === 0;
-  const showNotificationRecovery = localAlerts.length === 0;
+  const handleRuleCreate = async (rule: AlertRuleCreateRequest) => {
+    await alertAPI.createRule(workspaceId, projectId, rule);
+    await refreshAlertData();
+    toast.success(tCommon('create_success'));
+  };
+
+  const handleRuleUpdate = async (ruleId: string, updates: AlertRuleUpdateRequest) => {
+    await alertAPI.updateRule(workspaceId, projectId, ruleId, updates);
+    await refreshAlertData();
+    toast.success(tCommon('update_success'));
+  };
+
+  const handleRuleDelete = async (ruleId: string) => {
+    await alertAPI.deleteRule(workspaceId, projectId, ruleId);
+    await refreshAlertData();
+    toast.success(tCommon('delete_success'));
+  };
+
+  const handleRuleTest = async (ruleId: string) => {
+    const result = await alertAPI.testRule(workspaceId, projectId, ruleId);
+    toast.info(result.details);
+  };
+
+  const handleAlertMarkAsRead = (alertId: string) => {
+    setLocalAlerts((prev) =>
+      prev.map((alert) =>
+        alert.id === alertId && alert.status === 'unread'
+          ? { ...alert, status: 'read', read_at: new Date().toISOString() }
+          : alert,
+      ),
+    );
+  };
+
+  const handleAlertDismiss = (alertId: string) => {
+    setLocalAlerts((prev) =>
+      prev.map((alert) =>
+        alert.id === alertId
+          ? { ...alert, status: 'dismissed', dismissed_at: new Date().toISOString() }
+          : alert,
+      ),
+    );
+  };
 
   return (
     <PageState state="success">
-      <PageLayout
-        header={(
-          <PageHeader
-            title={t('title')}
-            subtitle={t('subtitle')}
-            actions={(
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={auditHref}
-                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
-                  data-testid="alerts__open-audit"
-                >
-                  {tCommon('open_audit')}
-                </Link>
-                <Link
-                  href={usageHref}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="alerts__open-usage"
-                >
-                  {tCommon('open_usage')}
-                </Link>
-              </div>
-            )}
-          />
-        )}
-      >
-        {(showRuleRecovery || showNotificationRecovery) ? (
-          <div className="mb-4 rounded-md border border-subtle bg-surface-low p-4 shadow-ambient" data-testid="alerts__recovery-strip">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                {showRuleRecovery ? (
-                  <div className="space-y-1.5" data-testid="alerts__recovery-no-rules">
-                    <div className="text-sm font-medium text-foreground">{t('no_rules')}</div>
-                    <div className="text-sm text-secondary">{t('no_rules_description')}</div>
-                  </div>
-                ) : null}
-                {showNotificationRecovery ? (
-                  <div className="space-y-1.5" data-testid="alerts__recovery-no-alerts">
-                    <div className="text-sm font-medium text-foreground">{t('no_alerts')}</div>
-                    <div className="text-sm text-secondary">{t('no_alerts_description')}</div>
-                  </div>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={auditHref}
-                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
-                  data-testid="alerts__recovery-open-audit"
-                >
-                  {tCommon('open_audit')}
-                </Link>
-                <Link
-                  href={usageHref}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="alerts__recovery-open-usage"
-                >
-                  {tCommon('open_usage')}
-                </Link>
-              </div>
+      <PageLayout density="immersive" contentWidth="wide">
+        <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="alerts__surface">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('title')}</div>
+              <div className="max-w-2xl text-sm text-secondary">{t('subtitle')}</div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={auditHref}
+                className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
+                data-testid="alerts__open-audit"
+              >
+                {tCommon('open_audit')}
+              </Link>
+              <Link
+                href={usageHref}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                data-testid="alerts__open-usage"
+              >
+                {tCommon('open_usage')}
+              </Link>
             </div>
           </div>
-        ) : null}
 
-        <AlertCenterPage
-          workspaceId={workspaceId}
-          projectId={projectId}
-          embedded
-          rules={rules}
-          alerts={localAlerts}
-          onRuleCreate={async (rule) => {
-            const payload: AlertRuleCreateRequest = {
-              name: rule.name,
-              description: rule.description,
-              enabled: rule.enabled,
-              trigger: rule.trigger,
-              channels: rule.channels,
-              behavior: rule.behavior,
-            };
-            await alertAPI.createRule(workspaceId, projectId, payload);
-            await queryClient.invalidateQueries({ queryKey: ['alert-rules', workspaceId, projectId] });
-            toast.success(tCommon('create_success'));
-          }}
-          onRuleUpdate={async (ruleId, updates) => {
-            const payload: AlertRuleUpdateRequest = {
-              name: updates.name,
-              description: updates.description,
-              enabled: updates.enabled,
-              trigger: updates.trigger,
-              channels: updates.channels,
-              behavior: updates.behavior,
-            };
-            await alertAPI.updateRule(workspaceId, projectId, ruleId, payload);
-            await queryClient.invalidateQueries({ queryKey: ['alert-rules', workspaceId, projectId] });
-            toast.success(tCommon('update_success'));
-          }}
-          onRuleDelete={async (ruleId) => {
-            await alertAPI.deleteRule(workspaceId, projectId, ruleId);
-            await queryClient.invalidateQueries({ queryKey: ['alert-rules', workspaceId, projectId] });
-            toast.success(tCommon('delete_success'));
-          }}
-          onRuleTest={async (ruleId) => {
-            const result = await alertAPI.testRule(workspaceId, projectId, ruleId);
-            toast.info(result.details);
-          }}
-          onAlertMarkAsRead={(alertId) => {
-            setLocalAlerts((prev) =>
-              prev.map((alert) =>
-                alert.id === alertId && alert.status === 'unread'
-                  ? { ...alert, status: 'read', read_at: new Date().toISOString() }
-                  : alert
-              )
-            );
-          }}
-          onAlertDismiss={(alertId) => {
-            setLocalAlerts((prev) =>
-              prev.map((alert) =>
-                alert.id === alertId
-                  ? { ...alert, status: 'dismissed', dismissed_at: new Date().toISOString() }
-                  : alert
-              )
-            );
-          }}
-        />
+          <div className="min-h-0" data-testid="alerts__main-surface">
+            <AlertCenterPage
+              embedded
+              workspaceId={workspaceId}
+              projectId={projectId}
+              rules={rules}
+              alerts={localAlerts}
+              onRuleCreate={handleRuleCreate}
+              onRuleUpdate={async (ruleId, updates) => {
+                await handleRuleUpdate(ruleId, updates);
+              }}
+              onRuleDelete={handleRuleDelete}
+              onRuleTest={handleRuleTest}
+              onAlertDismiss={handleAlertDismiss}
+              onAlertMarkAsRead={handleAlertMarkAsRead}
+            />
+          </div>
+        </div>
       </PageLayout>
     </PageState>
   );

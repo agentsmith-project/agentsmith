@@ -15,6 +15,10 @@ vi.mock('@/components/theme/PublicThemeToggle', () => ({
   PublicThemeToggle: () => <div data-testid="public-theme-toggle" />,
 }));
 
+vi.mock('@/components/app-shell/Logo', () => ({
+  Logo: () => <div data-testid="logo" />,
+}));
+
 import SystemLoginPage from '../page';
 
 describe('SystemLoginPage', () => {
@@ -65,7 +69,12 @@ describe('SystemLoginPage', () => {
   it('keeps a workspace-login recovery action visible without linking to protected system info', () => {
     render(<SystemLoginPage />);
 
+    expect(screen.getByTestId('logo')).toBeInTheDocument();
     expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'wide');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'split');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-family', 'public-auth');
+    expect(screen.getByTestId('public-auth__aside')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'open_workspace_login' })).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'open_system_info' })).not.toBeInTheDocument();
   });

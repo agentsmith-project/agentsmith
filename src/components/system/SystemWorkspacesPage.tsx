@@ -5,7 +5,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Filter, Plus, Search, Settings2 } from 'lucide-react';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -166,45 +168,46 @@ export function SystemWorkspacesPage() {
 
   return (
     <PageState state="success">
-      <PageLayout>
-        <div className="min-h-screen bg-background p-4 md:p-6">
-          <div className="mx-auto max-w-[1500px] space-y-5">
-            <header className="space-y-4 border-b border-subtle pb-5">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="max-w-3xl space-y-2">
-                  <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('eyebrow')}</p>
-                  <h1 className="text-2xl font-semibold text-foreground" data-testid="system-workspaces__heading">
-                    {t('workspaces_title')}
-                  </h1>
-                  <p className="text-sm leading-6 text-secondary">{t('workspaces_subtitle')}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Link href={`/${locale}/system/workspaces/new`}>
-                    <Button type="button" variant="primary" data-testid="system-workspaces__new-workspace">
-                      <Plus className="mr-2 h-4 w-4" />
-                      {t('new_workspace')}
-                    </Button>
-                  </Link>
-                  <Link href={`/${locale}/system/info`}>
-                    <Button type="button" variant="outline" data-testid="system-workspaces__open-info">
-                      {t('open_system_info')}
-                    </Button>
-                  </Link>
-                  <SystemLogoutButton />
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-secondary">
-                <span>{t('workspaces_summary_total_inline', { count: String(workspaces.length) })}</span>
-                <span>{t('workspaces_attention_summary_inline', { count: String(attentionCount) })}</span>
-                <span>{t('workspaces_ready_summary_inline', { count: String(readyCount) })}</span>
-              </div>
-            </header>
-
-            <section className="grid gap-4 xl:grid-cols-[minmax(360px,0.78fr)_minmax(560px,1.22fr)]">
-              <div
-                className="space-y-4 rounded-md border border-subtle bg-background/88 p-5"
-                data-testid="system-workspaces__list"
-              >
+      <PageLayout
+        header={(
+          <PageHeader
+            title={t('workspaces_title')}
+            subtitle={t('workspaces_subtitle')}
+            variant="compact"
+            actions={(
+              <>
+                <Link href={`/${locale}/system/workspaces/new`}>
+                  <Button type="button" variant="primary" data-testid="system-workspaces__new-workspace">
+                    <Plus className="mr-2 h-4 w-4" />
+                    {t('new_workspace')}
+                  </Button>
+                </Link>
+                <Link href={`/${locale}/system/info`}>
+                  <Button type="button" variant="outline" data-testid="system-workspaces__open-info">
+                    {t('open_system_info')}
+                  </Button>
+                </Link>
+                <SystemLogoutButton />
+              </>
+            )}
+          />
+        )}
+        toolbar={(
+          <PageToolbar className="w-full">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-secondary">
+              <span>{t('workspaces_summary_total_inline', { count: String(workspaces.length) })}</span>
+              <span>{t('workspaces_attention_summary_inline', { count: String(attentionCount) })}</span>
+              <span>{t('workspaces_ready_summary_inline', { count: String(readyCount) })}</span>
+            </div>
+          </PageToolbar>
+        )}
+      >
+        <div className="mx-auto max-w-[1500px] space-y-5">
+          <section className="grid items-start gap-5 xl:grid-cols-[minmax(280px,0.36fr)_minmax(0,1.64fr)]">
+            <div
+              className="space-y-4 xl:sticky xl:top-4 xl:self-start xl:border-r xl:border-subtle/60 xl:pr-6"
+              data-testid="system-workspaces__list"
+            >
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
@@ -212,7 +215,7 @@ export function SystemWorkspacesPage() {
                       <p className="text-xl font-semibold text-foreground">{t('workspace_directory_title')}</p>
                       <p className="text-sm text-tertiary">{t('workspace_directory_description')}</p>
                     </div>
-                    <div className="inline-flex items-center gap-2 rounded-md border border-subtle bg-background/70 px-3 py-2 text-xs text-tertiary">
+                    <div className="inline-flex items-center gap-2 text-xs text-tertiary">
                       <Filter className="h-3.5 w-3.5" />
                       {t('workspaces_filtered_summary', { count: String(listedWorkspaces.length) })}
                     </div>
@@ -259,65 +262,65 @@ export function SystemWorkspacesPage() {
                   </div>
                 </div>
 
-                {isLoading ? (
-                  <p className="text-sm text-tertiary" data-testid="system-workspaces__loading">{t('loading')}</p>
-                ) : isError ? (
-                  <div className="space-y-3 rounded-md border border-warning/30 bg-bg-base/20 p-4" data-testid="system-workspaces__error">
-                    <p className="text-sm font-medium text-foreground">{t('load_error_title')}</p>
-                    <p className="text-sm text-tertiary">{t('load_error_description')}</p>
-                    <Button type="button" variant="outline" onClick={() => void loadWorkspaces()} data-testid="system-workspaces__retry">
-                      {t('retry')}
-                    </Button>
+              {isLoading ? (
+                <p className="text-sm text-tertiary" data-testid="system-workspaces__loading">{t('loading')}</p>
+              ) : isError ? (
+                <div className="space-y-3 rounded-md border border-warning/30 bg-bg-base/20 p-4" data-testid="system-workspaces__error">
+                  <p className="text-sm font-medium text-foreground">{t('load_error_title')}</p>
+                  <p className="text-sm text-tertiary">{t('load_error_description')}</p>
+                  <Button type="button" variant="outline" onClick={() => void loadWorkspaces()} data-testid="system-workspaces__retry">
+                    {t('retry')}
+                  </Button>
+                </div>
+              ) : listedWorkspaces.length === 0 ? (
+                <div className="rounded-md border border-dashed border-subtle bg-bg-base/20 p-5" data-testid="system-workspaces__empty">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">{listEmptyState.title}</p>
+                    <p className="text-sm leading-6 text-tertiary">{listEmptyState.description}</p>
                   </div>
-                ) : listedWorkspaces.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-subtle bg-bg-base/20 p-5" data-testid="system-workspaces__empty">
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-foreground">{listEmptyState.title}</p>
-                      <p className="text-sm leading-6 text-tertiary">{listEmptyState.description}</p>
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {listEmptyState.canClearSearch ? (
-                        <Button type="button" variant="outline" onClick={clearSearch} data-testid="system-workspaces__clear-search">
-                          {t('workspace_directory_clear_search')}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {listEmptyState.canClearSearch ? (
+                      <Button type="button" variant="outline" onClick={clearSearch} data-testid="system-workspaces__clear-search">
+                        {t('workspace_directory_clear_search')}
+                      </Button>
+                    ) : null}
+                    {listEmptyState.canClearFilters ? (
+                      <Button type="button" variant="outline" onClick={clearFilters} data-testid="system-workspaces__clear-filters">
+                        {commonT('clear_filters')}
+                      </Button>
+                    ) : null}
+                    {(listEmptyState.canClearSearch || listEmptyState.canClearFilters) ? (
+                      <Button type="button" variant="ghost" onClick={resetListControls} data-testid="system-workspaces__reset-list">
+                        {t('workspace_directory_reset_list')}
+                      </Button>
+                    ) : null}
+                    {workspaces.length === 0 ? (
+                      <Link href={`/${locale}/system/workspaces/new`}>
+                        <Button type="button" variant="primary" data-testid="system-workspaces__empty-create">
+                          <Plus className="h-4 w-4" />
+                          {t('new_workspace')}
                         </Button>
-                      ) : null}
-                      {listEmptyState.canClearFilters ? (
-                        <Button type="button" variant="outline" onClick={clearFilters} data-testid="system-workspaces__clear-filters">
-                          {commonT('clear_filters')}
-                        </Button>
-                      ) : null}
-                      {(listEmptyState.canClearSearch || listEmptyState.canClearFilters) ? (
-                        <Button type="button" variant="ghost" onClick={resetListControls} data-testid="system-workspaces__reset-list">
-                          {t('workspace_directory_reset_list')}
-                        </Button>
-                      ) : null}
-                      {workspaces.length === 0 ? (
-                        <Link href={`/${locale}/system/workspaces/new`}>
-                          <Button type="button" variant="primary" data-testid="system-workspaces__empty-create">
-                            <Plus className="h-4 w-4" />
-                            {t('new_workspace')}
-                          </Button>
-                        </Link>
-                      ) : null}
-                    </div>
+                      </Link>
+                    ) : null}
                   </div>
-                ) : (
-                  <div className="space-y-3">
-                    {listedWorkspaces.map((workspace) => (
-                      <WorkspaceCard
-                        key={workspace.id}
-                        locale={locale}
-                        t={t}
-                        workspace={workspace}
-                        selected={editorState.selectedWorkspaceId === workspace.id}
-                        isEditMode={editorState.selectedWorkspaceId === workspace.id && editorState.isEditMode}
-                        onSelect={handleSelectWorkspace}
-                        onConfigure={handleConfigureWorkspace}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {listedWorkspaces.map((workspace) => (
+                    <WorkspaceCard
+                      key={workspace.id}
+                      locale={locale}
+                      t={t}
+                      workspace={workspace}
+                      selected={editorState.selectedWorkspaceId === workspace.id}
+                      isEditMode={editorState.selectedWorkspaceId === workspace.id && editorState.isEditMode}
+                      onSelect={handleSelectWorkspace}
+                      onConfigure={handleConfigureWorkspace}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
 
               {editorState.selectedWorkspace ? (
                 <WorkspaceEditorPanel
@@ -343,29 +346,29 @@ export function SystemWorkspacesPage() {
                 />
                 ) : (
                   <aside
-                    className="flex min-h-[420px] flex-col justify-between rounded-md border border-subtle bg-background/88 p-6"
+                    className="flex min-h-[420px] flex-col justify-between bg-background/84 px-0 py-6 xl:border-l xl:border-subtle/60 xl:pl-6"
                     data-testid="system-workspaces__editor-empty"
                   >
-                  <div className="space-y-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-md bg-background text-icon-default">
-                      <Settings2 className="h-5 w-5" />
+                    <div className="space-y-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-md bg-background text-icon-default">
+                        <Settings2 className="h-5 w-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_detail_label')}</p>
+                        <h2 className="text-2xl font-semibold text-foreground">{t('workspace_editor_empty_title')}</h2>
+                        <p className="max-w-xl text-sm leading-6 text-secondary">{t('workspace_editor_empty_body')}</p>
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_detail_label')}</p>
-                      <h2 className="text-2xl font-semibold text-foreground">{t('workspace_editor_empty_title')}</h2>
-                      <p className="max-w-xl text-sm leading-6 text-secondary">{t('workspace_editor_empty_body')}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Link href={`/${locale}/system/workspaces/new`}>
+                        <Button type="button" variant="primary">{t('new_workspace')}</Button>
+                      </Link>
                     </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Link href={`/${locale}/system/workspaces/new`}>
-                      <Button type="button" variant="primary">{t('new_workspace')}</Button>
-                    </Link>
-                  </div>
-                </aside>
+                  </aside>
               )}
             </section>
-          </div>
         </div>
+      </PageLayout>
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent data-testid="system-workspaces__delete-dialog">
             <AlertDialogHeader>
@@ -383,7 +386,6 @@ export function SystemWorkspacesPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </PageLayout>
     </PageState>
   );
 }

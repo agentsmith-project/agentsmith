@@ -145,7 +145,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
 
   return (
     <section
-      className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.012),transparent_14%)]"
+      className="flex min-w-0 flex-1 flex-col overflow-hidden"
       data-testid="chat__main-pane"
     >
       <ChatHeader
@@ -163,12 +163,20 @@ export function ChatMainPane(props: ChatMainPaneProps) {
       />
 
       {showEndpointRecovery ? (
-        <div className="border-b border-subtle bg-surface-low px-4 py-3" data-testid="chat__composer-recovery">
-          <div className="rounded-md border border-subtle bg-surface-high/20 p-4">
-            <div className="text-sm font-medium text-foreground">{labels.noEndpointRecoveryTitle}</div>
-            <div className="mt-1 text-sm text-secondary">{labels.noEndpointRecoveryDescription}</div>
+        <div className="px-4 py-3" data-testid="chat__composer-recovery">
+          <div
+            className="flex flex-wrap items-start justify-between gap-3"
+            data-testid="chat__composer-recovery-inline"
+          >
+            <div className="min-w-0 space-y-1">
+              <div className="text-sm font-medium text-foreground">{labels.noEndpointRecoveryTitle}</div>
+              <div className="text-sm text-secondary">{labels.noEndpointRecoveryDescription}</div>
+              {endpoints.length === 0 ? (
+                <div className="text-xs text-tertiary">{labels.noEndpointRecoveryHint}</div>
+              ) : null}
+            </div>
             {endpoints.length > 0 ? (
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2">
                 {endpoints.slice(0, 4).map((endpoint) => (
                   <Button
                     key={endpoint.id}
@@ -183,9 +191,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
                   </Button>
                 ))}
               </div>
-            ) : (
-              <div className="mt-3 text-xs text-tertiary">{labels.noEndpointRecoveryHint}</div>
-            )}
+            ) : null}
           </div>
         </div>
       ) : null}

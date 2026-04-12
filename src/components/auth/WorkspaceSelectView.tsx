@@ -4,7 +4,8 @@ import { useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArrowRight, Building2 } from 'lucide-react';
+import { Building2, ChevronRight } from 'lucide-react';
+import { Logo } from '@/components/app-shell/Logo';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
@@ -56,6 +57,7 @@ export function WorkspaceSelectView() {
           <PublicAuthShell>
             <div className="space-y-6">
               <PublicAuthHeader
+                logo={<Logo className="origin-left scale-125" />}
                 badge={(
                   <PublicAuthEyebrow>
                     <Building2 className="h-3.5 w-3.5" />
@@ -66,16 +68,16 @@ export function WorkspaceSelectView() {
                 description={t('workspace_select_minimal_description')}
               />
 
-              <PublicAuthSection>
+              <PublicAuthSection className="space-y-3">
                 {isLoading ? (
                   <p className="text-sm text-tertiary" data-testid="workspace-select__loading">
                     {t('loading_workspaces')}
                   </p>
                 ) : isUnauthorized ? (
                   <div className="space-y-4" data-testid="workspace-select__session-expired">
-                    <div className="rounded-md border border-error/20 bg-error/8 px-4 py-3">
+                    <div className="space-y-1.5">
                       <p className="text-sm font-medium text-foreground">{t('workspace_session_expired_title')}</p>
-                      <p className="mt-1 text-sm text-tertiary">{t('workspace_session_expired_description')}</p>
+                      <p className="text-sm text-tertiary">{t('workspace_session_expired_description')}</p>
                     </div>
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <Button type="button" variant="primary" onClick={handleReLogin} data-testid="workspace-select__relogin-btn">
@@ -88,9 +90,9 @@ export function WorkspaceSelectView() {
                   </div>
                 ) : isError ? (
                   <div className="space-y-4" data-testid="workspace-select__error">
-                    <div className="rounded-md border border-border/50 bg-background/72 px-4 py-3">
+                    <div className="space-y-1.5">
                       <p className="text-sm font-medium text-foreground">{t('workspace_load_failed_title')}</p>
-                      <p className="mt-1 text-sm text-tertiary">{t('workspace_load_failed_description')}</p>
+                      <p className="text-sm text-tertiary">{t('workspace_load_failed_description')}</p>
                     </div>
                     <Button type="button" variant="secondary" onClick={() => refetch()} data-testid="workspace-select__retry-btn">
                       {t('workspace_retry')}
@@ -98,18 +100,18 @@ export function WorkspaceSelectView() {
                   </div>
                 ) : (workspaces ?? []).length === 0 ? (
                   <div className="space-y-4" data-testid="workspace-select__empty">
-                    <div className="rounded-md border border-border/50 bg-background/72 px-4 py-3">
+                    <div className="space-y-1.5">
                       <p className="text-sm font-medium text-foreground">{t('workspace_empty_title')}</p>
-                      <p className="mt-1 text-sm text-tertiary">{t('workspace_empty_description')}</p>
+                      <p className="text-sm text-tertiary">{t('workspace_empty_description')}</p>
                     </div>
                     <Button type="button" variant="secondary" onClick={handleReLogin} data-testid="workspace-select__back-login-btn">
                       {t('keycloak_back_to_login')}
                     </Button>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="divide-y divide-subtle/70" data-testid="workspace-select__list" role="list">
                     {workspaces?.map((workspace) => (
-                      <WorkspaceCard
+                      <WorkspaceRow
                         key={workspace.id}
                         workspace={workspace}
                         onSelect={() => handleWorkspaceSelect(workspace.id)}
@@ -141,29 +143,23 @@ interface WorkspaceCardProps {
   onSelect: () => void;
 }
 
-function WorkspaceCard({ workspace, onSelect }: WorkspaceCardProps) {
-  const t = useTranslations('auth');
-
+function WorkspaceRow({ workspace, onSelect }: WorkspaceCardProps) {
   return (
     <button
       type="button"
-      data-testid={`workspace-select__card--${workspace.id}`}
+      role="listitem"
+      data-testid={`workspace-select__item--${workspace.id}`}
       onClick={onSelect}
-      className="group w-full rounded-md border border-border/45 bg-background/72 p-4 text-left transition-[border-color,background-color,transform] duration-150 hover:border-border/70 hover:bg-surface-low/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/25"
+      className="flex w-full items-center justify-between gap-4 px-0 py-3 text-left transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20"
     >
-      <div className="flex items-center gap-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border/45 bg-surface-low/70">
-          <Building2 className="h-5 w-5 text-icon-default" />
+      <div className="flex min-w-0 items-center gap-3">
+        <Building2 className="h-4 w-4 shrink-0 text-icon-default" />
+        <div className="min-w-0">
+          <h2 className="truncate text-[15px] font-medium text-foreground">{workspace.name}</h2>
+          <p className="truncate text-xs text-tertiary">{workspace.id}</p>
         </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-medium text-foreground">{workspace.name}</h2>
-          <p className="truncate text-sm text-tertiary">{workspace.id}</p>
-        </div>
-        <span className="inline-flex items-center gap-1 text-sm text-secondary transition-colors group-hover:text-foreground">
-          {t('workspace_card_action')}
-          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-        </span>
       </div>
+      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-tertiary" aria-hidden="true" />
     </button>
   );
 }

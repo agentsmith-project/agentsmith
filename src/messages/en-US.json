@@ -941,6 +941,7 @@
     "create_dialog": {
       "title": "Create Credential",
       "description": "Add a new API key. The secret value will never be shown again after creation.",
+      "summary": "Store one secret value here so project endpoints can reuse it without exposing the raw key in page content.",
       "guidance": "Store one secret value here so project endpoints can reuse it without exposing the raw key in page content.",
       "name": "Name",
       "name_placeholder": "e.g. OpenAI API Key",

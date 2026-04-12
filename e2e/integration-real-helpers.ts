@@ -390,9 +390,9 @@ export async function createAndPublishWorkspaceWithDirectoryAdmin(args: {
     (candidate) => candidate.url().includes('/api/system/workspaces/idp/verify') && candidate.request().method() === 'POST',
     { timeout: 20_000 },
   );
-  await args.page.getByTestId('system-workspaces__verify-idp').click();
+  await args.page.getByTestId('system-workspace-create__next').click();
   expect((await verifyResponse).ok()).toBeTruthy();
-  await expect(args.page.getByTestId('system-workspaces__idp-status')).toHaveText(/verified/i, { timeout: 20_000 });
+  await expect(args.page.getByTestId('system-workspaces__draft-admin')).toBeVisible({ timeout: 20_000 });
 
   await args.page.getByTestId('system-workspace-create__next').click();
   await args.page.getByTestId('system-workspaces__admin-mode--directory').click();

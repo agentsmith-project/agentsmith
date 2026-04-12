@@ -74,6 +74,8 @@ describe('AlertNotificationsPanel', () => {
     // Should show unread and read alerts, not dismissed
     expect(screen.getByText('Limit Exceeded')).toBeInTheDocument();
     expect(screen.getByText('Rate Limit Warning')).toBeInTheDocument();
+    expect(screen.getByTestId('alert-notifications__item--alert_1')).toBeInTheDocument();
+    expect(screen.queryByText('Budget Exceeded')).not.toBeInTheDocument();
   });
 
   it('filters out dismissed alerts by default', () => {
@@ -153,6 +155,19 @@ describe('AlertNotificationsPanel', () => {
 
     expect(screen.getByTestId('severity-badge-critical')).toBeInTheDocument();
     expect(screen.getByTestId('severity-badge-warning')).toBeInTheDocument();
+  });
+
+  it('keeps action buttons visually quiet', () => {
+    render(
+      <AlertNotificationsPanel
+        alerts={mockAlerts}
+        onMarkAsRead={vi.fn()}
+        onDismiss={vi.fn()}
+        onActionClick={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'View Usage' }).className).not.toMatch(/bg-accent|text-white/);
   });
 
   it('shows action buttons for alerts with actions', () => {

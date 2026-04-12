@@ -13,7 +13,6 @@ import * as React from 'react';
 import { useTranslations } from 'next-intl';
 
 import { PageLayout } from '@/components/layout/PageLayout';
-import { ProjectWorkbenchBar } from '@/components/layout/ProjectWorkbenchBar';
 import { toast } from '@/components/ui/toast';
 import { DesktopAccessDialog } from '@/components/files/files-page/DesktopAccessDialog';
 import { FilesPageContent } from '@/components/files/files-page/FilesPageContent';
@@ -411,20 +410,6 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
       density="immersive"
       contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
     >
-      <ProjectWorkbenchBar
-        title={t('title')}
-        meta={(
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-secondary">
-            <span className="rounded-full border border-subtle bg-surface-high/60 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.12em] text-tertiary">
-              {t('project_library_label')}
-            </span>
-            <span className="font-medium text-foreground">{selectedLibrary?.name ?? t('file_manager.no_libraries')}</span>
-            <span className="truncate text-tertiary">{prefix || t('file_manager.root')}</span>
-            <span className="text-tertiary">{filteredItems.length} {t('file_manager.items')}</span>
-          </div>
-        )}
-        className="mb-4"
-      />
       <input
         ref={fileInputRef}
         type="file"

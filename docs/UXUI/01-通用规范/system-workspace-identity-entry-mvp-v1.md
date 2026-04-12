@@ -9,6 +9,8 @@ Does not define: `global tokens / route truth / engineering gates`
 
 定义当前 MVP 的系统级管理、workspace 入口、身份边界与登录流，防止系统级管理能力与 workspace 业务面混杂。
 
+页面壳层、CTA、state 和 visual baseline 的统一约束，见 [`站点页面配方与壳层规范-v1`](../00-设计系统/站点页面配方与壳层规范-v1.md) 与 [`视觉基线审查与交付规范-v1`](../00-设计系统/视觉基线审查与交付规范-v1.md)。
+
 ## 2. 核心原则
 
 1. 系统超级管理员入口与 workspace 业务入口必须完全分离。

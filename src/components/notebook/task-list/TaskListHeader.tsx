@@ -15,15 +15,12 @@ export function TaskListHeader({
   onCreate,
 }: TaskListHeaderProps) {
   return (
-    <div className="px-4 pt-3 md:px-5">
+    <div className="px-4 pt-2 md:px-5">
       <div
         data-testid="notebook__task-list-header"
-        className="flex flex-col gap-3 border-b border-subtle/60 pb-3 md:flex-row md:items-end md:justify-between"
+        className="flex items-center justify-between gap-3 border-b border-subtle/60 pb-2.5"
       >
-        <div className="space-y-1">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('title')}</div>
-          <div className="mt-1 text-sm text-secondary">{t('description')}</div>
-        </div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('title')}</div>
         <Button
           variant="primary"
           size="sm"

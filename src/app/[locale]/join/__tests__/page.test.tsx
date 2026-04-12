@@ -48,6 +48,10 @@ vi.mock('@/components/ui/toast', () => ({
   toast: { error: vi.fn() },
 }));
 
+vi.mock('@/components/app-shell/Logo', () => ({
+  Logo: () => <div data-testid="logo" />,
+}));
+
 vi.mock('@/components/theme/PublicThemeToggle', () => ({
   PublicThemeToggle: () => <div data-testid="public-theme-toggle" />,
 }));
@@ -69,6 +73,10 @@ describe('JoinPage', () => {
 
     expect(screen.getByTestId('join__decline-btn')).toBeInTheDocument();
     expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'narrow');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'single');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-family', 'public-auth');
+    expect(screen.getByTestId('logo')).toBeInTheDocument();
     expect(screen.getAllByText('title')).toHaveLength(1);
     expect(screen.getAllByText('description')).toHaveLength(1);
   });
@@ -82,6 +90,7 @@ describe('JoinPage', () => {
       expect(screen.getAllByText('invalid_title')).toHaveLength(1);
     });
 
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'narrow');
     expect(screen.getByRole('button', { name: 'go_home' })).toBeInTheDocument();
     expect(screen.queryByTestId('join__accept-btn')).not.toBeInTheDocument();
   });

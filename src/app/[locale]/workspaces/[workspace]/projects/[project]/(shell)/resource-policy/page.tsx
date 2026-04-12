@@ -454,28 +454,29 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
           <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
         ) : null}
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              {groupedRows.endpoint.length} {tResource('resource_type.endpoint').toLowerCase()}
+          <div
+            className="flex flex-wrap items-center gap-2 rounded-md border border-subtle bg-surface-low px-4 py-3 text-sm"
+            data-testid="resource-policy__summary-line"
+          >
+            <div className="inline-flex items-center gap-2 text-tertiary">
+              <ShieldCheck className="h-3.5 w-3.5 text-accent" />
+              <span>{groupedRows.endpoint.length} {tResource('resource_type.endpoint').toLowerCase()}</span>
             </div>
-            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <span className="text-tertiary">·</span>
+            <span className="text-tertiary">
               {tResource('access_mode.label')}: {accessMode === 'allow_list' ? tResource('access_mode.allow_list') : tResource('access_mode.allow_all_members')}
-            </div>
-            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-              {tResource('subjects.title')}: {validSubjects.length}
-            </div>
+            </span>
+            <span className="text-tertiary">·</span>
+            <span className="text-tertiary">{tResource('subjects.title')}: {validSubjects.length}</span>
             {selectedResource ? (
-              <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-                {selectedResource.name}
-              </div>
+              <>
+                <span className="text-tertiary">·</span>
+                <span className="text-secondary">{selectedResource.name}</span>
+              </>
             ) : null}
           </div>
 
           <div className="rounded-md border border-subtle bg-surface/95 p-4 shadow-card">
-            <p className="mb-4 text-sm text-tertiary">
-              {tResource('default_model_hint')}
-            </p>
             <div className="grid gap-4 lg:grid-cols-[minmax(280px,360px)_1fr]">
             <ResourcePolicyTable
               groupedRows={groupedRows}

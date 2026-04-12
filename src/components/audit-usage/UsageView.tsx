@@ -117,25 +117,25 @@ function getProgressTone(remainingPct: number): {
 } {
   if (remainingPct < 30) {
     return {
-      fillClassName: 'bg-[linear-gradient(90deg,#ff6b6b_0%,#f87171_100%)]',
-      trackClassName: 'bg-[rgba(248,113,113,0.18)]',
-      ringClassName: 'border-[color:rgb(var(--error-rgb,239_68_68)/0.35)]',
-      badgeClassName: 'bg-[color:rgb(var(--error-rgb,239_68_68)/0.12)] text-[color:rgb(var(--error-rgb,239_68_68))]',
+      fillClassName: 'bg-error',
+      trackClassName: 'bg-error/12',
+      ringClassName: 'border-error/25',
+      badgeClassName: 'bg-error/8 text-error',
     };
   }
   if (remainingPct < 60) {
     return {
-      fillClassName: 'bg-[linear-gradient(90deg,#f6c453_0%,#fbbf24_100%)]',
-      trackClassName: 'bg-[rgba(251,191,36,0.16)]',
-      ringClassName: 'border-[rgba(245,158,11,0.28)]',
-      badgeClassName: 'bg-[rgba(245,158,11,0.12)] text-[rgb(245,158,11)]',
+      fillClassName: 'bg-foreground/70',
+      trackClassName: 'bg-subtle',
+      ringClassName: 'border-subtle',
+      badgeClassName: 'bg-surface-low text-secondary',
     };
   }
   return {
-    fillClassName: 'bg-[linear-gradient(90deg,#22c55e_0%,#34d399_100%)]',
-    trackClassName: 'bg-[rgba(34,197,94,0.12)]',
-    ringClassName: 'border-[rgba(34,197,94,0.22)]',
-    badgeClassName: 'bg-[color:rgb(var(--success-rgb,34_197_94)/0.12)] text-[color:rgb(var(--success-rgb,34_197_94))]',
+    fillClassName: 'bg-foreground/70',
+    trackClassName: 'bg-subtle',
+    ringClassName: 'border-subtle',
+    badgeClassName: 'bg-surface-low text-secondary',
   };
 }
 
@@ -191,13 +191,16 @@ export function UsageView({
   );
 
   return (
-    <div className="space-y-6" data-testid="usage__view">
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
+    <div
+      className="space-y-6 rounded-md border border-subtle bg-surface/95 p-4 md:p-5"
+      data-testid="usage__work-surface"
+    >
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
             <p className="text-lg font-semibold text-foreground">{t('view.limits_section_title')}</p>
             {selectedEndpoint ? (
-              <p className="mt-1 text-sm text-tertiary" data-testid="usage__selected-endpoint">
+              <p className="text-sm text-tertiary" data-testid="usage__selected-endpoint">
                 {selectedEndpoint.endpointName}
               </p>
             ) : null}
@@ -211,10 +214,10 @@ export function UsageView({
                     key={endpoint.endpointId}
                     type="button"
                     onClick={() => onEndpointChange?.(endpoint.endpointId)}
-                    className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                    className={`rounded-sm border px-3 py-1.5 text-sm transition ${
                       active
-                        ? 'border-accent/35 bg-accent/10 text-foreground'
-                        : 'border-subtle bg-bg-base/20 text-tertiary hover:border-white/12 hover:text-secondary'
+                        ? 'border-subtle bg-surface-low text-foreground'
+                        : 'border-subtle bg-transparent text-tertiary hover:bg-surface-low hover:text-secondary'
                     }`}
                     data-testid={`usage__resource-tab-${endpoint.endpointId}`}
                   >
@@ -227,60 +230,51 @@ export function UsageView({
         </div>
 
         {selectedEndpoint ? (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4" data-testid="usage__limits">
+          <div className="divide-y divide-subtle/70 border-y border-subtle/70" data-testid="usage__limits">
             {usageCards.map((card) => {
-              if (!card.rule) {
-                return (
-                  <div
-                    key={card.id}
-                    className="rounded-md border border-dashed border-subtle bg-bg-base/10 px-5 py-5"
-                    data-testid="usage__progress-card"
-                  >
-                    <p className="text-sm text-tertiary">{t(`view.cards.${card.titleKey}`)}</p>
-                    <p className="mt-3 text-sm text-tertiary">{t('view.limit_not_configured')}</p>
-                  </div>
-                );
-              }
-
-              const remainingPct = Math.max(0, 100 - clampPercent(card.rule.usagePct));
-              const tone = getProgressTone(remainingPct);
+              const hasRule = card.rule !== null;
+              const remainingPct = hasRule ? Math.max(0, 100 - clampPercent(card.rule.usagePct)) : 0;
+              const tone = hasRule ? getProgressTone(remainingPct) : null;
 
               return (
                 <div
                   key={card.id}
-                  className={`rounded-md border bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0.01)_100%)] p-5 ${tone.ringClassName}`}
-                  data-testid="usage__progress-card"
+                  className="grid gap-3 py-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.9fr)] md:items-center"
+                  data-testid="usage__limit-row"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm text-tertiary">{t(`view.cards.${card.titleKey}`)}</p>
-                      <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
-                        {formatValue(card.rule.used, card.unitKey)}
-                      </p>
-                      <p className="mt-1 text-xs text-tertiary">
-                        {t('view.card_out_of', {
-                          value: formatValue(card.rule.max, card.unitKey),
-                        })}
-                      </p>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">{t(`view.cards.${card.titleKey}`)}</p>
+                    <p className="text-xs text-tertiary">
+                      {hasRule
+                        ? t('view.card_out_of', {
+                            value: formatValue(card.rule.max, card.unitKey),
+                          })
+                        : t('view.limit_not_configured')}
+                    </p>
+                  </div>
+
+                  {hasRule ? (
+                    <>
+                      <div className="space-y-1">
+                        <p className="text-[11px] uppercase tracking-[0.12em] text-tertiary">usage</p>
+                        <p className="text-sm text-foreground">
+                          {formatValue(card.rule.used, card.unitKey)}
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className={`rounded-full px-2.5 py-1 text-xs font-medium ${tone?.badgeClassName ?? 'bg-surface-low text-secondary'}`}>
+                          {Math.round(remainingPct)}%
+                        </div>
+                        <p className="text-xs text-tertiary">
+                          {t('view.limit_reset_at', { value: formatResetTime(card.rule.resetAt) })}
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="md:col-span-3">
+                      <p className="text-sm text-tertiary">{t('view.limit_not_configured')}</p>
                     </div>
-                    <div className={`rounded-full px-2.5 py-1 text-xs font-medium ${tone.badgeClassName}`}>
-                      {Math.round(remainingPct)}%
-                    </div>
-                  </div>
-                  <div className={`mt-4 h-2.5 rounded-full ${tone.trackClassName}`}>
-                    <div
-                      className={`h-2.5 rounded-full ${tone.fillClassName}`}
-                      style={{ width: `${remainingPct}%` }}
-                    />
-                  </div>
-                  <div className="mt-4 flex items-center justify-between gap-3 text-xs text-tertiary">
-                    <span>
-                      {t('view.card_remaining', {
-                        value: formatValue(card.rule.remaining, card.unitKey),
-                      })}
-                    </span>
-                    <span>{t('view.limit_reset_at', { value: formatResetTime(card.rule.resetAt) })}</span>
-                  </div>
+                  )}
                 </div>
               );
             })}
@@ -292,14 +286,12 @@ export function UsageView({
         )}
       </section>
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-lg font-semibold text-foreground">{t('view.trend_section_title')}</p>
-            <p className="mt-1 text-sm text-tertiary">{t('view.trend_last_30_days')}</p>
-          </div>
+      <section className="space-y-3 border-t border-subtle/70 pt-4">
+        <div>
+          <p className="text-lg font-semibold text-foreground">{t('view.trend_section_title')}</p>
+          <p className="mt-1 text-sm text-tertiary">{t('view.trend_last_30_days')}</p>
         </div>
-        <div className="rounded-lg border border-border bg-surface p-5 shadow-sm" data-testid="usage__trend">
+        <div className="space-y-3" data-testid="usage__trend">
           {trendLoading ? (
             <div className="h-72 animate-pulse rounded-md border border-subtle bg-bg-base/20" data-testid="usage__loading" />
           ) : normalizedTrend.every((item) => (item.requests ?? 0) === 0) ? (
@@ -308,23 +300,18 @@ export function UsageView({
               <p className="mt-2 text-xs text-tertiary">{t('view.no_data_hint')}</p>
             </div>
           ) : (
-            <div className="rounded-md border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0)_100%)] px-3 pb-4 pt-6">
+            <div className="pt-2">
               <div className="flex h-64 items-end gap-1.5 border-b border-subtle/80">
                 {normalizedTrend.map((item, index) => {
                   const requests = item.requests ?? 0;
                   const height = Math.max(8, Math.round((requests / maxRequests) * 208));
                   const intensity = requests / maxRequests;
-                  const barClassName =
-                    intensity > 0.75
-                      ? 'bg-[linear-gradient(180deg,#ef4444_0%,#f97316_100%)]'
-                      : intensity > 0.45
-                        ? 'bg-[linear-gradient(180deg,#f43f5e_0%,#ec4899_100%)]'
-                        : 'bg-[linear-gradient(180deg,#fb7185_0%,#f472b6_100%)]';
+                  const barClassName = intensity > 0.5 ? 'bg-foreground/80' : 'bg-foreground/45';
 
                   return (
                     <div key={`${item.time_bucket}-${index}`} className="flex min-w-0 flex-1 flex-col items-center gap-2">
                       <div
-                        className={`w-full rounded-t-sm ${barClassName} shadow-[0_0_18px_rgba(244,63,94,0.1)]`}
+                        className={`w-full rounded-t-sm ${barClassName}`}
                         style={{ height }}
                         title={`${item.time_bucket}: ${requests}`}
                         data-testid="usage__trend-bar"

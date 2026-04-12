@@ -37,7 +37,6 @@ import { useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
 import { ChatMainPane } from '@/components/chat/ChatMainPane';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { ProjectWorkbenchBar } from '@/components/layout/ProjectWorkbenchBar';
 import { PageState } from '@/components/layout/PageState';
 import { useCanAccessChat } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
@@ -383,24 +382,24 @@ export default function ChatPage({ params }: ChatPageProps) {
         density="immersive"
         contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
       >
-        <div className="flex h-full min-h-0 flex-col gap-4">
-          <ProjectWorkbenchBar
-            title={t('title')}
-            meta={(
-              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-secondary">
-                <span className="font-medium text-foreground">{activeSession?.title ?? t('new_thread')}</span>
-                <span className="text-tertiary">{t('threads_title')} {sessions.length}</span>
-                {activeEndpoint ? <span className="truncate text-tertiary">{activeEndpoint.name}</span> : null}
-              </div>
-            )}
-          />
-
-          <div
-            className={cn(
-              'h-full min-h-0 flex overflow-hidden rounded-md border border-subtle bg-panel/40 shadow-card',
-              'w-full',
-            )}
-          >
+        <div
+          className={cn(
+            'flex h-full min-h-0 flex-1 overflow-hidden rounded-md border border-subtle bg-surface/90',
+            "[&_[data-testid='chat__main-pane']]:!bg-none",
+            "[&_[data-testid='chat__main-pane']]:!shadow-none",
+            "[&_[data-testid='chat__composer-recovery']]:!border-0",
+            "[&_[data-testid='chat__composer-recovery']]:!bg-transparent",
+            "[&_[data-testid='chat__composer-recovery']]:!px-0",
+            "[&_[data-testid='chat__composer-recovery']]:!py-0",
+            "[&_[data-testid='chat__composer-recovery']]:!shadow-none",
+            "[&_[data-testid='chat__composer-recovery']>div]:!rounded-none",
+            "[&_[data-testid='chat__composer-recovery']>div]:!border-0",
+            "[&_[data-testid='chat__composer-recovery']>div]:!bg-transparent",
+            "[&_[data-testid='chat__composer-recovery']>div]:!shadow-none",
+          )}
+          data-testid="chat__surface"
+        >
+          <div className="flex h-full min-h-0 flex-1 overflow-hidden">
             <ThreadsPane
               sessions={sessions}
               activeSessionId={currentSessionId}

@@ -90,7 +90,7 @@ export function SessionRecoveryProvider({ children }: { children: React.ReactNod
       handlingRef.current = true;
       clearAuth();
       queryClient.clear();
-      router.replace('/login/workspace');
+      router.replace(`/${locale}/login/workspace`);
       window.setTimeout(() => {
         handlingRef.current = false;
       }, 250);

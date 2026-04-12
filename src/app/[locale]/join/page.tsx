@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useMutation } from '@tanstack/react-query';
 import { ArrowRight } from 'lucide-react';
+import { Logo } from '@/components/app-shell/Logo';
 import { Button } from '@/components/ui/button';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -58,6 +59,7 @@ function JoinPageContent() {
         <PublicAuthShell>
           <div className="space-y-6">
             <PublicAuthHeader
+              logo={<Logo className="origin-left scale-125" />}
               title={t('invalid_title')}
               description={t('invalid_description')}
             />
@@ -82,6 +84,7 @@ function JoinPageContent() {
       <PublicAuthShell>
         <div className="space-y-6">
           <PublicAuthHeader
+            logo={<Logo className="origin-left scale-125" />}
             title={t('title')}
             description={t('description')}
           />

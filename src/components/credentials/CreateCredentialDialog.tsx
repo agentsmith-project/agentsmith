@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { KeyRound, Loader2, ShieldCheck } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { CredentialsAPI, getApiClient } from '@/lib/api';
 import type { CreateCredentialRequest } from '@/lib/api/types';
@@ -93,24 +93,14 @@ export function CreateCredentialDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[540px]" data-testid="credentials__create-dialog">
         <DialogHeader className="space-y-3">
-          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
-            <KeyRound className="h-3.5 w-3.5" />
-            Credential
-          </div>
           <DialogTitle>{t('create_dialog.title')}</DialogTitle>
           <DialogDescription>{t('create_dialog.description')}</DialogDescription>
+          <p className="text-sm text-tertiary" data-testid="credentials__create-dialog-summary">
+            {t('create_dialog.summary')}
+          </p>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="rounded-lg border border-subtle bg-surface-low p-4">
-            <div className="flex items-start gap-3">
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-300">
-                <ShieldCheck className="h-5 w-5" />
-              </span>
-              <p className="text-sm leading-6 text-secondary">{t('create_dialog.guidance')}</p>
-            </div>
-          </div>
-
           <div className="space-y-2 rounded-lg border border-subtle bg-surface-low p-4">
             <label htmlFor="cred-name" className="text-sm font-medium text-foreground">
               {t('create_dialog.name')}

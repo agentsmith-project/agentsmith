@@ -34,10 +34,48 @@ KEEP_FAILED_RUN="${MOCK_LANE_KEEP_FAILED:-1}"
 PRUNE_KEEP_COUNT="${MOCK_LANE_KEEP_RECENT:-5}"
 PRUNE_STALE_HOURS="${MOCK_LANE_PRUNE_STALE_HOURS:-24}"
 RUN_SUCCEEDED=0
+VISUAL_BUILD_INFO_FILE="${MOCK_STATE_DIR}/visual-build-info.json"
+VISUAL_BASELINE_BUILD_INFO_FILE="${VISUAL_BASELINE_BUILD_INFO_FILE:-${VISUAL_BUILD_INFO_FILE}}"
+VISUAL_BASELINE_BUILD_FINGERPRINT="${VISUAL_BASELINE_BUILD_FINGERPRINT:-}"
 next_generated_root_normalize
 
 info() { echo "[mock-lane] $*"; }
 err() { echo "[mock-lane] ERROR: $*" >&2; }
+
+write_visual_build_info() {
+  local git_sha started_at fingerprint existing_git_sha existing_run_id
+  git_sha="$(git -C "${ROOT_DIR}" rev-parse HEAD 2>/dev/null || true)"
+  if [[ -z "${git_sha}" ]]; then
+    err "failed to resolve git sha for visual build metadata"
+    exit 1
+  fi
+  started_at="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+  fingerprint="${VISUAL_BASELINE_BUILD_FINGERPRINT:-$(printf '%s|%s|%s|%s' "${MOCK_RUN_ID}" "${git_sha}" "${NEXT_DIST_DIR}" "${PORT_WEB}" | sha256sum | awk '{print $1}')}"
+
+  if [[ -f "${VISUAL_BASELINE_BUILD_INFO_FILE}" ]]; then
+    existing_git_sha="$(node -e "const fs=require('node:fs'); const file=process.argv[1]; const json=JSON.parse(fs.readFileSync(file,'utf8')); process.stdout.write(String(json.git_sha || ''));" "${VISUAL_BASELINE_BUILD_INFO_FILE}" 2>/dev/null || true)"
+    existing_run_id="$(node -e "const fs=require('node:fs'); const file=process.argv[1]; const json=JSON.parse(fs.readFileSync(file,'utf8')); process.stdout.write(String(json.run_id || ''));" "${VISUAL_BASELINE_BUILD_INFO_FILE}" 2>/dev/null || true)"
+    if [[ -n "${existing_git_sha}" && "${existing_git_sha}" != "${git_sha}" ]] || [[ -n "${existing_run_id}" && "${existing_run_id}" != "${MOCK_RUN_ID}" ]]; then
+      err "stale visual build metadata detected in ${VISUAL_BASELINE_BUILD_INFO_FILE}"
+      exit 1
+    fi
+  fi
+
+  cat > "${VISUAL_BASELINE_BUILD_INFO_FILE}" <<EOF
+{
+  "lane": "mock-lane",
+  "run_id": "${MOCK_RUN_ID}",
+  "git_sha": "${git_sha}",
+  "fingerprint": "${fingerprint}",
+  "started_at": "${started_at}",
+  "base_url": "${BASE_URL}",
+  "next_dist_dir": "${NEXT_DIST_DIR}"
+}
+EOF
+
+  VISUAL_BASELINE_BUILD_FINGERPRINT="${fingerprint}"
+  export VISUAL_BASELINE_BUILD_INFO_FILE VISUAL_BASELINE_BUILD_FINGERPRINT
+}
 
 stop_pid_gracefully() {
   local pid="$1"
@@ -331,7 +369,13 @@ run_playwright_once() {
   set +e
   (
     cd "${ROOT_DIR}"
-    env PW_EXCLUDE_LANE_REAL=true BASE_URL="${BASE_URL}" NEXT_PUBLIC_USE_MSW=true npx playwright test "$@"
+    env \
+      PW_EXCLUDE_LANE_REAL=true \
+      BASE_URL="${BASE_URL}" \
+      NEXT_PUBLIC_USE_MSW=true \
+      VISUAL_BASELINE_BUILD_INFO_FILE="${VISUAL_BASELINE_BUILD_INFO_FILE}" \
+      VISUAL_BASELINE_BUILD_FINGERPRINT="${VISUAL_BASELINE_BUILD_FINGERPRINT}" \
+      npx playwright test "$@"
   ) 2>&1 | tee "${LAST_PLAYWRIGHT_LOG}"
   local exit_code=${PIPESTATUS[0]}
   set -e
@@ -345,6 +389,7 @@ is_transient_playwright_failure() {
 }
 cleanup_stale_mock_processes
 start_mock_server
+write_visual_build_info
 
 attempt=1
 while [[ "${attempt}" -le "${MAX_ATTEMPTS}" ]]; do

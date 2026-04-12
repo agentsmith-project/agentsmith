@@ -93,6 +93,7 @@ make governance-pages-real-backend-interaction-smoke-strict
 
 ### backend-real visual review
 - `artifacts/backend-real-visual/<run-id>/review.md`
+- `artifacts/backend-real-visual/<run-id>/ux-traces/<lane>/<suite>/<story-id>/<run-id>/review.md`
 
 说明：
 - current docs 一律指向 run-scoped `artifacts/backend-real/runs/<run-id>/...`

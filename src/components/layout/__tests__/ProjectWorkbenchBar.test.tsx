@@ -22,6 +22,15 @@ describe('ProjectWorkbenchBar', () => {
     expect(shell.className).not.toMatch(/rounded-|shadow-/);
   });
 
+  it('supports a utility variant for surfaces that already have stronger local context', () => {
+    render(<ProjectWorkbenchBar title="Project" variant="utility" />);
+
+    const shell = screen.getByTestId('project-workbench');
+
+    expect(shell.className).toContain('py-1.5');
+    expect(screen.getByTestId('project-workbench__heading').className).toContain('tracking-[0.12em]');
+  });
+
   it('renders a compact segmented switcher without pill chrome', () => {
     const { container } = render(<ProjectWorkbenchSwitcher items={items} />);
 

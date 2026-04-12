@@ -108,4 +108,23 @@ describe('AuditFilters', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'select-anomaly' })[0]!);
     expect(handleCategoryChange).toHaveBeenCalledWith('anomaly');
   });
+
+  it('renders compact embedded chrome without boxed surfaces', () => {
+    render(
+      <AuditFilters
+        filters={buildFilters({ trace_ref: 'trace_1' })}
+        onChange={vi.fn()}
+        onClear={vi.fn()}
+        compact
+      />
+    );
+
+    expect(screen.getByTestId('audit-filters__surface').className).not.toMatch(/rounded-md|border|bg-surface/);
+    expect(screen.getByTestId('audit-filters__investigation').className).not.toMatch(/rounded-md|border border-border/);
+    expect(screen.queryByText('filters')).not.toBeInTheDocument();
+    expect(screen.getByTestId('audit-filters__primary-controls').className).toMatch(/flex-wrap/);
+    expect(screen.getByTestId('audit-filters__primary-controls').className).not.toMatch(/grid-cols-|lg:grid-cols-/);
+    expect(screen.getByTestId('audit-filters__investigation-controls').className).toMatch(/flex-wrap/);
+    expect(screen.getByTestId('audit-filters__investigation-controls').className).not.toMatch(/grid-cols-|lg:grid-cols-/);
+  });
 });

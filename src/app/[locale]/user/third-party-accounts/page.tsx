@@ -19,9 +19,9 @@ import type {
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, PlugZap, ShieldCheck, Link2 } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 import { ConnectionFormFields } from './_components/ConnectionFormFields';
 import { ThirdPartyAccountsTable } from './_components/ThirdPartyAccountsTable';
@@ -163,6 +163,13 @@ export default function ThirdPartyAccountsPage() {
     setCreateOpen(true);
   };
 
+  const handleSheetOpenChange = React.useCallback((open: boolean) => {
+    setCreateOpen(open);
+    if (!open) {
+      resetForm();
+    }
+  }, [resetForm]);
+
   const saveConnection = () => {
     const sanitizedFields = (() => {
       if (provider === 'jira') {
@@ -236,83 +243,39 @@ export default function ThirdPartyAccountsPage() {
     }
     return true;
   })();
-  const activeItems = React.useMemo(
-    () => items.filter((item) => item.status === 'active'),
-    [items],
-  );
-  const providerCount = React.useMemo(
-    () => new Set(items.map((item) => item.provider)).size,
-    [items],
-  );
-  const oauthItemsCount = React.useMemo(
-    () => items.filter((item) => item.kind === 'oauth_account').length,
-    [items],
-  );
-
   return (
     <PageState state="success">
-      <PageLayout>
-        <div className="mx-auto w-full max-w-6xl space-y-5 px-4 py-4 md:px-5 md:py-5">
-          <section className="rounded-lg border border-border bg-surface px-5 py-5 shadow-card md:px-6" data-testid="third-party-accounts__summary-strip">
-            <div className="flex items-start justify-between gap-4">
-              <div className="max-w-3xl space-y-2">
-                <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
-                  <Link2 className="h-3.5 w-3.5" />
-                  {t('summary_badge')}
-                </div>
-                <div>
-                  <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-                  <p className="mt-1 text-tertiary">{t('description')}</p>
-                </div>
-                <p className="max-w-2xl text-sm leading-6 text-secondary">{t('summary_intro')}</p>
-                <p className="text-sm leading-6 text-tertiary">{t('personal_scope_note')}</p>
-              </div>
-              <Button variant="action" onClick={openCreateDialog} data-testid="third-party-accounts__create-btn">
-                <Plus className="w-4 h-4" />
-                {t('create_personal_connection')}
-              </Button>
+      <PageLayout contentWidth="narrow">
+        <div className="mx-auto w-full max-w-5xl space-y-4 px-4 py-4 md:px-5 md:py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
+              <p className="text-sm text-tertiary">{t('description')}</p>
+              <p className="text-sm leading-6 text-tertiary">{t('personal_scope_note')}</p>
             </div>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <CompactSummaryChip
-                icon={<ShieldCheck className="h-3.5 w-3.5 text-accent" />}
-                label={t('summary_active_label')}
-                value={String(activeItems.length)}
-                hint={t('summary_active_hint')}
-              />
-              <CompactSummaryChip
-                icon={<PlugZap className="h-3.5 w-3.5 text-accent" />}
-                label={t('summary_oauth_label')}
-                value={String(oauthItemsCount)}
-                hint={t('summary_oauth_hint')}
-              />
-              <CompactSummaryChip
-                icon={<Link2 className="h-3.5 w-3.5 text-accent" />}
-                label={t('summary_provider_label')}
-                value={String(providerCount)}
-                hint={t('summary_provider_hint')}
-              />
-            </div>
-          </section>
+            <Button variant="action" onClick={openCreateDialog} data-testid="third-party-accounts__create-btn">
+              <Plus className="w-4 h-4" />
+              {t('create_personal_connection')}
+            </Button>
+          </div>
 
-          <section className="rounded-lg border border-border bg-surface shadow-card">
-            <div className="border-b border-border px-5 py-4 md:px-6">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-secondary">
-                    {t('list_title')}
-                  </h2>
-                  <p className="mt-1 text-sm text-tertiary">{t('list_description')}</p>
-                </div>
-                <div className="rounded-full border border-border/70 bg-surface-high px-3 py-1 text-xs font-medium text-secondary">
-                  {t('summary_total_label', { count: String(items.length) })}
-                </div>
+          <section className="rounded-md border border-subtle bg-surface" data-testid="third-party-accounts__list-section">
+            <div className="flex items-center justify-between gap-3 border-b border-subtle/60 px-4 py-4">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-secondary">
+                  {t('list_title')}
+                </h2>
+                <p className="mt-1 text-sm text-tertiary">{t('list_description')}</p>
+              </div>
+              <div className="rounded-full border border-border/70 bg-surface-high px-3 py-1 text-xs font-medium text-secondary">
+                {t('summary_total_label', { count: String(items.length) })}
               </div>
             </div>
-            <div className="px-5 py-5 md:px-6">
+            <div className="px-4 py-4">
               {isLoading ? (
                 <div className="py-12 text-sm text-tertiary">{commonT('loading')}</div>
               ) : items.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border bg-surface-high/70 px-6 py-16 text-center">
+                <div className="rounded-md border border-dashed border-border bg-surface-high/70 px-6 py-16 text-center">
                   <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-dashed border-subtle text-tertiary">
                     <Plus className="w-5 h-5" />
                   </div>
@@ -336,70 +299,67 @@ export default function ThirdPartyAccountsPage() {
           </section>
         </div>
 
-        <Dialog open={createOpen} onOpenChange={(open) => {
-          setCreateOpen(open);
-          if (!open) resetForm();
-        }}>
-          <DialogContent className="sm:max-w-[760px]" data-testid="third-party-accounts__dialog">
-            <DialogHeader className="space-y-3">
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
-                <Link2 className="h-3.5 w-3.5" />
-                {t('personal_scope_badge')}
+        <Sheet open={createOpen} onOpenChange={handleSheetOpenChange}>
+          <SheetContent
+            side="right-wide"
+            className="flex h-full flex-col gap-0 overflow-hidden p-0"
+            data-testid="third-party-accounts__sheet"
+          >
+            <SheetHeader className="border-b border-subtle px-6 py-4">
+              <SheetTitle>{editing ? t('edit_title') : t('create_title')}</SheetTitle>
+              <SheetDescription>{t('dialog_description')}</SheetDescription>
+            </SheetHeader>
+
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex-1 overflow-y-auto px-6 py-4">
+                <ConnectionFormFields
+                  createEmptyField={createEmptyField}
+                  customDomain={customDomain}
+                  displayName={displayName}
+                  editing={Boolean(editing)}
+                  fields={fields}
+                  gitHost={gitHost}
+                  githubApiBaseUrl={githubApiBaseUrl}
+                  githubToken={githubToken}
+                  jiraApiToken={jiraApiToken}
+                  jiraBaseUrl={jiraBaseUrl}
+                  kind={kind}
+                  note={note}
+                  provider={provider}
+                  sshPrivateKey={sshPrivateKey}
+                  sshPublicKey={sshPublicKey}
+                  t={t}
+                  onCustomDomainChange={setCustomDomain}
+                  onDisplayNameChange={setDisplayName}
+                  onFieldsChange={setFields}
+                  onGitHostChange={setGitHost}
+                  onGithubApiBaseUrlChange={setGithubApiBaseUrl}
+                  onGithubTokenChange={setGithubToken}
+                  onJiraApiTokenChange={setJiraApiToken}
+                  onJiraBaseUrlChange={setJiraBaseUrl}
+                  onKindChange={setKind}
+                  onNoteChange={setNote}
+                  onProviderChange={setProvider}
+                  onSshPrivateKeyChange={setSshPrivateKey}
+                  onSshPublicKeyChange={setSshPublicKey}
+                />
               </div>
-              <DialogTitle>{editing ? t('edit_title') : t('create_title')}</DialogTitle>
-              <DialogDescription>{t('dialog_description')}</DialogDescription>
-            </DialogHeader>
 
-            <div className="rounded-md border border-border/60 bg-background/72 p-4">
-              <p className="text-sm leading-6 text-secondary">{t('personal_scope_dialog_note')}</p>
+              <div className="flex flex-shrink-0 justify-end gap-2 border-t border-subtle px-6 py-4">
+                <Button variant="outline" onClick={() => handleSheetOpenChange(false)} disabled={isPending}>
+                  {commonT('cancel')}
+                </Button>
+                <Button
+                  variant="action"
+                  onClick={saveConnection}
+                  disabled={isPending || !canSubmit}
+                >
+                  {editing ? t('save') : t('create')}
+                </Button>
+              </div>
             </div>
-
-            <ConnectionFormFields
-              createEmptyField={createEmptyField}
-              customDomain={customDomain}
-              displayName={displayName}
-              editing={Boolean(editing)}
-              fields={fields}
-              gitHost={gitHost}
-              githubApiBaseUrl={githubApiBaseUrl}
-              githubToken={githubToken}
-              jiraApiToken={jiraApiToken}
-              jiraBaseUrl={jiraBaseUrl}
-              kind={kind}
-              note={note}
-              provider={provider}
-              sshPrivateKey={sshPrivateKey}
-              sshPublicKey={sshPublicKey}
-              t={t}
-              onCustomDomainChange={setCustomDomain}
-              onDisplayNameChange={setDisplayName}
-              onFieldsChange={setFields}
-              onGitHostChange={setGitHost}
-              onGithubApiBaseUrlChange={setGithubApiBaseUrl}
-              onGithubTokenChange={setGithubToken}
-              onJiraApiTokenChange={setJiraApiToken}
-              onJiraBaseUrlChange={setJiraBaseUrl}
-              onKindChange={setKind}
-              onNoteChange={setNote}
-              onProviderChange={setProvider}
-              onSshPrivateKeyChange={setSshPrivateKey}
-              onSshPublicKeyChange={setSshPublicKey}
-            />
-
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={isPending}>
-                {commonT('cancel')}
-              </Button>
-              <Button
-                variant="action"
-                onClick={saveConnection}
-                disabled={isPending || !canSubmit}
-              >
-                {editing ? t('save') : t('create')}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+          </SheetContent>
+        </Sheet>
 
         <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
           <AlertDialogContent>
@@ -420,28 +380,5 @@ export default function ThirdPartyAccountsPage() {
         </AlertDialog>
       </PageLayout>
     </PageState>
-  );
-}
-
-function CompactSummaryChip({
-  icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  hint: string;
-}) {
-  return (
-    <div className="min-w-[11rem] flex-1 rounded-md border border-border/55 bg-background/68 px-3.5 py-3">
-      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-2 text-2xl font-semibold text-foreground">{value}</div>
-      <div className="mt-1 text-sm text-tertiary">{hint}</div>
-    </div>
   );
 }

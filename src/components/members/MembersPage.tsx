@@ -7,11 +7,10 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
 import {
@@ -34,9 +33,6 @@ import { InviteMemberDialog } from './InviteMemberDialog';
 import { PeopleTab } from './PeopleTab';
 import { GroupsTab } from './GroupsTab';
 import { JoinRequestsTab } from './JoinRequestsTab';
-import { cn } from '@/lib/utils';
-import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
-import { GovernanceDrilldownBanner } from '@/components/ui/GovernanceDrilldownBanner';
 
 export interface MembersPageProps {
   workspaceId: string;
@@ -48,8 +44,6 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
   const t = useTranslations('members');
   const { canManage: canManageMembers } = useMemberPageCapabilities();
   const searchParams = useSearchParams();
-  const drilldownContext = React.useMemo(() => parseGovernanceDrilldownContext(searchParams), [searchParams]);
-  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const contextValue = useMembersList({ workspaceId, projectId });
   const [activeTab, setActiveTab] = React.useState<'people' | 'requests' | 'groups'>('people');
@@ -58,8 +52,6 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
   });
   const peopleCount = contextValue.members.length;
   const joinRequestCount = Array.isArray(joinRequests) ? joinRequests.length : 0;
-  const tabFocusTitle = t(`tab_focus.${activeTab}.title`);
-  const tabFocusDescription = t(`tab_focus.${activeTab}.description`);
 
   React.useEffect(() => {
     const requestedTab = searchParams.get('member_tab');
@@ -84,61 +76,30 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
         header={(
           <PageHeader
             title={t('title')}
-            subtitle={t('description')}
             variant="compact"
             actions={(
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="action"
-                  className="gap-2"
-                  onClick={() => contextValue.setInviteDialogOpen(true)}
-                  disabled={!canManageMembers}
-                  data-testid="members__invite-btn"
-                >
-                  <Plus className="h-4 w-4" />
-                  {t('invite_member')}
-                </Button>
-                <Link
-                  href={`${basePath}/credentials`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="members__open-credentials"
-                >
-                  {t('open_credentials')}
-                </Link>
-                <Link
-                  href={`${basePath}/resource-policy`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="members__open-resource-policy"
-                >
-                  {t('open_resource_policy')}
-                </Link>
-                <Link
-                  href={`${basePath}/audit`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="members__open-audit"
-                >
-                  {t('open_audit')}
-                </Link>
-              </div>
+              <Button
+                variant="action"
+                className="gap-2"
+                onClick={() => contextValue.setInviteDialogOpen(true)}
+                disabled={!canManageMembers}
+                data-testid="members__invite-btn"
+              >
+                <Plus className="h-4 w-4" />
+                {t('invite_member')}
+              </Button>
             )}
           />
         )}
       >
-        {drilldownContext ? (
-          <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
-        ) : null}
         <Tabs
           value={activeTab}
           onValueChange={(v) => setActiveTab(v as 'people' | 'requests' | 'groups')}
-          className="flex min-h-0 min-w-0 flex-1 flex-col rounded-md border border-subtle bg-surface/95 p-4 shadow-card"
+          className="flex min-h-0 min-w-0 flex-1 flex-col rounded-md border border-subtle bg-surface/95 p-4 md:p-5"
+          data-testid="members__work-surface"
         >
-          <div className="mb-4 flex flex-col gap-3 rounded-md border border-subtle bg-surface-low px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">{t('title')}</p>
-              <p className="text-sm font-medium text-foreground">{tabFocusTitle}</p>
-              <p className="text-sm text-secondary">{tabFocusDescription}</p>
-            </div>
-            <TabsList className="flex-shrink-0 rounded-md border border-subtle bg-surface-low p-1">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <TabsList className="flex-shrink-0 rounded-none border-0 bg-transparent p-0">
               <TabsTrigger value="people">
                 <span className="inline-flex items-center gap-2">
                   <span>{t('tabs.people')}</span>

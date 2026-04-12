@@ -104,13 +104,6 @@ export function PeopleTab({ workspaceId, projectId, locale = 'en-US' }: PeopleTa
   return (
     <div className="flex-1 min-h-0 flex gap-0">
       <div className="flex-1 min-h-0 flex flex-col relative">
-        <div className="mb-3 rounded-md border border-subtle bg-surface/80 px-4 py-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
-            {t('people_workbench_label')}
-          </p>
-          <p className="mt-1 text-sm font-medium text-foreground">{t('people_workbench_title')}</p>
-          <p className="mt-1 text-sm text-secondary">{t('people_workbench_description')}</p>
-        </div>
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Input
             value={search}

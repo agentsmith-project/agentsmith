@@ -162,9 +162,9 @@ describe('Topbar', () => {
 
     renderTopbar();
 
-    const menuTrigger = screen.getByTestId('topbar__project-switcher-menu');
-    fireEvent.pointerDown(menuTrigger, { button: 0 });
-    fireEvent.click(menuTrigger);
+    const switcher = screen.getByTestId('topbar__project-switcher');
+    fireEvent.pointerDown(switcher, { button: 0 });
+    fireEvent.click(switcher);
     fireEvent.click(screen.getByText('Members Project'));
 
     expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/ws_1/projects/proj_members/members');
@@ -181,11 +181,18 @@ describe('Topbar', () => {
 
     renderTopbar();
 
-    const menuTrigger = screen.getByTestId('topbar__project-switcher-menu');
-    fireEvent.pointerDown(menuTrigger, { button: 0 });
-    fireEvent.click(menuTrigger);
+    const switcher = screen.getByTestId('topbar__project-switcher');
+    fireEvent.pointerDown(switcher, { button: 0 });
+    fireEvent.click(switcher);
 
     expect(screen.getAllByText('Governance Project').length).toBeGreaterThan(1);
+  });
+
+  it('uses a single project trigger instead of split navigation and menu controls', () => {
+    renderTopbar();
+
+    expect(screen.getByTestId('topbar__project-switcher')).toBeInTheDocument();
+    expect(screen.queryByTestId('topbar__project-switcher-menu')).not.toBeInTheDocument();
   });
 
   it('routes the logo to the workspace overview on user surfaces without workspace context', () => {
@@ -248,9 +255,9 @@ describe('Topbar', () => {
 
     renderTopbar();
 
-    const menuTrigger = screen.getByTestId('topbar__project-switcher-menu');
-    fireEvent.pointerDown(menuTrigger, { button: 0 });
-    fireEvent.click(menuTrigger);
+    const switcher = screen.getByTestId('topbar__project-switcher');
+    fireEvent.pointerDown(switcher, { button: 0 });
+    fireEvent.click(switcher);
 
     expect(screen.getByText('Visible Project')).toBeInTheDocument();
     expect(screen.queryByText('Private Governable Project')).not.toBeInTheDocument();

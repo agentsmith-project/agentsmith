@@ -60,13 +60,25 @@ describe('SystemWorkspacesPage', () => {
     vi.stubGlobal('fetch', fetchMock);
   });
 
-  it('renders a lighter workspace directory and auto-selects the first workspace into settings', async () => {
+  it('renders a quieter workspace directory and keeps the editor collapsed until edit mode', async () => {
     render(<SystemWorkspacesPage />);
 
-    expect(await screen.findByTestId('system-workspaces__heading')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'workspaces_title' })).toBeInTheDocument();
+    expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
+    expect(screen.getByTestId('page-layout__toolbar')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__list')).toHaveClass('xl:sticky');
+    expect(screen.getByTestId('system-workspaces__list')).toHaveClass('xl:border-r');
+    expect(screen.getByTestId('system-workspaces__list')).not.toHaveClass('bg-surface-low/60');
+    expect(screen.getByTestId('system-workspaces__list')).not.toHaveClass('rounded-md');
+    expect(screen.getByTestId('system-workspaces__list')).not.toHaveClass('border');
+    expect(screen.getByTestId('system-workspaces__editor')).toHaveClass('bg-transparent');
+    expect(screen.getByTestId('system-workspaces__editor')).toHaveClass('xl:border-l');
+    expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('rounded-md');
+    expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('border');
     expect(screen.getByTestId('system-workspaces__new-workspace')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__new-workspace')).toHaveClass('bg-foreground/94');
     expect(screen.getByTestId('system-workspaces__new-workspace')).not.toHaveClass('bg-transparent');
+    expect(screen.queryByTestId('system-workspaces__summary-line')).not.toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('alpha-admin@example.com');
     expect(screen.queryByText('workspace_idp_card_label')).not.toBeInTheDocument();
@@ -74,13 +86,34 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__editor')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('shadow-card');
     expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground/94');
+    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).not.toHaveClass('rounded-md');
+    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveClass('border-b');
+    expect(screen.queryByTestId('system-workspaces__basics')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('system-workspaces__idp')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('system-workspaces__admin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('system-workspaces__lifecycle')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('system-workspaces__save')).not.toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));
+
     expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__lifecycle')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__save')).toHaveClass('bg-foreground/94');
     expect(screen.getByDisplayValue('Alpha Workspace')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
+  });
+
+  it('renders the empty editor as a quiet working area rather than a second boxed panel', async () => {
+    fetchMock.mockResolvedValueOnce(mockWorkspaceListResponse([]));
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__editor-empty')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__editor-empty')).not.toHaveClass('rounded-md');
+    expect(screen.getByTestId('system-workspaces__editor-empty')).not.toHaveClass('border');
+    expect(screen.getByTestId('system-workspaces__editor-empty')).toHaveClass('bg-background/84');
   });
 
   it('filters workspaces from the list without exposing tenant implementation details', async () => {
@@ -126,11 +159,10 @@ describe('SystemWorkspacesPage', () => {
   it('updates the workspace query param when selecting another workspace from the list', async () => {
     render(<SystemWorkspacesPage />);
 
-    expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
+    expect(await screen.findByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__card--ws_beta'));
 
     expect(replaceMock).toHaveBeenCalledWith('/en-US/system/workspaces?workspace=ws_beta', { scroll: false });
-    expect(await screen.findByDisplayValue('Beta Workspace')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
   });
 
@@ -143,6 +175,29 @@ describe('SystemWorkspacesPage', () => {
     expect(await screen.findByTestId('system-workspaces__error')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__retry'));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('exposes a quiet failed-state summary line for system workspaces visual review', async () => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(
+      mockWorkspaceListResponse([
+        makeWorkspace({
+          id: 'ws_seeded',
+          name: 'Seeded Workspace',
+          provisioning_status: 'failed',
+          last_initialized_at: null,
+          workspace_admin: 'seed-admin@example.com',
+          workspace_admin_user_id: 'seed-admin-id',
+          workspace_admin_name: 'Seed Admin',
+          last_init_error: 'identity_provider_config_incomplete',
+        }),
+      ]),
+    );
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__status')).toHaveTextContent('provisioning_status.failed');
+    expect(screen.getByTestId('system-workspaces__status')).toHaveTextContent('identity_provider_config_incomplete');
   });
 
   it('loads an existing workspace into structured settings and saves updates', async () => {
@@ -191,8 +246,9 @@ describe('SystemWorkspacesPage', () => {
 
     render(<SystemWorkspacesPage />);
 
-    expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
+    expect(await screen.findByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));
+    expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-url'), {
       target: { value: 'https://login.example.com' },
     });
@@ -224,8 +280,8 @@ describe('SystemWorkspacesPage', () => {
         expect.objectContaining({ method: 'PATCH' }),
       ),
     );
-    expect(screen.getByTestId('system-workspaces__save-notice')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__publish')).not.toBeDisabled();
+    await waitFor(() => expect(screen.getByTestId('system-workspaces__read-only-notice')).toBeInTheDocument());
+    expect(screen.queryByTestId('system-workspaces__publish')).not.toBeInTheDocument();
   });
 
   it('shows the pending admin status when a workspace is still bound by email only', async () => {
@@ -240,8 +296,9 @@ describe('SystemWorkspacesPage', () => {
 
     render(<SystemWorkspacesPage />);
 
-    expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
+    expect(await screen.findByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));
+    expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__admin-mode--email'));
     expect(screen.getByTestId('system-workspaces__admin-binding-warning')).toHaveTextContent('workspace_admin_pending_badge');
   });
@@ -280,6 +337,8 @@ describe('SystemWorkspacesPage', () => {
 
     render(<SystemWorkspacesPage />);
 
+    expect(await screen.findByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));
     expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__publish'));
 
@@ -318,6 +377,8 @@ describe('SystemWorkspacesPage', () => {
 
     render(<SystemWorkspacesPage />);
 
+    expect(await screen.findByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));
     expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__delete'));
     expect(screen.getByTestId('system-workspaces__delete-dialog')).toBeInTheDocument();

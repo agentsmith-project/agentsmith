@@ -159,15 +159,16 @@ describe('UserAPIKeysPage', () => {
       expect(screen.getByText(/Create, rotate, and revoke personal API keys/)).toBeInTheDocument();
     });
 
-    it('uses a single summary strip instead of stacking three summary cards', async () => {
+    it('renders API keys as a quiet settings sheet without dashboard-style chrome', async () => {
       render(<UserAPIKeysPage />, { wrapper });
 
       await waitFor(() => {
-        expect(screen.getByTestId('api-keys__summary-strip')).toBeInTheDocument();
+        expect(screen.getByText('API Keys')).toBeInTheDocument();
       });
 
+      expect(screen.queryByTestId('api-keys__summary-strip')).not.toBeInTheDocument();
       expect(screen.getByTestId('api-keys__list-section')).toBeInTheDocument();
-      expect(screen.queryByTestId('api-keys__summary-card')).not.toBeInTheDocument();
+      expect(screen.getByTestId('api-keys__list-section').className).not.toMatch(/rounded-lg|shadow-card/);
     });
 
     it('renders create button', async () => {
@@ -176,6 +177,18 @@ describe('UserAPIKeysPage', () => {
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /create new key/i })).toBeInTheDocument();
       });
+    });
+
+    it('opens a flatter create dialog without extra guidance chrome', async () => {
+      render(<UserAPIKeysPage />, { wrapper });
+
+      await user.click(screen.getByRole('button', { name: /create new key/i }));
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByText(/create a new api key/i)).toBeInTheDocument();
+      expect(screen.queryByText('dialog_title_badge')).not.toBeInTheDocument();
+      expect(screen.queryByText('dialog_guidance_title')).not.toBeInTheDocument();
+      expect(screen.queryByText('dialog_settings_title')).not.toBeInTheDocument();
     });
 
     it('shows empty state when no keys exist', async () => {

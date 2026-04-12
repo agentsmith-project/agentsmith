@@ -109,7 +109,7 @@ export function ResourcePolicyEditor(args: {
   if (!selectedResource) {
     return (
       <div
-        className="rounded-sm border border-subtle bg-surface-high p-4 space-y-4"
+        className="space-y-3 rounded-md border border-subtle bg-surface-high p-4"
         data-testid="resource-policy__editor"
       >
         <p className="text-sm text-tertiary">{tResource('select_resource')}</p>
@@ -120,7 +120,7 @@ export function ResourcePolicyEditor(args: {
   if (policyLoading) {
     return (
       <div
-        className="rounded-sm border border-subtle bg-surface-high p-4 space-y-4"
+        className="space-y-3 rounded-md border border-subtle bg-surface-high p-4"
         data-testid="resource-policy__editor"
       >
         <p className="text-sm text-tertiary">{tResource('loading_policy')}</p>
@@ -138,10 +138,10 @@ export function ResourcePolicyEditor(args: {
 
   return (
     <div
-      className="rounded-sm border border-subtle bg-surface-high p-4 space-y-4"
+      className="space-y-4 rounded-md border border-subtle bg-surface-high p-4"
       data-testid="resource-policy__editor"
     >
-      <div className="rounded-sm border border-subtle bg-surface p-3 space-y-1">
+      <div className="space-y-1">
         <h3 className="text-sm font-medium text-foreground">{selectedResource.name}</h3>
         <p className="text-xs text-tertiary">{tResource(`resource_type.${selectedResource.type}`)}</p>
         <p className="text-xs text-tertiary">
@@ -149,7 +149,7 @@ export function ResourcePolicyEditor(args: {
         </p>
       </div>
 
-      <div className="rounded-sm border border-subtle bg-surface p-3 space-y-2">
+      <div className="space-y-2 border-t border-subtle pt-4">
         <label htmlFor="resource-policy-access-mode" className="text-xs text-tertiary">
           {tResource('access_mode.label')}
         </label>
@@ -169,23 +169,25 @@ export function ResourcePolicyEditor(args: {
         </p>
       </div>
 
-      <ResourcePolicySubjectEditor
-        tResource={tResource}
-        selectedResourceType={selectedResource.type}
-        canUpdatePolicy={canUpdatePolicy}
-        subjects={subjects}
-        duplicateSubjectRowIds={duplicateSubjectRowIds}
-        staleSubjectRowIds={staleSubjectRowIds}
-        hasStaleSubjects={hasStaleSubjects}
-        userOptions={userOptions}
-        groupOptions={groupOptions}
-        onAddSubject={onAddSubject}
-        onRemoveSubject={onRemoveSubject}
-        onRemoveStaleSubjects={onRemoveStaleSubjects}
-        onUpdateSubject={onUpdateSubject}
-      />
+      <div className="space-y-3 border-t border-subtle pt-4">
+        <ResourcePolicySubjectEditor
+          tResource={tResource}
+          selectedResourceType={selectedResource.type}
+          canUpdatePolicy={canUpdatePolicy}
+          subjects={subjects}
+          duplicateSubjectRowIds={duplicateSubjectRowIds}
+          staleSubjectRowIds={staleSubjectRowIds}
+          hasStaleSubjects={hasStaleSubjects}
+          userOptions={userOptions}
+          groupOptions={groupOptions}
+          onAddSubject={onAddSubject}
+          onRemoveSubject={onRemoveSubject}
+          onRemoveStaleSubjects={onRemoveStaleSubjects}
+          onUpdateSubject={onUpdateSubject}
+        />
+      </div>
 
-      <div className="rounded-sm border border-subtle bg-surface p-3 space-y-3">
+      <div className="space-y-3 border-t border-subtle pt-4">
         {getRuleDefinitionsForResource(selectedResource.type).map((rule) => (
           <div key={rule.key} className="space-y-2">
             <label htmlFor={rule.rootInputId} className="text-xs text-tertiary">
@@ -211,7 +213,7 @@ export function ResourcePolicyEditor(args: {
         ))}
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-end border-t border-subtle pt-4">
         {allowListInvalid ? (
           <p className="mr-3 self-center text-xs text-error" data-testid="resource-policy__allow-list-required">
             {tResource('allow_list_required')}
@@ -235,31 +237,33 @@ export function ResourcePolicyEditor(args: {
         </Button>
       </div>
 
-      <ResourcePolicyEffectiveSummary
-        tResource={tResource}
-        accessMode={accessMode}
-        draftRootRuleSet={draftRootRuleSet}
-        validSubjects={validSubjects}
-      />
+      <div className="space-y-4 border-t border-subtle pt-4">
+        <ResourcePolicyEffectiveSummary
+          tResource={tResource}
+          accessMode={accessMode}
+          draftRootRuleSet={draftRootRuleSet}
+          validSubjects={validSubjects}
+        />
 
-      <ResourcePolicyExplainabilityPanel
-        basePath={basePath}
-        tResource={tResource}
-        selectedResource={selectedResource}
-        explainSubjectType={explainSubjectType}
-        explainSubjectId={explainSubjectId}
-        explainAction={explainAction}
-        explainOptions={explainOptions}
-        onExplainSubjectTypeChange={onExplainSubjectTypeChange}
-        onExplainSubjectIdChange={onExplainSubjectIdChange}
-        onExplainActionChange={onExplainActionChange}
-        onRunExplain={onRunExplain}
-        explainChecking={explainChecking}
-        authorizationResult={authorizationResult}
-        explainMatchedPolicy={explainMatchedPolicy}
-      />
+        <ResourcePolicyExplainabilityPanel
+          basePath={basePath}
+          tResource={tResource}
+          selectedResource={selectedResource}
+          explainSubjectType={explainSubjectType}
+          explainSubjectId={explainSubjectId}
+          explainAction={explainAction}
+          explainOptions={explainOptions}
+          onExplainSubjectTypeChange={onExplainSubjectTypeChange}
+          onExplainSubjectIdChange={onExplainSubjectIdChange}
+          onExplainActionChange={onExplainActionChange}
+          onRunExplain={onRunExplain}
+          explainChecking={explainChecking}
+          authorizationResult={authorizationResult}
+          explainMatchedPolicy={explainMatchedPolicy}
+        />
 
-      <ResourcePolicyGovernanceAuditPanel tResource={tResource} policyAuditEvents={policyAuditEvents} />
+        <ResourcePolicyGovernanceAuditPanel tResource={tResource} policyAuditEvents={policyAuditEvents} />
+      </div>
     </div>
   );
 }

@@ -8,7 +8,6 @@ import { useParams } from 'next/navigation';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { broadcastProjectLayoutMode, useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 import { useGovernableProjects, useProject, useProjects } from '@/lib/hooks/use-projects-queries';
@@ -201,31 +200,14 @@ export function Topbar({ className = '' }: TopbarProps) {
           <>
             <div className='hidden h-3.5 w-px bg-border/10 md:block' />
             <div className='flex min-w-0 items-center gap-2'>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      data-testid='topbar__project-switcher'
-                      onClick={handleGoToProjects}
-                      className={`${quietSwitcherClassName} max-w-[22rem] text-[13px]`}
-                      aria-label={t('go_to_projects')}
-                    >
-                      <FolderKanban className='h-4 w-4 flex-shrink-0 text-icon-default' />
-                      <span className='truncate text-sm text-foreground'>{currentProject.name}</span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t('go_to_projects')}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
               <DropdownMenu>
                 <DropdownMenuTrigger
-                  data-testid='topbar__project-switcher-menu'
-                  className='inline-flex h-8 w-8 items-center justify-center rounded-sm border border-transparent bg-transparent text-tertiary transition-[background-color,border-color,color] duration-150 hover:bg-surface-low/20 hover:text-foreground'
+                  data-testid='topbar__project-switcher'
+                  className={`${quietSwitcherClassName} max-w-[22rem] text-[13px]`}
                 >
-                  <ChevronDown className='h-4 w-4' />
+                  <FolderKanban className='h-4 w-4 flex-shrink-0 text-icon-default' />
+                  <span className='truncate text-sm text-foreground'>{currentProject.name}</span>
+                  <ChevronDown className='ml-auto h-4 w-4 flex-shrink-0 text-tertiary' />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align='start'>
                   {switchableProjects.map((proj) => (

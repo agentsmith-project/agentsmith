@@ -5,8 +5,8 @@ import * as React from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { FolderOpen, Link2, Loader2, Plus, Settings as SettingsIcon, ShieldCheck, Users } from 'lucide-react';
-import { Topbar } from '@/components/app-shell/Topbar';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { CreateProjectDialog } from '@/components/projects/CreateProjectDialog';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -287,300 +287,270 @@ export default function WorkspaceSettingsPage() {
 
   return (
     <PageState state="success">
-      <PageLayout>
-        <div className="min-h-screen bg-background flex flex-col">
-          <Topbar />
+      <PageLayout
+        contentWidth="narrow"
+        header={(
+          <PageHeader
+            title={workspaceDisplayName}
+            subtitle={t('workspace_settings_description')}
+            actions={(
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                data-testid="ws-settings__create-project"
+                onClick={() => setCreateProjectOpen(true)}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                {t('workspace_create_project')}
+              </Button>
+            )}
+            variant="compact"
+          />
+        )}
+      >
+        <div className="w-full divide-y divide-subtle/60 space-y-0" data-testid="ws-settings__sections">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-tertiary" data-testid="ws-settings__summary-line">
+            <span>{workspaceDisplayId}</span>
+            <span aria-hidden="true">·</span>
+            <span>{t('workspace_projects_count')}: {projects.length}</span>
+            <span aria-hidden="true">·</span>
+            <span>{t('workspace_active_projects_count')}: {activeProjects.length}</span>
+            <span aria-hidden="true">·</span>
+            <span>{t(`feishu_status_${feishuIntegration?.status ?? 'not_configured'}`)}</span>
+          </div>
 
-          <main className="flex-1 mx-auto w-full max-w-5xl space-y-5 px-4 py-4 md:px-5 md:py-5">
-            <section className="border-b border-subtle/60 pb-5">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                <div className="max-w-3xl space-y-2">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
-                    <SettingsIcon className="h-3.5 w-3.5" />
-                    {t('workspace_settings_badge')}
-                  </div>
-                  <div>
-                    <h1 className="flex items-center gap-2 text-2xl font-semibold text-foreground">
-                      <SettingsIcon className="w-6 h-6 text-icon-default" />
-                      {t('workspace_title')}
-                    </h1>
-                    <p className="mt-1 text-sm text-tertiary">{t('workspace_settings_description')}</p>
-                  </div>
+          <section className="space-y-4 py-5" data-testid="ws-settings__workspace">
+            <SectionHeading
+              eyebrow={t('workspace_general')}
+              title={workspaceDisplayName}
+            />
+            <p className="text-sm text-tertiary" data-testid="ws-settings__name">{workspaceDisplayId}</p>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={`${workspaceBasePath}/projects`}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                data-testid="ws-settings__open-projects"
+              >
+                {t('workspace_open_projects')}
+              </Link>
+              <Link
+                href={`${workspaceBasePath}/settings/context`}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                data-testid="ws-settings__open-context"
+              >
+                {t('workspace_open_context')}
+              </Link>
+            </div>
+          </section>
+
+          <section className="space-y-4 py-5" data-testid="ws-settings__integrations">
+            <SectionHeading
+              title={t('workspace_integrations_title')}
+              subtitle={t('workspace_integrations_description')}
+            />
+            <div className="space-y-3" data-testid="ws-settings__integration-feishu">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-tertiary">
+                  <Link2 className="h-4 w-4 text-icon-default" />
+                  {t('workspace_integration_feishu_label')}
                 </div>
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  data-testid="ws-settings__create-project"
-                  onClick={() => setCreateProjectOpen(true)}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  {t('workspace_create_project')}
-                </Button>
+                <p className="text-sm font-medium text-foreground">
+                  {t(`feishu_status_${feishuIntegration?.status ?? 'not_configured'}`)}
+                </p>
+                <p className="max-w-2xl text-sm text-secondary">
+                  {t('workspace_integration_feishu_scope')}
+                </p>
+                <p className="text-xs text-tertiary">
+                  {feishuIntegration?.verified_by_email
+                    ? t('workspace_integration_feishu_verified_by', { email: feishuIntegration.verified_by_email })
+                    : t('workspace_integration_feishu_verified_pending')}
+                </p>
               </div>
-            </section>
+              <Link
+                href={`${workspaceBasePath}/settings/feishu`}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                data-testid="ws-settings__open-feishu"
+              >
+                <Link2 className="mr-2 h-4 w-4" />
+                {feishuIntegration?.status === 'enabled'
+                  ? t('workspace_open_feishu_review')
+                  : t('workspace_open_feishu_setup')}
+              </Link>
+            </div>
+          </section>
 
-            <section className="space-y-4 border-t border-subtle/60 pt-5" data-testid="ws-settings__workspace">
-              <SectionHeading
-                eyebrow={t('workspace_general')}
-                title={workspaceDisplayName}
-              />
-
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <div className="border border-subtle/60 bg-transparent p-3">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_id_label')}</div>
-                  <div className="mt-1 text-sm font-medium text-foreground" data-testid="ws-settings__name">{workspaceDisplayId}</div>
-                </div>
-                <div className="border border-subtle/60 bg-transparent p-3">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_projects_count')}</div>
-                  <div className="mt-1 text-lg font-semibold text-foreground">{projects.length}</div>
-                </div>
-                <div className="border border-subtle/60 bg-transparent p-3">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_active_projects_count')}</div>
-                  <div className="mt-1 text-lg font-semibold text-foreground">{activeProjects.length}</div>
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Link
-                  href={`${workspaceBasePath}/projects`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="ws-settings__open-projects"
-                >
-                  {t('workspace_open_projects')}
-                </Link>
-                <Link
-                  href={`${workspaceBasePath}/settings/context`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="ws-settings__open-context"
-                >
-                  {t('workspace_open_context')}
-                </Link>
-              </div>
-            </section>
-
-            <section className="space-y-4 border-t border-subtle/60 pt-5" data-testid="ws-settings__integrations">
-              <div className="space-y-4">
-                <SectionHeading
-                  title={t('workspace_integrations_title')}
-                  subtitle={t('workspace_integrations_description')}
-                />
-
-                <div
-                  className="border border-subtle/60 bg-surface-low/40 p-4"
-                  data-testid="ws-settings__integration-feishu"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="space-y-2">
-                      <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-tertiary">
-                        <Link2 className="h-4 w-4 text-icon-default" />
-                        {t('workspace_integration_feishu_label')}
-                      </div>
-                      <p className="text-sm font-medium text-foreground">
-                        {t(`feishu_status_${feishuIntegration?.status ?? 'not_configured'}`)}
-                      </p>
-                      <p className="max-w-2xl text-sm text-secondary">
-                        {t('workspace_integration_feishu_scope')}
-                      </p>
-                      <p className="text-xs text-tertiary">
-                        {feishuIntegration?.verified_by_email
-                          ? t('workspace_integration_feishu_verified_by', { email: feishuIntegration.verified_by_email })
-                          : t('workspace_integration_feishu_verified_pending')}
-                      </p>
-                    </div>
-
-                    <Link
-                      href={`${workspaceBasePath}/settings/feishu`}
-                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                      data-testid="ws-settings__open-feishu"
-                    >
-                      <Link2 className="mr-2 h-4 w-4" />
-                      {feishuIntegration?.status === 'enabled'
-                        ? t('workspace_open_feishu_review')
-                        : t('workspace_open_feishu_setup')}
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="space-y-4 border-t border-subtle/60 pt-5" data-testid="ws-settings__projects">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <SectionHeading
-                  title={t('workspace_projects_title')}
-                  subtitle={t('workspace_projects_description')}
-                />
-              </div>
-
-              {projects.length === 0 ? (
-                <p className="mt-4 text-sm text-tertiary">{t('workspace_projects_empty')}</p>
-              ) : (
-                <div className="mt-4 divide-y divide-subtle/60 border-y border-subtle/60">
-                  {projects.map((project) => (
-                    <div
-                      key={project.id}
-                      className="py-4"
-                      data-testid={`ws-settings__project--${project.id}`}
-                    >
-                      {(() => {
-                        const actions = resolveWorkspaceGovernanceProjectActions(project);
-                        const defaultProjectPath = resolveWorkspaceProjectEntryPath(
-                          locale,
-                          workspaceId ?? '',
-                          project.id,
-                          project,
-                        );
-                        const selectedOwnerId = selectedProjectOwners[project.id] ?? project.owner_id;
-                        const isSavingProjectOwner = savingProjectOwnerId === project.id;
-                        return (
-                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
-                            <div className="min-w-0 flex-1 space-y-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-sm font-semibold text-foreground">{project.name}</p>
-                                <StatusBadge status={project.status === 'archived' ? 'info' : 'ready'}>
-                                  {project.status}
-                                </StatusBadge>
-                              </div>
-                              <p className="text-xs text-tertiary">
-                                {t('workspace_projects_admin_summary')}
-                              </p>
-                              <p className="text-sm text-foreground">
-                                {buildProjectAdminSummary(project, memberNameById)}
-                              </p>
-                              <p className="text-xs text-tertiary">
-                                {t('workspace_project_owner_current', {
-                                  owner: memberNameById.get(project.owner_id) || project.owner_id,
-                                })}
-                              </p>
-                              {canManageWorkspaceGovernance ? (
-                                <div className="border-t border-subtle/60 pt-3">
-                                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
-                                    <ShieldCheck className="h-3.5 w-3.5 text-icon-default" />
-                                    {t('workspace_project_governance_override')}
-                                  </div>
-                                  <p className="mt-2 text-sm text-secondary">{t('workspace_project_owner_override_help')}</p>
-                                  <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-end">
-                                    <label className="min-w-0 flex-1 space-y-2">
-                                      <span className="text-sm font-medium text-foreground">{t('workspace_project_owner_label')}</span>
-                                      <select
-                                        value={selectedOwnerId}
-                                        onChange={(event) => handleProjectOwnerChange(project.id, event.target.value)}
-                                        disabled={isSavingProjectOwner}
-                                        className="h-10 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                                        data-testid={`ws-settings__project-owner-select--${project.id}`}
-                                      >
-                                        {members.map((member) => (
-                                          <option key={member.user_id} value={member.user_id}>
-                                            {member.name || member.email || member.user_id}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </label>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      onClick={() => void handleSaveProjectOwner(project.id)}
-                                      disabled={isSavingProjectOwner || selectedOwnerId === project.owner_id}
-                                      data-testid={`ws-settings__project-owner-save--${project.id}`}
-                                    >
-                                      {isSavingProjectOwner ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      ) : (
-                                        t('workspace_project_owner_save')
-                                      )}
-                                    </Button>
-                                  </div>
-                                </div>
-                              ) : null}
+          <section className="space-y-4 py-5" data-testid="ws-settings__projects">
+            <SectionHeading
+              title={t('workspace_projects_title')}
+              subtitle={t('workspace_projects_description')}
+            />
+            {projects.length === 0 ? (
+              <p className="text-sm text-tertiary">{t('workspace_projects_empty')}</p>
+            ) : (
+              <div className="divide-y divide-subtle/60 border-y border-subtle/60">
+                {projects.map((project) => (
+                  <div
+                    key={project.id}
+                    className="py-4"
+                    data-testid={`ws-settings__project--${project.id}`}
+                  >
+                    {(() => {
+                      const actions = resolveWorkspaceGovernanceProjectActions(project);
+                      const defaultProjectPath = resolveWorkspaceProjectEntryPath(
+                        locale,
+                        workspaceId ?? '',
+                        project.id,
+                        project,
+                      );
+                      const selectedOwnerId = selectedProjectOwners[project.id] ?? project.owner_id;
+                      const isSavingProjectOwner = savingProjectOwnerId === project.id;
+                      return (
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-semibold text-foreground">{project.name}</p>
+                              <StatusBadge status={project.status === 'archived' ? 'info' : 'ready'}>
+                                {project.status}
+                              </StatusBadge>
                             </div>
-                            <div className="flex min-w-0 flex-col gap-3 lg:min-w-[220px]">
-                              <div className="space-y-2">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
-                                  {t('workspace_project_open_actions_title')}
+                            <p className="text-xs text-tertiary">{t('workspace_projects_admin_summary')}</p>
+                            <p className="text-sm text-foreground">{buildProjectAdminSummary(project, memberNameById)}</p>
+                            <p className="text-xs text-tertiary">
+                              {t('workspace_project_owner_current', {
+                                owner: memberNameById.get(project.owner_id) || project.owner_id,
+                              })}
+                            </p>
+                            {canManageWorkspaceGovernance ? (
+                              <div className="border-t border-subtle/60 pt-3">
+                                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
+                                  <ShieldCheck className="h-3.5 w-3.5 text-icon-default" />
+                                  {t('workspace_project_governance_override')}
                                 </div>
-                                <div className="flex flex-wrap gap-2">
-                                  {actions.canOpenOverview ? (
-                                    <Link
-                                      href={defaultProjectPath}
-                                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                                      data-testid={`ws-settings__project-open-overview--${project.id}`}
+                                <p className="mt-2 text-sm text-secondary">{t('workspace_project_owner_override_help')}</p>
+                                <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-end">
+                                  <label className="min-w-0 flex-1 space-y-2">
+                                    <span className="text-sm font-medium text-foreground">{t('workspace_project_owner_label')}</span>
+                                    <select
+                                      value={selectedOwnerId}
+                                      onChange={(event) => handleProjectOwnerChange(project.id, event.target.value)}
+                                      disabled={isSavingProjectOwner}
+                                      className="h-10 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                                      data-testid={`ws-settings__project-owner-select--${project.id}`}
                                     >
-                                      <FolderOpen className="mr-2 h-4 w-4" />
-                                      {t('workspace_open_project')}
-                                    </Link>
-                                  ) : null}
-                                  {actions.canOpenMembers ? (
-                                    <Link
-                                      href={`${workspaceBasePath}/projects/${project.id}/members`}
-                                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                                      data-testid={`ws-settings__project-open-members--${project.id}`}
-                                    >
-                                      <Users className="mr-2 h-4 w-4" />
-                                      {t('workspace_open_project_members')}
-                                    </Link>
-                                  ) : null}
-                                  {actions.canOpenSettings ? (
-                                    <Link
-                                      href={`${workspaceBasePath}/projects/${project.id}/settings`}
-                                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                                      data-testid={`ws-settings__project-open-settings--${project.id}`}
-                                    >
-                                      <SettingsIcon className="mr-2 h-4 w-4" />
-                                      {t('workspace_open_project_settings')}
-                                    </Link>
-                                  ) : null}
+                                      {members.map((member) => (
+                                        <option key={member.user_id} value={member.user_id}>
+                                          {member.name || member.email || member.user_id}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={() => void handleSaveProjectOwner(project.id)}
+                                    disabled={isSavingProjectOwner || selectedOwnerId === project.owner_id}
+                                    data-testid={`ws-settings__project-owner-save--${project.id}`}
+                                  >
+                                    {isSavingProjectOwner ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      t('workspace_project_owner_save')
+                                    )}
+                                  </Button>
                                 </div>
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="flex min-w-0 flex-col gap-3 lg:min-w-[220px]">
+                            <div className="space-y-2">
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
+                                {t('workspace_project_open_actions_title')}
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {actions.canOpenOverview ? (
+                                  <Link
+                                    href={defaultProjectPath}
+                                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                                    data-testid={`ws-settings__project-open-overview--${project.id}`}
+                                  >
+                                    <FolderOpen className="mr-2 h-4 w-4" />
+                                    {t('workspace_open_project')}
+                                  </Link>
+                                ) : null}
+                                {actions.canOpenMembers ? (
+                                  <Link
+                                    href={`${workspaceBasePath}/projects/${project.id}/members`}
+                                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                                    data-testid={`ws-settings__project-open-members--${project.id}`}
+                                  >
+                                    <Users className="mr-2 h-4 w-4" />
+                                    {t('workspace_open_project_members')}
+                                  </Link>
+                                ) : null}
+                                {actions.canOpenSettings ? (
+                                  <Link
+                                    href={`${workspaceBasePath}/projects/${project.id}/settings`}
+                                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                                    data-testid={`ws-settings__project-open-settings--${project.id}`}
+                                  >
+                                    <SettingsIcon className="mr-2 h-4 w-4" />
+                                    {t('workspace_open_project_settings')}
+                                  </Link>
+                                ) : null}
                               </div>
                             </div>
                           </div>
-                        );
-                      })()}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="space-y-4 border-t border-subtle/60 pt-5" data-testid="ws-settings__project-creators">
-              <SectionHeading
-                title={t('workspace_project_creators_title')}
-                subtitle={t('workspace_project_creators_description')}
-              />
-              <div className="mt-4 space-y-3">
-                {hasLegacyProjectCreatorBindings ? (
-                  <div
-                    className="border border-warning/30 bg-transparent px-4 py-3"
-                    data-testid="ws-settings__project-creators-binding-warning"
-                  >
-                    <p className="text-sm font-medium text-foreground">{t('workspace_project_creators_binding_warning_title')}</p>
-                    <p className="mt-1 text-sm text-secondary">{t('workspace_project_creators_binding_warning_body')}</p>
+                        </div>
+                      );
+                    })()}
                   </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-4 py-5" data-testid="ws-settings__project-creators">
+            <SectionHeading
+              title={t('workspace_project_creators_title')}
+              subtitle={t('workspace_project_creators_description')}
+            />
+            <div className="space-y-4">
+              {hasLegacyProjectCreatorBindings ? (
+                <div
+                  className="border-l-2 border-warning/30 pl-3"
+                  data-testid="ws-settings__project-creators-binding-warning"
+                >
+                  <p className="text-sm font-medium text-foreground">{t('workspace_project_creators_binding_warning_title')}</p>
+                  <p className="mt-1 text-sm text-secondary">{t('workspace_project_creators_binding_warning_body')}</p>
+                </div>
+              ) : null}
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-foreground">{t('workspace_project_creators_field')}</span>
+                <input
+                  type="text"
+                  value={projectCreatorQuery}
+                  onChange={(event) => setProjectCreatorQuery(event.target.value)}
+                  placeholder={t('workspace_project_creators_placeholder')}
+                  className="h-10 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground placeholder:text-tertiary"
+                  data-testid="ws-settings__project-creators-input"
+                />
+              </label>
+              <div className="space-y-2" data-testid="ws-settings__project-creators-results">
+                {projectCreatorSearchLoading ? (
+                  <p className="text-sm text-tertiary">{t('workspace_project_creators_loading')}</p>
                 ) : null}
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-foreground">{t('workspace_project_creators_field')}</span>
-                  <input
-                    type="text"
-                    value={projectCreatorQuery}
-                    onChange={(event) => setProjectCreatorQuery(event.target.value)}
-                    placeholder={t('workspace_project_creators_placeholder')}
-                    className="h-10 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground placeholder:text-tertiary"
-                    data-testid="ws-settings__project-creators-input"
-                  />
-                </label>
-                <div className="space-y-2" data-testid="ws-settings__project-creators-results">
-                  {projectCreatorSearchLoading ? (
-                    <p className="text-sm text-tertiary">{t('workspace_project_creators_loading')}</p>
-                  ) : null}
-                  {!projectCreatorSearchLoading && projectCreatorSearchError ? (
-                    <p className="text-sm text-error">{t('workspace_project_creators_search_error')}</p>
-                  ) : null}
-                  {!projectCreatorSearchLoading && !projectCreatorSearchError && projectCreatorQuery.trim().length >= 2 ? (
-                    projectCreatorSearchResults.length > 0 ? (
-                      projectCreatorSearchResults.map((user) => (
+                {!projectCreatorSearchLoading && projectCreatorSearchError ? (
+                  <p className="text-sm text-error">{t('workspace_project_creators_search_error')}</p>
+                ) : null}
+                {!projectCreatorSearchLoading && !projectCreatorSearchError && projectCreatorQuery.trim().length >= 2 ? (
+                  projectCreatorSearchResults.length > 0 ? (
+                    <div className="divide-y divide-subtle/60 border-y border-subtle/60">
+                      {projectCreatorSearchResults.map((user) => (
                         <button
                           key={user.user_id}
                           type="button"
-                          className="flex w-full items-start justify-between rounded-sm border border-subtle bg-bg-base/20 px-3 py-2 text-left transition hover:border-accent/40"
+                          className="flex w-full items-start justify-between gap-3 py-3 text-left transition-colors hover:text-foreground"
                           onClick={() => handleAddProjectCreator(user)}
                           data-testid={`ws-settings__project-creator-option--${user.user_id}`}
                         >
@@ -590,60 +560,64 @@ export default function WorkspaceSettingsPage() {
                           </span>
                           <span className="text-xs text-tertiary">{t('workspace_project_creators_add')}</span>
                         </button>
-                      ))
-                    ) : (
-                      <p className="text-sm text-tertiary">{t('workspace_project_creators_search_empty')}</p>
-                    )
-                  ) : null}
-                </div>
-                <div className="space-y-2" data-testid="ws-settings__project-creators-selected">
-                  {projectCreators.map((creator) => (
-                    <div
-                      key={creator.user_id}
-                      className="flex items-center justify-between rounded-sm border border-subtle bg-bg-base/20 px-3 py-2"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{creator.name || creator.email}</p>
-                        <p className="text-xs text-tertiary">{creator.email}</p>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleRemoveProjectCreator(creator.user_id)}
-                        data-testid={`ws-settings__project-creator-remove--${creator.user_id}`}
-                      >
-                        {t('workspace_project_creators_remove')}
-                      </Button>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-tertiary" data-testid="ws-settings__project-creators-summary">
-                    {projectCreatorsLoading
-                      ? t('workspace_project_creators_loading')
-                      : t('workspace_project_creators_summary', { count: String(projectCreators.length) })}
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => void handleSaveProjectCreators()}
-                    disabled={projectCreatorsSaving}
-                    data-testid="ws-settings__project-creators-save"
-                  >
-                    {projectCreatorsSaving ? t('workspace_project_creators_saving') : t('workspace_project_creators_save')}
-                  </Button>
-                </div>
+                  ) : (
+                    <p className="text-sm text-tertiary">{t('workspace_project_creators_search_empty')}</p>
+                  )
+                ) : null}
               </div>
-            </section>
+              <div className="space-y-2" data-testid="ws-settings__project-creators-selected">
+                {projectCreators.length > 0 ? (
+                  <div className="divide-y divide-subtle/60 border-y border-subtle/60">
+                    {projectCreators.map((creator) => (
+                      <div
+                        key={creator.user_id}
+                        className="flex items-center justify-between gap-3 py-3"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{creator.name || creator.email}</p>
+                          <p className="text-xs text-tertiary">{creator.email}</p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRemoveProjectCreator(creator.user_id)}
+                          data-testid={`ws-settings__project-creator-remove--${creator.user_id}`}
+                        >
+                          {t('workspace_project_creators_remove')}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-tertiary" data-testid="ws-settings__project-creators-summary">
+                  {projectCreatorsLoading
+                    ? t('workspace_project_creators_loading')
+                    : t('workspace_project_creators_summary', { count: String(projectCreators.length) })}
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void handleSaveProjectCreators()}
+                  disabled={projectCreatorsSaving}
+                  data-testid="ws-settings__project-creators-save"
+                >
+                  {projectCreatorsSaving ? t('workspace_project_creators_saving') : t('workspace_project_creators_save')}
+                </Button>
+              </div>
+            </div>
+          </section>
 
-            <CreateProjectDialog
-              open={createProjectOpen}
-              onOpenChange={setCreateProjectOpen}
-              workspaceId={workspaceId}
-              onSuccess={handleCreateProjectSuccess}
-            />
-          </main>
+          <CreateProjectDialog
+            open={createProjectOpen}
+            onOpenChange={setCreateProjectOpen}
+            workspaceId={workspaceId}
+            onSuccess={handleCreateProjectSuccess}
+          />
         </div>
       </PageLayout>
     </PageState>

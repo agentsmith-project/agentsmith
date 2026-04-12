@@ -66,6 +66,7 @@ export default function NotebookPage({ params }: NotebookPageProps) {
         <div className="space-y-4">
           <ProjectWorkbenchBar
             title={t('title')}
+            variant="utility"
             meta={<div className="text-sm text-secondary">{t('subtitle')}</div>}
           />
 

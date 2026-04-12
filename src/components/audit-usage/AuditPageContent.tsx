@@ -75,12 +75,15 @@ export function AuditPageContent({
 }: AuditPageContentProps) {
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.04),_transparent_38%)]"
+      className="flex min-h-0 flex-1 flex-col"
       data-testid="audit__page"
     >
       {drilldownContext}
       <AuditOverviewCards summary={overviewSummary} t={t} />
-      <div className="mb-3 rounded-md border border-subtle bg-surface-low p-4 shadow-ambient">
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-4 rounded-md border border-subtle bg-surface/95 p-4 md:p-5"
+        data-testid="audit__work-surface"
+      >
         <InvestigationAnchorBar
           traceSource={traceSource}
           requestId={filters.request_id}
@@ -90,72 +93,71 @@ export function AuditPageContent({
           traceEscalationId={filters.trace_escalation_id}
           traceRunId={filters.trace_run_id}
           onClear={onClearInvestigation}
+          compact
         />
         {traceMatchStatus ? (
-          <p className="mt-1 text-xs text-tertiary" data-testid="audit__trace-match-status">
+          <p className="text-xs text-tertiary" data-testid="audit__trace-match-status">
             {traceMatchStatus === 'matched'
               ? commonT('trace_context_match_found')
               : commonT('trace_context_match_missing')}
           </p>
         ) : null}
-      </div>
-      <div
-        data-testid="audit__filters"
-        className="rounded-md border border-subtle bg-surface/95 p-4 shadow-card"
-      >
-        <AuditFilters
-          filters={filters}
-          onChange={onFiltersChange}
-          onClear={onClearFilters}
-          defaultEndUserId={defaultEndUserId}
-          categoryFilter={categoryFilter}
-          onCategoryFilterChange={onCategoryFilterChange}
-        />
-      </div>
-
-      <div className="mt-4 min-h-0 flex-1 rounded-md border border-subtle bg-surface/95 p-4 shadow-card">
-        <div className="mb-4 flex flex-col gap-3 rounded-md border border-subtle bg-surface-low px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">{t('title')}</p>
-            <p className="mt-1 text-sm text-secondary">
-              {commonT('total_items', { count: String(totalItems) })}
-              {totalPages > 1 ? (
-                <>
-                  {' · '}
-                  {commonT('page_of', { page: String(currentPage), total: String(totalPages) })}
-                </>
-              ) : null}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!canGoPrev || isLoading}
-              onClick={onPrevPage}
-            >
-              {commonT('previous')}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!canGoNext || isLoading}
-              onClick={onNextPage}
-            >
-              {commonT('next')}
-            </Button>
-          </div>
-        </div>
-        <div className="min-h-0 overflow-y-auto rounded-md border border-subtle bg-background/35 p-3">
-          <AuditTable
-            data={auditItems}
-            loading={isLoading}
-            onViewDetails={onViewDetails}
-            onClearFilters={onClearFilters}
-            onRefresh={onRefresh}
+        <div data-testid="audit__filters">
+          <AuditFilters
+            filters={filters}
+            onChange={onFiltersChange}
+            onClear={onClearFilters}
+            compact
+            defaultEndUserId={defaultEndUserId}
+            categoryFilter={categoryFilter}
+            onCategoryFilterChange={onCategoryFilterChange}
           />
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col border-t border-subtle/70 pt-4">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">{t('title')}</p>
+              <p className="mt-1 text-sm text-secondary">
+                {commonT('total_items', { count: String(totalItems) })}
+                {totalPages > 1 ? (
+                  <>
+                    {' · '}
+                    {commonT('page_of', { page: String(currentPage), total: String(totalPages) })}
+                  </>
+                ) : null}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!canGoPrev || isLoading}
+                onClick={onPrevPage}
+              >
+                {commonT('previous')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!canGoNext || isLoading}
+                onClick={onNextPage}
+              >
+                {commonT('next')}
+              </Button>
+            </div>
+          </div>
+          <div className="min-h-0 overflow-y-auto" data-testid="audit__table-region">
+            <AuditTable
+              data={auditItems}
+              loading={isLoading}
+              onViewDetails={onViewDetails}
+              onClearFilters={onClearFilters}
+              onRefresh={onRefresh}
+            />
+          </div>
         </div>
       </div>
 

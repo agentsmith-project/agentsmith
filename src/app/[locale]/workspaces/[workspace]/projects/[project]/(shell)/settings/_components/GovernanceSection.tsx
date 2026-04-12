@@ -24,11 +24,13 @@ export function GovernanceSection({
   workspaceId,
 }: GovernanceSectionProps) {
   return (
-    <div className="rounded-md border border-subtle bg-surface/95 p-5 shadow-card md:p-6" data-testid="settings__governance-section">
-      <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('governance_title')}</h2>
-      <p className="text-sm text-tertiary">{settingsT('governance_help')}</p>
+    <section className="space-y-4 py-5" data-testid="settings__governance-section">
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold text-foreground">{settingsT('governance_title')}</h2>
+        <p className="text-sm text-tertiary">{settingsT('governance_help')}</p>
+      </div>
       {(canReadAudit || canManageMembership || canManageGovernance) ? (
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           {canReadAudit ? (
             <Button asChild variant="action" size="sm" data-testid="settings__governance-link--audit">
               <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/audit`}>
@@ -52,6 +54,6 @@ export function GovernanceSection({
           ) : null}
         </div>
       ) : null}
-    </div>
+    </section>
   );
 }

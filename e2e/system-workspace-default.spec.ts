@@ -76,10 +76,10 @@ async function verifyIdentityProvider(page: import('@playwright/test').Page) {
       candidate.request().method() === 'POST',
     { timeout: 15_000 },
   );
-  await page.getByTestId('system-workspaces__verify-idp').click();
+  await page.getByTestId('system-workspace-create__next').click();
   const response = await responsePromise;
   expect(response.ok()).toBeTruthy();
-  await expect(page.getByTestId('system-workspaces__idp-status')).toBeVisible();
+  await expect(page.getByTestId('system-workspaces__draft-admin')).toBeVisible();
 }
 
 async function selectWorkspaceAdmin(page: import('@playwright/test').Page, email: string) {

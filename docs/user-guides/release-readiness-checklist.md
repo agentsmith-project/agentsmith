@@ -52,6 +52,7 @@ npm run gate:release:full
 
 - backend-real visual review：
   - `artifacts/backend-real-visual/<run-id>/review.md`
+  - `artifacts/backend-real-visual/<run-id>/ux-traces/<lane>/<suite>/<story-id>/<run-id>/review.md`
 - demo rehearsal report：
   - `artifacts/runtime/scenario/demo-rehearsal/reports/<timestamp>.md`
 - cluster rehearsal report：

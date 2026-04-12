@@ -112,6 +112,10 @@ describe('AlertCenterPage', () => {
 
     expect(screen.getByRole('tab', { name: /rules/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /notifications/i })).toBeInTheDocument();
+    expect(screen.getByTestId('alert-center-page')).toBeInTheDocument();
+    expect(screen.getByTestId('alert-center__summary-meta')).toBeInTheDocument();
+    expect(screen.getByTestId('alert-center__main-surface')).toBeInTheDocument();
+    expect(screen.queryByTestId('alert-center__summary-card')).not.toBeInTheDocument();
   });
 
   it('shows rules list by default', () => {

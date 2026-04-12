@@ -198,7 +198,10 @@ describe('FilesPage (object browser)', () => {
 
     expect(await screen.findByTestId('files__library-list')).toBeInTheDocument();
     expect(screen.getByTestId('files__objects-table')).toBeInTheDocument();
-    expect(screen.getByText('Project library')).toBeInTheDocument();
+    expect(screen.getByTestId('files__workspace-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('files__workspace-surface').className).not.toContain('shadow-card');
+    expect(screen.queryByTestId('project-workbench')).not.toBeInTheDocument();
+    expect(screen.getByText('Libraries')).toBeInTheDocument();
   });
 
   it('selects the first library by default and only shows active-library actions', async () => {

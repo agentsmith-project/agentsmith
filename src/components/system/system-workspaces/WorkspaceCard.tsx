@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import {
   AlertTriangle,
-  Building2,
   CheckCircle2,
   Clock3,
   PauseCircle,
@@ -30,10 +29,10 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
       role="button"
       tabIndex={0}
       className={[
-        'group rounded-md border px-4 py-4 transition-colors cursor-pointer',
+        'group cursor-pointer border-b border-subtle/60 py-4 text-left transition-colors',
         selected
-          ? 'border-border bg-surface'
-          : 'border-subtle bg-background/70 hover:border-border hover:bg-surface/70',
+          ? 'bg-surface/55'
+          : 'bg-transparent hover:bg-surface/35',
       ].join(' ')}
       onClick={() => onSelect(workspace)}
       onKeyDown={(event) => {
@@ -45,10 +44,7 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
       data-testid={`system-workspaces__card--${workspace.id}`}
     >
       <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-subtle bg-background text-icon-default">
-          <Building2 className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1 space-y-4">
+        <div className="min-w-0 flex-1 space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
               <h2 className="truncate text-base font-semibold text-foreground">{workspace.name}</h2>
@@ -57,15 +53,12 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
             <StatusBadge label={statusLabel} tone={workspace.provisioning_status} />
           </div>
 
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_admin_card_label')}</p>
-              <p className="truncate text-sm font-medium text-foreground">{workspace.workspace_admin}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('initialized_at_label')}</p>
-              <p className="truncate text-sm font-medium text-foreground">{summary.timestamp}</p>
-            </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <span className="text-tertiary">{t('workspace_admin_card_label')}</span>
+            <span className="truncate text-foreground">{workspace.workspace_admin}</span>
+            <span className="text-tertiary">·</span>
+            <span className="text-tertiary">{t('initialized_at_label')}</span>
+            <span className="truncate text-foreground">{summary.timestamp}</span>
           </div>
 
           <div className="flex items-start gap-2 border-t border-subtle pt-3">
@@ -94,7 +87,7 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
                 data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}
                 onClick={(event) => event.stopPropagation()}
               >
-                <Button type="button" variant="outline">
+                <Button type="button" variant="ghost" size="sm">
                   {t('open_workspace_login')}
                 </Button>
               </Link>
@@ -102,7 +95,7 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
               <button
                 type="button"
                 disabled
-                className="inline-flex h-9 items-center rounded-md border border-subtle bg-background px-3 text-xs text-tertiary disabled:opacity-100"
+                className="inline-flex h-9 items-center rounded-md border border-subtle/70 bg-transparent px-3 text-xs text-tertiary disabled:opacity-100"
                 data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}
               >
                 {t('workspace_login_unavailable')}

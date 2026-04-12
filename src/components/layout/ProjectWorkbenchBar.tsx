@@ -46,6 +46,7 @@ interface ProjectWorkbenchBarProps {
   actions?: React.ReactNode;
   switcher?: React.ReactNode;
   className?: string;
+  variant?: 'default' | 'utility';
 }
 
 export function ProjectWorkbenchBar({
@@ -54,25 +55,32 @@ export function ProjectWorkbenchBar({
   actions,
   switcher,
   className,
+  variant = 'default',
 }: ProjectWorkbenchBarProps) {
   return (
     <div
       data-testid="project-workbench"
       className={cn(
-        'flex items-start justify-between gap-3 border-b border-subtle/70 bg-transparent px-3 py-2 md:px-4',
+        'flex items-start justify-between border-b border-subtle/70 bg-transparent',
+        variant === 'utility'
+          ? 'gap-2 px-3 py-1.5 md:px-4'
+          : 'gap-3 px-3 py-2 md:px-4',
         className,
       )}
     >
       <div className="min-w-0 flex-1">
         <div
           data-testid="project-workbench__heading"
-          className="text-[10px] font-semibold uppercase tracking-[0.14em] text-tertiary"
+          className={cn(
+            'font-semibold uppercase text-tertiary',
+            variant === 'utility' ? 'text-[9px] tracking-[0.12em]' : 'text-[10px] tracking-[0.14em]',
+          )}
         >
           {title}
         </div>
         {meta ? <div data-testid="project-workbench__meta" className="mt-0.5 min-w-0">{meta}</div> : null}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+      <div className={cn('flex shrink-0 flex-wrap items-center justify-end', variant === 'utility' ? 'gap-1' : 'gap-1.5')}>
         {actions}
         {switcher}
       </div>

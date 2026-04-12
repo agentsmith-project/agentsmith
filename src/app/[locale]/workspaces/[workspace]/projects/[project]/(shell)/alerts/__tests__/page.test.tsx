@@ -9,10 +9,6 @@ const mockListNotifications = vi.fn(async () => []);
 const STABLE_RULES: never[] = [];
 const STABLE_NOTIFICATIONS: never[] = [];
 
-vi.mock('@/components/alerts/AlertCenterPage', () => ({
-  AlertCenterPage: () => <div data-testid="alerts__center" />,
-}));
-
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useAlertPageCapabilities: () => mockUseAlertPageCapabilities(),
 }));
@@ -71,8 +67,17 @@ describe('AlertsPage route', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('alerts__center')).toBeInTheDocument();
+      expect(screen.getByTestId('alerts__surface')).toBeInTheDocument();
     });
+    expect(screen.queryByTestId('alerts__summary-meta')).not.toBeInTheDocument();
+    expect(screen.getByTestId('alert-center-page')).toBeInTheDocument();
+    expect(screen.getByTestId('alert-center__summary-meta')).toBeInTheDocument();
+    expect(screen.getByTestId('alerts__main-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('alerts__main-surface').className).not.toContain('border-subtle');
+    expect(screen.getByTestId('alerts__main-surface').className).not.toContain('bg-surface/95');
+    expect(screen.getByTestId('alerts__main-surface').className).not.toContain('p-4');
+    expect(screen.getByTestId('alerts__main-surface').className).not.toContain('shadow-card');
+    expect(screen.queryByTestId('alert-center__summary-card')).not.toBeInTheDocument();
     expect(screen.getByTestId('alerts__open-audit')).toBeInTheDocument();
     expect(screen.getByTestId('alerts__open-usage')).toBeInTheDocument();
   });
@@ -108,7 +113,7 @@ describe('AlertsPage route', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('alerts__center')).toBeInTheDocument();
+      expect(screen.getByTestId('alerts__surface')).toBeInTheDocument();
     });
   });
 

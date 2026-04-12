@@ -51,13 +51,17 @@ describe('SystemInfoPage', () => {
       />,
     );
 
-    expect(screen.getByTestId('system-info__heading')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'info_title' })).toBeInTheDocument();
+    expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
+    expect(screen.getByTestId('page-layout__toolbar')).toBeInTheDocument();
     expect(screen.getByTestId('system-info__shell')).not.toHaveClass('shadow-card');
     expect(screen.getByTestId('system-info__back').closest('a')).toHaveAttribute('href', '/en-US/system/workspaces');
     expect(screen.getByTestId('system-info__notice')).toBeInTheDocument();
+    expect(screen.queryByText('workspace_total_label')).not.toBeInTheDocument();
     expect(screen.getByTestId('system-info__next-steps')).toBeInTheDocument();
     const nextSteps = screen.getByTestId('system-info__next-steps');
     expect(within(nextSteps).getByText('system_info_next_steps_directory_title').closest('a')).toHaveAttribute('href', '/en-US/system/workspaces');
+    expect(within(nextSteps).getByText('back_to_workspaces')).not.toHaveClass('text-accent');
     expect(screen.getByTestId('system-info__health')).toBeInTheDocument();
     expect(screen.getByTestId('system-info__attention')).toBeInTheDocument();
     expect(screen.getByText('system_admin_title')).toBeInTheDocument();
@@ -73,7 +77,6 @@ describe('SystemInfoPage', () => {
     expect(screen.getByText('https://login.example.com')).toBeInTheDocument();
     expect(screen.getAllByText('config_status.available').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('config_status.configured').length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText('4').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('tenant_configuration_incomplete').length).toBeGreaterThanOrEqual(1);
   });
 
@@ -115,11 +118,16 @@ describe('SystemInfoPage', () => {
     expect(screen.getByTestId('system-info__attention')).toBeInTheDocument();
     expect(screen.getByText('system_info_all_clear_title')).toBeInTheDocument();
     expect(screen.getByText('system_info_all_clear_body')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'info_title' })).toBeInTheDocument();
+    expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
+    expect(screen.getByTestId('page-layout__toolbar')).toBeInTheDocument();
     expect(screen.getByTestId('system-info__back')).toHaveAttribute('href', '/en-US/system/workspaces');
+    expect(screen.queryByText('workspace_total_label')).not.toBeInTheDocument();
     const nextSteps = screen.getByTestId('system-info__next-steps');
     expect(within(nextSteps).getByText('system_info_next_steps_directory_title').closest('a')).toHaveAttribute(
       'href',
       '/en-US/system/workspaces',
     );
+    expect(within(nextSteps).getByText('back_to_workspaces')).not.toHaveClass('text-accent');
   });
 });

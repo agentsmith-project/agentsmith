@@ -88,10 +88,10 @@ async function verifyIdentityProvider(page: Page): Promise<void> {
     (candidate) => candidate.url().includes('/api/system/workspaces/idp/verify') && candidate.request().method() === 'POST',
     { timeout: 15_000 },
   );
-  await page.getByTestId('system-workspaces__verify-idp').click();
+  await page.getByTestId('system-workspace-create__next').click();
   const response = await responsePromise;
   expect(response.ok()).toBeTruthy();
-  await expect(page.getByTestId('system-workspaces__idp-status')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('system-workspaces__draft-admin')).toBeVisible({ timeout: 15_000 });
 }
 
 async function createAndPublishWorkspace(page: Page): Promise<string> {

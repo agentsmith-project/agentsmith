@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { AlertTriangle, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
 import type { SystemInfoSnapshot } from '@/lib/system-admin/config';
@@ -21,20 +23,6 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
   const t = useTranslations('system');
   const provisioning = snapshot.workspace_provisioning;
   const attentionItems = buildAttentionItems(snapshot, locale, t);
-  const statusOverview = [
-    { label: t('workspace_total_label'), value: String(provisioning.total), tone: 'default' as const },
-    { label: t('workspace_ready_label'), value: String(provisioning.ready), tone: 'positive' as const },
-    {
-      label: t('system_info_attention_label'),
-      value: String(provisioning.failed + provisioning.provisioning + provisioning.disabled),
-      tone: attentionItems.length > 0 ? 'warning' as const : 'default' as const,
-    },
-    {
-      label: t('workspace_last_failed_label'),
-      value: provisioning.last_failed_at ? new Date(provisioning.last_failed_at).toLocaleString(locale) : '-',
-      tone: provisioning.last_failed_at ? 'warning' as const : 'default' as const,
-    },
-  ];
 
   const quickActions = [
     {
@@ -53,36 +41,55 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout>
-        <div className="min-h-screen bg-background px-4 py-5 md:px-6 md:py-7">
-          <div className="mx-auto max-w-[1280px] space-y-7">
-            <header className="space-y-5">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="max-w-3xl space-y-2">
-                  <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('eyebrow')}</p>
-                  <h1 className="text-2xl font-semibold text-foreground" data-testid="system-info__heading">
-                    {t('info_title')}
-                  </h1>
-                  <p className="text-sm leading-6 text-secondary">{t('info_subtitle')}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button asChild type="button" variant="outline" data-testid="system-info__back">
-                    <Link href={`/${locale}/system/workspaces`}>
-                      {t('back_to_workspaces')}
+      <PageLayout
+        header={(
+          <PageHeader
+            title={t('info_title')}
+            subtitle={t('info_subtitle')}
+            variant="compact"
+            actions={(
+              <>
+                <Button asChild type="button" variant="outline" data-testid="system-info__back">
+                  <Link href={`/${locale}/system/workspaces`}>
+                    {t('back_to_workspaces')}
+                  </Link>
+                </Button>
+                <SystemLogoutButton />
+              </>
+            )}
+          />
+        )}
+        toolbar={(
+          <PageToolbar className="w-full">
+            <div className="flex w-full flex-wrap items-center justify-between gap-3 rounded-md border border-subtle bg-surface-low px-4 py-3 text-sm text-secondary">
+              <div className="flex flex-wrap items-center gap-2">
+                <span>{t('system_info_health_title')}</span>
+                <span>·</span>
+                <span>{t('system_info_configuration_title')}</span>
+                <span>·</span>
+                <span>{t('system_info_next_steps_title')}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {quickActions.map((action, index) => (
+                  <Button
+                    key={action.href}
+                    asChild
+                    type="button"
+                    variant={index === 1 ? 'primary' : 'outline'}
+                    size="sm"
+                  >
+                    <Link href={action.href}>
+                      {action.cta}
                     </Link>
                   </Button>
-                  <SystemLogoutButton />
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-x-10 gap-y-4 border-t border-subtle pt-4">
-                {statusOverview.map((item) => (
-                  <InlineMetric key={item.label} label={item.label} value={item.value} tone={item.tone} />
                 ))}
               </div>
-            </header>
-
-            <div className="rounded-md border border-subtle bg-background/88 p-5" data-testid="system-info__shell">
+            </div>
+          </PageToolbar>
+        )}
+      >
+        <div className="mx-auto max-w-[1280px] space-y-7">
+            <div className="rounded-md border border-subtle bg-background/84 p-5" data-testid="system-info__shell">
               <section className="grid gap-8 xl:grid-cols-[minmax(0,1.12fr)_minmax(320px,0.88fr)]">
               <div className="space-y-7">
                 <SectionBlock eyebrow={t('system_info_health_label')} title={t('system_info_health_title')} dataTestId="system-info__health">
@@ -208,7 +215,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                         <div className="space-y-1">
                           <p className="text-sm font-medium text-foreground">{action.title}</p>
                           <p className="text-sm leading-6 text-secondary">{action.body}</p>
-                          <p className="pt-1 text-xs font-semibold uppercase tracking-[0.14em] text-accent">{action.cta}</p>
+                          <p className="pt-1 text-xs font-semibold uppercase tracking-[0.14em] text-tertiary group-hover:text-secondary">{action.cta}</p>
                         </div>
                         <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-tertiary transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
                       </Link>
@@ -218,7 +225,6 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
               </div>
               </section>
             </div>
-          </div>
         </div>
       </PageLayout>
     </PageState>

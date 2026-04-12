@@ -1,5 +1,5 @@
 import { test as base, type Page } from '@playwright/test';
-import { withAuth } from './authenticated';
+import { ensureAuthenticatedSession, withAuth } from './authenticated';
 import { gotoAndWait, waitForPageReady } from '../utils/navigation';
 
 /** Default test constants */
@@ -53,43 +53,6 @@ export const test = base.extend<{
 });
 
 export { expect } from '@playwright/test';
-
-async function ensureAuthenticatedSession(page: Page, bootstrapPath: string): Promise<void> {
-  let bootstrapError: unknown = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      await gotoAndWait(page, bootstrapPath);
-      await waitForPageReady(page);
-      bootstrapError = null;
-      break;
-    } catch (error) {
-      bootstrapError = error;
-      if (page.isClosed()) {
-        throw error;
-      }
-      if (attempt < 2) {
-        await page.waitForTimeout(500 * (attempt + 1));
-      }
-    }
-  }
-  if (bootstrapError) {
-    throw bootstrapError;
-  }
-  if (!LOGIN_PATH_REGEX.test(new URL(page.url()).pathname)) return;
-
-  const ctx = await page.evaluate(() => window.__MBOS_AUTH_E2E_CONTEXT__ ?? null).catch(() => null);
-  if (ctx && typeof ctx.userEmail === 'string' && typeof ctx.userId === 'string') {
-    await withAuth(page, ctx.wsId || WS_ID, ctx.userEmail, ctx.userId);
-  } else {
-    await withAuth(page, WS_ID, TEST_EMAIL);
-  }
-
-  await gotoAndWait(page, bootstrapPath);
-  await waitForPageReady(page);
-  if (LOGIN_PATH_REGEX.test(new URL(page.url()).pathname)) {
-    throw new Error(`Failed to bootstrap authenticated session at ${bootstrapPath}`);
-  }
-}
 
 /** Navigate to a project page with auth already set up */
 export async function goToProject(page: Page, section: string) {

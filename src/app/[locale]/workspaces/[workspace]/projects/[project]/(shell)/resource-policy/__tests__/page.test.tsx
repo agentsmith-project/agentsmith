@@ -75,6 +75,9 @@ describe('ResourcePolicyPage', () => {
     });
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).queryByTestId('resource-policy__open-members')).not.toBeInTheDocument();
+    expect(screen.getByTestId('resource-policy__summary-line')).toHaveTextContent('resource_type.endpoint');
+    expect(screen.queryByTestId('resource-policy__summary-chip--access-mode')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('resource-policy__summary-chip--subjects')).not.toBeInTheDocument();
   });
 
   it('shows permission denied without policy permission', async () => {

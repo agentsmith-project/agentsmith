@@ -71,12 +71,15 @@ describe('ProfilePage', () => {
     });
   });
 
-  it('keeps the profile page to a single summary strip instead of stacked summary cards', async () => {
+  it('renders profile as a quiet settings sheet without dashboard-style chrome', async () => {
     render(<ProfilePage />, { wrapper });
 
-    expect(screen.getByTestId('profile__summary-strip')).toBeInTheDocument();
+    expect(screen.getByText('title')).toBeInTheDocument();
+    expect(screen.getByText('description')).toBeInTheDocument();
+    expect(screen.queryByTestId('profile__summary-strip')).not.toBeInTheDocument();
     expect(screen.getByTestId('profile__form')).toBeInTheDocument();
     expect(screen.getByTestId('profile__permissions')).toBeInTheDocument();
-    expect(screen.queryByTestId('profile__summary-card')).not.toBeInTheDocument();
+    expect(screen.getByTestId('profile__form').className).not.toMatch(/rounded-lg|shadow-card/);
+    expect(screen.getByTestId('profile__permissions').className).not.toMatch(/rounded-lg|shadow-card/);
   });
 });

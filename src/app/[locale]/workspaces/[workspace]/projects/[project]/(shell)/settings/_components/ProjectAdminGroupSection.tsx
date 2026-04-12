@@ -30,12 +30,14 @@ export function ProjectAdminGroupSection({
   onSave,
 }: ProjectAdminGroupSectionProps) {
   return (
-    <div className="rounded-lg border border-subtle bg-bg-base/20 p-4" data-testid="settings__project-admins-section">
-      <h3 className="text-sm font-semibold text-foreground mb-1">{settingsT('admin_group_title')}</h3>
-      <p className="text-sm text-tertiary mb-4">
+    <section className="space-y-4 py-5" data-testid="settings__project-admins-section">
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold text-foreground">{settingsT('admin_group_title')}</h3>
+        <p className="text-sm text-tertiary">
         {canAssignProjectAdmins ? settingsT('admin_group_owner_help') : settingsT('admin_group_read_only_help')}
-      </p>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-subtle bg-bg-base/20 p-3">
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-tertiary">
             {settingsT('admin_group_members_flow_label')}
@@ -44,13 +46,13 @@ export function ProjectAdminGroupSection({
         </div>
         <Link
           href={membersHref}
-          className="text-sm font-medium text-primary underline-offset-2 hover:underline"
+          className="text-sm font-medium text-secondary underline-offset-2 hover:text-foreground hover:underline"
           data-testid="settings__project-admins-open-members"
         >
           {settingsT('admin_group_open_members')}
         </Link>
       </div>
-      <div className="space-y-3">
+      <div className="divide-y divide-subtle/60">
         {workspaceMembers.map((member) => {
           const label = member.name || member.email || member.user_id;
           const description = member.email || member.user_id;
@@ -59,7 +61,7 @@ export function ProjectAdminGroupSection({
             <label
               key={member.id}
               htmlFor={`project-admin-${member.user_id}`}
-              className="flex items-start gap-3 rounded-lg border border-subtle bg-bg-base/20 p-3"
+              className="flex items-start gap-3 py-3"
               data-testid={`settings__project-admin-option--${member.user_id}`}
             >
               <Checkbox
@@ -80,12 +82,12 @@ export function ProjectAdminGroupSection({
         })}
       </div>
       {canAssignProjectAdmins ? (
-        <div className="mt-6 flex justify-end">
+        <div className="flex justify-end pt-4">
           <Button onClick={onSave} disabled={savingProjectAdmins} variant="primary" data-testid="settings__project-admins-save">
             {savingProjectAdmins ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsT('admin_group_save')}
           </Button>
         </div>
       ) : null}
-    </div>
+    </section>
   );
 }

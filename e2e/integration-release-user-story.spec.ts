@@ -9,6 +9,7 @@ import {
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
+import { createUxTraceBundleWriter } from './trace-bundle-support';
 
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
@@ -167,10 +168,10 @@ async function verifyIdentityProvider(page: Page): Promise<void> {
     (candidate) => candidate.url().includes('/api/system/workspaces/idp/verify') && candidate.request().method() === 'POST',
     { timeout: 15_000 },
   );
-  await page.getByTestId('system-workspaces__verify-idp').click();
+  await page.getByTestId('system-workspace-create__next').click();
   const response = await responsePromise;
   expect(response.ok()).toBeTruthy();
-  await expect(page.getByTestId('system-workspaces__idp-status')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('system-workspaces__draft-admin')).toBeVisible({ timeout: 15_000 });
 }
 
 async function waitForWorkspaceId(page: Page, workspaceName: string): Promise<string> {
@@ -698,98 +699,142 @@ test.describe('@lane-real release user story end-to-end', () => {
     const providerApiKey = requireRealLaneApiKey();
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
-
-    await loginAsSystemAdmin(page);
-    const workspaceId = await createAndPublishWorkspace(page);
-
-    await loginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    const { projectId, projectName } = await createProjectInWorkspace(page, workspaceId, 'Release Story Project', {
-      visibility: 'public',
-      joinPolicy: 'approval_required',
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-release-user-story',
+      storyId: 'release-user-story-end-to-end',
+      title: 'Release user story end-to-end',
+      actor: 'system 管理侧 / workspace admin / project owner / member',
+      route: `/${LOCALE}/system/login`,
+      specFile: 'e2e/integration-release-user-story.spec.ts',
+      browser: 'chromium',
+      goal: '用真实 backend 走完发布关键用户故事，并把关键 UI 状态写成 trace bundle。',
+      preconditions: ['backend-real stack is ready', 'Keycloak and provider API key are configured', 'sandbox manager is ready'],
+      seedData: ['ws_default'],
     });
+    let outcome: 'pass' | 'fail' = 'fail';
+    let externalRunner: { stop(): Promise<void> } | null = null;
 
-    await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
-    await requestProjectAccess(page, workspaceId, projectId);
+    const captureTrace = async (stepId: string, action: string, target: string, note: string): Promise<void> => {
+      await trace.capture(page, { stepId, action, target, note });
+    };
 
-    await loginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    await approveJoinRequest(page, workspaceId, projectId);
+    try {
+      await gotoWithRetry(page, `/${LOCALE}/system/login`);
+      await captureTrace('system-login', 'Open system login', 'system-login__heading', 'system 管理侧登录入口');
 
-    await createCredentialViaUi(page, workspaceId, projectId, 'Provider Unified Key', providerApiKey);
-    const anthropicEndpointName = `Preset Anthropic Endpoint ${Date.now()}`;
-    const openaiEndpointName = `Preset OpenAI Endpoint ${Date.now()}`;
-    await createEndpointViaUi({
-      page,
-      workspaceId,
-      projectId,
-      name: anthropicEndpointName,
-      upstreamProtocol: 'anthropic_messages',
-      baseUrl: ANTHROPIC_BASE_URL,
-      model: BACKEND_REAL_MODEL,
-    });
-    await createEndpointViaUi({
-      page,
-      workspaceId,
-      projectId,
-      name: openaiEndpointName,
-      upstreamProtocol: 'openai_chat_completions',
-      baseUrl: OPENAI_BASE_URL,
-      model: BACKEND_REAL_MODEL,
-    });
+      await loginAsSystemAdmin(page);
+      await captureTrace('system-workspaces', 'Review system workspaces', 'system-workspaces__heading', '工作区清单与创建入口');
 
-    const primaryEndpointId = await resolveEndpointId(page, workspaceId, projectId, anthropicEndpointName);
-    const secondaryEndpointId = await resolveEndpointId(page, workspaceId, projectId, openaiEndpointName);
+      const workspaceId = await createAndPublishWorkspace(page);
+      await captureTrace('system-workspace-published', 'Create and publish workspace', 'system-workspaces__heading', '新工作区创建并发布完成');
 
-    await updateResourcePolicyViaUi({
-      page,
-      workspaceId,
-      projectId,
-      endpointId: primaryEndpointId,
-      requestsPerDay: '1000',
-      spendingUsdPerDay: '500',
-    });
-    await updateResourcePolicyViaUi({
-      page,
-      workspaceId,
-      projectId,
-      endpointId: secondaryEndpointId,
-      requestsPerDay: '1000',
-      spendingUsdPerDay: '500',
-    });
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/login`);
+      await captureTrace('workspace-login', 'Open workspace login', 'workspace-login__keycloak-btn', '工作区登录入口');
 
-    const externalAgentName = `External Story Agent ${Date.now()}`;
-    const internalAgentName = `Internal Story Agent ${Date.now()}`;
-    await createAgentViaUi({
-      page,
-      workspaceId,
-      projectId,
-      name: externalAgentName,
-      mode: 'external',
-      endpointId: primaryEndpointId,
-    });
-    if (DEMO_MODE_IS_FULL) {
+      await loginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+      await captureTrace('workspace-projects', 'Enter workspace projects', 'projects__heading', 'workspace admin 进入项目列表');
+
+      const { projectId, projectName } = await createProjectInWorkspace(page, workspaceId, 'Release Story Project', {
+        visibility: 'public',
+        joinPolicy: 'approval_required',
+      });
+      await captureTrace('project-overview', 'Open project overview', 'project-overview__heading', '项目创建成功后的 overview');
+
+      await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
+      await captureTrace('projects-list-member', 'Review projects as member', 'projects__heading', '普通成员查看项目列表');
+      await requestProjectAccess(page, workspaceId, projectId);
+      await captureTrace('join-request-pending', 'Request project access', `projects__join-request-btn--${projectId}`, '普通成员发起加入申请后的待审批状态');
+
+      await loginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/members?member_tab=requests`);
+      await captureTrace('join-request-review', 'Review join request', 'members__requests-tab', '项目所有者查看待审批加入申请');
+      await approveJoinRequest(page, workspaceId, projectId);
+      await captureTrace('join-request-approved', 'Approve join request', 'members__people-tab', '加入申请已批准并授予项目访问');
+
+      await createCredentialViaUi(page, workspaceId, projectId, 'Provider Unified Key', providerApiKey);
+      await captureTrace('credentials-list', 'Review credentials', 'credentials__heading', '项目凭据列表');
+
+      const anthropicEndpointName = `Preset Anthropic Endpoint ${Date.now()}`;
+      const openaiEndpointName = `Preset OpenAI Endpoint ${Date.now()}`;
+      await createEndpointViaUi({
+        page,
+        workspaceId,
+        projectId,
+        name: anthropicEndpointName,
+        upstreamProtocol: 'anthropic_messages',
+        baseUrl: ANTHROPIC_BASE_URL,
+        model: BACKEND_REAL_MODEL,
+      });
+      await createEndpointViaUi({
+        page,
+        workspaceId,
+        projectId,
+        name: openaiEndpointName,
+        upstreamProtocol: 'openai_chat_completions',
+        baseUrl: OPENAI_BASE_URL,
+        model: BACKEND_REAL_MODEL,
+      });
+      await captureTrace('endpoints-list', 'Review endpoints', 'endpoints__heading', '双 preset endpoint 列表');
+
+      const primaryEndpointId = await resolveEndpointId(page, workspaceId, projectId, anthropicEndpointName);
+      const secondaryEndpointId = await resolveEndpointId(page, workspaceId, projectId, openaiEndpointName);
+
+      await updateResourcePolicyViaUi({
+        page,
+        workspaceId,
+        projectId,
+        endpointId: primaryEndpointId,
+        requestsPerDay: '1000',
+        spendingUsdPerDay: '500',
+      });
+      await updateResourcePolicyViaUi({
+        page,
+        workspaceId,
+        projectId,
+        endpointId: secondaryEndpointId,
+        requestsPerDay: '1000',
+        spendingUsdPerDay: '500',
+      });
+      await captureTrace('resource-policy', 'Review resource policy', 'resource-policy__table', '双 endpoint 的资源策略已就绪');
+
+      const externalAgentName = `External Story Agent ${Date.now()}`;
+      const internalAgentName = `Internal Story Agent ${Date.now()}`;
       await createAgentViaUi({
         page,
         workspaceId,
         projectId,
-        name: internalAgentName,
-        mode: 'internal',
-        endpointId: secondaryEndpointId,
-        image: INTERNAL_AGENT_IMAGE,
+        name: externalAgentName,
+        mode: 'external',
+        endpointId: primaryEndpointId,
       });
-    }
+      await captureTrace('agents-list-external', 'Review agents', 'agents__heading', '外部 agent 已创建');
+      if (DEMO_MODE_IS_FULL) {
+        await createAgentViaUi({
+          page,
+          workspaceId,
+          projectId,
+          name: internalAgentName,
+          mode: 'internal',
+          endpointId: secondaryEndpointId,
+          image: INTERNAL_AGENT_IMAGE,
+        });
+        await captureTrace('agents-list-internal', 'Review internal agent', 'agents__heading', '内部 agent 已创建');
+      }
 
-    const externalAgent = await resolveAgent(page, workspaceId, projectId, externalAgentName);
-    if (!externalAgent.wsUrl || !externalAgent.key) {
-      throw new Error('external_agent_connection_info_missing');
-    }
-    const externalRunner = await startCodexRunnerDockerProcess({
-      wsUrl: externalAgent.wsUrl,
-      agentKey: externalAgent.key,
-    });
+      const externalAgent = await resolveAgent(page, workspaceId, projectId, externalAgentName);
+      if (!externalAgent.wsUrl || !externalAgent.key) {
+        throw new Error('external_agent_connection_info_missing');
+      }
+      externalRunner = await startCodexRunnerDockerProcess({
+        wsUrl: externalAgent.wsUrl,
+        agentKey: externalAgent.key,
+      });
 
-    try {
       await waitForAgentPresenceOnline(page, workspaceId, projectId, externalAgent.id);
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
+      await captureTrace('member-workspace-home', 'Return as member', 'projects__heading', '成员重新进入 workspace');
 
       const externalTaskOne = await createTaskViaUi({
         page,
@@ -800,6 +845,7 @@ test.describe('@lane-real release user story end-to-end', () => {
         workspaceMode: 'create_new',
         workspaceName: `External Workspace ${Date.now()}`,
       });
+      await captureTrace('notebook-task-external-1', 'Create external notebook task', 'notebook__task-header', 'external task A 创建成功');
       await expectExternalTaskWorkspaceAccessReachable({
         page,
         workspaceId,
@@ -839,10 +885,12 @@ test.describe('@lane-real release user story end-to-end', () => {
       });
       await openFolderByName(page, '.artifacts');
       await expect(page.getByText('external_summary.md')).toBeVisible({ timeout: 30_000 });
+      await captureTrace('files-artifacts-external', 'Inspect generated artifacts', 'files__objects-table', 'external task 的 .artifacts 已可见');
 
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/${externalTaskOne.taskId}`);
       await expect(page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
+      await captureTrace('notebook-task-detail-external', 'Review task detail', 'notebook__task-header', 'external task 详情页');
 
       await deleteCurrentTaskViaUi(page, workspaceId, projectId);
 
@@ -887,6 +935,7 @@ test.describe('@lane-real release user story end-to-end', () => {
         taskId: externalTaskTwo.taskId,
         expectedPath: '.artifacts/external_reuse.md',
       });
+      await captureTrace('notebook-task-detail-external-reuse', 'Review reused workspace task', 'notebook__task-header', 'external task B 复用 workspace 成功');
 
       if (DEMO_MODE_IS_FULL) {
         const internalTask = await createTaskViaUi({
@@ -956,6 +1005,7 @@ test.describe('@lane-real release user story end-to-end', () => {
         });
         await openFolderByName(page, '.artifacts');
         await expect(page.getByText('internal_summary.md')).toBeVisible({ timeout: 30_000 });
+        await captureTrace('files-artifacts-internal', 'Inspect internal artifacts', 'files__objects-table', 'internal task 的 .artifacts 已可见');
 
         await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
       }
@@ -985,10 +1035,22 @@ test.describe('@lane-real release user story end-to-end', () => {
           endpointName: openaiEndpointName,
         });
       }
+      await captureTrace('usage-overview', 'Review usage metrics', 'usage__view', 'usage 页面已验证 endpoint 请求数据');
+
       expect(pageErrors).toEqual([]);
       expect(projectName).toContain('Release Story Project');
+      outcome = 'pass';
     } finally {
-      await externalRunner.stop();
+      try {
+        await trace.finish({
+          outcome,
+          finishedAt: new Date().toISOString(),
+        });
+      } finally {
+        if (externalRunner) {
+          await externalRunner.stop();
+        }
+      }
     }
   });
 });

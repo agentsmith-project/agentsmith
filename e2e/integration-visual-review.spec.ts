@@ -1,5 +1,3 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { WebSocket } from 'ws';
 import { expect, test, type Page } from '@playwright/test';
 import {
@@ -9,6 +7,7 @@ import {
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
+import { createUxTraceBundleWriter } from './trace-bundle-support';
 
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
@@ -27,10 +26,6 @@ const MEMBER_EMAIL = 'integration-member@example.com';
 const PROJECT_CREATOR_EMAIL = 'integration-user@example.com';
 const NOTEBOOK_EXPECTED_TOKEN = `REAL_VISUAL_NOTEBOOK_OK_${Date.now()}`;
 const NOTEBOOK_ARTIFACT_NAME = `visual-review-summary-${Date.now()}.md`;
-const ARTIFACT_DIR = process.env.RELEASE_REAL_VISUAL_ARTIFACT_DIR
-  ? path.resolve(process.env.RELEASE_REAL_VISUAL_ARTIFACT_DIR)
-  : path.resolve('artifacts/backend-real-visual/manual-run');
-
 type ExecutionWsMessage = {
   type?: string;
   request_id?: string;
@@ -47,16 +42,6 @@ type ExecutionWsMessage = {
   };
 };
 
-type CaptureEntry = {
-  name: string;
-  path: string;
-  role: string;
-  route: string;
-  notes: string;
-  status: 'pass' | 'pass_with_follow_up' | 'needs_fix';
-  blocking: boolean;
-};
-
 type ProjectContext = {
   workspaceId: string;
   projectId: string;
@@ -70,84 +55,11 @@ function requireRealLaneApiKey(): string {
   return BACKEND_REAL_API_KEY.trim();
 }
 
-async function ensureArtifactDir() {
-  await mkdir(ARTIFACT_DIR, { recursive: true });
-}
-
 async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
   ]);
-}
-
-async function capturePage(page: Page, captures: CaptureEntry[], args: {
-  name: string;
-  role: string;
-  route?: string;
-  notes: string;
-  fullPage?: boolean;
-  status?: CaptureEntry['status'];
-  blocking?: boolean;
-}) {
-  await ensureArtifactDir();
-  const filename = `${args.name}.png`;
-  const absolutePath = path.join(ARTIFACT_DIR, filename);
-  await page.screenshot({ path: absolutePath, fullPage: args.fullPage ?? true });
-  captures.push({
-    name: args.name,
-    path: filename,
-    role: args.role,
-    route: args.route ?? page.url(),
-    notes: args.notes,
-    status: args.status ?? 'pass',
-    blocking: args.blocking ?? false,
-  });
-}
-
-async function flushReviewArtifacts(captures: CaptureEntry[]) {
-  await ensureArtifactDir();
-  const counts = {
-    pass: captures.filter((item) => item.status === 'pass').length,
-    pass_with_follow_up: captures.filter((item) => item.status === 'pass_with_follow_up').length,
-    needs_fix: captures.filter((item) => item.status === 'needs_fix').length,
-  };
-  const blockingItems = captures.filter((item) => item.blocking);
-  const manifest = {
-    generated_at: new Date().toISOString(),
-    total: captures.length,
-    summary: counts,
-    screenshots: captures,
-  };
-  const reviewLines = [
-    '# 真实后端界面巡检截图',
-    '',
-    `- generated_at: ${manifest.generated_at}`,
-    `- total: ${manifest.total}`,
-    `- pass: ${counts.pass}`,
-    `- pass_with_follow_up: ${counts.pass_with_follow_up}`,
-    `- needs_fix: ${counts.needs_fix}`,
-    '',
-    '## 发布审查结论',
-    '',
-    blockingItems.length === 0 ? '- ready for release' : '- not ready for release',
-    blockingItems.length === 0
-      ? '- 当前真实后端主链、主要界面与关键操作路径未发现阻塞发布的问题。'
-      : `- 当前仍有 ${blockingItems.length} 个阻塞发布的问题需要修复。`,
-    '',
-    '## 页面审查结果',
-    '',
-    '| Screenshot | Role | Status | Blocking | Route | Notes |',
-    '| --- | --- | --- | --- | --- | --- |',
-    ...captures.map((item) => `| ${item.path} | ${item.role} | ${item.status} | ${item.blocking ? 'yes' : 'no'} | ${item.route} | ${item.notes} |`),
-    '',
-    '## 审查说明',
-    '',
-    '- 这批截图来自真实 Keycloak、真实 API、真实 notebook 主线。',
-    '- 用于人工观察界面、状态、操作路径和明显 UX/UI 缺陷。',
-  ];
-  await writeFile(path.join(ARTIFACT_DIR, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf-8');
-  await writeFile(path.join(ARTIFACT_DIR, 'review.md'), `${reviewLines.join('\n')}\n`, 'utf-8');
 }
 
 async function clearAppState(page: Page, workspaceId = 'ws_default'): Promise<void> {
@@ -294,10 +206,10 @@ async function verifyIdentityProvider(page: Page): Promise<void> {
     (candidate) => candidate.url().includes('/api/system/workspaces/idp/verify') && candidate.request().method() === 'POST',
     { timeout: 15_000 },
   );
-  await page.getByTestId('system-workspaces__verify-idp').click();
+  await page.getByTestId('system-workspace-create__next').click();
   const response = await responsePromise;
   expect(response.ok()).toBeTruthy();
-  await expect(page.getByTestId('system-workspaces__idp-status')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('system-workspaces__draft-admin')).toBeVisible({ timeout: 15_000 });
 }
 
 async function selectWorkspaceAdmin(page: Page, email: string): Promise<void> {
@@ -831,7 +743,19 @@ function sanitizeWorkloadId(taskId: string): string {
   return normalized || 'workload';
 }
 
-async function captureProjectPages(page: Page, captures: CaptureEntry[], context: ProjectContext, role: string) {
+async function captureProjectPages(
+  page: Page,
+  capturePage: (page: Page, captures: unknown[], args: {
+    name: string;
+    role: string;
+    route?: string;
+    notes: string;
+    fullPage?: boolean;
+  }) => Promise<unknown>,
+  captures: unknown[],
+  context: ProjectContext,
+  role: string,
+) {
   const pages: Array<{ name: string; path: string; waitFor?: string }> = [
     { name: 'project-overview', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/overview`, waitFor: 'project-hub__page' },
     { name: 'project-chat', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/chat`, waitFor: 'chat__main-pane' },
@@ -884,438 +808,475 @@ async function captureProjectPages(page: Page, captures: CaptureEntry[], context
 test.describe('@lane-real integration visual review', () => {
   test('captures real backend screenshots for main system and project surfaces', async ({ page }) => {
     test.setTimeout(900_000);
-    const captures: CaptureEntry[] = [];
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20070';
     const providerApiKey = requireRealLaneApiKey();
-
-    await gotoWithRetry(page, `/${LOCALE}/system/login`);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'system-login',
-      role: 'system 管理侧',
-      notes: 'system 管理侧登录入口',
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-visual-review',
+      storyId: 'real-backend-visual-review',
+      title: 'Backend-real visual review',
+      actor: 'system 管理侧 / project owner',
+      route: `/${LOCALE}/system/login`,
+      specFile: 'e2e/integration-visual-review.spec.ts',
+      browser: 'chromium',
+      goal: '用真实 backend 复核系统、工作区和项目核心界面的 UX/UI 质量。',
+      preconditions: ['real backend stack is ready', 'Keycloak and provider API key are configured'],
+      seedData: ['ws_default'],
     });
-
-    await loginAsSystemAdmin(page);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'system-workspaces',
-      role: 'system 管理侧',
-      notes: '工作区清单与创建入口',
+    const captures: unknown[] = [];
+    const capturePage = async (
+      targetPage: Page,
+      _unusedCaptures: unknown[],
+      args: {
+        name: string;
+        role: string;
+        route?: string;
+        notes: string;
+        fullPage?: boolean;
+      },
+    ) => trace.capture(targetPage, {
+      stepId: args.name,
+      action: args.notes,
+      target: args.role,
+      route: args.route ?? targetPage.url(),
+      note: args.notes,
+      fullPage: args.fullPage,
     });
-
-    const workspaceId = await createAndPublishWorkspace(page);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'system-workspace-editor',
-      role: 'system 管理侧',
-      notes: '新工作区创建并发布后的 system 管理侧工作区清单',
-    });
-
-    await page.getByTestId('system-workspaces__open-info').click();
-    await page.waitForURL(new RegExp(`/${LOCALE}/system/info`), { timeout: 20_000 });
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'system-info',
-      role: 'system 管理侧',
-      notes: 'system 信息页',
-    });
-
-    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/login`);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'workspace-login',
-      role: 'workspace admin',
-      notes: '工作区登录入口',
-    });
-
-    await loginToWorkspace(page, workspaceId, DEV_ADMIN_USERNAME, DEV_ADMIN_PASSWORD);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'workspace-home-admin',
-      role: 'workspace admin',
-      notes: 'workspace admin 进入工作区首页',
-    });
-
-    await saveWorkspaceProjectCreators(page, workspaceId);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'workspace-settings',
-      role: 'workspace admin',
-      notes: '工作区设置与 project creators 配置',
-    });
-
-    await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
-    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects`);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'workspace-projects-before-create',
-      role: 'project creator',
-      notes: 'project creator 的项目列表与创建入口',
-    });
-
-    await page.getByTestId('projects__create-btn').click();
-    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'dialog-create-project-real',
-      role: 'project creator',
-      notes: '真实环境创建项目对话框',
-    });
-    await page.getByRole('dialog').getByRole('button', { name: /cancel|取消/i }).click();
-
-    const project = await createProject(page, workspaceId);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'project-overview-initial',
-      role: 'project owner',
-      notes: '项目创建成功后的 overview',
-    });
-
-    await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
-    await requestProjectAccess(page, workspaceId, project.projectId);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'projects-join-request-pending',
-      role: 'ordinary member',
-      notes: '普通用户发起加入申请后的项目列表状态',
-    });
-
-    await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
-    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/members?member_tab=requests`);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'members-join-requests-before-approve',
-      role: 'project owner',
-      notes: '加入申请审批页',
-    });
-    await approveJoinRequest(page, workspaceId, project.projectId);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'members-join-requests-after-approve',
-      role: 'project owner',
-      notes: '批准并授予项目管理权限后的成员治理页',
-    });
-
-    const projectOwnerToken = await readStoredAuthToken(page);
-
-    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/credentials`);
-    await expect(page.getByTestId('credentials__create-btn')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('credentials__create-btn').click();
-    await expect(page.getByTestId('credentials__create-dialog')).toBeVisible();
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'dialog-create-credential-real',
-      role: 'project owner',
-      notes: '真实环境创建凭据对话框',
-    });
-    await page.getByTestId('credentials__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
-    await createCredential(page, workspaceId, project.projectId, providerApiKey);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'project-credentials-real',
-      role: 'project owner',
-      notes: '真实凭据列表',
-    });
-
-    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/endpoints`);
-    await expect(page.getByTestId('endpoints__create-btn')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('endpoints__create-btn').click();
-    await expect(page.getByTestId('endpoints__create-dialog')).toBeVisible();
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'dialog-create-endpoint-real',
-      role: 'project owner',
-      notes: '真实环境 endpoint 创建入口',
-    });
-    await page.getByTestId('endpoints__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
-    const endpointInfo = await createEndpoint(page, workspaceId, project.projectId);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'project-endpoints-real',
-      role: 'project owner',
-      notes: '真实 endpoint 列表',
-    });
-
-    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/agents`);
-    await expect(page.getByTestId('agents__create-btn')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('agents__create-btn').click();
-    await expect(page.getByTestId('agents__create-dialog')).toBeVisible();
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'dialog-create-agent-real',
-      role: 'project owner',
-      notes: '真实环境 agent 创建对话框',
-    });
-    await page.getByTestId('agents__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
-    const agentName = await createAgent(page, workspaceId, project.projectId);
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'project-agents-real',
-      role: 'project owner',
-      notes: '真实 agent 列表',
-    });
-
-    const agentId = await resolveAgentId(page, apiBase, workspaceId, project.projectId, projectOwnerToken, agentName);
-    const connectionInfo = await createAgentKeyAndConnectionInfo(page, apiBase, workspaceId, project.projectId, agentId, projectOwnerToken);
-
-    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/agents`);
-    await expect(page.getByTestId(`agents__keys-btn--${agentId}`)).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId(`agents__keys-btn--${agentId}`).click();
-    await expect(page.getByTestId('agents__dialog__keys')).toBeVisible({ timeout: 30_000 });
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'dialog-agent-connection-info-real',
-      role: 'project owner',
-      notes: '真实 external agent 的 key 与连接信息对话框',
-    });
-    await page.keyboard.press('Escape');
-
-    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
-    await expect(page.getByTestId('files__library-create')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('files__library-create').click();
-    await expect(page.getByTestId('files__dialog__library-create')).toBeVisible({ timeout: 30_000 });
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'dialog-file-library-create-real',
-      role: 'project owner',
-      notes: '真实文件库创建对话框',
-    });
-    await page.keyboard.press('Escape');
-    await page.getByTestId('files__library-create').click();
-    await page.getByTestId('files__library-create__name').fill('Visual Review Library');
-    const createLibraryResponsePromise = page.waitForResponse((response) =>
-        response.request().method() === 'POST'
-        && /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/file-libraries\/?$/.test(response.url()),
-      );
-    await page.getByTestId('files__library-create__submit').click();
-    const createLibraryResponse = await createLibraryResponsePromise;
-    expect(createLibraryResponse.ok()).toBeTruthy();
-    const createLibraryPayload = (await createLibraryResponse.json().catch(() => null)) as
-      | { id?: string; data?: { id?: string } }
-      | null;
-    const visualLibraryId = createLibraryPayload?.id ?? createLibraryPayload?.data?.id;
-    expect(visualLibraryId).toBeTruthy();
-    const visualLibrary = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: 'Visual Review Library' }).first();
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (await visualLibrary.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        break;
-      }
-      await page.reload();
-    }
-    await expect(visualLibrary).toBeVisible({ timeout: 30_000 });
-    await visualLibrary.locator('[data-testid^="files__library-desktop-access--"]').first().click();
-    await expect(page.getByTestId('files__dialog__desktop-mount-access')).toBeVisible({ timeout: 30_000 });
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'dialog-file-library-mount-access-real',
-      role: 'project owner',
-      notes: '真实文件库本地挂载说明对话框',
-    });
-    await page.keyboard.press('Escape');
-    await expect(page.getByTestId('files__dialog__desktop-mount-access')).toBeHidden({ timeout: 10_000 });
-
-    const runner = await startCodexRunnerProcess({
-      wsUrl: connectionInfo.wsUrl,
-      agentKey: connectionInfo.agentKey,
-    });
-    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
-    await waitForAgentPresenceOnline(page, workspaceId, project.projectId, agentId);
+    let outcome: 'pass' | 'fail' = 'fail';
 
     try {
-      await captureProjectPages(page, captures, project, 'project owner');
-      await runNotebookTask({
-        page,
-        context: project,
-        agentId,
-        fileLibraryId: visualLibraryId!,
-        expectedToken: NOTEBOOK_EXPECTED_TOKEN,
-        artifactName: NOTEBOOK_ARTIFACT_NAME,
-      });
+      await gotoWithRetry(page, `/${LOCALE}/system/login`);
       await settlePage(page);
       await capturePage(page, captures, {
-        name: 'project-notebook-task-detail-real',
-        role: 'project owner',
-        notes: 'notebook 真实任务完成后的详情页',
+        name: 'system-login',
+        role: 'system 管理侧',
+        notes: 'system 管理侧登录入口',
       });
-      const traceToggle = page.getByTestId('notebook__message-trace-toggle').first();
-      if (await traceToggle.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await traceToggle.click();
-        await expect(page.getByTestId('notebook__message-trace-panel')).toBeVisible({ timeout: 30_000 });
+
+      await loginAsSystemAdmin(page);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'system-workspaces',
+        role: 'system 管理侧',
+        notes: '工作区清单与创建入口',
+      });
+
+      const workspaceId = await createAndPublishWorkspace(page);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'system-workspace-editor',
+        role: 'system 管理侧',
+        notes: '新工作区创建并发布后的 system 管理侧工作区清单',
+      });
+
+      await page.getByTestId('system-workspaces__open-info').click();
+      await page.waitForURL(new RegExp(`/${LOCALE}/system/info`), { timeout: 20_000 });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'system-info',
+        role: 'system 管理侧',
+        notes: 'system 信息页',
+      });
+
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/login`);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'workspace-login',
+        role: 'workspace admin',
+        notes: '工作区登录入口',
+      });
+
+      await loginToWorkspace(page, workspaceId, DEV_ADMIN_USERNAME, DEV_ADMIN_PASSWORD);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'workspace-home-admin',
+        role: 'workspace admin',
+        notes: 'workspace admin 进入工作区首页',
+      });
+
+      await saveWorkspaceProjectCreators(page, workspaceId);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'workspace-settings',
+        role: 'workspace admin',
+        notes: '工作区设置与 project creators 配置',
+      });
+
+      await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects`);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'workspace-projects-before-create',
+        role: 'project creator',
+        notes: 'project creator 的项目列表与创建入口',
+      });
+
+      await page.getByTestId('projects__create-btn').click();
+      await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'dialog-create-project-real',
+        role: 'project creator',
+        notes: '真实环境创建项目对话框',
+      });
+      await page.getByRole('dialog').getByRole('button', { name: /cancel|取消/i }).click();
+
+      const project = await createProject(page, workspaceId);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'project-overview-initial',
+        role: 'project owner',
+        notes: '项目创建成功后的 overview',
+      });
+
+      await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
+      await requestProjectAccess(page, workspaceId, project.projectId);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'projects-join-request-pending',
+        role: 'ordinary member',
+        notes: '普通用户发起加入申请后的项目列表状态',
+      });
+
+      await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/members?member_tab=requests`);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'members-join-requests-before-approve',
+        role: 'project owner',
+        notes: '加入申请审批页',
+      });
+      await approveJoinRequest(page, workspaceId, project.projectId);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'members-join-requests-after-approve',
+        role: 'project owner',
+        notes: '批准并授予项目管理权限后的成员治理页',
+      });
+
+      const projectOwnerToken = await readStoredAuthToken(page);
+
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/credentials`);
+      await expect(page.getByTestId('credentials__create-btn')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('credentials__create-btn').click();
+      await expect(page.getByTestId('credentials__create-dialog')).toBeVisible();
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'dialog-create-credential-real',
+        role: 'project owner',
+        notes: '真实环境创建凭据对话框',
+      });
+      await page.getByTestId('credentials__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
+      await createCredential(page, workspaceId, project.projectId, providerApiKey);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'project-credentials-real',
+        role: 'project owner',
+        notes: '真实凭据列表',
+      });
+
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/endpoints`);
+      await expect(page.getByTestId('endpoints__create-btn')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('endpoints__create-btn').click();
+      await expect(page.getByTestId('endpoints__create-dialog')).toBeVisible();
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'dialog-create-endpoint-real',
+        role: 'project owner',
+        notes: '真实环境 endpoint 创建入口',
+      });
+      await page.getByTestId('endpoints__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
+      const endpointInfo = await createEndpoint(page, workspaceId, project.projectId);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'project-endpoints-real',
+        role: 'project owner',
+        notes: '真实 endpoint 列表',
+      });
+
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/agents`);
+      await expect(page.getByTestId('agents__create-btn')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('agents__create-btn').click();
+      await expect(page.getByTestId('agents__create-dialog')).toBeVisible();
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'dialog-create-agent-real',
+        role: 'project owner',
+        notes: '真实环境 agent 创建对话框',
+      });
+      await page.getByTestId('agents__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
+      const agentName = await createAgent(page, workspaceId, project.projectId);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'project-agents-real',
+        role: 'project owner',
+        notes: '真实 agent 列表',
+      });
+
+      const agentId = await resolveAgentId(page, apiBase, workspaceId, project.projectId, projectOwnerToken, agentName);
+      const connectionInfo = await createAgentKeyAndConnectionInfo(page, apiBase, workspaceId, project.projectId, agentId, projectOwnerToken);
+
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/agents`);
+      await expect(page.getByTestId(`agents__keys-btn--${agentId}`)).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId(`agents__keys-btn--${agentId}`).click();
+      await expect(page.getByTestId('agents__dialog__keys')).toBeVisible({ timeout: 30_000 });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'dialog-agent-connection-info-real',
+        role: 'project owner',
+        notes: '真实 external agent 的 key 与连接信息对话框',
+      });
+      await page.keyboard.press('Escape');
+
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
+      await expect(page.getByTestId('files__library-create')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('files__library-create').click();
+      await expect(page.getByTestId('files__dialog__library-create')).toBeVisible({ timeout: 30_000 });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'dialog-file-library-create-real',
+        role: 'project owner',
+        notes: '真实文件库创建对话框',
+      });
+      await page.keyboard.press('Escape');
+      await page.getByTestId('files__library-create').click();
+      await page.getByTestId('files__library-create__name').fill('Visual Review Library');
+      const createLibraryResponsePromise = page.waitForResponse((response) =>
+          response.request().method() === 'POST'
+          && /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/file-libraries\/?$/.test(response.url()),
+        );
+      await page.getByTestId('files__library-create__submit').click();
+      const createLibraryResponse = await createLibraryResponsePromise;
+      expect(createLibraryResponse.ok()).toBeTruthy();
+      const createLibraryPayload = (await createLibraryResponse.json().catch(() => null)) as
+        | { id?: string; data?: { id?: string } }
+        | null;
+      const visualLibraryId = createLibraryPayload?.id ?? createLibraryPayload?.data?.id;
+      expect(visualLibraryId).toBeTruthy();
+      const visualLibrary = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: 'Visual Review Library' }).first();
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (await visualLibrary.isVisible({ timeout: 5_000 }).catch(() => false)) {
+          break;
+        }
+        await page.reload();
+      }
+      await expect(visualLibrary).toBeVisible({ timeout: 30_000 });
+      await visualLibrary.locator('[data-testid^="files__library-desktop-access--"]').first().click();
+      await expect(page.getByTestId('files__dialog__desktop-mount-access')).toBeVisible({ timeout: 30_000 });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'dialog-file-library-mount-access-real',
+        role: 'project owner',
+        notes: '真实文件库本地挂载说明对话框',
+      });
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('files__dialog__desktop-mount-access')).toBeHidden({ timeout: 10_000 });
+
+      const runner = await startCodexRunnerProcess({
+        wsUrl: connectionInfo.wsUrl,
+        agentKey: connectionInfo.agentKey,
+      });
+      test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+      await waitForAgentPresenceOnline(page, workspaceId, project.projectId, agentId);
+
+      try {
+        await captureProjectPages(page, capturePage, captures, project, 'project owner');
+        await runNotebookTask({
+          page,
+          context: project,
+          agentId,
+          fileLibraryId: visualLibraryId!,
+          expectedToken: NOTEBOOK_EXPECTED_TOKEN,
+          artifactName: NOTEBOOK_ARTIFACT_NAME,
+        });
         await settlePage(page);
         await capturePage(page, captures, {
-          name: 'project-notebook-trace-real',
+          name: 'project-notebook-task-detail-real',
           role: 'project owner',
-          notes: '真实 notebook 任务的执行 trace 面板',
+          notes: 'notebook 真实任务完成后的详情页',
+        });
+        const traceToggle = page.getByTestId('notebook__message-trace-toggle').first();
+        if (await traceToggle.isVisible({ timeout: 5_000 }).catch(() => false)) {
+          await traceToggle.click();
+          await expect(page.getByTestId('notebook__message-trace-panel')).toBeVisible({ timeout: 30_000 });
+          await settlePage(page);
+          await capturePage(page, captures, {
+            name: 'project-notebook-trace-real',
+            role: 'project owner',
+            notes: '真实 notebook 任务的执行 trace 面板',
+          });
+        }
+
+        await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
+        const mountDialog = page.getByTestId('files__dialog__desktop-mount-access');
+        if (await mountDialog.isVisible().catch(() => false)) {
+          await page.keyboard.press('Escape');
+          await expect(mountDialog).toBeHidden({ timeout: 10_000 });
+        }
+        const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: 'Visual Review Library' }).first();
+        await expect(libraryItem).toBeVisible({ timeout: 30_000 });
+        await libraryItem.click();
+        const artifactsRow = page.getByTestId('files__object-row').filter({ hasText: '.artifacts' }).first();
+        await expect(artifactsRow).toBeVisible({ timeout: 30_000 });
+        await settlePage(page);
+        await capturePage(page, captures, {
+          name: 'project-files-notebook-workspace-real',
+          role: 'project owner',
+          notes: 'notebook 任务绑定的文件库根目录，.artifacts 交付目录已经在 Files 页面中可见',
+        });
+      } finally {
+        await runner.stop();
+      }
+
+      if (
+        process.env.SANDBOX_MANAGER_URL?.trim()
+        && process.env.SANDBOX_SERVICE_KEY?.trim()
+        && process.env.INTERNAL_AGENT_K8S_NAMESPACE?.trim()
+      ) {
+        const internalAgent = await createInternalCodexAgent(page, {
+          workspaceId,
+          projectId: project.projectId,
+          endpointId: endpointInfo.endpointId,
+          title: 'internal-visual-review-agent',
+        });
+        const internalExpectedToken = `INTERNAL_VISUAL_NOTEBOOK_OK_${Date.now()}`;
+        const internalArtifactName = `internal-visual-review-${Date.now()}.md`;
+        const internalTaskTitle = `Internal Visual Review ${Date.now()}`;
+        const internalTaskId = await createNotebookTaskViaApi({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          title: internalTaskTitle,
+          agentId: internalAgent.agentId,
+          fileLibraryId: visualLibraryId!,
+        });
+
+        await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/notebook`);
+        await expect(page.getByTestId('notebook__task-list')).toBeVisible({ timeout: 30_000 });
+        await page.getByTestId('notebook__task-list').getByText(internalTaskTitle).first().click();
+        await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
+
+        await sendNotebookTaskMessage({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          taskId: internalTaskId,
+          content: [
+            'Run the following shell command exactly, then reply with the token and filename.',
+            '```bash',
+            `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${internalArtifactName}`,
+            '# Internal workspace summary',
+            `- Token: ${internalExpectedToken}`,
+            '- Mode: internal-k8s',
+            '- Insight: JuiceFS CSI mounted workspace remained consistent across notebook execution',
+            'EOF',
+            '```',
+            `After the file is written, reply with exactly: ${internalExpectedToken} ${internalArtifactName}`,
+          ].join(' '),
+        });
+        await page.waitForTimeout(1_500);
+        await settlePage(page);
+        await capturePage(page, captures, {
+          name: 'project-notebook-task-internal-preparing-real',
+          role: 'project owner',
+          notes: 'internal agent lazy start 后的 notebook 任务执行中状态',
+        });
+
+        await waitForNotebookTaskToken({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          taskId: internalTaskId,
+          token: internalExpectedToken,
+        });
+        await settlePage(page);
+        await capturePage(page, captures, {
+          name: 'project-notebook-task-internal-detail-real',
+          role: 'project owner',
+          notes: 'internal-k8s notebook 任务完成后的详情页，工作目录固定为 /workspace',
+        });
+
+        const internalWorkloadId = sanitizeWorkloadId(internalTaskId);
+        await deleteInternalWorkloadViaManager({
+          workspaceId,
+          projectId: project.projectId,
+          workloadId: internalWorkloadId,
+        });
+        await page.waitForTimeout(3_000);
+
+        const resumeToken = `INTERNAL_VISUAL_NOTEBOOK_RESUME_${Date.now()}`;
+        await sendNotebookTaskMessage({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          taskId: internalTaskId,
+          content: `Reply with exactly ${resumeToken} after verifying the existing .artifacts/${internalArtifactName} file is still present in the workspace.`,
+        });
+        await waitForNotebookTaskToken({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          taskId: internalTaskId,
+          token: resumeToken,
+          minAgentMessages: 2,
+        });
+
+        await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
+        const internalLibraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: 'Visual Review Library' }).first();
+        await expect(internalLibraryItem).toBeVisible({ timeout: 30_000 });
+        await internalLibraryItem.click();
+        const internalArtifactsRow = page.getByTestId('files__object-row').filter({ hasText: '.artifacts' }).first();
+        await expect(internalArtifactsRow).toBeVisible({ timeout: 30_000 });
+        await settlePage(page);
+        await capturePage(page, captures, {
+          name: 'project-files-internal-workspace-real',
+          role: 'project owner',
+          notes: 'internal-k8s 任务恢复后，.artifacts 交付目录仍在 Files 页面中可见',
         });
       }
 
-      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
-      const mountDialog = page.getByTestId('files__dialog__desktop-mount-access');
-      if (await mountDialog.isVisible().catch(() => false)) {
-        await page.keyboard.press('Escape');
-        await expect(mountDialog).toBeHidden({ timeout: 10_000 });
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/usage`);
+      await expect(page.getByTestId('usage__view')).toBeVisible({ timeout: 30_000 });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'usage-limits-and-trend-real',
+        role: 'project owner',
+        notes: '真实 endpoint 调用后的用量卡片和趋势视图',
+      });
+
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/audit`);
+      await expect(page.getByTestId('audit__page')).toBeVisible({ timeout: 30_000 });
+      const firstAuditAction = page.locator('[data-testid^="audit__row-actions--"]').first();
+      if (await firstAuditAction.isVisible({ timeout: 10_000 }).catch(() => false)) {
+        await firstAuditAction.click();
+        await page.locator('[data-testid^="audit__view-details--"]').first().click();
+        await expect(page.getByTestId('audit__detail-summary')).toBeVisible({ timeout: 30_000 });
+        await settlePage(page);
+        await capturePage(page, captures, {
+          name: 'audit-detail-drawer-real',
+          role: 'project owner',
+          notes: '真实审计详情抽屉',
+        });
       }
-      const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: 'Visual Review Library' }).first();
-      await expect(libraryItem).toBeVisible({ timeout: 30_000 });
-      await libraryItem.click();
-      const artifactsRow = page.getByTestId('files__object-row').filter({ hasText: '.artifacts' }).first();
-      await expect(artifactsRow).toBeVisible({ timeout: 30_000 });
+
+      await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/members?member_tab=people`);
+      await expect(page.getByTestId('members__search-input')).toBeVisible({ timeout: 30_000 });
+      const firstMemberRow = page.getByTestId('members__table__row').first();
+      await expect(firstMemberRow).toBeVisible({ timeout: 30_000 });
+      await firstMemberRow.click();
+      await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
       await settlePage(page);
       await capturePage(page, captures, {
-        name: 'project-files-notebook-workspace-real',
+        name: 'members-effective-access-real',
         role: 'project owner',
-        notes: 'notebook 任务绑定的文件库根目录，.artifacts 交付目录已经在 Files 页面中可见',
+        notes: '成员有效权限抽屉',
       });
+
+      outcome = 'pass';
     } finally {
-      await runner.stop();
+      await trace.finish({ outcome });
     }
-
-    if (
-      process.env.SANDBOX_MANAGER_URL?.trim()
-      && process.env.SANDBOX_SERVICE_KEY?.trim()
-      && process.env.INTERNAL_AGENT_K8S_NAMESPACE?.trim()
-    ) {
-      const internalAgent = await createInternalCodexAgent(page, {
-        workspaceId,
-        projectId: project.projectId,
-        endpointId: endpointInfo.endpointId,
-        title: 'internal-visual-review-agent',
-      });
-      const internalExpectedToken = `INTERNAL_VISUAL_NOTEBOOK_OK_${Date.now()}`;
-      const internalArtifactName = `internal-visual-review-${Date.now()}.md`;
-      const internalTaskTitle = `Internal Visual Review ${Date.now()}`;
-      const internalTaskId = await createNotebookTaskViaApi({
-        page,
-        workspaceId,
-        projectId: project.projectId,
-        title: internalTaskTitle,
-        agentId: internalAgent.agentId,
-        fileLibraryId: visualLibraryId!,
-      });
-
-      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/notebook`);
-      await expect(page.getByTestId('notebook__task-list')).toBeVisible({ timeout: 30_000 });
-      await page.getByTestId('notebook__task-list').getByText(internalTaskTitle).first().click();
-      await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
-
-      await sendNotebookTaskMessage({
-        page,
-        workspaceId,
-        projectId: project.projectId,
-        taskId: internalTaskId,
-        content: [
-          'Run the following shell command exactly, then reply with the token and filename.',
-          '```bash',
-          `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${internalArtifactName}`,
-          '# Internal workspace summary',
-          `- Token: ${internalExpectedToken}`,
-          '- Mode: internal-k8s',
-          '- Insight: JuiceFS CSI mounted workspace remained consistent across notebook execution',
-          'EOF',
-          '```',
-          `After the file is written, reply with exactly: ${internalExpectedToken} ${internalArtifactName}`,
-        ].join(' '),
-      });
-      await page.waitForTimeout(1_500);
-      await settlePage(page);
-      await capturePage(page, captures, {
-        name: 'project-notebook-task-internal-preparing-real',
-        role: 'project owner',
-        notes: 'internal agent lazy start 后的 notebook 任务执行中状态',
-      });
-
-      await waitForNotebookTaskToken({
-        page,
-        workspaceId,
-        projectId: project.projectId,
-        taskId: internalTaskId,
-        token: internalExpectedToken,
-      });
-      await settlePage(page);
-      await capturePage(page, captures, {
-        name: 'project-notebook-task-internal-detail-real',
-        role: 'project owner',
-        notes: 'internal-k8s notebook 任务完成后的详情页，工作目录固定为 /workspace',
-      });
-
-      const internalWorkloadId = sanitizeWorkloadId(internalTaskId);
-      await deleteInternalWorkloadViaManager({
-        workspaceId,
-        projectId: project.projectId,
-        workloadId: internalWorkloadId,
-      });
-      await page.waitForTimeout(3_000);
-
-      const resumeToken = `INTERNAL_VISUAL_NOTEBOOK_RESUME_${Date.now()}`;
-      await sendNotebookTaskMessage({
-        page,
-        workspaceId,
-        projectId: project.projectId,
-        taskId: internalTaskId,
-        content: `Reply with exactly ${resumeToken} after verifying the existing .artifacts/${internalArtifactName} file is still present in the workspace.`,
-      });
-      await waitForNotebookTaskToken({
-        page,
-        workspaceId,
-        projectId: project.projectId,
-        taskId: internalTaskId,
-        token: resumeToken,
-        minAgentMessages: 2,
-      });
-
-      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
-      const internalLibraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: 'Visual Review Library' }).first();
-      await expect(internalLibraryItem).toBeVisible({ timeout: 30_000 });
-      await internalLibraryItem.click();
-      const internalArtifactsRow = page.getByTestId('files__object-row').filter({ hasText: '.artifacts' }).first();
-      await expect(internalArtifactsRow).toBeVisible({ timeout: 30_000 });
-      await settlePage(page);
-      await capturePage(page, captures, {
-        name: 'project-files-internal-workspace-real',
-        role: 'project owner',
-        notes: 'internal-k8s 任务恢复后，.artifacts 交付目录仍在 Files 页面中可见',
-      });
-    }
-
-    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/usage`);
-    await expect(page.getByTestId('usage__view')).toBeVisible({ timeout: 30_000 });
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'usage-limits-and-trend-real',
-      role: 'project owner',
-      notes: '真实 endpoint 调用后的用量卡片和趋势视图',
-    });
-
-    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/audit`);
-    await expect(page.getByTestId('audit__page')).toBeVisible({ timeout: 30_000 });
-    const firstAuditAction = page.locator('[data-testid^="audit__row-actions--"]').first();
-    if (await firstAuditAction.isVisible({ timeout: 10_000 }).catch(() => false)) {
-      await firstAuditAction.click();
-      await page.locator('[data-testid^="audit__view-details--"]').first().click();
-      await expect(page.getByTestId('audit__detail-summary')).toBeVisible({ timeout: 30_000 });
-      await settlePage(page);
-      await capturePage(page, captures, {
-        name: 'audit-detail-drawer-real',
-        role: 'project owner',
-        notes: '真实审计详情抽屉',
-      });
-    }
-
-    await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
-    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/members?member_tab=people`);
-    await expect(page.getByTestId('members__search-input')).toBeVisible({ timeout: 30_000 });
-    const firstMemberRow = page.getByTestId('members__table__row').first();
-    await expect(firstMemberRow).toBeVisible({ timeout: 30_000 });
-    await firstMemberRow.click();
-    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'members-effective-access-real',
-      role: 'project owner',
-      notes: '成员有效权限抽屉',
-    });
-
-    await flushReviewArtifacts(captures);
   });
 });

@@ -26,6 +26,10 @@ vi.mock('@/components/theme/PublicThemeToggle', () => ({
   PublicThemeToggle: () => <div data-testid="public-theme-toggle" />,
 }));
 
+vi.mock('@/components/app-shell/Logo', () => ({
+  Logo: () => <div data-testid="logo" />,
+}));
+
 import WorkspaceSelectPage from '../page';
 
 describe('WorkspaceSelectPage', () => {
@@ -47,11 +51,18 @@ describe('WorkspaceSelectPage', () => {
 
     render(<WorkspaceSelectPage />);
 
-    expect(screen.getByTestId('workspace-select__card--ws_1')).toBeInTheDocument();
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'narrow');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'single');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-family', 'public-auth');
+    expect(screen.getByTestId('workspace-select__list')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-select__item--ws_1')).toBeInTheDocument();
+    expect(screen.getByTestId('logo')).toBeInTheDocument();
     expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('workspace-select__card--ws_1'));
+    expect(screen.queryByText('Open')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('workspace-select__meta')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('workspace-select__item--ws_1'));
     expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/ws_1/login');
-    expect(screen.queryByText('workspace_select_list_title')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('workspace-select__card--ws_1')).not.toBeInTheDocument();
   });
 
   it('keeps the system 管理侧入口 as a low-emphasis footer link', () => {
@@ -64,6 +75,9 @@ describe('WorkspaceSelectPage', () => {
     });
 
     render(<WorkspaceSelectPage />);
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'narrow');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'single');
+    expect(screen.getByTestId('logo')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-select__system-link')).toHaveAttribute('href', '/en-US/system/login');
   });
 

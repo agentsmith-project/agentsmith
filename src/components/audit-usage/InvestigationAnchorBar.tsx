@@ -16,6 +16,7 @@ export interface InvestigationAnchorBarProps {
   traceRunId?: string;
   traceSource?: string;
   onClear?: () => void;
+  compact?: boolean;
 }
 
 type AnchorItem = {
@@ -33,6 +34,7 @@ export function InvestigationAnchorBar({
   traceRunId,
   traceSource,
   onClear,
+  compact = false,
 }: InvestigationAnchorBarProps) {
   const commonT = useTranslations('common');
   const toastT = useTranslations('common.toast');
@@ -51,8 +53,11 @@ export function InvestigationAnchorBar({
   if (items.length === 0) return null;
 
   return (
-    <div className="rounded-md border border-subtle bg-bg-base/20 p-3" data-testid="investigation-anchor__bar">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div
+      className={compact ? 'space-y-2' : 'rounded-md border border-subtle bg-bg-base/20 p-3'}
+      data-testid="investigation-anchor__bar"
+    >
+      <div className={compact ? 'flex flex-wrap items-center justify-between gap-2' : 'flex flex-wrap items-center justify-between gap-2'}>
         <p className="text-xs font-medium text-foreground">{commonT('investigation_context_title')}</p>
         {onClear ? (
           <Button variant="outline" size="sm" className="h-7" onClick={onClear} data-testid="investigation-anchor__clear">
@@ -60,7 +65,7 @@ export function InvestigationAnchorBar({
           </Button>
         ) : null}
       </div>
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className={compact ? 'flex flex-wrap gap-2' : 'mt-2 flex flex-wrap gap-2'}>
         {items.map((item) => (
           <Badge key={item.key} variant="outline" className="flex items-center gap-2">
             <span className="text-xs text-tertiary">{item.label}:</span>

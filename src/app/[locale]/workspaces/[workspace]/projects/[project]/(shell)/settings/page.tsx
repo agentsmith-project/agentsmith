@@ -294,27 +294,24 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             title={settingsT('title')}
             subtitle={settingsT('subtitle')}
             variant="compact"
-            className="[&>div>h1]:flex [&>div>h1]:items-center [&>div>h1]:gap-2"
           />
         )}
       >
         <div className="w-full space-y-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="rounded-md border border-subtle/70 bg-transparent px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-              {visibilityLabel}
-            </div>
-            <div className="rounded-md border border-subtle/70 bg-transparent px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-              {settingsT('join_policy')}: {joinPolicyLabel}
-            </div>
-            <div className="rounded-md border border-subtle/70 bg-transparent px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-              {settingsT('admin_group_title')}: {projectAdminCount}
-            </div>
-            <div className="rounded-md border border-subtle/70 bg-transparent px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-              {settingsT('workspace_project_owner_label')}: {ownerDisplayName}
-            </div>
+          <div
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-tertiary"
+            data-testid="settings__summary-line"
+          >
+            <span className="text-tertiary">{visibilityLabel}</span>
+            <span className="text-tertiary">·</span>
+            <span className="text-tertiary">{settingsT('join_policy')}: {joinPolicyLabel}</span>
+            <span className="text-tertiary">·</span>
+            <span className="text-tertiary">{settingsT('admin_group_title')}: {projectAdminCount}</span>
+            <span className="text-tertiary">·</span>
+            <span className="text-secondary">{settingsT('workspace_project_owner_label')}: {ownerDisplayName}</span>
           </div>
 
-          <div className="space-y-6 border-t border-subtle/60 pt-5" data-testid="settings__ownership-section">
+          <div className="space-y-3" data-testid="settings__ownership-section">
             <div className="space-y-1">
               <h2 className="text-base font-semibold text-foreground">{settingsT('ownership_lifecycle_title')}</h2>
               <p className="text-sm text-tertiary">
@@ -322,63 +319,70 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               </p>
             </div>
 
-            <GeneralSettingsSection
-              canManageProjectLifecycle={canManageProjectLifecycle}
-              commonT={commonT}
-              description={description}
-              joinPolicy={joinPolicy}
-              name={name}
-              projectT={projectT}
-              savingGeneral={savingGeneral}
-              settingsT={settingsT}
-              visibility={visibility}
-              onDescriptionChange={setDescription}
-              onJoinPolicyChange={setJoinPolicy}
-              onNameChange={setName}
-              onSave={handleSaveGeneral}
-              onVisibilityChange={setVisibility}
-            />
+            <div
+              className="divide-y divide-subtle/60 border-y border-subtle/60"
+              data-testid="settings__flow"
+            >
+              <GeneralSettingsSection
+                canManageProjectLifecycle={canManageProjectLifecycle}
+                commonT={commonT}
+                description={description}
+                joinPolicy={joinPolicy}
+                name={name}
+                projectT={projectT}
+                savingGeneral={savingGeneral}
+                settingsT={settingsT}
+                visibility={visibility}
+                onDescriptionChange={setDescription}
+                onJoinPolicyChange={setJoinPolicy}
+                onNameChange={setName}
+                onSave={handleSaveGeneral}
+                onVisibilityChange={setVisibility}
+              />
 
-          <ProjectAdminGroupSection
-              canAssignProjectAdmins={canAssignProjectAdmins}
-              savingProjectAdmins={savingProjectAdmins}
-              selectedProjectAdmins={selectedProjectAdmins}
-              settingsT={settingsT}
-              workspaceMembers={selectableProjectAdminMembers}
-              membersHref={membersHref}
-              onCheckedChange={handleProjectAdminCheckedChange}
-              onSave={handleSaveProjectAdmins}
-            />
+              <ProjectAdminGroupSection
+                canAssignProjectAdmins={canAssignProjectAdmins}
+                savingProjectAdmins={savingProjectAdmins}
+                selectedProjectAdmins={selectedProjectAdmins}
+                settingsT={settingsT}
+                workspaceMembers={selectableProjectAdminMembers}
+                membersHref={membersHref}
+                onCheckedChange={handleProjectAdminCheckedChange}
+                onSave={handleSaveProjectAdmins}
+              />
 
-            <ProjectOwnerSection
-              canTransferProjectOwner={canTransferProjectOwner}
-              currentProject={currentProject}
-              savingProjectOwner={savingProjectOwner}
-              selectedProjectOwner={selectedProjectOwner}
-              settingsT={settingsT}
-              workspaceMembers={workspaceMembers}
-              onOwnerChange={setSelectedProjectOwner}
-              onSave={handleSaveProjectOwner}
-            />
+              <ProjectOwnerSection
+                canTransferProjectOwner={canTransferProjectOwner}
+                currentProject={currentProject}
+                savingProjectOwner={savingProjectOwner}
+                selectedProjectOwner={selectedProjectOwner}
+                settingsT={settingsT}
+                workspaceMembers={workspaceMembers}
+                onOwnerChange={setSelectedProjectOwner}
+                onSave={handleSaveProjectOwner}
+              />
 
-            <div className="rounded-md border border-error/20 bg-error/5 p-4">
-              <h3 className="text-sm font-semibold text-error mb-3">{settingsT('danger_zone_title')}</h3>
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <div className="font-medium text-foreground">{settingsT('delete_project_title')}</div>
-                  <div className="text-sm text-tertiary">
-                    {canDeleteProject ? settingsT('delete_project_help') : settingsT('delete_project_owner_only')}
+              <section className="space-y-3 py-5" data-testid="settings__danger-zone">
+                <div className="space-y-1 border-l-2 border-error/30 pl-4">
+                  <h3 className="text-sm font-semibold text-error">{settingsT('danger_zone_title')}</h3>
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="font-medium text-foreground">{settingsT('delete_project_title')}</div>
+                      <div className="text-sm text-tertiary">
+                        {canDeleteProject ? settingsT('delete_project_help') : settingsT('delete_project_owner_only')}
+                      </div>
+                    </div>
+                    <Button
+                      variant="destructive"
+                      onClick={() => setDeleteDialogOpen(true)}
+                      disabled={!canDeleteProject}
+                      data-testid="settings__delete-project-btn"
+                    >
+                      {settingsT('delete_project_action')}
+                    </Button>
                   </div>
                 </div>
-                <Button
-                  variant="destructive"
-                  onClick={() => setDeleteDialogOpen(true)}
-                  disabled={!canDeleteProject}
-                  data-testid="settings__delete-project-btn"
-                >
-                  {settingsT('delete_project_action')}
-                </Button>
-              </div>
+              </section>
             </div>
           </div>
 

@@ -88,7 +88,11 @@ describe('WorkspaceLoginPage', () => {
     render(<WorkspaceLoginPage />);
 
     expect(await screen.findByTestId('workspace-login__heading')).toHaveTextContent('Alpha Workspace');
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'narrow');
+    expect(screen.getByTestId('logo')).toBeInTheDocument();
     expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'single');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-family', 'public-auth');
     expect(fetchMock).toHaveBeenCalledWith('/api/public/workspaces/ws_alpha', { cache: 'no-store' });
     expect(screen.queryByText('system_login_link')).not.toBeInTheDocument();
   });
@@ -96,6 +100,7 @@ describe('WorkspaceLoginPage', () => {
   it('redirects to workspace home after mock quick login', async () => {
     render(<WorkspaceLoginPage />);
 
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'narrow');
     expect(await screen.findByTestId('workspace-login__submit')).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('workspace-login__email-input'), {
       target: { value: 'user@example.com' },

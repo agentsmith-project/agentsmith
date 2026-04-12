@@ -188,6 +188,66 @@ Required:
 - prefer spacing and typography over nested summary cards
 - recovery CTAs must always point to real, reachable destinations
 
+### 5.5 Page families
+
+Every route must map to exactly one site-wide recipe family before implementation.
+
+Default families:
+
+- `public_auth_single`: one primary column for login, join, request, and completion flows
+- `public_auth_split`: a single secondary aside only when it materially reduces cognitive load
+- `work_surface_standard`: quiet shell plus one main work surface
+- `work_surface_immersive`: full-height work surface with only minimal utility chrome
+- `settings_sheet`: continuous settings sheet with section dividers, not a dashboard stack
+- `governance_table_detail`: one dominant list or table plus an optional detail surface
+- `system_admin_detail`: list-detail or editor-detail surface for system management
+- `overlay_dialog`: lightweight confirmation or single-step choice
+- `overlay_sheet`: multi-step or multi-field right-side panel
+
+Required:
+
+- one route, one recipe family
+- no page-local shell wrapper that recreates a second top-level layout
+- no chooser-card stack when a quiet list or single-column flow is sufficient
+- no dashboard-style summary strip unless the recipe explicitly allows it
+- any split layout must keep the primary task in the main column and helper content secondary
+
+### 5.6 Shell, CTA, and state rules
+
+Required:
+
+- each visible header cluster may expose one primary CTA and at most two visible secondary actions
+- the primary CTA is the only action that may use stronger accent fill
+- shell chrome must remain quieter than the content it frames
+- loading, empty, error, and recovery states must use shared primitives
+- recovery CTAs must point to reachable destinations
+- error states should surface stable identifiers such as `error_code` and `request_id` when available
+- light and dark modes must preserve the same topology, action order, and affordance placement
+- theme changes may alter tone and contrast, but not page recipe or information hierarchy
+
+### 5.7 Visual baseline review
+
+Every updated visual baseline must be reviewed against three truths:
+
+- the route and recipe family
+- the rendered screenshot in light and dark
+- the current public Cursor visual language
+
+Required review steps:
+
+1. inspect the route code and shared recipe usage
+2. inspect the rendered screenshot at full size
+3. compare the screenshot to the public Cursor reference for shell weight, spacing, typography, and CTA hierarchy
+4. record whether the baseline is accepted, rejected, or blocked on a missing recipe or state
+
+Acceptance requires:
+
+- no extra shell layer
+- no page-local decorative language
+- no dashboard tropes that overpower the main task
+- no light/dark mismatch in layout or control placement
+- no acceptance based on tests alone
+
 ## 6. Forbidden Deviations
 
 These patterns are forbidden unless a deliberate exception is documented:

@@ -28,11 +28,13 @@ export function ProjectOwnerSection({
   onSave,
 }: ProjectOwnerSectionProps) {
   return (
-    <div className="rounded-lg border border-subtle bg-bg-base/20 p-4" data-testid="settings__project-owner-section">
-      <h3 className="text-sm font-semibold text-foreground mb-1">{settingsT('project_owner_title')}</h3>
-      <p className="text-sm text-tertiary mb-4">
+    <section className="space-y-4 py-5" data-testid="settings__project-owner-section">
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold text-foreground">{settingsT('project_owner_title')}</h3>
+        <p className="text-sm text-tertiary">
         {canTransferProjectOwner ? settingsT('project_owner_help') : settingsT('project_owner_read_only_help')}
-      </p>
+        </p>
+      </div>
       <div className="space-y-3">
         <label className="block text-sm font-medium text-primary" htmlFor="project-owner-select">
           {settingsT('project_owner_field')}
@@ -53,7 +55,7 @@ export function ProjectOwnerSection({
         </select>
       </div>
       {canTransferProjectOwner ? (
-        <div className="mt-6 flex justify-end">
+        <div className="flex justify-end pt-4">
           <Button
             onClick={onSave}
             disabled={savingProjectOwner || selectedProjectOwner === currentProject.owner_id}
@@ -64,6 +66,6 @@ export function ProjectOwnerSection({
           </Button>
         </div>
       ) : null}
-    </div>
+    </section>
   );
 }

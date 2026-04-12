@@ -119,9 +119,9 @@ describe('JoinRequestsTab', () => {
     expect(screen.getByRole('button', { name: 'approve' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'reject' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'approve_and_grant' })).toBeInTheDocument();
-    expect(screen.getByText('pending_help')).toBeInTheDocument();
-    expect(screen.getByTestId('members__join-request-decision-paths')).toHaveTextContent('decision_paths.approve');
-    expect(screen.getByTestId('members__join-request-decision-paths')).toHaveTextContent('decision_paths.approve_and_grant');
+    expect(screen.getByTestId('members__join-requests-list')).toBeInTheDocument();
+    expect(screen.queryByText('pending_help')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('members__join-request-decision-paths')).not.toBeInTheDocument();
   });
 
   it('hides approve and reject actions for project admins without owner controls', () => {
@@ -208,6 +208,6 @@ describe('JoinRequestsTab', () => {
     );
 
     expect(screen.getByText('outcome.project_admin')).toBeInTheDocument();
-    expect(screen.getByText('reviewed_help')).toBeInTheDocument();
+    expect(screen.queryByText('reviewed_help')).not.toBeInTheDocument();
   });
 });

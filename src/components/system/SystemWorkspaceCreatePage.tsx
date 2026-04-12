@@ -1,11 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { CheckCircle2, ChevronLeft, Mail, ShieldCheck, UserRoundSearch } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
 import { slugifyWorkspaceId } from '@/lib/system-admin/slugify-workspace-id';
@@ -71,29 +73,31 @@ export function SystemWorkspaceCreatePage() {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const stepIndex = ['basics', 'identity', 'administrator', 'review'].indexOf(step);
-  const idpVerified = idpVerificationState === 'verified_with_directory' || idpVerificationState === 'verified_without_directory';
   const directorySearchEnabled = idpVerificationState === 'verified_with_directory';
-  const canContinueIdentity = idpVerified;
+  const canContinueIdentity = Boolean(
+    draft.loginIdpUrl.trim() &&
+    draft.loginIdpRealm.trim() &&
+    draft.loginClientId.trim(),
+  );
   const canContinueAdmin = draft.adminMode === 'directory_user'
     ? Boolean(draft.admin?.user_id)
     : isValidEmail(draft.adminEmail);
-  const reviewRows = useMemo(
-    () => [
-      { label: t('workspace_name'), value: draft.name || t('none') },
-      { label: t('idp_title'), value: `${draft.loginIdpRealm || t('none')} · ${draft.loginClientId || t('none')}` },
-      {
-        label: t('workspace_admin_title'),
-        value: draft.adminMode === 'directory_user'
-          ? draft.admin?.email || t('none')
-          : draft.adminEmail || t('none'),
-      },
-      { label: t('current_status_label'), value: t('provisioning_status.draft') },
-    ],
-    [draft, t],
-  );
   const workspaceSlug = slugifyWorkspaceId(draft.name || 'workspace');
   const workspaceLoginPath = `/${locale}/workspaces/${workspaceSlug}/login`;
   const workspaceCallbackPath = `/${locale}/workspaces/${workspaceSlug}/login/callback`;
+  const reviewRows = [
+    { label: t('workspace_name'), value: draft.name || t('none') },
+    { label: t('idp_title'), value: `${draft.loginIdpRealm || t('none')} · ${draft.loginClientId || t('none')}` },
+    { label: t('workspace_login_url_label'), value: workspaceLoginPath },
+    { label: t('workspace_callback_url_label'), value: workspaceCallbackPath },
+    {
+      label: t('workspace_admin_title'),
+      value: draft.adminMode === 'directory_user'
+        ? draft.admin?.email || t('none')
+        : draft.adminEmail || t('none'),
+    },
+    { label: t('current_status_label'), value: t('provisioning_status.draft') },
+  ];
 
   const updateDraft = (patch: Partial<SystemWorkspaceDraft>) => {
     const idpChanged = 'loginIdpUrl' in patch
@@ -128,7 +132,7 @@ export function SystemWorkspaceCreatePage() {
   };
 
   const verifyIdentityProvider = async () => {
-    if (!draft.loginIdpUrl.trim() || !draft.loginIdpRealm.trim() || !draft.loginClientId.trim()) return;
+    if (!draft.loginIdpUrl.trim() || !draft.loginIdpRealm.trim() || !draft.loginClientId.trim()) return false;
     setIdpVerificationState('verifying');
     setIdpVerificationNotice(null);
     setAdminSearchResults([]);
@@ -149,7 +153,7 @@ export function SystemWorkspaceCreatePage() {
       if (!response.ok || !data?.idp_ok) {
         setIdpVerificationState('failed');
         setIdpVerificationNotice(data?.error_message || 'keycloak_idp_invalid');
-        return;
+        return false;
       }
       if (data.directory_search_supported) {
         setIdpVerificationState('verified_with_directory');
@@ -157,7 +161,7 @@ export function SystemWorkspaceCreatePage() {
         if (draft.adminMode !== 'directory_user') {
           setDraft((current) => ({ ...current, adminMode: 'directory_user' }));
         }
-        return;
+        return true;
       }
       setIdpVerificationState('verified_without_directory');
       setIdpVerificationNotice(data?.advice_code === 'DIRECTORY_PERMISSION_RECOMMENDED'
@@ -170,9 +174,11 @@ export function SystemWorkspaceCreatePage() {
         adminQuery: '',
         adminEmail: current.adminEmail || current.admin?.email || '',
       }));
+      return true;
     } catch {
       setIdpVerificationState('failed');
       setIdpVerificationNotice('keycloak_directory_unavailable');
+      return false;
     }
   };
 
@@ -241,61 +247,82 @@ export function SystemWorkspaceCreatePage() {
     }
   };
 
+  const handlePrimaryAction = async () => {
+    if (step === 'basics') {
+      if (draft.name.trim()) setStep('identity');
+      return;
+    }
+
+    if (step === 'identity') {
+      const verified = await verifyIdentityProvider();
+      if (verified) setStep('administrator');
+      return;
+    }
+
+    if (step === 'administrator') {
+      if (canContinueAdmin) setStep('review');
+      return;
+    }
+
+    if (step === 'review') {
+      await createWorkspace();
+    }
+  };
+
   return (
     <PageState state="success">
-      <PageLayout>
-        <div className="min-h-screen bg-background p-4 md:p-6">
-          <div className="mx-auto max-w-5xl space-y-5">
-            <header className="rounded-md border border-subtle bg-background/88 p-5">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="space-y-2">
-                  <Link href={`/${locale}/system/workspaces`} className="inline-flex items-center gap-2 text-sm text-tertiary hover:text-secondary">
-                    <ChevronLeft className="h-4 w-4" />
-                    {t('back_to_workspaces')}
-                  </Link>
-                  <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('create_panel_title')}</p>
-                  <h1 className="text-2xl font-semibold text-foreground" data-testid="system-workspace-create__heading">
-                    {t('workspace_create_wizard_title')}
-                  </h1>
-                  <p className="text-sm leading-6 text-secondary">{t('workspace_create_wizard_subtitle')}</p>
-                </div>
-              </div>
-              <div className="mt-5" data-testid="system-workspace-create__step-tracker">
-                <div className="grid gap-3 md:grid-cols-4">
-                  {(['basics', 'identity', 'administrator', 'review'] as const).map((item, index) => {
-                    const isActive = step === item;
-                    const isComplete = index < stepIndex;
+      <PageLayout
+        header={(
+          <PageHeader
+            title={t('workspace_create_wizard_title')}
+            subtitle={t('workspace_create_wizard_subtitle')}
+            variant="compact"
+            actions={(
+              <Link href={`/${locale}/system/workspaces`} className="inline-flex items-center gap-2 text-sm text-tertiary hover:text-secondary">
+                <ChevronLeft className="h-4 w-4" />
+                {t('back_to_workspaces')}
+              </Link>
+            )}
+          />
+        )}
+        toolbar={(
+          <PageToolbar className="w-full">
+            <div className="grid w-full gap-3 md:grid-cols-4" data-testid="system-workspace-create__step-tracker">
+              {(['basics', 'identity', 'administrator', 'review'] as const).map((item, index) => {
+                const isActive = step === item;
+                const isComplete = index < stepIndex;
 
-                    return (
-                      <div
-                        key={item}
-                        className="flex items-start gap-3 border-t border-subtle pt-3"
-                        data-testid={`system-workspace-create__step--${item}`}
-                      >
-                        <span
-                          className={[
-                            'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium',
-                            isActive
-                              ? 'border-border bg-surface text-foreground'
-                              : isComplete
-                                ? 'border-success/30 bg-success/10 text-success'
-                                : 'border-subtle bg-background text-tertiary',
-                          ].join(' ')}
-                        >
-                          {index + 1}
-                        </span>
-                        <div className="space-y-1">
-                          <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_create_step_label', { step: String(index + 1) })}</p>
-                          <p className="text-sm font-medium text-foreground">{t(`workspace_create_step_${item}`)}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </header>
-
-            <section className="rounded-md border border-subtle bg-background/88 p-5" data-testid="system-workspace-create__shell">
+                return (
+                  <div
+                    key={item}
+                    className="flex items-start gap-3 border-t border-subtle pt-3"
+                    data-testid={`system-workspace-create__step--${item}`}
+                  >
+                    <span
+                      className={[
+                        'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium',
+                        isActive
+                          ? 'border-border bg-surface text-foreground'
+                          : isComplete
+                            ? 'border-success/30 bg-success/10 text-success'
+                            : 'border-subtle bg-background text-tertiary',
+                      ].join(' ')}
+                    >
+                      {index + 1}
+                    </span>
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_create_step_label', { step: String(index + 1) })}</p>
+                      <p className="text-sm font-medium text-foreground">{t(`workspace_create_step_${item}`)}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </PageToolbar>
+        )}
+      >
+        <div className="mx-auto max-w-5xl space-y-5">
+            <section className="space-y-5 bg-transparent py-2" data-testid="system-workspace-create__shell">
               {step === 'basics' ? (
                 <div className="space-y-5">
                   <div className="space-y-1">
@@ -378,19 +405,6 @@ export function SystemWorkspaceCreatePage() {
                         />
                       </div>
                     </div>
-                    <div className="border-t border-subtle pt-4 text-sm">
-                      <p className="font-medium text-foreground">{t('workspace_login_preview_title')}</p>
-                      <div className="mt-3 space-y-2">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_login_url_label')}</p>
-                          <p className="mt-1 break-all text-secondary" data-testid="system-workspace-create__login-preview">{workspaceLoginPath}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_callback_url_label')}</p>
-                          <p className="mt-1 break-all text-secondary" data-testid="system-workspace-create__callback-preview">{workspaceCallbackPath}</p>
-                        </div>
-                      </div>
-                    </div>
                   </div>
                   <div className={`rounded-md border px-4 py-4 ${buildVerificationToneClass(idpVerificationState)}`}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -403,15 +417,6 @@ export function SystemWorkspaceCreatePage() {
                           <p className="text-sm text-secondary" data-testid="system-workspaces__idp-notice">{t(idpVerificationNotice)}</p>
                         ) : null}
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => void verifyIdentityProvider()}
-                        disabled={isSubmitting || idpVerificationState === 'verifying'}
-                        data-testid="system-workspaces__verify-idp"
-                      >
-                        {idpVerificationState === 'verifying' ? t('idp_verify_loading') : t('idp_validate_continue')}
-                      </Button>
                     </div>
                   </div>
                 </div>
@@ -551,6 +556,19 @@ export function SystemWorkspaceCreatePage() {
                     </div>
                     <p className="text-sm text-tertiary">{t('workspace_create_review_body')}</p>
                   </div>
+                  <div className="space-y-3 border-t border-subtle pt-4 text-sm">
+                    <p className="font-medium text-foreground">{t('workspace_login_preview_title')}</p>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_login_url_label')}</p>
+                        <p className="mt-1 break-all text-secondary" data-testid="system-workspace-create__login-preview">{workspaceLoginPath}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_callback_url_label')}</p>
+                        <p className="mt-1 break-all text-secondary" data-testid="system-workspace-create__callback-preview">{workspaceCallbackPath}</p>
+                      </div>
+                    </div>
+                  </div>
                   <div className="space-y-3 border-t border-subtle pt-4">
                     {reviewRows.map((row) => (
                       <div key={row.label} className="flex flex-wrap items-start justify-between gap-3 border-b border-subtle py-3 first:pt-0 last:border-b-0 last:pb-0">
@@ -577,39 +595,26 @@ export function SystemWorkspaceCreatePage() {
                 >
                   {t('workspace_create_back')}
                 </Button>
-                {step !== 'review' ? (
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={() => {
-                      if (step === 'basics' && draft.name.trim()) setStep('identity');
-                      if (step === 'identity' && canContinueIdentity) setStep('administrator');
-                      if (step === 'administrator' && canContinueAdmin) setStep('review');
-                    }}
-                    disabled={
-                      isSubmitting
-                      || (step === 'basics' && !draft.name.trim())
-                      || (step === 'identity' && !canContinueIdentity)
-                      || (step === 'administrator' && !canContinueAdmin)
-                    }
-                    data-testid="system-workspace-create__next"
-                  >
-                    {step === 'identity' ? t('idp_validate_continue') : t('workspace_create_next')}
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={() => void createWorkspace()}
-                    disabled={isSubmitting}
-                    data-testid="system-workspace-create__create"
-                  >
-                    {isSubmitting ? t('creating') : t('create_workspace')}
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={() => void handlePrimaryAction()}
+                  disabled={
+                    isSubmitting
+                    || (step === 'basics' && !draft.name.trim())
+                    || (step === 'identity' && (!canContinueIdentity || idpVerificationState === 'verifying'))
+                    || (step === 'administrator' && !canContinueAdmin)
+                  }
+                  data-testid={step === 'review' ? 'system-workspace-create__create' : 'system-workspace-create__next'}
+                >
+                  {step === 'review'
+                    ? (isSubmitting ? t('creating') : t('create_workspace'))
+                    : step === 'identity'
+                      ? (idpVerificationState === 'verifying' ? t('idp_verify_loading') : t('idp_validate_continue'))
+                      : t('workspace_create_next')}
+                </Button>
               </div>
             </section>
-          </div>
         </div>
       </PageLayout>
     </PageState>

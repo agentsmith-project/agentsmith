@@ -21,6 +21,7 @@ export interface AuditFiltersProps {
   onChange: (filters: AuditListParams) => void;
   onClear: () => void;
   className?: string;
+  compact?: boolean;
   defaultEndUserId?: string;
   categoryFilter?: AuditEventCategoryFilter;
   onCategoryFilterChange?: (category: AuditEventCategoryFilter) => void;
@@ -31,6 +32,7 @@ export function AuditFilters({
   onChange,
   onClear,
   className,
+  compact = false,
   defaultEndUserId,
   categoryFilter = 'all',
   onCategoryFilterChange,
@@ -140,30 +142,49 @@ export function AuditFilters({
   }, [categoryFilter, filters]);
 
   return (
-    <div className={cn('bg-surface border border-border rounded-md p-4 space-y-4', className)}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-foreground">{commonT('filters')}</h3>
-        {hasActiveFilters && (
+    <div
+      className={cn(
+        compact ? 'space-y-3' : 'bg-surface border border-border rounded-md p-4 space-y-4',
+        className,
+      )}
+      data-testid="audit-filters__surface"
+    >
+      {!compact ? (
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-foreground">{commonT('filters')}</h3>
+          {hasActiveFilters && (
+            <Button variant="outline" size="sm" onClick={onClear}>
+              <X className="h-4 w-4 mr-2" />
+              {commonT('clear_filters')}
+            </Button>
+          )}
+        </div>
+      ) : hasActiveFilters ? (
+        <div className="flex items-center justify-end">
           <Button variant="outline" size="sm" onClick={onClear}>
             <X className="h-4 w-4 mr-2" />
             {commonT('clear_filters')}
           </Button>
-        )}
-      </div>
+        </div>
+      ) : null}
 
       <div className="space-y-4">
-        <TimeRangePicker
-          value={{
-            start_time: filters.start_time,
-            end_time: filters.end_time,
-          }}
-          onChange={handleTimeRangeChange}
-          presets={['last_24h', 'custom']}
-          maxDays={2}
-        />
+        <div className={compact ? 'flex flex-wrap items-end gap-3' : ''} data-testid="audit-filters__primary-controls">
+          <div className={compact ? 'min-w-[240px] flex-[1.2]' : ''}>
+            <TimeRangePicker
+              value={{
+                start_time: filters.start_time,
+                end_time: filters.end_time,
+              }}
+              onChange={handleTimeRangeChange}
+              presets={['last_24h', 'custom']}
+              maxDays={2}
+              showResolvedRangeLabel={!compact}
+              className={compact ? 'w-full' : undefined}
+            />
+          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div>
+          <div className={compact ? 'min-w-[180px] flex-1' : ''}>
             <label htmlFor="audit-filter-category" className="text-xs text-tertiary mb-1 block">{t('filters.category')}</label>
             <Select
               value={categoryFilter}
@@ -181,7 +202,7 @@ export function AuditFilters({
             </Select>
           </div>
 
-          <div>
+          <div className={compact ? 'min-w-[180px] flex-1' : ''}>
             <label htmlFor="audit-filter-resource-type" className="text-xs text-tertiary mb-1 block">{t('filters.resource_type')}</label>
             <Select
               value={filters.resource_type || 'all'}
@@ -201,7 +222,7 @@ export function AuditFilters({
             </Select>
           </div>
 
-          <div>
+          <div className={compact ? 'min-w-[180px] flex-1' : ''}>
             <label htmlFor="audit-filter-resource-id" className="text-xs text-tertiary mb-1 block">{t('filters.resource_id')}</label>
             <Input
               id="audit-filter-resource-id"
@@ -211,7 +232,7 @@ export function AuditFilters({
             />
           </div>
 
-          <div>
+          <div className={compact ? 'min-w-[160px] flex-[0.8]' : ''}>
             <label htmlFor="audit-filter-result" className="text-xs text-tertiary mb-1 block">{t('filters.result')}</label>
             <Select
               value={filters.result || 'all'}
@@ -227,10 +248,12 @@ export function AuditFilters({
               </SelectContent>
             </Select>
           </div>
-
         </div>
 
-        <div className="border border-border rounded-md p-3 space-y-3" data-testid="audit-filters__investigation">
+        <div
+          className={compact ? 'space-y-3 border-t border-subtle/70 pt-3' : 'border border-border rounded-md p-3 space-y-3'}
+          data-testid="audit-filters__investigation"
+        >
           <div className="flex items-center justify-between gap-3">
             <h4 className="text-xs font-semibold text-foreground">{t('filters.investigation_group')}</h4>
             <Button
@@ -244,8 +267,8 @@ export function AuditFilters({
             </Button>
           </div>
           {investigationExpanded ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div>
+            <div className={compact ? 'flex flex-wrap items-end gap-3' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'} data-testid="audit-filters__investigation-controls">
+              <div className={compact ? 'min-w-[180px] flex-1' : ''}>
                 <label htmlFor="audit-filter-action" className="text-xs text-tertiary mb-1 block">{t('filters.action')}</label>
                 <Select
                   value={filters.action || 'all'}
@@ -265,7 +288,7 @@ export function AuditFilters({
                 </Select>
               </div>
 
-              <div>
+              <div className={compact ? 'min-w-[180px] flex-1' : ''}>
                 <label htmlFor="audit-filter-actor-type" className="text-xs text-tertiary mb-1 block">{t('filters.actor_type')}</label>
                 <Select
                   value={filters.actor_type || 'all'}
@@ -283,7 +306,7 @@ export function AuditFilters({
                 </Select>
               </div>
 
-              <div>
+              <div className={compact ? 'min-w-[180px] flex-1' : ''}>
                 <label htmlFor="audit-filter-actor-id" className="text-xs text-tertiary mb-1 block">{t('filters.actor_id')}</label>
                 <Input
                   id="audit-filter-actor-id"
@@ -293,7 +316,7 @@ export function AuditFilters({
                 />
               </div>
 
-              <div>
+              <div className={compact ? 'min-w-[180px] flex-1' : ''}>
                 <label htmlFor="audit-filter-end-user-id" className="text-xs text-tertiary mb-1 block">{t('filters.end_user_id')}</label>
                 <Input
                   id="audit-filter-end-user-id"
@@ -304,7 +327,7 @@ export function AuditFilters({
                 />
               </div>
 
-              <div>
+              <div className={compact ? 'min-w-[180px] flex-1' : ''}>
                 <label htmlFor="audit-filter-request-id" className="text-xs text-tertiary mb-1 block">{t('filters.request_id')}</label>
                 <Input
                   id="audit-filter-request-id"
@@ -314,7 +337,7 @@ export function AuditFilters({
                 />
               </div>
 
-              <div>
+              <div className={compact ? 'min-w-[180px] flex-1' : ''}>
                 <label htmlFor="audit-filter-decision-id" className="text-xs text-tertiary mb-1 block">{t('filters.decision_id')}</label>
                 <Input
                   id="audit-filter-decision-id"
@@ -324,7 +347,7 @@ export function AuditFilters({
                 />
               </div>
 
-              <div>
+              <div className={compact ? 'min-w-[180px] flex-1' : ''}>
                 <label htmlFor="audit-filter-trace-ref" className="text-xs text-tertiary mb-1 block">{t('filters.trace_ref')}</label>
                 <Input
                   id="audit-filter-trace-ref"
@@ -334,7 +357,7 @@ export function AuditFilters({
                 />
               </div>
 
-              <div>
+              <div className={compact ? 'min-w-[180px] flex-1' : ''}>
                 <label htmlFor="audit-filter-trace-incident-id" className="text-xs text-tertiary mb-1 block">{t('filters.trace_incident_id')}</label>
                 <Input
                   id="audit-filter-trace-incident-id"
@@ -344,7 +367,7 @@ export function AuditFilters({
                 />
               </div>
 
-              <div>
+              <div className={compact ? 'min-w-[180px] flex-1' : ''}>
                 <label htmlFor="audit-filter-trace-escalation-id" className="text-xs text-tertiary mb-1 block">{t('filters.trace_escalation_id')}</label>
                 <Input
                   id="audit-filter-trace-escalation-id"
@@ -354,7 +377,7 @@ export function AuditFilters({
                 />
               </div>
 
-              <div>
+              <div className={compact ? 'min-w-[180px] flex-1' : ''}>
                 <label htmlFor="audit-filter-trace-run-id" className="text-xs text-tertiary mb-1 block">{t('filters.trace_run_id')}</label>
                 <Input
                   id="audit-filter-trace-run-id"

@@ -122,9 +122,15 @@ describe('MembersPage', () => {
 
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { name: 'title' })).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: 'invite_member' })).toBeInTheDocument();
+    expect(screen.queryByText('description')).not.toBeInTheDocument();
     const body = screen.getByTestId('page-layout__body');
     expect(body.classList.contains('p-6')).toBe(false);
-    expect(screen.getByText('tab_focus.people.title')).toBeInTheDocument();
+    expect(screen.getByTestId('members__work-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('members__work-surface').className).not.toMatch(/shadow-card/);
+    expect(screen.queryByTestId('members__utility-links')).not.toBeInTheDocument();
+    expect(screen.queryByText('tab_focus.people.title')).not.toBeInTheDocument();
+    expect(screen.queryByText('tab_focus.people.description')).not.toBeInTheDocument();
   });
 
   it('disables invite action for non-owners', () => {

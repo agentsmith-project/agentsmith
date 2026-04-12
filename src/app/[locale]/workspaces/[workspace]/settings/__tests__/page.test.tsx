@@ -261,6 +261,9 @@ describe('WorkspaceSettingsPage', () => {
       expect(screen.getByTestId('ws-settings__workspace')).toBeInTheDocument();
     });
 
+    expect(screen.getByTestId('page-layout')).toBeInTheDocument();
+    expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
+    expect(screen.queryByTestId('topbar')).not.toBeInTheDocument();
     expect(screen.queryByText('workspace_admin_subtitle')).not.toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__name')).toHaveTextContent('ws_1');
     expect(screen.getByTestId('ws-settings__open-projects')).toHaveAttribute(
@@ -272,9 +275,11 @@ describe('WorkspaceSettingsPage', () => {
       '/en/workspaces/ws_1/settings/feishu',
     );
     expect(screen.getByTestId('ws-settings__integration-feishu')).toBeInTheDocument();
-    expect(screen.getByTestId('ws-settings__workspace').className).not.toMatch(/rounded-|shadow-/);
-    expect(screen.getByTestId('ws-settings__integrations').className).not.toMatch(/rounded-|shadow-/);
+    expect(screen.getByTestId('ws-settings__sections')).toHaveClass('divide-y');
+    expect(screen.getByTestId('ws-settings__workspace').className).not.toMatch(/border-t|rounded-|shadow-/);
+    expect(screen.getByTestId('ws-settings__integrations').className).not.toMatch(/border-t|rounded-|shadow-/);
     expect(screen.queryByText('workspace_can_create_projects')).not.toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__summary-line')).toHaveTextContent('ws_1');
   });
 
   it('renders project administration list', async () => {
@@ -302,7 +307,7 @@ describe('WorkspaceSettingsPage', () => {
     );
     expect(screen.getByTestId('ws-settings__project--proj_3')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__create-project')).toBeInTheDocument();
-    expect(screen.getByTestId('ws-settings__projects').className).not.toMatch(/rounded-|shadow-/);
+    expect(screen.getByTestId('ws-settings__projects').className).not.toMatch(/border-t|rounded-|shadow-/);
     expect(screen.getByTestId('ws-settings__project-creators')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-owner-select--proj_1')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-owner-save--proj_1')).toBeDisabled();

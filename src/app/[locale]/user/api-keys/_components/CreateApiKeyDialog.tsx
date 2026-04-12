@@ -1,7 +1,5 @@
 'use client';
 
-import { KeyRound, ShieldCheck } from 'lucide-react';
-
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,56 +31,35 @@ export function CreateApiKeyDialog({
 }: CreateApiKeyDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[460px]" data-testid="api-keys__create-dialog">
-        <DialogHeader className="space-y-3">
-          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
-            <KeyRound className="h-3.5 w-3.5" />
-            {t('dialog_title_badge')}
-          </div>
+      <DialogContent className="sm:max-w-[440px]" data-testid="api-keys__create-dialog">
+        <DialogHeader className="space-y-2">
           <DialogTitle>{t('create')}</DialogTitle>
           <DialogDescription>
             {t('dialog_description')}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4">
-          <div className="rounded-lg border border-accent/20 bg-accent/10 p-4">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 rounded-lg bg-accent/15 p-2.5 text-accent">
-                <ShieldCheck className="h-4 w-4" />
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-foreground">{t('dialog_guidance_title')}</div>
-                <p className="text-sm leading-6 text-secondary">{t('dialog_guidance_description')}</p>
-              </div>
+        <div className="space-y-4 py-3">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('note')}</label>
+              <Input
+                value={createNote}
+                onChange={(event) => onCreateNoteChange(event.target.value)}
+                placeholder={t('note')}
+                disabled={isPending}
+              />
             </div>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-surface-high p-4">
-            <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-              <KeyRound className="h-3.5 w-3.5 text-accent" />
-              {t('dialog_settings_title')}
-            </div>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('note')}</label>
-                <Input
-                  value={createNote}
-                  onChange={(event) => onCreateNoteChange(event.target.value)}
-                  placeholder={t('note')}
-                  disabled={isPending}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('expires')}</label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={createExpiresIn}
-                  onChange={(event) => onCreateExpiresInChange(event.target.value)}
-                  placeholder={t('expiration_never')}
-                  disabled={isPending}
-                />
-                <p className="text-xs text-tertiary">{t('dialog_expiration_hint')}</p>
-              </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('expires')}</label>
+              <Input
+                type="number"
+                min="1"
+                value={createExpiresIn}
+                onChange={(event) => onCreateExpiresInChange(event.target.value)}
+                placeholder={t('expiration_never')}
+                disabled={isPending}
+              />
+              <p className="text-xs text-tertiary">{t('dialog_expiration_hint')}</p>
             </div>
           </div>
         </div>

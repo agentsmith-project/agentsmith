@@ -5,13 +5,13 @@ import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const dialogOverlayClassName = cn(
-  'fixed inset-0 z-50 bg-[rgb(var(--overlay-scrim)/0.34)] backdrop-blur-[1px]',
+  'fixed inset-0 z-50 bg-[rgb(var(--overlay-scrim)/0.28)]',
   'data-[state=open]:animate-in data-[state=closed]:animate-out',
   'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
 );
 
 export const dialogContentClassName = cn(
-  'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 rounded-md border border-border/65 bg-dialog p-5 shadow-float duration-200 md:p-6',
+  'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 rounded-md border border-border/70 bg-dialog p-5 shadow-card duration-200 md:p-6',
   'data-[state=open]:animate-in data-[state=closed]:animate-out',
   'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
   'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',

@@ -66,6 +66,8 @@
 看：
 - `artifacts/backend-real-visual/<run-id>/review.md`
 - `artifacts/backend-real-visual/<run-id>/manifest.json`
+- `artifacts/backend-real-visual/<run-id>/ux-traces/<lane>/<suite>/<story-id>/<run-id>/review.md`
+- `artifacts/backend-real-visual/<run-id>/ux-traces/<lane>/<suite>/<story-id>/<run-id>/events.jsonl`
 
 ### 发布前结论
 看：

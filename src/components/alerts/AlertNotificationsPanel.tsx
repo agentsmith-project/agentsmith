@@ -12,6 +12,7 @@ import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { Bell, X, AlertCircle, AlertTriangle, Info } from 'lucide-react';
 import type { Alert } from '@/lib/types/alerts';
+import { Button } from '@/components/ui/button';
 
 export interface AlertNotificationsPanelProps {
   alerts: Alert[];
@@ -30,10 +31,10 @@ const severityIcons = {
 };
 
 const severityColors = {
-  critical: 'text-error bg-error/10 border-error/20',
-  error: 'text-error bg-error/10 border-error/20',
-  warning: 'text-warning bg-warning/10 border-warning/20',
-  info: 'text-info bg-info/10 border-info/20',
+  critical: 'text-error',
+  error: 'text-error',
+  warning: 'text-warning',
+  info: 'text-info',
 };
 
 /**
@@ -74,11 +75,11 @@ export function AlertNotificationsPanel({
   // Loading state
   if (loading) {
     return (
-      <div className="space-y-3" data-testid="alert-notifications__loading">
+      <div className="space-y-3 py-3" data-testid="alert-notifications__loading">
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="h-24 rounded-lg bg-surface border border-border animate-pulse"
+            className="h-20 border-y border-subtle/60 animate-pulse"
             data-testid={`alert-notifications__skeleton-${i}`}
           />
         ))}
@@ -95,7 +96,7 @@ export function AlertNotificationsPanel({
   if (visibleAlerts.length === 0) {
     return (
       <div
-        className="flex flex-col items-center justify-center py-12 px-4 bg-surface border border-border rounded-md"
+        className="flex flex-col items-center justify-center border-y border-subtle/60 py-10 px-4"
         data-testid="alert-notifications__empty"
       >
         <Bell className="h-10 w-10 text-tertiary mb-3" />
@@ -114,31 +115,30 @@ export function AlertNotificationsPanel({
   });
 
   return (
-      <div className="space-y-3" data-testid="alert-notifications">
+      <div className="divide-y divide-subtle/60 border-y border-subtle/60" data-testid="alert-notifications">
       {sortedAlerts.map((alert) => {
         const SeverityIcon = severityIcons[alert.severity];
         const severityClass = severityColors[alert.severity];
         const isUnread = alert.status === 'unread';
 
         return (
-          <div
+          <article
             key={alert.id}
-            data-testid="alert-card"
-            className={`relative overflow-hidden rounded-md border bg-surface p-5 shadow-ambient transition-colors ${
-              isUnread ? 'border-l-4 border-l-accent border-border/80' : 'border-border'
+            data-testid={`alert-notifications__item--${alert.id}`}
+            className={`relative py-4 transition-colors ${
+              isUnread ? 'border-l-2 border-l-accent/40 pl-4' : 'pl-4'
             }`}
           >
-            {/* Severity Badge */}
             <div className="flex items-start gap-3">
               <div
-                className={`shrink-0 p-2 rounded-full border ${severityClass}`}
+                className={`shrink-0 inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.14em] ${severityClass}`}
                 data-testid={`severity-badge-${alert.severity}`}
               >
-                <SeverityIcon className="h-4 w-4" />
+                <SeverityIcon className="h-3.5 w-3.5" />
+                <span>{alert.severity}</span>
               </div>
 
               <div className="flex-1 min-w-0">
-                {/* Header: Title + Timestamp */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
                     <h4 className="text-sm font-medium text-foreground">{alert.title}</h4>
@@ -153,7 +153,6 @@ export function AlertNotificationsPanel({
                   </span>
                 </div>
 
-                {/* Message */}
                 <p className="mt-1 text-sm text-tertiary">{alert.message}</p>
 
                 {alert.metadata?.status === 'resolved' && (
@@ -173,10 +172,9 @@ export function AlertNotificationsPanel({
                   </p>
                 )}
 
-                {/* Actions */}
                 <div className="mt-3 flex items-center gap-2">
                   {alert.actions?.map((action, idx) => (
-                    <button
+                    <Button
                       key={idx}
                       onClick={() => {
                         onMarkAsRead(alert.id);
@@ -186,36 +184,34 @@ export function AlertNotificationsPanel({
                           onDismiss(alert.id);
                         }
                       }}
-                      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                        action.primary
-                          ? 'bg-accent text-white hover:bg-accent/90'
-                          : 'bg-surface-high text-foreground hover:bg-hover'
-                      }`}
+                      variant={action.primary ? 'outline' : 'ghost'}
+                      size="sm"
+                      className="h-7 px-2.5 text-[12px]"
                     >
                       {resolveActionLabel(action.label)}
-                    </button>
+                    </Button>
                   ))}
 
-                  {/* Default dismiss button if no dismiss action */}
                   {!alert.actions?.find((a) => a.handler === 'dismiss') && (
-                    <button
+                    <Button
                       onClick={() => onDismiss(alert.id)}
-                      className="p-1.5 text-tertiary hover:text-error transition-colors"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-tertiary hover:text-error"
                       data-testid={`dismiss-button-${alert.id}`}
                       aria-label={t('dismiss')}
                     >
                       <X className="h-4 w-4" />
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Unread indicator */}
             {isUnread && (
               <div className="absolute top-4 right-4 h-2 w-2 rounded-full bg-accent" />
             )}
-          </div>
+          </article>
         );
       })}
     </div>

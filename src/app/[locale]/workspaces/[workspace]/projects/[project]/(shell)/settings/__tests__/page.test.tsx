@@ -168,15 +168,23 @@ describe('SettingsPage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('settings__ownership-section')).toBeInTheDocument();
     });
+    expect(screen.getByTestId('page-layout')).toBeInTheDocument();
+    expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
+    expect(screen.queryByTestId('topbar')).not.toBeInTheDocument();
+    expect(screen.getByTestId('settings__summary-line')).toHaveTextContent('visibility_private');
+    expect(screen.queryByTestId('settings__summary-chip--visibility')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('settings__summary-chip--join-policy')).not.toBeInTheDocument();
     expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
-    expect(screen.getByTestId('settings__ownership-section').className).not.toMatch(/rounded-|shadow-/);
+    expect(screen.getByTestId('settings__ownership-section').className).not.toMatch(/rounded-|shadow-|border-t/);
+    expect(screen.getByTestId('settings__flow')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-admins-open-members')).toHaveAttribute(
       'href',
       '/en/workspaces/ws_1/projects/proj_1/members?member_tab=requests',
     );
     expect(screen.getByTestId('settings__project-owner-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__danger-zone').className).not.toMatch(/rounded-|shadow-|bg-error/);
     expect(screen.queryByTestId('settings__governance-section')).not.toBeInTheDocument();
     expect(screen.queryByTestId('settings__open-context')).not.toBeInTheDocument();
   });

@@ -199,13 +199,18 @@ describe('UsagePage', () => {
   it('renders compact 30 day usage view', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
-    expect(screen.getByTestId('usage__my-scope-badge')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__period-badge')).toHaveTextContent('view.last_30_days');
-    expect(screen.getAllByTestId('usage__progress-card')).toHaveLength(4);
+    expect(screen.getByTestId('usage__summary-line')).toHaveTextContent('scope_my_usage');
+    expect(screen.getByTestId('usage__summary-line')).toHaveTextContent('view.last_30_days');
+    expect(screen.getByTestId('usage__summary-line').className).not.toMatch(/rounded-md|border|bg-surface-low/);
+    expect(screen.getByTestId('usage__work-surface')).toBeInTheDocument();
+    expect(screen.queryByTestId('usage__progress-card')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('usage__limit-row')).toHaveLength(4);
     expect(screen.getByText('view.cards.requests_5h')).toBeInTheDocument();
     expect(screen.getByText('view.cards.spending_day')).toBeInTheDocument();
-    expect(screen.queryByTestId('usage__limit-mode-rate')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('usage__period-24')).not.toBeInTheDocument();
+    expect(screen.queryByText('view.card_remaining')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage__endpoint-count')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage__limits-count')).not.toBeInTheDocument();
+    expect(screen.getByTestId('usage__trend').className).not.toMatch(/rounded-md|border|bg-background/);
   });
 
   it('fills the trend chart to 30 daily bars', () => {

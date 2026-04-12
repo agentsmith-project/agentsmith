@@ -90,417 +90,430 @@ export function WorkspaceEditorPanel({
 
   return (
     <aside
-      className="rounded-md border border-subtle bg-background/88"
+      className="bg-transparent xl:border-l xl:border-subtle/40 xl:pl-6"
       data-testid="system-workspaces__editor"
     >
-      <div className="divide-y divide-subtle">
-        <div className="px-5 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-2">
-            <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_detail_label')}</p>
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-xl font-semibold text-foreground">{workspace?.name}</h2>
-              <span className="inline-flex items-center rounded-full border border-subtle bg-background/80 px-3 py-1 text-xs font-medium text-secondary">
-                {statusValue}
-              </span>
+      <div className="space-y-5">
+        <div className="space-y-4 px-5 py-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-3">
+              <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_detail_label')}</p>
+              <div className="space-y-2">
+                <h2 className="text-xl font-semibold text-foreground">{workspace?.name}</h2>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-secondary">
+                  <span>{statusValue}</span>
+                  <span>·</span>
+                  <span>{workspace?.workspace_admin || t('none')}</span>
+                  <span>·</span>
+                  <span>{lastInitializedValue}</span>
+                </div>
+              </div>
+              {!state.isEditMode && workspace?.provisioning_status === 'failed' && workspace.last_init_error ? (
+                <p className="text-sm text-secondary" data-testid="system-workspaces__status">
+                  {statusValue} · {workspace.last_init_error}
+                </p>
+              ) : null}
+              <p className="text-sm text-secondary">{t('workspace_edit_shell_description')}</p>
             </div>
-            <p className="text-sm text-secondary">{t('workspace_edit_shell_description')}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${workspaceStateTone}`}>
-              {workspaceStateLabel}
-            </span>
-            {state.isEditMode ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onCancelEditMode}
-                disabled={isSubmitting}
-                data-testid="system-workspaces__cancel-edit"
-              >
-                {t('cancel')}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="primary"
-                onClick={onEnableEditMode}
-                data-testid="system-workspaces__enable-edit"
-              >
-                {t('configure_workspace')}
-              </Button>
-            )}
-            {workspace?.provisioning_status === 'ready' ? (
-              <Link href={`/${locale}/workspaces/${workspace.id}/login`}>
-                <Button type="button" variant="outline" data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}>
-                  {t('open_workspace_login')}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${workspaceStateTone}`}>
+                {workspaceStateLabel}
+              </span>
+              {state.isEditMode ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onCancelEditMode}
+                  disabled={isSubmitting}
+                  data-testid="system-workspaces__cancel-edit"
+                >
+                  {t('cancel')}
                 </Button>
-              </Link>
-            ) : (
-              <button
-                type="button"
-                disabled
-                className="inline-flex h-9 items-center rounded-md border border-subtle bg-background px-3 text-xs text-tertiary disabled:opacity-100"
-                data-testid={`system-workspaces__open-workspace-login--${workspace?.id ?? 'selected'}`}
-              >
-                {t('workspace_login_unavailable')}
-              </button>
-            )}
+              ) : (
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={onEnableEditMode}
+                  data-testid="system-workspaces__enable-edit"
+                >
+                  {t('configure_workspace')}
+                </Button>
+              )}
+              {workspace?.provisioning_status === 'ready' ? (
+                <Link href={`/${locale}/workspaces/${workspace.id}/login`}>
+                  <Button type="button" variant="outline" data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}>
+                    {t('open_workspace_login')}
+                  </Button>
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex h-9 items-center rounded-md border border-subtle bg-background px-3 text-xs text-tertiary disabled:opacity-100"
+                  data-testid={`system-workspaces__open-workspace-login--${workspace?.id ?? 'selected'}`}
+                >
+                  {t('workspace_login_unavailable')}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
 
-        <dl className="mt-5 grid gap-3 md:grid-cols-3">
-          <div className="space-y-1 border-t border-subtle pt-3">
+        <dl className="grid gap-3 border-t border-subtle/60 pt-4 md:grid-cols-3">
+          <div className="space-y-1 border-t border-subtle/60 pt-3">
             <dt className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_detail_identity_label')}</dt>
             <dd className="truncate text-sm font-medium text-foreground">{workspace?.id}</dd>
           </div>
-          <div className="space-y-1 border-t border-subtle pt-3">
+          <div className="space-y-1 border-t border-subtle/60 pt-3">
             <dt className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_admin_card_label')}</dt>
             <dd className="truncate text-sm font-medium text-foreground">{workspace?.workspace_admin || t('none')}</dd>
           </div>
-          <div className="space-y-1 border-t border-subtle pt-3">
+          <div className="space-y-1 border-t border-subtle/60 pt-3">
             <dt className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('initialized_at_label')}</dt>
             <dd className="truncate text-sm font-medium text-foreground">{lastInitializedValue}</dd>
           </div>
         </dl>
-        {!state.isEditMode ? (
-          <div className="mt-4 border-l-2 border-border pl-3 text-sm text-secondary" data-testid="system-workspaces__read-only-notice">
-            {t('workspace_editor_read_only_notice')}
-          </div>
-        ) : null}
-      </div>
-
-      <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__basics">
-        <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_basics_label')}</p>
-          <p className="text-base font-medium text-foreground">{t('workspace_basics_title')}</p>
-          <p className="text-sm text-tertiary">{t('workspace_basics_settings_description')}</p>
-        </div>
-        <label className="block space-y-2">
-          <span className="text-sm font-medium text-foreground">{t('workspace_name')}</span>
-          <input
-            type="text"
-            value={state.draft.name}
-            onChange={(event) => onDraftChange({ name: event.target.value })}
-            placeholder={t('workspace_name_placeholder')}
-            disabled={formLocked}
-            className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-            data-testid="system-workspaces__draft-name"
-          />
-        </label>
-      </section>
-
-      <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__idp">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-base font-medium text-foreground">
-            <ShieldCheck className="h-4 w-4" />
-            {t('idp_title')}
-          </div>
-          <p className="text-sm text-tertiary">{t('idp_settings_description')}</p>
+          {!state.isEditMode ? (
+            <div className="border-l-2 border-border pl-3 text-sm text-secondary" data-testid="system-workspaces__read-only-notice">
+              {t('workspace_editor_read_only_notice')}
+            </div>
+          ) : null}
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
-          <div className="grid gap-3">
-            <input
-              type="text"
-              value={state.draft.loginIdpUrl}
-              onChange={(event) => onDraftChange({ loginIdpUrl: event.target.value })}
-              placeholder={t('idp_url_placeholder')}
-              disabled={formLocked}
-              className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-              data-testid="system-workspaces__draft-idp-url"
-            />
-            <div className="grid gap-3 md:grid-cols-2">
+      {state.isEditMode ? (
+        <>
+          <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__basics">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_basics_label')}</p>
+              <p className="text-base font-medium text-foreground">{t('workspace_basics_title')}</p>
+              <p className="text-sm text-tertiary">{t('workspace_basics_settings_description')}</p>
+            </div>
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-foreground">{t('workspace_name')}</span>
               <input
                 type="text"
-                value={state.draft.loginIdpRealm}
-                onChange={(event) => onDraftChange({ loginIdpRealm: event.target.value })}
-                placeholder={t('idp_realm_placeholder')}
+                value={state.draft.name}
+                onChange={(event) => onDraftChange({ name: event.target.value })}
+                placeholder={t('workspace_name_placeholder')}
                 disabled={formLocked}
                 className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-                data-testid="system-workspaces__draft-idp-realm"
+                data-testid="system-workspaces__draft-name"
               />
-              <input
-                type="text"
-                value={state.draft.loginClientId}
-                onChange={(event) => onDraftChange({ loginClientId: event.target.value })}
-                placeholder={t('login_client_id_placeholder')}
-                disabled={formLocked}
-                className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-                data-testid="system-workspaces__draft-idp-client-id"
-              />
+            </label>
+          </section>
+
+          <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__idp">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-base font-medium text-foreground">
+                <ShieldCheck className="h-4 w-4" />
+                {t('idp_title')}
+              </div>
+              <p className="text-sm text-tertiary">{t('idp_settings_description')}</p>
             </div>
 
-            <div className="border-t border-subtle pt-4">
-              <p className="text-sm font-medium text-foreground">{t('directory_client_section_title')}</p>
-              <p className="mt-1 text-sm text-tertiary">{t('directory_client_section_body')}</p>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
+              <div className="grid gap-3">
                 <input
                   type="text"
-                  value={state.draft.directoryClientId}
-                  onChange={(event) => onDraftChange({ directoryClientId: event.target.value })}
-                  placeholder={t('directory_client_id_placeholder')}
+                  value={state.draft.loginIdpUrl}
+                  onChange={(event) => onDraftChange({ loginIdpUrl: event.target.value })}
+                  placeholder={t('idp_url_placeholder')}
                   disabled={formLocked}
                   className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-                  data-testid="system-workspaces__draft-directory-client-id"
+                  data-testid="system-workspaces__draft-idp-url"
                 />
-                <input
-                  type="password"
-                  value={state.draft.directoryClientSecret}
-                  onChange={(event) => onDraftChange({ directoryClientSecret: event.target.value })}
-                  placeholder={t('directory_client_secret_placeholder')}
-                  disabled={formLocked}
-                  className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-                  data-testid="system-workspaces__draft-idp-client-secret"
-                />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <input
+                    type="text"
+                    value={state.draft.loginIdpRealm}
+                    onChange={(event) => onDraftChange({ loginIdpRealm: event.target.value })}
+                    placeholder={t('idp_realm_placeholder')}
+                    disabled={formLocked}
+                    className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                    data-testid="system-workspaces__draft-idp-realm"
+                  />
+                  <input
+                    type="text"
+                    value={state.draft.loginClientId}
+                    onChange={(event) => onDraftChange({ loginClientId: event.target.value })}
+                    placeholder={t('login_client_id_placeholder')}
+                    disabled={formLocked}
+                    className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                    data-testid="system-workspaces__draft-idp-client-id"
+                  />
+                </div>
+
+                <div className="border-t border-subtle pt-4">
+                  <p className="text-sm font-medium text-foreground">{t('directory_client_section_title')}</p>
+                  <p className="mt-1 text-sm text-tertiary">{t('directory_client_section_body')}</p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <input
+                      type="text"
+                      value={state.draft.directoryClientId}
+                      onChange={(event) => onDraftChange({ directoryClientId: event.target.value })}
+                      placeholder={t('directory_client_id_placeholder')}
+                      disabled={formLocked}
+                      className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                      data-testid="system-workspaces__draft-directory-client-id"
+                    />
+                    <input
+                      type="password"
+                      value={state.draft.directoryClientSecret}
+                      onChange={(event) => onDraftChange({ directoryClientSecret: event.target.value })}
+                      placeholder={t('directory_client_secret_placeholder')}
+                      disabled={formLocked}
+                      className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                      data-testid="system-workspaces__draft-idp-client-secret"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="border-t border-subtle pt-4 text-sm">
+                  <p className="font-medium text-foreground">{t('workspace_login_preview_title')}</p>
+                  <div className="mt-3 space-y-2">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_login_url_label')}</p>
+                      <p className="mt-1 break-all text-secondary" data-testid="system-workspaces__login-preview">{workspaceLoginPath}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_callback_url_label')}</p>
+                      <p className="mt-1 break-all text-secondary" data-testid="system-workspaces__callback-preview">{workspaceCallbackPath}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`rounded-md border px-4 py-4 ${buildVerificationToneClass(state.idpVerificationState)}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-2">
+                      <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('idp_status_label')}</p>
+                      <p className="text-sm font-medium text-foreground" data-testid="system-workspaces__idp-status">{idpStateText}</p>
+                      {idpVerificationNotice ? (
+                        <p className="text-sm text-secondary" data-testid="system-workspaces__idp-notice">{t(idpVerificationNotice)}</p>
+                      ) : null}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={onVerifyIdp}
+                      disabled={formLocked || isSubmitting || state.idpVerificationState === 'verifying'}
+                      data-testid="system-workspaces__verify-idp"
+                    >
+                      {state.idpVerificationState === 'verifying' ? t('idp_verify_loading') : t('idp_validate_continue')}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          </section>
 
-          <div className="space-y-3">
-            <div className="border-t border-subtle pt-4 text-sm">
-              <p className="font-medium text-foreground">{t('workspace_login_preview_title')}</p>
-              <div className="mt-3 space-y-2">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_login_url_label')}</p>
-                  <p className="mt-1 break-all text-secondary" data-testid="system-workspaces__login-preview">{workspaceLoginPath}</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_callback_url_label')}</p>
-                  <p className="mt-1 break-all text-secondary" data-testid="system-workspaces__callback-preview">{workspaceCallbackPath}</p>
-                </div>
+          <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__admin">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-base font-medium text-foreground">
+                <UserRoundSearch className="h-4 w-4" />
+                {t('workspace_admin_title')}
               </div>
+              <p className="text-sm text-tertiary">{t('workspace_admin_settings_description')}</p>
             </div>
 
-            <div className={`rounded-md border px-4 py-4 ${buildVerificationToneClass(state.idpVerificationState)}`}>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-2">
-                  <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('idp_status_label')}</p>
-                  <p className="text-sm font-medium text-foreground" data-testid="system-workspaces__idp-status">{idpStateText}</p>
-                  {idpVerificationNotice ? (
-                    <p className="text-sm text-secondary" data-testid="system-workspaces__idp-notice">{t(idpVerificationNotice)}</p>
+            <div className="grid gap-3 lg:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => onDraftChange({ adminMode: 'directory_user' })}
+                disabled={formLocked || !state.directorySearchEnabled}
+                className={[
+                  'rounded-md border p-4 text-left transition',
+                  state.draft.adminMode === 'directory_user'
+                    ? 'border-border bg-surface'
+                    : 'border-subtle bg-background hover:border-border',
+                  !state.directorySearchEnabled ? 'cursor-not-allowed opacity-60' : '',
+                ].join(' ')}
+                data-testid="system-workspaces__admin-mode--directory"
+              >
+                <p className="text-sm font-semibold text-foreground">{t('workspace_admin_mode_directory')}</p>
+                <p className="mt-1 text-sm text-tertiary">{t('workspace_admin_mode_directory_description')}</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => onDraftChange({ adminMode: 'email_pending' })}
+                disabled={formLocked}
+                className={[
+                  'rounded-md border p-4 text-left transition',
+                  state.draft.adminMode === 'email_pending'
+                    ? 'border-border bg-surface'
+                    : 'border-subtle bg-background hover:border-border',
+                ].join(' ')}
+                data-testid="system-workspaces__admin-mode--email"
+              >
+                <p className="text-sm font-semibold text-foreground">{t('workspace_admin_mode_email')}</p>
+                <p className="mt-1 text-sm text-tertiary">{t('workspace_admin_mode_email_description')}</p>
+              </button>
+            </div>
+
+            {state.draft.adminMode === 'directory_user' ? (
+              <div className="space-y-3 border-t border-subtle pt-4">
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-foreground">{t('workspace_admin')}</span>
+                  <input
+                    type="text"
+                    value={state.draft.adminQuery}
+                    onChange={(event) => onDraftChange({
+                      adminQuery: event.target.value,
+                      adminEmail: event.target.value,
+                      admin: null,
+                    })}
+                    placeholder={t('workspace_admin_placeholder')}
+                    disabled={formLocked || !state.directorySearchEnabled}
+                    className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary disabled:cursor-not-allowed disabled:opacity-70"
+                    data-testid="system-workspaces__draft-admin"
+                  />
+                </label>
+                {state.draft.admin ? (
+                  <div className="border-l-2 border-success/30 pl-3 text-sm text-foreground" data-testid="system-workspaces__selected-admin">
+                    <p className="font-medium">{state.draft.admin.name || state.draft.admin.email}</p>
+                    <p className="text-xs text-tertiary">{state.draft.admin.email}</p>
+                  </div>
+                ) : null}
+                <div className="space-y-2" data-testid="system-workspaces__admin-search-results">
+                  {adminSearchLoading ? <p className="text-sm text-tertiary">{t('workspace_admin_search_loading')}</p> : null}
+                  {!adminSearchLoading && adminSearchError ? <p className="text-sm text-error">{t('workspace_admin_search_error')}</p> : null}
+                  {!state.directorySearchEnabled ? (
+                    <p className="text-sm text-tertiary">{t('workspace_admin_directory_unavailable')}</p>
+                  ) : null}
+                  {!adminSearchLoading && !adminSearchError && state.directorySearchEnabled && state.draft.adminQuery.trim().length >= 2 ? (
+                    adminSearchResults.length > 0 ? (
+                      adminSearchResults.map((user) => (
+                        <button
+                          key={user.user_id}
+                          type="button"
+                          className="flex w-full items-start justify-between rounded-md border border-subtle bg-background px-3 py-3 text-left transition hover:border-accent/40"
+                          onClick={() => onDraftChange({
+                            admin: user,
+                            adminQuery: user.email,
+                            adminEmail: user.email,
+                          })}
+                          disabled={formLocked}
+                          data-testid={`system-workspaces__admin-option--${user.user_id}`}
+                        >
+                          <span>
+                            <span className="block text-sm font-medium text-foreground">{user.name || user.email}</span>
+                            <span className="block text-xs text-tertiary">{user.email}</span>
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-xs text-tertiary">
+                            {t('workspace_admin_search_select')}
+                            <ArrowRight className="h-3 w-3" />
+                          </span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="text-sm text-tertiary">{t('workspace_admin_search_empty')}</p>
+                    )
                   ) : null}
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onVerifyIdp}
-                  disabled={formLocked || isSubmitting || state.idpVerificationState === 'verifying'}
-                  data-testid="system-workspaces__verify-idp"
-                >
-                  {state.idpVerificationState === 'verifying' ? t('idp_verify_loading') : t('idp_validate_continue')}
-                </Button>
               </div>
-            </div>
-          </div>
-        </div>
-      </section>
+            ) : (
+              <div className="space-y-3 border-t border-subtle pt-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Mail className="h-4 w-4" />
+                  {t('workspace_admin_email_pending_title')}
+                </div>
+                <p className="text-sm text-secondary">{t('workspace_admin_email_pending_description')}</p>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-foreground">{t('workspace_admin_email_label')}</span>
+                  <input
+                    type="email"
+                    value={state.draft.adminEmail}
+                    onChange={(event) => onDraftChange({ adminEmail: event.target.value })}
+                    placeholder={t('workspace_admin_email_placeholder')}
+                    disabled={formLocked}
+                    className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                    data-testid="system-workspaces__draft-admin-email"
+                  />
+                </label>
+              </div>
+            )}
 
-      <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__admin">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-base font-medium text-foreground">
-            <UserRoundSearch className="h-4 w-4" />
-            {t('workspace_admin_title')}
-          </div>
-          <p className="text-sm text-tertiary">{t('workspace_admin_settings_description')}</p>
-        </div>
-
-        <div className="grid gap-3 lg:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => onDraftChange({ adminMode: 'directory_user' })}
-            disabled={formLocked || !state.directorySearchEnabled}
-            className={[
-              'rounded-md border p-4 text-left transition',
-              state.draft.adminMode === 'directory_user'
-                ? 'border-border bg-surface'
-                : 'border-subtle bg-background hover:border-border',
-              !state.directorySearchEnabled ? 'cursor-not-allowed opacity-60' : '',
-            ].join(' ')}
-            data-testid="system-workspaces__admin-mode--directory"
-          >
-            <p className="text-sm font-semibold text-foreground">{t('workspace_admin_mode_directory')}</p>
-            <p className="mt-1 text-sm text-tertiary">{t('workspace_admin_mode_directory_description')}</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => onDraftChange({ adminMode: 'email_pending' })}
-            disabled={formLocked}
-            className={[
-              'rounded-md border p-4 text-left transition',
-              state.draft.adminMode === 'email_pending'
-                ? 'border-border bg-surface'
-                : 'border-subtle bg-background hover:border-border',
-            ].join(' ')}
-            data-testid="system-workspaces__admin-mode--email"
-          >
-            <p className="text-sm font-semibold text-foreground">{t('workspace_admin_mode_email')}</p>
-            <p className="mt-1 text-sm text-tertiary">{t('workspace_admin_mode_email_description')}</p>
-          </button>
-        </div>
-
-        {state.draft.adminMode === 'directory_user' ? (
-          <div className="space-y-3 border-t border-subtle pt-4">
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-foreground">{t('workspace_admin')}</span>
-              <input
-                type="text"
-                value={state.draft.adminQuery}
-                onChange={(event) => onDraftChange({
-                  adminQuery: event.target.value,
-                  adminEmail: event.target.value,
-                  admin: null,
-                })}
-                placeholder={t('workspace_admin_placeholder')}
-                disabled={formLocked || !state.directorySearchEnabled}
-                className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary disabled:cursor-not-allowed disabled:opacity-70"
-                data-testid="system-workspaces__draft-admin"
-              />
-            </label>
-            {state.draft.admin ? (
-              <div className="border-l-2 border-success/30 pl-3 text-sm text-foreground" data-testid="system-workspaces__selected-admin">
-                <p className="font-medium">{state.draft.admin.name || state.draft.admin.email}</p>
-                <p className="text-xs text-tertiary">{state.draft.admin.email}</p>
+            {(workspace?.workspace_admin_binding_required || !workspace?.workspace_admin_user_id) && state.draft.adminMode === 'email_pending' ? (
+              <div className="border-l-2 border-warning/25 pl-3" data-testid="system-workspaces__admin-binding-warning">
+                <p className="text-sm font-medium text-foreground">{t('workspace_admin_pending_badge')}</p>
+                <p className="mt-1 text-sm text-secondary">{t('workspace_admin_binding_pending_body')}</p>
               </div>
             ) : null}
-            <div className="space-y-2" data-testid="system-workspaces__admin-search-results">
-              {adminSearchLoading ? <p className="text-sm text-tertiary">{t('workspace_admin_search_loading')}</p> : null}
-              {!adminSearchLoading && adminSearchError ? <p className="text-sm text-error">{t('workspace_admin_search_error')}</p> : null}
-              {!state.directorySearchEnabled ? (
-                <p className="text-sm text-tertiary">{t('workspace_admin_directory_unavailable')}</p>
-              ) : null}
-              {!adminSearchLoading && !adminSearchError && state.directorySearchEnabled && state.draft.adminQuery.trim().length >= 2 ? (
-                adminSearchResults.length > 0 ? (
-                  adminSearchResults.map((user) => (
-                    <button
-                      key={user.user_id}
-                      type="button"
-                      className="flex w-full items-start justify-between rounded-md border border-subtle bg-background px-3 py-3 text-left transition hover:border-accent/40"
-                      onClick={() => onDraftChange({
-                        admin: user,
-                        adminQuery: user.email,
-                        adminEmail: user.email,
-                      })}
-                      disabled={formLocked}
-                      data-testid={`system-workspaces__admin-option--${user.user_id}`}
-                    >
-                      <span>
-                        <span className="block text-sm font-medium text-foreground">{user.name || user.email}</span>
-                        <span className="block text-xs text-tertiary">{user.email}</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1 text-xs text-tertiary">
-                        {t('workspace_admin_search_select')}
-                        <ArrowRight className="h-3 w-3" />
-                      </span>
-                    </button>
-                  ))
-                ) : (
-                  <p className="text-sm text-tertiary">{t('workspace_admin_search_empty')}</p>
-                )
-              ) : null}
+          </section>
+
+          <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__status">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_lifecycle_label')}</p>
+              <p className="text-base font-medium text-foreground">{t('workspace_lifecycle_title')}</p>
+              <p className="text-sm text-tertiary">{t('workspace_lifecycle_settings_description')}</p>
             </div>
+            <PreviewRow label={t('current_status_label')} value={statusValue} />
+            <PreviewRow label={t('initialized_at_label')} value={lastInitializedValue} />
+            <PreviewRow label={t('last_init_error_label')} value={workspace?.last_init_error || t('none')} />
+          </section>
+
+          <div className={`px-5 py-4 text-sm ${statusToneClass}`} data-testid="system-workspaces__notice">
+            <p className="mb-1 text-[11px] uppercase tracking-[0.08em]" data-testid="system-workspaces__notice-status">
+              {statusPrefix}
+            </p>
+            {saveError ? (
+              <p className="text-error" data-testid="system-workspaces__save-error">{saveError}</p>
+            ) : saveNotice ? (
+              <p className="text-foreground" data-testid="system-workspaces__save-notice">{saveNotice}</p>
+            ) : state.isProvisioning ? (
+              t('provisioning_notice')
+            ) : (
+              t('workspace_editor_notice')
+            )}
           </div>
-        ) : (
-          <div className="space-y-3 border-t border-subtle pt-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <Mail className="h-4 w-4" />
-              {t('workspace_admin_email_pending_title')}
+
+          <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__lifecycle">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_actions_label')}</p>
+              <p className="text-base font-medium text-foreground">{t('workspace_actions_title')}</p>
+              <p className="text-sm text-tertiary">{t('workspace_actions_description')}</p>
             </div>
-            <p className="text-sm text-secondary">{t('workspace_admin_email_pending_description')}</p>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-foreground">{t('workspace_admin_email_label')}</span>
-              <input
-                type="email"
-                value={state.draft.adminEmail}
-                onChange={(event) => onDraftChange({ adminEmail: event.target.value })}
-                placeholder={t('workspace_admin_email_placeholder')}
-                disabled={formLocked}
-                className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-                data-testid="system-workspaces__draft-admin-email"
-              />
-            </label>
-          </div>
-        )}
-
-        {(workspace?.workspace_admin_binding_required || !workspace?.workspace_admin_user_id) && state.draft.adminMode === 'email_pending' ? (
-          <div className="border-l-2 border-warning/25 pl-3" data-testid="system-workspaces__admin-binding-warning">
-            <p className="text-sm font-medium text-foreground">{t('workspace_admin_pending_badge')}</p>
-            <p className="mt-1 text-sm text-secondary">{t('workspace_admin_binding_pending_body')}</p>
-          </div>
-        ) : null}
-      </section>
-
-      <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__status">
-        <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_lifecycle_label')}</p>
-          <p className="text-base font-medium text-foreground">{t('workspace_lifecycle_title')}</p>
-          <p className="text-sm text-tertiary">{t('workspace_lifecycle_settings_description')}</p>
-        </div>
-        <PreviewRow label={t('current_status_label')} value={statusValue} />
-        <PreviewRow label={t('initialized_at_label')} value={lastInitializedValue} />
-        <PreviewRow label={t('last_init_error_label')} value={workspace?.last_init_error || t('none')} />
-      </section>
-
-      <div className={`px-5 py-4 text-sm ${statusToneClass}`} data-testid="system-workspaces__notice">
-        <p className="mb-1 text-[11px] uppercase tracking-[0.08em]" data-testid="system-workspaces__notice-status">
-          {statusPrefix}
-        </p>
-        {saveError ? (
-          <p className="text-error" data-testid="system-workspaces__save-error">{saveError}</p>
-        ) : saveNotice ? (
-          <p className="text-foreground" data-testid="system-workspaces__save-notice">{saveNotice}</p>
-        ) : state.isProvisioning ? (
-          t('provisioning_notice')
-        ) : (
-          t('workspace_editor_notice')
-        )}
-      </div>
-
-      <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__lifecycle">
-        <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_actions_label')}</p>
-          <p className="text-base font-medium text-foreground">{t('workspace_actions_title')}</p>
-          <p className="text-sm text-tertiary">{t('workspace_actions_description')}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="primary"
-            onClick={onSubmit}
-            disabled={!state.canSubmit || disabledByProvisioning}
-            data-testid="system-workspaces__save"
-          >
-            {primaryActionLabel}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onPublish}
-            disabled={isSubmitting || !state.canPublish}
-            data-testid="system-workspaces__publish"
-          >
-            {isSubmitting && activeAction === 'publish' ? t('publishing') : t('publish_workspace')}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onDisable}
-            disabled={isSubmitting || !state.canDisable}
-            data-testid="system-workspaces__disable"
-          >
-            {isSubmitting && activeAction === 'disable' ? t('disabling') : t('disable_workspace')}
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            onClick={onDelete}
-            disabled={isSubmitting || !state.canDelete}
-            data-testid="system-workspaces__delete"
-          >
-            {isSubmitting && activeAction === 'delete' ? t('deleting') : t('delete_workspace')}
-          </Button>
-        </div>
-      </section>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="primary"
+                onClick={onSubmit}
+                disabled={!state.canSubmit || disabledByProvisioning}
+                data-testid="system-workspaces__save"
+              >
+                {primaryActionLabel}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onPublish}
+                disabled={isSubmitting || !state.canPublish}
+                data-testid="system-workspaces__publish"
+              >
+                {isSubmitting && activeAction === 'publish' ? t('publishing') : t('publish_workspace')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onDisable}
+                disabled={isSubmitting || !state.canDisable}
+                data-testid="system-workspaces__disable"
+              >
+                {isSubmitting && activeAction === 'disable' ? t('disabling') : t('disable_workspace')}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={onDelete}
+                disabled={isSubmitting || !state.canDelete}
+                data-testid="system-workspaces__delete"
+              >
+                {isSubmitting && activeAction === 'delete' ? t('deleting') : t('delete_workspace')}
+              </Button>
+            </div>
+          </section>
+        </>
+      ) : null}
       </div>
     </aside>
   );

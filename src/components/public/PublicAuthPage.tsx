@@ -14,13 +14,18 @@ export function PublicAuthFrame({
   className,
 }: PublicAuthFrameProps) {
   return (
-    <div className={cn('relative min-h-screen bg-background px-4 py-6 md:px-6 md:py-8', className)}>
+    <div
+      className={cn('relative min-h-screen bg-background px-4 py-6 md:px-6 md:py-8', className)}
+      data-testid="public-auth__frame"
+      data-width={width}
+    >
       <PublicThemeToggle className="absolute right-4 top-4 z-10 md:right-6 md:top-6" />
       <div
         className={cn(
-          'mx-auto flex min-h-[calc(100vh-3rem)] items-start justify-center pt-10 md:pt-14',
+          'mx-auto flex min-h-[calc(100vh-3rem)] items-start justify-start pt-10 md:pt-14',
           width === 'wide' ? 'max-w-4xl' : 'max-w-[34rem]',
         )}
+        data-testid="public-auth__stage"
       >
         {children}
       </div>
@@ -35,6 +40,7 @@ type PublicAuthShellProps = {
 };
 
 export function PublicAuthShell({ children, aside, className }: PublicAuthShellProps) {
+  const layout = aside ? 'split' : 'single';
   return (
     <section
       className={cn(
@@ -42,10 +48,13 @@ export function PublicAuthShell({ children, aside, className }: PublicAuthShellP
         aside ? 'grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.78fr)] md:items-start md:gap-8' : '',
         className,
       )}
+      data-family="public-auth"
+      data-layout={layout}
+      data-testid="public-auth__shell"
     >
       <div className="px-1 py-6 md:px-0 md:py-8">{children}</div>
       {aside ? (
-        <aside className="px-1 pt-4 md:pl-6 md:pr-0 md:pt-8">
+        <aside className="px-1 pt-4 md:pl-6 md:pr-0 md:pt-8" data-testid="public-auth__aside">
           {aside}
         </aside>
       ) : null}

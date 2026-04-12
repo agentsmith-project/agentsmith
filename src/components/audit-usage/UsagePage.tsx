@@ -179,46 +179,44 @@ export function UsagePage({
   return (
     <PageLayout
       header={(
-          <PageHeader
-            title={t('title')}
-            subtitle={t('subtitle')}
-            variant="compact"
-            actions={(
-              <Button variant="outline" onClick={handleRefresh} disabled={usageLoading}>
+        <PageHeader
+          title={t('title')}
+          subtitle={t('subtitle')}
+          variant="compact"
+          actions={(
+            <Button variant="outline" onClick={handleRefresh} disabled={usageLoading}>
               <RefreshCw className={`mr-2 h-4 w-4 ${usageLoading ? 'animate-spin' : ''}`} />
               {commonT('refresh')}
             </Button>
           )}
         />
       )}
-        toolbar={(
-          <PageToolbar className="w-full">
-            <div className="rounded-md border border-subtle bg-bg-base/20 px-3 py-2 text-xs text-tertiary" data-testid="usage__my-scope-badge">
-              {t('scope_my_usage')}
-            </div>
-            <div className="rounded-md border border-subtle bg-surface-low px-3 py-2 text-xs text-tertiary" data-testid="usage__endpoint-count">
-              {endpointOptions.length} {t('view.endpoints_label')}
-            </div>
-            <div className="rounded-md border border-subtle bg-surface-low px-3 py-2 text-xs text-tertiary" data-testid="usage__limits-count">
-              {totalLimitCards} {t('view.active_limits')}
-            </div>
-            <div className="rounded-md border border-subtle bg-surface-low px-3 py-2 text-xs text-tertiary" data-testid="usage__period-badge">
-              {t('view.last_30_days')}
-            </div>
-          </PageToolbar>
-        )}
-      >
-        <div className="rounded-md border border-subtle bg-surface/95 p-4 shadow-card">
-          <UsageView
-            trendPoints={usageData?.data_points ?? []}
-          trendLoading={usageLoading}
-          endpointOptions={endpointOptions}
-          selectedEndpointId={selectedEndpointId}
-          onEndpointChange={setSelectedEndpointId}
-          referenceNow={usageData?.time_range?.end ?? trendRange.end_time}
-          limitsOverview={limitsOverview}
-        />
-      </div>
+      toolbar={(
+        <PageToolbar className="w-full">
+          <div
+            className="flex flex-wrap items-center gap-2 text-xs text-tertiary"
+            data-testid="usage__summary-line"
+          >
+            <span>{t('scope_my_usage')}</span>
+            <span aria-hidden="true">·</span>
+            <span><span className="text-foreground">{endpointOptions.length}</span> {t('view.endpoints_label')}</span>
+            <span aria-hidden="true">·</span>
+            <span><span className="text-foreground">{totalLimitCards}</span> {t('view.active_limits')}</span>
+            <span aria-hidden="true">·</span>
+            <span>{t('view.last_30_days')}</span>
+          </div>
+        </PageToolbar>
+      )}
+    >
+      <UsageView
+        trendPoints={usageData?.data_points ?? []}
+        trendLoading={usageLoading}
+        endpointOptions={endpointOptions}
+        selectedEndpointId={selectedEndpointId}
+        onEndpointChange={setSelectedEndpointId}
+        referenceNow={usageData?.time_range?.end ?? trendRange.end_time}
+        limitsOverview={limitsOverview}
+      />
     </PageLayout>
   );
 }

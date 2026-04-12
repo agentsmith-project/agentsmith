@@ -54,19 +54,36 @@ describe('ThirdPartyAccountsPage', () => {
     mockRefresh.mockResolvedValue({ id: 'uec_3' });
   });
 
-  it('does not render workspace-scoped Feishu connect controls on the personal accounts page', async () => {
+  it('renders personal connections as a quiet settings sheet without dashboard-style chrome', async () => {
     render(<ThirdPartyAccountsPage />, { wrapper });
 
     await waitFor(() => {
       expect(screen.getByTestId('third-party-accounts__create-btn')).toBeInTheDocument();
     });
 
+    expect(screen.getByText('title')).toBeInTheDocument();
+    expect(screen.getByText('description')).toBeInTheDocument();
     expect(screen.getByText('personal_scope_note')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'create_personal_connection' })).toBeInTheDocument();
     expect(screen.queryByTestId('third-party-accounts__feishu-connect')).not.toBeInTheDocument();
-    expect(screen.getByTestId('third-party-accounts__summary-strip')).toBeInTheDocument();
+    expect(screen.queryByTestId('third-party-accounts__summary-strip')).not.toBeInTheDocument();
+    expect(screen.getByTestId('third-party-accounts__list-section')).toBeInTheDocument();
+    expect(screen.getByTestId('third-party-accounts__list-section').className).not.toMatch(/rounded-lg|shadow-card/);
     expect(screen.queryByTestId('third-party-accounts__personal-scope')).not.toBeInTheDocument();
     expect(screen.queryByTestId('third-party-accounts__workspace-scope')).not.toBeInTheDocument();
+  });
+
+  it('opens a right-side sheet without extra explanatory panels', async () => {
+    render(<ThirdPartyAccountsPage />, { wrapper });
+
+    await user.click(await screen.findByTestId('third-party-accounts__create-btn'));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('third-party-accounts__sheet')).toBeInTheDocument();
+    expect(screen.getByTestId('third-party-accounts__sheet').className).toMatch(/sm:w-\[640px\]/);
+    expect(screen.getByText('create_title')).toBeInTheDocument();
+    expect(screen.queryByText('personal_scope_badge')).not.toBeInTheDocument();
+    expect(screen.queryByText('personal_scope_dialog_note')).not.toBeInTheDocument();
   });
 
   it('creates a Jira secret bundle with provider-specific fields', async () => {

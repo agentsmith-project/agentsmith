@@ -1,106 +1,97 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { ChatMainPane, type ChatMainPaneProps } from '../ChatMainPane';
+import { ChatMainPane } from '../ChatMainPane';
 
 vi.mock('@/components/chat/ChatHeader', () => ({
-  ChatHeader: () => <div data-testid="chat-header" />,
+  ChatHeader: () => <div data-testid="chat__header" />,
 }));
 
 vi.mock('@/components/chat/Composer', () => ({
-  Composer: () => <div data-testid="chat-composer" />,
-}));
-
-vi.mock('@/components/chat/Markdown', () => ({
-  Markdown: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Composer: () => <div data-testid="chat__composer" />,
 }));
 
 vi.mock('@/components/chat/MessageList', () => ({
-  MessageList: () => <div data-testid="chat-message-list" />,
+  MessageList: () => <div data-testid="chat__message-list" />,
 }));
 
-function createProps(overrides: Partial<ChatMainPaneProps> = {}): ChatMainPaneProps {
-  return {
-    currentSessionId: 'session_1',
-    activeSession: {
-      id: 'session_1',
-      project_id: 'proj_1',
-      title: 'Session 1',
-      model: 'gpt-4o',
-      endpoint_id: 'ep_1',
-      external_agent_id: 'agent_1',
-      created_at: '2026-03-01T00:00:00Z',
-      updated_at: '2026-03-01T00:00:00Z',
-      message_count: 0,
-      total_tokens: 0,
-    },
-    endpoints: [],
-    externalAgents: [],
-    messages: [],
-    messagesLoading: false,
-    attachments: [],
-    activeVariantIndexByGroup: {},
-    editingMessageId: null,
-    disabled: false,
-    activeStreamStatus: 'error',
-    activeStreamingAssistant: null,
-    suppressAutoScroll: false,
-    createPending: false,
-    createMessagePending: false,
-    editMessagePending: false,
-    initAttachmentPending: false,
-    canUseChat: true,
-    canAttachFiles: true,
-    composerValue: '',
-    fileInputRef: { current: null },
-    labels: {
-      loading: 'Loading',
-      noActiveThreadTitle: 'No thread',
-      noActiveThreadDescription: 'No active thread',
-      noActiveThreadHint: 'Create a thread',
-      noEndpointHint: 'Need endpoint',
-      noEndpointRecoveryTitle: 'Choose an endpoint',
-      noEndpointRecoveryDescription: 'Pick one below',
-      noEndpointRecoveryHint: 'No endpoints available',
-      newThread: 'New Thread',
-      selectThreadHint: 'Select thread',
-      attachmentsDisabledReason: 'Disabled',
-      assistant: 'Assistant',
-    },
-    onCreateThread: vi.fn(),
-    onRenameActiveSession: vi.fn(),
-    onSelectActiveEndpoint: vi.fn(),
-    onSelectExternalAgent: vi.fn(),
-    onSelectVariant: vi.fn(),
-    onEditMessage: vi.fn(),
-    onEditCommit: vi.fn(),
-    onRegenerate: vi.fn(),
-    onComposerChange: vi.fn(),
-    onSend: vi.fn(),
-    onStop: vi.fn(),
-    onPickFiles: vi.fn(),
-    onPickFromLibrary: vi.fn(),
-    onPickUrl: vi.fn(),
-    onFilePicked: vi.fn(),
-    onAttachFiles: vi.fn().mockResolvedValue(undefined),
-    onRemoveAttachment: vi.fn(),
-    onRetryAttachment: vi.fn(),
-    onCancelEdit: vi.fn(),
-    ...overrides,
-  };
-}
+vi.mock('@/components/chat/chat-main-pane/ChatEmptyState', () => ({
+  ChatEmptyState: () => <div data-testid="chat__empty-state" />,
+}));
+
+vi.mock('@/components/chat/chat-main-pane/ChatLoadingState', () => ({
+  ChatLoadingState: () => <div data-testid="chat__loading-state" />,
+}));
+
+vi.mock('@/components/chat/chat-main-pane/StreamingAppendFooter', () => ({
+  StreamingAppendFooter: () => <div data-testid="chat__append-footer" />,
+}));
 
 describe('ChatMainPane', () => {
-  it('does not render stream error banner', () => {
-    render(<ChatMainPane {...createProps()} />);
+  it('keeps the recovery state inline and drops the local gradient', () => {
+    render(
+      <ChatMainPane
+        currentSessionId="session_1"
+        activeSession={{ id: 'session_1', project_id: 'proj_1', title: 'Session', endpoint_id: '', model: '' } as never}
+        endpoints={[{ id: 'ep_1', name: 'GPT-4', capabilities: [] } as never]}
+        messages={[]}
+        messagesLoading={false}
+        attachments={[]}
+        activeVariantIndexByGroup={{}}
+        editingMessageId={null}
+        disabled={false}
+        activeStreamStatus="idle"
+        activeStreamingAssistant={null}
+        suppressAutoScroll={false}
+        createPending={false}
+        createMessagePending={false}
+        editMessagePending={false}
+        initAttachmentPending={false}
+        canUseChat
+        canAttachFiles={false}
+        composerValue=""
+        fileInputRef={{ current: null }}
+        labels={{
+          loading: 'loading',
+          noActiveThreadTitle: 'noActiveThreadTitle',
+          noActiveThreadDescription: 'noActiveThreadDescription',
+          noActiveThreadHint: 'noActiveThreadHint',
+          noEndpointHint: 'noEndpointHint',
+          noEndpointRecoveryTitle: 'noEndpointRecoveryTitle',
+          noEndpointRecoveryDescription: 'noEndpointRecoveryDescription',
+          noEndpointRecoveryHint: 'noEndpointRecoveryHint',
+          newThread: 'newThread',
+          selectThreadHint: 'selectThreadHint',
+          attachmentsDisabledReason: 'attachmentsDisabledReason',
+          assistant: 'assistant',
+        }}
+        layoutMode="standard"
+        onCreateThread={vi.fn()}
+        onRenameActiveSession={vi.fn()}
+        onSelectActiveEndpoint={vi.fn()}
+        onSelectExternalAgent={vi.fn()}
+        onSelectVariant={vi.fn()}
+        onEditMessage={vi.fn()}
+        onEditCommit={vi.fn()}
+        onRegenerate={vi.fn()}
+        onComposerChange={vi.fn()}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        onPickFiles={vi.fn()}
+        onPickFromLibrary={vi.fn()}
+        onPickUrl={vi.fn()}
+        onFilePicked={vi.fn()}
+        onAttachFiles={vi.fn()}
+        onRemoveAttachment={vi.fn()}
+        onRetryAttachment={vi.fn()}
+        onCancelEdit={vi.fn()}
+      />
+    );
 
-    expect(screen.queryByTestId('chat__stream-error-banner')).not.toBeInTheDocument();
-  });
-
-  it('renders message list and composer normally in error state', () => {
-    render(<ChatMainPane {...createProps()} />);
-
-    expect(screen.getByTestId('chat-message-list')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-composer')).toBeInTheDocument();
+    expect(screen.getByTestId('chat__main-pane').className).not.toContain('bg-[linear-gradient');
+    expect(screen.getByTestId('chat__composer-recovery').className).not.toContain('bg-surface-low');
+    expect(screen.getByTestId('chat__composer-recovery').className).not.toContain('border-b');
+    expect(screen.getByTestId('chat__composer-recovery').className).not.toContain('rounded-md');
+    expect(screen.getByTestId('chat__message-list')).toBeInTheDocument();
   });
 });

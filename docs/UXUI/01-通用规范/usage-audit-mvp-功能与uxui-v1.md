@@ -14,6 +14,8 @@ Does not define: `global tokens / route truth / engineering gates`
 
 本文件只定义当前 MVP 对外功能与 UX/UI 原则，不讨论未来扩张形态。
 
+页面壳层、CTA、state 和 visual baseline 的统一约束，见 [`站点页面配方与壳层规范-v1`](../00-设计系统/站点页面配方与壳层规范-v1.md) 与 [`视觉基线审查与交付规范-v1`](../00-设计系统/视觉基线审查与交付规范-v1.md)。
+
 补充边界：
 
 1. 本文件只覆盖 workspace 业务面中的 `Usage` 与 `Audit`。

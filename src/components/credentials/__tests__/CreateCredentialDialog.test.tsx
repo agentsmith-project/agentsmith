@@ -125,6 +125,13 @@ describe('CreateCredentialDialog', () => {
       expect(screen.getByText(/add a new credential/i)).toBeInTheDocument();
     });
 
+    it('keeps the header quiet without a decorative credential badge', () => {
+      renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
+
+      expect(screen.getByTestId('credentials__create-dialog-summary')).toHaveTextContent('create_dialog.summary');
+      expect(screen.queryByText('Credential')).not.toBeInTheDocument();
+    });
+
     it('shows name input field', () => {
       renderWithProviders(<CreateCredentialDialog {...defaultProps} />);
 

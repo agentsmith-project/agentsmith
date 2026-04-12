@@ -3,16 +3,15 @@
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { CheckCircle2, MonitorSmartphone } from 'lucide-react';
+import { ArrowRight, MonitorSmartphone } from 'lucide-react';
+import { Logo } from '@/components/app-shell/Logo';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
-import { Button } from '@/components/ui/button';
 import {
-  PublicAuthAsideBlock,
   PublicAuthEyebrow,
   PublicAuthFrame,
   PublicAuthHeader,
-  PublicAuthMutedCard,
+  PublicAuthSection,
   PublicAuthShell,
 } from '@/components/public/PublicAuthPage';
 
@@ -27,29 +26,11 @@ export default function DesktopAuthCompletePage() {
   return (
     <PageState state="success">
       <PageLayout>
-        <PublicAuthFrame>
-          <PublicAuthShell
-            aside={(
-              <PublicAuthAsideBlock
-                icon={<CheckCircle2 className="h-5 w-5 text-success" />}
-                title={t('desktop_auth_complete_next_steps_title')}
-                description={t('desktop_auth_complete_close_hint')}
-              >
-                <div className="space-y-3 text-sm leading-6 text-secondary">
-                  <p>{t('desktop_auth_request_checklist_followup')}</p>
-                  <p>{t('desktop_auth_complete_retry_hint')}</p>
-                </div>
-                {requestId ? (
-                  <PublicAuthMutedCard>
-                    <p className="type-caption text-tertiary">{t('desktop_auth_request_reference_label')}</p>
-                    <p className="mt-2 type-mono text-sm text-foreground" data-testid="desktop-auth-complete__request-id">{requestId}</p>
-                  </PublicAuthMutedCard>
-                ) : null}
-              </PublicAuthAsideBlock>
-            )}
-          >
-            <div className="space-y-6">
+        <PublicAuthFrame width="narrow">
+          <PublicAuthShell>
+            <div className="space-y-5">
               <PublicAuthHeader
+                logo={<Logo className="origin-left scale-125" />}
                 badge={(
                   <PublicAuthEyebrow tone="success">
                     <MonitorSmartphone className="h-3.5 w-3.5" />
@@ -59,13 +40,22 @@ export default function DesktopAuthCompletePage() {
                 title={<span data-testid="desktop-auth-complete__title">{t('desktop_auth_complete_title')}</span>}
                 description={t('desktop_auth_complete_description')}
               />
-              <div className="flex flex-wrap gap-3">
-                <Button asChild variant="primary">
-                  <Link href={workspaceEntryHref} data-testid="desktop-auth-complete__workspace-entry-link">
-                    {t('desktop_auth_complete_open_workspace_entry')}
-                  </Link>
-                </Button>
-              </div>
+              <PublicAuthSection className="space-y-3">
+                {requestId ? (
+                  <div className="space-y-1" data-testid="desktop-auth-complete__request-meta">
+                    <p className="type-caption text-tertiary">{t('desktop_auth_request_reference_label')}</p>
+                    <p className="type-mono text-sm text-foreground" data-testid="desktop-auth-complete__request-id">{requestId}</p>
+                  </div>
+                ) : null}
+                <Link
+                  href={workspaceEntryHref}
+                  className="inline-flex items-center gap-2 text-sm text-secondary transition-colors hover:text-foreground"
+                  data-testid="desktop-auth-complete__workspace-entry-link"
+                >
+                  <span>{t('desktop_auth_complete_open_workspace_entry')}</span>
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Link>
+              </PublicAuthSection>
             </div>
           </PublicAuthShell>
         </PublicAuthFrame>

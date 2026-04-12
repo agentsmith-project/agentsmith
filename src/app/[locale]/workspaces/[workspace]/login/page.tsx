@@ -175,18 +175,15 @@ export default function WorkspaceLoginPage() {
           <PublicAuthShell>
             <div className="space-y-6">
               <PublicAuthHeader
-                logo={<Logo className="mx-auto scale-125" />}
+                logo={<Logo className="origin-left scale-125" />}
                 badge={(
-                  <div className="flex justify-center">
-                    <PublicAuthEyebrow>
-                      <Globe2 className="h-3.5 w-3.5" />
-                      {t('workspace_login_badge')}
-                    </PublicAuthEyebrow>
-                  </div>
+                  <PublicAuthEyebrow>
+                    <Globe2 className="h-3.5 w-3.5" />
+                    {t('workspace_login_badge')}
+                  </PublicAuthEyebrow>
                 )}
                 title={<span data-testid="workspace-login__heading">{heading}</span>}
                 description={t('workspace_login_minimal_description')}
-                className="text-center"
               />
 
               <PublicAuthSection>

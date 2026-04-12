@@ -1,6 +1,17 @@
 import { Page } from '@playwright/test';
+import { gotoAndWait, waitForPageReady } from '../utils/navigation';
 
-export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'test@example.com', userId = 'user_001') {
+const DEFAULT_WS_ID = 'ws_default';
+const DEFAULT_USER_EMAIL = 'test@example.com';
+const DEFAULT_USER_ID = 'user_001';
+const LOGIN_PATH_REGEX = /^\/(en-US|zh-CN)\/login(?:\/workspace)?\/?$/;
+
+export async function withAuth(
+  page: Page,
+  wsId = DEFAULT_WS_ID,
+  userEmail = DEFAULT_USER_EMAIL,
+  userId = DEFAULT_USER_ID,
+) {
   const inject = ({ wsId, userEmail, userId }: { wsId: string; userEmail: string; userId: string }) => {
     window.__MBOS_AUTH_SETUP__ = true;
     window.__MBOS_AUTH_E2E_CONTEXT__ = { wsId, userEmail, userId };
@@ -63,4 +74,58 @@ export async function withAuth(page: Page, wsId = 'ws_default', userEmail = 'tes
   await page.evaluate(inject, { wsId, userEmail, userId }).catch(() => {
     // about:blank / cross-origin pages can reject evaluate; initScript path still covers next navigation.
   });
+}
+
+export async function ensureAuthenticatedSession(
+  page: Page,
+  bootstrapPath: string,
+  fallback: {
+    wsId?: string;
+    userEmail?: string;
+    userId?: string;
+  } = {},
+): Promise<void> {
+  let bootstrapError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await gotoAndWait(page, bootstrapPath);
+      await waitForPageReady(page);
+      bootstrapError = null;
+      break;
+    } catch (error) {
+      bootstrapError = error;
+      if (page.isClosed()) {
+        throw error;
+      }
+      if (attempt < 2) {
+        await page.waitForTimeout(500 * (attempt + 1));
+      }
+    }
+  }
+
+  if (bootstrapError) {
+    throw bootstrapError;
+  }
+
+  if (!LOGIN_PATH_REGEX.test(new URL(page.url()).pathname)) {
+    return;
+  }
+
+  const ctx = await page.evaluate(() => window.__MBOS_AUTH_E2E_CONTEXT__ ?? null).catch(() => null);
+  if (ctx && typeof ctx.userEmail === 'string' && typeof ctx.userId === 'string') {
+    await withAuth(page, ctx.wsId || fallback.wsId || DEFAULT_WS_ID, ctx.userEmail, ctx.userId);
+  } else {
+    await withAuth(
+      page,
+      fallback.wsId || DEFAULT_WS_ID,
+      fallback.userEmail || DEFAULT_USER_EMAIL,
+      fallback.userId || DEFAULT_USER_ID,
+    );
+  }
+
+  await gotoAndWait(page, bootstrapPath);
+  await waitForPageReady(page);
+  if (LOGIN_PATH_REGEX.test(new URL(page.url()).pathname)) {
+    throw new Error(`Failed to bootstrap authenticated session at ${bootstrapPath}`);
+  }
 }

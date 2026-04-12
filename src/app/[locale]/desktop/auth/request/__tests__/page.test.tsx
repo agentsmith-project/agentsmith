@@ -17,6 +17,10 @@ vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }));
 
+vi.mock('@/components/app-shell/Logo', () => ({
+  Logo: () => <div data-testid="logo" />,
+}));
+
 vi.mock('@/components/theme/PublicThemeToggle', () => ({
   PublicThemeToggle: () => <div data-testid="public-theme-toggle" />,
 }));
@@ -57,7 +61,12 @@ describe('DesktopAuthRequestPage', () => {
     render(<DesktopAuthRequestPage />);
 
     expect(await screen.findByTestId('desktop-auth-request__title')).toHaveTextContent('desktop_auth_request_missing_title');
+    expect(screen.getByTestId('logo')).toBeInTheDocument();
     expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'wide');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'split');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-family', 'public-auth');
+    expect(screen.getByTestId('public-auth__aside')).toBeInTheDocument();
     expect(screen.getByTestId('desktop-auth-request__workspace-login-link')).toHaveAttribute('href', '/en-US/login/workspace');
   });
 
@@ -71,6 +80,22 @@ describe('DesktopAuthRequestPage', () => {
     await waitFor(() => {
       expect(screen.getAllByText('desktop_auth_request_progress_hint')).toHaveLength(1);
     });
+  });
+
+  it('keeps the aside focused on the request id instead of a checklist stack', async () => {
+    mockUseAuthStore.mockReturnValue({ token: 'token_123', isAuthenticated: true });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DesktopAuthRequestPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('desktop-auth-request__request-id')).toHaveTextContent('req_123');
+    });
+
+    expect(screen.queryByText('desktop_auth_request_checklist_identity')).not.toBeInTheDocument();
+    expect(screen.queryByText('desktop_auth_request_checklist_desktop')).not.toBeInTheDocument();
+    expect(screen.queryByText('desktop_auth_request_checklist_followup')).not.toBeInTheDocument();
   });
 
   it('completes the desktop handoff and redirects to the completion page', async () => {

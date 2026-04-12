@@ -41,18 +41,20 @@ export function GeneralSettingsSection({
   onVisibilityChange,
 }: GeneralSettingsSectionProps) {
   return (
-    <div className="rounded-lg border border-subtle bg-bg-base/20 p-4" data-testid="settings__general-section">
-      <h3 className="text-sm font-semibold text-foreground mb-1">{settingsT('general_access_title')}</h3>
-      <p className="text-sm text-tertiary mb-4">
+    <section className="space-y-4 py-5" data-testid="settings__general-section">
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold text-foreground">{settingsT('general_access_title')}</h3>
+        <p className="text-sm text-tertiary">
         {canManageProjectLifecycle ? settingsT('general_help') : settingsT('general_read_only_help')}
-      </p>
+        </p>
+      </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="md:col-span-1">
-          <label className="block text-sm font-medium text-primary mb-2">{settingsT('project_name')}</label>
+          <label className="mb-2 block text-sm font-medium text-primary">{settingsT('project_name')}</label>
           <Input value={name} onChange={(event) => onNameChange(event.target.value)} disabled={!canManageProjectLifecycle} />
         </div>
         <div className="md:col-span-1">
-          <label className="block text-sm font-medium text-primary mb-2">{settingsT('visibility')}</label>
+          <label className="mb-2 block text-sm font-medium text-primary">{settingsT('visibility')}</label>
           <Select
             value={visibility}
             onValueChange={(value) => onVisibilityChange(value as 'public' | 'private')}
@@ -94,12 +96,12 @@ export function GeneralSettingsSection({
           </Select>
         </div>
       </div>
-      <div className="mt-6 flex justify-end">
+      <div className="flex justify-end">
         <Button onClick={onSave} disabled={!canManageProjectLifecycle || savingGeneral} variant="primary" data-testid="settings__save-btn">
           <Save className="w-4 h-4" />
           {savingGeneral ? 'Saving...' : commonT('save')}
         </Button>
       </div>
-    </div>
+    </section>
   );
 }

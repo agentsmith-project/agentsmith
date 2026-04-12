@@ -135,10 +135,13 @@ export function FilesPageContent({
   const showDetailsPanel = Boolean(selected && selectedLibraryId);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.04),_transparent_40%)]">
+    <div
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      data-testid="files__workspace-surface"
+    >
       <div
         className={cn(
-          'flex-1 min-h-0 grid gap-3',
+          'flex-1 min-h-0 grid gap-0',
           showDetailsPanel
             ? (layoutMode === 'ultrawide'
                 ? 'grid-cols-[240px_minmax(0,1fr)_320px]'
@@ -147,78 +150,110 @@ export function FilesPageContent({
                 ? 'grid-cols-[240px_minmax(0,1fr)]'
                 : 'grid-cols-[220px_minmax(0,1fr)]'),
         )}
+        data-testid="files__workspace-grid"
       >
-        <FilesLibrariesPane
-          t={t}
-          canManage={canManage}
-          canExchangeCredentials={canExchangeCredentials}
-          libsLoading={libsLoading}
-          libraries={libraries}
-          selectedLibraryId={selectedLibraryId}
-          onSelectLibrary={onSelectLibrary}
-          onCreateLibrary={onCreateLibrary}
-          onOpenDesktopAccess={onOpenDesktopAccess}
-          onRenameLibrary={onRenameLibrary}
-          onDeleteLibrary={onDeleteLibrary}
-        />
+        <div
+          className="min-h-0 border-r border-subtle/60 pr-3 [&>div]:h-full [&>div]:!rounded-none [&>div]:!border-0 [&>div]:!bg-transparent [&>div]:!shadow-none [&_[data-testid='files__library-list']>div]:!rounded-none [&_[data-testid='files__library-list']>div]:!border-0 [&_[data-testid='files__library-list']>div]:!bg-transparent [&_[data-testid='files__library-list']>div]:!shadow-none"
+          data-testid="files__libraries-shell"
+        >
+          <FilesLibrariesPane
+            t={t}
+            canManage={canManage}
+            canExchangeCredentials={canExchangeCredentials}
+            libsLoading={libsLoading}
+            libraries={libraries}
+            selectedLibraryId={selectedLibraryId}
+            onSelectLibrary={onSelectLibrary}
+            onCreateLibrary={onCreateLibrary}
+            onOpenDesktopAccess={onOpenDesktopAccess}
+            onRenameLibrary={onRenameLibrary}
+            onDeleteLibrary={onDeleteLibrary}
+          />
+        </div>
 
-        <FilesBrowserPane
-          t={t}
-          prefix={prefix}
-          crumbs={crumbs}
-          searchInput={searchInput}
-          setSearchInput={setSearchInput}
-          selectedLibraryId={selectedLibraryId}
-          selectedLibraryStatus={selectedLibraryStatus}
-          filteredItems={filteredItems}
-          selectedIds={selectedIds}
-          selectionMode={selectionMode}
-          selectedCount={selectedCount}
-          selectedObjectsCount={selectedObjectsCount}
-          allSelected={allSelected}
-          hasSelection={hasSelection}
-          uploadInProgress={uploadInProgress}
-          uploadCurrentFileName={uploadCurrentFileName}
-          uploadQueueCompleted={uploadQueueCompleted}
-          uploadQueueTotal={uploadQueueTotal}
-          uploadCurrentProgress={uploadCurrentProgress}
-          isDropActive={isDropActive}
-          sortBy={sortBy}
-          sortOrder={sortOrder}
-          objectsQuery={objectsQuery}
-          fileInputRef={fileInputRef}
-          selectedForMove={selectedForMove}
-          moveNamePlaceholder={moveNamePlaceholder}
-          onNavigateToPrefix={onNavigateToPrefix}
-          onGoUp={onGoUp}
-          onRefresh={handleRefresh}
-          onCreateFolder={onCreateFolder}
-          onUploadClick={handleUploadClick}
-          onCancelUpload={handleCancelUpload}
-          onRename={handleRename}
-          onDelete={handleDelete}
-          onDownload={handleDownload}
-          onClearSelection={onClearSelection}
-          onToggleAll={onToggleAll}
-          onSortHeaderClick={handleSortHeaderClick}
-          onLoadNextPage={handleLoadNextPage}
-          onDrop={handleDrop}
-          onDropEnter={handleDropEnter}
-          onDropOver={handleDropOver}
-          onDropLeave={handleDropLeave}
-          onRowActivate={handleRowActivate}
-          onRowOpen={handleRowOpen}
-          onToggleRowCheckbox={handleToggleRowCheckbox}
-        />
+        <div
+          className="min-h-0 px-3 [&>div]:h-full [&>div]:!rounded-none [&>div]:!border-0 [&>div]:!bg-transparent [&>div]:!shadow-none [&_[data-testid='files__objects-table']_.sticky]:!bg-transparent [&_[data-testid='files__objects-table']_.sticky]:!border-0"
+          data-testid="files__browser-shell"
+        >
+          <FilesBrowserPane
+            t={t}
+            prefix={prefix}
+            crumbs={crumbs}
+            searchInput={searchInput}
+            setSearchInput={setSearchInput}
+            selectedLibraryId={selectedLibraryId}
+            selectedLibraryStatus={selectedLibraryStatus}
+            filteredItems={filteredItems}
+            selectedIds={selectedIds}
+            selectionMode={selectionMode}
+            selectedCount={selectedCount}
+            selectedObjectsCount={selectedObjectsCount}
+            allSelected={allSelected}
+            hasSelection={hasSelection}
+            uploadInProgress={uploadInProgress}
+            uploadCurrentFileName={uploadCurrentFileName}
+            uploadQueueCompleted={uploadQueueCompleted}
+            uploadQueueTotal={uploadQueueTotal}
+            uploadCurrentProgress={uploadCurrentProgress}
+            isDropActive={isDropActive}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            objectsQuery={objectsQuery}
+            fileInputRef={fileInputRef}
+            selectedForMove={selectedForMove}
+            moveNamePlaceholder={moveNamePlaceholder}
+            onNavigateToPrefix={onNavigateToPrefix}
+            onGoUp={onGoUp}
+            onRefresh={handleRefresh}
+            onCreateFolder={onCreateFolder}
+            onUploadClick={handleUploadClick}
+            onCancelUpload={handleCancelUpload}
+            onRename={handleRename}
+            onDelete={handleDelete}
+            onDownload={handleDownload}
+            onClearSelection={onClearSelection}
+            onToggleAll={onToggleAll}
+            onSortHeaderClick={handleSortHeaderClick}
+            onLoadNextPage={handleLoadNextPage}
+            onDrop={handleDrop}
+            onDropEnter={handleDropEnter}
+            onDropOver={handleDropOver}
+            onDropLeave={handleDropLeave}
+            onRowActivate={handleRowActivate}
+            onRowOpen={handleRowOpen}
+            onToggleRowCheckbox={handleToggleRowCheckbox}
+          />
+        </div>
 
         {showDetailsPanel ? (
-          <FileObjectDetailsPanel
-            workspaceId={workspaceId}
-            projectId={projectId}
-            selectedLibraryId={selectedLibraryId}
-            selected={selected}
-            onDownload={handleDownload}
-          />
+          <div
+            className={cn(
+              'min-h-0 pl-3',
+              "[&_[data-testid='files__details-panel']]:h-full",
+              "[&_[data-testid='files__details-panel']]:!border-0",
+              "[&_[data-testid='files__details-panel']]:!bg-transparent",
+              "[&_[data-testid='files__details-panel']]:!shadow-none",
+              "[&_[data-testid='files__details-tabs']_[role='tablist']]:!rounded-none",
+              "[&_[data-testid='files__details-tabs']_[role='tablist']]:!border-x-0",
+              "[&_[data-testid='files__details-tabs']_[role='tablist']]:!border-t-0",
+              "[&_[data-testid='files__details-tabs']_[role='tablist']]:!bg-transparent",
+              "[&_[data-testid='files__details-preview']]:!rounded-none",
+              "[&_[data-testid='files__details-preview']]:!bg-transparent",
+              "[&_[data-testid='files__details-preview']]:!p-0",
+              "[&_[data-testid='files__details-preview']_.h-40]:!rounded-none",
+              "[&_[data-testid='files__details-preview']_.h-40]:!bg-transparent",
+              "[&_[data-testid='files__details-preview']_.h-40]:!border-0",
+            )}
+            data-testid="files__details-shell"
+          >
+            <FileObjectDetailsPanel
+              workspaceId={workspaceId}
+              projectId={projectId}
+              selectedLibraryId={selectedLibraryId}
+              selected={selected}
+              onDownload={handleDownload}
+            />
+          </div>
         ) : null}
       </div>
     </div>

@@ -453,6 +453,8 @@ describe('ThirdPartyAccountsPage', () => {
     };
     mockList.mockResolvedValue([]);
     const originalVisualSeed = (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__;
+    const originalVisualContext = window.__MBOS_VISUAL_E2E_CONTEXT__;
+    window.__MBOS_VISUAL_E2E_CONTEXT__ = { thirdPartyAccountsBootstrap: true };
     (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = [seededConnection];
 
     try {
@@ -460,11 +462,12 @@ describe('ThirdPartyAccountsPage', () => {
 
       expect(await screen.findByTestId('third-party-accounts__row-uec_visual_custom_integration')).toBeInTheDocument();
     } finally {
+      window.__MBOS_VISUAL_E2E_CONTEXT__ = originalVisualContext;
       (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = originalVisualSeed;
     }
   });
 
-  it('hydrates the first frame from localStorage visual seed and clears the bootstrap key after consumption', async () => {
+  it('hydrates the first frame from sessionStorage visual seed and clears the bootstrap key after consumption', async () => {
     const seededConnection: UserExternalConnection = {
       id: 'uec_visual_custom_integration',
       user_id: 'user_1',
@@ -493,8 +496,10 @@ describe('ThirdPartyAccountsPage', () => {
     };
     mockList.mockImplementation(() => new Promise(() => {}));
     const originalVisualSeed = (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__;
-    window.localStorage.setItem('__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__', JSON.stringify([seededConnection]));
-    const removeItem = vi.spyOn(window.localStorage, 'removeItem');
+    const originalVisualContext = window.__MBOS_VISUAL_E2E_CONTEXT__;
+    window.__MBOS_VISUAL_E2E_CONTEXT__ = { thirdPartyAccountsBootstrap: true };
+    window.sessionStorage.setItem('__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__', JSON.stringify([seededConnection]));
+    const removeItem = vi.spyOn(window.sessionStorage, 'removeItem');
     (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = [seededConnection];
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -511,9 +516,59 @@ describe('ThirdPartyAccountsPage', () => {
 
       expect(await screen.findByTestId('third-party-accounts__row-uec_visual_custom_integration')).toBeInTheDocument();
       expect(mockList).toHaveBeenCalledTimes(1);
+      expect(window.__MBOS_VISUAL_E2E_CONTEXT__).toBeUndefined();
     } finally {
+      window.__MBOS_VISUAL_E2E_CONTEXT__ = originalVisualContext;
       (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = originalVisualSeed;
       removeItem.mockRestore();
+    }
+  });
+
+  it('ignores stale visual bootstrap data when the visual opt-in marker is missing', async () => {
+    const seededConnection: UserExternalConnection = {
+      id: 'uec_visual_custom_integration',
+      user_id: 'user_1',
+      provider: 'custom',
+      kind: 'secret_bundle',
+      display_name: 'Visual Custom Integration',
+      custom_domain: 'api.visual.example.com',
+      note: 'Visual seed',
+      status: 'active',
+      fields: [
+        {
+          key: 'base_url',
+          description: 'Base URL',
+          secret: false,
+          masked_value: 'https://api.visual.example.com',
+        },
+      ],
+      account_identity: null,
+      scopes: null,
+      expires_at: null,
+      last_refreshed_at: null,
+      last_used_at: null,
+      last_error: null,
+      created_at: '2026-03-05T00:00:00Z',
+      updated_at: '2026-03-05T00:00:00Z',
+    };
+    mockList.mockResolvedValue([]);
+    const originalVisualSeed = (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__;
+    const originalVisualContext = window.__MBOS_VISUAL_E2E_CONTEXT__;
+    window.sessionStorage.setItem('__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__', JSON.stringify([seededConnection]));
+    (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = [seededConnection];
+    delete window.__MBOS_VISUAL_E2E_CONTEXT__;
+
+    try {
+      render(<ThirdPartyAccountsPage />, { wrapper });
+
+      await waitFor(() => {
+        expect(mockList).toHaveBeenCalledTimes(1);
+      });
+      expect(screen.queryByTestId('third-party-accounts__row-uec_visual_custom_integration')).not.toBeInTheDocument();
+    } finally {
+      window.__MBOS_VISUAL_E2E_CONTEXT__ = originalVisualContext;
+      (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = originalVisualSeed;
+      window.sessionStorage.removeItem('__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__');
     }
   });
 
@@ -548,6 +603,8 @@ describe('ThirdPartyAccountsPage', () => {
       .mockResolvedValueOnce([seededConnection])
       .mockResolvedValueOnce([]);
     const originalVisualSeed = (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__;
+    const originalVisualContext = window.__MBOS_VISUAL_E2E_CONTEXT__;
+    window.__MBOS_VISUAL_E2E_CONTEXT__ = { thirdPartyAccountsBootstrap: true };
     (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = [seededConnection];
 
     try {
@@ -563,6 +620,7 @@ describe('ThirdPartyAccountsPage', () => {
       expect(mockRemove).toHaveBeenCalledWith('uec_visual_custom_integration');
       expect(mockList).toHaveBeenCalledTimes(2);
     } finally {
+      window.__MBOS_VISUAL_E2E_CONTEXT__ = originalVisualContext;
       (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = originalVisualSeed;
     }
   });

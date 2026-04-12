@@ -29,6 +29,10 @@ declare global {
       token?: string;
     };
 
+    __MBOS_VISUAL_E2E_CONTEXT__?: {
+      thirdPartyAccountsBootstrap?: boolean;
+    };
+
     __MBOS_PUBLIC_RUNTIME_CONFIG__?: PublicRuntimeConfig;
   }
 }

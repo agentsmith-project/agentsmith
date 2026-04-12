@@ -45,7 +45,10 @@ export default function ThirdPartyAccountsPage() {
   const api = React.useMemo(() => new UserExternalConnectionsAPI(getApiClient()), []);
   const runtimeConfig = React.useMemo(() => getPublicRuntimeConfig(), []);
   const [mswReady, setMswReady] = React.useState(() => !runtimeConfig.useMsw);
-  const visualSeedItems = React.useMemo(() => readVisualThirdPartyAccountsSeed(), []);
+  const visualSeedItems = React.useMemo(
+    () => readVisualThirdPartyAccountsSeed({ enabled: runtimeConfig.useMsw }),
+    [runtimeConfig.useMsw],
+  );
 
   React.useEffect(() => {
     if (!visualSeedItems) return;

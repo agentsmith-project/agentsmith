@@ -54,10 +54,14 @@ function buildVisualThirdPartyAccountRecord(seed: VisualThirdPartyConnectionSeed
 
 function setVisualThirdPartyAccountsBootstrap(record: UserExternalConnection) {
   try {
-    window.localStorage.setItem(VISUAL_SEED_STORAGE_KEY, JSON.stringify([record]));
+    window.sessionStorage.setItem(VISUAL_SEED_STORAGE_KEY, JSON.stringify([record]));
   } catch {
     // If storage is unavailable, the in-memory bootstrap channel below still covers first paint.
   }
+  window.__MBOS_VISUAL_E2E_CONTEXT__ = {
+    ...window.__MBOS_VISUAL_E2E_CONTEXT__,
+    thirdPartyAccountsBootstrap: true,
+  };
   (window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: UserExternalConnection[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = [record];
 }
 

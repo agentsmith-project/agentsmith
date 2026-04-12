@@ -14,6 +14,7 @@ import { useRouter } from '@/lib/i18n/routing';
 import { useWorkspaces } from './use-workspaces';
 import { useAuthStoreHydration } from '@/lib/stores/authStore';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { buildWorkspaceOverviewHref } from '@/lib/workspaces/workspace-paths';
 
 export function useSyncAuthFromUrl() {
   const params = useParams();
@@ -27,6 +28,7 @@ export function useSyncAuthFromUrl() {
   } = useWorkspaces();
   const rawWorkspaceId = params?.workspace;
   const rawProjectId = params?.project;
+  const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const workspaceId = validateWorkspaceParam(rawWorkspaceId);
   const projectId = validateProjectParam(rawProjectId);
 
@@ -39,9 +41,9 @@ export function useSyncAuthFromUrl() {
 
     if (!workspaceExists) {
       // Workspace not found for user, redirect to workspace list
-      router.replace('/workspaces');
+      router.replace(buildWorkspaceOverviewHref(locale));
     }
-  }, [hydrated, workspaceId, workspaces, workspacesLoading, workspacesError, router]);
+  }, [hydrated, locale, workspaceId, workspaces, workspacesLoading, workspacesError, router]);
 
   return {
     workspaceId,

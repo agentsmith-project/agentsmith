@@ -122,6 +122,7 @@ export function WorkspaceEditorPanel({
             ) : (
               <Button
                 type="button"
+                variant="primary"
                 onClick={onEnableEditMode}
                 data-testid="system-workspaces__enable-edit"
               >
@@ -461,6 +462,7 @@ export function WorkspaceEditorPanel({
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
+            variant="primary"
             onClick={onSubmit}
             disabled={!state.canSubmit || disabledByProvisioning}
             data-testid="system-workspaces__save"

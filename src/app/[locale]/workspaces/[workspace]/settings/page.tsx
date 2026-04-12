@@ -20,8 +20,7 @@ import { useGovernableProjects, useProjects } from '@/lib/hooks/use-projects-que
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { buildProjectAdminSummary } from '@/lib/projects/project-view';
 import {
-  buildProjectSurfacePath,
-  resolveDefaultProjectSurfaceHref,
+  resolveWorkspaceProjectEntryPath,
   resolveWorkspaceGovernanceProjectActions,
 } from '@/lib/projects/project-surface-access';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -434,10 +433,12 @@ export default function WorkspaceSettingsPage() {
                     >
                       {(() => {
                           const actions = resolveWorkspaceGovernanceProjectActions(project);
-                          const defaultProjectHref = resolveDefaultProjectSurfaceHref(project);
-                          const defaultProjectPath = defaultProjectHref
-                            ? buildProjectSurfacePath(locale, workspaceId ?? '', project.id, defaultProjectHref)
-                            : `${workspaceBasePath}/projects/${project.id}/overview`;
+                          const defaultProjectPath = resolveWorkspaceProjectEntryPath(
+                            locale,
+                            workspaceId ?? '',
+                            project.id,
+                            project,
+                          );
                           const selectedOwnerId = selectedProjectOwners[project.id] ?? project.owner_id;
                           const isSavingProjectOwner = savingProjectOwnerId === project.id;
                           return (

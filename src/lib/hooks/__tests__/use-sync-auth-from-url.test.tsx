@@ -171,7 +171,7 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces');
+        expect(mockRouter.replace).toHaveBeenCalledWith('/en-US/workspaces/overview');
       });
     });
 
@@ -253,7 +253,7 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces');
+        expect(mockRouter.replace).toHaveBeenCalledWith('/en-US/workspaces/overview');
       });
     });
   });
@@ -413,7 +413,7 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces');
+        expect(mockRouter.replace).toHaveBeenCalledWith('/en-US/workspaces/overview');
       });
     });
 
@@ -460,7 +460,7 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces');
+        expect(mockRouter.replace).toHaveBeenCalledWith('/en-US/workspaces/overview');
       });
     });
 

@@ -21,6 +21,7 @@ import {
   shouldUseGovernableProjectSwitcher,
 } from '@/lib/projects/project-surface-access';
 import { selectCurrentUser, useAuthStore } from '@/lib/stores/authStore';
+import { buildWorkspaceOverviewHref } from '@/lib/workspaces/workspace-paths';
 
 import { Logo } from './Logo';
 import { UserMenu } from './UserMenu';
@@ -36,6 +37,7 @@ function stripLocalePrefix(pathname: string): string {
 function resolveTopbarHomeHref(params: {
   pathname: string;
   workspaceId?: string;
+  locale: string;
 }): string {
   if (params.workspaceId) {
     return `/workspaces/${params.workspaceId}`;
@@ -46,7 +48,7 @@ function resolveTopbarHomeHref(params: {
     return '/system/workspaces';
   }
 
-  return '/workspaces';
+  return buildWorkspaceOverviewHref(params.locale);
 }
 
 const quietSwitcherClassName =
@@ -116,7 +118,7 @@ export function Topbar({ className = '' }: TopbarProps) {
   };
 
   const handleLogoClick = () => {
-    router.push(resolveTopbarHomeHref({ pathname, workspaceId }));
+    router.push(resolveTopbarHomeHref({ pathname, workspaceId, locale }));
   };
 
   const handleProfile = () => {

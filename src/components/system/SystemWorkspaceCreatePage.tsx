@@ -566,6 +566,7 @@ export function SystemWorkspaceCreatePage() {
                 {step !== 'review' ? (
                   <Button
                     type="button"
+                    variant="primary"
                     onClick={() => {
                       if (step === 'basics' && draft.name.trim()) setStep('identity');
                       if (step === 'identity' && canContinueIdentity) setStep('administrator');
@@ -584,6 +585,7 @@ export function SystemWorkspaceCreatePage() {
                 ) : (
                   <Button
                     type="button"
+                    variant="primary"
                     onClick={() => void createWorkspace()}
                     disabled={isSubmitting}
                     data-testid="system-workspace-create__create"

@@ -35,7 +35,7 @@ export function PublicThemeToggle({ className }: PublicThemeToggleProps) {
     >
       {THEME_OPTIONS.map((option) => {
         const Icon = option.icon;
-        const isActive = mounted ? theme === option.id : option.id === 'light';
+        const isActive = mounted && theme === option.id;
         return (
           <button
             key={option.id}

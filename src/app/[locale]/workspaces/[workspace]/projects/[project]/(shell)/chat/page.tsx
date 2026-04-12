@@ -78,7 +78,6 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
-  const locale = resolvedParams?.locale ?? 'en-US';
   const { layoutMode } = useProjectLayoutMode();
 
   const apiClient = useMemo(() => getApiClient(), []);

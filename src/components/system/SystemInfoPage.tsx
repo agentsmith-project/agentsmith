@@ -66,11 +66,11 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                   <p className="text-sm leading-6 text-secondary">{t('info_subtitle')}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Link href={`/${locale}/system/workspaces`}>
-                    <Button type="button" variant="outline" data-testid="system-info__back">
+                  <Button asChild type="button" variant="outline" data-testid="system-info__back">
+                    <Link href={`/${locale}/system/workspaces`}>
                       {t('back_to_workspaces')}
-                    </Button>
-                  </Link>
+                    </Link>
+                  </Button>
                   <SystemLogoutButton />
                 </div>
               </div>

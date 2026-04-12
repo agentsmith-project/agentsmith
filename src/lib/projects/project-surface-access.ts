@@ -160,3 +160,13 @@ export function buildProjectSurfacePath(
   const localePrefix = locale ? `/${locale}` : '';
   return `${localePrefix}/workspaces/${workspaceId}/projects/${projectId}/${href}`;
 }
+
+export function resolveWorkspaceProjectEntryPath(
+  locale: string | null | undefined,
+  workspaceId: string,
+  projectId: string,
+  value: ProjectPermissionCarrier | readonly string[] | null | undefined,
+): string {
+  const targetHref = resolveDefaultProjectSurfaceHref(value) ?? 'overview';
+  return buildProjectSurfacePath(locale, workspaceId, projectId, targetHref);
+}

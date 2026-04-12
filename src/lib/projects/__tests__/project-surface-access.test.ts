@@ -7,6 +7,7 @@ import {
   listAccessibleSidebarProjectRoutePolicies,
   listSwitchableProjects,
   resolveDefaultProjectSurfaceHref,
+  resolveWorkspaceProjectEntryPath,
   resolveWorkspaceGovernanceProjectActions,
   shouldUseGovernableProjectSwitcher,
 } from '../project-surface-access';
@@ -111,5 +112,19 @@ describe('project-surface-access', () => {
   it('builds locale-aware project surface paths', () => {
     expect(buildProjectSurfacePath('en-US', 'ws_1', 'proj_1', 'members')).toBe('/en-US/workspaces/ws_1/projects/proj_1/members');
     expect(buildProjectSurfacePath(undefined, 'ws_1', 'proj_1', 'members')).toBe('/workspaces/ws_1/projects/proj_1/members');
+  });
+
+  it('resolves workspace-side project entry paths with an overview fallback', () => {
+    expect(
+      resolveWorkspaceProjectEntryPath('en-US', 'ws_1', 'proj_1', {
+        permissions: ['project:membership:update'],
+      }),
+    ).toBe('/en-US/workspaces/ws_1/projects/proj_1/members');
+
+    expect(
+      resolveWorkspaceProjectEntryPath('en-US', 'ws_1', 'proj_2', {
+        permissions: [],
+      }),
+    ).toBe('/en-US/workspaces/ws_1/projects/proj_2/overview');
   });
 });

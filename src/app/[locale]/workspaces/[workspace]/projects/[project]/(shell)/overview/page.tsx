@@ -10,7 +10,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { useCurrentPermissions, useProjectOverviewCapabilities } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
-import { buildProjectSurfacePath } from '@/lib/projects/project-surface-access';
+import { buildProjectSurfacePath, type ProjectSurfaceHref } from '@/lib/projects/project-surface-access';
 import {
   buildOverviewPaths,
   buildOverviewSurfaceSummary,
@@ -78,8 +78,14 @@ export default function OverviewPage({ params }: OverviewPageProps) {
 
   const { workspaceBasePath } = buildOverviewPaths(locale, workspaceId, projectId);
   const accessiblePolicies = listAccessibleSidebarProjectRoutePolicies(currentPermissions);
-  const surfaceSummary = buildOverviewSurfaceSummary(accessiblePolicies, tNav, tContextStore);
   const nextStepEntries = buildOverviewNextStepEntries(accessiblePolicies, tNav, tContextStore, tOverview);
+  const nextStepHrefs = nextStepEntries.map((entry) => entry.href);
+  const remainingSurfaceSummary = buildOverviewSurfaceSummary(
+    accessiblePolicies,
+    tNav,
+    tContextStore,
+    nextStepHrefs,
+  );
   const noSurfaceLabel = tOverview('signals.not_available');
 
   return (
@@ -126,23 +132,32 @@ export default function OverviewPage({ params }: OverviewPageProps) {
             <div className="grid gap-5 md:grid-cols-3">
               <section data-testid="project-hub__use-summary">
                 <OverviewSummaryList
-                  items={surfaceSummary.useLabels}
+                  items={remainingSurfaceSummary.useLabels}
                   title={tOverview('signals.execution_title')}
                   emptyLabel={noSurfaceLabel}
+                  locale={locale}
+                  workspaceId={workspaceId}
+                  projectId={projectId}
                 />
               </section>
               <section data-testid="project-hub__governance-summary">
                 <OverviewSummaryList
-                  items={surfaceSummary.governLabels}
+                  items={remainingSurfaceSummary.governLabels}
                   title={tOverview('signals.governance_title')}
                   emptyLabel={noSurfaceLabel}
+                  locale={locale}
+                  workspaceId={workspaceId}
+                  projectId={projectId}
                 />
               </section>
               <section data-testid="project-hub__develop-summary">
                 <OverviewSummaryList
-                  items={surfaceSummary.developLabels}
+                  items={remainingSurfaceSummary.developLabels}
                   title={tOverview('signals.develop_title')}
                   emptyLabel={noSurfaceLabel}
+                  locale={locale}
+                  workspaceId={workspaceId}
+                  projectId={projectId}
                 />
               </section>
             </div>
@@ -157,10 +172,16 @@ function OverviewSummaryList({
   items,
   title,
   emptyLabel,
+  locale,
+  workspaceId,
+  projectId,
 }: {
-  items: string[];
+  items: Array<{ href: ProjectSurfaceHref; label: string }>;
   title: string;
   emptyLabel: string;
+  locale: string;
+  workspaceId: string;
+  projectId: string;
 }) {
   return (
     <div className="space-y-3">
@@ -168,11 +189,13 @@ function OverviewSummaryList({
       {items.length > 0 ? (
         <ul className="divide-y divide-subtle">
           {items.map((item) => (
-            <li
-              key={item}
-              className="px-0 py-3 text-sm text-secondary"
-            >
-              {item}
+            <li key={item.href} className="px-0 py-3 text-sm text-secondary">
+              <Link
+                href={buildProjectSurfacePath(locale, workspaceId, projectId, item.href)}
+                className="inline-flex max-w-full items-center text-sm text-secondary transition-colors hover:text-foreground"
+              >
+                <span className="truncate">{item.label}</span>
+              </Link>
             </li>
           ))}
         </ul>

@@ -188,7 +188,7 @@ describe('Topbar', () => {
     expect(screen.getAllByText('Governance Project').length).toBeGreaterThan(1);
   });
 
-  it('routes the logo to workspace home on user surfaces without workspace context', () => {
+  it('routes the logo to the workspace overview on user surfaces without workspace context', () => {
     mockParams = { locale: 'en-US' };
     mockPathname = '/en-US/user/api-keys';
     mockCurrentProject = null;
@@ -197,7 +197,7 @@ describe('Topbar', () => {
 
     fireEvent.click(screen.getByLabelText('go_to_projects'));
 
-    expect(mockPush).toHaveBeenCalledWith('/workspaces');
+    expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/overview');
   });
 
   it('keeps system logo navigation on system surfaces without workspace context', () => {

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { AlertTriangle, CheckCircle2, LoaderCircle, LogIn, MonitorSmartphone } from 'lucide-react';
@@ -24,6 +24,7 @@ type DesktopAuthRequestStatus = 'loading' | 'redirecting' | 'completing' | 'done
 export default function DesktopAuthRequestPage() {
   const params = useParams();
   const router = useRouter();
+  const routerReplace = router.replace;
   const searchParams = useSearchParams();
   const t = useTranslations('auth');
   const hydrated = useAuthStoreHydration();
@@ -33,7 +34,6 @@ export default function DesktopAuthRequestPage() {
   const requestId = searchParams.get('desktop_auth_request_id')?.trim() ?? '';
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<DesktopAuthRequestStatus>('loading');
-  const [retryTick, setRetryTick] = useState(0);
 
   const completeUrl = useMemo(
     () => (requestId
@@ -41,6 +41,38 @@ export default function DesktopAuthRequestPage() {
       : null),
     [requestId],
   );
+
+  const startCompletion = useCallback(async (cancelled?: { current: boolean }) => {
+    if (!completeUrl || !token) {
+      throw new Error('desktop_auth_complete_failed');
+    }
+
+    setError(null);
+    setStatus('completing');
+
+    try {
+      const response = await fetch(completeUrl, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`desktop_auth_complete_failed_${response.status}`);
+      }
+      if (cancelled?.current) {
+        return;
+      }
+      setStatus('done');
+      routerReplace(`/${locale}/desktop/auth/complete?desktop_auth_request_id=${encodeURIComponent(requestId)}`);
+    } catch (cause: unknown) {
+      if (cancelled?.current) {
+        return;
+      }
+      setError(cause instanceof Error ? cause.message : 'desktop_auth_complete_failed');
+      setStatus('error');
+    }
+  }, [completeUrl, locale, requestId, routerReplace, token]);
 
   useEffect(() => {
     if (!hydrated) {
@@ -53,41 +85,17 @@ export default function DesktopAuthRequestPage() {
     }
     if (!isAuthenticated || !token || !completeUrl) {
       setStatus('redirecting');
-      router.replace(`/${locale}/login/workspace?desktop_auth_request_id=${encodeURIComponent(requestId)}`);
+      routerReplace(`/${locale}/login/workspace?desktop_auth_request_id=${encodeURIComponent(requestId)}`);
       return;
     }
 
-    let cancelled = false;
-    const run = async () => {
-      setStatus('completing');
-      const response = await fetch(completeUrl, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`desktop_auth_complete_failed_${response.status}`);
-      }
-      if (cancelled) {
-        return;
-      }
-      setStatus('done');
-      router.replace(`/${locale}/desktop/auth/complete?desktop_auth_request_id=${encodeURIComponent(requestId)}`);
-    };
-
-    void run().catch((cause: unknown) => {
-      if (cancelled) {
-        return;
-      }
-      setError(cause instanceof Error ? cause.message : 'desktop_auth_complete_failed');
-      setStatus('error');
-    });
+    const cancelled = { current: false };
+    void startCompletion(cancelled);
 
     return () => {
-      cancelled = true;
+      cancelled.current = true;
     };
-  }, [completeUrl, hydrated, isAuthenticated, locale, requestId, retryTick, router, token]);
+  }, [completeUrl, hydrated, isAuthenticated, locale, requestId, routerReplace, startCompletion, token]);
 
   const statusContent = getStatusContent({ error, status, t });
   const workspaceLoginHref = requestId
@@ -143,7 +151,7 @@ export default function DesktopAuthRequestPage() {
                     </Link>
                   </Button>
                   {!missingRequest ? (
-                    <Button type="button" variant="secondary" onClick={() => setRetryTick((value) => value + 1)}>
+                    <Button type="button" variant="secondary" onClick={() => void startCompletion()}>
                       {t('desktop_auth_request_retry')}
                     </Button>
                   ) : null}

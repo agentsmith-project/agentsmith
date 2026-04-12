@@ -41,6 +41,7 @@ import { Input } from '@/components/ui/input';
 import { CreateProjectDialog } from '@/components/projects/CreateProjectDialog';
 import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
 import { ProjectsTable } from '@/components/projects/ProjectsTable';
+import { ProjectEntryActionCluster } from '@/components/projects/ProjectsTable';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -61,8 +62,7 @@ import {
   type Project,
 } from '@/lib/projects/project-view';
 import {
-  buildProjectSurfacePath,
-  resolveDefaultProjectSurfaceHref,
+  resolveWorkspaceProjectEntryPath,
 } from '@/lib/projects/project-surface-access';
 import { useCreateJoinRequest } from '@/lib/hooks/use-join-requests';
 
@@ -101,6 +101,7 @@ export function WorkspaceProjectsEntryPage({
 
   const workspaceId = workspaceIdOverride ?? validateWorkspaceParam(routeParams?.workspace);
   const locale = routeParams?.locale || 'en-US';
+  const workspaceBasePath = workspaceId ? `/${locale}/workspaces/${workspaceId}` : `/${locale}/workspaces`;
   const createJoinRequest = useCreateJoinRequest(workspaceId ?? '');
 
   const {
@@ -149,9 +150,11 @@ export function WorkspaceProjectsEntryPage({
       setJoinDialogProject(project);
       return;
     }
-    const defaultHref = resolveDefaultProjectSurfaceHref(project);
-    if (!defaultHref || !workspaceId) return;
-    router.push(buildProjectSurfacePath(locale, workspaceId, project.id, defaultHref));
+    if (!workspaceId) {
+      router.push(workspaceBasePath);
+      return;
+    }
+    router.push(resolveWorkspaceProjectEntryPath(locale, workspaceId, project.id, project));
   };
 
   const handleSettingsClick = (project: Project) => {
@@ -202,12 +205,7 @@ export function WorkspaceProjectsEntryPage({
         });
         const refreshed = await refetchProjects();
         const nextProject = refreshed.data?.find((item) => item.id === project.id) ?? project;
-        const defaultHref = resolveDefaultProjectSurfaceHref(nextProject);
-        if (!defaultHref) {
-          router.push(`/${locale}/workspaces/${workspaceId}`);
-        } else {
-          router.push(buildProjectSurfacePath(locale, workspaceId, project.id, defaultHref));
-        }
+        router.push(resolveWorkspaceProjectEntryPath(locale, workspaceId, project.id, nextProject));
       }
       setJoinDialogProject(null);
     } catch {
@@ -250,12 +248,7 @@ export function WorkspaceProjectsEntryPage({
       return;
     }
 
-    const defaultHref = resolveDefaultProjectSurfaceHref(createdProject);
-    if (!defaultHref) {
-      router.push(`/${locale}/workspaces/${workspaceId}`);
-      return;
-    }
-    router.push(buildProjectSurfacePath(locale, workspaceId, projectId, defaultHref));
+    router.push(resolveWorkspaceProjectEntryPath(locale, workspaceId, projectId, createdProject));
   };
 
   const memberNameById = useMemo(() => {
@@ -324,7 +317,6 @@ export function WorkspaceProjectsEntryPage({
 
   const canReadProjects = canWorkspaceRead;
   const canCreateProject = canCreateProjectByWorkspacePermissions;
-  const workspaceBasePath = `/${locale}/workspaces/${workspaceId}`;
   const workspaceSelectionPath = `/${locale}/workspaces/overview`;
   const workspaceName = currentWorkspace?.name || workspaceId;
 
@@ -522,21 +514,53 @@ export function WorkspaceProjectsEntryPage({
                         <Pin className="h-4 w-4" />
                         {t('pinned.title')}
                       </h2>
-                      <div className="flex flex-wrap gap-x-6 gap-y-3">
+                      <div className="space-y-2">
                         {pinnedProjects.map((project) => (
-                          <button
+                          <div
                             key={project.id}
-                            type="button"
-                            onClick={() => handleProjectClick(project)}
-                            className="group inline-flex min-w-[14rem] flex-col items-start gap-1 rounded-sm border border-transparent px-0 py-1 text-left transition-colors hover:text-foreground"
+                            className="group flex items-start justify-between gap-4 rounded-sm border border-transparent px-0 py-1 text-left transition-colors hover:text-foreground"
                             data-testid={`projects__pinned-link--${project.id}`}
                           >
-                            <span className="inline-flex items-center gap-2 text-sm text-foreground">
-                              <FolderOpen className="h-4 w-4 text-icon-default transition-colors group-hover:text-foreground" />
-                              {project.name}
-                            </span>
-                            <span className="text-sm text-secondary">{buildProjectAdminSummary(project, memberNameById)}</span>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => handleProjectClick(project)}
+                              className="flex min-w-0 flex-1 flex-col items-start gap-1 text-left"
+                              data-testid={`projects__pinned-open-btn--${project.id}`}
+                            >
+                              <span className="inline-flex items-center gap-2 text-sm text-foreground">
+                                <FolderOpen className="h-4 w-4 text-icon-default transition-colors group-hover:text-foreground" />
+                                {project.name}
+                              </span>
+                              <span className="text-sm text-secondary">{buildProjectAdminSummary(project, memberNameById)}</span>
+                            </button>
+                            <div className="flex items-center gap-1">
+                              <ProjectEntryActionCluster
+                                project={project}
+                                onProjectClick={handleProjectClick}
+                                onSettingsClick={handleSettingsClick}
+                                onDeleteClick={(targetProject) => setDeleteDialogProject(targetProject)}
+                                onJoinRequest={(targetProject) => void handleCreateJoinRequest(targetProject)}
+                                pendingJoinRequestIds={new Set([...pendingJoinRequestIds, ...joiningProjectIds])}
+                                canDeleteProjectByWorkspacePermission={canDeleteProjectByWorkspacePermission}
+                                t={t}
+                                showOpenButton={false}
+                                settingsButtonTestId={`projects__pinned-settings-btn--${project.id}`}
+                                moreButtonTestId={`projects__pinned-more-btn--${project.id}`}
+                                iconButtonClassName="h-8 w-8 rounded-sm hover:bg-surface-low"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={(e) => togglePin(project.id, e)}
+                                className="h-8 w-8 rounded-sm hover:bg-surface-low"
+                                aria-label={t('actions.unpin')}
+                                data-testid={`projects__unpin-btn--${project.id}`}
+                              >
+                                <Pin className="h-4 w-4 text-icon-default" />
+                              </Button>
+                            </div>
+                          </div>
                         ))}
                       </div>
                     </section>

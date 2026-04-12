@@ -51,6 +51,8 @@ describe('SystemWorkspaceCreatePage', () => {
     render(<SystemWorkspaceCreatePage />);
 
     expect(screen.getByTestId('system-workspace-create__heading')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspace-create__next')).toHaveClass('bg-foreground/94');
+    expect(screen.getByTestId('system-workspace-create__next')).not.toHaveClass('bg-transparent');
     fireEvent.change(screen.getByTestId('system-workspaces__draft-name'), {
       target: { value: 'Ops Workspace' },
     });
@@ -83,6 +85,7 @@ describe('SystemWorkspaceCreatePage', () => {
     fireEvent.click(screen.getByTestId('system-workspace-create__next'));
 
     expect(screen.getByText('Ops Workspace')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspace-create__create')).toHaveClass('bg-foreground/94');
     fireEvent.click(screen.getByTestId('system-workspace-create__create'));
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/en-US/system/workspaces?workspace=ws_new'));

@@ -737,7 +737,7 @@ describe("api-entry-node projects routes", () => {
         ws?.once("error", reject);
       });
       const observedMessages = new Promise<Array<Record<string, unknown>>>(
-        (resolve, reject) => {
+        (resolve) => {
           ws?.on("message", (raw) => {
             const msg = JSON.parse(raw.toString("utf-8")) as {
               type?: string;

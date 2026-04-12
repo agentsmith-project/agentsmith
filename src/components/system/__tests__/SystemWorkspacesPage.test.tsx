@@ -65,14 +65,18 @@ describe('SystemWorkspacesPage', () => {
 
     expect(await screen.findByTestId('system-workspaces__heading')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__new-workspace')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__new-workspace')).toHaveClass('bg-foreground/94');
+    expect(screen.getByTestId('system-workspaces__new-workspace')).not.toHaveClass('bg-transparent');
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('alpha-admin@example.com');
     expect(screen.queryByText('workspace_idp_card_label')).not.toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__editor')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground/94');
     expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__lifecycle')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__save')).toHaveClass('bg-foreground/94');
     expect(screen.getByDisplayValue('Alpha Workspace')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
   });

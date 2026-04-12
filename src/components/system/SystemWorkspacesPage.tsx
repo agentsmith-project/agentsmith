@@ -180,7 +180,7 @@ export function SystemWorkspacesPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Link href={`/${locale}/system/workspaces/new`}>
-                    <Button type="button" data-testid="system-workspaces__new-workspace">
+                    <Button type="button" variant="primary" data-testid="system-workspaces__new-workspace">
                       <Plus className="mr-2 h-4 w-4" />
                       {t('new_workspace')}
                     </Button>
@@ -358,7 +358,7 @@ export function SystemWorkspacesPage() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Link href={`/${locale}/system/workspaces/new`}>
-                      <Button type="button">{t('new_workspace')}</Button>
+                      <Button type="button" variant="primary">{t('new_workspace')}</Button>
                     </Link>
                   </div>
                 </aside>

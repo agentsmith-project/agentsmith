@@ -148,6 +148,7 @@ const mockUseHasWorkspacePermission = vi.mocked(useHasWorkspacePermission);
 describe('ProjectsPage route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     mockProjectsData = [
       {
         id: 'proj_1',
@@ -239,6 +240,84 @@ describe('ProjectsPage route', () => {
     fireEvent.click(row);
 
     expect(mockPush).toHaveBeenCalledWith('/en/workspaces/ws_1/projects/proj_members/members');
+  });
+
+  it('keeps pinned projects actionable and lets users unpin them from the entry page', async () => {
+    window.localStorage.setItem('mbos:projects:pinned:ws_1', JSON.stringify(['proj_1']));
+
+    render(<ProjectsPage />);
+
+    expect(await screen.findByTestId('projects__pinned-link--proj_1')).toBeInTheDocument();
+    expect(screen.getByTestId('projects__pinned-open-btn--proj_1')).toBeInTheDocument();
+    expect(screen.getByTestId('projects__pinned-settings-btn--proj_1')).toBeInTheDocument();
+    expect(screen.getByTestId('projects__pinned-more-btn--proj_1')).toBeInTheDocument();
+    expect(screen.getByTestId('projects__unpin-btn--proj_1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('projects__unpin-btn--proj_1'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('projects__pinned-link--proj_1')).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId('projects__table__row')).toBeInTheDocument();
+    expect(window.localStorage.getItem('mbos:projects:pinned:ws_1')).toBe('[]');
+  });
+
+  it('keeps pinned public projects joinable from the entry page', async () => {
+    mockProjectsData = [
+      {
+        id: 'proj_request',
+        workspace_id: 'ws_1',
+        name: 'Needs Approval',
+        visibility: 'public',
+        join_policy: 'approval_required',
+        owner_id: 'owner_1',
+        permissions: [],
+        membership_status: 'none' as const,
+        status: 'active' as const,
+        created_at: '2026-02-01T00:00:00Z',
+        updated_at: '2026-02-01T00:00:00Z',
+      },
+    ];
+    window.localStorage.setItem('mbos:projects:pinned:ws_1', JSON.stringify(['proj_request']));
+
+    render(<ProjectsPage />);
+
+    const requestButton = await screen.findByTestId('projects__join-request-btn--proj_request');
+    expect(requestButton).toHaveTextContent('join_request.action');
+
+    fireEvent.click(requestButton);
+
+    await waitFor(() => {
+      expect(mockCreateJoinRequestMutateAsync).toHaveBeenCalledWith({ projectId: 'proj_request' });
+    });
+  });
+
+  it('falls back to the project overview when a project has no reachable default surface', async () => {
+    mockProjectsData = [
+      {
+        id: 'proj_unreachable',
+        workspace_id: 'ws_1',
+        name: 'Project Without Surface',
+        visibility: 'private',
+        join_policy: 'approval_required' as const,
+        owner_id: 'owner_1',
+        groups: [],
+        permissions: [],
+        admin_member_ids: ['user_1'],
+        status: 'active' as const,
+        membership_status: 'active' as const,
+        created_at: '2026-02-01T00:00:00Z',
+        updated_at: '2026-02-01T00:00:00Z',
+      },
+    ];
+    window.localStorage.setItem('mbos:projects:pinned:ws_1', JSON.stringify(['proj_unreachable']));
+
+    render(<ProjectsPage />);
+
+    await screen.findByTestId('projects__pinned-link--proj_unreachable');
+    fireEvent.click(screen.getByTestId('projects__pinned-open-btn--proj_unreachable'));
+
+    expect(mockPush).toHaveBeenCalledWith('/en/workspaces/ws_1/projects/proj_unreachable/overview');
   });
 
   it('hides settings action when project lacks settings manage permission', async () => {

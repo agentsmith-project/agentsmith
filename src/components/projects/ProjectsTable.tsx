@@ -2,16 +2,7 @@
 
 import { useMemo } from 'react';
 import type { useTranslations } from 'next-intl';
-import {
-  Eye,
-  FolderOpen,
-  Globe,
-  Lock,
-  MoreVertical,
-  PinOff,
-  Settings,
-  Trash2,
-} from 'lucide-react';
+import { Eye, FolderOpen, Globe, Lock, MoreVertical, Pin, PinOff, Settings, Trash2 } from 'lucide-react';
 import {
   createColumnHelper,
   getCoreRowModel,
@@ -33,6 +24,158 @@ import {
 import { canRequestProjectJoin, canSelfJoinProject, isPendingProjectMembership } from '@/lib/projects/project-view';
 
 const columnHelper = createColumnHelper<Project>();
+
+type ProjectEntryActionClusterProps = {
+  project: Project;
+  onProjectClick: (project: Project) => void;
+  onSettingsClick: (project: Project) => void;
+  onDeleteClick: (project: Project) => void;
+  onJoinRequest: (project: Project) => void;
+  pendingJoinRequestIds: ReadonlySet<string>;
+  canDeleteProjectByWorkspacePermission: boolean;
+  t: ReturnType<typeof useTranslations<'projects'>>;
+  showOpenButton?: boolean;
+  openButtonTestId?: string;
+  settingsButtonTestId?: string;
+  moreButtonTestId?: string;
+  className?: string;
+  iconButtonClassName?: string;
+};
+
+export function ProjectEntryActionCluster({
+  project,
+  onProjectClick,
+  onSettingsClick,
+  onDeleteClick,
+  onJoinRequest,
+  pendingJoinRequestIds,
+  canDeleteProjectByWorkspacePermission,
+  t,
+  showOpenButton = true,
+  openButtonTestId,
+  settingsButtonTestId,
+  moreButtonTestId,
+  className = 'flex items-center gap-1',
+  iconButtonClassName = 'h-8 w-8 rounded-sm hover:bg-surface-high',
+}: ProjectEntryActionClusterProps) {
+  const canDeleteProject = canDeleteProjectByWorkspacePermission;
+  const canManageSettings = hasAnyProjectPermission(project, [
+    'project:governance:update',
+    'project:admins:update',
+    'project:lifecycle:update',
+  ]);
+  const canRequestJoin = canRequestProjectJoin(project);
+  const canSelfJoin = canSelfJoinProject(project);
+  const membershipPending = isPendingProjectMembership(project);
+  const joinRequestPending = membershipPending || pendingJoinRequestIds.has(project.id);
+
+  return (
+    <div className={className}>
+      {joinRequestPending && !canSelfJoin ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={(event) => {
+            event.stopPropagation();
+            onJoinRequest(project);
+          }}
+          disabled={joinRequestPending}
+          data-testid={`projects__join-request-btn--${project.id}`}
+        >
+          {t('join_request.pending')}
+        </Button>
+      ) : canRequestJoin ? (
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          onClick={(event) => {
+            event.stopPropagation();
+            onJoinRequest(project);
+          }}
+          data-testid={`projects__join-request-btn--${project.id}`}
+        >
+          {t('join_request.action')}
+        </Button>
+      ) : canSelfJoin ? (
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          onClick={(event) => {
+            event.stopPropagation();
+            onJoinRequest(project);
+          }}
+          disabled={joinRequestPending}
+          data-testid={`projects__join-project-btn--${project.id}`}
+        >
+          {joinRequestPending ? t('join_request.joining') : t('join_request.join_now')}
+        </Button>
+      ) : showOpenButton ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={(event) => {
+            event.stopPropagation();
+            onProjectClick(project);
+          }}
+          className={iconButtonClassName}
+          aria-label={t('actions.open')}
+          data-testid={openButtonTestId}
+        >
+          <Eye className="w-4 h-4 text-icon-default" />
+        </Button>
+      ) : null}
+      {canManageSettings ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSettingsClick(project);
+          }}
+          className={iconButtonClassName}
+          aria-label={t('actions.settings')}
+          data-testid={settingsButtonTestId ?? 'projects__settings-btn'}
+        >
+          <Settings className="w-4 h-4 text-icon-default" />
+        </Button>
+      ) : null}
+      {canDeleteProject ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={(event) => event.stopPropagation()}
+              className={iconButtonClassName}
+              aria-label="More actions"
+              data-testid={moreButtonTestId}
+            >
+              <MoreVertical className="w-4 h-4 text-icon-default" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault();
+                onDeleteClick(project);
+              }}
+              className="text-error focus:text-error"
+            >
+              <Trash2 className="w-4 h-4" />
+              {t('actions.delete')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </div>
+  );
+}
 
 export function ProjectsTable({
   projects,
@@ -62,19 +205,22 @@ export function ProjectsTable({
       columnHelper.display({
         id: 'pin',
         header: '',
-        cell: ({ row }) => (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={(e) => onTogglePin(row.original.id, e)}
-            className="h-8 w-8 rounded-sm hover:bg-surface-high"
-            aria-label={t('actions.pin')}
-            data-testid="projects__pin-btn"
-          >
-            <PinOff className="w-4 h-4 text-icon-default" />
-          </Button>
-        ),
+        cell: ({ row }) => {
+          const isPinned = !!row.original.pinned;
+          return (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={(e) => onTogglePin(row.original.id, e)}
+              className="h-8 w-8 rounded-sm hover:bg-surface-high"
+              aria-label={isPinned ? t('actions.unpin') : t('actions.pin')}
+              data-testid="projects__pin-btn"
+            >
+              {isPinned ? <PinOff className="w-4 h-4 text-icon-default" /> : <Pin className="w-4 h-4 text-icon-default" />}
+            </Button>
+          );
+        },
       }),
       columnHelper.accessor('name', {
         header: t('table.name'),
@@ -146,119 +292,18 @@ export function ProjectsTable({
       columnHelper.display({
         id: 'actions',
         header: '',
-        cell: ({ row }) => {
-          const canDeleteProject = canDeleteProjectByWorkspacePermission;
-          const canManageSettings = hasAnyProjectPermission(row.original, [
-            'project:governance:update',
-            'project:admins:update',
-            'project:lifecycle:update',
-          ]);
-          const canRequestJoin = canRequestProjectJoin(row.original);
-          const canSelfJoin = canSelfJoinProject(row.original);
-          const membershipPending = isPendingProjectMembership(row.original);
-          const joinRequestPending = membershipPending || pendingJoinRequestIds.has(row.original.id);
-          return (
-            <div className="flex items-center gap-1">
-              {joinRequestPending && !canSelfJoin ? (
-                <Button
-                  type="button"
-                  variant={joinRequestPending ? 'outline' : 'primary'}
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onJoinRequest(row.original);
-                  }}
-                  disabled={joinRequestPending}
-                  data-testid={`projects__join-request-btn--${row.original.id}`}
-                >
-                  {t('join_request.pending')}
-                </Button>
-              ) : canRequestJoin ? (
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onJoinRequest(row.original);
-                  }}
-                  data-testid={`projects__join-request-btn--${row.original.id}`}
-                >
-                  {t('join_request.action')}
-                </Button>
-              ) : canSelfJoin ? (
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onJoinRequest(row.original);
-                  }}
-                  disabled={joinRequestPending}
-                  data-testid={`projects__join-project-btn--${row.original.id}`}
-                >
-                  {joinRequestPending ? t('join_request.joining') : t('join_request.join_now')}
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => onProjectClick(row.original)}
-                  className="h-8 w-8 rounded-sm hover:bg-surface-high"
-                  aria-label={t('actions.open')}
-                >
-                  <Eye className="w-4 h-4 text-icon-default" />
-                </Button>
-              )}
-              {canManageSettings && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSettingsClick(row.original);
-                  }}
-                  className="h-8 w-8 rounded-sm hover:bg-surface-high"
-                  aria-label={t('actions.settings')}
-                  data-testid="projects__settings-btn"
-                >
-                  <Settings className="w-4 h-4 text-icon-default" />
-                </Button>
-              )}
-              {canDeleteProject && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => e.stopPropagation()}
-                      className="h-8 w-8 rounded-sm hover:bg-surface-high"
-                      aria-label="More actions"
-                    >
-                      <MoreVertical className="w-4 h-4 text-icon-default" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onSelect={(e) => {
-                        e.preventDefault();
-                        onDeleteClick(row.original);
-                      }}
-                      className="text-error focus:text-error"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      {t('actions.delete')}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
-          );
-        },
+        cell: ({ row }) => (
+          <ProjectEntryActionCluster
+            project={row.original}
+            onProjectClick={onProjectClick}
+            onSettingsClick={onSettingsClick}
+            onDeleteClick={onDeleteClick}
+            onJoinRequest={onJoinRequest}
+            pendingJoinRequestIds={pendingJoinRequestIds}
+            canDeleteProjectByWorkspacePermission={canDeleteProjectByWorkspacePermission}
+            t={t}
+          />
+        ),
       }),
     ],
     [

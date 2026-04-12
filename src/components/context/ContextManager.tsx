@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { ContextAPI, getApiClient } from '@/lib/api';
-import type { ContextContentType, ContextEntry, ContextScope } from '@/lib/api/types';
+import type { ContextContentType, ContextScope } from '@/lib/api/types';
 import { APIError } from '@/lib/api/errors';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,7 +45,7 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
     enabled: Boolean(workspaceId),
   });
 
-  const items = data ?? [];
+  const items = React.useMemo(() => data ?? [], [data]);
   const selectedEntry = selectedKey ? items.find((item) => item.key === selectedKey) ?? null : null;
 
   React.useEffect(() => {

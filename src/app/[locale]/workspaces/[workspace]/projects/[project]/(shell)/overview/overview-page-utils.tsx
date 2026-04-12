@@ -6,9 +6,14 @@ import type { ProjectRoutePolicy } from '@/lib/routes/project-route-policy';
 import type { useTranslations } from 'next-intl';
 
 export interface OverviewSurfaceSummary {
-  useLabels: string[];
-  developLabels: string[];
-  governLabels: string[];
+  useLabels: Array<OverviewSurfaceSummaryEntry>;
+  developLabels: Array<OverviewSurfaceSummaryEntry>;
+  governLabels: Array<OverviewSurfaceSummaryEntry>;
+}
+
+export interface OverviewSurfaceSummaryEntry {
+  href: ProjectRoutePolicy['href'];
+  label: string;
 }
 
 export interface OverviewNextStepEntry {
@@ -30,22 +35,32 @@ export function buildOverviewSurfaceSummary(
   policies: readonly ProjectRoutePolicy[],
   tNav: ReturnType<typeof useTranslations<'nav'>>,
   tContext: ReturnType<typeof useTranslations<'context_store'>>,
+  hiddenHrefs: readonly ProjectRoutePolicy['href'][] = [],
 ): OverviewSurfaceSummary {
+  const hiddenHrefSet = new Set(hiddenHrefs);
   const labelFor = (policy: ProjectRoutePolicy) =>
     policy.navLabelNamespace === 'context_store'
       ? tContext(policy.navLabelKey)
       : tNav(policy.navLabelKey);
+  const itemFor = (policy: ProjectRoutePolicy) => ({
+    href: policy.href,
+    label: labelFor(policy),
+  });
 
   return {
     useLabels: policies
-      .filter((policy) => policy.navSection === 'use')
-      .map(labelFor),
+      .filter((policy) => policy.navSection === 'use' && !hiddenHrefSet.has(policy.href))
+      .map(itemFor),
     developLabels: policies
-      .filter((policy) => policy.navSection === 'develop')
-      .map(labelFor),
+      .filter((policy) => policy.navSection === 'develop' && !hiddenHrefSet.has(policy.href))
+      .map(itemFor),
     governLabels: policies
-      .filter((policy) => policy.navSection === 'govern' || policy.navSection === 'operate')
-      .map(labelFor),
+      .filter(
+        (policy) =>
+          (policy.navSection === 'govern' || policy.navSection === 'operate')
+          && !hiddenHrefSet.has(policy.href),
+      )
+      .map(itemFor),
   };
 }
 

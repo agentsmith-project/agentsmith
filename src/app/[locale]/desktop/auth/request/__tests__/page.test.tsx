@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockReplace = vi.fn();
@@ -70,6 +70,47 @@ describe('DesktopAuthRequestPage', () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
+        'https://api.example.com/me/desktop/auth/requests/req_123/complete',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(mockReplace).toHaveBeenCalledWith('/en-US/desktop/auth/complete?desktop_auth_request_id=req_123');
+    });
+  });
+
+  it('shows completion failure state and retries the desktop handoff', async () => {
+    mockUseAuthStore.mockReturnValue({ token: 'token_123', isAuthenticated: true });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockResolvedValueOnce({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DesktopAuthRequestPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('desktop-auth-request__title')).toHaveTextContent('desktop_auth_request_error_title');
+      expect(screen.getByRole('button', { name: 'desktop_auth_request_retry' })).toBeInTheDocument();
+      expect(screen.getByTestId('desktop-auth-request__workspace-login-link')).toHaveAttribute(
+        'href',
+        '/en-US/login/workspace?desktop_auth_request_id=req_123',
+      );
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://api.example.com/me/desktop/auth/requests/req_123/complete',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    mockReplace.mockClear();
+    const callsBeforeRetry = fetchMock.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'desktop_auth_request_retry' }));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBeforeRetry);
+      expect(fetchMock).toHaveBeenLastCalledWith(
         'https://api.example.com/me/desktop/auth/requests/req_123/complete',
         expect.objectContaining({ method: 'POST' }),
       );

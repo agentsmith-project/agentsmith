@@ -40,15 +40,6 @@ interface AppShellSidebarProps {
 
 type ProjectMenuSection = 'home' | 'use' | 'develop' | 'govern' | 'operate';
 
-type ProjectMenuItem = {
-  icon: LucideIcon;
-  labelKey: string;
-  labelNamespace: 'nav' | 'context_store';
-  href: string;
-  section: ProjectMenuSection;
-  navOrder: number;
-};
-
 const PROJECT_MENU_SECTIONS: Array<{ id: ProjectMenuSection; labelKey: string }> = [
   { id: 'home', labelKey: 'sidebar.home' },
   { id: 'use', labelKey: 'sidebar.use' },

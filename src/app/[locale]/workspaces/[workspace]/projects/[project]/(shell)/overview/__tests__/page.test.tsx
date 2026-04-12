@@ -173,19 +173,42 @@ describe('OverviewPage', () => {
     expect(screen.getByTestId('project-hub__develop-summary')).toBeInTheDocument();
   });
 
-  it('derives use, governance, and develop summaries from accessible surfaces', () => {
+  it('renders the remaining reachable surfaces as quiet grouped links', () => {
+    render(<OverviewPage />);
+
+    expect(screen.getByTestId('project-hub__next-steps').querySelectorAll('a')).toHaveLength(4);
+
+    expect(screen.getByTestId('project-hub__use-summary')).toHaveTextContent('Usage');
+    expect(screen.getByTestId('project-hub__use-summary')).toHaveTextContent('Access guide');
+    expect(screen.getByTestId('project-hub__governance-summary')).toHaveTextContent('Policy');
+    expect(screen.getByTestId('project-hub__governance-summary')).toHaveTextContent('Project secrets');
+    expect(screen.getByTestId('project-hub__develop-summary')).toHaveTextContent('Agents');
+
+    expect(screen.getByRole('link', { name: 'Usage' })).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_default/projects/proj_001/usage',
+    );
+    expect(screen.getByRole('link', { name: 'Access guide' })).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_default/projects/proj_001/use-guide',
+    );
+    expect(screen.getByRole('link', { name: 'Agents' })).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_default/projects/proj_001/agents',
+    );
+  });
+
+  it('derives remaining summary groups from accessible surfaces', () => {
     render(<OverviewPage />);
 
     const useSummary = screen.getByTestId('project-hub__use-summary');
     const governanceSummary = screen.getByTestId('project-hub__governance-summary');
     const developSummary = screen.getByTestId('project-hub__develop-summary');
 
-    expect(useSummary).toHaveTextContent('Chat');
-    expect(useSummary).toHaveTextContent('Notebook');
-    expect(useSummary).toHaveTextContent('Files');
+    expect(useSummary).toHaveTextContent('Usage');
+    expect(useSummary).toHaveTextContent('Access guide');
     expect(governanceSummary).toHaveTextContent('Endpoints');
     expect(governanceSummary).toHaveTextContent('Policy');
-    expect(governanceSummary).toHaveTextContent('Shared context');
     expect(governanceSummary).toHaveTextContent('Project secrets');
     expect(governanceSummary).toHaveTextContent('Members');
     expect(governanceSummary).toHaveTextContent('Audit');

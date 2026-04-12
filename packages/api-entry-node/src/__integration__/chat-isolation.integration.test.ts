@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createDefaultNodeApiDeps } from '../index.js';
 import { UniversalProxyService } from '../universal-proxy-service.js';
-import { apiFetchWithToken, startServer, startServerWithDeps } from './test-support.js';
+import { apiFetchWithToken, startServerWithDeps } from './test-support.js';
 import {
   cleanupChatUpstreamServers,
   startOpenAICompatibleUpstreamServer,

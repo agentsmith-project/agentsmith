@@ -27,7 +27,10 @@ import { Plus } from 'lucide-react';
 
 import { ConnectionFormFields } from './_components/ConnectionFormFields';
 import { ThirdPartyAccountsTable } from './_components/ThirdPartyAccountsTable';
-import { readVisualThirdPartyAccountsSeed } from './third-party-accounts-visual-seed';
+import {
+  clearVisualThirdPartyAccountsSeed,
+  readVisualThirdPartyAccountsSeed,
+} from './third-party-accounts-visual-seed';
 import {
   allowedKindsForProvider,
   createEmptyField,
@@ -43,6 +46,11 @@ export default function ThirdPartyAccountsPage() {
   const runtimeConfig = React.useMemo(() => getPublicRuntimeConfig(), []);
   const [mswReady, setMswReady] = React.useState(() => !runtimeConfig.useMsw);
   const visualSeedItems = React.useMemo(() => readVisualThirdPartyAccountsSeed(), []);
+
+  React.useEffect(() => {
+    if (!visualSeedItems) return;
+    clearVisualThirdPartyAccountsSeed();
+  }, [visualSeedItems]);
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [deleteId, setDeleteId] = React.useState<string | null>(null);

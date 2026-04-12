@@ -10,7 +10,6 @@
 
 import { test as base, expect, type Page } from '@playwright/test';
 import { ensureAuthenticatedSession, withAuth } from './fixtures/authenticated';
-import { seedMockExternalConnectionForVisual } from './fixtures/third-party-accounts';
 import { gotoAndWait, waitForPageReady } from './utils/navigation';
 import { setVisualTheme, themedScreenshotName, VISUAL_THEMES } from './utils/visual-theme';
 import { resolveVisualBaselineStableMarkers } from './visual-baseline-support';
@@ -18,7 +17,6 @@ import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 
 const WS_ID = 'ws_default';
 const PROJECT_ID = 'proj_001';
-let visualThirdPartyAccountId = '';
 
 const test = base.extend<{ authedPage: Page; guestPage: Page }>({
   authedPage: async ({ page }, use) => {
@@ -194,29 +192,6 @@ async function resetPublicVisualState(page: Page) {
     localStorage.clear();
     sessionStorage.clear();
   }).catch(() => {});
-}
-
-async function seedCustomThirdPartyConnectionFixture(page: Page) {
-  return seedMockExternalConnectionForVisual(page, {
-    provider: 'custom',
-    kind: 'secret_bundle',
-    displayName: 'Visual Custom Integration',
-    note: 'Visual seed',
-    fields: [
-      {
-        key: 'base_url',
-        value: 'https://api.visual.example.com',
-        description: 'Base URL',
-        secret: false,
-      },
-      {
-        key: 'token',
-        value: 'tok-visual-secret',
-        description: 'API token',
-        secret: true,
-      },
-    ],
-  });
 }
 
 async function requireMockVisualAuthLane(page: Page, bootstrapPath = `/en-US/workspaces/${WS_ID}/projects`) {
@@ -772,10 +747,26 @@ const THEMED_OVERLAY_CASES = [
     requiresMockAuthLane: true,
     stableMarkers: ['third-party-accounts__sheet'],
     setup: async (page: Page) => {
-      visualThirdPartyAccountId = await seedCustomThirdPartyConnectionFixture(page);
-      await stableNavigate(page, '/en-US/user/third-party-accounts');
-      await expect(page.getByTestId(`third-party-accounts__row-${visualThirdPartyAccountId}`)).toBeVisible();
-      await page.getByTestId(`third-party-accounts__row-${visualThirdPartyAccountId}`).click();
+      await expect(page.getByTestId('third-party-accounts__create-btn')).toBeVisible();
+      await page.getByTestId('third-party-accounts__create-btn').click();
+      await expect(page.getByTestId('third-party-accounts__sheet')).toBeVisible();
+      await page.getByTestId('third-party-accounts__provider-select').selectOption('custom');
+      await page.getByTestId('third-party-accounts__custom-domain').fill('api.visual.example.com');
+      await page.getByTestId('third-party-accounts__display-name').fill('Visual Custom Integration');
+      await page.getByTestId('third-party-accounts__note').fill('Visual seed');
+      await page.getByTestId('third-party-accounts__field-key-0').fill('base_url');
+      await page.getByTestId('third-party-accounts__field-value-0').fill('https://api.visual.example.com');
+      await page.getByTestId('third-party-accounts__field-description-0').fill('Base URL');
+      await page.getByTestId('third-party-accounts__add-field').click();
+      await page.getByTestId('third-party-accounts__field-key-1').fill('token');
+      await page.getByTestId('third-party-accounts__field-value-1').fill('tok-visual-secret');
+      await page.getByTestId('third-party-accounts__field-description-1').fill('API token');
+      await page.getByTestId('third-party-accounts__submit-btn').click();
+      const connectionRow = page.locator('[data-testid^="third-party-accounts__row-"]').filter({
+        hasText: 'Visual Custom Integration',
+      }).first();
+      await expect(connectionRow).toBeVisible();
+      await connectionRow.click();
       await expect(page.getByTestId('third-party-accounts__sheet')).toBeVisible();
     },
   },

@@ -13,7 +13,6 @@ import {
   createMockExternalConnection,
   deleteMockExternalConnection,
   listMockExternalConnections,
-  seedMockExternalConnections,
   updateMockExternalConnection,
 } from '../state/me-external-connections';
 
@@ -58,6 +57,10 @@ export function resolveMockExternalConnectionsForRequest(args: {
   request: Request;
   storedConnections: ReturnType<typeof listMockExternalConnections>;
 }) {
+  if (args.storedConnections.length > 0) {
+    return args.storedConnections;
+  }
+
   const provider = readMockValue(args.request, 'x-mock-connection-provider', 'ags_mock_connection_provider');
   const workspaceId = readMockValue(args.request, 'x-mock-connection-workspace', 'ags_mock_connection_workspace') ?? 'ws_default';
   const connectedEmail = readMockValue(args.request, 'x-mock-connection-email', 'ags_mock_connection_email');
@@ -65,7 +68,7 @@ export function resolveMockExternalConnectionsForRequest(args: {
   const connectionKind = readMockValue(args.request, 'x-mock-connection-kind', 'ags_mock_connection_kind');
   const connectionStatus = readMockValue(args.request, 'x-mock-connection-status', 'ags_mock_connection_status');
   const connectionNote = readMockValue(args.request, 'x-mock-connection-note', 'ags_mock_connection_note');
-  const connectionCustomDomain = readMockValue(request, 'x-mock-connection-custom-domain', 'ags_mock_connection_custom_domain');
+  const connectionCustomDomain = readMockValue(args.request, 'x-mock-connection-custom-domain', 'ags_mock_connection_custom_domain');
   const connectionFields = readMockJsonArray(args.request, 'x-mock-connection-fields');
   const connectionScopesRaw = readMockValue(args.request, 'x-mock-connection-scopes', 'ags_mock_connection_scopes');
   const connectionScopes = connectionScopesRaw ? (() => {
@@ -134,10 +137,6 @@ export function resolveMockExternalConnectionsForRequest(args: {
     }];
   }
 
-  if (args.storedConnections.length > 0) {
-    return args.storedConnections;
-  }
-
   return [];
 }
 
@@ -172,7 +171,12 @@ export const meHandlers = [
       : body.connection
         ? [body.connection]
         : [];
-    const seeded = seedMockExternalConnections(userId, connections);
+    const seeded = connections.map((connection) =>
+      createMockExternalConnection(userId, {
+        ...connection,
+        status: connection.status ?? 'active',
+      })
+    );
     return HttpResponse.json({
       ok: true,
       count: seeded.length,

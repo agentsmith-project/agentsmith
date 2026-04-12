@@ -17,7 +17,7 @@ describe('me-external-connections state helpers', () => {
       display_name: 'Visual Seed',
       status: 'active',
       fields: [
-        { key: 'base_url', value: 'https://api.visual.example.com', description: 'Base URL', secret: false },
+        { key: 'base_url', masked_value: 'https://api.visual.example.com', description: 'Base URL', secret: false },
       ],
     });
 
@@ -60,8 +60,8 @@ describe('me-external-connections state helpers', () => {
       display_name: 'Visual Seed',
       status: 'active',
       fields: [
-        { key: 'base_url', value: 'https://api.visual.example.com', description: 'Base URL', secret: false },
-        { key: 'token', value: 'tok-visual', description: 'API token', secret: true },
+        { key: 'base_url', masked_value: 'https://api.visual.example.com', description: 'Base URL', secret: false },
+        { key: 'token', masked_value: '••••••••', description: 'API token', secret: true },
       ],
     });
 

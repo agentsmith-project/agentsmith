@@ -16,7 +16,18 @@ type ExternalConnectionSeed = Omit<
   updated_at?: string;
 };
 
-const connectionsByUser = new Map<string, UserExternalConnection[]>();
+declare global {
+  // Keep MSW external-connection state on globalThis so mock seeds survive
+  // route transitions within the same browser runtime, matching notification mocks.
+  var __MBOS_MSW_EXTERNAL_CONNECTIONS__: Record<string, UserExternalConnection[]> | undefined;
+}
+
+function externalConnectionStore(): Record<string, UserExternalConnection[]> {
+  if (!globalThis.__MBOS_MSW_EXTERNAL_CONNECTIONS__) {
+    globalThis.__MBOS_MSW_EXTERNAL_CONNECTIONS__ = {};
+  }
+  return globalThis.__MBOS_MSW_EXTERNAL_CONNECTIONS__;
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -51,15 +62,16 @@ function cloneConnection(connection: UserExternalConnection): UserExternalConnec
 }
 
 function getBucket(userId: string): UserExternalConnection[] {
-  const existing = connectionsByUser.get(userId);
+  const store = externalConnectionStore();
+  const existing = store[userId];
   if (existing) return existing;
   const bucket: UserExternalConnection[] = [];
-  connectionsByUser.set(userId, bucket);
+  store[userId] = bucket;
   return bucket;
 }
 
 export function clearMockExternalConnections(userId: string): void {
-  connectionsByUser.set(userId, []);
+  externalConnectionStore()[userId] = [];
 }
 
 export function listMockExternalConnections(userId: string): UserExternalConnection[] {

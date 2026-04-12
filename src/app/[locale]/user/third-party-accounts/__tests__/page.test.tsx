@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { UserExternalConnection } from '@/lib/api';
 
 const mockList = vi.fn();
 const mockCreate = vi.fn();
@@ -422,7 +423,7 @@ describe('ThirdPartyAccountsPage', () => {
   });
 
   it('prefers visual seed data so the seeded edit-sheet row can render even before the list refetch settles', async () => {
-    const seededConnection = {
+    const seededConnection: UserExternalConnection = {
       id: 'uec_visual_custom_integration',
       user_id: 'user_1',
       provider: 'custom',
@@ -456,6 +457,109 @@ describe('ThirdPartyAccountsPage', () => {
       render(<ThirdPartyAccountsPage />, { wrapper });
 
       expect(await screen.findByTestId('third-party-accounts__row-uec_visual_custom_integration')).toBeInTheDocument();
+    } finally {
+      (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = originalVisualSeed;
+    }
+  });
+
+  it('hydrates the first frame from localStorage visual seed and clears the bootstrap key after consumption', async () => {
+    const seededConnection: UserExternalConnection = {
+      id: 'uec_visual_custom_integration',
+      user_id: 'user_1',
+      provider: 'custom',
+      kind: 'secret_bundle',
+      display_name: 'Visual Custom Integration',
+      custom_domain: 'api.visual.example.com',
+      note: 'Visual seed',
+      status: 'active',
+      fields: [
+        {
+          key: 'base_url',
+          description: 'Base URL',
+          secret: false,
+          masked_value: 'https://api.visual.example.com',
+        },
+      ],
+      account_identity: null,
+      scopes: null,
+      expires_at: null,
+      last_refreshed_at: null,
+      last_used_at: null,
+      last_error: null,
+      created_at: '2026-03-05T00:00:00Z',
+      updated_at: '2026-03-05T00:00:00Z',
+    };
+    mockList.mockImplementation(() => new Promise(() => {}));
+    const originalVisualSeed = (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__;
+    window.localStorage.setItem('__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__', JSON.stringify([seededConnection]));
+    const removeItem = vi.spyOn(window.localStorage, 'removeItem');
+    (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = [seededConnection];
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const localWrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    try {
+      render(<ThirdPartyAccountsPage />, { wrapper: localWrapper });
+
+      expect(await screen.findByTestId('third-party-accounts__row-uec_visual_custom_integration')).toBeInTheDocument();
+      expect(mockList).toHaveBeenCalledTimes(1);
+    } finally {
+      (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = originalVisualSeed;
+      removeItem.mockRestore();
+    }
+  });
+
+  it('falls back to store truth after deleting a visually seeded connection', async () => {
+    const seededConnection: UserExternalConnection = {
+      id: 'uec_visual_custom_integration',
+      user_id: 'user_1',
+      provider: 'custom',
+      kind: 'secret_bundle',
+      display_name: 'Visual Custom Integration',
+      custom_domain: 'api.visual.example.com',
+      note: 'Visual seed',
+      status: 'active',
+      fields: [
+        {
+          key: 'base_url',
+          description: 'Base URL',
+          secret: false,
+          masked_value: 'https://api.visual.example.com',
+        },
+      ],
+      account_identity: null,
+      scopes: null,
+      expires_at: null,
+      last_refreshed_at: null,
+      last_used_at: null,
+      last_error: null,
+      created_at: '2026-03-05T00:00:00Z',
+      updated_at: '2026-03-05T00:00:00Z',
+    };
+    mockList
+      .mockResolvedValueOnce([seededConnection])
+      .mockResolvedValueOnce([]);
+    const originalVisualSeed = (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__;
+    (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = [seededConnection];
+
+    try {
+      render(<ThirdPartyAccountsPage />, { wrapper });
+
+      await screen.findByTestId('third-party-accounts__row-uec_visual_custom_integration');
+      await user.click(screen.getByTestId('third-party-accounts__delete-uec_visual_custom_integration'));
+      await user.click(screen.getByRole('button', { name: 'delete' }));
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('third-party-accounts__row-uec_visual_custom_integration')).not.toBeInTheDocument();
+      });
+      expect(mockRemove).toHaveBeenCalledWith('uec_visual_custom_integration');
+      expect(mockList).toHaveBeenCalledTimes(2);
     } finally {
       (globalThis.window as Window & { __MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__?: unknown[] }).__MBOS_VISUAL_THIRD_PARTY_ACCOUNTS__ = originalVisualSeed;
     }

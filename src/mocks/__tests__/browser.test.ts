@@ -64,7 +64,7 @@ describe('initMSW', () => {
     resolveReady();
     await Promise.resolve();
     expect(settled).toBe(false);
-    controllerChangeHandler?.();
+    (controllerChangeHandler as (() => void) | null)?.();
     await initPromise;
     expect(settled).toBe(true);
   });

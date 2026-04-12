@@ -232,8 +232,9 @@ export function UsageView({
         {selectedEndpoint ? (
           <div className="divide-y divide-subtle/70 border-y border-subtle/70" data-testid="usage__limits">
             {usageCards.map((card) => {
-              const hasRule = card.rule !== null;
-              const remainingPct = hasRule ? Math.max(0, 100 - clampPercent(card.rule.usagePct)) : 0;
+              const rule = card.rule;
+              const hasRule = rule !== null;
+              const remainingPct = hasRule ? Math.max(0, 100 - clampPercent(rule.usagePct)) : 0;
               const tone = hasRule ? getProgressTone(remainingPct) : null;
 
               return (
@@ -247,7 +248,7 @@ export function UsageView({
                     <p className="text-xs text-tertiary">
                       {hasRule
                         ? t('view.card_out_of', {
-                            value: formatValue(card.rule.max, card.unitKey),
+                            value: formatValue(rule.max, card.unitKey),
                           })
                         : t('view.limit_not_configured')}
                     </p>
@@ -258,7 +259,7 @@ export function UsageView({
                       <div className="space-y-1">
                         <p className="text-[11px] uppercase tracking-[0.12em] text-tertiary">usage</p>
                         <p className="text-sm text-foreground">
-                          {formatValue(card.rule.used, card.unitKey)}
+                          {formatValue(rule.used, card.unitKey)}
                         </p>
                       </div>
                       <div className="flex items-center justify-between gap-3">
@@ -266,7 +267,7 @@ export function UsageView({
                           {Math.round(remainingPct)}%
                         </div>
                         <p className="text-xs text-tertiary">
-                          {t('view.limit_reset_at', { value: formatResetTime(card.rule.resetAt) })}
+                          {t('view.limit_reset_at', { value: formatResetTime(rule.resetAt) })}
                         </p>
                       </div>
                     </>

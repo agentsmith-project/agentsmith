@@ -55,7 +55,8 @@ describe('SystemInfoPage', () => {
     expect(screen.getByTestId('system-info__back').closest('a')).toHaveAttribute('href', '/en-US/system/workspaces');
     expect(screen.getByTestId('system-info__notice')).toBeInTheDocument();
     expect(screen.getByTestId('system-info__next-steps')).toBeInTheDocument();
-    expect(screen.getByTestId('system-info__workspaces-cta').closest('a')).toHaveAttribute('href', '/en-US/system/workspaces');
+    const nextSteps = screen.getByTestId('system-info__next-steps');
+    expect(within(nextSteps).getByText('system_info_next_steps_directory_title').closest('a')).toHaveAttribute('href', '/en-US/system/workspaces');
     expect(screen.getByTestId('system-info__health')).toBeInTheDocument();
     expect(screen.getByTestId('system-info__attention')).toBeInTheDocument();
     expect(screen.getByText('system_admin_title')).toBeInTheDocument();
@@ -113,6 +114,7 @@ describe('SystemInfoPage', () => {
     expect(screen.getByTestId('system-info__attention')).toBeInTheDocument();
     expect(screen.getByText('system_info_all_clear_title')).toBeInTheDocument();
     expect(screen.getByText('system_info_all_clear_body')).toBeInTheDocument();
-    expect(screen.getByTestId('system-info__workspaces-cta')).toBeInTheDocument();
+    const nextSteps = screen.getByTestId('system-info__next-steps');
+    expect(within(nextSteps).getByText('system_info_next_steps_directory_title')).toBeInTheDocument();
   });
 });

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArrowLeft, ArrowRight, Bot, ShieldCheck, Workflow } from 'lucide-react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
@@ -58,6 +58,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
         {createOverviewErrorContent(
           tErrors('validation_error'),
           tErrors('badRequest.description'),
+          { href: `/${locale}/workspaces/overview`, label: tProjects('back_to_workspace') },
         )}
       </PageState>
     );
@@ -69,6 +70,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
         {createOverviewErrorContent(
           tErrors('permission_denied_title'),
           tErrors('permission_denied_hint'),
+          { href: `/${locale}/workspaces/${workspaceId}`, label: tProjects('back_to_workspace') },
         )}
       </PageState>
     );
@@ -78,17 +80,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
   const accessiblePolicies = listAccessibleSidebarProjectRoutePolicies(currentPermissions);
   const surfaceSummary = buildOverviewSurfaceSummary(accessiblePolicies, tNav, tContextStore);
   const nextStepEntries = buildOverviewNextStepEntries(accessiblePolicies, tNav, tContextStore, tOverview);
-  const governanceReadiness = surfaceSummary.governLabels.length > 0;
-  const developReadiness = surfaceSummary.developLabels.length > 0;
-  const useSummary = surfaceSummary.useLabels.length > 0
-    ? surfaceSummary.useLabels.join(', ')
-    : tOverview('signals.not_available');
-  const developSummary = surfaceSummary.developLabels.length > 0
-    ? surfaceSummary.developLabels.join(', ')
-    : tOverview('signals.not_available');
-  const governSummary = surfaceSummary.governLabels.length > 0
-    ? surfaceSummary.governLabels.join(', ')
-    : tOverview('signals.not_available');
+  const noSurfaceLabel = tOverview('signals.not_available');
 
   return (
     <PageState state="success">
@@ -103,123 +95,72 @@ export default function OverviewPage({ params }: OverviewPageProps) {
             {tProjects('back_to_workspace')}
           </Link>
 
-          <section className="border-b border-subtle pb-6" data-testid="project-hub__summary">
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] xl:items-start">
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <p className="type-caption text-tertiary">{tOverview('title')}</p>
-                  <p className="type-body-ui max-w-3xl text-secondary">
-                    {tWorkspace('workspace_home_next_steps_description')}
-                  </p>
-                </div>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <OverviewSignalCard
-                    icon={<Workflow className="h-4 w-4" />}
-                    label={tOverview('signals.execution_title')}
-                    value={tOverview('signals.ready')}
-                    helper={useSummary}
-                  />
-                  <OverviewSignalCard
-                    icon={<ShieldCheck className="h-4 w-4" />}
-                    label={tOverview('signals.governance_title')}
-                    value={governanceReadiness ? tOverview('signals.available') : tOverview('signals.limited')}
-                    helper={governSummary}
-                  />
-                  <OverviewSignalCard
-                    icon={<Bot className="h-4 w-4" />}
-                    label={tOverview('signals.develop_title')}
-                    value={developReadiness ? tOverview('signals.available') : tOverview('signals.not_available')}
-                    helper={developSummary}
-                  />
-                </div>
-              </div>
+          <section className="space-y-6 border-t border-subtle pt-5" data-testid="project-hub__summary">
+            <p className="type-body-ui max-w-3xl text-secondary">
+              {tWorkspace('workspace_home_next_steps_description')}
+            </p>
 
-              <div className="space-y-3" data-testid="project-hub__next-steps">
-                <div className="space-y-1">
-                  <p className="type-system-caption text-tertiary">{tWorkspace('workspace_home_next_steps_title')}</p>
-                  <p className="type-body-ui text-secondary">{tWorkspace('workspace_home_next_steps_description')}</p>
-                </div>
-                <div className="divide-y divide-subtle border-y border-subtle">
-                  {nextStepEntries.map((entry, index) => (
-                    <Link
-                      key={entry.href}
-                      href={buildProjectSurfacePath(locale, workspaceId, projectId, entry.href)}
-                      className="group flex items-start justify-between gap-4 px-0 py-4 transition-colors hover:text-foreground"
-                      data-testid={entry.testId}
-                    >
-                      <div className="space-y-1">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
-                          {index === 0 ? tOverview('next_steps_primary_badge') : tOverview('next_steps_secondary_badge')}
-                        </div>
-                        <div className="type-system-heading text-[1rem] font-semibold text-foreground">{entry.label}</div>
-                        <p className="text-sm leading-6 text-secondary">{entry.description}</p>
+            <div className="space-y-3" data-testid="project-hub__next-steps">
+              <p className="type-system-caption text-tertiary">{tWorkspace('workspace_home_next_steps_title')}</p>
+              <div className="divide-y divide-subtle border-y border-subtle">
+                {nextStepEntries.map((entry, index) => (
+                  <Link
+                    key={entry.href}
+                    href={buildProjectSurfacePath(locale, workspaceId, projectId, entry.href)}
+                    className="group flex items-start justify-between gap-4 px-0 py-4 transition-colors hover:text-foreground"
+                    data-testid={entry.testId}
+                  >
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
+                        {index === 0 ? tOverview('next_steps_primary_badge') : tOverview('next_steps_secondary_badge')}
                       </div>
-                      <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-icon-default transition-transform group-hover:translate-x-0.5" />
-                    </Link>
-                  ))}
-                </div>
+                      <div className="type-system-heading text-[1rem] font-semibold text-foreground">{entry.label}</div>
+                      <p className="text-sm leading-6 text-secondary">{entry.description}</p>
+                    </div>
+                    <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-icon-default transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                ))}
               </div>
             </div>
-          </section>
 
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)]">
-            <section className="border-t border-subtle pt-5" data-testid="project-hub__use-summary">
-              <OverviewSummaryList
-                items={surfaceSummary.useLabels}
-                title={tOverview('signals.execution_title')}
-              />
-            </section>
-
-            <div className="space-y-5">
-              <section className="border-t border-subtle pt-5" data-testid="project-hub__governance-summary">
+            <div className="grid gap-5 md:grid-cols-3">
+              <section data-testid="project-hub__use-summary">
+                <OverviewSummaryList
+                  items={surfaceSummary.useLabels}
+                  title={tOverview('signals.execution_title')}
+                  emptyLabel={noSurfaceLabel}
+                />
+              </section>
+              <section data-testid="project-hub__governance-summary">
                 <OverviewSummaryList
                   items={surfaceSummary.governLabels}
                   title={tOverview('signals.governance_title')}
+                  emptyLabel={noSurfaceLabel}
                 />
               </section>
-              <section className="border-t border-subtle pt-5" data-testid="project-hub__develop-summary">
+              <section data-testid="project-hub__develop-summary">
                 <OverviewSummaryList
                   items={surfaceSummary.developLabels}
                   title={tOverview('signals.develop_title')}
+                  emptyLabel={noSurfaceLabel}
                 />
               </section>
             </div>
-          </div>
+          </section>
         </div>
       </PageLayout>
     </PageState>
   );
 }
 
-function OverviewSignalCard({
-  icon,
-  label,
-  value,
-  helper,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <div className="space-y-1 border-l border-subtle pl-3">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
-        {icon}
-        {label}
-      </div>
-      <div className="text-base font-semibold text-foreground">{value}</div>
-      <div className="text-sm leading-6 text-secondary">{helper}</div>
-    </div>
-  );
-}
-
 function OverviewSummaryList({
   items,
   title,
+  emptyLabel,
 }: {
   items: string[];
   title: string;
+  emptyLabel: string;
 }) {
   return (
     <div className="space-y-3">
@@ -237,7 +178,7 @@ function OverviewSummaryList({
         </ul>
       ) : (
         <div className="text-sm text-tertiary">
-          {title}
+          {emptyLabel}
         </div>
       )}
     </div>

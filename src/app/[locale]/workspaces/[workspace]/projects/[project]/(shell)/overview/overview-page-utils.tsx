@@ -1,5 +1,7 @@
 import type { ComponentProps } from 'react';
 
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import type { ProjectRoutePolicy } from '@/lib/routes/project-route-policy';
 import type { useTranslations } from 'next-intl';
 
@@ -89,11 +91,19 @@ export function buildOverviewNextStepEntries(
 export function createOverviewErrorContent(
   title: string,
   description: string,
+  action?: { href: string; label: string },
 ): ComponentProps<'div'>['children'] {
   return (
-    <div className="max-w-md text-center space-y-2">
+    <div className="max-w-md text-center space-y-3">
       <h2 className="text-lg font-semibold">{title}</h2>
       <p className="text-sm text-tertiary">{description}</p>
+      {action ? (
+        <div className="flex justify-center">
+          <Button asChild variant="outline">
+            <Link href={action.href}>{action.label}</Link>
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

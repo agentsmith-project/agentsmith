@@ -195,7 +195,7 @@ export function AppShellSidebar({
       data-testid="sidebar"
       className={cn(
         collapsed ? 'w-[var(--sidebar-width-collapsed)]' : 'w-[var(--sidebar-width)]',
-        'flex flex-col border-r border-border/35 bg-sidebar/60 transition-[width] duration-200',
+        'flex flex-col border-r border-border/12 bg-transparent transition-[width] duration-200',
         className,
       )}
     >
@@ -205,7 +205,7 @@ export function AppShellSidebar({
             {groupedProjectMenuItems.map((section) => (
               <div key={section.id} data-testid={`sidebar__section--${section.id}`}>
                 {!collapsed ? (
-                  <div className="px-3 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-tertiary">
+                  <div className="px-3 pb-1 text-[10px] uppercase tracking-[0.12em] text-tertiary/90">
                     {tNav(section.labelKey)}
                   </div>
                 ) : null}
@@ -222,12 +222,12 @@ export function AppShellSidebar({
                         data-testid={`sidebar__nav-item--${item.href}`}
                         title={collapsed ? label : undefined}
                         className={cn(
-                          'relative flex h-9 items-center rounded-md text-sm transition-[background-color,border-color,color] duration-150',
+                          'relative flex h-9 items-center rounded-sm text-sm transition-[background-color,border-color,color] duration-150',
                           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
                           collapsed ? 'justify-center px-0' : 'gap-3 px-3',
                           isActive
-                            ? 'border border-transparent bg-surface-low/85 text-foreground'
-                            : 'border border-transparent text-primary hover:bg-surface-low/70 hover:text-foreground',
+                            ? 'border border-transparent bg-transparent font-medium text-foreground'
+                            : 'border border-transparent bg-transparent text-secondary hover:bg-surface-low/18 hover:text-foreground',
                         )}
                       >
                         <item.icon className={cn('h-5 w-5', isActive ? 'text-foreground' : 'text-icon-default')} />
@@ -254,12 +254,12 @@ export function AppShellSidebar({
                   data-testid={`sidebar__nav-item--${item.labelKey.replace('sidebar.', '')}`}
                   title={collapsed ? label : undefined}
                   className={cn(
-                    'relative flex h-9 items-center rounded-md text-sm transition-[background-color,border-color,color] duration-150',
+                    'relative flex h-9 items-center rounded-sm text-sm transition-[background-color,border-color,color] duration-150',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
                     collapsed ? 'justify-center px-0' : 'gap-3 px-3',
                     isActive
-                      ? 'border border-transparent bg-surface-low/85 text-foreground'
-                      : 'border border-transparent text-primary hover:bg-surface-low/70 hover:text-foreground',
+                      ? 'border border-transparent bg-transparent font-medium text-foreground'
+                      : 'border border-transparent bg-transparent text-secondary hover:bg-surface-low/18 hover:text-foreground',
                   )}
                 >
                   <item.icon className={cn('h-5 w-5', isActive ? 'text-foreground' : 'text-icon-default')} />
@@ -272,14 +272,14 @@ export function AppShellSidebar({
         )}
       </nav>
 
-      <div className={cn('border-t border-border/70 p-2.5', collapsed ? 'flex justify-center' : 'flex justify-end')}>
+      <div className={cn('border-t border-border/16 p-2.5', collapsed ? 'flex justify-center' : 'flex justify-end')}>
         <Button
           type="button"
           variant="ghost"
           size="icon"
           data-testid="sidebar__collapse-btn"
           onClick={toggleCollapsed}
-          className={cn('h-9 w-9 border-transparent bg-transparent text-icon-default shadow-none hover:bg-surface-low hover:text-foreground')}
+          className={cn('h-9 w-9 border-transparent bg-transparent text-icon-default shadow-none hover:bg-surface-low/18 hover:text-foreground')}
           aria-label={collapsed ? tNav('sidebar.expand') : tNav('sidebar.collapse')}
           title={collapsed ? tNav('sidebar.expand') : tNav('sidebar.collapse')}
         >

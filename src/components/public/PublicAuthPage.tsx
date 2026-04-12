@@ -18,8 +18,8 @@ export function PublicAuthFrame({
       <PublicThemeToggle className="absolute right-4 top-4 z-10 md:right-6 md:top-6" />
       <div
         className={cn(
-          'mx-auto flex min-h-[calc(100vh-3rem)] items-center justify-center',
-          width === 'wide' ? 'max-w-5xl' : 'max-w-xl',
+          'mx-auto flex min-h-[calc(100vh-3rem)] items-start justify-center pt-10 md:pt-14',
+          width === 'wide' ? 'max-w-4xl' : 'max-w-[34rem]',
         )}
       >
         {children}
@@ -38,14 +38,14 @@ export function PublicAuthShell({ children, aside, className }: PublicAuthShellP
   return (
     <section
       className={cn(
-        'w-full',
-        aside ? 'grid gap-8 md:grid-cols-[minmax(0,1.08fr)_minmax(280px,0.92fr)] md:items-start md:gap-10' : '',
+        'w-full max-w-[42rem]',
+        aside ? 'grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.78fr)] md:items-start md:gap-8' : '',
         className,
       )}
     >
       <div className="px-1 py-6 md:px-0 md:py-8">{children}</div>
       {aside ? (
-        <aside className="border-t border-border/45 px-1 pt-6 md:border-l md:border-t-0 md:pl-10 md:pr-0 md:pt-8">
+        <aside className="px-1 pt-4 md:pl-6 md:pr-0 md:pt-8">
           {aside}
         </aside>
       ) : null}
@@ -71,8 +71,8 @@ export function PublicAuthHeader({
       {logo ? <div className="flex justify-start">{logo}</div> : null}
       {badge ? <div>{badge}</div> : null}
       <div className="space-y-2.5">
-        <h1 className="type-section-heading max-w-2xl text-balance text-foreground">{title}</h1>
-        {description ? <p className="type-body-ui max-w-2xl text-secondary">{description}</p> : null}
+        <h1 className="type-subheading max-w-xl text-balance text-foreground">{title}</h1>
+        {description ? <p className="type-body-ui max-w-xl text-secondary">{description}</p> : null}
       </div>
     </div>
   );
@@ -112,7 +112,7 @@ export function PublicAuthSection({
   className?: string;
 }) {
   return (
-    <div className={cn('border-t border-subtle pt-5', className)}>
+    <div className={cn('border-t border-subtle/70 pt-4', className)}>
       {children}
     </div>
   );
@@ -126,7 +126,7 @@ export function PublicAuthMutedCard({
   className?: string;
 }) {
   return (
-    <div className={cn('border-l border-subtle pl-3', className)}>
+    <div className={cn('space-y-0.5', className)}>
       {children}
     </div>
   );

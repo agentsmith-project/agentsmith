@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Activity, AlertTriangle, ArrowRight, CheckCircle2, Database, ShieldCheck, Wrench } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
@@ -19,34 +19,19 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
   const params = useParams();
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const t = useTranslations('system');
-  const workspacesHref = `/${locale}/system/workspaces`;
   const provisioning = snapshot.workspace_provisioning;
   const attentionItems = buildAttentionItems(snapshot, locale, t);
   const statusOverview = [
-    {
-      label: t('workspace_total_label'),
-      value: String(provisioning.total),
-      detail: t('system_info_total_detail'),
-      tone: 'default' as const,
-    },
-    {
-      label: t('workspace_ready_label'),
-      value: String(provisioning.ready),
-      detail: t('system_info_ready_detail'),
-      tone: 'positive' as const,
-    },
+    { label: t('workspace_total_label'), value: String(provisioning.total), tone: 'default' as const },
+    { label: t('workspace_ready_label'), value: String(provisioning.ready), tone: 'positive' as const },
     {
       label: t('system_info_attention_label'),
       value: String(provisioning.failed + provisioning.provisioning + provisioning.disabled),
-      detail: t('system_info_attention_detail'),
       tone: attentionItems.length > 0 ? 'warning' as const : 'default' as const,
     },
     {
       label: t('workspace_last_failed_label'),
-      value: provisioning.last_failed_at
-        ? new Date(provisioning.last_failed_at).toLocaleString(locale)
-        : '-',
-      detail: provisioning.last_init_error || t('system_info_no_recent_failure'),
+      value: provisioning.last_failed_at ? new Date(provisioning.last_failed_at).toLocaleString(locale) : '-',
       tone: provisioning.last_failed_at ? 'warning' as const : 'default' as const,
     },
   ];
@@ -69,9 +54,9 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="min-h-screen bg-background p-4 md:p-6">
-          <div className="mx-auto max-w-[1440px] space-y-5">
-            <header className="space-y-4 border-b border-subtle pb-5">
+        <div className="min-h-screen bg-background px-4 py-5 md:px-6 md:py-7">
+          <div className="mx-auto max-w-[1280px] space-y-7">
+            <header className="space-y-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="max-w-3xl space-y-2">
                   <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('eyebrow')}</p>
@@ -90,29 +75,17 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="flex flex-wrap gap-x-10 gap-y-4 border-t border-subtle pt-4">
                 {statusOverview.map((item) => (
-                  <SummaryTile
-                    key={item.label}
-                    label={item.label}
-                    value={item.value}
-                    detail={item.detail}
-                    tone={item.tone}
-                  />
+                  <InlineMetric key={item.label} label={item.label} value={item.value} tone={item.tone} />
                 ))}
               </div>
             </header>
 
-            <section className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]">
-              <div className="space-y-4">
-                <SectionCard
-                  eyebrow={t('system_info_health_label')}
-                  title={t('system_info_health_title')}
-                  description={t('system_info_health_description')}
-                  icon={<Activity className="h-4 w-4" />}
-                  dataTestId="system-info__health"
-                >
-                  <div className="grid gap-3 md:grid-cols-2">
+            <section className="grid gap-8 xl:grid-cols-[minmax(0,1.12fr)_minmax(320px,0.88fr)]">
+              <div className="space-y-7">
+                <SectionBlock eyebrow={t('system_info_health_label')} title={t('system_info_health_title')} dataTestId="system-info__health">
+                  <div className="grid gap-x-8 gap-y-4 md:grid-cols-2">
                     <StatusLine
                       label={t('workspace_registry_title')}
                       value={t(`config_status.${snapshot.workspace_registry_status}`)}
@@ -134,27 +107,12 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                       tone={attentionItems.length > 0 ? 'warning' : 'positive'}
                     />
                   </div>
-                </SectionCard>
+                </SectionBlock>
 
-                <SectionCard
-                  eyebrow={t('system_info_configuration_label')}
-                  title={t('system_info_configuration_title')}
-                  description={t('system_info_configuration_description')}
-                  icon={<ShieldCheck className="h-4 w-4" />}
-                >
-                  <div className="grid gap-3 lg:grid-cols-2">
-                    <InfoGroup
-                      title={t('api_service_title')}
-                      rows={[
-                        { label: t('api_base_url_label'), value: snapshot.api_base_url },
-                      ]}
-                    />
-                    <InfoGroup
-                      title={t('system_admin_title')}
-                      rows={[
-                        { label: t('system_admin_username_label'), value: snapshot.system_admin_username },
-                      ]}
-                    />
+                <SectionBlock eyebrow={t('system_info_configuration_label')} title={t('system_info_configuration_title')}>
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    <InfoGroup title={t('api_service_title')} rows={[{ label: t('api_base_url_label'), value: snapshot.api_base_url }]} />
+                    <InfoGroup title={t('system_admin_title')} rows={[{ label: t('system_admin_username_label'), value: snapshot.system_admin_username }]} />
                     <InfoGroup
                       title={t('default_workspace_title')}
                       rows={[
@@ -172,20 +130,13 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                     />
                     <InfoGroup
                       title={t('workspace_registry_title')}
-                      rows={[
-                        { label: t('workspace_registry_status_label'), value: t(`config_status.${snapshot.workspace_registry_status}`) },
-                      ]}
+                      rows={[{ label: t('workspace_registry_status_label'), value: t(`config_status.${snapshot.workspace_registry_status}`) }]}
                     />
                   </div>
-                </SectionCard>
+                </SectionBlock>
 
-                <SectionCard
-                  eyebrow={t('system_info_data_plane_label')}
-                  title={t('system_info_data_plane_title')}
-                  description={t('system_info_data_plane_description')}
-                  icon={<Database className="h-4 w-4" />}
-                >
-                  <div className="grid gap-3 lg:grid-cols-2">
+                <SectionBlock eyebrow={t('system_info_data_plane_label')} title={t('system_info_data_plane_title')}>
+                  <div className="grid gap-6 lg:grid-cols-2">
                     <InfoGroup
                       title={t('data_service_title')}
                       rows={[
@@ -203,61 +154,41 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                       ]}
                     />
                   </div>
-                </SectionCard>
+                </SectionBlock>
               </div>
 
-              <div className="space-y-4">
-                <SectionCard
-                  eyebrow={t('system_info_attention_panel_label')}
-                  title={t('system_info_attention_panel_title')}
-                  description={t('system_info_attention_panel_description')}
-                  icon={<AlertTriangle className="h-4 w-4" />}
-                  dataTestId="system-info__attention"
-                >
+              <div className="space-y-7">
+                <SectionBlock eyebrow={t('system_info_attention_panel_label')} title={t('system_info_attention_panel_title')} dataTestId="system-info__attention">
                   {attentionItems.length > 0 ? (
-                    <div className="space-y-3">
+                    <div className="divide-y divide-subtle border-y border-subtle">
                       {attentionItems.map((item) => (
-                        <div key={item.title} className="border-l border-warning/35 pl-3">
-                          <div className="flex items-start gap-3">
-                            <item.icon className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium text-foreground">{item.title}</p>
-                              <p className="text-sm leading-6 text-secondary">{item.body}</p>
-                            </div>
+                        <div key={item.title} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
+                          <item.icon className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-foreground">{item.title}</p>
+                            <p className="text-sm leading-6 text-secondary">{item.body}</p>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="border-l border-success/35 pl-3">
-                      <div className="flex items-start gap-3">
-                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-foreground">{t('system_info_all_clear_title')}</p>
-                          <p className="text-sm leading-6 text-secondary">{t('system_info_all_clear_body')}</p>
-                        </div>
+                    <div className="flex items-start gap-3 border-y border-subtle py-3">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-foreground">{t('system_info_all_clear_title')}</p>
+                        <p className="text-sm leading-6 text-secondary">{t('system_info_all_clear_body')}</p>
                       </div>
                     </div>
                   )}
-                  <div className="flex justify-end">
-                    <Button asChild type="button" variant="outline" data-testid="system-info__workspaces-cta">
-                      <Link href={workspacesHref}>{t('back_to_workspaces')}</Link>
-                    </Button>
-                  </div>
-                </SectionCard>
+                </SectionBlock>
 
-                <SectionCard
-                  eyebrow={t('system_info_provisioning_label')}
-                  title={t('workspace_provisioning_title')}
-                  description={t('system_info_provisioning_description')}
-                  icon={<Wrench className="h-4 w-4" />}
-                >
-                  <div className="space-y-3">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <KeyMetric label={t('workspace_ready_label')} value={String(provisioning.ready)} />
-                      <KeyMetric label={t('workspace_failed_label')} value={String(provisioning.failed)} />
-                      <KeyMetric label={t('workspace_draft_label')} value={String(provisioning.draft)} />
-                      <KeyMetric label={t('workspace_disabled_label')} value={String(provisioning.disabled)} />
+                <SectionBlock eyebrow={t('system_info_provisioning_label')} title={t('workspace_provisioning_title')}>
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap gap-x-8 gap-y-3">
+                      <InlineMetric label={t('workspace_ready_label')} value={String(provisioning.ready)} tone="default" />
+                      <InlineMetric label={t('workspace_failed_label')} value={String(provisioning.failed)} tone={provisioning.failed > 0 ? 'warning' : 'default'} />
+                      <InlineMetric label={t('workspace_draft_label')} value={String(provisioning.draft)} tone="default" />
+                      <InlineMetric label={t('workspace_disabled_label')} value={String(provisioning.disabled)} tone="default" />
                     </div>
                     <div className="space-y-2 border-t border-subtle pt-3">
                       <TimelineRow label={t('workspace_last_initialized_label')} value={formatTimestamp(provisioning.last_initialized_at, locale)} />
@@ -265,23 +196,11 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                       <TimelineRow label={t('workspace_last_failed_label')} value={formatTimestamp(provisioning.last_failed_at, locale)} />
                       <TimelineRow label={t('workspace_last_init_error_label')} value={provisioning.last_init_error || '-'} />
                     </div>
+                    <p className="text-sm leading-6 text-tertiary" data-testid="system-info__notice">{t('info_notice')}</p>
                   </div>
-                </SectionCard>
+                </SectionBlock>
 
-                <section
-                  className="border-t border-dashed border-subtle pt-4"
-                  data-testid="system-info__notice"
-                >
-                  <p className="text-sm leading-6 text-tertiary">{t('info_notice')}</p>
-                </section>
-
-                <SectionCard
-                  eyebrow={t('system_info_next_steps_label')}
-                  title={t('system_info_next_steps_title')}
-                  description={t('system_info_next_steps_description')}
-                  icon={<Wrench className="h-4 w-4" />}
-                  dataTestId="system-info__next-steps"
-                >
+                <SectionBlock eyebrow={t('system_info_next_steps_label')} title={t('system_info_next_steps_title')} dataTestId="system-info__next-steps">
                   <div className="divide-y divide-subtle border-y border-subtle">
                     {quickActions.map((action) => (
                       <Link key={action.href} href={action.href} className="group flex items-start justify-between gap-4 py-4 transition-colors hover:text-foreground">
@@ -294,7 +213,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                       </Link>
                     ))}
                   </div>
-                </SectionCard>
+                </SectionBlock>
               </div>
             </section>
           </div>
@@ -304,65 +223,43 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
   );
 }
 
-function SectionCard({
+function SectionBlock({
   eyebrow,
   title,
-  description,
-  icon,
   children,
   dataTestId,
 }: {
   eyebrow: string;
   title: string;
-  description: string;
-  icon: ReactNode;
   children: ReactNode;
   dataTestId?: string;
 }) {
   return (
-    <section
-      className="border-t border-subtle pt-4"
-      data-testid={dataTestId}
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center text-icon-default">
-          {icon}
-        </div>
-        <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{eyebrow}</p>
-          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-          <p className="text-sm leading-6 text-secondary">{description}</p>
-        </div>
+    <section className="border-t border-subtle pt-4" data-testid={dataTestId}>
+      <div className="space-y-1">
+        <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{eyebrow}</p>
+        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
       </div>
       <div className="mt-4">{children}</div>
     </section>
   );
 }
 
-function SummaryTile({
+function InlineMetric({
   label,
   value,
-  detail,
   tone,
 }: {
   label: string;
   value: string;
-  detail: string;
   tone: 'default' | 'positive' | 'warning';
 }) {
-  const toneClassName = (
-    tone === 'positive'
-      ? 'text-success'
-      : tone === 'warning'
-        ? 'text-warning'
-        : 'text-foreground'
-  );
+  const toneClassName = tone === 'positive' ? 'text-success' : tone === 'warning' ? 'text-warning' : 'text-foreground';
 
   return (
-    <div className="border-l border-subtle pl-3">
+    <div className="min-w-[9rem] space-y-1">
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</p>
-      <p className={`mt-2 text-xl font-semibold ${toneClassName}`}>{value}</p>
-      <p className="mt-2 text-sm leading-5 text-secondary">{detail}</p>
+      <p className={`text-base font-semibold ${toneClassName}`}>{value}</p>
     </div>
   );
 }
@@ -377,9 +274,9 @@ function StatusLine({
   tone: 'positive' | 'warning';
 }) {
   return (
-    <div className="border-b border-subtle py-3 last:border-b-0">
+    <div className="space-y-1 border-t border-subtle pt-3 first:border-t-0 first:pt-0">
       <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{label}</p>
-      <p className={`mt-2 text-base font-semibold ${tone === 'positive' ? 'text-success' : 'text-warning'}`}>{value}</p>
+      <p className={`text-sm font-medium ${tone === 'positive' ? 'text-success' : 'text-warning'}`}>{value}</p>
     </div>
   );
 }
@@ -392,9 +289,9 @@ function InfoGroup({
   rows: Array<{ label: string; value: string }>;
 }) {
   return (
-    <div className="border-t border-subtle pt-3">
+    <div className="space-y-3 border-t border-subtle pt-3 first:border-t-0 first:pt-0">
       <p className="text-sm font-medium text-foreground">{title}</p>
-      <div className="mt-3 divide-y divide-subtle">
+      <div className="divide-y divide-subtle">
         {rows.map((row) => (
           <div key={row.label} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
             <p className="max-w-[42%] text-[11px] uppercase tracking-[0.08em] text-tertiary">{row.label}</p>
@@ -402,21 +299,6 @@ function InfoGroup({
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function KeyMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="border-l border-subtle pl-3">
-      <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{label}</p>
-      <p className="mt-2 text-lg font-semibold text-foreground">{value}</p>
     </div>
   );
 }
@@ -429,7 +311,7 @@ function TimelineRow({
   value: string;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-subtle py-2 last:border-b-0 last:pb-0 first:pt-0">
+    <div className="flex items-start justify-between gap-3 border-b border-subtle py-2 first:pt-0 last:border-b-0 last:pb-0">
       <p className="text-sm text-tertiary">{label}</p>
       <p className="max-w-[60%] text-right text-sm font-medium text-foreground">{value}</p>
     </div>

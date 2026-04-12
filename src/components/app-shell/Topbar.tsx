@@ -50,7 +50,7 @@ function resolveTopbarHomeHref(params: {
 }
 
 const quietSwitcherClassName =
-  'inline-flex h-9 items-center gap-2 rounded-md border border-transparent bg-transparent px-2.5 text-left text-primary transition-[background-color,border-color,color] duration-150 hover:bg-surface-low/80 hover:text-foreground';
+  'inline-flex h-8 items-center gap-2 rounded-sm border border-transparent bg-transparent px-1.5 text-left text-secondary transition-[background-color,border-color,color] duration-150 hover:bg-surface-low/20 hover:text-foreground';
 
 export function Topbar({ className = '' }: TopbarProps) {
   const user = useAuthStore(selectCurrentUser);
@@ -157,12 +157,12 @@ export function Topbar({ className = '' }: TopbarProps) {
   return (
     <header
       data-testid='topbar'
-      className={`sticky top-0 z-30 flex h-12 items-center justify-between gap-4 border-b border-border/45 bg-background px-4 md:px-5 ${className}`}
+      className={`sticky top-0 z-30 flex h-11 items-center justify-between gap-4 border-b border-border/12 bg-background/94 px-4 backdrop-blur-[2px] md:px-5 ${className}`}
     >
       <div className='flex min-w-0 items-center gap-3'>
         <button
           onClick={handleLogoClick}
-          className='rounded-md px-1 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20'
+          className='rounded-sm px-0.5 py-0.5 text-secondary transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20'
           aria-label={t('go_to_projects')}
         >
           <Logo />
@@ -176,7 +176,7 @@ export function Topbar({ className = '' }: TopbarProps) {
             className={`${quietSwitcherClassName} max-w-[20rem]`}
           >
             <Globe className='h-4 w-4 flex-shrink-0 text-icon-default' />
-            <span className='truncate text-sm text-foreground'>{currentWorkspace?.name || t('select_workspace')}</span>
+            <span className='truncate text-[13px] text-foreground'>{currentWorkspace?.name || t('select_workspace')}</span>
             <ChevronDown className='ml-auto h-4 w-4 flex-shrink-0 text-tertiary' />
           </DropdownMenuTrigger>
           <DropdownMenuContent align='start'>
@@ -197,7 +197,7 @@ export function Topbar({ className = '' }: TopbarProps) {
 
         {currentProject ? (
           <>
-            <div className='hidden h-4 w-px bg-border/30 md:block' />
+            <div className='hidden h-3.5 w-px bg-border/10 md:block' />
             <div className='flex min-w-0 items-center gap-2'>
               <TooltipProvider>
                 <Tooltip>
@@ -205,7 +205,7 @@ export function Topbar({ className = '' }: TopbarProps) {
                     <button
                       data-testid='topbar__project-switcher'
                       onClick={handleGoToProjects}
-                      className={`${quietSwitcherClassName} max-w-[22rem]`}
+                      className={`${quietSwitcherClassName} max-w-[22rem] text-[13px]`}
                       aria-label={t('go_to_projects')}
                     >
                       <FolderKanban className='h-4 w-4 flex-shrink-0 text-icon-default' />
@@ -221,7 +221,7 @@ export function Topbar({ className = '' }: TopbarProps) {
               <DropdownMenu>
                 <DropdownMenuTrigger
                   data-testid='topbar__project-switcher-menu'
-                  className='inline-flex h-9 w-9 items-center justify-center rounded-md border border-transparent bg-transparent text-tertiary transition-[background-color,border-color,color] duration-150 hover:bg-surface-low/80 hover:text-foreground'
+                  className='inline-flex h-8 w-8 items-center justify-center rounded-sm border border-transparent bg-transparent text-tertiary transition-[background-color,border-color,color] duration-150 hover:bg-surface-low/20 hover:text-foreground'
                 >
                   <ChevronDown className='h-4 w-4' />
                 </DropdownMenuTrigger>
@@ -246,7 +246,7 @@ export function Topbar({ className = '' }: TopbarProps) {
             type='button'
             variant='ghost'
             size='sm'
-            className='h-8 gap-2'
+            className='h-8 gap-2 border-transparent px-2.5 text-secondary hover:text-foreground'
             onClick={handleLayoutToggle}
             title={layoutMode === 'ultrawide' ? t('switch_to_standard') : t('switch_to_ultrawide')}
             aria-label={layoutMode === 'ultrawide' ? t('switch_to_standard') : t('switch_to_ultrawide')}

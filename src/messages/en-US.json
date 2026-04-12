@@ -2398,6 +2398,8 @@
       "limited": "Limited",
       "not_available": "Not available"
     },
+    "next_steps_primary_badge": "Start here",
+    "next_steps_secondary_badge": "Next step",
     "time_ranges": {
       "last_24h": "Last 24 hours",
       "last_7d": "Last 7 days"

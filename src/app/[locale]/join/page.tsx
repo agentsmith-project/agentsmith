@@ -10,7 +10,6 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import {
-  PublicAuthAsideBlock,
   PublicAuthEyebrow,
   PublicAuthFrame,
   PublicAuthHeader,
@@ -26,6 +25,7 @@ function JoinPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const t = useTranslations('join');
+  const tAuth = useTranslations('auth');
   const token = searchParams.get('token');
   const memberApi = React.useMemo(() => new MemberAPI(getApiClient()), []);
   const [inlineError, setInlineError] = React.useState(false);
@@ -56,21 +56,8 @@ function JoinPageContent() {
 
   if (!token) {
     return (
-      <PublicAuthFrame>
-        <PublicAuthShell
-          aside={(
-            <PublicAuthAsideBlock
-              icon={<Mail className="h-5 w-5" />}
-              title={t('go_home')}
-              description={t('invalid_description')}
-            >
-              <PublicAuthMutedCard>
-                <p className="type-caption text-tertiary">{t('invalid_title')}</p>
-                <p className="mt-2 type-body-ui text-secondary">{t('action_failed')}</p>
-              </PublicAuthMutedCard>
-            </PublicAuthAsideBlock>
-          )}
-        >
+      <PublicAuthFrame width="narrow">
+        <PublicAuthShell>
           <div className="space-y-6">
             <PublicAuthHeader
               badge={(
@@ -92,9 +79,9 @@ function JoinPageContent() {
                     helper={t('invalid_description')}
                   />
                   <JoinSummaryCard
-                    icon={<ArrowRight className="h-4 w-4 text-accent" />}
+                    icon={<Mail className="h-4 w-4 text-icon-default" />}
                     label={t('title')}
-                    value={t('decline')}
+                    value={tAuth('workspace_login_title')}
                     helper={t('description')}
                   />
                 </div>
@@ -103,7 +90,7 @@ function JoinPageContent() {
                     {t('go_home')}
                   </Button>
                   <Button variant="secondary" className="sm:flex-1" onClick={() => router.push('/login/workspace')}>
-                    {t('decline')}
+                    {tAuth('workspace_login_title')}
                   </Button>
                 </div>
               </div>
@@ -115,21 +102,8 @@ function JoinPageContent() {
   }
 
   return (
-    <PublicAuthFrame>
-      <PublicAuthShell
-        aside={(
-          <PublicAuthAsideBlock
-            icon={<Mail className="h-5 w-5" />}
-            title={t('accept')}
-            description={t('description')}
-          >
-            <PublicAuthMutedCard>
-              <p className="type-caption text-tertiary">{t('go_home')}</p>
-              <p className="mt-2 type-body-ui text-secondary">{t('decline')}</p>
-            </PublicAuthMutedCard>
-          </PublicAuthAsideBlock>
-        )}
-      >
+    <PublicAuthFrame width="narrow">
+      <PublicAuthShell>
         <div className="space-y-6">
           <PublicAuthHeader
             badge={(
@@ -144,7 +118,7 @@ function JoinPageContent() {
 
           <PublicAuthSection>
             <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <JoinSummaryCard
                   icon={<CheckCircle2 className="h-4 w-4 text-success" />}
                   label={t('accept')}
@@ -154,14 +128,8 @@ function JoinPageContent() {
                 <JoinSummaryCard
                   icon={<XCircle className="h-4 w-4 text-warning" />}
                   label={t('decline')}
-                  value={t('go_home')}
+                  value={t('declining')}
                   helper={t('action_failed')}
-                />
-                <JoinSummaryCard
-                  icon={<ArrowRight className="h-4 w-4 text-accent" />}
-                  label={t('title')}
-                  value={t('accept')}
-                  helper={t('declining')}
                 />
               </div>
               {inlineError ? (

@@ -32,7 +32,7 @@ describe('WorkspacesOverviewPage', () => {
     render(<WorkspacesOverviewPage />);
 
     expect(screen.getByTestId('workspace-overview__heading')).toBeInTheDocument();
-    expect(screen.getByTestId('workspace-overview__summary')).toHaveTextContent('2');
+    expect(screen.getByText('2 · overview_summary_label')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__search')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__list')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__card--ws_1')).toBeInTheDocument();

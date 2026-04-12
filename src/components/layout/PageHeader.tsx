@@ -15,18 +15,17 @@ export function PageHeader({ title, subtitle, actions, className, variant = 'def
   return (
     <div
       className={cn(
-        'flex flex-col border-b border-border/55 pb-4 md:flex-row md:items-start md:justify-between',
-        isCompact ? 'gap-3 md:pb-3' : 'gap-4 md:pb-4',
+        'flex flex-col md:flex-row md:items-start md:justify-between',
+        isCompact ? 'gap-2.5' : 'gap-3.5',
         className,
       )}
     >
-      <div className={cn(isCompact ? 'space-y-1.5' : 'space-y-2')}>
-        {isCompact ? null : <div className='type-caption text-tertiary'>Project surface</div>}
+      <div className={cn(isCompact ? 'space-y-1' : 'space-y-1.5')}>
         <h1 className={cn(isCompact ? 'type-subheading' : 'type-section-heading', 'text-foreground')}>
           {title}
         </h1>
         {subtitle ? (
-          <p className={cn(isCompact ? 'type-body-ui max-w-3xl text-secondary' : 'type-body-serif max-w-3xl text-secondary')}>
+          <p className='type-body-ui max-w-3xl text-secondary'>
             {subtitle}
           </p>
         ) : null}

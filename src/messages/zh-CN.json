@@ -2400,6 +2400,8 @@
       "limited": "受限",
       "not_available": "不可用"
     },
+    "next_steps_primary_badge": "从这里开始",
+    "next_steps_secondary_badge": "下一步",
     "time_ranges": {
       "last_24h": "最近 24 小时",
       "last_7d": "最近 7 天"

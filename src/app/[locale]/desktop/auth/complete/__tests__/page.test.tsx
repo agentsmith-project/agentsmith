@@ -12,6 +12,10 @@ vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }));
 
+vi.mock('@/components/theme/PublicThemeToggle', () => ({
+  PublicThemeToggle: () => <div data-testid="public-theme-toggle" />,
+}));
+
 import DesktopAuthCompletePage from '../page';
 
 describe('DesktopAuthCompletePage', () => {
@@ -22,6 +26,7 @@ describe('DesktopAuthCompletePage', () => {
   it('shows a recovery link back to workspace entry', () => {
     render(<DesktopAuthCompletePage />);
 
+    expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
     expect(screen.getByTestId('desktop-auth-complete__title')).toHaveTextContent('desktop_auth_complete_title');
     expect(screen.getByRole('link', { name: 'desktop_auth_complete_open_workspace_entry' })).toHaveAttribute('href', '/en-US/login/workspace');
   });

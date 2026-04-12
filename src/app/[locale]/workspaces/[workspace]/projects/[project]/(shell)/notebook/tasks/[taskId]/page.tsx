@@ -9,7 +9,9 @@ import { PageLoading } from "@/components/ui/loading";
 import { Button } from "@/components/ui/button";
 import { TaskPage } from "@/components/notebook/TaskPage";
 import { useCanAccessNotebook, useCanUseNotebookTerminal } from "@/lib/hooks/use-permissions";
+import { useProject } from "@/lib/hooks/use-projects-queries";
 import { useResolvedProjectRoute } from "@/lib/hooks/use-resolved-project-route";
+import { canAccessProjectSurfaceHref } from "@/lib/projects/project-surface-access";
 
 interface TaskPageParams {
   params: Promise<{
@@ -30,6 +32,23 @@ function validateTaskId(taskId: string): string | undefined {
   return trimmed;
 }
 
+type TaskDetailRecoveryAction = {
+  href: string;
+  label: string;
+  testId: string;
+  variant?: 'primary' | 'outline';
+};
+
+function pushRecoveryAction(
+  actions: TaskDetailRecoveryAction[],
+  condition: boolean,
+  action: TaskDetailRecoveryAction,
+) {
+  if (condition) {
+    actions.push(action);
+  }
+}
+
 function TaskDetailRouteState({
   title,
   description,
@@ -37,7 +56,7 @@ function TaskDetailRouteState({
 }: {
   title: string;
   description: string;
-  actions: Array<{ href: string; label: string; testId: string; variant?: 'primary' | 'outline' }>;
+  actions: TaskDetailRecoveryAction[];
 }) {
   return (
     <PageState state="error">
@@ -74,6 +93,7 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
   } | null>(null);
   const canAccessNotebook = useCanAccessNotebook();
   const canUseNotebookTerminal = useCanUseNotebookTerminal();
+  const { data: currentProject } = useProject(resolvedRoute.workspace ?? '', resolvedRoute.project ?? '');
 
   useEffect(() => {
     if (!resolvedRoute.isReady) {
@@ -125,6 +145,9 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
   const chatPath = resolvedParams.workspace && resolvedParams.project
     ? `/${locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/chat`
     : workspacePath;
+  const canOpenNotebookSurface = canAccessProjectSurfaceHref(currentProject, 'notebook');
+  const canOpenFilesSurface = canAccessProjectSurfaceHref(currentProject, 'files');
+  const canOpenChatSurface = canAccessProjectSurfaceHref(currentProject, 'chat');
 
   if (
     !resolvedRoute.isValid ||
@@ -132,29 +155,57 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
     !resolvedParams.project ||
     !resolvedParams.taskId
   ) {
+    const actions: TaskDetailRecoveryAction[] = [];
+    pushRecoveryAction(actions, canOpenNotebookSurface && canAccessNotebook, {
+      href: notebookPath,
+      label: tNotebook("task.back_to_notebook"),
+      testId: 'notebook-task__open-list',
+      variant: 'primary',
+    });
+    pushRecoveryAction(actions, canOpenFilesSurface, {
+      href: filesPath,
+      label: tCommon("open_files"),
+      testId: 'notebook-task__open-files',
+      variant: actions.length === 0 ? 'primary' : 'outline',
+    });
+    actions.push({
+      href: workspacePath,
+      label: tProjects("back_to_workspace"),
+      testId: 'notebook-task__back-to-workspace',
+      variant: actions.length === 0 ? 'primary' : 'outline',
+    });
+
     return (
       <TaskDetailRouteState
         title={tErrors("validation_error")}
         description={tErrors("badRequest.description")}
-        actions={[
-          { href: notebookPath, label: tNotebook("task.back_to_notebook"), testId: 'notebook-task__open-list', variant: 'primary' },
-          { href: filesPath, label: tCommon("open_files"), testId: 'notebook-task__open-files', variant: 'outline' },
-          { href: workspacePath, label: tProjects("back_to_workspace"), testId: 'notebook-task__back-to-workspace', variant: 'outline' },
-        ]}
+        actions={actions}
       />
     );
   }
 
   if (!canAccessNotebook) {
+    const actions: TaskDetailRecoveryAction[] = [
+      { href: workspacePath, label: tProjects("back_to_workspace"), testId: 'notebook-task__back-to-workspace', variant: 'primary' },
+    ];
+    pushRecoveryAction(actions, canOpenFilesSurface, {
+      href: filesPath,
+      label: tCommon("open_files"),
+      testId: 'notebook-task__open-files',
+      variant: 'outline',
+    });
+    pushRecoveryAction(actions, canOpenChatSurface, {
+      href: chatPath,
+      label: tCommon("open_chat"),
+      testId: 'notebook-task__open-chat',
+      variant: 'outline',
+    });
+
     return (
       <TaskDetailRouteState
         title={tErrors("permission_denied_title")}
         description={tErrors("permission_denied_hint")}
-        actions={[
-          { href: workspacePath, label: tProjects("back_to_workspace"), testId: 'notebook-task__back-to-workspace', variant: 'primary' },
-          { href: filesPath, label: tCommon("open_files"), testId: 'notebook-task__open-files', variant: 'outline' },
-          { href: chatPath, label: tCommon("open_chat"), testId: 'notebook-task__open-chat', variant: 'outline' },
-        ]}
+        actions={actions}
       />
     );
   }

@@ -393,32 +393,6 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('notebook-task-detail-artifact-hover.png', { fullPage: true });
   });
 
-  test('agents', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('agents'));
-    await expect(authedPage).toHaveScreenshot('agents.png', { fullPage: true });
-  });
-
-  test('endpoints', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('endpoints'));
-    await expect(authedPage).toHaveScreenshot('endpoints.png', { fullPage: true });
-  });
-
-  test('credentials', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('credentials'));
-    await expect(authedPage).toHaveScreenshot('credentials.png', { fullPage: true });
-  });
-
-  test('access guide', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('use-guide'));
-    await expect(authedPage.getByTestId('use-guide__page')).toBeVisible();
-    await expect(authedPage).toHaveScreenshot('use-guide.png', { fullPage: true });
-  });
-
-  test('resource policy', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('resource-policy'));
-    await expect(authedPage).toHaveScreenshot('resource-policy.png', { fullPage: true });
-  });
-
 });
 
 const THEMED_WALKTHROUGH_PAGES = [
@@ -490,6 +464,34 @@ const THEMED_PUBLIC_PAGES = [
       await expect(page.getByTestId('system-login__heading')).toBeVisible();
     },
   },
+  {
+    name: 'workspace-select',
+    path: '/en-US/login/workspace',
+    run: async (page: Page) => {
+      await expect(page.getByTestId('workspace-select__card--ws_default')).toBeVisible();
+    },
+  },
+  {
+    name: 'workspace-login',
+    path: `/en-US/workspaces/${WS_ID}/login`,
+    run: async (page: Page) => {
+      await expect(page.getByTestId('workspace-login__heading')).toBeVisible();
+    },
+  },
+  {
+    name: 'desktop-auth-request',
+    path: '/en-US/desktop/auth/request',
+    run: async (page: Page) => {
+      await expect(page.getByTestId('desktop-auth-request__title')).toBeVisible();
+    },
+  },
+  {
+    name: 'desktop-auth-complete',
+    path: '/en-US/desktop/auth/complete',
+    run: async (page: Page) => {
+      await expect(page.getByTestId('desktop-auth-complete__title')).toBeVisible();
+    },
+  },
 ] as const;
 
 const THEMED_WORKSPACE_PAGES_AUTHED = [
@@ -498,13 +500,6 @@ const THEMED_WORKSPACE_PAGES_AUTHED = [
     path: '/en-US/workspaces/overview',
     run: async (page: Page) => {
       await expect(page.getByTestId('workspace-overview__heading')).toBeVisible();
-    },
-  },
-  {
-    name: 'workspace-select',
-    path: '/en-US/login/workspace',
-    run: async (page: Page) => {
-      await expect(page.getByTestId('workspace-select__card--ws_default')).toBeVisible();
     },
   },
   {
@@ -519,16 +514,6 @@ const THEMED_WORKSPACE_PAGES_AUTHED = [
     path: `/en-US/workspaces/${WS_ID}/settings`,
     run: async (page: Page) => {
       await expect(page.getByTestId('ws-settings__workspace')).toBeVisible();
-    },
-  },
-] as const;
-
-const THEMED_WORKSPACE_PAGES_PLAIN = [
-  {
-    name: 'workspace-login',
-    path: `/en-US/workspaces/${WS_ID}/login`,
-    run: async (page: Page) => {
-      await expect(page.getByTestId('workspace-login__heading')).toBeVisible();
     },
   },
 ] as const;
@@ -576,10 +561,45 @@ const THEMED_USER_PAGES = [
 
 const THEMED_GOVERNANCE_PAGES = [
   {
+    name: 'agents',
+    path: projectPath('agents'),
+    run: async (page: Page) => {
+      await expect(page.getByTestId('agents__create-btn')).toBeVisible();
+    },
+  },
+  {
+    name: 'endpoints',
+    path: projectPath('endpoints'),
+    run: async (page: Page) => {
+      await expect(page.getByTestId('endpoints__create-btn')).toBeVisible();
+    },
+  },
+  {
+    name: 'credentials',
+    path: projectPath('credentials'),
+    run: async (page: Page) => {
+      await expect(page.getByTestId('credentials__create-btn')).toBeVisible();
+    },
+  },
+  {
     name: 'members',
     path: projectPath('members'),
     run: async (page: Page) => {
       await expect(page.getByTestId('members__invite-btn')).toBeVisible();
+    },
+  },
+  {
+    name: 'resource-policy',
+    path: projectPath('resource-policy'),
+    run: async (page: Page) => {
+      await expect(page.getByTestId('resource-policy__table')).toBeVisible();
+    },
+  },
+  {
+    name: 'access-guide',
+    path: projectPath('use-guide'),
+    run: async (page: Page) => {
+      await expect(page.getByTestId('use-guide__page')).toBeVisible();
     },
   },
   {
@@ -667,14 +687,6 @@ test.describe('Visual - Workspace Pages (Light/Dark)', () => {
         });
       }
 
-      for (const pageCase of THEMED_WORKSPACE_PAGES_PLAIN) {
-        test(pageCase.name, async ({ page }) => {
-          await setVisualTheme(page, theme);
-          await stableNavigate(page, pageCase.path);
-          await pageCase.run(page);
-          await expect(page).toHaveScreenshot(themedScreenshotName(pageCase.name, theme), { fullPage: true });
-        });
-      }
     });
   }
 });

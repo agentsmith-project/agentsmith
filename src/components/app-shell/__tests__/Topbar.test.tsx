@@ -30,13 +30,15 @@ let mockCurrentProject: { id: string; name: string; permissions: string[] } | nu
 };
 
 let canManageWorkspaceGovernance = false;
+let mockParams: { locale: string; workspace?: string; project?: string } = {
+  locale: 'en-US',
+  workspace: 'ws_1',
+  project: 'proj_chat',
+};
+let mockPathname = '/en-US/workspaces/ws_1/projects/proj_chat/overview';
 
 vi.mock('next/navigation', () => ({
-  useParams: () => ({
-    locale: 'en-US',
-    workspace: 'ws_1',
-    project: 'proj_chat',
-  }),
+  useParams: () => mockParams,
 }));
 
 vi.mock('@/lib/i18n/routing', () => ({
@@ -44,7 +46,7 @@ vi.mock('@/lib/i18n/routing', () => ({
     push: mockPush,
     replace: mockReplace,
   }),
-  usePathname: () => '/en-US/workspaces/ws_1/projects/proj_chat/overview',
+  usePathname: () => mockPathname,
 }));
 
 vi.mock('next-intl', () => ({
@@ -135,6 +137,12 @@ describe('Topbar', () => {
       name: 'Chat Project',
       permissions: ['project:endpoint:use'],
     };
+    mockParams = {
+      locale: 'en-US',
+      workspace: 'ws_1',
+      project: 'proj_chat',
+    };
+    mockPathname = '/en-US/workspaces/ws_1/projects/proj_chat/overview';
   });
 
   it('navigates to the first reachable surface instead of assuming overview', () => {
@@ -178,6 +186,30 @@ describe('Topbar', () => {
     fireEvent.click(menuTrigger);
 
     expect(screen.getAllByText('Governance Project').length).toBeGreaterThan(1);
+  });
+
+  it('routes the logo to workspace home on user surfaces without workspace context', () => {
+    mockParams = { locale: 'en-US' };
+    mockPathname = '/en-US/user/api-keys';
+    mockCurrentProject = null;
+
+    renderTopbar();
+
+    fireEvent.click(screen.getByLabelText('go_to_projects'));
+
+    expect(mockPush).toHaveBeenCalledWith('/workspaces');
+  });
+
+  it('keeps system logo navigation on system surfaces without workspace context', () => {
+    mockParams = { locale: 'en-US' };
+    mockPathname = '/en-US/system/workspaces';
+    mockCurrentProject = null;
+
+    renderTopbar();
+
+    fireEvent.click(screen.getByLabelText('go_to_projects'));
+
+    expect(mockPush).toHaveBeenCalledWith('/system/workspaces');
   });
 
   it('expands the switcher with governable projects only when they have a reachable surface', () => {

@@ -4,12 +4,13 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArrowRight, Building2, ShieldCheck } from 'lucide-react';
+import { Building2, ShieldCheck } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Logo } from '@/components/app-shell/Logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PublicThemeToggle } from '@/components/theme/PublicThemeToggle';
 
 export default function SystemLoginPage() {
   const params = useParams();
@@ -43,7 +44,8 @@ export default function SystemLoginPage() {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <div className="relative flex min-h-screen items-center justify-center bg-background p-4">
+          <PublicThemeToggle className="absolute right-4 top-4 z-10 md:right-6 md:top-6" />
           <section className="surface-elevated grid w-full max-w-4xl gap-6 rounded-[32px] border border-border/70 p-6 md:grid-cols-[minmax(0,1.08fr)_minmax(300px,0.92fr)] md:p-8">
             <div className="space-y-5">
               <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-high px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
@@ -124,8 +126,8 @@ export default function SystemLoginPage() {
                   <Building2 className="h-5 w-5" />
                 </div>
                 <div className="space-y-2">
-                  <h2 className="font-display text-2xl text-primary">{t('open_system_info')}</h2>
-                  <p className="text-sm leading-6 text-secondary">{t('system_admin_title')}</p>
+                  <h2 className="font-display text-2xl text-primary">{t('system_admin_title')}</h2>
+                  <p className="text-sm leading-6 text-secondary">{t('login_scope_hint')}</p>
                 </div>
                 <div className="rounded-[20px] border border-subtle bg-background/70 px-4 py-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('login_access_label')}</p>
@@ -133,12 +135,6 @@ export default function SystemLoginPage() {
                 </div>
               </div>
               <div className="space-y-3">
-                <Link href={`/${locale}/system/info`}>
-                  <Button variant="action" className="w-full justify-between">
-                    {t('open_system_info')}
-                    <ArrowRight className="h-4 w-4" />
-                  </Button>
-                </Link>
                 <Link href={`/${locale}/login/workspace`}>
                   <Button variant="outline" className="w-full">
                     {t('open_workspace_login')}

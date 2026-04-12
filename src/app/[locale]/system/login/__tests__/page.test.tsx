@@ -11,6 +11,10 @@ vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }));
 
+vi.mock('@/components/theme/PublicThemeToggle', () => ({
+  PublicThemeToggle: () => <div data-testid="public-theme-toggle" />,
+}));
+
 import SystemLoginPage from '../page';
 
 describe('SystemLoginPage', () => {
@@ -58,9 +62,11 @@ describe('SystemLoginPage', () => {
     expect(mockAssign).not.toHaveBeenCalled();
   });
 
-  it('keeps a workspace-login recovery action visible', () => {
+  it('keeps a workspace-login recovery action visible without linking to protected system info', () => {
     render(<SystemLoginPage />);
 
+    expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'open_workspace_login' }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'open_system_info' })).not.toBeInTheDocument();
   });
 });

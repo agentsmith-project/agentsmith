@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Logo } from '@/components/app-shell/Logo';
+import { PublicThemeToggle } from '@/components/theme/PublicThemeToggle';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import { createPkceChallenge, randomBase64Url } from '@/lib/auth/pkce';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
@@ -160,7 +161,8 @@ export default function WorkspaceLoginPage() {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="min-h-screen bg-background p-4">
+        <div className="relative min-h-screen bg-background p-4">
+          <PublicThemeToggle className="absolute right-4 top-4 z-10 md:right-6 md:top-6" />
           <main className="mx-auto flex min-h-screen w-full max-w-md items-center justify-center">
             <section className="w-full rounded-[28px] border border-border bg-surface px-6 py-7 shadow-[0_24px_60px_rgba(0,0,0,0.2)]">
               <div className="mb-6 flex justify-center">

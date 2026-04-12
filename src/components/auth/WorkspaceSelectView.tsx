@@ -11,6 +11,7 @@ import { useWorkspaces } from '@/lib/hooks/use-workspaces';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { APIError } from '@/lib/api/errors';
 import { Button } from '@/components/ui/button';
+import { PublicThemeToggle } from '@/components/theme/PublicThemeToggle';
 
 export function WorkspaceSelectView() {
   const router = useRouter();
@@ -45,7 +46,8 @@ export function WorkspaceSelectView() {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="min-h-screen bg-background p-4">
+        <div className="relative min-h-screen bg-background p-4">
+          <PublicThemeToggle className="absolute right-4 top-4 z-10 md:right-6 md:top-6" />
           <div className="mx-auto flex min-h-screen max-w-3xl items-center justify-center">
             <section className="w-full rounded-[28px] border border-border bg-surface px-6 py-7 shadow-[0_24px_60px_rgba(0,0,0,0.2)]">
               <div className="mb-6 space-y-2">

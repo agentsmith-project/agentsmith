@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
+import { PublicThemeToggle } from '@/components/theme/PublicThemeToggle';
 import { useRouter } from '@/lib/i18n/routing';
 import { getApiClient, MemberAPI } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
@@ -47,7 +48,8 @@ function JoinPageContent() {
 
   if (!token) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <div className="relative flex min-h-screen items-center justify-center bg-background p-4">
+        <PublicThemeToggle className="absolute right-4 top-4 z-10 md:right-6 md:top-6" />
         <section className="surface-elevated grid w-full max-w-4xl gap-6 rounded-[32px] border border-border/70 p-6 md:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)] md:p-8">
           <div className="space-y-5">
             <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-high px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
@@ -101,7 +103,8 @@ function JoinPageContent() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+    <div className="relative flex min-h-screen items-center justify-center bg-background p-4">
+      <PublicThemeToggle className="absolute right-4 top-4 z-10 md:right-6 md:top-6" />
       <section className="surface-elevated grid w-full max-w-4xl gap-6 rounded-[32px] border border-border/70 p-6 md:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)] md:p-8">
         <div className="space-y-5">
           <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-high px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-secondary">

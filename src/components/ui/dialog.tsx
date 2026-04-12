@@ -5,7 +5,7 @@ import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const dialogOverlayClassName = cn(
-  'fixed inset-0 z-50 bg-[rgb(var(--text-strong)/0.18)] backdrop-blur-[2px]',
+  'fixed inset-0 z-50 bg-[rgb(var(--overlay-scrim)/0.34)] backdrop-blur-[2px] dark:bg-[rgb(var(--overlay-scrim)/0.52)]',
   'data-[state=open]:animate-in data-[state=closed]:animate-out',
   'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
 );

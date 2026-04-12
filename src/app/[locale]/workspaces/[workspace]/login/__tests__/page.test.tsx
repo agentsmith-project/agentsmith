@@ -23,6 +23,10 @@ vi.mock('@/components/app-shell/Logo', () => ({
   Logo: () => <div data-testid="logo" />,
 }));
 
+vi.mock('@/components/theme/PublicThemeToggle', () => ({
+  PublicThemeToggle: () => <div data-testid="public-theme-toggle" />,
+}));
+
 vi.mock('@/lib/stores/authStore', () => ({
   useAuthStoreHydration: () => true,
   useAuthStore: () => ({
@@ -84,6 +88,7 @@ describe('WorkspaceLoginPage', () => {
     render(<WorkspaceLoginPage />);
 
     expect(await screen.findByTestId('workspace-login__heading')).toHaveTextContent('Alpha Workspace');
+    expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith('/api/public/workspaces/ws_alpha', { cache: 'no-store' });
     expect(screen.queryByText('system_login_link')).not.toBeInTheDocument();
   });

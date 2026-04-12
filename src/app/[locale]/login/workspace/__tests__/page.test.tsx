@@ -22,6 +22,10 @@ vi.mock('@/lib/stores/authStore', () => ({
   useAuthStore: () => ({ clearAuth: mockClearAuth }),
 }));
 
+vi.mock('@/components/theme/PublicThemeToggle', () => ({
+  PublicThemeToggle: () => <div data-testid="public-theme-toggle" />,
+}));
+
 import WorkspaceSelectPage from '../page';
 
 describe('WorkspaceSelectPage', () => {
@@ -44,6 +48,7 @@ describe('WorkspaceSelectPage', () => {
     render(<WorkspaceSelectPage />);
 
     expect(screen.getByTestId('workspace-select__card--ws_1')).toBeInTheDocument();
+    expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('workspace-select__card--ws_1'));
     expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/ws_1/login');
   });

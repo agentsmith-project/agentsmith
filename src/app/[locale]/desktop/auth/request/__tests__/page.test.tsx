@@ -19,6 +19,10 @@ vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }));
 
+vi.mock('@/components/theme/PublicThemeToggle', () => ({
+  PublicThemeToggle: () => <div data-testid="public-theme-toggle" />,
+}));
+
 vi.mock('@/lib/stores/authStore', () => ({
   useAuthStoreHydration: () => true,
   useAuthStore: (selector: (state: typeof mockAuthState) => unknown) => selector(mockAuthState),
@@ -43,6 +47,7 @@ describe('DesktopAuthRequestPage', () => {
     render(<DesktopAuthRequestPage />);
 
     expect(await screen.findByText('desktop_auth_request_missing_title')).toBeInTheDocument();
+    expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
     expect(screen.getByText('desktop_auth_request_missing_description')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'desktop_auth_request_back_to_workspace_login' })).toHaveAttribute('href', '/en-US/login/workspace');
     expect(screen.queryByRole('button', { name: 'desktop_auth_request_retry' })).not.toBeInTheDocument();

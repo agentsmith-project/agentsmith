@@ -29,6 +29,26 @@ interface TopbarProps {
   className?: string;
 }
 
+function stripLocalePrefix(pathname: string): string {
+  return pathname.replace(/^\/[a-z]{2}(?:-[A-Z]{2})?(?=\/|$)/, '');
+}
+
+function resolveTopbarHomeHref(params: {
+  pathname: string;
+  workspaceId?: string;
+}): string {
+  if (params.workspaceId) {
+    return `/workspaces/${params.workspaceId}`;
+  }
+
+  const normalizedPathname = stripLocalePrefix(params.pathname);
+  if (normalizedPathname.startsWith('/system')) {
+    return '/system/workspaces';
+  }
+
+  return '/workspaces';
+}
+
 export function Topbar({ className = '' }: TopbarProps) {
   const user = useAuthStore(selectCurrentUser);
   const { clearAuth } = useAuthStore();
@@ -93,11 +113,7 @@ export function Topbar({ className = '' }: TopbarProps) {
   };
 
   const handleLogoClick = () => {
-    if (workspaceId) {
-      router.push(`/workspaces/${workspaceId}`);
-      return;
-    }
-    router.push('/system/workspaces');
+    router.push(resolveTopbarHomeHref({ pathname, workspaceId }));
   };
 
   const handleProfile = () => {

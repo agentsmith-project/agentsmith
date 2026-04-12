@@ -48,6 +48,10 @@ vi.mock('@/components/ui/toast', () => ({
   toast: { error: vi.fn() },
 }));
 
+vi.mock('@/components/theme/PublicThemeToggle', () => ({
+  PublicThemeToggle: () => <div data-testid="public-theme-toggle" />,
+}));
+
 import JoinPage from '../page';
 
 describe('JoinPage', () => {
@@ -64,6 +68,7 @@ describe('JoinPage', () => {
     });
 
     expect(screen.getByTestId('join__decline-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
     expect(screen.getAllByText('title').length).toBeGreaterThan(0);
     expect(screen.getAllByText('description').length).toBeGreaterThan(0);
   });

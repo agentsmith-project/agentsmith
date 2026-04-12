@@ -8,6 +8,7 @@ import { AlertTriangle, CheckCircle2, LoaderCircle, LogIn, MonitorSmartphone } f
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
+import { PublicThemeToggle } from '@/components/theme/PublicThemeToggle';
 import { buildPublicApiUrl } from '@/lib/public-runtime-config';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 
@@ -90,7 +91,8 @@ export default function DesktopAuthRequestPage() {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="min-h-screen bg-background px-4 py-6 md:px-6 md:py-8">
+        <div className="relative min-h-screen bg-background px-4 py-6 md:px-6 md:py-8">
+          <PublicThemeToggle className="absolute right-4 top-4 z-10 md:right-6 md:top-6" />
           <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-4xl items-center justify-center">
             <section className="surface-elevated grid w-full gap-6 rounded-[32px] border border-border/70 p-6 md:grid-cols-[minmax(0,1.1fr)_minmax(260px,0.9fr)] md:p-8">
               <div className="space-y-5">

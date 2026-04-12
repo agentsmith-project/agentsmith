@@ -30,10 +30,10 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
       role="button"
       tabIndex={0}
       className={[
-        'rounded-md border p-4 transition-colors cursor-pointer',
+        'group rounded-md border px-4 py-4 transition-colors cursor-pointer',
         selected
           ? 'border-border bg-surface'
-          : 'border-subtle bg-surface-low/80 hover:border-border hover:bg-surface',
+          : 'border-subtle bg-background/70 hover:border-border hover:bg-surface/70',
       ].join(' ')}
       onClick={() => onSelect(workspace)}
       onKeyDown={(event) => {
@@ -50,31 +50,29 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
         </div>
         <div className="min-w-0 flex-1 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
+            <div className="min-w-0 space-y-1">
               <h2 className="truncate text-base font-semibold text-foreground">{workspace.name}</h2>
-              <p className="mt-1 truncate text-xs text-tertiary">{workspace.id}</p>
+              <p className="truncate text-xs text-tertiary">{workspace.id}</p>
             </div>
             <StatusBadge label={statusLabel} tone={workspace.provisioning_status} />
           </div>
 
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div>
+            <div className="space-y-1">
               <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_admin_card_label')}</p>
-              <p className="mt-1 truncate text-sm font-medium text-foreground">{workspace.workspace_admin}</p>
+              <p className="truncate text-sm font-medium text-foreground">{workspace.workspace_admin}</p>
             </div>
-            <div>
+            <div className="space-y-1">
               <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('initialized_at_label')}</p>
-              <p className="mt-1 truncate text-sm font-medium text-foreground">{summary.timestamp}</p>
+              <p className="truncate text-sm font-medium text-foreground">{summary.timestamp}</p>
             </div>
           </div>
 
-          <div className="rounded-md border border-subtle bg-background/80 px-3 py-3">
-            <div className="flex items-start gap-2">
-              <summary.icon className={`mt-0.5 h-4 w-4 shrink-0 ${summary.iconClassName}`} />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-foreground">{summary.title}</p>
-                <p className="line-clamp-2 text-xs leading-5 text-tertiary">{summary.body}</p>
-              </div>
+          <div className="flex items-start gap-2 border-t border-subtle pt-3">
+            <summary.icon className={`mt-0.5 h-4 w-4 shrink-0 ${summary.iconClassName}`} />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-foreground">{summary.title}</p>
+              <p className="line-clamp-2 text-xs leading-5 text-tertiary">{summary.body}</p>
             </div>
           </div>
 

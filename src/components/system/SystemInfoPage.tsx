@@ -82,7 +82,8 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
               </div>
             </header>
 
-            <section className="grid gap-8 xl:grid-cols-[minmax(0,1.12fr)_minmax(320px,0.88fr)]">
+            <div className="rounded-md border border-subtle bg-background/88 p-5" data-testid="system-info__shell">
+              <section className="grid gap-8 xl:grid-cols-[minmax(0,1.12fr)_minmax(320px,0.88fr)]">
               <div className="space-y-7">
                 <SectionBlock eyebrow={t('system_info_health_label')} title={t('system_info_health_title')} dataTestId="system-info__health">
                   <div className="grid gap-x-8 gap-y-4 md:grid-cols-2">
@@ -215,7 +216,8 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                   </div>
                 </SectionBlock>
               </div>
-            </section>
+              </section>
+            </div>
           </div>
         </div>
       </PageLayout>

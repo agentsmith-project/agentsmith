@@ -64,8 +64,9 @@ describe('ThirdPartyAccountsPage', () => {
     expect(screen.getByText('personal_scope_note')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'create_personal_connection' })).toBeInTheDocument();
     expect(screen.queryByTestId('third-party-accounts__feishu-connect')).not.toBeInTheDocument();
-    expect(screen.getByTestId('third-party-accounts__personal-scope')).toBeInTheDocument();
-    expect(screen.getByTestId('third-party-accounts__workspace-scope')).toBeInTheDocument();
+    expect(screen.getByTestId('third-party-accounts__summary-strip')).toBeInTheDocument();
+    expect(screen.queryByTestId('third-party-accounts__personal-scope')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('third-party-accounts__workspace-scope')).not.toBeInTheDocument();
   });
 
   it('creates a Jira secret bundle with provider-specific fields', async () => {

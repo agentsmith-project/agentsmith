@@ -69,8 +69,8 @@ describe('JoinPage', () => {
 
     expect(screen.getByTestId('join__decline-btn')).toBeInTheDocument();
     expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
-    expect(screen.getAllByText('title').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('description').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('title')).toHaveLength(1);
+    expect(screen.getAllByText('description')).toHaveLength(1);
   });
 
   it('renders invalid invitation state when token is missing', async () => {
@@ -79,7 +79,7 @@ describe('JoinPage', () => {
     render(<JoinPage />);
 
     await waitFor(() => {
-      expect(screen.getAllByText('invalid_title').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('invalid_title')).toHaveLength(1);
     });
 
     expect(screen.getByRole('button', { name: 'go_home' })).toBeInTheDocument();

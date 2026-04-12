@@ -92,8 +92,8 @@ export function SystemWorkspaceCreatePage() {
     [draft, t],
   );
   const workspaceSlug = slugifyWorkspaceId(draft.name || 'workspace');
-  const workspaceLoginPath = `/{locale}/workspaces/${workspaceSlug}/login`;
-  const workspaceCallbackPath = `/workspaces/${workspaceSlug}/login/callback`;
+  const workspaceLoginPath = `/${locale}/workspaces/${workspaceSlug}/login`;
+  const workspaceCallbackPath = `/${locale}/workspaces/${workspaceSlug}/login/callback`;
 
   const updateDraft = (patch: Partial<SystemWorkspaceDraft>) => {
     const idpChanged = 'loginIdpUrl' in patch
@@ -246,7 +246,7 @@ export function SystemWorkspaceCreatePage() {
       <PageLayout>
         <div className="min-h-screen bg-background p-4 md:p-6">
           <div className="mx-auto max-w-5xl space-y-5">
-            <header className="rounded-lg border border-subtle bg-surface/95 p-6 shadow-float">
+            <header className="rounded-md border border-subtle bg-background/88 p-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-2">
                   <Link href={`/${locale}/system/workspaces`} className="inline-flex items-center gap-2 text-sm text-tertiary hover:text-secondary">
@@ -260,28 +260,42 @@ export function SystemWorkspaceCreatePage() {
                   <p className="text-sm leading-6 text-secondary">{t('workspace_create_wizard_subtitle')}</p>
                 </div>
               </div>
-              <div className="mt-5 grid gap-3 md:grid-cols-4">
-                {(['basics', 'identity', 'administrator', 'review'] as const).map((item, index) => (
-                  <div
-                    key={item}
-                    className={[
-                      'rounded-md border px-4 py-3',
-                      step === item
-                        ? 'border-accent/45 bg-accent/10'
-                        : index < stepIndex
-                          ? 'border-success/30 bg-success/10'
-                          : 'border-subtle bg-background',
-                    ].join(' ')}
-                    data-testid={`system-workspace-create__step--${item}`}
-                  >
-                    <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_create_step_label', { step: String(index + 1) })}</p>
-                    <p className="mt-1 text-sm font-medium text-foreground">{t(`workspace_create_step_${item}`)}</p>
-                  </div>
-                ))}
+              <div className="mt-5" data-testid="system-workspace-create__step-tracker">
+                <div className="grid gap-3 md:grid-cols-4">
+                  {(['basics', 'identity', 'administrator', 'review'] as const).map((item, index) => {
+                    const isActive = step === item;
+                    const isComplete = index < stepIndex;
+
+                    return (
+                      <div
+                        key={item}
+                        className="flex items-start gap-3 border-t border-subtle pt-3"
+                        data-testid={`system-workspace-create__step--${item}`}
+                      >
+                        <span
+                          className={[
+                            'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium',
+                            isActive
+                              ? 'border-border bg-surface text-foreground'
+                              : isComplete
+                                ? 'border-success/30 bg-success/10 text-success'
+                                : 'border-subtle bg-background text-tertiary',
+                          ].join(' ')}
+                        >
+                          {index + 1}
+                        </span>
+                        <div className="space-y-1">
+                          <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_create_step_label', { step: String(index + 1) })}</p>
+                          <p className="text-sm font-medium text-foreground">{t(`workspace_create_step_${item}`)}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </header>
 
-            <section className="rounded-lg border border-border bg-surface/95 p-5 shadow-card">
+            <section className="rounded-md border border-subtle bg-background/88 p-5" data-testid="system-workspace-create__shell">
               {step === 'basics' ? (
                 <div className="space-y-5">
                   <div className="space-y-1">
@@ -300,7 +314,7 @@ export function SystemWorkspaceCreatePage() {
                       data-testid="system-workspaces__draft-name"
                     />
                   </label>
-                  <div className="rounded-md border border-subtle bg-background/70 px-4 py-4 text-sm text-secondary">
+                  <div className="border-t border-subtle pt-3 text-sm text-secondary">
                     {t('workspace_create_basics_hint')}
                   </div>
                 </div>
@@ -342,7 +356,7 @@ export function SystemWorkspaceCreatePage() {
                           data-testid="system-workspaces__draft-idp-client-id"
                         />
                     </div>
-                    <div className="rounded-md border border-subtle bg-background/70 p-4">
+                    <div className="border-t border-subtle pt-4">
                       <p className="text-sm font-medium text-foreground">{t('directory_client_section_title')}</p>
                       <p className="mt-1 text-sm text-tertiary">{t('directory_client_section_body')}</p>
                       <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -364,16 +378,16 @@ export function SystemWorkspaceCreatePage() {
                         />
                       </div>
                     </div>
-                    <div className="rounded-md border border-subtle bg-background/70 p-4 text-sm">
+                    <div className="border-t border-subtle pt-4 text-sm">
                       <p className="font-medium text-foreground">{t('workspace_login_preview_title')}</p>
                       <div className="mt-3 space-y-2">
                         <div>
                           <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_login_url_label')}</p>
-                          <p className="mt-1 break-all text-secondary">{workspaceLoginPath}</p>
+                          <p className="mt-1 break-all text-secondary" data-testid="system-workspace-create__login-preview">{workspaceLoginPath}</p>
                         </div>
                         <div>
                           <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_callback_url_label')}</p>
-                          <p className="mt-1 break-all text-secondary">{workspaceCallbackPath}</p>
+                          <p className="mt-1 break-all text-secondary" data-testid="system-workspace-create__callback-preview">{workspaceCallbackPath}</p>
                         </div>
                       </div>
                     </div>
@@ -421,8 +435,8 @@ export function SystemWorkspaceCreatePage() {
                       className={[
                         'rounded-md border p-4 text-left transition',
                         draft.adminMode === 'directory_user'
-                          ? 'border-accent/45 bg-accent/10'
-                          : 'border-subtle bg-background hover:border-accent/20',
+                          ? 'border-border bg-surface'
+                          : 'border-subtle bg-background hover:border-border',
                         !directorySearchEnabled ? 'cursor-not-allowed opacity-60' : '',
                       ].join(' ')}
                       data-testid="system-workspaces__admin-mode--directory"
@@ -436,8 +450,8 @@ export function SystemWorkspaceCreatePage() {
                       className={[
                         'rounded-md border p-4 text-left transition',
                         draft.adminMode === 'email_pending'
-                          ? 'border-accent/45 bg-accent/10'
-                          : 'border-subtle bg-background hover:border-accent/20',
+                          ? 'border-border bg-surface'
+                          : 'border-subtle bg-background hover:border-border',
                       ].join(' ')}
                       data-testid="system-workspaces__admin-mode--email"
                     >
@@ -447,7 +461,7 @@ export function SystemWorkspaceCreatePage() {
                   </div>
 
                   {draft.adminMode === 'directory_user' ? (
-                    <div className="space-y-3 rounded-md border border-subtle bg-background p-4">
+                    <div className="space-y-3 border-t border-subtle pt-4">
                       <label className="block space-y-2">
                         <span className="text-sm font-medium text-foreground">{t('workspace_admin')}</span>
                         <input
@@ -465,7 +479,7 @@ export function SystemWorkspaceCreatePage() {
                         />
                       </label>
                       {draft.admin ? (
-                        <div className="rounded-md border border-success/30 bg-success/10 px-3 py-3 text-sm text-foreground" data-testid="system-workspaces__selected-admin">
+                        <div className="border-l-2 border-success/30 pl-3 text-sm text-foreground" data-testid="system-workspaces__selected-admin">
                           <p className="font-medium">{draft.admin.name || draft.admin.email}</p>
                           <p className="text-xs text-tertiary">{draft.admin.email}</p>
                         </div>
@@ -501,7 +515,7 @@ export function SystemWorkspaceCreatePage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-3 rounded-md border border-subtle bg-background p-4">
+                    <div className="space-y-3 border-t border-subtle pt-4">
                       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                         <Mail className="h-4 w-4" />
                         {t('workspace_admin_email_pending_title')}
@@ -519,7 +533,7 @@ export function SystemWorkspaceCreatePage() {
                         />
                       </label>
                       {idpVerificationState === 'verified_without_directory' ? (
-                        <div className="rounded-md border border-warning/25 bg-warning/10 px-3 py-3 text-sm text-secondary">
+                        <div className="border-l-2 border-warning/25 pl-3 text-sm text-secondary">
                           {t('idp_directory_recommended')}
                         </div>
                       ) : null}
@@ -537,9 +551,9 @@ export function SystemWorkspaceCreatePage() {
                     </div>
                     <p className="text-sm text-tertiary">{t('workspace_create_review_body')}</p>
                   </div>
-                  <div className="space-y-3 rounded-md border border-subtle bg-background p-4">
+                  <div className="space-y-3 border-t border-subtle pt-4">
                     {reviewRows.map((row) => (
-                      <div key={row.label} className="flex flex-wrap items-start justify-between gap-3 border-b border-subtle pb-3 last:border-b-0 last:pb-0">
+                      <div key={row.label} className="flex flex-wrap items-start justify-between gap-3 border-b border-subtle py-3 first:pt-0 last:border-b-0 last:pb-0">
                         <span className="text-sm text-tertiary">{row.label}</span>
                         <span className="max-w-[70%] text-right text-sm font-medium text-foreground">{row.value}</span>
                       </div>

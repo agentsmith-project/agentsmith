@@ -29,6 +29,7 @@ describe('DesktopAuthCompletePage', () => {
     expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
     expect(screen.getByTestId('desktop-auth-complete__title')).toHaveTextContent('desktop_auth_complete_title');
     expect(screen.getByRole('link', { name: 'desktop_auth_complete_open_workspace_entry' })).toHaveAttribute('href', '/en-US/login/workspace');
+    expect(screen.getAllByText('desktop_auth_complete_close_hint')).toHaveLength(1);
   });
 
   it('shows the desktop request id when one is present', () => {

@@ -300,23 +300,23 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       >
         <div className="w-full space-y-6">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-md border border-subtle/70 bg-transparent px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {visibilityLabel}
             </div>
-            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-md border border-subtle/70 bg-transparent px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {settingsT('join_policy')}: {joinPolicyLabel}
             </div>
-            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-md border border-subtle/70 bg-transparent px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {settingsT('admin_group_title')}: {projectAdminCount}
             </div>
-            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-md border border-subtle/70 bg-transparent px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {settingsT('workspace_project_owner_label')}: {ownerDisplayName}
             </div>
           </div>
 
-          <div className="rounded-md border border-subtle bg-surface/95 p-5 shadow-card md:p-6 space-y-6" data-testid="settings__ownership-section">
-            <div>
-              <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('ownership_lifecycle_title')}</h2>
+          <div className="space-y-6 border-t border-subtle/60 pt-5" data-testid="settings__ownership-section">
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold text-foreground">{settingsT('ownership_lifecycle_title')}</h2>
               <p className="text-sm text-tertiary">
                 {canManageProjectLifecycle ? settingsT('ownership_lifecycle_help') : settingsT('ownership_lifecycle_read_only_help')}
               </p>
@@ -382,33 +382,33 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             </div>
           </div>
 
-      <DeleteProjectDialog
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-        project={currentProject ? {
-          id: currentProject.id,
-          workspace_id: currentProject.workspace_id,
-          name: currentProject.name,
-          description: currentProject.description,
-          visibility: currentProject.visibility,
-          owner_id: currentProject.owner_id,
-          status: currentProject.status,
-          admin_member_ids: currentProject.admin_member_ids,
-          groups: currentProject.groups,
-          permissions: currentProject.permissions,
-          membership_status: currentProject.membership_status,
-          created_at: currentProject.created_at,
-          updated_at: currentProject.updated_at,
-        } : null}
-        workspaceId={resolvedParams?.workspace || ''}
-        onDeleted={() => {
-          queryClient.invalidateQueries({
-            queryKey: ['workspaces', resolvedParams?.workspace, 'projects'],
-          });
-          router.push(`/${resolvedParams?.locale || 'en-US'}/workspaces/${resolvedParams?.workspace}/projects`);
-        }}
-        deleteProject={(wsId, projectId) => projectAPI.delete(wsId, projectId)}
-      />
+          <DeleteProjectDialog
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            project={currentProject ? {
+              id: currentProject.id,
+              workspace_id: currentProject.workspace_id,
+              name: currentProject.name,
+              description: currentProject.description,
+              visibility: currentProject.visibility,
+              owner_id: currentProject.owner_id,
+              status: currentProject.status,
+              admin_member_ids: currentProject.admin_member_ids,
+              groups: currentProject.groups,
+              permissions: currentProject.permissions,
+              membership_status: currentProject.membership_status,
+              created_at: currentProject.created_at,
+              updated_at: currentProject.updated_at,
+            } : null}
+            workspaceId={resolvedParams?.workspace || ''}
+            onDeleted={() => {
+              queryClient.invalidateQueries({
+                queryKey: ['workspaces', resolvedParams?.workspace, 'projects'],
+              });
+              router.push(`/${resolvedParams?.locale || 'en-US'}/workspaces/${resolvedParams?.workspace}/projects`);
+            }}
+            deleteProject={(wsId, projectId) => projectAPI.delete(wsId, projectId)}
+          />
         </div>
       </PageLayout>
     </PageState>

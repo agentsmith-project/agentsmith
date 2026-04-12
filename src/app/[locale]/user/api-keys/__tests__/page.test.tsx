@@ -159,6 +159,17 @@ describe('UserAPIKeysPage', () => {
       expect(screen.getByText(/Create, rotate, and revoke personal API keys/)).toBeInTheDocument();
     });
 
+    it('uses a single summary strip instead of stacking three summary cards', async () => {
+      render(<UserAPIKeysPage />, { wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('api-keys__summary-strip')).toBeInTheDocument();
+      });
+
+      expect(screen.getByTestId('api-keys__list-section')).toBeInTheDocument();
+      expect(screen.queryByTestId('api-keys__summary-card')).not.toBeInTheDocument();
+    });
+
     it('renders create button', async () => {
       render(<UserAPIKeysPage />, { wrapper });
 

@@ -81,9 +81,12 @@ describe('WorkspaceEditorPanel', () => {
       />,
     );
 
+    expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('shadow-card');
     expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground/94');
     expect(screen.getByTestId('system-workspaces__enable-edit')).not.toHaveClass('bg-transparent');
     expect(screen.getByTestId('system-workspaces__save')).toHaveClass('bg-foreground/94');
     expect(screen.getByTestId('system-workspaces__save')).not.toHaveClass('bg-transparent');
+    expect(screen.getByTestId('system-workspaces__login-preview')).toHaveTextContent('/en-US/workspaces/alpha_workspace/login');
+    expect(screen.getByTestId('system-workspaces__callback-preview')).toHaveTextContent('/en-US/workspaces/alpha_workspace/login/callback');
   });
 });

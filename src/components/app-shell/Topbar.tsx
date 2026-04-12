@@ -159,7 +159,7 @@ export function Topbar({ className = '' }: TopbarProps) {
   return (
     <header
       data-testid='topbar'
-      className={`sticky top-0 z-30 flex h-11 items-center justify-between gap-4 border-b border-border/12 bg-background/94 px-4 backdrop-blur-[2px] md:px-5 ${className}`}
+      className={`sticky top-0 z-30 flex h-11 items-center justify-between gap-4 border-b border-border/12 bg-background/94 px-4 md:px-5 ${className}`}
     >
       <div className='flex min-w-0 items-center gap-3'>
         <button

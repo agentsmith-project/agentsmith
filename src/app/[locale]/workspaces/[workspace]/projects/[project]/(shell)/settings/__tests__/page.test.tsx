@@ -170,6 +170,7 @@ describe('SettingsPage route', () => {
     });
     expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__ownership-section').className).not.toMatch(/rounded-|shadow-/);
     expect(screen.getByTestId('settings__project-admins-open-members')).toHaveAttribute(
       'href',
       '/en/workspaces/ws_1/projects/proj_1/members?member_tab=requests',

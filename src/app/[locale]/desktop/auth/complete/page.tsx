@@ -59,18 +59,6 @@ export default function DesktopAuthCompletePage() {
                 title={<span data-testid="desktop-auth-complete__title">{t('desktop_auth_complete_title')}</span>}
                 description={t('desktop_auth_complete_description')}
               />
-              <PublicAuthMutedCard>
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-md border border-success/18 bg-success/8 text-success">
-                    <CheckCircle2 className="h-4.5 w-4.5" />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="type-caption text-tertiary">{t('desktop_auth_complete_next_steps_title')}</p>
-                    <p className="type-body-ui text-secondary">{t('desktop_auth_complete_close_hint')}</p>
-                    <p className="type-body-ui text-secondary">{t('desktop_auth_complete_retry_hint')}</p>
-                  </div>
-                </div>
-              </PublicAuthMutedCard>
               <div className="flex flex-wrap gap-3">
                 <Button asChild variant="primary">
                   <Link href={workspaceEntryHref} data-testid="desktop-auth-complete__workspace-entry-link">

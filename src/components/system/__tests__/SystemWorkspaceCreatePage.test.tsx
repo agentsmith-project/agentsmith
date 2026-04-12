@@ -51,12 +51,18 @@ describe('SystemWorkspaceCreatePage', () => {
     render(<SystemWorkspaceCreatePage />);
 
     expect(screen.getByTestId('system-workspace-create__heading')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspace-create__shell')).not.toHaveClass('shadow-card');
+    expect(screen.getByTestId('system-workspace-create__step-tracker')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspace-create__step--basics')).not.toHaveClass('bg-accent/10');
     expect(screen.getByTestId('system-workspace-create__next')).toHaveClass('bg-foreground/94');
     expect(screen.getByTestId('system-workspace-create__next')).not.toHaveClass('bg-transparent');
     fireEvent.change(screen.getByTestId('system-workspaces__draft-name'), {
       target: { value: 'Ops Workspace' },
     });
     fireEvent.click(screen.getByTestId('system-workspace-create__next'));
+    expect(screen.getByTestId('system-workspaces__draft-idp-url')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspace-create__login-preview')).toHaveTextContent('/en-US/workspaces/ops_workspace/login');
+    expect(screen.getByTestId('system-workspace-create__callback-preview')).toHaveTextContent('/en-US/workspaces/ops_workspace/login/callback');
 
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-url'), {
       target: { value: 'https://login.example.com' },

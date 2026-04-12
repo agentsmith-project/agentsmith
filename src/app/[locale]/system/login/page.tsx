@@ -88,19 +88,6 @@ export default function SystemLoginPage() {
                 description={t('login_subtitle')}
               />
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <PublicAuthMutedCard>
-                  <p className="type-caption text-tertiary">{t('login_scope_label')}</p>
-                  <p className="mt-2 text-base font-medium text-foreground">{t('login_scope_value')}</p>
-                  <p className="mt-1 type-body-ui text-secondary">{t('login_scope_hint')}</p>
-                </PublicAuthMutedCard>
-                <PublicAuthMutedCard>
-                  <p className="type-caption text-tertiary">{t('login_access_label')}</p>
-                  <p className="mt-2 text-base font-medium text-foreground">{t('login_access_value')}</p>
-                  <p className="mt-1 type-body-ui text-secondary">{t('login_access_hint')}</p>
-                </PublicAuthMutedCard>
-              </div>
-
               <PublicAuthSection>
                 <div className="space-y-4">
                   <label className="block space-y-2">
@@ -139,11 +126,6 @@ export default function SystemLoginPage() {
                     >
                       {isSubmitting ? t('logging_in') : t('login_submit')}
                     </Button>
-                    <Link href={`/${locale}/login/workspace`} className="sm:flex-1">
-                      <Button type="button" variant="secondary" className="w-full">
-                        {t('open_workspace_login')}
-                      </Button>
-                    </Link>
                   </div>
                 </div>
               </PublicAuthSection>

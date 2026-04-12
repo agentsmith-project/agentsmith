@@ -89,7 +89,7 @@ export default function UserAPIKeysPage() {
     <PageState state="success">
       <PageLayout>
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-4 md:px-5 md:py-5">
-          <section className="rounded-lg border border-border bg-surface px-5 py-5 shadow-card md:px-6">
+          <section className="rounded-lg border border-border bg-surface px-5 py-5 shadow-card md:px-6" data-testid="api-keys__summary-strip">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-2xl space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
@@ -107,35 +107,29 @@ export default function UserAPIKeysPage() {
                 {t('create')}
               </Button>
             </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-3">
-              <div className="rounded-md border border-border/70 bg-surface-high p-4">
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-                  <Key className="h-3.5 w-3.5 text-accent" />
-                  {t('summary_active_label')}
-                </div>
-                <div className="mt-3 text-2xl font-semibold text-foreground">{activeKeys.length}</div>
-                <p className="mt-1 text-sm text-tertiary">{t('summary_active_hint')}</p>
-              </div>
-              <div className="rounded-md border border-border/70 bg-surface-high p-4">
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-                  <Clock3 className="h-3.5 w-3.5 text-accent" />
-                  {t('summary_recent_label')}
-                </div>
-                <div className="mt-3 text-2xl font-semibold text-foreground">{recentlyUsedKeys.length}</div>
-                <p className="mt-1 text-sm text-tertiary">{t('summary_recent_hint')}</p>
-              </div>
-              <div className="rounded-md border border-border/70 bg-surface-high p-4">
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-                  <ShieldCheck className="h-3.5 w-3.5 text-accent" />
-                  {t('summary_expiring_label')}
-                </div>
-                <div className="mt-3 text-2xl font-semibold text-foreground">{expiringKeys.length}</div>
-                <p className="mt-1 text-sm text-tertiary">{t('summary_expiring_hint')}</p>
-              </div>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <CompactSummaryChip
+                icon={<Key className="h-3.5 w-3.5 text-accent" />}
+                label={t('summary_active_label')}
+                value={String(activeKeys.length)}
+                hint={t('summary_active_hint')}
+              />
+              <CompactSummaryChip
+                icon={<Clock3 className="h-3.5 w-3.5 text-accent" />}
+                label={t('summary_recent_label')}
+                value={String(recentlyUsedKeys.length)}
+                hint={t('summary_recent_hint')}
+              />
+              <CompactSummaryChip
+                icon={<ShieldCheck className="h-3.5 w-3.5 text-accent" />}
+                label={t('summary_expiring_label')}
+                value={String(expiringKeys.length)}
+                hint={t('summary_expiring_hint')}
+              />
             </div>
           </section>
 
-          <section className="rounded-lg border border-border bg-surface shadow-card">
+          <section className="rounded-lg border border-border bg-surface shadow-card" data-testid="api-keys__list-section">
             <div className="border-b border-border px-5 py-4 md:px-6">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -235,5 +229,28 @@ export default function UserAPIKeysPage() {
         </div>
       </PageLayout>
     </PageState>
+  );
+}
+
+function CompactSummaryChip({
+  icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="min-w-[11rem] flex-1 rounded-md border border-border/55 bg-background/68 px-3.5 py-3">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-foreground">{value}</div>
+      <div className="mt-1 text-sm text-tertiary">{hint}</div>
+    </div>
   );
 }

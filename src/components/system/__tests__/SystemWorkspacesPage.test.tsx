@@ -70,7 +70,9 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('alpha-admin@example.com');
     expect(screen.queryByText('workspace_idp_card_label')).not.toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__list')).not.toHaveClass('shadow-card');
     expect(screen.getByTestId('system-workspaces__editor')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('shadow-card');
     expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground/94');
     expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();

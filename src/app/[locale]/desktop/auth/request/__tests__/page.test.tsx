@@ -61,6 +61,18 @@ describe('DesktopAuthRequestPage', () => {
     expect(screen.getByTestId('desktop-auth-request__workspace-login-link')).toHaveAttribute('href', '/en-US/login/workspace');
   });
 
+  it('keeps the progress hint singular instead of repeating it in the main column', async () => {
+    mockUseAuthStore.mockReturnValue({ token: 'token_123', isAuthenticated: true });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DesktopAuthRequestPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('desktop_auth_request_progress_hint')).toHaveLength(1);
+    });
+  });
+
   it('completes the desktop handoff and redirects to the completion page', async () => {
     mockUseAuthStore.mockReturnValue({ token: 'token_123', isAuthenticated: true });
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });

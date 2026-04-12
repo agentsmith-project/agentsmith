@@ -272,6 +272,8 @@ describe('WorkspaceSettingsPage', () => {
       '/en/workspaces/ws_1/settings/feishu',
     );
     expect(screen.getByTestId('ws-settings__integration-feishu')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__workspace').className).not.toMatch(/rounded-|shadow-/);
+    expect(screen.getByTestId('ws-settings__integrations').className).not.toMatch(/rounded-|shadow-/);
     expect(screen.queryByText('workspace_can_create_projects')).not.toBeInTheDocument();
   });
 
@@ -285,6 +287,7 @@ describe('WorkspaceSettingsPage', () => {
     const projectCard = screen.getByTestId('ws-settings__project--proj_1');
     expect(within(projectCard).getByText('workspace_open_project')).toBeInTheDocument();
     expect(within(projectCard).getByText('Proj Admin, Dev One')).toBeInTheDocument();
+    expect(projectCard.className).not.toMatch(/rounded-|shadow-/);
     expect(screen.getByTestId('ws-settings__project-open-overview--proj_1')).toHaveAttribute(
       'href',
       '/en/workspaces/ws_1/projects/proj_1/overview',
@@ -299,6 +302,7 @@ describe('WorkspaceSettingsPage', () => {
     );
     expect(screen.getByTestId('ws-settings__project--proj_3')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__create-project')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__projects').className).not.toMatch(/rounded-|shadow-/);
     expect(screen.getByTestId('ws-settings__project-creators')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-owner-select--proj_1')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-owner-save--proj_1')).toBeDisabled();
@@ -392,6 +396,7 @@ describe('WorkspaceSettingsPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('ws-settings__project-creators-selected')).toHaveTextContent('Dev One');
     });
+    expect(screen.getByTestId('ws-settings__project-creators').className).not.toMatch(/rounded-|shadow-/);
 
     await user.type(screen.getByTestId('ws-settings__project-creators-input'), 'admin');
     await waitFor(() => {

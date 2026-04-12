@@ -103,6 +103,15 @@ describe('ChatHeader', () => {
       expect(screen.getByText('Test Chat Session')).toBeInTheDocument();
     });
 
+    it('keeps the header shell quiet', () => {
+      render(<ChatHeader {...defaultProps} />);
+
+      const shell = screen.getByTestId('chat__header');
+
+      expect(shell.className).toContain('border-b');
+      expect(shell.className).not.toMatch(/rounded-|shadow-/);
+    });
+
     it('should render "Chat" when session is null', () => {
       render(<ChatHeader {...defaultProps} session={null} />);
 

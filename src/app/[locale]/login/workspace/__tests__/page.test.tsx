@@ -51,6 +51,7 @@ describe('WorkspaceSelectPage', () => {
     expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('workspace-select__card--ws_1'));
     expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/ws_1/login');
+    expect(screen.queryByText('workspace_select_list_title')).not.toBeInTheDocument();
   });
 
   it('keeps the system 管理侧入口 as a low-emphasis footer link', () => {

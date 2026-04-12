@@ -72,6 +72,8 @@ describe('UserMenu', () => {
   it('switches the document theme and persists the choice', async () => {
     renderMenu();
 
+    expect(screen.getByTestId('topbar__user-menu').className).not.toMatch(/shadow-/);
+
     openUserMenu();
     fireEvent.click(await screen.findByTestId('user-menu__theme-dark'));
 

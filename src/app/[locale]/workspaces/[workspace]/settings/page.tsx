@@ -291,8 +291,8 @@ export default function WorkspaceSettingsPage() {
         <div className="min-h-screen bg-background flex flex-col">
           <Topbar />
 
-          <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-4 md:px-5 md:py-5 space-y-5">
-            <section className="rounded-lg border border-border bg-surface/95 px-5 py-5 shadow-float md:px-6">
+          <main className="flex-1 mx-auto w-full max-w-5xl space-y-5 px-4 py-4 md:px-5 md:py-5">
+            <section className="border-b border-subtle/60 pb-5">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                 <div className="max-w-3xl space-y-2">
                   <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
@@ -320,25 +320,22 @@ export default function WorkspaceSettingsPage() {
               </div>
             </section>
 
-            <section
-              className="rounded-md border border-border bg-surface/95 p-5 shadow-card"
-              data-testid="ws-settings__workspace"
-            >
+            <section className="space-y-4 border-t border-subtle/60 pt-5" data-testid="ws-settings__workspace">
               <SectionHeading
                 eyebrow={t('workspace_general')}
                 title={workspaceDisplayName}
               />
 
               <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <div className="rounded-md border border-subtle bg-bg-base/20 p-3">
+                <div className="border border-subtle/60 bg-transparent p-3">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_id_label')}</div>
                   <div className="mt-1 text-sm font-medium text-foreground" data-testid="ws-settings__name">{workspaceDisplayId}</div>
                 </div>
-                <div className="rounded-md border border-subtle bg-bg-base/20 p-3">
+                <div className="border border-subtle/60 bg-transparent p-3">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_projects_count')}</div>
                   <div className="mt-1 text-lg font-semibold text-foreground">{projects.length}</div>
                 </div>
-                <div className="rounded-md border border-subtle bg-bg-base/20 p-3">
+                <div className="border border-subtle/60 bg-transparent p-3">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_active_projects_count')}</div>
                   <div className="mt-1 text-lg font-semibold text-foreground">{activeProjects.length}</div>
                 </div>
@@ -362,10 +359,7 @@ export default function WorkspaceSettingsPage() {
               </div>
             </section>
 
-            <section
-              className="rounded-md border border-border bg-surface/95 p-5 shadow-card"
-              data-testid="ws-settings__integrations"
-            >
+            <section className="space-y-4 border-t border-subtle/60 pt-5" data-testid="ws-settings__integrations">
               <div className="space-y-4">
                 <SectionHeading
                   title={t('workspace_integrations_title')}
@@ -373,7 +367,7 @@ export default function WorkspaceSettingsPage() {
                 />
 
                 <div
-                  className="rounded-md border border-subtle bg-bg-base/20 p-4 shadow-ambient"
+                  className="border border-subtle/60 bg-surface-low/40 p-4"
                   data-testid="ws-settings__integration-feishu"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
@@ -410,10 +404,7 @@ export default function WorkspaceSettingsPage() {
               </div>
             </section>
 
-            <section
-              className="rounded-md border border-border bg-surface/95 p-5 shadow-card"
-              data-testid="ws-settings__projects"
-            >
+            <section className="space-y-4 border-t border-subtle/60 pt-5" data-testid="ws-settings__projects">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <SectionHeading
                   title={t('workspace_projects_title')}
@@ -424,45 +415,45 @@ export default function WorkspaceSettingsPage() {
               {projects.length === 0 ? (
                 <p className="mt-4 text-sm text-tertiary">{t('workspace_projects_empty')}</p>
               ) : (
-                <div className="mt-4 space-y-3">
+                <div className="mt-4 divide-y divide-subtle/60 border-y border-subtle/60">
                   {projects.map((project) => (
                     <div
                       key={project.id}
-                      className="rounded-md border border-subtle bg-bg-base/20 p-4 shadow-ambient"
+                      className="py-4"
                       data-testid={`ws-settings__project--${project.id}`}
                     >
                       {(() => {
-                          const actions = resolveWorkspaceGovernanceProjectActions(project);
-                          const defaultProjectPath = resolveWorkspaceProjectEntryPath(
-                            locale,
-                            workspaceId ?? '',
-                            project.id,
-                            project,
-                          );
-                          const selectedOwnerId = selectedProjectOwners[project.id] ?? project.owner_id;
-                          const isSavingProjectOwner = savingProjectOwnerId === project.id;
-                          return (
-                          <div className="flex flex-wrap items-start justify-between gap-5">
-                            <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-foreground">{project.name}</p>
-                            <StatusBadge status={project.status === 'archived' ? 'info' : 'ready'}>
-                              {project.status}
-                            </StatusBadge>
-                          </div>
-                          <p className="mt-1 text-xs text-tertiary">
-                            {t('workspace_projects_admin_summary')}
-                          </p>
-                          <p className="mt-1 text-sm text-foreground">
-                            {buildProjectAdminSummary(project, memberNameById)}
-                          </p>
-                          <p className="mt-3 text-xs text-tertiary">
-                            {t('workspace_project_owner_current', {
-                              owner: memberNameById.get(project.owner_id) || project.owner_id,
-                            })}
-                          </p>
+                        const actions = resolveWorkspaceGovernanceProjectActions(project);
+                        const defaultProjectPath = resolveWorkspaceProjectEntryPath(
+                          locale,
+                          workspaceId ?? '',
+                          project.id,
+                          project,
+                        );
+                        const selectedOwnerId = selectedProjectOwners[project.id] ?? project.owner_id;
+                        const isSavingProjectOwner = savingProjectOwnerId === project.id;
+                        return (
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+                            <div className="min-w-0 flex-1 space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-semibold text-foreground">{project.name}</p>
+                                <StatusBadge status={project.status === 'archived' ? 'info' : 'ready'}>
+                                  {project.status}
+                                </StatusBadge>
+                              </div>
+                              <p className="text-xs text-tertiary">
+                                {t('workspace_projects_admin_summary')}
+                              </p>
+                              <p className="text-sm text-foreground">
+                                {buildProjectAdminSummary(project, memberNameById)}
+                              </p>
+                              <p className="text-xs text-tertiary">
+                                {t('workspace_project_owner_current', {
+                                  owner: memberNameById.get(project.owner_id) || project.owner_id,
+                                })}
+                              </p>
                               {canManageWorkspaceGovernance ? (
-                                <div className="mt-4 rounded-md border border-subtle bg-surface/60 p-3">
+                                <div className="border-t border-subtle/60 pt-3">
                                   <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
                                     <ShieldCheck className="h-3.5 w-3.5 text-icon-default" />
                                     {t('workspace_project_governance_override')}
@@ -502,7 +493,7 @@ export default function WorkspaceSettingsPage() {
                                 </div>
                               ) : null}
                             </div>
-                            <div className="flex min-w-[220px] flex-col gap-3">
+                            <div className="flex min-w-0 flex-col gap-3 lg:min-w-[220px]">
                               <div className="space-y-2">
                                 <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
                                   {t('workspace_project_open_actions_title')}
@@ -550,7 +541,7 @@ export default function WorkspaceSettingsPage() {
               )}
             </section>
 
-            <section className="rounded-md border border-border bg-surface p-5" data-testid="ws-settings__project-creators">
+            <section className="space-y-4 border-t border-subtle/60 pt-5" data-testid="ws-settings__project-creators">
               <SectionHeading
                 title={t('workspace_project_creators_title')}
                 subtitle={t('workspace_project_creators_description')}
@@ -558,7 +549,7 @@ export default function WorkspaceSettingsPage() {
               <div className="mt-4 space-y-3">
                 {hasLegacyProjectCreatorBindings ? (
                   <div
-                    className="rounded-md border border-warning/30 bg-warning/10 px-4 py-3"
+                    className="border border-warning/30 bg-transparent px-4 py-3"
                     data-testid="ws-settings__project-creators-binding-warning"
                   >
                     <p className="text-sm font-medium text-foreground">{t('workspace_project_creators_binding_warning_title')}</p>

@@ -123,7 +123,7 @@ export function UserMenu({
         <DropdownMenuTrigger asChild>
           <button
             data-testid="topbar__user-menu"
-            className="control-pill flex h-11 items-center gap-3 px-2.5 py-1.5 text-primary shadow-ambient transition-colors duration-150 hover:bg-surface hover:text-foreground"
+            className="control-pill flex h-10 items-center gap-2.5 px-2.5 py-1.5 text-primary transition-colors duration-150 hover:bg-surface-low/35 hover:text-foreground"
           >
             <Avatar className="h-8 w-8">
               {user?.avatar ? (
@@ -143,7 +143,7 @@ export function UserMenu({
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="end" className="w-72 p-2.5">
-          <div className="surface-soft px-3 py-3">
+          <div className="border-b border-subtle px-3 pb-3 pt-1">
             <p className="type-title truncate text-foreground">{user?.name || commonT('user')}</p>
             <p className="mt-1 truncate text-xs text-secondary">{user?.email || ''}</p>
           </div>
@@ -168,7 +168,7 @@ export function UserMenu({
           {onLanguageSwitch ? (
             <>
               <DropdownMenuSeparator />
-              <div className="px-3 pb-1 pt-1.5 text-[10px] uppercase tracking-[0.16em] text-tertiary">
+              <div className="type-caption px-3 pb-1 pt-1.5 text-tertiary">
                 {t('language')}
               </div>
               {LOCALES.map((loc) => (
@@ -187,7 +187,7 @@ export function UserMenu({
           ) : null}
 
           <DropdownMenuSeparator />
-          <div className="px-3 pb-1 pt-1.5 text-[10px] uppercase tracking-[0.16em] text-tertiary">
+          <div className="type-caption px-3 pb-1 pt-1.5 text-tertiary">
             {t('appearance')}
           </div>
           {THEME_OPTIONS.map((option) => (

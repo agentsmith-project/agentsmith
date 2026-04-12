@@ -200,6 +200,13 @@ describe('Topbar', () => {
     expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/overview');
   });
 
+  it('keeps the topbar shell quiet instead of relying on floating blur', () => {
+    renderTopbar();
+
+    const shell = screen.getByTestId('topbar');
+    expect(shell.className).not.toMatch(/shadow-|backdrop-blur/);
+  });
+
   it('keeps system logo navigation on system surfaces without workspace context', () => {
     mockParams = { locale: 'en-US' };
     mockPathname = '/en-US/system/workspaces';

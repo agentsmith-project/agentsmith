@@ -252,8 +252,8 @@ export default function ThirdPartyAccountsPage() {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="max-w-6xl mx-auto w-full px-4 py-4 md:px-5 md:py-5 space-y-5">
-          <section className="rounded-lg border border-border bg-surface px-5 py-5 shadow-card md:px-6">
+        <div className="mx-auto w-full max-w-6xl space-y-5 px-4 py-4 md:px-5 md:py-5">
+          <section className="rounded-lg border border-border bg-surface px-5 py-5 shadow-card md:px-6" data-testid="third-party-accounts__summary-strip">
             <div className="flex items-start justify-between gap-4">
               <div className="max-w-3xl space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
@@ -262,7 +262,7 @@ export default function ThirdPartyAccountsPage() {
                 </div>
                 <div>
                   <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-                  <p className="text-tertiary mt-1">{t('description')}</p>
+                  <p className="mt-1 text-tertiary">{t('description')}</p>
                 </div>
                 <p className="max-w-2xl text-sm leading-6 text-secondary">{t('summary_intro')}</p>
                 <p className="text-sm leading-6 text-tertiary">{t('personal_scope_note')}</p>
@@ -272,41 +272,25 @@ export default function ThirdPartyAccountsPage() {
                 {t('create_personal_connection')}
               </Button>
             </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-3">
-              <div className="rounded-md border border-border/70 bg-surface-high p-4">
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-                  <ShieldCheck className="h-3.5 w-3.5 text-accent" />
-                  {t('summary_active_label')}
-                </div>
-                <div className="mt-3 text-2xl font-semibold text-foreground">{activeItems.length}</div>
-                <p className="mt-1 text-sm text-tertiary">{t('summary_active_hint')}</p>
-              </div>
-              <div className="rounded-md border border-border/70 bg-surface-high p-4">
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-                  <PlugZap className="h-3.5 w-3.5 text-accent" />
-                  {t('summary_oauth_label')}
-                </div>
-                <div className="mt-3 text-2xl font-semibold text-foreground">{oauthItemsCount}</div>
-                <p className="mt-1 text-sm text-tertiary">{t('summary_oauth_hint')}</p>
-              </div>
-              <div className="rounded-md border border-border/70 bg-surface-high p-4">
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-                  <Link2 className="h-3.5 w-3.5 text-accent" />
-                  {t('summary_provider_label')}
-                </div>
-                <div className="mt-3 text-2xl font-semibold text-foreground">{providerCount}</div>
-                <p className="mt-1 text-sm text-tertiary">{t('summary_provider_hint')}</p>
-              </div>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <div className="rounded-lg border border-subtle bg-background/70 p-4" data-testid="third-party-accounts__personal-scope">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-secondary">{t('summary_personal_scope_title')}</p>
-                <p className="mt-2 text-sm leading-6 text-tertiary">{t('summary_personal_scope_body')}</p>
-              </div>
-              <div className="rounded-lg border border-subtle bg-background/70 p-4" data-testid="third-party-accounts__workspace-scope">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-secondary">{t('summary_workspace_scope_title')}</p>
-                <p className="mt-2 text-sm leading-6 text-tertiary">{t('summary_workspace_scope_body')}</p>
-              </div>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <CompactSummaryChip
+                icon={<ShieldCheck className="h-3.5 w-3.5 text-accent" />}
+                label={t('summary_active_label')}
+                value={String(activeItems.length)}
+                hint={t('summary_active_hint')}
+              />
+              <CompactSummaryChip
+                icon={<PlugZap className="h-3.5 w-3.5 text-accent" />}
+                label={t('summary_oauth_label')}
+                value={String(oauthItemsCount)}
+                hint={t('summary_oauth_hint')}
+              />
+              <CompactSummaryChip
+                icon={<Link2 className="h-3.5 w-3.5 text-accent" />}
+                label={t('summary_provider_label')}
+                value={String(providerCount)}
+                hint={t('summary_provider_hint')}
+              />
             </div>
           </section>
 
@@ -366,7 +350,7 @@ export default function ThirdPartyAccountsPage() {
               <DialogDescription>{t('dialog_description')}</DialogDescription>
             </DialogHeader>
 
-            <div className="rounded-lg border border-subtle bg-[linear-gradient(180deg,rgba(124,160,255,0.08),rgba(124,160,255,0.02))] p-4">
+            <div className="rounded-md border border-border/60 bg-background/72 p-4">
               <p className="text-sm leading-6 text-secondary">{t('personal_scope_dialog_note')}</p>
             </div>
 
@@ -436,5 +420,28 @@ export default function ThirdPartyAccountsPage() {
         </AlertDialog>
       </PageLayout>
     </PageState>
+  );
+}
+
+function CompactSummaryChip({
+  icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="min-w-[11rem] flex-1 rounded-md border border-border/55 bg-background/68 px-3.5 py-3">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-foreground">{value}</div>
+      <div className="mt-1 text-sm text-tertiary">{hint}</div>
+    </div>
   );
 }

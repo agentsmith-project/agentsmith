@@ -85,21 +85,22 @@ export function WorkspaceEditorPanel({
     : 'border-success/20 bg-success/8 text-foreground';
   const formLocked = !state.isEditMode;
   const workspaceSlug = slugifyWorkspaceId((workspace?.name ?? state.draft.name) || 'workspace');
-  const workspaceLoginPath = `/{locale}/workspaces/${workspaceSlug}/login`;
-  const workspaceCallbackPath = `/workspaces/${workspaceSlug}/login/callback`;
+  const workspaceLoginPath = `/${locale}/workspaces/${workspaceSlug}/login`;
+  const workspaceCallbackPath = `/${locale}/workspaces/${workspaceSlug}/login/callback`;
 
   return (
     <aside
-      className="space-y-4 rounded-md border border-subtle bg-background/88 p-5 shadow-card"
+      className="rounded-md border border-subtle bg-background/88"
       data-testid="system-workspaces__editor"
     >
-      <div className="rounded-md border border-subtle bg-background/82 p-5">
+      <div className="divide-y divide-subtle">
+        <div className="px-5 py-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_detail_label')}</p>
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-2xl font-semibold text-foreground">{workspace?.name}</h2>
-              <span className="inline-flex items-center rounded-full border border-subtle bg-background/82 px-3 py-1 text-xs font-medium text-secondary">
+              <h2 className="text-xl font-semibold text-foreground">{workspace?.name}</h2>
+              <span className="inline-flex items-center rounded-full border border-subtle bg-background/80 px-3 py-1 text-xs font-medium text-secondary">
                 {statusValue}
               </span>
             </div>
@@ -148,28 +149,28 @@ export function WorkspaceEditorPanel({
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <div className="rounded-md border border-subtle bg-background px-4 py-3">
-            <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_detail_identity_label')}</p>
-            <p className="mt-2 truncate text-sm font-semibold text-foreground">{workspace?.id}</p>
+        <dl className="mt-5 grid gap-3 md:grid-cols-3">
+          <div className="space-y-1 border-t border-subtle pt-3">
+            <dt className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_detail_identity_label')}</dt>
+            <dd className="truncate text-sm font-medium text-foreground">{workspace?.id}</dd>
           </div>
-          <div className="rounded-md border border-subtle bg-background px-4 py-3">
-            <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_admin_card_label')}</p>
-            <p className="mt-2 truncate text-sm font-semibold text-foreground">{workspace?.workspace_admin || t('none')}</p>
+          <div className="space-y-1 border-t border-subtle pt-3">
+            <dt className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_admin_card_label')}</dt>
+            <dd className="truncate text-sm font-medium text-foreground">{workspace?.workspace_admin || t('none')}</dd>
           </div>
-          <div className="rounded-md border border-subtle bg-background px-4 py-3">
-            <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('initialized_at_label')}</p>
-            <p className="mt-2 truncate text-sm font-semibold text-foreground">{lastInitializedValue}</p>
+          <div className="space-y-1 border-t border-subtle pt-3">
+            <dt className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('initialized_at_label')}</dt>
+            <dd className="truncate text-sm font-medium text-foreground">{lastInitializedValue}</dd>
           </div>
-        </div>
+        </dl>
         {!state.isEditMode ? (
-          <div className="mt-4 rounded-md border border-subtle bg-background/82 px-4 py-3 text-sm text-secondary" data-testid="system-workspaces__read-only-notice">
+          <div className="mt-4 border-l-2 border-border pl-3 text-sm text-secondary" data-testid="system-workspaces__read-only-notice">
             {t('workspace_editor_read_only_notice')}
           </div>
         ) : null}
       </div>
 
-      <section className="space-y-4 rounded-md border border-subtle bg-background/82 p-5" data-testid="system-workspaces__basics">
+      <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__basics">
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_basics_label')}</p>
           <p className="text-base font-medium text-foreground">{t('workspace_basics_title')}</p>
@@ -189,7 +190,7 @@ export function WorkspaceEditorPanel({
         </label>
       </section>
 
-      <section className="space-y-4 rounded-md border border-subtle bg-background/82 p-5" data-testid="system-workspaces__idp">
+      <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__idp">
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-base font-medium text-foreground">
             <ShieldCheck className="h-4 w-4" />
@@ -198,26 +199,27 @@ export function WorkspaceEditorPanel({
           <p className="text-sm text-tertiary">{t('idp_settings_description')}</p>
         </div>
 
-        <div className="grid gap-3">
-          <input
-            type="text"
-            value={state.draft.loginIdpUrl}
-            onChange={(event) => onDraftChange({ loginIdpUrl: event.target.value })}
-            placeholder={t('idp_url_placeholder')}
-            disabled={formLocked}
-            className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-            data-testid="system-workspaces__draft-idp-url"
-          />
-          <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
+          <div className="grid gap-3">
             <input
               type="text"
-              value={state.draft.loginIdpRealm}
-              onChange={(event) => onDraftChange({ loginIdpRealm: event.target.value })}
-              placeholder={t('idp_realm_placeholder')}
+              value={state.draft.loginIdpUrl}
+              onChange={(event) => onDraftChange({ loginIdpUrl: event.target.value })}
+              placeholder={t('idp_url_placeholder')}
               disabled={formLocked}
               className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-              data-testid="system-workspaces__draft-idp-realm"
+              data-testid="system-workspaces__draft-idp-url"
             />
+            <div className="grid gap-3 md:grid-cols-2">
+              <input
+                type="text"
+                value={state.draft.loginIdpRealm}
+                onChange={(event) => onDraftChange({ loginIdpRealm: event.target.value })}
+                placeholder={t('idp_realm_placeholder')}
+                disabled={formLocked}
+                className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                data-testid="system-workspaces__draft-idp-realm"
+              />
               <input
                 type="text"
                 value={state.draft.loginClientId}
@@ -227,70 +229,74 @@ export function WorkspaceEditorPanel({
                 className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                 data-testid="system-workspaces__draft-idp-client-id"
               />
-          </div>
-          <div className="rounded-md border border-subtle bg-background/70 p-4">
-            <p className="text-sm font-medium text-foreground">{t('directory_client_section_title')}</p>
-            <p className="mt-1 text-sm text-tertiary">{t('directory_client_section_body')}</p>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <input
-                type="text"
-                value={state.draft.directoryClientId}
-                onChange={(event) => onDraftChange({ directoryClientId: event.target.value })}
-                placeholder={t('directory_client_id_placeholder')}
-                disabled={formLocked}
-                className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-                data-testid="system-workspaces__draft-directory-client-id"
-              />
-              <input
-                type="password"
-                value={state.draft.directoryClientSecret}
-                onChange={(event) => onDraftChange({ directoryClientSecret: event.target.value })}
-                placeholder={t('directory_client_secret_placeholder')}
-                disabled={formLocked}
-                className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-                data-testid="system-workspaces__draft-idp-client-secret"
-              />
             </div>
-          </div>
 
-          <div className="rounded-md border border-subtle bg-background/70 p-4 text-sm">
-            <p className="font-medium text-foreground">{t('workspace_login_preview_title')}</p>
-            <div className="mt-3 space-y-2">
-              <div>
-                <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_login_url_label')}</p>
-                <p className="mt-1 break-all text-secondary">{workspaceLoginPath}</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_callback_url_label')}</p>
-                <p className="mt-1 break-all text-secondary">{workspaceCallbackPath}</p>
+            <div className="border-t border-subtle pt-4">
+              <p className="text-sm font-medium text-foreground">{t('directory_client_section_title')}</p>
+              <p className="mt-1 text-sm text-tertiary">{t('directory_client_section_body')}</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <input
+                  type="text"
+                  value={state.draft.directoryClientId}
+                  onChange={(event) => onDraftChange({ directoryClientId: event.target.value })}
+                  placeholder={t('directory_client_id_placeholder')}
+                  disabled={formLocked}
+                  className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                  data-testid="system-workspaces__draft-directory-client-id"
+                />
+                <input
+                  type="password"
+                  value={state.draft.directoryClientSecret}
+                  onChange={(event) => onDraftChange({ directoryClientSecret: event.target.value })}
+                  placeholder={t('directory_client_secret_placeholder')}
+                  disabled={formLocked}
+                  className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                  data-testid="system-workspaces__draft-idp-client-secret"
+                />
               </div>
             </div>
           </div>
-        </div>
 
-        <div className={`rounded-md border px-4 py-4 ${buildVerificationToneClass(state.idpVerificationState)}`}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('idp_status_label')}</p>
-              <p className="text-sm font-medium text-foreground" data-testid="system-workspaces__idp-status">{idpStateText}</p>
-              {idpVerificationNotice ? (
-                <p className="text-sm text-secondary" data-testid="system-workspaces__idp-notice">{t(idpVerificationNotice)}</p>
-              ) : null}
+          <div className="space-y-3">
+            <div className="border-t border-subtle pt-4 text-sm">
+              <p className="font-medium text-foreground">{t('workspace_login_preview_title')}</p>
+              <div className="mt-3 space-y-2">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_login_url_label')}</p>
+                  <p className="mt-1 break-all text-secondary" data-testid="system-workspaces__login-preview">{workspaceLoginPath}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_callback_url_label')}</p>
+                  <p className="mt-1 break-all text-secondary" data-testid="system-workspaces__callback-preview">{workspaceCallbackPath}</p>
+                </div>
+              </div>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onVerifyIdp}
-              disabled={formLocked || isSubmitting || state.idpVerificationState === 'verifying'}
-              data-testid="system-workspaces__verify-idp"
-            >
-              {state.idpVerificationState === 'verifying' ? t('idp_verify_loading') : t('idp_validate_continue')}
-            </Button>
+
+            <div className={`rounded-md border px-4 py-4 ${buildVerificationToneClass(state.idpVerificationState)}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('idp_status_label')}</p>
+                  <p className="text-sm font-medium text-foreground" data-testid="system-workspaces__idp-status">{idpStateText}</p>
+                  {idpVerificationNotice ? (
+                    <p className="text-sm text-secondary" data-testid="system-workspaces__idp-notice">{t(idpVerificationNotice)}</p>
+                  ) : null}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onVerifyIdp}
+                  disabled={formLocked || isSubmitting || state.idpVerificationState === 'verifying'}
+                  data-testid="system-workspaces__verify-idp"
+                >
+                  {state.idpVerificationState === 'verifying' ? t('idp_verify_loading') : t('idp_validate_continue')}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="space-y-4 rounded-md border border-subtle bg-background/82 p-5" data-testid="system-workspaces__admin">
+      <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__admin">
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-base font-medium text-foreground">
             <UserRoundSearch className="h-4 w-4" />
@@ -334,7 +340,7 @@ export function WorkspaceEditorPanel({
         </div>
 
         {state.draft.adminMode === 'directory_user' ? (
-          <div className="space-y-3 rounded-md border border-subtle bg-background p-4">
+          <div className="space-y-3 border-t border-subtle pt-4">
             <label className="block space-y-2">
               <span className="text-sm font-medium text-foreground">{t('workspace_admin')}</span>
               <input
@@ -352,10 +358,7 @@ export function WorkspaceEditorPanel({
               />
             </label>
             {state.draft.admin ? (
-              <div
-                className="rounded-md border border-success/30 bg-success/10 px-3 py-3 text-sm text-foreground"
-                data-testid="system-workspaces__selected-admin"
-              >
+              <div className="border-l-2 border-success/30 pl-3 text-sm text-foreground" data-testid="system-workspaces__selected-admin">
                 <p className="font-medium">{state.draft.admin.name || state.draft.admin.email}</p>
                 <p className="text-xs text-tertiary">{state.draft.admin.email}</p>
               </div>
@@ -398,7 +401,7 @@ export function WorkspaceEditorPanel({
             </div>
           </div>
         ) : (
-          <div className="space-y-3 rounded-md border border-subtle bg-background p-4">
+          <div className="space-y-3 border-t border-subtle pt-4">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Mail className="h-4 w-4" />
               {t('workspace_admin_email_pending_title')}
@@ -420,14 +423,14 @@ export function WorkspaceEditorPanel({
         )}
 
         {(workspace?.workspace_admin_binding_required || !workspace?.workspace_admin_user_id) && state.draft.adminMode === 'email_pending' ? (
-          <div className="rounded-md border border-warning/25 bg-warning/10 px-3 py-3" data-testid="system-workspaces__admin-binding-warning">
+          <div className="border-l-2 border-warning/25 pl-3" data-testid="system-workspaces__admin-binding-warning">
             <p className="text-sm font-medium text-foreground">{t('workspace_admin_pending_badge')}</p>
             <p className="mt-1 text-sm text-secondary">{t('workspace_admin_binding_pending_body')}</p>
           </div>
         ) : null}
       </section>
 
-      <section className="space-y-4 rounded-md border border-subtle bg-background/82 p-5" data-testid="system-workspaces__status">
+      <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__status">
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_lifecycle_label')}</p>
           <p className="text-base font-medium text-foreground">{t('workspace_lifecycle_title')}</p>
@@ -438,7 +441,7 @@ export function WorkspaceEditorPanel({
         <PreviewRow label={t('last_init_error_label')} value={workspace?.last_init_error || t('none')} />
       </section>
 
-      <div className={`rounded-md border px-4 py-4 text-sm ${statusToneClass}`} data-testid="system-workspaces__notice">
+      <div className={`px-5 py-4 text-sm ${statusToneClass}`} data-testid="system-workspaces__notice">
         <p className="mb-1 text-[11px] uppercase tracking-[0.08em]" data-testid="system-workspaces__notice-status">
           {statusPrefix}
         </p>
@@ -453,7 +456,7 @@ export function WorkspaceEditorPanel({
         )}
       </div>
 
-      <section className="space-y-4 rounded-md border border-subtle bg-background/82 p-5" data-testid="system-workspaces__lifecycle">
+      <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__lifecycle">
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_actions_label')}</p>
           <p className="text-base font-medium text-foreground">{t('workspace_actions_title')}</p>
@@ -498,6 +501,7 @@ export function WorkspaceEditorPanel({
           </Button>
         </div>
       </section>
+      </div>
     </aside>
   );
 }

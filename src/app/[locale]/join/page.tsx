@@ -4,16 +4,14 @@ import * as React from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useMutation } from '@tanstack/react-query';
-import { ArrowRight, CheckCircle2, Mail, XCircle } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import {
-  PublicAuthEyebrow,
   PublicAuthFrame,
   PublicAuthHeader,
-  PublicAuthMutedCard,
   PublicAuthSection,
   PublicAuthShell,
 } from '@/components/public/PublicAuthPage';
@@ -60,39 +58,17 @@ function JoinPageContent() {
         <PublicAuthShell>
           <div className="space-y-6">
             <PublicAuthHeader
-              badge={(
-                <PublicAuthEyebrow>
-                  <Mail className="h-3.5 w-3.5" />
-                  {t('title')}
-                </PublicAuthEyebrow>
-              )}
               title={t('invalid_title')}
               description={t('invalid_description')}
             />
             <PublicAuthSection>
-              <div className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <JoinSummaryCard
-                    icon={<XCircle className="h-4 w-4 text-warning" />}
-                    label={t('invalid_title')}
-                    value={t('go_home')}
-                    helper={t('invalid_description')}
-                  />
-                  <JoinSummaryCard
-                    icon={<Mail className="h-4 w-4 text-icon-default" />}
-                    label={t('title')}
-                    value={tAuth('workspace_login_title')}
-                    helper={t('description')}
-                  />
-                </div>
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <Button variant="primary" className="sm:flex-1" onClick={() => router.push('/')}>
-                    {t('go_home')}
-                  </Button>
-                  <Button variant="secondary" className="sm:flex-1" onClick={() => router.push('/login/workspace')}>
-                    {tAuth('workspace_login_title')}
-                  </Button>
-                </div>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button variant="primary" className="sm:flex-1" onClick={() => router.push('/')}>
+                  {t('go_home')}
+                </Button>
+                <Button variant="secondary" className="sm:flex-1" onClick={() => router.push('/login/workspace')}>
+                  {tAuth('workspace_login_title')}
+                </Button>
               </div>
             </PublicAuthSection>
           </div>
@@ -102,36 +78,16 @@ function JoinPageContent() {
   }
 
   return (
-    <PublicAuthFrame width="narrow">
+      <PublicAuthFrame width="narrow">
       <PublicAuthShell>
         <div className="space-y-6">
           <PublicAuthHeader
-            badge={(
-              <PublicAuthEyebrow tone="accent">
-                <Mail className="h-3.5 w-3.5" />
-                {t('title')}
-              </PublicAuthEyebrow>
-            )}
             title={t('title')}
             description={t('description')}
           />
 
           <PublicAuthSection>
             <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <JoinSummaryCard
-                  icon={<CheckCircle2 className="h-4 w-4 text-success" />}
-                  label={t('accept')}
-                  value={t('accepting')}
-                  helper={t('description')}
-                />
-                <JoinSummaryCard
-                  icon={<XCircle className="h-4 w-4 text-warning" />}
-                  label={t('decline')}
-                  value={t('declining')}
-                  helper={t('action_failed')}
-                />
-              </div>
               {inlineError ? (
                 <div className="rounded-md border border-error/20 bg-error/8 px-4 py-3 text-sm text-error" data-testid="join__error">
                   {t('action_failed')}
@@ -167,29 +123,6 @@ function JoinPageContent() {
         </div>
       </PublicAuthShell>
     </PublicAuthFrame>
-  );
-}
-
-function JoinSummaryCard({
-  icon,
-  label,
-  value,
-  helper,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <PublicAuthMutedCard>
-      <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-2 text-base font-medium text-foreground">{value}</div>
-      <div className="mt-1 text-sm text-secondary">{helper}</div>
-    </PublicAuthMutedCard>
   );
 }
 

@@ -66,7 +66,7 @@ describe('SystemLoginPage', () => {
     render(<SystemLoginPage />);
 
     expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'open_workspace_login' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'open_workspace_login' })).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'open_system_info' })).not.toBeInTheDocument();
   });
 });

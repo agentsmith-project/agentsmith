@@ -139,9 +139,6 @@ export default function DesktopAuthRequestPage() {
                 title={<span data-testid="desktop-auth-request__title">{statusContent.title}</span>}
                 description={statusContent.description}
               />
-              <PublicAuthMutedCard>
-                <p className="type-body-ui text-secondary">{statusContent.detail}</p>
-              </PublicAuthMutedCard>
               {status === 'error' ? (
                 <div className="flex flex-wrap gap-3">
                   <Button asChild variant="primary">

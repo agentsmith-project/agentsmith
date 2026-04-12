@@ -202,7 +202,7 @@ export function SystemWorkspacesPage() {
 
             <section className="grid gap-4 xl:grid-cols-[minmax(360px,0.78fr)_minmax(560px,1.22fr)]">
               <div
-                className="space-y-4 rounded-md border border-subtle bg-background/88 p-5 shadow-card"
+                className="space-y-4 rounded-md border border-subtle bg-background/88 p-5"
                 data-testid="system-workspaces__list"
               >
                 <div className="space-y-4">
@@ -341,11 +341,11 @@ export function SystemWorkspacesPage() {
                   onDisable={() => void disable()}
                   onDelete={() => setDeleteDialogOpen(true)}
                 />
-              ) : (
-                <aside
-                  className="flex min-h-[420px] flex-col justify-between rounded-md border border-subtle bg-background/88 p-6 shadow-card"
-                  data-testid="system-workspaces__editor-empty"
-                >
+                ) : (
+                  <aside
+                    className="flex min-h-[420px] flex-col justify-between rounded-md border border-subtle bg-background/88 p-6"
+                    data-testid="system-workspaces__editor-empty"
+                  >
                   <div className="space-y-3">
                     <div className="flex h-12 w-12 items-center justify-center rounded-md bg-background text-icon-default">
                       <Settings2 className="h-5 w-5" />

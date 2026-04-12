@@ -16,7 +16,10 @@ interface ProjectWorkbenchSwitcherProps {
 
 export function ProjectWorkbenchSwitcher({ items }: ProjectWorkbenchSwitcherProps) {
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-full border border-subtle bg-surface-low p-0.5">
+    <div
+      data-testid="project-workbench-switcher"
+      className="inline-flex items-center gap-0.5 rounded-md border border-subtle/70 bg-surface-low/60 p-0.5"
+    >
       {items.map((item) => (
         <Link
           key={item.testId}
@@ -24,9 +27,9 @@ export function ProjectWorkbenchSwitcher({ items }: ProjectWorkbenchSwitcherProp
           data-testid={item.testId}
           aria-current={item.active ? 'page' : undefined}
           className={cn(
-            'rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors',
+            'rounded-[6px] px-2.5 py-1 text-[11px] font-medium transition-colors',
             item.active
-              ? 'bg-white/[0.07] text-foreground'
+              ? 'bg-surface text-foreground shadow-none'
               : 'text-secondary hover:bg-surface hover:text-foreground',
           )}
         >
@@ -56,7 +59,7 @@ export function ProjectWorkbenchBar({
     <div
       data-testid="project-workbench"
       className={cn(
-        'flex items-start justify-between gap-3 rounded-md border border-subtle bg-surface-low px-3.5 py-2 shadow-none',
+        'flex items-start justify-between gap-3 border-b border-subtle/70 bg-transparent px-3 py-2 md:px-4',
         className,
       )}
     >
@@ -67,7 +70,7 @@ export function ProjectWorkbenchBar({
         >
           {title}
         </div>
-        {meta ? <div data-testid="project-workbench__meta" className="mt-1 min-w-0">{meta}</div> : null}
+        {meta ? <div data-testid="project-workbench__meta" className="mt-0.5 min-w-0">{meta}</div> : null}
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
         {actions}

@@ -52,6 +52,7 @@ describe('SystemInfoPage', () => {
     );
 
     expect(screen.getByTestId('system-info__heading')).toBeInTheDocument();
+    expect(screen.getByTestId('system-info__shell')).not.toHaveClass('shadow-card');
     expect(screen.getByTestId('system-info__back').closest('a')).toHaveAttribute('href', '/en-US/system/workspaces');
     expect(screen.getByTestId('system-info__notice')).toBeInTheDocument();
     expect(screen.getByTestId('system-info__next-steps')).toBeInTheDocument();

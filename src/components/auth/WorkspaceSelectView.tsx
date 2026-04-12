@@ -15,7 +15,6 @@ import {
   PublicAuthEyebrow,
   PublicAuthFrame,
   PublicAuthHeader,
-  PublicAuthMutedCard,
   PublicAuthSection,
   PublicAuthShell,
 } from '@/components/public/PublicAuthPage';
@@ -120,13 +119,6 @@ export function WorkspaceSelectView() {
                 )}
               </PublicAuthSection>
 
-              {!isLoading && !isError && (workspaces ?? []).length > 0 ? (
-                <PublicAuthMutedCard>
-                  <p className="type-caption text-tertiary">{t('workspace_select_list_title')}</p>
-                  <p className="mt-2 type-body-ui text-secondary">{t('workspace_select_list_description')}</p>
-                </PublicAuthMutedCard>
-              ) : null}
-
               <div className="flex justify-center pt-1">
                 <Link
                   href={`/${locale}/system/login`}
@@ -157,10 +149,10 @@ function WorkspaceCard({ workspace, onSelect }: WorkspaceCardProps) {
       type="button"
       data-testid={`workspace-select__card--${workspace.id}`}
       onClick={onSelect}
-      className="group w-full rounded-lg border border-border/55 bg-background/76 p-4 text-left transition-[border-color,background-color,transform] duration-150 hover:border-border/80 hover:bg-surface-low focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+      className="group w-full rounded-md border border-border/45 bg-background/72 p-4 text-left transition-[border-color,background-color,transform] duration-150 hover:border-border/70 hover:bg-surface-low/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/25"
     >
       <div className="flex items-center gap-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border/50 bg-surface-low/80">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border/45 bg-surface-low/70">
           <Building2 className="h-5 w-5 text-icon-default" />
         </div>
         <div className="min-w-0 flex-1">

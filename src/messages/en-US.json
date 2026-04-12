@@ -3195,6 +3195,12 @@
     "no_rules_description": "Create your first alert rule to get notified about important events",
     "no_alerts": "No notifications",
     "no_alerts_description": "You're all caught up! No new alerts to display",
+    "severity": {
+      "critical": "Critical",
+      "error": "Error",
+      "warning": "Warning",
+      "info": "Info"
+    },
     "resolved": "Resolved",
     "dismiss": "Dismiss",
     "form": {

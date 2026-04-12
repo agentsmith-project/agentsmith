@@ -11,7 +11,16 @@ import type { Alert } from '../AlertNotificationsPanel';
 
 // Mock next-intl
 vi.mock('next-intl', () => ({
-  useTranslations: () => (key: string) => key,
+  useTranslations: (namespace?: string) => {
+    const severityLabels: Record<string, string> = {
+      'alerts.severity.critical': 'Critical',
+      'alerts.severity.error': 'Error',
+      'alerts.severity.warning': 'Warning',
+      'alerts.severity.info': 'Info',
+    };
+
+    return (key: string) => severityLabels[`${namespace}.${key}`] ?? key;
+  },
 }));
 
 const mockAlerts: Alert[] = [
@@ -155,6 +164,22 @@ describe('AlertNotificationsPanel', () => {
 
     expect(screen.getByTestId('severity-badge-critical')).toBeInTheDocument();
     expect(screen.getByTestId('severity-badge-warning')).toBeInTheDocument();
+  });
+
+  it('renders translated severity labels instead of raw enum values', () => {
+    render(
+      <AlertNotificationsPanel
+        alerts={mockAlerts}
+        onMarkAsRead={vi.fn()}
+        onDismiss={vi.fn()}
+        onActionClick={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Critical')).toBeInTheDocument();
+    expect(screen.getByText('Warning')).toBeInTheDocument();
+    expect(screen.queryByText('critical')).not.toBeInTheDocument();
+    expect(screen.queryByText('warning')).not.toBeInTheDocument();
   });
 
   it('keeps action buttons visually quiet', () => {

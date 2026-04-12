@@ -8,8 +8,9 @@
  * Update baselines: npx playwright test e2e/visual.spec.ts --project=visual --update-snapshots
  */
 
-import { test as base, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test as base, expect, type Page } from '@playwright/test';
 import { ensureAuthenticatedSession, withAuth } from './fixtures/authenticated';
+import { seedMockExternalConnectionForVisual } from './fixtures/third-party-accounts';
 import { gotoAndWait, waitForPageReady } from './utils/navigation';
 import { setVisualTheme, themedScreenshotName, VISUAL_THEMES } from './utils/visual-theme';
 import { resolveVisualBaselineStableMarkers } from './visual-baseline-support';
@@ -17,6 +18,7 @@ import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 
 const WS_ID = 'ws_default';
 const PROJECT_ID = 'proj_001';
+let visualThirdPartyAccountId = '';
 
 const test = base.extend<{ authedPage: Page; guestPage: Page }>({
   authedPage: async ({ page }, use) => {
@@ -192,6 +194,29 @@ async function resetPublicVisualState(page: Page) {
     localStorage.clear();
     sessionStorage.clear();
   }).catch(() => {});
+}
+
+async function seedCustomThirdPartyConnectionFixture(page: Page) {
+  return seedMockExternalConnectionForVisual(page, {
+    provider: 'custom',
+    kind: 'secret_bundle',
+    displayName: 'Visual Custom Integration',
+    note: 'Visual seed',
+    fields: [
+      {
+        key: 'base_url',
+        value: 'https://api.visual.example.com',
+        description: 'Base URL',
+        secret: false,
+      },
+      {
+        key: 'token',
+        value: 'tok-visual-secret',
+        description: 'API token',
+        secret: true,
+      },
+    ],
+  });
 }
 
 async function requireMockVisualAuthLane(page: Page, bootstrapPath = `/en-US/workspaces/${WS_ID}/projects`) {
@@ -703,6 +728,57 @@ const THEMED_GOVERNANCE_PAGES = [
 
 const THEMED_OVERLAY_CASES = [
   {
+    name: 'api-keys-create-dialog',
+    path: '/en-US/user/api-keys',
+    requiresMockAuthLane: true,
+    stableMarkers: ['api-keys__create-dialog'],
+    setup: async (page: Page) => {
+      await expect(page.getByTestId('api-keys__create-btn')).toBeVisible();
+      await page.getByTestId('api-keys__create-btn').click();
+      await expect(page.getByTestId('api-keys__create-dialog')).toBeVisible();
+    },
+  },
+  {
+    name: 'api-keys-key-created-dialog',
+    path: '/en-US/user/api-keys',
+    requiresMockAuthLane: true,
+    stableMarkers: ['api-keys__key-created-dialog'],
+    setup: async (page: Page) => {
+      await expect(page.getByTestId('api-keys__create-btn')).toBeVisible();
+      await page.getByTestId('api-keys__create-btn').click();
+      const dialog = page.getByTestId('api-keys__create-dialog');
+      await expect(dialog).toBeVisible();
+      await dialog.locator('input').first().fill('Visual API Key');
+      await dialog.getByRole('button', { name: /create/i }).click();
+      await expect(page.getByTestId('api-keys__key-created-dialog')).toBeVisible();
+    },
+  },
+  {
+    name: 'third-party-accounts-create-sheet',
+    path: '/en-US/user/third-party-accounts',
+    requiresMockAuthLane: true,
+    stableMarkers: ['third-party-accounts__sheet'],
+    setup: async (page: Page) => {
+      await expect(page.getByTestId('third-party-accounts__create-btn')).toBeVisible();
+      await page.getByTestId('third-party-accounts__create-btn').click();
+      await expect(page.getByTestId('third-party-accounts__sheet')).toBeVisible();
+    },
+  },
+  {
+    name: 'third-party-accounts-edit-sheet',
+    path: '/en-US/user/third-party-accounts',
+    requiresMockAuthLane: true,
+    stableMarkers: ['third-party-accounts__sheet'],
+    setup: async (page: Page) => {
+      await stableNavigate(page, '/en-US/user/third-party-accounts');
+      visualThirdPartyAccountId = await seedCustomThirdPartyConnectionFixture(page);
+      await stableNavigate(page, '/en-US/user/third-party-accounts');
+      await expect(page.getByTestId(`third-party-accounts__row-${visualThirdPartyAccountId}`)).toBeVisible();
+      await page.getByTestId(`third-party-accounts__row-${visualThirdPartyAccountId}`).click();
+      await expect(page.getByTestId('third-party-accounts__sheet')).toBeVisible();
+    },
+  },
+  {
     name: 'audit-empty-state',
     path: `${projectPath('audit')}?resource_id=__visual_empty__`,
     setup: async (page: Page) => {
@@ -842,8 +918,14 @@ test.describe('Visual - Overlays (Light/Dark)', () => {
         test(pageCase.name, async ({ authedPage }) => {
           await setVisualTheme(authedPage, theme);
           await seedVisualTestNow(authedPage);
+          if ('prepare' in pageCase && pageCase.prepare) {
+            await pageCase.prepare(authedPage);
+          }
           await stableNavigate(authedPage, pageCase.path);
           await pageCase.setup(authedPage);
+          if ('stableMarkers' in pageCase && pageCase.stableMarkers) {
+            await waitForStableRecipeMarkers(authedPage, pageCase.name);
+          }
           await expect(authedPage).toHaveScreenshot(themedScreenshotName(pageCase.name, theme), { fullPage: true });
         });
       }

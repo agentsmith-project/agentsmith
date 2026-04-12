@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { AlertTriangle, CheckCircle2, LoaderCircle, LogIn, MonitorSmartphone } from 'lucide-react';
@@ -17,7 +17,7 @@ import {
   PublicAuthMutedCard,
   PublicAuthShell,
 } from '@/components/public/PublicAuthPage';
-import { buildPublicApiUrl } from '@/lib/public-runtime-config';
+import { completeDesktopAuthRequest } from '@/lib/auth/desktop-auth-request';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 
 type DesktopAuthRequestStatus = 'loading' | 'redirecting' | 'completing' | 'done' | 'error';
@@ -36,15 +36,8 @@ export default function DesktopAuthRequestPage() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<DesktopAuthRequestStatus>('loading');
 
-  const completeUrl = useMemo(
-    () => (requestId
-      ? buildPublicApiUrl(`/me/desktop/auth/requests/${encodeURIComponent(requestId)}/complete`)
-      : null),
-    [requestId],
-  );
-
   const startCompletion = useCallback(async (cancelled?: { current: boolean }) => {
-    if (!completeUrl || !token) {
+    if (!requestId || !token) {
       throw new Error('desktop_auth_complete_failed');
     }
 
@@ -52,15 +45,7 @@ export default function DesktopAuthRequestPage() {
     setStatus('completing');
 
     try {
-      const response = await fetch(completeUrl, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`desktop_auth_complete_failed_${response.status}`);
-      }
+      await completeDesktopAuthRequest(requestId, token);
       if (cancelled?.current) {
         return;
       }
@@ -73,7 +58,7 @@ export default function DesktopAuthRequestPage() {
       setError(cause instanceof Error ? cause.message : 'desktop_auth_complete_failed');
       setStatus('error');
     }
-  }, [completeUrl, locale, requestId, routerReplace, token]);
+  }, [locale, requestId, routerReplace, token]);
 
   useEffect(() => {
     if (!hydrated) {
@@ -84,7 +69,7 @@ export default function DesktopAuthRequestPage() {
       setStatus('error');
       return;
     }
-    if (!isAuthenticated || !token || !completeUrl) {
+    if (!isAuthenticated || !token || !requestId) {
       setStatus('redirecting');
       routerReplace(`/${locale}/login/workspace?desktop_auth_request_id=${encodeURIComponent(requestId)}`);
       return;
@@ -96,7 +81,7 @@ export default function DesktopAuthRequestPage() {
     return () => {
       cancelled.current = true;
     };
-  }, [completeUrl, hydrated, isAuthenticated, locale, requestId, routerReplace, startCompletion, token]);
+  }, [hydrated, isAuthenticated, locale, requestId, routerReplace, startCompletion, token]);
 
   const statusContent = getStatusContent({ error, status, t });
   const workspaceLoginHref = requestId

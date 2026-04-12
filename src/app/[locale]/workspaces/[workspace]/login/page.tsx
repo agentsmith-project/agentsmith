@@ -21,6 +21,11 @@ import {
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import { createPkceChallenge, randomBase64Url } from '@/lib/auth/pkce';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
+import {
+  buildDesktopAuthCompleteHref,
+  buildDesktopAuthRequestHref,
+  completeDesktopAuthRequest,
+} from '@/lib/auth/desktop-auth-request';
 import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 import { ArrowRight, Globe2 } from 'lucide-react';
 
@@ -48,6 +53,7 @@ export default function WorkspaceLoginPage() {
   const locale = (params?.locale as string) || 'en-US';
   const workspaceId = (params?.workspace as string) || '';
   const desktopAuthRequestId = searchParams.get('desktop_auth_request_id')?.trim() ?? '';
+  const desktopAuthRequestHref = desktopAuthRequestId ? buildDesktopAuthRequestHref(locale, desktopAuthRequestId) : null;
   const [config, setConfig] = useState<WorkspaceLoginConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [configError, setConfigError] = useState<string | null>(null);
@@ -57,9 +63,9 @@ export default function WorkspaceLoginPage() {
   const useMsw = getPublicRuntimeConfig().useMsw;
 
   useEffect(() => {
-    if (!hydrated || !isAuthenticated) return;
+    if (!hydrated || !isAuthenticated || desktopAuthRequestId) return;
     router.replace(`/workspaces/${workspaceId}`);
-  }, [hydrated, isAuthenticated, locale, router, workspaceId]);
+  }, [desktopAuthRequestId, hydrated, isAuthenticated, locale, router, workspaceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,6 +108,7 @@ export default function WorkspaceLoginPage() {
     if (!userEmail.trim()) return;
     setIsLoggingIn(true);
     try {
+      const accessToken = `mock_token_${workspaceId}_${Date.now()}`;
       setAuth(
         {
           id: 'user_001',
@@ -109,11 +116,25 @@ export default function WorkspaceLoginPage() {
           name: userEmail.split('@')[0],
           locale: locale as 'en-US' | 'zh-CN',
         },
-        `mock_token_${workspaceId}_${Date.now()}`,
+        accessToken,
       );
+      if (desktopAuthRequestId) {
+        try {
+          await completeDesktopAuthRequest(desktopAuthRequestId, accessToken);
+          router.replace(buildDesktopAuthCompleteHref(locale, desktopAuthRequestId));
+          return;
+        } catch (error) {
+          console.error('Desktop auth completion failed after quick login:', error);
+          if (desktopAuthRequestHref) {
+            router.replace(desktopAuthRequestHref);
+          }
+          return;
+        }
+      }
       router.push(`/workspaces/${workspaceId}`);
     } catch (error) {
       console.error('Workspace login failed:', error);
+      setKeycloakError(error instanceof Error ? error.message : 'desktop_auth_complete_failed');
       setIsLoggingIn(false);
     }
   };

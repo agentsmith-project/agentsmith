@@ -1,20 +1,30 @@
 import type { Page } from '@playwright/test';
 
-export async function readStoredAuthToken(page: Page): Promise<string> {
-  const token = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('agentsmith-auth');
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw) as { state?: { token?: string | null } };
-      return parsed.state?.token ?? null;
-    } catch {
-      return null;
-    }
-  });
-  if (!token) {
-    throw new Error('auth_token_not_found');
+export function extractStoredAuthToken(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { state?: { token?: string | null } };
+    return typeof parsed.state?.token === 'string' && parsed.state.token.trim().length > 0
+      ? parsed.state.token
+      : null;
+  } catch {
+    return null;
   }
-  return token;
+}
+
+export async function readStoredAuthToken(page: Page): Promise<string | null> {
+  try {
+    const raw = await page.evaluate(() => {
+      try {
+        return window.localStorage.getItem('agentsmith-auth');
+      } catch {
+        return null;
+      }
+    });
+    return extractStoredAuthToken(raw);
+  } catch {
+    return null;
+  }
 }
 
 export async function ensureWorkspaceProjectCreatorAccess(args: {

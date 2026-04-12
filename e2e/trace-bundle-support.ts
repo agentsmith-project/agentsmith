@@ -24,6 +24,19 @@ export type UxTraceEventInput = {
   note?: string;
 };
 
+export type UxTraceCaptureEventInput = {
+  stepId: string;
+  action: string;
+  target: string;
+  input?: string;
+  route?: string;
+  request?: UxTraceRequestSummary;
+  response?: UxTraceResponseSummary;
+  assertion?: string;
+  note?: string;
+  fullPage?: boolean;
+};
+
 export type UxTraceEventRecord = UxTraceEventInput & {
   seq: number;
   ts: string;
@@ -114,6 +127,20 @@ export type UxTraceBundleWriter = {
   finish(options: UxTraceBundleFinishOptions): Promise<UxTraceBundleManifest>;
   events(): UxTraceEventRecord[];
 };
+
+export function buildUxTraceCaptureEvent(event: UxTraceCaptureEventInput): UxTraceEventInput {
+  return {
+    stepId: event.stepId,
+    action: event.action,
+    target: event.target,
+    input: event.input,
+    route: event.route,
+    request: event.request,
+    response: event.response,
+    assertion: event.assertion,
+    note: event.note,
+  };
+}
 
 const DEFAULT_TRACE_OUTPUT_ROOT = path.resolve('artifacts/ux-traces');
 

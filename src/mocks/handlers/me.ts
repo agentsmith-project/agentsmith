@@ -7,6 +7,14 @@ import {
   markAllMockNotificationsRead,
   markMockNotificationRead,
 } from '../state/me-notifications';
+import {
+  buildMockExternalConnectionId,
+  createMockExternalConnection,
+  deleteMockExternalConnection,
+  listMockExternalConnections,
+  seedMockExternalConnections,
+  updateMockExternalConnection,
+} from '../state/me-external-connections';
 
 function readCookieValue(request: Request, key: string): string | null {
   const cookieHeader = request.headers.get('cookie');
@@ -21,6 +29,17 @@ function readCookieValue(request: Request, key: string): string | null {
 
 function readMockValue(request: Request, header: string, cookie: string): string | null {
   return request.headers.get(header) ?? readCookieValue(request, cookie);
+}
+
+function readMockJsonArray(request: Request, header: string): Array<Record<string, unknown>> | null {
+  const raw = readMockValue(request, header, header);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed as Array<Record<string, unknown>> : null;
+  } catch {
+    return null;
+  }
 }
 
 function getRequestUserId(request: Request): string {
@@ -40,6 +59,27 @@ export const meHandlers = [
     const provider = readMockValue(request, 'x-mock-connection-provider', 'ags_mock_connection_provider');
     const workspaceId = readMockValue(request, 'x-mock-connection-workspace', 'ags_mock_connection_workspace') ?? 'ws_default';
     const connectedEmail = readMockValue(request, 'x-mock-connection-email', 'ags_mock_connection_email');
+    const connectionDisplayName = readMockValue(request, 'x-mock-connection-display-name', 'ags_mock_connection_display_name');
+    const connectionKind = readMockValue(request, 'x-mock-connection-kind', 'ags_mock_connection_kind');
+    const connectionStatus = readMockValue(request, 'x-mock-connection-status', 'ags_mock_connection_status');
+    const connectionNote = readMockValue(request, 'x-mock-connection-note', 'ags_mock_connection_note');
+    const connectionCustomDomain = readMockValue(request, 'x-mock-connection-custom-domain', 'ags_mock_connection_custom_domain');
+    const connectionFields = readMockJsonArray(request, 'x-mock-connection-fields');
+    const connectionScopesRaw = readMockValue(request, 'x-mock-connection-scopes', 'ags_mock_connection_scopes');
+    const connectionScopes = connectionScopesRaw ? (() => {
+      try {
+        const parsed = JSON.parse(connectionScopesRaw) as unknown;
+        return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : null;
+      } catch {
+        return null;
+      }
+    })() : null;
+
+    const userId = getRequestUserId(request);
+    const storedConnections = listMockExternalConnections(userId);
+    if (storedConnections.length > 0) {
+      return HttpResponse.json({ items: storedConnections, total: storedConnections.length });
+    }
 
     if (provider === 'feishu' && connectedEmail) {
       return HttpResponse.json({
@@ -69,7 +109,86 @@ export const meHandlers = [
       });
     }
 
+    if (provider === 'custom' && connectionDisplayName && connectionFields) {
+      const displayName = connectionDisplayName.trim();
+      const customDomain = connectionCustomDomain?.trim() || null;
+      return HttpResponse.json({
+        items: [{
+          id: buildMockExternalConnectionId(displayName, 'custom'),
+          provider: 'custom',
+          kind: (connectionKind === 'ssh_keypair' || connectionKind === 'oauth_account' || connectionKind === 'secret_bundle')
+            ? connectionKind
+            : 'secret_bundle',
+          status: connectionStatus === 'expired' || connectionStatus === 'reauth_required' || connectionStatus === 'error'
+            ? connectionStatus
+            : 'active',
+          display_name: displayName,
+          note: connectionNote?.trim() || null,
+          custom_domain: customDomain,
+          fields: connectionFields.map((field) => ({
+            key: typeof field.key === 'string' ? field.key : '',
+            description: typeof field.description === 'string' ? field.description : null,
+            secret: field.secret !== false,
+            masked_value: typeof field.value === 'string' && field.secret !== false ? '••••••••' : typeof field.value === 'string' ? field.value : null,
+          })).filter((field) => field.key.length > 0),
+          account_identity: null,
+          scopes: connectionScopes,
+          expires_at: null,
+          last_refreshed_at: null,
+          last_error: null,
+          workspace_id: null,
+          created_at: '2026-03-19T08:00:00.000Z',
+          updated_at: '2026-03-19T08:00:00.000Z',
+        }],
+        total: 1,
+      });
+    }
+
     return HttpResponse.json({ items: [], total: 0 });
+  }),
+  http.post('/api/v1/me/external-connections', async ({ request }) => {
+    const userId = getRequestUserId(request);
+    const body = (await request.json().catch(() => ({}))) as Parameters<typeof createMockExternalConnection>[1];
+    return HttpResponse.json(createMockExternalConnection(userId, body), { status: 201 });
+  }),
+  http.post('/api/test/me/external-connections/seed', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      user_id?: string;
+      connections?: Array<Parameters<typeof createMockExternalConnection>[1]>;
+      connection?: Parameters<typeof createMockExternalConnection>[1];
+    };
+    const userId = typeof body.user_id === 'string' && body.user_id.trim().length > 0
+      ? body.user_id.trim()
+      : 'user_001';
+    const connections = Array.isArray(body.connections)
+      ? body.connections
+      : body.connection
+        ? [body.connection]
+        : [];
+    const seeded = seedMockExternalConnections(userId, connections);
+    return HttpResponse.json({
+      ok: true,
+      count: seeded.length,
+      items: seeded,
+      id: seeded[0]?.id ?? null,
+    });
+  }),
+  http.patch('/api/v1/me/external-connections/:id', async ({ params, request }) => {
+    const userId = getRequestUserId(request);
+    const body = (await request.json().catch(() => ({}))) as Parameters<typeof updateMockExternalConnection>[2];
+    const updated = updateMockExternalConnection(userId, params.id as string, body);
+    if (!updated) {
+      return HttpResponse.json({ error: 'external_connection_not_found' }, { status: 404 });
+    }
+    return HttpResponse.json(updated);
+  }),
+  http.delete('/api/v1/me/external-connections/:id', ({ params, request }) => {
+    const userId = getRequestUserId(request);
+    const deleted = deleteMockExternalConnection(userId, params.id as string);
+    if (!deleted) {
+      return HttpResponse.json({ error: 'external_connection_not_found' }, { status: 404 });
+    }
+    return HttpResponse.json({ ok: true });
   }),
   http.patch('/api/v1/me/profile', async ({ request }) => {
     const body: any = await request.json().catch(() => ({}));

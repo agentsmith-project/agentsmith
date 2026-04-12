@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   createUxTraceBundleWriter,
+  buildUxTraceCaptureEvent,
   resolveUxTraceBundleDir,
   type UxTracePageLike,
 } from '../e2e/trace-bundle-support';
@@ -180,5 +181,23 @@ describe('ux trace bundle support', () => {
     } finally {
       await rm(rootDir, { recursive: true, force: true });
     }
+  });
+
+  it('preserves visual review action and target fields when building capture events', () => {
+    const event = buildUxTraceCaptureEvent({
+      stepId: 'system-login',
+      action: 'Open system login',
+      target: 'system-login__heading',
+      note: 'system 管理侧登录入口',
+      route: '/en-US/system/login',
+    });
+
+    expect(event).toMatchObject({
+      stepId: 'system-login',
+      action: 'Open system login',
+      target: 'system-login__heading',
+      note: 'system 管理侧登录入口',
+      route: '/en-US/system/login',
+    });
   });
 });

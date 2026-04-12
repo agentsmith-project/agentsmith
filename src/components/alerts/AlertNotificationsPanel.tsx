@@ -10,7 +10,7 @@
 
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import { Bell, X, AlertCircle, AlertTriangle, Info } from 'lucide-react';
+import { Bell, X, AlertCircle, AlertTriangle, AlertOctagon, Info } from 'lucide-react';
 import type { Alert } from '@/lib/types/alerts';
 import { Button } from '@/components/ui/button';
 
@@ -135,7 +135,7 @@ export function AlertNotificationsPanel({
                 data-testid={`severity-badge-${alert.severity}`}
               >
                 <SeverityIcon className="h-3.5 w-3.5" />
-                <span>{alert.severity}</span>
+                <span>{t(`severity.${alert.severity}`)}</span>
               </div>
 
               <div className="flex-1 min-w-0">
@@ -220,6 +220,3 @@ export function AlertNotificationsPanel({
 
 // Re-export Alert type for convenience
 export type { Alert } from '@/lib/types/alerts';
-
-// Import AlertOctagon for severity icon
-import { AlertOctagon } from 'lucide-react';

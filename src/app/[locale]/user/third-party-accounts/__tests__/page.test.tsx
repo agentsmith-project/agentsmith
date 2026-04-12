@@ -81,6 +81,8 @@ describe('ThirdPartyAccountsPage', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByTestId('third-party-accounts__sheet')).toBeInTheDocument();
     expect(screen.getByTestId('third-party-accounts__sheet').className).toMatch(/sm:w-\[640px\]/);
+    expect(screen.getByTestId('third-party-accounts__provider-select')).toBeInTheDocument();
+    expect(screen.getByTestId('third-party-accounts__submit-btn')).toBeInTheDocument();
     expect(screen.getByText('create_title')).toBeInTheDocument();
     expect(screen.queryByText('personal_scope_badge')).not.toBeInTheDocument();
     expect(screen.queryByText('personal_scope_dialog_note')).not.toBeInTheDocument();
@@ -199,6 +201,62 @@ describe('ThirdPartyAccountsPage', () => {
           expires_at: undefined,
           last_error: undefined,
         },
+      );
+    });
+  });
+
+  it('preserves custom provider generic field values when editing existing connections', async () => {
+    mockList.mockResolvedValue([
+      {
+        id: 'uec_custom',
+        user_id: 'user_1',
+        provider: 'custom',
+        kind: 'secret_bundle',
+        display_name: 'Custom Integration',
+        custom_domain: 'custom.example.com',
+        note: 'External system connection',
+        status: 'active',
+        fields: [
+          { key: 'base_url', description: 'Base URL', secret: false, masked_value: 'https://api.custom.example.com' },
+          { key: 'token', description: 'API token', secret: true, masked_value: 'tok••••redacted' },
+        ],
+        account_identity: null,
+        scopes: null,
+        expires_at: null,
+        last_refreshed_at: null,
+        last_used_at: null,
+        last_error: null,
+        created_at: '2026-03-05T00:00:00Z',
+        updated_at: '2026-03-05T00:00:00Z',
+      },
+    ]);
+
+    render(<ThirdPartyAccountsPage />, { wrapper });
+
+    await user.click(await screen.findByTestId('third-party-accounts__row-uec_custom'));
+
+    expect(screen.getByLabelText('display_name_label')).toHaveValue('Custom Integration');
+    expect(screen.getByLabelText('custom_domain_label')).toHaveValue('custom.example.com');
+    const fieldKeys = screen.getAllByPlaceholderText('field_key_placeholder');
+    const fieldValues = screen.getAllByPlaceholderText('field_value_placeholder');
+    expect(fieldKeys[0]).toHaveValue('base_url');
+    expect(fieldValues[0]).toHaveValue('https://api.custom.example.com');
+    expect(screen.getByPlaceholderText('secret_keep_existing_hint')).toHaveValue('');
+
+    await user.click(screen.getByRole('button', { name: 'save' }));
+
+    await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalledWith(
+        'uec_custom',
+        expect.objectContaining({
+          custom_domain: 'custom.example.com',
+          display_name: 'Custom Integration',
+          note: 'External system connection',
+          fields: [
+            { key: 'base_url', value: 'https://api.custom.example.com', description: 'Base URL', secret: false },
+            { key: 'token', value: '', description: 'API token', secret: true },
+          ],
+        }),
       );
     });
   });

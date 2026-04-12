@@ -3198,6 +3198,12 @@
     "no_rules_description": "创建第一条告警规则，在重要事件发生时收到通知",
     "no_alerts": "暂无通知",
     "no_alerts_description": "已全部处理完毕！没有新告警",
+    "severity": {
+      "critical": "严重",
+      "error": "错误",
+      "warning": "警告",
+      "info": "信息"
+    },
     "resolved": "已恢复",
     "dismiss": "忽略",
     "form": {

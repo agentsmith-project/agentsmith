@@ -5,14 +5,14 @@ import path from 'node:path';
 import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { WebSocket } from 'ws';
-import { expect, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import {
   evaluateNotebookExecutionSnapshot,
   summarizeNotebookMessages,
   summarizeNotebookPod,
   summarizeNotebookTraces,
 } from './notebook-execution-outcome';
-import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
+import { ensureWorkspaceProjectCreatorAccess } from './integration-workspace-access';
 
 export const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 export const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
@@ -677,7 +677,8 @@ export async function createCredentialViaUi(
 }
 
 export async function createExternalConnectionViaApi(args: {
-  page: Page;
+  request: APIRequestContext;
+  token: string;
   provider: 'jira' | 'feishu' | 'github' | 'gitee' | 'custom';
   kind: 'oauth_account' | 'secret_bundle' | 'ssh_keypair';
   displayName: string;
@@ -686,8 +687,11 @@ export async function createExternalConnectionViaApi(args: {
   status?: 'active' | 'expired' | 'reauth_required' | 'error';
   scopes?: string[];
 }): Promise<string> {
-  const token = await readStoredAuthToken(args.page);
-  const response = await args.page.request.post(`${API_BASE}/api/v1/me/external-connections`, {
+  const token = args.token.trim();
+  if (!token) {
+    throw new Error('auth_token_not_found_for_external_connection_seed');
+  }
+  const response = await args.request.post(`${API_BASE}/api/v1/me/external-connections`, {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',

@@ -95,6 +95,7 @@ export function ConnectionFormFields({
               onChange={(event) => onProviderChange(event.target.value as UserExternalConnectionProvider)}
               disabled={editing}
               aria-label={t('provider_label')}
+              data-testid="third-party-accounts__provider-select"
               className="w-full h-10 rounded-md border border-subtle bg-background px-3 text-sm text-primary"
             >
               {(editing ? PROVIDERS : CREATE_PROVIDERS).map((item) => (
@@ -109,6 +110,7 @@ export function ConnectionFormFields({
               onChange={(event) => onKindChange(event.target.value as UserExternalConnectionKind)}
               disabled={editing || provider === 'feishu'}
               aria-label={t('kind_label')}
+              data-testid="third-party-accounts__kind-select"
               className="w-full h-10 rounded-md border border-subtle bg-background px-3 text-sm text-primary"
             >
               {KINDS.filter((item) => allowedKindsForProvider(provider).includes(item.value)).map((item) => (
@@ -125,6 +127,7 @@ export function ConnectionFormFields({
                 value={customDomain}
                 onChange={(event) => onCustomDomainChange(event.target.value)}
                 placeholder={t('custom_domain_placeholder')}
+                data-testid="third-party-accounts__custom-domain"
                 className="bg-background"
               />
             </div>
@@ -137,6 +140,7 @@ export function ConnectionFormFields({
               value={displayName}
               onChange={(event) => onDisplayNameChange(event.target.value)}
               placeholder={t('display_name_placeholder')}
+              data-testid="third-party-accounts__display-name"
               className="bg-background"
             />
           </div>
@@ -149,6 +153,7 @@ export function ConnectionFormFields({
               onChange={(event) => onNoteChange(event.target.value)}
               rows={2}
               placeholder={t('note_placeholder')}
+              data-testid="third-party-accounts__note"
               className="bg-background"
             />
           </div>
@@ -268,6 +273,7 @@ export function ConnectionFormFields({
               variant="outline"
               size="sm"
               onClick={() => onFieldsChange([...fields, createEmptyField()])}
+              data-testid="third-party-accounts__add-field"
             >
               <Plus className="w-4 h-4" />
               {t('add_field')}
@@ -275,17 +281,23 @@ export function ConnectionFormFields({
           </div>
           <div className="space-y-3">
             {fields.map((field, index) => (
-              <div key={`${index}-${field.key}`} className="space-y-3 rounded-md border border-subtle bg-background p-3">
+              <div
+                key={`${index}-${field.key}`}
+                className="space-y-3 rounded-md border border-subtle bg-background p-3"
+                data-testid={`third-party-accounts__field-row-${index}`}
+              >
                 <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                   <Input
                     value={field.key}
                     onChange={(event) => onFieldsChange(fields.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))}
                     placeholder={t('field_key_placeholder')}
+                    data-testid={`third-party-accounts__field-key-${index}`}
                   />
                   <Input
                     value={field.value}
                     onChange={(event) => onFieldsChange(fields.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))}
                     placeholder={editing && field.secret ? t('secret_keep_existing_hint') : t('field_value_placeholder')}
+                    data-testid={`third-party-accounts__field-value-${index}`}
                   />
                   <Button
                     type="button"
@@ -302,12 +314,14 @@ export function ConnectionFormFields({
                     value={field.description ?? ''}
                     onChange={(event) => onFieldsChange(fields.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item))}
                     placeholder={t('field_description_placeholder')}
+                    data-testid={`third-party-accounts__field-description-${index}`}
                   />
                   <label className="inline-flex items-center gap-2 text-sm text-tertiary">
                     <input
                       type="checkbox"
                       checked={field.secret !== false}
                       onChange={(event) => onFieldsChange(fields.map((item, itemIndex) => itemIndex === index ? { ...item, secret: event.target.checked } : item))}
+                      data-testid={`third-party-accounts__field-secret-${index}`}
                     />
                     {t('field_secret_label')}
                   </label>

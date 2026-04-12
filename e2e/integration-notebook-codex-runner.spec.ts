@@ -831,8 +831,11 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
 
     try {
+      const authToken = await readStoredAuthToken(page);
+      expect(authToken).toBeTruthy();
       await createExternalConnectionViaApi({
-        page,
+        request: page.request,
+        token: authToken!,
         provider: 'feishu',
         kind: 'oauth_account',
         displayName: `member-feishu-${Date.now()}`,

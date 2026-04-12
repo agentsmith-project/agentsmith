@@ -11,6 +11,7 @@ import {
 import type {
   CreateUserExternalConnectionRequest,
   UpdateUserExternalConnectionRequest,
+  UserExternalConnectionField,
   UserExternalConnection,
   UserExternalConnectionFieldInput,
   UserExternalConnectionKind,
@@ -152,9 +153,9 @@ export default function ThirdPartyAccountsPage() {
     setSshPrivateKey('');
     setFields(
       item.fields.length > 0
-        ? item.fields.map((field) => ({
+        ? item.fields.map((field: UserExternalConnectionField) => ({
             key: field.key,
-            value: '',
+            value: field.secret ? '' : (field.masked_value ?? ''),
             description: field.description ?? '',
             secret: field.secret,
           }))
@@ -353,6 +354,7 @@ export default function ThirdPartyAccountsPage() {
                   variant="action"
                   onClick={saveConnection}
                   disabled={isPending || !canSubmit}
+                  data-testid="third-party-accounts__submit-btn"
                 >
                   {editing ? t('save') : t('create')}
                 </Button>

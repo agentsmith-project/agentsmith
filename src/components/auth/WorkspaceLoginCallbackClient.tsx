@@ -6,9 +6,13 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api/client';
-import { buildPublicApiUrl } from '@/lib/public-runtime-config';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
 import { readAccessTokenClaims } from '@/lib/auth/token-claims';
+import {
+  buildDesktopAuthCompleteHref,
+  buildDesktopAuthRequestHref,
+  completeDesktopAuthRequest,
+} from '@/lib/auth/desktop-auth-request';
 
 interface KeycloakTokenResponse {
   access_token: string;
@@ -80,19 +84,6 @@ async function tryBindWorkspaceAdmin(workspaceId: string, accessToken: string): 
       authorization: `Bearer ${accessToken}`,
     },
   }).catch(() => undefined);
-}
-
-async function tryCompleteDesktopAuthRequest(requestId: string, accessToken: string): Promise<void> {
-  await fetch(buildPublicApiUrl(`/me/desktop/auth/requests/${encodeURIComponent(requestId)}/complete`), {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${accessToken}`,
-    },
-  }).then(async (response) => {
-    if (!response.ok) {
-      throw new Error(`desktop_auth_complete_failed_${response.status}`);
-    }
-  });
 }
 
 export function WorkspaceLoginCallbackClient({
@@ -184,6 +175,9 @@ export function WorkspaceLoginCallbackClient({
       }
 
       const locale = pkce.locale || fallbackLocale;
+      const desktopAuthRequestHref = pkce.desktopAuthRequestId
+        ? buildDesktopAuthRequestHref(locale, pkce.desktopAuthRequestId)
+        : null;
       setAuth(
         {
           id: claims.sub,
@@ -204,13 +198,23 @@ export function WorkspaceLoginCallbackClient({
       getApiClient().setToken(token.access_token);
       await tryBindWorkspaceAdmin(workspaceId, token.access_token);
       if (pkce.desktopAuthRequestId) {
-        await tryCompleteDesktopAuthRequest(pkce.desktopAuthRequestId, token.access_token);
+        try {
+          await completeDesktopAuthRequest(pkce.desktopAuthRequestId, token.access_token);
+        } catch (cause) {
+          if (!cancelled) {
+            setError(cause instanceof Error ? cause.message : 'desktop_auth_complete_failed');
+            if (desktopAuthRequestHref) {
+              window.location.replace(desktopAuthRequestHref);
+            }
+          }
+          return;
+        }
       }
       sessionStorage.removeItem('mbos:keycloak:pkce');
       if (!cancelled) {
         window.location.replace(
           pkce.desktopAuthRequestId
-            ? `/${locale}/desktop/auth/complete?desktop_auth_request_id=${encodeURIComponent(pkce.desktopAuthRequestId)}`
+            ? buildDesktopAuthCompleteHref(locale, pkce.desktopAuthRequestId)
             : `/${locale}/workspaces/${workspaceId}`,
         );
       }

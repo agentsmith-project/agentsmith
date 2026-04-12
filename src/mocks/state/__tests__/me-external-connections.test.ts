@@ -1,0 +1,78 @@
+import { describe, expect, it } from 'vitest';
+import {
+  listMockExternalConnections,
+  seedMockExternalConnection,
+  seedMockExternalConnections,
+  updateMockExternalConnection,
+} from '../me-external-connections';
+
+describe('me-external-connections state helpers', () => {
+  it('seeds one external connection at a time with cloned fields', () => {
+    const seeded = seedMockExternalConnection('user_seed_1', {
+      id: 'uec_seed_1',
+      user_id: 'user_seed_1',
+      provider: 'custom',
+      kind: 'secret_bundle',
+      display_name: 'Visual Seed',
+      status: 'active',
+      fields: [
+        { key: 'base_url', value: 'https://api.visual.example.com', description: 'Base URL', secret: false },
+      ],
+    });
+
+    expect(seeded.id).toBe('uec_seed_1');
+    expect(listMockExternalConnections('user_seed_1')).toEqual([seeded]);
+  });
+
+  it('seeds multiple external connections for the same user', () => {
+    const seeded = seedMockExternalConnections('user_seed_2', [
+      {
+        id: 'uec_seed_2',
+        user_id: 'user_seed_2',
+        provider: 'jira',
+        kind: 'secret_bundle',
+        display_name: 'Jira Seed',
+        status: 'active',
+        fields: [],
+      },
+      {
+        id: 'uec_seed_3',
+        user_id: 'user_seed_2',
+        provider: 'custom',
+        kind: 'secret_bundle',
+        display_name: 'Custom Seed',
+        status: 'active',
+        fields: [],
+      },
+    ]);
+
+    expect(seeded.map((item) => item.id)).toEqual(['uec_seed_2', 'uec_seed_3']);
+    expect(listMockExternalConnections('user_seed_2')).toHaveLength(2);
+  });
+
+  it('preserves existing fields when updating a seeded connection', () => {
+    seedMockExternalConnection('user_seed_3', {
+      id: 'uec_seed_4',
+      user_id: 'user_seed_3',
+      provider: 'custom',
+      kind: 'secret_bundle',
+      display_name: 'Visual Seed',
+      status: 'active',
+      fields: [
+        { key: 'base_url', value: 'https://api.visual.example.com', description: 'Base URL', secret: false },
+        { key: 'token', value: 'tok-visual', description: 'API token', secret: true },
+      ],
+    });
+
+    const updated = updateMockExternalConnection('user_seed_3', 'uec_seed_4', {
+      display_name: 'Visual Seed Updated',
+      fields: [
+        { key: 'base_url', value: 'https://api.visual.example.com', description: 'Base URL', secret: false },
+        { key: 'token', value: 'tok-visual', description: 'API token', secret: true },
+      ],
+    });
+
+    expect(updated?.display_name).toBe('Visual Seed Updated');
+    expect(updated?.fields).toHaveLength(2);
+  });
+});

@@ -122,9 +122,21 @@ describe('visual baseline support', () => {
       'api-keys__list-section',
       'api-keys__create-btn',
     ]);
+    expect(grouped.get('api-keys-create-dialog')?.stableMarkers).toEqual([
+      'api-keys__create-dialog',
+    ]);
+    expect(grouped.get('api-keys-key-created-dialog')?.stableMarkers).toEqual([
+      'api-keys__key-created-dialog',
+    ]);
     expect(grouped.get('third-party-accounts')?.stableMarkers).toEqual([
       'third-party-accounts__list-section',
       'third-party-accounts__create-btn',
+    ]);
+    expect(grouped.get('third-party-accounts-create-sheet')?.stableMarkers).toEqual([
+      'third-party-accounts__sheet',
+    ]);
+    expect(grouped.get('third-party-accounts-edit-sheet')?.stableMarkers).toEqual([
+      'third-party-accounts__sheet',
     ]);
     expect(grouped.get('members')?.stableMarkers).toEqual([
       'members__work-surface',
@@ -255,6 +267,18 @@ describe('visual baseline support', () => {
       'usage__selected-endpoint',
       'usage__trend',
       'usage__limits',
+    ]);
+    expect(resolveVisualBaselineStableMarkers('api-keys-create-dialog')).toEqual([
+      'api-keys__create-dialog',
+    ]);
+    expect(resolveVisualBaselineStableMarkers('api-keys-key-created-dialog')).toEqual([
+      'api-keys__key-created-dialog',
+    ]);
+    expect(resolveVisualBaselineStableMarkers('third-party-accounts-create-sheet')).toEqual([
+      'third-party-accounts__sheet',
+    ]);
+    expect(resolveVisualBaselineStableMarkers('third-party-accounts-edit-sheet')).toEqual([
+      'third-party-accounts__sheet',
     ]);
 
     expect(resolveVisualBaselineStableMarkers('chat-standard')).toEqual([

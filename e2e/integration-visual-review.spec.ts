@@ -48,6 +48,52 @@ type ProjectContext = {
   projectName: string;
 };
 
+type VisualReviewTraceMeta = {
+  action: string;
+  target: string;
+};
+
+const VISUAL_REVIEW_TRACE_META: Record<string, VisualReviewTraceMeta> = {
+  'system-login': { action: 'Open system login', target: 'system-login__heading' },
+  'system-workspaces': { action: 'Review system workspaces', target: 'system-workspaces__list' },
+  'system-workspace-editor': { action: 'Review workspace editor', target: 'system-workspaces__editor' },
+  'system-info': { action: 'Open system info', target: 'system-info__shell' },
+  'workspace-login': { action: 'Open workspace login', target: 'workspace-login__heading' },
+  'workspace-home-admin': { action: 'Open workspace home', target: 'workspace-overview__heading' },
+  'workspace-settings': { action: 'Open workspace settings', target: 'ws-settings__summary-line' },
+  'workspace-projects-before-create': { action: 'Open projects list', target: 'projects__create-btn' },
+  'dialog-create-project-real': { action: 'Open create project dialog', target: 'dialog[role="dialog"]' },
+  'project-overview-initial': { action: 'Inspect project overview', target: 'project-hub__page' },
+  'projects-join-request-pending': { action: 'Request project access', target: 'projects__join-request-btn' },
+  'members-join-requests-before-approve': { action: 'Review join requests', target: 'members__join-requests-list' },
+  'members-join-requests-after-approve': { action: 'Approve join request', target: 'members__join-requests-list' },
+  'dialog-create-credential-real': { action: 'Open create credential dialog', target: 'credentials__create-dialog' },
+  'project-credentials-real': { action: 'Inspect credentials list', target: 'credentials__table' },
+  'dialog-create-endpoint-real': { action: 'Open create endpoint dialog', target: 'endpoints__create-dialog' },
+  'project-endpoints-real': { action: 'Inspect endpoints list', target: 'endpoints__table' },
+  'dialog-create-agent-real': { action: 'Open create agent dialog', target: 'agents__create-dialog' },
+  'project-agents-real': { action: 'Inspect agents list', target: 'agents__table' },
+  'dialog-agent-connection-info-real': { action: 'Open agent connection info', target: 'agents__dialog__keys' },
+  'dialog-file-library-create-real': { action: 'Open create library dialog', target: 'files__dialog__library-create' },
+  'dialog-file-library-mount-access-real': { action: 'Open mount access dialog', target: 'files__dialog__desktop-mount-access' },
+  'project-notebook-task-detail-real': { action: 'Inspect notebook task detail', target: 'notebook__task-detail' },
+  'project-notebook-trace-real': { action: 'Inspect notebook trace panel', target: 'notebook__message-trace-panel' },
+  'project-files-notebook-workspace-real': { action: 'Inspect files workspace', target: 'files__object-row' },
+  'project-notebook-task-internal-preparing-real': { action: 'Inspect internal notebook task progress', target: 'notebook__task-progress' },
+  'project-notebook-task-internal-detail-real': { action: 'Inspect internal notebook task detail', target: 'notebook__task-detail' },
+  'project-files-internal-workspace-real': { action: 'Inspect internal files workspace', target: 'files__object-row' },
+  'usage-limits-and-trend-real': { action: 'Open usage view', target: 'usage__work-surface' },
+  'audit-detail-drawer-real': { action: 'Open audit detail drawer', target: 'audit__detail-summary' },
+  'members-effective-access-real': { action: 'Open member access drawer', target: 'members__effective-access' },
+};
+
+function resolveVisualReviewTraceMeta(stepId: string, role: string): VisualReviewTraceMeta {
+  return VISUAL_REVIEW_TRACE_META[stepId] ?? {
+    action: `Review ${stepId}`,
+    target: role,
+  };
+}
+
 function requireRealLaneApiKey(): string {
   if (!BACKEND_REAL_API_KEY?.trim()) {
     throw new Error('missing_BACKEND_REAL_API_KEY');
@@ -748,8 +794,10 @@ async function captureProjectPages(
   capturePage: (page: Page, captures: unknown[], args: {
     name: string;
     role: string;
-    route?: string;
     notes: string;
+    action?: string;
+    target?: string;
+    route?: string;
     fullPage?: boolean;
   }) => Promise<unknown>,
   captures: unknown[],
@@ -767,10 +815,10 @@ async function captureProjectPages(
     { name: 'project-members', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/members`, waitFor: 'members__search-input' },
     { name: 'project-resource-policy', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/resource-policy`, waitFor: 'resource-policy__editor' },
     { name: 'project-audit', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/audit`, waitFor: 'audit__page' },
-    { name: 'project-usage', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/usage`, waitFor: 'usage__view' },
+    { name: 'project-usage', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/usage`, waitFor: 'usage__work-surface' },
     { name: 'project-settings', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/settings`, waitFor: 'settings__general-section' },
     { name: 'project-use-guide', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/use-guide`, waitFor: 'use-guide__page' },
-    { name: 'project-alerts', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/alerts`, waitFor: 'alerts__open-audit' },
+    { name: 'project-alerts', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/alerts`, waitFor: 'alerts__main-surface' },
   ];
 
   for (const item of pages) {
@@ -797,10 +845,13 @@ async function captureProjectPages(
       }
     }
     await settlePage(page);
+    const traceMeta = resolveVisualReviewTraceMeta(item.name, role);
     await capturePage(page, captures, {
       name: item.name,
       role,
       notes,
+      action: traceMeta.action,
+      target: traceMeta.target,
     });
   }
 }
@@ -831,16 +882,19 @@ test.describe('@lane-real integration visual review', () => {
       args: {
         name: string;
         role: string;
-        route?: string;
         notes: string;
+        route?: string;
         fullPage?: boolean;
+        action?: string;
+        target?: string;
+        note?: string;
       },
     ) => trace.capture(targetPage, {
       stepId: args.name,
-      action: args.notes,
-      target: args.role,
+      action: args.action ?? resolveVisualReviewTraceMeta(args.name, args.role).action,
+      target: args.target ?? resolveVisualReviewTraceMeta(args.name, args.role).target,
       route: args.route ?? targetPage.url(),
-      note: args.notes,
+      note: args.note ?? args.notes,
       fullPage: args.fullPage,
     });
     let outcome: 'pass' | 'fail' = 'fail';

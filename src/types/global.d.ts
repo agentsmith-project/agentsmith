@@ -26,6 +26,7 @@ declare global {
       wsId: string;
       userEmail: string;
       userId: string;
+      token?: string;
     };
 
     __MBOS_PUBLIC_RUNTIME_CONFIG__?: PublicRuntimeConfig;

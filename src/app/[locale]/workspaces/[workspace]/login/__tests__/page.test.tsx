@@ -5,10 +5,11 @@ const mockReplace = vi.fn();
 const mockPush = vi.fn();
 const mockAssign = vi.fn();
 const mockSetAuth = vi.fn();
+const mockUseSearchParams = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ locale: 'en-US', workspace: 'ws_alpha' }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => mockUseSearchParams(),
 }));
 
 vi.mock('@/lib/i18n/routing', () => ({
@@ -52,6 +53,8 @@ describe('WorkspaceLoginPage', () => {
     mockReplace.mockReset();
     mockPush.mockReset();
     mockSetAuth.mockReset();
+    mockUseSearchParams.mockReset();
+    mockUseSearchParams.mockReturnValue(new URLSearchParams());
     fetchMock.mockReset();
     fetchMock.mockResolvedValue({
       ok: true,
@@ -109,6 +112,82 @@ describe('WorkspaceLoginPage', () => {
 
     expect(mockSetAuth).toHaveBeenCalled();
     expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_alpha');
+  });
+
+  it('completes desktop auth request before leaving quick login when request id is present', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('desktop_auth_request_id=req_123'));
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        id: 'ws_alpha',
+        name: 'Alpha Workspace',
+        login_idp: {
+          kind: 'keycloak',
+          url: 'https://login.example.com',
+          realm: 'alpha',
+          client_id: 'alpha-client',
+        },
+      }),
+    });
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+    render(<WorkspaceLoginPage />);
+
+    expect(await screen.findByTestId('workspace-login__submit')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('workspace-login__email-input'), {
+      target: { value: 'user@example.com' },
+    });
+    fireEvent.click(screen.getByTestId('workspace-login__submit'));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/public/workspaces/ws_alpha',
+        { cache: 'no-store' },
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/me/desktop/auth/requests/req_123/complete'),
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            authorization: expect.stringContaining('Bearer mock_token_ws_alpha_'),
+          }),
+        }),
+      );
+      expect(mockReplace).toHaveBeenCalledWith('/en-US/desktop/auth/complete?desktop_auth_request_id=req_123');
+    });
+  });
+
+  it('keeps auth and returns to desktop handoff recovery when quick login desktop completion fails', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('desktop_auth_request_id=req_123'));
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'ws_alpha',
+          name: 'Alpha Workspace',
+          login_idp: {
+            kind: 'keycloak',
+            url: 'https://login.example.com',
+            realm: 'alpha',
+            client_id: 'alpha-client',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) });
+
+    render(<WorkspaceLoginPage />);
+
+    expect(await screen.findByTestId('workspace-login__submit')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('workspace-login__email-input'), {
+      target: { value: 'user@example.com' },
+    });
+    fireEvent.click(screen.getByTestId('workspace-login__submit'));
+
+    await waitFor(() => {
+      expect(mockSetAuth).toHaveBeenCalled();
+      expect(mockPush).not.toHaveBeenCalled();
+      expect(mockReplace).toHaveBeenCalledWith('/en-US/desktop/auth/request?desktop_auth_request_id=req_123');
+    });
   });
 
   it('starts keycloak login with a locale-independent workspace callback', async () => {

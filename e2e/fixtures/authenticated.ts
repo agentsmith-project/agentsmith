@@ -14,7 +14,10 @@ export async function withAuth(
 ) {
   const inject = ({ wsId, userEmail, userId }: { wsId: string; userEmail: string; userId: string }) => {
     window.__MBOS_AUTH_SETUP__ = true;
-    window.__MBOS_AUTH_E2E_CONTEXT__ = { wsId, userEmail, userId };
+    const token = `mock_token_${userId}_${Date.now()}`;
+    const refreshToken = `mock_refresh_${Date.now()}`;
+    const tokenExpiresAt = Date.now() + 60 * 60 * 1000;
+    window.__MBOS_AUTH_E2E_CONTEXT__ = { wsId, userEmail, userId, token };
 
     const user = {
       id: userId,
@@ -22,10 +25,6 @@ export async function withAuth(
       name: userEmail.split('@')[0],
       locale: 'en-US',
     };
-
-    const token = `mock_token_${userId}_${Date.now()}`;
-    const refreshToken = `mock_refresh_${Date.now()}`;
-    const tokenExpiresAt = Date.now() + 60 * 60 * 1000;
 
     try {
       localStorage.setItem('agentsmith-auth', JSON.stringify({
@@ -74,6 +73,11 @@ export async function withAuth(
   await page.evaluate(inject, { wsId, userEmail, userId }).catch(() => {
     // about:blank / cross-origin pages can reject evaluate; initScript path still covers next navigation.
   });
+}
+
+export async function readMockAuthTokenFromContext(page: Page): Promise<string | null> {
+  const token = await page.evaluate(() => window.__MBOS_AUTH_E2E_CONTEXT__?.token ?? null).catch(() => null);
+  return typeof token === 'string' && token.trim().length > 0 ? token : null;
 }
 
 export async function ensureAuthenticatedSession(

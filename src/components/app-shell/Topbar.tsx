@@ -49,6 +49,9 @@ function resolveTopbarHomeHref(params: {
   return '/workspaces';
 }
 
+const quietSwitcherClassName =
+  'inline-flex h-10 items-center gap-2 rounded-pill border border-transparent bg-transparent px-3 text-left text-primary transition-[background-color,border-color,color] duration-150 hover:border-border/55 hover:bg-surface-low hover:text-foreground';
+
 export function Topbar({ className = '' }: TopbarProps) {
   const user = useAuthStore(selectCurrentUser);
   const { clearAuth } = useAuthStore();
@@ -153,36 +156,36 @@ export function Topbar({ className = '' }: TopbarProps) {
 
   return (
     <header
-      data-testid="topbar"
-      className={`sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-border/70 bg-background/88 px-4 backdrop-blur-xl md:px-6 ${className}`}
+      data-testid='topbar'
+      className={`sticky top-0 z-30 flex h-14 items-center justify-between gap-4 border-b border-border/55 bg-background/92 px-4 backdrop-blur-md md:px-5 ${className}`}
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className='flex min-w-0 items-center gap-3'>
         <button
           onClick={handleLogoClick}
-          className="rounded-md px-1 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          className='rounded-md px-1 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20'
           aria-label={t('go_to_projects')}
         >
           <Logo />
         </button>
       </div>
 
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className='flex min-w-0 flex-1 items-center gap-2'>
         <DropdownMenu>
           <DropdownMenuTrigger
-            data-testid="topbar__workspace-switcher"
-            className="control-pill flex h-11 max-w-[22rem] items-center gap-2.5 px-3.5 text-left text-primary shadow-ambient transition-colors duration-150 hover:bg-surface hover:text-foreground"
+            data-testid='topbar__workspace-switcher'
+            className={`${quietSwitcherClassName} max-w-[20rem]`}
           >
-            <Globe className="h-4 w-4 flex-shrink-0 text-icon-default" />
-            <span className="truncate text-sm text-foreground">{currentWorkspace?.name || t('select_workspace')}</span>
-            <ChevronDown className="ml-auto h-4 w-4 flex-shrink-0 text-tertiary" />
+            <Globe className='h-4 w-4 flex-shrink-0 text-icon-default' />
+            <span className='truncate text-sm text-foreground'>{currentWorkspace?.name || t('select_workspace')}</span>
+            <ChevronDown className='ml-auto h-4 w-4 flex-shrink-0 text-tertiary' />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
+          <DropdownMenuContent align='start'>
             {workspaces && workspaces.length > 0 ? (
               workspaces.map((ws) => (
                 <DropdownMenuItem key={ws.id} onSelect={() => handleWorkspaceChange(ws.id)}>
                   {ws.name}
                   {currentWorkspace?.id === ws.id ? (
-                    <span className="ml-auto text-xs text-tertiary">{t('current_workspace')}</span>
+                    <span className='ml-auto text-xs text-tertiary'>{t('current_workspace')}</span>
                   ) : null}
                 </DropdownMenuItem>
               ))
@@ -194,19 +197,19 @@ export function Topbar({ className = '' }: TopbarProps) {
 
         {currentProject ? (
           <>
-            <div className="hidden h-5 w-px bg-border/60 md:block" />
-            <div className="flex min-w-0 items-center gap-2">
+            <div className='hidden h-4 w-px bg-border/45 md:block' />
+            <div className='flex min-w-0 items-center gap-2'>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
-                      data-testid="topbar__project-switcher"
+                      data-testid='topbar__project-switcher'
                       onClick={handleGoToProjects}
-                      className="control-pill flex h-11 max-w-[24rem] items-center gap-2.5 px-3.5 text-left shadow-ambient transition-colors duration-150 hover:bg-surface"
+                      className={`${quietSwitcherClassName} max-w-[22rem]`}
                       aria-label={t('go_to_projects')}
                     >
-                      <FolderKanban className="h-4 w-4 flex-shrink-0 text-icon-default" />
-                      <span className="truncate text-sm text-foreground">{currentProject.name}</span>
+                      <FolderKanban className='h-4 w-4 flex-shrink-0 text-icon-default' />
+                      <span className='truncate text-sm text-foreground'>{currentProject.name}</span>
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -217,18 +220,18 @@ export function Topbar({ className = '' }: TopbarProps) {
 
               <DropdownMenu>
                 <DropdownMenuTrigger
-                  data-testid="topbar__project-switcher-menu"
-                  className="control-pill flex h-11 w-11 items-center justify-center text-tertiary shadow-ambient transition-colors duration-150 hover:bg-surface hover:text-foreground"
+                  data-testid='topbar__project-switcher-menu'
+                  className='inline-flex h-10 w-10 items-center justify-center rounded-pill border border-transparent bg-transparent text-tertiary transition-[background-color,border-color,color] duration-150 hover:border-border/55 hover:bg-surface-low hover:text-foreground'
                 >
-                  <ChevronDown className="h-4 w-4" />
+                  <ChevronDown className='h-4 w-4' />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
+                <DropdownMenuContent align='start'>
                   {switchableProjects.map((proj) => (
                     <DropdownMenuItem key={proj.id} onSelect={() => handleProjectChange(proj.id)}>
                       {proj.name}
                     </DropdownMenuItem>
                   ))}
-                  <div className="my-1 h-px bg-border/50" />
+                  <div className='my-1 h-px bg-border/50' />
                   <DropdownMenuItem onSelect={handleGoToProjects}>{t('view_all_projects')}</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -237,20 +240,20 @@ export function Topbar({ className = '' }: TopbarProps) {
         ) : null}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className='flex items-center gap-2'>
         {workspaceId && projectId && showLayoutToggle ? (
           <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="h-9 gap-2"
+            type='button'
+            variant='ghost'
+            size='sm'
+            className='h-8 gap-2'
             onClick={handleLayoutToggle}
             title={layoutMode === 'ultrawide' ? t('switch_to_standard') : t('switch_to_ultrawide')}
             aria-label={layoutMode === 'ultrawide' ? t('switch_to_standard') : t('switch_to_ultrawide')}
-            data-testid="topbar__layout-toggle"
+            data-testid='topbar__layout-toggle'
             data-state={layoutMode}
           >
-            <PanelRight className="h-4 w-4" />
+            <PanelRight className='h-4 w-4' />
             {layoutMode === 'ultrawide' ? t('layout_ultrawide') : t('layout_standard')}
           </Button>
         ) : null}

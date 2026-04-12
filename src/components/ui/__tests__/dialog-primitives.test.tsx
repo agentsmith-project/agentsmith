@@ -22,7 +22,8 @@ describe('dialog primitives', () => {
     expect(dialogDescriptionClassName).toBe(alertDialogDescriptionClassName);
     expect(dialogDescriptionClassName).toBe(sheetDescriptionClassName);
     expect(dialogOverlayClassName).toContain('--overlay-scrim');
-    expect(dialogOverlayClassName).toContain('dark:bg-[rgb(var(--overlay-scrim)/0.52)]');
+    expect(dialogOverlayClassName).not.toContain('dark:bg-');
+    expect(dialogOverlayClassName).toContain('backdrop-blur-[1px]');
   });
 
   it('renders readable description copy in the base dialog', () => {

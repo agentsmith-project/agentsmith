@@ -44,7 +44,7 @@ export function ArtifactsPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-transparent">
-      <div className="border-b border-white/6 px-2.5 py-1.5">
+      <div className="border-b border-subtle px-2.5 py-1.5">
         <div className="mb-1.5 flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-foreground">
             {t("title")}
@@ -78,7 +78,7 @@ export function ArtifactsPanel({
           value={filterType}
           onValueChange={(v) => setFilterType(v as ArtifactType | "all")}
         >
-          <SelectTrigger className="h-7 w-full border-white/8 bg-surface-high/18 text-[11px]">
+          <SelectTrigger className="h-7 w-full border-subtle bg-surface-high/18 text-[11px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

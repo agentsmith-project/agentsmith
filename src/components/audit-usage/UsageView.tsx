@@ -233,7 +233,7 @@ export function UsageView({
                 return (
                   <div
                     key={card.id}
-                    className="rounded-[24px] border border-dashed border-subtle bg-bg-base/10 px-5 py-5"
+                    className="rounded-md border border-dashed border-subtle bg-bg-base/10 px-5 py-5"
                     data-testid="usage__progress-card"
                   >
                     <p className="text-sm text-tertiary">{t(`view.cards.${card.titleKey}`)}</p>
@@ -248,7 +248,7 @@ export function UsageView({
               return (
                 <div
                   key={card.id}
-                  className={`rounded-[24px] border bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0.01)_100%)] p-5 ${tone.ringClassName}`}
+                  className={`rounded-md border bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0.01)_100%)] p-5 ${tone.ringClassName}`}
                   data-testid="usage__progress-card"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -286,7 +286,7 @@ export function UsageView({
             })}
           </div>
         ) : (
-          <div className="rounded-[24px] border border-dashed border-subtle bg-bg-base/10 px-5 py-10 text-center">
+          <div className="rounded-md border border-dashed border-subtle bg-bg-base/10 px-5 py-10 text-center">
             <p className="text-sm text-tertiary">{t('view.limits_empty')}</p>
           </div>
         )}
@@ -299,16 +299,16 @@ export function UsageView({
             <p className="mt-1 text-sm text-tertiary">{t('view.trend_last_30_days')}</p>
           </div>
         </div>
-        <div className="rounded-[28px] border border-border bg-surface p-5 shadow-sm" data-testid="usage__trend">
+        <div className="rounded-lg border border-border bg-surface p-5 shadow-sm" data-testid="usage__trend">
           {trendLoading ? (
-            <div className="h-72 animate-pulse rounded-[24px] border border-subtle bg-bg-base/20" data-testid="usage__loading" />
+            <div className="h-72 animate-pulse rounded-md border border-subtle bg-bg-base/20" data-testid="usage__loading" />
           ) : normalizedTrend.every((item) => (item.requests ?? 0) === 0) ? (
-            <div className="rounded-[24px] border border-dashed border-subtle bg-bg-base/10 px-5 py-10 text-center">
+            <div className="rounded-md border border-dashed border-subtle bg-bg-base/10 px-5 py-10 text-center">
               <p className="text-sm font-medium text-foreground">{t('view.no_data')}</p>
               <p className="mt-2 text-xs text-tertiary">{t('view.no_data_hint')}</p>
             </div>
           ) : (
-            <div className="rounded-[24px] border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0)_100%)] px-3 pb-4 pt-6">
+            <div className="rounded-md border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0)_100%)] px-3 pb-4 pt-6">
               <div className="flex h-64 items-end gap-1.5 border-b border-subtle/80">
                 {normalizedTrend.map((item, index) => {
                   const requests = item.requests ?? 0;

@@ -53,7 +53,7 @@ export function ConversationInput({
   }, [value]);
 
   return (
-    <div className="border-t border-white/6 bg-transparent px-4 py-2.5" data-testid="notebook__conversation-input">
+    <div className="border-t border-subtle bg-transparent px-4 py-2.5" data-testid="notebook__conversation-input">
       <div className="flex items-end gap-2">
         <div className="flex-1">
           <textarea
@@ -65,7 +65,7 @@ export function ConversationInput({
             disabled={disabled}
             rows={2}
             className={cn(
-              'w-full resize-none rounded-[14px] bg-surface-high/70 px-3 py-2 text-sm text-primary',
+              'w-full resize-none rounded-md bg-surface-high/70 px-3 py-2 text-sm text-primary',
               'placeholder:text-tertiary',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
               'disabled:cursor-not-allowed disabled:opacity-50',
@@ -90,20 +90,20 @@ export function ConversationInput({
       </div>
       {agentRunning ? (
         <div
-          className="mt-2 rounded-xl bg-blue-500/10 px-3 py-2 text-[11px] text-blue-100"
+          className="mt-2 rounded-md bg-blue-500/10 px-3 py-2 text-[11px] text-blue-100"
           data-testid="notebook__pending-hint"
         >
           {t('pending_hint_running')}
         </div>
       ) : null}
       {pendingQueue.length > 0 ? (
-        <div className="mt-2 rounded-[14px] bg-surface-high/45 p-2" data-testid="notebook__pending-queue">
+        <div className="mt-2 rounded-md bg-surface-high/45 p-2" data-testid="notebook__pending-queue">
           <div className="mb-2 text-[11px] font-medium text-primary">
             {t('pending_queue_title', { count: pendingQueue.length })}
           </div>
           <div className="space-y-2">
             {pendingQueue.map((item, index) => (
-              <div key={item.id} className="rounded-xl bg-background/50 p-2">
+              <div key={item.id} className="rounded-md bg-background/50 p-2">
                 <div className="mb-1 text-[11px] text-tertiary">
                   {t('pending_item_label', { index: index + 1 })}
                 </div>

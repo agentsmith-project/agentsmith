@@ -136,14 +136,14 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
 
   return (
     <div
-      className="relative flex min-h-0 flex-col overflow-hidden rounded-[18px] border border-white/5 bg-surface/78 shadow-[0_12px_28px_rgba(0,0,0,0.12)]"
+      className="relative flex min-h-0 flex-col overflow-hidden rounded-md border border-subtle bg-surface/78 shadow-ambient"
       onDragEnter={onDropEnter}
       onDragOver={onDropOver}
       onDragLeave={onDropLeave}
       onDrop={onDrop}
       data-testid="files__dropzone"
     >
-      <div className="flex flex-wrap items-center gap-2 border-b border-white/6 px-3.5 py-1.5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-subtle px-3.5 py-1.5">
         <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('file_manager.location')}</div>
           <div className="mt-0.5 text-sm text-secondary">{selectedLibraryId ? t('file_manager.root') : t('file_manager.no_libraries')}</div>
@@ -218,7 +218,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
 
       <div className="flex-1 min-h-0">
         <div className="w-full h-full text-sm flex flex-col" data-testid="files__objects-table">
-          <div className="flex min-h-0 items-center justify-between gap-2 border-b border-white/6 px-3.5 py-1.5" data-testid="files__selection-summary">
+          <div className="flex min-h-0 items-center justify-between gap-2 border-b border-subtle px-3.5 py-1.5" data-testid="files__selection-summary">
             {isMultiMode ? (
               <div className="flex items-center gap-2 min-w-0 text-[11px] text-primary">
                 <span>{t('file_manager.selected_count', { count: String(selectedCount) })}</span>
@@ -236,7 +236,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
 
             <div className="flex items-center gap-2 shrink-0">
               {uploadInProgress ? (
-                <div className="flex items-center gap-2 rounded-xl bg-surface-high/30 px-2.5 py-1.5 min-w-[260px]" data-testid="files__upload-progress">
+                <div className="flex items-center gap-2 rounded-md bg-surface-high/30 px-2.5 py-1.5 min-w-[260px]" data-testid="files__upload-progress">
                   <div className="min-w-0 flex-1">
                     <div className="text-[11px] text-primary truncate">
                       {t('file_manager.uploading', {
@@ -298,7 +298,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
             </div>
           </div>
 
-          <div className="sticky top-0 z-10 bg-surface/95 border-b border-white/6 text-xs text-tertiary">
+          <div className="sticky top-0 z-10 bg-surface/95 border-b border-subtle text-xs text-tertiary">
             <div className={cn('grid', isMultiMode ? 'grid-cols-[40px_minmax(0,1fr)_128px_192px]' : 'grid-cols-[minmax(0,1fr)_128px_192px]')}>
               {isMultiMode ? (
                 <div className="px-3 py-2">
@@ -364,7 +364,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
               <div className="px-3 py-8 text-center text-tertiary">{t('file_manager.loading')}</div>
             ) : filteredItems.length === 0 ? (
               <div className="px-4 py-12 text-center" data-testid="files__empty-state">
-                <div className="mx-auto flex max-w-[520px] flex-col items-center gap-3 rounded-[18px] border border-dashed border-white/8 bg-white/[0.025] px-5 py-6">
+                <div className="mx-auto flex max-w-[520px] flex-col items-center gap-3 rounded-md border border-dashed border-subtle bg-surface-low px-5 py-6">
                   <div>
                     <div className="text-sm font-medium text-primary">
                       {searchInput.trim().length > 0

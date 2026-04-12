@@ -18,7 +18,7 @@ export function TaskListHeader({
 }: TaskListHeaderProps) {
   return (
     <div className="px-4 pb-3 pt-3 md:px-5">
-      <div className="rounded-[22px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+      <div className="rounded-md border border-subtle bg-surface/95 p-4 shadow-card">
         <div className="mb-3">
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('title')}</div>
           <div className="mt-1 text-sm text-secondary">{t('description')}</div>

@@ -33,7 +33,7 @@ export function CredentialsContent(args: {
 
   if (!credentials || credentials.length === 0) {
     return (
-      <div className="rounded-[22px] border border-subtle bg-surface/95 p-6 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+      <div className="rounded-md border border-subtle bg-surface/95 p-6 shadow-card">
         <EmptyState
           icon={Key}
           title={emptyTitle}
@@ -48,7 +48,7 @@ export function CredentialsContent(args: {
   }
 
   return (
-    <div className="rounded-[22px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+    <div className="rounded-md border border-subtle bg-surface/95 p-4 shadow-card">
       <DataTable table={table} testId="credentials__table" />
     </div>
   );

@@ -183,7 +183,7 @@ export function TaskCreateDialog({
           <div className="space-y-2">
             <span className="text-sm font-medium text-foreground">{t('workspace_source_label')}</span>
             <div className="grid gap-2">
-              <label className="flex items-start gap-3 rounded-lg border border-white/10 bg-surface/30 px-3 py-3">
+              <label className="flex items-start gap-3 rounded-lg border border-subtle bg-surface/30 px-3 py-3">
                 <input
                   type="radio"
                   name="task-workspace-mode"
@@ -198,7 +198,7 @@ export function TaskCreateDialog({
                 </div>
               </label>
               {workspaceMode === 'create_new' ? (
-                <div className="space-y-2 rounded-lg border border-dashed border-white/10 bg-surface/20 p-3">
+                <div className="space-y-2 rounded-lg border border-dashed border-subtle bg-surface/20 p-3">
                   <label htmlFor="task-workspace-name" className="text-sm font-medium text-foreground">
                     {t('workspace_name_label')}
                   </label>
@@ -212,7 +212,7 @@ export function TaskCreateDialog({
                   <p className="text-xs text-tertiary">{t('workspace_name_hint')}</p>
                 </div>
               ) : null}
-              <label className="flex items-start gap-3 rounded-lg border border-white/10 bg-surface/30 px-3 py-3">
+              <label className="flex items-start gap-3 rounded-lg border border-subtle bg-surface/30 px-3 py-3">
                 <input
                   type="radio"
                   name="task-workspace-mode"
@@ -227,7 +227,7 @@ export function TaskCreateDialog({
                 </div>
               </label>
               {workspaceMode === 'use_existing' ? (
-                <div className="space-y-2 rounded-lg border border-dashed border-white/10 bg-surface/20 p-3">
+                <div className="space-y-2 rounded-lg border border-dashed border-subtle bg-surface/20 p-3">
                   <label htmlFor="task-workspace-file-library" className="text-sm font-medium text-foreground">
                     {t('select_workspace_file_library')}
                   </label>

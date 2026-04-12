@@ -264,10 +264,10 @@ export function CreateEndpointDialog({
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="border-b border-white/6 px-6 py-4">
-            <div className="rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(124,160,255,0.08),rgba(124,160,255,0.02))] p-4">
+          <div className="border-b border-subtle px-6 py-4">
+            <div className="rounded-lg border border-subtle bg-[linear-gradient(180deg,rgba(124,160,255,0.08),rgba(124,160,255,0.02))] p-4">
               <div className="flex items-start gap-3">
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/12 text-accent">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/12 text-accent">
                   <Sparkles className="h-5 w-5" />
                 </span>
                 <div className="space-y-1">
@@ -336,7 +336,7 @@ export function CreateEndpointDialog({
             />
           ) : (
             <div className="flex-1 px-6 py-6">
-              <div className="rounded-2xl border border-dashed border-subtle bg-surface-low p-5 text-sm text-secondary">
+              <div className="rounded-lg border border-dashed border-subtle bg-surface-low p-5 text-sm text-secondary">
                 <p className="font-medium text-foreground">{t('create_dialog.guided_setup_title')}</p>
                 <p className="mt-2 leading-6">{t('create_dialog.guided_setup_description')}</p>
               </div>

@@ -71,7 +71,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
       <PageLayout>
         <div className="min-h-screen bg-background p-4 md:p-6">
           <div className="mx-auto max-w-[1440px] space-y-5">
-            <header className="rounded-[30px] border border-subtle bg-surface/95 p-6 shadow-[0_24px_56px_rgba(0,0,0,0.2)]">
+            <header className="space-y-4 border-b border-subtle pb-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="max-w-3xl space-y-2">
                   <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('eyebrow')}</p>
@@ -90,7 +90,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                 </div>
               </div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {statusOverview.map((item) => (
                   <SummaryTile
                     key={item.label}
@@ -217,7 +217,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                   {attentionItems.length > 0 ? (
                     <div className="space-y-3">
                       {attentionItems.map((item) => (
-                        <div key={item.title} className="rounded-[18px] border border-warning/25 bg-warning/10 p-4">
+                        <div key={item.title} className="rounded-md border border-warning/25 bg-warning/10 p-4">
                           <div className="flex items-start gap-3">
                             <item.icon className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                             <div className="space-y-1">
@@ -229,7 +229,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                       ))}
                     </div>
                   ) : (
-                    <div className="rounded-[18px] border border-success/25 bg-success/10 p-4">
+                    <div className="rounded-md border border-success/25 bg-success/10 p-4">
                       <div className="flex items-start gap-3">
                         <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                         <div className="space-y-1">
@@ -259,7 +259,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                       <KeyMetric label={t('workspace_draft_label')} value={String(provisioning.draft)} />
                       <KeyMetric label={t('workspace_disabled_label')} value={String(provisioning.disabled)} />
                     </div>
-                    <div className="space-y-2 rounded-[18px] border border-subtle bg-background/70 p-4">
+                    <div className="space-y-2 rounded-md border border-subtle bg-background/70 p-4">
                       <TimelineRow label={t('workspace_last_initialized_label')} value={formatTimestamp(provisioning.last_initialized_at, locale)} />
                       <TimelineRow label={t('workspace_last_ready_label')} value={formatTimestamp(provisioning.last_ready_at, locale)} />
                       <TimelineRow label={t('workspace_last_failed_label')} value={formatTimestamp(provisioning.last_failed_at, locale)} />
@@ -269,7 +269,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                 </SectionCard>
 
                 <section
-                  className="rounded-[24px] border border-dashed border-subtle bg-bg-base/20 p-5 shadow-[0_12px_28px_rgba(0,0,0,0.1)]"
+                  className="rounded-md border border-dashed border-subtle bg-surface-low/70 p-5"
                   data-testid="system-info__notice"
                 >
                   <p className="text-sm leading-6 text-tertiary">{t('info_notice')}</p>
@@ -284,7 +284,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                 >
                   <div className="grid gap-3 md:grid-cols-2">
                     {quickActions.map((action) => (
-                      <Link key={action.href} href={action.href} className="group rounded-[20px] border border-subtle bg-surface-high p-4 transition-colors hover:border-border hover:bg-background/70">
+                      <Link key={action.href} href={action.href} className="group rounded-md border border-subtle bg-surface-high p-4 transition-colors hover:border-border hover:bg-background/70">
                         <div className="flex items-start justify-between gap-3">
                           <div className="space-y-1">
                             <p className="text-sm font-medium text-foreground">{action.title}</p>
@@ -323,11 +323,11 @@ function SectionCard({
 }) {
   return (
     <section
-      className="rounded-[28px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+      className="rounded-md border border-subtle bg-background/88 p-5 shadow-card"
       data-testid={dataTestId}
     >
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-background text-icon-default">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-subtle bg-background text-icon-default">
           {icon}
         </div>
         <div className="space-y-1">
@@ -354,14 +354,14 @@ function SummaryTile({
 }) {
   const toneClassName = (
     tone === 'positive'
-      ? 'border-success/30 bg-success/10'
+      ? 'border-success/18 bg-success/8'
       : tone === 'warning'
-        ? 'border-warning/30 bg-warning/10'
-        : 'border-border bg-surface-high'
+        ? 'border-warning/18 bg-warning/8'
+        : 'border-subtle bg-background/75'
   );
 
   return (
-    <div className={`rounded-[20px] border p-4 shadow-[0_12px_24px_rgba(0,0,0,0.12)] ${toneClassName}`}>
+    <div className={`rounded-md border p-4 ${toneClassName}`}>
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</p>
       <p className="mt-2 text-xl font-semibold text-foreground">{value}</p>
       <p className="mt-2 text-sm leading-5 text-secondary">{detail}</p>
@@ -379,7 +379,7 @@ function StatusLine({
   tone: 'positive' | 'warning';
 }) {
   return (
-    <div className="rounded-[18px] border border-subtle bg-background/70 p-4">
+    <div className="rounded-md border border-subtle bg-background/78 p-4">
       <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{label}</p>
       <p className={`mt-2 text-base font-semibold ${tone === 'positive' ? 'text-success' : 'text-warning'}`}>{value}</p>
     </div>
@@ -394,13 +394,13 @@ function InfoGroup({
   rows: Array<{ label: string; value: string }>;
 }) {
   return (
-    <div className="rounded-[20px] border border-subtle bg-surface-high p-4">
+    <div className="rounded-md border border-subtle bg-surface-low/72 p-4">
       <p className="text-sm font-medium text-foreground">{title}</p>
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 divide-y divide-subtle">
         {rows.map((row) => (
-          <div key={row.label} className="space-y-1 rounded-[16px] border border-white/5 bg-background/70 p-3">
-            <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">{row.label}</p>
-            <code className="block break-all text-sm text-foreground">{row.value}</code>
+          <div key={row.label} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
+            <p className="max-w-[42%] text-[11px] uppercase tracking-[0.08em] text-tertiary">{row.label}</p>
+            <code className="max-w-[58%] break-all text-right text-sm text-foreground">{row.value}</code>
           </div>
         ))}
       </div>
@@ -416,7 +416,7 @@ function KeyMetric({
   value: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-subtle bg-surface-high p-4">
+    <div className="rounded-md border border-subtle bg-background/78 p-4">
       <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{label}</p>
       <p className="mt-2 text-lg font-semibold text-foreground">{value}</p>
     </div>
@@ -431,7 +431,7 @@ function TimelineRow({
   value: string;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-white/5 py-2 last:border-b-0 last:pb-0 first:pt-0">
+    <div className="flex items-start justify-between gap-3 border-b border-subtle py-2 last:border-b-0 last:pb-0 first:pt-0">
       <p className="text-sm text-tertiary">{label}</p>
       <p className="max-w-[60%] text-right text-sm font-medium text-foreground">{value}</p>
     </div>

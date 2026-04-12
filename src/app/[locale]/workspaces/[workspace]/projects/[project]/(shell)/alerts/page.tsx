@@ -228,7 +228,7 @@ export default function AlertsPage({ params }: AlertsPageProps) {
         )}
       >
         {(showRuleRecovery || showNotificationRecovery) ? (
-          <div className="mb-4 rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]" data-testid="alerts__recovery-strip">
+          <div className="mb-4 rounded-md border border-subtle bg-surface-low p-4 shadow-ambient" data-testid="alerts__recovery-strip">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="grid gap-4 md:grid-cols-2">
                 {showRuleRecovery ? (

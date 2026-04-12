@@ -146,13 +146,13 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
         )}
         toolbar={(
           <PageToolbar>
-            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {credentialList.length} {t('title').toLowerCase()}
             </div>
-            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {rotatedCount} {t('rotate.title').toLowerCase()}
             </div>
-            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {credentialTypeCount} {t('fingerprint').toLowerCase()}
             </div>
             <Button

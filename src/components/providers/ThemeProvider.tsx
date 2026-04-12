@@ -1,7 +1,14 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import { DEFAULT_THEME, sanitizeTheme, THEME_STORAGE_KEY, type Theme } from "@/lib/theme";
+import * as React from 'react';
+import {
+  DEFAULT_THEME,
+  resolvePreferredTheme,
+  resolveSystemTheme,
+  sanitizeTheme,
+  THEME_STORAGE_KEY,
+  type Theme,
+} from '@/lib/theme';
 
 type ThemeContextValue = {
   theme: Theme;
@@ -14,7 +21,7 @@ const ThemeContext = React.createContext<ThemeContextValue | null>(null);
 
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
-  root.setAttribute("data-theme", theme);
+  root.setAttribute('data-theme', theme);
   root.style.colorScheme = theme;
 }
 
@@ -26,9 +33,18 @@ function persistTheme(theme: Theme) {
   }
 }
 
+function readStoredTheme(): Theme | null {
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return storedTheme === null ? null : sanitizeTheme(storedTheme);
+  } catch {
+    return null;
+  }
+}
+
 function readThemeFromDom(): Theme {
-  if (typeof document === "undefined") return DEFAULT_THEME;
-  return sanitizeTheme(document.documentElement.getAttribute("data-theme"));
+  if (typeof document === 'undefined') return DEFAULT_THEME;
+  return sanitizeTheme(document.documentElement.getAttribute('data-theme'));
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -42,26 +58,40 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggleTheme = React.useCallback(() => {
-    setTheme(theme === "light" ? "dark" : "light");
+    setTheme((theme === 'light' ? 'dark' : 'light'));
   }, [setTheme, theme]);
 
   React.useEffect(() => {
-    const initialTheme = readThemeFromDom();
+    const storedTheme = readStoredTheme();
+    const initialTheme = storedTheme ?? readThemeFromDom();
     applyTheme(initialTheme);
     setThemeState(initialTheme);
     setMounted(true);
   }, []);
 
   React.useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key !== THEME_STORAGE_KEY) return;
-      const nextTheme = sanitizeTheme(event.newValue);
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const handleSystemThemeChange = () => {
+      if (readStoredTheme() !== null) return;
+      const nextTheme = resolveSystemTheme();
       applyTheme(nextTheme);
       setThemeState(nextTheme);
     };
 
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== THEME_STORAGE_KEY) return;
+      const nextTheme = event.newValue === null ? resolvePreferredTheme(null) : sanitizeTheme(event.newValue);
+      applyTheme(nextTheme);
+      setThemeState(nextTheme);
+    };
+
+    mediaQuery.addEventListener('change', handleSystemThemeChange);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      mediaQuery.removeEventListener('change', handleSystemThemeChange);
+      window.removeEventListener('storage', onStorage);
+    };
   }, []);
 
   const value = React.useMemo<ThemeContextValue>(
@@ -75,7 +105,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 export function useTheme() {
   const context = React.useContext(ThemeContext);
   if (!context) {
-    throw new Error("useTheme must be used within a ThemeProvider");
+    throw new Error('useTheme must be used within a ThemeProvider');
   }
   return context;
 }

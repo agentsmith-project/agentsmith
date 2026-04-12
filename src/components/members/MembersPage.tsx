@@ -130,19 +130,19 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
         <Tabs
           value={activeTab}
           onValueChange={(v) => setActiveTab(v as 'people' | 'requests' | 'groups')}
-          className="flex min-h-0 min-w-0 flex-1 flex-col rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+          className="flex min-h-0 min-w-0 flex-1 flex-col rounded-md border border-subtle bg-surface/95 p-4 shadow-card"
         >
-          <div className="mb-4 flex flex-col gap-3 rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mb-4 flex flex-col gap-3 rounded-md border border-subtle bg-surface-low px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
               <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">{t('title')}</p>
               <p className="text-sm font-medium text-foreground">{tabFocusTitle}</p>
               <p className="text-sm text-secondary">{tabFocusDescription}</p>
             </div>
-            <TabsList className="flex-shrink-0 rounded-[18px] border border-white/6 bg-white/[0.04] p-1">
+            <TabsList className="flex-shrink-0 rounded-md border border-subtle bg-surface-low p-1">
               <TabsTrigger value="people">
                 <span className="inline-flex items-center gap-2">
                   <span>{t('tabs.people')}</span>
-                  <span className="rounded-full border border-white/8 bg-white/[0.06] px-2 py-0.5 text-[11px] text-tertiary">
+                  <span className="rounded-full border border-subtle bg-white/[0.06] px-2 py-0.5 text-[11px] text-tertiary">
                     {peopleCount}
                   </span>
                 </span>

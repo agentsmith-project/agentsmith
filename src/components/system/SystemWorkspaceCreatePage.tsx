@@ -246,7 +246,7 @@ export function SystemWorkspaceCreatePage() {
       <PageLayout>
         <div className="min-h-screen bg-background p-4 md:p-6">
           <div className="mx-auto max-w-5xl space-y-5">
-            <header className="rounded-[30px] border border-subtle bg-surface/95 p-6 shadow-[0_24px_56px_rgba(0,0,0,0.2)]">
+            <header className="rounded-lg border border-subtle bg-surface/95 p-6 shadow-float">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-2">
                   <Link href={`/${locale}/system/workspaces`} className="inline-flex items-center gap-2 text-sm text-tertiary hover:text-secondary">
@@ -265,7 +265,7 @@ export function SystemWorkspaceCreatePage() {
                   <div
                     key={item}
                     className={[
-                      'rounded-[18px] border px-4 py-3',
+                      'rounded-md border px-4 py-3',
                       step === item
                         ? 'border-accent/45 bg-accent/10'
                         : index < stepIndex
@@ -281,7 +281,7 @@ export function SystemWorkspaceCreatePage() {
               </div>
             </header>
 
-            <section className="rounded-[28px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+            <section className="rounded-lg border border-border bg-surface/95 p-5 shadow-card">
               {step === 'basics' ? (
                 <div className="space-y-5">
                   <div className="space-y-1">
@@ -296,11 +296,11 @@ export function SystemWorkspaceCreatePage() {
                       value={draft.name}
                       onChange={(event) => updateDraft({ name: event.target.value })}
                       placeholder={t('workspace_name_placeholder')}
-                      className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                      className="h-11 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                       data-testid="system-workspaces__draft-name"
                     />
                   </label>
-                  <div className="rounded-[18px] border border-subtle bg-background/70 px-4 py-4 text-sm text-secondary">
+                  <div className="rounded-md border border-subtle bg-background/70 px-4 py-4 text-sm text-secondary">
                     {t('workspace_create_basics_hint')}
                   </div>
                 </div>
@@ -321,7 +321,7 @@ export function SystemWorkspaceCreatePage() {
                       value={draft.loginIdpUrl}
                       onChange={(event) => updateDraft({ loginIdpUrl: event.target.value })}
                       placeholder={t('idp_url_placeholder')}
-                      className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                      className="h-11 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                       data-testid="system-workspaces__draft-idp-url"
                     />
                     <div className="grid gap-3 md:grid-cols-2">
@@ -330,7 +330,7 @@ export function SystemWorkspaceCreatePage() {
                         value={draft.loginIdpRealm}
                         onChange={(event) => updateDraft({ loginIdpRealm: event.target.value })}
                         placeholder={t('idp_realm_placeholder')}
-                        className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                        className="h-11 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                         data-testid="system-workspaces__draft-idp-realm"
                       />
                         <input
@@ -338,11 +338,11 @@ export function SystemWorkspaceCreatePage() {
                           value={draft.loginClientId}
                           onChange={(event) => updateDraft({ loginClientId: event.target.value })}
                           placeholder={t('login_client_id_placeholder')}
-                          className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                          className="h-11 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                           data-testid="system-workspaces__draft-idp-client-id"
                         />
                     </div>
-                    <div className="rounded-[18px] border border-subtle bg-background/70 p-4">
+                    <div className="rounded-md border border-subtle bg-background/70 p-4">
                       <p className="text-sm font-medium text-foreground">{t('directory_client_section_title')}</p>
                       <p className="mt-1 text-sm text-tertiary">{t('directory_client_section_body')}</p>
                       <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -351,7 +351,7 @@ export function SystemWorkspaceCreatePage() {
                           value={draft.directoryClientId}
                           onChange={(event) => updateDraft({ directoryClientId: event.target.value })}
                           placeholder={t('directory_client_id_placeholder')}
-                          className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                          className="h-11 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                           data-testid="system-workspaces__draft-directory-client-id"
                         />
                         <input
@@ -359,12 +359,12 @@ export function SystemWorkspaceCreatePage() {
                           value={draft.directoryClientSecret}
                           onChange={(event) => updateDraft({ directoryClientSecret: event.target.value })}
                           placeholder={t('directory_client_secret_placeholder')}
-                          className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                          className="h-11 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                           data-testid="system-workspaces__draft-idp-client-secret"
                         />
                       </div>
                     </div>
-                    <div className="rounded-[18px] border border-subtle bg-background/70 p-4 text-sm">
+                    <div className="rounded-md border border-subtle bg-background/70 p-4 text-sm">
                       <p className="font-medium text-foreground">{t('workspace_login_preview_title')}</p>
                       <div className="mt-3 space-y-2">
                         <div>
@@ -378,7 +378,7 @@ export function SystemWorkspaceCreatePage() {
                       </div>
                     </div>
                   </div>
-                  <div className={`rounded-[18px] border px-4 py-4 ${buildVerificationToneClass(idpVerificationState)}`}>
+                  <div className={`rounded-md border px-4 py-4 ${buildVerificationToneClass(idpVerificationState)}`}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="space-y-2">
                         <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('idp_status_label')}</p>
@@ -419,7 +419,7 @@ export function SystemWorkspaceCreatePage() {
                       onClick={() => updateDraft({ adminMode: 'directory_user' })}
                       disabled={!directorySearchEnabled}
                       className={[
-                        'rounded-[18px] border p-4 text-left transition',
+                        'rounded-md border p-4 text-left transition',
                         draft.adminMode === 'directory_user'
                           ? 'border-accent/45 bg-accent/10'
                           : 'border-subtle bg-background hover:border-accent/20',
@@ -434,7 +434,7 @@ export function SystemWorkspaceCreatePage() {
                       type="button"
                       onClick={() => updateDraft({ adminMode: 'email_pending' })}
                       className={[
-                        'rounded-[18px] border p-4 text-left transition',
+                        'rounded-md border p-4 text-left transition',
                         draft.adminMode === 'email_pending'
                           ? 'border-accent/45 bg-accent/10'
                           : 'border-subtle bg-background hover:border-accent/20',
@@ -447,7 +447,7 @@ export function SystemWorkspaceCreatePage() {
                   </div>
 
                   {draft.adminMode === 'directory_user' ? (
-                    <div className="space-y-3 rounded-[18px] border border-subtle bg-background p-4">
+                    <div className="space-y-3 rounded-md border border-subtle bg-background p-4">
                       <label className="block space-y-2">
                         <span className="text-sm font-medium text-foreground">{t('workspace_admin')}</span>
                         <input
@@ -460,12 +460,12 @@ export function SystemWorkspaceCreatePage() {
                           }}
                           placeholder={t('workspace_admin_placeholder')}
                           disabled={!directorySearchEnabled}
-                          className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary disabled:cursor-not-allowed disabled:opacity-70"
+                          className="h-11 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary disabled:cursor-not-allowed disabled:opacity-70"
                           data-testid="system-workspaces__draft-admin"
                         />
                       </label>
                       {draft.admin ? (
-                        <div className="rounded-[16px] border border-success/30 bg-success/10 px-3 py-3 text-sm text-foreground" data-testid="system-workspaces__selected-admin">
+                        <div className="rounded-md border border-success/30 bg-success/10 px-3 py-3 text-sm text-foreground" data-testid="system-workspaces__selected-admin">
                           <p className="font-medium">{draft.admin.name || draft.admin.email}</p>
                           <p className="text-xs text-tertiary">{draft.admin.email}</p>
                         </div>
@@ -479,7 +479,7 @@ export function SystemWorkspaceCreatePage() {
                               <button
                                 key={user.user_id}
                                 type="button"
-                                className="flex w-full items-start justify-between rounded-[16px] border border-subtle bg-background px-3 py-3 text-left transition hover:border-accent/40"
+                                className="flex w-full items-start justify-between rounded-md border border-subtle bg-background px-3 py-3 text-left transition hover:border-accent/40"
                                 onClick={() => updateDraft({
                                   admin: user,
                                   adminQuery: user.email,
@@ -501,7 +501,7 @@ export function SystemWorkspaceCreatePage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-3 rounded-[18px] border border-subtle bg-background p-4">
+                    <div className="space-y-3 rounded-md border border-subtle bg-background p-4">
                       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                         <Mail className="h-4 w-4" />
                         {t('workspace_admin_email_pending_title')}
@@ -514,12 +514,12 @@ export function SystemWorkspaceCreatePage() {
                           value={draft.adminEmail}
                           onChange={(event) => updateDraft({ adminEmail: event.target.value })}
                           placeholder={t('workspace_admin_email_placeholder')}
-                          className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                          className="h-11 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                           data-testid="system-workspaces__draft-admin-email"
                         />
                       </label>
                       {idpVerificationState === 'verified_without_directory' ? (
-                        <div className="rounded-[16px] border border-warning/25 bg-warning/10 px-3 py-3 text-sm text-secondary">
+                        <div className="rounded-md border border-warning/25 bg-warning/10 px-3 py-3 text-sm text-secondary">
                           {t('idp_directory_recommended')}
                         </div>
                       ) : null}
@@ -537,7 +537,7 @@ export function SystemWorkspaceCreatePage() {
                     </div>
                     <p className="text-sm text-tertiary">{t('workspace_create_review_body')}</p>
                   </div>
-                  <div className="space-y-3 rounded-[18px] border border-subtle bg-background p-4">
+                  <div className="space-y-3 rounded-md border border-subtle bg-background p-4">
                     {reviewRows.map((row) => (
                       <div key={row.label} className="flex flex-wrap items-start justify-between gap-3 border-b border-subtle pb-3 last:border-b-0 last:pb-0">
                         <span className="text-sm text-tertiary">{row.label}</span>
@@ -546,7 +546,7 @@ export function SystemWorkspaceCreatePage() {
                     ))}
                   </div>
                   {saveError ? (
-                    <div className="rounded-[18px] border border-error/30 bg-error/10 px-4 py-4 text-sm text-error" data-testid="system-workspaces__save-error">
+                    <div className="rounded-md border border-error/30 bg-error/10 px-4 py-4 text-sm text-error" data-testid="system-workspaces__save-error">
                       {saveError}
                     </div>
                   ) : null}

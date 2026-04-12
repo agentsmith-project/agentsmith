@@ -168,7 +168,7 @@ export default function WorkspaceConnectionsPage() {
           <Topbar />
 
           <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-4 md:px-5 md:py-5 space-y-5">
-            <section className="rounded-[28px] border border-border bg-surface/95 px-5 py-5 shadow-[0_22px_50px_rgba(0,0,0,0.18)] md:px-6">
+            <section className="rounded-lg border border-border bg-surface/95 px-5 py-5 shadow-float md:px-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-2">
                   <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
@@ -194,12 +194,12 @@ export default function WorkspaceConnectionsPage() {
                 </div>
               </div>
               <div className="mt-5 grid gap-3 md:grid-cols-3">
-                <div className="rounded-[20px] border border-subtle bg-background/70 p-4" data-testid="workspace-connections__workspace-state">
+                <div className="rounded-md border border-subtle bg-background/70 p-4" data-testid="workspace-connections__workspace-state">
                   <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_connections_workspace_state_title')}</p>
                   <p className="mt-2 text-sm font-medium text-foreground">{workspaceStateLabel}</p>
                   <p className="mt-2 text-sm leading-6 text-secondary">{isEnabled ? t('workspace_feishu_enabled_description') : t('workspace_feishu_disabled_description')}</p>
                 </div>
-                <div className="rounded-[20px] border border-subtle bg-background/70 p-4" data-testid="workspace-connections__personal-state">
+                <div className="rounded-md border border-subtle bg-background/70 p-4" data-testid="workspace-connections__personal-state">
                   <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_connections_personal_state_title')}</p>
                   <p className="mt-2 text-sm font-medium text-foreground">{personalStateLabel}</p>
                   <p className="mt-2 text-sm leading-6 text-secondary">
@@ -208,7 +208,7 @@ export default function WorkspaceConnectionsPage() {
                       || t('workspace_feishu_not_connected')}
                   </p>
                 </div>
-                <div className="rounded-[20px] border border-subtle bg-background/70 p-4" data-testid="workspace-connections__next-step">
+                <div className="rounded-md border border-subtle bg-background/70 p-4" data-testid="workspace-connections__next-step">
                   <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_connections_next_step_title')}</p>
                   <p className="mt-2 text-sm font-medium text-foreground">{nextStepLabel}</p>
                   <p className="mt-2 text-sm leading-6 text-secondary">
@@ -217,15 +217,15 @@ export default function WorkspaceConnectionsPage() {
                 </div>
               </div>
               {!canManageWorkspace ? (
-                <div className="mt-4 rounded-[20px] border border-subtle bg-background/70 px-4 py-3 text-sm leading-6 text-tertiary" data-testid="workspace-connections__read-only-hint">
+                <div className="mt-4 rounded-md border border-subtle bg-background/70 px-4 py-3 text-sm leading-6 text-tertiary" data-testid="workspace-connections__read-only-hint">
                   {t('workspace_connections_read_only_hint')}
                 </div>
               ) : null}
             </section>
 
-            <section className="rounded-[24px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+            <section className="rounded-md border border-border bg-surface/95 p-5 shadow-card">
               <div className={cn(
-                'rounded-[22px] border p-5 transition-colors',
+                'rounded-md border p-5 transition-colors',
                 isEnabled ? 'border-subtle bg-bg-base/20' : 'border-subtle/60 bg-bg-base/10 opacity-70',
               )}>
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -242,7 +242,7 @@ export default function WorkspaceConnectionsPage() {
                 </div>
 
                 <div className="mt-5 grid gap-3 md:grid-cols-2">
-                  <div className="rounded-[18px] border border-subtle bg-background/70 p-4">
+                  <div className="rounded-md border border-subtle bg-background/70 p-4">
                     <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_feishu_connection_label')}</div>
                     <div className="mt-2 text-sm font-medium text-foreground">
                       {feishuConnection?.account_identity?.external_email
@@ -250,7 +250,7 @@ export default function WorkspaceConnectionsPage() {
                         || (feishuConnection ? t('workspace_feishu_connected') : t('workspace_feishu_not_connected'))}
                     </div>
                   </div>
-                  <div className="rounded-[18px] border border-subtle bg-background/70 p-4">
+                  <div className="rounded-md border border-subtle bg-background/70 p-4">
                     <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_feishu_last_refresh_label')}</div>
                     <div className="mt-2 text-sm font-medium text-foreground">
                       {feishuConnection?.last_refreshed_at ?? t('workspace_feishu_never_refreshed')}
@@ -283,7 +283,7 @@ export default function WorkspaceConnectionsPage() {
 
                 {feishuConfig ? (
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div className="rounded-[18px] border border-subtle bg-background/70 p-4">
+                    <div className="rounded-md border border-subtle bg-background/70 p-4">
                       <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_feishu_scope_policy_label')}</div>
                       <div className="mt-2 text-sm font-medium text-foreground">
                         {feishuConfig.scope_policy === 'custom'
@@ -291,7 +291,7 @@ export default function WorkspaceConnectionsPage() {
                           : t('workspace_feishu_scope_policy_full')}
                       </div>
                     </div>
-                    <div className="rounded-[18px] border border-subtle bg-background/70 p-4">
+                    <div className="rounded-md border border-subtle bg-background/70 p-4">
                       <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_feishu_requested_scope_count_label')}</div>
                       <div className="mt-2 text-sm font-medium text-foreground">
                         {t('workspace_feishu_requested_scope_count_value', { count: requestedScopes.length })}
@@ -301,7 +301,7 @@ export default function WorkspaceConnectionsPage() {
                 ) : null}
 
                 {requestedScopes.length > 0 ? (
-                  <details className="mt-4 rounded-[18px] border border-subtle bg-background/70 p-4 text-sm">
+                  <details className="mt-4 rounded-md border border-subtle bg-background/70 p-4 text-sm">
                     <summary className="cursor-pointer font-medium text-foreground">
                       {t('workspace_feishu_requested_scopes_label')}
                     </summary>
@@ -310,7 +310,7 @@ export default function WorkspaceConnectionsPage() {
                 ) : null}
 
                 {feishuConnection?.status === 'reauth_required' ? (
-                  <div className="mt-4 rounded-[18px] border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
+                  <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
                     <div className="font-medium text-foreground">
                       {feishuReauthReason === 'missing_scopes'
                         ? t('workspace_feishu_reauth_required_title')

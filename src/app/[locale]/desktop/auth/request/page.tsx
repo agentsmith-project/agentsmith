@@ -8,7 +8,14 @@ import { AlertTriangle, CheckCircle2, LoaderCircle, LogIn, MonitorSmartphone } f
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
-import { PublicThemeToggle } from '@/components/theme/PublicThemeToggle';
+import {
+  PublicAuthAsideBlock,
+  PublicAuthEyebrow,
+  PublicAuthFrame,
+  PublicAuthHeader,
+  PublicAuthMutedCard,
+  PublicAuthShell,
+} from '@/components/public/PublicAuthPage';
 import { buildPublicApiUrl } from '@/lib/public-runtime-config';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 
@@ -91,67 +98,60 @@ export default function DesktopAuthRequestPage() {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="relative min-h-screen bg-background px-4 py-6 md:px-6 md:py-8">
-          <PublicThemeToggle className="absolute right-4 top-4 z-10 md:right-6 md:top-6" />
-          <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-4xl items-center justify-center">
-            <section className="surface-elevated grid w-full gap-6 rounded-[32px] border border-border/70 p-6 md:grid-cols-[minmax(0,1.1fr)_minmax(260px,0.9fr)] md:p-8">
-              <div className="space-y-5">
-                <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
-                  <MonitorSmartphone className="h-3.5 w-3.5" />
-                  {t('desktop_auth_request_badge')}
-                </div>
-                <div className="space-y-3">
-                  <h1 className="type-display max-w-2xl text-balance text-foreground" data-testid="desktop-auth-request__title">
-                    {statusContent.title}
-                  </h1>
-                  <p className="type-body-ui max-w-2xl text-secondary">{statusContent.description}</p>
-                </div>
-                {statusContent.detail ? (
-                  <div className="surface-soft rounded-[24px] border border-subtle px-4 py-4">
-                    <p className="type-system-caption text-tertiary">{statusContent.detail}</p>
-                  </div>
-                ) : null}
-                {status === 'error' ? (
-                  <div className="flex flex-wrap gap-3">
-                    <Button asChild variant="primary">
-                      <Link href={workspaceLoginHref} data-testid="desktop-auth-request__workspace-login-link">
-                        <LogIn className="h-4 w-4" />
-                        {t('desktop_auth_request_back_to_workspace_login')}
-                      </Link>
-                    </Button>
-                    {!missingRequest ? (
-                      <Button type="button" variant="outline" onClick={() => setRetryTick((value) => value + 1)}>
-                        {t('desktop_auth_request_retry')}
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-
-              <aside className="surface-soft flex flex-col justify-between rounded-[28px] border border-subtle p-5 md:p-6">
-                <div className="space-y-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-subtle bg-background text-icon-default">
-                    <statusContent.icon className={statusContent.iconClassName} />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="type-system-caption text-tertiary">{t('desktop_auth_request_checklist_label')}</p>
-                    <ul className="space-y-3 text-sm leading-6 text-secondary">
-                      <li>{t('desktop_auth_request_checklist_identity')}</li>
-                      <li>{t('desktop_auth_request_checklist_desktop')}</li>
-                      <li>{t('desktop_auth_request_checklist_followup')}</li>
-                    </ul>
-                  </div>
+        <PublicAuthFrame>
+          <PublicAuthShell
+            aside={(
+              <PublicAuthAsideBlock
+                icon={<statusContent.icon className={statusContent.iconClassName} />}
+                title={t('desktop_auth_request_checklist_label')}
+                description={statusContent.detail}
+              >
+                <div className="space-y-3 text-sm leading-6 text-secondary">
+                  <p>{t('desktop_auth_request_checklist_identity')}</p>
+                  <p>{t('desktop_auth_request_checklist_desktop')}</p>
+                  <p>{t('desktop_auth_request_checklist_followup')}</p>
                 </div>
                 {requestId ? (
-                  <div className="rounded-[20px] border border-subtle bg-background/70 px-4 py-3">
-                    <p className="type-system-caption text-tertiary">{t('desktop_auth_request_reference_label')}</p>
+                  <PublicAuthMutedCard>
+                    <p className="type-caption text-tertiary">{t('desktop_auth_request_reference_label')}</p>
                     <p className="mt-2 type-mono text-sm text-foreground" data-testid="desktop-auth-request__request-id">{requestId}</p>
-                  </div>
+                  </PublicAuthMutedCard>
                 ) : null}
-              </aside>
-            </section>
-          </div>
-        </div>
+              </PublicAuthAsideBlock>
+            )}
+          >
+            <div className="space-y-6">
+              <PublicAuthHeader
+                badge={(
+                  <PublicAuthEyebrow tone="accent">
+                    <MonitorSmartphone className="h-3.5 w-3.5" />
+                    {t('desktop_auth_request_badge')}
+                  </PublicAuthEyebrow>
+                )}
+                title={<span data-testid="desktop-auth-request__title">{statusContent.title}</span>}
+                description={statusContent.description}
+              />
+              <PublicAuthMutedCard>
+                <p className="type-body-ui text-secondary">{statusContent.detail}</p>
+              </PublicAuthMutedCard>
+              {status === 'error' ? (
+                <div className="flex flex-wrap gap-3">
+                  <Button asChild variant="primary">
+                    <Link href={workspaceLoginHref} data-testid="desktop-auth-request__workspace-login-link">
+                      <LogIn className="h-4 w-4" />
+                      {t('desktop_auth_request_back_to_workspace_login')}
+                    </Link>
+                  </Button>
+                  {!missingRequest ? (
+                    <Button type="button" variant="secondary" onClick={() => setRetryTick((value) => value + 1)}>
+                      {t('desktop_auth_request_retry')}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </PublicAuthShell>
+        </PublicAuthFrame>
       </PageLayout>
     </PageState>
   );
@@ -173,7 +173,6 @@ function getStatusContent({
       detail: t('desktop_auth_request_redirecting_hint'),
       icon: LoaderCircle,
       iconClassName: 'h-5 w-5 animate-spin',
-      actions: null,
     };
   }
 
@@ -184,7 +183,6 @@ function getStatusContent({
       detail: t('desktop_auth_request_progress_hint'),
       icon: status === 'done' ? CheckCircle2 : LoaderCircle,
       iconClassName: status === 'done' ? 'h-5 w-5 text-success' : 'h-5 w-5 animate-spin',
-      actions: null,
     };
   }
 
@@ -195,6 +193,5 @@ function getStatusContent({
     detail: missingRequest ? t('desktop_auth_request_missing_hint') : t('desktop_auth_request_error_hint'),
     icon: AlertTriangle,
     iconClassName: 'h-5 w-5 text-warning',
-    actions: null,
   };
 }

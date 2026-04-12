@@ -1,4 +1,4 @@
-@import "@xterm/xterm/css/xterm.css";
+@import '@xterm/xterm/css/xterm.css';
 
 @tailwind base;
 @tailwind components;
@@ -7,8 +7,8 @@
 @layer base {
   :root {
     --radius-sm: 4px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
+    --radius-md: 7px;
+    --radius-lg: 10px;
     --radius-pill: 999px;
 
     --spacing-xs: 8px;
@@ -16,8 +16,8 @@
     --spacing-md: 16px;
     --spacing-lg: 24px;
 
-    --layout-padding: 20px;
-    --layout-gap: 20px;
+    --layout-padding: 18px;
+    --layout-gap: 18px;
     --layout-padding-immersive: 8px;
     --layout-gap-immersive: 8px;
 
@@ -30,75 +30,70 @@
     --font-mono-ui: var(--font-berkeley-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;
   }
 
-  :root[data-theme="light"] {
-    --bg-base: 242 241 237;
-    --bg-sidebar: 247 247 244;
-    --bg-surface-low: 247 247 244;
-    --bg-surface: 230 229 224;
-    --bg-surface-high: 235 234 229;
-    --bg-hover: 225 224 219;
-    --bg-dialog: 247 247 244;
-    --bg-input: 250 249 244;
+  :root[data-theme='light'] {
+    --bg-base: 247 247 244;
+    --bg-sidebar: 244 242 236;
+    --bg-surface-low: 245 244 239;
+    --bg-surface: 241 238 231;
+    --bg-surface-high: 236 232 225;
+    --bg-hover: 232 228 220;
+    --bg-dialog: 248 247 243;
+    --bg-input: 243 240 233;
 
-    --border: 38 37 30;
-    --border-subtle: 38 37 30;
-    --border-input: 38 37 30;
+    --border: 166 156 139;
+    --border-subtle: 186 177 162;
+    --border-input: 159 149 132;
 
-    --text-strong: 38 37 30;
-    --text-primary: 56 52 42;
-    --text-secondary: 94 88 72;
-    --text-tertiary: 129 120 101;
-    --icon-default: 110 104 89;
+    --text-strong: 41 37 29;
+    --text-primary: 67 60 49;
+    --text-secondary: 102 93 78;
+    --text-tertiary: 137 127 111;
+    --icon-default: 124 114 98;
 
-    --accent: 245 78 0;
-    --success: 31 138 101;
-    --error: 207 45 86;
-    --warning: 192 133 50;
-    --overlay-scrim: 18 16 12;
+    --accent: 218 104 35;
+    --success: 31 132 96;
+    --error: 191 63 90;
+    --warning: 181 130 53;
+    --overlay-scrim: 12 11 8;
 
-    --shadow-ambient: 0 8px 18px rgba(20, 18, 11, 0.04);
-    --shadow-card: 0 18px 48px rgba(20, 18, 11, 0.08), 0 8px 22px rgba(20, 18, 11, 0.06), 0 0 0 1px rgb(var(--border) / 0.08);
-    --shadow-float: 0 28px 70px rgba(20, 18, 11, 0.14), 0 14px 32px rgba(20, 18, 11, 0.1), 0 0 0 1px rgb(var(--border) / 0.12);
+    --shadow-ambient: 0 1px 2px rgba(20, 18, 11, 0.05);
+    --shadow-card: 0 10px 30px rgba(20, 18, 11, 0.08), 0 1px 0 rgba(255, 255, 255, 0.42) inset;
+    --shadow-float: 0 18px 48px rgba(20, 18, 11, 0.14), 0 1px 0 rgba(255, 255, 255, 0.2) inset;
 
-    --page-background-image:
-      radial-gradient(circle at top left, rgb(var(--accent) / 0.035), transparent 18%),
-      radial-gradient(circle at top right, rgb(192 133 50 / 0.03), transparent 16%),
-      linear-gradient(180deg, rgb(255 255 255 / 0.24), transparent 180px);
+    --page-background-image: linear-gradient(180deg, rgb(255 255 255 / 0.28), transparent 180px);
   }
 
-  :root[data-theme="dark"] {
+  :root[data-theme='dark'] {
     --bg-base: 20 18 11;
-    --bg-sidebar: 26 23 16;
+    --bg-sidebar: 23 21 14;
     --bg-surface-low: 24 21 15;
-    --bg-surface: 31 27 19;
-    --bg-surface-high: 41 36 26;
-    --bg-hover: 59 50 36;
-    --bg-dialog: 29 25 18;
-    --bg-input: 35 30 22;
+    --bg-surface: 28 25 18;
+    --bg-surface-high: 33 29 22;
+    --bg-hover: 40 35 27;
+    --bg-dialog: 28 25 18;
+    --bg-input: 31 28 21;
 
-    --border: 214 198 165;
-    --border-subtle: 176 158 124;
-    --border-input: 200 183 149;
+    --border: 103 92 74;
+    --border-subtle: 81 72 57;
+    --border-input: 112 100 82;
 
-    --text-strong: 245 239 228;
-    --text-primary: 226 214 192;
-    --text-secondary: 188 172 142;
-    --text-tertiary: 148 132 104;
-    --icon-default: 174 160 133;
+    --text-strong: 242 236 225;
+    --text-primary: 221 210 188;
+    --text-secondary: 176 163 137;
+    --text-tertiary: 135 121 97;
+    --icon-default: 151 137 111;
 
-    --accent: 255 118 50;
-    --success: 82 190 148;
-    --error: 235 109 148;
-    --warning: 221 176 84;
-    --overlay-scrim: 0 0 0;
+    --accent: 228 119 58;
+    --success: 79 185 144;
+    --error: 225 109 138;
+    --warning: 216 170 80;
+    --overlay-scrim: 4 4 3;
 
-    --shadow-ambient: 0 10px 24px rgba(0, 0, 0, 0.18);
-    --shadow-card: 0 18px 48px rgba(0, 0, 0, 0.28), 0 10px 28px rgba(0, 0, 0, 0.2), 0 0 0 1px rgb(var(--border-subtle) / 0.16);
-    --shadow-float: 0 28px 70px rgba(0, 0, 0, 0.42), 0 14px 32px rgba(0, 0, 0, 0.26), 0 0 0 1px rgb(var(--border-subtle) / 0.18);
+    --shadow-ambient: 0 1px 2px rgba(0, 0, 0, 0.18);
+    --shadow-card: 0 12px 30px rgba(0, 0, 0, 0.24), 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+    --shadow-float: 0 22px 60px rgba(0, 0, 0, 0.36), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 
-    --page-background-image:
-      radial-gradient(circle at top center, rgb(255 255 255 / 0.045), transparent 20%),
-      linear-gradient(180deg, rgb(255 255 255 / 0.025), transparent 160px);
+    --page-background-image: linear-gradient(180deg, rgb(255 255 255 / 0.025), transparent 180px);
   }
 
   * {
@@ -112,7 +107,7 @@
     color-scheme: light;
   }
 
-  html[data-theme="dark"] {
+  html[data-theme='dark'] {
     color-scheme: dark;
   }
 
@@ -120,9 +115,9 @@
     @apply bg-background text-primary;
     font-family: var(--font-body-sans);
     font-size: 14px;
-    line-height: 1.5;
-    letter-spacing: 0.01em;
-    font-feature-settings: "rlig" 1, "calt" 1, "ss09" 1;
+    line-height: 1.55;
+    letter-spacing: 0.005em;
+    font-feature-settings: 'rlig' 1, 'calt' 1, 'ss09' 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
@@ -152,7 +147,7 @@
   }
 
   ::selection {
-    background: rgb(var(--accent) / 0.18);
+    background: rgb(var(--accent) / 0.14);
     color: rgb(var(--text-strong));
   }
 
@@ -163,10 +158,10 @@
     textarea,
     select,
     summary,
-    [role="button"],
-    [tabindex]:not([tabindex="-1"])
+    [role='button'],
+    [tabindex]:not([tabindex='-1'])
   ):focus-visible {
-    @apply outline-none ring-2 ring-accent/30 ring-offset-2 ring-offset-background;
+    @apply outline-none ring-2 ring-accent/20 ring-offset-2 ring-offset-background;
   }
 
   input,
@@ -182,7 +177,6 @@
   margin: 0;
 }
 
-/* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -193,42 +187,42 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgb(var(--text-tertiary) / 0.38);
+  background: rgb(var(--text-tertiary) / 0.24);
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(var(--text-secondary) / 0.58);
+  background: rgb(var(--text-secondary) / 0.34);
 }
 
 @layer components {
   .type-display {
     font-family: var(--font-display);
-    font-size: clamp(3rem, 5vw, 4.5rem);
-    line-height: 1.06;
+    font-size: clamp(2.8rem, 4.5vw, 4.25rem);
+    line-height: 1.04;
     letter-spacing: -0.06em;
     font-weight: 400;
   }
 
   .type-section-heading {
     font-family: var(--font-display);
-    font-size: clamp(2rem, 3vw, 2.25rem);
-    line-height: 1.14;
+    font-size: clamp(1.75rem, 2.6vw, 2.1rem);
+    line-height: 1.12;
     letter-spacing: -0.045em;
     font-weight: 400;
   }
 
   .type-subheading {
     font-family: var(--font-display);
-    font-size: 1.625rem;
-    line-height: 1.2;
+    font-size: 1.4rem;
+    line-height: 1.18;
     letter-spacing: -0.028em;
     font-weight: 400;
   }
 
   .type-title {
     font-family: var(--font-display);
-    font-size: 1.375rem;
+    font-size: 1.15rem;
     line-height: 1.24;
     letter-spacing: -0.018em;
     font-weight: 400;
@@ -236,23 +230,23 @@
 
   .type-body-serif {
     font-family: var(--font-body-serif);
-    font-size: 1.08rem;
+    font-size: 1.02rem;
     line-height: 1.56;
     font-weight: 400;
-    font-feature-settings: "cswh" 1;
+    font-feature-settings: 'cswh' 1;
   }
 
   .type-body-ui {
     font-family: var(--font-body-sans);
-    font-size: 0.95rem;
-    line-height: 1.58;
-    letter-spacing: 0.01em;
+    font-size: 0.93rem;
+    line-height: 1.56;
+    letter-spacing: 0.008em;
     font-weight: 400;
   }
 
   .type-caption {
     font-family: var(--font-display);
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     line-height: 1.45;
     letter-spacing: 0.14em;
     font-weight: 400;
@@ -260,17 +254,17 @@
   }
 
   .type-system-heading {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 1.25rem;
-    line-height: 1.4;
-    font-weight: 700;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 1.08rem;
+    line-height: 1.38;
+    font-weight: 600;
   }
 
   .type-system-caption {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 0.81rem;
-    line-height: 1.33;
-    font-weight: 600;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    font-weight: 500;
   }
 
   .type-mono {
@@ -280,19 +274,19 @@
   }
 
   .surface-card {
-    @apply rounded-md border border-border bg-surface shadow-card;
+    @apply rounded-md border border-border/65 bg-surface shadow-ambient;
   }
 
   .surface-elevated {
-    @apply rounded-lg border border-border bg-surface-high shadow-float;
+    @apply rounded-md border border-border/60 bg-surface-high shadow-card;
   }
 
   .surface-soft {
-    @apply rounded-md border border-border/60 bg-surface-low;
+    @apply rounded-md border border-border/50 bg-surface-low;
   }
 
   .control-pill {
-    @apply rounded-pill border border-border/70 bg-surface-low;
+    @apply rounded-pill border border-border/55 bg-surface-low;
   }
 }
 

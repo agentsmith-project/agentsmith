@@ -102,16 +102,16 @@ export function CreateCredentialDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+          <div className="rounded-lg border border-subtle bg-surface-low p-4">
             <div className="flex items-start gap-3">
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/12 text-emerald-300">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-300">
                 <ShieldCheck className="h-5 w-5" />
               </span>
               <p className="text-sm leading-6 text-secondary">{t('create_dialog.guidance')}</p>
             </div>
           </div>
 
-          <div className="space-y-2 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+          <div className="space-y-2 rounded-lg border border-subtle bg-surface-low p-4">
             <label htmlFor="cred-name" className="text-sm font-medium text-foreground">
               {t('create_dialog.name')}
             </label>
@@ -125,7 +125,7 @@ export function CreateCredentialDialog({
             />
           </div>
 
-          <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+          <div className="rounded-lg border border-subtle bg-surface-low p-4">
             <CredentialSecretField
               id="cred-value"
               label={t('create_dialog.value')}

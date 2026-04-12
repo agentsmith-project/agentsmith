@@ -300,21 +300,21 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       >
         <div className="w-full space-y-6">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {visibilityLabel}
             </div>
-            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {settingsT('join_policy')}: {joinPolicyLabel}
             </div>
-            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {settingsT('admin_group_title')}: {projectAdminCount}
             </div>
-            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {settingsT('workspace_project_owner_label')}: {ownerDisplayName}
             </div>
           </div>
 
-          <div className="rounded-[22px] border border-subtle bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)] md:p-6 space-y-6" data-testid="settings__ownership-section">
+          <div className="rounded-md border border-subtle bg-surface/95 p-5 shadow-card md:p-6 space-y-6" data-testid="settings__ownership-section">
             <div>
               <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('ownership_lifecycle_title')}</h2>
               <p className="text-sm text-tertiary">
@@ -361,7 +361,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               onSave={handleSaveProjectOwner}
             />
 
-            <div className="rounded-[18px] border border-error/20 bg-error/5 p-4">
+            <div className="rounded-md border border-error/20 bg-error/5 p-4">
               <h3 className="text-sm font-semibold text-error mb-3">{settingsT('danger_zone_title')}</h3>
               <div className="flex items-center justify-between gap-4">
                 <div>

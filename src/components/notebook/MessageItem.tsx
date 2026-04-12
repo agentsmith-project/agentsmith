@@ -76,7 +76,7 @@ function StepRow(props: {
   return (
     <div
       className={cn(
-        "relative border-l border-white/8 pl-4 pr-2 py-1.5",
+        "relative border-l border-subtle pl-4 pr-2 py-1.5",
         latest && "border-white/18",
         (highlighted || latest) && "rounded-r-md bg-white/[0.035]",
       )}
@@ -214,7 +214,7 @@ export function MessageItem({
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[min(680px,62%)] rounded-[16px] border border-subtle bg-hover px-4 py-3 text-foreground shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+        <div className="max-w-[min(680px,62%)] rounded-md border border-subtle bg-hover px-4 py-3 text-foreground shadow-ambient">
           <div className="space-y-2">
             <Markdown content={displayContent} />
           </div>
@@ -243,7 +243,7 @@ export function MessageItem({
   return (
     <div className="flex w-full justify-start pr-2">
       <div
-        className="w-full max-w-[1120px] rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.038),rgba(255,255,255,0.016))] px-5 py-4 shadow-[0_18px_42px_rgba(0,0,0,0.14)] text-primary"
+        className="w-full max-w-[1120px] rounded-md border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.038),rgba(255,255,255,0.016))] px-5 py-4 shadow-card text-primary"
         data-testid="notebook__agent-message-bubble"
       >
         <div data-testid="notebook__message-process-panel">
@@ -348,7 +348,7 @@ export function MessageItem({
 
         {displayContent.trim().length > 0 ? (
           <div
-            className="mt-4 border-t border-white/8 pt-4"
+            className="mt-4 border-t border-subtle pt-4"
             data-testid="notebook__message-final-answer"
           >
             <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary/90">
@@ -360,7 +360,7 @@ export function MessageItem({
           </div>
         ) : streamingContent != null || forceRunning ? (
           <div
-            className="mt-4 border-t border-white/8 pt-4"
+            className="mt-4 border-t border-subtle pt-4"
             data-testid="notebook__message-final-answer-pending"
           >
             <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary/90">
@@ -383,7 +383,7 @@ export function MessageItem({
         ) : null}
 
         <div
-          className="mt-3 flex items-center justify-between gap-2 border-t border-white/8 pt-3 text-[11px]"
+          className="mt-3 flex items-center justify-between gap-2 border-t border-subtle pt-3 text-[11px]"
           data-testid="notebook__message-status-footer"
         >
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-tertiary">

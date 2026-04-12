@@ -95,7 +95,7 @@ export function AlertNotificationsPanel({
   if (visibleAlerts.length === 0) {
     return (
       <div
-        className="flex flex-col items-center justify-center py-12 px-4 bg-surface border border-border rounded-xl"
+        className="flex flex-col items-center justify-center py-12 px-4 bg-surface border border-border rounded-md"
         data-testid="alert-notifications__empty"
       >
         <Bell className="h-10 w-10 text-tertiary mb-3" />
@@ -124,7 +124,7 @@ export function AlertNotificationsPanel({
           <div
             key={alert.id}
             data-testid="alert-card"
-            className={`relative overflow-hidden rounded-[22px] border bg-surface p-5 shadow-[0_12px_28px_rgba(0,0,0,0.12)] transition-colors ${
+            className={`relative overflow-hidden rounded-md border bg-surface p-5 shadow-ambient transition-colors ${
               isUnread ? 'border-l-4 border-l-accent border-border/80' : 'border-border'
             }`}
           >

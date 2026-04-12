@@ -131,7 +131,7 @@ export function TaskHeader({
 
   return (
     <div
-      className="flex items-center justify-between gap-3 border-b border-white/6 bg-surface/55 px-3.5 py-1.5"
+      className="flex items-center justify-between gap-3 border-b border-subtle bg-surface/55 px-3.5 py-1.5"
       data-testid="notebook__task-header"
     >
       <div className="flex items-center gap-3 flex-1 min-w-0">

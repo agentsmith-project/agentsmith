@@ -170,7 +170,7 @@ export function AlertCenterPage({
         />
       </div>
 
-      <div className="rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+      <div className="rounded-md border border-subtle bg-surface/95 p-4 shadow-card">
         <AlertCenterTabs
           activeTab={activeTab}
           alerts={alerts}
@@ -220,7 +220,7 @@ function AlertCenterSummaryCard({
   helper: string;
 }) {
   return (
-    <div className="rounded-[20px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
+    <div className="rounded-md border border-subtle bg-surface-low p-4 shadow-ambient">
       <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
         {icon}
         {label}

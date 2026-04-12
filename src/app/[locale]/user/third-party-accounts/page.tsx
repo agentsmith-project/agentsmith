@@ -253,7 +253,7 @@ export default function ThirdPartyAccountsPage() {
     <PageState state="success">
       <PageLayout>
         <div className="max-w-6xl mx-auto w-full px-4 py-4 md:px-5 md:py-5 space-y-5">
-          <section className="rounded-2xl border border-border bg-surface px-5 py-5 shadow-sm shadow-black/10 md:px-6">
+          <section className="rounded-lg border border-border bg-surface px-5 py-5 shadow-card md:px-6">
             <div className="flex items-start justify-between gap-4">
               <div className="max-w-3xl space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
@@ -273,7 +273,7 @@ export default function ThirdPartyAccountsPage() {
               </Button>
             </div>
             <div className="mt-5 grid gap-3 md:grid-cols-3">
-              <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+              <div className="rounded-md border border-border/70 bg-surface-high p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                   <ShieldCheck className="h-3.5 w-3.5 text-accent" />
                   {t('summary_active_label')}
@@ -281,7 +281,7 @@ export default function ThirdPartyAccountsPage() {
                 <div className="mt-3 text-2xl font-semibold text-foreground">{activeItems.length}</div>
                 <p className="mt-1 text-sm text-tertiary">{t('summary_active_hint')}</p>
               </div>
-              <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+              <div className="rounded-md border border-border/70 bg-surface-high p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                   <PlugZap className="h-3.5 w-3.5 text-accent" />
                   {t('summary_oauth_label')}
@@ -289,7 +289,7 @@ export default function ThirdPartyAccountsPage() {
                 <div className="mt-3 text-2xl font-semibold text-foreground">{oauthItemsCount}</div>
                 <p className="mt-1 text-sm text-tertiary">{t('summary_oauth_hint')}</p>
               </div>
-              <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+              <div className="rounded-md border border-border/70 bg-surface-high p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                   <Link2 className="h-3.5 w-3.5 text-accent" />
                   {t('summary_provider_label')}
@@ -299,18 +299,18 @@ export default function ThirdPartyAccountsPage() {
               </div>
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <div className="rounded-2xl border border-subtle bg-background/70 p-4" data-testid="third-party-accounts__personal-scope">
+              <div className="rounded-lg border border-subtle bg-background/70 p-4" data-testid="third-party-accounts__personal-scope">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-secondary">{t('summary_personal_scope_title')}</p>
                 <p className="mt-2 text-sm leading-6 text-tertiary">{t('summary_personal_scope_body')}</p>
               </div>
-              <div className="rounded-2xl border border-subtle bg-background/70 p-4" data-testid="third-party-accounts__workspace-scope">
+              <div className="rounded-lg border border-subtle bg-background/70 p-4" data-testid="third-party-accounts__workspace-scope">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-secondary">{t('summary_workspace_scope_title')}</p>
                 <p className="mt-2 text-sm leading-6 text-tertiary">{t('summary_workspace_scope_body')}</p>
               </div>
             </div>
           </section>
 
-          <section className="rounded-2xl border border-border bg-surface shadow-sm shadow-black/10">
+          <section className="rounded-lg border border-border bg-surface shadow-card">
             <div className="border-b border-border px-5 py-4 md:px-6">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -328,7 +328,7 @@ export default function ThirdPartyAccountsPage() {
               {isLoading ? (
                 <div className="py-12 text-sm text-tertiary">{commonT('loading')}</div>
               ) : items.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border bg-surface-high/70 px-6 py-16 text-center">
+                <div className="rounded-lg border border-dashed border-border bg-surface-high/70 px-6 py-16 text-center">
                   <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-dashed border-subtle text-tertiary">
                     <Plus className="w-5 h-5" />
                   </div>
@@ -366,7 +366,7 @@ export default function ThirdPartyAccountsPage() {
               <DialogDescription>{t('dialog_description')}</DialogDescription>
             </DialogHeader>
 
-            <div className="rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(124,160,255,0.08),rgba(124,160,255,0.02))] p-4">
+            <div className="rounded-lg border border-subtle bg-[linear-gradient(180deg,rgba(124,160,255,0.08),rgba(124,160,255,0.02))] p-4">
               <p className="text-sm leading-6 text-secondary">{t('personal_scope_dialog_note')}</p>
             </div>
 

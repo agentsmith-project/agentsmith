@@ -104,7 +104,7 @@ export function ChatHeader({
   };
 
   return (
-    <div className="border-b border-white/6 bg-transparent px-3 py-1.5 md:px-4">
+    <div className="border-b border-subtle bg-transparent px-3 py-1.5 md:px-4">
       <div className={cn('mx-auto flex w-full items-start justify-between gap-2', contentWidthClass)}>
         <div className="min-w-0 flex-1 space-y-0.5">
           <EditableSessionTitle

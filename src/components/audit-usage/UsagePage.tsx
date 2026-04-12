@@ -153,7 +153,7 @@ export function UsagePage({
     return (
       <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
         <div className="flex flex-1 flex-col items-center justify-center">
-          <div className="max-w-md rounded-xl border border-border bg-surface p-8 text-center">
+          <div className="max-w-md rounded-md border border-border bg-surface p-8 text-center">
             <p className="text-sm text-tertiary">{t('permission_denied')}</p>
           </div>
         </div>
@@ -196,19 +196,19 @@ export function UsagePage({
             <div className="rounded-md border border-subtle bg-bg-base/20 px-3 py-2 text-xs text-tertiary" data-testid="usage__my-scope-badge">
               {t('scope_my_usage')}
             </div>
-            <div className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-2 text-xs text-tertiary" data-testid="usage__endpoint-count">
+            <div className="rounded-md border border-subtle bg-surface-low px-3 py-2 text-xs text-tertiary" data-testid="usage__endpoint-count">
               {endpointOptions.length} {t('view.endpoints_label')}
             </div>
-            <div className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-2 text-xs text-tertiary" data-testid="usage__limits-count">
+            <div className="rounded-md border border-subtle bg-surface-low px-3 py-2 text-xs text-tertiary" data-testid="usage__limits-count">
               {totalLimitCards} {t('view.active_limits')}
             </div>
-            <div className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-2 text-xs text-tertiary" data-testid="usage__period-badge">
+            <div className="rounded-md border border-subtle bg-surface-low px-3 py-2 text-xs text-tertiary" data-testid="usage__period-badge">
               {t('view.last_30_days')}
             </div>
           </PageToolbar>
         )}
       >
-        <div className="rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+        <div className="rounded-md border border-subtle bg-surface/95 p-4 shadow-card">
           <UsageView
             trendPoints={usageData?.data_points ?? []}
           trendLoading={usageLoading}

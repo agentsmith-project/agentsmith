@@ -111,7 +111,7 @@ export function CreateProjectDialog({
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
-            <div className="rounded-xl border border-accent/20 bg-accent/10 p-4">
+            <div className="rounded-md border border-accent/20 bg-accent/10 p-4">
               <div className="flex items-start gap-3">
                 <div className="rounded-full bg-accent/15 p-2 text-accent">
                   <FolderPlus className="h-4 w-4" />
@@ -123,7 +123,7 @@ export function CreateProjectDialog({
               </div>
             </div>
 
-            <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+            <div className="rounded-md border border-border/70 bg-surface-high p-4">
               <div className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                 {t('dialog_basics_title')}
               </div>
@@ -160,7 +160,7 @@ export function CreateProjectDialog({
               </div>
             </div>
 
-            <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+            <div className="rounded-md border border-border/70 bg-surface-high p-4">
               <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                 <ShieldCheck className="h-3.5 w-3.5 text-accent" />
                 {t('dialog_access_title')}

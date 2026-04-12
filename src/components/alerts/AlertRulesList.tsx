@@ -64,7 +64,7 @@ export function AlertRulesList({
   if (rules.length === 0) {
     return (
       <div
-        className="flex flex-col items-center justify-center py-16 px-4 bg-surface border border-border rounded-xl"
+        className="flex flex-col items-center justify-center py-16 px-4 bg-surface border border-border rounded-md"
         data-testid="alert-rules-list__empty"
       >
         <Bell className="h-12 w-12 text-tertiary mb-3" />

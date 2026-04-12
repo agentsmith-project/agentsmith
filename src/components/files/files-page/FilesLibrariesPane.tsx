@@ -34,8 +34,8 @@ export function FilesLibrariesPane({
   const showActions = canManage || canExchangeCredentials;
 
   return (
-    <div className="min-h-0 rounded-[16px] border border-white/5 bg-surface/74 shadow-[0_10px_24px_rgba(0,0,0,0.1)]">
-      <div className="flex items-center justify-between border-b border-white/6 px-3 py-2">
+    <div className="min-h-0 rounded-md border border-subtle bg-surface/74 shadow-ambient">
+      <div className="flex items-center justify-between border-b border-subtle px-3 py-2">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('file_manager.libraries')}</div>
           <div className="mt-0.5 text-[11px] text-secondary">{libraries.length} {t('file_manager.items')}</div>
@@ -67,7 +67,7 @@ export function FilesLibrariesPane({
                 ? 'border-error/25 bg-error/10 text-error'
                 : library.status === 'degraded'
                   ? 'border-warning/25 bg-warning/10 text-warning'
-                  : 'border-white/8 bg-white/5 text-secondary';
+                  : 'border-subtle bg-white/5 text-secondary';
               const statusReason = library.status === 'failed'
                 ? t('file_manager.library_status_reason_failed')
                 : library.status === 'degraded'
@@ -83,7 +83,7 @@ export function FilesLibrariesPane({
                     onSelectLibrary(library.id);
                   }}
                   className={cn(
-                    'flex w-full flex-col gap-2 rounded-[12px] px-2.5 py-2 text-left transition-colors',
+                    'flex w-full flex-col gap-2 rounded-md px-2.5 py-2 text-left transition-colors',
                     active
                       ? 'bg-accent/10 text-strong ring-1 ring-accent/18'
                       : 'text-primary hover:bg-hover/55',
@@ -121,7 +121,7 @@ export function FilesLibrariesPane({
                   </div>
                   {active && showActions ? (
                     <TooltipProvider delayDuration={120}>
-                      <div className="flex items-center gap-1.5 border-t border-white/6 pt-1">
+                      <div className="flex items-center gap-1.5 border-t border-subtle pt-1">
                         {canExchangeCredentials ? (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -155,7 +155,7 @@ export function FilesLibrariesPane({
                                   type="button"
                                   size="icon"
                                   variant="ghost"
-                                  className="h-8 w-8 rounded-full border border-white/8 bg-transparent text-secondary hover:bg-hover/55 hover:text-primary"
+                                  className="h-8 w-8 rounded-full border border-subtle bg-transparent text-secondary hover:bg-hover/55 hover:text-primary"
                                   onClick={(event) => {
                                     event.preventDefault();
                                     event.stopPropagation();
@@ -175,7 +175,7 @@ export function FilesLibrariesPane({
                                   type="button"
                                   size="icon"
                                   variant="ghost"
-                                  className="h-8 w-8 rounded-full border border-white/8 bg-transparent text-secondary hover:bg-error/12 hover:text-error"
+                                  className="h-8 w-8 rounded-full border border-subtle bg-transparent text-secondary hover:bg-error/12 hover:text-error"
                                   onClick={(event) => {
                                     event.preventDefault();
                                     event.stopPropagation();
@@ -194,7 +194,7 @@ export function FilesLibrariesPane({
                       </div>
                     </TooltipProvider>
                   ) : active ? (
-                    <div className="border-t border-white/6 pt-1" />
+                    <div className="border-t border-subtle pt-1" />
                   ) : null}
                 </div>
               );

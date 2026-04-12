@@ -59,12 +59,12 @@ export function ThreadsPane({
   return (
     <aside
       className={cn(
-        'border-r border-white/6 bg-panel/45 backdrop-blur-sm flex flex-col overflow-hidden',
+        'border-r border-subtle bg-panel/45 backdrop-blur-sm flex flex-col overflow-hidden',
         layoutMode === 'ultrawide' ? 'w-[256px] xl:w-[276px] 2xl:w-[296px]' : 'w-[216px] xl:w-[228px] 2xl:w-[240px]',
       )}
       data-testid="chat__threads-pane"
     >
-      <div className="border-b border-white/6 space-y-1.5">
+      <div className="border-b border-subtle space-y-1.5">
         <ThreadsPaneHeader
           canCreate={canCreate}
           createPending={createPending}

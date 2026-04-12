@@ -161,7 +161,7 @@ export default function WorkspaceFeishuSettingsPage() {
           <Topbar />
 
           <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-4 md:px-5 md:py-5 space-y-5">
-            <section className="rounded-[28px] border border-border bg-surface/95 px-5 py-5 shadow-[0_22px_50px_rgba(0,0,0,0.18)] md:px-6">
+            <section className="rounded-lg border border-border bg-surface/95 px-5 py-5 shadow-float md:px-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-2">
                   <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
@@ -196,7 +196,7 @@ export default function WorkspaceFeishuSettingsPage() {
                       type="button"
                       onClick={() => setStep((index + 1) as WizardStep)}
                       className={cn(
-                        'rounded-[18px] border p-4 text-left transition-colors',
+                        'rounded-md border p-4 text-left transition-colors',
                         isActive ? 'border-accent bg-accent/10' : 'border-subtle bg-bg-base/20',
                       )}
                     >
@@ -211,7 +211,7 @@ export default function WorkspaceFeishuSettingsPage() {
               </div>
             </section>
 
-            <section className="rounded-[24px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+            <section className="rounded-md border border-border bg-surface/95 p-5 shadow-card">
               {showLockedView ? (
                 <div className="space-y-5" data-testid="ws-feishu__locked">
                   <SectionHeading
@@ -219,19 +219,19 @@ export default function WorkspaceFeishuSettingsPage() {
                     subtitle={t('feishu_locked_description')}
                   />
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4">
+                    <div className="rounded-md border border-subtle bg-bg-base/20 p-4">
                       <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('feishu_status_label')}</div>
                       <div className="mt-2 text-sm font-medium text-foreground">{t(`feishu_status_${status}`)}</div>
                     </div>
-                    <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4">
+                    <div className="rounded-md border border-subtle bg-bg-base/20 p-4">
                       <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('feishu_verified_by_label')}</div>
                       <div className="mt-2 text-sm font-medium text-foreground">{integration?.verified_by_email || t('feishu_not_verified_yet')}</div>
                     </div>
-                    <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4">
+                    <div className="rounded-md border border-subtle bg-bg-base/20 p-4">
                       <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('feishu_redirect_uri_label')}</div>
                       <div className="mt-2 break-all text-sm font-medium text-foreground">{integration?.redirect_uri || t('feishu_callback_unavailable')}</div>
                     </div>
-                    <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4">
+                    <div className="rounded-md border border-subtle bg-bg-base/20 p-4">
                       <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('feishu_scope_label')}</div>
                       <div className="mt-2 text-sm text-foreground">{t('feishu_scope_description')}</div>
                     </div>
@@ -262,14 +262,14 @@ export default function WorkspaceFeishuSettingsPage() {
                     title={t('feishu_prepare_title')}
                     subtitle={t('feishu_prepare_description')}
                   />
-                  <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4 space-y-3 text-sm text-secondary">
+                  <div className="rounded-md border border-subtle bg-bg-base/20 p-4 space-y-3 text-sm text-secondary">
                     <p>{t('feishu_prepare_item_app')}</p>
                     <p>{t('feishu_prepare_item_secret')}</p>
                     <p>{t('feishu_prepare_item_callback')}</p>
                   </div>
-                  <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4">
+                  <div className="rounded-md border border-subtle bg-bg-base/20 p-4">
                     <Label className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('feishu_recommended_callback_label')}</Label>
-                    <div className="mt-2 break-all rounded-xl border border-subtle bg-background px-3 py-2 text-sm text-foreground">
+                    <div className="mt-2 break-all rounded-md border border-subtle bg-background px-3 py-2 text-sm text-foreground">
                       {recommendedCallback || t('feishu_callback_unavailable')}
                     </div>
                   </div>
@@ -309,7 +309,7 @@ export default function WorkspaceFeishuSettingsPage() {
                     <Input id="feishu-redirect-uri" value={redirectUri} onChange={(event) => setRedirectUri(event.target.value)} />
                   </div>
                   {integration?.status === 'enabled' ? (
-                    <div className="rounded-[18px] border border-warning/30 bg-warning/10 p-4 text-sm text-secondary">
+                    <div className="rounded-md border border-warning/30 bg-warning/10 p-4 text-sm text-secondary">
                       {t('feishu_edit_warning')}
                     </div>
                   ) : null}
@@ -341,7 +341,7 @@ export default function WorkspaceFeishuSettingsPage() {
                     title={t('feishu_verify_title')}
                     subtitle={t('feishu_verify_description')}
                   />
-                  <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4 space-y-2 text-sm">
+                  <div className="rounded-md border border-subtle bg-bg-base/20 p-4 space-y-2 text-sm">
                     <p className="text-foreground">{t('feishu_verify_requirement')}</p>
                     <p className="text-secondary">{t('feishu_verify_result_hint')}</p>
                   </div>
@@ -369,11 +369,11 @@ export default function WorkspaceFeishuSettingsPage() {
                     subtitle={t('feishu_enable_description')}
                   />
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4">
+                    <div className="rounded-md border border-subtle bg-bg-base/20 p-4">
                       <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('feishu_status_label')}</div>
                       <div className="mt-2 text-sm font-medium text-foreground">{t(`feishu_status_${status}`)}</div>
                     </div>
-                    <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4">
+                    <div className="rounded-md border border-subtle bg-bg-base/20 p-4">
                       <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('feishu_verified_by_label')}</div>
                       <div className="mt-2 text-sm font-medium text-foreground">{integration?.verified_by_email || t('feishu_not_verified_yet')}</div>
                     </div>

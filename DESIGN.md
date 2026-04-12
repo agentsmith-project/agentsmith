@@ -1,216 +1,215 @@
-# Cursor Design Guide for AgentSmith
+# Cursor UI Contract for AgentSmith
 
-This file is the UI style guide for AgentSmith.
+This file defines the UI style contract for AgentSmith.
 
-It is based on the publicly observable design language of `https://cursor.com` as reviewed on April 11, 2026. It covers only UI style, visual language, and implementation preferences. It does not define product objects, IA, permissions, routes, contracts, or engineering gates.
+It is based only on the publicly observable UI of `https://cursor.com` and its public subpages as reviewed on April 11, 2026. It covers visual language, styling rules, and implementation constraints. It does not define product objects, permissions, routes, contracts, or engineering gates.
 
-## 1. Source of truth
+## 1. Scope
 
-When design questions come up, use this order:
+Use this file to answer:
 
-1. Observed live Cursor UI truth on `cursor.com`
-2. The translation rules in this document for turning that language into an enterprise control-plane app
-3. Shared AgentSmith tokens, primitives, and shell components
+- what the UI should feel like
+- how colors, borders, surfaces, typography, and chrome should behave
+- which implementation patterns are allowed
+- which visual deviations are forbidden
 
-Do not invent a parallel design language page by page.
+Do not use this file to answer:
 
-## 2. Observed Cursor truth
+- what the product does
+- who can access a route
+- how a workflow should behave
+- how a business feature should be modeled
 
-### Theme model
+## 2. Public Cursor Truth
 
-Cursor's public site is a real dual-theme system, not a light-only site with a cosmetic dark variant.
+### 2.1 Theme anchors
 
-Observed anchors from the live site:
-- Light theme color: `#f7f7f4`
-- Dark theme color: `#14120b`
-- Light is warm cream, not white
-- Dark is warm near-black, not cold graphite
+Observed public theme anchors:
 
-Both themes are low-noise and restrained. Neither theme relies on loud gradients, glossy glass, or neon contrast.
+- light theme-color: `#f7f7f4`
+- dark theme-color: `#14120b`
 
-### Typography
+Both themes are warm and restrained.
 
-The live site exposes three defining font families:
+- Light is cream, parchment, and soft mineral, not white.
+- Dark is warm near-black, not blue-black or graphite.
+- Neither theme relies on loud gradients, glossy glass, or neon contrast.
+
+### 2.2 Typography
+
+Observed public font families:
+
 - `CursorGothic`
 - `jjannon`
-- `berkeleyMono`
+- `berkeleymono`
 
-Use them by role, not decoratively:
-- `CursorGothic`: display, headings, UI labels, structured interface language
-- `jjannon`: editorial body copy, narrative/supporting prose, longer descriptive passages
-- `berkeleyMono`: technical labels, code, request ids, terminals, compact diagnostics
+Their public roles are consistent across the main site and content pages:
 
-Typography should carry hierarchy mostly through size, spacing, and restraint rather than heavy weights.
+- `CursorGothic`: headings, UI labels, compact interface language
+- `jjannon`: longer editorial copy and supporting prose
+- `berkeleymono`: code, diagnostics, compact technical labels
 
-### Color and atmosphere
+Hierarchy comes from proportion, spacing, and restraint, not from extreme weight shifts.
 
-Cursor's visual language is warm, quiet, and precise.
+### 2.3 Background and atmosphere
 
-Observed characteristics:
-- Cream and parchment-like light surfaces
-- Warm brown or near-black text instead of pure neutral black
-- Orange used sparingly as accent, not as the default fill for everything
-- Subtle borders and surface separation
-- Visual density comes from typography and spacing more than decoration
+Cursor uses a low-noise page atmosphere.
 
-Avoid:
-- Pure white application backgrounds
-- Cold blue-tinted neutrals as the primary shell language
-- Heavy radial lighting effects
-- Large areas of saturated brand orange
-- Bright translucent overlays in dark mode
+- Backgrounds are mostly solid or nearly solid.
+- Decorative light wash is subtle.
+- The site explicitly describes its main demo background as a subtle, solid brand background.
+- Decorative effects never overpower structure or text.
 
-### Surfaces and depth
+### 2.4 Surfaces and borders
 
-Cursor's site uses restrained depth.
+Cursor's surfaces are calm and light-handed.
 
-Principles:
-- Surfaces should feel calm and tactile, not glossy
-- Borders are often more important than shadows
-- Shadows are soft and editorial, not dramatic product-marketing lifts
-- Overlays darken and quiet the background in both themes
-- Background art, when present, is subtle and should never overpower content
+- Borders are visible but subdued.
+- Borders must never be as strong as primary text.
+- Surface separation is mild.
+- Many sections are defined by spacing and type rhythm rather than large independent cards.
+- Shadows are soft and sparse.
 
-### Shape and radius
+### 2.5 Radius and shape
 
-The overall shape language is controlled and moderately rounded.
+Cursor uses controlled rounding.
 
-Use:
-- Small to medium radii for controls and containers
-- Full-pill only for true pills, chips, or compact toggles
+- Small and medium radii are common.
+- Large plush radii are not the default page language.
+- Full-pill is reserved for chips, toggles, and compact controls.
 
-Avoid:
-- Oversized 24px to 32px radii as a default page language
-- Soft, plush card systems that feel more like consumer SaaS than a precise editor brand
+### 2.6 Chrome and navigation
 
-### Interaction language
+Cursor's shell is quiet.
 
-Cursor's interactive language is understated.
+- Chrome should be calmer than content.
+- Active navigation is clear but understated.
+- Navigation should not rely on loud rails, bright fills, or heavy outlining.
+- Menus and top controls should feel integrated with the page, not like a detached component showcase.
 
-Principles:
-- Primary actions should feel deliberate, not loud
-- Accent color should guide attention, not flood the screen
-- Hover states should usually be color, border, or subtle surface changes
-- Focus states must remain visible but not introduce a foreign color language
-- Empty, loading, and error states should feel composed and informative rather than alarm-heavy
+### 2.7 CTA language
 
-## 3. AgentSmith translation rules
+Cursor uses measured emphasis.
 
-AgentSmith is not Cursor's marketing site. It is an enterprise control-plane app. We should translate Cursor's visual language into a product shell that supports dense navigation, governance surfaces, data tables, forms, and audit-heavy workflows.
+- Primary actions are clear but not theatrical.
+- Accent orange is a guide, not a flood color.
+- Buttons should feel deliberate and compact.
+- Most actions should rely on subtle surface and typography changes rather than strong fills.
 
-### What we inherit directly
+### 2.8 Overlay behavior
 
-We inherit:
-- The warm light and warm dark theme mood
-- The font stack and its role split
-- The restrained use of accent orange
-- The calm border-first surface model
-- The editorial, low-noise shell tone
+- Overlays darken and quiet the background.
+- Overlays do not brighten the surrounding page in dark mode.
+- Dialogs and sheets feel like slightly raised paper, not floating glass slabs.
 
-### What we translate for app surfaces
+## 3. Direct Copy Rules
 
-For control-plane surfaces:
-- Shell chrome should stay quieter than content
-- Navigation should be compact and legible, not decorative
-- Data-heavy pages should prioritize scanability over theatrical styling
-- Governance pages should feel stable and trustworthy, not celebratory
-- Empty and recovery states should always explain next action clearly
+The following traits must be copied directly in spirit and system behavior:
 
-### What we do not copy from the marketing site
+- warm cream light theme anchored on `#f7f7f4`
+- warm near-black dark theme anchored on `#14120b`
+- quiet shell chrome
+- low-contrast border model
+- restrained radius scale
+- sparse, soft shadow model
+- editorial typography split across `CursorGothic`, `jjannon`, and `berkeleymono`
+- subtle backgrounds instead of decorative gradients
+- calm CTA hierarchy with limited accent fill
 
-Do not directly port:
-- Scenic or painterly hero backgrounds into product chrome
-- Marketing-only composition tricks as default page structure
-- Feature-showcase color stories as global semantic tokens
-- Decorative motion or large hero spacing into routine CRUD/governance pages
+These are not optional preferences. They are the default design system contract.
 
-## 4. Foundation rules for implementation
+## 4. Allowed Translation for AgentSmith
 
-### Tokens
+AgentSmith is an application, not a marketing site. The allowed translation is visual only.
 
-All colors, borders, shadows, backgrounds, and surface states must come from shared theme tokens.
+Allowed:
 
-Do not:
-- hardcode one-off dark-only values into pages
-- invent page-local gradients to "make it feel like Cursor"
-- use one-off rgba overlays instead of shared scrim tokens
+- denser navigation and data layouts
+- denser form and governance surfaces
+- application shell structures needed for multi-surface workflows
+- control-plane tables, audit summaries, and settings forms
 
-### Primitives first
+Not allowed:
 
-Design language must land in shared primitives before page code.
+- inventing a second visual language for app pages
+- using dashboard tropes that overpower Cursor's quietness
+- replacing subtle structure with piles of bordered cards
+- replacing type rhythm with decoration
 
-Prioritize:
+## 5. Executable Implementation Contract
+
+### 5.1 Foundation
+
+All visual language must come from shared tokens and primitives.
+
+Required:
+
+- dual-theme parity
+- border tokens weaker than primary text
+- small to medium default radius
+- minimal background decoration
+- quiet shadow model
+
+### 5.2 Primitives
+
+Shared primitives define the look. Pages compose them.
+
+The following must carry the design language:
+
 - buttons
 - inputs
 - selects
+- menus
+- tabs
+- cards
 - dialogs
 - sheets
-- cards
-- tabs
-- menus
 - page headers
-- shell navigation controls
+- empty, error, and recovery states
 
-Pages should compose these primitives. They should not define a private visual system.
+### 5.3 Shell
 
-### Dual-theme parity
+Topbar, sidebar, and page headers must remain quieter than the content they frame.
 
-Light and dark are both first-class truths.
+Required:
 
-Requirements:
-- Every stable interface must remain readable and usable in both themes
-- Public/auth pages must expose the same theme-switching capability as signed-in app surfaces
-- Overlays must preserve hierarchy in both themes
-- Visual review must cover both themes for stable pages
+- understated active states
+- no heavy pill collection as the default chrome language
+- no strong accent rails as the default active affordance
+- no default page-header card shell unless the page genuinely needs a panel
 
-## 5. Page-level guidance
+### 5.4 Pages
 
-### Public and auth pages
+Pages may translate layout density, but they may not invent private styling systems.
 
-These pages should feel clear, calm, and trust-building.
+Required:
 
-Requirements:
-- Immediate orientation in the first screenful
-- One dominant primary action
-- Secondary actions that genuinely help recovery
-- Theme switch visible on-page
-- No dead-end CTA loops
+- rely on page recipes and shared primitives
+- prefer spacing and typography over nested summary cards
+- recovery CTAs must always point to real, reachable destinations
 
-### Workspace and project shells
+## 6. Forbidden Deviations
 
-These pages should feel like a composed application shell, not a marketing landing page.
+These patterns are forbidden unless a deliberate exception is documented:
 
-Requirements:
-- Quiet chrome
-- Strong information hierarchy
-- Consistent section headers and card containers
-- Clear distinction between browse, create, and governance actions
+- borders at or near strongest text contrast
+- default page-level `rounded-[18px]`, `rounded-[20px]`, `rounded-[24px]`, `rounded-[28px]`, `rounded-[32px]`
+- page-local heavy gradients or radial glow backgrounds
+- page-local custom shadow stacks for stable surfaces
+- raw white/black alpha patches as a page's private surface model
+- bright dark-mode overlays that lift the background
+- default high-contrast filled orange CTA buttons everywhere
+- loud active navigation rails and decorative shell emphasis
+- nested card stacks used as a substitute for hierarchy
 
-### Recovery and permission states
+## 7. Acceptance Checklist
 
-Recovery UI must follow real route accessibility.
+A change fits this contract only if it is:
 
-Requirements:
-- Recovery CTAs must only point to reachable surfaces
-- Permission-denied states must explain the boundary and offer a valid next step
-- Governance-only visibility does not automatically imply project-shell navigation
-
-## 6. Anti-patterns
-
-Avoid these patterns even if they look visually appealing in isolation:
-- Large, saturated orange primary buttons everywhere
-- Over-bright dark theme overlays
-- Big plush radii as the default language
-- Heavy radial gradient backgrounds behind everyday work surfaces
-- Page-specific visual patch classes that bypass shared tokens and primitives
-- Public/auth pages that inherit theme state but offer no local theme control
-
-## 7. Practical test for acceptance
-
-A change fits this guide if it feels:
 - warm, not cold
-- precise, not flashy
-- editorial, not ornamental
-- quiet in chrome, strong in hierarchy
+- quiet, not flashy
+- precise, not plush
+- structured by spacing and typography more than card piles
 - equally intentional in light and dark
-- implemented through shared tokens and primitives rather than page-local styling
+- implemented through shared tokens, primitives, and shell recipes
+- visibly consistent with the public Cursor site at a system level

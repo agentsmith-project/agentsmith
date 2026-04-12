@@ -459,20 +459,20 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
               <ShieldCheck className="h-3.5 w-3.5" />
               {groupedRows.endpoint.length} {tResource('resource_type.endpoint').toLowerCase()}
             </div>
-            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {tResource('access_mode.label')}: {accessMode === 'allow_list' ? tResource('access_mode.allow_list') : tResource('access_mode.allow_all_members')}
             </div>
-            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {tResource('subjects.title')}: {validSubjects.length}
             </div>
             {selectedResource ? (
-              <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+              <div className="rounded-full border border-subtle bg-surface-low px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
                 {selectedResource.name}
               </div>
             ) : null}
           </div>
 
-          <div className="rounded-[22px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+          <div className="rounded-md border border-subtle bg-surface/95 p-4 shadow-card">
             <p className="mb-4 text-sm text-tertiary">
               {tResource('default_model_hint')}
             </p>

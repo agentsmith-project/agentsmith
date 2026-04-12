@@ -107,7 +107,7 @@ export function ManualMountAccessContent({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-[18px] border border-accent/12 bg-accent/5 p-4 shadow-[0_14px_34px_rgba(0,0,0,0.12)]">
+      <div className="rounded-md border border-accent/12 bg-accent/5 p-4 shadow-card">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">

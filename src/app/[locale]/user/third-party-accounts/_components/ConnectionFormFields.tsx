@@ -83,7 +83,7 @@ export function ConnectionFormFields({
 }: ConnectionFormFieldsProps) {
   return (
     <div className="space-y-4 py-4">
-      <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+      <div className="rounded-md border border-border/70 bg-surface-high p-4">
         <div className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
           {t('section_connection_title')}
         </div>
@@ -156,7 +156,7 @@ export function ConnectionFormFields({
       </div>
 
       {provider === 'jira' ? (
-        <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+        <div className="rounded-md border border-border/70 bg-surface-high p-4">
           <div className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
             {t('section_credentials_title')}
           </div>
@@ -187,7 +187,7 @@ export function ConnectionFormFields({
       ) : null}
 
       {provider === 'github' && kind === 'secret_bundle' ? (
-        <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+        <div className="rounded-md border border-border/70 bg-surface-high p-4">
           <div className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
             {t('section_credentials_title')}
           </div>
@@ -218,7 +218,7 @@ export function ConnectionFormFields({
       ) : null}
 
       {(provider === 'github' || provider === 'gitee') && kind === 'ssh_keypair' ? (
-        <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+        <div className="rounded-md border border-border/70 bg-surface-high p-4">
           <div className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
             {t('section_credentials_title')}
           </div>
@@ -260,7 +260,7 @@ export function ConnectionFormFields({
       ) : null}
 
       {provider === 'custom' ? (
-        <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+        <div className="rounded-md border border-border/70 bg-surface-high p-4">
           <div className="mb-3 flex items-center justify-between">
             <label className="text-sm font-medium">{t('fields_label')}</label>
             <Button

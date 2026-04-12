@@ -128,7 +128,7 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
         </CardHeader>
         <CardContent className="space-y-2">
           {items.length === 0 ? (
-            <div className="rounded-[16px] border border-dashed border-subtle bg-bg-base/10 px-4 py-5 text-sm text-tertiary">
+            <div className="rounded-md border border-dashed border-subtle bg-bg-base/10 px-4 py-5 text-sm text-tertiary">
               <div className="font-medium text-foreground">{t('empty_title')}</div>
               <div className="mt-1">{t('empty_description')}</div>
             </div>
@@ -140,10 +140,10 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
                   key={item.key}
                   type="button"
                   onClick={() => setSelectedKey(item.key)}
-                  className={`w-full rounded-[16px] border px-3 py-3 text-left transition ${
+                  className={`w-full rounded-md border px-3 py-3 text-left transition ${
                     active
                       ? 'border-accent/35 bg-accent/10'
-                      : 'border-subtle bg-bg-base/10 hover:border-white/15 hover:bg-white/[0.04]'
+                      : 'border-subtle bg-bg-base/10 hover:border-white/15 hover:bg-surface-low'
                   }`}
                   data-testid={`context-store__item--${item.key}`}
                 >
@@ -205,13 +205,13 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
           </div>
 
           {saveMutation.error instanceof APIError ? (
-            <div className="rounded-[14px] border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
+            <div className="rounded-md border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
               {saveMutation.error.message}
             </div>
           ) : null}
 
           {deleteMutation.error instanceof APIError ? (
-            <div className="rounded-[14px] border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
+            <div className="rounded-md border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
               {deleteMutation.error.message}
             </div>
           ) : null}

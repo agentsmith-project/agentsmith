@@ -145,7 +145,7 @@ export function DesktopAccessDialog({
           <div className="py-6 text-sm text-secondary">{t('file_manager.desktop_access_loading')}</div>
         ) : desktopMountAccess ? (
           <div className="space-y-6">
-            <div className="rounded-[18px] border border-accent/12 bg-accent/5 p-4 shadow-[0_14px_34px_rgba(0,0,0,0.12)]">
+            <div className="rounded-md border border-accent/12 bg-accent/5 p-4 shadow-card">
               <div className="flex items-start gap-3">
                 <Laptop className="mt-0.5 h-4 w-4 text-accent" />
                 <div>
@@ -155,7 +155,7 @@ export function DesktopAccessDialog({
               </div>
             </div>
 
-            <div className="space-y-3 rounded-[16px] border border-white/8 bg-surface/70 p-4">
+            <div className="space-y-3 rounded-md border border-subtle bg-surface/70 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-medium text-foreground">{t('file_manager.desktop_platform_title')}</div>
@@ -177,7 +177,7 @@ export function DesktopAccessDialog({
                 </TabsList>
               </Tabs>
 
-              <div className="rounded-[14px] border border-white/8 bg-background/40 p-4">
+              <div className="rounded-md border border-subtle bg-background/40 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-medium text-foreground">{t('file_manager.desktop_app_name')}</div>
@@ -195,20 +195,20 @@ export function DesktopAccessDialog({
               </div>
             </div>
 
-            <div className="grid gap-3 rounded-[16px] border border-white/8 bg-surface/70 p-4 sm:grid-cols-3">
-              <div className="rounded-[12px] border border-white/6 bg-background/30 px-3 py-3">
+            <div className="grid gap-3 rounded-md border border-subtle bg-surface/70 p-4 sm:grid-cols-3">
+              <div className="rounded-md border border-subtle bg-background/30 px-3 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-tertiary">
                   {t('file_manager.desktop_step_label', { step: '1' })}
                 </div>
                 <div className="mt-1 text-sm text-primary">{t('file_manager.desktop_step_install')}</div>
               </div>
-              <div className="rounded-[12px] border border-white/6 bg-background/30 px-3 py-3">
+              <div className="rounded-md border border-subtle bg-background/30 px-3 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-tertiary">
                   {t('file_manager.desktop_step_label', { step: '2' })}
                 </div>
                 <div className="mt-1 text-sm text-primary">{t('file_manager.desktop_step_sign_in')}</div>
               </div>
-              <div className="rounded-[12px] border border-white/6 bg-background/30 px-3 py-3">
+              <div className="rounded-md border border-subtle bg-background/30 px-3 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-tertiary">
                   {t('file_manager.desktop_step_label', { step: '3' })}
                 </div>
@@ -240,7 +240,7 @@ export function DesktopAccessDialog({
               <p className="text-xs text-secondary">{t('file_manager.desktop_address_hint')}</p>
             </div>
 
-            <div className="rounded-[14px] border border-white/6 bg-background/20 p-4">
+            <div className="rounded-md border border-subtle bg-background/20 p-4">
               <button
                 type="button"
                 className="flex w-full items-center justify-between gap-3 text-left"
@@ -258,7 +258,7 @@ export function DesktopAccessDialog({
               <p className="mt-2 text-xs text-secondary">{t('file_manager.desktop_debug_description')}</p>
 
               {showManualDebug ? (
-                <div className="mt-4 border-t border-white/8 pt-4" data-testid="files__desktop-setup__debug-panel">
+                <div className="mt-4 border-t border-subtle pt-4" data-testid="files__desktop-setup__debug-panel">
                   {manualMountAccessPending ? (
                     <div className="py-3 text-sm text-secondary">{t('file_manager.mount_access_loading')}</div>
                   ) : (

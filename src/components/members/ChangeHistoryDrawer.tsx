@@ -70,8 +70,8 @@ export function ChangeHistoryDrawer({
 
         <div className="space-y-3">
           {history.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] py-10 text-center text-tertiary">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-accent">
+            <div className="rounded-lg border border-dashed border-subtle bg-surface-low py-10 text-center text-tertiary">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-lg border border-subtle bg-surface-low text-accent">
                 <ShieldCheck className="h-5 w-5" />
               </div>
               <p className="text-sm">{t('empty')}</p>

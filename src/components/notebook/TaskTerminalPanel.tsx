@@ -420,11 +420,11 @@ export function TaskTerminalPanel({
 
   return (
     <div
-      className="mt-3 overflow-hidden rounded-[18px] border border-white/5 bg-surface/70 shadow-[0_12px_28px_rgba(0,0,0,0.12)]"
+      className="mt-3 overflow-hidden rounded-md border border-subtle bg-surface/70 shadow-ambient"
       data-testid="notebook__task-terminal"
     >
       {(status !== 'active' || errorMessage) ? (
-        <div className="flex items-center justify-between gap-3 border-b border-white/6 px-4 py-2">
+        <div className="flex items-center justify-between gap-3 border-b border-subtle px-4 py-2">
           <Badge variant={
             status === 'failed'
               ? 'destructive'
@@ -444,14 +444,14 @@ export function TaskTerminalPanel({
         </div>
       ) : null}
       {errorMessage ? (
-        <div className="border-b border-white/6 bg-error/10 px-4 py-2 text-xs text-error">
+        <div className="border-b border-subtle bg-error/10 px-4 py-2 text-xs text-error">
           {t('terminal_error_hint', { reason: errorMessage })}
         </div>
       ) : null}
       <div className="h-[360px] overflow-hidden bg-[#0f141d]">
         <div
           ref={containerRef}
-          className="h-full w-full overflow-hidden rounded-[12px] border border-white/6 bg-[#0f141d]"
+          className="h-full w-full overflow-hidden rounded-md border border-subtle bg-[#0f141d]"
         />
       </div>
     </div>

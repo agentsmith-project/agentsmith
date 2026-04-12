@@ -233,10 +233,10 @@ export function EditEndpointDialog({
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="border-b border-white/6 px-6 py-4">
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+          <div className="border-b border-subtle px-6 py-4">
+            <div className="rounded-lg border border-subtle bg-surface-low p-4">
               <div className="flex items-start gap-3">
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/12 text-accent">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/12 text-accent">
                   <Settings2 className="h-5 w-5" />
                 </span>
                 <div className="space-y-1">

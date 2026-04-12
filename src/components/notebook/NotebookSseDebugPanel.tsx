@@ -13,7 +13,7 @@ export function NotebookSseDebugPanel({ events }: NotebookSseDebugPanelProps) {
 
   return (
     <div
-      className="border-b border-white/6 bg-white/[0.015] px-3.5 py-1.5 text-[11px] text-tertiary"
+      className="border-b border-subtle bg-white/[0.015] px-3.5 py-1.5 text-[11px] text-tertiary"
       data-testid="notebook__sse-debug-panel"
     >
       <div className="mb-1 font-medium text-primary">{t('sse_debug_title')}</div>

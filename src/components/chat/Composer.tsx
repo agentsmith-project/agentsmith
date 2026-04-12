@@ -131,7 +131,7 @@ export function Composer({
 
   return (
     <div
-      className="border-t border-white/6 bg-transparent"
+      className="border-t border-subtle bg-transparent"
       data-testid="chat__composer"
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -140,7 +140,7 @@ export function Composer({
       <div className={cn('mx-auto w-full px-4 py-2.5', contentWidthClass)}>
         <div
           className={cn(
-            'rounded-[18px] bg-surface/55 px-3 py-2.5 sm:px-4 sm:py-3 transition-colors',
+            'rounded-md bg-surface/55 px-3 py-2.5 sm:px-4 sm:py-3 transition-colors',
             dragActive && 'bg-surface-high/80 ring-1 ring-accent/40',
           )}
         >
@@ -208,7 +208,7 @@ export function Composer({
 
           <div className="flex items-end gap-2">
             {attachmentEnabled ? (
-              <div className="flex h-10 items-center gap-1 rounded-xl bg-surface-high/70 px-1">
+              <div className="flex h-10 items-center gap-1 rounded-md bg-surface-high/70 px-1">
                 <Button
                   type="button"
                   variant="ghost"
@@ -251,7 +251,7 @@ export function Composer({
               </div>
             ) : null}
 
-            <div className="flex-1 rounded-xl bg-surface-high/80 px-3 py-2 focus-within:ring-2 focus-within:ring-accent/35">
+            <div className="flex-1 rounded-md bg-surface-high/80 px-3 py-2 focus-within:ring-2 focus-within:ring-accent/35">
               <textarea
                 ref={textareaRef}
                 value={value}

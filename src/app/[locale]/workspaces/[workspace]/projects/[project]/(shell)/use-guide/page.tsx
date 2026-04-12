@@ -112,7 +112,7 @@ function GuideCodeBlock({
   testId: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-subtle bg-bg-base/40 p-4" data-testid={testId}>
+    <div className="rounded-md border border-subtle bg-bg-base/40 p-4" data-testid={testId}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="text-xs font-medium uppercase tracking-wide text-secondary">{title}</div>
         <CopyValueButton value={value} label={copyLabel} testId={`${testId}__copy`} />
@@ -272,7 +272,7 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
     <PageState state="success">
       <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} variant="compact" />}>
         <div className="w-full space-y-6" data-testid="use-guide__page">
-          <section className="rounded-[28px] border border-subtle bg-surface/95 px-6 py-6 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+          <section className="rounded-lg border border-subtle bg-surface/95 px-6 py-6 shadow-card">
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(21rem,0.9fr)]">
               <div className="space-y-4">
                 <Badge variant="outline" className="rounded-full px-3 py-1 text-[11px] tracking-[0.18em]" data-testid="use-guide__hero-badge">
@@ -287,14 +287,14 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
                   </p>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-[20px] border border-subtle bg-bg-base/40 p-4" data-testid="use-guide__hero-local-agent">
+                  <div className="rounded-md border border-subtle bg-bg-base/40 p-4" data-testid="use-guide__hero-local-agent">
                     <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
                       <TerminalSquare className="h-4 w-4 text-secondary" />
                       {t('hero.local_agent.title')}
                     </div>
                     <p className="text-sm leading-6 text-tertiary">{t('hero.local_agent.description')}</p>
                   </div>
-                  <div className="rounded-[20px] border border-subtle bg-bg-base/40 p-4" data-testid="use-guide__hero-governance">
+                  <div className="rounded-md border border-subtle bg-bg-base/40 p-4" data-testid="use-guide__hero-governance">
                     <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
                       <ShieldCheck className="h-4 w-4 text-secondary" />
                       {t('hero.governance.title')}
@@ -304,7 +304,7 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
                 </div>
               </div>
 
-              <div className="min-w-0 rounded-[22px] border border-subtle bg-bg-base/40 px-4 py-4">
+              <div className="min-w-0 rounded-md border border-subtle bg-bg-base/40 px-4 py-4">
                 <div className="space-y-3 text-sm">
                   <div data-testid="use-guide__status-api-keys">
                     <div className="flex items-start justify-between gap-3">
@@ -343,7 +343,7 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
             </div>
           </section>
 
-          <section className="rounded-[28px] border border-subtle bg-surface/95 px-6 py-6 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+          <section className="rounded-lg border border-subtle bg-surface/95 px-6 py-6 shadow-card">
             <div className="space-y-8">
               <div className="space-y-3">
                 <div className="text-xs font-medium uppercase tracking-[0.2em] text-secondary">{t('selection.title')}</div>
@@ -359,7 +359,7 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
                         onValueChange={(value) => updateQuery({ endpoint: value })}
                         disabled={endpointsLoading || usableEndpoints.length === 0}
                       >
-                        <SelectTrigger className="h-12 rounded-[18px] border-subtle bg-bg-base/50 text-left" data-testid="use-guide__endpoint-select">
+                        <SelectTrigger className="h-12 rounded-md border-subtle bg-bg-base/50 text-left" data-testid="use-guide__endpoint-select">
                           <SelectValue placeholder={t('selection.placeholder')} />
                         </SelectTrigger>
                         <SelectContent>
@@ -371,12 +371,12 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
                         </SelectContent>
                       </Select>
                     ) : (
-                      <div className="rounded-[18px] border border-dashed border-subtle bg-bg-base/30 p-4 text-sm text-tertiary" data-testid="use-guide__endpoint-empty">
+                      <div className="rounded-md border border-dashed border-subtle bg-bg-base/30 p-4 text-sm text-tertiary" data-testid="use-guide__endpoint-empty">
                         {t('selection.empty')}
                       </div>
                     )
                   ) : (
-                    <div className="rounded-[18px] border border-dashed border-subtle bg-bg-base/30 p-4 text-sm text-tertiary" data-testid="use-guide__endpoint-unavailable">
+                    <div className="rounded-md border border-dashed border-subtle bg-bg-base/30 p-4 text-sm text-tertiary" data-testid="use-guide__endpoint-unavailable">
                       {t('selection.no_read_access')}
                     </div>
                   )}
@@ -384,7 +384,7 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
                   <div className="min-h-12">
                     {selectedEndpoint ? (
                       <div className="space-y-3" data-testid="use-guide__endpoint-summary">
-                        <div className="rounded-[18px] border border-subtle bg-bg-base/35 p-4">
+                        <div className="rounded-md border border-subtle bg-bg-base/35 p-4">
                           <div className="text-sm font-semibold text-foreground">{selectedEndpoint.name}</div>
                           <div className="mt-3 flex flex-wrap gap-2">
                             <Badge variant={getEndpointStatusTone(selectedEndpoint)}>{selectedEndpoint.upstream_protocol}</Badge>
@@ -422,7 +422,7 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
 
                 <div className="space-y-4">
                   <Tabs value={effectiveProtocol} onValueChange={(value) => updateQuery({ protocol: value as ProtocolTab })}>
-                    <TabsList className="mb-4 grid h-auto w-full grid-cols-2 rounded-[16px] bg-bg-base/70 p-1">
+                    <TabsList className="mb-4 grid h-auto w-full grid-cols-2 rounded-md bg-bg-base/70 p-1">
                       <TabsTrigger value="openai" disabled={!protocolSupport.openai} data-testid="use-guide__tab-openai">
                         {t('protocols.openai.title')}
                       </TabsTrigger>
@@ -511,7 +511,7 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
                   </div>
                 <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-4">
                   {(['auth', 'endpoint', 'rate_limit', 'protocol'] as const).map((key) => (
-                    <div key={key} className="rounded-[18px] border border-subtle bg-bg-base/30 p-4 space-y-1" data-testid={`use-guide__troubleshooting__${key}`}>
+                    <div key={key} className="rounded-md border border-subtle bg-bg-base/30 p-4 space-y-1" data-testid={`use-guide__troubleshooting__${key}`}>
                       <div className="text-sm font-semibold text-foreground">{t(`troubleshooting.items.${key}.title`)}</div>
                       <p className="text-sm text-tertiary">{t(`troubleshooting.items.${key}.description`)}</p>
                     </div>

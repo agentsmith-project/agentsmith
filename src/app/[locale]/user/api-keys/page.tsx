@@ -89,7 +89,7 @@ export default function UserAPIKeysPage() {
     <PageState state="success">
       <PageLayout>
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-4 md:px-5 md:py-5">
-          <section className="rounded-2xl border border-border bg-surface px-5 py-5 shadow-sm shadow-black/10 md:px-6">
+          <section className="rounded-lg border border-border bg-surface px-5 py-5 shadow-card md:px-6">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-2xl space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
@@ -108,7 +108,7 @@ export default function UserAPIKeysPage() {
               </Button>
             </div>
             <div className="mt-5 grid gap-3 md:grid-cols-3">
-              <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+              <div className="rounded-md border border-border/70 bg-surface-high p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                   <Key className="h-3.5 w-3.5 text-accent" />
                   {t('summary_active_label')}
@@ -116,7 +116,7 @@ export default function UserAPIKeysPage() {
                 <div className="mt-3 text-2xl font-semibold text-foreground">{activeKeys.length}</div>
                 <p className="mt-1 text-sm text-tertiary">{t('summary_active_hint')}</p>
               </div>
-              <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+              <div className="rounded-md border border-border/70 bg-surface-high p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                   <Clock3 className="h-3.5 w-3.5 text-accent" />
                   {t('summary_recent_label')}
@@ -124,7 +124,7 @@ export default function UserAPIKeysPage() {
                 <div className="mt-3 text-2xl font-semibold text-foreground">{recentlyUsedKeys.length}</div>
                 <p className="mt-1 text-sm text-tertiary">{t('summary_recent_hint')}</p>
               </div>
-              <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+              <div className="rounded-md border border-border/70 bg-surface-high p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                   <ShieldCheck className="h-3.5 w-3.5 text-accent" />
                   {t('summary_expiring_label')}
@@ -135,7 +135,7 @@ export default function UserAPIKeysPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-border bg-surface shadow-sm shadow-black/10">
+          <section className="rounded-lg border border-border bg-surface shadow-card">
             <div className="border-b border-border px-5 py-4 md:px-6">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -154,9 +154,9 @@ export default function UserAPIKeysPage() {
               {isLoading ? (
                 <div className="py-12 text-sm text-tertiary">{t('list_loading')}</div>
               ) : isError ? (
-                <div className="rounded-2xl border border-warning/30 bg-warning/10 px-6 py-8" data-testid="api-keys__error">
+                <div className="rounded-lg border border-warning/30 bg-warning/10 px-6 py-8" data-testid="api-keys__error">
                   <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-2xl bg-warning/15 p-2.5 text-warning">
+                    <div className="mt-0.5 rounded-lg bg-warning/15 p-2.5 text-warning">
                       <TriangleAlert className="h-4 w-4" />
                     </div>
                     <div className="space-y-3">
@@ -177,7 +177,7 @@ export default function UserAPIKeysPage() {
                   </div>
                 </div>
               ) : keys.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border bg-surface-high/70 px-6 py-16 text-center" data-testid="api-keys__empty">
+                <div className="rounded-lg border border-dashed border-border bg-surface-high/70 px-6 py-16 text-center" data-testid="api-keys__empty">
                   <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-dashed border-border text-tertiary">
                     <Key className="h-6 w-6" />
                   </div>

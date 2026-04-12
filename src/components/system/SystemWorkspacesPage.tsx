@@ -169,7 +169,7 @@ export function SystemWorkspacesPage() {
       <PageLayout>
         <div className="min-h-screen bg-background p-4 md:p-6">
           <div className="mx-auto max-w-[1500px] space-y-5">
-            <header className="rounded-[30px] border border-subtle bg-surface/95 p-6 shadow-[0_24px_56px_rgba(0,0,0,0.2)]">
+            <header className="space-y-4 border-b border-subtle pb-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="max-w-3xl space-y-2">
                   <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('eyebrow')}</p>
@@ -193,7 +193,7 @@ export function SystemWorkspacesPage() {
                   <SystemLogoutButton />
                 </div>
               </div>
-              <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-secondary">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-secondary">
                 <span>{t('workspaces_summary_total_inline', { count: String(workspaces.length) })}</span>
                 <span>{t('workspaces_attention_summary_inline', { count: String(attentionCount) })}</span>
                 <span>{t('workspaces_ready_summary_inline', { count: String(readyCount) })}</span>
@@ -202,7 +202,7 @@ export function SystemWorkspacesPage() {
 
             <section className="grid gap-4 xl:grid-cols-[minmax(360px,0.78fr)_minmax(560px,1.22fr)]">
               <div
-                className="space-y-4 rounded-[28px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+                className="space-y-4 rounded-md border border-subtle bg-background/88 p-5 shadow-card"
                 data-testid="system-workspaces__list"
               >
                 <div className="space-y-4">
@@ -212,7 +212,7 @@ export function SystemWorkspacesPage() {
                       <p className="text-xl font-semibold text-foreground">{t('workspace_directory_title')}</p>
                       <p className="text-sm text-tertiary">{t('workspace_directory_description')}</p>
                     </div>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-subtle bg-background/70 px-3 py-2 text-xs text-tertiary">
+                    <div className="inline-flex items-center gap-2 rounded-md border border-subtle bg-background/70 px-3 py-2 text-xs text-tertiary">
                       <Filter className="h-3.5 w-3.5" />
                       {t('workspaces_filtered_summary', { count: String(listedWorkspaces.length) })}
                     </div>
@@ -225,7 +225,7 @@ export function SystemWorkspacesPage() {
                       value={searchQuery}
                       onChange={(event) => setSearchQuery(event.target.value)}
                       placeholder={t('search_placeholder')}
-                      className="h-11 rounded-2xl bg-surface-high pl-10"
+                      className="h-11 rounded-lg bg-surface-high pl-10"
                       data-testid="system-workspaces__search"
                     />
                   </div>
@@ -246,10 +246,10 @@ export function SystemWorkspacesPage() {
                         type="button"
                         onClick={() => setListFilter(value)}
                         className={[
-                          'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                          'rounded-md border px-3 py-1.5 text-xs font-medium transition-colors',
                           listFilter === value
-                            ? 'border-accent/40 bg-accent/10 text-accent'
-                            : 'border-subtle bg-background text-tertiary hover:text-secondary',
+                            ? 'border-border bg-surface text-foreground'
+                            : 'border-subtle bg-background text-tertiary hover:border-border hover:text-secondary',
                         ].join(' ')}
                         data-testid={`system-workspaces__filter--${value}`}
                       >
@@ -262,7 +262,7 @@ export function SystemWorkspacesPage() {
                 {isLoading ? (
                   <p className="text-sm text-tertiary" data-testid="system-workspaces__loading">{t('loading')}</p>
                 ) : isError ? (
-                  <div className="space-y-3 rounded-[20px] border border-warning/30 bg-bg-base/20 p-4" data-testid="system-workspaces__error">
+                  <div className="space-y-3 rounded-md border border-warning/30 bg-bg-base/20 p-4" data-testid="system-workspaces__error">
                     <p className="text-sm font-medium text-foreground">{t('load_error_title')}</p>
                     <p className="text-sm text-tertiary">{t('load_error_description')}</p>
                     <Button type="button" variant="outline" onClick={() => void loadWorkspaces()} data-testid="system-workspaces__retry">
@@ -270,7 +270,7 @@ export function SystemWorkspacesPage() {
                     </Button>
                   </div>
                 ) : listedWorkspaces.length === 0 ? (
-                  <div className="rounded-[24px] border border-dashed border-subtle bg-bg-base/20 p-5" data-testid="system-workspaces__empty">
+                  <div className="rounded-md border border-dashed border-subtle bg-bg-base/20 p-5" data-testid="system-workspaces__empty">
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-foreground">{listEmptyState.title}</p>
                       <p className="text-sm leading-6 text-tertiary">{listEmptyState.description}</p>
@@ -343,11 +343,11 @@ export function SystemWorkspacesPage() {
                 />
               ) : (
                 <aside
-                  className="flex min-h-[420px] flex-col justify-between rounded-[28px] border border-border bg-surface/95 p-6 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+                  className="flex min-h-[420px] flex-col justify-between rounded-md border border-subtle bg-background/88 p-6 shadow-card"
                   data-testid="system-workspaces__editor-empty"
                 >
                   <div className="space-y-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-[16px] bg-background text-icon-default">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-md bg-background text-icon-default">
                       <Settings2 className="h-5 w-5" />
                     </div>
                     <div className="space-y-1">

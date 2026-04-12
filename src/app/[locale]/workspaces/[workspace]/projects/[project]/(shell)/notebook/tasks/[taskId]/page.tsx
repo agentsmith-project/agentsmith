@@ -61,7 +61,7 @@ function TaskDetailRouteState({
   return (
     <PageState state="error">
       <div className="mx-auto flex w-full max-w-2xl items-center justify-center px-4 py-10">
-        <div className="w-full rounded-[24px] border border-subtle bg-surface/95 px-6 py-7 text-center shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+        <div className="w-full rounded-md border border-subtle bg-surface/95 px-6 py-7 text-center shadow-card">
           <h2 className="mb-2 text-lg font-semibold text-foreground">{title}</h2>
           <p className="mb-5 text-sm text-tertiary">{description}</p>
           <div className="flex flex-wrap items-center justify-center gap-3">

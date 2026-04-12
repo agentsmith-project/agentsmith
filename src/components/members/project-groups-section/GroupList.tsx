@@ -46,14 +46,14 @@ export function GroupList({
   return (
     <div className="space-y-3">
       {groups.length === 0 ? (
-        <div className="rounded-[20px] border border-dashed border-subtle bg-white/[0.02] p-5 text-sm text-secondary">
+        <div className="rounded-md border border-dashed border-subtle bg-surface-low p-5 text-sm text-secondary">
           {t('group_empty')}
         </div>
       ) : (
         groups.map((group) => (
           <div
             key={group.id}
-            className="rounded-[22px] border border-subtle bg-surface-high/75 p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]"
+            className="rounded-md border border-subtle bg-surface-high/75 p-4 shadow-ambient"
             data-testid={`members__group-row--${group.id}`}
           >
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -65,10 +65,10 @@ export function GroupList({
                   {t('selected_count', { count: group.member_ids.length })}
                 </p>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-tertiary">
-                  <span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1">
+                  <span className="rounded-full border border-subtle bg-surface-low px-2.5 py-1">
                     {templateNameMap.get(group.permission_template_id) || group.permission_template_id}
                   </span>
-                  <span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1">
+                  <span className="rounded-full border border-subtle bg-surface-low px-2.5 py-1">
                     {t('selected_count', { count: group.member_ids.length })}
                   </span>
                 </div>
@@ -116,7 +116,7 @@ export function GroupList({
               </div>
             </div>
             {previewGroupId === group.id ? (
-              <div className="mt-4 rounded-[18px] border border-subtle bg-surface p-3">
+              <div className="mt-4 rounded-md border border-subtle bg-surface p-3">
                 <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-tertiary">
                   {t('group_preview_title')}
                 </p>
@@ -141,7 +141,7 @@ export function GroupList({
               </div>
             ) : null}
             {lastApplyResult?.groupId === group.id ? (
-              <div className="mt-3 rounded-[18px] border border-subtle bg-surface p-3 text-xs text-tertiary">
+              <div className="mt-3 rounded-md border border-subtle bg-surface p-3 text-xs text-tertiary">
                 <p data-testid={`members__group-apply-result--${group.id}`}>
                   {t('group_apply_result', {
                     applied: lastApplyResult.appliedCount,
@@ -151,7 +151,7 @@ export function GroupList({
                 {lastApplyResult.failedDetails.length > 0 ? (
                   <div className="mt-2 space-y-1" data-testid={`members__group-apply-failed-list--${group.id}`}>
                     {lastApplyResult.failedDetails.map((item) => (
-                      <p key={item.memberId} className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-2">
+                      <p key={item.memberId} className="rounded-md border border-subtle bg-surface-low px-3 py-2">
                         {memberNameMap.get(item.memberId) ?? item.memberId}
                         {item.message ? ` (${item.message})` : ''}
                       </p>

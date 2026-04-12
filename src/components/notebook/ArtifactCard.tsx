@@ -128,7 +128,7 @@ export function ArtifactCard({
   return (
     <TooltipProvider>
       <div
-        className="group relative rounded-lg border border-white/6 bg-surface/40 px-2 py-1.5 transition-colors hover:border-white/10 hover:bg-hover/35 focus-within:border-white/10 focus-within:bg-hover/35"
+        className="group relative rounded-lg border border-subtle bg-surface/40 px-2 py-1.5 transition-colors hover:border-subtle hover:bg-hover/35 focus-within:border-subtle focus-within:bg-hover/35"
         data-testid="notebook__artifact-card"
         data-artifact-id={artifact.id}
         onMouseEnter={(event) => openDetails(event.currentTarget)}
@@ -148,7 +148,7 @@ export function ArtifactCard({
         {isDetailsVisible && hoverRect
           ? createPortal(
               <div
-                className="fixed z-[90] rounded-xl border border-white/10 bg-background/95 p-2.5 shadow-[0_18px_40px_rgba(0,0,0,0.4)]"
+                className="fixed z-[90] rounded-md border border-subtle bg-background/95 p-2.5 shadow-[0_18px_40px_rgba(0,0,0,0.4)]"
                 style={hoverStyle}
                 data-testid="notebook__artifact-hover-panel"
                 onMouseEnter={() => {

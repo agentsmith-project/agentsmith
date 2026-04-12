@@ -184,7 +184,7 @@ export function AuditDetailDrawer({
         </DialogHeader>
 
         <div className="space-y-5">
-          <div className="rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-4 space-y-3" data-testid="audit__detail-summary">
+          <div className="rounded-lg border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-4 space-y-3" data-testid="audit__detail-summary">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={category === 'anomaly' ? 'destructive' : category === 'change' ? 'secondary' : 'outline'}>
                 {t(`category.${category}`)}
@@ -199,7 +199,7 @@ export function AuditDetailDrawer({
             ) : null}
           </div>
 
-          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 space-y-4">
+          <div className="rounded-lg border border-subtle bg-surface-low p-4 space-y-4">
             <div>
               <h4 className="text-sm font-semibold text-foreground">{t('detail.title')}</h4>
               <p className="mt-1 text-sm text-secondary">{summary}</p>
@@ -250,7 +250,7 @@ export function AuditDetailDrawer({
           </div>
 
           {ownershipTransfer ? (
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 space-y-3" data-testid="audit__detail-ownership">
+            <div className="rounded-lg border border-subtle bg-surface-low p-4 space-y-3" data-testid="audit__detail-ownership">
               <h4 className="text-sm font-semibold text-foreground">{t('detail.ownership_title')}</h4>
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
@@ -278,7 +278,7 @@ export function AuditDetailDrawer({
           ) : null}
 
           {showInvestigationRefs ? (
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 space-y-3">
+            <div className="rounded-lg border border-subtle bg-surface-low p-4 space-y-3">
               <h4 className="text-sm font-semibold text-foreground">{t('detail.error_information')}</h4>
               {event.error_code ? (
                 <div className="flex items-center gap-2">

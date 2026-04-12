@@ -23,7 +23,7 @@ export function ArtifactImageGrid({ artifacts, onImageClick }: ArtifactImageGrid
   return (
     <div className="grid grid-cols-1 gap-1.5">
       {artifacts.map((artifact) => (
-        <div key={artifact.id} className="rounded-xl border border-white/6 bg-surface/55 p-1.5">
+        <div key={artifact.id} className="rounded-md border border-subtle bg-surface/55 p-1.5">
           <div className="flex items-start gap-2">
             <button
               onClick={() => onImageClick(artifact)}

@@ -165,13 +165,13 @@ export default function AgentsPage({ params }: AgentsPageProps) {
         )}
         toolbar={(
           <PageToolbar>
-            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {agents.length} {t('title').toLowerCase()}
             </div>
             <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-300">
               {enabledCount} {t('status_enabled').toLowerCase()}
             </div>
-            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {externalCount} {t('detail_title').toLowerCase()}
             </div>
             <Button

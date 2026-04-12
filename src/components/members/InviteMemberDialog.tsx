@@ -113,7 +113,7 @@ export function InviteMemberDialog({
 
         {inviteUrl ? (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+            <div className="rounded-lg border border-subtle bg-surface-low p-4">
               <p className="text-sm leading-6 text-secondary">{t('success_description')}</p>
             </div>
             <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-high p-3">
@@ -152,13 +152,13 @@ export function InviteMemberDialog({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+            <div className="rounded-lg border border-subtle bg-surface-low p-4">
               <p className="text-sm leading-6 text-secondary">
                 {t('success_description')}
               </p>
             </div>
 
-            <div className="space-y-2 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+            <div className="space-y-2 rounded-lg border border-subtle bg-surface-low p-4">
               <Label htmlFor="invite-email">{t('email_label')}</Label>
               <Input
                 id="invite-email"
@@ -172,7 +172,7 @@ export function InviteMemberDialog({
               />
             </div>
 
-            <div className="space-y-2 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+            <div className="space-y-2 rounded-lg border border-subtle bg-surface-low p-4">
               <Label htmlFor="invite-expires">{t('expires_label')}</Label>
               <Select
                 value={expiresInHours.toString()}

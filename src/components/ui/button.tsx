@@ -3,24 +3,24 @@ import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border text-[14px] font-normal leading-none tracking-[0.01em] transition-[color,background-color,border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border text-[13px] font-normal leading-none tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
-        default: 'border-border/80 bg-surface-high text-foreground shadow-ambient hover:border-border hover:bg-surface hover:text-accent',
-        primary: 'border-transparent bg-foreground text-background shadow-ambient hover:bg-foreground/92 hover:text-background',
-        action: 'border-border/70 bg-surface-low text-foreground shadow-ambient hover:border-border hover:bg-surface hover:text-foreground',
-        outline: 'border-border/70 bg-transparent text-primary hover:bg-surface-low hover:text-foreground',
-        secondary: 'border-border/60 bg-surface-low text-primary hover:border-border hover:bg-surface hover:text-foreground',
+        default: 'border-border/60 bg-transparent text-primary hover:border-border/80 hover:bg-surface-low hover:text-foreground',
+        primary: 'border-border/80 bg-foreground text-background shadow-ambient hover:border-foreground/95 hover:bg-foreground/94 hover:text-background',
+        action: 'border-border/55 bg-surface-low text-foreground hover:border-border/75 hover:bg-surface hover:text-foreground',
+        outline: 'border-border/55 bg-transparent text-primary hover:border-border/75 hover:bg-surface-low hover:text-foreground',
+        secondary: 'border-border/50 bg-surface text-primary hover:border-border/70 hover:bg-surface-high hover:text-foreground',
         ghost: 'border-transparent bg-transparent text-secondary hover:bg-surface-low hover:text-foreground',
-        link: 'border-transparent bg-transparent px-0 text-accent hover:text-error',
-        destructive: 'border-error/25 bg-error/10 text-error hover:bg-error/15',
+        link: 'border-transparent bg-transparent px-0 text-secondary hover:text-foreground',
+        destructive: 'border-error/25 bg-error/8 text-error hover:bg-error/12',
       },
       size: {
-        default: 'h-10 px-4',
-        sm: 'h-9 px-3.5 text-[13px]',
-        lg: 'h-11 px-5 text-[14px]',
-        icon: 'h-10 w-10 p-0',
+        default: 'h-9 px-3.5',
+        sm: 'h-8 px-3 text-[12px]',
+        lg: 'h-10 px-4 text-[13px]',
+        icon: 'h-9 w-9 p-0',
       },
     },
     defaultVariants: {

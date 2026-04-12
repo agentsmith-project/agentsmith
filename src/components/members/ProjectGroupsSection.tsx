@@ -293,26 +293,26 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
 
   return (
     <div className="space-y-5" data-testid="members__groups-section">
-      <div className="rounded-[24px] border border-subtle bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+      <div className="rounded-md border border-subtle bg-surface/95 p-5 shadow-card">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-2xl">
             <h3 className="text-sm font-semibold text-foreground">{t('group_templates')}</h3>
             <p className="mt-1 text-sm leading-6 text-secondary">{t('group_templates_description')}</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3">
+            <div className="rounded-md border border-subtle bg-surface-low px-4 py-3">
               <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
                 {t('group_templates')}
               </p>
               <p className="mt-2 text-2xl font-semibold text-foreground">{groups.length}</p>
             </div>
-            <div className="rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3">
+            <div className="rounded-md border border-subtle bg-surface-low px-4 py-3">
               <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
                 {t('select_members')}
               </p>
               <p className="mt-2 text-2xl font-semibold text-foreground">{members.length}</p>
             </div>
-            <div className="rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3">
+            <div className="rounded-md border border-subtle bg-surface-low px-4 py-3">
               <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
                 {t('select_template')}
               </p>
@@ -367,7 +367,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
           onTemplateIdChange={setTemplateId}
         />
 
-        <div className="space-y-3 rounded-[24px] border border-subtle bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+        <div className="space-y-3 rounded-md border border-subtle bg-surface/95 p-5 shadow-card">
           <div className="flex flex-col gap-1">
             <h4 className="text-sm font-semibold text-foreground">{t('group_templates')}</h4>
             <p className="text-sm leading-6 text-secondary">

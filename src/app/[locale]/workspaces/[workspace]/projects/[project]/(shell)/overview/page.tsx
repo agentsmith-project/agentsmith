@@ -4,11 +4,10 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArrowLeft, Bot, ShieldCheck, Sparkles, Workflow } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bot, ShieldCheck, Workflow } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useCurrentPermissions, useProjectOverviewCapabilities } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { buildProjectSurfacePath } from '@/lib/projects/project-surface-access';
@@ -93,7 +92,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout header={<PageHeader title={tNav('overview')} />}>
+      <PageLayout header={<PageHeader title={tNav('overview')} subtitle={tOverview('subtitle')} />}>
         <div className="space-y-5" data-testid="project-hub__page">
           <Link
             href={workspaceBasePath}
@@ -104,103 +103,99 @@ export default function OverviewPage({ params }: OverviewPageProps) {
             {tProjects('back_to_workspace')}
           </Link>
 
-          <Card className="overflow-hidden">
-            <CardContent className="border-b border-white/6 bg-[linear-gradient(180deg,rgba(124,160,255,0.10),rgba(124,160,255,0.02))] p-6 md:p-7">
-              <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
-                <Sparkles className="h-3.5 w-3.5" />
-                {tNav('overview')}
-              </div>
-              <p className="mt-4 max-w-3xl text-sm text-secondary md:text-[15px]">
-                {tOverview('subtitle')}
-              </p>
-            </CardContent>
-            <CardHeader className="space-y-2">
-              <CardTitle className="text-lg">{tOverview('title')}</CardTitle>
-              <p className="max-w-2xl text-sm text-secondary">
-                {tWorkspace('workspace_home_next_steps_description')}
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-6" data-testid="project-hub__summary">
-              <div className="space-y-3" data-testid="project-hub__next-steps">
-                <div className="flex flex-wrap items-end justify-between gap-2">
-                  <div>
-                    <div className="text-sm font-medium text-foreground">{tWorkspace('workspace_home_next_steps_title')}</div>
-                    <p className="text-sm text-secondary">{tWorkspace('workspace_home_next_steps_description')}</p>
-                  </div>
+          <section className="surface-soft px-5 py-4 md:px-6" data-testid="project-hub__summary">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.95fr)] xl:items-start">
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <p className="type-caption text-tertiary">{tOverview('title')}</p>
+                  <p className="type-body-ui max-w-3xl text-secondary">
+                    {tWorkspace('workspace_home_next_steps_description')}
+                  </p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <OverviewSignalCard
+                    icon={<Workflow className="h-4 w-4" />}
+                    label={tOverview('signals.execution_title')}
+                    value={tOverview('signals.ready')}
+                    helper={useSummary}
+                  />
+                  <OverviewSignalCard
+                    icon={<ShieldCheck className="h-4 w-4" />}
+                    label={tOverview('signals.governance_title')}
+                    value={governanceReadiness ? tOverview('signals.available') : tOverview('signals.limited')}
+                    helper={governSummary}
+                  />
+                  <OverviewSignalCard
+                    icon={<Bot className="h-4 w-4" />}
+                    label={tOverview('signals.develop_title')}
+                    value={developReadiness ? tOverview('signals.available') : tOverview('signals.not_available')}
+                    helper={developSummary}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3" data-testid="project-hub__next-steps">
+                <div className="space-y-1">
+                  <p className="type-system-caption text-tertiary">{tWorkspace('workspace_home_next_steps_title')}</p>
+                  <p className="type-body-ui text-secondary">{tWorkspace('workspace_home_next_steps_description')}</p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
                   {nextStepEntries.map((entry, index) => (
                     <Link
                       key={entry.href}
                       href={buildProjectSurfacePath(locale, workspaceId, projectId, entry.href)}
-                      className="group rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)] transition-colors hover:border-accent/30 hover:bg-white/[0.05]"
+                      className="surface-card group px-4 py-4 transition-colors hover:border-border hover:bg-surface-high"
                       data-testid={entry.testId}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
                             {index === 0 ? tOverview('next_steps_primary_badge') : tOverview('next_steps_secondary_badge')}
                           </div>
-                          <div className="mt-2 text-base font-semibold text-foreground">{entry.label}</div>
+                          <ArrowRight className="h-4 w-4 text-icon-default transition-transform group-hover:translate-x-0.5" />
                         </div>
-                      </div>
-                      <p className="mt-2 text-sm text-secondary">{entry.description}</p>
-                      <div className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-accent transition-transform group-hover:translate-x-0.5">
-                        {tOverview('next_steps_open')}
-                        <ArrowLeft className="h-3.5 w-3.5 rotate-180" />
+                        <div>
+                          <div className="type-system-heading text-[1rem] font-semibold text-foreground">{entry.label}</div>
+                          <p className="mt-1 text-sm leading-6 text-secondary">{entry.description}</p>
+                        </div>
                       </div>
                     </Link>
                   ))}
                 </div>
               </div>
+            </div>
+          </section>
 
-              <div className="grid gap-3 md:grid-cols-3">
-                <OverviewSummaryCard
-                  icon={<Workflow className="h-4 w-4" />}
-                  label={tOverview('signals.execution_title')}
-                  value={tOverview('signals.ready')}
-                  helper={useSummary}
-                />
-                <OverviewSummaryCard
-                  icon={<ShieldCheck className="h-4 w-4" />}
-                  label={tOverview('signals.governance_title')}
-                  value={governanceReadiness ? tOverview('signals.available') : tOverview('signals.limited')}
-                  helper={governSummary}
-                />
-                <OverviewSummaryCard
-                  icon={<Bot className="h-4 w-4" />}
-                  label={tOverview('signals.develop_title')}
-                  value={developReadiness ? tOverview('signals.available') : tOverview('signals.not_available')}
-                  helper={developSummary}
-                />
-              </div>
-
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)]">
+            <section className="surface-card px-5 py-5 md:px-6" data-testid="project-hub__use-summary">
               <OverviewSummaryList
                 items={surfaceSummary.useLabels}
-                testId="project-hub__use-summary"
                 title={tOverview('signals.execution_title')}
               />
+            </section>
 
-              <OverviewSummaryList
-                items={surfaceSummary.governLabels}
-                testId="project-hub__governance-summary"
-                title={tOverview('signals.governance_title')}
-              />
-
-              <OverviewSummaryList
-                items={surfaceSummary.developLabels}
-                testId="project-hub__develop-summary"
-                title={tOverview('signals.develop_title')}
-              />
-            </CardContent>
-          </Card>
+            <div className="space-y-4">
+              <section className="surface-card px-5 py-5 md:px-6" data-testid="project-hub__governance-summary">
+                <OverviewSummaryList
+                  items={surfaceSummary.governLabels}
+                  title={tOverview('signals.governance_title')}
+                />
+              </section>
+              <section className="surface-card px-5 py-5 md:px-6" data-testid="project-hub__develop-summary">
+                <OverviewSummaryList
+                  items={surfaceSummary.developLabels}
+                  title={tOverview('signals.develop_title')}
+                />
+              </section>
+            </div>
+          </div>
         </div>
       </PageLayout>
     </PageState>
   );
 }
 
-function OverviewSummaryCard({
+function OverviewSignalCard({
   icon,
   label,
   value,
@@ -212,42 +207,40 @@ function OverviewSummaryCard({
   helper: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+    <div className="rounded-md border border-subtle bg-background px-4 py-3">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
         {icon}
         {label}
       </div>
-      <div className="mt-3 text-lg font-semibold tracking-tight text-foreground">{value}</div>
-      <div className="mt-1 text-sm text-secondary">{helper}</div>
+      <div className="mt-3 text-base font-semibold text-foreground">{value}</div>
+      <div className="mt-1 text-sm leading-6 text-secondary">{helper}</div>
     </div>
   );
 }
 
 function OverviewSummaryList({
   items,
-  testId,
   title,
 }: {
   items: string[];
-  testId: string;
   title: string;
 }) {
   return (
-    <div className="space-y-3" data-testid={testId}>
-      <div className="text-sm font-medium text-foreground">{title}</div>
+    <div className="space-y-3">
+      <div className="type-system-caption text-tertiary">{title}</div>
       {items.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
+        <ul className="space-y-2">
           {items.map((item) => (
-            <div
+            <li
               key={item}
-              className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-xs text-secondary"
+              className="rounded-md border border-subtle bg-surface-low px-3 py-2 text-sm text-secondary"
             >
               {item}
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       ) : (
-        <div className="rounded-[18px] border border-dashed border-white/8 bg-white/[0.02] px-4 py-3 text-sm text-tertiary">
+        <div className="rounded-md border border-dashed border-subtle bg-surface-low px-4 py-3 text-sm text-tertiary">
           {title}
         </div>
       )}

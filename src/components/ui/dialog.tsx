@@ -5,13 +5,13 @@ import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const dialogOverlayClassName = cn(
-  'fixed inset-0 z-50 bg-[rgb(var(--overlay-scrim)/0.34)] backdrop-blur-[2px] dark:bg-[rgb(var(--overlay-scrim)/0.52)]',
+  'fixed inset-0 z-50 bg-[rgb(var(--overlay-scrim)/0.34)] backdrop-blur-[1px]',
   'data-[state=open]:animate-in data-[state=closed]:animate-out',
   'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
 );
 
 export const dialogContentClassName = cn(
-  'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border border-border bg-dialog p-6 shadow-float duration-200',
+  'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 rounded-md border border-border/65 bg-dialog p-5 shadow-float duration-200 md:p-6',
   'data-[state=open]:animate-in data-[state=closed]:animate-out',
   'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
   'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
@@ -20,9 +20,9 @@ export const dialogContentClassName = cn(
 );
 
 export const dialogCloseClassName = cn(
-  'absolute right-4 top-4 rounded-pill p-1.5 text-tertiary transition-colors',
+  'absolute right-3 top-3 rounded-pill p-1.5 text-tertiary transition-colors',
   'hover:bg-surface-low hover:text-foreground',
-  'focus:outline-none focus:ring-2 focus:ring-accent/25 focus:ring-offset-2 focus:ring-offset-dialog',
+  'focus:outline-none focus:ring-2 focus:ring-accent/18 focus:ring-offset-2 focus:ring-offset-dialog',
   'disabled:pointer-events-none',
 );
 
@@ -59,9 +59,9 @@ const DialogContent = React.forwardRef<
       {children}
       <DialogPrimitive.Close
         className={dialogCloseClassName}
-        aria-label="Close"
+        aria-label='Close'
       >
-        <X className="h-4 w-4" />
+        <X className='h-4 w-4' />
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>

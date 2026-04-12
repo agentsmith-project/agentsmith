@@ -33,14 +33,14 @@ export function EndpointsToolbar({
   onSyncCatalog,
 }: EndpointsToolbarProps) {
   return (
-    <PageToolbar className="rounded-[18px] border border-white/6 bg-white/[0.025] p-3 shadow-[0_10px_24px_rgba(0,0,0,0.1)]">
-      <div className="mr-1 rounded-full border border-white/8 bg-black/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+    <PageToolbar className="rounded-md border border-subtle bg-surface-low p-3 shadow-ambient">
+      <div className="mr-1 rounded-full border border-subtle bg-black/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
         {endpointsCount} {t('title').toLowerCase()}
       </div>
       <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-300">
         {activeCount} {t('status_active').toLowerCase()}
       </div>
-      <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+      <div className="rounded-full border border-subtle bg-surface-low px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
         {disabledCount} {t('status_disabled').toLowerCase()}
       </div>
       <Button

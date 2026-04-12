@@ -105,10 +105,10 @@ export function MoveDialogs({
             <DialogTitle>{t('file_manager.new_folder')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+            <div className="rounded-lg border border-subtle bg-surface-low p-4">
               <p className="text-sm leading-6 text-secondary">{t('file_manager.folder_name_hint')}</p>
             </div>
-            <div className="space-y-2 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+            <div className="space-y-2 rounded-lg border border-subtle bg-surface-low p-4">
               <div className="text-xs text-tertiary">{t('file_manager.folder_name_hint')}</div>
               <Input
                 value={folderName}

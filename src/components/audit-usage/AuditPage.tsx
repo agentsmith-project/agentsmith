@@ -153,7 +153,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
         )}
       >
         <div className="flex flex-col items-center justify-center flex-1">
-          <div className="rounded-xl border border-border bg-surface p-8 text-center max-w-md">
+          <div className="rounded-md border border-border bg-surface p-8 text-center max-w-md">
             <p className="text-sm text-tertiary">{t('permission_denied')}</p>
           </div>
         </div>

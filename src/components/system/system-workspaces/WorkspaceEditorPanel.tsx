@@ -71,18 +71,18 @@ export function WorkspaceEditorPanel({
   );
   const statusPrefix = saveError ? t('status_error') : saveNotice ? t('status_success') : t('status_idle');
   const statusToneClass = saveError
-    ? 'border-error/30 bg-error/10 text-error'
+    ? 'border-error/22 bg-error/10 text-foreground'
     : saveNotice
-      ? 'border-success/30 bg-success/10 text-foreground'
-      : 'border-subtle bg-background/70 text-tertiary';
+      ? 'border-success/20 bg-success/8 text-foreground'
+      : 'border-subtle bg-background/82 text-tertiary';
   const primaryActionLabel = isSubmitting && activeAction === 'update' ? t('updating') : t('save_draft');
   const disabledByProvisioning = isSubmitting || state.isProvisioning;
   const workspaceStateLabel = workspace?.workspace_admin_binding_required
     ? t('workspace_admin_pending_badge')
     : t('workspace_admin_bound_badge');
   const workspaceStateTone = workspace?.workspace_admin_binding_required
-    ? 'border-warning/30 bg-warning/10 text-warning'
-    : 'border-success/30 bg-success/10 text-success';
+    ? 'border-warning/22 bg-warning/10 text-foreground'
+    : 'border-success/20 bg-success/8 text-foreground';
   const formLocked = !state.isEditMode;
   const workspaceSlug = slugifyWorkspaceId((workspace?.name ?? state.draft.name) || 'workspace');
   const workspaceLoginPath = `/{locale}/workspaces/${workspaceSlug}/login`;
@@ -90,16 +90,16 @@ export function WorkspaceEditorPanel({
 
   return (
     <aside
-      className="space-y-4 rounded-[28px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+      className="space-y-4 rounded-md border border-subtle bg-background/88 p-5 shadow-card"
       data-testid="system-workspaces__editor"
     >
-      <div className="rounded-[22px] border border-border bg-surface-high p-5">
+      <div className="rounded-md border border-subtle bg-background/82 p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_detail_label')}</p>
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="text-2xl font-semibold text-foreground">{workspace?.name}</h2>
-              <span className="inline-flex items-center rounded-full border border-subtle bg-background px-3 py-1 text-xs font-medium text-secondary">
+              <span className="inline-flex items-center rounded-full border border-subtle bg-background/82 px-3 py-1 text-xs font-medium text-secondary">
                 {statusValue}
               </span>
             </div>
@@ -138,7 +138,7 @@ export function WorkspaceEditorPanel({
               <button
                 type="button"
                 disabled
-                className="inline-flex h-9 items-center rounded-xl border border-subtle px-3 text-xs text-tertiary disabled:opacity-100"
+                className="inline-flex h-9 items-center rounded-md border border-subtle bg-background px-3 text-xs text-tertiary disabled:opacity-100"
                 data-testid={`system-workspaces__open-workspace-login--${workspace?.id ?? 'selected'}`}
               >
                 {t('workspace_login_unavailable')}
@@ -148,27 +148,27 @@ export function WorkspaceEditorPanel({
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <div className="rounded-[18px] border border-subtle bg-background px-4 py-3">
+          <div className="rounded-md border border-subtle bg-background px-4 py-3">
             <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_detail_identity_label')}</p>
             <p className="mt-2 truncate text-sm font-semibold text-foreground">{workspace?.id}</p>
           </div>
-          <div className="rounded-[18px] border border-subtle bg-background px-4 py-3">
+          <div className="rounded-md border border-subtle bg-background px-4 py-3">
             <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_admin_card_label')}</p>
             <p className="mt-2 truncate text-sm font-semibold text-foreground">{workspace?.workspace_admin || t('none')}</p>
           </div>
-          <div className="rounded-[18px] border border-subtle bg-background px-4 py-3">
+          <div className="rounded-md border border-subtle bg-background px-4 py-3">
             <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('initialized_at_label')}</p>
             <p className="mt-2 truncate text-sm font-semibold text-foreground">{lastInitializedValue}</p>
           </div>
         </div>
         {!state.isEditMode ? (
-          <div className="mt-4 rounded-[18px] border border-subtle bg-background/70 px-4 py-3 text-sm text-secondary" data-testid="system-workspaces__read-only-notice">
+          <div className="mt-4 rounded-md border border-subtle bg-background/82 px-4 py-3 text-sm text-secondary" data-testid="system-workspaces__read-only-notice">
             {t('workspace_editor_read_only_notice')}
           </div>
         ) : null}
       </div>
 
-      <section className="space-y-4 rounded-[22px] border border-border bg-surface-high p-5" data-testid="system-workspaces__basics">
+      <section className="space-y-4 rounded-md border border-subtle bg-background/82 p-5" data-testid="system-workspaces__basics">
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_basics_label')}</p>
           <p className="text-base font-medium text-foreground">{t('workspace_basics_title')}</p>
@@ -182,13 +182,13 @@ export function WorkspaceEditorPanel({
             onChange={(event) => onDraftChange({ name: event.target.value })}
             placeholder={t('workspace_name_placeholder')}
             disabled={formLocked}
-            className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+            className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
             data-testid="system-workspaces__draft-name"
           />
         </label>
       </section>
 
-      <section className="space-y-4 rounded-[22px] border border-border bg-surface-high p-5" data-testid="system-workspaces__idp">
+      <section className="space-y-4 rounded-md border border-subtle bg-background/82 p-5" data-testid="system-workspaces__idp">
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-base font-medium text-foreground">
             <ShieldCheck className="h-4 w-4" />
@@ -204,7 +204,7 @@ export function WorkspaceEditorPanel({
             onChange={(event) => onDraftChange({ loginIdpUrl: event.target.value })}
             placeholder={t('idp_url_placeholder')}
             disabled={formLocked}
-            className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+            className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
             data-testid="system-workspaces__draft-idp-url"
           />
           <div className="grid gap-3 md:grid-cols-2">
@@ -214,7 +214,7 @@ export function WorkspaceEditorPanel({
               onChange={(event) => onDraftChange({ loginIdpRealm: event.target.value })}
               placeholder={t('idp_realm_placeholder')}
               disabled={formLocked}
-              className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+              className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
               data-testid="system-workspaces__draft-idp-realm"
             />
               <input
@@ -223,11 +223,11 @@ export function WorkspaceEditorPanel({
                 onChange={(event) => onDraftChange({ loginClientId: event.target.value })}
                 placeholder={t('login_client_id_placeholder')}
                 disabled={formLocked}
-                className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                 data-testid="system-workspaces__draft-idp-client-id"
               />
           </div>
-          <div className="rounded-[18px] border border-subtle bg-background/70 p-4">
+          <div className="rounded-md border border-subtle bg-background/70 p-4">
             <p className="text-sm font-medium text-foreground">{t('directory_client_section_title')}</p>
             <p className="mt-1 text-sm text-tertiary">{t('directory_client_section_body')}</p>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -237,7 +237,7 @@ export function WorkspaceEditorPanel({
                 onChange={(event) => onDraftChange({ directoryClientId: event.target.value })}
                 placeholder={t('directory_client_id_placeholder')}
                 disabled={formLocked}
-                className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                 data-testid="system-workspaces__draft-directory-client-id"
               />
               <input
@@ -246,13 +246,13 @@ export function WorkspaceEditorPanel({
                 onChange={(event) => onDraftChange({ directoryClientSecret: event.target.value })}
                 placeholder={t('directory_client_secret_placeholder')}
                 disabled={formLocked}
-                className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                 data-testid="system-workspaces__draft-idp-client-secret"
               />
             </div>
           </div>
 
-          <div className="rounded-[18px] border border-subtle bg-background/70 p-4 text-sm">
+          <div className="rounded-md border border-subtle bg-background/70 p-4 text-sm">
             <p className="font-medium text-foreground">{t('workspace_login_preview_title')}</p>
             <div className="mt-3 space-y-2">
               <div>
@@ -267,7 +267,7 @@ export function WorkspaceEditorPanel({
           </div>
         </div>
 
-        <div className={`rounded-[18px] border px-4 py-4 ${buildVerificationToneClass(state.idpVerificationState)}`}>
+        <div className={`rounded-md border px-4 py-4 ${buildVerificationToneClass(state.idpVerificationState)}`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-2">
               <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('idp_status_label')}</p>
@@ -289,7 +289,7 @@ export function WorkspaceEditorPanel({
         </div>
       </section>
 
-      <section className="space-y-4 rounded-[22px] border border-border bg-surface-high p-5" data-testid="system-workspaces__admin">
+      <section className="space-y-4 rounded-md border border-subtle bg-background/82 p-5" data-testid="system-workspaces__admin">
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-base font-medium text-foreground">
             <UserRoundSearch className="h-4 w-4" />
@@ -304,10 +304,10 @@ export function WorkspaceEditorPanel({
             onClick={() => onDraftChange({ adminMode: 'directory_user' })}
             disabled={formLocked || !state.directorySearchEnabled}
             className={[
-              'rounded-[18px] border p-4 text-left transition',
+              'rounded-md border p-4 text-left transition',
               state.draft.adminMode === 'directory_user'
-                ? 'border-accent/45 bg-accent/10'
-                : 'border-subtle bg-background hover:border-accent/20',
+                ? 'border-border bg-surface'
+                : 'border-subtle bg-background hover:border-border',
               !state.directorySearchEnabled ? 'cursor-not-allowed opacity-60' : '',
             ].join(' ')}
             data-testid="system-workspaces__admin-mode--directory"
@@ -320,10 +320,10 @@ export function WorkspaceEditorPanel({
             onClick={() => onDraftChange({ adminMode: 'email_pending' })}
             disabled={formLocked}
             className={[
-              'rounded-[18px] border p-4 text-left transition',
+              'rounded-md border p-4 text-left transition',
               state.draft.adminMode === 'email_pending'
-                ? 'border-accent/45 bg-accent/10'
-                : 'border-subtle bg-background hover:border-accent/20',
+                ? 'border-border bg-surface'
+                : 'border-subtle bg-background hover:border-border',
             ].join(' ')}
             data-testid="system-workspaces__admin-mode--email"
           >
@@ -333,7 +333,7 @@ export function WorkspaceEditorPanel({
         </div>
 
         {state.draft.adminMode === 'directory_user' ? (
-          <div className="space-y-3 rounded-[18px] border border-subtle bg-background p-4">
+          <div className="space-y-3 rounded-md border border-subtle bg-background p-4">
             <label className="block space-y-2">
               <span className="text-sm font-medium text-foreground">{t('workspace_admin')}</span>
               <input
@@ -346,13 +346,13 @@ export function WorkspaceEditorPanel({
                 })}
                 placeholder={t('workspace_admin_placeholder')}
                 disabled={formLocked || !state.directorySearchEnabled}
-                className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary disabled:cursor-not-allowed disabled:opacity-70"
+                className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary disabled:cursor-not-allowed disabled:opacity-70"
                 data-testid="system-workspaces__draft-admin"
               />
             </label>
             {state.draft.admin ? (
               <div
-                className="rounded-[16px] border border-success/30 bg-success/10 px-3 py-3 text-sm text-foreground"
+                className="rounded-md border border-success/30 bg-success/10 px-3 py-3 text-sm text-foreground"
                 data-testid="system-workspaces__selected-admin"
               >
                 <p className="font-medium">{state.draft.admin.name || state.draft.admin.email}</p>
@@ -371,7 +371,7 @@ export function WorkspaceEditorPanel({
                     <button
                       key={user.user_id}
                       type="button"
-                      className="flex w-full items-start justify-between rounded-[16px] border border-subtle bg-background px-3 py-3 text-left transition hover:border-accent/40"
+                      className="flex w-full items-start justify-between rounded-md border border-subtle bg-background px-3 py-3 text-left transition hover:border-accent/40"
                       onClick={() => onDraftChange({
                         admin: user,
                         adminQuery: user.email,
@@ -397,7 +397,7 @@ export function WorkspaceEditorPanel({
             </div>
           </div>
         ) : (
-          <div className="space-y-3 rounded-[18px] border border-subtle bg-background p-4">
+          <div className="space-y-3 rounded-md border border-subtle bg-background p-4">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Mail className="h-4 w-4" />
               {t('workspace_admin_email_pending_title')}
@@ -411,7 +411,7 @@ export function WorkspaceEditorPanel({
                 onChange={(event) => onDraftChange({ adminEmail: event.target.value })}
                 placeholder={t('workspace_admin_email_placeholder')}
                 disabled={formLocked}
-                className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                className="h-10 w-full rounded-md border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                 data-testid="system-workspaces__draft-admin-email"
               />
             </label>
@@ -419,14 +419,14 @@ export function WorkspaceEditorPanel({
         )}
 
         {(workspace?.workspace_admin_binding_required || !workspace?.workspace_admin_user_id) && state.draft.adminMode === 'email_pending' ? (
-          <div className="rounded-[16px] border border-warning/25 bg-warning/10 px-3 py-3" data-testid="system-workspaces__admin-binding-warning">
+          <div className="rounded-md border border-warning/25 bg-warning/10 px-3 py-3" data-testid="system-workspaces__admin-binding-warning">
             <p className="text-sm font-medium text-foreground">{t('workspace_admin_pending_badge')}</p>
             <p className="mt-1 text-sm text-secondary">{t('workspace_admin_binding_pending_body')}</p>
           </div>
         ) : null}
       </section>
 
-      <section className="space-y-4 rounded-[22px] border border-border bg-surface-high p-5" data-testid="system-workspaces__status">
+      <section className="space-y-4 rounded-md border border-subtle bg-background/82 p-5" data-testid="system-workspaces__status">
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_lifecycle_label')}</p>
           <p className="text-base font-medium text-foreground">{t('workspace_lifecycle_title')}</p>
@@ -437,7 +437,7 @@ export function WorkspaceEditorPanel({
         <PreviewRow label={t('last_init_error_label')} value={workspace?.last_init_error || t('none')} />
       </section>
 
-      <div className={`rounded-[22px] border px-4 py-4 text-sm ${statusToneClass}`} data-testid="system-workspaces__notice">
+      <div className={`rounded-md border px-4 py-4 text-sm ${statusToneClass}`} data-testid="system-workspaces__notice">
         <p className="mb-1 text-[11px] uppercase tracking-[0.08em]" data-testid="system-workspaces__notice-status">
           {statusPrefix}
         </p>
@@ -452,7 +452,7 @@ export function WorkspaceEditorPanel({
         )}
       </div>
 
-      <section className="space-y-4 rounded-[22px] border border-border bg-surface-high p-5" data-testid="system-workspaces__lifecycle">
+      <section className="space-y-4 rounded-md border border-subtle bg-background/82 p-5" data-testid="system-workspaces__lifecycle">
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_actions_label')}</p>
           <p className="text-base font-medium text-foreground">{t('workspace_actions_title')}</p>

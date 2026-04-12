@@ -398,7 +398,7 @@ export default function ChatPage({ params }: ChatPageProps) {
 
           <div
             className={cn(
-              'h-full min-h-0 flex overflow-hidden rounded-[22px] border border-subtle bg-panel/40 shadow-[0_18px_40px_rgba(0,0,0,0.16)]',
+              'h-full min-h-0 flex overflow-hidden rounded-md border border-subtle bg-panel/40 shadow-card',
               'w-full',
             )}
           >

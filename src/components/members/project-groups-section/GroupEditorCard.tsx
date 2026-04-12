@@ -87,7 +87,7 @@ export const GroupEditorCard = React.forwardRef<HTMLDivElement, GroupEditorCardP
     <div
       ref={ref}
       className={cn(
-        'space-y-4 rounded-[24px] border border-subtle bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)] transition-colors duration-200',
+        'space-y-4 rounded-md border border-subtle bg-surface/95 p-5 shadow-card transition-colors duration-200',
         editingGroupId ? 'border-accent/40 bg-accent/5' : null,
       )}
     >
@@ -128,7 +128,7 @@ export const GroupEditorCard = React.forwardRef<HTMLDivElement, GroupEditorCardP
             </label>
           </div>
           <select
-            className="h-10 w-full rounded-xl border border-subtle bg-surface-high px-3 text-sm"
+            className="h-10 w-full rounded-md border border-subtle bg-surface-high px-3 text-sm"
             value={selectedTemplateId}
             onChange={(event) => onTemplateIdChange(event.target.value)}
             disabled={!canManage}
@@ -144,7 +144,7 @@ export const GroupEditorCard = React.forwardRef<HTMLDivElement, GroupEditorCardP
         </div>
       </div>
 
-      <div className="space-y-3 rounded-[20px] border border-subtle bg-surface-high/70 p-4">
+      <div className="space-y-3 rounded-md border border-subtle bg-surface-high/70 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
             <p className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">
@@ -196,7 +196,7 @@ export const GroupEditorCard = React.forwardRef<HTMLDivElement, GroupEditorCardP
               {selectedTemplate.permissions.map((permission) => (
                 <span
                   key={permission}
-                  className="rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1 text-[11px] text-secondary"
+                  className="rounded-full border border-subtle bg-surface-low px-2.5 py-1 text-[11px] text-secondary"
                 >
                   {permission}
                 </span>
@@ -213,12 +213,12 @@ export const GroupEditorCard = React.forwardRef<HTMLDivElement, GroupEditorCardP
             <p className="mt-1 text-sm text-secondary">{t('selected_count', { count: selectedMemberIds.length })}</p>
           </div>
           {typeof selectedTemplatePermissionsCount === 'number' ? (
-            <div className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1 text-xs text-tertiary">
+            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1 text-xs text-tertiary">
               {t('permissions_count', { count: selectedTemplatePermissionsCount })}
             </div>
           ) : null}
         </div>
-        <div className="space-y-2 rounded-[20px] border border-subtle bg-surface-high/80 p-3">
+        <div className="space-y-2 rounded-md border border-subtle bg-surface-high/80 p-3">
           <Input
             value={memberSearch}
             onChange={(event) => onMemberSearchChange(event.target.value)}
@@ -226,11 +226,11 @@ export const GroupEditorCard = React.forwardRef<HTMLDivElement, GroupEditorCardP
             className="h-9 bg-surface"
             data-testid="members__group-member-search"
           />
-          <div className="max-h-48 overflow-auto rounded-[16px] border border-white/6 bg-surface/80 px-2 py-1">
+          <div className="max-h-48 overflow-auto rounded-md border border-subtle bg-surface/80 px-2 py-1">
             {pagedMembers.map((member) => (
               <label
                 key={member.id}
-                className="flex items-center gap-2 rounded-xl px-2 py-2 text-xs text-primary transition-colors hover:bg-white/[0.03]"
+                className="flex items-center gap-2 rounded-md px-2 py-2 text-xs text-primary transition-colors hover:bg-surface-low"
               >
                 <input
                   type="checkbox"
@@ -305,7 +305,7 @@ export const GroupEditorCard = React.forwardRef<HTMLDivElement, GroupEditorCardP
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-white/6 pt-1">
+      <div className="flex flex-wrap items-center gap-2 border-t border-subtle pt-1">
         <Button
           type="button"
           onClick={onSave}

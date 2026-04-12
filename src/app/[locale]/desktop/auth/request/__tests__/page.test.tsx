@@ -1,17 +1,15 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const replaceMock = vi.fn();
-const mockFetch = vi.fn();
+const mockReplace = vi.fn();
 const mockUseSearchParams = vi.fn();
-const mockAuthState = {
-  token: 'desktop-token',
-  isAuthenticated: true,
-};
+const mockUseAuthStoreHydration = vi.fn();
+const mockUseAuthStore = vi.fn();
+const mockBuildPublicApiUrl = vi.fn((path: string) => `https://api.example.com${path}`);
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ locale: 'en-US' }),
-  useRouter: () => ({ replace: replaceMock }),
+  useRouter: () => ({ replace: mockReplace }),
   useSearchParams: () => mockUseSearchParams(),
 }));
 
@@ -23,57 +21,59 @@ vi.mock('@/components/theme/PublicThemeToggle', () => ({
   PublicThemeToggle: () => <div data-testid="public-theme-toggle" />,
 }));
 
-vi.mock('@/lib/stores/authStore', () => ({
-  useAuthStoreHydration: () => true,
-  useAuthStore: (selector: (state: typeof mockAuthState) => unknown) => selector(mockAuthState),
+vi.mock('@/lib/public-runtime-config', () => ({
+  buildPublicApiUrl: (path: string) => mockBuildPublicApiUrl(path),
 }));
 
-vi.mock('@/lib/public-runtime-config', () => ({
-  buildPublicApiUrl: (path: string) => `/api/v1${path}`,
+vi.mock('@/lib/stores/authStore', () => ({
+  useAuthStoreHydration: () => mockUseAuthStoreHydration(),
+  useAuthStore: (selector: (state: { token: string | null; isAuthenticated: boolean }) => unknown) =>
+    selector(mockUseAuthStore()),
 }));
 
 import DesktopAuthRequestPage from '../page';
 
 describe('DesktopAuthRequestPage', () => {
   beforeEach(() => {
-    replaceMock.mockReset();
-    mockFetch.mockReset();
-    mockUseSearchParams.mockReturnValue(new URLSearchParams(''));
-    mockFetch.mockResolvedValue({ ok: false, status: 500 });
-    vi.stubGlobal('fetch', mockFetch);
-  });
-
-  it('shows a recovery CTA when the desktop auth request id is missing', async () => {
-    render(<DesktopAuthRequestPage />);
-
-    expect(await screen.findByText('desktop_auth_request_missing_title')).toBeInTheDocument();
-    expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
-    expect(screen.getByText('desktop_auth_request_missing_description')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'desktop_auth_request_back_to_workspace_login' })).toHaveAttribute('href', '/en-US/login/workspace');
-    expect(screen.queryByRole('button', { name: 'desktop_auth_request_retry' })).not.toBeInTheDocument();
-  });
-
-  it('offers retry when completing the desktop auth request fails', async () => {
+    mockReplace.mockReset();
     mockUseSearchParams.mockReturnValue(new URLSearchParams('desktop_auth_request_id=req_123'));
+    mockUseAuthStoreHydration.mockReturnValue(true);
+    mockUseAuthStore.mockReturnValue({ token: null, isAuthenticated: false });
+    mockBuildPublicApiUrl.mockClear();
+    vi.unstubAllGlobals();
+  });
+
+  it('redirects unauthenticated users to workspace login with the desktop request id', async () => {
+    render(<DesktopAuthRequestPage />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith('/en-US/login/workspace?desktop_auth_request_id=req_123');
+    });
+  });
+
+  it('shows the missing request recovery state when the request id is absent', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams(''));
+
+    render(<DesktopAuthRequestPage />);
+
+    expect(await screen.findByTestId('desktop-auth-request__title')).toHaveTextContent('desktop_auth_request_missing_title');
+    expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
+    expect(screen.getByTestId('desktop-auth-request__workspace-login-link')).toHaveAttribute('href', '/en-US/login/workspace');
+  });
+
+  it('completes the desktop handoff and redirects to the completion page', async () => {
+    mockUseAuthStore.mockReturnValue({ token: 'token_123', isAuthenticated: true });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
 
     render(<DesktopAuthRequestPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('desktop_auth_request_error_title')).toBeInTheDocument();
-    });
-
-    expect(screen.getByText('desktop_auth_request_error_description')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'desktop_auth_request_back_to_workspace_login' })).toHaveAttribute(
-      'href',
-      '/en-US/login/workspace?desktop_auth_request_id=req_123',
-    );
-    expect(screen.getByRole('button', { name: 'desktop_auth_request_retry' })).toBeInTheDocument();
-
-    const initialCalls = mockFetch.mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: 'desktop_auth_request_retry' }));
-
-    await waitFor(() => {
-      expect(mockFetch.mock.calls.length).toBeGreaterThan(initialCalls);
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://api.example.com/me/desktop/auth/requests/req_123/complete',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(mockReplace).toHaveBeenCalledWith('/en-US/desktop/auth/complete?desktop_auth_request_id=req_123');
     });
   });
 });

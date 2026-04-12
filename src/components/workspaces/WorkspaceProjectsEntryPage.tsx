@@ -296,7 +296,7 @@ export function WorkspaceProjectsEntryPage({
     return (
       <PageState state="error">
         <PageLayout contentWidth="narrow">
-          <div className="surface-card rounded-[28px] px-6 py-8 text-center">
+          <div className="surface-soft px-6 py-8 text-center">
             <div className="space-y-2">
               <h2 className="type-title text-foreground">{tErrors('validation_error')}</h2>
               <p className="type-body-ui text-secondary">{tErrors('badRequest.description')}</p>
@@ -333,7 +333,7 @@ export function WorkspaceProjectsEntryPage({
     return (
       <PageState state="error">
         <PageLayout contentWidth="narrow">
-          <div className="surface-card rounded-[28px] px-6 py-8 text-center">
+          <div className="surface-soft px-6 py-8 text-center">
             <div className="space-y-2">
               <h2 className="type-title text-foreground">{tErrors('permission_denied_title')}</h2>
               <p className="type-body-ui text-secondary">{tErrors('permission_denied_hint')}</p>
@@ -353,7 +353,7 @@ export function WorkspaceProjectsEntryPage({
     return (
       <PageState state="error">
         <PageLayout contentWidth="narrow">
-          <div className="surface-card rounded-[28px] px-6 py-8 text-center">
+          <div className="surface-soft px-6 py-8 text-center">
             <div className="space-y-2">
               <h2 className="type-title text-foreground">{t('workspace_unavailable_title')}</h2>
               <p className="type-body-ui text-secondary">{t('workspace_unavailable_description')}</p>
@@ -376,7 +376,7 @@ export function WorkspaceProjectsEntryPage({
     return (
       <PageState state="error">
         <PageLayout contentWidth="narrow">
-          <div className="surface-card rounded-[28px] px-6 py-8 text-center">
+          <div className="surface-soft px-6 py-8 text-center">
             <div className="space-y-2">
               <h2 className="type-title text-foreground">{t('workspace_unavailable_title')}</h2>
               <p className="type-body-ui text-secondary">{t('workspace_unavailable_description')}</p>
@@ -396,7 +396,7 @@ export function WorkspaceProjectsEntryPage({
     return (
       <PageState state="error">
         <PageLayout contentWidth="narrow">
-          <div className="surface-card rounded-[28px] px-6 py-8 text-center">
+          <div className="surface-soft px-6 py-8 text-center">
             <div className="space-y-2">
               <h2 className="type-title text-foreground">{t('load_failed_title')}</h2>
               <p className="type-body-ui text-secondary">{t('load_failed_description')}</p>
@@ -449,44 +449,56 @@ export function WorkspaceProjectsEntryPage({
                 )}
               />
 
-              <section className="grid gap-4 xl:grid-cols-3">
-                <article className="surface-card rounded-[28px] px-5 py-5">
-                  <p className="type-caption text-tertiary">{t('summary.total_label')}</p>
-                  <div className="mt-4 flex items-center gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-subtle bg-surface-low text-accent">
-                      <FolderKanban className="h-5 w-5" />
+              <section className="surface-soft px-5 py-5 md:px-6">
+                <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+                  <div className="flex flex-wrap gap-x-10 gap-y-4">
+                    <div className="min-w-[140px] space-y-1">
+                      <p className="type-caption text-tertiary">{t('summary.total_label')}</p>
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-md border border-subtle bg-background text-icon-default">
+                          <FolderKanban className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="type-subheading text-foreground">{filteredProjects.length}</p>
+                          <p className="type-body-ui text-secondary">{t('summary.total_hint')}</p>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="type-section-heading text-foreground">{filteredProjects.length}</p>
-                      <p className="type-body-ui text-secondary">{t('summary.total_hint')}</p>
+                    <div className="min-w-[140px] space-y-1">
+                      <p className="type-caption text-tertiary">{t('summary.pinned_label')}</p>
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-md border border-subtle bg-background text-icon-default">
+                          <Pin className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="type-subheading text-foreground">{pinnedProjects.length}</p>
+                          <p className="type-body-ui text-secondary">{t('summary.pinned_hint')}</p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </article>
-
-                <article className="surface-card rounded-[28px] px-5 py-5">
-                  <p className="type-caption text-tertiary">{t('summary.pinned_label')}</p>
-                  <div className="mt-4 flex items-center gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-subtle bg-surface-low text-icon-default">
-                      <Pin className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="type-section-heading text-foreground">{pinnedProjects.length}</p>
-                      <p className="type-body-ui text-secondary">{t('summary.pinned_hint')}</p>
-                    </div>
-                  </div>
-                </article>
-
-                <article className="surface-card rounded-[28px] px-5 py-5">
-                  <p className="type-caption text-tertiary">{t('workspace_label')}</p>
-                  <div className="mt-4 space-y-3">
-                    <div className="space-y-2">
+                    <div className="min-w-[220px] space-y-1">
+                      <p className="type-caption text-tertiary">{t('workspace_label')}</p>
                       <p className="type-title text-foreground">{workspaceName}</p>
                       <p className="type-body-ui text-secondary">
                         {canCreateProject ? t('empty.description') : t('empty.read_only_description')}
                       </p>
                     </div>
+                  </div>
+
+                  <div className="flex w-full max-w-md flex-col gap-3 xl:items-end">
+                    <label className="relative block w-full">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-icon-default" />
+                      <Input
+                        type="text"
+                        placeholder={t('search_placeholder')}
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        data-testid="projects__search"
+                        className="pl-10"
+                      />
+                    </label>
                     {canManageWorkspaceGovernance ? (
-                      <Button asChild variant="outline" data-testid="projects__workspace-settings-btn" className="w-full md:w-auto">
+                      <Button asChild variant="outline" data-testid="projects__workspace-settings-btn" className="w-full xl:w-auto">
                         <Link href={`${workspaceBasePath}/settings`}>
                           <SettingsIcon className="mr-2 h-4 w-4" />
                           {tSettings('workspace_title')}
@@ -494,26 +506,6 @@ export function WorkspaceProjectsEntryPage({
                       </Button>
                     ) : null}
                   </div>
-                </article>
-              </section>
-
-              <section className="surface-card rounded-[28px] px-5 py-5 md:px-6 md:py-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                  <div className="space-y-2">
-                    <h2 className="type-subheading text-foreground">{t('all.title')}</h2>
-                    <p className="type-body-ui text-secondary">{t('summary.table_hint')}</p>
-                  </div>
-                  <label className="relative block w-full max-w-md">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-icon-default" />
-                    <Input
-                      type="text"
-                      placeholder={t('search_placeholder')}
-                      value={searchQuery}
-                      onChange={(event) => setSearchQuery(event.target.value)}
-                      data-testid="projects__search"
-                      className="pl-10"
-                    />
-                  </label>
                 </div>
               </section>
 
@@ -522,9 +514,9 @@ export function WorkspaceProjectsEntryPage({
                   <PageLoading />
                 </div>
               ) : projects.length === 0 ? (
-                <section className="surface-elevated rounded-[32px] px-6 py-14 text-center">
+                <section className="surface-soft px-6 py-14 text-center">
                   <div className="mx-auto flex max-w-2xl flex-col items-center space-y-4">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-[24px] border border-subtle bg-surface-low text-icon-default">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-md border border-subtle bg-surface-low text-icon-default">
                       <FolderOpen className="h-8 w-8" />
                     </div>
                     <div className="space-y-2">
@@ -552,7 +544,7 @@ export function WorkspaceProjectsEntryPage({
               ) : (
                 <div className="space-y-6">
                   {pinnedProjects.length > 0 ? (
-                    <section className="surface-card rounded-[28px] px-5 py-5 md:px-6 md:py-6">
+                    <section className="surface-card px-5 py-5 md:px-6 md:py-6">
                       <div className="mb-5 flex items-center justify-between gap-4">
                         <div>
                           <h2 className="type-subheading flex items-center gap-2 text-foreground">
@@ -583,7 +575,7 @@ export function WorkspaceProjectsEntryPage({
                     </section>
                   ) : null}
 
-                  <section className="surface-elevated rounded-[32px] px-5 py-5 md:px-6 md:py-6">
+                  <section className="surface-card px-5 py-5 md:px-6 md:py-6">
                     <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                       <div>
                         <h2 className="type-subheading text-foreground">{t('all.count', { count: unpinnedProjects.length })}</h2>

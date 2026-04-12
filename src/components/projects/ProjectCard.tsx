@@ -39,7 +39,7 @@ export function ProjectCard({
   return (
     <div
       onClick={onClick}
-      className="relative group rounded-[20px] border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/20 hover:bg-white/[0.045] hover:shadow-[0_18px_40px_rgba(0,0,0,0.22)] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+      className="relative group cursor-pointer rounded-md border border-subtle bg-surface-low/70 p-5 transition-colors duration-200 hover:border-border hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35"
     >
       <div className="absolute top-4 right-4 flex items-center gap-1">
         {canManageSettings && onSettingsClick && (
@@ -51,7 +51,7 @@ export function ProjectCard({
               e.stopPropagation();
               onSettingsClick();
             }}
-            className="h-8 w-8 rounded-lg hover:bg-white/8"
+            className="h-8 w-8 rounded-md hover:bg-surface"
             aria-label={t('actions.settings')}
           >
             <Settings className="w-4 h-4 text-icon-default" />
@@ -65,7 +65,7 @@ export function ProjectCard({
             e.stopPropagation();
             onTogglePin(e);
           }}
-          className="h-8 w-8 rounded-lg hover:bg-white/8"
+          className="h-8 w-8 rounded-md hover:bg-surface"
           aria-label={t('actions.unpin')}
           data-testid="projects__pin-btn"
         >
@@ -74,7 +74,7 @@ export function ProjectCard({
       </div>
 
       <div className="flex items-start gap-4 mb-4">
-        <div className="w-11 h-11 rounded-xl border border-white/6 bg-white/[0.05] flex items-center justify-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+        <div className="flex h-11 w-11 items-center justify-center rounded-md border border-subtle bg-background">
           <FolderOpen className="w-5 h-5 text-icon-default" />
         </div>
         <div className="flex-1 min-w-0">
@@ -90,10 +90,10 @@ export function ProjectCard({
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-white/6 pt-4">
+      <div className="flex items-center justify-between gap-3 border-t border-subtle pt-4">
         <div className="min-w-0">
           <p className="text-[11px] font-medium text-tertiary uppercase tracking-wide">{t('table.project_admin')}</p>
-          <p className="text-xs text-primary truncate" title={adminSummary}>
+          <p className="text-xs text-secondary truncate" title={adminSummary}>
             {adminSummary}
           </p>
         </div>

@@ -125,7 +125,7 @@ export function TaskPageContent({
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.03),_transparent_40%)]">
       {terminalPanel}
       <div className="mt-3 flex min-h-0 flex-1 gap-3 overflow-hidden">
-        <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-[18px] border border-white/5 bg-surface/70 p-1.5 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border border-subtle bg-surface/70 p-1.5 shadow-ambient">
           {showSseDebugPanel ? (
             <NotebookSseDebugPanel events={sseDebugEvents} />
           ) : null}
@@ -162,7 +162,7 @@ export function TaskPageContent({
             inputPlaceholder={inputPlaceholder}
           />
         </div>
-        <div className="flex h-full min-h-0 w-[216px] flex-shrink-0 overflow-hidden rounded-[16px] border border-white/5 bg-surface/68 p-1.5 shadow-[0_10px_24px_rgba(0,0,0,0.1)]">
+        <div className="flex h-full min-h-0 w-[216px] flex-shrink-0 overflow-hidden rounded-md border border-subtle bg-surface/68 p-1.5 shadow-ambient">
           <ArtifactsPanel
             artifacts={artifacts}
             onView={handleViewArtifact}

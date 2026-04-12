@@ -211,9 +211,9 @@ export function CreateAgentDialog({
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
-            <div className="rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(124,160,255,0.08),rgba(124,160,255,0.02))] p-4">
+            <div className="rounded-lg border border-subtle bg-[linear-gradient(180deg,rgba(124,160,255,0.08),rgba(124,160,255,0.02))] p-4">
               <div className="flex items-start gap-3">
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/12 text-accent">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/12 text-accent">
                   <Sparkles className="h-5 w-5" />
                 </span>
                 <div className="space-y-1">
@@ -246,7 +246,7 @@ export function CreateAgentDialog({
               />
             ) : (
               <div className="space-y-4">
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4" data-testid="agents__create-dialog__product-summary">
+                <div className="rounded-lg border border-subtle bg-surface-low p-4" data-testid="agents__create-dialog__product-summary">
                   <div className="grid gap-3 md:grid-cols-2">
                     <SummaryField label={t('create_dialog.name')} value={name.trim()} />
                     <SummaryField label={t('agent_kind')} value={interactionKind === 'chat' ? t('interaction_chat') : t('interaction_notebook')} />

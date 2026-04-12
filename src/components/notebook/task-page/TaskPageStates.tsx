@@ -10,8 +10,8 @@ interface TaskPageLoadingStateProps {
 export function TaskPageLoadingState({ text }: TaskPageLoadingStateProps) {
   return (
     <div className="flex h-full items-center justify-center p-6">
-      <div className="surface-elevated flex w-full max-w-lg flex-col items-center gap-4 rounded-[28px] border border-border/70 px-6 py-8 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-subtle bg-accent/10 text-accent">
+      <div className="surface-elevated flex w-full max-w-lg flex-col items-center gap-4 rounded-lg border border-border/70 px-6 py-8 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-md border border-subtle bg-accent/10 text-accent">
           <LoaderCircle className="h-5 w-5 animate-spin" />
         </div>
         <div className="space-y-2">
@@ -46,7 +46,7 @@ export function TaskPageNotFoundState({
 }: TaskPageNotFoundStateProps) {
   return (
     <div className="flex h-full items-center justify-center p-6">
-      <div className="surface-elevated flex w-full max-w-lg flex-col gap-5 rounded-[28px] border border-border/70 px-6 py-8 text-center">
+      <div className="surface-elevated flex w-full max-w-lg flex-col gap-5 rounded-lg border border-border/70 px-6 py-8 text-center">
         <div className="space-y-3">
           <h2 className="type-section-heading text-foreground">{title}</h2>
           <p className="type-body-ui text-secondary">{description}</p>

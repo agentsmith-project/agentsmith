@@ -80,7 +80,7 @@ export function AuditPageContent({
     >
       {drilldownContext}
       <AuditOverviewCards summary={overviewSummary} t={t} />
-      <div className="mb-3 rounded-[20px] border border-white/6 bg-white/[0.025] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
+      <div className="mb-3 rounded-md border border-subtle bg-surface-low p-4 shadow-ambient">
         <InvestigationAnchorBar
           traceSource={traceSource}
           requestId={filters.request_id}
@@ -101,7 +101,7 @@ export function AuditPageContent({
       </div>
       <div
         data-testid="audit__filters"
-        className="rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_20px_44px_rgba(0,0,0,0.16)]"
+        className="rounded-md border border-subtle bg-surface/95 p-4 shadow-card"
       >
         <AuditFilters
           filters={filters}
@@ -113,8 +113,8 @@ export function AuditPageContent({
         />
       </div>
 
-      <div className="mt-4 min-h-0 flex-1 rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_20px_44px_rgba(0,0,0,0.16)]">
-        <div className="mb-4 flex flex-col gap-3 rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-4 min-h-0 flex-1 rounded-md border border-subtle bg-surface/95 p-4 shadow-card">
+        <div className="mb-4 flex flex-col gap-3 rounded-md border border-subtle bg-surface-low px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">{t('title')}</p>
             <p className="mt-1 text-sm text-secondary">
@@ -148,7 +148,7 @@ export function AuditPageContent({
             </Button>
           </div>
         </div>
-        <div className="min-h-0 overflow-y-auto rounded-[20px] border border-white/6 bg-background/35 p-3">
+        <div className="min-h-0 overflow-y-auto rounded-md border border-subtle bg-background/35 p-3">
           <AuditTable
             data={auditItems}
             loading={isLoading}

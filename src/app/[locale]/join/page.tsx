@@ -9,7 +9,15 @@ import { Button } from '@/components/ui/button';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import { PublicThemeToggle } from '@/components/theme/PublicThemeToggle';
+import {
+  PublicAuthAsideBlock,
+  PublicAuthEyebrow,
+  PublicAuthFrame,
+  PublicAuthHeader,
+  PublicAuthMutedCard,
+  PublicAuthSection,
+  PublicAuthShell,
+} from '@/components/public/PublicAuthPage';
 import { useRouter } from '@/lib/i18n/routing';
 import { getApiClient, MemberAPI } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
@@ -48,143 +56,149 @@ function JoinPageContent() {
 
   if (!token) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center bg-background p-4">
-        <PublicThemeToggle className="absolute right-4 top-4 z-10 md:right-6 md:top-6" />
-        <section className="surface-elevated grid w-full max-w-4xl gap-6 rounded-[32px] border border-border/70 p-6 md:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)] md:p-8">
-          <div className="space-y-5">
-            <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-high px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-              <Mail className="h-3.5 w-3.5 text-accent" />
-              {t('title')}
-            </div>
-            <div className="space-y-2">
-              <h1 className="font-display text-4xl text-primary">{t('invalid_title')}</h1>
-              <p className="max-w-xl text-base leading-7 text-secondary">{t('invalid_description')}</p>
-            </div>
-            <div className="surface-soft rounded-[24px] border border-subtle px-4 py-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <JoinSummaryCard
-                  icon={<XCircle className="h-4 w-4 text-warning" />}
-                  label={t('invalid_title')}
-                  value={t('go_home')}
-                  helper={t('invalid_description')}
-                />
-                <JoinSummaryCard
-                  icon={<ArrowRight className="h-4 w-4 text-accent" />}
-                  label={t('title')}
-                  value={t('decline')}
-                  helper={t('description')}
-                />
+      <PublicAuthFrame>
+        <PublicAuthShell
+          aside={(
+            <PublicAuthAsideBlock
+              icon={<Mail className="h-5 w-5" />}
+              title={t('go_home')}
+              description={t('invalid_description')}
+            >
+              <PublicAuthMutedCard>
+                <p className="type-caption text-tertiary">{t('invalid_title')}</p>
+                <p className="mt-2 type-body-ui text-secondary">{t('action_failed')}</p>
+              </PublicAuthMutedCard>
+            </PublicAuthAsideBlock>
+          )}
+        >
+          <div className="space-y-6">
+            <PublicAuthHeader
+              badge={(
+                <PublicAuthEyebrow>
+                  <Mail className="h-3.5 w-3.5" />
+                  {t('title')}
+                </PublicAuthEyebrow>
+              )}
+              title={t('invalid_title')}
+              description={t('invalid_description')}
+            />
+            <PublicAuthSection>
+              <div className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <JoinSummaryCard
+                    icon={<XCircle className="h-4 w-4 text-warning" />}
+                    label={t('invalid_title')}
+                    value={t('go_home')}
+                    helper={t('invalid_description')}
+                  />
+                  <JoinSummaryCard
+                    icon={<ArrowRight className="h-4 w-4 text-accent" />}
+                    label={t('title')}
+                    value={t('decline')}
+                    helper={t('description')}
+                  />
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button variant="primary" className="sm:flex-1" onClick={() => router.push('/')}>
+                    {t('go_home')}
+                  </Button>
+                  <Button variant="secondary" className="sm:flex-1" onClick={() => router.push('/login/workspace')}>
+                    {t('decline')}
+                  </Button>
+                </div>
               </div>
-            </div>
+            </PublicAuthSection>
           </div>
-          <aside className="surface-soft flex flex-col justify-between rounded-[28px] border border-subtle p-5 md:p-6">
-            <div className="space-y-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-subtle bg-background text-icon-default">
-                <Mail className="h-5 w-5" />
-              </div>
-              <div className="space-y-2">
-                <h2 className="font-display text-2xl text-primary">{t('go_home')}</h2>
-                <p className="text-sm leading-6 text-secondary">{t('action_failed')}</p>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <Button variant="action" className="w-full justify-between" onClick={() => router.push('/')}>
-                {t('go_home')}
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" className="w-full" onClick={() => router.push('/login/workspace')}>
-                {t('decline')}
-              </Button>
-            </div>
-          </aside>
-        </section>
-      </div>
+        </PublicAuthShell>
+      </PublicAuthFrame>
     );
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background p-4">
-      <PublicThemeToggle className="absolute right-4 top-4 z-10 md:right-6 md:top-6" />
-      <section className="surface-elevated grid w-full max-w-4xl gap-6 rounded-[32px] border border-border/70 p-6 md:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)] md:p-8">
-        <div className="space-y-5">
-          <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-high px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-            <Mail className="h-3.5 w-3.5 text-accent" />
-            {t('title')}
-          </div>
-          <div className="space-y-2">
-            <h1 className="font-display text-4xl text-primary">{t('title')}</h1>
-            <p className="max-w-xl text-base leading-7 text-secondary">{t('description')}</p>
-          </div>
-          <div className="surface-soft rounded-[24px] border border-subtle px-4 py-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <JoinSummaryCard
-                icon={<CheckCircle2 className="h-4 w-4 text-success" />}
-                label={t('accept')}
-                value={t('accepting')}
-                helper={t('description')}
-              />
-              <JoinSummaryCard
-                icon={<XCircle className="h-4 w-4 text-warning" />}
-                label={t('decline')}
-                value={t('go_home')}
-                helper={t('action_failed')}
-              />
-              <JoinSummaryCard
-                icon={<ArrowRight className="h-4 w-4 text-accent" />}
-                label={t('title')}
-                value={t('accept')}
-                helper={t('declining')}
-              />
+    <PublicAuthFrame>
+      <PublicAuthShell
+        aside={(
+          <PublicAuthAsideBlock
+            icon={<Mail className="h-5 w-5" />}
+            title={t('accept')}
+            description={t('description')}
+          >
+            <PublicAuthMutedCard>
+              <p className="type-caption text-tertiary">{t('go_home')}</p>
+              <p className="mt-2 type-body-ui text-secondary">{t('decline')}</p>
+            </PublicAuthMutedCard>
+          </PublicAuthAsideBlock>
+        )}
+      >
+        <div className="space-y-6">
+          <PublicAuthHeader
+            badge={(
+              <PublicAuthEyebrow tone="accent">
+                <Mail className="h-3.5 w-3.5" />
+                {t('title')}
+              </PublicAuthEyebrow>
+            )}
+            title={t('title')}
+            description={t('description')}
+          />
+
+          <PublicAuthSection>
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <JoinSummaryCard
+                  icon={<CheckCircle2 className="h-4 w-4 text-success" />}
+                  label={t('accept')}
+                  value={t('accepting')}
+                  helper={t('description')}
+                />
+                <JoinSummaryCard
+                  icon={<XCircle className="h-4 w-4 text-warning" />}
+                  label={t('decline')}
+                  value={t('go_home')}
+                  helper={t('action_failed')}
+                />
+                <JoinSummaryCard
+                  icon={<ArrowRight className="h-4 w-4 text-accent" />}
+                  label={t('title')}
+                  value={t('accept')}
+                  helper={t('declining')}
+                />
+              </div>
+              {inlineError ? (
+                <div className="rounded-md border border-error/20 bg-error/8 px-4 py-3 text-sm text-error" data-testid="join__error">
+                  {t('action_failed')}
+                </div>
+              ) : null}
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  data-testid="join__accept-btn"
+                  variant="primary"
+                  className="justify-between sm:flex-1"
+                  disabled={acceptInviteMutation.isPending || declineInviteMutation.isPending}
+                  onClick={() => {
+                    acceptInviteMutation.mutate(token);
+                  }}
+                >
+                  {acceptInviteMutation.isPending ? t('accepting') : t('accept')}
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  data-testid="join__decline-btn"
+                  variant="secondary"
+                  className="sm:flex-1"
+                  disabled={acceptInviteMutation.isPending || declineInviteMutation.isPending}
+                  onClick={() => {
+                    declineInviteMutation.mutate(token);
+                  }}
+                >
+                  {declineInviteMutation.isPending ? t('declining') : t('decline')}
+                </Button>
+              </div>
             </div>
-          </div>
-          {inlineError ? (
-            <div className="rounded-[20px] border border-error/25 bg-error/10 px-4 py-3 text-sm text-error" data-testid="join__error">
-              {t('action_failed')}
-            </div>
-          ) : null}
+          </PublicAuthSection>
         </div>
-        <aside className="surface-soft flex flex-col justify-between rounded-[28px] border border-subtle p-5 md:p-6">
-          <div className="space-y-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-subtle bg-background text-icon-default">
-              <Mail className="h-5 w-5" />
-            </div>
-            <div className="space-y-2">
-              <h2 className="font-display text-2xl text-primary">{t('accept')}</h2>
-              <p className="text-sm leading-6 text-secondary">{t('description')}</p>
-            </div>
-            <div className="rounded-[20px] border border-subtle bg-background/70 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('go_home')}</p>
-              <p className="mt-1 text-sm text-secondary">{t('decline')}</p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            <Button
-              data-testid="join__accept-btn"
-              variant="action"
-              className="w-full justify-between"
-              disabled={acceptInviteMutation.isPending || declineInviteMutation.isPending}
-              onClick={() => {
-                acceptInviteMutation.mutate(token);
-              }}
-            >
-              {acceptInviteMutation.isPending ? t('accepting') : t('accept')}
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-            <Button
-              data-testid="join__decline-btn"
-              variant="outline"
-              className="w-full"
-              disabled={acceptInviteMutation.isPending || declineInviteMutation.isPending}
-              onClick={() => {
-                declineInviteMutation.mutate(token);
-              }}
-            >
-              {declineInviteMutation.isPending ? t('declining') : t('decline')}
-            </Button>
-          </div>
-        </aside>
-      </section>
-    </div>
+      </PublicAuthShell>
+    </PublicAuthFrame>
   );
 }
 
@@ -200,14 +214,14 @@ function JoinSummaryCard({
   helper: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-subtle bg-background/70 p-4">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+    <PublicAuthMutedCard>
+      <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
         {icon}
         {label}
       </div>
-      <div className="mt-2 text-base font-semibold text-foreground">{value}</div>
+      <div className="mt-2 text-base font-medium text-foreground">{value}</div>
       <div className="mt-1 text-sm text-secondary">{helper}</div>
-    </div>
+    </PublicAuthMutedCard>
   );
 }
 

@@ -293,7 +293,7 @@ export default function WorkspaceSettingsPage() {
           <Topbar />
 
           <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-4 md:px-5 md:py-5 space-y-5">
-            <section className="rounded-[28px] border border-border bg-surface/95 px-5 py-5 shadow-[0_22px_50px_rgba(0,0,0,0.18)] md:px-6">
+            <section className="rounded-lg border border-border bg-surface/95 px-5 py-5 shadow-float md:px-6">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                 <div className="max-w-3xl space-y-2">
                   <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
@@ -322,7 +322,7 @@ export default function WorkspaceSettingsPage() {
             </section>
 
             <section
-              className="rounded-[24px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+              className="rounded-md border border-border bg-surface/95 p-5 shadow-card"
               data-testid="ws-settings__workspace"
             >
               <SectionHeading
@@ -331,15 +331,15 @@ export default function WorkspaceSettingsPage() {
               />
 
               <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-3">
+                <div className="rounded-md border border-subtle bg-bg-base/20 p-3">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_id_label')}</div>
                   <div className="mt-1 text-sm font-medium text-foreground" data-testid="ws-settings__name">{workspaceDisplayId}</div>
                 </div>
-                <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-3">
+                <div className="rounded-md border border-subtle bg-bg-base/20 p-3">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_projects_count')}</div>
                   <div className="mt-1 text-lg font-semibold text-foreground">{projects.length}</div>
                 </div>
-                <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-3">
+                <div className="rounded-md border border-subtle bg-bg-base/20 p-3">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_active_projects_count')}</div>
                   <div className="mt-1 text-lg font-semibold text-foreground">{activeProjects.length}</div>
                 </div>
@@ -364,7 +364,7 @@ export default function WorkspaceSettingsPage() {
             </section>
 
             <section
-              className="rounded-[24px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+              className="rounded-md border border-border bg-surface/95 p-5 shadow-card"
               data-testid="ws-settings__integrations"
             >
               <div className="space-y-4">
@@ -374,7 +374,7 @@ export default function WorkspaceSettingsPage() {
                 />
 
                 <div
-                  className="rounded-[20px] border border-subtle bg-bg-base/20 p-4 shadow-[0_12px_26px_rgba(0,0,0,0.12)]"
+                  className="rounded-md border border-subtle bg-bg-base/20 p-4 shadow-ambient"
                   data-testid="ws-settings__integration-feishu"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
@@ -412,7 +412,7 @@ export default function WorkspaceSettingsPage() {
             </section>
 
             <section
-              className="rounded-[24px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+              className="rounded-md border border-border bg-surface/95 p-5 shadow-card"
               data-testid="ws-settings__projects"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -429,7 +429,7 @@ export default function WorkspaceSettingsPage() {
                   {projects.map((project) => (
                     <div
                       key={project.id}
-                      className="rounded-[20px] border border-subtle bg-bg-base/20 p-4 shadow-[0_12px_26px_rgba(0,0,0,0.12)]"
+                      className="rounded-md border border-subtle bg-bg-base/20 p-4 shadow-ambient"
                       data-testid={`ws-settings__project--${project.id}`}
                     >
                       {(() => {
@@ -461,7 +461,7 @@ export default function WorkspaceSettingsPage() {
                             })}
                           </p>
                               {canManageWorkspaceGovernance ? (
-                                <div className="mt-4 rounded-[18px] border border-subtle bg-surface/60 p-3">
+                                <div className="mt-4 rounded-md border border-subtle bg-surface/60 p-3">
                                   <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
                                     <ShieldCheck className="h-3.5 w-3.5 text-icon-default" />
                                     {t('workspace_project_governance_override')}
@@ -549,7 +549,7 @@ export default function WorkspaceSettingsPage() {
               )}
             </section>
 
-            <section className="rounded-xl border border-border bg-surface p-5" data-testid="ws-settings__project-creators">
+            <section className="rounded-md border border-border bg-surface p-5" data-testid="ws-settings__project-creators">
               <SectionHeading
                 title={t('workspace_project_creators_title')}
                 subtitle={t('workspace_project_creators_description')}
@@ -557,7 +557,7 @@ export default function WorkspaceSettingsPage() {
               <div className="mt-4 space-y-3">
                 {hasLegacyProjectCreatorBindings ? (
                   <div
-                    className="rounded-[18px] border border-warning/30 bg-warning/10 px-4 py-3"
+                    className="rounded-md border border-warning/30 bg-warning/10 px-4 py-3"
                     data-testid="ws-settings__project-creators-binding-warning"
                   >
                     <p className="text-sm font-medium text-foreground">{t('workspace_project_creators_binding_warning_title')}</p>

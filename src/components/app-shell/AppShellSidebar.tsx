@@ -195,7 +195,7 @@ export function AppShellSidebar({
       data-testid="sidebar"
       className={cn(
         collapsed ? 'w-[var(--sidebar-width-collapsed)]' : 'w-[var(--sidebar-width)]',
-        'flex flex-col border-r border-border/70 bg-sidebar/92 shadow-[inset_-1px_0_0_rgb(var(--border)/0.04)] transition-[width] duration-200 backdrop-blur-xl',
+        'flex flex-col border-r border-border/50 bg-sidebar/94 transition-[width] duration-200',
         className,
       )}
     >
@@ -222,22 +222,17 @@ export function AppShellSidebar({
                         data-testid={`sidebar__nav-item--${item.href}`}
                         title={collapsed ? label : undefined}
                         className={cn(
-                          'relative flex h-10 items-center rounded-xl text-sm transition-[background-color,border-color,color,box-shadow] duration-150',
+                          'relative flex h-10 items-center rounded-lg text-sm transition-[background-color,border-color,color] duration-150',
                           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
                           collapsed ? 'justify-center px-0' : 'gap-3 px-3',
                           isActive
-                            ? 'border border-accent/20 bg-accent/10 text-foreground shadow-ambient'
-                            : 'border border-transparent text-primary hover:border-border/60 hover:bg-surface-low hover:text-foreground',
+                            ? 'border border-transparent bg-surface-low text-foreground'
+                            : 'border border-transparent text-primary hover:bg-surface-low hover:text-foreground',
                         )}
                       >
-                        <item.icon className={cn('w-5 h-5', isActive ? 'text-accent' : 'text-icon-default')} />
+                        <item.icon className={cn('h-5 w-5', isActive ? 'text-foreground' : 'text-icon-default')} />
                         <span className={cn('truncate', collapsed && 'hidden')}>{label}</span>
-                        {isActive ? (
-                          <div
-                            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-7 rounded-r-full"
-                            style={{ backgroundColor: 'rgb(var(--accent))' }}
-                          />
-                        ) : null}
+                        
                       </Link>
                     );
                   })}
@@ -259,22 +254,17 @@ export function AppShellSidebar({
                   data-testid={`sidebar__nav-item--${item.labelKey.replace('sidebar.', '')}`}
                   title={collapsed ? label : undefined}
                   className={cn(
-                    'relative flex h-10 items-center rounded-xl text-sm transition-[background-color,border-color,color,box-shadow] duration-150',
+                    'relative flex h-10 items-center rounded-lg text-sm transition-[background-color,border-color,color] duration-150',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
                     collapsed ? 'justify-center px-0' : 'gap-3 px-3',
                     isActive
-                      ? 'border border-accent/20 bg-accent/10 text-foreground shadow-ambient'
-                      : 'border border-transparent text-primary hover:border-border/60 hover:bg-surface-low hover:text-foreground',
+                      ? 'border border-transparent bg-surface-low text-foreground'
+                      : 'border border-transparent text-primary hover:bg-surface-low hover:text-foreground',
                   )}
                 >
-                  <item.icon className={cn('w-5 h-5', isActive ? 'text-accent' : 'text-icon-default')} />
+                  <item.icon className={cn('h-5 w-5', isActive ? 'text-foreground' : 'text-icon-default')} />
                   <span className={cn('truncate', collapsed && 'hidden')}>{label}</span>
-                  {isActive ? (
-                    <div
-                      className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full"
-                      style={{ backgroundColor: 'rgb(var(--accent))' }}
-                    />
-                  ) : null}
+                  
                 </Link>
               );
             })}
@@ -289,7 +279,7 @@ export function AppShellSidebar({
           size="icon"
           data-testid="sidebar__collapse-btn"
           onClick={toggleCollapsed}
-          className={cn('control-pill h-10 w-10 border-transparent bg-transparent text-icon-default shadow-none hover:border-border/60 hover:bg-surface-low hover:text-foreground')}
+          className={cn('h-9 w-9 border-transparent bg-transparent text-icon-default shadow-none hover:bg-surface-low hover:text-foreground')}
           aria-label={collapsed ? tNav('sidebar.expand') : tNav('sidebar.collapse')}
           title={collapsed ? tNav('sidebar.expand') : tNav('sidebar.collapse')}
         >

@@ -163,8 +163,8 @@ export function ChatMainPane(props: ChatMainPaneProps) {
       />
 
       {showEndpointRecovery ? (
-        <div className="border-b border-white/6 bg-white/[0.02] px-4 py-3" data-testid="chat__composer-recovery">
-          <div className="rounded-[16px] border border-white/6 bg-surface-high/20 p-4">
+        <div className="border-b border-subtle bg-surface-low px-4 py-3" data-testid="chat__composer-recovery">
+          <div className="rounded-md border border-subtle bg-surface-high/20 p-4">
             <div className="text-sm font-medium text-foreground">{labels.noEndpointRecoveryTitle}</div>
             <div className="mt-1 text-sm text-secondary">{labels.noEndpointRecoveryDescription}</div>
             {endpoints.length > 0 ? (

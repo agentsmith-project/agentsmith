@@ -135,7 +135,7 @@ export function FormDialog({
           <div
             role="alert"
             data-testid={testId ? `${testId}__error` : undefined}
-            className="rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-sm leading-6 text-error"
+            className="rounded-md border border-error/20 bg-error/10 px-4 py-3 text-sm leading-6 text-error"
           >
             {error}
           </div>

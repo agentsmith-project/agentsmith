@@ -15,17 +15,13 @@ export function PageHeader({ title, subtitle, actions, className, variant = 'def
   return (
     <div
       className={cn(
-        isCompact
-          ? 'surface-card px-4 py-4 md:px-5'
-          : 'surface-elevated px-5 py-5 md:px-6 md:py-6',
-        `flex flex-col ${isCompact ? 'gap-3' : 'gap-4'} md:flex-row md:items-start md:justify-between`,
+        'flex flex-col border-b border-border/55 pb-4 md:flex-row md:items-start md:justify-between',
+        isCompact ? 'gap-3 md:pb-3' : 'gap-4 md:pb-4',
         className,
       )}
     >
       <div className={cn(isCompact ? 'space-y-1.5' : 'space-y-2')}>
-        {isCompact ? null : (
-          <div className="type-caption text-tertiary">Project surface</div>
-        )}
+        {isCompact ? null : <div className='type-caption text-tertiary'>Project surface</div>}
         <h1 className={cn(isCompact ? 'type-subheading' : 'type-section-heading', 'text-foreground')}>
           {title}
         </h1>
@@ -35,7 +31,7 @@ export function PageHeader({ title, subtitle, actions, className, variant = 'def
           </p>
         ) : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2 md:justify-end">{actions}</div> : null}
+      {actions ? <div className='flex flex-wrap items-center gap-2 md:justify-end'>{actions}</div> : null}
     </div>
   );
 }

@@ -45,9 +45,9 @@ export function CreateApiKeyDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
-          <div className="rounded-2xl border border-accent/20 bg-accent/10 p-4">
+          <div className="rounded-lg border border-accent/20 bg-accent/10 p-4">
             <div className="flex items-start gap-3">
-              <div className="mt-0.5 rounded-2xl bg-accent/15 p-2.5 text-accent">
+              <div className="mt-0.5 rounded-lg bg-accent/15 p-2.5 text-accent">
                 <ShieldCheck className="h-4 w-4" />
               </div>
               <div className="space-y-1">
@@ -56,7 +56,7 @@ export function CreateApiKeyDialog({
               </div>
             </div>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-surface-high p-4">
+          <div className="rounded-lg border border-border/70 bg-surface-high p-4">
             <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
               <KeyRound className="h-3.5 w-3.5 text-accent" />
               {t('dialog_settings_title')}

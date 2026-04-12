@@ -134,9 +134,9 @@ export function ConversationPanel({
     !runActivity?.active;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-[16px] bg-background/55">
+    <div className="flex h-full flex-col overflow-hidden rounded-md bg-background/55">
       {(connectionStatus && connectionStatus !== 'connected') || sandboxStarting || runActivity?.active ? (
-        <div className="border-b border-white/6 bg-[linear-gradient(180deg,rgba(255,255,255,0.018),rgba(255,255,255,0.008))] px-3.5 py-2">
+        <div className="border-b border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.018),rgba(255,255,255,0.008))] px-3.5 py-2">
           <div className="flex flex-wrap items-start justify-between gap-3" data-testid="notebook__execution-visibility">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -151,7 +151,7 @@ export function ConversationPanel({
                   </span>
                 ) : null}
                 {runActivity?.active ? (
-                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium text-secondary">
+                  <span className="rounded-full border border-subtle bg-surface-low px-2 py-0.5 text-[10px] font-medium text-secondary">
                     {t('run_active_title', { duration: formatElapsed(runActivity.elapsedSeconds) })}
                   </span>
                 ) : null}
@@ -218,7 +218,7 @@ export function ConversationPanel({
       <div className="min-h-0 flex-1 bg-[linear-gradient(180deg,rgba(255,255,255,0.012),transparent_12%)]">
         {showEmptyOrientation ? (
           <div className="flex h-full items-center justify-center px-4 py-8" data-testid="notebook__conversation-empty-state">
-            <div className="w-full max-w-xl rounded-[20px] border border-white/6 bg-white/[0.03] p-5 shadow-[0_14px_28px_rgba(0,0,0,0.12)]">
+            <div className="w-full max-w-xl rounded-md border border-subtle bg-surface-low p-5 shadow-ambient">
               <div className="text-sm font-medium text-foreground">{t('empty')}</div>
               <div className="mt-2 text-sm text-secondary">{t('empty_description')}</div>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -266,7 +266,7 @@ export function ConversationPanel({
           />
         )}
       </div>
-      <div className="border-t border-white/6 bg-transparent">
+      <div className="border-t border-subtle bg-transparent">
         <ConversationInput
           value={inputValue}
           onChange={setInputValue}

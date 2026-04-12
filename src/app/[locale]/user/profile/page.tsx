@@ -136,7 +136,7 @@ export default function ProfilePage() {
     <PageState state="success">
       <PageLayout>
         <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-4 md:px-5 md:py-5">
-          <section className="rounded-2xl border border-border bg-surface px-5 py-5 shadow-sm shadow-black/10 md:px-6">
+          <section className="rounded-lg border border-border bg-surface px-5 py-5 shadow-card md:px-6">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="flex flex-col gap-4">
                 <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
@@ -176,7 +176,7 @@ export default function ProfilePage() {
               </Button>
             </div>
             <div className="mt-5 grid gap-3 md:grid-cols-3">
-              <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+              <div className="rounded-md border border-border/70 bg-surface-high p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                   <User className="h-3.5 w-3.5 text-accent" />
                   {t('summary_completion_label')}
@@ -184,7 +184,7 @@ export default function ProfilePage() {
                 <div className="mt-3 text-2xl font-semibold text-foreground">{completionScore}</div>
                 <p className="mt-1 text-sm text-tertiary">{t('summary_completion_hint')}</p>
               </div>
-              <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+              <div className="rounded-md border border-border/70 bg-surface-high p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                   <BriefcaseBusiness className="h-3.5 w-3.5 text-accent" />
                   {t('summary_work_label')}
@@ -194,7 +194,7 @@ export default function ProfilePage() {
                 </div>
                 <p className="mt-1 text-sm text-tertiary">{t('summary_work_hint')}</p>
               </div>
-              <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+              <div className="rounded-md border border-border/70 bg-surface-high p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                   <ShieldCheck className="h-3.5 w-3.5 text-accent" />
                   {t('summary_context_label')}
@@ -209,7 +209,7 @@ export default function ProfilePage() {
 
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.95fr)]">
             <div className="space-y-5">
-              <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
+              <div className="rounded-md border border-accent/30 bg-accent/5 p-4">
                 <div className="flex gap-3">
                   <Bot className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
                   <div>
@@ -219,12 +219,12 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm shadow-black/10" data-testid="profile__form">
+              <div className="rounded-lg border border-border bg-surface p-5 shadow-card" data-testid="profile__form">
                 <h2 className="mb-4 flex items-center gap-2 text-base font-medium text-foreground">
                   <User className="h-4 w-4 text-icon-default" />
                   {t('basic_info')}
                 </h2>
-                <div className="mb-6 rounded-xl border border-border/70 bg-surface-high px-4 py-4">
+                <div className="mb-6 rounded-md border border-border/70 bg-surface-high px-4 py-4">
                   <p className="text-sm text-tertiary">{t('account_name_label')}</p>
                   <p className="mt-1 font-medium text-foreground">{user.name}</p>
                   <div className="mt-2 flex items-center gap-2 text-sm text-tertiary">
@@ -262,7 +262,7 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm shadow-black/10">
+              <div className="rounded-lg border border-border bg-surface p-5 shadow-card">
                 <h2 className="mb-4 flex items-center gap-2 text-base font-medium text-foreground">
                   <BriefcaseBusiness className="h-4 w-4 text-icon-default" />
                   {t('work_info')}
@@ -295,7 +295,7 @@ export default function ProfilePage() {
             </div>
 
             <div className="space-y-5">
-              <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm shadow-black/10">
+              <div className="rounded-lg border border-border bg-surface p-5 shadow-card">
                 <h2 className="mb-4 flex items-center gap-2 text-base font-medium text-foreground">
                   <Globe2 className="h-4 w-4 text-icon-default" />
                   {t('preferences')}
@@ -354,13 +354,13 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm shadow-black/10" data-testid="profile__permission-tokens">
+              <div className="rounded-lg border border-border bg-surface p-5 shadow-card" data-testid="profile__permission-tokens">
                 <h2 className="mb-1 text-base font-medium text-foreground">
                   {t('permission_tokens_title')}
                 </h2>
                 <p className="mb-4 text-sm text-tertiary">{t('permission_tokens_description')}</p>
                 {!hasContext ? (
-                  <div className="rounded-xl border border-dashed border-border bg-surface-high/70 px-4 py-5 text-sm text-tertiary">
+                  <div className="rounded-md border border-dashed border-border bg-surface-high/70 px-4 py-5 text-sm text-tertiary">
                     {t('permission_tokens_context_hint')}
                   </div>
                 ) : (

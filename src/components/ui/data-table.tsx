@@ -22,17 +22,17 @@ export function DataTable<TData>({
 }: DataTableProps<TData>) {
   const cellPadding = compact ? 'px-3 py-2' : 'px-4 py-3';
   const headerPadding = compact ? 'px-3 py-2' : 'px-4 py-3';
-  const selectedRowBg = 'bg-accent/15 hover:bg-accent/20 border-l-2 border-l-accent';
-  const unselectedRowBg = 'border-l-2 border-l-transparent hover:bg-hover';
+  const selectedRowBg = 'bg-surface-high text-foreground';
+  const unselectedRowBg = 'hover:bg-surface-low';
 
   return (
     <div
-      className="overflow-hidden rounded-[20px] border border-subtle bg-surface/90 shadow-[0_12px_30px_rgba(0,0,0,0.14)]"
+      className="overflow-hidden rounded-md border border-border/60 bg-surface shadow-ambient"
       data-testid={testId}
     >
       <div className="overflow-x-auto overflow-y-hidden">
       <table className="min-w-full border-collapse">
-        <thead className="border-b border-white/6 bg-white/[0.03]">
+        <thead className="border-b border-subtle bg-surface-low">
           {table.getHeaderGroups().map(headerGroup => (
             <tr key={headerGroup.id}>
               {headerGroup.headers.map(header => (
@@ -62,7 +62,7 @@ export function DataTable<TData>({
             <tr
               key={row.id}
               className={cn(
-                'border-b border-white/6 last:border-b-0 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+                'border-b border-subtle last:border-b-0 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20',
                 clickable && 'cursor-pointer',
                 row.getIsSelected() ? selectedRowBg : unselectedRowBg,
               )}

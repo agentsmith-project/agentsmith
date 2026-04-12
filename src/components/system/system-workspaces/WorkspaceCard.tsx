@@ -30,10 +30,10 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
       role="button"
       tabIndex={0}
       className={[
-        'rounded-[20px] border p-4 transition-colors cursor-pointer',
+        'rounded-md border p-4 transition-colors cursor-pointer',
         selected
-          ? 'border-accent/45 bg-accent/10 shadow-[0_16px_30px_rgba(76,119,255,0.14)]'
-          : 'border-border bg-surface-high hover:border-white/12 hover:bg-hover',
+          ? 'border-border bg-surface'
+          : 'border-subtle bg-surface-low/80 hover:border-border hover:bg-surface',
       ].join(' ')}
       onClick={() => onSelect(workspace)}
       onKeyDown={(event) => {
@@ -45,7 +45,7 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
       data-testid={`system-workspaces__card--${workspace.id}`}
     >
       <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-background text-icon-default">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-subtle bg-background text-icon-default">
           <Building2 className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1 space-y-4">
@@ -68,7 +68,7 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
             </div>
           </div>
 
-          <div className="rounded-[16px] border border-subtle bg-background/70 px-3 py-3">
+          <div className="rounded-md border border-subtle bg-background/80 px-3 py-3">
             <div className="flex items-start gap-2">
               <summary.icon className={`mt-0.5 h-4 w-4 shrink-0 ${summary.iconClassName}`} />
               <div className="min-w-0">
@@ -104,7 +104,7 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
               <button
                 type="button"
                 disabled
-                className="inline-flex h-9 items-center rounded-xl border border-subtle px-3 text-xs text-tertiary disabled:opacity-100"
+                className="inline-flex h-9 items-center rounded-md border border-subtle bg-background px-3 text-xs text-tertiary disabled:opacity-100"
                 data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}
               >
                 {t('workspace_login_unavailable')}
@@ -126,12 +126,12 @@ function StatusBadge({
 }) {
   const toneClassName = (
     tone === 'ready'
-      ? 'border-success/35 bg-success/10 text-success'
+      ? 'border-success/20 bg-success/8 text-foreground'
       : tone === 'failed'
-        ? 'border-error/35 bg-error/10 text-error'
+        ? 'border-error/22 bg-error/10 text-foreground'
         : tone === 'disabled'
-          ? 'border-warning/35 bg-warning/10 text-warning'
-          : 'border-border bg-background text-secondary'
+          ? 'border-warning/22 bg-warning/10 text-foreground'
+          : 'border-subtle bg-background text-secondary'
   );
 
   return (

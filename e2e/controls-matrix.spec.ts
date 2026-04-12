@@ -68,7 +68,11 @@ test.describe('Controls Matrix', () => {
     await expect(authedPage.getByTestId('audit__filters')).toBeVisible();
 
     await goToProject(authedPage, 'usage');
-    await expect(authedPage.getByTestId('usage__endpoint-tabs')).toBeVisible();
+    const endpointTabs = authedPage.getByTestId('usage__endpoint-tabs');
+    if ((await endpointTabs.count()) > 0) {
+      await expect(endpointTabs).toBeVisible();
+    }
+    await expect(authedPage.getByTestId('usage__selected-endpoint')).toBeVisible();
     await expect(authedPage.getByTestId('usage__limits')).toBeVisible();
 
     await goToProject(authedPage, 'settings');

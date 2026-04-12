@@ -162,4 +162,118 @@ describe('ContextManager', () => {
 
     expect(await screen.findByText('context_write_forbidden')).toBeInTheDocument();
   });
+
+  it('uses the workspace-personal scope without project id', async () => {
+    const existing = createEntry({
+      id: 'ctx_member_1',
+      scope: 'member',
+      key: 'personal.review_style',
+      content: 'Focus on correctness first.',
+      content_type: 'text',
+      user_id: 'user_123',
+      workspace_id: 'ws_default',
+      project_id: null,
+    });
+    mockList
+      .mockResolvedValueOnce([existing])
+      .mockResolvedValue([existing]);
+    mockPut.mockResolvedValueOnce(existing);
+    mockRemove.mockResolvedValueOnce(undefined);
+
+    renderWithQueryClient(
+      <ContextManager
+        scope="member"
+        workspaceId="ws_default"
+        surface="workspace"
+      />,
+    );
+
+    await screen.findByTestId('context-store__item--personal.review_style');
+
+    expect(mockList).toHaveBeenCalledWith({
+      scope: 'member',
+      workspace_id: 'ws_default',
+    });
+
+    fireEvent.click(screen.getByTestId('context-store__save'));
+
+    await waitFor(() => {
+      expect(mockPut).toHaveBeenCalledWith({
+        scope: 'member',
+        key: 'personal.review_style',
+        content: 'Focus on correctness first.',
+        content_type: 'text',
+        workspace_id: 'ws_default',
+      });
+    });
+
+    fireEvent.click(screen.getByTestId('context-store__delete'));
+
+    await waitFor(() => {
+      expect(mockRemove).toHaveBeenCalledWith({
+        scope: 'member',
+        key: 'personal.review_style',
+        workspace_id: 'ws_default',
+      });
+    });
+  });
+
+  it('uses the project-personal scope with project id for project entries', async () => {
+    const existing = createEntry({
+      id: 'ctx_project_member_1',
+      scope: 'project_member',
+      key: 'personal.bindings.feishu',
+      content: 'uec_project_123',
+      content_type: 'text',
+      user_id: 'user_123',
+      workspace_id: 'ws_default',
+      project_id: 'proj_001',
+    });
+    mockList
+      .mockResolvedValueOnce([existing])
+      .mockResolvedValue([existing]);
+    mockPut.mockResolvedValueOnce(existing);
+    mockRemove.mockResolvedValueOnce(undefined);
+
+    renderWithQueryClient(
+      <ContextManager
+        scope="project_member"
+        workspaceId="ws_default"
+        projectId="proj_001"
+        surface="project"
+      />,
+    );
+
+    await screen.findByTestId('context-store__item--personal.bindings.feishu');
+
+    expect(mockList).toHaveBeenCalledWith({
+      scope: 'project_member',
+      workspace_id: 'ws_default',
+      project_id: 'proj_001',
+    });
+
+    fireEvent.click(screen.getByTestId('context-store__save'));
+
+    await waitFor(() => {
+      expect(mockPut).toHaveBeenCalledWith({
+        scope: 'project_member',
+        key: 'personal.bindings.feishu',
+        content: 'uec_project_123',
+        content_type: 'text',
+        workspace_id: 'ws_default',
+        project_id: 'proj_001',
+      });
+    });
+
+    fireEvent.click(screen.getByTestId('context-store__delete'));
+
+    await waitFor(() => {
+      expect(mockRemove).toHaveBeenCalledWith({
+        scope: 'project_member',
+        key: 'personal.bindings.feishu',
+        workspace_id: 'ws_default',
+        project_id: 'proj_001',
+      });
+    });
+  });
 });

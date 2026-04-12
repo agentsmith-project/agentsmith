@@ -102,6 +102,9 @@ describe('WorkspaceConnectionsPage', () => {
 
     expect(screen.getByTestId('workspace-connections__feishu-connect')).toBeDisabled();
     expect(screen.getAllByText('workspace_feishu_disabled_description').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('workspace-connections__capability-note')).toHaveTextContent('workspace_connections_capability_note');
+    expect(screen.getByTestId('workspace-connections__resolver-note')).toHaveTextContent('workspace_connections_resolver_note_title');
+    expect(screen.getByTestId('workspace-connections__resolver-note')).toHaveTextContent('workspace_connections_resolver_note_body');
     expect(screen.getByTestId('workspace-connections__workspace-state')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-connections__personal-state')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-connections__next-step')).toBeInTheDocument();

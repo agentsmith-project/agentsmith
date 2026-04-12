@@ -9,6 +9,12 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+SHARED_RUNTIME_DIR = Path(__file__).resolve().parents[2] / ".mbos-runtime"
+if str(SHARED_RUNTIME_DIR) not in sys.path:
+    sys.path.insert(0, str(SHARED_RUNTIME_DIR))
+
+from capability_runtime import resolve_simple_credential_dependency
+
 
 PROXY_ENV_VARS = [
     "http_proxy",
@@ -21,69 +27,14 @@ PROXY_ENV_VARS = [
     "NO_PROXY",
 ]
 
-
-def read_api_base() -> str | None:
-    value = os.environ.get("MBOS_AGENT_API_BASE", "").strip()
-    return value.rstrip("/") if value else None
-
-
-def read_execution_ticket() -> str | None:
-    value = os.environ.get("MBOS_AGENT_EXECUTION_TICKET", "").strip()
-    return value or None
-
-
-def build_context_query(scope: str, key: str) -> str:
-    params = {"scope": scope, "key": key}
-    workspace_id = os.environ.get("MBOS_AGENT_WORKSPACE_ID", "").strip()
-    project_id = os.environ.get("MBOS_AGENT_PROJECT_ID", "").strip()
-    task_id = os.environ.get("MBOS_AGENT_TASK_ID", "").strip()
-    if workspace_id:
-        params["workspace_id"] = workspace_id
-    if project_id:
-        params["project_id"] = project_id
-    if task_id:
-        params["task_id"] = task_id
-    return urllib.parse.urlencode(params)
-
-
-def context_api_get(scope: str, key: str) -> str | None:
-    api_base = read_api_base()
-    ticket = read_execution_ticket()
-    if not api_base or not ticket:
-        return None
-    req = urllib.request.Request(
-        f"{api_base}/context?{build_context_query(scope, key)}",
-        headers={"Authorization": f"Bearer {ticket}"},
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            return None
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Context API HTTP {exc.code}: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Context API network error: {exc}") from exc
-    payload = json.loads(raw)
-    content = payload.get("content")
-    return content if isinstance(content, str) else None
-
-
 def load_simple_jira_credentials_from_context() -> tuple[str | None, str | None]:
-    for scope in ("task", "member"):
-        base_url = (
-            context_api_get(scope, "credentials.jira_base_url")
-            or context_api_get(scope, "credentials.jira_url")
-        )
-        token = (
-            context_api_get(scope, "credentials.jira_token")
-            or context_api_get(scope, "credentials.jira_api_token")
-        )
-        if base_url or token:
-            return (base_url.strip() if isinstance(base_url, str) else None, token.strip() if isinstance(token, str) else None)
-    return None, None
+    resolved = resolve_simple_credential_dependency(__file__, "jira-auth")
+    base_url = resolved.get("base_url")
+    token = resolved.get("token")
+    return (
+        base_url.strip() if isinstance(base_url, str) and base_url.strip() else None,
+        token.strip() if isinstance(token, str) and token.strip() else None,
+    )
 
 
 def clear_proxy_env() -> None:
@@ -203,11 +154,11 @@ def resolve_auth(args) -> tuple[str, str]:
 
     if not base_url:
         raise RuntimeError(
-            "Jira base URL not found. Set credentials.jira_base_url in mbos-context or pass --base-url."
+            "Jira base URL not found. Configure the 'jira-auth' runtime credential bundle in AgentSmith or pass --base-url."
         )
     if not token:
         raise RuntimeError(
-            "Jira token not found. Set credentials.jira_token in mbos-context or pass --token."
+            "Jira token not found. Configure the 'jira-auth' runtime credential bundle in AgentSmith or pass --token."
         )
     return base_url, token
 

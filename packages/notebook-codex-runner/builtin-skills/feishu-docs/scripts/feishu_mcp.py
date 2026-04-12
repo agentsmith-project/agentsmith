@@ -6,9 +6,13 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+SHARED_RUNTIME_DIR = Path(__file__).resolve().parents[2] / ".mbos-runtime"
+if str(SHARED_RUNTIME_DIR) not in sys.path:
+    sys.path.insert(0, str(SHARED_RUNTIME_DIR))
+
+from capability_runtime import refresh_managed_credential_dependency, resolve_managed_credential_dependency
 
 
 ENDPOINT = "https://mcp.feishu.cn/mcp"
@@ -17,95 +21,14 @@ DEFAULT_ALLOWED_TOOLS = (
     "fetch-doc,update-doc,list-docs,get-comments,add-comments"
 )
 OAUTH_TOKEN_ENDPOINT = "https://open.feishu.cn/open-apis/authen/v2/oauth/token"
-MANAGED_CONTEXT_KEY = "managed_credentials.feishu"
-
-
-def read_api_base() -> str | None:
-    value = os.environ.get("MBOS_AGENT_API_BASE", "").strip()
-    return value.rstrip("/") if value else None
-
-
-def read_execution_ticket() -> str | None:
-    value = os.environ.get("MBOS_AGENT_EXECUTION_TICKET", "").strip()
-    return value or None
-
-
-def build_context_query(*, scope: str, key: str) -> str:
-    query: dict[str, str] = {"scope": scope, "key": key}
-    workspace_id = os.environ.get("MBOS_AGENT_WORKSPACE_ID", "").strip()
-    project_id = os.environ.get("MBOS_AGENT_PROJECT_ID", "").strip()
-    task_id = os.environ.get("MBOS_AGENT_TASK_ID", "").strip()
-    if workspace_id:
-        query["workspace_id"] = workspace_id
-    if project_id:
-        query["project_id"] = project_id
-    if task_id:
-        query["task_id"] = task_id
-    return urlencode(query)
-
-
-def context_api_request(method: str, path: str) -> dict[str, Any]:
-    api_base = read_api_base()
-    ticket = read_execution_ticket()
-    if not api_base or not ticket:
-        raise RuntimeError("Context API is unavailable in this runner session.")
-
-    req = Request(
-        f"{api_base}{path}",
-        headers={"Authorization": f"Bearer {ticket}"},
-        method=method,
-    )
-    try:
-        with urlopen(req, timeout=30) as resp:
-            raw = resp.read().decode("utf-8")
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Context API HTTP {exc.code}: {detail}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"Context API network error: {exc}") from exc
-
-    if not raw.strip():
-        return {}
-    payload = json.loads(raw)
-    if not isinstance(payload, dict):
-        raise RuntimeError("Context API returned an unexpected payload.")
-    return payload
 
 
 def load_managed_connection_from_context() -> dict[str, Any] | None:
-    if not read_api_base() or not read_execution_ticket():
-        raise RuntimeError(
-            "Managed Feishu credentials are unavailable. This skill requires AgentSmith Context Store access in notebook or terminal runner sessions."
-        )
-    payload = context_api_request(
-        "GET",
-        f"/context?{build_context_query(scope='member', key=MANAGED_CONTEXT_KEY)}",
-    )
-    content = payload.get("content")
-    if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("Managed Feishu credential projection is empty.")
-    projected = json.loads(content)
-    if not isinstance(projected, dict):
-        raise RuntimeError("Managed Feishu credential projection is invalid.")
-    return projected
+    return resolve_managed_credential_dependency(__file__, "feishu-managed-user")
 
 
 def refresh_managed_connection_from_context() -> dict[str, Any]:
-    if not read_api_base() or not read_execution_ticket():
-        raise RuntimeError("Context API is unavailable in this runner session.")
-    workspace_id = os.environ.get("MBOS_AGENT_WORKSPACE_ID", "").strip()
-    search = f"?workspace_id={workspace_id}" if workspace_id else ""
-    payload = context_api_request(
-        "POST",
-        f"/context/managed-credentials/feishu/refresh{search}",
-    )
-    content = payload.get("content")
-    if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("Managed Feishu credential refresh returned empty content.")
-    projected = json.loads(content)
-    if not isinstance(projected, dict):
-        raise RuntimeError("Managed Feishu credential refresh returned invalid content.")
-    return projected
+    return refresh_managed_credential_dependency(__file__, "feishu-managed-user")
 
 
 def resolve_explicit_credential_dir(candidate: Path, anchor: Path | None = None) -> Path | None:

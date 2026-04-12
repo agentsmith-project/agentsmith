@@ -1,7 +1,11 @@
 import { http, HttpResponse } from 'msw';
+import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
+import { docProjectMembershipFixtures } from '../doc-fixtures/workspace-projects';
+import { memberProjectMembershipFixtures } from '../fixtures/members';
 
-type ContextScope = 'member' | 'task' | 'project' | 'workspace';
+type ContextScope = 'member' | 'task' | 'project_member' | 'project' | 'workspace';
 type ContextContentType = 'text' | 'json' | 'markdown' | 'yaml';
+type ProjectMembershipStatus = 'active' | 'pending' | 'suspended' | 'removed';
 
 type ContextEntry = {
   id: string;
@@ -16,6 +20,12 @@ type ContextEntry = {
   read_only: boolean;
   updated_at: string;
   updated_by: string;
+};
+
+type ProjectMembershipRecord = {
+  project_id: string;
+  user_id: string;
+  status: ProjectMembershipStatus;
 };
 
 function nowIso(): string {
@@ -43,6 +53,22 @@ function buildContextId(entry: Pick<ContextEntry, 'scope' | 'key' | 'user_id' | 
     entry.project_id ?? '',
     entry.task_id ?? '',
   ].join('__');
+}
+
+const projectMembershipSources: ReadonlyArray<ReadonlyArray<ProjectMembershipRecord>> = DOC_FIXTURES_ENABLED
+  ? [docProjectMembershipFixtures as ReadonlyArray<ProjectMembershipRecord>, memberProjectMembershipFixtures as ReadonlyArray<ProjectMembershipRecord>]
+  : [memberProjectMembershipFixtures as ReadonlyArray<ProjectMembershipRecord>];
+
+function getProjectMembership(projectId: string, userId: string): ProjectMembershipRecord | null {
+  for (const source of projectMembershipSources) {
+    const membership = source.find((item) => item.project_id === projectId && item.user_id === userId);
+    if (membership) return membership;
+  }
+  return null;
+}
+
+function isActiveProjectMember(projectId: string, userId: string): boolean {
+  return getProjectMembership(projectId, userId)?.status === 'active';
 }
 
 const contextEntries: ContextEntry[] = [
@@ -91,7 +117,11 @@ const contextEntries: ContextEntry[] = [
 ];
 
 function isContextScope(value: string | null): value is ContextScope {
-  return value === 'member' || value === 'task' || value === 'project' || value === 'workspace';
+  return value === 'member'
+    || value === 'task'
+    || value === 'project_member'
+    || value === 'project'
+    || value === 'workspace';
 }
 
 function filterEntries(params: URLSearchParams, request: Request): ContextEntry[] {
@@ -106,27 +136,57 @@ function filterEntries(params: URLSearchParams, request: Request): ContextEntry[
     if (projectId && entry.project_id !== projectId) return false;
     if (taskId && entry.task_id !== taskId) return false;
     if ((entry.scope === 'member' || entry.scope === 'task') && entry.user_id !== userId) return false;
+    if (entry.scope === 'project_member') {
+      if (entry.user_id !== userId) return false;
+      if (!entry.workspace_id || !entry.project_id) return false;
+      if (!isActiveProjectMember(entry.project_id, userId)) return false;
+    }
     return true;
   });
 }
 
 export const contextHandlers = [
-  http.get('/api/v1/context/list', ({ request }) => {
+  http.get(/\/api\/v1\/context\/list$/, ({ request }) => {
     const url = new URL(request.url);
     const scope = url.searchParams.get('scope');
     if (!isContextScope(scope)) {
       return HttpResponse.json({ error_code: 'INVALID_REQUEST', message: 'context_scope_required' }, { status: 400 });
     }
+    if (scope === 'project_member' && (!url.searchParams.get('workspace_id') || !url.searchParams.get('project_id'))) {
+      return HttpResponse.json({ error_code: 'INVALID_REQUEST', message: 'context_project_member_scope_requires_ids' }, { status: 400 });
+    }
+    if (scope === 'project_member') {
+      const workspaceId = url.searchParams.get('workspace_id') ?? '';
+      const projectId = url.searchParams.get('project_id') ?? '';
+      const userId = getRequestUserId(request);
+      if (!isActiveProjectMember(projectId, userId)) {
+        return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'context_not_found' }, { status: 404 });
+      }
+      if (!workspaceId) {
+        return HttpResponse.json({ error_code: 'INVALID_REQUEST', message: 'context_project_member_scope_requires_ids' }, { status: 400 });
+      }
+    }
     const items = filterEntries(url.searchParams, request).sort((left, right) => left.key.localeCompare(right.key));
     return HttpResponse.json({ items, total: items.length });
   }),
 
-  http.get('/api/v1/context', ({ request }) => {
+  http.get(/\/api\/v1\/context$/, ({ request }) => {
     const url = new URL(request.url);
     const scope = url.searchParams.get('scope');
     const key = url.searchParams.get('key');
     if (!isContextScope(scope) || !key) {
       return HttpResponse.json({ error_code: 'INVALID_REQUEST', message: 'context_scope_and_key_required' }, { status: 400 });
+    }
+    if (scope === 'project_member' && (!url.searchParams.get('workspace_id') || !url.searchParams.get('project_id'))) {
+      return HttpResponse.json({ error_code: 'INVALID_REQUEST', message: 'context_project_member_scope_requires_ids' }, { status: 400 });
+    }
+    if (scope === 'project_member') {
+      const workspaceId = url.searchParams.get('workspace_id') ?? '';
+      const projectId = url.searchParams.get('project_id') ?? '';
+      const userId = getRequestUserId(request);
+      if (!workspaceId || !projectId || !isActiveProjectMember(projectId, userId)) {
+        return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'context_not_found' }, { status: 404 });
+      }
     }
     const item = filterEntries(url.searchParams, request).find((entry) => entry.key === key);
     if (!item) {
@@ -135,29 +195,36 @@ export const contextHandlers = [
     return HttpResponse.json(item);
   }),
 
-  http.put('/api/v1/context', async ({ request }) => {
+  http.put(/\/api\/v1\/context$/, async ({ request }) => {
     const body = (await request.json().catch(() => null)) as Partial<ContextEntry> | null;
     const scope = typeof body?.scope === 'string' ? body.scope : null;
     if (!body || !isContextScope(scope) || typeof body.key !== 'string') {
       return HttpResponse.json({ error_code: 'INVALID_REQUEST', message: 'context_scope_and_key_required' }, { status: 400 });
     }
     const userId = getRequestUserId(request);
+    if (scope === 'project_member' && (!body.workspace_id || !body.project_id)) {
+      return HttpResponse.json({ error_code: 'INVALID_REQUEST', message: 'context_project_member_scope_requires_ids' }, { status: 400 });
+    }
+    const projectId = typeof body.project_id === 'string' ? body.project_id : '';
+    if (scope === 'project_member' && !isActiveProjectMember(projectId, userId)) {
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'context_not_found' }, { status: 404 });
+    }
     const next: ContextEntry = {
       id: buildContextId({
         scope,
         key: body.key,
-        user_id: scope === 'member' || scope === 'task' ? userId : null,
+        user_id: scope === 'member' || scope === 'task' || scope === 'project_member' ? userId : null,
         workspace_id: body.workspace_id ?? null,
-        project_id: body.project_id ?? null,
+        project_id: projectId || null,
         task_id: body.task_id ?? null,
       }),
       scope,
       key: body.key,
       content: typeof body.content === 'string' ? body.content : '',
       content_type: body.content_type ?? 'text',
-      user_id: scope === 'member' || scope === 'task' ? userId : null,
+      user_id: scope === 'member' || scope === 'task' || scope === 'project_member' ? userId : null,
       workspace_id: body.workspace_id ?? null,
-      project_id: body.project_id ?? null,
+      project_id: projectId || null,
       task_id: body.task_id ?? null,
       read_only: false,
       updated_at: nowIso(),
@@ -172,12 +239,23 @@ export const contextHandlers = [
     return HttpResponse.json(next);
   }),
 
-  http.delete('/api/v1/context', ({ request }) => {
+  http.delete(/\/api\/v1\/context$/, ({ request }) => {
     const url = new URL(request.url);
     const scope = url.searchParams.get('scope');
     const key = url.searchParams.get('key');
     if (!isContextScope(scope) || !key) {
       return HttpResponse.json({ error_code: 'INVALID_REQUEST', message: 'context_scope_and_key_required' }, { status: 400 });
+    }
+    if (scope === 'project_member' && (!url.searchParams.get('workspace_id') || !url.searchParams.get('project_id'))) {
+      return HttpResponse.json({ error_code: 'INVALID_REQUEST', message: 'context_project_member_scope_requires_ids' }, { status: 400 });
+    }
+    if (scope === 'project_member') {
+      const workspaceId = url.searchParams.get('workspace_id') ?? '';
+      const projectId = url.searchParams.get('project_id') ?? '';
+      const userId = getRequestUserId(request);
+      if (!workspaceId || !projectId || !isActiveProjectMember(projectId, userId)) {
+        return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'context_not_found' }, { status: 404 });
+      }
     }
     const item = filterEntries(url.searchParams, request).find((entry) => entry.key === key);
     if (!item) {

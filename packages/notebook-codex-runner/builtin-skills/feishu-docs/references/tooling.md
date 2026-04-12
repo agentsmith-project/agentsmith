@@ -9,7 +9,7 @@ python3 ~/.agents/skills/feishu-docs/scripts/feishu_mcp.py call-tool search-doc 
 
 Credential source:
 
-- Read the managed Feishu connection from AgentSmith Context Store as the current workspace member's `managed_credentials.feishu`
+- Resolve the `feishu-managed-user` runtime dependency, which currently projects the current workspace member's `managed_credentials.feishu`
 - Do not browse workspace files for Feishu credentials
 - If the managed connection is missing or stale, reconnect or refresh it in AgentSmith
 

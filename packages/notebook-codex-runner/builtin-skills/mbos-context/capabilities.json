@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skill_name": "mbos-context",
+  "dependencies": [],
+  "provides": [
+    {
+      "kind": "context_store",
+      "scopes": ["member", "task", "project_member", "project", "workspace"],
+      "direct_access": true,
+      "writable_scopes": ["member", "task"]
+    },
+    {
+      "kind": "managed_credential_refresh",
+      "providers": ["feishu"]
+    }
+  ]
+}

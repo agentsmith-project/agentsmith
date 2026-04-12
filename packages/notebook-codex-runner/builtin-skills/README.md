@@ -4,8 +4,15 @@ This directory is the repository-managed source for the builtin Codex skills tha
 
 Current builtin set:
 
+- `mbos-context`
 - `feishu-docs`
 - `jira-ops`
+
+Runtime dependency contract:
+
+- each builtin skill keeps natural-language guidance in `SKILL.md`
+- each builtin skill also ships `capabilities.json` for machine-readable dependency metadata
+- shared deterministic helpers live under `.mbos-runtime/`
 
 Runtime behavior:
 

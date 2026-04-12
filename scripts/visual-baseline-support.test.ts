@@ -151,6 +151,19 @@ describe('visual baseline support', () => {
       'audit__work-surface',
       'audit__table',
     ]);
+    expect(grouped.get('alerts-rule-create-dialog')?.stableMarkers).toEqual([
+      'alerts__main-surface',
+      'alert-center-page',
+      'alert-center__summary-meta',
+      'alerts__tab__rules',
+      'alert-center__create-button',
+    ]);
+    expect(grouped.get('usage-endpoint-switch')?.stableMarkers).toEqual([
+      'usage__work-surface',
+      'usage__summary-line',
+      'usage__selected-endpoint',
+      'usage__limits',
+    ]);
   });
 
 
@@ -184,6 +197,14 @@ describe('visual baseline support', () => {
       'ws-settings__workspace',
       'ws-settings__integrations',
       'ws-settings__projects',
+    ]);
+    expect(grouped.get('workspace-personal-context')?.stableMarkers).toEqual([
+      'context-store__list-card',
+      'context-store__editor-card',
+    ]);
+    expect(grouped.get('project-personal-context')?.stableMarkers).toEqual([
+      'context-store__list-card',
+      'context-store__editor-card',
     ]);
     expect(grouped.get('settings')?.stableMarkers).toEqual([
       'settings__summary-line',
@@ -258,15 +279,22 @@ describe('visual baseline support', () => {
       'usage__work-surface',
       'usage__summary-line',
       'usage__selected-endpoint',
-      'usage__trend',
+      'usage__limits',
     ]);
 
     expect(resolveVisualBaselineStableMarkers('usage-endpoint-switch')).toEqual([
       'usage__work-surface',
       'usage__summary-line',
       'usage__selected-endpoint',
-      'usage__trend',
       'usage__limits',
+    ]);
+
+    expect(resolveVisualBaselineStableMarkers('alerts-rule-create-dialog')).toEqual([
+      'alerts__main-surface',
+      'alert-center-page',
+      'alert-center__summary-meta',
+      'alerts__tab__rules',
+      'alert-center__create-button',
     ]);
     expect(resolveVisualBaselineStableMarkers('api-keys-create-dialog')).toEqual([
       'api-keys__create-dialog',
@@ -306,6 +334,16 @@ describe('visual baseline support', () => {
       'alerts__open-usage',
     ]);
 
+    expect(resolveVisualBaselineStableMarkers('workspace-personal-context')).toEqual([
+      'context-store__list-card',
+      'context-store__editor-card',
+    ]);
+
+    expect(resolveVisualBaselineStableMarkers('project-personal-context')).toEqual([
+      'context-store__list-card',
+      'context-store__editor-card',
+    ]);
+
     expect(resolveVisualBaselineStableMarkers('workspace-settings')).toEqual([
       'ws-settings__summary-line',
       'ws-settings__workspace',
@@ -340,5 +378,16 @@ describe('visual baseline support', () => {
     expect(script).toContain('write_visual_build_info');
     expect(script).toContain('VISUAL_BASELINE_BUILD_INFO_FILE');
     expect(script).toContain('VISUAL_BASELINE_BUILD_FINGERPRINT');
+  });
+
+  it('finalizes lane-local generated root state when the mock visual lane exits', async () => {
+    const script = await readFile('scripts/run-mock-lane-playwright.sh', 'utf-8');
+
+    expect(script).toContain('next_generated_root_finalize_lane_cleanup');
+    const cleanupIndex = script.indexOf('cleanup()');
+    const finalizeIndex = script.indexOf('next_generated_root_finalize_lane_cleanup');
+
+    expect(cleanupIndex).toBeGreaterThanOrEqual(0);
+    expect(finalizeIndex).toBeGreaterThan(cleanupIndex);
   });
 });

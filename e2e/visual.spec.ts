@@ -332,7 +332,13 @@ test.describe('Visual - Workspace Pages', () => {
     await seedVisualFeishuState(authedPage, { status: 'not_configured' });
     await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/connections`);
     await expect(authedPage.getByTestId('workspace-connections__feishu-connect')).toBeVisible();
-    await expect(authedPage).toHaveScreenshot('workspace-connections-feishu-disabled.png', { fullPage: true });
+    await expect(authedPage.getByTestId('workspace-connections__capability-note')).toBeVisible();
+    await expect(authedPage.getByTestId('workspace-connections__personal-state')).toContainText('workspace default connection');
+    await expect(authedPage.getByTestId('workspace-connections__resolver-note')).toContainText('Project resolution can still differ');
+    await expect(authedPage).toHaveScreenshot('workspace-connections-feishu-disabled.png', {
+      fullPage: true,
+      maxDiffPixelRatio: 0,
+    });
   });
 
   test('workspace connections - Feishu connected state', async ({ authedPage }) => {
@@ -345,7 +351,13 @@ test.describe('Visual - Workspace Pages', () => {
     });
     await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/connections`);
     await expect(authedPage.getByTestId('workspace-connections__feishu-connect')).toBeVisible();
-    await expect(authedPage).toHaveScreenshot('workspace-connections-feishu-connected.png', { fullPage: true });
+    await expect(authedPage.getByTestId('workspace-connections__capability-note')).toBeVisible();
+    await expect(authedPage.getByTestId('workspace-connections__personal-state')).toContainText('workspace default connection');
+    await expect(authedPage.getByTestId('workspace-connections__resolver-note')).toContainText('Project resolution can still differ');
+    await expect(authedPage).toHaveScreenshot('workspace-connections-feishu-connected.png', {
+      fullPage: true,
+      maxDiffPixelRatio: 0,
+    });
   });
 });
 
@@ -581,6 +593,14 @@ const THEMED_WORKSPACE_PAGES_AUTHED = [
       await expect(page.getByTestId('ws-settings__projects')).toBeVisible();
     },
   },
+  {
+    name: 'workspace-personal-context',
+    path: `/en-US/workspaces/${WS_ID}/context`,
+    run: async (page: Page) => {
+      await expect(page.getByTestId('context-store__list-card')).toBeVisible();
+      await expect(page.getByTestId('context-store__editor-card')).toBeVisible();
+    },
+  },
 ] as const;
 
 const THEMED_SYSTEM_PAGES = [
@@ -626,6 +646,7 @@ const THEMED_USER_PAGES = [
     requiresMockAuthLane: true,
     run: async (page: Page) => {
       await expect(page.getByTestId('third-party-accounts__create-btn')).toBeVisible();
+      await expect(page.getByTestId('third-party-accounts__capability-note')).toBeVisible();
     },
   },
 ] as const;
@@ -650,6 +671,20 @@ const THEMED_GOVERNANCE_PAGES = [
     path: projectPath('credentials'),
     run: async (page: Page) => {
       await expect(page.getByTestId('credentials__create-btn')).toBeVisible();
+      await expect(page.getByTestId('credentials__capability-note')).toBeVisible();
+      await expect(page.getByTestId('credentials__summary-count')).toBeVisible();
+      const rotatedChip = page.getByTestId('credentials__summary-rotated');
+      await expect(rotatedChip).toBeVisible();
+      await expect(rotatedChip).not.toContainText(/credentials\./i);
+      await expect(page.getByTestId('credentials__summary-types')).toBeVisible();
+    },
+  },
+  {
+    name: 'project-personal-context',
+    path: projectPath('my-context'),
+    run: async (page: Page) => {
+      await expect(page.getByTestId('context-store__list-card')).toBeVisible();
+      await expect(page.getByTestId('context-store__editor-card')).toBeVisible();
     },
   },
   {

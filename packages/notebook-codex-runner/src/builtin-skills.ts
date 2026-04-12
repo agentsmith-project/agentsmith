@@ -2,17 +2,21 @@ import * as fs from 'node:fs';
 import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readBuiltinSkillCapabilityContract, type BuiltinSkillCapabilityContract } from './skill-capabilities.js';
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const FALLBACK_DEV_SKILLS_DIR = resolve(MODULE_DIR, '../builtin-skills');
 const PACKAGED_IMAGE_SKILLS_DIR = '/etc/codex/skills';
 const DEFAULT_BUILTIN_SKILLS = ['mbos-context', 'feishu-docs', 'jira-ops'];
 const MANIFEST_FILENAME = 'builtin-skills-manifest.json';
+const SHARED_RUNTIME_DIRNAME = '.mbos-runtime';
 
 type BuiltinSkillManifest = {
-  version: 1;
+  version: 2;
   source_dir: string;
   installed_skills: string[];
+  runtime_helpers: string[];
+  skill_contracts: Record<string, BuiltinSkillCapabilityContract>;
   installed_at: string;
 };
 
@@ -111,15 +115,27 @@ export async function inspectBuiltinSkills(args: {
   available: string[];
   missing: string[];
   sourceDir: string;
+  skillContracts: Record<string, BuiltinSkillCapabilityContract>;
 }> {
   const available: string[] = [];
   const missing: string[] = [];
+  const skillContracts: Record<string, BuiltinSkillCapabilityContract> = {};
   for (const skill of args.skills) {
     const skillRoot = resolve(args.sourceDir, skill);
     const skillFile = resolve(skillRoot, 'SKILL.md');
     if (!fs.existsSync(skillRoot) || !fs.existsSync(skillFile)) {
       missing.push(skill);
       continue;
+    }
+    const contractPath = resolve(skillRoot, 'capabilities.json');
+    if (!fs.existsSync(contractPath)) {
+      throw new Error(`builtin_skill_contract_missing:${skill}`);
+    }
+    try {
+      skillContracts[skill] = await readBuiltinSkillCapabilityContract(skillRoot);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'skill_contract_invalid';
+      throw new Error(`builtin_skill_contract_invalid:${skill}:${message}`);
     }
     available.push(skill);
   }
@@ -130,6 +146,7 @@ export async function inspectBuiltinSkills(args: {
     available,
     missing,
     sourceDir: args.sourceDir,
+    skillContracts,
   };
 }
 
@@ -146,18 +163,30 @@ export async function seedBuiltinSkills(args: {
   await mkdir(args.targetDir, { recursive: true });
   await mkdir(args.manifestDir, { recursive: true });
   const seeded: string[] = [];
+  const skillContracts: Record<string, BuiltinSkillCapabilityContract> = {};
   for (const skill of args.skills) {
     const sourceSkillDir = resolve(args.sourceDir, skill);
     const targetSkillDir = resolve(args.targetDir, skill);
     await mirrorDirectory(sourceSkillDir, targetSkillDir);
     await rewriteAbsoluteSkillPaths(skill, targetSkillDir);
+    skillContracts[skill] = await readBuiltinSkillCapabilityContract(sourceSkillDir);
     seeded.push(skill);
+  }
+  const runtimeHelpers: string[] = [];
+  const sharedRuntimeSourceDir = resolve(args.sourceDir, SHARED_RUNTIME_DIRNAME);
+  if (fs.existsSync(sharedRuntimeSourceDir)) {
+    const sharedRuntimeTargetDir = resolve(args.targetDir, SHARED_RUNTIME_DIRNAME);
+    await mirrorDirectory(sharedRuntimeSourceDir, sharedRuntimeTargetDir);
+    await rewriteAbsoluteSkillPaths(SHARED_RUNTIME_DIRNAME, sharedRuntimeTargetDir);
+    runtimeHelpers.push(SHARED_RUNTIME_DIRNAME);
   }
   const manifestPath = join(args.manifestDir, MANIFEST_FILENAME);
   const manifest: BuiltinSkillManifest = {
-    version: 1,
+    version: 2,
     source_dir: args.sourceDir,
     installed_skills: seeded,
+    runtime_helpers: runtimeHelpers,
+    skill_contracts: skillContracts,
     installed_at: new Date().toISOString(),
   };
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');

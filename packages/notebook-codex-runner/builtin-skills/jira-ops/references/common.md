@@ -2,7 +2,7 @@
 
 ## Authentication
 
-Use Bearer token auth. Prefer reading simple Jira credentials from AgentSmith Context Store:
+Use Bearer token auth. Prefer resolving the `jira-auth` runtime credential dependency from AgentSmith Context Store:
 
 ```text
 scope=task or member
@@ -12,9 +12,9 @@ key=credentials.jira_token
 
 Rules:
 
-- read `credentials.jira_base_url` and `credentials.jira_token` through `mbos-context`
+- resolve the `jira-auth` dependency through the shared runtime helper
 - if the base URL is not present in context, pass `--base-url` explicitly
-- if the token is not present in context, set it first through `mbos-context`
+- if the token is not present in context, set it first through AgentSmith context tooling
 
 ## Proxy Rule
 
@@ -46,7 +46,7 @@ Only use that against trusted internal Jira sites.
 
 ## Weak-Model Guidance
 
-- inspect `credentials.jira_base_url` and `credentials.jira_token` through `mbos-context` before assuming auth inputs
+- inspect the `jira-auth` runtime dependency before assuming auth inputs
 - If the issue key is unknown, search first
 - If editing fields, inspect `editmeta` first
 - If transitioning, inspect transitions with field expansion first

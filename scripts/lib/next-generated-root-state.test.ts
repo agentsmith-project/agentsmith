@@ -146,4 +146,75 @@ EOF_TSCONFIG
     expect(tsconfig).toContain('artifacts/mock-lane/current/next-dist/types/**/*.ts');
     expect(tsconfig).not.toContain('/mock-20260411T011449Z-1305939-19002/');
   });
+
+  it('refuses validation cleanup when an active mock-lane owner still holds the run', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-owner-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+    const runRoot = path.join(
+      tempRoot,
+      'artifacts/mock-lane/runs/mock-20260412T190154Z-1498987-24516',
+    );
+    const lanePidFile = path.join(runRoot, 'web.pid');
+    const nextPidFile = path.join(runRoot, 'next-dev.pid');
+    const currentLink = path.join(tempRoot, 'artifacts/mock-lane/current');
+
+    const output = runBash(
+      `
+        mkdir -p "${runRoot}"
+        cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
+{"include":["src/**/*.ts","artifacts/mock-lane/runs/mock-20260412T190154Z-1498987-24516/next-dist/types/**/*.ts"]}
+EOF_TSCONFIG
+        : > "${nextEnvPath}"
+        bash -lc 'exec -a "bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual" sleep 300' &
+        owner_pid=$!
+        bash -lc 'exec -a "npm run dev:test -- --port 3001" sleep 300' &
+        lane_pid=$!
+        bash -lc 'exec -a "next dev --port 3001" sleep 300' &
+        next_pid=$!
+        printf '%s\\n' "\${lane_pid}" > "${lanePidFile}"
+        printf '%s\\n' "\${next_pid}" > "${nextPidFile}"
+        ln -sfn "${runRoot}" "${currentLink}"
+        source "${helper}"
+        next_generated_root_write_lane_owner "${runRoot}" "mock-lane" "\${owner_pid}" "run-mock-lane-playwright.sh"
+        set +e
+        next_generated_root_prepare_for_validation >"${tempRoot}/prepare.log" 2>&1
+        status=$?
+        set -e
+        printf 'status=%s\\n' "\${status}"
+        cat "${tempRoot}/prepare.log"
+        if kill -0 "\${owner_pid}" >/dev/null 2>&1; then
+          echo "owner_process=alive"
+        else
+          echo "owner_process=stopped"
+        fi
+        if kill -0 "\${lane_pid}" >/dev/null 2>&1; then
+          echo "lane_process=alive"
+        else
+          echo "lane_process=stopped"
+        fi
+        if kill -0 "\${next_pid}" >/dev/null 2>&1; then
+          echo "next_process=alive"
+        else
+          echo "next_process=stopped"
+        fi
+        if [[ -L "${currentLink}" ]]; then
+          echo "current_link=present"
+        else
+          echo "current_link=removed"
+        fi
+        kill "\${owner_pid}" "\${lane_pid}" "\${next_pid}" >/dev/null 2>&1 || true
+        wait "\${owner_pid}" "\${lane_pid}" "\${next_pid}" >/dev/null 2>&1 || true
+      `,
+      tempRoot,
+    );
+
+    expect(output).toContain('status=1');
+    expect(output).toContain('owner_process=alive');
+    expect(output).toContain('lane_process=alive');
+    expect(output).toContain('next_process=alive');
+    expect(output).toContain('current_link=present');
+    expect(output).toContain('active lane owner');
+  });
 });

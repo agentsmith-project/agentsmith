@@ -119,6 +119,24 @@ export function normalizeExternalConnectionFields(value: unknown): UserExternalC
   return next;
 }
 
+export function selectUserExternalConnectionForProvider(
+  connections: UserExternalConnectionRecord[],
+  provider: UserExternalConnectionProvider,
+  workspaceId?: string | null,
+): UserExternalConnectionRecord | null {
+  const candidates = connections.filter((item) => item.provider === provider);
+  if (candidates.length === 0) return null;
+  if (workspaceId) {
+    const activeInWorkspace = candidates.find((item) => item.workspace_id === workspaceId && item.status === 'active');
+    if (activeInWorkspace) return activeInWorkspace;
+    const scoped = candidates.find((item) => item.workspace_id === workspaceId);
+    if (scoped) return scoped;
+  }
+  return candidates.find((item) => item.status === 'active')
+    ?? candidates[0]
+    ?? null;
+}
+
 export function mergeExternalConnectionFields(
   existing: UserExternalConnectionFieldRecord[],
   value: unknown,

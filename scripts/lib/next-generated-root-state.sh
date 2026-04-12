@@ -14,6 +14,61 @@ next_generated_root_canonical_next_env() {
 EOF
 }
 
+next_generated_root_lane_owner_file() {
+  local run_root="$1"
+  printf '%s/.lane-owner.env\n' "${run_root}"
+}
+
+next_generated_root_write_lane_owner() {
+  local run_root="$1"
+  local lane_name="$2"
+  local owner_pid="$3"
+  local owner_label="${4:-}"
+  local owner_file
+  owner_file="$(next_generated_root_lane_owner_file "${run_root}")"
+  mkdir -p "$(dirname "${owner_file}")"
+  cat > "${owner_file}" <<EOF
+lane_name=${lane_name}
+owner_pid=${owner_pid}
+owner_label=${owner_label}
+started_at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+EOF
+}
+
+next_generated_root_clear_lane_owner() {
+  local run_root="$1"
+  rm -f "$(next_generated_root_lane_owner_file "${run_root}")"
+}
+
+next_generated_root_read_lane_owner_field() {
+  local run_root="$1"
+  local field_name="$2"
+  local owner_file field_value
+  owner_file="$(next_generated_root_lane_owner_file "${run_root}")"
+  [[ -f "${owner_file}" ]] || return 1
+  field_value="$(sed -n "s/^${field_name}=//p" "${owner_file}" | head -n 1)"
+  [[ -n "${field_value}" ]] || return 1
+  printf '%s\n' "${field_value}"
+}
+
+next_generated_root_is_lane_owner_active() {
+  local run_root="$1"
+  local owner_pid owner_label owner_cmd
+  owner_pid="$(next_generated_root_read_lane_owner_field "${run_root}" owner_pid 2>/dev/null || true)"
+  [[ -n "${owner_pid}" ]] || return 1
+  if ! kill -0 "${owner_pid}" >/dev/null 2>&1; then
+    return 1
+  fi
+
+  owner_label="$(next_generated_root_read_lane_owner_field "${run_root}" owner_label 2>/dev/null || true)"
+  if [[ -z "${owner_label}" ]]; then
+    return 0
+  fi
+
+  owner_cmd="$(ps -p "${owner_pid}" -o command= 2>/dev/null || true)"
+  [[ "${owner_cmd}" == *"${owner_label}"* ]]
+}
+
 next_generated_root_normalize() {
   local repo_dir
   repo_dir="$(next_generated_root_repo_dir)"
@@ -101,7 +156,8 @@ next_generated_root_remove_lane_current_links() {
 }
 
 next_generated_root_stop_lane_web_processes() {
-  local repo_dir lane_root pid_file pid cmd
+  local repo_dir lane_root pid_file pid cmd run_root
+  local active_conflicts=()
   repo_dir="$(next_generated_root_repo_dir)"
 
   for lane_root in \
@@ -111,6 +167,12 @@ next_generated_root_stop_lane_web_processes() {
     [[ -d "${lane_root}" ]] || continue
     while IFS= read -r pid_file; do
       [[ -n "${pid_file}" ]] || continue
+      run_root="$(dirname "${pid_file}")"
+      if next_generated_root_is_lane_owner_active "${run_root}"; then
+        active_conflicts+=("${run_root}")
+        continue
+      fi
+      next_generated_root_clear_lane_owner "${run_root}"
       pid="$(cat "${pid_file}" 2>/dev/null || true)"
       if [[ -z "${pid}" ]]; then
         rm -f "${pid_file}"
@@ -127,10 +189,31 @@ next_generated_root_stop_lane_web_processes() {
       rm -f "${pid_file}"
     done < <(find "${lane_root}" -mindepth 2 -maxdepth 2 \( -type f -name 'web.pid' -o -type f -name 'next-dev.pid' \) 2>/dev/null | sort -u)
   done
+
+  if [[ "${#active_conflicts[@]}" -gt 0 ]]; then
+    printf '[next-generated-root] active lane owner blocks validation cleanup:\n' >&2
+    local conflict
+    for conflict in "${active_conflicts[@]}"; do
+      printf ' - %s\n' "${conflict}" >&2
+    done
+    return 2
+  fi
 }
 
 next_generated_root_prepare_for_validation() {
   next_generated_root_stop_lane_web_processes
+  local status=$?
+  if [[ "${status}" -eq 2 ]]; then
+    return 1
+  fi
+  if [[ "${status}" -ne 0 ]]; then
+    return "${status}"
+  fi
+  next_generated_root_remove_lane_current_links
+  next_generated_root_normalize
+}
+
+next_generated_root_finalize_lane_cleanup() {
   next_generated_root_remove_lane_current_links
   next_generated_root_normalize
 }

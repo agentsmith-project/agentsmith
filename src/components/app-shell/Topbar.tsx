@@ -132,6 +132,16 @@ export function Topbar({ className = '' }: TopbarProps) {
     router.push('/user/api-keys');
   };
 
+  const handleWorkspacePersonalContext = () => {
+    if (!workspaceId) return;
+    router.push(`/workspaces/${workspaceId}/context`);
+  };
+
+  const handleProjectPersonalContext = () => {
+    if (!workspaceId || !projectId) return;
+    router.push(`/workspaces/${workspaceId}/projects/${projectId}/my-context`);
+  };
+
   const handleWorkspaceIntegrations = () => {
     if (!workspaceId) return;
     router.push(`/workspaces/${workspaceId}/connections`);
@@ -247,6 +257,8 @@ export function Topbar({ className = '' }: TopbarProps) {
         <UserMenu
           user={user}
           onProfile={handleProfile}
+          onWorkspacePersonalContext={workspaceId ? handleWorkspacePersonalContext : undefined}
+          onProjectPersonalContext={workspaceId && projectId ? handleProjectPersonalContext : undefined}
           onWorkspaceIntegrations={workspaceId ? handleWorkspaceIntegrations : undefined}
           onPersonalConnections={handlePersonalConnections}
           onApiKeys={handleApiKeys}

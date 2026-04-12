@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "skill_name": "feishu-docs",
+  "dependencies": [
+    {
+      "name": "feishu-managed-user",
+      "kind": "managed_credential",
+      "provider": "feishu",
+      "scope": "member",
+      "refresh_supported": true
+    }
+  ]
+}

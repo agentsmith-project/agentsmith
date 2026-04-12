@@ -16,14 +16,20 @@ import { PageLoading } from '@/components/ui/loading';
 import { toast } from '@/components/ui/toast';
 
 type ContextManagerProps = {
-  scope: Extract<ContextScope, 'project' | 'workspace'>;
+  scope: Extract<ContextScope, 'member' | 'project_member' | 'project' | 'workspace'>;
   workspaceId: string;
   projectId?: string;
+  surface?: 'workspace' | 'project';
 };
 
 const CONTENT_TYPES: ContextContentType[] = ['text', 'json', 'markdown', 'yaml'];
 
-export function ContextManager({ scope, workspaceId, projectId }: ContextManagerProps) {
+export function ContextManager({
+  scope,
+  workspaceId,
+  projectId,
+  surface: _surface = projectId ? 'project' : 'workspace',
+}: ContextManagerProps) {
   const t = useTranslations('context_store');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
@@ -32,15 +38,18 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
   const [draftKey, setDraftKey] = React.useState('');
   const [draftContent, setDraftContent] = React.useState('');
   const [draftContentType, setDraftContentType] = React.useState<ContextContentType>('text');
+  const isWorkspacePersonalScope = scope === 'member';
+  const isProjectPersonalScope = scope === 'project_member';
+  const requestProjectId = scope === 'project' || scope === 'project_member' ? projectId : undefined;
 
-  const queryKey = ['context-store', scope, workspaceId, projectId ?? ''];
+  const queryKey = ['context-store', scope, workspaceId, requestProjectId ?? ''];
 
   const { data, isLoading } = useQuery({
     queryKey,
     queryFn: () => api.list({
       scope,
       workspace_id: workspaceId,
-      project_id: projectId,
+      project_id: requestProjectId,
     }),
     enabled: Boolean(workspaceId),
   });
@@ -77,7 +86,7 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
       content: draftContent,
       content_type: draftContentType,
       workspace_id: workspaceId,
-      project_id: projectId,
+      project_id: requestProjectId,
     }),
     onSuccess: async (saved) => {
       setSelectedKey(saved.key);
@@ -91,7 +100,7 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
       scope,
       key: draftKey,
       workspace_id: workspaceId,
-      project_id: projectId,
+      project_id: requestProjectId,
     }),
     onSuccess: async () => {
       setSelectedKey(null);
@@ -114,6 +123,32 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
     return <PageLoading />;
   }
 
+  const listDescription = isWorkspacePersonalScope
+    ? t('member_list_description')
+    : isProjectPersonalScope
+      ? t('project_member_list_description')
+      : t('list_description');
+  const emptyDescription = isWorkspacePersonalScope
+    ? t('member_empty_description')
+    : isProjectPersonalScope
+      ? t('project_member_empty_description')
+      : t('empty_description');
+  const editorDescription = isWorkspacePersonalScope
+    ? t('member_editor_description')
+    : isProjectPersonalScope
+      ? t('project_member_editor_description')
+      : t('editor_description');
+  const keyPlaceholder = isWorkspacePersonalScope
+    ? t('member_key_placeholder')
+    : isProjectPersonalScope
+      ? t('project_member_key_placeholder')
+      : t('key_placeholder');
+  const contentPlaceholder = isWorkspacePersonalScope
+    ? t('member_content_placeholder')
+    : isProjectPersonalScope
+      ? t('project_member_content_placeholder')
+      : t('content_placeholder');
+
   return (
     <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
       <Card data-testid="context-store__list-card">
@@ -124,13 +159,13 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
               {t('new_entry')}
             </Button>
           </div>
-          <p className="text-sm text-tertiary">{t('list_description')}</p>
+          <p className="text-sm text-tertiary">{listDescription}</p>
         </CardHeader>
         <CardContent className="space-y-2">
           {items.length === 0 ? (
             <div className="rounded-md border border-dashed border-subtle bg-bg-base/10 px-4 py-5 text-sm text-tertiary">
               <div className="font-medium text-foreground">{t('empty_title')}</div>
-              <div className="mt-1">{t('empty_description')}</div>
+              <div className="mt-1">{emptyDescription}</div>
             </div>
           ) : (
             items.map((item) => {
@@ -159,7 +194,7 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
       <Card data-testid="context-store__editor-card">
         <CardHeader>
           <CardTitle>{selectedEntry ? t('edit_entry') : t('create_entry')}</CardTitle>
-          <p className="text-sm text-tertiary">{t('editor_description')}</p>
+          <p className="text-sm text-tertiary">{editorDescription}</p>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="space-y-2">
@@ -168,7 +203,7 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
               id="context-key"
               value={draftKey}
               onChange={(event) => setDraftKey(event.target.value)}
-              placeholder={t('key_placeholder')}
+              placeholder={keyPlaceholder}
               data-testid="context-store__key"
             />
           </div>
@@ -199,7 +234,7 @@ export function ContextManager({ scope, workspaceId, projectId }: ContextManager
               rows={14}
               value={draftContent}
               onChange={(event) => setDraftContent(event.target.value)}
-              placeholder={t('content_placeholder')}
+              placeholder={contentPlaceholder}
               data-testid="context-store__content"
             />
           </div>

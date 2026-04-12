@@ -14,6 +14,7 @@ export const ROUTES = {
   workspace: [
     { path: '/zh-CN/workspaces/ws_default/projects', testId: 'projects__create-btn' },
     { path: '/zh-CN/workspaces/ws_default/settings', testId: 'ws-settings__workspace' },
+    { path: '/zh-CN/workspaces/ws_default/context', testId: 'context-store__list-card' },
   ],
   project: [
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/overview', testId: 'project-hub__page' },
@@ -29,5 +30,6 @@ export const ROUTES = {
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/files', testId: 'files__library-list' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/credentials', testId: 'credentials__table' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/settings', testId: 'settings__general-section' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/my-context', testId: 'context-store__list-card' },
   ],
 };

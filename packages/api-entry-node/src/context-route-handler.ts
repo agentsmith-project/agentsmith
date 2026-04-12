@@ -6,7 +6,7 @@ import {
   getContextEntry,
   isContextContentType,
   isContextScope,
-  isMemberOwnedContextScope,
+  canAgentWriteContextScope,
   listContextEntries,
   normalizeContextKey,
   normalizeTarget,
@@ -16,13 +16,18 @@ import {
   type ContextScope,
   type ContextTarget,
 } from './context-store.js';
-import { listUserExternalConnections, type UserExternalConnectionRecord } from './user-external-connections-store.js';
-import { evaluateProjectPermissions } from './project-authz-engine.js';
+import { evaluateProjectPermissions, resolveProjectAuthorizationSnapshot } from './project-authz-engine.js';
 import { resolveWorkspacePermissions } from './workspace-permissions.js';
 import type { ResolvedInternalTicket } from './internal-ticket-store.js';
 import { isAgentExecutionTicket } from './internal-ticket-store.js';
 import { loadProjectTasks } from './notebook-task/task-store.js';
 import { findTaskById } from './notebook-task/task-runtime-state.js';
+import {
+  buildManagedCredentialEntries,
+  buildManagedCredentialProjection,
+  resolveManagedCredentialConnection,
+} from './managed-credential-resolver.js';
+import type { UserExternalConnectionProvider } from './user-external-connections-store.js';
 
 type ContextRouteHandlerArgs = {
   req: http.IncomingMessage;
@@ -48,66 +53,10 @@ function presentContextEntry(record: ContextEntryRecord) {
   };
 }
 
-function selectProjectedConnection(args: {
-  connections: UserExternalConnectionRecord[];
-  provider: string;
-  workspaceId?: string | null;
-}): UserExternalConnectionRecord | null {
-  const candidates = args.connections.filter((item) => item.provider === args.provider);
-  if (candidates.length === 0) return null;
-  if (args.workspaceId) {
-    const scoped = candidates.find((item) => item.workspace_id === args.workspaceId);
-    if (scoped) return scoped;
-  }
-  return candidates.find((item) => item.status === 'active')
-    ?? candidates[0]
-    ?? null;
-}
-
-function buildManagedCredentialProjection(
-  connection: UserExternalConnectionRecord,
-): ContextEntryRecord {
-  return {
-    id: `ctx_managed_${connection.provider}_${connection.id}`,
-    scope: 'member',
-    key: `managed_credentials.${connection.provider}`,
-    content: `${JSON.stringify({
-      connection_id: connection.id,
-      provider: connection.provider,
-      kind: connection.kind,
-      display_name: connection.display_name,
-      workspace_id: connection.workspace_id ?? null,
-      status: connection.status,
-      fields: Object.fromEntries(connection.fields.map((field) => [field.key, field.value])),
-      scopes: connection.scopes ?? [],
-      expires_at: connection.expires_at ?? null,
-      updated_at: connection.updated_at,
-    }, null, 2)}\n`,
-    content_type: 'json',
-    user_id: connection.user_id,
-    workspace_id: connection.workspace_id ?? null,
-    read_only: true,
-    updated_at: connection.updated_at,
-    updated_by: connection.user_id,
-  };
-}
-
-async function buildManagedCredentialEntries(args: {
-  deps: NodeApiDeps;
-  user: AuthenticatedUser;
-  workspaceId?: string | null;
-}): Promise<ContextEntryRecord[]> {
-  const all = await listUserExternalConnections(args.deps.docStore, args.user.id);
-  const providers = Array.from(new Set(all.map((item) => item.provider)));
-  return providers
-    .map((provider) => selectProjectedConnection({
-      connections: all,
-      provider,
-      workspaceId: args.workspaceId,
-    }))
-    .filter((item): item is UserExternalConnectionRecord => item !== null)
-    .map(buildManagedCredentialProjection)
-    .sort((left, right) => left.key.localeCompare(right.key));
+function errorCodeForStatus(status: number): string {
+  if (status === 403) return 'FORBIDDEN';
+  if (status === 404) return 'NOT_FOUND';
+  return 'INVALID_REQUEST';
 }
 
 async function findOwnedTask(args: {
@@ -175,13 +124,16 @@ async function resolveContextAccess(args: {
     if ((scope === 'project' || scope === 'task') && !ticketProjectId) {
       return { error: { status: 403, message: 'context_project_scope_not_available' } };
     }
+    if (scope === 'project_member' && !ticketProjectId) {
+      return { error: { status: 403, message: 'context_project_member_scope_not_available' } };
+    }
     if (scope === 'task' && (ticketMode !== 'notebook' || !ticketTaskId)) {
       return { error: { status: 403, message: 'context_task_scope_not_available' } };
     }
     if (scope === 'member' && !ticketWorkspaceId) {
       return { error: { status: 403, message: 'context_member_scope_not_available' } };
     }
-    if (writeIntent && !isMemberOwnedContextScope(scope)) {
+    if (writeIntent && isAgentExecutionTicket(internalTicket) && !canAgentWriteContextScope(scope)) {
       return { error: { status: 403, message: 'context_scope_read_only_for_agent' } };
     }
 
@@ -199,12 +151,18 @@ async function resolveContextAccess(args: {
       target: normalizeTarget({
         scope,
         key,
-        user_id: scope === 'member' || scope === 'task' ? ticketUserId : null,
-        workspace_id: scope === 'member' || scope === 'workspace' || scope === 'project' || scope === 'task' ? ticketWorkspaceId : null,
-        project_id: scope === 'project' || scope === 'task' ? ticketProjectId : null,
+        user_id: scope === 'member' || scope === 'task' || scope === 'project_member' ? ticketUserId : null,
+        workspace_id: scope === 'member'
+          || scope === 'workspace'
+          || scope === 'project'
+          || scope === 'task'
+          || scope === 'project_member'
+          ? ticketWorkspaceId
+          : null,
+        project_id: scope === 'project' || scope === 'task' || scope === 'project_member' ? ticketProjectId : null,
         task_id: scope === 'task' ? ticketTaskId : null,
       }),
-      writeAllowed: isMemberOwnedContextScope(scope),
+      writeAllowed: canAgentWriteContextScope(scope),
       includeManagedCredentialProjections: scope === 'member',
     };
   }
@@ -223,6 +181,37 @@ async function resolveContextAccess(args: {
       }),
       writeAllowed: true,
       includeManagedCredentialProjections: true,
+    };
+  }
+
+  if (scope === 'project_member') {
+    const workspaceId = identifiers.workspaceId ?? null;
+    const projectId = identifiers.projectId ?? null;
+    if (!workspaceId || !projectId) {
+      return { error: { status: 400, message: 'context_project_member_scope_requires_ids' } };
+    }
+    const project = await deps.getProjectUseCase.execute({ workspaceId, projectId });
+    const authorization = await resolveProjectAuthorizationSnapshot({
+      docStore: deps.docStore,
+      workspaceId,
+      projectId,
+      projectOwnerId: project.owner_id,
+      projectGovernance: project.governance_json,
+      actorUserId: user.id,
+    });
+    if (authorization.membership_status !== 'active') {
+      return { error: { status: 404, message: 'context_not_found' } };
+    }
+    return {
+      target: normalizeTarget({
+        scope,
+        key,
+        user_id: user.id,
+        workspace_id: workspaceId,
+        project_id: projectId,
+      }),
+      writeAllowed: true,
+      includeManagedCredentialProjections: false,
     };
   }
 
@@ -329,32 +318,51 @@ async function handleManagedCredentialRefresh(args: {
   internalTicket?: ResolvedInternalTicket | null;
   provider: string;
   workspaceId?: string | null;
+  projectId?: string | null;
 }): Promise<ContextEntryRecord | { error: { status: number; message: string } }> {
   if (isAgentExecutionTicket(args.internalTicket)) {
     const ticketWorkspaceId = args.internalTicket.workspace_id ?? null;
+    const ticketProjectId = args.internalTicket.project_id ?? null;
     if (args.workspaceId && ticketWorkspaceId && args.workspaceId !== ticketWorkspaceId) {
       return { error: { status: 403, message: 'context_workspace_scope_mismatch' } };
+    }
+    if (args.projectId && !ticketProjectId) {
+      return { error: { status: 403, message: 'context_project_member_scope_not_available' } };
+    }
+    if (args.projectId && ticketProjectId && args.projectId !== ticketProjectId) {
+      return { error: { status: 403, message: 'context_project_scope_mismatch' } };
     }
   }
   if (args.provider !== 'feishu') {
     return { error: { status: 422, message: 'context_managed_credential_refresh_not_supported' } };
   }
-  const connections = await listUserExternalConnections(args.deps.docStore, args.user.id);
-  const connection = selectProjectedConnection({
-    connections,
+  const resolved = await resolveManagedCredentialConnection({
+    docStore: args.deps.docStore,
+    userId: args.user.id,
     provider: 'feishu',
-    workspaceId: args.workspaceId,
+    workspaceId: args.workspaceId ?? null,
+    projectId: args.projectId ?? null,
   });
-  if (!connection) {
+  if (!resolved) {
     return { error: { status: 404, message: 'context_managed_credential_not_found' } };
   }
   const { refreshFeishuOAuth } = await import('./feishu-oauth.js');
-  const refreshed = await refreshFeishuOAuth({
+  await refreshFeishuOAuth({
     docStore: args.deps.docStore,
     userId: args.user.id,
-    connectionId: connection.id,
+    connectionId: resolved.connection.id,
   });
-  return buildManagedCredentialProjection(refreshed);
+  const projected = await buildManagedCredentialProjection({
+    docStore: args.deps.docStore,
+    userId: args.user.id,
+    provider: 'feishu',
+    workspaceId: args.workspaceId ?? null,
+    projectId: args.projectId ?? null,
+  });
+  if (!projected) {
+    return { error: { status: 404, message: 'context_managed_credential_not_found' } };
+  }
+  return projected;
 }
 
 export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise<boolean> {
@@ -380,7 +388,7 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
       writeIntent: false,
     });
     if ('error' in resolved) {
-      json(res, resolved.error.status, { error_code: 'FORBIDDEN', message: resolved.error.message });
+      json(res, resolved.error.status, { error_code: errorCodeForStatus(resolved.error.status), message: resolved.error.message });
       return true;
     }
     const stored = await listContextEntries(deps.docStore, {
@@ -393,9 +401,10 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
     const items = stored.map(presentContextEntry);
     if (resolved.includeManagedCredentialProjections) {
       const projections = await buildManagedCredentialEntries({
-        deps,
-        user,
+        docStore: deps.docStore,
+        userId: user.id,
         workspaceId: resolved.target.workspace_id ?? identifiers.workspaceId ?? null,
+        projectId: identifiers.projectId ?? resolved.target.project_id ?? null,
       });
       items.push(...projections.map(presentContextEntry));
       items.sort((left, right) => left.key.localeCompare(right.key));
@@ -422,16 +431,18 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
         writeIntent: false,
       });
       if ('error' in resolved) {
-        json(res, resolved.error.status, { error_code: 'FORBIDDEN', message: resolved.error.message });
+        json(res, resolved.error.status, { error_code: errorCodeForStatus(resolved.error.status), message: resolved.error.message });
         return true;
       }
       if (scope === 'member' && key.startsWith('managed_credentials.')) {
         const provider = key.slice('managed_credentials.'.length);
-        const projected = (await buildManagedCredentialEntries({
-          deps,
-          user,
+        const projected = await buildManagedCredentialProjection({
+          docStore: deps.docStore,
+          userId: user.id,
+          provider: provider as UserExternalConnectionProvider,
           workspaceId: identifiers.workspaceId ?? resolved.target.workspace_id ?? null,
-        })).find((item) => item.key === `managed_credentials.${provider}`);
+          projectId: identifiers.projectId ?? resolved.target.project_id ?? null,
+        });
         if (!projected) {
           json(res, 404, { error_code: 'NOT_FOUND', message: 'context_not_found' });
           return true;
@@ -468,7 +479,7 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
         writeIntent: true,
       });
       if ('error' in resolved) {
-        json(res, resolved.error.status, { error_code: 'FORBIDDEN', message: resolved.error.message });
+        json(res, resolved.error.status, { error_code: errorCodeForStatus(resolved.error.status), message: resolved.error.message });
         return true;
       }
       if (!resolved.writeAllowed) {
@@ -502,7 +513,7 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
         writeIntent: true,
       });
       if ('error' in resolved) {
-        json(res, resolved.error.status, { error_code: 'FORBIDDEN', message: resolved.error.message });
+        json(res, resolved.error.status, { error_code: errorCodeForStatus(resolved.error.status), message: resolved.error.message });
         return true;
       }
       if (!resolved.writeAllowed) {
@@ -537,13 +548,10 @@ export async function handleContextRoute(args: ContextRouteHandlerArgs): Promise
       internalTicket,
       provider,
       workspaceId: identifiers.workspaceId ?? internalTicket?.workspace_id ?? null,
+      projectId: identifiers.projectId ?? internalTicket?.project_id ?? null,
     });
     if ('error' in refreshed) {
-      json(
-        res,
-        refreshed.error.status,
-        { error_code: refreshed.error.status === 403 ? 'FORBIDDEN' : 'INVALID_REQUEST', message: refreshed.error.message },
-      );
+      json(res, refreshed.error.status, { error_code: errorCodeForStatus(refreshed.error.status), message: refreshed.error.message });
       return true;
     }
     json(res, 200, presentContextEntry(refreshed));

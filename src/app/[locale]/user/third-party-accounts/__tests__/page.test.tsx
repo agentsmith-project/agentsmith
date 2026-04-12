@@ -72,6 +72,7 @@ describe('ThirdPartyAccountsPage', () => {
     expect(screen.getByText('title')).toBeInTheDocument();
     expect(screen.getByText('description')).toBeInTheDocument();
     expect(screen.getByText('personal_scope_note')).toBeInTheDocument();
+    expect(screen.getByTestId('third-party-accounts__capability-note')).toHaveTextContent('agent_capability_note');
     expect(screen.getByRole('button', { name: 'create_personal_connection' })).toBeInTheDocument();
     expect(screen.queryByTestId('third-party-accounts__feishu-connect')).not.toBeInTheDocument();
     expect(screen.queryByTestId('third-party-accounts__summary-strip')).not.toBeInTheDocument();

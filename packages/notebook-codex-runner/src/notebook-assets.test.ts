@@ -36,8 +36,16 @@ describe('prepareNotebookWorkspaceAssets', () => {
         taskInputs: [],
       });
 
-      expect(readFileSync(join(cwd, 'AGENTS.md'), 'utf8')).toContain('This workspace root is the persistent notebook environment');
-      expect(readFileSync(join(cwd, '.mbos', 'RUNNER_RUNTIME.md'), 'utf8')).toContain('mbos-context');
+      const agents = readFileSync(join(cwd, 'AGENTS.md'), 'utf8');
+      const runtime = readFileSync(join(cwd, '.mbos', 'RUNNER_RUNTIME.md'), 'utf8');
+      expect(agents).toContain('This workspace root is the persistent notebook environment');
+      expect(agents).toContain('capability-aware builtin skills');
+      expect(agents).toContain('member/task context');
+      expect(agents).toContain('inspect project_member context');
+      expect(runtime).toContain('project_member');
+      expect(runtime).toContain('machine-readable capability contracts');
+      expect(runtime).toContain('read project_member');
+      expect(runtime).toContain('write member/task');
       expect(() => readFileSync(join(cwd, '.mbos', 'task-inputs.json'), 'utf8')).toThrow();
     } finally {
       rmSync(cwd, { recursive: true, force: true });

@@ -46,7 +46,7 @@ All frames are JSON objects:
       - `username: string`
       - `endpoint_id: string`
       - `api_base?: string` (for notebook helper scripts / file download access)
-      - `user_bearer_token: string`
+      - `execution_ticket: string`
       - `wire_api: \"chat\" | \"responses\"`
       - `model: string`
       - `task_inputs?: Array<{ kind?: "library_object" | "artifact" | "url"; library_id?: string; key?: string; task_id?: string; artifact_id?: string; url?: string; filename?: string; file_type?: string; file_size?: number }>`
@@ -62,7 +62,7 @@ All frames are JSON objects:
         | `HOME` | same as task root | same as task root | same as task root |
         | Codex state | `<task_root>/.codex/` | `<task_root>/.codex/` | `<task_root>/.codex/` |
         | skills | `<task_root>/.agents/skills/` | `<task_root>/.agents/skills/` | `<task_root>/.agents/skills/` |
-        | agent context / credentials | AgentSmith Context Store via `mbos-context`; managed OAuth credentials are read-only context projections | AgentSmith Context Store via `mbos-context`; managed OAuth credentials are read-only context projections | AgentSmith Context Store via `mbos-context`; managed OAuth credentials are read-only context projections |
+        | agent context / credentials | AgentSmith Context Store member/task/project_member/project/workspace context via capability-aware builtin skill helpers; `mbos-context` remains the generic direct-access skill; managed OAuth credentials are read-only context projections | AgentSmith Context Store member/task/project_member/project/workspace context via capability-aware builtin skill helpers; `mbos-context` remains the generic direct-access skill; managed OAuth credentials are read-only context projections | AgentSmith Context Store member/task/project_member/project/workspace context via capability-aware builtin skill helpers; `mbos-context` remains the generic direct-access skill; managed OAuth credentials are read-only context projections |
 
         Notes:
         - the task mount point is the real JuiceFS-backed working directory for the current task

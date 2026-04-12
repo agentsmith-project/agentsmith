@@ -18,78 +18,29 @@ def write_connections_file(root: Path, payload: dict) -> Path:
 
 
 class FeishuMcpTests(unittest.TestCase):
-    @patch.dict(
-        "os.environ",
-        {
-            "MBOS_AGENT_API_BASE": "http://localhost:20000/api/v1",
-            "MBOS_AGENT_EXECUTION_TICKET": "ticket_123",
-            "MBOS_AGENT_WORKSPACE_ID": "ws_default",
-            "MBOS_AGENT_PROJECT_ID": "proj_1",
-            "MBOS_AGENT_TASK_ID": "task_1",
-        },
-        clear=False,
-    )
-    @patch("feishu_mcp.urlopen")
-    def test_loads_managed_connection_from_context(self, mock_urlopen: MagicMock) -> None:
-        response = MagicMock()
-        response.read.return_value = json.dumps(
-            {
-                "content": json.dumps(
-                    {
-                        "provider": "feishu",
-                        "status": "active",
-                        "fields": {
-                            "access_token": "token_from_context",
-                            "feishu_mcp_endpoint": "https://mcp.feishu.cn/mcp",
-                        },
-                    },
-                    ensure_ascii=False,
-                )
-            }
-        ).encode("utf-8")
-        mock_urlopen.return_value.__enter__.return_value = response
+    @patch("feishu_mcp.resolve_managed_credential_dependency")
+    def test_loads_managed_connection_from_runtime_dependency(self, mock_resolve: MagicMock) -> None:
+        mock_resolve.return_value = {
+            "provider": "feishu",
+            "fields": {"access_token": "token_from_runtime"},
+        }
 
         connection = feishu_mcp.load_managed_connection_from_context()
-        self.assertEqual(connection["fields"]["access_token"], "token_from_context")
-        req = mock_urlopen.call_args.args[0]
-        self.assertEqual(
-            req.full_url,
-            "http://localhost:20000/api/v1/context?scope=member&key=managed_credentials.feishu&workspace_id=ws_default&project_id=proj_1&task_id=task_1",
-        )
 
-    @patch.dict(
-        "os.environ",
-        {
-            "MBOS_AGENT_API_BASE": "http://localhost:20000/api/v1",
-            "MBOS_AGENT_EXECUTION_TICKET": "ticket_123",
-            "MBOS_AGENT_WORKSPACE_ID": "ws_default",
-        },
-        clear=False,
-    )
-    @patch("feishu_mcp.urlopen")
-    def test_refreshes_managed_connection_through_context_api(self, mock_urlopen: MagicMock) -> None:
-        response = MagicMock()
-        response.read.return_value = json.dumps(
-            {
-                "content": json.dumps(
-                    {
-                        "provider": "feishu",
-                        "status": "active",
-                        "fields": {"access_token": "token_refreshed"},
-                    },
-                    ensure_ascii=False,
-                )
-            }
-        ).encode("utf-8")
-        mock_urlopen.return_value.__enter__.return_value = response
+        self.assertEqual(connection["fields"]["access_token"], "token_from_runtime")
+        self.assertEqual(mock_resolve.call_args.args[1], "feishu-managed-user")
+
+    @patch("feishu_mcp.refresh_managed_credential_dependency")
+    def test_refreshes_managed_connection_from_runtime_dependency(self, mock_refresh: MagicMock) -> None:
+        mock_refresh.return_value = {
+            "provider": "feishu",
+            "fields": {"access_token": "token_refreshed"},
+        }
 
         connection = feishu_mcp.refresh_managed_connection_from_context()
+
         self.assertEqual(connection["fields"]["access_token"], "token_refreshed")
-        req = mock_urlopen.call_args.args[0]
-        self.assertEqual(
-            req.full_url,
-            "http://localhost:20000/api/v1/context/managed-credentials/feishu/refresh?workspace_id=ws_default",
-        )
+        self.assertEqual(mock_refresh.call_args.args[1], "feishu-managed-user")
 
     def test_uses_single_active_connection_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

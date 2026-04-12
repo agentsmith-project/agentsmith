@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skill_name": "jira-ops",
+  "dependencies": [
+    {
+      "name": "jira-auth",
+      "kind": "simple_credential_bundle",
+      "scopes": ["task", "member"],
+      "fields": [
+        {
+          "name": "base_url",
+          "keys": ["credentials.jira_base_url", "credentials.jira_url"],
+          "required": true
+        },
+        {
+          "name": "token",
+          "keys": ["credentials.jira_token", "credentials.jira_api_token"],
+          "required": true
+        }
+      ]
+    }
+  ]
+}

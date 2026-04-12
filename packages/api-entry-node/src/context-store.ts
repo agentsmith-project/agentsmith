@@ -2,9 +2,14 @@ import { createHash } from 'node:crypto';
 import type { JsonDocStorePort } from '@mbos/ports';
 import { decryptSecretValue, encryptSecretValue } from './secret-crypto.js';
 
-export type ContextScope = 'member' | 'task' | 'project' | 'workspace';
+export type ContextScope = 'member' | 'task' | 'project_member' | 'project' | 'workspace';
 export type ContextContentType = 'text' | 'json' | 'markdown' | 'yaml';
-export type ContextOwnership = 'member_owned' | 'shared';
+export type ContextOwnership = 'private' | 'shared';
+
+export type ContextAccessPolicy = {
+  browserWritable: boolean;
+  agentWritable: boolean;
+};
 
 export type ContextEntryRecord = {
   id: string;
@@ -38,23 +43,51 @@ const COLLECTION = 'context_store_entries';
 
 const CONTEXT_SCOPE_DEFINITIONS: Record<ContextScope, {
   ownership: ContextOwnership;
+  access: ContextAccessPolicy;
 }> = {
   member: {
-    ownership: 'member_owned',
+    ownership: 'private',
+    access: {
+      browserWritable: true,
+      agentWritable: true,
+    },
   },
   task: {
-    ownership: 'member_owned',
+    ownership: 'private',
+    access: {
+      browserWritable: true,
+      agentWritable: true,
+    },
+  },
+  project_member: {
+    ownership: 'private',
+    access: {
+      browserWritable: true,
+      agentWritable: false,
+    },
   },
   project: {
     ownership: 'shared',
+    access: {
+      browserWritable: true,
+      agentWritable: false,
+    },
   },
   workspace: {
     ownership: 'shared',
+    access: {
+      browserWritable: true,
+      agentWritable: false,
+    },
   },
 };
 
 export function isContextScope(value: unknown): value is ContextScope {
-  return value === 'member' || value === 'task' || value === 'project' || value === 'workspace';
+  return value === 'member'
+    || value === 'task'
+    || value === 'project_member'
+    || value === 'project'
+    || value === 'workspace';
 }
 
 export function isContextContentType(value: unknown): value is ContextContentType {
@@ -85,7 +118,15 @@ function buildContextId(target: ContextTarget): string {
 }
 
 export function isMemberOwnedContextScope(scope: ContextScope): boolean {
-  return CONTEXT_SCOPE_DEFINITIONS[scope].ownership === 'member_owned';
+  return CONTEXT_SCOPE_DEFINITIONS[scope].ownership === 'private';
+}
+
+export function canAgentWriteContextScope(scope: ContextScope): boolean {
+  return CONTEXT_SCOPE_DEFINITIONS[scope].access.agentWritable;
+}
+
+export function canBrowserWriteContextScope(scope: ContextScope): boolean {
+  return CONTEXT_SCOPE_DEFINITIONS[scope].access.browserWritable;
 }
 
 export function normalizeTarget(target: ContextTarget): ContextTarget {
@@ -107,6 +148,12 @@ export function normalizeTarget(target: ContextTarget): ContextTarget {
   if (target.scope === 'task') {
     return {
       ...base,
+    };
+  }
+  if (target.scope === 'project_member') {
+    return {
+      ...base,
+      task_id: null,
     };
   }
   if (target.scope === 'project') {

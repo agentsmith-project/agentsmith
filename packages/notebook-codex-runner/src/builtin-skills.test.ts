@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
+import { parseBuiltinSkillCapabilityContract, readBuiltinSkillCapabilityContract } from './skill-capabilities.js';
 
 describe('builtin-skills', () => {
   it('resolves dev fallback defaults when env vars are not set', () => {
@@ -91,8 +92,42 @@ describe('builtin-skills', () => {
     try {
       mkdirSync(join(sourceRoot, 'feishu-docs'), { recursive: true });
       writeFileSync(join(sourceRoot, 'feishu-docs', 'SKILL.md'), 'feishu');
+      writeFileSync(
+        join(sourceRoot, 'feishu-docs', 'capabilities.json'),
+        JSON.stringify({
+          version: 1,
+          skill_name: 'feishu-docs',
+          dependencies: [
+            {
+              name: 'feishu-managed-user',
+              kind: 'managed_credential',
+              provider: 'feishu',
+              scope: 'member',
+              refresh_supported: true,
+            },
+          ],
+        }),
+      );
       mkdirSync(join(sourceRoot, 'jira-ops'), { recursive: true });
       writeFileSync(join(sourceRoot, 'jira-ops', 'SKILL.md'), 'jira');
+      writeFileSync(
+        join(sourceRoot, 'jira-ops', 'capabilities.json'),
+        JSON.stringify({
+          version: 1,
+          skill_name: 'jira-ops',
+          dependencies: [
+            {
+              name: 'jira-auth',
+              kind: 'simple_credential_bundle',
+              scopes: ['task', 'member'],
+              fields: [
+                { name: 'base_url', keys: ['credentials.jira_base_url', 'credentials.jira_url'], required: true },
+                { name: 'token', keys: ['credentials.jira_token', 'credentials.jira_api_token'], required: true },
+              ],
+            },
+          ],
+        }),
+      );
       const result = await inspectBuiltinSkills({
         sourceDir: sourceRoot,
         skills: ['feishu-docs', 'jira-ops'],
@@ -100,6 +135,10 @@ describe('builtin-skills', () => {
       });
       expect(result.available).toEqual(['feishu-docs', 'jira-ops']);
       expect(result.missing).toEqual([]);
+      expect(result.skillContracts['jira-ops']?.dependencies?.[0]).toMatchObject({
+        name: 'jira-auth',
+        kind: 'simple_credential_bundle',
+      });
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
     }
@@ -110,6 +149,10 @@ describe('builtin-skills', () => {
     try {
       mkdirSync(join(sourceRoot, 'feishu-docs'), { recursive: true });
       writeFileSync(join(sourceRoot, 'feishu-docs', 'SKILL.md'), 'feishu');
+      writeFileSync(
+        join(sourceRoot, 'feishu-docs', 'capabilities.json'),
+        JSON.stringify({ version: 1, skill_name: 'feishu-docs', dependencies: [] }),
+      );
       await expect(inspectBuiltinSkills({
         sourceDir: sourceRoot,
         skills: ['feishu-docs', 'jira-ops'],
@@ -125,6 +168,10 @@ describe('builtin-skills', () => {
     try {
       mkdirSync(join(sourceRoot, 'jira-ops'), { recursive: true });
       writeFileSync(join(sourceRoot, 'jira-ops', 'SKILL.md'), 'jira');
+      writeFileSync(
+        join(sourceRoot, 'jira-ops', 'capabilities.json'),
+        JSON.stringify({ version: 1, skill_name: 'jira-ops', dependencies: [] }),
+      );
       const result = await inspectBuiltinSkills({
         sourceDir: sourceRoot,
         skills: ['feishu-docs', 'jira-ops'],
@@ -143,10 +190,28 @@ describe('builtin-skills', () => {
     const manifestRoot = mkdtempSync(join(tmpdir(), 'runner-skills-manifest-'));
     try {
       mkdirSync(join(sourceRoot, 'feishu-docs'), { recursive: true });
+      mkdirSync(join(sourceRoot, '.mbos-runtime'), { recursive: true });
       writeFileSync(
         join(sourceRoot, 'feishu-docs', 'SKILL.md'),
         'python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py tools-list',
       );
+      writeFileSync(
+        join(sourceRoot, 'feishu-docs', 'capabilities.json'),
+        JSON.stringify({
+          version: 1,
+          skill_name: 'feishu-docs',
+          dependencies: [
+            {
+              name: 'feishu-managed-user',
+              kind: 'managed_credential',
+              provider: 'feishu',
+              scope: 'member',
+              refresh_supported: true,
+            },
+          ],
+        }),
+      );
+      writeFileSync(join(sourceRoot, '.mbos-runtime', 'capability_runtime.py'), 'RUNTIME = True\n');
       const result = await seedBuiltinSkills({
         sourceDir: sourceRoot,
         skills: ['feishu-docs'],
@@ -157,11 +222,88 @@ describe('builtin-skills', () => {
       expect(readFileSync(join(targetRoot, 'feishu-docs', 'SKILL.md'), 'utf-8')).toContain(
         `${targetRoot}/feishu-docs/scripts/feishu_mcp.py`,
       );
-      expect(readFileSync(result.manifestPath, 'utf-8')).toContain('"installed_skills"');
+      expect(readFileSync(join(targetRoot, '.mbos-runtime', 'capability_runtime.py'), 'utf-8')).toContain('RUNTIME');
+      const manifest = JSON.parse(readFileSync(result.manifestPath, 'utf-8')) as {
+        installed_skills: string[];
+        runtime_helpers?: string[];
+        skill_contracts?: Record<string, { dependencies?: Array<{ name?: string }> }>;
+      };
+      expect(manifest.installed_skills).toEqual(['feishu-docs']);
+      expect(manifest.runtime_helpers).toContain('.mbos-runtime');
+      expect(manifest.skill_contracts?.['feishu-docs']?.dependencies?.[0]?.name).toBe('feishu-managed-user');
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(targetRoot, { recursive: true, force: true });
       rmSync(manifestRoot, { recursive: true, force: true });
     }
+  });
+
+  it('fails inspection when a selected skill is missing its machine-readable capability contract', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
+    try {
+      mkdirSync(join(sourceRoot, 'jira-ops'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'jira-ops', 'SKILL.md'), 'jira');
+      await expect(inspectBuiltinSkills({
+        sourceDir: sourceRoot,
+        skills: ['jira-ops'],
+        required: true,
+      })).rejects.toThrow('builtin_skill_contract_missing:jira-ops');
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('parses project_member as a first-class skill capability scope', () => {
+    const contract = parseBuiltinSkillCapabilityContract({
+      version: 1,
+      skill_name: 'mbos-context',
+      dependencies: [
+        {
+          name: 'project-personal-feishu',
+          kind: 'managed_credential',
+          provider: 'feishu',
+          scope: 'project_member',
+          refresh_supported: true,
+        },
+      ],
+      provides: [
+        {
+          kind: 'context_store',
+          scopes: ['member', 'task', 'project_member', 'project', 'workspace'],
+          direct_access: true,
+          writable_scopes: ['member', 'task'],
+        },
+      ],
+    });
+
+    expect(contract.dependencies[0]).toMatchObject({
+      name: 'project-personal-feishu',
+      scope: 'project_member',
+    });
+    expect(contract.provides?.[0]).toMatchObject({
+      scopes: ['member', 'task', 'project_member', 'project', 'workspace'],
+    });
+  });
+
+  it('ships mbos-context with project_member readable but not agent-writable', async () => {
+    const config = resolveBuiltinSkillsConfig({
+      fileExists: (target) => target !== '/etc/codex/skills',
+    });
+    const contract = await readBuiltinSkillCapabilityContract(join(config.sourceDir, 'mbos-context'));
+    expect(contract.provides?.[0]).toMatchObject({
+      kind: 'context_store',
+      scopes: ['member', 'task', 'project_member', 'project', 'workspace'],
+      writable_scopes: ['member', 'task'],
+    });
+  });
+
+  it('documents project_member as readable-only for agent execution in mbos-context skill docs', () => {
+    const config = resolveBuiltinSkillsConfig({
+      fileExists: (target) => target !== '/etc/codex/skills',
+    });
+    const skillDoc = readFileSync(join(config.sourceDir, 'mbos-context', 'SKILL.md'), 'utf8');
+    expect(skillDoc).toContain('read or write member/task');
+    expect(skillDoc).toContain('read project_member');
+    expect(skillDoc).not.toContain('write member/task/project_member');
   });
 });

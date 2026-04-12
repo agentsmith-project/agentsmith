@@ -565,6 +565,22 @@ const SCENARIOS: readonly VisualBaselineScenarioSeed[] = [
     stableMarkers: stableMarkers('ws-settings__summary-line', 'ws-settings__workspace', 'ws-settings__integrations', 'ws-settings__projects'),
   }),
   paired({
+    id: 'workspace-personal-context',
+    group: 'workspace_pages',
+    route: `/${LOCALE}/workspaces/${WS_ID}/context`,
+    recipeFamily: 'work_surface_standard',
+    storyId: 'workspace_personal_context',
+    scenario: 'Workspace personal context page for the current member.',
+    codeRefs: [
+      'e2e/visual.spec.ts',
+      'src/app/[locale]/workspaces/[workspace]/context/page.tsx',
+      'src/components/context/ContextManager.tsx',
+    ],
+    capture: 'full_page',
+    authLane: 'authed',
+    stableMarkers: stableMarkers('context-store__list-card', 'context-store__editor-card'),
+  }),
+  paired({
     id: 'system-workspaces',
     group: 'system_pages',
     route: `/${LOCALE}/system/workspaces`,
@@ -707,6 +723,22 @@ const SCENARIOS: readonly VisualBaselineScenarioSeed[] = [
     authLane: 'authed',
   }),
   paired({
+    id: 'project-personal-context',
+    group: 'governance_pages',
+    route: projectPath('my-context'),
+    recipeFamily: 'work_surface_standard',
+    storyId: 'project_personal_context',
+    scenario: 'Project personal context page for the current member.',
+    codeRefs: [
+      'e2e/visual.spec.ts',
+      'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/my-context/page.tsx',
+      'src/components/context/ContextManager.tsx',
+    ],
+    capture: 'full_page',
+    authLane: 'authed',
+    stableMarkers: stableMarkers('context-store__list-card', 'context-store__editor-card'),
+  }),
+  paired({
     id: 'members',
     group: 'governance_pages',
     route: projectPath('members'),
@@ -758,11 +790,11 @@ const SCENARIOS: readonly VisualBaselineScenarioSeed[] = [
     route: projectPath('usage'),
     recipeFamily: 'governance_table_detail',
     storyId: 'project_usage',
-    scenario: 'Project usage page.',
+    scenario: 'Project usage page with the resolved endpoint scope.',
     codeRefs: ['e2e/visual.spec.ts', 'src/components/audit-usage/UsagePage.tsx'],
     capture: 'full_page',
     authLane: 'authed',
-    stableMarkers: stableMarkers('usage__work-surface', 'usage__summary-line', 'usage__endpoint-tabs'),
+    stableMarkers: stableMarkers('usage__work-surface', 'usage__summary-line', 'usage__selected-endpoint', 'usage__limits'),
   }),
   paired({
     id: 'settings',
@@ -854,7 +886,7 @@ const SCENARIOS: readonly VisualBaselineScenarioSeed[] = [
     codeRefs: ['e2e/visual.spec.ts', 'src/components/alerts/AlertCenterPage.tsx', 'src/components/alerts/AlertRuleFormDialog.tsx'],
     capture: 'full_page',
     authLane: 'authed',
-    stableMarkers: stableMarkers('alerts__main-surface', 'alert-center-page', 'alert-center__summary-meta', 'alerts__tab__rules', 'alert-center__create-button', 'alert-rule-form-dialog'),
+    stableMarkers: stableMarkers('alerts__main-surface', 'alert-center-page', 'alert-center__summary-meta', 'alerts__tab__rules', 'alert-center__create-button'),
   }),
   single({
     id: 'members-effective-access-drawer',
@@ -1006,15 +1038,15 @@ const SCENARIOS: readonly VisualBaselineScenarioSeed[] = [
     route: projectPath('usage'),
     recipeFamily: 'governance_table_detail',
     storyId: 'project_usage_endpoint_switch',
-    scenario: 'Usage page switched to endpoint scope.',
+    scenario: 'Usage page focused on the resolved endpoint scope.',
     codeRefs: ['e2e/visual.spec.ts', 'src/components/audit-usage/UsagePage.tsx'],
     capture: 'full_page',
     authLane: 'authed',
     stableMarkers: stableMarkers(
       'usage__work-surface',
       'usage__summary-line',
-      'usage__endpoint-tabs',
       'usage__selected-endpoint',
+      'usage__limits',
     ),
   }),
 ] as const;
@@ -1155,42 +1187,6 @@ export function renderVisualBaselineScenarioReviewMarkdown(args: {
   return `${lines.join('\n')}\n`;
 }
 
-const STABLE_MARKERS_BY_SCENARIO: Record<string, readonly string[]> = {
-  join: stableMarkers(),
-  'system-login': stableMarkers('system-login__heading', 'system-login__submit'),
-  'workspace-select': stableMarkers('workspace-select__heading', 'workspace-select__list', 'workspace-select__system-link'),
-  'workspace-login': stableMarkers('workspace-login__heading', 'workspace-login__keycloak-btn'),
-  'desktop-auth-request': stableMarkers('desktop-auth-request__title'),
-  'desktop-auth-complete': stableMarkers('desktop-auth-complete__title', 'desktop-auth-complete__workspace-entry-link'),
-  'api-keys-create-dialog': stableMarkers('api-keys__create-dialog'),
-  'api-keys-key-created-dialog': stableMarkers('api-keys__key-created-dialog'),
-  'third-party-accounts-create-sheet': stableMarkers('third-party-accounts__sheet'),
-  'third-party-accounts-edit-sheet': stableMarkers('third-party-accounts__sheet'),
-  'chat-standard': stableMarkers('chat__surface', 'chat__threads-pane', 'chat__main-pane', 'chat__header', 'chat__composer'),
-  files: stableMarkers(
-    'files__workspace-surface',
-    'files__workspace-grid',
-    'files__libraries-shell',
-    'files__browser-shell',
-    'files__library-list',
-    'files__objects-table',
-  ),
-  alerts: stableMarkers('alerts__main-surface', 'alert-center-page', 'alert-center__summary-meta', 'alerts__tab__rules', 'alert-rules-list__surface', 'alerts__open-audit', 'alerts__open-usage'),
-  'alerts-rules-tab': stableMarkers('alerts__main-surface', 'alert-center-page', 'alert-center__summary-meta', 'alerts__tab__rules', 'alert-rules-list__surface'),
-  'workspace-settings': stableMarkers('ws-settings__summary-line', 'ws-settings__workspace', 'ws-settings__integrations', 'ws-settings__projects'),
-  settings: stableMarkers('settings__summary-line', 'settings__general-section', 'settings__ownership-section', 'settings__project-admins-section'),
-  'system-workspaces': stableMarkers('system-workspaces__list', 'system-workspaces__editor-empty'),
-  'system-info': stableMarkers('system-info__shell', 'system-info__health', 'system-info__next-steps'),
-  usage: stableMarkers('usage__work-surface', 'usage__summary-line', 'usage__selected-endpoint', 'usage__trend'),
-  'usage-endpoint-switch': stableMarkers(
-    'usage__work-surface',
-    'usage__summary-line',
-    'usage__selected-endpoint',
-    'usage__trend',
-    'usage__limits',
-  ),
-};
-
 export function resolveVisualBaselineStableMarkers(scenarioId: string): readonly string[] {
-  return STABLE_MARKERS_BY_SCENARIO[scenarioId] ?? stableMarkers();
+  return SCENARIOS.find((scenario) => scenario.id === scenarioId)?.stableMarkers ?? stableMarkers();
 }

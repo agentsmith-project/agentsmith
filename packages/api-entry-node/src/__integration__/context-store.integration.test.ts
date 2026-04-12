@@ -66,6 +66,86 @@ describe('api-entry-node context store integration', () => {
     });
   });
 
+  it('stores project_member context and reads it back over the authenticated API', async () => {
+    const { baseUrl, deps } = startServer();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_test',
+      input: {
+        name: 'Project Member Context',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+
+    const saveRes = await apiFetchWithToken(baseUrl, '/api/v1/context', 'test-token', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        scope: 'project_member',
+        key: 'bindings.feishu.connection_id',
+        workspace_id: 'ws_default',
+        project_id: project.id,
+        content: 'uec_project_1',
+        content_type: 'text',
+      }),
+    });
+    expect(saveRes.status).toBe(200);
+
+    const getRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/context?scope=project_member&key=bindings.feishu.connection_id&workspace_id=ws_default&project_id=${project.id}`,
+      'test-token',
+    );
+    expect(getRes.status).toBe(200);
+    await expect(getRes.json()).resolves.toMatchObject({
+      scope: 'project_member',
+      key: 'bindings.feishu.connection_id',
+      content: 'uec_project_1',
+      workspace_id: 'ws_default',
+      project_id: project.id,
+      user_id: 'user_test',
+    });
+  });
+
+  it('isolates project_member context between different authenticated users in the same project', async () => {
+    const { baseUrl, deps } = startServer();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_test',
+      input: {
+        name: 'Project Member Isolation',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+
+    const saveRes = await apiFetchWithToken(baseUrl, '/api/v1/context', 'test-token', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        scope: 'project_member',
+        key: 'bindings.feishu.connection_id',
+        workspace_id: 'ws_default',
+        project_id: project.id,
+        content: 'uec_project_1',
+        content_type: 'text',
+      }),
+    });
+    expect(saveRes.status).toBe(200);
+
+    const otherUserGetRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/context?scope=project_member&key=bindings.feishu.connection_id&workspace_id=ws_default&project_id=${project.id}`,
+      'alt-token',
+    );
+    expect(otherUserGetRes.status).toBe(404);
+    await expect(otherUserGetRes.json()).resolves.toMatchObject({
+      error_code: 'NOT_FOUND',
+      message: 'context_not_found',
+    });
+  });
+
   it('lets an agent execution ticket read task context written by the task owner', async () => {
     const { baseUrl, deps } = startServer();
     const createdTask: TaskRecord = {
@@ -133,6 +213,89 @@ describe('api-entry-node context store integration', () => {
       content: 'remember this task note',
       user_id: 'user_test',
       task_id: createdTask.id,
+    });
+  });
+
+  it('lets an agent execution ticket read project_member context but not write it', async () => {
+    const { baseUrl, deps } = startServer();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_test',
+      input: {
+        name: 'Project Member Agent Access',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+
+    const saveRes = await apiFetchWithToken(baseUrl, '/api/v1/context', 'test-token', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        scope: 'project_member',
+        key: 'bindings.feishu.connection_id',
+        workspace_id: 'ws_default',
+        project_id: project.id,
+        content: 'uec_project_1',
+        content_type: 'text',
+      }),
+    });
+    expect(saveRes.status).toBe(200);
+
+    const executionTicket = await issueInternalTicket(deps.cache, {
+      purpose: 'agent_execution',
+      userId: 'user_test',
+      workspaceId: 'ws_default',
+      projectId: project.id,
+      prefix: 'exec',
+      maxUses: 5,
+      payload: {
+        endpoint_id: 'ep_1',
+        task_id: 'task_1',
+        session_id: 'task_1',
+        agent_id: 'agent_1',
+        mode: 'notebook',
+      },
+    });
+
+    const getRes = await fetch(
+      `${baseUrl}/api/v1/context?scope=project_member&key=bindings.feishu.connection_id&workspace_id=ws_default&project_id=${project.id}`,
+      {
+        headers: {
+          Authorization: `Bearer ${executionTicket.ticket}`,
+        },
+      },
+    );
+    expect(getRes.status).toBe(200);
+    await expect(getRes.json()).resolves.toMatchObject({
+      scope: 'project_member',
+      key: 'bindings.feishu.connection_id',
+      content: 'uec_project_1',
+      user_id: 'user_test',
+    });
+
+    const writeRes = await fetch(
+      `${baseUrl}/api/v1/context`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${executionTicket.ticket}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          scope: 'project_member',
+          key: 'bindings.feishu.connection_id',
+          workspace_id: 'ws_default',
+          project_id: project.id,
+          content: 'uec_project_2',
+          content_type: 'text',
+        }),
+      },
+    );
+    expect(writeRes.status).toBe(403);
+    await expect(writeRes.json()).resolves.toMatchObject({
+      error_code: 'FORBIDDEN',
+      message: 'context_scope_read_only_for_agent',
     });
   });
 

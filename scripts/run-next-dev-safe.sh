@@ -7,6 +7,7 @@ source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 DEFAULT_MAX_OLD_SPACE_SIZE="${NEXT_MAX_OLD_SPACE_SIZE:-4096}"
 NEXT_GENERATED_ROOT_MANAGED="${NEXT_GENERATED_ROOT_MANAGED:-0}"
 export PATH="${ROOT_DIR}/node_modules/.bin:${PATH}"
+NEXT_DEV_EXIT_MARKER_WRITTEN=0
 
 if [[ -n "${NODE_OPTIONS:-}" ]]; then
   export NODE_OPTIONS="${NODE_OPTIONS} --max-old-space-size=${DEFAULT_MAX_OLD_SPACE_SIZE}"
@@ -47,11 +48,39 @@ fi
 
 NEXT_DEV_CHILD_PID=""
 
+write_next_dev_exit_marker() {
+  local event="$1"
+  local exit_status="$2"
+  local signal_value="${3:-null}"
+  local child_pid_value="${4:-null}"
+  [[ -n "${NEXT_DEV_EXIT_MARKER_FILE:-}" ]] || return 0
+  if [[ "${NEXT_DEV_EXIT_MARKER_WRITTEN}" == "1" ]]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "${NEXT_DEV_EXIT_MARKER_FILE}")"
+  cat > "${NEXT_DEV_EXIT_MARKER_FILE}" <<EOF
+{
+  "event": "${event}",
+  "exit_status": ${exit_status},
+  "signal": ${signal_value},
+  "wrapper_pid": $$,
+  "child_pid": ${child_pid_value},
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+}
+EOF
+  NEXT_DEV_EXIT_MARKER_WRITTEN=1
+}
+
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
 
   if [[ -n "${NEXT_DEV_CHILD_PID}" ]] && kill -0 "${NEXT_DEV_CHILD_PID}" >/dev/null 2>&1; then
+    local cleanup_signal="null"
+    if [[ "${status}" -ge 128 ]]; then
+      cleanup_signal="$((status - 128))"
+    fi
+    write_next_dev_exit_marker "wrapper_cleanup" "${status}" "${cleanup_signal}" "${NEXT_DEV_CHILD_PID}"
     next_generated_root_stop_pid_tree_gracefully "${NEXT_DEV_CHILD_PID}" 5
     wait "${NEXT_DEV_CHILD_PID}" >/dev/null 2>&1 || true
   fi
@@ -76,4 +105,22 @@ if [[ -n "${NEXT_DEV_PID_FILE:-}" ]]; then
   printf '%s\n' "${NEXT_DEV_CHILD_PID}" > "${NEXT_DEV_PID_FILE}"
 fi
 
+set +e
 wait "${NEXT_DEV_CHILD_PID}"
+NEXT_DEV_CHILD_STATUS=$?
+set -e
+
+NEXT_DEV_CHILD_SIGNAL="null"
+if [[ "${NEXT_DEV_CHILD_STATUS}" -ge 128 ]]; then
+  NEXT_DEV_CHILD_SIGNAL="$((NEXT_DEV_CHILD_STATUS - 128))"
+fi
+write_next_dev_exit_marker "child_exit" "${NEXT_DEV_CHILD_STATUS}" "${NEXT_DEV_CHILD_SIGNAL}" "${NEXT_DEV_CHILD_PID}"
+
+if [[ "${NEXT_DEV_CHILD_STATUS}" -ge 128 ]]; then
+  echo "[next-dev-safe] next dev child exited due to signal ${NEXT_DEV_CHILD_SIGNAL} (status ${NEXT_DEV_CHILD_STATUS})" >&2
+else
+  echo "[next-dev-safe] next dev child exited with status ${NEXT_DEV_CHILD_STATUS}" >&2
+fi
+
+NEXT_DEV_CHILD_PID=""
+exit "${NEXT_DEV_CHILD_STATUS}"

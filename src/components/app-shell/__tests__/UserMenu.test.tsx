@@ -13,6 +13,8 @@ vi.mock('next-intl', () => ({
       },
       'common.user_menu': {
         profile: 'Profile',
+        workspace_personal_context: 'My Workspace Context',
+        project_personal_context: 'My Project Context',
         workspace_integrations: 'Workspace integrations',
         personal_connections: 'Personal connections',
         api_keys: 'API Keys',
@@ -41,6 +43,8 @@ describe('UserMenu', () => {
         <UserMenu
           user={{ name: 'Alice Doe', email: 'alice@example.com' }}
           onProfile={() => undefined}
+          onWorkspacePersonalContext={() => undefined}
+          onProjectPersonalContext={() => undefined}
           onWorkspaceIntegrations={() => undefined}
           onPersonalConnections={() => undefined}
           onApiKeys={() => undefined}
@@ -60,6 +64,8 @@ describe('UserMenu', () => {
     openUserMenu();
 
     expect(await screen.findByText('Profile')).toBeInTheDocument();
+    expect(screen.getByText('My Workspace Context')).toBeInTheDocument();
+    expect(screen.getByText('My Project Context')).toBeInTheDocument();
     expect(screen.getByText('Workspace integrations')).toBeInTheDocument();
     expect(screen.getByText('Personal connections')).toBeInTheDocument();
     expect(screen.getByText('API Keys')).toBeInTheDocument();
@@ -80,5 +86,28 @@ describe('UserMenu', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
     expect(document.documentElement.style.colorScheme).toBe('dark');
     expect(window.localStorage.getItem('mbos.theme')).toBe('dark');
+  });
+
+  it('fires workspace and project personal context actions from the menu', async () => {
+    const onWorkspacePersonalContext = vi.fn();
+    const onProjectPersonalContext = vi.fn();
+
+    render(
+      <ThemeProvider>
+        <UserMenu
+          user={{ name: 'Alice Doe', email: 'alice@example.com' }}
+          onWorkspacePersonalContext={onWorkspacePersonalContext}
+          onProjectPersonalContext={onProjectPersonalContext}
+        />
+      </ThemeProvider>,
+    );
+
+    openUserMenu();
+    fireEvent.click(await screen.findByText('My Workspace Context'));
+    openUserMenu();
+    fireEvent.click(await screen.findByText('My Project Context'));
+
+    expect(onWorkspacePersonalContext).toHaveBeenCalledTimes(1);
+    expect(onProjectPersonalContext).toHaveBeenCalledTimes(1);
   });
 });

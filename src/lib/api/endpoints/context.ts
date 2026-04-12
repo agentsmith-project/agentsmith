@@ -31,8 +31,15 @@ export class ContextAPI {
     return this.client.delete<void>(`/context?${buildSearch(query)}`);
   }
 
-  async refreshManagedCredential(provider: string, workspaceId?: string | null): Promise<ContextEntry> {
-    const search = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : '';
+  async refreshManagedCredential(
+    provider: string,
+    workspaceId?: string | null,
+    projectId?: string | null,
+  ): Promise<ContextEntry> {
+    const params = new URLSearchParams();
+    if (workspaceId) params.set('workspace_id', workspaceId);
+    if (projectId) params.set('project_id', projectId);
+    const search = params.toString() ? `?${params.toString()}` : '';
     return this.client.post<ContextEntry>(`/context/managed-credentials/${encodeURIComponent(provider)}/refresh${search}`);
   }
 }

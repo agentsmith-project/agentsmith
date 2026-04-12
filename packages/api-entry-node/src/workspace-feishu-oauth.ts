@@ -18,6 +18,7 @@ import {
   getRequiredFeishuDocsScopes,
   normalizeFeishuScopeString,
 } from './feishu-oauth-scopes.js';
+import { syncManagedCredentialBinding } from './managed-credential-resolver.js';
 
 type WorkspaceFeishuOAuthIntent = 'admin_verify' | 'user_connect';
 
@@ -420,6 +421,15 @@ async function completeWorkspaceFeishuOAuthInternal(args: {
     missing_scopes: missingScopes.length > 0 ? missingScopes : null,
     status: missingScopesError ? 'reauth_required' : 'active',
   });
+  await syncManagedCredentialBinding({
+    docStore: args.docStore,
+    userId: session.userId,
+    workspaceId: args.workspaceId,
+    provider: 'feishu',
+    connectionId: connection.id,
+    updatedBy: session.userId,
+    scope: 'member',
+  });
   await writeWorkspaceFeishuOAuthResult(args.cache, state, {
     userId: session.userId,
     workspaceId: args.workspaceId,
@@ -511,7 +521,7 @@ export async function refreshWorkspaceFeishuOAuth(args: {
     const scopes = normalizeFeishuScopeString(token.scope) ?? connection.scopes ?? [];
     const missingScopes = findMissingFeishuDocsScopes(scopes);
     const missingScopesError = buildFeishuMissingScopesError(missingScopes);
-    return upsertUserExternalConnectionByProvider(args.docStore, {
+    const updated = await upsertUserExternalConnectionByProvider(args.docStore, {
       ...connection,
       fields: [
         {
@@ -540,6 +550,16 @@ export async function refreshWorkspaceFeishuOAuth(args: {
       last_refreshed_at: new Date().toISOString(),
       last_error: missingScopesError,
     });
+    await syncManagedCredentialBinding({
+      docStore: args.docStore,
+      userId: args.userId,
+      workspaceId: connection.workspace_id,
+      provider: 'feishu',
+      connectionId: updated.id,
+      updatedBy: args.userId,
+      scope: 'member',
+    });
+    return updated;
   }
   throw new Error('feishu_workspace_context_required');
 }

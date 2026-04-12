@@ -61,6 +61,60 @@ describe('context-store', () => {
     ).toBeNull();
   });
 
+  it('stores, retrieves, lists, and deletes encrypted project_member context entries', async () => {
+    const docStore = new InMemoryJsonDocStore();
+
+    const saved = await putContextEntry(docStore, {
+      scope: 'project_member',
+      key: 'bindings.feishu.connection_id',
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      content: 'uec_project_1',
+      content_type: 'text',
+      updated_by: 'user_1',
+    });
+
+    expect(saved.content).toBe('uec_project_1');
+
+    const loaded = await getContextEntry(docStore, {
+      scope: 'project_member',
+      key: 'bindings.feishu.connection_id',
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+    expect(loaded?.content).toBe('uec_project_1');
+    expect(loaded?.task_id).toBeNull();
+
+    const listed = await listContextEntries(docStore, {
+      scope: 'project_member',
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.key).toBe('bindings.feishu.connection_id');
+
+    const deleted = await deleteContextEntry(docStore, {
+      scope: 'project_member',
+      key: 'bindings.feishu.connection_id',
+      user_id: 'user_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+    expect(deleted).toBe(true);
+    expect(
+      await getContextEntry(docStore, {
+        scope: 'project_member',
+        key: 'bindings.feishu.connection_id',
+        user_id: 'user_1',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+      }),
+    ).toBeNull();
+  });
+
   it('keeps task context keyed by workspace, project, task, and owner user', async () => {
     const docStore = new InMemoryJsonDocStore();
 

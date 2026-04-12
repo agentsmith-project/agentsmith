@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -167,5 +167,82 @@ while true; do sleep 1; done
     }
 
     expect(childStillAlive).toBe(false);
+  });
+
+  it('reports child signal exits for observability when next dev terminates unexpectedly', () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+kill -KILL $$
+`,
+      { mode: 0o755 },
+    );
+
+    let error: unknown;
+    try {
+      execFileSync('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+        cwd: rootDir,
+        env: {
+          ...process.env,
+          ROOT_DIR: rootDir,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
+        stdio: 'pipe',
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeDefined();
+    const stderr = String((error as { stderr?: Buffer | string }).stderr ?? '');
+    expect(stderr).toContain('[next-dev-safe] next dev child exited due to signal 9');
+  });
+
+  it('writes a child exit marker when next dev terminates unexpectedly', () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const exitMarkerFile = path.join(rootDir, 'artifacts/runtime/next-dev-exit.json');
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+kill -KILL $$
+`,
+      { mode: 0o755 },
+    );
+
+    let error: unknown;
+    try {
+      execFileSync('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+        cwd: rootDir,
+        env: {
+          ...process.env,
+          ROOT_DIR: rootDir,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          NEXT_DEV_EXIT_MARKER_FILE: exitMarkerFile,
+        },
+        stdio: 'pipe',
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeDefined();
+    expect(existsSync(exitMarkerFile)).toBe(true);
+    const exitMarker = JSON.parse(readFileSync(exitMarkerFile, 'utf8')) as {
+      event: string;
+      exit_status: number;
+      signal: number | null;
+      wrapper_pid: number;
+      child_pid: number | null;
+    };
+    expect(exitMarker.event).toBe('child_exit');
+    expect(exitMarker.exit_status).toBe(137);
+    expect(exitMarker.signal).toBe(9);
+    expect(exitMarker.wrapper_pid).toBeGreaterThan(0);
+    expect(exitMarker.child_pid).toBeGreaterThan(0);
   });
 });

@@ -100,7 +100,7 @@ vi.mock('@/components/credentials/DeleteCredentialDialog', () => ({
 }));
 
 vi.mock('next-intl', () => ({
-  useTranslations: vi.fn((namespace) => (key: string) => {
+  useTranslations: vi.fn((namespace) => (key: string, values?: Record<string, string | number>) => {
     const translations: Record<string, Record<string, string>> = {
       credentials: {
         title: 'Credentials',
@@ -108,6 +108,9 @@ vi.mock('next-intl', () => ({
         create: 'Create Credential',
         rotate: 'Rotate',
         delete: 'Delete',
+        summary_total_label: '{count} project secrets',
+        summary_rotated_label: '{count} rotated',
+        summary_types_label: '{count} types',
         'table.name': 'Name',
         'table.type': 'Type',
         'table.last_rotated': 'Last Rotated',
@@ -116,7 +119,11 @@ vi.mock('next-intl', () => ({
         'empty.description': 'Create a credential to get started',
       },
     };
-    return translations[namespace]?.[key] || key;
+    const template = translations[namespace]?.[key] || key;
+    if (!values) return template;
+    return Object.entries(values).reduce((result, [token, value]) => {
+      return result.replace(`{${token}}`, String(value));
+    }, template);
   }),
 }));
 
@@ -200,6 +207,27 @@ describe('CredentialsPage', () => {
       expect(within(toolbar).getByRole('button', { name: /create credential/i })).toBeInTheDocument();
     });
 
+    it('renders human-readable summary chips instead of raw translation keys', async () => {
+      render(
+        <CredentialsPage
+          params={Promise.resolve({
+            workspace: 'ws_test',
+            project: 'proj_001',
+            locale: 'en',
+          })}
+        />,
+        { wrapper }
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('credentials__summary-count')).toHaveTextContent('2 project secrets');
+      });
+
+      expect(screen.getByTestId('credentials__summary-rotated')).toHaveTextContent('2 rotated');
+      expect(screen.getByTestId('credentials__summary-rotated')).not.toHaveTextContent('credentials.');
+      expect(screen.getByTestId('credentials__summary-types')).toHaveTextContent('1 types');
+    });
+
     it('renders page title and description', async () => {
       render(
         <CredentialsPage
@@ -216,6 +244,7 @@ describe('CredentialsPage', () => {
         expect(screen.getByText('Credentials')).toBeInTheDocument();
         expect(screen.getByText(/manage project credentials/i)).toBeInTheDocument();
       });
+      expect(screen.getByTestId('credentials__capability-note')).toHaveTextContent('capability_note');
     });
 
     it('renders create button', async () => {

@@ -6,6 +6,7 @@ import { Topbar } from '../Topbar';
 
 const mockPush = vi.fn();
 const mockReplace = vi.fn();
+const mockUserMenu = vi.fn();
 
 let mockProjects = [
   {
@@ -62,7 +63,10 @@ vi.mock('../Logo', () => ({
 }));
 
 vi.mock('../UserMenu', () => ({
-  UserMenu: () => <div data-testid="user-menu" />,
+  UserMenu: (props: unknown) => {
+    mockUserMenu(props);
+    return <div data-testid="user-menu" />;
+  },
 }));
 
 vi.mock('@/lib/stores/authStore', () => ({
@@ -143,6 +147,7 @@ describe('Topbar', () => {
       project: 'proj_chat',
     };
     mockPathname = '/en-US/workspaces/ws_1/projects/proj_chat/overview';
+    mockUserMenu.mockReset();
   });
 
   it('navigates to the first reachable surface instead of assuming overview', () => {
@@ -224,6 +229,24 @@ describe('Topbar', () => {
     fireEvent.click(screen.getByLabelText('go_to_projects'));
 
     expect(mockPush).toHaveBeenCalledWith('/system/workspaces');
+  });
+
+  it('routes workspace and project personal context entry actions through the user menu', () => {
+    renderTopbar();
+
+    const userMenuProps = mockUserMenu.mock.calls.at(-1)?.[0] as {
+      onWorkspacePersonalContext?: () => void;
+      onProjectPersonalContext?: () => void;
+    };
+
+    expect(userMenuProps?.onWorkspacePersonalContext).toEqual(expect.any(Function));
+    expect(userMenuProps?.onProjectPersonalContext).toEqual(expect.any(Function));
+
+    userMenuProps?.onWorkspacePersonalContext?.();
+    userMenuProps?.onProjectPersonalContext?.();
+
+    expect(mockPush).toHaveBeenNthCalledWith(1, '/workspaces/ws_1/context');
+    expect(mockPush).toHaveBeenNthCalledWith(2, '/workspaces/ws_1/projects/proj_chat/my-context');
   });
 
   it('expands the switcher with governable projects only when they have a reachable surface', () => {

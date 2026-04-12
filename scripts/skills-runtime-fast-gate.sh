@@ -5,6 +5,7 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 
 info() { echo "[skills-runtime-fast-gate] $*"; }
 
@@ -12,6 +13,8 @@ run_cmd() {
   info "$*"
   (cd "${ROOT_DIR}" && eval "$*")
 }
+
+next_generated_root_prepare_for_validation
 
 run_cmd "npx tsc --noEmit"
 

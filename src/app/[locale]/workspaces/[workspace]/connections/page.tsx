@@ -180,6 +180,12 @@ export default function WorkspaceConnectionsPage() {
                     subtitle={t('workspace_connections_description', { workspace: workspace?.name ?? workspaceId })}
                   />
                   <p className="max-w-3xl text-sm leading-6 text-tertiary">{t('workspace_connections_scope_note')}</p>
+                  <p
+                    className="max-w-3xl text-sm leading-6 text-secondary"
+                    data-testid="workspace-connections__capability-note"
+                  >
+                    {t('workspace_connections_capability_note')}
+                  </p>
                 </div>
                 <div className="flex flex-wrap gap-3">
                   {canManageWorkspace ? (
@@ -215,6 +221,13 @@ export default function WorkspaceConnectionsPage() {
                     {canManageWorkspace ? t('workspace_connections_next_step_admin_detail') : t('workspace_connections_next_step_member_detail')}
                   </p>
                 </div>
+              </div>
+              <div
+                className="mt-4 rounded-md border border-subtle bg-background/70 px-4 py-3 text-sm leading-6 text-tertiary"
+                data-testid="workspace-connections__resolver-note"
+              >
+                <p className="font-medium text-foreground">{t('workspace_connections_resolver_note_title')}</p>
+                <p className="mt-1">{t('workspace_connections_resolver_note_body')}</p>
               </div>
               {!canManageWorkspace ? (
                 <div className="mt-4 rounded-md border border-subtle bg-background/70 px-4 py-3 text-sm leading-6 text-tertiary" data-testid="workspace-connections__read-only-hint">

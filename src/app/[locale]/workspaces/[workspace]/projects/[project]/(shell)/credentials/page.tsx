@@ -99,6 +99,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
   const credentialList = credentials ?? [];
   const rotatedCount = credentialList.filter((credential) => credential.last_rotated_at).length;
   const credentialTypeCount = new Set(credentialList.map((credential) => credential.type)).size;
+  const summaryChipClassName = 'rounded-full border border-subtle bg-surface-low px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary';
 
   if (!resolvedParams.isReady) {
     return (
@@ -146,14 +147,23 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
         )}
         toolbar={(
           <PageToolbar>
-            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-              {credentialList.length} {t('title').toLowerCase()}
+            <div
+              className={summaryChipClassName}
+              data-testid="credentials__summary-count"
+            >
+              {t('summary_total_label', { count: credentialList.length })}
             </div>
-            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-              {rotatedCount} {t('rotate.title').toLowerCase()}
+            <div
+              className={summaryChipClassName}
+              data-testid="credentials__summary-rotated"
+            >
+              {t('summary_rotated_label', { count: rotatedCount })}
             </div>
-            <div className="rounded-full border border-subtle bg-surface-low px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-              {credentialTypeCount} {t('fingerprint').toLowerCase()}
+            <div
+              className={summaryChipClassName}
+              data-testid="credentials__summary-types"
+            >
+              {t('summary_types_label', { count: credentialTypeCount })}
             </div>
             <Button
               onClick={() => setCreateDialogOpen(true)}
@@ -168,6 +178,9 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
         )}
       >
         <div className="w-full space-y-4">
+          <p className="max-w-3xl text-sm leading-6 text-secondary" data-testid="credentials__capability-note">
+            {t('capability_note')}
+          </p>
           <CredentialsContent
             isLoading={isLoading}
             credentials={credentials}

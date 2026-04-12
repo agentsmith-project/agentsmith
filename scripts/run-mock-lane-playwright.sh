@@ -24,6 +24,7 @@ WARM_ROUTE_ATTEMPTS="${MOCK_LANE_WARM_ROUTE_ATTEMPTS:-15}"
 PID_FILE="${MOCK_STATE_DIR}/web.pid"
 NEXT_PID_FILE="${MOCK_STATE_DIR}/next-dev.pid"
 LOG_FILE="${MOCK_STATE_DIR}/web.log"
+NEXT_DEV_EXIT_MARKER_FILE="${MOCK_STATE_DIR}/next-dev-exit.json"
 MOCK_WORKSPACE_PROVISIONING_PATH="${MOCK_WORKSPACE_PROVISIONING_PATH:-artifacts/mock-lane/runs/${MOCK_RUN_ID}/system-workspace-provisioning.mock}"
 MOCK_WORKSPACE_REGISTRY_FILE="${MOCK_WORKSPACE_REGISTRY_FILE:-artifacts/mock-lane/runs/${MOCK_RUN_ID}/system-workspaces.json}"
 STARTED_BY_SCRIPT=0
@@ -37,10 +38,26 @@ RUN_SUCCEEDED=0
 VISUAL_BUILD_INFO_FILE="${MOCK_STATE_DIR}/visual-build-info.json"
 VISUAL_BASELINE_BUILD_INFO_FILE="${VISUAL_BASELINE_BUILD_INFO_FILE:-${VISUAL_BUILD_INFO_FILE}}"
 VISUAL_BASELINE_BUILD_FINGERPRINT="${VISUAL_BASELINE_BUILD_FINGERPRINT:-}"
+PLAYWRIGHT_WATCHDOG_SIGNAL_FILE="${MOCK_STATE_DIR}/playwright-watchdog.signal"
+PLAYWRIGHT_PID=""
+PLAYWRIGHT_TAIL_PID=""
+PLAYWRIGHT_WATCHDOG_PID=""
 next_generated_root_normalize
+next_generated_root_write_lane_owner "${MOCK_RUN_ROOT}" "mock-lane" "$$" "run-mock-lane-playwright.sh"
 
 info() { echo "[mock-lane] $*"; }
 err() { echo "[mock-lane] ERROR: $*" >&2; }
+
+log_next_dev_exit_marker() {
+  [[ -f "${NEXT_DEV_EXIT_MARKER_FILE}" ]] || return 1
+  local summary
+  summary="$(node -e "const fs=require('node:fs'); const file=process.argv[1]; const json=JSON.parse(fs.readFileSync(file,'utf8')); const signal=json.signal === null ? 'none' : String(json.signal); const child=json.child_pid === null ? 'unknown' : String(json.child_pid); process.stdout.write(\`event=\${json.event};status=\${json.exit_status};signal=\${signal};child_pid=\${child}\`);" "${NEXT_DEV_EXIT_MARKER_FILE}" 2>/dev/null || true)"
+  if [[ -n "${summary}" ]]; then
+    info "next dev exit marker: ${summary}"
+    return 0
+  fi
+  return 1
+}
 
 write_visual_build_info() {
   local git_sha started_at fingerprint existing_git_sha existing_run_id
@@ -97,6 +114,21 @@ reset_next_dev_artifacts_if_corrupt() {
 }
 
 cleanup() {
+  if [[ -n "${PLAYWRIGHT_WATCHDOG_PID}" ]]; then
+    kill "${PLAYWRIGHT_WATCHDOG_PID}" >/dev/null 2>&1 || true
+    wait "${PLAYWRIGHT_WATCHDOG_PID}" >/dev/null 2>&1 || true
+    PLAYWRIGHT_WATCHDOG_PID=""
+  fi
+  if [[ -n "${PLAYWRIGHT_TAIL_PID}" ]]; then
+    kill "${PLAYWRIGHT_TAIL_PID}" >/dev/null 2>&1 || true
+    wait "${PLAYWRIGHT_TAIL_PID}" >/dev/null 2>&1 || true
+    PLAYWRIGHT_TAIL_PID=""
+  fi
+  if [[ -n "${PLAYWRIGHT_PID}" ]]; then
+    kill "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
+    wait "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
+    PLAYWRIGHT_PID=""
+  fi
   if [[ "${STARTED_BY_SCRIPT}" == "1" ]] && [[ -f "${PID_FILE}" ]]; then
     local pid
     pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
@@ -109,7 +141,8 @@ cleanup() {
     stop_pid_gracefully "${next_pid}" "mock lane next"
     rm -f "${NEXT_PID_FILE}"
   fi
-  next_generated_root_normalize
+  next_generated_root_clear_lane_owner "${MOCK_RUN_ROOT}"
+  next_generated_root_finalize_lane_cleanup
   rm -rf "${ROOT_DIR}/${MOCK_WORKSPACE_PROVISIONING_PATH}"
   if [[ "${RUN_SUCCEEDED}" == "1" ]]; then
     lane_mark_status "${MOCK_RUN_ROOT}" success
@@ -138,7 +171,10 @@ is_server_alive() {
     return $?
   fi
   if kill -0 "${pid}" >/dev/null 2>&1; then
-    return 0
+    if port_is_listening "${PORT_WEB}"; then
+      return 0
+    fi
+    return 1
   fi
   port_is_listening "${PORT_WEB}"
 }
@@ -292,6 +328,7 @@ start_mock_server() {
   local launch_attempt=1
   while [[ "${launch_attempt}" -le 3 ]]; do
     rm -rf "${ROOT_DIR}/${MOCK_WORKSPACE_PROVISIONING_PATH}"
+    rm -f "${NEXT_DEV_EXIT_MARKER_FILE}"
 
     if ! port_is_bindable "${PORT_WEB}"; then
       info "port :${PORT_WEB} is busy; finding an alternate free port for this mock lane"
@@ -319,6 +356,7 @@ start_mock_server() {
         NEXT_DIST_DIR="${NEXT_DIST_DIR}" \
         NEXT_GENERATED_ROOT_MANAGED=1 \
         NEXT_DEV_PID_FILE="${NEXT_PID_FILE}" \
+        NEXT_DEV_EXIT_MARKER_FILE="${NEXT_DEV_EXIT_MARKER_FILE}" \
         NEXT_PUBLIC_USE_MSW=true \
         AGENTSMITH_ENABLE_TEST_ROUTES=true \
         SYSTEM_WORKSPACE_REGISTRY_MODE=file \
@@ -348,6 +386,7 @@ start_mock_server() {
     fi
 
     info "mock web server failed to become ready; restarting lane bootstrap (${launch_attempt}/3)"
+    log_next_dev_exit_marker || true
     stop_owned_server
     reset_next_dev_artifacts_if_corrupt
     if ! port_wait_for_release "${PORT_WEB}" 15; then
@@ -366,7 +405,8 @@ start_mock_server() {
 
 run_playwright_once() {
   LAST_PLAYWRIGHT_LOG="$(mktemp "${MOCK_STATE_DIR}/playwright.XXXXXX.log")"
-  set +e
+  rm -f "${PLAYWRIGHT_WATCHDOG_SIGNAL_FILE}"
+  : > "${LAST_PLAYWRIGHT_LOG}"
   (
     cd "${ROOT_DIR}"
     env \
@@ -376,10 +416,45 @@ run_playwright_once() {
       VISUAL_BASELINE_BUILD_INFO_FILE="${VISUAL_BASELINE_BUILD_INFO_FILE}" \
       VISUAL_BASELINE_BUILD_FINGERPRINT="${VISUAL_BASELINE_BUILD_FINGERPRINT}" \
       npx playwright test "$@"
-  ) 2>&1 | tee "${LAST_PLAYWRIGHT_LOG}"
-  local exit_code=${PIPESTATUS[0]}
+  ) >"${LAST_PLAYWRIGHT_LOG}" 2>&1 &
+  PLAYWRIGHT_PID=$!
+
+  tail --pid="${PLAYWRIGHT_PID}" -n +1 -f "${LAST_PLAYWRIGHT_LOG}" &
+  PLAYWRIGHT_TAIL_PID=$!
+
+  (
+    while kill -0 "${PLAYWRIGHT_PID}" >/dev/null 2>&1; do
+      sleep 2
+      if ! port_is_listening "${PORT_WEB}"; then
+        printf 'listener_lost\n' > "${PLAYWRIGHT_WATCHDOG_SIGNAL_FILE}"
+        info "mock lane web on :${PORT_WEB} stopped listening during playwright execution; terminating current attempt for retry"
+        kill -TERM "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
+        sleep 2
+        kill -KILL "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
+        exit 0
+      fi
+    done
+  ) &
+  PLAYWRIGHT_WATCHDOG_PID=$!
+
+  set +e
+  wait "${PLAYWRIGHT_PID}"
+  local exit_code=$?
   set -e
+
+  kill "${PLAYWRIGHT_WATCHDOG_PID}" >/dev/null 2>&1 || true
+  wait "${PLAYWRIGHT_WATCHDOG_PID}" >/dev/null 2>&1 || true
+  PLAYWRIGHT_WATCHDOG_PID=""
+
+  wait "${PLAYWRIGHT_TAIL_PID}" >/dev/null 2>&1 || true
+  PLAYWRIGHT_TAIL_PID=""
+  PLAYWRIGHT_PID=""
+
   return "${exit_code}"
+}
+
+did_playwright_watchdog_trip() {
+  [[ -s "${PLAYWRIGHT_WATCHDOG_SIGNAL_FILE}" ]]
 }
 
 is_transient_playwright_failure() {
@@ -402,7 +477,8 @@ while [[ "${attempt}" -le "${MAX_ATTEMPTS}" ]]; do
     break
   fi
 
-  if is_transient_playwright_failure || ! is_server_alive; then
+  if did_playwright_watchdog_trip || is_transient_playwright_failure || ! is_server_alive; then
+    log_next_dev_exit_marker || true
     info "detected transient web/execution-service failure; restarting mock lane and retrying (${attempt}/${MAX_ATTEMPTS})"
     stop_owned_server
     start_mock_server

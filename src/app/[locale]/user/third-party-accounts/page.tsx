@@ -301,6 +301,9 @@ export default function ThirdPartyAccountsPage() {
               <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
               <p className="text-sm text-tertiary">{t('description')}</p>
               <p className="text-sm leading-6 text-tertiary">{t('personal_scope_note')}</p>
+              <p className="text-sm leading-6 text-secondary" data-testid="third-party-accounts__capability-note">
+                {t('agent_capability_note')}
+              </p>
             </div>
             <Button variant="action" onClick={openCreateDialog} data-testid="third-party-accounts__create-btn">
               <Plus className="w-4 h-4" />

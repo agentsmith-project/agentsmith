@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
+  BookText,
   Languages,
   LogOut,
   MoonStar,
@@ -22,7 +23,13 @@ import type { Theme } from '@/lib/theme';
 
 interface UserMenuItem {
   id: string;
-  labelKey: 'profile' | 'workspace_integrations' | 'personal_connections' | 'api_keys';
+  labelKey:
+    | 'profile'
+    | 'workspace_personal_context'
+    | 'project_personal_context'
+    | 'workspace_integrations'
+    | 'personal_connections'
+    | 'api_keys';
   icon: LucideIcon;
   onClick?: () => void;
   disabled?: boolean;
@@ -46,6 +53,8 @@ interface UserMenuProps {
     avatar?: string;
   } | null;
   onProfile?: () => void;
+  onWorkspacePersonalContext?: () => void;
+  onProjectPersonalContext?: () => void;
   onWorkspaceIntegrations?: () => void;
   onPersonalConnections?: () => void;
   onApiKeys?: () => void;
@@ -58,6 +67,8 @@ interface UserMenuProps {
 export function UserMenu({
   user,
   onProfile,
+  onWorkspacePersonalContext,
+  onProjectPersonalContext,
   onWorkspaceIntegrations,
   onPersonalConnections,
   onApiKeys,
@@ -75,6 +86,12 @@ export function UserMenu({
       ...(onProfile
         ? [{ id: 'profile', labelKey: 'profile', icon: User, onClick: onProfile }] satisfies UserMenuItem[]
         : []),
+      ...(onWorkspacePersonalContext
+        ? [{ id: 'workspace_personal_context', labelKey: 'workspace_personal_context', icon: BookText, onClick: onWorkspacePersonalContext }] satisfies UserMenuItem[]
+        : []),
+      ...(onProjectPersonalContext
+        ? [{ id: 'project_personal_context', labelKey: 'project_personal_context', icon: BookText, onClick: onProjectPersonalContext }] satisfies UserMenuItem[]
+        : []),
       ...(onWorkspaceIntegrations
         ? [{ id: 'workspace_integrations', labelKey: 'workspace_integrations', icon: Settings, onClick: onWorkspaceIntegrations }] satisfies UserMenuItem[]
         : []),
@@ -85,13 +102,19 @@ export function UserMenu({
         ? [{ id: 'api_keys', labelKey: 'api_keys', icon: Settings, onClick: onApiKeys }] satisfies UserMenuItem[]
         : []),
     ],
-    [onApiKeys, onPersonalConnections, onProfile, onWorkspaceIntegrations],
+    [onApiKeys, onPersonalConnections, onProfile, onProjectPersonalContext, onWorkspaceIntegrations, onWorkspacePersonalContext],
   );
 
   const handleClick = (itemId: string) => {
     switch (itemId) {
       case 'profile':
         onProfile?.();
+        break;
+      case 'workspace_personal_context':
+        onWorkspacePersonalContext?.();
+        break;
+      case 'project_personal_context':
+        onProjectPersonalContext?.();
         break;
       case 'workspace_integrations':
         onWorkspaceIntegrations?.();
@@ -154,7 +177,7 @@ export function UserMenu({
               {items.map((item) => (
                 <DropdownMenuItem
                   key={item.id}
-                  data-testid={`user-menu__${item.id === 'api_keys' ? 'api-keys' : item.id}`}
+                  data-testid={`user-menu__${item.id === 'api_keys' ? 'api-keys' : item.id.replace(/_/g, '-')}`}
                   onSelect={() => handleClick(item.id)}
                   className="gap-3"
                 >

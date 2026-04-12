@@ -33,14 +33,19 @@ def build_query(args: argparse.Namespace) -> dict[str, str]:
     query: dict[str, str] = {"scope": args.scope}
     if getattr(args, "key", None):
       query["key"] = args.key
+    scope = args.scope
+    key = getattr(args, "key", None)
     workspace_id = getattr(args, "workspace_id", None) or read_env_default("MBOS_AGENT_WORKSPACE_ID")
     project_id = getattr(args, "project_id", None) or read_env_default("MBOS_AGENT_PROJECT_ID")
     task_id = getattr(args, "task_id", None) or read_env_default("MBOS_AGENT_TASK_ID")
-    if workspace_id:
+    if workspace_id and scope in ("member", "task", "project_member", "project", "workspace"):
         query["workspace_id"] = workspace_id
-    if project_id:
+    include_project_id = scope in ("task", "project_member", "project") or (
+        scope == "member" and isinstance(key, str) and key.startswith("managed_credentials.")
+    )
+    if project_id and include_project_id:
         query["project_id"] = project_id
-    if task_id:
+    if task_id and scope == "task":
         query["task_id"] = task_id
     return query
 
@@ -73,11 +78,13 @@ def api_request(method: str, path: str, *, query: dict[str, str] | None = None, 
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Read or write AgentSmith Context Store entries.")
+    parser = argparse.ArgumentParser(
+        description="Read AgentSmith Context Store entries, and write member/task entries when allowed by the runner ticket.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_scope_args(target: argparse.ArgumentParser, *, needs_key: bool) -> None:
-        target.add_argument("--scope", required=True, choices=["member", "task", "project", "workspace"])
+        target.add_argument("--scope", required=True, choices=["member", "task", "project_member", "project", "workspace"])
         if needs_key:
             target.add_argument("--key", required=True)
         else:
@@ -105,6 +112,7 @@ def parse_args() -> argparse.Namespace:
     refresh_parser = sub.add_parser("refresh-managed-credential")
     refresh_parser.add_argument("--provider", required=True)
     refresh_parser.add_argument("--workspace-id")
+    refresh_parser.add_argument("--project-id")
 
     return parser.parse_args()
 
@@ -151,6 +159,8 @@ def main() -> int:
         query = {}
         if args.workspace_id or read_env_default("MBOS_AGENT_WORKSPACE_ID"):
             query["workspace_id"] = args.workspace_id or read_env_default("MBOS_AGENT_WORKSPACE_ID")
+        if args.project_id or read_env_default("MBOS_AGENT_PROJECT_ID"):
+            query["project_id"] = args.project_id or read_env_default("MBOS_AGENT_PROJECT_ID")
         response = api_request(
             "POST",
             f"/context/managed-credentials/{args.provider}/refresh",

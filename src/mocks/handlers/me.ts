@@ -13,8 +13,12 @@ import {
   createMockExternalConnection,
   deleteMockExternalConnection,
   listMockExternalConnections,
+  seedMockExternalConnections,
+  toStoredExternalConnectionField,
   updateMockExternalConnection,
 } from '../state/me-external-connections';
+
+type MockExternalConnectionSeed = Parameters<typeof seedMockExternalConnections>[1][number];
 
 function readCookieValue(request: Request, key: string): string | null {
   const cookieHeader = request.headers.get('cookie');
@@ -120,12 +124,14 @@ export function resolveMockExternalConnectionsForRequest(args: {
       display_name: displayName,
       note: connectionNote?.trim() || null,
       custom_domain: customDomain,
-      fields: connectionFields.map((field) => ({
-        key: typeof field.key === 'string' ? field.key : '',
-        description: typeof field.description === 'string' ? field.description : null,
-        secret: field.secret !== false,
-        masked_value: typeof field.value === 'string' && field.secret !== false ? '••••••••' : typeof field.value === 'string' ? field.value : null,
-      })).filter((field) => field.key.length > 0),
+      fields: connectionFields.map((field) =>
+        toStoredExternalConnectionField({
+          key: typeof field.key === 'string' ? field.key : '',
+          value: typeof field.value === 'string' ? field.value : '',
+          description: typeof field.description === 'string' ? field.description : null,
+          secret: field.secret !== false,
+        })
+      ).filter((field) => field.key.length > 0),
       account_identity: null,
       scopes: connectionScopes,
       expires_at: null,
@@ -138,6 +144,29 @@ export function resolveMockExternalConnectionsForRequest(args: {
   }
 
   return [];
+}
+
+export function normalizeMockExternalConnectionSeed(
+  userId: string,
+  connection: MockExternalConnectionSeed,
+): MockExternalConnectionSeed {
+  return {
+    ...connection,
+    user_id: userId,
+    custom_domain: connection.custom_domain ?? null,
+    note: connection.note ?? null,
+    status: connection.status ?? 'active',
+    fields: (connection.fields ?? []).map((field) => toStoredExternalConnectionField(field)),
+    account_identity: connection.account_identity ?? null,
+    scopes: connection.scopes ?? null,
+    expires_at: connection.expires_at ?? null,
+    last_refreshed_at: connection.last_refreshed_at ?? null,
+    last_used_at: connection.last_used_at ?? null,
+    last_error: connection.last_error ?? null,
+    reauth_reason: connection.reauth_reason ?? null,
+    missing_scopes: connection.missing_scopes ?? null,
+    workspace_id: connection.workspace_id ?? null,
+  };
 }
 
 export const meHandlers = [
@@ -156,8 +185,8 @@ export const meHandlers = [
   http.post('/api/test/me/external-connections/seed', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as {
       user_id?: string;
-      connections?: Array<Parameters<typeof createMockExternalConnection>[1]>;
-      connection?: Parameters<typeof createMockExternalConnection>[1];
+      connections?: Parameters<typeof seedMockExternalConnections>[1];
+      connection?: Parameters<typeof seedMockExternalConnections>[1][number];
       replace_existing?: boolean;
     };
     const userId = typeof body.user_id === 'string' && body.user_id.trim().length > 0
@@ -171,11 +200,9 @@ export const meHandlers = [
       : body.connection
         ? [body.connection]
         : [];
-    const seeded = connections.map((connection) =>
-      createMockExternalConnection(userId, {
-        ...connection,
-        status: connection.status ?? 'active',
-      })
+    const seeded = seedMockExternalConnections(
+      userId,
+      connections.map((connection) => normalizeMockExternalConnectionSeed(userId, connection))
     );
     return HttpResponse.json({
       ok: true,

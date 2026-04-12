@@ -4,17 +4,22 @@ import type {
   UserExternalConnection,
   UserExternalConnectionField,
   UserExternalConnectionFieldInput,
+  UserExternalConnectionStatus,
 } from '@/lib/api';
 
 type ExternalConnectionSeed = Omit<
   UserExternalConnection,
-  'id' | 'user_id' | 'created_at' | 'updated_at'
+  'id' | 'user_id' | 'created_at' | 'updated_at' | 'fields' | 'status'
 > & {
   id?: string;
   user_id?: string;
   created_at?: string;
   updated_at?: string;
+  status?: UserExternalConnectionStatus;
+  fields: Array<ExternalConnectionSeedField>;
 };
+
+type ExternalConnectionSeedField = UserExternalConnectionField | UserExternalConnectionFieldInput;
 
 declare global {
   // Keep MSW external-connection state on globalThis so mock seeds survive
@@ -42,12 +47,30 @@ export function buildMockExternalConnectionId(displayName: string, fallbackProvi
   return `uec_${slug || fallbackProvider}`;
 }
 
-function cloneField(field: UserExternalConnectionField | UserExternalConnectionFieldInput): UserExternalConnectionField {
+export function toStoredExternalConnectionField(
+  field: ExternalConnectionSeedField,
+  previousField?: UserExternalConnectionField | null,
+): UserExternalConnectionField {
+  if ('masked_value' in field) {
+    return {
+      key: field.key,
+      description: field.description ?? null,
+      secret: field.secret !== false,
+      masked_value: field.masked_value ?? null,
+    };
+  }
+  const nextField = field as UserExternalConnectionFieldInput;
   return {
-    key: field.key,
-    description: field.description ?? null,
-    secret: field.secret !== false,
-    masked_value: 'masked_value' in field ? field.masked_value ?? null : null,
+    key: nextField.key,
+    description: nextField.description ?? null,
+    secret: nextField.secret !== false,
+    masked_value: nextField.secret === false
+      ? nextField.value
+      : nextField.value.trim().length > 0
+        ? '••••••••'
+        : previousField?.secret !== false
+          ? previousField?.masked_value ?? '••••••••'
+          : null,
   };
 }
 
@@ -87,6 +110,7 @@ export function seedMockExternalConnection(userId: string, seed: ExternalConnect
     updated_at: seed.updated_at ?? seed.created_at ?? nowIso(),
     custom_domain: seed.custom_domain ?? null,
     note: seed.note ?? null,
+    status: seed.status ?? 'active',
     account_identity: seed.account_identity ?? null,
     scopes: seed.scopes ?? null,
     expires_at: seed.expires_at ?? null,
@@ -95,7 +119,7 @@ export function seedMockExternalConnection(userId: string, seed: ExternalConnect
     last_error: seed.last_error ?? null,
     reauth_reason: seed.reauth_reason ?? null,
     missing_scopes: seed.missing_scopes ?? null,
-    fields: seed.fields.map(cloneField),
+    fields: seed.fields.map((field) => toStoredExternalConnectionField(field)),
   };
   getBucket(userId).push(connection);
   return cloneConnection(connection);
@@ -118,7 +142,7 @@ export function createMockExternalConnection(
     custom_domain: request.custom_domain ?? null,
     note: request.note ?? null,
     status: request.status ?? 'active',
-    fields: (request.fields ?? []).map(cloneField),
+    fields: request.fields ?? [],
     account_identity: request.account_identity ?? null,
     scopes: request.scopes ?? null,
     expires_at: request.expires_at ?? null,
@@ -153,7 +177,12 @@ export function updateMockExternalConnection(
     connection.status = request.status;
   }
   if (request.fields !== undefined) {
-    connection.fields = request.fields.map(cloneField);
+    connection.fields = request.fields.map((field) =>
+      toStoredExternalConnectionField(
+        field,
+        connection.fields.find((existingField) => existingField.key === field.key) ?? null,
+      )
+    );
   }
   if (request.account_identity !== undefined) {
     connection.account_identity = request.account_identity ?? null;

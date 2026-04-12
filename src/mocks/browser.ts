@@ -4,6 +4,11 @@ import type { SetupWorker } from 'msw/browser';
 let worker: SetupWorker | null = null;
 let started = false;
 
+export function resetMSWForTests() {
+  worker = null;
+  started = false;
+}
+
 export async function initMSW() {
   const useMsw = getPublicRuntimeConfig().useMsw;
   const hasServiceWorkerSupport = typeof navigator !== 'undefined' && 'serviceWorker' in navigator;

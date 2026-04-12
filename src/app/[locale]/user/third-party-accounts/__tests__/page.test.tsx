@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -408,7 +408,9 @@ describe('ThirdPartyAccountsPage', () => {
           },
         },
       });
-      controllerChangeListeners.forEach((handler) => handler());
+      await act(async () => {
+        controllerChangeListeners.forEach((handler) => handler());
+      });
 
       await waitFor(() => {
         expect(mockList).toHaveBeenCalledTimes(1);

@@ -7,7 +7,7 @@ vi.mock('msw/browser', () => ({
   setupWorker,
 }));
 
-vi.mock('../index', () => ({
+vi.mock('../src/mocks/index', () => ({
   handlers: [],
 }));
 
@@ -15,9 +15,14 @@ vi.mock('@/lib/public-runtime-config', () => ({
   getPublicRuntimeConfig: vi.fn(() => ({ useMsw: true })),
 }));
 
-import { initMSW } from '../browser';
+import { initMSW, resetMSWForTests } from '../src/mocks/browser';
 
 describe('initMSW', () => {
+  afterEach(() => {
+    resetMSWForTests();
+    vi.unstubAllGlobals();
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
   });
@@ -29,31 +34,29 @@ describe('initMSW', () => {
     });
     let controllerChangeHandler: (() => void) | null = null;
 
-    Object.defineProperty(globalThis, 'navigator', {
-      configurable: true,
-      value: {
-        serviceWorker: {
-          ready,
-          controller: null,
-          addEventListener: vi.fn((event: string, handler: () => void) => {
-            if (event === 'controllerchange') {
-              controllerChangeHandler = handler;
-            }
-          }),
-          removeEventListener: vi.fn((event: string, handler: () => void) => {
-            if (event === 'controllerchange' && controllerChangeHandler === handler) {
-              controllerChangeHandler = null;
-            }
-          }),
-        },
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        ready,
+        controller: null,
+        addEventListener: vi.fn((event: string, handler: () => void) => {
+          if (event === 'controllerchange') {
+            controllerChangeHandler = handler;
+          }
+        }),
+        removeEventListener: vi.fn((event: string, handler: () => void) => {
+          if (event === 'controllerchange' && controllerChangeHandler === handler) {
+            controllerChangeHandler = null;
+          }
+        }),
       },
     });
 
     const initPromise = initMSW();
-    await Promise.resolve();
 
-    expect(setupWorker).toHaveBeenCalledTimes(1);
-    expect(start).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(setupWorker).toHaveBeenCalledTimes(1);
+      expect(start).toHaveBeenCalledTimes(1);
+    });
 
     let settled = false;
     initPromise.then(() => {
@@ -64,7 +67,7 @@ describe('initMSW', () => {
     resolveReady();
     await Promise.resolve();
     expect(settled).toBe(false);
-    (controllerChangeHandler as (() => void) | null)?.();
+    controllerChangeHandler?.();
     await initPromise;
     expect(settled).toBe(true);
   });

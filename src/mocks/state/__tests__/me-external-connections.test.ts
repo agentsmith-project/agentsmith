@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   clearMockExternalConnections,
+  createMockExternalConnection,
   listMockExternalConnections,
   seedMockExternalConnection,
   seedMockExternalConnections,
@@ -74,7 +75,20 @@ describe('me-external-connections state helpers', () => {
     });
 
     expect(updated?.display_name).toBe('Visual Seed Updated');
-    expect(updated?.fields).toHaveLength(2);
+    expect(updated?.fields).toEqual([
+      {
+        key: 'base_url',
+        description: 'Base URL',
+        secret: false,
+        masked_value: 'https://api.visual.example.com',
+      },
+      {
+        key: 'token',
+        description: 'API token',
+        secret: true,
+        masked_value: '••••••••',
+      },
+    ]);
   });
 
   it('can clear stored external connections before a new visual seed is applied', () => {
@@ -91,5 +105,61 @@ describe('me-external-connections state helpers', () => {
     expect(listMockExternalConnections('user_seed_4')).toHaveLength(1);
     clearMockExternalConnections('user_seed_4');
     expect(listMockExternalConnections('user_seed_4')).toHaveLength(0);
+  });
+
+  it('preserves non-secret field values when creating a request-shaped connection', () => {
+    const created = createMockExternalConnection('user_seed_5', {
+      provider: 'custom',
+      kind: 'secret_bundle',
+      display_name: 'Created Visual Seed',
+      fields: [
+        { key: 'base_url', value: 'https://api.visual.example.com', description: 'Base URL', secret: false },
+        { key: 'token', value: 'tok-visual', description: 'API token', secret: true },
+      ],
+    });
+
+    expect(created.fields).toEqual([
+      {
+        key: 'base_url',
+        description: 'Base URL',
+        secret: false,
+        masked_value: 'https://api.visual.example.com',
+      },
+      {
+        key: 'token',
+        description: 'API token',
+        secret: true,
+        masked_value: '••••••••',
+      },
+    ]);
+  });
+
+  it('preserves existing secret placeholders when an edit keeps the secret field blank', () => {
+    seedMockExternalConnection('user_seed_6', {
+      id: 'uec_seed_6',
+      user_id: 'user_seed_6',
+      provider: 'custom',
+      kind: 'secret_bundle',
+      display_name: 'Preserve Secret',
+      status: 'active',
+      fields: [
+        { key: 'token', masked_value: '••••••••', description: 'API token', secret: true },
+      ],
+    });
+
+    const updated = updateMockExternalConnection('user_seed_6', 'uec_seed_6', {
+      fields: [
+        { key: 'token', value: '', description: 'API token', secret: true },
+      ],
+    });
+
+    expect(updated?.fields).toEqual([
+      {
+        key: 'token',
+        description: 'API token',
+        secret: true,
+        masked_value: '••••••••',
+      },
+    ]);
   });
 });

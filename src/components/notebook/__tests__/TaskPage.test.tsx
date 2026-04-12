@@ -47,6 +47,8 @@ vi.mock('next-intl', () => ({
   useTranslations: (namespace?: string) => (key: string) => {
     const dict: Record<string, string> = {
       'common.cancel': 'Cancel',
+      'common.open_chat': 'Open Chat',
+      'common.open_files': 'Open Files',
       'notebook.task.loading': 'Loading task...',
       'notebook.task.not_found_title': 'Task not found',
       'notebook.task.not_found_description': "The task you're looking for doesn't exist or has been deleted.",
@@ -342,14 +344,22 @@ describe('TaskPage', () => {
       expect(screen.getByText(/Task not found/i)).toBeInTheDocument();
     });
 
-    it('shows back button in not found state', () => {
+    it('shows notebook, files, and chat recovery actions in not found state', async () => {
+      const user = userEvent.setup();
       mockTaskHookState.task = null;
       mockTaskHookState.taskLoading = false;
 
       renderComponent();
 
-      const backButton = screen.getByText(/Go back to Notebook/i);
-      expect(backButton).toBeInTheDocument();
+      expect(screen.getByTestId('notebook-task__open-list')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook-task__open-files')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook-task__open-chat')).toBeInTheDocument();
+
+      await user.click(screen.getByTestId('notebook-task__open-files'));
+      expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/workspace-1/projects/project-1/files');
+
+      await user.click(screen.getByTestId('notebook-task__open-chat'));
+      expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/workspace-1/projects/project-1/chat');
     });
   });
 

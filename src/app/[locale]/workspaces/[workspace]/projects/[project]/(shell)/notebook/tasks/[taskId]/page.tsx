@@ -1,10 +1,12 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { ProjectWorkbenchBar } from "@/components/layout/ProjectWorkbenchBar";
 import { PageState } from "@/components/layout/PageState";
 import { PageLoading } from "@/components/ui/loading";
+import { Button } from "@/components/ui/button";
 import { TaskPage } from "@/components/notebook/TaskPage";
 import { useCanAccessNotebook, useCanUseNotebookTerminal } from "@/lib/hooks/use-permissions";
 import { useResolvedProjectRoute } from "@/lib/hooks/use-resolved-project-route";
@@ -28,9 +30,41 @@ function validateTaskId(taskId: string): string | undefined {
   return trimmed;
 }
 
+function TaskDetailRouteState({
+  title,
+  description,
+  actions,
+}: {
+  title: string;
+  description: string;
+  actions: Array<{ href: string; label: string; testId: string; variant?: 'primary' | 'outline' }>;
+}) {
+  return (
+    <PageState state="error">
+      <div className="mx-auto flex w-full max-w-2xl items-center justify-center px-4 py-10">
+        <div className="w-full rounded-[24px] border border-subtle bg-surface/95 px-6 py-7 text-center shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+          <h2 className="mb-2 text-lg font-semibold text-foreground">{title}</h2>
+          <p className="mb-5 text-sm text-tertiary">{description}</p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {actions.map((action) => (
+              <Button key={action.testId} asChild variant={action.variant === 'primary' ? 'action' : 'outline'} size="sm">
+                <Link href={action.href} data-testid={action.testId}>
+                  {action.label}
+                </Link>
+              </Button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </PageState>
+  );
+}
+
 export default function TaskDetailPage({ params }: TaskPageParams) {
   const tErrors = useTranslations("errors");
   const tNotebook = useTranslations("notebook");
+  const tCommon = useTranslations("common");
+  const tProjects = useTranslations("projects");
   const resolvedRoute = useResolvedProjectRoute(params);
   const [resolvedParams, setResolvedParams] = useState<{
     workspace: string | null;
@@ -78,6 +112,20 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
     );
   }
 
+  const locale = resolvedParams.locale ?? "en-US";
+  const workspacePath = resolvedParams.workspace
+    ? `/${locale}/workspaces/${resolvedParams.workspace}`
+    : `/${locale}/workspaces`;
+  const notebookPath = resolvedParams.workspace && resolvedParams.project
+    ? `/${locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/notebook`
+    : workspacePath;
+  const filesPath = resolvedParams.workspace && resolvedParams.project
+    ? `/${locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/files`
+    : workspacePath;
+  const chatPath = resolvedParams.workspace && resolvedParams.project
+    ? `/${locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/chat`
+    : workspacePath;
+
   if (
     !resolvedRoute.isValid ||
     !resolvedParams.workspace ||
@@ -85,35 +133,32 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
     !resolvedParams.taskId
   ) {
     return (
-      <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">
-            {tErrors("validation_error")}
-          </h2>
-          <p className="text-sm text-tertiary">
-            {tErrors("badRequest.description")}
-          </p>
-        </div>
-      </PageState>
+      <TaskDetailRouteState
+        title={tErrors("validation_error")}
+        description={tErrors("badRequest.description")}
+        actions={[
+          { href: notebookPath, label: tNotebook("task.back_to_notebook"), testId: 'notebook-task__open-list', variant: 'primary' },
+          { href: filesPath, label: tCommon("open_files"), testId: 'notebook-task__open-files', variant: 'outline' },
+          { href: workspacePath, label: tProjects("back_to_workspace"), testId: 'notebook-task__back-to-workspace', variant: 'outline' },
+        ]}
+      />
     );
   }
 
   if (!canAccessNotebook) {
     return (
-      <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">
-            {tErrors("permission_denied_title")}
-          </h2>
-          <p className="text-sm text-tertiary">
-            {tErrors("permission_denied_hint")}
-          </p>
-        </div>
-      </PageState>
+      <TaskDetailRouteState
+        title={tErrors("permission_denied_title")}
+        description={tErrors("permission_denied_hint")}
+        actions={[
+          { href: workspacePath, label: tProjects("back_to_workspace"), testId: 'notebook-task__back-to-workspace', variant: 'primary' },
+          { href: filesPath, label: tCommon("open_files"), testId: 'notebook-task__open-files', variant: 'outline' },
+          { href: chatPath, label: tCommon("open_chat"), testId: 'notebook-task__open-chat', variant: 'outline' },
+        ]}
+      />
     );
   }
 
-  const locale = resolvedParams.locale ?? "en-US";
   const basePath = `/${locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}`;
 
   return (

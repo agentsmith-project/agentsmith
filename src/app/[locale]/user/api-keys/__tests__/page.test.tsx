@@ -11,7 +11,7 @@
  * - Time formatting and display
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -58,6 +58,7 @@ vi.mock('next-intl', () => ({
     const translations: Record<string, Record<string, string>> = {
       user_keys: {
         title: 'API Keys',
+        page_description: 'Create, rotate, and revoke personal API keys for user-scoped automation.',
         create: 'Create New Key',
         prefix: 'Prefix',
         note: 'Note',
@@ -70,10 +71,21 @@ vi.mock('next-intl', () => ({
         revoke: 'Revoke',
         create_success_title: 'API Key Created',
         create_success_hint: 'Copy this key now. You will not be able to see it again.',
+        list_loading: 'Loading your API keys...',
+        list_empty_title: 'No API keys yet',
+        list_empty_description: 'Create a personal API key to authenticate scripts and local tools.',
+        list_error_title: 'Could not load your API keys',
+        list_error_description: 'Refresh the list or create a new key if you need to keep moving.',
+        dialog_title_badge: 'API Key',
+        dialog_description: 'Create a new API key. Add an optional note and expiration so you can identify it later.',
+        dialog_expiration_hint: 'Leave empty to create a key that does not expire automatically.',
+        create_pending: 'Creating...',
+        create_success_prefix_only: 'The API only returned the key prefix. Use it to identify this key in the list.',
       },
       common: {
         cancel: 'Cancel',
         confirm: 'Confirm',
+        retry: 'Retry',
       },
     };
     return translations[namespace]?.[key] || key;
@@ -144,7 +156,7 @@ describe('UserAPIKeysPage', () => {
       render(<UserAPIKeysPage />, { wrapper });
 
       expect(screen.getByText('API Keys')).toBeInTheDocument();
-      expect(screen.getByText(/Manage API keys for authenticating/)).toBeInTheDocument();
+      expect(screen.getByText(/Create, rotate, and revoke personal API keys/)).toBeInTheDocument();
     });
 
     it('renders create button', async () => {
@@ -162,7 +174,17 @@ describe('UserAPIKeysPage', () => {
       await waitFor(() => {
         expect(screen.getByText(/no api keys yet/i)).toBeInTheDocument();
       });
-      expect(screen.getByText(/create an api key to authenticate/i)).toBeInTheDocument();
+      expect(screen.getByText(/create a personal api key to authenticate/i)).toBeInTheDocument();
+    });
+
+    it('shows retry recovery when listing keys fails', async () => {
+      mockList.mockRejectedValueOnce(new Error('network_failed'));
+      render(<UserAPIKeysPage />, { wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('api-keys__error')).toBeInTheDocument();
+      });
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
     });
 
     it('renders table with keys', async () => {
@@ -244,8 +266,8 @@ describe('UserAPIKeysPage', () => {
 
       render(<UserAPIKeysPage />, { wrapper });
 
-      await user.click(screen.getByRole('button', { name: /create new key/i }));
-      await user.click(screen.getByRole('button', { name: 'Create New Key' }));
+      await user.click(screen.getByTestId('api-keys__create-btn'));
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create New Key' }));
 
       // Should call create even without note
       await waitFor(() => {
@@ -327,8 +349,8 @@ describe('UserAPIKeysPage', () => {
 
       render(<UserAPIKeysPage />, { wrapper });
 
-      await user.click(screen.getByRole('button', { name: /create new key/i }));
-      await user.click(screen.getByRole('button', { name: 'Create New Key' }));
+      await user.click(screen.getByTestId('api-keys__create-btn'));
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create New Key' }));
 
       await waitFor(() => {
         expect(screen.getByTestId('key-created-dialog')).toBeInTheDocument();
@@ -344,8 +366,8 @@ describe('UserAPIKeysPage', () => {
 
       render(<UserAPIKeysPage />, { wrapper });
 
-      await user.click(screen.getByRole('button', { name: /create new key/i }));
-      await user.click(screen.getByRole('button', { name: 'Create New Key' }));
+      await user.click(screen.getByTestId('api-keys__create-btn'));
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create New Key' }));
 
       await waitFor(() => {
         // The KeyCreatedDialog should appear with the key value
@@ -361,8 +383,8 @@ describe('UserAPIKeysPage', () => {
 
       render(<UserAPIKeysPage />, { wrapper });
 
-      await user.click(screen.getByRole('button', { name: /create new key/i }));
-      await user.click(screen.getByRole('button', { name: 'Create New Key' }));
+      await user.click(screen.getByTestId('api-keys__create-btn'));
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create New Key' }));
 
       await waitFor(() => {
         expect(screen.getByTestId('key-created-dialog')).toBeInTheDocument();
@@ -375,8 +397,8 @@ describe('UserAPIKeysPage', () => {
 
       render(<UserAPIKeysPage />, { wrapper });
 
-      await user.click(screen.getByRole('button', { name: /create new key/i }));
-      await user.click(screen.getByRole('button', { name: 'Create New Key' }));
+      await user.click(screen.getByTestId('api-keys__create-btn'));
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create New Key' }));
 
       expect(screen.getByText(/creating/i)).toBeInTheDocument();
     });
@@ -495,8 +517,8 @@ describe('UserAPIKeysPage', () => {
 
       render(<UserAPIKeysPage />, { wrapper });
 
-      await user.click(screen.getByRole('button', { name: /create new key/i }));
-      await user.click(screen.getByRole('button', { name: 'Create New Key' }));
+      await user.click(screen.getByTestId('api-keys__create-btn'));
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create New Key' }));
 
       await waitFor(() => {
         expect(screen.getByTestId('key-created-dialog')).toBeInTheDocument();
@@ -538,8 +560,8 @@ describe('UserAPIKeysPage', () => {
 
       render(<UserAPIKeysPage />, { wrapper });
 
-      await user.click(screen.getByRole('button', { name: /create new key/i }));
-      await user.click(screen.getByRole('button', { name: 'Create New Key' }));
+      await user.click(screen.getByTestId('api-keys__create-btn'));
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create New Key' }));
 
       // Should not crash, error handled by handleErrorForToast
       await waitFor(() => {
@@ -579,8 +601,8 @@ describe('UserAPIKeysPage', () => {
 
       render(<UserAPIKeysPage />, { wrapper });
 
-      await user.click(screen.getByRole('button', { name: /create new key/i }));
-      await user.click(screen.getByRole('button', { name: 'Create New Key' }));
+      await user.click(screen.getByTestId('api-keys__create-btn'));
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create New Key' }));
 
       await waitFor(() => {
         expect(screen.getByTestId('key-created-dialog')).toBeInTheDocument();
@@ -598,8 +620,8 @@ describe('UserAPIKeysPage', () => {
 
       render(<UserAPIKeysPage />, { wrapper });
 
-      await user.click(screen.getByRole('button', { name: /create new key/i }));
-      await user.click(screen.getByRole('button', { name: 'Create New Key' }));
+      await user.click(screen.getByTestId('api-keys__create-btn'));
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create New Key' }));
 
       await waitFor(() => {
         expect(screen.getByTestId('key-created-dialog')).toBeInTheDocument();

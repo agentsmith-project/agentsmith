@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Copy, KeyRound, ServerCog, ShieldCheck, TerminalSquare } from 'lucide-react';
@@ -152,7 +152,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
   });
 
   const requestedEndpointId = searchParams.get('endpoint')?.trim() || '';
-  const selectedEndpoint = usableEndpoints.find((item) => item.id === requestedEndpointId) ?? usableEndpoints[0] ?? null;
+  const selectedEndpoint = usableEndpoints.find((item) => item.id === requestedEndpointId) ?? null;
   const protocolSupport = getEndpointProtocolSupport(selectedEndpoint);
   const requestedProtocol = searchParams.get('protocol') === 'anthropic' ? 'anthropic' : searchParams.get('protocol') === 'openai' ? 'openai' : null;
   const effectiveProtocol: ProtocolTab = requestedProtocol && protocolSupport[requestedProtocol]
@@ -171,29 +171,6 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
     const query = next.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [pathname, router, searchParams]);
-
-  useEffect(() => {
-    if (!routeReady || !routeValid || !canUseProject) {
-      return;
-    }
-    const nextEndpointId = selectedEndpoint?.id ?? null;
-    if (requestedEndpointId !== (nextEndpointId ?? '')) {
-      updateQuery({ endpoint: nextEndpointId });
-      return;
-    }
-    if (requestedProtocol !== effectiveProtocol) {
-      updateQuery({ protocol: effectiveProtocol });
-    }
-  }, [
-    canUseProject,
-    effectiveProtocol,
-    requestedEndpointId,
-    requestedProtocol,
-    routeReady,
-    routeValid,
-    selectedEndpoint?.id,
-    updateQuery,
-  ]);
 
   if (!routeReady) {
     return (
@@ -376,7 +353,7 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
               <div className="space-y-4">
                 <div className="grid gap-4 xl:grid-cols-[minmax(20rem,28rem)_minmax(0,1fr)] xl:items-start">
                   {canReadEndpoints ? (
-                    selectedEndpoint || endpointsLoading ? (
+                    endpointsLoading || usableEndpoints.length > 0 ? (
                       <Select
                         value={selectedEndpoint?.id ?? ''}
                         onValueChange={(value) => updateQuery({ endpoint: value })}

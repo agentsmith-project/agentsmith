@@ -4,6 +4,7 @@ import * as React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { dialogCloseClassName, dialogDescriptionClassName, dialogOverlayClassName } from './dialog';
 
 const Sheet = DialogPrimitive.Root;
 const SheetTrigger = DialogPrimitive.Trigger;
@@ -16,10 +17,7 @@ const SheetOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn(
-      'fixed inset-0 z-50 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-      className,
-    )}
+    className={cn(dialogOverlayClassName, className)}
     {...props}
   />
 ));
@@ -58,7 +56,7 @@ const SheetContent = React.forwardRef<
     >
       {children}
       <DialogPrimitive.Close
-        className="absolute right-4 top-4 rounded-sm p-1 text-tertiary opacity-70 transition-opacity hover:opacity-100 hover:text-primary focus:outline-none focus:ring-2 focus:ring-accent/50 focus:ring-offset-2 focus:ring-offset-dialog disabled:pointer-events-none"
+        className={dialogCloseClassName}
         aria-label="Close"
       >
         <X className="h-4 w-4" />
@@ -94,7 +92,7 @@ const SheetDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn('text-sm text-tertiary', className)}
+    className={cn(dialogDescriptionClassName, className)}
     {...props}
   />
 ));
@@ -111,3 +109,5 @@ export {
   SheetTitle,
   SheetDescription,
 };
+
+export { dialogOverlayClassName as sheetOverlayClassName, dialogDescriptionClassName as sheetDescriptionClassName };

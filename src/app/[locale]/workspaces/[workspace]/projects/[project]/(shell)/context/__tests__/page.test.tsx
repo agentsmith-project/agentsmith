@@ -41,6 +41,7 @@ describe('ProjectContextPage', () => {
     );
 
     expect(screen.getByTestId('context-manager')).toBeInTheDocument();
+    expect(screen.getByText('project_subtitle')).toBeInTheDocument();
     expect(mockContextManager).toHaveBeenCalledWith(
       expect.objectContaining({
         scope: 'project',

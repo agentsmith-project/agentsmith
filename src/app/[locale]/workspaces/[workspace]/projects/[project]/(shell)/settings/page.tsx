@@ -204,6 +204,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       await projectAPI.update(resolvedParams.workspace!, resolvedParams.project!, {
         owner_id: nextOwnerId,
       });
+      setSelectedProjectOwner(nextOwnerId);
       queryClient.invalidateQueries({
         queryKey: ['workspaces', resolvedParams.workspace, 'projects', resolvedParams.project],
       });
@@ -211,7 +212,6 @@ export default function SettingsPage({ params }: SettingsPageProps) {
         queryKey: ['workspaces', resolvedParams.workspace, 'projects'],
       });
       toast.success(commonT('refreshed_data'));
-      router.push(`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/overview`);
     } catch (error) {
       handleError(error, { context: settingsT('project_owner_title') });
     } finally {

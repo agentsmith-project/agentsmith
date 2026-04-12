@@ -48,6 +48,7 @@ describe('UsagePage route', () => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+    expect(screen.getByTestId('project-recovery__action')).toHaveAttribute('href', '/en/workspaces/ws_1/projects');
   });
 
   it('passes route params and current user to usage component', async () => {
@@ -111,5 +112,6 @@ describe('UsagePage route', () => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
     expect(screen.getByText('validation_error')).toBeInTheDocument();
+    expect(screen.getByTestId('project-recovery__action')).toHaveAttribute('href', '/en/workspaces');
   });
 });

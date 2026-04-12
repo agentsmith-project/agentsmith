@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, Key, Clock3, ShieldCheck } from 'lucide-react';
+import { Plus, Key, Clock3, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserAPIKeyService, getApiClient } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -35,7 +35,7 @@ export default function UserAPIKeysPage() {
   const [createNote, setCreateNote] = React.useState('');
   const [createExpiresIn, setCreateExpiresIn] = React.useState<string>('');
 
-  const { data: keys = [], isLoading } = useQuery({
+  const { data: keys = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['user', 'keys'],
     queryFn: () => api.list(),
   });
@@ -72,14 +72,8 @@ export default function UserAPIKeysPage() {
     });
   };
 
-  const activeKeys = React.useMemo(
-    () => keys.filter((item) => item.status === 'active'),
-    [keys],
-  );
-  const recentlyUsedKeys = React.useMemo(
-    () => keys.filter((item) => item.last_used_at),
-    [keys],
-  );
+  const activeKeys = React.useMemo(() => keys.filter((item) => item.status === 'active'), [keys]);
+  const recentlyUsedKeys = React.useMemo(() => keys.filter((item) => item.last_used_at), [keys]);
   const expiringKeys = React.useMemo(
     () =>
       keys.filter((item) => {
@@ -104,9 +98,7 @@ export default function UserAPIKeysPage() {
                 </div>
                 <div>
                   <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-                  <p className="mt-1 text-sm text-tertiary">
-                    Manage API keys for authenticating your applications.
-                  </p>
+                  <p className="mt-1 text-sm text-tertiary">{t('page_description')}</p>
                 </div>
                 <p className="max-w-xl text-sm leading-6 text-secondary">{t('summary_intro')}</p>
               </div>
@@ -160,16 +152,37 @@ export default function UserAPIKeysPage() {
 
             <div className="px-5 py-5 md:px-6">
               {isLoading ? (
-                <div className="py-12 text-sm text-tertiary">Loading...</div>
+                <div className="py-12 text-sm text-tertiary">{t('list_loading')}</div>
+              ) : isError ? (
+                <div className="rounded-2xl border border-warning/30 bg-warning/10 px-6 py-8" data-testid="api-keys__error">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 rounded-2xl bg-warning/15 p-2.5 text-warning">
+                      <TriangleAlert className="h-4 w-4" />
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-base font-semibold text-foreground">{t('list_error_title')}</p>
+                        <p className="mt-1 text-sm leading-6 text-secondary">{t('list_error_description')}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-3">
+                        <Button variant="outline" onClick={() => void refetch()} data-testid="api-keys__retry-btn">
+                          {commonT('retry')}
+                        </Button>
+                        <Button variant="action" onClick={() => setCreateDialogOpen(true)}>
+                          <Plus className="w-4 h-4" />
+                          {t('create')}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               ) : keys.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border bg-surface-high/70 px-6 py-16 text-center">
+                <div className="rounded-2xl border border-dashed border-border bg-surface-high/70 px-6 py-16 text-center" data-testid="api-keys__empty">
                   <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-dashed border-border text-tertiary">
                     <Key className="h-6 w-6" />
                   </div>
-                  <p className="mb-2 text-base font-medium text-foreground">No API keys yet</p>
-                  <p className="mx-auto mb-5 max-w-lg text-sm leading-6 text-tertiary">
-                    Create an API key to authenticate your applications.
-                  </p>
+                  <p className="mb-2 text-base font-medium text-foreground">{t('list_empty_title')}</p>
+                  <p className="mx-auto mb-5 max-w-lg text-sm leading-6 text-tertiary">{t('list_empty_description')}</p>
                   <Button variant="action" onClick={() => setCreateDialogOpen(true)}>
                     <Plus className="w-4 h-4" />
                     {t('create')}
@@ -181,44 +194,44 @@ export default function UserAPIKeysPage() {
             </div>
           </section>
 
-      <CreateApiKeyDialog
-        commonT={commonT}
-        createExpiresIn={createExpiresIn}
-        createNote={createNote}
-        isPending={createMutation.isPending}
-        open={createDialogOpen}
-        t={t}
-        onCreate={handleCreate}
-        onCreateExpiresInChange={setCreateExpiresIn}
-        onCreateNoteChange={setCreateNote}
-        onOpenChange={setCreateDialogOpen}
-      />
+          <CreateApiKeyDialog
+            commonT={commonT}
+            createExpiresIn={createExpiresIn}
+            createNote={createNote}
+            isPending={createMutation.isPending}
+            open={createDialogOpen}
+            t={t}
+            onCreate={handleCreate}
+            onCreateExpiresInChange={setCreateExpiresIn}
+            onCreateNoteChange={setCreateNote}
+            onOpenChange={setCreateDialogOpen}
+          />
 
-      <KeyCreatedDialog
-        open={!!keyCreatedDialog}
-        onOpenChange={(open) => !open && setKeyCreatedDialog(null)}
-        keyValue={keyCreatedDialog?.key || null}
-        keyPrefix={keyCreatedDialog?.keyPrefix}
-        scope="user"
-      />
+          <KeyCreatedDialog
+            open={!!keyCreatedDialog}
+            onOpenChange={(open) => !open && setKeyCreatedDialog(null)}
+            keyValue={keyCreatedDialog?.key || null}
+            keyPrefix={keyCreatedDialog?.keyPrefix}
+            scope="user"
+          />
 
-      <AlertDialog open={!!revokeKeyId} onOpenChange={() => setRevokeKeyId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('revoke_confirm_title')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('revoke_confirm_hint')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => revokeKeyId && revokeMutation.mutate(revokeKeyId)}
-              className="bg-error hover:bg-error/90"
-            >
-              {t('revoke')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          <AlertDialog open={!!revokeKeyId} onOpenChange={() => setRevokeKeyId(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('revoke_confirm_title')}</AlertDialogTitle>
+                <AlertDialogDescription>{t('revoke_confirm_hint')}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => revokeKeyId && revokeMutation.mutate(revokeKeyId)}
+                  className="bg-error hover:bg-error/90"
+                >
+                  {t('revoke')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </PageLayout>
     </PageState>

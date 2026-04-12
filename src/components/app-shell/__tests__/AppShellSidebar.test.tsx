@@ -258,7 +258,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     expect(within(governSection).queryByTestId('sidebar__nav-item--members')).not.toBeInTheDocument();
   });
 
-  it('shows members and settings for membership managers because both surfaces are reachable', () => {
+  it('shows members but not settings for membership managers', () => {
     const wrapper = createWrapper();
     mockProjectPermissions.mockReturnValue([
       'project:endpoint:use',
@@ -269,14 +269,14 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
 
     const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
     expect(within(governSection).getByTestId('sidebar__nav-item--members')).toBeInTheDocument();
-    expect(within(governSection).getByTestId('sidebar__nav-item--settings')).toBeInTheDocument();
+    expect(within(governSection).queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--audit')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--resource-policy')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--context')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--credentials')).not.toBeInTheDocument();
   });
 
-  it('shows audit and settings for audit readers because settings remains reachable', () => {
+  it('shows audit but not settings for audit readers', () => {
     const wrapper = createWrapper();
     mockProjectPermissions.mockReturnValue([
       'project:endpoint:use',
@@ -287,6 +287,6 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
 
     const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
     expect(within(governSection).getByTestId('sidebar__nav-item--audit')).toBeInTheDocument();
-    expect(within(governSection).getByTestId('sidebar__nav-item--settings')).toBeInTheDocument();
+    expect(within(governSection).queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
   });
 });

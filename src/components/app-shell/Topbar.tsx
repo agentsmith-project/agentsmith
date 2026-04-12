@@ -1,32 +1,29 @@
 'use client';
 
 import * as React from 'react';
-import { NotificationCenter } from '@/components/notifications/NotificationCenter';
-import { Logo } from './Logo';
-import { UserMenu } from './UserMenu';
-import { useAuthStore, selectCurrentUser } from '@/lib/stores/authStore';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { Globe, FolderKanban, ChevronDown, PanelRight } from 'lucide-react';
-import { useParams } from 'next/navigation';
-import { useRouter, usePathname } from '@/lib/i18n/routing';
+import { ChevronDown, FolderKanban, Globe, PanelRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { useParams } from 'next/navigation';
+
+import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { Button } from '@/components/ui/button';
-import { useWorkspaces } from '@/lib/hooks/use-workspaces';
-import { useGovernableProjects, useProject, useProjects } from '@/lib/hooks/use-projects-queries';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { broadcastProjectLayoutMode, useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
+import { useGovernableProjects, useProject, useProjects } from '@/lib/hooks/use-projects-queries';
+import { useWorkspaces } from '@/lib/hooks/use-workspaces';
+import { useRouter, usePathname } from '@/lib/i18n/routing';
 import {
   buildProjectSurfacePath,
   listSwitchableProjects,
   resolveDefaultProjectSurfaceHref,
   shouldUseGovernableProjectSwitcher,
 } from '@/lib/projects/project-surface-access';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { selectCurrentUser, useAuthStore } from '@/lib/stores/authStore';
+
+import { Logo } from './Logo';
+import { UserMenu } from './UserMenu';
 
 interface TopbarProps {
   className?: string;
@@ -49,11 +46,12 @@ export function Topbar({ className = '' }: TopbarProps) {
   const { data: projects } = useProjects(workspaceId || '');
   const { data: currentProject } = useProject(workspaceId || '', projectId || '');
   const shouldIncludeGovernableProjects = React.useMemo(
-    () => shouldUseGovernableProjectSwitcher({
-      discoverableProjects: projects ?? [],
-      currentProject,
-      canManageWorkspaceGovernance,
-    }),
+    () =>
+      shouldUseGovernableProjectSwitcher({
+        discoverableProjects: projects ?? [],
+        currentProject,
+        canManageWorkspaceGovernance,
+      }),
     [canManageWorkspaceGovernance, currentProject, projects],
   );
   const { data: governableProjects } = useGovernableProjects(workspaceId || '', {
@@ -61,12 +59,13 @@ export function Topbar({ className = '' }: TopbarProps) {
   });
   const { layoutMode, showLayoutToggle } = useProjectLayoutMode();
   const switchableProjects = React.useMemo(
-    () => listSwitchableProjects({
-      discoverableProjects: projects ?? [],
-      governableProjects: governableProjects ?? [],
-      currentProject,
-      includeGovernableProjects: shouldIncludeGovernableProjects,
-    }),
+    () =>
+      listSwitchableProjects({
+        discoverableProjects: projects ?? [],
+        governableProjects: governableProjects ?? [],
+        currentProject,
+        includeGovernableProjects: shouldIncludeGovernableProjects,
+      }),
     [currentProject, governableProjects, projects, shouldIncludeGovernableProjects],
   );
 
@@ -83,10 +82,7 @@ export function Topbar({ className = '' }: TopbarProps) {
     if (!workspaceId) return;
     const nextProject = switchableProjects.find((project) => project.id === newProjectId);
     const defaultHref = resolveDefaultProjectSurfaceHref(nextProject);
-    if (!defaultHref) {
-      router.push(`/workspaces/${workspaceId}`);
-      return;
-    }
+    if (!defaultHref) return;
     router.push(buildProjectSurfacePath(locale, workspaceId, newProjectId, defaultHref));
   };
 
@@ -99,7 +95,9 @@ export function Topbar({ className = '' }: TopbarProps) {
   const handleLogoClick = () => {
     if (workspaceId) {
       router.push(`/workspaces/${workspaceId}`);
+      return;
     }
+    router.push('/system/workspaces');
   };
 
   const handleProfile = () => {
@@ -111,7 +109,7 @@ export function Topbar({ className = '' }: TopbarProps) {
   };
 
   const handleApiKeys = () => {
-    router.push(`/user/api-keys`);
+    router.push('/user/api-keys');
   };
 
   const handleWorkspaceIntegrations = () => {
@@ -120,7 +118,7 @@ export function Topbar({ className = '' }: TopbarProps) {
   };
 
   const handlePersonalConnections = () => {
-    router.push(`/user/third-party-accounts`);
+    router.push('/user/third-party-accounts');
   };
 
   const handleLanguageSwitch = (newLocale: string) => {
@@ -140,106 +138,94 @@ export function Topbar({ className = '' }: TopbarProps) {
   return (
     <header
       data-testid="topbar"
-      className={`h-16 flex items-center justify-between px-4 md:px-5 bg-[linear-gradient(180deg,rgba(31,33,37,0.96),rgba(26,28,31,0.92))] backdrop-blur-xl border-b border-white/6 shadow-[0_10px_28px_rgba(0,0,0,0.22)] ${className}`}
+      className={`sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-border/70 bg-background/88 px-4 backdrop-blur-xl md:px-6 ${className}`}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         <button
           onClick={handleLogoClick}
-          className="rounded-xl px-1.5 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+          className="rounded-md px-1 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           aria-label={t('go_to_projects')}
         >
           <Logo />
         </button>
       </div>
 
-      <div className="flex-1 min-w-0 px-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              data-testid="topbar__workspace-switcher"
-              className="max-w-[360px] flex items-center gap-2 px-3.5 h-11 rounded-xl border border-white/6 bg-white/4 hover:bg-white/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors"
-            >
-              <Globe className="w-4 h-4 text-icon-default flex-shrink-0" />
-              <span className="text-sm text-foreground truncate">
-                {currentWorkspace?.name || t('select_workspace')}
-              </span>
-              <ChevronDown className="w-4 h-4 text-tertiary flex-shrink-0" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {workspaces && workspaces.length > 0 ? (
-                <>
-                  {workspaces.map((ws) => (
-                    <DropdownMenuItem key={ws.id} onSelect={() => handleWorkspaceChange(ws.id)}>
-                      {ws.name}
-                      {currentWorkspace?.id === ws.id && (
-                        <span className="ml-auto text-xs text-tertiary">({t('current_workspace')})</span>
-                      )}
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            data-testid="topbar__workspace-switcher"
+            className="control-pill flex h-11 max-w-[22rem] items-center gap-2.5 px-3.5 text-left text-primary shadow-ambient transition-colors duration-150 hover:bg-surface hover:text-foreground"
+          >
+            <Globe className="h-4 w-4 flex-shrink-0 text-icon-default" />
+            <span className="truncate text-sm text-foreground">{currentWorkspace?.name || t('select_workspace')}</span>
+            <ChevronDown className="ml-auto h-4 w-4 flex-shrink-0 text-tertiary" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {workspaces && workspaces.length > 0 ? (
+              workspaces.map((ws) => (
+                <DropdownMenuItem key={ws.id} onSelect={() => handleWorkspaceChange(ws.id)}>
+                  {ws.name}
+                  {currentWorkspace?.id === ws.id ? (
+                    <span className="ml-auto text-xs text-tertiary">{t('current_workspace')}</span>
+                  ) : null}
+                </DropdownMenuItem>
+              ))
+            ) : (
+              <DropdownMenuItem disabled>{t('no_workspaces')}</DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {currentProject ? (
+          <>
+            <div className="hidden h-5 w-px bg-border/60 md:block" />
+            <div className="flex min-w-0 items-center gap-2">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      data-testid="topbar__project-switcher"
+                      onClick={handleGoToProjects}
+                      className="control-pill flex h-11 max-w-[24rem] items-center gap-2.5 px-3.5 text-left shadow-ambient transition-colors duration-150 hover:bg-surface"
+                      aria-label={t('go_to_projects')}
+                    >
+                      <FolderKanban className="h-4 w-4 flex-shrink-0 text-icon-default" />
+                      <span className="truncate text-sm text-foreground">{currentProject.name}</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{t('go_to_projects')}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  data-testid="topbar__project-switcher-menu"
+                  className="control-pill flex h-11 w-11 items-center justify-center text-tertiary shadow-ambient transition-colors duration-150 hover:bg-surface hover:text-foreground"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {switchableProjects.map((proj) => (
+                    <DropdownMenuItem key={proj.id} onSelect={() => handleProjectChange(proj.id)}>
+                      {proj.name}
                     </DropdownMenuItem>
                   ))}
-                </>
-              ) : (
-                <DropdownMenuItem disabled>
-                  {t('no_workspaces')}
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {currentProject && (
-            <>
-              <span className="text-tertiary">/</span>
-
-              <div className="flex items-center gap-2 max-w-[420px]">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        data-testid="topbar__project-switcher"
-                        onClick={handleGoToProjects}
-                        className="flex items-center gap-2 px-3.5 h-11 rounded-xl border border-transparent hover:border-white/6 hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors group"
-                        aria-label={t('go_to_projects')}
-                      >
-                        <FolderKanban className="w-4 h-4 text-icon-default flex-shrink-0" />
-                        <span className="text-sm text-primary truncate group-hover:text-accent transition-colors">
-                          {currentProject.name}
-                        </span>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{t('go_to_projects')}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    data-testid="topbar__project-switcher-menu"
-                    className="p-2 h-11 rounded-xl hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors"
-                  >
-                    <ChevronDown className="w-4 h-4 text-tertiary" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {switchableProjects.map((proj) => (
-                      <DropdownMenuItem key={proj.id} onSelect={() => handleProjectChange(proj.id)}>
-                        {proj.name}
-                      </DropdownMenuItem>
-                    ))}
-                    <div className="h-px bg-border my-1" />
-                    <DropdownMenuItem onSelect={handleGoToProjects}>
-                      {t('view_all_projects')}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </>
-          )}
-        </div>
+                  <div className="my-1 h-px bg-border/50" />
+                  <DropdownMenuItem onSelect={handleGoToProjects}>{t('view_all_projects')}</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </>
+        ) : null}
       </div>
 
-      <div className="flex items-center gap-3 md:gap-4">
+      <div className="flex items-center gap-3">
         {workspaceId && projectId && showLayoutToggle ? (
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             size="sm"
             className="h-9 gap-2"
             onClick={handleLayoutToggle}

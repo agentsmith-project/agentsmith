@@ -5,6 +5,7 @@ import { EndpointsPageView, type EndpointsPageProps } from '@/components/endpoin
 import { PageState } from '@/components/layout/PageState';
 import { useEndpointPageCapabilities } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
+import { ProjectRecoveryState } from '../_components/ProjectRecoveryState';
 
 interface EndpointsRouteProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -22,10 +23,12 @@ export default function EndpointsPage({ params }: EndpointsRouteProps) {
   if (!resolved.isValid || !resolved.workspace || !resolved.project) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
-        </div>
+        <ProjectRecoveryState
+          title={tErrors('validation_error')}
+          description={tErrors('badRequest.description')}
+          locale={resolved.locale}
+          workspaceId={resolved.workspace}
+        />
       </PageState>
     );
   }
@@ -33,10 +36,12 @@ export default function EndpointsPage({ params }: EndpointsRouteProps) {
   if (!capabilities.canRead) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
-        </div>
+        <ProjectRecoveryState
+          title={tErrors('permission_denied_title')}
+          description={tErrors('permission_denied_hint')}
+          locale={resolved.locale}
+          workspaceId={resolved.workspace}
+        />
       </PageState>
     );
   }

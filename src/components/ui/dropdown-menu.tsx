@@ -10,14 +10,8 @@ export function DropdownMenu({
   onOpenChange,
 }: {
   children: React.ReactNode;
-  /**
-   * Default `false` to avoid scroll-lock/body padding adjustments that can
-   * cause subtle layout shift (e.g. topbar width changes) when menus open.
-   */
   modal?: boolean;
-  /** Controlled open state. When provided, the menu is controlled. */
   open?: boolean;
-  /** Called when open state changes (e.g. on select, escape, outside click). */
   onOpenChange?: (open: boolean) => void;
 }) {
   return (
@@ -37,12 +31,12 @@ export function DropdownMenuTrigger({
     <DropdownMenuPrimitive.Trigger
       className={cn(
         asChild
-          ? "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:pointer-events-none disabled:opacity-50"
+          ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50'
           : [
-              "px-3 py-2 rounded-sm text-sm transition-colors duration-200",
-              "text-primary hover:bg-hover hover:text-foreground",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
-              "disabled:pointer-events-none disabled:opacity-50",
+              'rounded-pill border border-border/60 bg-surface-low px-3 py-2 text-sm text-primary transition-colors duration-150',
+              'hover:border-border hover:bg-surface hover:text-foreground',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+              'disabled:pointer-events-none disabled:opacity-50',
             ],
         className
       )}
@@ -57,13 +51,15 @@ export function DropdownMenuTrigger({
 export function DropdownMenuContent({
   children,
   className,
+  sideOffset = 8,
   ...props
 }: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>) {
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
+        sideOffset={sideOffset}
         className={cn(
-          "min-w-[12rem] overflow-hidden rounded-md border border-subtle bg-surface-high shadow-float",
+          'min-w-[13rem] overflow-hidden rounded-lg border border-border bg-dialog p-1.5 shadow-float',
           className
         )}
         {...props}
@@ -82,11 +78,10 @@ export function DropdownMenuItem({
   return (
     <DropdownMenuPrimitive.Item
       className={cn(
-        "flex cursor-default select-none items-center gap-2 px-3 py-2 text-sm outline-none",
-        "transition-colors duration-200",
-        "text-primary hover:bg-hover hover:text-foreground",
-        "focus:bg-hover focus:text-foreground",
-        "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        'flex cursor-default select-none items-center gap-2 rounded-md px-3 py-2 text-[13px] text-primary outline-none transition-colors duration-150',
+        'hover:bg-surface-high hover:text-foreground',
+        'focus:bg-surface-high focus:text-foreground',
+        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
         className
       )}
       {...props}
@@ -102,7 +97,7 @@ export function DropdownMenuSeparator({
 }: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>) {
   return (
     <DropdownMenuPrimitive.Separator
-      className={cn("my-1 h-px bg-subtle", className)}
+      className={cn('my-1 h-px bg-border/50', className)}
       {...props}
     />
   );

@@ -363,7 +363,59 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
             ) : objectsQuery.isLoading ? (
               <div className="px-3 py-8 text-center text-tertiary">{t('file_manager.loading')}</div>
             ) : filteredItems.length === 0 ? (
-              <div className="px-3 py-10 text-center text-tertiary">{t('file_manager.empty')}</div>
+              <div className="px-4 py-12 text-center" data-testid="files__empty-state">
+                <div className="mx-auto flex max-w-[520px] flex-col items-center gap-3 rounded-[18px] border border-dashed border-white/8 bg-white/[0.025] px-5 py-6">
+                  <div>
+                    <div className="text-sm font-medium text-primary">
+                      {searchInput.trim().length > 0
+                        ? t('file_manager.search_empty_title')
+                        : t('file_manager.empty')}
+                    </div>
+                    <div className="mt-2 text-sm text-tertiary">
+                      {searchInput.trim().length > 0
+                        ? t('file_manager.search_empty_description')
+                        : t('file_manager.empty_description')}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    {searchInput.trim().length > 0 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => setSearchInput('')}
+                        data-testid="files__empty-clear-search"
+                      >
+                        {t('file_manager.search_empty_clear')}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      onClick={onCreateFolder}
+                      disabled={libraryActionsDisabled}
+                      data-testid="files__empty-new-folder"
+                    >
+                      <FolderPlus className="h-3.5 w-3.5 mr-1" />
+                      {t('file_manager.new_folder')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8"
+                      onClick={onUploadClick}
+                      disabled={libraryActionsDisabled || uploadInProgress}
+                      data-testid="files__empty-upload"
+                    >
+                      <Upload className="h-3.5 w-3.5 mr-1" />
+                      {t('file_manager.upload')}
+                    </Button>
+                  </div>
+                </div>
+              </div>
             ) : (
               <Virtuoso
                 style={{ height: '100%' }}

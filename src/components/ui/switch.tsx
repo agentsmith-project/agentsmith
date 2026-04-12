@@ -3,12 +3,6 @@ import * as React from 'react';
 import * as SwitchPrimitive from '@radix-ui/react-switch';
 import { cn } from '@/lib/utils';
 
-/**
- * Switch - Toggle switch component
- *
- * Dark theme: track = border (#4A4D52), thumb moves on toggle
- * Active state: accent bg (#3B82F6)
- */
 const Switch = React.forwardRef<
   React.ElementRef<typeof SwitchPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SwitchPrimitive.Root>
@@ -16,9 +10,9 @@ const Switch = React.forwardRef<
   <SwitchPrimitive.Root
     ref={ref}
     className={cn(
-      'peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 transition-colors duration-200',
-      'border-border-input bg-input',
-      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+      'peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-pill border transition-colors duration-150',
+      'border-border-input/80 bg-input',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
       'disabled:cursor-not-allowed disabled:opacity-50',
       'data-[state=checked]:bg-accent data-[state=checked]:border-accent',
       className,
@@ -27,7 +21,7 @@ const Switch = React.forwardRef<
   >
     <SwitchPrimitive.Thumb
       className={cn(
-        'pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg transition-transform duration-200',
+        'pointer-events-none block h-4 w-4 rounded-full bg-white shadow-ambient transition-transform duration-150',
         'data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0',
       )}
     />

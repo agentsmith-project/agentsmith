@@ -199,16 +199,27 @@ export function FileObjectDetailsPanel({
 
   const renderEmpty = () => {
     if (!selectedLibraryId || selected.length === 0) {
-      return <div className="text-tertiary">{t('file_manager.details_empty')}</div>;
+      return (
+        <div className="space-y-3" data-testid="files__details-empty-state">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-tertiary">{t('file_manager.details')}</div>
+            <div className="mt-1 text-sm font-medium text-primary">{t('file_manager.details_empty')}</div>
+            <div className="mt-2 text-sm text-tertiary">{t('file_manager.details_empty_description')}</div>
+          </div>
+        </div>
+      );
     }
     if (selected.length > 1) {
       return <div className="text-tertiary">{t('file_manager.details_multi', { count: String(selected.length) })}</div>;
     }
     if (selected[0].kind === 'prefix') {
       return (
-        <div className="space-y-2">
-          <div className="text-xs text-tertiary">{t('file_manager.folder')}</div>
-          <div className="font-mono text-xs break-all">{selected[0].prefix}</div>
+        <div className="space-y-3" data-testid="files__details-prefix-state">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-tertiary">{t('file_manager.folder')}</div>
+            <div className="mt-1 text-sm font-medium text-primary">{selected[0].prefix}</div>
+            <div className="mt-2 text-sm text-tertiary">{t('file_manager.details_prefix_description')}</div>
+          </div>
         </div>
       );
     }

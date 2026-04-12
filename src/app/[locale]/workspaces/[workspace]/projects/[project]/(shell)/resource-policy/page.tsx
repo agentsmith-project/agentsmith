@@ -49,6 +49,7 @@ import {
   createSubjectRowId,
 } from '@/lib/resource-policy/editor-utils';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
+import { ProjectRecoveryState } from '../_components/ProjectRecoveryState';
 import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 import type { GovernanceAuthorizationResponse } from '@/lib/api/endpoints/governance-explainability';
 import { ResourcePolicyEditor } from './_components/ResourcePolicyEditor';
@@ -379,10 +380,12 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   if (!resolvedParams.isValid || !workspaceId || !projectId) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
-        </div>
+        <ProjectRecoveryState
+          title={tErrors('validation_error')}
+          description={tErrors('badRequest.description')}
+          locale={resolvedParams.locale}
+          workspaceId={workspaceId}
+        />
       </PageState>
     );
   }
@@ -398,10 +401,12 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   if (!canReadPolicy) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
-        </div>
+        <ProjectRecoveryState
+          title={tErrors('permission_denied_title')}
+          description={tErrors('permission_denied_hint')}
+          locale={resolvedParams.locale}
+          workspaceId={workspaceId}
+        />
       </PageState>
     );
   }

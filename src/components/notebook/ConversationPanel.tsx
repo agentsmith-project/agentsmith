@@ -126,6 +126,13 @@ export function ConversationPanel({
     ? latestRunAction?.summary ?? runActivity.lastSummary ?? t('run_active_default_action')
     : null;
 
+  const showEmptyOrientation =
+    messages.length === 0 &&
+    !streamingMessageId &&
+    !streamingContent &&
+    !sandboxStarting &&
+    !runActivity?.active;
+
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-[16px] bg-background/55">
       {(connectionStatus && connectionStatus !== 'connected') || sandboxStarting || runActivity?.active ? (
@@ -209,23 +216,55 @@ export function ConversationPanel({
         </div>
       ) : null}
       <div className="min-h-0 flex-1 bg-[linear-gradient(180deg,rgba(255,255,255,0.012),transparent_12%)]">
-        <MessageList
-          messages={messages}
-          streamingMessageId={streamingMessageId}
-          streamingContent={streamingContent}
-          focusTraceMessageId={focusTraceMessageId}
-          focusTraceName={focusTraceName}
-          focusTraceToken={focusTraceToken}
-          traceEventsByMessageId={traceEventsByMessageId}
-          traceHasMoreByMessageId={traceHasMoreByMessageId}
-          traceLoadingByMessageId={traceLoadingByMessageId}
-          traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
-          traceErrorByMessageId={traceErrorByMessageId}
-          disabled={disabled}
-          activeAgentMessageId={activeAgentMessageId}
-          onTraceExpand={onTraceExpand}
-          onTraceLoadMore={onTraceLoadMore}
-        />
+        {showEmptyOrientation ? (
+          <div className="flex h-full items-center justify-center px-4 py-8" data-testid="notebook__conversation-empty-state">
+            <div className="w-full max-w-xl rounded-[20px] border border-white/6 bg-white/[0.03] p-5 shadow-[0_14px_28px_rgba(0,0,0,0.12)]">
+              <div className="text-sm font-medium text-foreground">{t('empty')}</div>
+              <div className="mt-2 text-sm text-secondary">{t('empty_description')}</div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {diagnosticsLinks ? (
+                  <>
+                    <Button asChild variant="outline" size="sm" className="h-8">
+                      <Link href={diagnosticsLinks.audit} data-testid="notebook__conversation-empty-open-audit">
+                        {t('open_audit')}
+                      </Link>
+                    </Button>
+                    <Button asChild variant="outline" size="sm" className="h-8">
+                      <Link href={diagnosticsLinks.usage} data-testid="notebook__conversation-empty-open-usage">
+                        {t('open_usage')}
+                      </Link>
+                    </Button>
+                    {diagnosticsLinks.agent ? (
+                      <Button asChild variant="outline" size="sm" className="h-8">
+                        <Link href={diagnosticsLinks.agent} data-testid="notebook__conversation-empty-open-agent">
+                          {t('open_agent_diagnostics')}
+                        </Link>
+                      </Button>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <MessageList
+            messages={messages}
+            streamingMessageId={streamingMessageId}
+            streamingContent={streamingContent}
+            focusTraceMessageId={focusTraceMessageId}
+            focusTraceName={focusTraceName}
+            focusTraceToken={focusTraceToken}
+            traceEventsByMessageId={traceEventsByMessageId}
+            traceHasMoreByMessageId={traceHasMoreByMessageId}
+            traceLoadingByMessageId={traceLoadingByMessageId}
+            traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
+            traceErrorByMessageId={traceErrorByMessageId}
+            disabled={disabled}
+            activeAgentMessageId={activeAgentMessageId}
+            onTraceExpand={onTraceExpand}
+            onTraceLoadMore={onTraceLoadMore}
+          />
+        )}
       </div>
       <div className="border-t border-white/6 bg-transparent">
         <ConversationInput

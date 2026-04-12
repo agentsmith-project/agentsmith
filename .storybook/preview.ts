@@ -1,5 +1,6 @@
 import type { Preview } from '@storybook/nextjs';
-import { withDarkTheme, withI18n } from '../src/stories/decorators';
+
+import { withTheme, withI18n } from '../src/stories/decorators';
 import { globalTypes } from '../src/stories/types';
 
 const preview: Preview = {
@@ -12,16 +13,17 @@ const preview: Preview = {
       },
     },
     backgrounds: {
-      default: 'dark',
+      default: 'canvas-light',
       values: [
-        { name: 'dark', value: '#191919' },
-        { name: 'panel', value: '#1f1f1f' },
-        { name: 'surface', value: '#252525' },
+        { name: 'canvas-light', value: '#f2f1ed' },
+        { name: 'canvas-dark', value: '#14120b' },
+        { name: 'surface-light', value: '#ebeae5' },
+        { name: 'surface-dark', value: '#1f1b13' },
       ],
     },
   },
   globalTypes,
-  decorators: [withDarkTheme, withI18n],
+  decorators: [withTheme, withI18n],
 };
 
 export default preview;

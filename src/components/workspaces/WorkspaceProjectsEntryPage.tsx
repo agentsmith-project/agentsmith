@@ -8,10 +8,10 @@
 
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,25 +24,25 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   ArrowLeft,
-  ArrowUpRight,
   FolderKanban,
   FolderOpen,
-  Plus,
   Pin,
+  Plus,
   Search,
   Settings as SettingsIcon,
-  Sparkles,
 } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import type { ProjectWithMembership } from '@/lib/hooks/use-permissions';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { CreateProjectDialog } from '@/components/projects/CreateProjectDialog';
 import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
 import { ProjectCard } from '@/components/projects/ProjectCard';
 import { ProjectsTable } from '@/components/projects/ProjectsTable';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
@@ -53,7 +53,6 @@ import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { useWorkspace } from '@/lib/hooks/use-workspaces';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useQueryClient } from '@tanstack/react-query';
-import { cn } from '@/lib/utils';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import {
   buildProjectAdminSummary,
@@ -82,6 +81,7 @@ export function WorkspaceProjectsEntryPage({
   const queryClient = useQueryClient();
   const t = useTranslations('projects');
   const tSettings = useTranslations('settings');
+  const tWorkspace = useTranslations('workspace');
   const tErrors = useTranslations('errors');
   const { isAuthenticated, token } = useAuthStore();
   const hydrated = useAuthStoreHydration();
@@ -156,6 +156,7 @@ export function WorkspaceProjectsEntryPage({
   };
 
   const handleSettingsClick = (project: Project) => {
+    if (!workspaceId) return;
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/settings`);
   };
 
@@ -294,10 +295,19 @@ export function WorkspaceProjectsEntryPage({
   if (!workspaceId) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
-        </div>
+        <PageLayout contentWidth="narrow">
+          <div className="surface-card rounded-[28px] px-6 py-8 text-center">
+            <div className="space-y-2">
+              <h2 className="type-title text-foreground">{tErrors('validation_error')}</h2>
+              <p className="type-body-ui text-secondary">{tErrors('badRequest.description')}</p>
+            </div>
+            <div className="mt-5 flex justify-center">
+              <Button asChild variant="outline">
+                <Link href={`/${locale}/workspaces/overview`}>{tWorkspace('select')}</Link>
+              </Button>
+            </div>
+          </div>
+        </PageLayout>
       </PageState>
     );
   }
@@ -316,15 +326,25 @@ export function WorkspaceProjectsEntryPage({
   const canReadProjects = canWorkspaceRead;
   const canCreateProject = canCreateProjectByWorkspacePermissions;
   const workspaceBasePath = `/${locale}/workspaces/${workspaceId}`;
+  const workspaceSelectionPath = `/${locale}/workspaces/overview`;
   const workspaceName = currentWorkspace?.name || workspaceId;
 
   if (!canReadProjects) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
-        </div>
+        <PageLayout contentWidth="narrow">
+          <div className="surface-card rounded-[28px] px-6 py-8 text-center">
+            <div className="space-y-2">
+              <h2 className="type-title text-foreground">{tErrors('permission_denied_title')}</h2>
+              <p className="type-body-ui text-secondary">{tErrors('permission_denied_hint')}</p>
+            </div>
+            <div className="mt-5 flex justify-center">
+              <Button asChild variant="outline">
+                <Link href={workspaceSelectionPath}>{tWorkspace('select')}</Link>
+              </Button>
+            </div>
+          </div>
+        </PageLayout>
       </PageState>
     );
   }
@@ -332,10 +352,19 @@ export function WorkspaceProjectsEntryPage({
   if (isWorkspaceFetched && !currentWorkspace) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{t('workspace_unavailable_title')}</h2>
-          <p className="text-sm text-tertiary">{t('workspace_unavailable_description')}</p>
-        </div>
+        <PageLayout contentWidth="narrow">
+          <div className="surface-card rounded-[28px] px-6 py-8 text-center">
+            <div className="space-y-2">
+              <h2 className="type-title text-foreground">{t('workspace_unavailable_title')}</h2>
+              <p className="type-body-ui text-secondary">{t('workspace_unavailable_description')}</p>
+            </div>
+            <div className="mt-5 flex justify-center">
+              <Button asChild variant="outline">
+                <Link href={workspaceSelectionPath}>{tWorkspace('select')}</Link>
+              </Button>
+            </div>
+          </div>
+        </PageLayout>
       </PageState>
     );
   }
@@ -346,10 +375,19 @@ export function WorkspaceProjectsEntryPage({
   if (isProjectsNotFound) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{t('workspace_unavailable_title')}</h2>
-          <p className="text-sm text-tertiary">{t('workspace_unavailable_description')}</p>
-        </div>
+        <PageLayout contentWidth="narrow">
+          <div className="surface-card rounded-[28px] px-6 py-8 text-center">
+            <div className="space-y-2">
+              <h2 className="type-title text-foreground">{t('workspace_unavailable_title')}</h2>
+              <p className="type-body-ui text-secondary">{t('workspace_unavailable_description')}</p>
+            </div>
+            <div className="mt-5 flex justify-center">
+              <Button asChild variant="outline">
+                <Link href={workspaceSelectionPath}>{tWorkspace('select')}</Link>
+              </Button>
+            </div>
+          </div>
+        </PageLayout>
       </PageState>
     );
   }
@@ -357,240 +395,222 @@ export function WorkspaceProjectsEntryPage({
   if (isProjectsError) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-3">
-          <div className="space-y-2">
-            <h2 className="text-lg font-semibold">{t('load_failed_title')}</h2>
-            <p className="text-sm text-tertiary">{t('load_failed_description')}</p>
+        <PageLayout contentWidth="narrow">
+          <div className="surface-card rounded-[28px] px-6 py-8 text-center">
+            <div className="space-y-2">
+              <h2 className="type-title text-foreground">{t('load_failed_title')}</h2>
+              <p className="type-body-ui text-secondary">{t('load_failed_description')}</p>
+            </div>
+            <div className="mt-5 flex flex-wrap justify-center gap-3">
+              <Button variant="primary" onClick={() => void refetchProjects()}>{t('retry')}</Button>
+              <Button asChild variant="outline">
+                <Link href={workspaceSelectionPath}>{tWorkspace('select')}</Link>
+              </Button>
+            </div>
           </div>
-          <div className="flex justify-center">
-            <Button variant="action" onClick={() => void refetchProjects()}>{t('retry')}</Button>
-          </div>
-        </div>
+        </PageLayout>
       </PageState>
     );
   }
 
   return (
     <PageState state="success">
-      <PageLayout>
-        <div className="min-h-screen bg-background flex flex-col">
+      <PageLayout contentWidth="full">
+        <div className="flex min-h-screen flex-col bg-background">
           <Topbar />
 
           <main
-            className="flex-1 w-full max-w-[1640px] mx-auto px-4 py-6 md:px-6 md:py-8"
+            className="mx-auto flex w-full max-w-[1640px] flex-1 flex-col px-4 py-6 md:px-6 md:py-8"
             data-testid="projects__page"
           >
-            <div className="mb-6 space-y-4">
+            <div className="space-y-6">
               {showBackLink ? (
-                <Link
-                  href={workspaceBasePath}
-                  className="inline-flex items-center gap-2 text-sm text-tertiary transition-colors hover:text-foreground"
-                  data-testid="projects__back-to-workspace"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  {t('back_to_workspace')}
-                </Link>
+                <Button asChild variant="ghost" className="w-fit px-0 text-secondary hover:text-foreground" data-testid="projects__back-to-workspace">
+                  <Link href={workspaceBasePath}>
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    {t('back_to_workspace')}
+                  </Link>
+                </Button>
               ) : null}
 
-              <section className="rounded-[24px] border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.22)] md:p-7">
-                <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-                  <div className="space-y-3">
-                    <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
-                      <Sparkles className="h-3.5 w-3.5" />
-                      {t('title')}
-                    </div>
-                    <div className="space-y-2">
-                      <h1 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">{t('title')}</h1>
-                      <p className="max-w-2xl text-sm text-secondary md:text-[15px]">
-                        {t('workspace_label')} {workspaceName}
-                      </p>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <div className="rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-tertiary">
-                          {t('summary.total_label')}
-                        </p>
-                        <div className="mt-2 flex items-center gap-3">
-                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-accent/12 text-accent">
-                            <FolderKanban className="h-5 w-5" />
-                          </span>
-                          <div>
-                            <p className="text-2xl font-semibold text-foreground">{filteredProjects.length}</p>
-                            <p className="text-sm text-secondary">{t('summary.total_hint')}</p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-tertiary">
-                          {t('summary.pinned_label')}
-                        </p>
-                        <div className="mt-2 flex items-center gap-3">
-                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.06] text-foreground">
-                            <Pin className="h-5 w-5" />
-                          </span>
-                          <div>
-                            <p className="text-2xl font-semibold text-foreground">{pinnedProjects.length}</p>
-                            <p className="text-sm text-secondary">{t('summary.pinned_hint')}</p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-tertiary">
-                          {t('workspace_label')}
-                        </p>
-                        <div className="mt-2 flex items-center gap-3">
-                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.06] text-foreground">
-                            <ArrowUpRight className="h-5 w-5" />
-                          </span>
-                          <div>
-                            <p className="text-base font-semibold text-foreground">{workspaceName}</p>
-                            <p className="text-sm text-secondary">
-                              {canCreateProject ? t('empty.description') : t('empty.read_only_description')}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[20px] border border-white/8 bg-black/15 p-4 shadow-[0_14px_32px_rgba(0,0,0,0.14)]">
-                    <div className="space-y-3">
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-tertiary">
-                          {t('search_placeholder')}
-                        </p>
-                        <p className="mt-1 text-sm text-secondary">{t('summary.table_hint')}</p>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-[minmax(0,320px)_auto_auto]">
-                        <label className="relative block">
-                          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-icon-default" />
-                          <input
-                            type="text"
-                            placeholder={t('search_placeholder')}
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            data-testid="projects__search"
-                            className="h-11 w-full rounded-xl border border-white/6 bg-white/5 pl-10 pr-4 text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
-                          />
-                        </label>
-
-                        <Button
-                          variant="primary"
-                          onClick={() => setCreateDialogOpen(true)}
-                          disabled={!canCreateProject}
-                          data-testid="projects__create-btn"
-                          className="h-11 px-5"
-                        >
-                          <Plus className="h-4 w-4" />
-                          {t('new_project')}
-                        </Button>
-
-                        {canManageWorkspaceGovernance ? (
-                          <Link
-                            href={`${workspaceBasePath}/settings`}
-                            className={cn(buttonVariants({ variant: 'outline', size: 'default' }), 'h-11 px-5')}
-                            data-testid="projects__workspace-settings-btn"
-                          >
-                            <SettingsIcon className="mr-2 h-4 w-4" />
-                            {tSettings('workspace_title')}
-                          </Link>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </div>
-
-            {!isAuthenticated || (isProjectsLoading && projects.length === 0) ? (
-              <div className="flex min-h-[320px] items-center justify-center">
-                <PageLoading />
-              </div>
-            ) : projects.length === 0 ? (
-              <div className="rounded-[24px] border border-subtle bg-surface/90 px-6 py-20 text-center shadow-[0_18px_40px_rgba(0,0,0,0.18)]">
-                <div className="mx-auto mb-5 inline-flex h-16 w-16 items-center justify-center rounded-3xl border border-white/8 bg-white/[0.04]">
-                  <FolderOpen className="h-8 w-8 text-tertiary" />
-                </div>
-                <h2 className="text-xl font-semibold text-foreground mb-2">{t('empty.title')}</h2>
-                <p className="mx-auto mb-6 max-w-xl text-tertiary">
-                  {canCreateProject ? t('empty.description') : t('empty.read_only_description')}
-                </p>
-                {canCreateProject ? (
+              <PageHeader
+                title={t('title')}
+                subtitle={`${t('workspace_label')} ${workspaceName}`}
+                actions={(
                   <Button
                     variant="primary"
                     onClick={() => setCreateDialogOpen(true)}
+                    disabled={!canCreateProject}
+                    data-testid="projects__create-btn"
                   >
-                    <Plus className="w-4 h-4" />
-                    {t('empty.create_first')}
+                    <Plus className="h-4 w-4" />
+                    {t('new_project')}
                   </Button>
-                ) : null}
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {pinnedProjects.length > 0 && (
-                  <section className="space-y-4 rounded-[24px] border border-subtle bg-surface/88 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)] md:p-6">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <h2 className="text-lg font-medium text-foreground flex items-center gap-2">
-                          <Pin className="w-4 h-4" />
-                          {t('pinned.title')}
-                        </h2>
-                        <p className="mt-1 text-sm text-secondary">{t('summary.pinned_section_hint')}</p>
-                      </div>
-                      <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-sm text-secondary">
-                        {pinnedProjects.length}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {pinnedProjects.map((project) => (
-                        <ProjectCard
-                          key={project.id}
-                          project={project}
-                          onClick={() => handleProjectClick(project)}
-                          onSettingsClick={() => handleSettingsClick(project)}
-                          onTogglePin={(e) => togglePin(project.id, e)}
-                          onJoinRequest={() => void handleCreateJoinRequest(project)}
-                          isJoinRequestPending={pendingJoinRequestIds.has(project.id) || joiningProjectIds.has(project.id)}
-                          adminSummary={buildProjectAdminSummary(project, memberNameById)}
-                          t={t}
-                        />
-                      ))}
-                    </div>
-                  </section>
                 )}
+              />
 
-                <section className="rounded-[24px] border border-subtle bg-surface/92 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.18)] md:p-6">
-                  <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                    <div>
-                      <h2 className="text-lg font-medium text-foreground">
-                        {t('all.count', { count: unpinnedProjects.length })}
-                      </h2>
-                      <p className="mt-1 text-sm text-secondary">{t('summary.table_hint')}</p>
+              <section className="grid gap-4 xl:grid-cols-3">
+                <article className="surface-card rounded-[28px] px-5 py-5">
+                  <p className="type-caption text-tertiary">{t('summary.total_label')}</p>
+                  <div className="mt-4 flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-subtle bg-surface-low text-accent">
+                      <FolderKanban className="h-5 w-5" />
                     </div>
-
-                    <div className="flex flex-wrap items-center gap-3 text-sm text-secondary">
-                      <div className="inline-flex items-center gap-2 rounded-full border border-white/6 bg-white/[0.03] px-3 py-2">
-                        <ArrowUpRight className="h-4 w-4 text-accent" />
-                        {t('workspace_label')} {currentWorkspace?.name || workspaceId}
-                      </div>
+                    <div>
+                      <p className="type-section-heading text-foreground">{filteredProjects.length}</p>
+                      <p className="type-body-ui text-secondary">{t('summary.total_hint')}</p>
                     </div>
                   </div>
+                </article>
 
-                  <ProjectsTable
-                    projects={unpinnedProjects}
-                    onProjectClick={handleProjectClick}
-                    onSettingsClick={handleSettingsClick}
-                    onDeleteClick={(project) => setDeleteDialogProject(project)}
-                    onTogglePin={togglePin}
-                    onJoinRequest={(project) => void handleCreateJoinRequest(project)}
-                    pendingJoinRequestIds={new Set([...pendingJoinRequestIds, ...joiningProjectIds])}
-                    canDeleteProjectByWorkspacePermission={canDeleteProjectByWorkspacePermission}
-                    memberNameById={memberNameById}
-                    t={t}
-                  />
+                <article className="surface-card rounded-[28px] px-5 py-5">
+                  <p className="type-caption text-tertiary">{t('summary.pinned_label')}</p>
+                  <div className="mt-4 flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-subtle bg-surface-low text-icon-default">
+                      <Pin className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="type-section-heading text-foreground">{pinnedProjects.length}</p>
+                      <p className="type-body-ui text-secondary">{t('summary.pinned_hint')}</p>
+                    </div>
+                  </div>
+                </article>
+
+                <article className="surface-card rounded-[28px] px-5 py-5">
+                  <p className="type-caption text-tertiary">{t('workspace_label')}</p>
+                  <div className="mt-4 space-y-3">
+                    <div className="space-y-2">
+                      <p className="type-title text-foreground">{workspaceName}</p>
+                      <p className="type-body-ui text-secondary">
+                        {canCreateProject ? t('empty.description') : t('empty.read_only_description')}
+                      </p>
+                    </div>
+                    {canManageWorkspaceGovernance ? (
+                      <Button asChild variant="outline" data-testid="projects__workspace-settings-btn" className="w-full md:w-auto">
+                        <Link href={`${workspaceBasePath}/settings`}>
+                          <SettingsIcon className="mr-2 h-4 w-4" />
+                          {tSettings('workspace_title')}
+                        </Link>
+                      </Button>
+                    ) : null}
+                  </div>
+                </article>
+              </section>
+
+              <section className="surface-card rounded-[28px] px-5 py-5 md:px-6 md:py-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="space-y-2">
+                    <h2 className="type-subheading text-foreground">{t('all.title')}</h2>
+                    <p className="type-body-ui text-secondary">{t('summary.table_hint')}</p>
+                  </div>
+                  <label className="relative block w-full max-w-md">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-icon-default" />
+                    <Input
+                      type="text"
+                      placeholder={t('search_placeholder')}
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      data-testid="projects__search"
+                      className="pl-10"
+                    />
+                  </label>
+                </div>
+              </section>
+
+              {!isAuthenticated || (isProjectsLoading && projects.length === 0) ? (
+                <div className="flex min-h-[320px] items-center justify-center">
+                  <PageLoading />
+                </div>
+              ) : projects.length === 0 ? (
+                <section className="surface-elevated rounded-[32px] px-6 py-14 text-center">
+                  <div className="mx-auto flex max-w-2xl flex-col items-center space-y-4">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-[24px] border border-subtle bg-surface-low text-icon-default">
+                      <FolderOpen className="h-8 w-8" />
+                    </div>
+                    <div className="space-y-2">
+                      <h2 className="type-section-heading text-foreground">{t('empty.title')}</h2>
+                      <p className="type-body-ui text-secondary">
+                        {canCreateProject ? t('empty.description') : t('empty.read_only_description')}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap justify-center gap-3">
+                      {canCreateProject ? (
+                        <Button
+                          variant="primary"
+                          onClick={() => setCreateDialogOpen(true)}
+                        >
+                          <Plus className="h-4 w-4" />
+                          {t('empty.create_first')}
+                        </Button>
+                      ) : null}
+                      <Button asChild variant="outline">
+                        <Link href={workspaceSelectionPath}>{tWorkspace('select')}</Link>
+                      </Button>
+                    </div>
+                  </div>
                 </section>
-              </div>
-            )}
+              ) : (
+                <div className="space-y-6">
+                  {pinnedProjects.length > 0 ? (
+                    <section className="surface-card rounded-[28px] px-5 py-5 md:px-6 md:py-6">
+                      <div className="mb-5 flex items-center justify-between gap-4">
+                        <div>
+                          <h2 className="type-subheading flex items-center gap-2 text-foreground">
+                            <Pin className="h-4 w-4" />
+                            {t('pinned.title')}
+                          </h2>
+                          <p className="mt-1 type-body-ui text-secondary">{t('summary.pinned_section_hint')}</p>
+                        </div>
+                        <div className="surface-soft rounded-full px-3 py-1.5 type-system-caption text-secondary">
+                          {pinnedProjects.length}
+                        </div>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        {pinnedProjects.map((project) => (
+                          <ProjectCard
+                            key={project.id}
+                            project={project}
+                            onClick={() => handleProjectClick(project)}
+                            onSettingsClick={() => handleSettingsClick(project)}
+                            onTogglePin={(event) => togglePin(project.id, event)}
+                            onJoinRequest={() => void handleCreateJoinRequest(project)}
+                            isJoinRequestPending={pendingJoinRequestIds.has(project.id) || joiningProjectIds.has(project.id)}
+                            adminSummary={buildProjectAdminSummary(project, memberNameById)}
+                            t={t}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+
+                  <section className="surface-elevated rounded-[32px] px-5 py-5 md:px-6 md:py-6">
+                    <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                      <div>
+                        <h2 className="type-subheading text-foreground">{t('all.count', { count: unpinnedProjects.length })}</h2>
+                        <p className="mt-1 type-body-ui text-secondary">{t('summary.table_hint')}</p>
+                      </div>
+                      <div className="surface-soft inline-flex items-center gap-2 self-start rounded-full px-3 py-2 type-system-caption text-secondary xl:self-auto">
+                        <FolderKanban className="h-4 w-4 text-accent" />
+                        {t('workspace_label')} {workspaceName}
+                      </div>
+                    </div>
+
+                    <ProjectsTable
+                      projects={unpinnedProjects}
+                      onProjectClick={handleProjectClick}
+                      onSettingsClick={handleSettingsClick}
+                      onDeleteClick={(project) => setDeleteDialogProject(project)}
+                      onTogglePin={togglePin}
+                      onJoinRequest={(project) => void handleCreateJoinRequest(project)}
+                      pendingJoinRequestIds={new Set([...pendingJoinRequestIds, ...joiningProjectIds])}
+                      canDeleteProjectByWorkspacePermission={canDeleteProjectByWorkspacePermission}
+                      memberNameById={memberNameById}
+                      t={t}
+                    />
+                  </section>
+                </div>
+              )}
+            </div>
           </main>
 
           <CreateProjectDialog

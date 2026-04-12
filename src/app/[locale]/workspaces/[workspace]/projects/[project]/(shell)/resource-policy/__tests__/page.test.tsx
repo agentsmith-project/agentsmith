@@ -84,6 +84,7 @@ describe('ResourcePolicyPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
+    expect(screen.getByTestId('project-recovery__action')).toHaveAttribute('href', '/en-US/workspaces/ws_1/projects');
   });
 
   it('shows invalid parameter error for unsafe route params', async () => {
@@ -91,5 +92,6 @@ describe('ResourcePolicyPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
+    expect(screen.getByTestId('project-recovery__action')).toHaveAttribute('href', '/en-US/workspaces');
   });
 });

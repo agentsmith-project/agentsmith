@@ -83,9 +83,10 @@ test.describe('@lane-real personal api key endpoint access', () => {
       });
 
       const endpointCredentialName = `Gateway Endpoint Key ${Date.now()}`;
+      const endpointName = `Anthropic Upstream Gateway Endpoint ${Date.now()}`;
       await createCredentialViaUi(page, workspaceId, projectId, endpointCredentialName, upstreamApiKey);
       const endpointId = await createEndpointViaApi(page, workspaceId, projectId, {
-        endpointName: `Anthropic Upstream Gateway Endpoint ${Date.now()}`,
+        endpointName,
         endpointModel: anthropicModel,
         upstreamBaseUrl: upstream.baseUrl,
         credentialName: endpointCredentialName,
@@ -93,6 +94,9 @@ test.describe('@lane-real personal api key endpoint access', () => {
       });
 
       await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/use-guide`);
+      await page.getByTestId('use-guide__endpoint-select').click();
+      await expect(page.getByRole('option', { name: endpointName })).toBeVisible({ timeout: 10_000 });
+      await page.getByRole('option', { name: endpointName }).click();
       await expect(page.getByTestId('use-guide__openai-base-url')).toContainText(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/openai`);
       await page.getByTestId('use-guide__tab-anthropic').click();
       await expect(page.getByTestId('use-guide__anthropic-base-url')).toContainText(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/anthropic`);
@@ -122,7 +126,7 @@ test.describe('@lane-real personal api key endpoint access', () => {
       }
 
       const anthropicResponse = await page.request.post(
-        `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/anthropic/v1/messages`,
+        `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/anthropic/messages`,
         {
           headers: {
             Authorization: `Bearer ${apiKey}`,

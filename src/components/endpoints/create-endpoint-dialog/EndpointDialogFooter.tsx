@@ -20,12 +20,23 @@ export function EndpointDialogFooter({
   onCancel,
 }: EndpointDialogFooterProps) {
   return (
-    <div className="flex flex-shrink-0 justify-end gap-2 border-t border-subtle px-6 py-4">
-      <Button type="button" variant="ghost" onClick={onCancel} disabled={createPending}>
+    <div className="flex flex-shrink-0 flex-col-reverse gap-2 border-t border-subtle px-6 py-4 sm:flex-row sm:justify-end" data-testid="endpoints__dialog-footer">
+      <Button type="button" variant="ghost" onClick={onCancel} disabled={createPending} className="w-full sm:w-auto">
         {commonT('cancel')}
       </Button>
-      <Button type="submit" variant="primary" disabled={!canSubmit || !hasCredentials}>
-        {createPending ? <Loader2 className="w-4 h-4 animate-spin" /> : commonT('create')}
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={!canSubmit || !hasCredentials || createPending}
+        className="w-full sm:w-auto"
+        aria-label={commonT('create')}
+      >
+        {createPending ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="sr-only">{commonT('create')}</span>
+          </>
+        ) : commonT('create')}
       </Button>
     </div>
   );

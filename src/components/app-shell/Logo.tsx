@@ -7,11 +7,11 @@ interface LogoProps {
 
 export function Logo({ className = '' }: LogoProps) {
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-surface-high border border-subtle">
-        <Sparkles className="w-4 h-4 text-accent" strokeWidth={2} />
+    <div className={`flex items-center gap-2.5 ${className}`}>
+      <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-surface-high shadow-ambient">
+        <Sparkles className="h-4 w-4 text-accent" strokeWidth={1.85} />
       </div>
-      <span className="text-lg font-semibold text-foreground">MBOS</span>
+      <span className="type-title text-foreground">MBOS</span>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { useMemberPageCapabilities } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
+import { ProjectRecoveryState } from '../_components/ProjectRecoveryState';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 
 interface MembersPageProps {
@@ -40,10 +41,12 @@ export default function MembersRoute({ params }: MembersPageProps) {
   if (!resolvedParams.isValid || !resolvedParams.workspace || !resolvedParams.project) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
-        </div>
+        <ProjectRecoveryState
+          title={tErrors('validation_error')}
+          description={tErrors('badRequest.description')}
+          locale={resolvedParams.locale}
+          workspaceId={resolvedParams.workspace}
+        />
       </PageState>
     );
   }
@@ -51,10 +54,12 @@ export default function MembersRoute({ params }: MembersPageProps) {
   if (!canReadMembers) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
-        </div>
+        <ProjectRecoveryState
+          title={tErrors('permission_denied_title')}
+          description={tErrors('permission_denied_hint')}
+          locale={resolvedParams.locale}
+          workspaceId={resolvedParams.workspace}
+        />
       </PageState>
     );
   }

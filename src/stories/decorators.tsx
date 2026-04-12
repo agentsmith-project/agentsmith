@@ -1,33 +1,30 @@
-import type { StoryFn, StoryContext } from '@storybook/react';
+import type { StoryContext, StoryFn } from '@storybook/react';
 import { useEffect } from 'react';
 
-/**
- * Internal component that handles dark theme setup
- */
-function DarkThemeWrapper({ story }: { story: React.ReactNode }) {
+import { withI18n } from './decorators-i18n';
+
+type ThemeWrapperProps = {
+  story: React.ReactNode;
+  theme: 'light' | 'dark';
+};
+
+function ThemeWrapper({ story, theme }: ThemeWrapperProps) {
   useEffect(() => {
-    document.documentElement.classList.add('dark');
-    document.documentElement.style.backgroundColor = '#191919';
-    document.documentElement.style.color = '#ffffff';
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.style.colorScheme = theme;
 
     return () => {
-      document.documentElement.classList.remove('dark');
-      document.documentElement.style.backgroundColor = '';
-      document.documentElement.style.color = '';
+      document.documentElement.removeAttribute('data-theme');
+      document.documentElement.style.colorScheme = '';
     };
-  }, []);
+  }, [theme]);
 
-  return (
-    <div className="min-h-screen bg-background text-primary p-8">
-      {story}
-    </div>
-  );
+  return <div className="min-h-screen bg-background px-8 py-10 text-primary">{story}</div>;
 }
 
-/**
- * A decorator that wraps stories in a dark theme container
- * matching the MBOS design system
- */
-export const withDarkTheme = (Story: StoryFn, context: StoryContext) => {
-  return <DarkThemeWrapper story={Story({}, context)} />;
+export const withTheme = (Story: StoryFn, context: StoryContext) => {
+  const theme = context.globals.theme === 'dark' ? 'dark' : 'light';
+  return <ThemeWrapper story={Story({}, context)} theme={theme} />;
 };
+
+export { withI18n };

@@ -52,16 +52,12 @@ test.describe("Agents Page", () => {
   });
 
   test("shows build header actions", async ({ authedPage }) => {
-    await expect(authedPage.getByTestId("agents__open-chat")).toHaveAttribute(
+    await expect(authedPage.getByTestId("agents__open-endpoints")).toHaveAttribute(
       "href",
-      /\/chat$/,
+      /\/endpoints$/,
     );
-    await expect(
-      authedPage.getByTestId("agents__open-notebook"),
-    ).toHaveAttribute("href", /\/notebook$/);
-    await expect(
-      authedPage.getByTestId("agents__open-endpoints"),
-    ).toHaveAttribute("href", /\/endpoints$/);
+    await expect(authedPage.getByTestId("agents__open-chat")).toHaveCount(0);
+    await expect(authedPage.getByTestId("agents__open-notebook")).toHaveCount(0);
   });
 
   test("opens diagnostics panel when agent query context is present", async ({

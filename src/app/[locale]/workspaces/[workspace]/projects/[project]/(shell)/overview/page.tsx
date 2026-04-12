@@ -11,9 +11,11 @@ import { PageState } from '@/components/layout/PageState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useCurrentPermissions, useProjectOverviewCapabilities } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
+import { buildProjectSurfacePath } from '@/lib/projects/project-surface-access';
 import {
   buildOverviewPaths,
   buildOverviewSurfaceSummary,
+  buildOverviewNextStepEntries,
   createOverviewErrorContent,
 } from './overview-page-utils';
 import { listAccessibleSidebarProjectRoutePolicies } from '@/lib/projects/project-surface-access';
@@ -76,6 +78,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
   const { workspaceBasePath } = buildOverviewPaths(locale, workspaceId, projectId);
   const accessiblePolicies = listAccessibleSidebarProjectRoutePolicies(currentPermissions);
   const surfaceSummary = buildOverviewSurfaceSummary(accessiblePolicies, tNav, tContextStore);
+  const nextStepEntries = buildOverviewNextStepEntries(accessiblePolicies, tNav, tContextStore, tOverview);
   const governanceReadiness = surfaceSummary.governLabels.length > 0;
   const developReadiness = surfaceSummary.developLabels.length > 0;
   const useSummary = surfaceSummary.useLabels.length > 0
@@ -118,6 +121,39 @@ export default function OverviewPage({ params }: OverviewPageProps) {
               </p>
             </CardHeader>
             <CardContent className="space-y-6" data-testid="project-hub__summary">
+              <div className="space-y-3" data-testid="project-hub__next-steps">
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-medium text-foreground">{tWorkspace('workspace_home_next_steps_title')}</div>
+                    <p className="text-sm text-secondary">{tWorkspace('workspace_home_next_steps_description')}</p>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {nextStepEntries.map((entry, index) => (
+                    <Link
+                      key={entry.href}
+                      href={buildProjectSurfacePath(locale, workspaceId, projectId, entry.href)}
+                      className="group rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)] transition-colors hover:border-accent/30 hover:bg-white/[0.05]"
+                      data-testid={entry.testId}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+                            {index === 0 ? tOverview('next_steps_primary_badge') : tOverview('next_steps_secondary_badge')}
+                          </div>
+                          <div className="mt-2 text-base font-semibold text-foreground">{entry.label}</div>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-sm text-secondary">{entry.description}</p>
+                      <div className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-accent transition-transform group-hover:translate-x-0.5">
+                        {tOverview('next_steps_open')}
+                        <ArrowLeft className="h-3.5 w-3.5 rotate-180" />
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid gap-3 md:grid-cols-3">
                 <OverviewSummaryCard
                   icon={<Workflow className="h-4 w-4" />}

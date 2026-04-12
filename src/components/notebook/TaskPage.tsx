@@ -701,6 +701,26 @@ export function TaskPage({
             `/${locale}/workspaces/${workspaceId}/projects/${projectId}/notebook`,
           )
         }
+        actions={[
+          {
+            label: tCommon("open_files"),
+            onClick: () =>
+              router.push(
+                `/${locale}/workspaces/${workspaceId}/projects/${projectId}/files`,
+              ),
+            testId: "notebook-task__open-files",
+            variant: "outline",
+          },
+          {
+            label: tCommon("open_chat"),
+            onClick: () =>
+              router.push(
+                `/${locale}/workspaces/${workspaceId}/projects/${projectId}/chat`,
+              ),
+            testId: "notebook-task__open-chat",
+            variant: "outline",
+          },
+        ]}
       />
     );
   }

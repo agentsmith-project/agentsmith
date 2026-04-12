@@ -87,6 +87,36 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.queryByText('workspace_tenant_card_label')).not.toBeInTheDocument();
   });
 
+  it('offers recovery actions when the current list view filters every workspace out', async () => {
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('system-workspaces__search'), { target: { value: 'missing' } });
+
+    expect(screen.getByTestId('system-workspaces__empty')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__clear-search')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__reset-list')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('system-workspaces__reset-list'));
+
+    expect(await screen.findByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
+  });
+
+
+  it('shows a filtered empty state with a clear filters recovery action', async () => {
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('system-workspaces__search'), { target: { value: 'gamma' } });
+
+    await waitFor(() => expect(screen.getByTestId('system-workspaces__empty')).toBeInTheDocument());
+    expect(screen.getByText('workspace_directory_empty_filtered_title')).toBeInTheDocument();
+    expect(screen.getByText('workspace_directory_empty_filtered_description')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__clear-search'));
+
+    await waitFor(() => expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument());
+  });
+
   it('updates the workspace query param when selecting another workspace from the list', async () => {
     render(<SystemWorkspacesPage />);
 

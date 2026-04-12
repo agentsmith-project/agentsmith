@@ -122,9 +122,9 @@ test.describe('Endpoints Page', () => {
   });
 
   test('shows build header actions', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('endpoints__open-chat')).toHaveAttribute('href', /\/chat$/);
-    await expect(authedPage.getByTestId('endpoints__open-notebook')).toHaveAttribute('href', /\/notebook$/);
     await expect(authedPage.getByTestId('endpoints__open-agents')).toHaveAttribute('href', /\/agents$/);
+    await expect(authedPage.getByTestId('endpoints__open-chat')).toHaveCount(0);
+    await expect(authedPage.getByTestId('endpoints__open-notebook')).toHaveCount(0);
   });
 
   test('create dialog opens with form fields', async ({ authedPage }) => {

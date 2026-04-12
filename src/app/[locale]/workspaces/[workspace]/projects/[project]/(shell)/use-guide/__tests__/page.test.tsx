@@ -33,6 +33,7 @@ const translationMap: Record<string, string> = {
   'readiness.policy.ready': 'Project policy is enforced automatically',
   'selection.empty': 'No active endpoint is available for API access yet',
   'selection.no_read_access': 'You can use project access, but this page cannot read the endpoint list.',
+  'selection.placeholder': 'Select an endpoint',
 };
 
 vi.mock('next-intl', () => ({ useTranslations: () => (key: string, values?: Record<string, string | number>) => {
@@ -83,11 +84,14 @@ describe('UseGuidePage route', () => {
 
     expect(screen.getByTestId('use-guide__status-api-keys')).toHaveTextContent('2 active API keys ready');
     expect(screen.getByTestId('use-guide__status-endpoint')).toHaveTextContent('readiness.endpoint.title');
-    expect(screen.getByTestId('use-guide__endpoint-summary')).toHaveTextContent('Primary OpenAI Endpoint');
-    expect(screen.getByTestId('use-guide__gateway-base-url')).toHaveTextContent('https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_1/proxy');
-    expect(screen.getByTestId('use-guide__openai-base-url')).toHaveTextContent('https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_1/proxy/openai');
-    expect(screen.getByTestId('use-guide__codex-sample')).toHaveTextContent('model_providers.agentsmith.base_url="https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/ep_1/proxy/openai"');
-    expect(screen.getByTestId('use-guide__codex-sample')).toHaveTextContent('placeholder-chat-model');
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(screen.getByTestId('use-guide__endpoint-select')).toBeInTheDocument();
+    expect(screen.getByTestId('use-guide__endpoint-select')).toHaveTextContent('Select an endpoint');
+    expect(screen.queryByTestId('use-guide__endpoint-summary')).not.toBeInTheDocument();
+    expect(screen.getByTestId('use-guide__gateway-base-url')).toHaveTextContent('https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/<endpoint-id>/proxy');
+    expect(screen.getByTestId('use-guide__openai-base-url')).toHaveTextContent('https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/<endpoint-id>/proxy/openai');
+    expect(screen.getByTestId('use-guide__codex-sample')).toHaveTextContent('model_providers.agentsmith.base_url="https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/<endpoint-id>/proxy/openai"');
+    expect(screen.getByTestId('use-guide__codex-sample')).toHaveTextContent('<project-model-name>');
     expect(screen.getByTestId('use-guide__tab-openai')).toBeEnabled();
     expect(screen.getByTestId('use-guide__tab-anthropic')).toBeEnabled();
     expect(screen.getByTestId('use-guide__openai-base-url__copy')).toBeInTheDocument();
@@ -111,6 +115,8 @@ describe('UseGuidePage route', () => {
     });
 
     expect(screen.getByTestId('use-guide__status-api-keys')).toHaveTextContent('Create your first personal API key before using CLI, SDK, or curl examples.');
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('use-guide__endpoint-select')).not.toBeInTheDocument();
     expect(screen.getByTestId('use-guide__gateway-base-url')).toHaveTextContent('https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/<endpoint-id>/proxy');
     expect(screen.getByTestId('use-guide__openai-base-url')).toHaveTextContent('https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/<endpoint-id>/proxy/openai');
   });

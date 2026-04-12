@@ -6,92 +6,155 @@
 
 @layer base {
   :root {
-    /*
-      AgentSmith UI tokens
-      Global UI design guide: DESIGN.md
-      Implementation tokens in this file may lag behind the current guide while surfaces converge
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-pill: 999px;
 
-      Tokens are RGB triplets to support alpha via:
-        rgb(var(--token) / <alpha>)
-    */
-
-    /* Background hierarchy */
-    --bg-base: 18 18 20;          /* #121214 */
-    --bg-sidebar: 23 24 27;       /* #17181B */
-    --bg-surface: 31 33 37;       /* #1F2125 */
-    --bg-surface-high: 43 46 52;  /* #2B2E34 */
-    --bg-hover: 56 60 68;         /* #383C44 */
-
-    /* Dialog-specific (layered hierarchy) */
-    --bg-dialog: 43 46 51;        /* #2B2E33 */
-    --bg-input: 61 65 72;         /* #3D4148 */
-    --border-input: 80 85 94;     /* #50555E */
-
-    /* Borders */
-    --border: 63 68 76;           /* #3F444C */
-    --border-subtle: 47 50 57;    /* #2F3239 */
-
-    /* Typography colors */
-    --text-strong: 255 255 255;   /* #FFFFFF */
-    --text-primary: 219 223 228;  /* #DBDFE4 */
-    --text-secondary: 191 197 206;/* #BFC5CE */
-    --text-tertiary: 133 141 153; /* #858D99 */
-    --icon-default: 190 198 210;  /* #BEC6D2 */
-
-    /* Brand & semantic */
-    --accent: 124 160 255;        /* #7CA0FF */
-    --ai-gradient: linear-gradient(90deg, #C6D4FF, #3B82F6);
-    --success: 61 219 133;        /* #3DDB85 */
-    --error: 244 67 54;           /* #F44336 */
-    --warning: 255 185 92;        /* #FFB95C (备用) */
-
-    /* Radius */
-    --radius-sm: 8px;
-    --radius-md: 14px;
-    --radius-lg: 18px;
-
-    /* Spacing */
     --spacing-xs: 8px;
     --spacing-sm: 12px;
     --spacing-md: 16px;
     --spacing-lg: 24px;
 
-    /* Layout density */
     --layout-padding: 20px;
     --layout-gap: 20px;
     --layout-padding-immersive: 8px;
     --layout-gap-immersive: 8px;
 
-    /* App shell widths */
-    --sidebar-width: 208px;
-    --sidebar-width-collapsed: 72px;
+    --sidebar-width: 228px;
+    --sidebar-width-collapsed: 76px;
+
+    --font-display: var(--font-cursor-gothic), system-ui, Helvetica Neue, Helvetica, Arial, sans-serif;
+    --font-body-serif: var(--font-jjannon), Iowan Old Style, Palatino Linotype, URW Palladio L, P052, ui-serif, Georgia, Cambria, Times New Roman, Times, serif;
+    --font-body-sans: var(--font-cursor-gothic), system-ui, Helvetica Neue, Helvetica, Arial, sans-serif;
+    --font-mono-ui: var(--font-berkeley-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;
+  }
+
+  :root[data-theme="light"] {
+    --bg-base: 242 241 237;
+    --bg-sidebar: 247 247 244;
+    --bg-surface-low: 247 247 244;
+    --bg-surface: 230 229 224;
+    --bg-surface-high: 235 234 229;
+    --bg-hover: 225 224 219;
+    --bg-dialog: 247 247 244;
+    --bg-input: 250 249 244;
+
+    --border: 38 37 30;
+    --border-subtle: 38 37 30;
+    --border-input: 38 37 30;
+
+    --text-strong: 38 37 30;
+    --text-primary: 56 52 42;
+    --text-secondary: 94 88 72;
+    --text-tertiary: 129 120 101;
+    --icon-default: 110 104 89;
+
+    --accent: 245 78 0;
+    --success: 31 138 101;
+    --error: 207 45 86;
+    --warning: 192 133 50;
+
+    --shadow-ambient: 0 8px 18px rgba(20, 18, 11, 0.04);
+    --shadow-card: 0 18px 48px rgba(20, 18, 11, 0.08), 0 8px 22px rgba(20, 18, 11, 0.06), 0 0 0 1px rgb(var(--border) / 0.08);
+    --shadow-float: 0 28px 70px rgba(20, 18, 11, 0.14), 0 14px 32px rgba(20, 18, 11, 0.1), 0 0 0 1px rgb(var(--border) / 0.12);
+
+    --page-background-image:
+      radial-gradient(circle at top left, rgb(var(--accent) / 0.08), transparent 22%),
+      radial-gradient(circle at top right, rgb(192 133 50 / 0.08), transparent 18%),
+      linear-gradient(180deg, rgb(255 255 255 / 0.36), transparent 200px);
+  }
+
+  :root[data-theme="dark"] {
+    --bg-base: 20 18 11;
+    --bg-sidebar: 26 23 16;
+    --bg-surface-low: 24 21 15;
+    --bg-surface: 31 27 19;
+    --bg-surface-high: 41 36 26;
+    --bg-hover: 59 50 36;
+    --bg-dialog: 29 25 18;
+    --bg-input: 35 30 22;
+
+    --border: 214 198 165;
+    --border-subtle: 176 158 124;
+    --border-input: 200 183 149;
+
+    --text-strong: 245 239 228;
+    --text-primary: 226 214 192;
+    --text-secondary: 188 172 142;
+    --text-tertiary: 148 132 104;
+    --icon-default: 174 160 133;
+
+    --accent: 255 118 50;
+    --success: 82 190 148;
+    --error: 235 109 148;
+    --warning: 221 176 84;
+
+    --shadow-ambient: 0 10px 24px rgba(0, 0, 0, 0.18);
+    --shadow-card: 0 18px 48px rgba(0, 0, 0, 0.28), 0 10px 28px rgba(0, 0, 0, 0.2), 0 0 0 1px rgb(var(--border-subtle) / 0.16);
+    --shadow-float: 0 28px 70px rgba(0, 0, 0, 0.42), 0 14px 32px rgba(0, 0, 0, 0.26), 0 0 0 1px rgb(var(--border-subtle) / 0.18);
+
+    --page-background-image:
+      radial-gradient(circle at top left, rgb(var(--accent) / 0.14), transparent 18%),
+      radial-gradient(circle at top right, rgb(221 176 84 / 0.12), transparent 16%),
+      linear-gradient(180deg, rgb(255 255 255 / 0.02), transparent 200px);
   }
 
   * {
     @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    max-width: 100vw;
+    overflow-x: hidden;
+    color-scheme: light;
+  }
+
+  html[data-theme="dark"] {
+    color-scheme: dark;
   }
 
   body {
     @apply bg-background text-primary;
-    font-family: Inter, "Noto Sans SC", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: var(--font-body-sans);
     font-size: 14px;
     line-height: 1.5;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    letter-spacing: 0.01em;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss09" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
-    background-image:
-      radial-gradient(circle at top left, rgb(var(--accent) / 0.12), transparent 28%),
-      radial-gradient(circle at top right, rgb(83 153 255 / 0.08), transparent 22%),
-      linear-gradient(180deg, rgb(12 12 14 / 0.82), transparent 180px);
+    max-width: 100vw;
+    overflow-x: hidden;
+    background-image: var(--page-background-image);
     background-attachment: fixed;
+    transition: background-color 180ms ease, color 180ms ease;
   }
 
-  /*
-    Focus-visible baseline:
-    Scope to keyboard-focusable controls only, avoid applying a global ring to
-    Radix popover/menu containers (which are programmatically focused on open).
-  */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    color: rgb(var(--text-strong));
+    font-family: var(--font-display);
+    font-weight: 400;
+  }
+
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono-ui);
+  }
+
+  ::selection {
+    background: rgb(var(--accent) / 0.18);
+    color: rgb(var(--text-strong));
+  }
+
   :where(
     a,
     button,
@@ -102,22 +165,20 @@
     [role="button"],
     [tabindex]:not([tabindex="-1"])
   ):focus-visible {
-    @apply outline-none ring-2 ring-accent;
-    --tw-ring-opacity: 0.5;
+    @apply outline-none ring-2 ring-accent/30 ring-offset-2 ring-offset-background;
+  }
+
+  input,
+  button,
+  textarea,
+  select {
+    font: inherit;
   }
 }
 
-/* Reset styles outside of @layer */
 * {
-  box-sizing: border-box;
   padding: 0;
   margin: 0;
-}
-
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
 }
 
 /* Scrollbar styling */
@@ -127,26 +188,119 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgb(var(--bg-base));
+  background: rgb(var(--bg-sidebar));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgb(var(--bg-hover));
-  border-radius: 4px;
+  background: rgb(var(--text-tertiary) / 0.38);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(var(--text-tertiary));
+  background: rgb(var(--text-secondary) / 0.58);
 }
 
-/* Utility classes */
+@layer components {
+  .type-display {
+    font-family: var(--font-display);
+    font-size: clamp(3rem, 5vw, 4.5rem);
+    line-height: 1.06;
+    letter-spacing: -0.06em;
+    font-weight: 400;
+  }
+
+  .type-section-heading {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 3vw, 2.25rem);
+    line-height: 1.14;
+    letter-spacing: -0.045em;
+    font-weight: 400;
+  }
+
+  .type-subheading {
+    font-family: var(--font-display);
+    font-size: 1.625rem;
+    line-height: 1.2;
+    letter-spacing: -0.028em;
+    font-weight: 400;
+  }
+
+  .type-title {
+    font-family: var(--font-display);
+    font-size: 1.375rem;
+    line-height: 1.24;
+    letter-spacing: -0.018em;
+    font-weight: 400;
+  }
+
+  .type-body-serif {
+    font-family: var(--font-body-serif);
+    font-size: 1.08rem;
+    line-height: 1.56;
+    font-weight: 400;
+    font-feature-settings: "cswh" 1;
+  }
+
+  .type-body-ui {
+    font-family: var(--font-body-sans);
+    font-size: 0.95rem;
+    line-height: 1.58;
+    letter-spacing: 0.01em;
+    font-weight: 400;
+  }
+
+  .type-caption {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    line-height: 1.45;
+    letter-spacing: 0.14em;
+    font-weight: 400;
+    text-transform: uppercase;
+  }
+
+  .type-system-heading {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 1.25rem;
+    line-height: 1.4;
+    font-weight: 700;
+  }
+
+  .type-system-caption {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 0.81rem;
+    line-height: 1.33;
+    font-weight: 600;
+  }
+
+  .type-mono {
+    font-family: var(--font-mono-ui);
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }
+
+  .surface-card {
+    @apply rounded-md border border-border bg-surface shadow-card;
+  }
+
+  .surface-elevated {
+    @apply rounded-lg border border-border bg-surface-high shadow-float;
+  }
+
+  .surface-soft {
+    @apply rounded-md border border-border/60 bg-surface-low;
+  }
+
+  .control-pill {
+    @apply rounded-pill border border-border/70 bg-surface-low;
+  }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
 }
 
-/* Hide Next.js dev overlay for clean visual baselines */
 nextjs-portal {
   display: none !important;
 }

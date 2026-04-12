@@ -4,12 +4,13 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Building2, FolderKanban } from 'lucide-react';
+import { Building2, FolderKanban, Search } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
-import { cn } from '@/lib/utils';
 
 export default function WorkspacesOverviewPage() {
   const params = useParams();
@@ -36,150 +37,160 @@ export default function WorkspacesOverviewPage() {
 
   return (
     <PageState state="success">
-      <PageLayout>
-        <div className="min-h-screen bg-background p-4 md:p-6">
-          <div className="mx-auto max-w-6xl space-y-5">
-            <header className="rounded-[28px] border border-subtle bg-surface/95 p-6 shadow-[0_22px_50px_rgba(0,0,0,0.18)]">
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('overview_eyebrow')}</p>
-                <h1 className="text-2xl font-semibold text-foreground" data-testid="workspace-overview__heading">
-                  {t('overview_title')}
-                </h1>
-                <p className="text-sm leading-6 text-secondary">{t('overview_subtitle')}</p>
-              </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <div
-                  className="rounded-[20px] border border-white/6 bg-white/[0.025] px-4 py-3"
-                  data-testid="workspace-overview__summary"
-                >
-                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
-                    {t('overview_summary_label')}
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{(workspaces ?? []).length}</p>
-                  <p className="mt-1 text-sm text-secondary">{t('overview_summary_value')}</p>
+      <PageLayout
+        header={(
+          <div data-testid="workspace-overview__heading">
+            <PageHeader
+              title={t('overview_title')}
+              subtitle={t('overview_subtitle')}
+            />
+          </div>
+        )}
+      >
+        <div className="space-y-6">
+          <section className="grid gap-4 md:grid-cols-3">
+            <article
+              className="surface-card rounded-[28px] px-5 py-5"
+              data-testid="workspace-overview__summary"
+            >
+              <p className="type-caption text-tertiary">{t('overview_summary_label')}</p>
+              <div className="mt-4 flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-subtle bg-surface-low text-accent">
+                  <Building2 className="h-5 w-5" />
                 </div>
-                <div className="rounded-[20px] border border-white/6 bg-white/[0.025] px-4 py-3">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
-                    {t('overview_search_placeholder')}
-                  </p>
-                  <p className="mt-2 text-sm text-secondary">{searchQuery.trim() || t('overview_list_subtitle')}</p>
-                </div>
-                <div className="rounded-[20px] border border-white/6 bg-white/[0.025] px-4 py-3">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
-                    {t('overview_projects_entry')}
-                  </p>
-                  <p className="mt-2 text-sm text-secondary">{t('overview_open_workspace')}</p>
+                <div>
+                  <p className="type-section-heading text-foreground">{(workspaces ?? []).length}</p>
+                  <p className="type-body-ui text-secondary">{t('overview_summary_value')}</p>
                 </div>
               </div>
-            </header>
+            </article>
+            <article className="surface-card rounded-[28px] px-5 py-5">
+              <p className="type-caption text-tertiary">{t('overview_list_title')}</p>
+              <p className="mt-3 type-body-serif text-foreground">{t('overview_list_subtitle')}</p>
+            </article>
+            <article className="surface-card rounded-[28px] px-5 py-5">
+              <p className="type-caption text-tertiary">{t('overview_projects_entry')}</p>
+              <p className="mt-3 type-body-serif text-foreground">{t('overview_open_workspace')}</p>
+            </article>
+          </section>
 
-            {isLoading ? (
-              <div
-                className="rounded-[24px] border border-subtle bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
-                data-testid="workspace-overview__loading"
-              >
-                <p className="text-sm text-tertiary">{t('overview_loading')}</p>
-              </div>
-            ) : isError ? (
-              <div
-                className="rounded-[24px] border border-warning/30 bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
-                data-testid="workspace-overview__error"
-              >
-                <p className="text-sm font-medium text-foreground">{t('overview_error_title')}</p>
-                <p className="mt-1 text-sm text-tertiary">{t('overview_error_description')}</p>
+          {isLoading ? (
+            <section
+              className="surface-card rounded-[28px] px-5 py-6"
+              data-testid="workspace-overview__loading"
+            >
+              <p className="type-body-ui text-secondary">{t('overview_loading')}</p>
+            </section>
+          ) : isError ? (
+            <section
+              className="surface-card rounded-[28px] border-warning/30 px-5 py-6"
+              data-testid="workspace-overview__error"
+            >
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <h2 className="type-title text-foreground">{t('overview_error_title')}</h2>
+                  <p className="type-body-ui text-secondary">{t('overview_error_description')}</p>
+                </div>
                 <Button
                   type="button"
                   variant="outline"
-                  className="mt-3"
                   onClick={() => void refetch()}
                   data-testid="workspace-overview__retry"
                 >
                   {t('overview_retry')}
                 </Button>
               </div>
-            ) : (
-              <>
-                <section
-                  className="rounded-[24px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
-                  data-testid="workspace-overview__list"
+            </section>
+          ) : (
+            <section
+              className="surface-elevated rounded-[32px] px-5 py-5 md:px-6 md:py-6"
+              data-testid="workspace-overview__list"
+            >
+              <div className="flex flex-col gap-4 border-b border-subtle pb-5 md:flex-row md:items-end md:justify-between">
+                <div className="space-y-2">
+                  <h2 className="type-subheading text-foreground">{t('overview_list_title')}</h2>
+                  <p className="type-body-ui text-secondary">{t('overview_list_subtitle')}</p>
+                </div>
+                <label className="relative block w-full max-w-md">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-icon-default" />
+                  <Input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder={t('overview_search_placeholder')}
+                    className="pl-10"
+                    data-testid="workspace-overview__search"
+                  />
+                </label>
+              </div>
+
+              {(workspaces ?? []).length === 0 ? (
+                <div
+                  className="surface-soft mt-5 rounded-[24px] border border-dashed border-subtle px-5 py-8"
+                  data-testid="workspace-overview__empty"
                 >
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-base font-semibold text-foreground">{t('overview_list_title')}</h2>
-                      <p className="text-sm text-secondary">{t('overview_list_subtitle')}</p>
-                    </div>
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(event) => setSearchQuery(event.target.value)}
-                      placeholder={t('overview_search_placeholder')}
-                      className="h-10 min-w-[240px] rounded-xl border border-subtle bg-surface-high px-3 text-sm text-foreground placeholder:text-tertiary"
-                      data-testid="workspace-overview__search"
-                    />
+                  <div className="space-y-1.5">
+                    <h3 className="type-title text-foreground">{t('overview_empty_title')}</h3>
+                    <p className="type-body-ui text-secondary">{t('overview_empty_description')}</p>
                   </div>
-
-                  {(workspaces ?? []).length === 0 ? (
-                    <div
-                      className="rounded-[20px] border border-dashed border-subtle bg-bg-base/20 p-6"
-                      data-testid="workspace-overview__empty"
+                </div>
+              ) : filteredWorkspaces.length === 0 ? (
+                <div
+                  className="surface-soft mt-5 rounded-[24px] border border-dashed border-subtle px-5 py-8"
+                  data-testid="workspace-overview__empty-filtered"
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <p className="type-body-ui text-secondary">{t('overview_empty_filtered')}</p>
+                    <Button type="button" variant="outline" onClick={() => setSearchQuery('')}>
+                      {t('overview_clear_search')}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {filteredWorkspaces.map((workspace) => (
+                    <article
+                      key={workspace.id}
+                      className="surface-card rounded-[28px] px-5 py-5"
+                      data-testid={`workspace-overview__card--${workspace.id}`}
                     >
-                      <p className="text-sm font-medium text-foreground">{t('overview_empty_title')}</p>
-                      <p className="mt-1 text-sm text-tertiary">{t('overview_empty_description')}</p>
-                    </div>
-                  ) : filteredWorkspaces.length === 0 ? (
-                    <div
-                      className="rounded-[20px] border border-dashed border-subtle bg-bg-base/20 p-6"
-                      data-testid="workspace-overview__empty-filtered"
-                    >
-                      <p className="text-sm text-tertiary">{t('overview_empty_filtered')}</p>
-                    </div>
-                  ) : (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      {filteredWorkspaces.map((workspace) => (
-                        <article
-                          key={workspace.id}
-                          className="rounded-[22px] border border-subtle bg-bg-base/20 p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]"
-                          data-testid={`workspace-overview__card--${workspace.id}`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-[16px] bg-surface-high text-icon-default">
-                              <Building2 className="h-5 w-5" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <h3 className="truncate text-base font-semibold text-foreground">{workspace.name}</h3>
-                              <p className="mt-1 truncate text-sm text-tertiary">{workspace.id}</p>
-                              <p className="mt-2 flex items-center gap-1 text-xs text-tertiary">
-                                <FolderKanban className="h-3.5 w-3.5" />
-                                {t('overview_projects_entry')}
-                              </p>
-                              <p className="mt-2 text-xs text-tertiary">
-                                {t('overview_updated_at', {
-                                  value: new Date(workspace.updated_at).toLocaleString(locale),
-                                })}
-                              </p>
-                            </div>
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-subtle bg-surface-low text-icon-default">
+                          <Building2 className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div>
+                            <h3 className="type-title truncate text-foreground">{workspace.name}</h3>
+                            <p className="mt-1 type-system-caption truncate text-tertiary">{workspace.id}</p>
                           </div>
+                          <p className="inline-flex items-center gap-1.5 type-system-caption text-tertiary">
+                            <FolderKanban className="h-3.5 w-3.5" />
+                            {t('overview_projects_entry')}
+                          </p>
+                          <p className="type-system-caption text-tertiary">
+                            {t('overview_updated_at', {
+                              value: new Date(workspace.updated_at).toLocaleString(locale),
+                            })}
+                          </p>
+                        </div>
+                      </div>
 
-                          <div className="mt-4 flex items-center gap-2">
-                            <Link
-                              href={`/${locale}/workspaces/${workspace.id}/login`}
-                              className={cn(
-                                'inline-flex h-9 items-center rounded-xl border border-subtle px-3 text-sm font-medium text-foreground transition-colors',
-                                'hover:bg-hover',
-                              )}
-                              data-testid={`workspace-overview__open-workspace--${workspace.id}`}
-                            >
-                              {t('overview_open_workspace')}
-                            </Link>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </section>
-              </>
-            )}
-          </div>
+                      <div className="mt-5 flex items-center gap-2">
+                        <Button asChild variant="outline">
+                          <Link
+                            href={`/${locale}/workspaces/${workspace.id}/login`}
+                            data-testid={`workspace-overview__open-workspace--${workspace.id}`}
+                          >
+                            {t('overview_open_workspace')}
+                          </Link>
+                        </Button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </div>
       </PageLayout>
     </PageState>

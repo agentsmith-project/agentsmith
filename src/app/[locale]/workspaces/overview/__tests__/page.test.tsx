@@ -59,6 +59,16 @@ describe('WorkspacesOverviewPage', () => {
     expect(screen.getByTestId('workspace-overview__empty-filtered')).toBeInTheDocument();
   });
 
+  it('lets users clear the search from the filtered empty state', () => {
+    render(<WorkspacesOverviewPage />);
+
+    fireEvent.change(screen.getByTestId('workspace-overview__search'), { target: { value: 'missing' } });
+    fireEvent.click(screen.getByRole('button', { name: 'overview_clear_search' }));
+
+    expect(screen.getByTestId('workspace-overview__card--ws_1')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__card--ws_2')).toBeInTheDocument();
+  });
+
   it('shows loading state', () => {
     mockUseWorkspaces.mockReturnValue({
       data: undefined,

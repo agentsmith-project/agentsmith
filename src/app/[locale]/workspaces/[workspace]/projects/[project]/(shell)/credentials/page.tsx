@@ -25,6 +25,7 @@ import { RotateCredentialDialog } from '@/components/credentials/RotateCredentia
 import { DeleteCredentialDialog } from '@/components/credentials/DeleteCredentialDialog';
 import { useCanAccessCredentials } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
+import { ProjectRecoveryState } from '../_components/ProjectRecoveryState';
 import { CredentialsContent } from './_components/CredentialsContent';
 import { createCredentialColumns } from './credentials-table';
 
@@ -110,10 +111,12 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
   if (!resolvedParams.isValid || !workspaceId || !projectId) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
-        </div>
+        <ProjectRecoveryState
+          title={tErrors('validation_error')}
+          description={tErrors('badRequest.description')}
+          locale={resolvedParams.locale}
+          workspaceId={workspaceId}
+        />
       </PageState>
     );
   }
@@ -121,10 +124,12 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
   if (!canReadCredentials) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
-        </div>
+        <ProjectRecoveryState
+          title={tErrors('permission_denied_title')}
+          description={tErrors('permission_denied_hint')}
+          locale={resolvedParams.locale}
+          workspaceId={workspaceId}
+        />
       </PageState>
     );
   }

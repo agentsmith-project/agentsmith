@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Activity, AlertTriangle, CheckCircle2, Database, ShieldCheck, Wrench } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, CheckCircle2, Database, ShieldCheck, Wrench } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
   const params = useParams();
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const t = useTranslations('system');
+  const workspacesHref = `/${locale}/system/workspaces`;
   const provisioning = snapshot.workspace_provisioning;
   const attentionItems = buildAttentionItems(snapshot, locale, t);
   const statusOverview = [
@@ -47,6 +48,21 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
         : '-',
       detail: provisioning.last_init_error || t('system_info_no_recent_failure'),
       tone: provisioning.last_failed_at ? 'warning' as const : 'default' as const,
+    },
+  ];
+
+  const quickActions = [
+    {
+      href: `/${locale}/system/workspaces`,
+      title: t('system_info_next_steps_directory_title'),
+      body: t('system_info_next_steps_directory_body'),
+      cta: t('back_to_workspaces'),
+    },
+    {
+      href: `/${locale}/system/workspaces/new`,
+      title: t('system_info_next_steps_create_title'),
+      body: t('system_info_next_steps_create_body'),
+      cta: t('new_workspace'),
     },
   ];
 
@@ -223,6 +239,11 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                       </div>
                     </div>
                   )}
+                  <div className="flex justify-end">
+                    <Button asChild type="button" variant="outline" data-testid="system-info__workspaces-cta">
+                      <Link href={workspacesHref}>{t('back_to_workspaces')}</Link>
+                    </Button>
+                  </div>
                 </SectionCard>
 
                 <SectionCard
@@ -253,6 +274,29 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                 >
                   <p className="text-sm leading-6 text-tertiary">{t('info_notice')}</p>
                 </section>
+
+                <SectionCard
+                  eyebrow={t('system_info_next_steps_label')}
+                  title={t('system_info_next_steps_title')}
+                  description={t('system_info_next_steps_description')}
+                  icon={<Wrench className="h-4 w-4" />}
+                  dataTestId="system-info__next-steps"
+                >
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {quickActions.map((action) => (
+                      <Link key={action.href} href={action.href} className="group rounded-[20px] border border-subtle bg-surface-high p-4 transition-colors hover:border-border hover:bg-background/70">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-foreground">{action.title}</p>
+                            <p className="text-sm leading-6 text-secondary">{action.body}</p>
+                          </div>
+                          <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-tertiary transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+                        </div>
+                        <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-accent">{action.cta}</p>
+                      </Link>
+                    ))}
+                  </div>
+                </SectionCard>
               </div>
             </section>
           </div>

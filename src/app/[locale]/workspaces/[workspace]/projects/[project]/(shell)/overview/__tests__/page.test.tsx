@@ -77,8 +77,21 @@ vi.mock('next-intl', () => ({
         'signals.available': 'Available',
         'signals.limited': 'Limited',
         'signals.not_available': 'Not available',
+        'next_steps.chat_description': 'Jump into chat',
+        'next_steps.notebook_description': 'Open notebook',
+        'next_steps.files_description': 'Open files',
+        'next_steps.context_description': 'Review shared context',
+        'next_steps.members_description': 'Review members',
+        'next_steps.settings_description': 'Open settings',
+        'next_steps.audit_description': 'Open audit',
+        'next_steps.endpoints_description': 'Open endpoints',
+        'next_steps.agents_description': 'Open agents',
+        'next_steps.primary_badge': 'Start here',
+        'next_steps.secondary_badge': 'Next step',
+        'next_steps.open': 'Open',
       },
       workspace: {
+        workspace_home_next_steps_title: 'What you can do here',
         workspace_home_next_steps_description: 'Next steps',
       },
       projects: {
@@ -138,6 +151,23 @@ describe('OverviewPage', () => {
       '/en-US/workspaces/ws_default',
     );
     expect(screen.getByTestId('project-hub__summary')).toBeInTheDocument();
+    expect(screen.getByTestId('project-hub__next-steps')).toBeInTheDocument();
+    expect(screen.getByTestId('project-hub__next-step--chat')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_default/projects/proj_001/chat',
+    );
+    expect(screen.getByTestId('project-hub__next-step--notebook')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_default/projects/proj_001/notebook',
+    );
+    expect(screen.getByTestId('project-hub__next-step--files')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_default/projects/proj_001/files',
+    );
+    expect(screen.getByTestId('project-hub__next-step--context')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_default/projects/proj_001/context',
+    );
     expect(screen.getByTestId('project-hub__use-summary')).toBeInTheDocument();
     expect(screen.getByTestId('project-hub__governance-summary')).toBeInTheDocument();
     expect(screen.getByTestId('project-hub__develop-summary')).toBeInTheDocument();

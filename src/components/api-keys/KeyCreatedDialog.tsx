@@ -84,7 +84,7 @@ export function KeyCreatedDialog({
           </div>
           {!keyValue && keyPrefix && (
             <p className="text-xs text-tertiary">
-              Full key was not returned by the API. Use the prefix above to identify this key.
+              {t('create_success_prefix_only')}
             </p>
           )}
         </div>

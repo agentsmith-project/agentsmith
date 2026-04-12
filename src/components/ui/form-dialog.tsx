@@ -131,6 +131,16 @@ export function FormDialog({
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
 
+        {error ? (
+          <div
+            role="alert"
+            data-testid={testId ? `${testId}__error` : undefined}
+            className="rounded-xl border border-error/20 bg-error/10 px-4 py-3 text-sm leading-6 text-error"
+          >
+            {error}
+          </div>
+        ) : null}
+
         {children({ isSubmitting, error, onSubmit: handleSubmit as (e: React.FormEvent) => Promise<void> })}
 
         <DialogFooter>

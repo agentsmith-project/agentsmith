@@ -17,22 +17,8 @@ export function EndpointsHeaderActions({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Link
-        href={`${basePath}/chat`}
-        className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
-        data-testid="endpoints__open-chat"
-      >
-        {t('open_chat')}
-      </Link>
-      <Link
-        href={`${basePath}/notebook`}
-        className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-        data-testid="endpoints__open-notebook"
-      >
-        {t('open_notebook')}
-      </Link>
-      <Link
         href={`${basePath}/agents`}
-        className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+        className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}
         data-testid="endpoints__open-agents"
       >
         {t('open_agents')}

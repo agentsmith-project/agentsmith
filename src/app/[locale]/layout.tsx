@@ -1,14 +1,15 @@
-import { notFound } from 'next/navigation';
-import { getMessages, setRequestLocale } from 'next-intl/server';
-import { NextIntlClientProvider } from 'next-intl';
-import { QueryProvider } from '@/components/providers/QueryProvider';
-import { MSWProvider } from '@/components/providers/MSWProvider';
-import { AuthProvider } from '@/components/providers/AuthProvider';
-import { RealtimeProvider } from '@/components/providers/RealtimeProvider';
-import { SessionRecoveryProvider } from '@/components/providers/SessionRecoveryProvider';
-import { ToastContainer } from '@/components/ui/toast';
-import { type Locale } from '@/lib/i18n/config';
-import { routing } from '@/lib/i18n/routing';
+import { notFound } from "next/navigation";
+import { getMessages, setRequestLocale } from "next-intl/server";
+import { NextIntlClientProvider } from "next-intl";
+import { QueryProvider } from "@/components/providers/QueryProvider";
+import { MSWProvider } from "@/components/providers/MSWProvider";
+import { AuthProvider } from "@/components/providers/AuthProvider";
+import { RealtimeProvider } from "@/components/providers/RealtimeProvider";
+import { SessionRecoveryProvider } from "@/components/providers/SessionRecoveryProvider";
+import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { ToastContainer } from "@/components/ui/toast";
+import { type Locale } from "@/lib/i18n/config";
+import { routing } from "@/lib/i18n/routing";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -27,8 +28,6 @@ export default async function LocaleLayout({
     notFound();
   }
 
-  // Set request-scoped locale so getRequestConfig / getMessages() use it.
-  // Required for correct language; works with middleware (header) and static rendering.
   setRequestLocale(locale);
 
   let messages;
@@ -38,7 +37,6 @@ export default async function LocaleLayout({
     messages = {};
   }
 
-  // NOTE: No <html> or <body> tags here - they are in the root layout
   return (
     <AuthProvider>
       <MSWProvider>
@@ -46,10 +44,12 @@ export default async function LocaleLayout({
           <QueryProvider>
             <SessionRecoveryProvider>
               <NextIntlClientProvider locale={locale} messages={messages}>
-                <div data-testid="page-layout" className="h-full">
-                  {children}
-                </div>
-                <ToastContainer />
+                <ThemeProvider>
+                  <div data-testid="page-layout" className="h-full">
+                    {children}
+                  </div>
+                  <ToastContainer />
+                </ThemeProvider>
               </NextIntlClientProvider>
             </SessionRecoveryProvider>
           </QueryProvider>

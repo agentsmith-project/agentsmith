@@ -8,6 +8,7 @@ import { Filter, Plus, Search, Settings2 } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,6 +33,7 @@ export function SystemWorkspacesPage() {
   const searchParams = useSearchParams();
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const t = useTranslations('system');
+  const commonT = useTranslations('common');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [listFilter, setListFilter] = useState<WorkspaceListFilter>('all');
   const requestedWorkspaceId = searchParams.get('workspace');
@@ -78,6 +80,13 @@ export function SystemWorkspacesPage() {
     () => workspaces.filter((workspace) => workspace.provisioning_status === 'ready').length,
     [workspaces],
   );
+  const hasSearchQuery = searchQuery.trim().length > 0;
+  const hasActiveListFilter = listFilter !== 'all';
+
+  const clearWorkspaceFilters = () => {
+    setSearchQuery('');
+    setListFilter('all');
+  };
 
   const listedWorkspaces = useMemo(() => {
     if (listFilter === 'all') return filteredWorkspaces;
@@ -114,6 +123,28 @@ export function SystemWorkspacesPage() {
     handleSelectWorkspace(workspace);
     enableEditMode();
   };
+
+  const clearSearch = () => setSearchQuery('');
+  const clearFilters = () => setListFilter('all');
+  const resetListControls = clearWorkspaceFilters;
+
+  const listEmptyState = useMemo(() => {
+    if (workspaces.length === 0) {
+      return {
+        title: t('workspace_directory_empty_title'),
+        description: t('workspace_directory_empty_description'),
+        canClearSearch: false,
+        canClearFilters: false,
+      };
+    }
+
+    return {
+      title: t('workspace_directory_empty_filtered_title'),
+      description: t('workspace_directory_empty_filtered_description'),
+      canClearSearch: hasSearchQuery,
+      canClearFilters: hasActiveListFilter,
+    };
+  }, [hasActiveListFilter, hasSearchQuery, t, workspaces.length]);
 
   useEffect(() => {
     if (workspaces.length === 0) return;
@@ -189,12 +220,12 @@ export function SystemWorkspacesPage() {
 
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-tertiary" />
-                    <input
+                    <Input
                       type="text"
                       value={searchQuery}
                       onChange={(event) => setSearchQuery(event.target.value)}
                       placeholder={t('search_placeholder')}
-                      className="h-11 w-full rounded-2xl border border-subtle bg-surface-high pl-10 pr-3 text-sm text-foreground placeholder:text-tertiary"
+                      className="h-11 rounded-2xl bg-surface-high pl-10"
                       data-testid="system-workspaces__search"
                     />
                   </div>
@@ -239,8 +270,36 @@ export function SystemWorkspacesPage() {
                     </Button>
                   </div>
                 ) : listedWorkspaces.length === 0 ? (
-                  <div className="rounded-[20px] border border-dashed border-subtle bg-bg-base/20 p-5" data-testid="system-workspaces__empty">
-                    <p className="text-sm text-tertiary">{t('empty')}</p>
+                  <div className="rounded-[24px] border border-dashed border-subtle bg-bg-base/20 p-5" data-testid="system-workspaces__empty">
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-foreground">{listEmptyState.title}</p>
+                      <p className="text-sm leading-6 text-tertiary">{listEmptyState.description}</p>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {listEmptyState.canClearSearch ? (
+                        <Button type="button" variant="outline" onClick={clearSearch} data-testid="system-workspaces__clear-search">
+                          {t('workspace_directory_clear_search')}
+                        </Button>
+                      ) : null}
+                      {listEmptyState.canClearFilters ? (
+                        <Button type="button" variant="outline" onClick={clearFilters} data-testid="system-workspaces__clear-filters">
+                          {commonT('clear_filters')}
+                        </Button>
+                      ) : null}
+                      {(listEmptyState.canClearSearch || listEmptyState.canClearFilters) ? (
+                        <Button type="button" variant="ghost" onClick={resetListControls} data-testid="system-workspaces__reset-list">
+                          {t('workspace_directory_reset_list')}
+                        </Button>
+                      ) : null}
+                      {workspaces.length === 0 ? (
+                        <Link href={`/${locale}/system/workspaces/new`}>
+                          <Button type="button" variant="primary" data-testid="system-workspaces__empty-create">
+                            <Plus className="h-4 w-4" />
+                            {t('new_workspace')}
+                          </Button>
+                        </Link>
+                      ) : null}
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-3">

@@ -60,6 +60,7 @@ function renderPage() {
 describe('WorkspaceConnectionsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseParams.mockReturnValue({ workspace: 'ws_1', locale: 'en-US' });
     mockUseHasWorkspacePermission.mockImplementation((permission: string) => (
       permission === 'workspace:read' || permission === 'workspace:governance:update'
     ));
@@ -100,7 +101,46 @@ describe('WorkspaceConnectionsPage', () => {
     });
 
     expect(screen.getByTestId('workspace-connections__feishu-connect')).toBeDisabled();
-    expect(screen.getByText('workspace_feishu_disabled_description')).toBeInTheDocument();
+    expect(screen.getAllByText('workspace_feishu_disabled_description').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('workspace-connections__workspace-state')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-connections__personal-state')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-connections__next-step')).toBeInTheDocument();
+  });
+
+
+  it('shows recovery actions when the workspace id is invalid', () => {
+    mockUseParams.mockReturnValue({ workspace: '', locale: 'en-US' });
+
+    renderPage();
+
+    expect(screen.getByText('feishu_invalid_workspace_title')).toBeInTheDocument();
+    expect(screen.getByText('feishu_invalid_workspace_description')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'workspace_connections_back_to_workspaces' })).toHaveAttribute('href', '/en-US/workspaces');
+  });
+
+  it('keeps the workspace connections page in read-only mode for workspace readers', async () => {
+    mockUseHasWorkspacePermission.mockImplementation((permission: string) => permission === 'workspace:read');
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('workspace-connections__read-only-hint')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('link', { name: 'workspace_connections_open_personal_connections' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'workspace_connections_manage_feishu' })).not.toBeInTheDocument();
+  });
+
+  it('shows a retry action when the workspace integration cannot load', async () => {
+    mockGetFeishuIntegration.mockRejectedValueOnce(new Error('boom'));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'workspace_connections_load_failed_title' })).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('button', { name: 'retry' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'workspace_connections_back_to_workspaces' })).toHaveAttribute('href', '/en-US/workspaces');
   });
 
   it('shows a reauthorization warning when Feishu is missing required scopes', async () => {

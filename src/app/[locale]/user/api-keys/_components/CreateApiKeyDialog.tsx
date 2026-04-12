@@ -37,11 +37,11 @@ export function CreateApiKeyDialog({
         <DialogHeader className="space-y-3">
           <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
             <KeyRound className="h-3.5 w-3.5" />
-            API Key
+            {t('dialog_title_badge')}
           </div>
           <DialogTitle>{t('create')}</DialogTitle>
           <DialogDescription>
-            Create a new API key. You can add an optional note and expiration.
+            {t('dialog_description')}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
@@ -81,7 +81,7 @@ export function CreateApiKeyDialog({
                   placeholder={t('expiration_never')}
                   disabled={isPending}
                 />
-                <p className="text-xs text-tertiary">Leave empty for no expiration (days)</p>
+                <p className="text-xs text-tertiary">{t('dialog_expiration_hint')}</p>
               </div>
             </div>
           </div>
@@ -91,7 +91,7 @@ export function CreateApiKeyDialog({
             {commonT('cancel')}
           </Button>
           <Button variant="action" onClick={onCreate} disabled={isPending}>
-            {isPending ? 'Creating...' : t('create')}
+            {isPending ? t('create_pending') : t('create')}
           </Button>
         </div>
       </DialogContent>

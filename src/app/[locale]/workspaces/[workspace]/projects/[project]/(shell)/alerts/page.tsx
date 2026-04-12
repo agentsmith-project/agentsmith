@@ -196,6 +196,9 @@ export default function AlertsPage({ params }: AlertsPageProps) {
   const auditHref = `${basePath}/audit${buildSharedOpsFilterQuery(timeRange)}`;
   const usageHref = `${basePath}/usage${buildSharedOpsFilterQuery(timeRange, { panel: 'usage' })}`;
 
+  const showRuleRecovery = rules.length === 0;
+  const showNotificationRecovery = localAlerts.length === 0;
+
   return (
     <PageState state="success">
       <PageLayout
@@ -224,6 +227,43 @@ export default function AlertsPage({ params }: AlertsPageProps) {
           />
         )}
       >
+        {(showRuleRecovery || showNotificationRecovery) ? (
+          <div className="mb-4 rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]" data-testid="alerts__recovery-strip">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                {showRuleRecovery ? (
+                  <div className="space-y-1.5" data-testid="alerts__recovery-no-rules">
+                    <div className="text-sm font-medium text-foreground">{t('no_rules')}</div>
+                    <div className="text-sm text-secondary">{t('no_rules_description')}</div>
+                  </div>
+                ) : null}
+                {showNotificationRecovery ? (
+                  <div className="space-y-1.5" data-testid="alerts__recovery-no-alerts">
+                    <div className="text-sm font-medium text-foreground">{t('no_alerts')}</div>
+                    <div className="text-sm text-secondary">{t('no_alerts_description')}</div>
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={auditHref}
+                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
+                  data-testid="alerts__recovery-open-audit"
+                >
+                  {tCommon('open_audit')}
+                </Link>
+                <Link
+                  href={usageHref}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="alerts__recovery-open-usage"
+                >
+                  {tCommon('open_usage')}
+                </Link>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <AlertCenterPage
           workspaceId={workspaceId}
           projectId={projectId}

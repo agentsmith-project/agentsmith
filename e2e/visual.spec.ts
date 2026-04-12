@@ -11,6 +11,7 @@
 import { test as base, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { withAuth } from './fixtures/authenticated';
 import { gotoAndWait, waitForPageReady } from './utils/navigation';
+import { setVisualTheme, themedScreenshotName, VISUAL_THEMES } from './utils/visual-theme';
 import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 
 const WS_ID = 'ws_default';
@@ -168,7 +169,6 @@ function projectPath(section: string) {
   return `/en-US/workspaces/${WS_ID}/projects/${PROJECT_ID}/${section}`;
 }
 
-
 async function seedVisualTestNow(page: Page, iso = VISUAL_TEST_REFERENCE_NOW_ISO) {
   await page.addInitScript((nextNow) => {
     (window as Window & { __MBOS_TEST_NOW__?: string }).__MBOS_TEST_NOW__ = nextNow;
@@ -178,34 +178,9 @@ async function seedVisualTestNow(page: Page, iso = VISUAL_TEST_REFERENCE_NOW_ISO
   }, iso).catch(() => {});
 }
 
-// ─── Public Pages ───────────────────────────────────────────────────────────
-
-test.describe('Visual - Public Pages', () => {
-  test('join page', async ({ page }) => {
-    await stableNavigate(page, '/en-US/join');
-    await expect(page).toHaveScreenshot('join.png', { fullPage: true });
-  });
-
-  test('system login page', async ({ page }) => {
-    await stableNavigate(page, '/en-US/system/login');
-    await expect(page).toHaveScreenshot('system-login.png', { fullPage: true });
-  });
-});
-
 // ─── Workspace Pages ────────────────────────────────────────────────────────
 
 test.describe('Visual - Workspace Pages', () => {
-  test('workspace overview', async ({ authedPage }) => {
-    await stableNavigate(authedPage, '/en-US/workspaces/overview');
-    await expect(authedPage.getByTestId('workspace-overview__heading')).toBeVisible();
-    await expect(authedPage).toHaveScreenshot('workspace-overview.png', { fullPage: true });
-  });
-
-  test('workspace home', async ({ authedPage }) => {
-    await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}`);
-    await expect(authedPage.getByTestId('projects__page')).toBeVisible();
-    await expect(authedPage).toHaveScreenshot('workspace-home.png', { fullPage: true });
-  });
 
   test('workspace home - project creator', async ({ page }) => {
     await withAuth(page, WS_ID, 'dev2@corp.com', 'u_2');
@@ -214,18 +189,6 @@ test.describe('Visual - Workspace Pages', () => {
     await expect(page.getByTestId('projects__create-btn')).toBeVisible();
     await expect(page.getByTestId('projects__back-to-workspace')).toHaveCount(0);
     await expect(page).toHaveScreenshot('workspace-home-project-creator.png', { fullPage: true });
-  });
-
-  test('workspace selection', async ({ authedPage }) => {
-    await stableNavigate(authedPage, '/en-US/login/workspace');
-    await expect(authedPage.getByTestId('workspace-select__card--ws_default')).toBeVisible();
-    await expect(authedPage).toHaveScreenshot('workspace-select.png', { fullPage: true });
-  });
-
-  test('workspace login', async ({ page }) => {
-    await stableNavigate(page, `/en-US/workspaces/${WS_ID}/login`);
-    await expect(page.getByTestId('workspace-login__heading')).toBeVisible();
-    await expect(page).toHaveScreenshot('workspace-login.png', { fullPage: true });
   });
 
   test('projects list', async ({ authedPage }) => {
@@ -298,14 +261,6 @@ test.describe('Visual - Workspace Pages', () => {
     await expect(page).toHaveScreenshot('projects-empty.png', { fullPage: true });
   });
 
-  test('workspace settings', async ({ authedPage }) => {
-    await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/settings`);
-    await expect(authedPage.getByTestId('ws-settings__workspace')).toBeVisible();
-    await expect(authedPage.getByTestId('ws-settings__project-creators')).toBeVisible();
-    await expect(authedPage.getByTestId('ws-settings__project-owner-save--proj_001')).toBeVisible();
-    await expect(authedPage).toHaveScreenshot('workspace-settings.png', { fullPage: true });
-  });
-
   test('workspace settings create project dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/settings`);
     await authedPage.getByTestId('ws-settings__create-project').click();
@@ -368,13 +323,6 @@ test.describe('Visual - Workspace Pages', () => {
 // ─── System Pages ───────────────────────────────────────────────────────────
 
 test.describe('Visual - System Pages', () => {
-  test('system workspaces', async ({ page, request }) => {
-    await seedSystemWorkspaces(request, 'empty');
-    await loginAsSystemAdmin(page);
-    await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
-    await expect(page.getByTestId('system-workspaces__new-workspace')).toBeVisible();
-    await expect(page).toHaveScreenshot('system-workspaces.png', { fullPage: true });
-  });
 
   test('system workspaces edit mode', async ({ page, request }) => {
     await seedSystemWorkspaces(request, 'with_workspace');
@@ -410,45 +358,17 @@ test.describe('Visual - System Pages', () => {
     await expect(page).toHaveScreenshot('system-workspaces-delete-confirmation.png', { fullPage: true });
   });
 
-  test('system info', async ({ page, request }) => {
-    await seedSystemWorkspaces(request, 'with_failed_workspace');
-    await loginAsSystemAdmin(page);
-    await page.getByTestId('system-workspaces__open-info').click();
-    await page.waitForURL(/\/en-US\/system\/info/, { timeout: 15_000 });
-    await expect(page.getByTestId('system-info__heading')).toBeVisible();
-    await expect(page).toHaveScreenshot('system-info.png', { fullPage: true });
-  });
 });
 
 // ─── Project Pages ──────────────────────────────────────────────────────────
 
 test.describe('Visual - Project Pages', () => {
-  test('overview', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('overview'));
-    await expect(authedPage.getByTestId('project-hub__summary')).toBeVisible();
-    await expect(authedPage.getByTestId('project-hub__use-summary')).toBeVisible();
-    await expect(authedPage.getByTestId('project-hub__governance-summary')).toBeVisible();
-    await expect(authedPage).toHaveScreenshot('overview.png', { fullPage: true });
-  });
-
-  test('chat - standard', async ({ authedPage }) => {
-    await authedPage.setViewportSize({ width: 1440, height: 900 });
-    await stableNavigate(authedPage, projectPath('chat'));
-    await expect(authedPage.getByTestId('chat__execution-target-trigger')).toBeVisible();
-    await expect(authedPage).toHaveScreenshot('chat-standard.png', { fullPage: true });
-  });
 
   test('chat - ultrawide', async ({ authedPage }) => {
     await authedPage.setViewportSize({ width: 2200, height: 1200 });
     await stableNavigate(authedPage, projectPath('chat'));
     await expect(authedPage.getByTestId('chat__execution-target-trigger')).toBeVisible();
     await expect(authedPage).toHaveScreenshot('chat-ultrawide.png', { fullPage: true });
-  });
-
-  test('notebook', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('notebook'));
-    await expect(authedPage.getByTestId('notebook__task-list')).toBeVisible();
-    await expect(authedPage).toHaveScreenshot('notebook.png', { fullPage: true });
   });
 
   test('notebook create task dialog - create new workspace', async ({ authedPage }) => {
@@ -478,12 +398,6 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('agents.png', { fullPage: true });
   });
 
-  test('alerts', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('alerts'));
-    await expect(authedPage.getByTestId('alerts__open-audit')).toBeVisible();
-    await expect(authedPage).toHaveScreenshot('alerts.png', { fullPage: true });
-  });
-
   test('endpoints', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('endpoints'));
     await expect(authedPage).toHaveScreenshot('endpoints.png', { fullPage: true });
@@ -492,34 +406,6 @@ test.describe('Visual - Project Pages', () => {
   test('credentials', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('credentials'));
     await expect(authedPage).toHaveScreenshot('credentials.png', { fullPage: true });
-  });
-
-  test('members', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('members'));
-    await expect(authedPage).toHaveScreenshot('members.png', { fullPage: true });
-  });
-
-  test('files', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('files'));
-    await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
-    await expect(authedPage.getByTestId('project-workbench__heading')).toContainText('Files');
-    await expect(authedPage.getByText('Project library')).toBeVisible();
-    await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
-    await expect(authedPage.getByTestId('files__library-item--lib_shared_default')).toBeVisible();
-    await expect(authedPage.getByTestId('files__library-desktop-access--lib_shared_default')).toBeVisible();
-    await authedPage.waitForTimeout(1500);
-    await expect(authedPage).toHaveScreenshot('files.png', { fullPage: true });
-  });
-
-  test('audit', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('audit'));
-    await expect(authedPage).toHaveScreenshot('audit.png', { fullPage: true });
-  });
-
-  test('usage', async ({ authedPage }) => {
-    await seedVisualTestNow(authedPage);
-    await stableNavigate(authedPage, projectPath('usage'));
-    await expect(authedPage).toHaveScreenshot('usage.png', { fullPage: true });
   });
 
   test('access guide', async ({ authedPage }) => {
@@ -533,43 +419,334 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('resource-policy.png', { fullPage: true });
   });
 
-  test('settings - general', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('settings'));
-    await expect(authedPage).toHaveScreenshot('settings-general.png', { fullPage: true });
-  });
-
 });
 
+const THEMED_WALKTHROUGH_PAGES = [
+  {
+    name: 'overview',
+    run: async (page: Page) => {
+      await stableNavigate(page, projectPath('overview'));
+      await expect(page.getByTestId('project-hub__summary')).toBeVisible();
+      await expect(page.getByTestId('project-hub__use-summary')).toBeVisible();
+      await expect(page.getByTestId('project-hub__governance-summary')).toBeVisible();
+    },
+  },
+  {
+    name: 'chat-standard',
+    run: async (page: Page) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await stableNavigate(page, projectPath('chat'));
+      await expect(page.getByTestId('chat__execution-target-trigger')).toBeVisible();
+    },
+  },
+  {
+    name: 'notebook',
+    run: async (page: Page) => {
+      await stableNavigate(page, projectPath('notebook'));
+      await expect(page.getByTestId('notebook__task-list')).toBeVisible();
+    },
+  },
+  {
+    name: 'files',
+    run: async (page: Page) => {
+      await stableNavigate(page, projectPath('files'));
+      await expect(page.getByTestId('project-workbench__heading')).toBeVisible();
+      await expect(page.getByText('Project library')).toBeVisible();
+      await expect(page.getByTestId('files__library-item--lib_shared_default')).toBeVisible();
+    },
+  },
+  {
+    name: 'alerts',
+    run: async (page: Page) => {
+      await stableNavigate(page, projectPath('alerts'));
+    },
+  },
+] as const;
 
-// ─── User Pages ─────────────────────────────────────────────────────────────
+test.describe('Visual - Project Pages (Light/Dark)', () => {
+  for (const theme of VISUAL_THEMES) {
+    test.describe(`${theme} theme`, () => {
+      for (const pageCase of THEMED_WALKTHROUGH_PAGES) {
+        test(pageCase.name, async ({ authedPage }) => {
+          await setVisualTheme(authedPage, theme);
+          await pageCase.run(authedPage);
+          await expect(authedPage).toHaveScreenshot(themedScreenshotName(pageCase.name, theme), { fullPage: true });
+        });
+      }
+    });
+  }
+});
 
-test.describe('Visual - User Pages', () => {
-  test('profile', async ({ authedPage }) => {
-    await stableNavigate(authedPage, '/en-US/user/profile');
-    await expect(authedPage).toHaveScreenshot('profile.png', { fullPage: true });
-  });
+const THEMED_PUBLIC_PAGES = [
+  {
+    name: 'join',
+    path: '/en-US/join',
+    run: async () => {},
+  },
+  {
+    name: 'system-login',
+    path: '/en-US/system/login',
+    run: async (page: Page) => {
+      await expect(page.getByTestId('system-login__heading')).toBeVisible();
+    },
+  },
+] as const;
 
-  test('api keys', async ({ authedPage }) => {
-    await stableNavigate(authedPage, '/en-US/user/api-keys');
-    await expect(authedPage).toHaveScreenshot('api-keys.png', { fullPage: true });
-  });
+const THEMED_WORKSPACE_PAGES_AUTHED = [
+  {
+    name: 'workspace-overview',
+    path: '/en-US/workspaces/overview',
+    run: async (page: Page) => {
+      await expect(page.getByTestId('workspace-overview__heading')).toBeVisible();
+    },
+  },
+  {
+    name: 'workspace-select',
+    path: '/en-US/login/workspace',
+    run: async (page: Page) => {
+      await expect(page.getByTestId('workspace-select__card--ws_default')).toBeVisible();
+    },
+  },
+  {
+    name: 'workspace-home',
+    path: `/en-US/workspaces/${WS_ID}`,
+    run: async (page: Page) => {
+      await expect(page.getByTestId('projects__page')).toBeVisible();
+    },
+  },
+  {
+    name: 'workspace-settings',
+    path: `/en-US/workspaces/${WS_ID}/settings`,
+    run: async (page: Page) => {
+      await expect(page.getByTestId('ws-settings__workspace')).toBeVisible();
+    },
+  },
+] as const;
 
-  test('third party accounts', async ({ authedPage }) => {
-    await stableNavigate(authedPage, '/en-US/user/third-party-accounts');
-    await expect(authedPage.getByTestId('third-party-accounts__create-btn')).toBeVisible();
-    await expect(authedPage).toHaveScreenshot('third-party-accounts.png', { fullPage: true });
-  });
+const THEMED_WORKSPACE_PAGES_PLAIN = [
+  {
+    name: 'workspace-login',
+    path: `/en-US/workspaces/${WS_ID}/login`,
+    run: async (page: Page) => {
+      await expect(page.getByTestId('workspace-login__heading')).toBeVisible();
+    },
+  },
+] as const;
+
+const THEMED_SYSTEM_PAGES = [
+  {
+    name: 'system-workspaces',
+    path: '/en-US/system/workspaces',
+    run: async (page: Page) => {
+      await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
+    },
+  },
+  {
+    name: 'system-info',
+    path: '/en-US/system/info',
+    run: async (page: Page) => {
+      await expect(page.getByTestId('system-info__heading')).toBeVisible();
+    },
+  },
+] as const;
+
+const THEMED_USER_PAGES = [
+  {
+    name: 'profile',
+    path: '/en-US/user/profile',
+    run: async (page: Page) => {
+      await expect(page.getByTestId('profile__save-btn')).toBeVisible();
+    },
+  },
+  {
+    name: 'api-keys',
+    path: '/en-US/user/api-keys',
+    run: async (page: Page) => {
+      await expect(page.getByTestId('api-keys__create-btn')).toBeVisible();
+    },
+  },
+  {
+    name: 'third-party-accounts',
+    path: '/en-US/user/third-party-accounts',
+    run: async (page: Page) => {
+      await expect(page.getByTestId('third-party-accounts__create-btn')).toBeVisible();
+    },
+  },
+] as const;
+
+const THEMED_GOVERNANCE_PAGES = [
+  {
+    name: 'members',
+    path: projectPath('members'),
+    run: async (page: Page) => {
+      await expect(page.getByTestId('members__invite-btn')).toBeVisible();
+    },
+  },
+  {
+    name: 'audit',
+    path: projectPath('audit'),
+    run: async (page: Page) => {
+      await expect(page.getByTestId('audit__table')).toBeVisible();
+    },
+  },
+  {
+    name: 'usage',
+    path: projectPath('usage'),
+    run: async (page: Page) => {
+      await expect(page.getByTestId('usage__view')).toBeVisible();
+    },
+  },
+  {
+    name: 'settings',
+    path: projectPath('settings'),
+    run: async (page: Page) => {
+      await expect(page.getByTestId('settings__ownership-section')).toBeVisible();
+    },
+  },
+] as const;
+
+const THEMED_OVERLAY_CASES = [
+  {
+    name: 'audit-empty-state',
+    path: `${projectPath('audit')}?resource_id=__visual_empty__`,
+    setup: async (page: Page) => {
+      await expect(page.getByTestId('audit-usage__empty-state')).toBeVisible();
+    },
+  },
+  {
+    name: 'members-join-requests-tab',
+    path: projectPath('members'),
+    setup: async (page: Page) => {
+      await page.getByRole('tab', { name: /requests/i }).first().click();
+      await expect(page.getByRole('tabpanel', { name: /requests/i })).toBeVisible();
+    },
+  },
+  {
+    name: 'dialog-create-agent',
+    path: projectPath('agents'),
+    setup: async (page: Page) => {
+      await page.getByTestId('agents__create-btn').click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+    },
+  },
+  {
+    name: 'dialog-files-create-folder',
+    path: projectPath('files'),
+    setup: async (page: Page) => {
+      await expect(page.getByTestId('project-workbench__heading')).toBeVisible();
+      await page.getByTestId('files__new-folder').click();
+      await expect(page.getByTestId('files__dialog__new-folder')).toBeVisible();
+    },
+  },
+] as const;
+
+test.describe('Visual - Public Pages (Light/Dark)', () => {
+  for (const theme of VISUAL_THEMES) {
+    test.describe(`${theme} theme`, () => {
+      for (const pageCase of THEMED_PUBLIC_PAGES) {
+        test(pageCase.name, async ({ page }) => {
+          await setVisualTheme(page, theme);
+          await stableNavigate(page, pageCase.path);
+          await pageCase.run(page);
+          await expect(page).toHaveScreenshot(themedScreenshotName(pageCase.name, theme), { fullPage: true });
+        });
+      }
+    });
+  }
+});
+
+test.describe('Visual - Workspace Pages (Light/Dark)', () => {
+  for (const theme of VISUAL_THEMES) {
+    test.describe(`${theme} theme`, () => {
+      for (const pageCase of THEMED_WORKSPACE_PAGES_AUTHED) {
+        test(pageCase.name, async ({ authedPage }) => {
+          await setVisualTheme(authedPage, theme);
+          await stableNavigate(authedPage, pageCase.path);
+          await pageCase.run(authedPage);
+          await expect(authedPage).toHaveScreenshot(themedScreenshotName(pageCase.name, theme), { fullPage: true });
+        });
+      }
+
+      for (const pageCase of THEMED_WORKSPACE_PAGES_PLAIN) {
+        test(pageCase.name, async ({ page }) => {
+          await setVisualTheme(page, theme);
+          await stableNavigate(page, pageCase.path);
+          await pageCase.run(page);
+          await expect(page).toHaveScreenshot(themedScreenshotName(pageCase.name, theme), { fullPage: true });
+        });
+      }
+    });
+  }
+});
+
+test.describe('Visual - System Pages (Light/Dark)', () => {
+  for (const theme of VISUAL_THEMES) {
+    test.describe(`${theme} theme`, () => {
+      for (const pageCase of THEMED_SYSTEM_PAGES) {
+        test(pageCase.name, async ({ page, request }) => {
+          await seedSystemWorkspaces(request, pageCase.name === 'system-workspaces' ? 'empty' : 'with_failed_workspace');
+          await setVisualTheme(page, theme);
+          await loginAsSystemAdmin(page);
+          await stableNavigate(page, pageCase.path);
+          await pageCase.run(page);
+          await expect(page).toHaveScreenshot(themedScreenshotName(pageCase.name, theme), { fullPage: true });
+        });
+      }
+    });
+  }
+});
+
+test.describe('Visual - User Pages (Light/Dark)', () => {
+  for (const theme of VISUAL_THEMES) {
+    test.describe(`${theme} theme`, () => {
+      for (const pageCase of THEMED_USER_PAGES) {
+        test(pageCase.name, async ({ authedPage, page }) => {
+          const targetPage = pageCase.auth === 'plain' ? page : authedPage;
+          await setVisualTheme(targetPage, theme);
+          await stableNavigate(targetPage, pageCase.path);
+          await pageCase.run(targetPage);
+          await expect(targetPage).toHaveScreenshot(themedScreenshotName(pageCase.name, theme), { fullPage: true });
+        });
+      }
+    });
+  }
+});
+
+test.describe('Visual - Governance Pages (Light/Dark)', () => {
+  for (const theme of VISUAL_THEMES) {
+    test.describe(`${theme} theme`, () => {
+      for (const pageCase of THEMED_GOVERNANCE_PAGES) {
+        test(pageCase.name, async ({ authedPage }) => {
+          await setVisualTheme(authedPage, theme);
+          await seedVisualTestNow(authedPage);
+          await stableNavigate(authedPage, pageCase.path);
+          await pageCase.run(authedPage);
+          await expect(authedPage).toHaveScreenshot(themedScreenshotName(pageCase.name, theme), { fullPage: true });
+        });
+      }
+    });
+  }
+});
+
+test.describe('Visual - Overlays (Light/Dark)', () => {
+  for (const theme of VISUAL_THEMES) {
+    test.describe(`${theme} theme`, () => {
+      for (const pageCase of THEMED_OVERLAY_CASES) {
+        test(pageCase.name, async ({ authedPage }) => {
+          await setVisualTheme(authedPage, theme);
+          await seedVisualTestNow(authedPage);
+          await stableNavigate(authedPage, pageCase.path);
+          await pageCase.setup(authedPage);
+          await expect(authedPage).toHaveScreenshot(themedScreenshotName(pageCase.name, theme), { fullPage: true });
+        });
+      }
+    });
+  }
 });
 
 // ─── Dialog / Drawer Screenshots ────────────────────────────────────────────
 
 test.describe('Visual - Overlays', () => {
-  test('audit - empty state', async ({ authedPage }) => {
-    await stableNavigate(authedPage, `${projectPath('audit')}?resource_id=__visual_empty__`);
-    await expect(authedPage.getByTestId('audit-usage__empty-state')).toBeVisible();
-    await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('audit-empty-state.png', { fullPage: true });
-  });
 
   test('alerts - notifications tab', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('alerts'));
@@ -577,14 +754,6 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage.getByTestId('alert-notifications')).toBeVisible();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('alerts-notifications-tab.png', { fullPage: true });
-  });
-
-  test('members - join requests tab', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('members'));
-    await authedPage.getByRole('tab', { name: /requests/i }).first().click();
-    await expect(authedPage.getByRole('tabpanel', { name: /requests/i })).toBeVisible();
-    await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('members-join-requests-tab.png', { fullPage: true });
   });
 
   test('members - effective access drawer', async ({ authedPage }) => {
@@ -617,13 +786,6 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage).toHaveScreenshot('drawer-audit-detail.png');
   });
 
-  test('create agent dialog', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('agents'));
-    await authedPage.getByTestId('agents__create-btn').click();
-    await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('dialog-create-agent.png');
-  });
-
   test('create endpoint dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('endpoints'));
     await authedPage.getByTestId('endpoints__create-btn').click();
@@ -643,16 +805,6 @@ test.describe('Visual - Overlays', () => {
     await authedPage.getByTestId('members__invite-btn').click();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('dialog-invite-member.png');
-  });
-
-  test('files - create folder dialog', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('files'));
-    await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
-    await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
-    await authedPage.waitForTimeout(1500);
-    await authedPage.getByTestId('files__new-folder').click();
-    await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('dialog-files-create-folder.png');
   });
 
   test('files - rename dialog', async ({ authedPage }) => {

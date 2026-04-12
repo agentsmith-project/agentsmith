@@ -9,6 +9,13 @@ export interface OverviewSurfaceSummary {
   governLabels: string[];
 }
 
+export interface OverviewNextStepEntry {
+  href: ProjectRoutePolicy['href'];
+  label: string;
+  description: string;
+  testId: string;
+}
+
 export function buildOverviewPaths(locale: string, workspaceId: string, projectId: string) {
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   return {
@@ -38,6 +45,45 @@ export function buildOverviewSurfaceSummary(
       .filter((policy) => policy.navSection === 'govern' || policy.navSection === 'operate')
       .map(labelFor),
   };
+}
+
+const OVERVIEW_NEXT_STEP_PRIORITY: Array<{
+  href: ProjectRoutePolicy['href'];
+  descriptionKey: string;
+  testId: string;
+}> = [
+  { href: 'chat', descriptionKey: 'next_steps.chat_description', testId: 'project-hub__next-step--chat' },
+  { href: 'notebook', descriptionKey: 'next_steps.notebook_description', testId: 'project-hub__next-step--notebook' },
+  { href: 'files', descriptionKey: 'next_steps.files_description', testId: 'project-hub__next-step--files' },
+  { href: 'context', descriptionKey: 'next_steps.context_description', testId: 'project-hub__next-step--context' },
+  { href: 'members', descriptionKey: 'next_steps.members_description', testId: 'project-hub__next-step--members' },
+  { href: 'settings', descriptionKey: 'next_steps.settings_description', testId: 'project-hub__next-step--settings' },
+  { href: 'audit', descriptionKey: 'next_steps.audit_description', testId: 'project-hub__next-step--audit' },
+  { href: 'endpoints', descriptionKey: 'next_steps.endpoints_description', testId: 'project-hub__next-step--endpoints' },
+  { href: 'agents', descriptionKey: 'next_steps.agents_description', testId: 'project-hub__next-step--agents' },
+];
+
+export function buildOverviewNextStepEntries(
+  policies: readonly ProjectRoutePolicy[],
+  tNav: ReturnType<typeof useTranslations<'nav'>>,
+  tContext: ReturnType<typeof useTranslations<'context_store'>>,
+  tOverview: ReturnType<typeof useTranslations<'overview'>>,
+): OverviewNextStepEntry[] {
+  const policyByHref = new Map(policies.map((policy) => [policy.href, policy]));
+  return OVERVIEW_NEXT_STEP_PRIORITY.flatMap((item) => {
+    const policy = policyByHref.get(item.href);
+    if (!policy) return [];
+    const label =
+      policy.navLabelNamespace === 'context_store'
+        ? tContext(policy.navLabelKey)
+        : tNav(policy.navLabelKey);
+    return [{
+      href: policy.href,
+      label,
+      description: tOverview(item.descriptionKey),
+      testId: item.testId,
+    }];
+  }).slice(0, 4);
 }
 
 export function createOverviewErrorContent(

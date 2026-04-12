@@ -60,7 +60,7 @@ describe('NotebookTaskDetailPage route', () => {
     expect(screen.queryByTestId('notebook-task__open-files')).not.toBeInTheDocument();
   });
 
-  it('shows invalid parameter error for unsafe taskId', async () => {
+  it('shows recovery actions for unsafe taskId', async () => {
     mockUseCanAccessNotebook.mockReturnValue(true);
     mockUseCanUseNotebookTerminal.mockReturnValue(true);
     render(
@@ -78,9 +78,12 @@ describe('NotebookTaskDetailPage route', () => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
     expect(screen.getByText('validation_error')).toBeInTheDocument();
+    expect(screen.getByTestId('notebook-task__open-list')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/notebook');
+    expect(screen.getByTestId('notebook-task__open-files')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/files');
+    expect(screen.getByTestId('notebook-task__back-to-workspace')).toHaveAttribute('href', '/en/workspaces/ws_1');
   });
 
-  it('shows permission denied when user lacks notebook access', async () => {
+  it('shows recovery actions when user lacks notebook access', async () => {
     mockUseCanAccessNotebook.mockReturnValue(false);
     mockUseCanUseNotebookTerminal.mockReturnValue(false);
     render(
@@ -98,6 +101,9 @@ describe('NotebookTaskDetailPage route', () => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+    expect(screen.getByTestId('notebook-task__back-to-workspace')).toHaveAttribute('href', '/en/workspaces/ws_1');
+    expect(screen.getByTestId('notebook-task__open-files')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/files');
+    expect(screen.getByTestId('notebook-task__open-chat')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/chat');
   });
 
   it('keeps notebook access but disables terminal when user lacks terminal permission', async () => {

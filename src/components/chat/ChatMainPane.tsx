@@ -8,6 +8,7 @@ import type { SessionStreamStatus, SessionStreamingAssistant } from '@/lib/chat/
 
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { Composer } from '@/components/chat/Composer';
+import { Button } from '@/components/ui/button';
 import { MessageList } from '@/components/chat/MessageList';
 import { ChatEmptyState } from '@/components/chat/chat-main-pane/ChatEmptyState';
 import { ChatLoadingState } from '@/components/chat/chat-main-pane/ChatLoadingState';
@@ -19,6 +20,9 @@ export interface ChatMainPaneLabels {
   noActiveThreadDescription: string;
   noActiveThreadHint: string;
   noEndpointHint: string;
+  noEndpointRecoveryTitle: string;
+  noEndpointRecoveryDescription: string;
+  noEndpointRecoveryHint: string;
   newThread: string;
   selectThreadHint: string;
   attachmentsDisabledReason: string;
@@ -137,6 +141,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
       : composerState === 'need_endpoint'
         ? labels.noEndpointHint
         : (!canAttachFiles ? labels.attachmentsDisabledReason : '');
+  const showEndpointRecovery = currentSessionId !== null && composerState === 'need_endpoint';
 
   return (
     <section
@@ -156,6 +161,34 @@ export function ChatMainPane(props: ChatMainPaneProps) {
         createPending={createPending}
         layoutMode={layoutMode}
       />
+
+      {showEndpointRecovery ? (
+        <div className="border-b border-white/6 bg-white/[0.02] px-4 py-3" data-testid="chat__composer-recovery">
+          <div className="rounded-[16px] border border-white/6 bg-surface-high/20 p-4">
+            <div className="text-sm font-medium text-foreground">{labels.noEndpointRecoveryTitle}</div>
+            <div className="mt-1 text-sm text-secondary">{labels.noEndpointRecoveryDescription}</div>
+            {endpoints.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {endpoints.slice(0, 4).map((endpoint) => (
+                  <Button
+                    key={endpoint.id}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => onSelectActiveEndpoint(endpoint)}
+                    data-testid={`chat__composer-recovery-endpoint--${endpoint.id}`}
+                  >
+                    {endpoint.name}
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 text-xs text-tertiary">{labels.noEndpointRecoveryHint}</div>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1">
         {!currentSessionId ? (

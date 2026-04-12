@@ -265,6 +265,7 @@ describe('SettingsPage route', () => {
     await waitFor(() => {
       expect(mockProjectUpdate).toHaveBeenCalledWith('ws_1', 'proj_1', { owner_id: 'admin_1' });
     });
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('includes joined project members in project admin options', async () => {

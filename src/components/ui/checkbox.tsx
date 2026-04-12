@@ -4,10 +4,6 @@ import * as CheckboxPrimitive from '@radix-ui/react-checkbox';
 import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-/**
- * Checkbox - Design System 5.5
- * Dark theme: visible border (#4A4D52), checked = accent bg + white check
- */
 const Checkbox = React.forwardRef<
   React.ElementRef<typeof CheckboxPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root>
@@ -15,9 +11,9 @@ const Checkbox = React.forwardRef<
   <CheckboxPrimitive.Root
     ref={ref}
     className={cn(
-      'peer h-4 w-4 shrink-0 rounded border-2 transition-colors duration-200',
-      'border-border-input bg-input hover:border-[rgb(90,93,98)]',
-      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+      'peer h-4 w-4 shrink-0 rounded-sm border transition-colors duration-150',
+      'border-border-input/80 bg-input hover:border-border',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
       'disabled:cursor-not-allowed disabled:opacity-50',
       'data-[state=checked]:bg-accent data-[state=checked]:border-accent data-[state=checked]:text-white',
       className,

@@ -3,32 +3,29 @@ import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:pointer-events-none disabled:opacity-50",
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border text-[13px] font-normal leading-none tracking-[0.01em] transition-[color,background-color,border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
-        default: "bg-surface-high text-foreground border border-subtle hover:bg-hover",
-        // Primary: solid accent for main CTA in dialogs (design doc 5.5)
-        primary: "border border-accent/40 bg-[linear-gradient(180deg,rgba(124,160,255,1),rgba(92,131,244,1))] text-white shadow-[0_10px_24px_rgba(76,110,211,0.28)] hover:brightness-110",
-        // Action: neutral toolbar CTA for page-level "Create/New" actions (design system 5.3)
-        action: "border border-white/8 bg-white/6 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-accent/30 hover:bg-white/10",
-        outline: "border border-border bg-transparent text-primary hover:border-accent/30 hover:bg-white/5 hover:text-foreground",
-        secondary: "border border-subtle bg-surface text-primary hover:border-border hover:bg-hover hover:text-foreground",
-        // Ghost: text-only for Cancel in dialogs (design doc 5.5)
-        ghost: "bg-transparent text-tertiary hover:text-primary hover:bg-white/5",
-        link: "bg-transparent text-accent underline-offset-4 hover:underline",
-        destructive: "bg-transparent text-error hover:bg-error/10",
+        default: 'border-border/80 bg-surface-high text-foreground shadow-ambient hover:border-border hover:bg-surface hover:text-accent',
+        primary: 'border-transparent bg-accent text-white shadow-[0_18px_36px_rgba(245,78,0,0.24)] hover:-translate-y-[1px] hover:bg-accent/90',
+        action: 'border-border bg-surface text-foreground shadow-ambient hover:bg-surface-high hover:text-accent',
+        outline: 'border-border/70 bg-transparent text-primary hover:bg-surface-low hover:text-foreground',
+        secondary: 'border-border/60 bg-surface-low text-primary hover:border-border hover:bg-surface hover:text-foreground',
+        ghost: 'border-transparent bg-transparent text-secondary hover:bg-surface-low hover:text-foreground',
+        link: 'border-transparent bg-transparent px-0 text-accent hover:text-error',
+        destructive: 'border-error/25 bg-error/10 text-error hover:bg-error/15',
       },
       size: {
-        default: "h-10 px-4",
-        sm: "h-9 px-3",
-        lg: "h-11 px-6",
-        icon: "h-10 w-10",
+        default: 'h-10 px-4',
+        sm: 'h-9 px-3.5 text-[12px]',
+        lg: 'h-11 px-5 text-sm',
+        icon: 'h-10 w-10 p-0',
       },
     },
     defaultVariants: {
-      variant: "default",
-      size: "default",
+      variant: 'default',
+      size: 'default',
     },
   }
 );

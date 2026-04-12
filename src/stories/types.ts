@@ -13,4 +13,17 @@ export const globalTypes = {
     tags: ['i18n'],
     options: Object.fromEntries(locales.map((l) => [l, l])),
   },
+  theme: {
+    name: 'Theme',
+    description: 'UI theme',
+    toolbar: {
+      title: 'Theme',
+      icon: 'mirror',
+    },
+    defaultValue: 'light',
+    options: {
+      light: 'light',
+      dark: 'dark',
+    },
+  },
 };

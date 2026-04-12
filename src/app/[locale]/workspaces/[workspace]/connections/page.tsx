@@ -23,6 +23,7 @@ export default function WorkspaceConnectionsPage() {
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const t = useTranslations('third_party_accounts');
+  const commonT = useTranslations('common');
   const settingsT = useTranslations('settings');
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
   const canManageWorkspace = useHasWorkspacePermission('workspace:governance:update');
@@ -31,7 +32,7 @@ export default function WorkspaceConnectionsPage() {
   const queryClient = useQueryClient();
   const { data: workspace } = useWorkspace(workspaceId ?? '');
 
-  const { data: integration, isLoading, isError, error } = useQuery({
+  const { data: integration, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['workspace', workspaceId, 'feishu-integration'],
     queryFn: () => workspaceApi.getFeishuIntegration(workspaceId ?? ''),
     enabled: Boolean(workspaceId && canReadWorkspace),
@@ -47,6 +48,9 @@ export default function WorkspaceConnectionsPage() {
     queryFn: () => connectionsApi.getProviderConfig('feishu'),
     enabled: Boolean(workspaceId && canReadWorkspace),
   });
+
+  const workspaceListHref = `/${locale}/workspaces`;
+  const personalConnectionsHref = `/${locale}/user/third-party-accounts`;
 
   const feishuConnection = React.useMemo(
     () => connections.find((item) => item.provider === 'feishu' && item.workspace_id === workspaceId) ?? null,
@@ -86,13 +90,34 @@ export default function WorkspaceConnectionsPage() {
     || feishuReauthReason === 'missing_scopes'
     || feishuReauthReason === 'refresh_token_missing'
     || feishuReauthReason === 'oauth_not_configured';
+  const isEnabled = integration?.status === 'enabled';
+  const workspaceStateLabel = isEnabled
+    ? t('workspace_connections_workspace_state_enabled')
+    : t('workspace_connections_workspace_state_disabled');
+  const personalStateLabel = feishuConnection
+    ? t('workspace_connections_personal_state_connected')
+    : t('workspace_connections_personal_state_not_connected');
+  const nextStepLabel = !isEnabled
+    ? (canManageWorkspace
+      ? t('workspace_connections_next_step_enable_workspace')
+      : t('workspace_connections_next_step_wait_for_workspace'))
+    : !feishuConnection
+      ? t('workspace_connections_next_step_connect_personal')
+      : feishuConnection.status === 'reauth_required'
+        ? t('workspace_connections_next_step_refresh_personal')
+        : t('workspace_connections_next_step_ready');
 
   if (!workspaceId) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
+        <div className="max-w-md space-y-3 text-center">
           <h2 className="text-lg font-semibold">{settingsT('feishu_invalid_workspace_title')}</h2>
           <p className="text-sm text-tertiary">{settingsT('feishu_invalid_workspace_description')}</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button asChild type="button" variant="outline">
+              <Link href={workspaceListHref}>{t('workspace_connections_back_to_workspaces')}</Link>
+            </Button>
+          </div>
         </div>
       </PageState>
     );
@@ -101,9 +126,17 @@ export default function WorkspaceConnectionsPage() {
   if (!canReadWorkspace) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
+        <div className="max-w-md space-y-3 text-center">
           <h2 className="text-lg font-semibold">{t('workspace_connections_forbidden_title')}</h2>
           <p className="text-sm text-tertiary">{t('workspace_connections_forbidden_description')}</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button asChild type="button" variant="outline">
+              <Link href={workspaceListHref}>{t('workspace_connections_back_to_workspaces')}</Link>
+            </Button>
+            <Button asChild type="button" variant="primary">
+              <Link href={personalConnectionsHref}>{t('workspace_connections_open_personal_connections')}</Link>
+            </Button>
+          </div>
         </div>
       </PageState>
     );
@@ -112,17 +145,21 @@ export default function WorkspaceConnectionsPage() {
   if (isError) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
+        <div className="max-w-md space-y-3 text-center">
           <h2 className="text-lg font-semibold">{t('workspace_connections_load_failed_title')}</h2>
           <p className="text-sm text-tertiary">
             {error instanceof APIError ? error.message : t('workspace_connections_load_failed_description')}
           </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button type="button" variant="outline" onClick={() => void refetch()}>{commonT('retry')}</Button>
+            <Button asChild type="button" variant="primary">
+              <Link href={workspaceListHref}>{t('workspace_connections_back_to_workspaces')}</Link>
+            </Button>
+          </div>
         </div>
       </PageState>
     );
   }
-
-  const isEnabled = integration?.status === 'enabled';
 
   return (
     <PageState state={isLoading ? 'loading' : 'success'}>
@@ -142,6 +179,7 @@ export default function WorkspaceConnectionsPage() {
                     title={settingsT('workspace_integrations_title')}
                     subtitle={t('workspace_connections_description', { workspace: workspace?.name ?? workspaceId })}
                   />
+                  <p className="max-w-3xl text-sm leading-6 text-tertiary">{t('workspace_connections_scope_note')}</p>
                 </div>
                 <div className="flex flex-wrap gap-3">
                   {canManageWorkspace ? (
@@ -155,6 +193,34 @@ export default function WorkspaceConnectionsPage() {
                   ) : null}
                 </div>
               </div>
+              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                <div className="rounded-[20px] border border-subtle bg-background/70 p-4" data-testid="workspace-connections__workspace-state">
+                  <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_connections_workspace_state_title')}</p>
+                  <p className="mt-2 text-sm font-medium text-foreground">{workspaceStateLabel}</p>
+                  <p className="mt-2 text-sm leading-6 text-secondary">{isEnabled ? t('workspace_feishu_enabled_description') : t('workspace_feishu_disabled_description')}</p>
+                </div>
+                <div className="rounded-[20px] border border-subtle bg-background/70 p-4" data-testid="workspace-connections__personal-state">
+                  <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_connections_personal_state_title')}</p>
+                  <p className="mt-2 text-sm font-medium text-foreground">{personalStateLabel}</p>
+                  <p className="mt-2 text-sm leading-6 text-secondary">
+                    {feishuConnection?.account_identity?.external_email
+                      || feishuConnection?.account_identity?.external_name
+                      || t('workspace_feishu_not_connected')}
+                  </p>
+                </div>
+                <div className="rounded-[20px] border border-subtle bg-background/70 p-4" data-testid="workspace-connections__next-step">
+                  <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_connections_next_step_title')}</p>
+                  <p className="mt-2 text-sm font-medium text-foreground">{nextStepLabel}</p>
+                  <p className="mt-2 text-sm leading-6 text-secondary">
+                    {canManageWorkspace ? t('workspace_connections_next_step_admin_detail') : t('workspace_connections_next_step_member_detail')}
+                  </p>
+                </div>
+              </div>
+              {!canManageWorkspace ? (
+                <div className="mt-4 rounded-[20px] border border-subtle bg-background/70 px-4 py-3 text-sm leading-6 text-tertiary" data-testid="workspace-connections__read-only-hint">
+                  {t('workspace_connections_read_only_hint')}
+                </div>
+              ) : null}
             </section>
 
             <section className="rounded-[24px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">

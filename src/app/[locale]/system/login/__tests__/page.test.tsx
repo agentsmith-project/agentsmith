@@ -57,4 +57,10 @@ describe('SystemLoginPage', () => {
     expect(await screen.findByTestId('system-login__error')).toBeInTheDocument();
     expect(mockAssign).not.toHaveBeenCalled();
   });
+
+  it('keeps a workspace-login recovery action visible', () => {
+    render(<SystemLoginPage />);
+
+    expect(screen.getAllByRole('button', { name: 'open_workspace_login' }).length).toBeGreaterThan(0);
+  });
 });

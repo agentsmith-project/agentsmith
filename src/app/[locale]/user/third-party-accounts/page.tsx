@@ -244,6 +244,10 @@ export default function ThirdPartyAccountsPage() {
     () => new Set(items.map((item) => item.provider)).size,
     [items],
   );
+  const oauthItemsCount = React.useMemo(
+    () => items.filter((item) => item.kind === 'oauth_account').length,
+    [items],
+  );
 
   return (
     <PageState state="success">
@@ -261,10 +265,11 @@ export default function ThirdPartyAccountsPage() {
                   <p className="text-tertiary mt-1">{t('description')}</p>
                 </div>
                 <p className="max-w-2xl text-sm leading-6 text-secondary">{t('summary_intro')}</p>
+                <p className="text-sm leading-6 text-tertiary">{t('personal_scope_note')}</p>
               </div>
               <Button variant="action" onClick={openCreateDialog} data-testid="third-party-accounts__create-btn">
                 <Plus className="w-4 h-4" />
-                {t('create')}
+                {t('create_personal_connection')}
               </Button>
             </div>
             <div className="mt-5 grid gap-3 md:grid-cols-3">
@@ -281,8 +286,8 @@ export default function ThirdPartyAccountsPage() {
                   <PlugZap className="h-3.5 w-3.5 text-accent" />
                   {t('summary_oauth_label')}
                 </div>
-                <div className="mt-3 text-2xl font-semibold text-foreground">{activeItems.length}</div>
-                <p className="mt-1 text-sm text-tertiary">{t('summary_workspace_hint')}</p>
+                <div className="mt-3 text-2xl font-semibold text-foreground">{oauthItemsCount}</div>
+                <p className="mt-1 text-sm text-tertiary">{t('summary_oauth_hint')}</p>
               </div>
               <div className="rounded-xl border border-border/70 bg-surface-high p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
@@ -291,6 +296,16 @@ export default function ThirdPartyAccountsPage() {
                 </div>
                 <div className="mt-3 text-2xl font-semibold text-foreground">{providerCount}</div>
                 <p className="mt-1 text-sm text-tertiary">{t('summary_provider_hint')}</p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-subtle bg-background/70 p-4" data-testid="third-party-accounts__personal-scope">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-secondary">{t('summary_personal_scope_title')}</p>
+                <p className="mt-2 text-sm leading-6 text-tertiary">{t('summary_personal_scope_body')}</p>
+              </div>
+              <div className="rounded-2xl border border-subtle bg-background/70 p-4" data-testid="third-party-accounts__workspace-scope">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-secondary">{t('summary_workspace_scope_title')}</p>
+                <p className="mt-2 text-sm leading-6 text-tertiary">{t('summary_workspace_scope_body')}</p>
               </div>
             </div>
           </section>
@@ -321,7 +336,7 @@ export default function ThirdPartyAccountsPage() {
                   <p className="mx-auto mb-5 max-w-xl text-sm leading-6 text-tertiary">{t('empty_description')}</p>
                   <Button variant="action" onClick={openCreateDialog}>
                     <Plus className="w-4 h-4" />
-                    {t('create')}
+                    {t('create_personal_connection')}
                   </Button>
                 </div>
               ) : (
@@ -345,24 +360,14 @@ export default function ThirdPartyAccountsPage() {
             <DialogHeader className="space-y-3">
               <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
                 <Link2 className="h-3.5 w-3.5" />
-                External Access
+                {t('personal_scope_badge')}
               </div>
               <DialogTitle>{editing ? t('edit_title') : t('create_title')}</DialogTitle>
               <DialogDescription>{t('dialog_description')}</DialogDescription>
             </DialogHeader>
 
             <div className="rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(124,160,255,0.08),rgba(124,160,255,0.02))] p-4">
-              <div className="flex items-start gap-3">
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/12 text-accent">
-                  <ShieldCheck className="h-5 w-5" />
-                </span>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-foreground">
-                    {editing ? t('edit_title') : t('create_title')}
-                  </p>
-                  <p className="text-sm leading-6 text-secondary">{t('dialog_description')}</p>
-                </div>
-              </div>
+              <p className="text-sm leading-6 text-secondary">{t('personal_scope_dialog_note')}</p>
             </div>
 
             <ConnectionFormFields

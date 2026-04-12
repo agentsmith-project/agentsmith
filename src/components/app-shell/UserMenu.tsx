@@ -1,6 +1,14 @@
 import * as React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { LogOut, User, Settings, Languages, type LucideIcon } from 'lucide-react';
+import {
+  Languages,
+  LogOut,
+  MoonStar,
+  Settings,
+  SunMedium,
+  User,
+  type LucideIcon,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import {
   DropdownMenu,
@@ -9,6 +17,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useTheme } from '@/components/providers/ThemeProvider';
+import type { Theme } from '@/lib/theme';
 
 interface UserMenuItem {
   id: string;
@@ -23,6 +33,11 @@ const LOCALES = [
   { id: 'en-US', label: 'English', icon: Languages },
   { id: 'zh-CN', label: '中文', icon: Languages },
 ] as const;
+
+const THEME_OPTIONS: Array<{ id: Theme; labelKey: 'theme_light' | 'theme_dark'; icon: LucideIcon }> = [
+  { id: 'light', labelKey: 'theme_light', icon: SunMedium },
+  { id: 'dark', labelKey: 'theme_dark', icon: MoonStar },
+];
 
 interface UserMenuProps {
   user: {
@@ -53,6 +68,8 @@ export function UserMenu({
 }: UserMenuProps) {
   const t = useTranslations('common.user_menu');
   const commonT = useTranslations('common');
+  const { theme, setTheme, mounted } = useTheme();
+
   const items = React.useMemo<UserMenuItem[]>(
     () => [
       ...(onProfile
@@ -91,7 +108,6 @@ export function UserMenu({
     }
   };
 
-  // Get initials from name
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -107,71 +123,93 @@ export function UserMenu({
         <DropdownMenuTrigger asChild>
           <button
             data-testid="topbar__user-menu"
-            className="flex items-center gap-2 hover:bg-hover rounded-full p-1 pr-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+            className="control-pill flex h-11 items-center gap-3 px-2.5 py-1.5 text-primary shadow-ambient transition-colors duration-150 hover:bg-surface hover:text-foreground"
           >
-            <Avatar className="w-8 h-8">
+            <Avatar className="h-8 w-8">
               {user?.avatar ? (
                 <AvatarImage src={user.avatar} alt={user.name} />
               ) : (
-                <AvatarFallback className="text-foreground text-xs bg-surface-high border border-subtle">
+                <AvatarFallback className="type-system-caption bg-surface-high text-foreground">
                   {user ? getInitials(user.name) : commonT('user')}
                 </AvatarFallback>
               )}
             </Avatar>
-            <span className="hidden sm:block text-sm text-foreground max-w-[120px] truncate">
-              {user?.name || commonT('user')}
-            </span>
+            <div className="hidden min-w-0 sm:block">
+              <div className="truncate text-sm text-foreground">{user?.name || commonT('user')}</div>
+              <div className="truncate text-[11px] text-tertiary">{user?.email || ''}</div>
+            </div>
+            <span className="sr-only">{user?.name || commonT('user')}</span>
           </button>
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="end" className="w-64 p-2">
-          <div className="px-2 py-2">
-            <p className="text-sm font-medium text-foreground truncate">{user?.name || commonT('user')}</p>
-            <p className="text-xs text-tertiary truncate">{user?.email || ''}</p>
+        <DropdownMenuContent align="end" className="w-72 p-2.5">
+          <div className="surface-soft px-3 py-3">
+            <p className="type-title truncate text-foreground">{user?.name || commonT('user')}</p>
+            <p className="mt-1 truncate text-xs text-secondary">{user?.email || ''}</p>
           </div>
 
-          <DropdownMenuSeparator />
-
-          {items.map((item) => (
-            <DropdownMenuItem
-              key={item.id}
-              data-testid={`user-menu__${item.id === 'api_keys' ? 'api-keys' : item.id}`}
-              onSelect={() => handleClick(item.id)}
-              className="gap-3"
-            >
-              <item.icon className="w-4 h-4 text-icon-default" />
-              <span>{t(item.labelKey)}</span>
-            </DropdownMenuItem>
-          ))}
-
-          {onLanguageSwitch && (
+          {items.length > 0 ? (
             <>
               <DropdownMenuSeparator />
-              {LOCALES.map((loc) => (
+              {items.map((item) => (
                 <DropdownMenuItem
-                  key={loc.id}
-                  data-testid="user-menu__language"
-                  onSelect={() => onLanguageSwitch(loc.id)}
+                  key={item.id}
+                  data-testid={`user-menu__${item.id === 'api_keys' ? 'api-keys' : item.id}`}
+                  onSelect={() => handleClick(item.id)}
                   className="gap-3"
                 >
-                  <loc.icon className="w-4 h-4 text-icon-default" />
-                  <span>{loc.label}</span>
-                  {currentLocale === loc.id && (
-                    <span className="ml-auto text-xs text-accent">✓</span>
-                  )}
+                  <item.icon className="h-4 w-4 text-icon-default" />
+                  <span>{t(item.labelKey)}</span>
                 </DropdownMenuItem>
               ))}
             </>
-          )}
+          ) : null}
+
+          {onLanguageSwitch ? (
+            <>
+              <DropdownMenuSeparator />
+              <div className="px-3 pb-1 pt-1.5 text-[10px] uppercase tracking-[0.16em] text-tertiary">
+                {t('language')}
+              </div>
+              {LOCALES.map((loc) => (
+                <DropdownMenuItem
+                  key={loc.id}
+                  data-testid={`user-menu__language-${loc.id}`}
+                  onSelect={() => onLanguageSwitch(loc.id)}
+                  className="gap-3"
+                >
+                  <loc.icon className="h-4 w-4 text-icon-default" />
+                  <span>{loc.label}</span>
+                  {currentLocale === loc.id ? <span className="ml-auto text-xs text-accent">{t('current')}</span> : null}
+                </DropdownMenuItem>
+              ))}
+            </>
+          ) : null}
 
           <DropdownMenuSeparator />
+          <div className="px-3 pb-1 pt-1.5 text-[10px] uppercase tracking-[0.16em] text-tertiary">
+            {t('appearance')}
+          </div>
+          {THEME_OPTIONS.map((option) => (
+            <DropdownMenuItem
+              key={option.id}
+              data-testid={`user-menu__theme-${option.id}`}
+              onSelect={() => setTheme(option.id)}
+              className="gap-3"
+            >
+              <option.icon className="h-4 w-4 text-icon-default" />
+              <span>{t(option.labelKey)}</span>
+              {mounted && theme === option.id ? <span className="ml-auto text-xs text-accent">{t('current')}</span> : null}
+            </DropdownMenuItem>
+          ))}
 
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             data-testid="user-menu__logout"
             onSelect={() => handleClick('logout')}
             className="gap-3 text-error hover:text-error focus:text-error"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="h-4 w-4" />
             <span>{t('logout')}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>

@@ -11,6 +11,7 @@ import { useCanReadAudit } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
+import { ProjectRecoveryState } from '../_components/ProjectRecoveryState';
 
 interface AuditPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -38,10 +39,12 @@ export default function AuditPage({ params }: AuditPageProps) {
   if (!resolvedParams.isValid || !workspaceId || !projectId) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
-        </div>
+        <ProjectRecoveryState
+          title={tErrors('validation_error')}
+          description={tErrors('badRequest.description')}
+          locale={resolvedParams.locale}
+          workspaceId={workspaceId}
+        />
       </PageState>
     );
   }
@@ -57,10 +60,12 @@ export default function AuditPage({ params }: AuditPageProps) {
   if (!canViewAudit) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
-        </div>
+        <ProjectRecoveryState
+          title={tErrors('permission_denied_title')}
+          description={tErrors('permission_denied_hint')}
+          locale={resolvedParams.locale}
+          workspaceId={workspaceId}
+        />
       </PageState>
     );
   }

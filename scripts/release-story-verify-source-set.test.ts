@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const HELPER_PATH = 'scripts/lib/release-story-verify-source-set.sh';
+const EXPECTED_SOURCE_SET_NAME = 'backend_real_story_verify_source_set';
 
 function read(relativePath: string): string {
   return readFileSync(relativePath, 'utf8');
@@ -28,9 +29,44 @@ function listReleaseStoryVerifySources(): string[] {
     .filter(Boolean);
 }
 
+function listBackendRealStoryFiles(): string[] {
+  const output = execFileSync('bash', ['-lc', "find e2e/stories/backend-real -type f -name '*.story.md' | sort"], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+
+  return output
+    .split('\n')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function readSourceSetContract(): { name: string; helperPath: string } {
+  const output = execFileSync(
+    'bash',
+    [
+      '-lc',
+      `source "${HELPER_PATH}" && printf '%s\\n%s\\n' "$(release_story_verify_source_set_name)" "$(release_story_verify_source_set_helper_path)"`,
+    ],
+    {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    },
+  )
+    .split('\n')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return {
+    name: output[0] ?? '',
+    helperPath: output[1] ?? '',
+  };
+}
+
 describe('release story verify source set', () => {
   it('declares the full release story contract family and committed story files', () => {
     const sources = listReleaseStoryVerifySources();
+    const storyFiles = listBackendRealStoryFiles();
 
     expect(sources).toEqual(
       expect.arrayContaining([
@@ -41,19 +77,37 @@ describe('release story verify source set', () => {
         'e2e/story-loader.ts',
         'e2e/story-trace-binding.ts',
         'e2e/generated/story-specs.generated.json',
-        'e2e/stories/backend-real/release-user-story-end-to-end.story.md',
-        'e2e/stories/backend-real/real-backend-visual-review.story.md',
       ]),
     );
+    expect(sources).toEqual(expect.arrayContaining(storyFiles));
   });
 
-  it('keeps demo and cluster bundle manifests aligned with the shared source set', () => {
+  it('keeps demo and cluster bundle manifests aligned with the shared source set contract instead of static story file lists', () => {
     const sources = listReleaseStoryVerifySources();
-    const demoManifest = readJson('infra/deploy/demo/deployment.manifest.json') as { bundle_files?: string[] };
-    const clusterManifest = readJson('infra/deploy/cluster/deployment.manifest.json') as { bundle_files?: string[] };
+    const sourceSetContract = readSourceSetContract();
+    const demoManifest = readJson('infra/deploy/demo/deployment.manifest.json') as {
+      bundle_files?: string[];
+      bundle_source_sets?: Array<{ name?: string; helper?: string }>;
+    };
+    const clusterManifest = readJson('infra/deploy/cluster/deployment.manifest.json') as {
+      bundle_files?: string[];
+      bundle_source_sets?: Array<{ name?: string; helper?: string }>;
+    };
 
-    expect(demoManifest.bundle_files).toEqual(expect.arrayContaining(sources));
-    expect(clusterManifest.bundle_files).toEqual(expect.arrayContaining(sources));
+    expect(sourceSetContract.name).toBe(EXPECTED_SOURCE_SET_NAME);
+    for (const manifest of [demoManifest, clusterManifest]) {
+      expect(manifest.bundle_source_sets).toEqual(
+        expect.arrayContaining([
+          {
+            name: sourceSetContract.name,
+            helper: sourceSetContract.helperPath,
+          },
+        ]),
+      );
+      expect(manifest.bundle_files ?? []).toEqual(
+        expect.not.arrayContaining(sources.filter((relativePath) => relativePath.startsWith('e2e/'))),
+      );
+    }
   });
 
   it('makes demo and cluster build/verify scripts consume the shared source set helper instead of a spec-only copy', () => {
@@ -71,6 +125,8 @@ describe('release story verify source set', () => {
     expect(clusterBuild).not.toContain('copy_bundle_file "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts"');
     expect(demoVerify).not.toContain('VERIFY_INTEGRATION_RELEASE_USER_STORY_SPEC=');
     expect(clusterVerify).not.toContain('VERIFY_INTEGRATION_RELEASE_USER_STORY_SPEC=');
+    expect(demoBuild).toContain('release_story_verify_source_set_name');
+    expect(clusterBuild).toContain('release_story_verify_source_set_name');
     expect(demoVerify).toContain('prepare_release_story_verify_mounts');
     expect(demoVerify).toContain('"${RELEASE_STORY_VERIFY_MOUNTS[@]}"');
     expect(clusterVerify).toContain('prepare_release_story_verify_mounts');

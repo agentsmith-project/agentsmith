@@ -23,6 +23,11 @@ export type TraceStoryBinding = {
   storyId: string;
   title: string;
   actor: string;
+  family: string;
+  personas: readonly string[];
+  kind: StoryDefinition['kind'];
+  gatePolicy: StoryDefinition['gatePolicy'];
+  externalDependencies: StoryDefinition['externalDependencies'];
   goal: string;
   preconditions: readonly string[];
   seedData: readonly string[];
@@ -46,6 +51,19 @@ export function buildTraceStoryBinding(story: StoryDefinition): TraceStoryBindin
     storyId: story.storyId,
     title: story.title,
     actor: story.actor,
+    family: story.family,
+    personas: [...story.personas],
+    kind: story.kind,
+    gatePolicy: {
+      tier: story.gatePolicy.tier,
+      requiredEvidence: [...story.gatePolicy.requiredEvidence],
+    },
+    externalDependencies: story.externalDependencies.map((dependency) => ({
+      dependencyId: dependency.dependencyId,
+      kind: dependency.kind,
+      required: dependency.required ?? false,
+      note: dependency.note,
+    })),
     goal: story.goal,
     preconditions: [...(story.preconditions ?? [])],
     seedData: [...(story.seedData ?? [])],

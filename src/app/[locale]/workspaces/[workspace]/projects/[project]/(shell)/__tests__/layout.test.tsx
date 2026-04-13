@@ -24,6 +24,7 @@ const mockUseProject = vi.fn<
   error: null,
   refetch: mockRefetchProject,
 }));
+const mockTopbar = vi.fn<(props: unknown) => unknown>(() => <div data-testid="project-shell__topbar" />);
 
 vi.mock('next/navigation', () => ({
   useParams: () => mockUseParams(),
@@ -40,7 +41,10 @@ vi.mock('@/components/app-shell/AppShellSidebar', () => ({
 }));
 
 vi.mock('@/components/app-shell/Topbar', () => ({
-  Topbar: () => <div data-testid="project-shell__topbar" />,
+  Topbar: (props: unknown) => {
+    mockTopbar(props);
+    return <div data-testid="project-shell__topbar" />;
+  },
 }));
 
 vi.mock('@/components/auth/ProtectedRoute', () => ({
@@ -64,6 +68,21 @@ describe('AppShellLayout', () => {
       error: null,
       refetch: mockRefetchProject,
     });
+  });
+
+  it('passes stable workspace and project route ids to the topbar', () => {
+    render(
+      <AppShellLayout>
+        <div data-testid="project-shell__content">content</div>
+      </AppShellLayout>,
+    );
+
+    expect(mockTopbar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+      }),
+    );
   });
 
   it('renders shell chrome when project is available', () => {

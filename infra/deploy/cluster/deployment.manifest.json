@@ -218,16 +218,6 @@
     "e2e/integration-workspace-entry.spec.ts",
     "e2e/integration-workspace-publish-usable.spec.ts",
     "e2e/integration-preset-external-file-library.spec.ts",
-    "e2e/integration-release-user-story.spec.ts",
-    "e2e/release-user-story.contract.ts",
-    "e2e/story-contract.ts",
-    "e2e/story-generated-spec.ts",
-    "e2e/story-loader.ts",
-    "e2e/story-trace-binding.ts",
-    "e2e/trace-bundle-support.ts",
-    "e2e/generated/story-specs.generated.json",
-    "e2e/stories/backend-real/release-user-story-end-to-end.story.md",
-    "e2e/stories/backend-real/real-backend-visual-review.story.md",
     "docs/user-guides/cluster-admin-runbook.md",
     "docs/contracts/cluster-deployment-spec-v1.md",
     "docs/user-guides/cluster-deploy-operations.md",
@@ -235,5 +225,11 @@
     "tools/kubectl",
     "checksums.txt",
     "VERSION"
+  ],
+  "bundle_source_sets": [
+    {
+      "name": "backend_real_story_verify_source_set",
+      "helper": "scripts/lib/release-story-verify-source-set.sh"
+    }
   ]
 }

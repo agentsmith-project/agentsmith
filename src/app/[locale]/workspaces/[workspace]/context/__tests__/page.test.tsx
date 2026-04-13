@@ -42,12 +42,14 @@ describe('WorkspacePersonalContextPage', () => {
     );
   });
 
-  it('shows permission denied when workspace access is unavailable', () => {
+  it('renders workspace personal context even when workspace read is unavailable for a joined member', () => {
     mockUseHasWorkspacePermission.mockReturnValueOnce(false);
 
     render(<WorkspacePersonalContextPage />);
 
-    expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+    expect(screen.getByText('member_workspace_title')).toBeInTheDocument();
+    expect(screen.getByTestId('context-manager')).toBeInTheDocument();
+    expect(screen.queryByText('permission_denied_title')).not.toBeInTheDocument();
   });
 
   it('shows validation error for invalid workspace parameters', () => {

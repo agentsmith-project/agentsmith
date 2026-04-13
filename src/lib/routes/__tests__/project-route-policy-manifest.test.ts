@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { PLATFORM_PERMISSIONS } from '@/lib/constants/permissions';
 import { PROJECT_SETTINGS_READ_PERMISSIONS } from '@/lib/projects/project-settings-access';
 import {
   findProjectRoutePolicyByHref,
@@ -24,7 +23,7 @@ describe('project route policy manifest', () => {
     const personalContextPolicy = findProjectRoutePolicyByHref('my-context');
 
     expect(personalContextPolicy).not.toBeNull();
-    expect(personalContextPolicy?.permissions).toEqual([...PLATFORM_PERMISSIONS.PROJECT]);
+    expect(personalContextPolicy?.permissions).toEqual(['project:endpoint:use']);
     expect(personalContextPolicy?.sidebar).toBe(false);
     expect(personalContextPolicy?.governanceObject).toBe(false);
     expect(personalContextPolicy?.navSection).toBe('govern');

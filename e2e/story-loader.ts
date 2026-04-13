@@ -6,6 +6,14 @@ import {
   type StoryAuthLane,
   type StoryDefinition,
   type StoryEvidence,
+  type StoryExternalDependency,
+  STORY_EXTERNAL_DEPENDENCY_KIND_VALUES,
+  STORY_EVIDENCE_VALUES,
+  STORY_GATE_TIER_VALUES,
+  STORY_KIND_VALUES,
+  STORY_LANE_VALUES,
+  type StoryGatePolicy,
+  type StoryKind,
   type StoryLane,
   type StoryRuntimeData,
   type StoryRecipeFamily,
@@ -22,6 +30,8 @@ export type StoryLoaderOptions = {
 export type LoadStoryDefinitionOptions = {
   rootDir?: string;
 };
+
+const STORY_LANE_DIRECTORY_NAMES = STORY_LANE_VALUES;
 
 export function resolveCommittedStoryRoot(rootDir?: string): string {
   return path.resolve(rootDir ?? 'e2e/stories');
@@ -95,6 +105,14 @@ function optionalObjectList(
   });
 }
 
+function requireStringList(frontmatter: FrontmatterRecord, key: string): string[] {
+  const value = optionalStringList(frontmatter, key);
+  if (value === undefined) {
+    throw new Error(`missing frontmatter key: ${key}`);
+  }
+  return value;
+}
+
 function optionalObject(frontmatter: FrontmatterRecord, key: string): Record<string, unknown> | undefined {
   const value = frontmatter[key];
   if (value === undefined) {
@@ -104,6 +122,83 @@ function optionalObject(frontmatter: FrontmatterRecord, key: string): Record<str
     throw new Error(`frontmatter key ${key} must be an object`);
   }
   return value as Record<string, unknown>;
+}
+
+function parseStoryKind(raw: unknown, storyId: string): StoryKind {
+  if (typeof raw !== 'string' || !STORY_KIND_VALUES.includes(raw as StoryKind)) {
+    throw new Error(`frontmatter key kind in ${storyId} must be one of: ${STORY_KIND_VALUES.join(', ')}`);
+  }
+  return raw as StoryKind;
+}
+
+function parseStoryLane(raw: unknown, storyId: string): StoryLane {
+  if (typeof raw !== 'string' || !STORY_LANE_VALUES.includes(raw as StoryLane)) {
+    throw new Error(`frontmatter key lane in ${storyId} must be one of: ${STORY_LANE_VALUES.join(', ')}`);
+  }
+  return raw as StoryLane;
+}
+
+function normalizeGatePolicy(
+  raw: Record<string, unknown> | undefined,
+  storyId: string,
+): StoryGatePolicy {
+  if (!raw) {
+    throw new Error(`missing frontmatter key: gatePolicy`);
+  }
+  const tier = raw.tier;
+  if (typeof tier !== 'string' || !STORY_GATE_TIER_VALUES.includes(tier as (typeof STORY_GATE_TIER_VALUES)[number])) {
+    throw new Error(`frontmatter key gatePolicy.tier in ${storyId} must be one of: ${STORY_GATE_TIER_VALUES.join(', ')}`);
+  }
+  const requiredEvidence = raw.requiredEvidence;
+  if (!Array.isArray(requiredEvidence) || requiredEvidence.length === 0) {
+    throw new Error(`frontmatter key gatePolicy.requiredEvidence in ${storyId} must be a non-empty list`);
+  }
+
+  return {
+    tier: tier as StoryGatePolicy['tier'],
+    requiredEvidence: requiredEvidence.map((entry) => {
+      if (typeof entry !== 'string' || !STORY_EVIDENCE_VALUES.includes(entry as StoryEvidence)) {
+        throw new Error(
+          `frontmatter key gatePolicy.requiredEvidence in ${storyId} must only contain: ${STORY_EVIDENCE_VALUES.join(', ')}`,
+        );
+      }
+      return entry.trim() as StoryEvidence;
+    }),
+  };
+}
+
+function normalizeExternalDependencies(
+  raw: Array<Record<string, unknown>> | undefined,
+  storyId: string,
+): StoryExternalDependency[] {
+  if (!raw) {
+    throw new Error(`missing frontmatter key: externalDependencies`);
+  }
+
+  return raw.map((entry) => {
+    const dependencyId = requireFieldString(entry, ['dependencyId'], `external dependency id in ${storyId}`);
+    const kind = entry.kind;
+    if (
+      typeof kind !== 'string' ||
+      !STORY_EXTERNAL_DEPENDENCY_KIND_VALUES.includes(kind as (typeof STORY_EXTERNAL_DEPENDENCY_KIND_VALUES)[number])
+    ) {
+      throw new Error(
+        `frontmatter key externalDependencies.kind in ${storyId} must be one of: ${STORY_EXTERNAL_DEPENDENCY_KIND_VALUES.join(', ')}`,
+      );
+    }
+    const required = typeof entry.required === 'boolean' ? entry.required : false;
+    const note =
+      typeof entry.note === 'string' && entry.note.trim().length > 0
+        ? entry.note.trim()
+        : undefined;
+
+    return {
+      dependencyId,
+      kind: kind as StoryExternalDependency['kind'],
+      required,
+      note,
+    };
+  });
 }
 
 function requireFieldString(frontmatter: FrontmatterRecord, keys: readonly string[], fieldName: string): string {
@@ -201,14 +296,25 @@ function buildStoryDefinition(markdown: string, sourceFile: string): StoryDefini
 
   const scenes = optionalObjectList(frontmatter, 'scenes') ?? [];
   const steps = optionalObjectList(frontmatter, 'steps') ?? [];
+  const actor = requireString(frontmatter, 'actor');
+  const lane = parseStoryLane(frontmatter.lane, storyId);
+  const normalizedSteps = steps.map((step) => normalizeStep(step, storyId));
+  const personas = requireStringList(frontmatter, 'personas');
+  const family = requireString(frontmatter, 'family');
+  const kind = parseStoryKind(frontmatter.kind, storyId);
 
   const story: StoryDefinition = {
     filePath: path.resolve(sourceFile),
     sourceFile: sourceFile === 'inline.story.md' ? sourceFile : relativeStorySource(sourceFile),
     storyId,
     title: requireString(frontmatter, 'title'),
-    actor: requireString(frontmatter, 'actor'),
-    lane: requireString(frontmatter, 'lane') as StoryLane,
+    actor,
+    family,
+    personas,
+    kind,
+    gatePolicy: normalizeGatePolicy(optionalObject(frontmatter, 'gatePolicy'), storyId),
+    externalDependencies: normalizeExternalDependencies(optionalObjectList(frontmatter, 'externalDependencies'), storyId),
+    lane,
     entryRoute: requireString(frontmatter, 'entryRoute'),
     goal: requireString(frontmatter, 'goal'),
     preconditions: optionalStringList(frontmatter, 'preconditions'),
@@ -216,7 +322,7 @@ function buildStoryDefinition(markdown: string, sourceFile: string): StoryDefini
     narrative: requireString(frontmatter, 'narrative'),
     runtimeData: optionalObject(frontmatter, 'runtimeData') as StoryRuntimeData | undefined,
     scenes: scenes.map((scene) => normalizeScene(scene, storyId)),
-    steps: steps.map((step) => normalizeStep(step, storyId)),
+    steps: normalizedSteps,
   };
 
   validateStoryDefinition(story);
@@ -244,13 +350,13 @@ export function readStoryDefinitionFromMarkdownFileSync(filePath: string): Story
   return readStoryDefinitionFromMarkdown(source, path.resolve(filePath));
 }
 
-async function listStoryFiles(rootDir: string): Promise<string[]> {
+async function listStoryFilesInDirectory(rootDir: string): Promise<string[]> {
   const entries = await readdir(rootDir, { withFileTypes: true });
   const nested = await Promise.all(
     entries.map(async (entry) => {
       const entryPath = path.join(rootDir, entry.name);
       if (entry.isDirectory()) {
-        return listStoryFiles(entryPath);
+        return listStoryFilesInDirectory(entryPath);
       }
       if (entry.isFile() && entry.name.endsWith(STORY_FILE_SUFFIX)) {
         return [entryPath];
@@ -261,13 +367,13 @@ async function listStoryFiles(rootDir: string): Promise<string[]> {
   return nested.flat().sort((left, right) => left.localeCompare(right));
 }
 
-function listStoryFilesSync(rootDir: string): string[] {
+function listStoryFilesInDirectorySync(rootDir: string): string[] {
   return fs
     .readdirSync(rootDir, { withFileTypes: true })
     .flatMap((entry) => {
       const entryPath = path.join(rootDir, entry.name);
       if (entry.isDirectory()) {
-        return listStoryFilesSync(entryPath);
+        return listStoryFilesInDirectorySync(entryPath);
       }
       if (entry.isFile() && entry.name.endsWith(STORY_FILE_SUFFIX)) {
         return [entryPath];
@@ -275,6 +381,42 @@ function listStoryFilesSync(rootDir: string): string[] {
       return [];
     })
     .sort((left, right) => left.localeCompare(right));
+}
+
+async function listStoryFiles(rootDir: string): Promise<string[]> {
+  const files = await Promise.all(
+    STORY_LANE_DIRECTORY_NAMES.map(async (laneDir) => {
+      const laneRoot = path.join(rootDir, laneDir);
+      if (!fs.existsSync(laneRoot) || !fs.statSync(laneRoot).isDirectory()) {
+        return [];
+      }
+      return listStoryFilesInDirectory(laneRoot);
+    }),
+  );
+  return files.flat().sort((left, right) => left.localeCompare(right));
+}
+
+function listStoryFilesSync(rootDir: string): string[] {
+  return STORY_LANE_DIRECTORY_NAMES.flatMap((laneDir) => {
+    const laneRoot = path.join(rootDir, laneDir);
+    if (!fs.existsSync(laneRoot) || !fs.statSync(laneRoot).isDirectory()) {
+      return [];
+    }
+    return listStoryFilesInDirectorySync(laneRoot);
+  }).sort((left, right) => left.localeCompare(right));
+}
+
+function validateStoryLaneDirectory(story: StoryDefinition, filePath: string, rootDir: string) {
+  const relativePath = path.relative(rootDir, filePath).replace(/\\/g, '/');
+  const laneDirectory = relativePath.split('/', 1)[0];
+  if (!STORY_LANE_DIRECTORY_NAMES.includes(laneDirectory as (typeof STORY_LANE_DIRECTORY_NAMES)[number])) {
+    throw new Error(`story ${story.storyId} must live under a canonical lane directory`);
+  }
+  if (laneDirectory !== story.lane) {
+    throw new Error(
+      `story ${story.storyId} lane directory drift: expected ${story.lane}, received ${laneDirectory}`,
+    );
+  }
 }
 
 function validateNoDuplicateStoryIds(stories: readonly StoryDefinition[]) {
@@ -293,7 +435,9 @@ export async function loadAllStoryDefinitions(options?: StoryLoaderOptions): Pro
   const stories = [...(options?.injectedStories ?? [])];
   const files = await listStoryFiles(rootDir);
   for (const filePath of files) {
-    stories.push(await readStoryDefinitionFromMarkdownFile(filePath));
+    const story = await readStoryDefinitionFromMarkdownFile(filePath);
+    validateStoryLaneDirectory(story, filePath, rootDir);
+    stories.push(story);
   }
   validateNoDuplicateStoryIds(stories);
   return stories.sort((left, right) => left.storyId.localeCompare(right.storyId));
@@ -304,7 +448,9 @@ export function loadAllStoryDefinitionsSync(options?: StoryLoaderOptions): Story
   const stories = [...(options?.injectedStories ?? [])];
   const files = listStoryFilesSync(rootDir);
   for (const filePath of files) {
-    stories.push(readStoryDefinitionFromMarkdownFileSync(filePath));
+    const story = readStoryDefinitionFromMarkdownFileSync(filePath);
+    validateStoryLaneDirectory(story, filePath, rootDir);
+    stories.push(story);
   }
   validateNoDuplicateStoryIds(stories);
   return stories.sort((left, right) => left.storyId.localeCompare(right.storyId));

@@ -21,16 +21,31 @@ import {
 } from '@/lib/projects/project-surface-access';
 import { selectCurrentUser, useAuthStore } from '@/lib/stores/authStore';
 import { buildWorkspaceOverviewHref } from '@/lib/workspaces/workspace-paths';
+import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
 import { Logo } from './Logo';
 import { UserMenu } from './UserMenu';
 
 interface TopbarProps {
   className?: string;
+  workspaceId?: string;
+  projectId?: string;
 }
 
 function stripLocalePrefix(pathname: string): string {
   return pathname.replace(/^\/[a-z]{2}(?:-[A-Z]{2})?(?=\/|$)/, '');
+}
+
+function extractWorkspaceProjectIds(pathname: string): { workspaceId?: string; projectId?: string } {
+  const normalizedPathname = stripLocalePrefix(pathname);
+  const match = normalizedPathname.match(/^\/workspaces\/([^/]+)(?:\/projects\/([^/]+))?/);
+  if (!match) {
+    return {};
+  }
+  return {
+    workspaceId: match[1],
+    projectId: match[2],
+  };
 }
 
 function resolveTopbarHomeHref(params: {
@@ -53,7 +68,7 @@ function resolveTopbarHomeHref(params: {
 const quietSwitcherClassName =
   'inline-flex h-8 items-center gap-2 rounded-sm border border-transparent bg-transparent px-1.5 text-left text-secondary transition-[background-color,border-color,color] duration-150 hover:bg-surface-low/20 hover:text-foreground';
 
-export function Topbar({ className = '' }: TopbarProps) {
+export function Topbar({ className = '', workspaceId: workspaceIdProp, projectId: projectIdProp }: TopbarProps) {
   const user = useAuthStore(selectCurrentUser);
   const { clearAuth } = useAuthStore();
   const router = useRouter();
@@ -62,8 +77,15 @@ export function Topbar({ className = '' }: TopbarProps) {
   const locale = (params?.locale as string) || 'en-US';
   const t = useTranslations('nav');
 
-  const workspaceId = params?.workspace as string | undefined;
-  const projectId = params?.project as string | undefined;
+  const routeIds = React.useMemo(() => extractWorkspaceProjectIds(pathname), [pathname]);
+  const workspaceId =
+    validateWorkspaceParam(workspaceIdProp) ??
+    validateWorkspaceParam(params?.workspace) ??
+    routeIds.workspaceId;
+  const projectId =
+    validateProjectParam(projectIdProp) ??
+    validateProjectParam(params?.project) ??
+    routeIds.projectId;
   const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
 
   const { data: workspaces } = useWorkspaces();

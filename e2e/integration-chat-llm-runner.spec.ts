@@ -21,7 +21,44 @@ import {
   startChatRunnerProcess,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
+import { loadStoryDefinitionSync } from './story-loader';
+import { buildTraceStoryBinding } from './story-trace-binding';
+import { createUxTraceBundleWriter } from './trace-bundle-support';
 import { readStoredAuthToken } from './integration-workspace-access';
+
+const CHAT_CONTINUITY_STORY = loadStoryDefinitionSync('chat-conversation-continuity');
+const CHAT_CONTINUITY_BINDING = buildTraceStoryBinding(CHAT_CONTINUITY_STORY);
+
+type ChatContinuityRuntime = {
+  projectName: string;
+  chatTitle: string;
+  rememberToken: string;
+  rememberPrompt: string;
+  recallPrompt: string;
+};
+
+function resolveChatContinuityStep(stepId: string) {
+  const step = CHAT_CONTINUITY_BINDING.steps.find((entry) => entry.stepId === stepId);
+  if (!step) {
+    throw new Error(`unknown_chat_continuity_step:${stepId}`);
+  }
+  return step;
+}
+
+function requireChatContinuityRuntime(): ChatContinuityRuntime {
+  const runtimeRoot = CHAT_CONTINUITY_STORY.runtimeData as Record<string, unknown> | undefined;
+  const chat = runtimeRoot?.chat as Record<string, unknown> | undefined;
+  const continuity = chat?.continuity as Record<string, unknown> | undefined;
+  if (!continuity) {
+    throw new Error('missing_chat_continuity_runtime_data');
+  }
+  for (const key of ['projectName', 'chatTitle', 'rememberToken', 'rememberPrompt', 'recallPrompt'] as const) {
+    if (typeof continuity[key] !== 'string' || continuity[key].trim().length === 0) {
+      throw new Error(`missing_chat_continuity_runtime_data:${key}`);
+    }
+  }
+  return continuity as unknown as ChatContinuityRuntime;
+}
 
 function requireRealLaneApiKey(): string {
   const value = process.env.BACKEND_REAL_API_KEY?.trim();
@@ -176,12 +213,13 @@ test.describe('@lane-real external agent chat-runner integration', () => {
     }
   });
 
-  test('preserves session continuity across refresh with the real local chat runner', async ({ page }) => {
+  test('preserves conversation continuity across refresh with story-bound trace evidence', async ({ page }) => {
     test.setTimeout(720_000);
     const providerApiKey = requireRealLaneApiKey();
+    const runtime = requireChatContinuityRuntime();
 
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Agent Memory');
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', runtime.projectName);
     const credentialName = `Provider Credential ${Date.now()}`;
     await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
@@ -190,7 +228,7 @@ test.describe('@lane-real external agent chat-runner integration', () => {
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const chatTitle = `chat-runner-memory-${Date.now()}`;
+    const chatTitle = `${runtime.chatTitle}-${Date.now()}`;
     const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId: 'ws_default',
       projectId,
@@ -198,51 +236,81 @@ test.describe('@lane-real external agent chat-runner integration', () => {
       title: chatTitle,
       interactionKind: 'chat',
     });
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-chat-llm-runner',
+      storyId: CHAT_CONTINUITY_STORY.storyId,
+      title: CHAT_CONTINUITY_STORY.title,
+      actor: CHAT_CONTINUITY_STORY.actor,
+      route: `/${LOCALE}/workspaces/ws_default/projects/${projectId}/chat`,
+      specFile: 'e2e/integration-chat-llm-runner.spec.ts',
+      browser: 'chromium',
+      goal: CHAT_CONTINUITY_STORY.goal,
+      preconditions: [...(CHAT_CONTINUITY_STORY.preconditions ?? [])],
+      seedData: [...(CHAT_CONTINUITY_STORY.seedData ?? [])],
+      storyBinding: CHAT_CONTINUITY_BINDING,
+    });
+    const captureTrace = async (stepId: string): Promise<void> => {
+      const storyStep = resolveChatContinuityStep(stepId);
+      await trace.capture(page, {
+        stepId,
+        action: storyStep.action,
+        target: storyStep.target,
+        note: storyStep.note ?? storyStep.expectedFeedback,
+      });
+    };
 
     const runner = await startChatRunnerProcess({
       wsUrl: agentBundle.wsUrl,
       agentKey: agentBundle.agentKey,
     });
     test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+    let outcome: 'pass' | 'fail' = 'fail';
 
     try {
       await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
       await openChatSession(page, 'ws_default', projectId, chatTitle);
+      await captureTrace('open-chat');
 
-      const rememberToken = `MEM_${Date.now()}`;
       const composer = page.getByTestId('chat__composer').locator('textarea');
-      await composer.fill(`Remember this token for our session: ${rememberToken}. Make sure your reply includes the token.`);
+      await composer.fill(runtime.rememberPrompt);
       await page.getByTestId('chat__send-btn').click();
-      await expect(page.getByTestId('chat__message').filter({ hasText: rememberToken }).first()).toBeVisible({ timeout: 240_000 });
+      await expect(page.getByTestId('chat__message').filter({ hasText: runtime.rememberToken }).first()).toBeVisible({ timeout: 240_000 });
       await waitForLatestAssistantContent({
         page,
         projectId,
         sessionId: agentBundle.sessionId,
-        requiredSubstring: rememberToken,
+        requiredSubstring: runtime.rememberToken,
         minMessages: 2,
       });
+      await captureTrace('remember-conversation');
 
       await page.reload();
       await openChatSession(page, 'ws_default', projectId, chatTitle);
-      await expect(page.getByTestId('chat__message').filter({ hasText: rememberToken }).first()).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId('chat__message').filter({ hasText: runtime.rememberToken }).first()).toBeVisible({ timeout: 60_000 });
+      await captureTrace('reload-chat-session');
 
       await page.waitForTimeout(20_000);
       await waitForComposerReady(page);
-      await composer.fill('What token did I ask you to remember? Reply with only the token.');
+      await composer.fill(runtime.recallPrompt);
       await page.getByTestId('chat__send-btn').click();
       const sessionMessages = await waitForLatestAssistantContent({
         page,
         projectId,
         sessionId: agentBundle.sessionId,
-        requiredSubstring: rememberToken,
+        requiredSubstring: runtime.rememberToken,
         minMessages: 4,
       });
       expect(sessionMessages.length).toBeGreaterThanOrEqual(4);
       const assistantMessages = sessionMessages.filter((item) => item.role === 'assistant');
-      expect(assistantMessages.some((item) => item.content?.includes(rememberToken))).toBe(true);
-      expect(assistantMessages.at(-1)?.content?.includes(rememberToken)).toBe(true);
+      expect(assistantMessages.some((item) => item.content?.includes(runtime.rememberToken))).toBe(true);
+      expect(assistantMessages.at(-1)?.content?.includes(runtime.rememberToken)).toBe(true);
+      await captureTrace('recall-conversation');
+      outcome = 'pass';
     } finally {
       await runner.stop();
+      await trace.finish({ outcome });
     }
   });
 

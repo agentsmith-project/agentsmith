@@ -7,6 +7,7 @@ This contract defines the executable user story source used by trace, visual rev
 The source of truth is:
 
 - `e2e/stories/backend-real/*.story.md`
+- `e2e/stories/mock-lane/*.story.md`
 
 Derived artifacts are not truth sources:
 
@@ -31,8 +32,9 @@ The committed generated cache is still a checked-in artifact, but it must be a b
 
 ## File naming
 
-- Committed stories must live under `e2e/stories/backend-real/`
-- Filename must match story id exactly: `<story-id>.story.md`
+- committed stories may live under `e2e/stories/backend-real/` or `e2e/stories/mock-lane/`
+- filename must match story id exactly: `<story-id>.story.md`
+- the committed lane directory must match `story.lane`
 
 ## Supported file formats
 
@@ -44,6 +46,10 @@ Required top-level fields:
 - `title`
 - `actor`
 - `lane`
+- `family`
+- `personas`
+- `kind`
+- `gatePolicy`
 - `entryRoute`
 - `goal`
 - `narrative`
@@ -55,6 +61,7 @@ Optional top-level fields:
 - `preconditions`
 - `seedData`
 - `runtimeData`
+- `externalDependencies`
 
 The markdown body is optional and ignored by the loader for canonical stories.
 
@@ -65,6 +72,11 @@ The markdown body is optional and ignored by the loader for canonical stories.
 - `storyId: string`
 - `title: string`
 - `actor: string`
+- `family: string`
+- `personas: string[]`
+- `kind: StoryKind`
+- `gatePolicy: StoryGatePolicy`
+- `externalDependencies: StoryExternalDependency[]`
 - `lane: 'mock-lane' | 'backend-real'`
 - `entryRoute: string`
 - `goal: string`
@@ -74,7 +86,6 @@ The markdown body is optional and ignored by the loader for canonical stories.
 - `runtimeData?: StoryRuntimeData`
 - `scenes: StorySceneDefinition[]`
 - `steps: StoryStepDefinition[]`
-- `story.runtimeData?: StoryRuntimeData`
 
 ### Scene
 
@@ -96,15 +107,57 @@ The markdown body is optional and ignored by the loader for canonical stories.
 - `evidence: Array<'trace' | 'visual' | 'doc'>`
 - `optional?: boolean`
 - `note?: string`
-- `step.note?: string`
+
+### Story pyramid metadata
+
+- `family: string`
+- `personas: string[]`
+- `kind: StoryKind`
+- `gatePolicy: StoryGatePolicy`
+- `externalDependencies: StoryExternalDependency[]`
+
+### Story kind
+
+- `'journey'`
+- `'review'`
+
+### Gate policy
+
+- `tier: 'default' | 'release' | 'advisory'`
+- `requiredEvidence: Array<'trace' | 'visual' | 'doc'>`
+
+### External dependency
+
+- `dependencyId: string`
+- `kind: 'service' | 'integration' | 'credential' | 'manual'`
+- `required?: boolean`
+- `note?: string`
 
 ### Runtime data
 
 - `notebook?: Record<string, StoryRuntimeNotebookFlowDefinition>`
-- `visualReview?: { notebookTask: StoryRuntimeVisualReviewNotebookTaskDefinition }`
-- `story.runtimeData.notebook?: Record<string, StoryRuntimeNotebookFlowDefinition>`
-- `story.runtimeData.visualReview?: { notebookTask: StoryRuntimeVisualReviewNotebookTaskDefinition }`
-- `story.runtimeData.visualReview.notebookTask: StoryRuntimeVisualReviewNotebookTaskDefinition`
+- `visualReview?: StoryRuntimeVisualReviewDefinition`
+
+### Visual review scene
+
+- `sceneId: string`
+- `scenarioId: string`
+- `scenario: string`
+- `group: StoryVisualReviewScenarioGroup`
+- `codeRefs: string[]`
+- `capture: StoryVisualReviewCaptureMode`
+- `authLane?: StoryAuthLane`
+- `screenshotBaseName?: string`
+- `themes?: StoryVisualReviewTheme[]`
+- `viewport?: StoryVisualReviewViewport`
+- `setupNotes?: string[]`
+
+`themes` may use `light` / `dark` for paired theme captures, or `default` for a single canonical screenshot when the scene does not need theme-specific variants.
+
+### Visual review
+
+- `scenes: StoryRuntimeVisualReviewSceneDefinition[]`
+- `notebookTask?: StoryRuntimeVisualReviewNotebookTaskDefinition`
 
 ### Notebook turn
 
@@ -133,10 +186,16 @@ The markdown body is optional and ignored by the loader for canonical stories.
 - every story must define at least one step
 - `sceneId` values must be unique within a story
 - `stepId` values must be unique within a story
+- `family` must be non-empty
+- `personas` must be non-empty and unique within a story
+- `lane` must be one of `mock-lane | backend-real`
+- `kind` must be one of `journey | review`
+- `gatePolicy.requiredEvidence` must be non-empty and valid
+- `externalDependencies[].dependencyId` must be non-empty and unique within a story
 - steps with `visual` evidence must reference an existing `sceneId`
 - if `note` is present, it must be non-empty
 - committed filename and `storyId` must match exactly
-- committed story ids must be unique across the discovered `backend-real` story root
+- committed story ids must be unique across the discovered canonical lane roots
 
 ## Fingerprints
 

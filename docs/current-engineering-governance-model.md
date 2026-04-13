@@ -25,7 +25,10 @@ Current gate truth:
 - `scripts/governance/current-gate-manifest.ts` is the machine-readable source for gate composition, visual ownership, backend-real ownership, and CI/checklist alignment.
 - story evidence is part of current gate truth, not a release-only prose convention.
 - `visual_scene_catalog` is the machine-readable evidence kind owned by `test:visual` / `lane:visual`, with scene linkage defined in `e2e/visual-baseline-support.ts`.
-- `ux_trace_bundle` is the machine-readable evidence kind owned by `gate:release` / `lane:backend-real:release`, with release artifacts rooted at `artifacts/backend-real-visual/<run-id>/ux-traces`.
+- `ux_trace_bundle` is the machine-readable evidence kind owned by both default-tier and release-tier backend-real commands:
+  - `test:backend-real:core` / `lane:backend-real:core` own default-tier daily/self-service trace bundles under `artifacts/backend-real/runs/<run-id>/ux-traces`
+  - `gate:release` / `lane:backend-real:release` own release-grade trace bundles under `artifacts/backend-real-visual/<run-id>/ux-traces`
+- missing story evidence is blocking only for the tiers declared in `storyEvidenceRequiredFor`; this rule is machine-readable and must not live only in prose.
 - `gate:default` does not own the full visual lane.
 - `lane:visual` is the only current command that owns full visual verification.
 
@@ -202,7 +205,8 @@ Important:
 - `gate:default` may contain targeted visual checks inside domain gates.
 - `lane:visual` is the only current full visual lane.
 - `lane:visual` owns `visual_scene_catalog` evidence through `e2e/visual-baseline-support.ts` and the committed baseline set under `e2e/__screenshots__/visual.spec.ts`.
-- `gate:release` and `lane:backend-real:release` own `ux_trace_bundle` evidence through `artifacts/backend-real-visual/<run-id>/ux-traces`.
+- `test:backend-real:core` and `lane:backend-real:core` own default-tier `ux_trace_bundle` evidence through `artifacts/backend-real/runs/<run-id>/ux-traces`.
+- `gate:release` and `lane:backend-real:release` own release-grade `ux_trace_bundle` evidence through `artifacts/backend-real-visual/<run-id>/ux-traces`.
 - Checklists and contracts must use these machine-readable evidence kinds instead of inventing parallel release-only names.
 
 ## 6. Current configuration language

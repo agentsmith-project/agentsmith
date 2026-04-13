@@ -74,6 +74,22 @@ These six stages are the only supported deployment flow.
 - `simple` deploys, bootstraps, verifies, and reports only the external-agent surface.
 - `full` deploys, bootstraps, verifies, and reports the complete external + internal surface.
 
+## Offline Bundle Manifest Contract
+
+The demo deployment bundle manifest has two distinct inclusion contracts:
+
+- `bundle_files`
+  - explicit static bundle assets that operators and runtime stages consume directly
+- `bundle_source_sets`
+  - helper-owned dynamic families that must be copied into the bundle and mounted for verify without enumerating each member in the manifest
+
+The backend-real story verify family must be declared through:
+
+- `bundle_source_sets[].name = backend_real_story_verify_source_set`
+- `bundle_source_sets[].helper = scripts/lib/release-story-verify-source-set.sh`
+
+Story markdown files under `e2e/stories/backend-real/` must enter the bundle through that source set, not by being hard-coded one by one in `bundle_files`.
+
 ## Address Model
 
 ### Public Addresses

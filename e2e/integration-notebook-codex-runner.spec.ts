@@ -3,6 +3,7 @@ import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import {
   API_BASE,
+  LOCALE,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   KEYCLOAK_INTEGRATION_USER_PASSWORD,
@@ -32,7 +33,57 @@ import {
   waitForAssistantToken,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
+import { loadStoryDefinitionSync } from './story-loader';
+import { buildTraceStoryBinding } from './story-trace-binding';
+import { createUxTraceBundleWriter } from './trace-bundle-support';
 import { readStoredAuthToken } from './integration-workspace-access';
+
+const NOTEBOOK_ARTIFACT_STORY = loadStoryDefinitionSync('notebook-artifact-to-files-download');
+const NOTEBOOK_ARTIFACT_BINDING = buildTraceStoryBinding(NOTEBOOK_ARTIFACT_STORY);
+
+type NotebookArtifactDownloadRuntime = {
+  projectName: string;
+  workspaceLibraryName: string;
+  agentTitle: string;
+  taskTitle: string;
+  artifactName: string;
+  artifactToken: string;
+  createPrompt: string;
+  expectedArtifactPath: string;
+  downloadPath: string;
+};
+
+function resolveNotebookArtifactStep(stepId: string) {
+  const step = NOTEBOOK_ARTIFACT_BINDING.steps.find((entry) => entry.stepId === stepId);
+  if (!step) {
+    throw new Error(`unknown_notebook_artifact_step:${stepId}`);
+  }
+  return step;
+}
+
+function requireNotebookArtifactRuntime(): NotebookArtifactDownloadRuntime {
+  const runtimeRoot = NOTEBOOK_ARTIFACT_STORY.runtimeData as Record<string, unknown> | undefined;
+  const artifactDownload = runtimeRoot?.notebookArtifactDownload as Record<string, unknown> | undefined;
+  if (!artifactDownload) {
+    throw new Error('missing_notebook_artifact_runtime_data');
+  }
+  for (const key of [
+    'projectName',
+    'workspaceLibraryName',
+    'agentTitle',
+    'taskTitle',
+    'artifactName',
+    'artifactToken',
+    'createPrompt',
+    'expectedArtifactPath',
+    'downloadPath',
+  ] as const) {
+    if (typeof artifactDownload[key] !== 'string' || artifactDownload[key].trim().length === 0) {
+      throw new Error(`missing_notebook_artifact_runtime_data:${key}`);
+    }
+  }
+  return artifactDownload as unknown as NotebookArtifactDownloadRuntime;
+}
 
 function expectRelativeLibraryRootPath(value: string | null | undefined): void {
   expect(value).toBeTruthy();
@@ -87,12 +138,30 @@ function isRetryableUpstreamCapacityError(content: string | null | undefined): b
     || normalized.includes('needs retry');
 }
 
+function buildNotebookArtifactPrompt(args: {
+  artifactName: string;
+  token: string;
+  title: string;
+  bodyLines: string[];
+}): string {
+  return [
+    'Run the following shell command exactly.',
+    '```bash',
+    `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${args.artifactName}`,
+    args.title,
+    ...args.bodyLines,
+    'EOF',
+    '```',
+    `After the file is written, reply with exactly: ${args.token} ${args.artifactName}`,
+  ].join('\n');
+}
+
 async function sendNotebookWriteMessage(args: {
   page: Page;
   projectId: string;
   taskId: string;
   token: string;
-  artifactName: string;
+  prompt: string;
 }): Promise<void> {
   const authToken = await readStoredAuthToken(args.page);
   const sendMessageResponse = await args.page.request.post(
@@ -104,13 +173,7 @@ async function sendNotebookWriteMessage(args: {
       },
       data: {
         role: 'user',
-        content: [
-          'Run the following shell command exactly, then reply with the token and filename.',
-          '```bash',
-          `mkdir -p .artifacts && printf '%s\\n' '# Market sizing summary' '- Token: ${args.token}' '- Segment: North America consumer electronics' '- Insight: online channel share is expanding faster than retail' '- Recommendation: prioritize search plus retail media in the next planning cycle' > .artifacts/${args.artifactName}`,
-          '```',
-          `After the file is written, reply with exactly: ${args.token} ${args.artifactName}`,
-        ].join(' '),
+        content: args.prompt,
       },
     },
   );
@@ -232,11 +295,12 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
   test('runs a notebook task and keeps the mounted workspace consistent across runner, Files UI, and local mount', async ({ page }) => {
     test.setTimeout(720_000);
     const providerApiKey = requireRealLaneApiKey();
+    const runtime = requireNotebookArtifactRuntime();
 
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Notebook');
-    const workspaceLibraryName = `Notebook Workspace ${Date.now()}`;
-    await createFileLibraryViaUi(page, 'ws_default', projectId, workspaceLibraryName);
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', runtime.projectName);
+    const workspaceLibraryName = `${runtime.workspaceLibraryName} ${Date.now()}`;
+    const fileLibraryId = await createFileLibraryViaUi(page, 'ws_default', projectId, workspaceLibraryName);
     const credentialName = `Provider Credential ${Date.now()}`;
     await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
@@ -249,8 +313,32 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       workspaceId: 'ws_default',
       projectId,
       endpointId,
-      title: 'codex-notebook',
+      title: `${runtime.agentTitle}-${Date.now()}`,
     });
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-notebook-codex-runner',
+      storyId: NOTEBOOK_ARTIFACT_STORY.storyId,
+      title: NOTEBOOK_ARTIFACT_STORY.title,
+      actor: NOTEBOOK_ARTIFACT_STORY.actor,
+      route: `/${LOCALE}/workspaces/ws_default/projects/${projectId}/notebook`,
+      specFile: 'e2e/integration-notebook-codex-runner.spec.ts',
+      browser: 'chromium',
+      goal: NOTEBOOK_ARTIFACT_STORY.goal,
+      preconditions: [...(NOTEBOOK_ARTIFACT_STORY.preconditions ?? [])],
+      seedData: [...(NOTEBOOK_ARTIFACT_STORY.seedData ?? [])],
+      storyBinding: NOTEBOOK_ARTIFACT_BINDING,
+    });
+    const captureTrace = async (stepId: string): Promise<void> => {
+      const storyStep = resolveNotebookArtifactStep(stepId);
+      await trace.capture(page, {
+        stepId,
+        action: storyStep.action,
+        target: storyStep.target,
+        note: storyStep.note ?? storyStep.expectedFeedback,
+      });
+    };
 
     const runner = await startCodexRunnerProcess({
       wsUrl: agentBundle.wsUrl,
@@ -258,6 +346,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     });
     let runnerStopped = false;
     test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+    let outcome: 'pass' | 'fail' = 'fail';
 
     try {
       await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
@@ -269,11 +358,12 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         projectId,
         agentName: agentBundle.agentName,
         workspaceLibraryName,
-        title: `Codex Notebook ${Date.now()}`,
+        title: `${runtime.taskTitle} ${Date.now()}`,
       });
+      await captureTrace('open-notebook-task');
 
-      const replyToken = `REAL_CODEX_NOTEBOOK_OK_${Date.now()}`;
-      const artifactName = `market-summary-${Date.now()}.md`;
+      const replyToken = runtime.artifactToken;
+      const artifactName = runtime.artifactName;
       let agentMessageRecord: { id?: string; content?: string } | null = null;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         await sendNotebookWriteMessage({
@@ -281,7 +371,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
           projectId,
           taskId,
           token: replyToken,
-          artifactName,
+          prompt: runtime.createPrompt,
         });
         agentMessageRecord = await waitForAgentReply({
           page,
@@ -296,7 +386,6 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
 
       expect(agentMessageRecord).toBeTruthy();
       expect(agentMessageRecord?.content).toContain(replyToken);
-      expect(agentMessageRecord?.content).toContain(artifactName);
 
       const token = await readStoredAuthToken(page);
       const workspaceAccessResponse = await page.request.post(
@@ -321,9 +410,25 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         libraryName: workspaceLibraryName,
       });
       await openFolderByName(page, '.artifacts');
-      await expect(
-        page.getByTestId('files__object-row').filter({ hasText: artifactName }).first(),
-      ).toBeVisible({ timeout: 30_000 });
+      const artifactRow = page.getByTestId('files__object-row').filter({ hasText: artifactName }).first();
+      await expect(artifactRow).toBeVisible({ timeout: 30_000 });
+      await captureTrace('open-files-artifacts');
+
+      await artifactRow.getByRole('button').click();
+      const downloadResponsePromise = page.waitForResponse((response) => {
+        return response.url().includes(`/api/v1/workspaces/ws_default/projects/${projectId}/file-libraries/${fileLibraryId}/download`)
+          && response.status() === 200;
+      });
+      await page.getByTestId('files__download').click();
+      const uiDownloadResponse = await downloadResponsePromise;
+      expect(uiDownloadResponse.ok()).toBeTruthy();
+      expect(uiDownloadResponse.headers()['content-type']).toContain('text/');
+      const verifiedDownload = await page.request.get(uiDownloadResponse.url(), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(verifiedDownload.ok()).toBeTruthy();
+      await expect(verifiedDownload.text()).resolves.toContain(replyToken);
+      await captureTrace('download-artifact');
 
       await runner.stop();
       runnerStopped = true;
@@ -344,10 +449,13 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         await localMount.stop();
       }
 
+      outcome = 'pass';
+
     } finally {
       if (!runnerStopped) {
         await runner.stop();
       }
+      await trace.finish({ outcome });
     }
   });
 
@@ -922,7 +1030,17 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       });
 
       const replyToken = `REAL_CODEX_DOCKER_NOTEBOOK_OK_${Date.now()}`;
-      const artifactName = `docker-market-summary-${Date.now()}.md`;
+      const artifactName = `docker-artifact-${Date.now()}.md`;
+      const prompt = buildNotebookArtifactPrompt({
+        artifactName,
+        token: replyToken,
+        title: '# Docker Notebook Artifact',
+        bodyLines: [
+          `- Token: ${replyToken}`,
+          '- Audience: notebook runtime verification',
+          '- Delivery: docker runner artifact',
+        ],
+      });
       let agentMessageRecord: { id?: string; content?: string } | null = null;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         await sendNotebookWriteMessage({
@@ -930,7 +1048,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
           projectId,
           taskId,
           token: replyToken,
-          artifactName,
+          prompt,
         });
         agentMessageRecord = await waitForAgentReply({
           page,

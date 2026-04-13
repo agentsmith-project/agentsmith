@@ -1,6 +1,9 @@
 import { WebSocket } from 'ws';
 import { test, expect, type Page } from '@playwright/test';
 import { readStoredAuthToken } from './integration-workspace-access';
+import { loadStoryDefinitionSync } from './story-loader';
+import { buildTraceStoryBinding } from './story-trace-binding';
+import { createUxTraceBundleWriter } from './trace-bundle-support';
 
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
@@ -12,13 +15,51 @@ const BACKEND_REAL_MODEL = process.env.BACKEND_REAL_MODEL ?? 'placeholder-model'
 const BACKEND_REAL_API_KEY = process.env.BACKEND_REAL_API_KEY;
 const DEV_ADMIN_USERNAME = process.env.INTEGRATION_DEV_ADMIN_USERNAME ?? 'dev-admin';
 const DEV_ADMIN_PASSWORD = process.env.INTEGRATION_DEV_ADMIN_PASSWORD ?? 'dev-admin-123';
-const PROJECT_CREATOR_USERNAME = process.env.INTEGRATION_USER_USERNAME ?? 'integration-user';
-const PROJECT_CREATOR_PASSWORD = process.env.INTEGRATION_USER_PASSWORD ?? 'integration-user-123';
 const MEMBER_USERNAME = process.env.INTEGRATION_MEMBER_USERNAME ?? 'integration-member';
 const MEMBER_PASSWORD = process.env.INTEGRATION_MEMBER_PASSWORD ?? 'integration-member-123';
 const MEMBER_EMAIL = 'integration-member@example.com';
-const PROJECT_CREATOR_EMAIL = 'integration-user@example.com';
-const NOTEBOOK_EXPECTED_TOKEN = `MAINLINE_REAL_NOTEBOOK_OK_${Date.now()}`;
+const NOTEBOOK_FIRST_SUCCESS_STORY = loadStoryDefinitionSync('notebook-first-success');
+const NOTEBOOK_FIRST_SUCCESS_BINDING = buildTraceStoryBinding(NOTEBOOK_FIRST_SUCCESS_STORY);
+
+type NotebookFirstSuccessRuntime = {
+  workspaceNamePrefix: string;
+  adminEmail: string;
+  projectNamePrefix: string;
+  agentNamePrefix: string;
+  taskTitlePrefix: string;
+  taskWorkspaceNamePrefix: string;
+  expectedTokenPrefix: string;
+};
+
+function resolveNotebookFirstSuccessStep(stepId: string) {
+  const step = NOTEBOOK_FIRST_SUCCESS_BINDING.steps.find((entry) => entry.stepId === stepId);
+  if (!step) {
+    throw new Error(`unknown_notebook_first_success_step:${stepId}`);
+  }
+  return step;
+}
+
+function requireNotebookFirstSuccessRuntime(): NotebookFirstSuccessRuntime {
+  const runtimeRoot = NOTEBOOK_FIRST_SUCCESS_STORY.runtimeData as Record<string, unknown> | undefined;
+  const runtime = runtimeRoot?.notebookFirstSuccess as Record<string, unknown> | undefined;
+  if (!runtime) {
+    throw new Error('missing_notebook_first_success_runtime_data');
+  }
+  for (const key of [
+    'workspaceNamePrefix',
+    'adminEmail',
+    'projectNamePrefix',
+    'agentNamePrefix',
+    'taskTitlePrefix',
+    'taskWorkspaceNamePrefix',
+    'expectedTokenPrefix',
+  ] as const) {
+    if (typeof runtime[key] !== 'string' || runtime[key].trim().length === 0) {
+      throw new Error(`missing_notebook_first_success_runtime_data:${key}`);
+    }
+  }
+  return runtime as unknown as NotebookFirstSuccessRuntime;
+}
 
 function expectRelativeLibraryRootPath(value: string | null | undefined): void {
   expect(value).toBeTruthy();
@@ -137,7 +178,7 @@ async function loginAsSystemAdmin(page: Page): Promise<void> {
   await expect
     .poll(() => page.url(), { timeout: 30_000 })
     .toMatch(new RegExp(`/${LOCALE}/system/workspaces`));
-  await expect(page.getByTestId('system-workspaces__heading')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('system-workspaces__new-workspace')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Loading workspaces...')).not.toBeVisible({ timeout: 30_000 });
 }
 
@@ -167,21 +208,21 @@ async function waitForWorkspaceId(page: Page, workspaceName: string): Promise<st
   return resolved;
 }
 
-async function createAndPublishWorkspace(page: Page): Promise<string> {
-  const workspaceName = `Notebook Mainline ${Date.now()}`;
+async function createAndPublishWorkspace(page: Page, runtime: NotebookFirstSuccessRuntime): Promise<string> {
+  const workspaceName = `${runtime.workspaceNamePrefix} ${Date.now()}`;
 
   await page.getByTestId('system-workspaces__new-workspace').click();
   await page.waitForURL(new RegExp(`/${LOCALE}/system/workspaces/new$`), { timeout: 30_000 });
-  await expect(page.getByTestId('system-workspace-create__heading')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('system-workspace-create__shell')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('system-workspaces__draft-name')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
   await page.getByTestId('system-workspace-create__next').click();
   await page.getByTestId('system-workspaces__draft-idp-url').fill(KEYCLOAK_BASE_URL);
   await page.getByTestId('system-workspaces__draft-idp-realm').fill(KEYCLOAK_REALM);
   await page.getByTestId('system-workspaces__draft-idp-client-id').fill(KEYCLOAK_WORKSPACE_CLIENT_ID);
   await verifyIdentityProvider(page);
-  await page.getByTestId('system-workspace-create__next').click();
   await page.getByTestId('system-workspaces__admin-mode--email').click();
-  await page.getByTestId('system-workspaces__draft-admin-email').fill('dev-admin@example.com');
+  await page.getByTestId('system-workspaces__draft-admin-email').fill(runtime.adminEmail);
   await page.getByTestId('system-workspace-create__next').click();
   await page.getByTestId('system-workspace-create__create').click();
 
@@ -244,7 +285,7 @@ async function verifyIdentityProvider(page: Page): Promise<void> {
   await page.getByTestId('system-workspace-create__next').click();
   const response = await responsePromise;
   expect(response.ok()).toBeTruthy();
-  await expect(page.getByTestId('system-workspaces__draft-admin')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('system-workspaces__admin-mode--email')).toBeVisible({ timeout: 15_000 });
 }
 
 async function selectWorkspaceAdmin(page: Page, email: string): Promise<void> {
@@ -344,26 +385,12 @@ async function loginToWorkspace(page: Page, workspaceId: string, username: strin
   throw new Error(`workspace_login_retry_exhausted:${workspaceId}:${username}`);
 }
 
-async function saveWorkspaceProjectCreators(page: Page, workspaceId: string): Promise<void> {
-  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/settings`);
-  await expect(page.getByTestId('ws-settings__project-creators')).toBeVisible({ timeout: 30_000 });
-
-  const searchInput = page.getByTestId('ws-settings__project-creators-input');
-  await searchInput.fill(PROJECT_CREATOR_EMAIL);
-  const creatorOption = page.getByTestId('ws-settings__project-creators-results').getByRole('button', {
-    name: new RegExp(PROJECT_CREATOR_EMAIL.replace('.', '\\.')),
-  });
-  await expect(creatorOption).toBeVisible({ timeout: 15_000 });
-  await creatorOption.click();
-  await page.getByTestId('ws-settings__project-creators-save').click();
-
-  await expect
-    .poll(async () => page.getByTestId('ws-settings__project-creators-selected').textContent(), { timeout: 20_000 })
-    .toContain(PROJECT_CREATOR_EMAIL);
-}
-
-async function createProject(page: Page, workspaceId: string): Promise<{ projectId: string; projectName: string }> {
-  const projectName = `Notebook Delivery ${Date.now()}`;
+async function createProject(
+  page: Page,
+  workspaceId: string,
+  runtime: NotebookFirstSuccessRuntime,
+): Promise<{ projectId: string; projectName: string }> {
+  const projectName = `${runtime.projectNamePrefix} ${Date.now()}`;
   await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects`);
   await expect(page.getByTestId('projects__create-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('projects__create-btn').click();
@@ -375,6 +402,10 @@ async function createProject(page: Page, workspaceId: string): Promise<{ project
   const selects = dialog.locator('[role="combobox"]');
   await selects.nth(0).click();
   await page.getByRole('option', { name: /public/i }).click();
+  if (await selects.nth(1).isVisible().catch(() => false)) {
+    await selects.nth(1).click();
+    await page.getByRole('option', { name: /approval required/i }).click();
+  }
 
   await dialog.getByRole('button', { name: /create|创建/i }).click();
   await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/.+/overview`), { timeout: 30_000 });
@@ -457,8 +488,13 @@ async function createEndpoint(page: Page, workspaceId: string, projectId: string
   await expect(page.getByText('Provider Anthropic Endpoint')).toBeVisible({ timeout: 30_000 });
 }
 
-async function createAgent(page: Page, workspaceId: string, projectId: string): Promise<string> {
-  const agentName = `Notebook Bridge Agent ${Date.now()}`;
+async function createAgent(
+  page: Page,
+  workspaceId: string,
+  projectId: string,
+  runtime: NotebookFirstSuccessRuntime,
+): Promise<string> {
+  const agentName = `${runtime.agentNamePrefix} ${Date.now()}`;
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agents`);
   await expect(page.getByTestId('agents__create-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('agents__create-btn').click();
@@ -749,8 +785,8 @@ async function runNotebookTask(
   workspaceId: string,
   projectId: string,
   agentName: string,
-  _initialToken: string,
   expectedToken: string,
+  runtime: NotebookFirstSuccessRuntime,
 ): Promise<void> {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook`);
   await expect(page.getByTestId('notebook__create-task-btn')).toBeVisible({ timeout: 30_000 });
@@ -758,13 +794,13 @@ async function runNotebookTask(
 
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
-  await dialog.locator('#task-title').fill('Mainline Real Notebook Task');
+  await dialog.locator('#task-title').fill(`${runtime.taskTitlePrefix} ${Date.now()}`);
   await dialog.locator('#task-agent').click();
   await page.getByRole('option', { name: new RegExp(agentName) }).click();
   await expect(
     dialog.getByRole('radio', { name: /initialize a new workspace automatically/i }),
   ).toBeChecked();
-  await dialog.locator('#task-workspace-name').fill(`Mainline Notebook Workspace ${Date.now()}`);
+  await dialog.locator('#task-workspace-name').fill(`${runtime.taskWorkspaceNamePrefix} ${Date.now()}`);
   await dialog.getByRole('button', { name: /create/i }).click();
 
   await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/.+`), {
@@ -837,60 +873,93 @@ test.describe('@lane-real integration system-to-notebook mainline', () => {
     const providerApiKey = requireRealLaneApiKey();
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
     const pageErrors: string[] = [];
+    const runtime = requireNotebookFirstSuccessRuntime();
+    const expectedToken = `${runtime.expectedTokenPrefix}_${Date.now()}`;
 
     page.on('pageerror', (error) => pageErrors.push(error.message));
-
-    await loginAsSystemAdmin(page);
-    const workspaceId = await createAndPublishWorkspace(page);
-
-    await loginToWorkspace(page, workspaceId, DEV_ADMIN_USERNAME, DEV_ADMIN_PASSWORD);
-    await saveWorkspaceProjectCreators(page, workspaceId);
-
-    await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
-    const { projectId } = await createProject(page, workspaceId);
-
-    await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
-    await requestProjectAccess(page, workspaceId, projectId);
-
-    await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
-    await approveJoinRequest(page, workspaceId, projectId);
-    await promoteJoinedMemberToProjectAdmin(page, workspaceId, projectId);
-
-    await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
-    await createCredential(page, workspaceId, projectId, providerApiKey);
-    await createEndpoint(page, workspaceId, projectId);
-    const agentName = await createAgent(page, workspaceId, projectId);
-
-    const token = await readStoredAuthToken(page);
-    const agentId = await resolveAgentId(page, apiBase, workspaceId, projectId, token, agentName);
-    const { agentKey, wsUrl } = await createAgentKeyAndConnectionInfo(page, apiBase, workspaceId, projectId, agentId, token);
-
-    const bridge = startExternalNotebookBridge({
-      wsUrl,
-      agentKey,
-      expectedToken: NOTEBOOK_EXPECTED_TOKEN,
-      model: BACKEND_REAL_MODEL,
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-system-notebook-default',
+      storyId: NOTEBOOK_FIRST_SUCCESS_STORY.storyId,
+      title: NOTEBOOK_FIRST_SUCCESS_STORY.title,
+      actor: NOTEBOOK_FIRST_SUCCESS_STORY.actor,
+      route: `/${LOCALE}/system/login`,
+      specFile: 'e2e/integration-system-notebook-default.spec.ts',
+      browser: 'chromium',
+      goal: NOTEBOOK_FIRST_SUCCESS_STORY.goal,
+      preconditions: [...(NOTEBOOK_FIRST_SUCCESS_STORY.preconditions ?? [])],
+      seedData: [...(NOTEBOOK_FIRST_SUCCESS_STORY.seedData ?? [])],
+      storyBinding: NOTEBOOK_FIRST_SUCCESS_BINDING,
     });
+    const captureTrace = async (stepId: string): Promise<void> => {
+      const storyStep = resolveNotebookFirstSuccessStep(stepId);
+      await trace.capture(page, {
+        stepId,
+        action: storyStep.action,
+        target: storyStep.target,
+        note: storyStep.note ?? storyStep.expectedFeedback,
+      });
+    };
+    let outcome: 'pass' | 'fail' = 'fail';
 
     try {
-      await bridge.ready;
-      await waitForAgentPresenceOnline(page, apiBase, workspaceId, projectId, agentId, token);
-      await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
-      await runNotebookTask(
-        page,
-        apiBase,
-        workspaceId,
-        projectId,
-        agentName,
-        token,
-        NOTEBOOK_EXPECTED_TOKEN,
-      );
-      const observedReply = await bridge.observedReply;
-      expect(observedReply).toContain(NOTEBOOK_EXPECTED_TOKEN);
-    } finally {
-      await bridge.stop();
-    }
+      await loginAsSystemAdmin(page);
+      await captureTrace('open-system-login');
+      const workspaceId = await createAndPublishWorkspace(page, runtime);
+      await captureTrace('publish-workspace');
 
-    expect(pageErrors).toEqual([]);
+      await loginToWorkspace(page, workspaceId, DEV_ADMIN_USERNAME, DEV_ADMIN_PASSWORD);
+      const { projectId } = await createProject(page, workspaceId, runtime);
+
+      await createCredential(page, workspaceId, projectId, providerApiKey);
+      await createEndpoint(page, workspaceId, projectId);
+      const agentName = await createAgent(page, workspaceId, projectId, runtime);
+      await captureTrace('configure-notebook-project');
+
+      await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
+      await requestProjectAccess(page, workspaceId, projectId);
+
+      await loginToWorkspace(page, workspaceId, DEV_ADMIN_USERNAME, DEV_ADMIN_PASSWORD);
+      await approveJoinRequest(page, workspaceId, projectId);
+      await promoteJoinedMemberToProjectAdmin(page, workspaceId, projectId);
+      await captureTrace('grant-member-notebook-access');
+
+      const token = await readStoredAuthToken(page);
+      const agentId = await resolveAgentId(page, apiBase, workspaceId, projectId, token, agentName);
+      const { agentKey, wsUrl } = await createAgentKeyAndConnectionInfo(page, apiBase, workspaceId, projectId, agentId, token);
+
+      const bridge = startExternalNotebookBridge({
+        wsUrl,
+        agentKey,
+        expectedToken,
+        model: BACKEND_REAL_MODEL,
+      });
+
+      try {
+        await bridge.ready;
+        await waitForAgentPresenceOnline(page, apiBase, workspaceId, projectId, agentId, token);
+        await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
+        await runNotebookTask(
+          page,
+          apiBase,
+          workspaceId,
+          projectId,
+          agentName,
+          expectedToken,
+          runtime,
+        );
+        const observedReply = await bridge.observedReply;
+        expect(observedReply).toContain(expectedToken);
+        await captureTrace('run-first-notebook-task');
+        outcome = 'pass';
+      } finally {
+        await bridge.stop();
+      }
+
+      expect(pageErrors).toEqual([]);
+    } finally {
+      await trace.finish({ outcome });
+    }
   });
 });

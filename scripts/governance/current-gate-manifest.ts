@@ -32,6 +32,7 @@ export interface CurrentGateDefinition {
   storyEvidencePolicy: CurrentGateStoryEvidencePolicy;
   storyEvidenceKinds: readonly CurrentGateStoryEvidenceKind[];
   storyEvidenceArtifacts: readonly string[];
+  storyEvidenceRequiredFor: readonly CurrentGateRequirement[];
   storyEvidenceSceneSource?: string;
   ciJob?: string;
   checklistDocs: readonly string[];
@@ -41,13 +42,20 @@ export interface CurrentGateDefinition {
 function defineCurrentGate(
   definition: Omit<
     CurrentGateDefinition,
-    'storyEvidencePolicy' | 'storyEvidenceKinds' | 'storyEvidenceArtifacts'
-  > & Partial<Pick<CurrentGateDefinition, 'storyEvidencePolicy' | 'storyEvidenceKinds' | 'storyEvidenceArtifacts'>>,
+    'storyEvidencePolicy' | 'storyEvidenceKinds' | 'storyEvidenceArtifacts' | 'storyEvidenceRequiredFor'
+  > &
+    Partial<
+      Pick<
+        CurrentGateDefinition,
+        'storyEvidencePolicy' | 'storyEvidenceKinds' | 'storyEvidenceArtifacts' | 'storyEvidenceRequiredFor'
+      >
+    >,
 ): CurrentGateDefinition {
   return {
     storyEvidencePolicy: 'none',
     storyEvidenceKinds: [],
     storyEvidenceArtifacts: [],
+    storyEvidenceRequiredFor: [],
     ...definition,
   };
 }
@@ -89,9 +97,28 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
       'e2e/__screenshots__/visual.spec.ts',
       'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
     ],
+    storyEvidenceRequiredFor: ['visual', 'release'],
     storyEvidenceSceneSource: 'e2e/visual-baseline-support.ts',
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['visual', 'release'],
+  }),
+  defineCurrentGate({
+    id: 'test-backend-real-core',
+    npmScript: 'test:backend-real:core',
+    command: 'bash scripts/workspace-project-default-gate.sh --with-backend-real',
+    description: 'run the default-tier backend-real daily and self-service verification suite',
+    kind: 'test',
+    visualPolicy: 'targeted',
+    backendRealPolicy: 'required',
+    storyEvidencePolicy: 'required',
+    storyEvidenceKinds: ['ux_trace_bundle'],
+    storyEvidenceArtifacts: ['artifacts/backend-real/runs/<run-id>/ux-traces'],
+    storyEvidenceRequiredFor: ['default'],
+    checklistDocs: [
+      'docs/user-guides/workspace-project-default-engineering-gate-checklist.md',
+      'docs/user-guides/release-readiness-checklist.md',
+    ],
+    requiredFor: [],
   }),
   defineCurrentGate({
     id: 'gate-fast',
@@ -135,6 +162,7 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
       'e2e/__screenshots__/visual.spec.ts',
       'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
     ],
+    storyEvidenceRequiredFor: ['visual', 'release'],
     storyEvidenceSceneSource: 'e2e/visual-baseline-support.ts',
     ciJob: 'lane-visual',
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
@@ -148,8 +176,15 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     kind: 'lane',
     visualPolicy: 'none',
     backendRealPolicy: 'required',
+    storyEvidencePolicy: 'required',
+    storyEvidenceKinds: ['ux_trace_bundle'],
+    storyEvidenceArtifacts: ['artifacts/backend-real/runs/<run-id>/ux-traces'],
+    storyEvidenceRequiredFor: ['default'],
     ciJob: 'lane-backend-real-core',
-    checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
+    checklistDocs: [
+      'docs/user-guides/workspace-project-default-engineering-gate-checklist.md',
+      'docs/user-guides/release-readiness-checklist.md',
+    ],
     requiredFor: [],
   }),
   defineCurrentGate({
@@ -166,6 +201,7 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
       'artifacts/backend-real-visual/<run-id>/review.md',
       'artifacts/backend-real-visual/<run-id>/ux-traces',
     ],
+    storyEvidenceRequiredFor: ['release'],
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['release'],
   }),
@@ -205,6 +241,7 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
       'artifacts/backend-real-visual/<run-id>/review.md',
       'artifacts/backend-real-visual/<run-id>/ux-traces',
     ],
+    storyEvidenceRequiredFor: ['release'],
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['release'],
   }),
@@ -224,6 +261,7 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
       'artifacts/backend-real-visual/<run-id>/review.md',
       'artifacts/backend-real-visual/<run-id>/ux-traces',
     ],
+    storyEvidenceRequiredFor: ['release'],
     storyEvidenceSceneSource: 'e2e/visual-baseline-support.ts',
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['release'],

@@ -182,7 +182,7 @@ async function seedVisualTestNow(page: Page, iso = VISUAL_TEST_REFERENCE_NOW_ISO
 async function waitForStableRecipeMarkers(page: Page, scenarioId: string) {
   const stableMarkers = resolveVisualBaselineStableMarkers(scenarioId);
   for (const marker of stableMarkers) {
-    await expect(page.getByTestId(marker)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId(marker).first()).toBeVisible({ timeout: 15_000 });
   }
 }
 
@@ -468,10 +468,78 @@ const THEMED_WALKTHROUGH_PAGES = [
     },
   },
   {
+    name: 'chat-operate',
+    stableMarkers: ['chat__surface', 'chat__threads-pane', 'chat__main-pane', 'chat__header', 'chat__composer'],
+    run: async (page: Page) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await stableNavigate(page, projectPath('chat'));
+      await expect(page.getByTestId('chat__surface')).toBeVisible();
+      await expect(page.getByTestId('chat__threads-pane')).toBeVisible();
+      await expect(page.getByTestId('chat__main-pane')).toBeVisible();
+      await expect(page.getByTestId('chat__header')).toBeVisible();
+      await expect(page.getByTestId('chat__composer')).toBeVisible();
+      await expect(page.getByTestId('chat__execution-target-trigger')).toBeVisible();
+    },
+  },
+  {
+    name: 'chat-recover-empty',
+    stableMarkers: ['chat__threads-empty-state', 'chat__threads-empty-new-thread', 'chat__new-thread-btn'],
+    run: async (page: Page) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await stableNavigate(page, projectPath('chat'));
+      await page.getByPlaceholder('Search threads...').fill('zzzzzz-no-match');
+      await expect(page.getByTestId('chat__threads-empty-state')).toBeVisible();
+      await expect(page.getByTestId('chat__threads-empty-new-thread')).toBeVisible();
+      await expect(page.getByTestId('chat__new-thread-btn')).toBeVisible();
+    },
+  },
+  {
     name: 'notebook',
     run: async (page: Page) => {
       await stableNavigate(page, projectPath('notebook'));
       await expect(page.getByTestId('notebook__task-list')).toBeVisible();
+    },
+  },
+  {
+    name: 'notebook-task-lifecycle-list',
+    stableMarkers: ['notebook__task-list', 'notebook__task-card', 'notebook__create-task-btn'],
+    run: async (page: Page) => {
+      await stableNavigate(page, projectPath('notebook'));
+      await expect(page.getByTestId('notebook__task-list')).toBeVisible();
+      await expect(page.getByTestId('notebook__task-card').first()).toBeVisible();
+      await expect(page.getByTestId('notebook__create-task-btn')).toBeVisible();
+    },
+  },
+  {
+    name: 'notebook-task-lifecycle-create-dialog',
+    stableMarkers: ['notebook__create-task-btn'],
+    run: async (page: Page) => {
+      await stableNavigate(page, projectPath('notebook'));
+      await expect(page.getByTestId('notebook__create-task-btn')).toBeVisible();
+      await page.getByTestId('notebook__create-task-btn').click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+    },
+  },
+  {
+    name: 'notebook-task-lifecycle-detail',
+    stableMarkers: ['notebook__task-header', 'notebook__conversation-input', 'notebook__send-btn'],
+    run: async (page: Page) => {
+      await stableNavigate(page, projectPath('notebook/tasks/task_001'));
+      await expect(page.getByTestId('notebook__task-header')).toBeVisible();
+      await expect(page.getByTestId('notebook__conversation-input')).toBeVisible();
+      await expect(page.getByTestId('notebook__send-btn')).toBeVisible();
+    },
+  },
+  {
+    name: 'notebook-task-lifecycle-artifact',
+    stableMarkers: ['notebook__task-header', 'notebook__artifact-card', 'notebook__artifact-hover-panel'],
+    run: async (page: Page) => {
+      await stableNavigate(page, projectPath('notebook/tasks/task_001'));
+      await expect(page.getByTestId('notebook__task-header')).toBeVisible();
+      const artifact = page.getByTestId('notebook__artifact-card').first();
+      await expect(artifact).toBeVisible();
+      await artifact.hover();
+      await expect(page.getByTestId('notebook__artifact-hover-panel')).toBeVisible();
     },
   },
   {
@@ -734,6 +802,27 @@ const THEMED_GOVERNANCE_PAGES = [
       await expect(page.getByTestId('settings__general-section')).toBeVisible();
       await expect(page.getByTestId('settings__ownership-section')).toBeVisible();
       await expect(page.getByTestId('settings__project-admins-section')).toBeVisible();
+    },
+  },
+  {
+    name: 'project-settings-review',
+    path: projectPath('settings'),
+    stableMarkers: ['settings__summary-line', 'settings__general-section', 'settings__ownership-section', 'settings__project-admins-section'],
+    run: async (page: Page) => {
+      await expect(page.getByTestId('settings__summary-line')).toBeVisible();
+      await expect(page.getByTestId('settings__general-section')).toBeVisible();
+      await expect(page.getByTestId('settings__ownership-section')).toBeVisible();
+      await expect(page.getByTestId('settings__project-admins-section')).toBeVisible();
+    },
+  },
+  {
+    name: 'project-members-review',
+    path: projectPath('members'),
+    stableMarkers: ['members__work-surface', 'members__table', 'members__invite-btn'],
+    run: async (page: Page) => {
+      await expect(page.getByTestId('members__work-surface')).toBeVisible();
+      await expect(page.getByTestId('members__table')).toBeVisible();
+      await expect(page.getByTestId('members__invite-btn')).toBeVisible();
     },
   },
 ] as const;

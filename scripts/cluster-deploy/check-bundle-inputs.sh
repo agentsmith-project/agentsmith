@@ -9,13 +9,15 @@ REGISTRY_ENV_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/registry.env.example"
 KUBECONFIG_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/kubeconfig.example.yaml"
 ADMIN_KUBECONFIG_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/admin-kubeconfig.example.yaml"
 MANAGER_KUBECONFIG_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/manager-kubeconfig.example.yaml"
+RELEASE_STORY_SOURCE_SET_NAME="$(release_story_verify_source_set_name)"
+RELEASE_STORY_SOURCE_SET_HELPER="$(release_story_verify_source_set_helper_path)"
 
 python3 "${ROOT_DIR}/scripts/lib/check-required-env-templates.py" \
   "${MANIFEST_PATH}" \
   "${SITE_ENV_EXAMPLE}" \
   "${REGISTRY_ENV_EXAMPLE}"
 
-python3 - <<'PY' "${MANIFEST_PATH}" "${REGISTRY_ENV_EXAMPLE}" "${KUBECONFIG_EXAMPLE}" "${ADMIN_KUBECONFIG_EXAMPLE}" "${MANAGER_KUBECONFIG_EXAMPLE}" "${ROOT_DIR}"
+python3 - <<'PY' "${MANIFEST_PATH}" "${REGISTRY_ENV_EXAMPLE}" "${KUBECONFIG_EXAMPLE}" "${ADMIN_KUBECONFIG_EXAMPLE}" "${MANAGER_KUBECONFIG_EXAMPLE}" "${ROOT_DIR}" "${RELEASE_STORY_SOURCE_SET_NAME}" "${RELEASE_STORY_SOURCE_SET_HELPER}"
 import json
 import pathlib
 import sys
@@ -26,8 +28,11 @@ kubeconfig_path = pathlib.Path(sys.argv[3])
 admin_kubeconfig_path = pathlib.Path(sys.argv[4])
 manager_kubeconfig_path = pathlib.Path(sys.argv[5])
 root_dir = pathlib.Path(sys.argv[6])
+expected_source_set_name = sys.argv[7]
+expected_source_set_helper = sys.argv[8]
 
 manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+bundle_source_sets = manifest.get("bundle_source_sets")
 
 required_host_tools = manifest.get("required_host_tools")
 bundled_tools = manifest.get("bundled_tools")
@@ -35,6 +40,13 @@ if not isinstance(required_host_tools, list) or not required_host_tools:
     raise SystemExit("missing_required_host_tools")
 if not isinstance(bundled_tools, list) or not bundled_tools:
     raise SystemExit("missing_bundled_tools")
+if not isinstance(bundle_source_sets, list) or not any(
+    isinstance(entry, dict)
+    and entry.get("name") == expected_source_set_name
+    and entry.get("helper") == expected_source_set_helper
+    for entry in bundle_source_sets
+):
+    raise SystemExit(f"missing_bundle_source_set:{expected_source_set_name}")
 
 if "REGISTRY_HOST" not in registry_env_path.read_text(encoding='utf-8'):
     raise SystemExit("missing_registry_host_template")
@@ -100,19 +112,31 @@ for relative in manifest.get("bundle_files", []):
 PY
 
 mapfile -t release_story_runtime_files < <(release_story_verify_source_set "${ROOT_DIR}")
-python3 - <<'PY' "${MANIFEST_PATH}" "${release_story_runtime_files[@]}"
+python3 - <<'PY' "${MANIFEST_PATH}" "${ROOT_DIR}" "${RELEASE_STORY_SOURCE_SET_NAME}" "${RELEASE_STORY_SOURCE_SET_HELPER}" "${release_story_runtime_files[@]}"
 import json
 import pathlib
 import sys
 
 manifest_path = pathlib.Path(sys.argv[1])
-required_files = sys.argv[2:]
+root_dir = pathlib.Path(sys.argv[2])
+expected_source_set_name = sys.argv[3]
+expected_source_set_helper = sys.argv[4]
+required_files = sys.argv[5:]
 manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-bundle_files = manifest.get("bundle_files", [])
+bundle_source_sets = manifest.get("bundle_source_sets", [])
+
+if not any(
+    isinstance(entry, dict)
+    and entry.get("name") == expected_source_set_name
+    and entry.get("helper") == expected_source_set_helper
+    for entry in bundle_source_sets
+):
+    raise SystemExit(f"missing_bundle_source_set:{expected_source_set_name}")
 
 for relative_path in required_files:
-    if relative_path not in bundle_files:
-        raise SystemExit(f"missing_release_story_runtime_file:{relative_path}")
+    source = root_dir / relative_path
+    if not source.exists():
+        raise SystemExit(f"missing_release_story_source:{relative_path}")
 PY
 
 runtime_bundle_scripts=(

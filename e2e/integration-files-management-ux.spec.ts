@@ -6,6 +6,12 @@ import {
   KEYCLOAK_DEV_ADMIN_USERNAME,
   LOCALE,
 } from './integration-real-helpers';
+import { loadStoryDefinitionSync } from './story-loader';
+import { buildTraceStoryBinding } from './story-trace-binding';
+import { createUxTraceBundleWriter } from './trace-bundle-support';
+
+const FILES_LIBRARY_STORY = loadStoryDefinitionSync('files-library-access-and-recovery');
+const FILES_LIBRARY_BINDING = buildTraceStoryBinding(FILES_LIBRARY_STORY);
 
 type ReadyLibraryFixture = {
   workspaceId: string;
@@ -21,6 +27,33 @@ type DegradedLibraryFixture = {
   workspaceId: string;
   projectId: string;
 };
+
+type FilesLibraryRuntime = {
+  degradedLibraryNamePrefix: string;
+  degradedLibraryDescription: string;
+};
+
+function resolveFilesLibraryStep(stepId: string) {
+  const step = FILES_LIBRARY_BINDING.steps.find((entry) => entry.stepId === stepId);
+  if (!step) {
+    throw new Error(`unknown_files_library_step:${stepId}`);
+  }
+  return step;
+}
+
+function requireFilesLibraryRuntime(): FilesLibraryRuntime {
+  const runtimeRoot = FILES_LIBRARY_STORY.runtimeData as Record<string, unknown> | undefined;
+  const runtime = runtimeRoot?.filesLibraryAccessRecovery as Record<string, unknown> | undefined;
+  if (!runtime) {
+    throw new Error('missing_files_library_runtime_data');
+  }
+  for (const key of ['degradedLibraryNamePrefix', 'degradedLibraryDescription'] as const) {
+    if (typeof runtime[key] !== 'string' || runtime[key].trim().length === 0) {
+      throw new Error(`missing_files_library_runtime_data:${key}`);
+    }
+  }
+  return runtime as unknown as FilesLibraryRuntime;
+}
 
 function runMongoEval(script: string): string {
   return execFileSync(
@@ -79,9 +112,9 @@ function findReadyLibraryFixture(): ReadyLibraryFixture {
   };
 }
 
-function insertTemporaryDegradedLibrary(base: ReadyLibraryFixture): DegradedLibraryFixture {
+function insertTemporaryDegradedLibrary(base: ReadyLibraryFixture, runtime: FilesLibraryRuntime): DegradedLibraryFixture {
   const id = `flib_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
-  const name = `Release UX Degraded ${Date.now()}`;
+  const name = `${runtime.degradedLibraryNamePrefix} ${Date.now()}`;
   const now = new Date().toISOString();
   runMongoEval(
     [
@@ -91,7 +124,7 @@ function insertTemporaryDegradedLibrary(base: ReadyLibraryFixture): DegradedLibr
         workspace_id: base.workspaceId,
         project_id: base.projectId,
         name,
-        description: 'Temporary degraded fixture for Files/Desktop release walkthrough.',
+        description: runtime.degradedLibraryDescription,
         status: 'degraded',
         filesystem_name: `release_ux_${id}`,
         created_by_user_id: base.createdByUserId,
@@ -122,8 +155,8 @@ function deleteTemporaryLibrary(libraryId: string): void {
 async function loginThroughWorkspaceSelection(page: Page, workspaceId: string) {
   await page.context().clearCookies();
   await page.goto(`/${LOCALE}/login/workspace`);
-  await expect(page.getByTestId(`workspace-select__card--${workspaceId}`)).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId(`workspace-select__card--${workspaceId}`).click();
+  await expect(page.getByTestId(`workspace-select__item--${workspaceId}`)).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId(`workspace-select__item--${workspaceId}`).click();
 
   await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('workspace-login__keycloak-btn').click();
@@ -141,10 +174,11 @@ async function loginThroughWorkspaceSelection(page: Page, workspaceId: string) {
 test.describe('@lane-real files management UX walkthrough', () => {
   let readyLibrary: ReadyLibraryFixture;
   let degradedLibrary: DegradedLibraryFixture;
+  const runtime = requireFilesLibraryRuntime();
 
   test.beforeAll(() => {
     readyLibrary = findReadyLibraryFixture();
-    degradedLibrary = insertTemporaryDegradedLibrary(readyLibrary);
+    degradedLibrary = insertTemporaryDegradedLibrary(readyLibrary, runtime);
   });
 
   test.afterAll(() => {
@@ -153,70 +187,103 @@ test.describe('@lane-real files management UX walkthrough', () => {
 
   test('shows ready and degraded file libraries with operator-friendly recovery UX', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-files-management-ux',
+      storyId: FILES_LIBRARY_STORY.storyId,
+      title: FILES_LIBRARY_STORY.title,
+      actor: FILES_LIBRARY_STORY.actor,
+      route: `/${LOCALE}/workspaces/${readyLibrary.workspaceId}/projects/${readyLibrary.projectId}/files`,
+      specFile: 'e2e/integration-files-management-ux.spec.ts',
+      browser: 'chromium',
+      goal: FILES_LIBRARY_STORY.goal,
+      preconditions: [...(FILES_LIBRARY_STORY.preconditions ?? [])],
+      seedData: [...(FILES_LIBRARY_STORY.seedData ?? [])],
+      storyBinding: FILES_LIBRARY_BINDING,
+    });
+    const captureTrace = async (stepId: string): Promise<void> => {
+      const storyStep = resolveFilesLibraryStep(stepId);
+      await trace.capture(page, {
+        stepId,
+        action: storyStep.action,
+        target: storyStep.target,
+        note: storyStep.note ?? storyStep.expectedFeedback,
+      });
+    };
+    let outcome: 'pass' | 'fail' = 'fail';
 
-    await loginThroughWorkspaceSelection(page, readyLibrary.workspaceId);
-    await page.goto(`/${LOCALE}/workspaces/${readyLibrary.workspaceId}/projects/${readyLibrary.projectId}/files`);
+    try {
+      await loginThroughWorkspaceSelection(page, readyLibrary.workspaceId);
+      await page.goto(`/${LOCALE}/workspaces/${readyLibrary.workspaceId}/projects/${readyLibrary.projectId}/files`);
 
-    const readyCard = page.getByTestId(`files__library-item--${readyLibrary.libraryId}`);
-    await expect(readyCard).toBeVisible({ timeout: 30_000 });
-    await readyCard.click();
+      const readyCard = page.getByTestId(`files__library-item--${readyLibrary.libraryId}`);
+      await expect(readyCard).toBeVisible({ timeout: 30_000 });
+      await readyCard.click();
 
-    await expect(page.getByTestId(`files__library-status--${readyLibrary.libraryId}`)).toContainText('Ready');
-    await expect(page.getByTestId(`files__library-desktop-access--${readyLibrary.libraryId}`)).toBeEnabled();
-    await expect(page.getByTestId(`files__library-manual-mount-access--${readyLibrary.libraryId}`)).toHaveCount(0);
-    await expect(page.getByTestId('files__library-unavailable-empty-state')).toHaveCount(0);
-    await expect(page.locator('body')).not.toContainText('files.file_manager.loading');
-    await page.screenshot({ path: testInfo.outputPath('files-ready-overview.png'), fullPage: true });
+      await expect(page.getByTestId(`files__library-status--${readyLibrary.libraryId}`)).toContainText('Ready');
+      await expect(page.getByTestId(`files__library-desktop-access--${readyLibrary.libraryId}`)).toBeEnabled();
+      await expect(page.getByTestId(`files__library-manual-mount-access--${readyLibrary.libraryId}`)).toHaveCount(0);
+      await expect(page.getByTestId('files__library-unavailable-empty-state')).toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText('files.file_manager.loading');
+      await page.screenshot({ path: testInfo.outputPath('files-ready-overview.png'), fullPage: true });
+      await captureTrace('open-files-library');
 
-    await page.getByTestId(`files__library-desktop-access--${readyLibrary.libraryId}`).click();
-    const desktopDialog = page.getByTestId('files__dialog__desktop-mount-access');
-    await expect(desktopDialog).toBeVisible();
-    await expect(desktopDialog).toContainText('AgentSmith Desktop');
-    await expect(page.getByTestId('files__desktop-setup__download')).toBeVisible();
-    await expect(page.getByTestId('files__desktop-mount__deployment-url')).toHaveValue('http://localhost:3101');
-    await expect(page.getByTestId('files__desktop-setup__debug-panel')).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath('files-ready-desktop-dialog.png'), fullPage: true });
+      await page.getByTestId(`files__library-desktop-access--${readyLibrary.libraryId}`).click();
+      const desktopDialog = page.getByTestId('files__dialog__desktop-mount-access');
+      await expect(desktopDialog).toBeVisible();
+      await expect(desktopDialog).toContainText('AgentSmith Desktop');
+      await expect(page.getByTestId('files__desktop-setup__download')).toBeVisible();
+      await expect(page.getByTestId('files__desktop-mount__deployment-url')).toHaveValue(/https?:\/\/.+/);
+      await expect(page.getByTestId('files__desktop-setup__debug-panel')).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath('files-ready-desktop-dialog.png'), fullPage: true });
 
-    await page.getByTestId('files__desktop-setup__platform-windows').click();
-    await expect(page.getByTestId('files__desktop-setup__platform-windows')).toHaveAttribute('data-state', 'active');
-    await page.screenshot({ path: testInfo.outputPath('files-ready-desktop-dialog-windows.png'), fullPage: true });
+      await page.getByTestId('files__desktop-setup__platform-windows').click();
+      await expect(page.getByTestId('files__desktop-setup__platform-windows')).toHaveAttribute('data-state', 'active');
+      await page.screenshot({ path: testInfo.outputPath('files-ready-desktop-dialog-windows.png'), fullPage: true });
 
-    await page.getByTestId('files__desktop-setup__debug-toggle').click();
-    await expect(page.getByTestId('files__desktop-setup__debug-panel')).toBeVisible();
-    await expect(page.getByTestId('files__library-mount__filesystem-name')).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath('files-ready-desktop-dialog-debug.png'), fullPage: true });
-    await page.keyboard.press('Escape');
-    await expect(desktopDialog).toHaveCount(0);
+      await page.getByTestId('files__desktop-setup__debug-toggle').click();
+      await expect(page.getByTestId('files__desktop-setup__debug-panel')).toBeVisible();
+      await expect(page.getByTestId('files__library-mount__filesystem-name')).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath('files-ready-desktop-dialog-debug.png'), fullPage: true });
+      await captureTrace('review-desktop-access');
+      await page.keyboard.press('Escape');
+      await expect(desktopDialog).toHaveCount(0);
 
-    const degradedCard = page.getByTestId(`files__library-item--${degradedLibrary.id}`);
-    await expect(degradedCard).toBeVisible({ timeout: 30_000 });
-    await degradedCard.click();
+      const degradedCard = page.getByTestId(`files__library-item--${degradedLibrary.id}`);
+      await expect(degradedCard).toBeVisible({ timeout: 30_000 });
+      await degradedCard.click();
 
-    await expect(page.getByTestId(`files__library-status--${degradedLibrary.id}`)).toContainText('Degraded');
-    await expect(page.getByTestId(`files__library-status-reason--${degradedLibrary.id}`)).toContainText(
-      'This library needs attention before you rely on it for local mounts.',
-    );
-    await expect(page.getByTestId(`files__library-desktop-access--${degradedLibrary.id}`)).toBeDisabled();
-    await expect(page.getByTestId(`files__library-manual-mount-access--${degradedLibrary.id}`)).toHaveCount(0);
-    await expect(page.getByTestId('files__library-unavailable-empty-state')).toBeVisible();
-    await expect(page.getByTestId('files__library-unavailable-empty-state')).toContainText(
-      'This library is not ready for browsing or local mounts.',
-    );
-    await expect(page.getByTestId('files__library-unavailable-empty-state')).toContainText(
-      'delete the broken record and create a new one',
-    );
-    await expect(page.locator('body')).not.toContainText('files.file_manager.loading');
-    await page.screenshot({ path: testInfo.outputPath('files-degraded-overview.png'), fullPage: true });
+      await expect(page.getByTestId(`files__library-status--${degradedLibrary.id}`)).toContainText('Degraded');
+      await expect(page.getByTestId(`files__library-status-reason--${degradedLibrary.id}`)).toContainText(
+        'This library needs attention before you rely on it for local mounts.',
+      );
+      await expect(page.getByTestId(`files__library-desktop-access--${degradedLibrary.id}`)).toBeDisabled();
+      await expect(page.getByTestId(`files__library-manual-mount-access--${degradedLibrary.id}`)).toHaveCount(0);
+      await expect(page.getByTestId('files__library-unavailable-empty-state')).toBeVisible();
+      await expect(page.getByTestId('files__library-unavailable-empty-state')).toContainText(
+        'This library is not ready for browsing or local mounts.',
+      );
+      await expect(page.getByTestId('files__library-unavailable-empty-state')).toContainText(
+        'delete the broken record and create a new one',
+      );
+      await expect(page.locator('body')).not.toContainText('files.file_manager.loading');
+      await page.screenshot({ path: testInfo.outputPath('files-degraded-overview.png'), fullPage: true });
 
-    await page.getByTestId(`files__library-delete-inline--${degradedLibrary.id}`).click();
-    const deleteDialog = page.getByTestId('files__dialog__library-delete');
-    await expect(deleteDialog).toBeVisible();
-    await expect(deleteDialog).toContainText(
-      `Delete "${degradedLibrary.name}" if you want to clean up the broken record, then create a new library if you still need it.`,
-    );
-    await expect(page.getByTestId('files__library-delete__warning')).toContainText(
-      'Recovery action: this removes the broken library record.',
-    );
-    await page.screenshot({ path: testInfo.outputPath('files-degraded-delete-dialog.png'), fullPage: true });
+      await page.getByTestId(`files__library-delete-inline--${degradedLibrary.id}`).click();
+      const deleteDialog = page.getByTestId('files__dialog__library-delete');
+      await expect(deleteDialog).toBeVisible();
+      await expect(deleteDialog).toContainText(
+        `Delete "${degradedLibrary.name}" if you want to clean up the broken record, then create a new library if you still need it.`,
+      );
+      await expect(page.getByTestId('files__library-delete__warning')).toContainText(
+        'Recovery action: this removes the broken library record.',
+      );
+      await page.screenshot({ path: testInfo.outputPath('files-degraded-delete-dialog.png'), fullPage: true });
+      await captureTrace('review-degraded-recovery');
+      outcome = 'pass';
+    } finally {
+      await trace.finish({ outcome });
+    }
   });
 });

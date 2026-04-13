@@ -23,8 +23,10 @@ describe('story contract', () => {
     expect(stories.length).toBeGreaterThanOrEqual(2);
     expect(stories.map((story) => story.storyId)).toEqual(
       expect.arrayContaining([
+        'mock-lane-entry-access',
         'release-user-story-end-to-end',
         'real-backend-visual-review',
+        'workspace-entry-and-project-discovery',
       ]),
     );
 
@@ -50,6 +52,14 @@ describe('story contract', () => {
   "title": "Contract owned parser",
   "actor": "reviewer",
   "lane": "mock-lane",
+  "family": "contract-owned-parser",
+  "personas": ["reviewer"],
+  "kind": "journey",
+  "gatePolicy": {
+    "tier": "default",
+    "requiredEvidence": ["trace"]
+  },
+  "externalDependencies": [],
   "entryRoute": "/en-US/workspaces/ws_default",
   "goal": "Verify the parser lives in story-loader.",
   "narrative": "Story parsing should stay in story-loader so story-contract can remain schema-only.",

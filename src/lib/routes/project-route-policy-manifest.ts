@@ -1,5 +1,4 @@
 import { createProjectRoutePolicy } from './project-route-policy';
-import { PLATFORM_PERMISSIONS } from '@/lib/constants/permissions';
 import { PROJECT_SETTINGS_READ_PERMISSIONS } from '@/lib/projects/project-settings-access';
 
 export const PROJECT_ROUTE_POLICY_MANIFEST = {
@@ -84,7 +83,7 @@ export const PROJECT_ROUTE_POLICY_MANIFEST = {
     navOrder: 20,
   }),
   'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/my-context/page.tsx': createProjectRoutePolicy({
-    permissions: [...PLATFORM_PERMISSIONS.PROJECT],
+    permissions: ['project:endpoint:use'],
     href: 'my-context',
     navLabelKey: 'member_project_title',
     navLabelNamespace: 'context_store',

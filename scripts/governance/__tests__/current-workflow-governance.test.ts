@@ -9,6 +9,7 @@ import {
   listRecommendedCurrentWorkflowSections,
 } from '../current-workflow-manifest';
 import { GOVERNANCE_CHECK_DEFINITIONS } from '../check-definitions';
+import { findCurrentGateDefinition } from '../current-gate-manifest';
 
 describe('current workflow governance', () => {
   it('keeps the expected top-level workflow terms and section order', () => {
@@ -37,6 +38,8 @@ describe('current workflow governance', () => {
       expect(command.description.length).toBeGreaterThan(0);
       expect(['none', 'required']).toContain(command.storyEvidencePolicy);
       expect(Array.isArray(command.storyEvidenceKinds)).toBe(true);
+      expect(Array.isArray(command.storyEvidenceArtifacts)).toBe(true);
+      expect(Array.isArray(command.storyEvidenceRequiredFor)).toBe(true);
 
       if (command.canonical === 'npm') {
         expect(command.npmScript).toBeTruthy();
@@ -55,21 +58,53 @@ describe('current workflow governance', () => {
   it('marks story-evidence-bearing workflow commands explicitly', () => {
     const commands = listCurrentWorkflowCommands();
     const visualTest = commands.find((command) => command.npmScript === 'test:visual');
+    const backendRealCoreTest = commands.find((command) => command.npmScript === 'test:backend-real:core');
     const releaseGate = commands.find((command) => command.npmScript === 'gate:release');
     const visualLane = commands.find((command) => command.npmScript === 'lane:visual');
+    const backendRealCoreLane = commands.find((command) => command.npmScript === 'lane:backend-real:core');
     const releaseLane = commands.find((command) => command.npmScript === 'lane:backend-real:release');
 
     expect(visualTest?.storyEvidencePolicy).toBe('required');
     expect(visualTest?.storyEvidenceKinds).toEqual(['visual_scene_catalog']);
+    expect(visualTest?.storyEvidenceRequiredFor).toEqual(['visual', 'release']);
 
     expect(visualLane?.storyEvidencePolicy).toBe('required');
     expect(visualLane?.storyEvidenceKinds).toEqual(['visual_scene_catalog']);
+    expect(visualLane?.storyEvidenceRequiredFor).toEqual(['visual', 'release']);
+
+    expect(backendRealCoreTest?.storyEvidencePolicy).toBe('required');
+    expect(backendRealCoreTest?.storyEvidenceKinds).toEqual(['ux_trace_bundle']);
+    expect(backendRealCoreTest?.storyEvidenceArtifacts).toContain('artifacts/backend-real/runs/<run-id>/ux-traces');
+    expect(backendRealCoreTest?.storyEvidenceRequiredFor).toEqual(['default']);
+
+    expect(backendRealCoreLane?.storyEvidencePolicy).toBe('required');
+    expect(backendRealCoreLane?.storyEvidenceKinds).toEqual(['ux_trace_bundle']);
+    expect(backendRealCoreLane?.storyEvidenceArtifacts).toContain('artifacts/backend-real/runs/<run-id>/ux-traces');
+    expect(backendRealCoreLane?.storyEvidenceRequiredFor).toEqual(['default']);
 
     expect(releaseGate?.storyEvidencePolicy).toBe('required');
     expect(releaseGate?.storyEvidenceKinds).toEqual(['ux_trace_bundle']);
+    expect(releaseGate?.storyEvidenceRequiredFor).toEqual(['release']);
 
     expect(releaseLane?.storyEvidencePolicy).toBe('required');
     expect(releaseLane?.storyEvidenceKinds).toEqual(['ux_trace_bundle']);
+    expect(releaseLane?.storyEvidenceRequiredFor).toEqual(['release']);
+  });
+
+  it('derives workflow story-evidence ownership from current gate truth', () => {
+    const commands = listCurrentWorkflowCommands().filter((command) => command.npmScript);
+
+    for (const command of commands) {
+      const gate = findCurrentGateDefinition(command.npmScript!);
+      if (!gate) {
+        continue;
+      }
+
+      expect(command.storyEvidencePolicy).toBe(gate.storyEvidencePolicy);
+      expect(command.storyEvidenceKinds).toEqual(gate.storyEvidenceKinds);
+      expect(command.storyEvidenceArtifacts).toEqual(gate.storyEvidenceArtifacts);
+      expect(command.storyEvidenceRequiredFor).toEqual(gate.storyEvidenceRequiredFor);
+    }
   });
 
   it('keeps governance check definitions complete and uniquely keyed', () => {

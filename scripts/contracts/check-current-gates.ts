@@ -57,6 +57,9 @@ for (const definition of CURRENT_GATE_MANIFEST) {
   if (definition.storyEvidencePolicy === 'required' && definition.storyEvidenceArtifacts.length === 0) {
     failures.push(`${definition.npmScript} must declare required story evidence artifact roots`);
   }
+  if (definition.storyEvidencePolicy === 'required' && definition.storyEvidenceRequiredFor.length === 0) {
+    failures.push(`${definition.npmScript} must declare the tiers where missing story evidence is blocking`);
+  }
   if (definition.storyEvidenceKinds.includes('visual_scene_catalog') && !definition.storyEvidenceSceneSource) {
     failures.push(`${definition.npmScript} must declare its visual scene source when it owns visual_scene_catalog evidence`);
   }
@@ -65,12 +68,13 @@ for (const definition of CURRENT_GATE_MANIFEST) {
 const gateDefault = findCurrentGateDefinition('gate:default');
 const laneVisual = findCurrentGateDefinition('lane:visual');
 const testVisual = findCurrentGateDefinition('test:visual');
+const testBackendRealCore = findCurrentGateDefinition('test:backend-real:core');
 const backendRealCore = findCurrentGateDefinition('lane:backend-real:core');
 const laneDemoRehearsal = findCurrentGateDefinition('lane:demo-rehearsal');
 const laneClusterRehearsal = findCurrentGateDefinition('lane:cluster-rehearsal');
 const gateReleaseFull = findCurrentGateDefinition('gate:release:full');
 
-if (!gateDefault || !laneVisual || !testVisual || !backendRealCore || !laneDemoRehearsal || !laneClusterRehearsal || !gateReleaseFull) {
+if (!gateDefault || !laneVisual || !testVisual || !testBackendRealCore || !backendRealCore || !laneDemoRehearsal || !laneClusterRehearsal || !gateReleaseFull) {
   failures.push('current gate manifest is missing required default/visual/backend-real/rehearsal definitions');
 }
 
@@ -88,6 +92,7 @@ requireMatch(backendRealRun, /cleanup_gate_ports 20060 3061 e2e\/integration-sys
 requireMatch(backendRealRun, /cleanup_gate_ports 20064 3065 e2e\/integration-chat-llm-runner\.spec\.ts/, 'backend-real-run must clean stale ports before the external chat runner backend-real lane', failures);
 requireMatch(backendRealRun, /cleanup_gate_ports 20064 3065 e2e\/integration-notebook-codex-runner\.spec\.ts/, 'backend-real-run must clean stale ports before the external notebook runner backend-real lane', failures);
 requireMatch(integrationE2EFull, /clear_runtime_stack_env[\s\S]*resolve_loopback_runtime_stack/, 'run-integration-e2e-full must clear inherited runtime stack addresses before rebuilding its isolated loopback stack', failures);
+requireMatch(integrationE2EFull, /UX_TRACE_OUTPUT_ROOT="\$\{UX_TRACE_OUTPUT_ROOT:-\$\{INTEGRATION_RUN_ROOT\}\/ux-traces\}"/, 'run-integration-e2e-full must root backend-real ux trace bundles under artifacts/backend-real/runs/<run-id>/ux-traces by default', failures);
 
 requireMatch(workflow, /^  gate-fast:\n/m, 'quality-gates workflow is missing the gate-fast job', failures);
 requireMatch(workflow, /^  gate-default:\n/m, 'quality-gates workflow is missing the gate-default job', failures);
@@ -115,12 +120,18 @@ requireMatch(gateContract, /targeted visual/, 'current gate manifest contract mu
 requireMatch(gateContract, /story evidence/, 'current gate manifest contract must define story evidence ownership', failures);
 requireMatch(gateContract, /visual_scene_catalog/, 'current gate manifest contract must define visual_scene_catalog evidence', failures);
 requireMatch(gateContract, /ux_trace_bundle/, 'current gate manifest contract must define ux_trace_bundle evidence', failures);
+requireMatch(gateContract, /test:backend-real:core/, 'current gate manifest contract must define test:backend-real:core as a backend-real story-evidence owner', failures);
+requireMatch(gateContract, /lane:backend-real:core/, 'current gate manifest contract must define lane:backend-real:core as a backend-real story-evidence owner', failures);
 requireMatch(gateContract, /e2e\/visual-baseline-support\.ts/, 'current gate manifest contract must identify the visual scene catalog source', failures);
+requireMatch(gateContract, /artifacts\/backend-real\/runs\/<run-id>\/ux-traces/, 'current gate manifest contract must identify the default-tier backend-real ux trace bundle root', failures);
 requireMatch(gateContract, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/, 'current gate manifest contract must identify backend-real ux trace bundle roots', failures);
 requireMatch(gateContract, /scenario-owned local clean reset/, 'current gate manifest contract must require clean-reset semantics for rehearsal lanes', failures);
 requireMatch(gateContract, /generated handoff state/, 'current gate manifest contract must describe rehearsal-generated handoff state ownership', failures);
 
 requireMatch(workspaceDefaultChecklist, /npm run test:default-e2e/, 'workspace/project checklist must keep test:default-e2e as its canonical gate command', failures);
+requireMatch(workspaceDefaultChecklist, /npm run test:backend-real:core/, 'workspace/project checklist must keep test:backend-real:core as the optional real-backend command', failures);
+requireMatch(workspaceDefaultChecklist, /ux_trace_bundle/, 'workspace/project checklist must describe the default-tier backend-real ux_trace_bundle evidence', failures);
+requireMatch(workspaceDefaultChecklist, /artifacts\/backend-real\/runs\/<run-id>\/ux-traces/, 'workspace/project checklist must identify the default-tier backend-real ux trace bundle root', failures);
 requireMatch(workspaceDefaultChecklist, /targeted visual/, 'workspace/project checklist must explain that its visual coverage is targeted', failures);
 requireMatch(workspaceDefaultChecklist, /npm run lane:visual/, 'workspace/project checklist must point full visual verification to npm run lane:visual', failures);
 forbidMatch(workspaceDefaultChecklist, /npm run gate:default/, 'workspace/project checklist must document its own canonical gate command instead of gate:default', failures);

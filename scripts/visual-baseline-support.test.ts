@@ -1,6 +1,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { loadStoryDefinition } from '../e2e/story-loader';
 import {
   groupVisualBaselineCatalogByScenario,
   listVisualBaselineCatalogEntries,
@@ -39,6 +40,8 @@ describe('visual baseline support', () => {
       expect(entry.storyEvidenceKind).toBe('visual_scene_catalog');
       expect(entry.storyEvidenceOwner).toBe('lane:visual');
       expect(entry.sourceSpec).toBe('e2e/visual.spec.ts');
+      expect(entry.storySourceFile).toMatch(/^e2e\/stories\/mock-lane\//);
+      expect(entry.storySceneId.length).toBeGreaterThan(0);
     }
   });
 
@@ -135,6 +138,9 @@ describe('visual baseline support', () => {
     expect(grouped.get('api-keys-key-created-dialog')?.stableMarkers).toEqual([
       'api-keys__key-created-dialog',
     ]);
+    expect(grouped.get('workspace-feishu-setup-credentials')?.stableMarkers).toEqual([
+      'ws-feishu__save-draft',
+    ]);
     expect(grouped.get('third-party-accounts')?.stableMarkers).toEqual([
       'third-party-accounts__list-section',
       'third-party-accounts__create-btn',
@@ -224,6 +230,11 @@ describe('visual baseline support', () => {
       'system-workspaces__editor',
       'system-workspaces__basics',
     ]);
+    expect(grouped.get('overview')?.stableMarkers).toEqual([
+      'project-hub__summary',
+      'project-hub__use-summary',
+      'project-hub__governance-summary',
+    ]);
     expect(grouped.get('system-workspaces-create-wizard')?.stableMarkers).toEqual([
       'system-workspace-create__shell',
       'system-workspace-create__step-tracker',
@@ -255,6 +266,77 @@ describe('visual baseline support', () => {
     ]);
   });
 
+  it('assigns monitoring and connections lifecycle scenes to dedicated goal-oriented mock-lane stories', () => {
+    const grouped = groupVisualBaselineCatalogByScenario();
+
+    expect(grouped.get('alerts')?.storyId).toBe('mock-lane-alerts-and-usage-review');
+    expect(grouped.get('alerts-rules-tab')?.storyId).toBe('mock-lane-alerts-and-usage-review');
+    expect(grouped.get('alerts-rule-create-dialog')?.storyId).toBe('mock-lane-alerts-and-usage-review');
+    expect(grouped.get('usage')?.storyId).toBe('mock-lane-alerts-and-usage-review');
+    expect(grouped.get('usage-endpoint-switch')?.storyId).toBe('mock-lane-alerts-and-usage-review');
+    expect(grouped.get('audit')?.storyId).toBe('mock-lane-alerts-and-usage-review');
+    expect(grouped.get('drawer-audit-detail')?.storyId).toBe('mock-lane-alerts-and-usage-review');
+
+    expect(grouped.get('third-party-accounts')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
+    expect(grouped.get('third-party-accounts-edit-sheet')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
+    expect(grouped.get('workspace-connections-feishu-disabled')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
+    expect(grouped.get('workspace-connections-feishu-connected')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
+    expect(grouped.get('workspace-feishu-setup-credentials')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
+    expect(grouped.get('credentials')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
+    expect(grouped.get('dialog-create-credential')?.storyId).toBe('mock-lane-connections-and-credentials-lifecycle');
+  });
+
+  it('assigns second-wave high-frequency mock-lane scenes to dedicated user-goal stories', () => {
+    const grouped = groupVisualBaselineCatalogByScenario();
+
+    expect(grouped.get('chat-operate')?.storyId).toBe('mock-lane-chat-operate-and-recover');
+    expect(grouped.get('chat-recover-empty')?.storyId).toBe('mock-lane-chat-operate-and-recover');
+    expect(grouped.get('notebook-task-lifecycle-list')?.storyId).toBe('mock-lane-notebook-task-lifecycle');
+    expect(grouped.get('notebook-task-lifecycle-create-dialog')?.storyId).toBe('mock-lane-notebook-task-lifecycle');
+    expect(grouped.get('notebook-task-lifecycle-detail')?.storyId).toBe('mock-lane-notebook-task-lifecycle');
+    expect(grouped.get('notebook-task-lifecycle-artifact')?.storyId).toBe('mock-lane-notebook-task-lifecycle');
+    expect(grouped.get('project-settings-review')?.storyId).toBe('mock-lane-settings-and-members-review');
+    expect(grouped.get('project-members-review')?.storyId).toBe('mock-lane-settings-and-members-review');
+  });
+
+  it('reads mock-lane visual scene metadata from the canonical story runtimeData contract', async () => {
+    const story = await loadStoryDefinition('mock-lane-chat-operate-and-recover');
+
+    expect(story.runtimeData?.visualReview?.scenes).toEqual([
+      {
+        sceneId: 'chat-operate',
+        scenarioId: 'chat-operate',
+        scenario: expect.stringContaining('active thread'),
+        group: 'project_pages',
+        codeRefs: expect.arrayContaining([
+          'e2e/visual.spec.ts',
+          'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat/page.tsx',
+          'src/components/chat/ChatMainPane.tsx',
+          'src/components/chat/ChatHeader.tsx',
+          'src/components/chat/ThreadsPane.tsx',
+        ]),
+        capture: 'full_page',
+        authLane: 'authed',
+        themes: ['light', 'dark'],
+      },
+      {
+        sceneId: 'chat-recover-empty',
+        scenarioId: 'chat-recover-empty',
+        scenario: expect.stringContaining('search results filtered to zero'),
+        group: 'project_pages',
+        codeRefs: expect.arrayContaining([
+          'e2e/visual.spec.ts',
+          'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat/page.tsx',
+          'src/components/chat/ChatMainPane.tsx',
+          'src/components/chat/ThreadsPane.tsx',
+        ]),
+        capture: 'full_page',
+        authLane: 'authed',
+        themes: ['light', 'dark'],
+      },
+    ]);
+  });
+
   it('exposes stable recipe markers for public/auth scenarios so visual waits can target real readiness points', () => {
     expect(resolveVisualBaselineStableMarkers('workspace-select')).toEqual([
       'workspace-select__heading',
@@ -274,6 +356,16 @@ describe('visual baseline support', () => {
     expect(resolveVisualBaselineStableMarkers('system-workspaces')).toEqual([
       'system-workspaces__list',
       'system-workspaces__editor-empty',
+    ]);
+
+    expect(resolveVisualBaselineStableMarkers('workspace-feishu-setup-credentials')).toEqual([
+      'ws-feishu__save-draft',
+    ]);
+
+    expect(resolveVisualBaselineStableMarkers('overview')).toEqual([
+      'project-hub__summary',
+      'project-hub__use-summary',
+      'project-hub__governance-summary',
     ]);
 
     expect(resolveVisualBaselineStableMarkers('system-info')).toEqual([
@@ -324,6 +416,20 @@ describe('visual baseline support', () => {
       'chat__composer',
     ]);
 
+    expect(resolveVisualBaselineStableMarkers('chat-operate')).toEqual([
+      'chat__surface',
+      'chat__threads-pane',
+      'chat__main-pane',
+      'chat__header',
+      'chat__composer',
+    ]);
+
+    expect(resolveVisualBaselineStableMarkers('chat-recover-empty')).toEqual([
+      'chat__threads-empty-state',
+      'chat__threads-empty-new-thread',
+      'chat__new-thread-btn',
+    ]);
+
     expect(resolveVisualBaselineStableMarkers('files')).toEqual([
       'files__workspace-surface',
       'files__workspace-grid',
@@ -351,11 +457,46 @@ describe('visual baseline support', () => {
       'context-store__editor-card',
     ]);
 
+    expect(resolveVisualBaselineStableMarkers('notebook-task-lifecycle-list')).toEqual([
+      'notebook__task-list',
+      'notebook__task-card',
+      'notebook__create-task-btn',
+    ]);
+
+    expect(resolveVisualBaselineStableMarkers('notebook-task-lifecycle-create-dialog')).toEqual([
+      'notebook__create-task-btn',
+    ]);
+
+    expect(resolveVisualBaselineStableMarkers('notebook-task-lifecycle-detail')).toEqual([
+      'notebook__task-header',
+      'notebook__conversation-input',
+      'notebook__send-btn',
+    ]);
+
+    expect(resolveVisualBaselineStableMarkers('notebook-task-lifecycle-artifact')).toEqual([
+      'notebook__task-header',
+      'notebook__artifact-card',
+      'notebook__artifact-hover-panel',
+    ]);
+
     expect(resolveVisualBaselineStableMarkers('workspace-settings')).toEqual([
       'ws-settings__summary-line',
       'ws-settings__workspace',
       'ws-settings__integrations',
       'ws-settings__projects',
+    ]);
+
+    expect(resolveVisualBaselineStableMarkers('project-settings-review')).toEqual([
+      'settings__summary-line',
+      'settings__general-section',
+      'settings__ownership-section',
+      'settings__project-admins-section',
+    ]);
+
+    expect(resolveVisualBaselineStableMarkers('project-members-review')).toEqual([
+      'members__work-surface',
+      'members__table',
+      'members__invite-btn',
     ]);
 
     expect(resolveVisualBaselineStableMarkers('settings')).toEqual([
@@ -399,6 +540,44 @@ describe('visual baseline support', () => {
       kind: 'visual_scene_catalog',
       owner: 'lane:visual',
     });
+  });
+
+  it('derives the visual catalog from mock-lane story families instead of a standalone scenario seed', async () => {
+    const grouped = groupVisualBaselineCatalogByScenario();
+
+    expect(grouped.get('workspace-select')).toMatchObject({
+      storyId: expect.stringContaining('mock-lane'),
+      storySourceFile: 'e2e/stories/mock-lane/mock-lane-entry-access.story.md',
+      storySceneId: 'workspace-select',
+    });
+    expect(grouped.get('api-keys-create-dialog')).toMatchObject({
+      storyId: expect.stringContaining('mock-lane'),
+      storySourceFile: 'e2e/stories/mock-lane/mock-lane-self-service.story.md',
+      storySceneId: 'api-keys-create-dialog',
+    });
+    expect(grouped.get('workspace-home-project-creator')).toMatchObject({
+      storySourceFile: 'e2e/stories/mock-lane/mock-lane-workspace-project-core.story.md',
+      storySceneId: 'workspace-home-project-creator',
+    });
+    expect(grouped.get('system-workspaces')).toMatchObject({
+      storySourceFile: 'e2e/stories/mock-lane/mock-lane-governance-surfaces.story.md',
+      storySceneId: 'system-workspaces',
+    });
+    expect(grouped.get('alerts')).toMatchObject({
+      storySourceFile: 'e2e/stories/mock-lane/mock-lane-alerts-and-usage-review.story.md',
+      storySceneId: 'alerts',
+    });
+  });
+
+  it('documents the mock-lane story family linkage contract', async () => {
+    const docSource = await readFile(path.resolve('docs/testing/mock-lane-visual-story-linkage.md'), 'utf-8');
+
+    expect(docSource).toContain('e2e/stories/mock-lane/*.story.md');
+    expect(docSource).toContain('runtimeData.visualReview.scenes');
+    expect(docSource).toContain('storySourceFile');
+    expect(docSource).toContain('storySceneId');
+    expect(docSource).toContain('visual-baseline-support.ts');
+    expect(docSource).not.toContain('standalone scenario seed');
   });
 
   it('finalizes lane-local generated root state when the mock visual lane exits', async () => {

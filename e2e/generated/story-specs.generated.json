@@ -1,14 +1,918 @@
 [
   {
+    "storyId": "api-key-to-endpoint-consumption",
+    "title": "API key to endpoint consumption",
+    "actor": "project member",
+    "family": "api-key-to-endpoint-consumption",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/user/api-keys",
+    "goal": "项目成员创建自己的 API key 后，可以按 Use Guide 调用项目 endpoint，而不需要管理凭据或 endpoint 配置。",
+    "sourceRef": "e2e/stories/backend-real/api-key-to-endpoint-consumption.story.md#api-key-to-endpoint-consumption",
+    "sourceFingerprint": "cb0a3f754c5d40e02706f56f9238fc31c8cd4c9613b664f39e26d2db7a09d4c3",
+    "storyFingerprint": "fd37c59e48e02f14cc695f26c4f01918a29fe188b99350c254ac98f24c9266cc",
+    "stepMapFingerprint": "c6ed92d03de4c5609308e0c43457f268c669df89f237a4d1187d039fbf87c504",
+    "sceneIds": [
+      "user-api-keys",
+      "project-use-guide"
+    ],
+    "stepIds": [
+      "review-use-guide",
+      "create-personal-api-key",
+      "consume-endpoint"
+    ],
+    "traceStepIds": [
+      "review-use-guide",
+      "create-personal-api-key",
+      "consume-endpoint"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "chat-conversation-continuity",
+    "title": "Chat conversation continuity",
+    "actor": "project member",
+    "family": "chat-conversation-continuity",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/chat",
+    "goal": "项目成员在刷新后继续同一个对话时，chat session 会保留上下文，不需要重新解释之前的约定。",
+    "sourceRef": "e2e/stories/backend-real/chat-conversation-continuity.story.md#chat-conversation-continuity",
+    "sourceFingerprint": "a82d986915a76572bb5849e2bf9e81e7195aa1ced47739b1c421dc6a301b2436",
+    "storyFingerprint": "935e3c14c50fac7362a8c164c97581d84fe28a0fa259c40fa69f042cae96bb81",
+    "stepMapFingerprint": "545264ea1d208c427f02f986c2f923586e3ab40c64791af694d5d82c171bc7f5",
+    "sceneIds": [
+      "project-chat"
+    ],
+    "stepIds": [
+      "open-chat",
+      "remember-conversation",
+      "reload-chat-session",
+      "recall-conversation"
+    ],
+    "traceStepIds": [
+      "open-chat",
+      "remember-conversation",
+      "reload-chat-session",
+      "recall-conversation"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "chat-day-two-thread-workflow",
+    "title": "Chat day-two thread workflow",
+    "actor": "project member",
+    "family": "chat-day-two",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "local-openai-compatible-upstream",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real chat day-two story uses a local deterministic upstream to keep thread lifecycle assertions stable."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/chat",
+    "goal": "项目成员第二天回到 chat 时，能保留有价值的线程、给它重新命名、删除无用线程，并继续在保留线程上工作，而不是从头整理上下文。",
+    "sourceRef": "e2e/stories/backend-real/chat-day-two-thread-workflow.story.md#chat-day-two-thread-workflow",
+    "sourceFingerprint": "211a3135903617dff86e6fed4c3fce50679638e98dd68bedfbe034e9141530d4",
+    "storyFingerprint": "4ea9b6978a5d89b1d05615d243c9136a6f676310e2b62a5dacc6bfedbafbe109",
+    "stepMapFingerprint": "ad02f38a88909001478225c0a33dd8eadc56160d6d5ca130a492209ac14066a2",
+    "sceneIds": [
+      "project-chat"
+    ],
+    "stepIds": [
+      "open-chat-day-two",
+      "create-follow-up-thread",
+      "rename-keep-thread",
+      "delete-stale-thread",
+      "resume-kept-thread"
+    ],
+    "traceStepIds": [
+      "open-chat-day-two",
+      "create-follow-up-thread",
+      "rename-keep-thread",
+      "delete-stale-thread",
+      "resume-kept-thread"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "files-crud-and-sync",
+    "title": "Files CRUD and sync continuity",
+    "actor": "project member / project operator",
+    "family": "files-daily-work",
+    "personas": [
+      "project member",
+      "project operator"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "juicefs-client",
+        "kind": "service",
+        "required": true,
+        "note": "mount sync validation requires a local JuiceFS client and storage credential exchange."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/files",
+    "goal": "成员在 Files 中管理文件对象后，Web 文件浏览与桌面挂载内容保持一致，不需要自己猜测哪一侧才是真相。",
+    "sourceRef": "e2e/stories/backend-real/files-crud-and-sync.story.md#files-crud-and-sync",
+    "sourceFingerprint": "e58a6ebcfb3afefb577c519bc6a870a5c45be0345d7f240a293737f8c9bb2eff",
+    "storyFingerprint": "54e4ee9a6d25a648efed570949070db9c242ae02cec9c026ebcf419e039011b6",
+    "stepMapFingerprint": "2fc0d3db733af0b00462a9858361e3f88b53d1e529b090c4f71d511d9cb884ac",
+    "sceneIds": [
+      "project-files",
+      "project-files-browser"
+    ],
+    "stepIds": [
+      "open-files-library",
+      "manage-files-from-web",
+      "verify-web-desktop-sync"
+    ],
+    "traceStepIds": [
+      "open-files-library",
+      "manage-files-from-web",
+      "verify-web-desktop-sync"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "files-library-access-and-recovery",
+    "title": "Files library access and recovery",
+    "actor": "workspace member / project operator",
+    "family": "files-management",
+    "personas": [
+      "workspace member",
+      "project operator"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "mongo-file-library-fixture",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real files story reads one ready library and inserts one degraded library fixture."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/login/workspace",
+    "goal": "成员在日常使用文件库时，既能顺畅进入 ready 文件库和桌面访问入口，也能在 degraded 文件库上看到清晰的恢复动作，而不是自己猜测下一步。",
+    "sourceRef": "e2e/stories/backend-real/files-library-access-and-recovery.story.md#files-library-access-and-recovery",
+    "sourceFingerprint": "eac5c48ac0eff80ccf9bbe52ac82b78da834697ad36f1827c7db5ef700f9c2ac",
+    "storyFingerprint": "aafb196c6ca38f6735190f13a3a55b2600be00e51812fa053b2acab91cdbd014",
+    "stepMapFingerprint": "35816e246610d99770a9977e401f118bb83cf598b7b60be926b322313b419d9f",
+    "sceneIds": [
+      "workspace-select",
+      "project-files",
+      "desktop-access-dialog",
+      "degraded-delete-dialog"
+    ],
+    "stepIds": [
+      "open-files-library",
+      "review-desktop-access",
+      "review-degraded-recovery"
+    ],
+    "traceStepIds": [
+      "open-files-library",
+      "review-desktop-access",
+      "review-degraded-recovery"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "members-invite-and-chat-privacy",
+    "title": "Members invite to first usable access",
+    "actor": "project owner / invitee member",
+    "family": "members-onboarding",
+    "personas": [
+      "project owner",
+      "invitee member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "provider-api-key",
+        "kind": "credential",
+        "required": true,
+        "note": "backend-real member onboarding story needs a runnable endpoint for first-use chat validation."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/join",
+    "goal": "被邀请的成员接受邀请后，应该立刻成为可用成员，能进入项目并开始第一次使用；与此同时，别人的私人聊天内容不能泄露给他。",
+    "sourceRef": "e2e/stories/backend-real/members-invite-and-chat-privacy.story.md#members-invite-and-chat-privacy",
+    "sourceFingerprint": "d2abbf2a97022923cdb8ae7764f73f8f692de4da34d9e8a464b63bccc8d3e7a0",
+    "storyFingerprint": "b5cb8f0b2507d772870710a1d7a4b3e4e0f7f8fcb6181b8145a16f7fbdc4ea47",
+    "stepMapFingerprint": "fdf8f19cf3fe6420caed28c6cb0cd3bfe7712c189664aa7a6e4c7fce1f83c845",
+    "sceneIds": [
+      "join-invite",
+      "project-overview",
+      "project-chat"
+    ],
+    "stepIds": [
+      "accept-invite",
+      "verify-member-first-access",
+      "start-first-chat-use",
+      "verify-chat-privacy",
+      "verify-shared-runner-isolation"
+    ],
+    "traceStepIds": [
+      "accept-invite",
+      "verify-member-first-access",
+      "start-first-chat-use",
+      "verify-chat-privacy",
+      "verify-shared-runner-isolation"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "mock-lane-alerts-and-usage-review",
+    "title": "Mock lane alerts and usage review scenes",
+    "actor": "project owner / project admin",
+    "family": "mock-lane-alerts-and-usage-review",
+    "personas": [
+      "project owner",
+      "project admin"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "mock-lane",
+    "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/alerts",
+    "goal": "统一描述项目 owner 日常查看 alerts、usage 与 audit 信号时的 mock-lane visual scene 真相。",
+    "sourceRef": "e2e/stories/mock-lane/mock-lane-alerts-and-usage-review.story.md#mock-lane-alerts-and-usage-review",
+    "sourceFingerprint": "f5cd7290d37aeed52ff6cbec517f9058e586976716ddffe3563c5a7768ca6030",
+    "storyFingerprint": "96f437017bb830f6817f52196071bfc570fbb61b232c7c905866440f3e970ec0",
+    "stepMapFingerprint": "cc8b0caf5b8119a41596353fe29d646f45d77fb0050f31bd1637c89a592cf7a5",
+    "sceneIds": [
+      "alerts",
+      "alerts-notifications-tab",
+      "alerts-rules-tab",
+      "alerts-rule-create-dialog",
+      "usage",
+      "usage-endpoint-switch",
+      "audit",
+      "audit-empty-state",
+      "drawer-audit-detail"
+    ],
+    "stepIds": [
+      "open-alerts-review",
+      "open-usage-review"
+    ],
+    "traceStepIds": [
+      "open-alerts-review",
+      "open-usage-review"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "mock-lane-chat-operate-and-recover",
+    "title": "Mock lane chat operate and recover scenes",
+    "actor": "authenticated project member",
+    "family": "chat-operate-and-recover",
+    "personas": [
+      "authenticated project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "mock-lane",
+    "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/chat",
+    "goal": "用一组 mock-lane story scenes 覆盖用户在 chat 中正常对话、切换执行目标，以及在搜索为空时恢复新线程的高频心智。",
+    "sourceRef": "e2e/stories/mock-lane/mock-lane-chat-operate-and-recover.story.md#mock-lane-chat-operate-and-recover",
+    "sourceFingerprint": "a744fcaa0dee8cf3dd5c18333820fcef8d164dd860d08f645d834a1f2fcb7a2f",
+    "storyFingerprint": "6f74986bcbd56888c9a35c795e0f0929bcdb6074e7e5b9cd5cc5553d5ff7372c",
+    "stepMapFingerprint": "6d53299eda3838b3754ef2df0dcb285c7f1a20c4f97e1025590ae321312f14a8",
+    "sceneIds": [
+      "chat-operate",
+      "chat-recover-empty"
+    ],
+    "stepIds": [
+      "chat-operate-open",
+      "chat-recover-empty-open"
+    ],
+    "traceStepIds": [
+      "chat-operate-open",
+      "chat-recover-empty-open"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "mock-lane-connections-and-credentials-lifecycle",
+    "title": "Mock lane connections and credentials lifecycle scenes",
+    "actor": "workspace member / workspace admin / project owner",
+    "family": "mock-lane-connections-and-credentials-lifecycle",
+    "personas": [
+      "workspace member",
+      "workspace admin",
+      "project owner"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "mock-lane",
+    "entryRoute": "/en-US/user/third-party-accounts",
+    "goal": "统一描述个人连接、工作区集成状态和项目凭据生命周期的 mock-lane visual scene 真相。",
+    "sourceRef": "e2e/stories/mock-lane/mock-lane-connections-and-credentials-lifecycle.story.md#mock-lane-connections-and-credentials-lifecycle",
+    "sourceFingerprint": "9186e50bc88621f21ae8f316f0733e9ca13bf3d9e4020f490efd1b01018d9b33",
+    "storyFingerprint": "a58dfcb28cc4d67b4adc76f5b88ddc4bda3a3fe696454c0275d3f6533c180804",
+    "stepMapFingerprint": "f3b344c50bbcdd5d545c92964cdadbab84c4f5052063d02ef1987e97c2319bbc",
+    "sceneIds": [
+      "third-party-accounts",
+      "third-party-accounts-create-sheet",
+      "third-party-accounts-edit-sheet",
+      "workspace-settings-feishu-enabled",
+      "workspace-feishu-setup-credentials",
+      "workspace-feishu-locked",
+      "workspace-connections-feishu-disabled",
+      "workspace-connections-feishu-connected",
+      "credentials",
+      "dialog-create-credential"
+    ],
+    "stepIds": [
+      "open-personal-connections",
+      "open-workspace-connections",
+      "open-project-credentials"
+    ],
+    "traceStepIds": [
+      "open-personal-connections",
+      "open-workspace-connections",
+      "open-project-credentials"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "mock-lane-entry-access",
+    "title": "Mock lane entry/access visual scenes",
+    "actor": "public visitor / system 管理侧 / workspace member",
+    "family": "mock-lane-entry-access",
+    "personas": [
+      "public visitor",
+      "system 管理侧",
+      "workspace member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "mock-lane",
+    "entryRoute": "/en-US/join",
+    "goal": "用一份 mock-lane story family 统一描述入口、登录和桌面接续的 visual scene 真相。",
+    "sourceRef": "e2e/stories/mock-lane/mock-lane-entry-access.story.md#mock-lane-entry-access",
+    "sourceFingerprint": "4b5563f16d6af6285ae25f6bc2495aada0cdb5602b8dfd1bb9219d48577644cb",
+    "storyFingerprint": "17eecb49041c5c83eea862cea3649bc4dcccc2f7611000a0e9aa28ce123e1741",
+    "stepMapFingerprint": "f7cdac1a4b147dcbd621405867b50a6c177058c8280f5b2584d3db8b5cd1c0f6",
+    "sceneIds": [
+      "join",
+      "system-login",
+      "workspace-select",
+      "workspace-login",
+      "desktop-auth-request",
+      "desktop-auth-complete"
+    ],
+    "stepIds": [
+      "open-system-login",
+      "open-workspace-login"
+    ],
+    "traceStepIds": [
+      "open-system-login",
+      "open-workspace-login"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "mock-lane-governance-surfaces",
+    "title": "Mock lane governance visual scenes",
+    "actor": "system 管理侧 / project owner / project admin",
+    "family": "mock-lane-governance-surfaces",
+    "personas": [
+      "system 管理侧",
+      "project owner",
+      "project admin"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "mock-lane",
+    "entryRoute": "/en-US/system/workspaces",
+    "goal": "统一描述 system 管理侧与 project governance 核心面的 mock-lane visual scene 真相。",
+    "sourceRef": "e2e/stories/mock-lane/mock-lane-governance-surfaces.story.md#mock-lane-governance-surfaces",
+    "sourceFingerprint": "80e8cfefd289aa9f505a2e9a3f8a58613ffe816ff50d932972d8f153cda8c3d6",
+    "storyFingerprint": "3a5609d5e6ef204932a9a273c3e98600dfec6085316f806b8ddf8f7484ab63e1",
+    "stepMapFingerprint": "f99ec14da80cffc353760d6ea51b65e8d2555e30be432554aab37189c5855ff6",
+    "sceneIds": [
+      "system-workspaces",
+      "system-workspaces-edit-mode",
+      "system-workspaces-create-wizard",
+      "system-workspaces-failed-state",
+      "system-workspaces-delete-confirmation",
+      "system-info",
+      "agents",
+      "dialog-create-agent",
+      "endpoints",
+      "dialog-edit-endpoint",
+      "dialog-create-endpoint",
+      "project-personal-context",
+      "members",
+      "members-effective-access-drawer",
+      "members-join-requests-tab",
+      "members-project-groups",
+      "members-change-history-dialog",
+      "dialog-invite-member",
+      "resource-policy",
+      "access-guide",
+      "settings"
+    ],
+    "stepIds": [
+      "open-system-workspaces",
+      "open-members-governance"
+    ],
+    "traceStepIds": [
+      "open-system-workspaces",
+      "open-members-governance"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "mock-lane-notebook-task-lifecycle",
+    "title": "Mock lane notebook task lifecycle scenes",
+    "actor": "authenticated project member",
+    "family": "notebook-task-lifecycle",
+    "personas": [
+      "authenticated project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "mock-lane",
+    "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/notebook",
+    "goal": "用一组 mock-lane story scenes 统一描述 notebook task 从列表、创建、详情到产物检查的高频任务生命周期。",
+    "sourceRef": "e2e/stories/mock-lane/mock-lane-notebook-task-lifecycle.story.md#mock-lane-notebook-task-lifecycle",
+    "sourceFingerprint": "1ffd8a848ad960eca972114987cc8902ca11251bacfac768f7cae517b173ea6e",
+    "storyFingerprint": "fc6baff6ea17170aa2f50625d6bb3170f0633d62d3b6f5eddfabc60fa52695d7",
+    "stepMapFingerprint": "fafa2add94be782963e45a8208404b3c19434432fa192bd4ea65d270302241de",
+    "sceneIds": [
+      "notebook-task-lifecycle-list",
+      "notebook-task-lifecycle-create-dialog",
+      "notebook-task-lifecycle-detail",
+      "notebook-task-lifecycle-artifact"
+    ],
+    "stepIds": [
+      "notebook-task-lifecycle-open-list",
+      "notebook-task-lifecycle-open-create-dialog",
+      "notebook-task-lifecycle-open-detail",
+      "notebook-task-lifecycle-open-artifact"
+    ],
+    "traceStepIds": [
+      "notebook-task-lifecycle-open-list",
+      "notebook-task-lifecycle-open-create-dialog",
+      "notebook-task-lifecycle-open-detail",
+      "notebook-task-lifecycle-open-artifact"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "mock-lane-self-service",
+    "title": "Mock lane self-service visual scenes",
+    "actor": "workspace member",
+    "family": "mock-lane-self-service",
+    "personas": [
+      "workspace member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "mock-lane",
+    "entryRoute": "/en-US/user/profile",
+    "goal": "统一描述用户自助资料与 API key 管理的 mock-lane visual scenes。",
+    "sourceRef": "e2e/stories/mock-lane/mock-lane-self-service.story.md#mock-lane-self-service",
+    "sourceFingerprint": "98122ece1c71a28e49312286ba4b54dff1835c5c74696169c41d274ece9b4d36",
+    "storyFingerprint": "d0c987d5bad089326c44ca94870404e5ef54a4c06808ddea4b0e1ce5d5b0c08c",
+    "stepMapFingerprint": "ff99b7208f76fc85d5aa59b305623bf0bb173c32b049d2f074bb4c8db1126d68",
+    "sceneIds": [
+      "profile",
+      "api-keys",
+      "api-keys-create-dialog",
+      "api-keys-key-created-dialog"
+    ],
+    "stepIds": [
+      "open-profile",
+      "open-api-keys"
+    ],
+    "traceStepIds": [
+      "open-profile",
+      "open-api-keys"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "mock-lane-settings-and-members-review",
+    "title": "Mock lane settings and members review scenes",
+    "actor": "project owner / project admin / workspace admin",
+    "family": "settings-and-members-review",
+    "personas": [
+      "project owner",
+      "project admin",
+      "workspace admin"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "mock-lane",
+    "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/settings",
+    "goal": "用一组 mock-lane story scenes 统一描述项目 owner 在设置与成员治理中做 review 的高频心智。",
+    "sourceRef": "e2e/stories/mock-lane/mock-lane-settings-and-members-review.story.md#mock-lane-settings-and-members-review",
+    "sourceFingerprint": "4f80442a10752c500f890c29c16ff19f6d94e30eb8d822277eafa07ad3e312a4",
+    "storyFingerprint": "1961caad473d343225207ff754926edf7ef498c1a9f68dc16b9187c9972bbb30",
+    "stepMapFingerprint": "85de957718e5ef3f541eefc17dd9801ea9e2738846e023f6beed2ed34a9c2521",
+    "sceneIds": [
+      "project-settings-review",
+      "project-members-review"
+    ],
+    "stepIds": [
+      "project-settings-review-open",
+      "project-members-review-open"
+    ],
+    "traceStepIds": [
+      "project-settings-review-open",
+      "project-members-review-open"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "mock-lane-workspace-project-core",
+    "title": "Mock lane workspace/project core visual scenes",
+    "actor": "workspace admin / project owner / authenticated member / guest",
+    "family": "mock-lane-workspace-project-core",
+    "personas": [
+      "workspace admin",
+      "project owner",
+      "authenticated member",
+      "guest"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "mock-lane",
+    "entryRoute": "/en-US/workspaces/ws_default",
+    "goal": "统一描述 workspace 与 project 核心工作面的 mock-lane visual scene 真相。",
+    "sourceRef": "e2e/stories/mock-lane/mock-lane-workspace-project-core.story.md#mock-lane-workspace-project-core",
+    "sourceFingerprint": "d3bc8d32d0ee4ad2a63817a8ee7101332cd3cec1979825995dd344f6be5e9d40",
+    "storyFingerprint": "b6f500fa30aaa15380be36cfff4938afa213101e8053e8971f9ff05607b6b472",
+    "stepMapFingerprint": "b88c3a7b64ff2de6a84d036844b28bcad3b84b039b050544c73f3798861ed9da",
+    "sceneIds": [
+      "workspace-home-project-creator",
+      "projects-list",
+      "projects-list-public-discovery",
+      "dialog-project-join-request",
+      "dialog-project-join-now",
+      "notification-center-join-request",
+      "projects-empty",
+      "workspace-settings-create-project",
+      "workspace-overview",
+      "workspace-home",
+      "workspace-settings",
+      "workspace-personal-context",
+      "project-overview",
+      "chat-standard",
+      "chat-ultrawide",
+      "notebook",
+      "notebook-create-task-dialog",
+      "notebook-task-detail",
+      "notebook-task-detail-artifact-hover",
+      "files",
+      "files-selection-details",
+      "dialog-files-create-folder",
+      "dialog-files-rename",
+      "dialog-files-mount-access",
+      "dialog-files-library-create",
+      "dialog-files-library-delete"
+    ],
+    "stepIds": [
+      "open-workspace-home",
+      "open-project-overview"
+    ],
+    "traceStepIds": [
+      "open-workspace-home",
+      "open-project-overview"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "notebook-artifact-to-files-download",
+    "title": "Notebook artifact to files download",
+    "actor": "project member",
+    "family": "notebook-artifact-to-files-download",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/notebook",
+    "goal": "项目成员运行 notebook 任务后，可以在 Files 中找到交付物并下载验证内容。",
+    "sourceRef": "e2e/stories/backend-real/notebook-artifact-to-files-download.story.md#notebook-artifact-to-files-download",
+    "sourceFingerprint": "765067e51184da43bce605a6ff427b4dc0add554f01a66261b4eaca9a63d1631",
+    "storyFingerprint": "3e783e185b6a98eefa2ba4b21f5c0da784e179b158dd129f14aa6c3faf0e7977",
+    "stepMapFingerprint": "f268a1c63ef0bdc079a1fbc2e3722d20b81d923db67abc628554517ba9049ef8",
+    "sceneIds": [
+      "project-notebook",
+      "project-files"
+    ],
+    "stepIds": [
+      "open-notebook-task",
+      "open-files-artifacts",
+      "download-artifact"
+    ],
+    "traceStepIds": [
+      "open-notebook-task",
+      "open-files-artifacts",
+      "download-artifact"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "notebook-first-success",
+    "title": "First notebook success",
+    "actor": "system 管理侧 / workspace admin / project member",
+    "family": "notebook-first-success",
+    "personas": [
+      "system 管理侧",
+      "workspace admin",
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "provider-api-key",
+        "kind": "credential",
+        "required": true,
+        "note": "backend-real notebook onboarding story needs a runnable endpoint credential."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/system/login",
+    "goal": "新工作区准备完成后，workspace admin 应先把 notebook 配到可用，再让成员第一次进入 notebook 就能成功创建任务并拿到第一条有效结果，而不是停在配置或运行失败上。",
+    "sourceRef": "e2e/stories/backend-real/notebook-first-success.story.md#notebook-first-success",
+    "sourceFingerprint": "76c432198b00754d2036e7f11c7ca5c8ede2a0f19817eea86258b6c6e1d16da6",
+    "storyFingerprint": "1ffa40b7db8a57f90ec02bb659c39fdb3a3f0ade113cee6dc8ce15d15fc43b82",
+    "stepMapFingerprint": "5a1d367b0392176359966de1d9d4c6a1576e91ef564e65c76a85682c3aebe699",
+    "sceneIds": [
+      "system-login",
+      "system-workspaces",
+      "project-agents",
+      "project-members",
+      "project-notebook"
+    ],
+    "stepIds": [
+      "open-system-login",
+      "publish-workspace",
+      "configure-notebook-project",
+      "grant-member-notebook-access",
+      "run-first-notebook-task"
+    ],
+    "traceStepIds": [
+      "open-system-login",
+      "publish-workspace",
+      "configure-notebook-project",
+      "grant-member-notebook-access",
+      "run-first-notebook-task"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "project-governance-onboarding",
+    "title": "Project governance onboarding",
+    "actor": "system 管理侧 / workspace admin / project creator / member / guest / invitee",
+    "family": "project-governance-onboarding",
+    "personas": [
+      "system 管理侧",
+      "workspace admin",
+      "project creator",
+      "member",
+      "guest",
+      "invitee"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/system/login",
+    "goal": "完成 workspace 发布、project creator 授权，并验证 project visibility / join policy 的 onboarding 结果。",
+    "sourceRef": "e2e/stories/backend-real/project-governance-onboarding.story.md#project-governance-onboarding",
+    "sourceFingerprint": "7ab083abb0f2cbd0d626ffef0b4193f4016b75497636852bc854f6331e6e5caf",
+    "storyFingerprint": "920ba606bd44a1d3b84f6246af0eb517bf325b7ae65274d0c5f2f15178d3ffc0",
+    "stepMapFingerprint": "81044c0e0c12c24e1b2bd663bab9bb3672ab3b1b492a0bcdc78f364c319b9f67",
+    "sceneIds": [
+      "system-login",
+      "system-workspaces",
+      "workspace-settings",
+      "workspace-projects",
+      "project-overview",
+      "project-members"
+    ],
+    "stepIds": [
+      "system-login",
+      "workspace-created-published",
+      "workspace-project-creators-granted",
+      "public-project-discovery",
+      "private-project-governance",
+      "matrix-verification"
+    ],
+    "traceStepIds": [
+      "system-login",
+      "workspace-created-published",
+      "workspace-project-creators-granted",
+      "public-project-discovery",
+      "private-project-governance",
+      "matrix-verification"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "project-governance-runtime-setup",
+    "title": "Project governance runtime setup",
+    "actor": "project owner / member",
+    "family": "project-governance-runtime-setup",
+    "personas": [
+      "project owner",
+      "member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/ws_default/projects",
+    "goal": "project owner can configure credentials, endpoints, and agents; members can use agents but cannot manage them.",
+    "sourceRef": "e2e/stories/backend-real/project-governance-runtime-setup.story.md#project-governance-runtime-setup",
+    "sourceFingerprint": "0bc7bb7e709f3b57ac659644bdccc134211a75bf39b3d140df8a72d8e4cd9d14",
+    "storyFingerprint": "89986492c58de3a0d59d5afbaa841a38b2ab73e9600ff37fa6d6b8f797233c3f",
+    "stepMapFingerprint": "26b951dbea60a499021ea76933e3370b0c700cec4e77866f19096c3adbdada97",
+    "sceneIds": [
+      "project-credentials",
+      "project-endpoints",
+      "project-agents",
+      "project-notebook",
+      "project-members"
+    ],
+    "stepIds": [
+      "credentials-list",
+      "endpoint-custom-created",
+      "endpoint-catalog-edited",
+      "agents-created",
+      "member-task-created",
+      "member-manage-forbidden"
+    ],
+    "traceStepIds": [
+      "credentials-list",
+      "endpoint-custom-created",
+      "endpoint-catalog-edited",
+      "agents-created",
+      "member-task-created",
+      "member-manage-forbidden"
+    ],
+    "visualStepIds": []
+  },
+  {
     "storyId": "real-backend-visual-review",
     "title": "Backend-real visual review",
     "actor": "system 管理侧 / project owner",
+    "family": "real-backend-visual-review",
+    "personas": [
+      "system 管理侧",
+      "project owner"
+    ],
+    "kind": "review",
+    "gatePolicy": {
+      "tier": "release",
+      "requiredEvidence": [
+        "trace",
+        "visual"
+      ]
+    },
+    "externalDependencies": [],
     "lane": "backend-real",
     "entryRoute": "/en-US/system/login",
     "goal": "用真实 backend 复核系统、工作区和项目核心界面的 UX/UI 质量。",
     "sourceRef": "e2e/stories/backend-real/real-backend-visual-review.story.md#real-backend-visual-review",
-    "sourceFingerprint": "ee47ec88be6138133b791d6d52017314a83bf507068c8e42a7f701bf043f2e33",
-    "storyFingerprint": "b1f59d840a1ee71f3fc753871229661c9a14d4a3d8d389b25ef5270428d20ee8",
+    "sourceFingerprint": "7cda6a5174d47e36d69b688dcec88d2f24d039330a9c6d87f6a6f23f9af824ff",
+    "storyFingerprint": "9e1501b3a97b63a18752210d8aee5670b3b66685bde84d9cf2f8add5f760f57f",
     "stepMapFingerprint": "260a30def8abb8ef9fc3e8fb99537fba207ed1d29bec4258a200c7d582ed5246",
     "sceneIds": [
       "system-login",
@@ -113,12 +1017,27 @@
     "storyId": "release-user-story-end-to-end",
     "title": "Release user story end-to-end",
     "actor": "system 管理侧 / workspace admin / project owner / member",
+    "family": "release-user-story-end-to-end",
+    "personas": [
+      "system 管理侧",
+      "workspace admin",
+      "project owner",
+      "member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "release",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
     "lane": "backend-real",
     "entryRoute": "/en-US/system/login",
     "goal": "用真实 backend 走完发布关键用户故事，并把关键 UI 状态写成 trace bundle。",
     "sourceRef": "e2e/stories/backend-real/release-user-story-end-to-end.story.md#release-user-story-end-to-end",
-    "sourceFingerprint": "553c83c23d8e902f45dce22bd30a205701d75111b0526c3a63d275a6c8e5975e",
-    "storyFingerprint": "3ecebf81c78d6406b9fee2a89a991fd3c73110bc8c7c4431b86d31207de47955",
+    "sourceFingerprint": "068ce6ba24729fe2fb0b428c9cc358e71e79141138659d8b1eec728593db3ca0",
+    "storyFingerprint": "51c82d82e7867f2287cb5eb399f40d33dc5b037e91e0a6fe7aa81983aa4db238",
     "stepMapFingerprint": "e3c2f5e48c0148b32764a0c051e7009402d66bdc89bd7a1460acc77c8f713e72",
     "sceneIds": [
       "system-login",
@@ -182,6 +1101,217 @@
       "notebook-task-detail-external-reuse",
       "files-artifacts-internal",
       "usage-overview"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "system-admin-entry",
+    "title": "System admin entry",
+    "actor": "system 管理侧",
+    "family": "system-admin-entry",
+    "personas": [
+      "system 管理侧"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "release",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/system/login",
+    "goal": "system 管理侧登录后稳定进入工作区清单页，不出现多余的拒绝访问闪烁。",
+    "sourceRef": "e2e/stories/backend-real/system-admin-entry.story.md#system-admin-entry",
+    "sourceFingerprint": "6ba2830e9844950200076b97d45d6e539d71f1353e00adcbda1486be248a9a3b",
+    "storyFingerprint": "b2fed2f6b4c12ffb06366200117ecc4b8cd62b7d92fdc4c0c81437c25fd8d45f",
+    "stepMapFingerprint": "1161be994671c0fb41bce93bfc95e084079146ea0f807ffe5a60d409e22ce2d4",
+    "sceneIds": [
+      "system-login",
+      "system-workspaces"
+    ],
+    "stepIds": [
+      "system-login",
+      "system-workspaces"
+    ],
+    "traceStepIds": [
+      "system-login",
+      "system-workspaces"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "workspace-entry-and-project-discovery",
+    "title": "Workspace entry and project discovery",
+    "actor": "workspace admin / project creator",
+    "family": "workspace-entry-and-project-discovery",
+    "personas": [
+      "workspace admin",
+      "project creator"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/ws_default/login",
+    "goal": "workspace admin can enter the workspace and discover the project list without denied flicker.",
+    "sourceRef": "e2e/stories/backend-real/workspace-entry-and-project-discovery.story.md#workspace-entry-and-project-discovery",
+    "sourceFingerprint": "34957cc8f5e99619db3e9989c766a8edbc1309ff26643a307fe8c566e0f79d50",
+    "storyFingerprint": "fffa1a980f6b5805e30b8a3ca2b6c21bffbb67c83709645b299f4ac7398c5249",
+    "stepMapFingerprint": "562d936ac90e996fa6aaa0f3aa701df73e890b465d1e4000c779eba1e55848d0",
+    "sceneIds": [
+      "workspace-login",
+      "workspace-projects"
+    ],
+    "stepIds": [
+      "workspace-login",
+      "workspace-projects",
+      "project-discovery"
+    ],
+    "traceStepIds": [
+      "workspace-login",
+      "workspace-projects",
+      "project-discovery"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "workspace-project-personal-context",
+    "title": "Workspace and project personal context",
+    "actor": "project member",
+    "family": "workspace-project-personal-context",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/ws_default/context",
+    "goal": "成员可以分别维护 workspace personal context 和 project personal context，并清楚看到项目内覆写不会修改 workspace 范围的个人配置。",
+    "sourceRef": "e2e/stories/backend-real/workspace-project-personal-context.story.md#workspace-project-personal-context",
+    "sourceFingerprint": "ec7a48f1b244dd4d186b159ca52e5210b3ff0148780d996c2d20be9165045961",
+    "storyFingerprint": "b8670930354c0fa3cb7a23bc7844a2403a1b21a131f50ec9f0fd0e896f211b16",
+    "stepMapFingerprint": "3865f6eff9b406a52eafc3b6e0e7f73765d405d5339f173fa736221e73f36af5",
+    "sceneIds": [
+      "workspace-personal-context",
+      "project-personal-context"
+    ],
+    "stepIds": [
+      "open-workspace-personal-context",
+      "save-workspace-personal-context",
+      "open-project-personal-context",
+      "save-project-personal-context",
+      "verify-scoped-context"
+    ],
+    "traceStepIds": [
+      "open-workspace-personal-context",
+      "save-workspace-personal-context",
+      "open-project-personal-context",
+      "save-project-personal-context",
+      "verify-scoped-context"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "workspace-publish-to-usable-access",
+    "title": "Workspace publish to usable access",
+    "actor": "system 管理侧 / workspace admin",
+    "family": "workspace-publish",
+    "personas": [
+      "system 管理侧",
+      "workspace admin"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "workspace-idp-configuration",
+        "kind": "integration",
+        "required": true,
+        "note": "backend-real publish story verifies a real IdP configuration before the workspace is published."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/system/login",
+    "goal": "system 管理侧发布工作区后，被指定的 workspace admin 应该能立刻在浏览器和 API 里使用这个工作区，而不是再经历一轮人工排障。",
+    "sourceRef": "e2e/stories/backend-real/workspace-publish-to-usable-access.story.md#workspace-publish-to-usable-access",
+    "sourceFingerprint": "3c48709441d2cb8679ff8a1f95e250ffffa72450566444ca65be4e13879858c4",
+    "storyFingerprint": "27a9792984bbd5e6fb49f94e133c96eae1672b6764a15a6f2b130391d56354e5",
+    "stepMapFingerprint": "11950255e797c51754e1792d44bad95aa58004f988164cecf513930e074c6cef",
+    "sceneIds": [
+      "system-login",
+      "system-workspaces",
+      "workspace-projects"
+    ],
+    "stepIds": [
+      "open-system-login",
+      "publish-workspace",
+      "login-workspace-admin",
+      "verify-workspace-usable"
+    ],
+    "traceStepIds": [
+      "open-system-login",
+      "publish-workspace",
+      "login-workspace-admin",
+      "verify-workspace-usable"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "workspace-settings-save-and-effect",
+    "title": "Workspace settings save and effect",
+    "actor": "workspace admin / project creator",
+    "family": "workspace-settings",
+    "personas": [
+      "workspace admin",
+      "project creator"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/ws_default/settings",
+    "goal": "工作区管理员在 settings 中保存 project creator 后，creator 立即能看到创建项目入口并成功创建项目。",
+    "sourceRef": "e2e/stories/backend-real/workspace-settings-save-and-effect.story.md#workspace-settings-save-and-effect",
+    "sourceFingerprint": "131f6f1b099b030972d61a6848e4b59a60d7e3432ffa4fc3beaba092d6440265",
+    "storyFingerprint": "f6cb479a49e21b590b1957033ad1d3aa13d12257595da021591e9d957e88cb70",
+    "stepMapFingerprint": "f560220ad17eaa314de4e5e204c0ca6627192647970c5f7416f219e74aa0d2a0",
+    "sceneIds": [
+      "workspace-settings",
+      "workspace-projects",
+      "project-overview"
+    ],
+    "stepIds": [
+      "open-workspace-settings",
+      "save-project-creator",
+      "verify-project-creator-effect"
+    ],
+    "traceStepIds": [
+      "open-workspace-settings",
+      "save-project-creator",
+      "verify-project-creator-effect"
     ],
     "visualStepIds": []
   }

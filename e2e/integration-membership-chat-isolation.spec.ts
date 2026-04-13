@@ -20,6 +20,54 @@ import {
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
+import { loadStoryDefinitionSync } from './story-loader';
+import { buildTraceStoryBinding } from './story-trace-binding';
+import { createUxTraceBundleWriter } from './trace-bundle-support';
+
+const MEMBERS_INVITE_STORY = loadStoryDefinitionSync('members-invite-and-chat-privacy');
+const MEMBERS_INVITE_BINDING = buildTraceStoryBinding(MEMBERS_INVITE_STORY);
+
+type MembersInviteRuntime = {
+  privateProjectNamePrefix: string;
+  sharedRunnerProjectNamePrefix: string;
+  credentialNamePrefix: string;
+  endpointNamePrefix: string;
+  ownerPrivateMessagePrefix: string;
+  sharedChatTitlePrefix: string;
+  ownerTokenPrefix: string;
+  memberTokenPrefix: string;
+};
+
+function resolveMembersInviteStep(stepId: string) {
+  const step = MEMBERS_INVITE_BINDING.steps.find((entry) => entry.stepId === stepId);
+  if (!step) {
+    throw new Error(`unknown_members_invite_step:${stepId}`);
+  }
+  return step;
+}
+
+function requireMembersInviteRuntime(): MembersInviteRuntime {
+  const runtimeRoot = MEMBERS_INVITE_STORY.runtimeData as Record<string, unknown> | undefined;
+  const runtime = runtimeRoot?.membersInviteFirstUse as Record<string, unknown> | undefined;
+  if (!runtime) {
+    throw new Error('missing_members_invite_runtime_data');
+  }
+  for (const key of [
+    'privateProjectNamePrefix',
+    'sharedRunnerProjectNamePrefix',
+    'credentialNamePrefix',
+    'endpointNamePrefix',
+    'ownerPrivateMessagePrefix',
+    'sharedChatTitlePrefix',
+    'ownerTokenPrefix',
+    'memberTokenPrefix',
+  ] as const) {
+    if (typeof runtime[key] !== 'string' || runtime[key].trim().length === 0) {
+      throw new Error(`missing_members_invite_runtime_data:${key}`);
+    }
+  }
+  return runtime as unknown as MembersInviteRuntime;
+}
 
 function requireApiKey(): string {
   const value = process.env.BACKEND_REAL_API_KEY?.trim() || process.env.PRESET_ENDPOINT_API_KEY?.trim();
@@ -160,18 +208,19 @@ test.describe('@lane-real invite flow and chat isolation', () => {
     test.setTimeout(600_000);
     const workspaceId = 'ws_default';
     const apiKey = requireApiKey();
+    const runtime = requireMembersInviteRuntime();
     await ensureIntegrationKeycloakUsers();
 
     await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    const { projectId } = await createProjectInWorkspace(page, workspaceId, 'Invite Chat Isolation', {
+    const { projectId } = await createProjectInWorkspace(page, workspaceId, `${runtime.privateProjectNamePrefix} ${Date.now()}`, {
       visibility: 'private',
       joinPolicy: 'approval_required',
     });
 
-    const credentialName = `Invite Chat Credential ${Date.now()}`;
+    const credentialName = `${runtime.credentialNamePrefix} ${Date.now()}`;
     await createCredentialViaUi(page, workspaceId, projectId, credentialName, apiKey);
     const endpointId = await createEndpointViaApi(page, workspaceId, projectId, {
-      endpointName: `Invite Chat Endpoint ${Date.now()}`,
+      endpointName: `${runtime.endpointNamePrefix} ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
@@ -179,7 +228,32 @@ test.describe('@lane-real invite flow and chat isolation', () => {
 
     const invitePath = await createInvite(page, workspaceId, projectId, 'integration-member@example.com');
     const ownerSessionId = await createChatSession(page, workspaceId, projectId, endpointId);
-    await postChatMessage(page, workspaceId, projectId, ownerSessionId, `OWNER_PRIVATE_MESSAGE_${Date.now()}`);
+    await postChatMessage(page, workspaceId, projectId, ownerSessionId, `${runtime.ownerPrivateMessagePrefix}_${Date.now()}`);
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-membership-chat-isolation',
+      storyId: MEMBERS_INVITE_STORY.storyId,
+      title: MEMBERS_INVITE_STORY.title,
+      actor: MEMBERS_INVITE_STORY.actor,
+      route: `/${LOCALE}/join`,
+      specFile: 'e2e/integration-membership-chat-isolation.spec.ts',
+      browser: 'chromium',
+      goal: MEMBERS_INVITE_STORY.goal,
+      preconditions: [...(MEMBERS_INVITE_STORY.preconditions ?? [])],
+      seedData: [...(MEMBERS_INVITE_STORY.seedData ?? [])],
+      storyBinding: MEMBERS_INVITE_BINDING,
+    });
+    const captureTrace = async (pageRef: import('@playwright/test').Page, stepId: string): Promise<void> => {
+      const storyStep = resolveMembersInviteStep(stepId);
+      await trace.capture(pageRef, {
+        stepId,
+        action: storyStep.action,
+        target: storyStep.target,
+        note: storyStep.note ?? storyStep.expectedFeedback,
+      });
+    };
+    let outcome: 'pass' | 'fail' = 'fail';
 
     const memberContext = await browser.newContext();
     const memberPage = await memberContext.newPage();
@@ -192,8 +266,17 @@ test.describe('@lane-real invite flow and chat isolation', () => {
       );
       await memberPage.goto(`/${LOCALE}${invitePath}`);
       await expect(memberPage.getByTestId('join__accept-btn')).toBeVisible({ timeout: 30_000 });
+      await captureTrace(memberPage, 'accept-invite');
       await memberPage.getByTestId('join__accept-btn').click();
       await memberPage.waitForURL(/\/login\/workspace/, { timeout: 30_000 });
+
+      await memberPage.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview`);
+      await expect(memberPage.getByTestId('project-hub__page')).toBeVisible({ timeout: 30_000 });
+      await captureTrace(memberPage, 'verify-member-first-access');
+
+      await memberPage.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/chat`);
+      await expect(memberPage.getByTestId('chat__surface')).toBeVisible({ timeout: 30_000 });
+      await captureTrace(memberPage, 'start-first-chat-use');
 
       const memberToken = await readStoredAuthToken(memberPage);
       const memberUserId = readUserIdFromJwt(memberToken);
@@ -230,8 +313,11 @@ test.describe('@lane-real invite flow and chat isolation', () => {
       const adminIds = groupsPayload.items?.find((group) => group.id === 'grp_project_admins')?.member_ids ?? [];
       expect(memberIds).toContain(memberUserId);
       expect(adminIds).not.toContain(memberUserId);
+      await captureTrace(memberPage, 'verify-chat-privacy');
+      outcome = 'pass';
     } finally {
       await memberContext.close();
+      await trace.finish({ outcome });
     }
   });
 
@@ -239,23 +325,24 @@ test.describe('@lane-real invite flow and chat isolation', () => {
     test.setTimeout(720_000);
     const workspaceId = 'ws_default';
     const apiKey = requireApiKey();
+    const runtime = requireMembersInviteRuntime();
     await ensureIntegrationKeycloakUsers();
 
     await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    const { projectId } = await createProjectInWorkspace(page, workspaceId, 'Invite Chat Shared Pod', {
+    const { projectId } = await createProjectInWorkspace(page, workspaceId, `${runtime.sharedRunnerProjectNamePrefix} ${Date.now()}`, {
       visibility: 'private',
       joinPolicy: 'approval_required',
     });
 
-    const credentialName = `Invite Chat Shared Pod Credential ${Date.now()}`;
+    const credentialName = `${runtime.credentialNamePrefix} ${Date.now()}`;
     await createCredentialViaUi(page, workspaceId, projectId, credentialName, apiKey);
     const endpointId = await createEndpointViaApi(page, workspaceId, projectId, {
-      endpointName: `Invite Chat Shared Pod Endpoint ${Date.now()}`,
+      endpointName: `${runtime.endpointNamePrefix} ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
-    const chatTitle = `shared-pod-chat-${Date.now()}`;
+    const chatTitle = `${runtime.sharedChatTitlePrefix}-${Date.now()}`;
     const agentBundle = await createExternalRunnerAgentBundle(page, {
       workspaceId,
       projectId,
@@ -271,8 +358,33 @@ test.describe('@lane-real invite flow and chat isolation', () => {
     test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
 
     const invitePath = await createInvite(page, workspaceId, projectId, KEYCLOAK_INTEGRATION_MEMBER_EMAIL);
-    const ownerToken = `OWNER_CHAT_${Date.now()}`;
-    const memberToken = `MEMBER_CHAT_${Date.now()}`;
+    const ownerToken = `${runtime.ownerTokenPrefix}_${Date.now()}`;
+    const memberToken = `${runtime.memberTokenPrefix}_${Date.now()}`;
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-membership-chat-isolation',
+      storyId: MEMBERS_INVITE_STORY.storyId,
+      title: MEMBERS_INVITE_STORY.title,
+      actor: MEMBERS_INVITE_STORY.actor,
+      route: `/${LOCALE}/join`,
+      specFile: 'e2e/integration-membership-chat-isolation.spec.ts',
+      browser: 'chromium',
+      goal: MEMBERS_INVITE_STORY.goal,
+      preconditions: [...(MEMBERS_INVITE_STORY.preconditions ?? [])],
+      seedData: [...(MEMBERS_INVITE_STORY.seedData ?? [])],
+      storyBinding: MEMBERS_INVITE_BINDING,
+    });
+    const captureTrace = async (pageRef: import('@playwright/test').Page, stepId: string): Promise<void> => {
+      const storyStep = resolveMembersInviteStep(stepId);
+      await trace.capture(pageRef, {
+        stepId,
+        action: storyStep.action,
+        target: storyStep.target,
+        note: storyStep.note ?? storyStep.expectedFeedback,
+      });
+    };
+    let outcome: 'pass' | 'fail' = 'fail';
 
     try {
       await waitForAgentPresenceOnline(page, workspaceId, projectId, agentBundle.agentId);
@@ -299,8 +411,13 @@ test.describe('@lane-real invite flow and chat isolation', () => {
         await keycloakLoginToWorkspace(memberPage, workspaceId, KEYCLOAK_INTEGRATION_MEMBER_USERNAME, KEYCLOAK_INTEGRATION_MEMBER_PASSWORD);
         await memberPage.goto(`/${LOCALE}${invitePath}`);
         await expect(memberPage.getByTestId('join__accept-btn')).toBeVisible({ timeout: 30_000 });
+        await captureTrace(memberPage, 'accept-invite');
         await memberPage.getByTestId('join__accept-btn').click();
         await memberPage.waitForURL(/\/login\/workspace/, { timeout: 30_000 });
+
+        await memberPage.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/chat`);
+        await expect(memberPage.getByTestId('chat__surface')).toBeVisible({ timeout: 30_000 });
+        await captureTrace(memberPage, 'start-first-chat-use');
 
         const memberSessionId = (await createChatSessionViaApi({
           page: memberPage,
@@ -337,11 +454,14 @@ test.describe('@lane-real invite flow and chat isolation', () => {
         const memberMessages = await memberMessagesRes.json() as { items?: Array<{ role?: string; content?: string }> };
         expect((memberMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(memberToken))).toBe(true);
         expect((memberMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(ownerToken))).toBe(false);
+        await captureTrace(memberPage, 'verify-shared-runner-isolation');
+        outcome = 'pass';
       } finally {
         await memberContext.close();
       }
     } finally {
       await runner.stop();
+      await trace.finish({ outcome });
     }
   });
 });

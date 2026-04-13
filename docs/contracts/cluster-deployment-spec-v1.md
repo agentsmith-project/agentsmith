@@ -67,6 +67,22 @@ The current transfer policy is:
 
 The build machine does not upload directly to the target host.
 
+## Offline Bundle Manifest Contract
+
+The cluster deployment bundle manifest has two distinct inclusion contracts:
+
+- `bundle_files`
+  - explicit static bundle assets required by target-host stages
+- `bundle_source_sets`
+  - helper-owned dynamic families that must be bundled and mounted for verify without repeating each member in the manifest
+
+The backend-real story verify family must be declared through:
+
+- `bundle_source_sets[].name = backend_real_story_verify_source_set`
+- `bundle_source_sets[].helper = scripts/lib/release-story-verify-source-set.sh`
+
+Story markdown files under `e2e/stories/backend-real/` must flow through that source set instead of being listed one by one in `bundle_files`.
+
 ## Authority Boundary
 
 `cluster-deploy` is a namespace-first release line.

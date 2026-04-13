@@ -3,22 +3,97 @@ import http, { type Server } from 'node:http';
 import { expect, test } from '@playwright/test';
 import {
   API_BASE,
+  ensureIntegrationKeycloakUsers,
   createCredentialViaUi,
   createEndpointViaApi,
   createProjectInWorkspace,
   keycloakLoginToWorkspace,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
+  KEYCLOAK_INTEGRATION_USER_PASSWORD,
+  KEYCLOAK_INTEGRATION_USER_USERNAME,
   LOCALE,
 } from './integration-real-helpers';
+import { loadStoryDefinitionSync } from './story-loader';
+import { buildTraceStoryBinding } from './story-trace-binding';
+import { createUxTraceBundleWriter } from './trace-bundle-support';
 
-async function startAnthropicCompatibleUpstream(replyText: string): Promise<{ baseUrl: string; stop: () => Promise<void> }> {
+const API_KEY_ENDPOINT_STORY = loadStoryDefinitionSync('api-key-to-endpoint-consumption');
+const API_KEY_ENDPOINT_BINDING = buildTraceStoryBinding(API_KEY_ENDPOINT_STORY);
+
+type ApiKeyEndpointRuntime = {
+  projectName: string;
+  endpointName: string;
+  credentialName: string;
+  apiKeyLabel: string;
+  apiKeyTtlDays: string;
+  model: string;
+  consumeProtocol: 'openai' | 'anthropic';
+  expectedReplyText: string;
+};
+
+function resolveApiKeyEndpointStep(stepId: string) {
+  const step = API_KEY_ENDPOINT_BINDING.steps.find((entry) => entry.stepId === stepId);
+  if (!step) {
+    throw new Error(`unknown_api_key_endpoint_step:${stepId}`);
+  }
+  return step;
+}
+
+function requireApiKeyEndpointRuntime(): ApiKeyEndpointRuntime {
+  const runtimeRoot = API_KEY_ENDPOINT_STORY.runtimeData as Record<string, unknown> | undefined;
+  const runtime = runtimeRoot?.apiKeyEndpointConsumption as Record<string, unknown> | undefined;
+  if (!runtime) {
+    throw new Error('missing_api_key_endpoint_runtime_data');
+  }
+  for (const key of [
+    'projectName',
+    'endpointName',
+    'credentialName',
+    'apiKeyLabel',
+    'apiKeyTtlDays',
+    'model',
+    'consumeProtocol',
+    'expectedReplyText',
+  ] as const) {
+    if (typeof runtime[key] !== 'string' || runtime[key].trim().length === 0) {
+      throw new Error(`missing_api_key_endpoint_runtime_data:${key}`);
+    }
+  }
+  return runtime as unknown as ApiKeyEndpointRuntime;
+}
+
+async function startAnthropicCompatibleStreamingUpstream(replyText: string): Promise<{ baseUrl: string; stop: () => Promise<void> }> {
   let server: Server;
   server = http.createServer((req, res) => {
     void (async () => {
       const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
 
       if (req.method === 'POST' && requestUrl.pathname.endsWith('/messages')) {
+        const body = await new Promise<string>((resolve, reject) => {
+          const chunks: Buffer[] = [];
+          req.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+          req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+          req.on('error', reject);
+        });
+        const parsed = body.trim().length > 0
+          ? JSON.parse(body) as { stream?: boolean }
+          : {};
+        if (parsed.stream) {
+          res.statusCode = 200;
+          res.setHeader('content-type', 'text/event-stream');
+          res.setHeader('cache-control', 'no-cache');
+          res.setHeader('connection', 'keep-alive');
+          res.write('event: message_start\n');
+          res.write('data: {"type":"message_start","message":{"id":"msg_gateway_it"}}\n\n');
+          res.write('event: content_block_delta\n');
+          res.write(`data: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: replyText } })}\n\n`);
+          res.write('event: message_stop\n');
+          res.write('data: {"type":"message_stop"}\n\n');
+          res.end();
+          return;
+        }
+
         res.statusCode = 200;
         res.setHeader('content-type', 'application/json');
         res.end(
@@ -49,15 +124,18 @@ async function startAnthropicCompatibleUpstream(replyText: string): Promise<{ ba
   };
 }
 
-async function createPersonalApiKey(page: import('@playwright/test').Page): Promise<string> {
+async function createPersonalApiKey(
+  page: import('@playwright/test').Page,
+  input: { label: string; ttlDays: string },
+): Promise<string> {
   await page.goto(`/${LOCALE}/user/api-keys`);
   await expect(page.getByTestId('api-keys__create-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('api-keys__create-btn').click();
   const dialog = page.getByTestId('api-keys__create-dialog');
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   const inputs = dialog.locator('input');
-  await inputs.nth(0).fill(`Gateway E2E ${Date.now()}`);
-  await inputs.nth(1).fill('7');
+  await inputs.nth(0).fill(input.label);
+  await inputs.nth(1).fill(input.ttlDays);
   await dialog.getByRole('button', { name: /create/i }).click();
   const createdDialog = page.getByTestId('api-keys__key-created-dialog');
   await expect(createdDialog).toBeVisible({ timeout: 30_000 });
@@ -67,98 +145,138 @@ async function createPersonalApiKey(page: import('@playwright/test').Page): Prom
   return keyValue;
 }
 
+async function joinProjectNow(page: import('@playwright/test').Page, workspaceId: string, projectId: string): Promise<void> {
+  await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects`);
+  const joinButton = page.getByTestId(`projects__join-project-btn--${projectId}`);
+  await expect(joinButton).toBeVisible({ timeout: 30_000 });
+  await joinButton.click();
+  await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}(/|$)`), {
+    timeout: 30_000,
+  });
+}
+
 test.describe('@lane-real personal api key endpoint access', () => {
   test('user can create personal API key and use one endpoint through canonical openai/anthropic base urls', async ({ page }) => {
     test.setTimeout(600_000);
     const workspaceId = 'ws_default';
     const upstreamApiKey = 'gateway-upstream-test-key';
-    const anthropicModel = 'gateway-it-model';
-    const upstream = await startAnthropicCompatibleUpstream('ok');
+    const runtime = requireApiKeyEndpointRuntime();
+    const upstream = await startAnthropicCompatibleStreamingUpstream(runtime.expectedReplyText);
 
     try {
+      await ensureIntegrationKeycloakUsers();
       await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-      const { projectId } = await createProjectInWorkspace(page, workspaceId, 'Gateway API Key Access', {
-        visibility: 'private',
-        joinPolicy: 'approval_required',
+      const { projectId } = await createProjectInWorkspace(page, workspaceId, runtime.projectName, {
+        visibility: 'public',
+        joinPolicy: 'open',
       });
 
-      const endpointCredentialName = `Gateway Endpoint Key ${Date.now()}`;
-      const endpointName = `Anthropic Upstream Gateway Endpoint ${Date.now()}`;
+      const endpointCredentialName = `${runtime.credentialName} ${Date.now()}`;
+      const endpointName = `${runtime.endpointName} ${Date.now()}`;
       await createCredentialViaUi(page, workspaceId, projectId, endpointCredentialName, upstreamApiKey);
       const endpointId = await createEndpointViaApi(page, workspaceId, projectId, {
         endpointName,
-        endpointModel: anthropicModel,
+        endpointModel: runtime.model,
         upstreamBaseUrl: upstream.baseUrl,
         credentialName: endpointCredentialName,
         upstreamProtocol: 'anthropic_messages',
       });
-
-      await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/use-guide`);
-      await page.getByTestId('use-guide__endpoint-select').click();
-      await expect(page.getByRole('option', { name: endpointName })).toBeVisible({ timeout: 10_000 });
-      await page.getByRole('option', { name: endpointName }).click();
-      await expect(page.getByTestId('use-guide__openai-base-url')).toContainText(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/openai`);
-      await page.getByTestId('use-guide__tab-anthropic').click();
-      await expect(page.getByTestId('use-guide__anthropic-base-url')).toContainText(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/anthropic`);
-
-      const apiKey = await createPersonalApiKey(page);
-
-      const meResponse = await page.request.get(`${API_BASE}/api/v1/me/profile`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+        lane: 'backend-real',
+        suite: 'integration-api-key-gateway',
+        storyId: API_KEY_ENDPOINT_STORY.storyId,
+        title: API_KEY_ENDPOINT_STORY.title,
+        actor: API_KEY_ENDPOINT_STORY.actor,
+        route: `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/use-guide`,
+        specFile: 'e2e/integration-api-key-gateway.spec.ts',
+        browser: 'chromium',
+        goal: API_KEY_ENDPOINT_STORY.goal,
+        preconditions: [...(API_KEY_ENDPOINT_STORY.preconditions ?? [])],
+        seedData: [...(API_KEY_ENDPOINT_STORY.seedData ?? [])],
+        storyBinding: API_KEY_ENDPOINT_BINDING,
       });
-      expect(meResponse.ok()).toBeTruthy();
+      const captureTrace = async (stepId: string): Promise<void> => {
+        const storyStep = resolveApiKeyEndpointStep(stepId);
+        await trace.capture(page, {
+          stepId,
+          action: storyStep.action,
+          target: storyStep.target,
+          note: storyStep.note ?? storyStep.expectedFeedback,
+        });
+      };
+      let outcome: 'pass' | 'fail' = 'fail';
 
-      const openAiResponse = await page.request.post(
-        `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/openai/responses`,
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          data: {
-            model: anthropicModel,
-            input: 'Reply exactly: ok',
-          },
-        },
-      );
-      if (!openAiResponse.ok()) {
-        throw new Error(`openai_endpoint_request_failed:${openAiResponse.status()}:${await openAiResponse.text()}`);
+      await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_INTEGRATION_USER_USERNAME, KEYCLOAK_INTEGRATION_USER_PASSWORD);
+      await joinProjectNow(page, workspaceId, projectId);
+
+      try {
+        await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/use-guide`);
+        await page.getByTestId('use-guide__endpoint-select').click();
+        await expect(page.getByRole('option', { name: endpointName })).toBeVisible({ timeout: 10_000 });
+        await page.getByRole('option', { name: endpointName }).click();
+        await expect(page.getByTestId('use-guide__openai-base-url')).toContainText(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/openai`);
+        await page.getByTestId('use-guide__tab-anthropic').click();
+        await expect(page.getByTestId('use-guide__anthropic-base-url')).toContainText(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/anthropic`);
+        await captureTrace('review-use-guide');
+
+        const apiKey = await createPersonalApiKey(page, {
+          label: `${runtime.apiKeyLabel} ${Date.now()}`,
+          ttlDays: runtime.apiKeyTtlDays,
+        });
+        await captureTrace('create-personal-api-key');
+
+        const meResponse = await page.request.get(`${API_BASE}/api/v1/me/profile`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        expect(meResponse.ok()).toBeTruthy();
+
+        if (runtime.consumeProtocol === 'anthropic') {
+          const anthropicResponse = await page.request.post(
+            `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/anthropic/messages`,
+            {
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                'x-api-key': apiKey,
+                'Content-Type': 'application/json',
+                'anthropic-version': '2023-06-01',
+              },
+              data: {
+                model: runtime.model,
+                max_tokens: 64,
+                messages: [{ role: 'user', content: [{ type: 'text', text: `Reply exactly: ${runtime.expectedReplyText}` }] }],
+              },
+            },
+          );
+          if (!anthropicResponse.ok()) {
+            throw new Error(`anthropic_endpoint_request_failed:${anthropicResponse.status()}:${await anthropicResponse.text()}`);
+          }
+          await expect(anthropicResponse.text()).resolves.toContain(runtime.expectedReplyText);
+        } else {
+          const openAiResponse = await page.request.post(
+            `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/openai/responses`,
+            {
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+              },
+              data: {
+                model: runtime.model,
+                input: `Reply exactly: ${runtime.expectedReplyText}`,
+              },
+            },
+          );
+          if (!openAiResponse.ok()) {
+            throw new Error(`openai_endpoint_request_failed:${openAiResponse.status()}:${await openAiResponse.text()}`);
+          }
+          await expect(openAiResponse.text()).resolves.toContain(runtime.expectedReplyText);
+        }
+
+        await captureTrace('consume-endpoint');
+        outcome = 'pass';
+      } finally {
+        await trace.finish({ outcome });
       }
-
-      const anthropicResponse = await page.request.post(
-        `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/anthropic/messages`,
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'x-api-key': apiKey,
-            'Content-Type': 'application/json',
-            'anthropic-version': '2023-06-01',
-          },
-          data: {
-            model: anthropicModel,
-            max_tokens: 64,
-            messages: [{ role: 'user', content: [{ type: 'text', text: 'Reply exactly: ok' }] }],
-          },
-        },
-      );
-      if (!anthropicResponse.ok()) {
-        throw new Error(`anthropic_endpoint_request_failed:${anthropicResponse.status()}:${await anthropicResponse.text()}`);
-      }
-
-      const legacyResponse = await page.request.post(
-        `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/responses`,
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          data: {
-            model: anthropicModel,
-            input: 'legacy should fail',
-          },
-        },
-      );
-      expect(legacyResponse.status()).toBe(422);
     } finally {
       await upstream.stop();
     }

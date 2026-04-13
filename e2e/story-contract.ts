@@ -2,9 +2,17 @@ import { createHash } from 'node:crypto';
 
 export const STORY_FILE_SUFFIX = '.story.md';
 
-export type StoryLane = 'mock-lane' | 'backend-real';
-export type StoryEvidence = 'trace' | 'visual' | 'doc';
+export const STORY_LANE_VALUES = ['mock-lane', 'backend-real'] as const;
+export type StoryLane = (typeof STORY_LANE_VALUES)[number];
+export const STORY_EVIDENCE_VALUES = ['trace', 'visual', 'doc'] as const;
+export type StoryEvidence = (typeof STORY_EVIDENCE_VALUES)[number];
 export type StoryTargetMatch = 'exact' | 'prefix';
+export const STORY_KIND_VALUES = ['journey', 'review'] as const;
+export type StoryKind = (typeof STORY_KIND_VALUES)[number];
+export const STORY_GATE_TIER_VALUES = ['default', 'release', 'advisory'] as const;
+export type StoryGateTier = (typeof STORY_GATE_TIER_VALUES)[number];
+export const STORY_EXTERNAL_DEPENDENCY_KIND_VALUES = ['service', 'integration', 'credential', 'manual'] as const;
+export type StoryExternalDependencyKind = (typeof STORY_EXTERNAL_DEPENDENCY_KIND_VALUES)[number];
 export type StoryAuthLane =
   | 'public'
   | 'authed'
@@ -22,6 +30,38 @@ export type StoryRecipeFamily =
   | 'system_admin_detail'
   | 'overlay_dialog'
   | 'overlay_sheet';
+
+export const STORY_VISUAL_REVIEW_SCENARIO_GROUP_VALUES = [
+  'public_pages',
+  'workspace_pages',
+  'project_pages',
+  'system_pages',
+  'user_pages',
+  'governance_pages',
+  'overlay_cases',
+  'overlay_drawers',
+] as const;
+export type StoryVisualReviewScenarioGroup = (typeof STORY_VISUAL_REVIEW_SCENARIO_GROUP_VALUES)[number];
+export const STORY_VISUAL_REVIEW_CAPTURE_VALUES = ['full_page', 'viewport'] as const;
+export type StoryVisualReviewCaptureMode = (typeof STORY_VISUAL_REVIEW_CAPTURE_VALUES)[number];
+export const STORY_VISUAL_REVIEW_THEME_VALUES = ['light', 'dark', 'default'] as const;
+export type StoryVisualReviewTheme = (typeof STORY_VISUAL_REVIEW_THEME_VALUES)[number];
+export const STORY_VISUAL_REVIEW_VIEWPORT_VALUES = ['default', 'ultrawide'] as const;
+export type StoryVisualReviewViewport = (typeof STORY_VISUAL_REVIEW_VIEWPORT_VALUES)[number];
+
+export type StoryRuntimeVisualReviewSceneDefinition = {
+  sceneId: string;
+  scenarioId: string;
+  scenario: string;
+  group: StoryVisualReviewScenarioGroup;
+  codeRefs: readonly string[];
+  capture: StoryVisualReviewCaptureMode;
+  authLane?: StoryAuthLane;
+  screenshotBaseName?: string;
+  themes?: readonly StoryVisualReviewTheme[];
+  viewport?: StoryVisualReviewViewport;
+  setupNotes?: readonly string[];
+};
 
 export type StorySceneDefinition = {
   sceneId: string;
@@ -41,6 +81,18 @@ export type StoryStepDefinition = {
   expectedFeedback: string;
   evidence: readonly StoryEvidence[];
   optional?: boolean;
+  note?: string;
+};
+
+export type StoryGatePolicy = {
+  tier: StoryGateTier;
+  requiredEvidence: readonly StoryEvidence[];
+};
+
+export type StoryExternalDependency = {
+  dependencyId: string;
+  kind: StoryExternalDependencyKind;
+  required?: boolean;
   note?: string;
 };
 
@@ -65,11 +117,14 @@ export type StoryRuntimeVisualReviewNotebookTaskDefinition = {
   artifactBodyLines: readonly string[];
 };
 
+export type StoryRuntimeVisualReviewDefinition = {
+  scenes: readonly StoryRuntimeVisualReviewSceneDefinition[];
+  notebookTask?: StoryRuntimeVisualReviewNotebookTaskDefinition;
+};
+
 export type StoryRuntimeData = {
   notebook?: Record<string, StoryRuntimeNotebookFlowDefinition>;
-  visualReview?: {
-    notebookTask: StoryRuntimeVisualReviewNotebookTaskDefinition;
-  };
+  visualReview?: StoryRuntimeVisualReviewDefinition;
 };
 
 export type StoryDefinition = {
@@ -78,6 +133,11 @@ export type StoryDefinition = {
   storyId: string;
   title: string;
   actor: string;
+  family: string;
+  personas: readonly string[];
+  kind: StoryKind;
+  gatePolicy: StoryGatePolicy;
+  externalDependencies: readonly StoryExternalDependency[];
   lane: StoryLane;
   entryRoute: string;
   goal: string;
@@ -99,6 +159,83 @@ function validateNonEmptyText(field: string, value: string, storyId: string) {
   }
 }
 
+function validateUniqueList(field: string, values: readonly string[], storyId: string) {
+  const seen = new Set<string>();
+  for (const value of values) {
+    validateNonEmptyText(field, value, storyId);
+    if (seen.has(value)) {
+      throw new Error(`story ${storyId} has duplicate ${field}: ${value}`);
+    }
+    seen.add(value);
+  }
+}
+
+function validateVisualReviewScene(scene: StoryRuntimeVisualReviewSceneDefinition, storyId: string) {
+  validateNonEmptyText('visual review scene id', scene.sceneId, storyId);
+  validateNonEmptyText('visual review scenario id', scene.scenarioId, storyId);
+  validateNonEmptyText('visual review scenario', scene.scenario, storyId);
+  if (!STORY_VISUAL_REVIEW_SCENARIO_GROUP_VALUES.includes(scene.group)) {
+    throw new Error(`story ${storyId} has invalid visual review scene group: ${scene.group}`);
+  }
+  if (scene.codeRefs.length === 0) {
+    throw new Error(`story ${storyId} visual review scene ${scene.sceneId} must define code refs`);
+  }
+  validateUniqueList('visual review code ref', scene.codeRefs, storyId);
+  if (!STORY_VISUAL_REVIEW_CAPTURE_VALUES.includes(scene.capture)) {
+    throw new Error(`story ${storyId} has invalid visual review capture mode: ${scene.capture}`);
+  }
+  if (scene.authLane !== undefined && !['public', 'authed', 'guest', 'system_admin', 'mock_auth', 'mixed'].includes(scene.authLane)) {
+    throw new Error(`story ${storyId} has invalid visual review auth lane: ${scene.authLane}`);
+  }
+  if (scene.screenshotBaseName !== undefined) {
+    validateNonEmptyText('visual review screenshot base name', scene.screenshotBaseName, storyId);
+  }
+  if (scene.themes !== undefined) {
+    if (scene.themes.length === 0) {
+      throw new Error(`story ${storyId} visual review scene ${scene.sceneId} must define at least one theme when themes are provided`);
+    }
+    validateUniqueList('visual review theme', scene.themes, storyId);
+    for (const theme of scene.themes) {
+      if (!STORY_VISUAL_REVIEW_THEME_VALUES.includes(theme)) {
+        throw new Error(`story ${storyId} has invalid visual review theme: ${theme}`);
+      }
+    }
+  }
+  if (scene.viewport !== undefined && !STORY_VISUAL_REVIEW_VIEWPORT_VALUES.includes(scene.viewport)) {
+    throw new Error(`story ${storyId} has invalid visual review viewport: ${scene.viewport}`);
+  }
+  if (scene.setupNotes !== undefined) {
+    validateUniqueList('visual review setup note', scene.setupNotes, storyId);
+  }
+}
+
+function validateRuntimeData(runtimeData: StoryRuntimeData | undefined, story: StoryDefinition) {
+  const visualReview = runtimeData?.visualReview;
+  if (!visualReview) {
+    return;
+  }
+  if (visualReview.scenes.length === 0) {
+    throw new Error(`story ${story.storyId} must define at least one visual review scene`);
+  }
+  const sceneIds = new Set(story.scenes.map((scene) => scene.sceneId));
+  const visualSceneIds = new Set<string>();
+  const visualScenarioIds = new Set<string>();
+  for (const scene of visualReview.scenes) {
+    validateVisualReviewScene(scene, story.storyId);
+    if (!sceneIds.has(scene.sceneId)) {
+      throw new Error(`story ${story.storyId} visual review scene ${scene.sceneId} references unknown story scene`);
+    }
+    if (visualSceneIds.has(scene.sceneId)) {
+      throw new Error(`story ${story.storyId} has duplicate visual review scene id: ${scene.sceneId}`);
+    }
+    if (visualScenarioIds.has(scene.scenarioId)) {
+      throw new Error(`story ${story.storyId} has duplicate visual review scenario id: ${scene.scenarioId}`);
+    }
+    visualSceneIds.add(scene.sceneId);
+    visualScenarioIds.add(scene.scenarioId);
+  }
+}
+
 export function buildStorySourceFingerprint(source: string): string {
   return hashStableObject(source.replace(/\r\n/g, '\n').trim());
 }
@@ -108,6 +245,19 @@ function canonicalStoryForHash(story: StoryDefinition) {
     storyId: story.storyId,
     title: story.title,
     actor: story.actor,
+    family: story.family,
+    personas: [...story.personas],
+    kind: story.kind,
+    gatePolicy: {
+      tier: story.gatePolicy.tier,
+      requiredEvidence: [...story.gatePolicy.requiredEvidence],
+    },
+    externalDependencies: story.externalDependencies.map((dependency) => ({
+      dependencyId: dependency.dependencyId,
+      kind: dependency.kind,
+      required: dependency.required ?? false,
+      note: dependency.note,
+    })),
     lane: story.lane,
     entryRoute: story.entryRoute,
     goal: story.goal,
@@ -161,8 +311,45 @@ export function validateStoryDefinition(story: StoryDefinition) {
   validateNonEmptyText('story id', story.storyId, story.storyId || '<unknown>');
   validateNonEmptyText('title', story.title, story.storyId);
   validateNonEmptyText('actor', story.actor, story.storyId);
+  validateNonEmptyText('family', story.family, story.storyId);
   validateNonEmptyText('goal', story.goal, story.storyId);
   validateNonEmptyText('narrative', story.narrative, story.storyId);
+  if (!STORY_LANE_VALUES.includes(story.lane)) {
+    throw new Error(`story ${story.storyId} has invalid lane: ${story.lane}`);
+  }
+  if (story.personas.length === 0) {
+    throw new Error(`story ${story.storyId} must define at least one persona`);
+  }
+  validateUniqueList('persona', story.personas, story.storyId);
+  if (!STORY_KIND_VALUES.includes(story.kind)) {
+    throw new Error(`story ${story.storyId} has invalid kind: ${story.kind}`);
+  }
+  if (!STORY_GATE_TIER_VALUES.includes(story.gatePolicy.tier)) {
+    throw new Error(`story ${story.storyId} has invalid gate tier: ${story.gatePolicy.tier}`);
+  }
+  if (story.gatePolicy.requiredEvidence.length === 0) {
+    throw new Error(`story ${story.storyId} must define gate policy evidence`);
+  }
+  validateUniqueList('gate policy evidence', story.gatePolicy.requiredEvidence, story.storyId);
+  for (const evidence of story.gatePolicy.requiredEvidence) {
+    if (!STORY_EVIDENCE_VALUES.includes(evidence)) {
+      throw new Error(`story ${story.storyId} has invalid gate policy evidence: ${evidence}`);
+    }
+  }
+  const dependencyIds = new Set<string>();
+  for (const dependency of story.externalDependencies) {
+    validateNonEmptyText('external dependency id', dependency.dependencyId, story.storyId);
+    if (!STORY_EXTERNAL_DEPENDENCY_KIND_VALUES.includes(dependency.kind)) {
+      throw new Error(`story ${story.storyId} has invalid external dependency kind: ${dependency.kind}`);
+    }
+    if (dependency.note !== undefined) {
+      validateNonEmptyText('external dependency note', dependency.note, story.storyId);
+    }
+    if (dependencyIds.has(dependency.dependencyId)) {
+      throw new Error(`story ${story.storyId} has duplicate external dependency: ${dependency.dependencyId}`);
+    }
+    dependencyIds.add(dependency.dependencyId);
+  }
 
   if (!story.entryRoute.startsWith('/')) {
     throw new Error(`story ${story.storyId} has invalid entry route`);
@@ -203,8 +390,15 @@ export function validateStoryDefinition(story: StoryDefinition) {
     if (step.evidence.length === 0) {
       throw new Error(`story ${story.storyId} step ${step.stepId} must declare evidence`);
     }
+    for (const evidence of step.evidence) {
+      if (!STORY_EVIDENCE_VALUES.includes(evidence)) {
+        throw new Error(`story ${story.storyId} step ${step.stepId} has invalid evidence: ${evidence}`);
+      }
+    }
     if (step.evidence.includes('visual') && !step.sceneId) {
       throw new Error(`story ${story.storyId} step ${step.stepId} uses visual evidence without a scene`);
     }
   }
+
+  validateRuntimeData(story.runtimeData, story);
 }

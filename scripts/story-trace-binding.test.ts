@@ -24,6 +24,11 @@ describe('story trace binding', () => {
     const binding = buildTraceStoryBinding(story);
 
     expect(binding.storyId).toBe('release-user-story-end-to-end');
+    expect(binding.title).toBe('Release user story end-to-end');
+    expect(binding.actor).toContain('system 管理侧');
+    expect(binding.goal.length).toBeGreaterThan(0);
+    expect(binding.preconditions.length).toBeGreaterThan(0);
+    expect(binding.seedData).toEqual(['ws_default']);
     expect(binding.storyFingerprint.length).toBeGreaterThan(0);
     expect(binding.stepMapFingerprint.length).toBeGreaterThan(0);
     expect(binding.steps.map((step) => step.stepId)).toContain('system-login');

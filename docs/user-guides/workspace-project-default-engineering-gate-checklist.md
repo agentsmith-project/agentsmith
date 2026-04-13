@@ -101,11 +101,14 @@ npm run test:backend-real:core
 This adds:
 
 1. `e2e/integration-minimal.spec.ts` against the real backend lane
+2. required `ux_trace_bundle` evidence for the default-tier backend-real daily/self-service stories
 
 Notes:
 
 1. The real-core script will auto start integration dependencies, API, and frontend on dedicated ports.
 2. You can still override ports with `INTEGRATION_API_PORT` and `INTEGRATION_WEB_PORT` if needed.
+3. The canonical default-tier trace bundle root is `artifacts/backend-real/runs/<run-id>/ux-traces`.
+4. Missing `ux_trace_bundle` evidence means the `test:backend-real:core` run itself is incomplete, even though this backend-real verification remains optional for the default checklist.
 
 ## 7. Engineering Notes Required In PR
 

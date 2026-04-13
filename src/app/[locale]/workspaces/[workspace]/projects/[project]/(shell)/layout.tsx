@@ -86,7 +86,7 @@ export default function AppShellLayout({
       ) : (
       <div data-testid="page-layout" className="h-screen bg-background flex flex-col overflow-hidden">
         {/* Topbar */}
-        <Topbar />
+        <Topbar workspaceId={workspaceId} projectId={projectId} />
 
         {/* Main Content */}
         <div className="flex-1 flex overflow-hidden">

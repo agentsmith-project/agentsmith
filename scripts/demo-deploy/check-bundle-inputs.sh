@@ -5,20 +5,25 @@ ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/release-story-verify-source-set.sh"
 MANIFEST_PATH="${ROOT_DIR}/infra/deploy/demo/deployment.manifest.json"
 SITE_ENV_EXAMPLE="${ROOT_DIR}/infra/deploy/demo/env/site.env.example"
+RELEASE_STORY_SOURCE_SET_NAME="$(release_story_verify_source_set_name)"
+RELEASE_STORY_SOURCE_SET_HELPER="$(release_story_verify_source_set_helper_path)"
 
 python3 "${ROOT_DIR}/scripts/lib/check-required-env-templates.py" \
   "${MANIFEST_PATH}" \
   "${SITE_ENV_EXAMPLE}"
 
-python3 - <<'PY' "${MANIFEST_PATH}" "${ROOT_DIR}"
+python3 - <<'PY' "${MANIFEST_PATH}" "${ROOT_DIR}" "${RELEASE_STORY_SOURCE_SET_NAME}" "${RELEASE_STORY_SOURCE_SET_HELPER}"
 import json
 import pathlib
 import sys
 
 manifest_path = pathlib.Path(sys.argv[1])
 root_dir = pathlib.Path(sys.argv[2])
+expected_source_set_name = sys.argv[3]
+expected_source_set_helper = sys.argv[4]
 
 manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+bundle_source_sets = manifest.get("bundle_source_sets")
 
 required_host_tools = manifest.get("required_host_tools")
 bundled_tools = manifest.get("bundled_tools")
@@ -26,6 +31,13 @@ if not isinstance(required_host_tools, list) or not required_host_tools:
     raise SystemExit("missing_required_host_tools")
 if not isinstance(bundled_tools, list) or not bundled_tools:
     raise SystemExit("missing_bundled_tools")
+if not isinstance(bundle_source_sets, list) or not any(
+    isinstance(entry, dict)
+    and entry.get("name") == expected_source_set_name
+    and entry.get("helper") == expected_source_set_helper
+    for entry in bundle_source_sets
+):
+    raise SystemExit(f"missing_bundle_source_set:{expected_source_set_name}")
 
 for relative in manifest.get("bundle_files", []):
     source = root_dir / relative if not relative.startswith("tools/") else pathlib.Path("/nonexistent")
@@ -76,19 +88,31 @@ for relative in manifest.get("bundle_files", []):
 PY
 
 mapfile -t release_story_runtime_files < <(release_story_verify_source_set "${ROOT_DIR}")
-python3 - <<'PY' "${MANIFEST_PATH}" "${release_story_runtime_files[@]}"
+python3 - <<'PY' "${MANIFEST_PATH}" "${ROOT_DIR}" "${RELEASE_STORY_SOURCE_SET_NAME}" "${RELEASE_STORY_SOURCE_SET_HELPER}" "${release_story_runtime_files[@]}"
 import json
 import pathlib
 import sys
 
 manifest_path = pathlib.Path(sys.argv[1])
-required_files = sys.argv[2:]
+root_dir = pathlib.Path(sys.argv[2])
+expected_source_set_name = sys.argv[3]
+expected_source_set_helper = sys.argv[4]
+required_files = sys.argv[5:]
 manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-bundle_files = manifest.get("bundle_files", [])
+bundle_source_sets = manifest.get("bundle_source_sets", [])
+
+if not any(
+    isinstance(entry, dict)
+    and entry.get("name") == expected_source_set_name
+    and entry.get("helper") == expected_source_set_helper
+    for entry in bundle_source_sets
+):
+    raise SystemExit(f"missing_bundle_source_set:{expected_source_set_name}")
 
 for relative_path in required_files:
-    if relative_path not in bundle_files:
-        raise SystemExit(f"missing_release_story_runtime_file:{relative_path}")
+    source = root_dir / relative_path
+    if not source.exists():
+        raise SystemExit(f"missing_release_story_source:{relative_path}")
 PY
 
 runtime_bundle_scripts=(

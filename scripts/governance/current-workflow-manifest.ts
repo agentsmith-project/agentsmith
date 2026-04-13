@@ -1,3 +1,10 @@
+import {
+  findCurrentGateDefinition,
+  type CurrentGateRequirement,
+  type CurrentGateStoryEvidenceKind,
+  type CurrentGateStoryEvidencePolicy,
+} from './current-gate-manifest';
+
 export const CURRENT_WORKFLOW_TOP_LEVEL_TERMS = [
   '环境',
   '测试',
@@ -15,8 +22,10 @@ export interface CurrentWorkflowCommand {
   makeTarget?: string;
   npmScript?: string;
   recommended?: boolean;
-  storyEvidencePolicy: 'none' | 'required';
-  storyEvidenceKinds: readonly ('visual_scene_catalog' | 'ux_trace_bundle')[];
+  storyEvidencePolicy: CurrentGateStoryEvidencePolicy;
+  storyEvidenceKinds: readonly CurrentGateStoryEvidenceKind[];
+  storyEvidenceArtifacts: readonly string[];
+  storyEvidenceRequiredFor: readonly CurrentGateRequirement[];
 }
 
 export interface CurrentWorkflowSection {
@@ -44,8 +53,16 @@ export const CURRENT_WORKFLOW_DOCUMENT_FILES = [
   'scripts/governance/current-gate-manifest.ts',
 ] as const;
 
-type RawCurrentWorkflowCommand = Omit<CurrentWorkflowCommand, 'storyEvidencePolicy' | 'storyEvidenceKinds'> &
-  Partial<Pick<CurrentWorkflowCommand, 'storyEvidencePolicy' | 'storyEvidenceKinds'>>;
+type RawCurrentWorkflowCommand = Omit<
+  CurrentWorkflowCommand,
+  'storyEvidencePolicy' | 'storyEvidenceKinds' | 'storyEvidenceArtifacts' | 'storyEvidenceRequiredFor'
+> &
+  Partial<
+    Pick<
+      CurrentWorkflowCommand,
+      'storyEvidencePolicy' | 'storyEvidenceKinds' | 'storyEvidenceArtifacts' | 'storyEvidenceRequiredFor'
+    >
+  >;
 
 type RawCurrentWorkflowSection = {
   id: string;
@@ -53,37 +70,23 @@ type RawCurrentWorkflowSection = {
   commands: RawCurrentWorkflowCommand[];
 };
 
-const CURRENT_WORKFLOW_STORY_EVIDENCE_BY_SCRIPT: Partial<
-  Record<NonNullable<CurrentWorkflowCommand['npmScript']>, Pick<CurrentWorkflowCommand, 'storyEvidencePolicy' | 'storyEvidenceKinds'>>
-> = {
-  'test:visual': {
-    storyEvidencePolicy: 'required',
-    storyEvidenceKinds: ['visual_scene_catalog'],
-  },
-  'lane:visual': {
-    storyEvidencePolicy: 'required',
-    storyEvidenceKinds: ['visual_scene_catalog'],
-  },
-  'gate:release': {
-    storyEvidencePolicy: 'required',
-    storyEvidenceKinds: ['ux_trace_bundle'],
-  },
-  'lane:backend-real:release': {
-    storyEvidencePolicy: 'required',
-    storyEvidenceKinds: ['ux_trace_bundle'],
-  },
-};
-
 function hydrateCurrentWorkflowCommand(command: RawCurrentWorkflowCommand): CurrentWorkflowCommand {
-  const storyEvidence = command.npmScript
-    ? CURRENT_WORKFLOW_STORY_EVIDENCE_BY_SCRIPT[command.npmScript]
-    : undefined;
+  const storyEvidence = command.npmScript ? findCurrentGateDefinition(command.npmScript) : undefined;
 
   return {
     storyEvidencePolicy: 'none',
     storyEvidenceKinds: [],
+    storyEvidenceArtifacts: [],
+    storyEvidenceRequiredFor: [],
     ...command,
-    ...storyEvidence,
+    ...(storyEvidence
+      ? {
+          storyEvidencePolicy: storyEvidence.storyEvidencePolicy,
+          storyEvidenceKinds: storyEvidence.storyEvidenceKinds,
+          storyEvidenceArtifacts: storyEvidence.storyEvidenceArtifacts,
+          storyEvidenceRequiredFor: storyEvidence.storyEvidenceRequiredFor,
+        }
+      : {}),
   };
 }
 

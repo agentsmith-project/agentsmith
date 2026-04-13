@@ -1,6 +1,60 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
-import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
+import {
+  KEYCLOAK_DEV_ADMIN_PASSWORD,
+  KEYCLOAK_DEV_ADMIN_USERNAME,
+  createFileLibraryViaUi,
+  createProjectInWorkspace,
+  keycloakLoginToWorkspace,
+} from './integration-real-helpers';
+import { buildTraceStoryBinding } from './story-trace-binding';
+import { loadStoryDefinitionSync } from './story-loader';
+import { createUxTraceBundleWriter } from './trace-bundle-support';
+
+const FILES_CRUD_SYNC_STORY = loadStoryDefinitionSync('files-crud-and-sync');
+const FILES_CRUD_SYNC_BINDING = buildTraceStoryBinding(FILES_CRUD_SYNC_STORY);
+const WORKSPACE_ID = FILES_CRUD_SYNC_STORY.seedData?.[0];
+
+type FilesCrudRuntime = {
+  projectNamePrefix: string;
+  libraryNamePrefix: string;
+  folderNamePrefix: string;
+  uploadFileName: string;
+  uploadContent: string;
+  renamedFileName: string;
+};
+
+function requireWorkspaceId(): string {
+  if (typeof WORKSPACE_ID !== 'string' || WORKSPACE_ID.trim().length === 0) {
+    throw new Error('missing_files_crud_sync_workspace_seed');
+  }
+  return WORKSPACE_ID;
+}
+
+function requireFilesCrudRuntime(): FilesCrudRuntime {
+  const runtimeRoot = FILES_CRUD_SYNC_STORY.runtimeData as Record<string, unknown> | undefined;
+  const filesCrudSync = runtimeRoot?.filesCrudSync as Record<string, unknown> | undefined;
+  const webCrud = filesCrudSync?.webCrud as Record<string, unknown> | undefined;
+  if (!webCrud) {
+    throw new Error('missing_files_crud_sync_runtime:webCrud');
+  }
+
+  const fields = [
+    'projectNamePrefix',
+    'libraryNamePrefix',
+    'folderNamePrefix',
+    'uploadFileName',
+    'uploadContent',
+    'renamedFileName',
+  ] as const;
+  for (const field of fields) {
+    if (typeof webCrud[field] !== 'string' || webCrud[field].trim().length === 0) {
+      throw new Error(`missing_files_crud_sync_runtime:webCrud.${field}`);
+    }
+  }
+
+  return webCrud as unknown as FilesCrudRuntime;
+}
 
 async function dismissOpenFilesDialogs(page: Page) {
   const libraryDeleteConfirm = page.getByTestId('files__library-delete__confirm');
@@ -20,124 +74,110 @@ test.describe('@lane-real files integration flow', () => {
   test('keycloak login, create project, and complete files object-browser CRUD', async ({ page }) => {
     test.setTimeout(240_000);
     const multiSelectModifier: 'Control' | 'Meta' = process.platform === 'darwin' ? 'Meta' : 'Control';
-    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
-    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
-    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
-
-    await page.goto(`/${locale}/workspaces/ws_default/login`);
-    await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('workspace-login__keycloak-btn').click();
-    await page.waitForURL(/\/realms\/.+\/protocol\/openid-connect\/auth|\/login-actions\/authenticate/i, {
-      timeout: 30_000,
+    const runtime = requireFilesCrudRuntime();
+    const workspaceId = requireWorkspaceId();
+    const folderName = `${runtime.folderNamePrefix}-${Date.now()}`;
+    const libraryName = `${runtime.libraryNamePrefix} ${Date.now()}`;
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-files',
+      storyId: FILES_CRUD_SYNC_STORY.storyId,
+      title: FILES_CRUD_SYNC_STORY.title,
+      actor: FILES_CRUD_SYNC_STORY.actor,
+      route: FILES_CRUD_SYNC_STORY.entryRoute,
+      specFile: 'e2e/integration-files.spec.ts',
+      browser: 'chromium',
+      goal: FILES_CRUD_SYNC_STORY.goal,
+      preconditions: [...(FILES_CRUD_SYNC_STORY.preconditions ?? [])],
+      seedData: [...(FILES_CRUD_SYNC_STORY.seedData ?? [])],
+      storyBinding: FILES_CRUD_SYNC_BINDING,
     });
-    await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
-    await page.locator('input#password, input[name="password"]').first().fill(password);
-    await page.locator('#kc-login, button[type="submit"]').first().click();
-    await expect
-      .poll(() => page.url(), { timeout: 60_000 })
-      .toMatch(new RegExp(`/${locale}/workspaces/ws_default(?:$|/projects)`));
-    if (!new RegExp(`/${locale}/workspaces/ws_default/projects`).test(page.url())) {
-      await page.goto(`/${locale}/workspaces/ws_default/projects`);
+    let outcome: 'pass' | 'fail' = 'fail';
+
+    try {
+      await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+      const { projectId } = await createProjectInWorkspace(page, workspaceId, runtime.projectNamePrefix);
+      await createFileLibraryViaUi(page, workspaceId, projectId, libraryName);
+
+      const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: libraryName }).first();
+      await expect(libraryItem).toBeVisible({ timeout: 30_000 });
+      await libraryItem.click();
+      await dismissOpenFilesDialogs(page);
+      await trace.capture(page, { stepId: 'open-files-library' });
+
+      await page.getByTestId('files__new-folder').click();
+      await page.getByTestId('files__dialog__new-folder').locator('input').fill(folderName);
+      await page.getByTestId('files__dialog__new-folder').getByRole('button', { name: /Create|创建/i }).click();
+      await expect(page.getByRole('button', { name: folderName }).first()).toHaveCount(1, { timeout: 30_000 });
+      await page.getByRole('button', { name: /^root$/i }).click();
+      await expect(page.getByRole('button', { name: /^root$/i })).toBeVisible({ timeout: 30_000 });
+      await expect(
+        page.locator('[data-testid="files__object-row"]').filter({ hasText: folderName }).first(),
+      ).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('files__upload').click();
+      await page.locator('input[type="file"]').setInputFiles({
+        name: runtime.uploadFileName,
+        mimeType: 'text/plain',
+        buffer: Buffer.from(runtime.uploadContent, 'utf-8'),
+      });
+      await expect(page.locator('text=' + runtime.uploadFileName)).toBeVisible({ timeout: 30_000 });
+
+      const uploadedRow = page
+        .locator('[data-testid="files__object-row"]')
+        .filter({ hasText: runtime.uploadFileName })
+        .first();
+      await uploadedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
+      await uploadedRow.locator('input[type="checkbox"]').check();
+
+      await page.getByTestId('files__rename').click();
+      await page.getByTestId('files__move__dest-prefix').fill(`${folderName}/`);
+      await page.getByTestId('files__move__name').fill(runtime.renamedFileName);
+      await page.getByTestId('files__move__submit').click();
+      await expect(
+        page.locator('[data-testid="files__object-row"]').filter({ hasText: runtime.uploadFileName }),
+      ).toHaveCount(0);
+      await expect(
+        page.locator('[data-testid="files__object-row"]').filter({ hasText: runtime.renamedFileName }),
+      ).toHaveCount(0);
+
+      await page.keyboard.press('Escape');
+      await page
+        .locator('[data-testid="files__object-row"]')
+        .filter({ hasText: folderName })
+        .first()
+        .locator('button')
+        .first()
+        .dblclick();
+      const movedRow = page
+        .locator('[data-testid="files__object-row"]')
+        .filter({ hasText: runtime.renamedFileName })
+        .first();
+      await expect(movedRow).toBeVisible({ timeout: 30_000 });
+      await movedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
+      const movedCheckbox = movedRow.locator('input[type="checkbox"]');
+      await movedCheckbox.check();
+      await expect(movedCheckbox).toBeChecked();
+
+      await expect(page.getByTestId('files__details-panel')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('files__details-share').click();
+      await expect(page.getByTestId('files__dialog__share-link')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('files__share-generate').click();
+      await expect(page.getByTestId('files__share-link-value')).toBeVisible({ timeout: 30_000 });
+      await page.keyboard.press('Escape');
+      await movedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
+      await expect(movedCheckbox).toBeChecked();
+      await page.getByTestId('files__delete').click();
+      await page.getByTestId('files__dialog__delete').getByRole('button', { name: /Delete|删除/i }).click();
+      await expect(page.locator('text=' + runtime.renamedFileName)).toHaveCount(0);
+      await trace.capture(page, { stepId: 'manage-files-from-web' });
+      outcome = 'pass';
+    } finally {
+      await trace.finish({
+        outcome,
+        finishedAt: new Date().toISOString(),
+      });
     }
-    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects(?:$|/)`), { timeout: 30_000 });
-    const apiBase = process.env.INTEGRATION_API_BASE || 'http://localhost:20010';
-    const token = await readStoredAuthToken(page);
-    await ensureWorkspaceProjectCreatorAccess({ page, apiBase, token, username });
-    await page.goto(`/${locale}/workspaces/ws_default/projects`);
-
-    const projectName = `it-src-${Date.now()}`;
-    const createButton = page.getByTestId('projects__create-btn');
-    if (await createButton.isVisible().catch(() => false)) {
-      await createButton.click();
-    } else {
-      await page.getByRole('button', { name: /New Project|Create|创建|新建项目/i }).first().click();
-    }
-    await page.locator('#project-name').fill(projectName);
-    await Promise.all([
-      page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/.+/overview`), { timeout: 30_000 }),
-      page.getByRole('button', { name: /Create|创建/i }).click(),
-    ]);
-
-    const projectMatch = page.url().match(/\/projects\/([^/]+)\//);
-    expect(projectMatch?.[1]).toBeTruthy();
-    const projectId = projectMatch![1];
-
-    await page.getByRole('link', { name: /Files|文件/i }).first().click();
-    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/files`));
-
-    await page.getByTestId('files__library-create').click();
-    await page.getByTestId('files__library-create__name').fill('Integration Library');
-    await page.getByTestId('files__library-create__submit').click();
-    const libraryItem = page.locator('[data-testid^="files__library-item--"]').first();
-    await expect(libraryItem).toBeVisible({ timeout: 30_000 });
-    await libraryItem.click();
-    await dismissOpenFilesDialogs(page);
-
-    const folderName = `docs-${Date.now()}`;
-    await page.getByTestId('files__new-folder').click();
-    await page.getByTestId('files__dialog__new-folder').locator('input').fill(folderName);
-    await page.getByTestId('files__dialog__new-folder').getByRole('button', { name: /Create|创建/i }).click();
-    await expect(page.getByRole('button', { name: folderName }).first()).toHaveCount(1, { timeout: 30_000 });
-    await page.getByRole('button', { name: /^root$/i }).click();
-    await expect(page.getByRole('button', { name: /^root$/i })).toBeVisible({ timeout: 30_000 });
-    await expect(
-      page.locator('[data-testid="files__object-row"]').filter({ hasText: folderName }).first(),
-    ).toBeVisible({ timeout: 30_000 });
-
-    await page.getByTestId('files__upload').click();
-    await page.locator('input[type="file"]').setInputFiles({
-      name: 'integration-note.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('integration-content', 'utf-8'),
-    });
-    await expect(page.locator('text=integration-note.txt')).toBeVisible({ timeout: 30_000 });
-
-    const row = page
-      .locator('[data-testid="files__object-row"]')
-      .filter({ hasText: 'integration-note.txt' })
-      .first();
-    await row.getByRole('button').click({ modifiers: [multiSelectModifier] });
-    await row.locator('input[type="checkbox"]').check();
-
-    await page.getByTestId('files__rename').click();
-    await page.getByTestId('files__move__dest-prefix').fill(`${folderName}/`);
-    await page.getByTestId('files__move__name').fill('integration-note-renamed.txt');
-    await page.getByTestId('files__move__submit').click();
-    await expect(
-      page.locator('[data-testid="files__object-row"]').filter({ hasText: 'integration-note.txt' }),
-    ).toHaveCount(0);
-    await expect(
-      page.locator('[data-testid="files__object-row"]').filter({ hasText: 'integration-note-renamed.txt' }),
-    ).toHaveCount(0);
-
-    await page.keyboard.press('Escape');
-    await page
-      .locator('[data-testid="files__object-row"]')
-      .filter({ hasText: folderName })
-      .first()
-      .locator('button')
-      .first()
-      .dblclick();
-    const movedRow = page
-      .locator('[data-testid="files__object-row"]')
-      .filter({ hasText: 'integration-note-renamed.txt' })
-      .first();
-    await expect(movedRow).toBeVisible({ timeout: 30_000 });
-    await movedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
-    const movedCheckbox = movedRow.locator('input[type="checkbox"]');
-    await movedCheckbox.check();
-    await expect(movedCheckbox).toBeChecked();
-
-    await expect(page.getByTestId('files__details-panel')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('files__details-share').click();
-    await expect(page.getByTestId('files__dialog__share-link')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('files__share-generate').click();
-    await expect(page.getByTestId('files__share-link-value')).toBeVisible({ timeout: 30_000 });
-    await page.keyboard.press('Escape');
-    await movedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
-    await expect(movedCheckbox).toBeChecked();
-    await page.getByTestId('files__delete').click();
-    await page.getByTestId('files__dialog__delete').getByRole('button', { name: /Delete|删除/i }).click();
-    await expect(page.locator('text=integration-note-renamed.txt')).toHaveCount(0);
   });
 });

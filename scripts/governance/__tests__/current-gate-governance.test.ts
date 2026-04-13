@@ -25,6 +25,7 @@ describe('current gate governance', () => {
       expect(['none', 'required']).toContain(definition.storyEvidencePolicy);
       expect(Array.isArray(definition.storyEvidenceKinds)).toBe(true);
       expect(Array.isArray(definition.storyEvidenceArtifacts)).toBe(true);
+      expect(Array.isArray(definition.storyEvidenceRequiredFor)).toBe(true);
       expect(ids.has(definition.id)).toBe(false);
       expect(npmScripts.has(definition.npmScript)).toBe(false);
       ids.add(definition.id);
@@ -61,26 +62,43 @@ describe('current gate governance', () => {
   it('keeps machine-readable story evidence ownership aligned with visual and release lanes', () => {
     const visualLane = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'lane:visual');
     const visualTest = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'test:visual');
+    const backendRealCoreTest = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'test:backend-real:core');
+    const backendRealCoreLane = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'lane:backend-real:core');
     const releaseGate = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'gate:release');
     const releaseLane = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'lane:backend-real:release');
     const releaseFull = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'gate:release:full');
 
     expect(visualLane?.storyEvidencePolicy).toBe('required');
     expect(visualLane?.storyEvidenceKinds).toEqual(['visual_scene_catalog']);
+    expect(visualLane?.storyEvidenceRequiredFor).toEqual(['visual', 'release']);
     expect(visualLane?.storyEvidenceSceneSource).toBe('e2e/visual-baseline-support.ts');
 
     expect(visualTest?.storyEvidencePolicy).toBe('required');
     expect(visualTest?.storyEvidenceKinds).toEqual(['visual_scene_catalog']);
+    expect(visualTest?.storyEvidenceRequiredFor).toEqual(['visual', 'release']);
+
+    expect(backendRealCoreTest?.storyEvidencePolicy).toBe('required');
+    expect(backendRealCoreTest?.storyEvidenceKinds).toEqual(['ux_trace_bundle']);
+    expect(backendRealCoreTest?.storyEvidenceArtifacts).toContain('artifacts/backend-real/runs/<run-id>/ux-traces');
+    expect(backendRealCoreTest?.storyEvidenceRequiredFor).toEqual(['default']);
+
+    expect(backendRealCoreLane?.storyEvidencePolicy).toBe('required');
+    expect(backendRealCoreLane?.storyEvidenceKinds).toEqual(['ux_trace_bundle']);
+    expect(backendRealCoreLane?.storyEvidenceArtifacts).toContain('artifacts/backend-real/runs/<run-id>/ux-traces');
+    expect(backendRealCoreLane?.storyEvidenceRequiredFor).toEqual(['default']);
 
     expect(releaseGate?.storyEvidencePolicy).toBe('required');
     expect(releaseGate?.storyEvidenceKinds).toEqual(['ux_trace_bundle']);
+    expect(releaseGate?.storyEvidenceRequiredFor).toEqual(['release']);
 
     expect(releaseLane?.storyEvidencePolicy).toBe('required');
     expect(releaseLane?.storyEvidenceKinds).toEqual(['ux_trace_bundle']);
     expect(releaseLane?.storyEvidenceArtifacts).toContain('artifacts/backend-real-visual/<run-id>/ux-traces');
+    expect(releaseLane?.storyEvidenceRequiredFor).toEqual(['release']);
 
     expect(releaseFull?.storyEvidencePolicy).toBe('required');
     expect(releaseFull?.storyEvidenceKinds).toEqual(['visual_scene_catalog', 'ux_trace_bundle']);
+    expect(releaseFull?.storyEvidenceRequiredFor).toEqual(['release']);
   });
 
   it('keeps generated gate contracts in sync with the repository state', () => {

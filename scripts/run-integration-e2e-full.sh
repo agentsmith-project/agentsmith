@@ -57,8 +57,10 @@ export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-$([[ -n "${SANDBOX_MANAGER_
 ensure_backend_real_state
 INTEGRATION_RUN_ID="${INTEGRATION_RUN_ID:-$(lane_generate_run_id integration)}"
 INTEGRATION_RUN_ROOT="${INTEGRATION_RUN_ROOT:-$(lane_prepare_run_root backend-real "${INTEGRATION_RUN_ID}" current-run)}"
+UX_TRACE_OUTPUT_ROOT="${UX_TRACE_OUTPUT_ROOT:-${INTEGRATION_RUN_ROOT}/ux-traces}"
 INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-${INTEGRATION_RUN_ROOT}/integration}"
 export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-$(basename "${INTEGRATION_RUN_ROOT}")}"
+export UX_TRACE_OUTPUT_ROOT
 clear_runtime_stack_env
 resolve_loopback_runtime_stack "${API_PORT}" "${WEB_PORT}" "${KEYCLOAK_PORT}" "mbos" "agentsmith"
 # Use 127.0.0.1 for the isolated integration Keycloak lane so browser cookies do not collide

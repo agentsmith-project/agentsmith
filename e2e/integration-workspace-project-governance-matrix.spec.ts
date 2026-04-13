@@ -30,6 +30,20 @@ import {
   teardownExternalTestKeycloak,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
+import { buildTraceStoryBinding } from './story-trace-binding';
+import { loadStoryDefinitionSync } from './story-loader';
+import { createUxTraceBundleWriter, type UxTraceBundleWriter } from './trace-bundle-support';
+
+const GOVERNANCE_ONBOARDING_STORY = loadStoryDefinitionSync('project-governance-onboarding');
+const GOVERNANCE_ONBOARDING_BINDING = buildTraceStoryBinding(GOVERNANCE_ONBOARDING_STORY);
+const MATRIX_SETUP = GOVERNANCE_ONBOARDING_STORY.runtimeData?.matrixSetup as
+  | {
+      workspaceNamePrefix?: string;
+      projectNamePrefix?: string;
+      defaultIdpLabel?: string;
+      externalIdpLabel?: string;
+    }
+  | undefined;
 
 type UserIdentity = {
   token: string;
@@ -261,6 +275,8 @@ async function runProjectMatrix(args: {
   guest: UserIdentity;
   invitee: UserIdentity;
   prefix: string;
+  trace?: UxTraceBundleWriter;
+  traceEnabled?: boolean;
 }) {
   await keycloakLoginToWorkspace(args.page, args.workspaceId, KEYCLOAK_INTEGRATION_USER_USERNAME, KEYCLOAK_INTEGRATION_USER_PASSWORD, {
     ensureProjectCreatorAccess: false,
@@ -280,6 +296,12 @@ async function runProjectMatrix(args: {
     visibleNames: [projects.publicOpen.projectName, projects.publicApproval.projectName],
     hiddenNames: [projects.privateOpen.projectName, projects.privateApproval.projectName],
   });
+  if (args.traceEnabled !== false && args.trace) {
+    await args.trace.capture(args.page, {
+      stepId: 'public-project-discovery',
+      note: '公共项目可见且可创建',
+    });
+  }
 
   const publicOpenJoin = await apiRequest({
     page: args.page,
@@ -430,6 +452,12 @@ async function runProjectMatrix(args: {
     projectId: projects.privateApproval.projectId,
     invitedUserId: args.guest.userId,
   });
+  if (args.traceEnabled !== false && args.trace) {
+    await args.trace.capture(args.page, {
+      stepId: 'private-project-governance',
+      note: '私有项目的 join policy 和审批路径已验证',
+    });
+  }
 
   await keycloakLoginToWorkspace(args.page, args.workspaceId, KEYCLOAK_INTEGRATION_GUEST_USERNAME, KEYCLOAK_INTEGRATION_GUEST_PASSWORD, {
     ensureProjectCreatorAccess: false,
@@ -449,161 +477,208 @@ test.describe('@lane-real integration workspace project governance matrix', () =
   test('creates a workspace, grants project creators, verifies the 2x2 matrix, then repeats after switching to an external keycloak', async ({ page }) => {
     test.setTimeout(1_200_000);
 
-    await ensureIntegrationKeycloakUsers();
-    await loginAsSystemAdmin(page);
-    const workspaceName = `Governance Matrix ${Date.now()}`;
-    const workspaceId = await createAndPublishWorkspaceWithDirectoryAdmin({
-      page,
-      workspaceName,
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-workspace-project-governance-matrix',
+      storyId: GOVERNANCE_ONBOARDING_STORY.storyId,
+      title: GOVERNANCE_ONBOARDING_STORY.title,
+      actor: GOVERNANCE_ONBOARDING_STORY.actor,
+      route: GOVERNANCE_ONBOARDING_STORY.entryRoute,
+      specFile: 'e2e/integration-workspace-project-governance-matrix.spec.ts',
+      browser: 'chromium',
+      goal: GOVERNANCE_ONBOARDING_STORY.goal,
+      preconditions: [...(GOVERNANCE_ONBOARDING_STORY.preconditions ?? [])],
+      seedData: [...(GOVERNANCE_ONBOARDING_STORY.seedData ?? [])],
+      storyBinding: GOVERNANCE_ONBOARDING_BINDING,
     });
+    let outcome: 'pass' | 'fail' = 'fail';
 
-    const admin = await loginAndReadIdentity({
-      page,
-      workspaceId,
-      username: KEYCLOAK_DEV_ADMIN_USERNAME,
-      password: KEYCLOAK_DEV_ADMIN_PASSWORD,
-    });
-    await ensureWorkspaceProjectCreatorViaUi({
-      page,
-      workspaceId,
-      creatorEmail: 'integration-user@example.com',
-    });
+    try {
+      await ensureIntegrationKeycloakUsers();
+      await page.goto(`/${LOCALE}/system/login`);
+      await expect(page.getByTestId('system-login__heading')).toBeVisible({ timeout: 30_000 });
+      await trace.capture(page, { stepId: 'system-login' });
+      await loginAsSystemAdmin(page);
+      const workspaceNamePrefix = MATRIX_SETUP?.workspaceNamePrefix ?? 'Governance Matrix';
+      const workspaceName = `${workspaceNamePrefix} ${Date.now()}`;
+      const workspaceId = await createAndPublishWorkspaceWithDirectoryAdmin({
+        page,
+        workspaceName,
+      });
+      await trace.note({
+        stepId: 'workspace-created-published',
+        note: '新工作区创建并发布完成',
+      });
 
-    const creator = await loginAndReadIdentity({
-      page,
-      workspaceId,
-      username: KEYCLOAK_INTEGRATION_USER_USERNAME,
-      password: KEYCLOAK_INTEGRATION_USER_PASSWORD,
-    });
-    await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects`);
-    await expect(page.getByTestId('projects__create-btn')).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId('sidebar__nav-item--settings')).toHaveCount(0);
+      const admin = await loginAndReadIdentity({
+        page,
+        workspaceId,
+        username: KEYCLOAK_DEV_ADMIN_USERNAME,
+        password: KEYCLOAK_DEV_ADMIN_PASSWORD,
+      });
+      await ensureWorkspaceProjectCreatorViaUi({
+        page,
+        workspaceId,
+        creatorEmail: 'integration-user@example.com',
+      });
+      await trace.note({
+        stepId: 'workspace-project-creators-granted',
+        note: '工作区 project creators 已配置完成',
+      });
 
-    const member = await loginAndReadIdentity({
-      page,
-      workspaceId,
-      username: KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
-      password: KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
-    });
-    member.email ||= KEYCLOAK_INTEGRATION_MEMBER_EMAIL;
-    const memberCreateAttempt = await apiRequest({
-      page,
-      token: member.token,
-      method: 'POST',
-      path: `/api/v1/workspaces/${workspaceId}/projects`,
-      body: {
-        name: 'Blocked Project Creator Attempt',
-        visibility: 'private',
-        join_policy: 'approval_required',
-      },
-    });
-    expect(memberCreateAttempt.status()).toBe(403);
+      const creator = await loginAndReadIdentity({
+        page,
+        workspaceId,
+        username: KEYCLOAK_INTEGRATION_USER_USERNAME,
+        password: KEYCLOAK_INTEGRATION_USER_PASSWORD,
+      });
+      const projectPrefix = MATRIX_SETUP?.projectNamePrefix ?? MATRIX_SETUP?.workspaceNamePrefix ?? 'Governance Matrix';
+      await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects`);
+      await expect(page.getByTestId('projects__create-btn')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('sidebar__nav-item--settings')).toHaveCount(0);
+      await trace.capture(page, { stepId: 'public-project-discovery' });
 
-    const guest = await loginAndReadIdentity({
-      page,
-      workspaceId,
-      username: KEYCLOAK_INTEGRATION_GUEST_USERNAME,
-      password: KEYCLOAK_INTEGRATION_GUEST_PASSWORD,
-    });
-    guest.email ||= KEYCLOAK_INTEGRATION_GUEST_EMAIL;
-    const invitee = await loginAndReadIdentity({
-      page,
-      workspaceId,
-      username: KEYCLOAK_INTEGRATION_INVITEE_USERNAME,
-      password: KEYCLOAK_INTEGRATION_INVITEE_PASSWORD,
-    });
-    invitee.email ||= KEYCLOAK_INTEGRATION_INVITEE_EMAIL;
+      const member = await loginAndReadIdentity({
+        page,
+        workspaceId,
+        username: KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
+        password: KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
+      });
+      member.email ||= KEYCLOAK_INTEGRATION_MEMBER_EMAIL;
+      const memberCreateAttempt = await apiRequest({
+        page,
+        token: member.token,
+        method: 'POST',
+        path: `/api/v1/workspaces/${workspaceId}/projects`,
+        body: {
+          name: 'Blocked Project Creator Attempt',
+          visibility: 'private',
+          join_policy: 'approval_required',
+        },
+      });
+      expect(memberCreateAttempt.status()).toBe(403);
 
-    await runProjectMatrix({
-      page,
-      workspaceId,
-      creator,
-      member,
-      guest,
-      invitee,
-      prefix: 'Default IdP',
-    });
+      const guest = await loginAndReadIdentity({
+        page,
+        workspaceId,
+        username: KEYCLOAK_INTEGRATION_GUEST_USERNAME,
+        password: KEYCLOAK_INTEGRATION_GUEST_PASSWORD,
+      });
+      guest.email ||= KEYCLOAK_INTEGRATION_GUEST_EMAIL;
+      const invitee = await loginAndReadIdentity({
+        page,
+        workspaceId,
+        username: KEYCLOAK_INTEGRATION_INVITEE_USERNAME,
+        password: KEYCLOAK_INTEGRATION_INVITEE_PASSWORD,
+      });
+      invitee.email ||= KEYCLOAK_INTEGRATION_INVITEE_EMAIL;
 
-    await ensureExternalTestKeycloak();
-    await loginAsSystemAdmin(page);
-    await page.goto(`/${LOCALE}/system/workspaces?workspace=${workspaceId}`);
-    await expect(page.getByTestId('system-workspaces__heading')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('system-workspaces__enable-edit').click();
-    await page.getByTestId('system-workspaces__draft-idp-url').fill(EXTERNAL_KEYCLOAK_BASE_URL);
-    await page.getByTestId('system-workspaces__draft-idp-realm').fill(process.env.KEYCLOAK_REALM ?? 'mbos');
-    await page.getByTestId('system-workspaces__draft-idp-client-id').fill(process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith');
-    await page.getByTestId('system-workspaces__draft-directory-client-id').fill(KEYCLOAK_DIRECTORY_CLIENT_ID);
-    await page.getByTestId('system-workspaces__draft-idp-client-secret').fill(KEYCLOAK_DIRECTORY_CLIENT_SECRET);
-    const verifyExternalResponse = page.waitForResponse(
-      (candidate) => candidate.url().includes('/api/system/workspaces/idp/verify') && candidate.request().method() === 'POST',
-      { timeout: 20_000 },
-    );
-    await page.getByTestId('system-workspaces__verify-idp').click();
-    expect((await verifyExternalResponse).ok()).toBeTruthy();
-    await page.getByTestId('system-workspaces__admin-mode--directory').click();
-    await selectWorkspaceAdminFromDirectory(page, 'dev-admin@example.com');
-    await page.getByTestId('system-workspaces__save').click();
-    await expect(page.getByTestId('system-workspaces__save-notice')).toBeVisible({ timeout: 20_000 });
-    await page.getByTestId('system-workspaces__publish').click();
-    await expect(page.getByTestId('system-workspaces__save-notice')).toBeVisible({ timeout: 20_000 });
+      await runProjectMatrix({
+        page,
+        workspaceId,
+        creator,
+        member,
+        guest,
+        invitee,
+        prefix: `${projectPrefix} ${MATRIX_SETUP?.defaultIdpLabel ?? 'Default IdP'}`,
+        trace,
+        traceEnabled: true,
+      });
 
-    await loginAndReadIdentity({
-      page,
-      workspaceId,
-      username: KEYCLOAK_DEV_ADMIN_USERNAME,
-      password: KEYCLOAK_DEV_ADMIN_PASSWORD,
-    });
-    await ensureWorkspaceProjectCreatorViaUi({
-      page,
-      workspaceId,
-      creatorEmail: 'integration-user@example.com',
-    });
+      await ensureExternalTestKeycloak();
+      await loginAsSystemAdmin(page);
+      await page.goto(`/${LOCALE}/system/workspaces?workspace=${workspaceId}`);
+      await expect(page.getByTestId('system-workspaces__heading')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('system-workspaces__enable-edit').click();
+      await page.getByTestId('system-workspaces__draft-idp-url').fill(EXTERNAL_KEYCLOAK_BASE_URL);
+      await page.getByTestId('system-workspaces__draft-idp-realm').fill(process.env.KEYCLOAK_REALM ?? 'mbos');
+      await page.getByTestId('system-workspaces__draft-idp-client-id').fill(process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith');
+      await page.getByTestId('system-workspaces__draft-directory-client-id').fill(KEYCLOAK_DIRECTORY_CLIENT_ID);
+      await page.getByTestId('system-workspaces__draft-idp-client-secret').fill(KEYCLOAK_DIRECTORY_CLIENT_SECRET);
+      const verifyExternalResponse = page.waitForResponse(
+        (candidate) => candidate.url().includes('/api/system/workspaces/idp/verify') && candidate.request().method() === 'POST',
+        { timeout: 20_000 },
+      );
+      await page.getByTestId('system-workspaces__verify-idp').click();
+      expect((await verifyExternalResponse).ok()).toBeTruthy();
+      await page.getByTestId('system-workspaces__admin-mode--directory').click();
+      await selectWorkspaceAdminFromDirectory(page, 'dev-admin@example.com');
+      await page.getByTestId('system-workspaces__save').click();
+      await expect(page.getByTestId('system-workspaces__save-notice')).toBeVisible({ timeout: 20_000 });
+      await page.getByTestId('system-workspaces__publish').click();
+      await expect(page.getByTestId('system-workspaces__save-notice')).toBeVisible({ timeout: 20_000 });
 
-    const switchedCreator = await loginAndReadIdentity({
-      page,
-      workspaceId,
-      username: KEYCLOAK_INTEGRATION_USER_USERNAME,
-      password: KEYCLOAK_INTEGRATION_USER_PASSWORD,
-    });
-    switchedCreator.email ||= KEYCLOAK_INTEGRATION_USER_EMAIL;
-    const switchedMember = await loginAndReadIdentity({
-      page,
-      workspaceId,
-      username: KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
-      password: KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
-    });
-    switchedMember.email ||= KEYCLOAK_INTEGRATION_MEMBER_EMAIL;
-    const switchedGuest = await loginAndReadIdentity({
-      page,
-      workspaceId,
-      username: KEYCLOAK_INTEGRATION_GUEST_USERNAME,
-      password: KEYCLOAK_INTEGRATION_GUEST_PASSWORD,
-    });
-    switchedGuest.email ||= KEYCLOAK_INTEGRATION_GUEST_EMAIL;
-    const switchedInvitee = await loginAndReadIdentity({
-      page,
-      workspaceId,
-      username: KEYCLOAK_INTEGRATION_INVITEE_USERNAME,
-      password: KEYCLOAK_INTEGRATION_INVITEE_PASSWORD,
-    });
-    switchedInvitee.email ||= KEYCLOAK_INTEGRATION_INVITEE_EMAIL;
+      await loginAndReadIdentity({
+        page,
+        workspaceId,
+        username: KEYCLOAK_DEV_ADMIN_USERNAME,
+        password: KEYCLOAK_DEV_ADMIN_PASSWORD,
+      });
+      await ensureWorkspaceProjectCreatorViaUi({
+        page,
+        workspaceId,
+        creatorEmail: 'integration-user@example.com',
+      });
 
-    await runProjectMatrix({
-      page,
-      workspaceId,
-      creator: switchedCreator,
-      member: switchedMember,
-      guest: switchedGuest,
-      invitee: switchedInvitee,
-      prefix: 'External IdP',
-    });
+      const switchedCreator = await loginAndReadIdentity({
+        page,
+        workspaceId,
+        username: KEYCLOAK_INTEGRATION_USER_USERNAME,
+        password: KEYCLOAK_INTEGRATION_USER_PASSWORD,
+      });
+      switchedCreator.email ||= KEYCLOAK_INTEGRATION_USER_EMAIL;
+      const switchedMember = await loginAndReadIdentity({
+        page,
+        workspaceId,
+        username: KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
+        password: KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
+      });
+      switchedMember.email ||= KEYCLOAK_INTEGRATION_MEMBER_EMAIL;
+      const switchedGuest = await loginAndReadIdentity({
+        page,
+        workspaceId,
+        username: KEYCLOAK_INTEGRATION_GUEST_USERNAME,
+        password: KEYCLOAK_INTEGRATION_GUEST_PASSWORD,
+      });
+      switchedGuest.email ||= KEYCLOAK_INTEGRATION_GUEST_EMAIL;
+      const switchedInvitee = await loginAndReadIdentity({
+        page,
+        workspaceId,
+        username: KEYCLOAK_INTEGRATION_INVITEE_USERNAME,
+        password: KEYCLOAK_INTEGRATION_INVITEE_PASSWORD,
+      });
+      switchedInvitee.email ||= KEYCLOAK_INTEGRATION_INVITEE_EMAIL;
 
-    const adminMembersRes = await apiRequest({
-      page,
-      token: admin.token,
-      method: 'GET',
-      path: `/api/v1/workspaces/${workspaceId}/members`,
-    });
-    expect(adminMembersRes.ok()).toBeTruthy();
+      await runProjectMatrix({
+        page,
+        workspaceId,
+        creator: switchedCreator,
+        member: switchedMember,
+        guest: switchedGuest,
+        invitee: switchedInvitee,
+        prefix: `${projectPrefix} ${MATRIX_SETUP?.externalIdpLabel ?? 'External IdP'}`,
+        trace,
+        traceEnabled: false,
+      });
+
+      const adminMembersRes = await apiRequest({
+        page,
+        token: admin.token,
+        method: 'GET',
+        path: `/api/v1/workspaces/${workspaceId}/members`,
+      });
+      expect(adminMembersRes.ok()).toBeTruthy();
+      await trace.note({
+        stepId: 'matrix-verification',
+        note: 'workspace / project 访问矩阵已收敛到预期状态',
+      });
+      outcome = 'pass';
+    } finally {
+      await trace.finish({
+        outcome,
+        finishedAt: new Date().toISOString(),
+      });
+    }
   });
 });

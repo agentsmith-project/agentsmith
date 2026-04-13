@@ -8,6 +8,8 @@ source "${ROOT_DIR}/scripts/lib/ensure-juicefs-vendor.sh"
 source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
 source "${ROOT_DIR}/scripts/lib/release-story-verify-source-set.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
+RELEASE_STORY_SOURCE_SET_NAME="$(release_story_verify_source_set_name)"
+RELEASE_STORY_SOURCE_SET_HELPER="$(release_story_verify_source_set_helper_path)"
 OUT_DIR="${OUT_DIR:-${HOME}/agentsmith/deploy/uploads}"
 RELEASE_ID="${RELEASE_ID:-$(git -C "${ROOT_DIR}" rev-parse --short HEAD)-$(date -u +%Y%m%dT%H%M%SZ)}"
 BUNDLE_DIR="${OUT_DIR}/agentsmith-${RELEASE_ID}"
@@ -310,19 +312,38 @@ EOF
 
 (cd "${BUNDLE_DIR}" && find . -type f -print0 | sort -z | xargs -0 sha256sum > checksums.txt)
 
-python3 - <<'PY' "${BUNDLE_DIR}/deployment.manifest.json" "${BUNDLE_DIR}"
+mapfile -t release_story_runtime_files < <(release_story_verify_source_set "${ROOT_DIR}")
+
+python3 - <<'PY' "${BUNDLE_DIR}/deployment.manifest.json" "${BUNDLE_DIR}" "${RELEASE_STORY_SOURCE_SET_NAME}" "${RELEASE_STORY_SOURCE_SET_HELPER}" "${release_story_runtime_files[@]}"
 import json
 import pathlib
 import sys
 
 manifest_path = pathlib.Path(sys.argv[1])
 bundle_root = pathlib.Path(sys.argv[2])
+expected_source_set_name = sys.argv[3]
+expected_source_set_helper = sys.argv[4]
+required_source_files = sys.argv[5:]
 manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
 
 for relative in manifest.get("bundle_files", []):
     path = bundle_root / relative
     if not path.exists():
         raise SystemExit(f"missing_bundle_file:{relative}")
+
+bundle_source_sets = manifest.get("bundle_source_sets", [])
+if not any(
+    isinstance(entry, dict)
+    and entry.get("name") == expected_source_set_name
+    and entry.get("helper") == expected_source_set_helper
+    for entry in bundle_source_sets
+):
+    raise SystemExit(f"missing_bundle_source_set:{expected_source_set_name}")
+
+for relative in required_source_files:
+    path = bundle_root / relative
+    if not path.exists():
+        raise SystemExit(f"missing_bundle_source_set_file:{relative}")
 
 for tool_name in manifest.get("bundled_tools", []):
     path = bundle_root / "tools" / tool_name

@@ -1,12 +1,58 @@
-import http, { type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
 import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
+import { loadStoryDefinitionSync } from './story-loader';
+import { buildTraceStoryBinding } from './story-trace-binding';
+import { createUxTraceBundleWriter } from './trace-bundle-support';
+import {
+  startOpenAICompatibleUpstream,
+  startOpenAICompatibleUpstreamWith,
+  startOpenAIStreamingUpstreamWith,
+} from './integration-chat-local-upstream';
 
 const RUN_REAL_COMPLETION = process.env.INTEGRATION_REAL_COMPLETION_E2E === 'true';
 let lastApiAuthContext: { apiBase: string; authHeader: string } | null = null;
+const CHAT_DAY_TWO_STORY = loadStoryDefinitionSync('chat-day-two-thread-workflow');
+const CHAT_DAY_TWO_BINDING = buildTraceStoryBinding(CHAT_DAY_TWO_STORY);
+
+type ChatDayTwoRuntime = {
+  projectNamePrefix: string;
+  upstreamReplyText: string;
+  firstThreadPrompt: string;
+  secondThreadPrompt: string;
+  resumeThreadPrompt: string;
+  renamedThreadPrefix: string;
+};
+
+function resolveChatDayTwoStep(stepId: string) {
+  const step = CHAT_DAY_TWO_BINDING.steps.find((entry) => entry.stepId === stepId);
+  if (!step) {
+    throw new Error(`unknown_chat_day_two_step:${stepId}`);
+  }
+  return step;
+}
+
+function requireChatDayTwoRuntime(): ChatDayTwoRuntime {
+  const runtimeRoot = CHAT_DAY_TWO_STORY.runtimeData as Record<string, unknown> | undefined;
+  const runtime = runtimeRoot?.chatDayTwoWorkflow as Record<string, unknown> | undefined;
+  if (!runtime) {
+    throw new Error('missing_chat_day_two_runtime_data');
+  }
+  for (const key of [
+    'projectNamePrefix',
+    'upstreamReplyText',
+    'firstThreadPrompt',
+    'secondThreadPrompt',
+    'resumeThreadPrompt',
+    'renamedThreadPrefix',
+  ] as const) {
+    if (typeof runtime[key] !== 'string' || runtime[key].trim().length === 0) {
+      throw new Error(`missing_chat_day_two_runtime_data:${key}`);
+    }
+  }
+  return runtime as unknown as ChatDayTwoRuntime;
+}
 
 function captureApiAuthContextFromResponse(response: import('@playwright/test').Response): void {
   const authHeader = response.request().headers()['authorization'];
@@ -14,150 +60,6 @@ function captureApiAuthContextFromResponse(response: import('@playwright/test').
   if (authHeader && match?.[1]) {
     lastApiAuthContext = { apiBase: match[1], authHeader };
   }
-}
-
-async function startOpenAICompatibleUpstream(): Promise<{
-  server: Server;
-  baseUrl: string;
-  getRequestCount: () => number;
-}> {
-  return startOpenAICompatibleUpstreamWith({
-    replyText: 'Hello from integration upstream.',
-  });
-}
-
-async function startOpenAICompatibleUpstreamWith(args: {
-  replyText: string;
-  delayMs?: number;
-  statusCode?: number;
-  errorMessage?: string;
-  errorCode?: string;
-}): Promise<{
-  server: Server;
-  baseUrl: string;
-  getRequestCount: () => number;
-}> {
-  const {
-    replyText,
-    delayMs = 0,
-    statusCode = 200,
-    errorMessage = 'upstream_error',
-    errorCode = 'UPSTREAM_ERROR',
-  } = args;
-  let requestCount = 0;
-  const server = http.createServer((req, res) => {
-    void (async () => {
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
-      requestCount += 1;
-
-      if (req.method !== 'POST' || !req.url?.includes('/chat/completions')) {
-        res.statusCode = 404;
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ error: 'not_found' }));
-        return;
-      }
-      if (delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-
-      if (statusCode >= 400) {
-        res.statusCode = statusCode;
-        res.setHeader('content-type', 'application/json');
-        res.end(
-          JSON.stringify({
-            error_code: errorCode,
-            message: errorMessage,
-          }),
-        );
-        return;
-      }
-
-      res.statusCode = 200;
-      res.setHeader('content-type', 'application/json');
-      res.end(
-        JSON.stringify({
-          id: 'chatcmpl_integration',
-          object: 'chat.completion',
-          created: Math.floor(Date.now() / 1000),
-          model: 'integration-chat-model',
-          choices: [
-            {
-              index: 0,
-              message: { role: 'assistant', content: replyText },
-              finish_reason: 'stop',
-            },
-          ],
-        }),
-      );
-    })();
-  });
-
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
-  const address = server.address() as AddressInfo;
-  return {
-    server,
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
-    getRequestCount: () => requestCount,
-  };
-}
-
-async function startOpenAIStreamingUpstreamWith(args: {
-  chunks: string[];
-  chunkDelayMs?: number;
-}): Promise<{
-  server: Server;
-  baseUrl: string;
-  getRequestCount: () => number;
-}> {
-  const { chunks, chunkDelayMs = 500 } = args;
-  let requestCount = 0;
-  const server = http.createServer((req, res) => {
-    void (async () => {
-      const bodyChunks: Buffer[] = [];
-      for await (const chunk of req) {
-        bodyChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
-      requestCount += 1;
-
-      if (req.method !== 'POST' || !req.url?.includes('/chat/completions')) {
-        res.statusCode = 404;
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ error: 'not_found' }));
-        return;
-      }
-
-      res.statusCode = 200;
-      res.setHeader('content-type', 'text/event-stream');
-      res.setHeader('cache-control', 'no-cache');
-      res.setHeader('connection', 'keep-alive');
-
-      for (const chunk of chunks) {
-        const payload = JSON.stringify({
-          id: 'chatcmpl_stream_integration',
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: 'integration-chat-model',
-          choices: [{ index: 0, delta: { content: chunk }, finish_reason: null }],
-        });
-        res.write(`data: ${payload}\n\n`);
-        await new Promise((resolve) => setTimeout(resolve, chunkDelayMs));
-      }
-
-      res.write('data: [DONE]\n\n');
-      res.end();
-    })();
-  });
-
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
-  const address = server.address() as AddressInfo;
-  return {
-    server,
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
-    getRequestCount: () => requestCount,
-  };
 }
 
 async function keycloakLogin(page: import('@playwright/test').Page, locale: string, username: string, password: string) {
@@ -347,8 +249,11 @@ async function openChatAndSendExpectAssistantAny(
   expect((lastMessageText ?? '').trim().length).toBeGreaterThan(0);
 }
 
-async function createProjectFromUi(page: import('@playwright/test').Page, locale: string): Promise<string> {
-  const projectName = `it-chat-proj-${Date.now()}`;
+async function createProjectFromUi(
+  page: import('@playwright/test').Page,
+  locale: string,
+  projectName = `it-chat-proj-${Date.now()}`,
+): Promise<string> {
   const createButton = page.getByTestId('projects__create-btn');
   if (await createButton.isVisible().catch(() => false)) {
     await createButton.click();
@@ -488,7 +393,7 @@ async function createCredential(
   },
 ): Promise<string> {
   const { credentialName, credentialValue } = args;
-  await page.getByRole('link', { name: /credentials|凭据/i }).first().click();
+  await page.goto(`/${locale}/workspaces/ws_default/projects/${projectId}/credentials`);
   await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/credentials`), {
     timeout: 30_000,
   });
@@ -714,7 +619,7 @@ async function openChatAndSend(
   projectId: string,
   text: string,
   sessionId?: string | null,
-  expectedReply = 'Hello from integration upstream.',
+  expectedReply: string | null = 'Hello from integration upstream.',
 ): Promise<string> {
   await page.getByRole('link', { name: /chat|对话/i }).first().click();
   await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/chat`), {
@@ -743,6 +648,7 @@ async function openChatAndSend(
   await ensureComposerEnabled(page);
   await expect(textarea).toBeEditable();
   await textarea.fill(text);
+  const beforeCount = await page.getByTestId('chat__message').count();
 
   const sendBtn = page.getByTestId('chat__send-btn');
   await expect(sendBtn).toBeEnabled({ timeout: 15_000 });
@@ -757,7 +663,15 @@ async function openChatAndSend(
     const bodyText = await streamRes.text().catch(() => '');
     throw new Error(`Stream request failed (${streamRes.status()}): ${bodyText}`);
   }
-  await expect(page.getByText(expectedReply).first()).toBeVisible({ timeout: 60_000 });
+  if (expectedReply) {
+    await expect(page.getByText(expectedReply).first()).toBeVisible({ timeout: 60_000 });
+  } else {
+    await expect
+      .poll(async () => page.getByTestId('chat__message').count(), { timeout: 60_000 })
+      .toBeGreaterThanOrEqual(beforeCount + 2);
+    const lastMessageText = await page.getByTestId('chat__message').last().textContent();
+    expect((lastMessageText ?? '').trim().length).toBeGreaterThan(0);
+  }
   return selectedThreadId!;
 }
 
@@ -1548,53 +1462,93 @@ test.describe('@lane-real integration chat flow', () => {
     const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
     const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
     const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+    const runtime = requireChatDayTwoRuntime();
 
-    const upstream = await startOpenAICompatibleUpstreamWith({ replyText: 'Thread lifecycle reply' });
+    const upstream = await startOpenAICompatibleUpstreamWith({ replyText: runtime.upstreamReplyText });
     try {
       await keycloakLogin(page, locale, username, password);
-      const projectId = await createProjectFromUi(page, locale);
+      const projectId = await createProjectFromUi(
+        page,
+        locale,
+        `${runtime.projectNamePrefix} ${Date.now()}`,
+      );
       await provisionCredentialAndEndpoint(page, locale, projectId, upstream.baseUrl);
-
-      const threadAId = await openChatAndSend(
-        page,
-        locale,
-        projectId,
-        'Thread A initial message',
-        null,
-        'Thread lifecycle reply',
-      );
-      const threadBId = await createNewThreadInChat(page, locale, projectId);
-      await openChatAndSend(
-        page,
-        locale,
-        projectId,
-        'Thread B initial message',
-        threadBId,
-        'Thread lifecycle reply',
-      );
-
-      const renamedTitle = `Renamed Thread ${Date.now()}`;
-      await renameThreadInChat(page, threadAId, renamedTitle);
-      await deleteThreadInChat(page, threadBId);
-
-      await page.goto(`/${locale}/workspaces/ws_default/projects/${projectId}/overview`);
-      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/overview`), {
-        timeout: 30_000,
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+        lane: 'backend-real',
+        suite: 'integration-chat',
+        storyId: CHAT_DAY_TWO_STORY.storyId,
+        title: CHAT_DAY_TWO_STORY.title,
+        actor: CHAT_DAY_TWO_STORY.actor,
+        route: `/${locale}/workspaces/ws_default/projects/${projectId}/chat`,
+        specFile: 'e2e/integration-chat.spec.ts',
+        browser: 'chromium',
+        goal: CHAT_DAY_TWO_STORY.goal,
+        preconditions: [...(CHAT_DAY_TWO_STORY.preconditions ?? [])],
+        seedData: [...(CHAT_DAY_TWO_STORY.seedData ?? [])],
+        storyBinding: CHAT_DAY_TWO_BINDING,
       });
+      const captureTrace = async (stepId: string): Promise<void> => {
+        const storyStep = resolveChatDayTwoStep(stepId);
+        await trace.capture(page, {
+          stepId,
+          action: storyStep.action,
+          target: storyStep.target,
+          note: storyStep.note ?? storyStep.expectedFeedback,
+        });
+      };
+      let outcome: 'pass' | 'fail' = 'fail';
 
-      const beforeResume = upstream.getRequestCount();
-      await openChatAndSend(
-        page,
-        locale,
-        projectId,
-        'Thread A after lifecycle operations',
-        threadAId,
-        'Thread lifecycle reply',
-      );
-      const threadA = page.locator(`[data-testid="chat__thread-item"][data-thread-id="${threadAId}"]`).first();
-      await expect(threadA.getByText(renamedTitle)).toBeVisible({ timeout: 30_000 });
-      await expect(page.locator(`[data-testid="chat__thread-item"][data-thread-id="${threadBId}"]`)).toHaveCount(0);
-      expect(upstream.getRequestCount()).toBeGreaterThanOrEqual(beforeResume + 1);
+      try {
+        const threadAId = await openChatAndSend(
+          page,
+          locale,
+          projectId,
+          runtime.firstThreadPrompt,
+          null,
+          runtime.upstreamReplyText,
+        );
+        await captureTrace('open-chat-day-two');
+        const threadBId = await createNewThreadInChat(page, locale, projectId);
+        await openChatAndSend(
+          page,
+          locale,
+          projectId,
+          runtime.secondThreadPrompt,
+          threadBId,
+          runtime.upstreamReplyText,
+        );
+        await captureTrace('create-follow-up-thread');
+
+        const renamedTitle = `${runtime.renamedThreadPrefix} ${Date.now()}`;
+        await renameThreadInChat(page, threadAId, renamedTitle);
+        await captureTrace('rename-keep-thread');
+        await deleteThreadInChat(page, threadBId);
+        await captureTrace('delete-stale-thread');
+
+        await page.goto(`/${locale}/workspaces/ws_default/projects/${projectId}/overview`);
+        await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/overview`), {
+          timeout: 30_000,
+        });
+
+        const beforeResume = upstream.getRequestCount();
+        await openChatAndSend(
+          page,
+          locale,
+          projectId,
+          runtime.resumeThreadPrompt,
+          threadAId,
+          runtime.upstreamReplyText,
+        );
+        const threadA = page.locator(`[data-testid="chat__thread-item"][data-thread-id="${threadAId}"]`).first();
+        await expect(threadA.getByText(renamedTitle)).toBeVisible({ timeout: 30_000 });
+        await expect(page.locator(`[data-testid="chat__thread-item"][data-thread-id="${threadBId}"]`)).toHaveCount(0);
+        expect(upstream.getRequestCount()).toBeGreaterThanOrEqual(beforeResume + 1);
+        await captureTrace('resume-kept-thread');
+        outcome = 'pass';
+      } finally {
+        await trace.finish({ outcome });
+      }
     } finally {
       await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
     }

@@ -12,7 +12,7 @@ import {
   summarizeNotebookPod,
   summarizeNotebookTraces,
 } from './notebook-execution-outcome';
-import { ensureWorkspaceProjectCreatorAccess } from './integration-workspace-access';
+import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
 
 export const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 export const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';

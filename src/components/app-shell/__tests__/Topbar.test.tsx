@@ -110,7 +110,7 @@ vi.mock('@/lib/hooks/use-project-layout-mode', () => ({
   broadcastProjectLayoutMode: vi.fn(),
 }));
 
-function renderTopbar() {
+function renderTopbar(props?: { workspaceId?: string; projectId?: string }) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -119,7 +119,7 @@ function renderTopbar() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <Topbar />
+      <Topbar {...props} />
     </QueryClientProvider>,
   );
 }
@@ -247,6 +247,21 @@ describe('Topbar', () => {
 
     expect(mockPush).toHaveBeenNthCalledWith(1, '/workspaces/ws_1/context');
     expect(mockPush).toHaveBeenNthCalledWith(2, '/workspaces/ws_1/projects/proj_chat/my-context');
+  });
+
+  it('prefers explicit workspace and project route ids when route params are not ready', () => {
+    mockParams = { locale: 'en-US' };
+    mockPathname = '/en-US/workspaces/ws_1/projects/proj_chat/overview';
+
+    renderTopbar({ workspaceId: 'ws_1', projectId: 'proj_chat' });
+
+    const userMenuProps = mockUserMenu.mock.calls.at(-1)?.[0] as {
+      onWorkspacePersonalContext?: () => void;
+      onProjectPersonalContext?: () => void;
+    };
+
+    expect(userMenuProps?.onWorkspacePersonalContext).toEqual(expect.any(Function));
+    expect(userMenuProps?.onProjectPersonalContext).toEqual(expect.any(Function));
   });
 
   it('expands the switcher with governable projects only when they have a reachable surface', () => {

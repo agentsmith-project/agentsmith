@@ -11,6 +11,11 @@ export type GeneratedStorySpec = {
   storyId: string;
   title: string;
   actor: string;
+  family: string;
+  personas: readonly string[];
+  kind: StoryDefinition['kind'];
+  gatePolicy: StoryDefinition['gatePolicy'];
+  externalDependencies: StoryDefinition['externalDependencies'];
   lane: StoryDefinition['lane'];
   entryRoute: string;
   goal: string;
@@ -29,6 +34,19 @@ export function buildGeneratedStorySpecs(stories: readonly StoryDefinition[]): G
     storyId: story.storyId,
     title: story.title,
     actor: story.actor,
+    family: story.family,
+    personas: [...story.personas],
+    kind: story.kind,
+    gatePolicy: {
+      tier: story.gatePolicy.tier,
+      requiredEvidence: [...story.gatePolicy.requiredEvidence],
+    },
+    externalDependencies: story.externalDependencies.map((dependency) => ({
+      dependencyId: dependency.dependencyId,
+      kind: dependency.kind,
+      required: dependency.required ?? false,
+      note: dependency.note,
+    })),
     lane: story.lane,
     entryRoute: story.entryRoute,
     goal: story.goal,

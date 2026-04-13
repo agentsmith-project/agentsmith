@@ -6,7 +6,6 @@ import { ContextManager } from '@/components/context/ContextManager';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
-import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
 export default function WorkspacePersonalContextPage() {
@@ -14,7 +13,6 @@ export default function WorkspacePersonalContextPage() {
   const t = useTranslations('context_store');
   const tErrors = useTranslations('errors');
   const workspaceId = validateWorkspaceParam(params?.workspace);
-  const canReadWorkspace = useHasWorkspacePermission('workspace:read');
 
   if (!workspaceId) {
     return (
@@ -24,18 +22,7 @@ export default function WorkspacePersonalContextPage() {
           <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
         </div>
       </PageState>
-    );
-  }
-
-  if (!canReadWorkspace) {
-    return (
-      <PageState state="error">
-        <div className="max-w-md space-y-2 text-center">
-          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
-        </div>
-      </PageState>
-    );
+      );
   }
 
   return (

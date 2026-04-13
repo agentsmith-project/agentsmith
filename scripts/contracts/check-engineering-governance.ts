@@ -84,6 +84,8 @@ requireMatch(governanceModel, /current-gate-manifest\.ts/, 'current engineering 
 requireMatch(governanceModel, /story evidence/i, 'current engineering governance model must describe story evidence as part of gate truth');
 requireMatch(governanceModel, /visual_scene_catalog/, 'current engineering governance model must define visual_scene_catalog ownership');
 requireMatch(governanceModel, /ux_trace_bundle/, 'current engineering governance model must define ux_trace_bundle ownership');
+requireMatch(governanceModel, /test:backend-real:core/, 'current engineering governance model must describe test:backend-real:core as a default-tier backend-real story-evidence owner');
+requireMatch(governanceModel, /lane:backend-real:core/, 'current engineering governance model must describe lane:backend-real:core as a default-tier backend-real story-evidence owner');
 requireMatch(contractsIndex, /product-terminology\.md/, 'contracts README is missing the product terminology contract reference');
 requireMatch(contractsIndex, /Execution target/, 'contracts README must describe Execution target as part of the current terminology contract');
 requireMatch(contractsIndex, /Shared context/, 'contracts README must describe Shared context as part of the current terminology contract');
@@ -140,6 +142,7 @@ requireMatch(readme, /lane:visual/, 'README must document lane:visual');
 requireMatch(development, /lane:visual/, 'DEVELOPMENT must document lane:visual');
 requireMatch(governanceModel, /lane:visual/, 'current engineering governance model must document lane:visual');
 requireMatch(governanceModel, /e2e\/visual-baseline-support\.ts/, 'current engineering governance model must identify the visual scene catalog source');
+requireMatch(governanceModel, /artifacts\/backend-real\/runs\/<run-id>\/ux-traces/, 'current engineering governance model must identify the default-tier backend-real ux trace bundle root');
 requireMatch(governanceModel, /artifacts\/backend-real-visual\/<run-id>\/ux-traces/, 'current engineering governance model must identify the backend-real ux trace bundle root');
 
 const requiredMockLaneScripts = [

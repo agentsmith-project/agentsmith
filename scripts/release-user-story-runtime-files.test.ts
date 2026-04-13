@@ -5,18 +5,6 @@ import { describe, expect, it } from 'vitest';
 
 const HELPER_PATH = 'scripts/lib/release-story-verify-source-set.sh';
 
-const REQUIRED_RELEASE_STORY_VERIFY_FILES = [
-  'e2e/integration-release-user-story.spec.ts',
-  'e2e/release-user-story.contract.ts',
-  'e2e/story-contract.ts',
-  'e2e/story-loader.ts',
-  'e2e/story-trace-binding.ts',
-  'e2e/trace-bundle-support.ts',
-  'e2e/generated/story-specs.generated.json',
-  'e2e/stories/backend-real/release-user-story-end-to-end.story.md',
-  'e2e/stories/backend-real/real-backend-visual-review.story.md',
-] as const;
-
 function read(relativePath: string): string {
   return readFileSync(relativePath, 'utf8');
 }
@@ -36,6 +24,28 @@ function listReleaseStoryVerifySources(): string[] {
     .filter(Boolean);
 }
 
+function readSourceSetContract(): { name: string; helperPath: string } {
+  const output = execFileSync(
+    'bash',
+    [
+      '-lc',
+      `source "${HELPER_PATH}" && printf '%s\\n%s\\n' "$(release_story_verify_source_set_name)" "$(release_story_verify_source_set_helper_path)"`,
+    ],
+    {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    },
+  )
+    .split('\n')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return {
+    name: output[0] ?? '',
+    helperPath: output[1] ?? '',
+  };
+}
+
 describe('release story verify source set runtime contract', () => {
   it('keeps a single helper-owned release story source list for deploy bundle and verify flows', () => {
     const helper = read(HELPER_PATH);
@@ -43,13 +53,12 @@ describe('release story verify source set runtime contract', () => {
 
     expect(helper).toContain('e2e/trace-bundle-support.ts');
     expect(helper).toContain('find "${story_root}" -type f -name \'*.story.md\'');
-
-    for (const relativePath of REQUIRED_RELEASE_STORY_VERIFY_FILES) {
-      expect(sources).toContain(relativePath);
-    }
+    expect(sources).toContain('e2e/integration-release-user-story.spec.ts');
+    expect(sources).toContain('e2e/trace-bundle-support.ts');
+    expect(sources.some((relativePath) => relativePath.endsWith('.story.md'))).toBe(true);
   });
 
-  it('makes demo and cluster build/verify and bundle-input gates consume the shared verify source set helper', () => {
+  it('makes demo and cluster build/verify and bundle-input gates consume the shared verify source set helper and source-set contract', () => {
     const demoBuild = read('scripts/demo-deploy/build-offline-bundle.sh');
     const clusterBuild = read('scripts/cluster-deploy/build-bundle.sh');
     const demoVerify = read('scripts/demo-deploy/verify.sh');
@@ -69,19 +78,36 @@ describe('release story verify source set runtime contract', () => {
       expect(script).toContain('release_story_verify_source_set');
     }
 
+    for (const script of [demoBuild, clusterBuild, demoBundleInputs, clusterBundleInputs]) {
+      expect(script).toContain('release_story_verify_source_set_name');
+    }
+
+    expect(demoBundleInputs).toContain('bundle_source_sets');
+    expect(clusterBundleInputs).toContain('bundle_source_sets');
     expect(demoVerify).toContain('prepare_release_story_verify_mounts');
     expect(demoVerify).toContain('"${RELEASE_STORY_VERIFY_MOUNTS[@]}"');
     expect(clusterVerify).toContain('prepare_release_story_verify_mounts');
     expect(clusterVerify).toContain('"${RELEASE_STORY_VERIFY_MOUNTS[@]}"');
   });
 
-  it('keeps both deployment manifests aligned with the shared release story verify source set', () => {
-    const demoManifest = JSON.parse(read('infra/deploy/demo/deployment.manifest.json')) as { bundle_files?: string[] };
-    const clusterManifest = JSON.parse(read('infra/deploy/cluster/deployment.manifest.json')) as { bundle_files?: string[] };
+  it('keeps both deployment manifests aligned with the shared release story verify source-set declaration', () => {
+    const sourceSetContract = readSourceSetContract();
+    const demoManifest = JSON.parse(read('infra/deploy/demo/deployment.manifest.json')) as {
+      bundle_source_sets?: Array<{ name?: string; helper?: string }>;
+    };
+    const clusterManifest = JSON.parse(read('infra/deploy/cluster/deployment.manifest.json')) as {
+      bundle_source_sets?: Array<{ name?: string; helper?: string }>;
+    };
 
-    for (const relativePath of REQUIRED_RELEASE_STORY_VERIFY_FILES) {
-      expect(demoManifest.bundle_files).toContain(relativePath);
-      expect(clusterManifest.bundle_files).toContain(relativePath);
+    for (const manifest of [demoManifest, clusterManifest]) {
+      expect(manifest.bundle_source_sets).toEqual(
+        expect.arrayContaining([
+          {
+            name: sourceSetContract.name,
+            helper: sourceSetContract.helperPath,
+          },
+        ]),
+      );
     }
   });
 });

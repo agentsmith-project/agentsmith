@@ -272,7 +272,7 @@ export default function WorkspaceLoginPage() {
 
                     <div className="pt-1 text-center">
                       <Link
-                        href={`/${locale}/login`}
+                        href={`/${locale}/login/workspace`}
                         className="text-xs text-tertiary transition-colors hover:text-secondary"
                         data-testid="workspace-login__back-to-selection"
                       >

@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { TaskAPI } from '@/lib/api/endpoints/tasks';
 import type { TaskTerminalServerEvent } from '@/lib/types/task';
 import { toast } from '@/components/ui/toast';
@@ -444,8 +445,21 @@ export function TaskTerminalPanel({
         </div>
       ) : null}
       {errorMessage ? (
-        <div className="border-b border-subtle bg-error/10 px-4 py-2 text-xs text-error">
-          {t('terminal_error_hint', { reason: errorMessage })}
+        <div className="border-b border-subtle bg-error/10 px-4 py-3 text-xs text-error">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div>{t('terminal_error_hint', { reason: errorMessage })}</div>
+              <div className="mt-1 text-[11px] text-error/80">{t('terminal_recovery_hint')}</div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 border-error/30 bg-background/70 px-2.5 text-[11px] text-error hover:bg-background"
+              onClick={handleEndSession}
+            >
+              {t('terminal_recovery_close')}
+            </Button>
+          </div>
         </div>
       ) : null}
       <div className="h-[360px] overflow-hidden bg-[#0f141d]">

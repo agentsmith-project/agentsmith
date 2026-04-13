@@ -1,209 +1,150 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  API_BASE,
+  BACKEND_REAL_ANTHROPIC_BASE_URL,
+  BACKEND_REAL_MODEL,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   LOCALE,
+  createCredentialViaUi,
+  createEndpointViaApi,
+  createExternalRunnerAgentBundle,
+  createFileLibraryViaUi,
+  createNotebookTaskViaApi,
+  createProjectInWorkspace,
+  keycloakLoginToWorkspace,
+  startCodexRunnerProcess,
+  waitForAgentPresenceOnline,
 } from './integration-real-helpers';
+import { loadStoryDefinitionSync } from './story-loader';
+import { buildTraceStoryBinding } from './story-trace-binding';
+import { createUxTraceBundleWriter } from './trace-bundle-support';
 
 const WORKSPACE_ID = process.env.INTEGRATION_NOTEBOOK_TERMINAL_WORKSPACE_ID ?? 'ws_default';
-const PROJECT_ID = process.env.INTEGRATION_NOTEBOOK_TERMINAL_PROJECT_ID ?? 'proj_1775067184556_95890';
-const AGENT_ID = process.env.INTEGRATION_NOTEBOOK_TERMINAL_AGENT_ID ?? '';
-const TASK_ID = process.env.INTEGRATION_NOTEBOOK_TERMINAL_TASK_ID ?? '';
-const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:21000';
 const TERMINAL_SESSION_ROUTE = new RegExp(`${API_BASE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/api/v1/workspaces/.+/projects/.+/tasks/.+/terminal/sessions$`);
+const NOTEBOOK_TERMINAL_STORY = loadStoryDefinitionSync('notebook-terminal-day-to-day-and-recovery');
+const NOTEBOOK_TERMINAL_BINDING = buildTraceStoryBinding(NOTEBOOK_TERMINAL_STORY);
 
-async function loginThroughWorkspaceSelection(page: Page) {
-  await page.context().clearCookies();
-  await page.goto(`/${LOCALE}/login/workspace`);
-  await page.evaluate(() => {
-    window.localStorage.clear();
-    window.sessionStorage.clear();
-  });
-  await expect(page.getByTestId(`workspace-select__card--${WORKSPACE_ID}`)).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId(`workspace-select__card--${WORKSPACE_ID}`).click();
+type TerminalRouteMode = 'warmup' | 'failure' | 'recovery';
 
-  await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('workspace-login__keycloak-btn').click();
-  await page.waitForURL(/\/realms\/.+\/protocol\/openid-connect\/auth|\/login-actions\/authenticate/i, {
-    timeout: 30_000,
-  });
-  await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(KEYCLOAK_DEV_ADMIN_USERNAME);
-  await page.locator('input#password, input[name="password"]').first().fill(KEYCLOAK_DEV_ADMIN_PASSWORD);
-  await page.locator('#kc-login, button[type="submit"]').first().click();
-  await expect
-    .poll(() => page.url(), { timeout: 60_000 })
-    .toMatch(new RegExp(`/${LOCALE}/workspaces/${WORKSPACE_ID}(?:$|/projects)`));
+type TerminalReadyTask = {
+  projectId: string;
+  taskId: string;
+  stopRunner: () => Promise<void>;
+  runnerLogPath: string;
+};
+
+function resolveTerminalStep(stepId: string) {
+  const step = NOTEBOOK_TERMINAL_BINDING.steps.find((entry) => entry.stepId === stepId);
+  if (!step) {
+    throw new Error(`unknown_notebook_terminal_step:${stepId}`);
+  }
+  return step;
 }
 
-async function resolveTerminalTaskId(page: Page, options?: { allowFallback?: boolean; preferFreshTask?: boolean }): Promise<string> {
-  return page.evaluate(async ({ workspaceId, projectId, taskId, agentId, apiBase, allowFallback, preferFreshTask }) => {
-    const stored = window.localStorage.getItem('agentsmith-auth');
-    const parsed = stored ? JSON.parse(stored) as { state?: { token?: string | null } } : null;
-    const bearer = parsed?.state?.token?.trim();
-    if (!bearer) {
-      throw new Error('auth_token_missing');
-    }
-    const taskBase = `${apiBase}/api/v1/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/tasks`;
-    const headers = {
-      Authorization: `Bearer ${bearer}`,
-      'content-type': 'application/json',
-    };
-    const fetchWithRetry = async (input: string, init?: RequestInit, attempts = 5): Promise<Response> => {
-      let lastError: unknown = null;
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        try {
-          const response = await fetch(input, init);
-          return response;
-        } catch (error) {
-          lastError = error;
-          await new Promise((resolve) => window.setTimeout(resolve, 500 * (attempt + 1)));
-        }
-      }
-      throw lastError instanceof Error ? lastError : new Error('terminal_task_fetch_failed');
-    };
-    if (taskId && !preferFreshTask) {
-      const seedRes = await fetchWithRetry(`${taskBase}/${encodeURIComponent(taskId)}`, {
-        headers: {
-          Authorization: `Bearer ${bearer}`,
-        },
-      });
-      if (seedRes.ok) {
-        const seedTask = await seedRes.json() as { id?: string };
-        if (seedTask.id) {
-          return seedTask.id;
-        }
-      }
-    }
-    let resolvedAgentId = agentId;
-    if (!preferFreshTask) {
-      const listRes = await fetchWithRetry(taskBase, {
-        headers: {
-          Authorization: `Bearer ${bearer}`,
-        },
-      });
-      if (listRes.ok) {
-        const listed = await listRes.json() as { items?: Array<{ id?: string; status?: string; agent_id?: string }> };
-        const matchingActiveTask = (listed.items ?? []).find(
-          (item) => item.status === 'active' && item.id && item.agent_id && (!resolvedAgentId || item.agent_id === resolvedAgentId),
-        );
-        if (matchingActiveTask?.id) {
-          return matchingActiveTask.id;
-        }
-        if (!resolvedAgentId) {
-          const activeTask = (listed.items ?? []).find((item) => item.status === 'active' && item.agent_id && item.id);
-          if (activeTask?.id && activeTask.agent_id) {
-            return activeTask.id;
-          }
-        }
-      }
-    }
-    if (!resolvedAgentId) {
-      throw new Error('seed_task_missing_agent');
-    }
-    let createRes: Response | null = null;
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      createRes = await fetchWithRetry(
-        taskBase,
-        {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            title: `Playwright Terminal UX ${Date.now()}`,
-            agent_id: resolvedAgentId,
-            workspace_mode: 'create_new',
-          }),
-        },
-        3,
-      );
-      if (createRes.ok) break;
-      if (createRes.status !== 409 && createRes.status < 500) {
-        throw new Error(`task_create_failed:${createRes.status}`);
-      }
-      await new Promise((resolve) => window.setTimeout(resolve, 1000 * (attempt + 1)));
-    }
-    if (!createRes?.ok) {
-      if (!allowFallback) {
-        throw new Error(`task_create_failed:${createRes?.status ?? 'unknown'}`);
-      }
-      if (taskId) {
-        return taskId;
-      }
-      throw new Error(`task_create_failed:${createRes?.status ?? 'unknown'}`);
-    }
-    const created = await createRes.json() as { id?: string };
-    if (!created.id) {
-      throw new Error('created_task_missing_id');
-    }
-    return created.id;
-  }, {
-    workspaceId: WORKSPACE_ID,
-    projectId: PROJECT_ID,
-    taskId: TASK_ID,
-    agentId: AGENT_ID,
-    apiBase: API_BASE,
-    allowFallback: options?.allowFallback ?? false,
-    preferFreshTask: options?.preferFreshTask ?? false,
+function requireProviderApiKey(): string {
+  const value = process.env.BACKEND_REAL_API_KEY?.trim() || process.env.PRESET_ENDPOINT_API_KEY?.trim();
+  if (!value) {
+    throw new Error('missing_BACKEND_REAL_API_KEY_or_PRESET_ENDPOINT_API_KEY');
+  }
+  return value;
+}
+
+async function prepareTerminalReadyTask(page: Page): Promise<TerminalReadyTask> {
+  const providerApiKey = requireProviderApiKey();
+
+  await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+  const { projectId } = await createProjectInWorkspace(page, WORKSPACE_ID, 'Story Notebook Terminal Day 2');
+  const workspaceLibraryName = `Story Terminal Workspace ${Date.now()}`;
+  const fileLibraryId = await createFileLibraryViaUi(page, WORKSPACE_ID, projectId, workspaceLibraryName);
+  const credentialName = `Story Terminal Credential ${Date.now()}`;
+  await createCredentialViaUi(page, WORKSPACE_ID, projectId, credentialName, providerApiKey);
+  const endpointId = await createEndpointViaApi(page, WORKSPACE_ID, projectId, {
+    endpointName: `Story Terminal Endpoint ${Date.now()}`,
+    endpointModel: BACKEND_REAL_MODEL,
+    upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+    credentialName,
   });
+  const agentBundle = await createExternalRunnerAgentBundle(page, {
+    workspaceId: WORKSPACE_ID,
+    projectId,
+    endpointId,
+    title: 'story-notebook-terminal-day-two',
+  });
+  const runner = await startCodexRunnerProcess({
+    wsUrl: agentBundle.wsUrl,
+    agentKey: agentBundle.agentKey,
+  });
+  await waitForAgentPresenceOnline(page, WORKSPACE_ID, projectId, agentBundle.agentId);
+  const taskId = await createNotebookTaskViaApi({
+    page,
+    workspaceId: WORKSPACE_ID,
+    projectId,
+    title: `Story Notebook Terminal Task ${Date.now()}`,
+    agentId: agentBundle.agentId,
+    fileLibraryId,
+  });
+
+  return {
+    projectId,
+    taskId,
+    stopRunner: runner.stop,
+    runnerLogPath: runner.logPath,
+  };
+}
+
+async function waitForTerminalReady(panel: ReturnType<Page['getByTestId']>) {
+  await expect
+    .poll(async () => (await panel.textContent()) ?? '', {
+      timeout: 120_000,
+      intervals: [500, 1_000, 2_000],
+    })
+    .toContain('Terminal ready for');
 }
 
 test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
-  test('shows task-integrated terminal session with real shell output', async ({ page }, testInfo) => {
-    test.setTimeout(180_000);
+  test('project member continues notebook work through terminal warmup and recovery guidance', async ({ page }, testInfo) => {
+    test.setTimeout(480_000);
 
-    await loginThroughWorkspaceSelection(page);
-    const terminalTaskId = await resolveTerminalTaskId(page, { allowFallback: true, preferFreshTask: true });
-    await page.goto(`/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook/tasks/${terminalTaskId}`);
+    const terminalTask = await prepareTerminalReadyTask(page);
+    test.info().annotations.push({ type: 'codex_runner_log', description: terminalTask.runnerLogPath });
 
-    await expect(page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
-    const terminalToggle = page.getByTestId('notebook__task-header-terminal');
-    await expect(terminalToggle).toBeVisible();
-    await expect(terminalToggle).toBeEnabled();
-    await page.screenshot({ path: testInfo.outputPath('notebook-terminal-closed.png'), fullPage: true });
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-notebook-terminal-ux',
+      storyId: NOTEBOOK_TERMINAL_STORY.storyId,
+      title: NOTEBOOK_TERMINAL_STORY.title,
+      actor: NOTEBOOK_TERMINAL_STORY.actor,
+      route: `/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${terminalTask.projectId}/notebook/tasks/${terminalTask.taskId}`,
+      specFile: 'e2e/integration-notebook-terminal-ux.spec.ts',
+      browser: 'chromium',
+      goal: NOTEBOOK_TERMINAL_STORY.goal,
+      preconditions: [...(NOTEBOOK_TERMINAL_STORY.preconditions ?? [])],
+      seedData: [...(NOTEBOOK_TERMINAL_STORY.seedData ?? [])],
+      storyBinding: NOTEBOOK_TERMINAL_BINDING,
+    });
+    const captureTerminalTrace = async (pageRef: Page, stepId: string): Promise<void> => {
+      const storyStep = resolveTerminalStep(stepId);
+      await trace.capture(pageRef, {
+        stepId,
+        action: storyStep.action,
+        target: storyStep.target,
+        note: storyStep.note ?? storyStep.expectedFeedback,
+      });
+    };
 
-    await terminalToggle.click();
+    let routeMode: TerminalRouteMode = 'warmup';
+    let warmupIntercepted = 0;
+    let outcome: 'pass' | 'fail' = 'fail';
 
-    const panel = page.getByTestId('notebook__task-terminal');
-    await expect(panel).toBeVisible({ timeout: 30_000 });
-    await expect(panel).toContainText('Connecting', { timeout: 10_000 });
-    await expect
-      .poll(async () => (await panel.textContent()) ?? '', {
-        timeout: 120_000,
-        intervals: [500, 1_000, 2_000],
-      })
-      .toContain('Terminal ready for');
-    await expect(terminalToggle).toContainText('Hide Terminal');
-    await expect(page.getByTestId('notebook__conversation-input').getByRole('textbox')).toHaveAttribute(
-      'placeholder',
-      'Close Terminal before starting a new agent run...',
-    );
-
-    const terminalViewport = panel.locator('.xterm-screen');
-    await expect(terminalViewport).toBeVisible({ timeout: 30_000 });
-
-    await expect(panel).not.toContainText('zsh-newuser-install');
-    await expect(panel).not.toContainText('You are seeing this message because you have no zsh startup files');
-
-    await page.screenshot({ path: testInfo.outputPath('notebook-terminal-active.png'), fullPage: true });
-    await page.screenshot({ path: testInfo.outputPath('notebook-terminal-input-blocked.png'), fullPage: true });
-
-    await page.getByTestId('notebook__task-header-terminal-close').click();
-    await expect(panel).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath('notebook-terminal-closed-after-session.png'), fullPage: true });
-  });
-
-  test('shows connecting state while runner warmup retries are in progress', async ({ page }, testInfo) => {
-    test.setTimeout(180_000);
-
-    await loginThroughWorkspaceSelection(page);
-    const freshTaskId = await resolveTerminalTaskId(page, { allowFallback: true, preferFreshTask: true });
-    let intercepted = 0;
     await page.route(TERMINAL_SESSION_ROUTE, async (route) => {
       if (route.request().method() !== 'POST') {
         await route.continue();
         return;
       }
-      if (intercepted < 2) {
-        intercepted += 1;
+      if (routeMode === 'warmup' && warmupIntercepted < 2) {
+        warmupIntercepted += 1;
         await route.fulfill({
           status: 409,
           contentType: 'application/json',
@@ -214,50 +155,79 @@ test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
         });
         return;
       }
+      if (routeMode === 'failure') {
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error_code: 'RESOURCE_CONFLICT',
+            message: 'task_agent_not_available',
+          }),
+        });
+        return;
+      }
       await route.continue();
     });
 
-    await page.goto(`/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook/tasks/${freshTaskId}`);
-    const terminalToggle = page.getByTestId('notebook__task-header-terminal');
-    await expect(terminalToggle).toBeVisible({ timeout: 30_000 });
-    await terminalToggle.click();
+    try {
+      await page.goto(`/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${terminalTask.projectId}/notebook/tasks/${terminalTask.taskId}`);
 
-    const panel = page.getByTestId('notebook__task-terminal');
-    await expect(panel).toBeVisible({ timeout: 30_000 });
-    await expect(panel).toContainText('Connecting', { timeout: 10_000 });
-    await page.screenshot({ path: testInfo.outputPath('notebook-terminal-connecting.png'), fullPage: true });
-    await expect(panel).toContainText('Active', { timeout: 60_000 });
-  });
+      await expect(page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
+      await captureTerminalTrace(page, 'return-to-notebook-task');
 
-  test('shows failed state with friendly guidance when terminal creation is rejected', async ({ page }, testInfo) => {
-    test.setTimeout(180_000);
+      const terminalToggle = page.getByTestId('notebook__task-header-terminal');
+      await expect(terminalToggle).toBeVisible();
+      await expect(terminalToggle).toBeEnabled();
+      await terminalToggle.click();
 
-    await loginThroughWorkspaceSelection(page);
-    const failureTaskId = TASK_ID || await resolveTerminalTaskId(page, { allowFallback: true, preferFreshTask: false });
-    await page.route(TERMINAL_SESSION_ROUTE, async (route) => {
-      if (route.request().method() !== 'POST') {
-        await route.continue();
-        return;
-      }
-      await route.fulfill({
-        status: 409,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          error_code: 'RESOURCE_CONFLICT',
-          message: 'task_agent_not_available',
-        }),
-      });
-    });
+      const panel = page.getByTestId('notebook__task-terminal');
+      await expect(panel).toBeVisible({ timeout: 30_000 });
+      await captureTerminalTrace(page, 'open-terminal-for-follow-up-work');
 
-    await page.goto(`/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook/tasks/${failureTaskId}`);
-    const terminalToggle = page.getByTestId('notebook__task-header-terminal');
-    await expect(terminalToggle).toBeVisible({ timeout: 30_000 });
-    await terminalToggle.click();
+      await expect(panel).toContainText('Preparing', { timeout: 10_000 });
+      await expect(panel).toContainText('Preparing the task environment before opening the terminal...', { timeout: 10_000 });
+      await captureTerminalTrace(page, 'stay-oriented-during-runner-warmup');
 
-    const panel = page.getByTestId('notebook__task-terminal');
-    await expect(panel).toBeVisible({ timeout: 30_000 });
-    await expect(panel).toContainText('Failed', { timeout: 10_000 });
-    await expect(panel).toContainText("This task's runner is not available right now.");
-    await page.screenshot({ path: testInfo.outputPath('notebook-terminal-failed.png'), fullPage: true });
+      await waitForTerminalReady(panel);
+      await expect(terminalToggle).toContainText('Hide Terminal');
+      await expect(page.getByTestId('notebook__conversation-input').getByRole('textbox')).toHaveAttribute(
+        'placeholder',
+        'Close Terminal before starting a new agent run...',
+      );
+      await expect(panel.locator('.xterm-screen')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('notebook__task-header-terminal-close').click();
+      await expect(panel).toHaveCount(0, { timeout: 30_000 });
+
+      routeMode = 'failure';
+      await expect(terminalToggle).toHaveText('Open Terminal', { timeout: 30_000 });
+      await terminalToggle.click();
+
+      const failedPanel = page.getByTestId('notebook__task-terminal');
+      await expect(failedPanel).toBeVisible({ timeout: 30_000 });
+      await expect(failedPanel).toContainText('Failed', { timeout: 10_000 });
+      await expect(failedPanel).toContainText("This task's runner is not available right now.");
+      await expect(failedPanel).toContainText(
+        'Close this terminal, then reopen it from the task header when you are ready to retry.',
+      );
+      await page.screenshot({ path: testInfo.outputPath('notebook-terminal-recovery-guidance.png'), fullPage: true });
+      await captureTerminalTrace(page, 'see-clear-terminal-recovery-guidance');
+
+      await failedPanel.getByRole('button', { name: 'Close failed terminal' }).click();
+      await expect(failedPanel).toHaveCount(0, { timeout: 30_000 });
+
+      routeMode = 'recovery';
+      await expect(terminalToggle).toHaveText('Open Terminal', { timeout: 30_000 });
+      await terminalToggle.click();
+      const recoveredPanel = page.getByTestId('notebook__task-terminal');
+      await expect(recoveredPanel).toBeVisible({ timeout: 30_000 });
+      await waitForTerminalReady(recoveredPanel);
+      await expect(recoveredPanel).not.toContainText('Failed');
+      await captureTerminalTrace(page, 'recover-terminal-after-guidance');
+
+      outcome = 'pass';
+    } finally {
+      await trace.finish({ outcome });
+      await terminalTask.stopRunner();
+    }
   });
 });

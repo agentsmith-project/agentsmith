@@ -177,8 +177,9 @@ export function UsagePage({
   }
 
   return (
-    <PageLayout
-      header={(
+    <div data-testid="usage__view">
+      <PageLayout
+        header={(
         <PageHeader
           title={t('title')}
           subtitle={t('subtitle')}
@@ -193,17 +194,28 @@ export function UsagePage({
       )}
       toolbar={(
         <PageToolbar className="w-full">
-          <div
-            className="flex flex-wrap items-center gap-2 text-xs text-tertiary"
-            data-testid="usage__summary-line"
-          >
-            <span>{t('scope_my_usage')}</span>
-            <span aria-hidden="true">·</span>
-            <span><span className="text-foreground">{endpointOptions.length}</span> {t('view.endpoints_label')}</span>
-            <span aria-hidden="true">·</span>
-            <span><span className="text-foreground">{totalLimitCards}</span> {t('view.active_limits')}</span>
-            <span aria-hidden="true">·</span>
-            <span>{t('view.last_30_days')}</span>
+          <div className="w-full space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className="inline-flex items-center rounded-full border border-subtle bg-surface-low px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-secondary"
+                data-testid="usage__my-scope-badge"
+              >
+                {t('scope_my_usage')}
+              </span>
+              <p className="text-xs text-tertiary" data-testid="usage__scope-note">
+                {t('view.scope_note')}
+              </p>
+            </div>
+            <div
+              className="flex flex-wrap items-center gap-2 text-xs text-tertiary"
+              data-testid="usage__summary-line"
+            >
+              <span><span className="text-foreground">{endpointOptions.length}</span> {t('view.endpoints_label')}</span>
+              <span aria-hidden="true">·</span>
+              <span><span className="text-foreground">{totalLimitCards}</span> {t('view.active_limits')}</span>
+              <span aria-hidden="true">·</span>
+              <span>{t('view.last_30_days')}</span>
+            </div>
           </div>
         </PageToolbar>
       )}
@@ -218,5 +230,6 @@ export function UsagePage({
         limitsOverview={limitsOverview}
       />
     </PageLayout>
+    </div>
   );
 }

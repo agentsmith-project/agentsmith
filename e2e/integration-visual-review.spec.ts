@@ -1,4 +1,3 @@
-import { WebSocket } from 'ws';
 import { expect, test, type Page } from '@playwright/test';
 import {
   createInternalCodexAgent,
@@ -24,26 +23,9 @@ const PROJECT_CREATOR_USERNAME = process.env.INTEGRATION_USER_USERNAME ?? 'integ
 const PROJECT_CREATOR_PASSWORD = process.env.INTEGRATION_USER_PASSWORD ?? 'integration-user-123';
 const MEMBER_USERNAME = process.env.INTEGRATION_MEMBER_USERNAME ?? 'integration-member';
 const MEMBER_PASSWORD = process.env.INTEGRATION_MEMBER_PASSWORD ?? 'integration-member-123';
-const MEMBER_EMAIL = 'integration-member@example.com';
 const PROJECT_CREATOR_EMAIL = 'integration-user@example.com';
 const NOTEBOOK_EXPECTED_TOKEN = `REAL_VISUAL_NOTEBOOK_OK_${Date.now()}`;
 const NOTEBOOK_ARTIFACT_NAME = `visual-review-summary-${Date.now()}.md`;
-type ExecutionWsMessage = {
-  type?: string;
-  request_id?: string;
-  payload?: {
-    messages?: Array<{ role?: string; content?: unknown }>;
-    resource_proxy?: {
-      base_url?: string;
-    };
-    execution_context?: {
-      execution_ticket?: string;
-      task_id?: string;
-      run_id?: string;
-    };
-  };
-};
-
 type ProjectContext = {
   workspaceId: string;
   projectId: string;
@@ -58,6 +40,8 @@ type VisualReviewTraceMeta = {
 
 const VISUAL_REVIEW_STORY = loadStoryDefinitionSync('real-backend-visual-review');
 const VISUAL_REVIEW_STORY_BINDING = buildTraceStoryBinding(VISUAL_REVIEW_STORY);
+const PROJECT_SURFACE_HANDOFF_STORY = loadStoryDefinitionSync('project-surface-handoff-continuity');
+const PROJECT_SURFACE_HANDOFF_STORY_BINDING = buildTraceStoryBinding(PROJECT_SURFACE_HANDOFF_STORY);
 
 function resolveVisualReviewTraceMeta(stepId: string, role: string): VisualReviewTraceMeta {
   const step = VISUAL_REVIEW_STORY_BINDING.steps.find((entry) => entry.stepId === stepId);
@@ -80,13 +64,6 @@ function requireRealLaneApiKey(): string {
     throw new Error('missing_BACKEND_REAL_API_KEY');
   }
   return BACKEND_REAL_API_KEY.trim();
-}
-
-async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
-  ]);
 }
 
 async function clearAppState(page: Page, workspaceId = 'ws_default'): Promise<void> {
@@ -169,7 +146,7 @@ async function loginAsSystemAdmin(page: Page): Promise<void> {
   await expect
     .poll(() => page.url(), { timeout: 30_000 })
     .toMatch(new RegExp(`/${LOCALE}/system/workspaces`));
-  await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
+  await expect(page.getByTestId('system-workspaces__list')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Loading workspaces...')).not.toBeVisible({ timeout: 30_000 });
 }
 
@@ -203,14 +180,13 @@ async function createAndPublishWorkspace(page: Page): Promise<string> {
   const workspaceName = `Real Visual Workspace ${Date.now()}`;
   await page.getByTestId('system-workspaces__new-workspace').click();
   await page.waitForURL(new RegExp(`/${LOCALE}/system/workspaces/new$`), { timeout: 30_000 });
-  await expect(page.getByTestId('system-workspace-create__heading')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('system-workspace-create__shell')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
   await page.getByTestId('system-workspace-create__next').click();
   await page.getByTestId('system-workspaces__draft-idp-url').fill(KEYCLOAK_BASE_URL);
   await page.getByTestId('system-workspaces__draft-idp-realm').fill(KEYCLOAK_REALM);
   await page.getByTestId('system-workspaces__draft-idp-client-id').fill(KEYCLOAK_WORKSPACE_CLIENT_ID);
   await verifyIdentityProvider(page);
-  await page.getByTestId('system-workspace-create__next').click();
   await page.getByTestId('system-workspaces__admin-mode--email').click();
   await page.getByTestId('system-workspaces__draft-admin-email').fill('dev-admin@example.com');
   await page.getByTestId('system-workspace-create__next').click();
@@ -236,51 +212,7 @@ async function verifyIdentityProvider(page: Page): Promise<void> {
   await page.getByTestId('system-workspace-create__next').click();
   const response = await responsePromise;
   expect(response.ok()).toBeTruthy();
-  await expect(page.getByTestId('system-workspaces__draft-admin')).toBeVisible({ timeout: 15_000 });
-}
-
-async function selectWorkspaceAdmin(page: Page, email: string): Promise<void> {
-  const adminInput = page.getByTestId('system-workspaces__draft-admin');
-  let lastFailure = 'directory_request_not_observed';
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const responsePromise = page.waitForResponse(
-      (candidate) => candidate.url().includes('/api/system/workspaces/directory/users') && candidate.request().method() === 'POST',
-      { timeout: 15_000 },
-    ).catch(() => null);
-    await adminInput.fill('');
-    await adminInput.fill(email);
-    const response = await responsePromise;
-    if (!response) {
-      lastFailure = 'directory_request_timeout';
-      continue;
-    }
-
-    const payload = (await response.json().catch(() => null)) as
-      | { items?: Array<{ user_id?: string; email?: string }> }
-      | { error_message?: string }
-      | null;
-    if (!response.ok()) {
-      lastFailure = `directory_response_${response.status()}`;
-      continue;
-    }
-
-    const matchedUser = Array.isArray(payload?.items)
-      ? payload.items.find((item) => item.email === email)
-      : null;
-    const userId = typeof matchedUser?.user_id === 'string' ? matchedUser.user_id : '';
-    if (!userId) {
-      lastFailure = 'directory_user_missing';
-      continue;
-    }
-
-    const adminOption = page.getByTestId(`system-workspaces__admin-option--${userId}`);
-    await expect(adminOption).toBeVisible({ timeout: 15_000 });
-    await adminOption.click();
-    return;
-  }
-
-  throw new Error(`workspace_admin_directory_user_missing:${email}:${lastFailure}`);
+  await expect(page.getByTestId('system-workspaces__admin-mode--email')).toBeVisible({ timeout: 15_000 });
 }
 
 async function loginToWorkspace(page: Page, workspaceId: string, username: string, password: string): Promise<void> {
@@ -442,7 +374,7 @@ async function createEndpoint(page: Page, workspaceId: string, projectId: string
   };
 }
 
-function apiBaseForPage(page: Page): string {
+function apiBaseForPage(_page: Page): string {
   return process.env.INTEGRATION_API_BASE ?? 'http://localhost:20070';
 }
 
@@ -494,149 +426,6 @@ async function createAgentKeyAndConnectionInfo(page: Page, apiBase: string, work
   return {
     agentKey: keyBody.key,
     wsUrl: connectionBody.ws_url.replace('ws://localhost:20000', apiBase.replace('http://', 'ws://')),
-  };
-}
-
-function extractAssistantContent(payload: unknown): string {
-  if (!payload || typeof payload !== 'object') return '';
-  const maybeAnthropicContent = (payload as { content?: unknown }).content;
-  if (Array.isArray(maybeAnthropicContent)) {
-    return maybeAnthropicContent
-      .map((part) => {
-        if (!part || typeof part !== 'object') return '';
-        const typedPart = part as { type?: unknown; text?: unknown };
-        return typedPart.type === 'text' ? String(typedPart.text ?? '') : '';
-      })
-      .join('');
-  }
-  const maybeChoices = (payload as { choices?: Array<{ message?: { content?: unknown } }> }).choices;
-  const content = maybeChoices?.[0]?.message?.content;
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => (typeof part === 'object' && part !== null && 'text' in part ? String((part as { text?: unknown }).text ?? '') : ''))
-      .join('');
-  }
-  return '';
-}
-
-function startExternalNotebookBridge(args: {
-  wsUrl: string;
-  agentKey: string;
-  expectedToken: string;
-  model: string;
-}) {
-  let helloResolved = false;
-  let helloResolve!: () => void;
-  let helloReject!: (reason?: unknown) => void;
-  let observedResolve!: (reply: string) => void;
-  let observedReject!: (reason?: unknown) => void;
-  let resourceProxyBase = '';
-
-  const ready = new Promise<void>((resolve, reject) => {
-    helloResolve = resolve;
-    helloReject = reject;
-  });
-  const observedReply = new Promise<string>((resolve, reject) => {
-    observedResolve = resolve;
-    observedReject = reject;
-  });
-
-  const ws = new WebSocket(args.wsUrl, { headers: { Authorization: `Bearer ${args.agentKey}` } });
-
-  ws.once('error', (error) => {
-    if (!helloResolved) helloReject(error);
-    observedReject(error);
-  });
-
-  ws.on('open', () => {
-    ws.send(JSON.stringify({
-      type: 'agent.ready',
-      timestamp: new Date().toISOString(),
-      payload: { capabilities: { streaming_completion: true, multimodal_completion: false } },
-    }));
-  });
-
-  ws.on('message', (raw) => {
-    const msg = JSON.parse(raw.toString('utf-8')) as ExecutionWsMessage;
-    if (msg.type === 'server.ping') {
-      ws.send(JSON.stringify({ type: 'agent.pong', timestamp: new Date().toISOString(), payload: {} }));
-      return;
-    }
-    if (msg.type === 'server.hello') {
-      resourceProxyBase = msg.payload?.resource_proxy?.base_url ?? '';
-      helloResolved = true;
-      helloResolve();
-      return;
-    }
-    if (msg.type !== 'server.request.start' || !msg.request_id) return;
-
-    void (async () => {
-      const executionTicket = msg.payload?.execution_context?.execution_ticket ?? '';
-      try {
-        const upstreamResponse = await fetch(`${resourceProxyBase}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${executionTicket}`,
-            'Content-Type': 'application/json',
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: args.model,
-            messages: msg.payload?.messages ?? [],
-          }),
-        });
-        if (!upstreamResponse.ok) {
-          const errorText = await upstreamResponse.text();
-          ws.send(JSON.stringify({
-            type: 'agent.response.error',
-            request_id: msg.request_id,
-            timestamp: new Date().toISOString(),
-            payload: { error_code: 'AGENT_UPSTREAM_ERROR', error_message: errorText || 'upstream_request_failed' },
-          }));
-          observedReject(new Error(`upstream_request_failed:${upstreamResponse.status}`));
-          return;
-        }
-        const responseBody = (await upstreamResponse.json()) as unknown;
-        const assistantContent = extractAssistantContent(responseBody);
-        ws.send(JSON.stringify({
-          type: 'agent.response.delta',
-          request_id: msg.request_id,
-          timestamp: new Date().toISOString(),
-          payload: { delta: assistantContent },
-        }));
-        ws.send(JSON.stringify({
-          type: 'agent.response.done',
-          request_id: msg.request_id,
-          timestamp: new Date().toISOString(),
-          payload: { finish_reason: 'stop', usage_tokens: assistantContent.length },
-        }));
-        if (assistantContent.includes(args.expectedToken)) {
-          observedResolve(assistantContent);
-        }
-      } catch (error) {
-        ws.send(JSON.stringify({
-          type: 'agent.response.error',
-          request_id: msg.request_id,
-          timestamp: new Date().toISOString(),
-          payload: { error_code: 'AGENT_BRIDGE_ERROR', error_message: error instanceof Error ? error.message : 'unknown_error' },
-        }));
-        observedReject(error);
-      }
-    })();
-  });
-
-  return {
-    ready,
-    observedReply,
-    stop: async () => {
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        await withTimeout(new Promise<void>((resolve) => {
-          ws.once('close', () => resolve());
-          ws.close();
-        }), 5_000, undefined);
-      }
-    },
   };
 }
 
@@ -833,6 +622,91 @@ async function captureProjectPages(
       notes,
       action: traceMeta.action,
       target: traceMeta.target,
+    });
+  }
+}
+
+
+async function captureProjectSurfaceHandoffContinuity(
+  page: Page,
+  capturePage: (page: Page, captures: unknown[], args: {
+    name: string;
+    role: string;
+    notes: string;
+    action?: string;
+    target?: string;
+    route?: string;
+    fullPage?: boolean;
+  }) => Promise<unknown>,
+  captures: unknown[],
+  context: ProjectContext,
+  role: string,
+) {
+  const steps: Array<{
+    name: string;
+    action: string;
+    target: string;
+    notes: string;
+    route: string;
+    waitFor: string;
+  }> = [
+    {
+      name: 'open-project-overview',
+      action: 'Open project overview',
+      target: 'project-hub__page',
+      notes: '成员先回到 overview 作为日常 handoff hub。',
+      route: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/overview`,
+      waitFor: 'project-hub__page',
+    },
+    {
+      name: 'handoff-to-chat',
+      action: 'Switch to chat',
+      target: 'sidebar__nav-item--chat',
+      notes: '从 overview 切到 chat，仍然是同一个 project context。',
+      route: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/chat`,
+      waitFor: 'chat__main-pane',
+    },
+    {
+      name: 'handoff-to-notebook',
+      action: 'Switch to notebook',
+      target: 'sidebar__nav-item--notebook',
+      notes: '从 chat 切到 notebook，继续同一个项目工作流。',
+      route: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/notebook`,
+      waitFor: 'notebook__task-list',
+    },
+    {
+      name: 'handoff-to-files',
+      action: 'Switch to files',
+      target: 'sidebar__nav-item--files',
+      notes: '从 notebook 切到 files，仍保留项目壳层上下文。',
+      route: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/files`,
+      waitFor: 'files__library-create',
+    },
+    {
+      name: 'return-to-overview',
+      action: 'Return to overview',
+      target: 'sidebar__nav-item--overview',
+      notes: '回到 overview 后可以继续下一轮工作。',
+      route: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/overview`,
+      waitFor: 'project-hub__page',
+    },
+  ];
+
+  for (const step of steps) {
+    if (step.name === 'open-project-overview') {
+      await gotoWithRetry(page, step.route);
+    } else {
+      await page.getByTestId(step.target).click();
+    }
+    await expect(page.getByTestId(step.waitFor)).toBeVisible({ timeout: 30_000 });
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: step.name,
+      role,
+      notes: step.notes,
+      action: step.action,
+      target: step.target,
+      route: step.route,
     });
   }
 }
@@ -1313,6 +1187,78 @@ test.describe('@lane-real integration visual review', () => {
         role: 'project owner',
         notes: '成员有效权限抽屉',
       });
+
+      outcome = 'pass';
+    } finally {
+      await trace.finish({ outcome });
+    }
+  });
+
+  test('captures project surface handoff continuity for a normal project member moving among overview, chat, notebook, and files', async ({ page }) => {
+    test.setTimeout(600_000);
+    const storyBinding = PROJECT_SURFACE_HANDOFF_STORY_BINDING;
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-visual-review',
+      storyId: storyBinding.storyId,
+      title: storyBinding.title,
+      actor: storyBinding.actor,
+      route: PROJECT_SURFACE_HANDOFF_STORY.entryRoute,
+      specFile: 'e2e/integration-visual-review.spec.ts',
+      browser: 'chromium',
+      goal: storyBinding.goal,
+      preconditions: [...storyBinding.preconditions],
+      seedData: [...storyBinding.seedData],
+      storyBinding,
+    });
+    const captures: unknown[] = [];
+    const capturePage = async (
+      targetPage: Page,
+      _unusedCaptures: unknown[],
+      args: {
+        name: string;
+        role: string;
+        notes: string;
+        route?: string;
+        fullPage?: boolean;
+        action?: string;
+        target?: string;
+        note?: string;
+      },
+    ) => {
+      const storyMeta = resolveVisualReviewTraceMeta(args.name, args.role);
+      return trace.capture(targetPage, {
+        stepId: args.name,
+        action: args.action ?? storyMeta.action,
+        target: args.target ?? storyMeta.target,
+        route: args.route ?? targetPage.url(),
+        note: args.note ?? storyMeta.note ?? args.notes,
+        fullPage: args.fullPage,
+      });
+    };
+    let outcome: 'pass' | 'fail' = 'fail';
+
+    try {
+      await gotoWithRetry(page, `/${LOCALE}/system/login`);
+      await settlePage(page);
+
+      await loginAsSystemAdmin(page);
+      const workspaceId = await createAndPublishWorkspace(page);
+      await loginToWorkspace(page, workspaceId, DEV_ADMIN_USERNAME, DEV_ADMIN_PASSWORD);
+      await saveWorkspaceProjectCreators(page, workspaceId);
+
+      await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
+      const project = await createProject(page, workspaceId);
+      await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
+      await requestProjectAccess(page, workspaceId, project.projectId);
+
+      await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/members?member_tab=requests`);
+      await approveJoinRequest(page, workspaceId, project.projectId);
+
+      await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
+      await captureProjectSurfaceHandoffContinuity(page, capturePage, captures, project, 'project member');
 
       outcome = 'pass';
     } finally {

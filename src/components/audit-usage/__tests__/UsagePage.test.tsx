@@ -199,7 +199,9 @@ describe('UsagePage', () => {
   it('renders compact 30 day usage view', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
-    expect(screen.getByTestId('usage__summary-line')).toHaveTextContent('scope_my_usage');
+    expect(screen.getByTestId('usage__view')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__my-scope-badge')).toHaveTextContent('scope_my_usage');
+    expect(screen.getByTestId('usage__scope-note')).toHaveTextContent('view.scope_note');
     expect(screen.getByTestId('usage__summary-line')).toHaveTextContent('view.last_30_days');
     expect(screen.getByTestId('usage__summary-line').className).not.toMatch(/rounded-md|border|bg-surface-low/);
     expect(screen.getByTestId('usage__work-surface')).toBeInTheDocument();

@@ -267,7 +267,7 @@ describe('WorkspaceLoginPage', () => {
   it('keeps only a back link to workspace selection on the direct workspace login page', async () => {
     render(<WorkspaceLoginPage />);
 
-    expect(await screen.findByTestId('workspace-login__back-to-selection')).toHaveAttribute('href', '/en-US/login');
+    expect(await screen.findByTestId('workspace-login__back-to-selection')).toHaveAttribute('href', '/en-US/login/workspace');
     expect(screen.queryByText('system_login_link')).not.toBeInTheDocument();
   });
 });

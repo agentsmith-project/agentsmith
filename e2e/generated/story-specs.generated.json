@@ -889,6 +889,55 @@
     "visualStepIds": []
   },
   {
+    "storyId": "notebook-terminal-day-to-day-and-recovery",
+    "title": "Notebook terminal day-to-day and recovery",
+    "actor": "project member",
+    "family": "notebook-terminal-day-to-day",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "notebook-terminal-runtime",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real terminal story needs a live terminal session service behind notebook tasks."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/login",
+    "goal": "项目成员回到已有 notebook 任务继续工作时，terminal 应该在 runner 预热期间保持清晰可理解；如果这次打开失败，界面必须明确告诉用户下一步，并让他在同一条任务流里恢复成功。",
+    "sourceRef": "e2e/stories/backend-real/notebook-terminal-day-to-day-and-recovery.story.md#notebook-terminal-day-to-day-and-recovery",
+    "sourceFingerprint": "fef18c39ebf2f282ec5db1471551038d0a480d9e87e6466dbfc6d28ec55910db",
+    "storyFingerprint": "bd6a8028aff130b313da3aad45304814eaf0e10956ed8a57234a466c50eb2ff3",
+    "stepMapFingerprint": "b1be894506f77018f1e6fab1c0275a8bf6ceb688cf3eaafa09105f89a024562c",
+    "sceneIds": [
+      "notebook-task"
+    ],
+    "stepIds": [
+      "return-to-notebook-task",
+      "open-terminal-for-follow-up-work",
+      "stay-oriented-during-runner-warmup",
+      "see-clear-terminal-recovery-guidance",
+      "recover-terminal-after-guidance"
+    ],
+    "traceStepIds": [
+      "return-to-notebook-task",
+      "open-terminal-for-follow-up-work",
+      "stay-oriented-during-runner-warmup",
+      "see-clear-terminal-recovery-guidance",
+      "recover-terminal-after-guidance"
+    ],
+    "visualStepIds": []
+  },
+  {
     "storyId": "personal-self-service-lifecycle",
     "title": "Personal self-service lifecycle",
     "actor": "workspace member / project member",
@@ -1091,6 +1140,51 @@
       "inspect-runtime-usage",
       "inspect-audit-detail",
       "configure-alert-follow-up"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "project-surface-handoff-continuity",
+    "title": "Project surface handoff continuity",
+    "actor": "project member",
+    "family": "project-surface-handoff-continuity",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/overview",
+    "goal": "项目成员从 overview 连续切到 chat、notebook、files，再返回 overview 时，工作上下文仍然连续，不需要重新解释自己正在做什么。",
+    "sourceRef": "e2e/stories/backend-real/project-surface-handoff-continuity.story.md#project-surface-handoff-continuity",
+    "sourceFingerprint": "50e99389821f5132eb7a3daf1d27c2c6e2443b943e1b80adfdd33f9fd31e81b4",
+    "storyFingerprint": "4022ed414312fbe8d715bc50906ea6be97755191574038a3dc343d1b5662616c",
+    "stepMapFingerprint": "7137f67d2dabd89d9e138c2d6c131aee1f2a49fd1ae756de160b7d1c449e15af",
+    "sceneIds": [
+      "project-overview",
+      "project-chat",
+      "project-notebook",
+      "project-files"
+    ],
+    "stepIds": [
+      "open-project-overview",
+      "handoff-to-chat",
+      "handoff-to-notebook",
+      "handoff-to-files",
+      "return-to-overview"
+    ],
+    "traceStepIds": [
+      "open-project-overview",
+      "handoff-to-chat",
+      "handoff-to-notebook",
+      "handoff-to-files",
+      "return-to-overview"
     ],
     "visualStepIds": []
   },
@@ -1347,6 +1441,46 @@
     "visualStepIds": []
   },
   {
+    "storyId": "usage-self-scope-review",
+    "title": "Usage self scope review",
+    "actor": "project member",
+    "family": "usage-self-scope-review",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/usage",
+    "goal": "项目成员在发起一次真实请求后，可以打开我的用量并看懂这里只显示自己的 usage，而不是项目治理总览。",
+    "sourceRef": "e2e/stories/backend-real/usage-self-scope-review.story.md#usage-self-scope-review",
+    "sourceFingerprint": "ff75fd085fe36827ec34fddd4bd2dc8a28b336ccbfb65a03923fa815ed59b201",
+    "storyFingerprint": "d00f09fd9fd427ae080142749701025499e73f67b756ec52da731c853ceaba6d",
+    "stepMapFingerprint": "3f09b21ad429f7df48ffab81469ae29489e592b7adead46fd3aa3b738c04d585",
+    "sceneIds": [
+      "project-usage-self"
+    ],
+    "stepIds": [
+      "generate-self-usage",
+      "open-usage-review",
+      "review-self-scope-summary",
+      "review-endpoint-usage"
+    ],
+    "traceStepIds": [
+      "generate-self-usage",
+      "open-usage-review",
+      "review-self-scope-summary",
+      "review-endpoint-usage"
+    ],
+    "visualStepIds": []
+  },
+  {
     "storyId": "workspace-entry-and-project-discovery",
     "title": "Workspace entry and project discovery",
     "actor": "workspace admin / project creator",
@@ -1472,6 +1606,46 @@
       "open-project-personal-context",
       "save-project-personal-context",
       "verify-scoped-context"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "workspace-public-entry-and-login-truth",
+    "title": "Workspace public entry and login truth",
+    "actor": "workspace member / invited user",
+    "family": "workspace-public-entry-and-login-truth",
+    "personas": [
+      "workspace member",
+      "invited user"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/login/workspace",
+    "goal": "普通用户从公开入口进入时，能确认自己到了正确工作区，并清楚知道下一步如何登录。",
+    "sourceRef": "e2e/stories/backend-real/workspace-public-entry-and-login-truth.story.md#workspace-public-entry-and-login-truth",
+    "sourceFingerprint": "2a3b9afa3dde9e1c678f58b7729a9cd17b8399116460139bfdda050c2eb27c7c",
+    "storyFingerprint": "be5aea05d2583b7e467ce571f31723a96b7db6ce9e7cac99f76f0bde11745363",
+    "stepMapFingerprint": "3c4206c744b3c862d2214f235aa693bf0856d4cbfe86c09972f8f297945b51dd",
+    "sceneIds": [
+      "workspace-selection",
+      "workspace-login"
+    ],
+    "stepIds": [
+      "workspace-selection",
+      "workspace-login-identity",
+      "workspace-login-next-step"
+    ],
+    "traceStepIds": [
+      "workspace-selection",
+      "workspace-login-identity",
+      "workspace-login-next-step"
     ],
     "visualStepIds": []
   },

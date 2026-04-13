@@ -59,6 +59,8 @@ vi.mock('next-intl', () => ({
       terminal_error_agent_unavailable: "This task's runner is not available right now.",
       terminal_error_connection_failed: 'The terminal connection could not be opened. Please retry.',
       terminal_error_taken_over: 'This terminal was opened in another browser tab. Reopen it here if you want to continue.',
+      terminal_recovery_hint: 'Close this terminal, then reopen it from the task header when you are ready to retry.',
+      terminal_recovery_close: 'Close failed terminal',
     };
     return map[key] ?? key;
   },
@@ -188,6 +190,7 @@ describe('TaskTerminalPanel', () => {
     const createTerminalSession = vi
       .fn()
       .mockRejectedValue(new Error('task_agent_not_available'));
+    const onOpenChange = vi.fn();
 
     render(
       <TaskTerminalPanel
@@ -197,13 +200,24 @@ describe('TaskTerminalPanel', () => {
         taskId="task_1"
         taskTitle="terminal-smoke"
         taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
-        onOpenChange={vi.fn()}
+        onOpenChange={onOpenChange}
       />,
     );
 
     await waitFor(() => {
       expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Failed');
       expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent("This task's runner is not available right now.");
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent(
+        'Close this terminal, then reopen it from the task header when you are ready to retry.',
+      );
+    });
+
+    act(() => {
+      screen.getByRole('button', { name: 'Close failed terminal' }).click();
+    });
+
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
     });
   });
 

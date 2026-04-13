@@ -73,7 +73,7 @@ describe('GovernanceExplainabilityAPI', () => {
     });
   });
 
-  it('builds effective access snapshot from existing governance endpoints', async () => {
+  it('builds effective access snapshot from membership and effective member-permissions endpoints', async () => {
     const mock = createClient();
     mock.get
       .mockResolvedValueOnce({
@@ -102,6 +102,7 @@ describe('GovernanceExplainabilityAPI', () => {
     expect(mock.get).toHaveBeenNthCalledWith(1, '/workspaces/ws_1/projects/proj_1/memberships/user_1');
     expect(mock.get).toHaveBeenNthCalledWith(2, '/workspaces/ws_1/projects/proj_1/members/user_1/permissions');
     expect(snapshot.membership_status).toBe('suspended');
+    expect(snapshot.permissions.platform_permissions).toEqual(['project:endpoint:use', 'project:governance:update']);
     expect(snapshot.effective_permissions).toEqual(['project:endpoint:use', 'project:governance:update']);
   });
 

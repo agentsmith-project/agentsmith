@@ -26,6 +26,32 @@ import type { CreateInviteRequest, InviteResponse, ProjectGroup } from '@/lib/ap
 
 const getMemberAPI = () => new MemberAPI(getApiClient());
 
+function invalidateMembershipDerivedQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  projectId: string,
+  memberId?: string,
+): void {
+  queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(workspaceId, projectId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.governanceExplainability._def });
+  if (memberId) {
+    queryClient.invalidateQueries({ queryKey: queryKeys.members.permissions(workspaceId, projectId, memberId) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.members.changeHistory(workspaceId, projectId, memberId) });
+  }
+}
+
+function invalidateProjectGroupDerivedQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  projectId: string,
+): void {
+  queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(workspaceId, projectId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.projectGroups.list(workspaceId, projectId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.governanceExplainability._def });
+}
+
 /**
  * Hook to create an invite
  */
@@ -69,8 +95,8 @@ export function useRemoveMember(workspaceId: string, projectId: string) {
     mutationFn: async (memberId: string) => {
       return getMemberAPI().remove(workspaceId, projectId, memberId);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
+    onSuccess: (_data, memberId) => {
+      invalidateMembershipDerivedQueries(queryClient, workspaceId, projectId, memberId);
       toast.success(t('remove_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useRemoveMember'),
@@ -113,8 +139,7 @@ export function useUpdateMemberPermissions(
       return getMemberAPI().updatePermissions(workspaceId, projectId, memberId, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.members.permissions(workspaceId, projectId, memberId) });
+      invalidateMembershipDerivedQueries(queryClient, workspaceId, projectId, memberId);
       toast.success(t('update_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useUpdateMemberPermissions'),
@@ -146,10 +171,7 @@ export function useApplyTemplateToMember(workspaceId: string, projectId: string)
       });
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.members.permissions(workspaceId, projectId, variables.memberId),
-      });
+      invalidateMembershipDerivedQueries(queryClient, workspaceId, projectId, variables.memberId);
       toast.success(t('apply_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useApplyTemplateToMember'),
@@ -196,10 +218,13 @@ export function useBatchApplyPermissionTemplate(workspaceId: string, projectId: 
       return { appliedMemberIds, failedMemberIds };
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
+      invalidateMembershipDerivedQueries(queryClient, workspaceId, projectId);
       for (const memberId of data.appliedMemberIds) {
         queryClient.invalidateQueries({
           queryKey: queryKeys.members.permissions(workspaceId, projectId, memberId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.members.changeHistory(workspaceId, projectId, memberId),
         });
       }
       const appliedCount = data.appliedMemberIds.length;
@@ -377,7 +402,7 @@ export function useCreateProjectGroup(workspaceId: string, projectId: string) {
       member_ids?: string[];
     }) => getMemberAPI().createGroup(workspaceId, projectId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projectGroups.list(workspaceId, projectId) });
+      invalidateProjectGroupDerivedQueries(queryClient, workspaceId, projectId);
       toast.success(t('group_create_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useCreateProjectGroup'),
@@ -402,7 +427,7 @@ export function useUpdateProjectGroup(workspaceId: string, projectId: string) {
       };
     }) => getMemberAPI().updateGroup(workspaceId, projectId, groupId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projectGroups.list(workspaceId, projectId) });
+      invalidateProjectGroupDerivedQueries(queryClient, workspaceId, projectId);
       toast.success(t('group_update_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useUpdateProjectGroup'),
@@ -416,7 +441,7 @@ export function useDeleteProjectGroup(workspaceId: string, projectId: string) {
   return useMutation({
     mutationFn: async (groupId: string) => getMemberAPI().deleteGroup(workspaceId, projectId, groupId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projectGroups.list(workspaceId, projectId) });
+      invalidateProjectGroupDerivedQueries(queryClient, workspaceId, projectId);
       toast.success(t('group_delete_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useDeleteProjectGroup'),
@@ -436,7 +461,7 @@ export function useApplyProjectGroupTemplate(workspaceId: string, projectId: str
       memberIds?: string[];
     }) => getMemberAPI().applyGroupTemplate(workspaceId, projectId, groupId, memberIds),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
+      invalidateProjectGroupDerivedQueries(queryClient, workspaceId, projectId);
       const failedCount = result.results?.filter((item) => item.status === 'failed').length ?? 0;
       if (failedCount > 0) {
         toast.warning(t('group_apply_partial_success', { count: failedCount.toString() }));

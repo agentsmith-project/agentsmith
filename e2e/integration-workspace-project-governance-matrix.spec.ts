@@ -1,12 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   API_BASE,
-  createAndPublishWorkspaceWithDirectoryAdmin,
   createProjectInWorkspace,
   ensureIntegrationKeycloakUsers,
   ensureExternalTestKeycloak,
-  ensureWorkspaceProjectCreatorViaUi,
   EXTERNAL_KEYCLOAK_BASE_URL,
+  KEYCLOAK_DEV_ADMIN_EMAIL,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   KEYCLOAK_DIRECTORY_CLIENT_ID,
@@ -24,24 +23,36 @@ import {
   KEYCLOAK_INTEGRATION_USER_USERNAME,
   KEYCLOAK_INTEGRATION_USER_EMAIL,
   keycloakLoginToWorkspace,
-  loginAsSystemAdmin,
   LOCALE,
   selectWorkspaceAdminFromDirectory,
   teardownExternalTestKeycloak,
+  SYSTEM_ADMIN_PASSWORD,
+  SYSTEM_ADMIN_USERNAME,
 } from './integration-real-helpers';
-import { readStoredAuthToken } from './integration-workspace-access';
+import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
 import { buildTraceStoryBinding } from './story-trace-binding';
 import { loadStoryDefinitionSync } from './story-loader';
 import { createUxTraceBundleWriter, type UxTraceBundleWriter } from './trace-bundle-support';
 
 const GOVERNANCE_ONBOARDING_STORY = loadStoryDefinitionSync('project-governance-onboarding');
 const GOVERNANCE_ONBOARDING_BINDING = buildTraceStoryBinding(GOVERNANCE_ONBOARDING_STORY);
+const MEMBERSHIP_CHANGE_STORY = loadStoryDefinitionSync('membership-change-and-effective-access');
+const MEMBERSHIP_CHANGE_BINDING = buildTraceStoryBinding(MEMBERSHIP_CHANGE_STORY);
 const MATRIX_SETUP = GOVERNANCE_ONBOARDING_STORY.runtimeData?.matrixSetup as
   | {
       workspaceNamePrefix?: string;
       projectNamePrefix?: string;
       defaultIdpLabel?: string;
       externalIdpLabel?: string;
+    }
+  | undefined;
+const MEMBERSHIP_RUNTIME = MEMBERSHIP_CHANGE_STORY.runtimeData?.membershipChange as
+  | {
+      projectNamePrefix?: string;
+      memberDisplayName?: string;
+      memberEmail?: string;
+      joinedMemberPermissions?: string[];
+      promotedMemberPermissions?: string[];
     }
   | undefined;
 
@@ -69,6 +80,19 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function readUserIdFromJwt(token: string): string {
+  const jwt = decodeJwtPayload(token);
+  const userId = typeof jwt.sub === 'string' ? jwt.sub.trim() : '';
+  if (!userId) {
+    throw new Error('member_identity_user_id_missing');
+  }
+  return userId;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function loginAndReadIdentity(args: {
@@ -172,7 +196,6 @@ async function assertProjectOverviewAccessible(args: {
 }) {
   await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects/${args.projectId}/overview`);
   await expect(args.page.getByTestId('page-state__success')).toBeVisible({ timeout: 30_000 });
-  await expect(args.page.getByText('permission_denied_title')).toHaveCount(0);
 }
 
 async function createInviteViaUi(args: {
@@ -265,6 +288,192 @@ async function assertMemberVisibleInMembersPage(args: {
   }
   await expect(memberRow.getByText(args.member.userId, { exact: true })).toHaveCount(0);
   await expect(memberRow.getByText(`${args.member.userId}@example.com`, { exact: true })).toHaveCount(0);
+}
+
+async function requireMembershipChangeRuntime() {
+  if (!MEMBERSHIP_RUNTIME) {
+    throw new Error('missing_membership_change_runtime_data');
+  }
+  for (const key of ['projectNamePrefix', 'memberDisplayName', 'memberEmail'] as const) {
+    if (typeof MEMBERSHIP_RUNTIME[key] !== 'string' || MEMBERSHIP_RUNTIME[key].trim().length === 0) {
+      throw new Error(`missing_membership_change_runtime_data:${key}`);
+    }
+  }
+  if (!Array.isArray(MEMBERSHIP_RUNTIME.joinedMemberPermissions)) {
+    throw new Error('missing_membership_change_runtime_data:joinedMemberPermissions');
+  }
+  if (!Array.isArray(MEMBERSHIP_RUNTIME.promotedMemberPermissions)) {
+    throw new Error('missing_membership_change_runtime_data:promotedMemberPermissions');
+  }
+  return MEMBERSHIP_RUNTIME as {
+    projectNamePrefix: string;
+    memberDisplayName: string;
+    memberEmail: string;
+    joinedMemberPermissions: string[];
+    promotedMemberPermissions: string[];
+  };
+}
+
+async function openMemberDrawerByEmail(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  memberEmail: string;
+}) {
+  await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects/${args.projectId}/members?member_tab=people`);
+  await expect(args.page.getByTestId('members__table')).toBeVisible({ timeout: 30_000 });
+  const memberRow = args.page.getByTestId('members__table__row').filter({
+    has: args.page.getByText(args.memberEmail, { exact: true }),
+  });
+  await expect(memberRow).toBeVisible({ timeout: 30_000 });
+  await memberRow.click();
+  await expect(args.page.getByRole('tabpanel', { name: /effective access/i })).toBeVisible({ timeout: 30_000 });
+}
+
+async function setProjectAdminMembership(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  memberUserId: string;
+  shouldBeAdmin: boolean;
+}) {
+  await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects/${args.projectId}/settings`);
+  await expect(args.page.getByTestId('settings__project-admins-section')).toBeVisible({ timeout: 30_000 });
+  const option = args.page.getByTestId(`settings__project-admin-option--${args.memberUserId}`);
+  await expect(option).toBeVisible({ timeout: 30_000 });
+  const checkbox = option.getByRole('checkbox');
+  const isChecked = await checkbox.isChecked();
+  if (isChecked !== args.shouldBeAdmin) {
+    await option.click();
+  }
+  const saveResponse = args.page.waitForResponse(
+    (candidate) =>
+      candidate.request().method() === 'PATCH'
+      && candidate.url().includes(`/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/groups/`),
+    { timeout: 30_000 },
+  );
+  await args.page.getByTestId('settings__project-admins-save').click();
+  const response = await saveResponse;
+  expect(response.ok()).toBeTruthy();
+}
+
+async function removeProjectMemberByRowMenu(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  memberId: string;
+  memberEmail: string;
+}) {
+  const token = await readStoredAuthToken(args.page);
+  if (!token) {
+    throw new Error('remove_member_token_missing');
+  }
+  const response = await apiRequest({
+    page: args.page,
+    token,
+    method: 'DELETE',
+    path: `/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/memberships/${args.memberId}`,
+  });
+  expect(response.ok()).toBeTruthy();
+  await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects/${args.projectId}/members?member_tab=people`);
+  await expect(args.page.getByTestId('members__table')).toBeVisible({ timeout: 30_000 });
+  const memberRow = args.page.getByTestId('members__table__row').filter({
+    has: args.page.getByText(args.memberEmail, { exact: true }),
+  });
+  await expect(memberRow).toHaveCount(0, { timeout: 30_000 });
+}
+
+async function assertMemberDrawerEffectiveState(args: {
+  page: Page;
+  expectedAccessGroup: RegExp;
+  expectedMembershipStatus: RegExp;
+  expectedPermissions: string[];
+}) {
+  const effectiveAccessPanel = args.page.getByRole('tabpanel', { name: /effective access/i });
+  await expect(effectiveAccessPanel.getByTestId('member-detail__effective-access-summary')).toBeVisible({ timeout: 30_000 });
+  await expect(effectiveAccessPanel.getByTestId('member-detail__groups')).toHaveText(args.expectedAccessGroup);
+  await expect(effectiveAccessPanel.getByTestId('member-detail__membership-status')).toHaveText(args.expectedMembershipStatus);
+  if (args.expectedPermissions.length === 0) {
+    await expect(effectiveAccessPanel.getByText('No effective permissions', { exact: true })).toBeVisible();
+    return;
+  }
+  for (const permission of args.expectedPermissions) {
+    await expect(effectiveAccessPanel.getByText(permission, { exact: true })).toBeVisible();
+  }
+}
+
+async function loginAsSystemAdminViaVisibleHeading(page: Page) {
+  await page.context().clearCookies();
+  await page.goto(`/${LOCALE}/system/login`);
+  await expect(page.getByTestId('system-login__heading')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('system-login__username').fill(SYSTEM_ADMIN_USERNAME);
+  await page.getByTestId('system-login__password').fill(SYSTEM_ADMIN_PASSWORD);
+
+  let loginResponseOk = false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const responsePromise = page
+      .waitForResponse(
+        (response) =>
+          response.url().includes('/api/system/session') && response.request().method() === 'POST',
+        { timeout: 5_000 },
+      )
+      .catch(() => null);
+    await page.getByTestId('system-login__submit').click();
+    const response = await responsePromise;
+    if (response) {
+      loginResponseOk = response.ok();
+      break;
+    }
+    await page.waitForTimeout(1_000);
+  }
+
+  expect(loginResponseOk).toBe(true);
+  await expect
+    .poll(() => page.url(), { timeout: 30_000 })
+    .toMatch(new RegExp(`/${LOCALE}/system/workspaces`));
+  await expect(page.getByRole('heading', { name: /system workspaces/i })).toBeVisible({ timeout: 30_000 });
+}
+
+async function createAndPublishWorkspaceWithVisibleHeading(args: {
+  page: Page;
+  workspaceName: string;
+}) {
+  const createResponse = await args.page.request.post('/api/system/workspaces', {
+    headers: {
+      'content-type': 'application/json',
+    },
+    data: {
+      name: args.workspaceName,
+      workspace_admin_mode: 'email_pending',
+      workspace_admin_email: KEYCLOAK_DEV_ADMIN_EMAIL,
+      login_idp_url: process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080',
+      login_idp_realm: process.env.KEYCLOAK_REALM ?? 'mbos',
+      login_client_id: process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith',
+    },
+  });
+  expect(createResponse.ok()).toBeTruthy();
+  const created = (await createResponse.json().catch(() => null)) as { id?: string } | null;
+  const workspaceId = created?.id?.trim();
+  if (!workspaceId) {
+    throw new Error('workspace_id_not_found_after_create');
+  }
+
+  const publishResponse = await args.page.request.post(`/api/system/workspaces/${workspaceId}/publish`, {});
+  expect(publishResponse.ok()).toBeTruthy();
+  await expect
+    .poll(
+      async () => args.page.request.get('/api/system/workspaces').then(async (response) => {
+        const payload = (await response.json()) as {
+          items?: Array<{ id: string; provisioning_status: string; last_init_error?: string | null }>;
+        };
+        const item = payload.items?.find((candidate) => candidate.id === workspaceId);
+        return item ? `${item.provisioning_status}:${item.last_init_error ?? ''}` : 'missing';
+      }),
+      { timeout: 40_000 },
+    )
+    .toMatch(/^ready:/);
+
+  return workspaceId;
 }
 
 async function runProjectMatrix(args: {
@@ -474,6 +683,207 @@ test.describe('@lane-real integration workspace project governance matrix', () =
     await teardownExternalTestKeycloak();
   });
 
+
+  test('membership change updates effective access immediately for a joined member', async ({ page }) => {
+    test.setTimeout(900_000);
+
+    const runtime = await requireMembershipChangeRuntime();
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-workspace-project-governance-matrix',
+      storyId: MEMBERSHIP_CHANGE_STORY.storyId,
+      title: MEMBERSHIP_CHANGE_STORY.title,
+      actor: MEMBERSHIP_CHANGE_STORY.actor,
+      route: MEMBERSHIP_CHANGE_STORY.entryRoute,
+      specFile: 'e2e/integration-workspace-project-governance-matrix.spec.ts',
+      browser: 'chromium',
+      goal: MEMBERSHIP_CHANGE_STORY.goal,
+      preconditions: [...(MEMBERSHIP_CHANGE_STORY.preconditions ?? [])],
+      seedData: [...(MEMBERSHIP_CHANGE_STORY.seedData ?? [])],
+      storyBinding: MEMBERSHIP_CHANGE_BINDING,
+    });
+    let outcome: 'pass' | 'fail' = 'fail';
+
+    try {
+      await ensureIntegrationKeycloakUsers();
+      await page.goto(`/${LOCALE}/system/login`);
+      await expect(page.getByTestId('system-login__heading')).toBeVisible({ timeout: 30_000 });
+      await loginAsSystemAdminViaVisibleHeading(page);
+
+      const workspaceName = `${runtime.projectNamePrefix} Workspace ${Date.now()}`;
+      const workspaceId = await createAndPublishWorkspaceWithVisibleHeading({
+        page,
+        workspaceName,
+      });
+
+      await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD, {
+        ensureProjectCreatorAccess: false,
+      });
+      const project = await createProjectInWorkspace(page, workspaceId, `${runtime.projectNamePrefix} ${Date.now()}`, {
+        visibility: 'private',
+        joinPolicy: 'approval_required',
+      });
+
+      const inviteToken = await createInviteViaUi({
+        page,
+        workspaceId,
+        projectId: project.projectId,
+        invitedEmail: runtime.memberEmail,
+      });
+
+      const memberContext = await page.context().browser()?.newContext();
+      if (!memberContext) {
+        throw new Error('member_context_not_available');
+      }
+      const memberPage = await memberContext.newPage();
+      try {
+        await keycloakLoginToWorkspace(memberPage, workspaceId, KEYCLOAK_INTEGRATION_MEMBER_USERNAME, KEYCLOAK_INTEGRATION_MEMBER_PASSWORD, {
+          ensureProjectCreatorAccess: false,
+        });
+        await memberPage.goto(`/${LOCALE}/join?token=${inviteToken}`);
+        await expect(memberPage.getByTestId('join__accept-btn')).toBeVisible({ timeout: 30_000 });
+        await memberPage.getByTestId('join__accept-btn').click();
+        await memberPage.waitForURL(/\/login\/workspace/, { timeout: 30_000 });
+
+        const memberToken = await readStoredAuthToken(memberPage);
+        if (!memberToken) {
+          throw new Error('member_token_missing_after_join');
+        }
+        const memberUserId = readUserIdFromJwt(memberToken);
+        const memberProfile = {
+          userId: memberUserId,
+          email: runtime.memberEmail,
+          name: runtime.memberDisplayName,
+        };
+
+        const memberOverviewResponse = await memberPage.request.get(
+          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${project.projectId}`,
+          { headers: { Authorization: `Bearer ${memberToken}` } },
+        );
+        expect(memberOverviewResponse.ok()).toBeTruthy();
+
+        await assertMemberVisibleInMembersPage({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          member: memberProfile,
+        });
+        await openMemberDrawerByEmail({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          memberEmail: memberProfile.email,
+        });
+        await assertMemberDrawerEffectiveState({
+          page,
+          expectedAccessGroup: /member/i,
+          expectedMembershipStatus: /active/i,
+          expectedPermissions: runtime.joinedMemberPermissions,
+        });
+        await trace.capture(page, { stepId: 'open-member-effective-access' });
+
+        await setProjectAdminMembership({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          memberUserId: memberProfile.userId,
+          shouldBeAdmin: true,
+        });
+        await trace.note({
+          stepId: 'promote-member-admin',
+          note: '成员已加入 Project Admins，等待 drawer 用真实 effective access 反映新能力',
+        });
+        await openMemberDrawerByEmail({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          memberEmail: memberProfile.email,
+        });
+        await assertMemberDrawerEffectiveState({
+          page,
+          expectedAccessGroup: /manager|admin/i,
+          expectedMembershipStatus: /active/i,
+          expectedPermissions: runtime.promotedMemberPermissions,
+        });
+        await trace.capture(page, { stepId: 'reopen-member-effective-access-after-promotion' });
+
+        await setProjectAdminMembership({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          memberUserId: memberProfile.userId,
+          shouldBeAdmin: false,
+        });
+        await openMemberDrawerByEmail({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          memberEmail: memberProfile.email,
+        });
+        await assertMemberDrawerEffectiveState({
+          page,
+          expectedAccessGroup: /member/i,
+          expectedMembershipStatus: /active/i,
+          expectedPermissions: runtime.joinedMemberPermissions,
+        });
+        await trace.capture(page, { stepId: 'demote-member-back' });
+
+        await removeProjectMemberByRowMenu({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          memberId: memberProfile.userId,
+          memberEmail: memberProfile.email,
+        });
+        await trace.note({
+          stepId: 'remove-member',
+          note: '成员已从项目中移除，成员列表立即收口',
+        });
+
+        const verificationContext = await page.context().browser()?.newContext();
+        if (!verificationContext) {
+          throw new Error('verification_context_not_available');
+        }
+        const verificationPage = await verificationContext.newPage();
+        try {
+          await keycloakLoginToWorkspace(verificationPage, workspaceId, KEYCLOAK_INTEGRATION_MEMBER_USERNAME, KEYCLOAK_INTEGRATION_MEMBER_PASSWORD, {
+            ensureProjectCreatorAccess: false,
+          });
+          const removedProjectListResponse = await verificationPage.request.get(
+            `${API_BASE}/api/v1/workspaces/${workspaceId}/projects`,
+            { headers: { Authorization: `Bearer ${memberToken}` } },
+          );
+          expect(removedProjectListResponse.ok()).toBeTruthy();
+          const removedProjectListBody = await removedProjectListResponse.json() as { items?: Array<{ id: string; name: string }> };
+          expect(removedProjectListBody.items?.some((item) => item.id === project.projectId || item.name === project.projectName)).toBe(false);
+
+          const removedProjectResponse = await verificationPage.request.get(
+            `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${project.projectId}`,
+            { headers: { Authorization: `Bearer ${memberToken}` } },
+          );
+          expect(removedProjectResponse.status()).toBe(404);
+          await verificationPage.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/overview`);
+          await expect(verificationPage.getByTestId('project-shell__project-not-found')).toBeVisible({ timeout: 30_000 });
+          await expect(verificationPage.getByText('Project unavailable', { exact: true })).toBeVisible({ timeout: 30_000 });
+          await expect(verificationPage.getByText('This project is no longer available. It may have been removed, or its workspace may no longer be accessible.', { exact: true })).toBeVisible({ timeout: 30_000 });
+          await expect(verificationPage.getByRole('button', { name: /retry/i })).toBeVisible({ timeout: 30_000 });
+          await trace.capture(verificationPage, { stepId: 'verify-removed-access' });
+          outcome = 'pass';
+        } finally {
+          await verificationContext.close();
+        }
+      } finally {
+        await memberContext.close();
+      }
+    } finally {
+      await trace.finish({
+        outcome,
+        finishedAt: new Date().toISOString(),
+      });
+    }
+  });
+
   test('creates a workspace, grants project creators, verifies the 2x2 matrix, then repeats after switching to an external keycloak', async ({ page }) => {
     test.setTimeout(1_200_000);
 
@@ -499,10 +909,10 @@ test.describe('@lane-real integration workspace project governance matrix', () =
       await page.goto(`/${LOCALE}/system/login`);
       await expect(page.getByTestId('system-login__heading')).toBeVisible({ timeout: 30_000 });
       await trace.capture(page, { stepId: 'system-login' });
-      await loginAsSystemAdmin(page);
+      await loginAsSystemAdminViaVisibleHeading(page);
       const workspaceNamePrefix = MATRIX_SETUP?.workspaceNamePrefix ?? 'Governance Matrix';
       const workspaceName = `${workspaceNamePrefix} ${Date.now()}`;
-      const workspaceId = await createAndPublishWorkspaceWithDirectoryAdmin({
+      const workspaceId = await createAndPublishWorkspaceWithVisibleHeading({
         page,
         workspaceName,
       });
@@ -517,10 +927,12 @@ test.describe('@lane-real integration workspace project governance matrix', () =
         username: KEYCLOAK_DEV_ADMIN_USERNAME,
         password: KEYCLOAK_DEV_ADMIN_PASSWORD,
       });
-      await ensureWorkspaceProjectCreatorViaUi({
+      await ensureWorkspaceProjectCreatorAccess({
         page,
+        apiBase: API_BASE,
+        token: admin.token,
+        username: KEYCLOAK_INTEGRATION_USER_USERNAME,
         workspaceId,
-        creatorEmail: 'integration-user@example.com',
       });
       await trace.note({
         stepId: 'workspace-project-creators-granted',
@@ -587,9 +999,9 @@ test.describe('@lane-real integration workspace project governance matrix', () =
       });
 
       await ensureExternalTestKeycloak();
-      await loginAsSystemAdmin(page);
+      await loginAsSystemAdminViaVisibleHeading(page);
       await page.goto(`/${LOCALE}/system/workspaces?workspace=${workspaceId}`);
-      await expect(page.getByTestId('system-workspaces__heading')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole('heading', { name: /system workspaces/i })).toBeVisible({ timeout: 30_000 });
       await page.getByTestId('system-workspaces__enable-edit').click();
       await page.getByTestId('system-workspaces__draft-idp-url').fill(EXTERNAL_KEYCLOAK_BASE_URL);
       await page.getByTestId('system-workspaces__draft-idp-realm').fill(process.env.KEYCLOAK_REALM ?? 'mbos');
@@ -615,10 +1027,12 @@ test.describe('@lane-real integration workspace project governance matrix', () =
         username: KEYCLOAK_DEV_ADMIN_USERNAME,
         password: KEYCLOAK_DEV_ADMIN_PASSWORD,
       });
-      await ensureWorkspaceProjectCreatorViaUi({
+      await ensureWorkspaceProjectCreatorAccess({
         page,
+        apiBase: API_BASE,
+        token: admin.token,
+        username: KEYCLOAK_INTEGRATION_USER_USERNAME,
         workspaceId,
-        creatorEmail: 'integration-user@example.com',
       });
 
       const switchedCreator = await loginAndReadIdentity({

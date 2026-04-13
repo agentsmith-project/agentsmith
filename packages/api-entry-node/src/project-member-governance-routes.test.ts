@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import {
+  setProjectAdminGroupMembersPersisted,
+  upsertProjectMemberPermissionState,
+  upsertProjectMembershipRecord,
+} from './project-member-governance-persistence.js';
 
 const {
   writeProjectAuditEvent,
@@ -258,6 +263,65 @@ describe('project-member-governance-routes', () => {
           expect.objectContaining({ change_type: 'permissions' }),
           expect.objectContaining({ change_type: 'membership' }),
         ]),
+      }),
+    );
+  });
+
+
+  it('returns group-derived effective permissions for the member permissions snapshot', async () => {
+    const workspaceId = `ws-effective-${Date.now()}`;
+    const projectId = `proj-effective-${Date.now()}`;
+    const deps = buildDeps();
+    const json = vi.fn();
+    const res = { end: vi.fn(), statusCode: 200 } as never;
+
+    await upsertProjectMembershipRecord(deps.docStore, workspaceId, projectId, {
+      project_id: projectId,
+      user_id: 'user-1',
+      role: 'member',
+      status: 'active',
+      joined_at: new Date().toISOString(),
+    });
+    await setProjectAdminGroupMembersPersisted({
+      docStore: deps.docStore,
+      workspaceId,
+      projectId,
+      memberIds: ['user-1'],
+    });
+    await upsertProjectMemberPermissionState(deps.docStore, workspaceId, projectId, 'user-1', {
+      mode: 'custom',
+      template: null,
+      permissions: ['project:files:update'],
+    });
+
+    await expect(handleProjectMembershipGovernanceRoute({
+      routeKind: 'projectMemberPermissions',
+      method: 'GET',
+      workspaceId,
+      projectId,
+      userId: 'user-1',
+      req: {} as never,
+      res,
+      deps,
+      user: { id: 'owner-1', email: 'owner-1@example.com', name: 'Owner One' },
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenLastCalledWith(
+      res,
+      200,
+      expect.objectContaining({
+        platform_permissions: expect.arrayContaining([
+          'project:endpoint:use',
+          'project:agent:manage',
+          'project:agent:public',
+          'project:governance:update',
+          'project:membership:update',
+          'project:admins:update',
+          'project:files:update',
+        ]),
+        resource_permissions: undefined,
       }),
     );
   });

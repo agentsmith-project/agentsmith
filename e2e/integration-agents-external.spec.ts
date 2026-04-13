@@ -1,5 +1,49 @@
 import { WebSocket } from 'ws';
 import { test, expect, type Page } from '@playwright/test';
+import { BACKEND_REAL_MODEL, BACKEND_REAL_OPENAI_BASE_URL, createCredentialViaUi, createEndpointViaApi } from './integration-real-helpers';
+import { loadStoryDefinitionSync } from './story-loader';
+import { buildTraceStoryBinding } from './story-trace-binding';
+import { createUxTraceBundleWriter } from './trace-bundle-support';
+
+const AI_RUNTIME_RECOVERY_STORY = loadStoryDefinitionSync('e2e/stories/backend-real/ai-runtime-failure-and-recovery.story.md');
+const AI_RUNTIME_RECOVERY_BINDING = buildTraceStoryBinding(AI_RUNTIME_RECOVERY_STORY);
+
+type AiRuntimeFailureRecoveryRuntime = {
+  chatTitlePrefix: string;
+  offlinePrompt: string;
+  recoveryPrompt: string;
+  recoveryToken: string;
+};
+
+function resolveAiRuntimeRecoveryStep(stepId: string) {
+  const step = AI_RUNTIME_RECOVERY_BINDING.steps.find((entry) => entry.stepId === stepId);
+  if (!step) {
+    throw new Error(`unknown_ai_runtime_recovery_step:${stepId}`);
+  }
+  return step;
+}
+
+function requireRealLaneApiKey(): string {
+  const value = process.env.BACKEND_REAL_API_KEY?.trim();
+  if (!value) {
+    throw new Error('missing_BACKEND_REAL_API_KEY');
+  }
+  return value;
+}
+
+function requireAiRuntimeRecoveryRuntime(): AiRuntimeFailureRecoveryRuntime {
+  const runtimeRoot = AI_RUNTIME_RECOVERY_STORY.runtimeData as Record<string, unknown> | undefined;
+  const runtime = runtimeRoot?.aiRuntimeFailureRecovery as Record<string, unknown> | undefined;
+  if (!runtime) {
+    throw new Error('missing_ai_runtime_failure_recovery_runtime_data');
+  }
+  for (const key of ['chatTitlePrefix', 'offlinePrompt', 'recoveryPrompt', 'recoveryToken'] as const) {
+    if (typeof runtime[key] !== 'string' || runtime[key].trim().length === 0) {
+      throw new Error(`missing_ai_runtime_failure_recovery_runtime_data:${key}`);
+    }
+  }
+  return runtime as unknown as AiRuntimeFailureRecoveryRuntime;
+}
 
 async function issuePasswordGrantToken(username: string, password: string): Promise<string> {
   const keycloakBase = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
@@ -98,6 +142,7 @@ async function createExternalAgentBundle(args: {
   projectId: string;
   multimodal: boolean;
   title: string;
+  executionEndpointId?: string;
 }): Promise<{ agentId: string; wsUrl: string; agentKey: string; sessionId: string }> {
   const createAgentRes = await fetch(
     `${args.apiBase}/api/v1/workspaces/ws_default/projects/${args.projectId}/agents`,
@@ -111,6 +156,13 @@ async function createExternalAgentBundle(args: {
         name: `it-external-agent-${Date.now()}`,
         mode: 'external',
         interaction_kind: 'chat',
+        ...(args.executionEndpointId
+          ? {
+              execution_preferences_json: {
+                chat: { endpoint_id: args.executionEndpointId },
+              },
+            }
+          : {}),
         capabilities: {
           streaming_completion: true,
           multimodal_completion: args.multimodal,
@@ -575,6 +627,98 @@ test.describe('@lane-real integration external agent chat stream', () => {
     await page.getByTestId('chat__send-btn').click();
 
     await expect(page.getByText(/External agent is offline|外部 Agent 当前离线/)).toBeVisible({ timeout: 20_000 });
+  });
+
+  test('ai runtime failure and recovery guides reconnect and succeeds in the same chat', async ({ page }) => {
+    test.setTimeout(240_000);
+
+    const runtime = requireAiRuntimeRecoveryRuntime();
+    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
+    const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
+    const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+    const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
+
+    await keycloakLogin(page, locale, username, password);
+    const token = await issuePasswordGrantToken(username, password);
+    const projectId = await createProjectViaApi(apiBase, token);
+
+    const title = `${runtime.chatTitlePrefix} ${Date.now()}`;
+    const credentialName = `Story Runtime Recovery Credential ${Date.now()}`;
+    const endpointName = `Story Runtime Recovery Endpoint ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, requireRealLaneApiKey());
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_OPENAI_BASE_URL,
+      credentialName,
+      upstreamProtocol: 'openai_responses',
+    });
+    const bundle = await createExternalAgentBundle({
+      apiBase,
+      token,
+      projectId,
+      multimodal: false,
+      title,
+      executionEndpointId: endpointId,
+    });
+
+    await openChatSession(page, locale, projectId, title);
+
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-agents-external',
+      storyId: AI_RUNTIME_RECOVERY_STORY.storyId,
+      title: AI_RUNTIME_RECOVERY_STORY.title,
+      actor: AI_RUNTIME_RECOVERY_STORY.actor,
+      route: `/${locale}/workspaces/ws_default/projects/${projectId}/chat`,
+      specFile: 'e2e/integration-agents-external.spec.ts',
+      browser: 'chromium',
+      goal: AI_RUNTIME_RECOVERY_STORY.goal,
+      preconditions: [...(AI_RUNTIME_RECOVERY_STORY.preconditions ?? [])],
+      seedData: [...(AI_RUNTIME_RECOVERY_STORY.seedData ?? [])],
+      storyBinding: AI_RUNTIME_RECOVERY_BINDING,
+    });
+    const captureTrace = async (stepId: string): Promise<void> => {
+      const storyStep = resolveAiRuntimeRecoveryStep(stepId);
+      await trace.capture(page, {
+        stepId,
+        action: storyStep.action,
+        target: storyStep.target,
+        note: storyStep.note ?? storyStep.expectedFeedback,
+      });
+    };
+    let outcome: 'pass' | 'fail' = 'fail';
+    let ws: WebSocket | null = null;
+
+    try {
+      await captureTrace('open-chat-runtime-recovery');
+      await page.getByTestId('chat__composer').locator('textarea').fill(runtime.offlinePrompt);
+      await page.getByTestId('chat__send-btn').click();
+
+      await expect(page.getByText(/External agent is offline|外部 Agent 当前离线/)).toBeVisible({ timeout: 20_000 });
+      await captureTrace('trigger-runtime-failure');
+      await expect(page.getByText(/Reconnect the agent and retry|请先连接后重试/)).toBeVisible({ timeout: 20_000 });
+      await captureTrace('review-runtime-recovery');
+
+      ws = await connectEchoWs({ wsUrl: bundle.wsUrl, agentKey: bundle.agentKey, mode: 'normal' });
+      await page.getByTestId('chat__composer').locator('textarea').fill(runtime.recoveryPrompt);
+      await page.getByTestId('chat__send-btn').click();
+      await expect
+        .poll(async () => {
+          const messages = await page.getByTestId('chat__message').allTextContents();
+          return messages.join('\n');
+        }, { timeout: 60_000 })
+        .toContain(runtime.recoveryToken);
+      await captureTrace('retry-after-recovery');
+
+      outcome = 'pass';
+    } finally {
+      if (ws) {
+        ws.close();
+      }
+      await trace.finish({ outcome });
+    }
   });
 
   test('external agent protocol error shows specific stream banner', async ({ page }) => {

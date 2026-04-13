@@ -109,7 +109,7 @@ export class MemberAPI {
    */
   async remove(workspaceId: string, projectId: string, memberId: string): Promise<void> {
     return this.client.delete<void>(
-      `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}`
+      `/workspaces/${workspaceId}/projects/${projectId}/memberships/${memberId}`
     );
   }
 

@@ -1,0 +1,163 @@
+---
+{
+  "storyId": "membership-change-and-effective-access",
+  "title": "Membership change and effective access",
+  "actor": "project owner / project admin / joined member",
+  "family": "membership-change-and-effective-access",
+  "personas": [
+    "project owner",
+    "project admin",
+    "joined member"
+  ],
+  "kind": "journey",
+  "lane": "backend-real",
+  "entryRoute": "/en-US/workspaces/ws_default/projects",
+  "goal": "成员的升权、降权和移除应该立即反映在 effective access 上，页面和 backend 都不能继续显示旧能力状态。",
+  "gatePolicy": {
+    "tier": "default",
+    "requiredEvidence": [
+      "trace"
+    ]
+  },
+  "preconditions": [
+    "backend-real stack is ready",
+    "workspace ws_default is available",
+    "Keycloak integration users are available"
+  ],
+  "externalDependencies": [
+    {
+      "dependencyId": "integration-keycloak-users",
+      "kind": "integration",
+      "required": true,
+      "note": "backend-real membership change story needs integration Keycloak users to exercise day-2 promotion and removal."
+    }
+  ],
+  "seedData": [
+    "ws_default"
+  ],
+  "runtimeData": {
+    "membershipChange": {
+      "projectNamePrefix": "Story Membership Effective Access",
+      "memberDisplayName": "Integration Member",
+      "memberEmail": "integration-member@example.com",
+      "joinedMemberPermissions": [
+        "project:endpoint:use",
+        "project:agent:use",
+        "project:terminal:use"
+      ],
+      "promotedMemberPermissions": [
+        "project:endpoint:use",
+        "project:agent:use",
+        "project:terminal:use",
+        "project:agent:manage",
+        "project:agent:public",
+        "project:audit:read",
+        "project:governance:update",
+        "project:membership:update",
+        "project:admins:update",
+        "project:files:update"
+      ]
+    }
+  },
+  "narrative": "成员心智上最重要的不是一个邀请成功，而是当他被升权、降权或移除之后，自己能做什么要马上变；effective access drawer 也必须同步讲真话，并且默认成员语义要对齐真实的项目成员权限状态。",
+  "scenes": [
+    {
+      "sceneId": "project-members",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/members",
+      "stableMarkers": [
+        "members__table",
+        "member-detail__effective-access-summary"
+      ]
+    },
+    {
+      "sceneId": "project-settings",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/settings",
+      "stableMarkers": [
+        "settings__project-admins-section"
+      ]
+    },
+    {
+      "sceneId": "project-overview",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/overview",
+      "stableMarkers": [
+        "project-hub__page"
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "stepId": "open-member-effective-access",
+      "sceneId": "project-members",
+      "intent": "Open the member detail drawer and inspect the current effective access state.",
+      "action": "Open member effective access",
+      "target": "member-detail__effective-access-summary",
+      "expectedFeedback": "成员作为 Project Members 加入后，默认立即显示 Project Members 的 member template permissions。",
+      "note": "先看当前能力状态，再做 membership 变更，默认成员语义必须是真实的 Project Members template 能力，而不是空白或缓存残留。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "promote-member-admin",
+      "sceneId": "project-settings",
+      "intent": "Promote the joined member to project admin and save the new group membership.",
+      "action": "Promote member to admin",
+      "target": "settings__project-admins-save",
+      "expectedFeedback": "成员升权后立即出现在 Project Admins 中，并且 effective permissions 立即切换到 admin template permissions。",
+      "note": "升权之后必须马上看到 access group 变化，而不是等 cache 自己过期。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "reopen-member-effective-access-after-promotion",
+      "sceneId": "project-members",
+      "intent": "Reopen the member drawer and confirm the promoted access is reflected immediately.",
+      "action": "Reopen member effective access",
+      "target": "member-detail__effective-access-summary",
+      "expectedFeedback": "effective access 立即切换到 Project Admins，并展示 admin template permissions。",
+      "note": "升权不应该等待后台缓存超时才生效。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "demote-member-back",
+      "sceneId": "project-settings",
+      "intent": "Remove the member from project admin group and save the lower access state.",
+      "action": "Demote member back",
+      "target": "settings__project-admins-save",
+      "expectedFeedback": "成员降权后立即回到 Project Members，并恢复 member template permissions。",
+      "note": "降权同样必须立刻反映到 access group 和 effective access.",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "remove-member",
+      "sceneId": "project-members",
+      "intent": "Remove the member from the project and verify the access disappears immediately.",
+      "action": "Remove member",
+      "target": "members__table",
+      "expectedFeedback": "成员被移除后，effective access 不能继续显示旧的 project access。",
+      "note": "移除后必须立即失去项目访问，不允许 drawer 继续展示旧能力。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "verify-removed-access",
+      "sceneId": "project-overview",
+      "intent": "Re-login the removed member in a fresh session and confirm the project is no longer accessible.",
+      "action": "Verify removed access",
+      "target": "project-hub__page",
+      "expectedFeedback": "移除后在新会话里访问项目时，应无法再在项目列表中发现它，直接打开时则进入 Project unavailable 恢复面，而不是 generic error 或旧缓存。",
+      "note": "必须用 fresh member session 复验，先确认 removed member 不再 discover 该项目，再确认项目布局层给出 Project unavailable 恢复面，避免同一 SPA context 里的旧 React Query 缓存掩盖真实后端不可访问状态。",
+      "evidence": [
+        "trace"
+      ]
+    }
+  ]
+}
+---
+Canonical backend-real story for membership change and effective access.

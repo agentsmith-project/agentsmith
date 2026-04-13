@@ -1,5 +1,52 @@
 [
   {
+    "storyId": "ai-runtime-failure-and-recovery",
+    "title": "AI runtime failure and recovery",
+    "actor": "project operator",
+    "family": "ai-runtime-failure-and-recovery",
+    "personas": [
+      "project operator"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "external-agent-chat-runtime",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real recovery story needs a reconnectable external agent websocket runtime."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/ws_default/projects/{projectId}/chat",
+    "goal": "项目操作人员在 chat 里遇到外部 AI runtime 离线时，应该立刻看到明确的恢复动作；完成重新连接后，能在同一条对话链里再次成功。",
+    "sourceRef": "e2e/stories/backend-real/ai-runtime-failure-and-recovery.story.md#ai-runtime-failure-and-recovery",
+    "sourceFingerprint": "08325ab8a1cf93bca728ca917affd9280e02e22d398a73b54222d7b985865889",
+    "storyFingerprint": "c36c756daa86c81fb69eefaa768f49befa18d45946ea53d680f475c00873ab02",
+    "stepMapFingerprint": "1a1866c76bb41560884961f072896a9b48425d8d59083b30f21c28b396ea2d07",
+    "sceneIds": [
+      "project-chat"
+    ],
+    "stepIds": [
+      "open-chat-runtime-recovery",
+      "trigger-runtime-failure",
+      "review-runtime-recovery",
+      "retry-after-recovery"
+    ],
+    "traceStepIds": [
+      "open-chat-runtime-recovery",
+      "trigger-runtime-failure",
+      "review-runtime-recovery",
+      "retry-after-recovery"
+    ],
+    "visualStepIds": []
+  },
+  {
     "storyId": "api-key-to-endpoint-consumption",
     "title": "API key to endpoint consumption",
     "actor": "project member",
@@ -272,6 +319,61 @@
       "start-first-chat-use",
       "verify-chat-privacy",
       "verify-shared-runner-isolation"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "membership-change-and-effective-access",
+    "title": "Membership change and effective access",
+    "actor": "project owner / project admin / joined member",
+    "family": "membership-change-and-effective-access",
+    "personas": [
+      "project owner",
+      "project admin",
+      "joined member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "integration-keycloak-users",
+        "kind": "integration",
+        "required": true,
+        "note": "backend-real membership change story needs integration Keycloak users to exercise day-2 promotion and removal."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/ws_default/projects",
+    "goal": "成员的升权、降权和移除应该立即反映在 effective access 上，页面和 backend 都不能继续显示旧能力状态。",
+    "sourceRef": "e2e/stories/backend-real/membership-change-and-effective-access.story.md#membership-change-and-effective-access",
+    "sourceFingerprint": "a732bd32c9825780b0a1983b678daa0d1ccd5d0f35678aefb17cc32220d70b4a",
+    "storyFingerprint": "eccb82d4198ac5129fc6a589bf645f5eb5d44d7ed04d648226e8c158aa918bbb",
+    "stepMapFingerprint": "cf62a483e5273d1f4bd14c74e219d440a48677c217388c277fb76e4d293b246f",
+    "sceneIds": [
+      "project-members",
+      "project-settings",
+      "project-overview"
+    ],
+    "stepIds": [
+      "open-member-effective-access",
+      "promote-member-admin",
+      "reopen-member-effective-access-after-promotion",
+      "demote-member-back",
+      "remove-member",
+      "verify-removed-access"
+    ],
+    "traceStepIds": [
+      "open-member-effective-access",
+      "promote-member-admin",
+      "reopen-member-effective-access-after-promotion",
+      "demote-member-back",
+      "remove-member",
+      "verify-removed-access"
     ],
     "visualStepIds": []
   },
@@ -787,6 +889,59 @@
     "visualStepIds": []
   },
   {
+    "storyId": "personal-self-service-lifecycle",
+    "title": "Personal self-service lifecycle",
+    "actor": "workspace member / project member",
+    "family": "personal-self-service",
+    "personas": [
+      "workspace member",
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "local-anthropic-compatible-upstream",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real self-service lifecycle uses a local deterministic upstream to keep endpoint consumption assertions stable."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/user/profile",
+    "goal": "成员把自己的个人身份和访问能力配置到可用状态后，应该能立即带着这些个人设置进入项目 access guide 并成功使用自己的访问入口，而不是在个人资料、连接和访问凭据之间来回排障。",
+    "sourceRef": "e2e/stories/backend-real/personal-self-service-lifecycle.story.md#personal-self-service-lifecycle",
+    "sourceFingerprint": "1148c646e61b4d3c575f1d80cb6da1dbf0b33ee564cb052995495fe8b08e0f33",
+    "storyFingerprint": "1522d45172c4b67fbc38945ca1829b23656f081f97c122e0511a8a0e207aad73",
+    "stepMapFingerprint": "85714f690d8f1d795f8ce6c5d349c6ea5319757ba95807560f0a6b6a84837af3",
+    "sceneIds": [
+      "user-profile",
+      "personal-connections",
+      "user-api-keys",
+      "project-use-guide"
+    ],
+    "stepIds": [
+      "update-personal-profile",
+      "create-personal-connection",
+      "create-personal-api-key",
+      "review-project-access-guide",
+      "verify-personal-access-ready"
+    ],
+    "traceStepIds": [
+      "update-personal-profile",
+      "create-personal-connection",
+      "create-personal-api-key",
+      "review-project-access-guide",
+      "verify-personal-access-ready"
+    ],
+    "visualStepIds": []
+  },
+  {
     "storyId": "project-governance-onboarding",
     "title": "Project governance onboarding",
     "actor": "system 管理侧 / workspace admin / project creator / member / guest / invitee",
@@ -886,6 +1041,56 @@
       "agents-created",
       "member-task-created",
       "member-manage-forbidden"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "project-owner-daily-governance-review",
+    "title": "Project owner daily governance review",
+    "actor": "system 管理侧 / project owner",
+    "family": "project-owner-daily-governance-review",
+    "personas": [
+      "system 管理侧",
+      "project owner"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "provider-api-key",
+        "kind": "credential",
+        "required": true,
+        "note": "backend-real governance review needs a runnable provider credential to generate real usage before review."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/usage",
+    "goal": "project owner 能在进入项目后看懂项目现在运行如何，并根据 usage、audit 与 alerts 的连续信号判断要不要处理，以及下一步是否需要把监控交给 alerts follow-up surface。",
+    "sourceRef": "e2e/stories/backend-real/project-owner-daily-governance-review.story.md#project-owner-daily-governance-review",
+    "sourceFingerprint": "fa0a9773999bc6e447b7790351c022783628bc41d1da25ffe9b2e18c29a5e238",
+    "storyFingerprint": "9d43183643b28b1ef3c1cec589425062ca046ec40cf22ef9413c2386eac1e540",
+    "stepMapFingerprint": "32534ec005da5e7cf793c69daf45d817869b3e9bd78afe9758bd55d9c09b7454",
+    "sceneIds": [
+      "project-usage",
+      "project-audit",
+      "project-alerts"
+    ],
+    "stepIds": [
+      "open-usage-review",
+      "inspect-runtime-usage",
+      "inspect-audit-detail",
+      "configure-alert-follow-up"
+    ],
+    "traceStepIds": [
+      "open-usage-review",
+      "inspect-runtime-usage",
+      "inspect-audit-detail",
+      "configure-alert-follow-up"
     ],
     "visualStepIds": []
   },
@@ -1178,6 +1383,52 @@
       "workspace-login",
       "workspace-projects",
       "project-discovery"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "workspace-lifecycle-admin-operations",
+    "title": "Workspace lifecycle admin operations",
+    "actor": "system 管理侧 / workspace admin",
+    "family": "workspace-lifecycle-admin-operations",
+    "personas": [
+      "system 管理侧",
+      "workspace admin"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/system/login",
+    "goal": "system 管理侧对一个已上线 workspace 做一次 day-2 维护核验，重新确认它的 IdP 和 workspace login 仍然真实可访问。",
+    "sourceRef": "e2e/stories/backend-real/workspace-lifecycle-admin-operations.story.md#workspace-lifecycle-admin-operations",
+    "sourceFingerprint": "ed5de5dc2e39039c26093cbd5ef0521a0c239e810dea1587620b762633459138",
+    "storyFingerprint": "35080ac358ea99270af42060f77c70c8a82357afec4d9cc1c8e1f8853e967832",
+    "stepMapFingerprint": "30c76ce87fb469c11c2aef50e67695c87143d022d28efa60c1402e755ba61e48",
+    "sceneIds": [
+      "system-login",
+      "system-workspaces",
+      "workspace-login",
+      "workspace-projects"
+    ],
+    "stepIds": [
+      "system-login",
+      "system-workspaces",
+      "live-workspace-maintenance",
+      "workspace-login",
+      "workspace-projects"
+    ],
+    "traceStepIds": [
+      "system-login",
+      "system-workspaces",
+      "live-workspace-maintenance",
+      "workspace-login",
+      "workspace-projects"
     ],
     "visualStepIds": []
   },

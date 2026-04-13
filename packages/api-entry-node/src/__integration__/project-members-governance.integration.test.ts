@@ -1304,7 +1304,7 @@ describe('api-entry-node project members governance routes', () => {
     );
     expect(suspendedPermissionsRes.status).toBe(200);
     expect(await suspendedPermissionsRes.json()).toEqual({
-      platform_permissions: ['project:endpoint:use'],
+      platform_permissions: [],
       resource_permissions: undefined,
     });
 
@@ -1330,6 +1330,23 @@ describe('api-entry-node project members governance routes', () => {
       },
     );
     expect(restoreRes.status).toBe(204);
+
+    const restoredPermissionsRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/members/user_alt/permissions`,
+      'owner-token',
+    );
+    expect(restoredPermissionsRes.status).toBe(200);
+    expect(await restoredPermissionsRes.json()).toEqual({
+      platform_permissions: [
+        'project:endpoint:use',
+        'project:agent:use',
+        'project:terminal:use',
+        'project:audit:read',
+        'project:membership:update',
+      ],
+      resource_permissions: undefined,
+    });
 
     const restoredRouteRes = await apiFetchWithToken(
       baseUrl,
@@ -1393,7 +1410,7 @@ describe('api-entry-node project members governance routes', () => {
     );
     expect(getPermsAfterRes.status).toBe(200);
     expect(await getPermsAfterRes.json()).toEqual({
-      platform_permissions: ['project:audit:read', 'project:membership:update'],
+      platform_permissions: [],
       resource_permissions: undefined,
     });
 

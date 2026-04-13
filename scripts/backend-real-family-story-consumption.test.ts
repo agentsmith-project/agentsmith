@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadStoryDefinitionSync } from '../e2e/story-loader';
+import { loadCanonicalStoryCatalog, loadCommittedStoryDefinitionByIdSync } from './story-catalog-support';
 
 type GeneratedStorySpec = {
   storyId: string;
@@ -18,58 +18,30 @@ async function readGeneratedStorySpecs(): Promise<GeneratedStorySpec[]> {
   return JSON.parse(raw) as GeneratedStorySpec[];
 }
 
+function expectedSourceRefForStory(story: { sourceFile?: string; filePath: string; storyId: string }): string {
+  const sourcePath = story.sourceFile ?? path.relative(process.cwd(), story.filePath).replace(/\\/g, '/');
+  return `${sourcePath}#${story.storyId}`;
+}
+
 describe('backend-real family story consumption', () => {
   it('keeps the daily-use and self-service family stories in the generated story catalog', async () => {
+    const { stories } = await loadCanonicalStoryCatalog();
     const specs = await readGeneratedStorySpecs();
-    const storyIds = specs.map((entry) => entry.storyId);
+    const backendRealStories = stories.filter((story) => story.lane === 'backend-real');
+    const backendRealSpecs = specs.filter((entry) => backendRealStories.some((story) => story.storyId === entry.storyId));
 
-    expect(storyIds).toEqual(expect.arrayContaining([
-      'files-library-access-and-recovery',
-      'files-crud-and-sync',
-      'members-invite-and-chat-privacy',
-      'workspace-publish-to-usable-access',
-      'workspace-settings-save-and-effect',
-      'chat-conversation-continuity',
-      'chat-day-two-thread-workflow',
-      'notebook-artifact-to-files-download',
-      'notebook-first-success',
-      'api-key-to-endpoint-consumption',
-      'workspace-project-personal-context',
-    ]));
+    expect(backendRealSpecs.map((entry) => entry.storyId)).toEqual(backendRealStories.map((story) => story.storyId));
 
-    expect(specs.find((entry) => entry.storyId === 'chat-conversation-continuity')?.traceStepIds).toEqual(
-      expect.arrayContaining(['open-chat', 'reload-chat-session', 'recall-conversation']),
-    );
-    expect(specs.find((entry) => entry.storyId === 'chat-day-two-thread-workflow')?.traceStepIds).toEqual(
-      expect.arrayContaining(['open-chat-day-two', 'create-follow-up-thread', 'rename-keep-thread', 'delete-stale-thread', 'resume-kept-thread']),
-    );
-    expect(specs.find((entry) => entry.storyId === 'notebook-artifact-to-files-download')?.stepIds).toEqual(
-      expect.arrayContaining(['open-notebook-task', 'open-files-artifacts', 'download-artifact']),
-    );
-    expect(specs.find((entry) => entry.storyId === 'notebook-first-success')?.traceStepIds).toEqual(
-      expect.arrayContaining(['open-system-login', 'publish-workspace', 'configure-notebook-project', 'grant-member-notebook-access', 'run-first-notebook-task']),
-    );
-    expect(specs.find((entry) => entry.storyId === 'api-key-to-endpoint-consumption')?.traceStepIds).toEqual(
-      expect.arrayContaining(['review-use-guide', 'create-personal-api-key', 'consume-endpoint']),
-    );
-    expect(specs.find((entry) => entry.storyId === 'workspace-project-personal-context')?.traceStepIds).toEqual(
-      expect.arrayContaining(['open-workspace-personal-context', 'save-project-personal-context', 'verify-scoped-context']),
-    );
-    expect(specs.find((entry) => entry.storyId === 'files-library-access-and-recovery')?.traceStepIds).toEqual(
-      expect.arrayContaining(['open-files-library', 'review-desktop-access', 'review-degraded-recovery']),
-    );
-    expect(specs.find((entry) => entry.storyId === 'files-crud-and-sync')?.traceStepIds).toEqual(
-      expect.arrayContaining(['open-files-library', 'manage-files-from-web', 'verify-web-desktop-sync']),
-    );
-    expect(specs.find((entry) => entry.storyId === 'members-invite-and-chat-privacy')?.traceStepIds).toEqual(
-      expect.arrayContaining(['accept-invite', 'verify-member-first-access', 'verify-chat-privacy']),
-    );
-    expect(specs.find((entry) => entry.storyId === 'workspace-publish-to-usable-access')?.traceStepIds).toEqual(
-      expect.arrayContaining(['open-system-login', 'publish-workspace', 'verify-workspace-usable']),
-    );
-    expect(specs.find((entry) => entry.storyId === 'workspace-settings-save-and-effect')?.traceStepIds).toEqual(
-      expect.arrayContaining(['open-workspace-settings', 'save-project-creator', 'verify-project-creator-effect']),
-    );
+    for (const story of backendRealStories) {
+      const spec = backendRealSpecs.find((entry) => entry.storyId === story.storyId);
+
+      expect(spec?.lane).toBe('backend-real');
+      expect(spec?.sourceRef).toBe(expectedSourceRefForStory(story));
+      expect(spec?.stepIds).toEqual(story.steps.map((step) => step.stepId));
+      expect(spec?.traceStepIds).toEqual(
+        story.steps.filter((step) => step.evidence.includes('trace')).map((step) => step.stepId),
+      );
+    }
   });
 
   it('loads story definitions in the backend-real family specs instead of hard-coding daily-use runtime details inline', async () => {
@@ -164,7 +136,7 @@ describe('backend-real family story consumption', () => {
   });
 
   it('keeps notebook artifact prompts executable as multiline shell commands', () => {
-    const story = loadStoryDefinitionSync('notebook-artifact-to-files-download');
+    const story = loadCommittedStoryDefinitionByIdSync('notebook-artifact-to-files-download');
     const runtime = (story.runtimeData as Record<string, unknown> | undefined)?.notebookArtifactDownload as
       | Record<string, unknown>
       | undefined;
@@ -178,13 +150,13 @@ describe('backend-real family story consumption', () => {
   });
 
   it('keeps api key and personal context stories aligned with the member journey assumptions', () => {
-    const apiKeyStory = loadStoryDefinitionSync('api-key-to-endpoint-consumption');
+    const apiKeyStory = loadCommittedStoryDefinitionByIdSync('api-key-to-endpoint-consumption');
     const apiKeyRuntime = (apiKeyStory.runtimeData as Record<string, unknown> | undefined)?.apiKeyEndpointConsumption as
       | Record<string, unknown>
       | undefined;
     expect(apiKeyRuntime?.consumeProtocol).toBe('anthropic');
 
-    const personalContextStory = loadStoryDefinitionSync('workspace-project-personal-context');
+    const personalContextStory = loadCommittedStoryDefinitionByIdSync('workspace-project-personal-context');
     const [workspaceStep, projectStep] = personalContextStory.steps.filter(
       (step) =>
         step.stepId === 'open-workspace-personal-context'
@@ -195,39 +167,39 @@ describe('backend-real family story consumption', () => {
   });
 
   it('keeps the second-wave backend-real stories aligned with user goals instead of implementation-specific runtime labels', () => {
-    const filesCrudStory = loadStoryDefinitionSync('files-crud-and-sync');
+    const filesCrudStory = loadCommittedStoryDefinitionByIdSync('files-crud-and-sync');
     expect(filesCrudStory.goal).toContain('管理文件');
     expect(filesCrudStory.goal).not.toContain('JuiceFS');
 
-    const filesStory = loadStoryDefinitionSync('files-library-access-and-recovery');
+    const filesStory = loadCommittedStoryDefinitionByIdSync('files-library-access-and-recovery');
     expect(filesStory.goal).toContain('文件库');
     expect(filesStory.goal).not.toContain('Mongo');
 
-    const membersStory = loadStoryDefinitionSync('members-invite-and-chat-privacy');
+    const membersStory = loadCommittedStoryDefinitionByIdSync('members-invite-and-chat-privacy');
     expect(membersStory.goal).toContain('成员');
     expect(membersStory.goal).not.toContain('JWT');
 
-    const publishStory = loadStoryDefinitionSync('workspace-publish-to-usable-access');
+    const publishStory = loadCommittedStoryDefinitionByIdSync('workspace-publish-to-usable-access');
     expect(publishStory.goal).toContain('发布');
     expect(publishStory.goal).not.toContain('Keycloak');
 
-    const workspaceSettingsStory = loadStoryDefinitionSync('workspace-settings-save-and-effect');
+    const workspaceSettingsStory = loadCommittedStoryDefinitionByIdSync('workspace-settings-save-and-effect');
     expect(workspaceSettingsStory.goal).toContain('project creator');
     expect(workspaceSettingsStory.goal).not.toContain('directory search');
   });
 
   it('keeps the chat day-two and first notebook stories aligned with common user journeys instead of runner internals', () => {
-    const chatDayTwoStory = loadStoryDefinitionSync('chat-day-two-thread-workflow');
+    const chatDayTwoStory = loadCommittedStoryDefinitionByIdSync('chat-day-two-thread-workflow');
     expect(chatDayTwoStory.goal).toContain('第二天');
     expect(chatDayTwoStory.goal).not.toContain('upstream');
 
-    const notebookFirstStory = loadStoryDefinitionSync('notebook-first-success');
+    const notebookFirstStory = loadCommittedStoryDefinitionByIdSync('notebook-first-success');
     expect(notebookFirstStory.goal).toContain('第一次');
     expect(notebookFirstStory.goal).not.toContain('WebSocket');
   });
 
   it('keeps files story runtime data focused on stable fixtures instead of environment-derived deployment URLs', async () => {
-    const filesStory = loadStoryDefinitionSync('files-library-access-and-recovery');
+    const filesStory = loadCommittedStoryDefinitionByIdSync('files-library-access-and-recovery');
     const filesRuntime = (filesStory.runtimeData as Record<string, unknown> | undefined)?.filesLibraryAccessRecovery as
       | Record<string, unknown>
       | undefined;
@@ -241,7 +213,7 @@ describe('backend-real family story consumption', () => {
   });
 
   it('keeps files CRUD and workspace settings stories focused on visible user outcomes instead of raw fixture strings', async () => {
-    const filesCrudStory = loadStoryDefinitionSync('files-crud-and-sync');
+    const filesCrudStory = loadCommittedStoryDefinitionByIdSync('files-crud-and-sync');
     const filesCrudRuntime = (filesCrudStory.runtimeData as Record<string, unknown> | undefined)?.filesCrudSync as
       | Record<string, unknown>
       | undefined;
@@ -249,7 +221,7 @@ describe('backend-real family story consumption', () => {
     expect(filesCrudRuntime?.webCrud).toBeDefined();
     expect(filesCrudRuntime?.mountSync).toBeDefined();
 
-    const workspaceSettingsStory = loadStoryDefinitionSync('workspace-settings-save-and-effect');
+    const workspaceSettingsStory = loadCommittedStoryDefinitionByIdSync('workspace-settings-save-and-effect');
     const workspaceSettingsRuntime = (workspaceSettingsStory.runtimeData as Record<string, unknown> | undefined)?.workspaceSettingsSaveEffect as
       | Record<string, unknown>
       | undefined;
@@ -258,7 +230,7 @@ describe('backend-real family story consumption', () => {
   });
 
   it('anchors the workspace publish story on the live system workspaces entry point instead of a removed heading marker', async () => {
-    const publishStory = loadStoryDefinitionSync('workspace-publish-to-usable-access');
+    const publishStory = loadCommittedStoryDefinitionByIdSync('workspace-publish-to-usable-access');
     const publishScene = publishStory.scenes.find((scene) => scene.sceneId === 'system-workspaces');
     const publishStep = publishStory.steps.find((step) => step.stepId === 'publish-workspace');
     const publishSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-workspace-publish-usable.spec.ts'), 'utf-8');

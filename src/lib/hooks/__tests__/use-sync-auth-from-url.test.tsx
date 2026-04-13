@@ -139,6 +139,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: [],
@@ -160,6 +161,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: [],
@@ -171,8 +173,28 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/en-US/workspaces/overview');
+        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces/overview');
       });
+    });
+
+    it('should not redirect while workspaces are refetching after transient invalidation', async () => {
+      mockParams.workspace = 'ws_nonexistent';
+      vi.mocked(useAuthStoreHydration).mockReturnValue(true);
+      vi.mocked(useWorkspaces).mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isFetching: true,
+      } as any);
+      vi.mocked(useProjects).mockReturnValue({
+        data: [],
+        isLoading: false,
+      } as any);
+
+      renderHook(() => useSyncAuthFromUrl(), {
+        wrapper: createTestWrapper(),
+      });
+
+      expect(mockRouter.replace).not.toHaveBeenCalled();
     });
 
     it('should not redirect when workspaces are still loading', async () => {
@@ -181,6 +203,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: undefined,
         isLoading: true,
+        isFetching: true,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: [],
@@ -201,6 +224,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: [],
@@ -221,6 +245,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: [],
@@ -242,6 +267,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: [],
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: [],
@@ -253,8 +279,28 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/en-US/workspaces/overview');
+        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces/overview');
       });
+    });
+
+    it('should not redirect while workspaces are refetching after transient invalidation', async () => {
+      mockParams.workspace = 'ws_nonexistent';
+      vi.mocked(useAuthStoreHydration).mockReturnValue(true);
+      vi.mocked(useWorkspaces).mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isFetching: true,
+      } as any);
+      vi.mocked(useProjects).mockReturnValue({
+        data: [],
+        isLoading: false,
+      } as any);
+
+      renderHook(() => useSyncAuthFromUrl(), {
+        wrapper: createTestWrapper(),
+      });
+
+      expect(mockRouter.replace).not.toHaveBeenCalled();
     });
   });
 
@@ -266,6 +312,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: mockProjects,
@@ -288,6 +335,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: mockProjects,
@@ -310,6 +358,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       // Projects for ws_another would be empty
       vi.mocked(useProjects).mockReturnValue({
@@ -333,6 +382,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: undefined,
@@ -354,6 +404,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: mockProjects,
@@ -378,6 +429,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: mockProjects,
@@ -402,6 +454,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: mockProjects,
@@ -413,8 +466,28 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/en-US/workspaces/overview');
+        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces/overview');
       });
+    });
+
+    it('should not redirect while workspaces are refetching after transient invalidation', async () => {
+      mockParams.workspace = 'ws_nonexistent';
+      vi.mocked(useAuthStoreHydration).mockReturnValue(true);
+      vi.mocked(useWorkspaces).mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isFetching: true,
+      } as any);
+      vi.mocked(useProjects).mockReturnValue({
+        data: [],
+        isLoading: false,
+      } as any);
+
+      renderHook(() => useSyncAuthFromUrl(), {
+        wrapper: createTestWrapper(),
+      });
+
+      expect(mockRouter.replace).not.toHaveBeenCalled();
     });
 
     it('should keep deep link when workspace is valid but project is invalid', async () => {
@@ -424,6 +497,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: mockProjects,
@@ -449,6 +523,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: [],
@@ -460,8 +535,28 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/en-US/workspaces/overview');
+        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces/overview');
       });
+    });
+
+    it('should not redirect while workspaces are refetching after transient invalidation', async () => {
+      mockParams.workspace = 'ws_nonexistent';
+      vi.mocked(useAuthStoreHydration).mockReturnValue(true);
+      vi.mocked(useWorkspaces).mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isFetching: true,
+      } as any);
+      vi.mocked(useProjects).mockReturnValue({
+        data: [],
+        isLoading: false,
+      } as any);
+
+      renderHook(() => useSyncAuthFromUrl(), {
+        wrapper: createTestWrapper(),
+      });
+
+      expect(mockRouter.replace).not.toHaveBeenCalled();
     });
 
     it('should handle back navigation to workspace list page', async () => {
@@ -471,6 +566,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: [],
@@ -497,6 +593,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: undefined,
         isLoading: true,
+        isFetching: true,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: [],
@@ -517,6 +614,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: undefined,
@@ -537,6 +635,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: mockProjects,
@@ -559,6 +658,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: mockProjects,
@@ -582,6 +682,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: [],
@@ -608,6 +709,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: mockProjects,
@@ -666,6 +768,7 @@ describe('useSyncAuthFromUrl', () => {
       vi.mocked(useWorkspaces).mockReturnValue({
         data: mockWorkspaces,
         isLoading: false,
+        isFetching: false,
       } as any);
       vi.mocked(useProjects).mockReturnValue({
         data: null,

@@ -20,7 +20,7 @@ import {
   shouldUseGovernableProjectSwitcher,
 } from '@/lib/projects/project-surface-access';
 import { selectCurrentUser, useAuthStore } from '@/lib/stores/authStore';
-import { buildWorkspaceOverviewHref } from '@/lib/workspaces/workspace-paths';
+import { buildWorkspaceOverviewPath } from '@/lib/workspaces/workspace-paths';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
 import { Logo } from './Logo';
@@ -62,7 +62,7 @@ function resolveTopbarHomeHref(params: {
     return '/system/workspaces';
   }
 
-  return buildWorkspaceOverviewHref(params.locale);
+  return buildWorkspaceOverviewPath();
 }
 
 const quietSwitcherClassName =

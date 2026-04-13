@@ -2,6 +2,11 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  listCommittedStoryMarkdownFiles,
+  loadCommittedStoryDefinitions,
+  loadCommittedStoryDefinitionById,
+} from './story-catalog-support';
 import { loadAllStoryDefinitions, loadStoryDefinition, parseStoryDefinition } from '../e2e/story-loader';
 
 function buildJsonFrontmatterStory(overrides: Record<string, unknown> = {}): string {
@@ -177,7 +182,7 @@ describe('story loader', () => {
   });
 
   it('loads explicit runtime visual review scenes from the story contract instead of a separate visual parser', async () => {
-    const story = await loadStoryDefinition('mock-lane-chat-operate-and-recover');
+    const story = await loadCommittedStoryDefinitionById('mock-lane-chat-operate-and-recover');
 
     expect(story.runtimeData?.visualReview?.scenes).toEqual([
       {
@@ -221,41 +226,19 @@ describe('story loader', () => {
   });
 
   it('discovers only committed story markdown files from canonical lane directories under the story root', async () => {
-    const stories = await loadAllStoryDefinitions();
-
-    expect(stories.map((story) => story.storyId)).toEqual([
-      'api-key-to-endpoint-consumption',
-      'chat-conversation-continuity',
-      'chat-day-two-thread-workflow',
-      'files-crud-and-sync',
-      'files-library-access-and-recovery',
-      'members-invite-and-chat-privacy',
-      'mock-lane-alerts-and-usage-review',
-      'mock-lane-chat-operate-and-recover',
-      'mock-lane-connections-and-credentials-lifecycle',
-      'mock-lane-entry-access',
-      'mock-lane-governance-surfaces',
-      'mock-lane-notebook-task-lifecycle',
-      'mock-lane-self-service',
-      'mock-lane-settings-and-members-review',
-      'mock-lane-workspace-project-core',
-      'notebook-artifact-to-files-download',
-      'notebook-first-success',
-      'project-governance-onboarding',
-      'project-governance-runtime-setup',
-      'real-backend-visual-review',
-      'release-user-story-end-to-end',
-      'system-admin-entry',
-      'workspace-entry-and-project-discovery',
-      'workspace-project-personal-context',
-      'workspace-publish-to-usable-access',
-      'workspace-settings-save-and-effect',
+    const [stories, committedFiles] = await Promise.all([
+      loadCommittedStoryDefinitions(),
+      listCommittedStoryMarkdownFiles(),
     ]);
+
+    const committedStoryIds = committedFiles.map((filePath) => path.basename(filePath, '.story.md'));
+    expect(stories.map((story) => story.storyId)).toEqual(committedStoryIds);
     expect(
       stories.every((story) =>
         /(\/|\\)e2e(\/|\\)stories(\/|\\)(backend-real|mock-lane)(\/|\\).+\.story\.md$/.test(story.filePath),
       ),
     ).toBe(true);
+    expect(new Set(committedStoryIds).size).toBe(committedStoryIds.length);
   });
 
   it('does not keep committed story markdown files at the story root', async () => {
@@ -265,14 +248,14 @@ describe('story loader', () => {
 
   it('keeps backend-real governance and admin stories on explicit gatePolicy tiers instead of inheriting release by default', async () => {
     const [systemAdminEntry, onboarding, runtimeSetup, workspaceEntry, personalContext, filesManagement, memberInvite, workspacePublish] = await Promise.all([
-      loadStoryDefinition('system-admin-entry'),
-      loadStoryDefinition('project-governance-onboarding'),
-      loadStoryDefinition('project-governance-runtime-setup'),
-      loadStoryDefinition('workspace-entry-and-project-discovery'),
-      loadStoryDefinition('workspace-project-personal-context'),
-      loadStoryDefinition('files-library-access-and-recovery'),
-      loadStoryDefinition('members-invite-and-chat-privacy'),
-      loadStoryDefinition('workspace-publish-to-usable-access'),
+      loadCommittedStoryDefinitionById('system-admin-entry'),
+      loadCommittedStoryDefinitionById('project-governance-onboarding'),
+      loadCommittedStoryDefinitionById('project-governance-runtime-setup'),
+      loadCommittedStoryDefinitionById('workspace-entry-and-project-discovery'),
+      loadCommittedStoryDefinitionById('workspace-project-personal-context'),
+      loadCommittedStoryDefinitionById('files-library-access-and-recovery'),
+      loadCommittedStoryDefinitionById('members-invite-and-chat-privacy'),
+      loadCommittedStoryDefinitionById('workspace-publish-to-usable-access'),
     ]);
 
     expect(systemAdminEntry.gatePolicy).toEqual({

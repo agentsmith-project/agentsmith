@@ -722,9 +722,17 @@ export async function handleProjectMembershipGovernanceRoute(args: {
   }
 
   if (routeKind === 'projectMemberPermissions' && method === 'GET') {
-    const current = await getProjectMemberPermissionState(deps.docStore, workspaceId, projectId, userId);
+    const project = await deps.getProjectUseCase.execute({ workspaceId, projectId });
+    const permissions = await resolveVisibleProjectPermissionsForActor({
+      docStore: deps.docStore,
+      workspaceId,
+      projectId,
+      projectOwnerId: project.owner_id,
+      projectGovernance: project.governance_json,
+      actorUserId: userId,
+    });
     json(res, 200, {
-      platform_permissions: current?.permissions ?? [],
+      platform_permissions: permissions,
       resource_permissions: undefined,
     });
     return true;

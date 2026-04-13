@@ -1,6 +1,6 @@
 import type { AddressInfo } from 'node:net';
 import http, { type Server } from 'node:http';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   API_BASE,
   ensureIntegrationKeycloakUsers,
@@ -14,12 +14,15 @@ import {
   KEYCLOAK_INTEGRATION_USER_USERNAME,
   LOCALE,
 } from './integration-real-helpers';
+import { readStoredAuthToken } from './integration-workspace-access';
 import { loadStoryDefinitionSync } from './story-loader';
 import { buildTraceStoryBinding } from './story-trace-binding';
 import { createUxTraceBundleWriter } from './trace-bundle-support';
 
 const API_KEY_ENDPOINT_STORY = loadStoryDefinitionSync('api-key-to-endpoint-consumption');
 const API_KEY_ENDPOINT_BINDING = buildTraceStoryBinding(API_KEY_ENDPOINT_STORY);
+const PERSONAL_SELF_SERVICE_STORY = loadStoryDefinitionSync('personal-self-service-lifecycle');
+const PERSONAL_SELF_SERVICE_BINDING = buildTraceStoryBinding(PERSONAL_SELF_SERVICE_STORY);
 
 type ApiKeyEndpointRuntime = {
   projectName: string;
@@ -32,10 +35,34 @@ type ApiKeyEndpointRuntime = {
   expectedReplyText: string;
 };
 
+type PersonalSelfServiceRuntime = {
+  projectNamePrefix: string;
+  endpointNamePrefix: string;
+  credentialNamePrefix: string;
+  profileDisplayName: string;
+  profileBio: string;
+  apiKeyLabelPrefix: string;
+  apiKeyTtlDays: string;
+  connectionDisplayNamePrefix: string;
+  connectionCustomDomainSuffix: string;
+  connectionToken: string;
+  connectionNote: string;
+  model: string;
+  expectedReplyText: string;
+};
+
 function resolveApiKeyEndpointStep(stepId: string) {
   const step = API_KEY_ENDPOINT_BINDING.steps.find((entry) => entry.stepId === stepId);
   if (!step) {
     throw new Error(`unknown_api_key_endpoint_step:${stepId}`);
+  }
+  return step;
+}
+
+function resolvePersonalSelfServiceStep(stepId: string) {
+  const step = PERSONAL_SELF_SERVICE_BINDING.steps.find((entry) => entry.stepId === stepId);
+  if (!step) {
+    throw new Error(`unknown_personal_self_service_step:${stepId}`);
   }
   return step;
 }
@@ -61,6 +88,34 @@ function requireApiKeyEndpointRuntime(): ApiKeyEndpointRuntime {
     }
   }
   return runtime as unknown as ApiKeyEndpointRuntime;
+}
+
+function requirePersonalSelfServiceRuntime(): PersonalSelfServiceRuntime {
+  const runtimeRoot = PERSONAL_SELF_SERVICE_STORY.runtimeData as Record<string, unknown> | undefined;
+  const runtime = runtimeRoot?.personalSelfServiceLifecycle as Record<string, unknown> | undefined;
+  if (!runtime) {
+    throw new Error('missing_personal_self_service_runtime_data');
+  }
+  for (const key of [
+    'projectNamePrefix',
+    'endpointNamePrefix',
+    'credentialNamePrefix',
+    'profileDisplayName',
+    'profileBio',
+    'apiKeyLabelPrefix',
+    'apiKeyTtlDays',
+    'connectionDisplayNamePrefix',
+    'connectionCustomDomainSuffix',
+    'connectionToken',
+    'connectionNote',
+    'model',
+    'expectedReplyText',
+  ] as const) {
+    if (typeof runtime[key] !== 'string' || runtime[key].trim().length === 0) {
+      throw new Error(`missing_personal_self_service_runtime_data:${key}`);
+    }
+  }
+  return runtime as unknown as PersonalSelfServiceRuntime;
 }
 
 async function startAnthropicCompatibleStreamingUpstream(replyText: string): Promise<{ baseUrl: string; stop: () => Promise<void> }> {
@@ -125,7 +180,7 @@ async function startAnthropicCompatibleStreamingUpstream(replyText: string): Pro
 }
 
 async function createPersonalApiKey(
-  page: import('@playwright/test').Page,
+  page: Page,
   input: { label: string; ttlDays: string },
 ): Promise<string> {
   await page.goto(`/${LOCALE}/user/api-keys`);
@@ -145,7 +200,69 @@ async function createPersonalApiKey(
   return keyValue;
 }
 
-async function joinProjectNow(page: import('@playwright/test').Page, workspaceId: string, projectId: string): Promise<void> {
+async function updatePersonalProfile(
+  page: Page,
+  input: { workspaceId: string; projectId: string; displayName: string; bio: string },
+): Promise<void> {
+  await page.goto(`/${LOCALE}/user/profile?workspace=${input.workspaceId}&project=${input.projectId}`);
+  await expect(page.getByTestId('profile__form')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('profile__display-name').fill(input.displayName);
+  await page.getByTestId('profile__bio').fill(input.bio);
+  const saveResponse = page.waitForResponse((res) =>
+    res.request().method() === 'PATCH' && res.url().includes('/api/v1/me/profile'),
+  );
+  await page.getByTestId('profile__save-btn').click();
+  const response = await saveResponse;
+  expect(response.ok()).toBeTruthy();
+  await expect(page.getByTestId('profile__display-name')).toHaveValue(input.displayName, { timeout: 30_000 });
+  await expect(page.getByTestId('profile__bio')).toHaveValue(input.bio, { timeout: 30_000 });
+
+  const authToken = await readStoredAuthToken(page);
+  expect(authToken).toBeTruthy();
+  const persistedProfileResponse = await page.request.get(`${API_BASE}/api/v1/me/profile`, {
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  expect(persistedProfileResponse.ok()).toBeTruthy();
+  const persistedProfile = (await persistedProfileResponse.json()) as { display_name?: string | null; bio?: string | null };
+  expect(persistedProfile.display_name).toBe(input.displayName);
+  expect(persistedProfile.bio).toBe(input.bio);
+}
+
+async function createPersonalConnection(
+  page: Page,
+  input: { displayName: string; customDomain: string; note: string; token: string },
+): Promise<void> {
+  await page.goto(`/${LOCALE}/user/third-party-accounts`);
+  await expect(page.getByTestId('third-party-accounts__create-btn')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('third-party-accounts__create-btn').click();
+  const sheet = page.getByTestId('third-party-accounts__sheet');
+  await expect(sheet).toBeVisible({ timeout: 30_000 });
+  await sheet.getByTestId('third-party-accounts__provider-select').selectOption('custom');
+  await expect(sheet.getByTestId('third-party-accounts__custom-domain')).toBeVisible({ timeout: 10_000 });
+  await sheet.getByTestId('third-party-accounts__custom-domain').fill(input.customDomain);
+  await sheet.getByTestId('third-party-accounts__display-name').fill(input.displayName);
+  await sheet.getByTestId('third-party-accounts__note').fill(input.note);
+  const baseUrlSecretToggle = sheet.getByTestId('third-party-accounts__field-secret-0');
+  if (await baseUrlSecretToggle.isChecked()) {
+    await baseUrlSecretToggle.uncheck();
+  }
+  await sheet.getByTestId('third-party-accounts__field-key-0').fill('base_url');
+  await sheet.getByTestId('third-party-accounts__field-value-0').fill(`https://${input.customDomain}`);
+  await sheet.getByTestId('third-party-accounts__field-description-0').fill('Base URL');
+  await sheet.getByTestId('third-party-accounts__add-field').click();
+  await sheet.getByTestId('third-party-accounts__field-key-1').fill('token');
+  await sheet.getByTestId('third-party-accounts__field-value-1').fill(input.token);
+  await sheet.getByTestId('third-party-accounts__field-description-1').fill('Access token');
+  const createResponse = page.waitForResponse((res) =>
+    res.request().method() === 'POST' && res.url().endsWith('/api/v1/me/external-connections'),
+  );
+  await sheet.getByTestId('third-party-accounts__submit-btn').click();
+  const response = await createResponse;
+  expect(response.ok()).toBeTruthy();
+  await expect(page.getByText(input.displayName)).toBeVisible({ timeout: 30_000 });
+}
+
+async function joinProjectNow(page: Page, workspaceId: string, projectId: string): Promise<void> {
   await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects`);
   const joinButton = page.getByTestId(`projects__join-project-btn--${projectId}`);
   await expect(joinButton).toBeVisible({ timeout: 30_000 });
@@ -273,6 +390,139 @@ test.describe('@lane-real personal api key endpoint access', () => {
         }
 
         await captureTrace('consume-endpoint');
+        outcome = 'pass';
+      } finally {
+        await trace.finish({ outcome });
+      }
+    } finally {
+      await upstream.stop();
+    }
+  });
+
+  test('member configures personal identity and access into a ready state', async ({ page }) => {
+    test.setTimeout(600_000);
+    const workspaceId = 'ws_default';
+    const upstreamApiKey = 'gateway-upstream-test-key';
+    const runtime = requirePersonalSelfServiceRuntime();
+    const runId = Date.now();
+    const profileDisplayName = `${runtime.profileDisplayName} ${runId}`;
+    const profileBio = `${runtime.profileBio} [${runId}]`;
+    const connectionDisplayName = `${runtime.connectionDisplayNamePrefix} ${runId}`;
+    const connectionCustomDomain = `${runId}.${runtime.connectionCustomDomainSuffix}`;
+    const apiKeyLabel = `${runtime.apiKeyLabelPrefix} ${runId}`;
+    const endpointCredentialName = `${runtime.credentialNamePrefix} ${runId}`;
+    const endpointName = `${runtime.endpointNamePrefix} ${runId}`;
+    const projectName = `${runtime.projectNamePrefix} ${runId}`;
+    const upstream = await startAnthropicCompatibleStreamingUpstream(runtime.expectedReplyText);
+
+    try {
+      await ensureIntegrationKeycloakUsers();
+      await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+      const { projectId } = await createProjectInWorkspace(page, workspaceId, projectName, {
+        visibility: 'public',
+        joinPolicy: 'open',
+      });
+      await createCredentialViaUi(page, workspaceId, projectId, endpointCredentialName, upstreamApiKey);
+      const endpointId = await createEndpointViaApi(page, workspaceId, projectId, {
+        endpointName,
+        endpointModel: runtime.model,
+        upstreamBaseUrl: upstream.baseUrl,
+        credentialName: endpointCredentialName,
+        upstreamProtocol: 'anthropic_messages',
+      });
+
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+        lane: 'backend-real',
+        suite: 'integration-api-key-gateway',
+        storyId: PERSONAL_SELF_SERVICE_STORY.storyId,
+        title: PERSONAL_SELF_SERVICE_STORY.title,
+        actor: PERSONAL_SELF_SERVICE_STORY.actor,
+        route: `/${LOCALE}/user/profile?workspace=${workspaceId}&project=${projectId}`,
+        specFile: 'e2e/integration-api-key-gateway.spec.ts',
+        browser: 'chromium',
+        goal: PERSONAL_SELF_SERVICE_STORY.goal,
+        preconditions: [...(PERSONAL_SELF_SERVICE_STORY.preconditions ?? [])],
+        seedData: [...(PERSONAL_SELF_SERVICE_STORY.seedData ?? [])],
+        storyBinding: PERSONAL_SELF_SERVICE_BINDING,
+      });
+      const captureSelfServiceTrace = async (stepId: string): Promise<void> => {
+        const storyStep = resolvePersonalSelfServiceStep(stepId);
+        await trace.capture(page, {
+          stepId,
+          action: storyStep.action,
+          target: storyStep.target,
+          note: storyStep.note ?? storyStep.expectedFeedback,
+        });
+      };
+      let outcome: 'pass' | 'fail' = 'fail';
+
+      await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_INTEGRATION_USER_USERNAME, KEYCLOAK_INTEGRATION_USER_PASSWORD);
+      await joinProjectNow(page, workspaceId, projectId);
+
+      try {
+        await updatePersonalProfile(page, {
+          workspaceId,
+          projectId,
+          displayName: profileDisplayName,
+          bio: profileBio,
+        });
+        await captureSelfServiceTrace('update-personal-profile');
+
+        await createPersonalConnection(page, {
+          displayName: connectionDisplayName,
+          customDomain: connectionCustomDomain,
+          note: runtime.connectionNote,
+          token: runtime.connectionToken,
+        });
+        await captureSelfServiceTrace('create-personal-connection');
+
+        const apiKey = await createPersonalApiKey(page, {
+          label: apiKeyLabel,
+          ttlDays: runtime.apiKeyTtlDays,
+        });
+        await captureSelfServiceTrace('create-personal-api-key');
+
+        await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/use-guide`);
+        await page.getByTestId('use-guide__endpoint-select').click();
+        await expect(page.getByRole('option', { name: endpointName })).toBeVisible({ timeout: 10_000 });
+        await page.getByRole('option', { name: endpointName }).click();
+        await expect(page.getByTestId('use-guide__openai-base-url')).toContainText(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/openai`);
+        await page.getByTestId('use-guide__tab-anthropic').click();
+        await expect(page.getByTestId('use-guide__anthropic-base-url')).toContainText(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/anthropic`);
+        await captureSelfServiceTrace('review-project-access-guide');
+
+        const meResponse = await page.request.get(`${API_BASE}/api/v1/me/profile`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (!meResponse.ok()) {
+          throw new Error(`personal_profile_request_failed:${meResponse.status()}:${await meResponse.text()}`);
+        }
+        const meProfile = (await meResponse.json()) as { display_name?: string | null; bio?: string | null };
+        expect(meProfile.display_name).toBe(profileDisplayName);
+        expect(meProfile.bio).toBe(profileBio);
+
+        const anthropicResponse = await page.request.post(
+          `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/${endpointId}/proxy/anthropic/messages`,
+          {
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'x-api-key': apiKey,
+              'Content-Type': 'application/json',
+              'anthropic-version': '2023-06-01',
+            },
+            data: {
+              model: runtime.model,
+              max_tokens: 64,
+              messages: [{ role: 'user', content: [{ type: 'text', text: `Reply exactly: ${runtime.expectedReplyText}` }] }],
+            },
+          },
+        );
+        if (!anthropicResponse.ok()) {
+          throw new Error(`personal_access_request_failed:${anthropicResponse.status()}:${await anthropicResponse.text()}`);
+        }
+        await expect(anthropicResponse.text()).resolves.toContain(runtime.expectedReplyText);
+        await captureSelfServiceTrace('verify-personal-access-ready');
         outcome = 'pass';
       } finally {
         await trace.finish({ outcome });

@@ -209,7 +209,7 @@ describe('Topbar', () => {
 
     fireEvent.click(screen.getByLabelText('go_to_projects'));
 
-    expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/overview');
+    expect(mockPush).toHaveBeenCalledWith('/workspaces/overview');
   });
 
   it('keeps the topbar shell quiet instead of relying on floating blur', () => {

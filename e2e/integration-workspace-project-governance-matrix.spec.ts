@@ -26,6 +26,7 @@ import {
   LOCALE,
   selectWorkspaceAdminFromDirectory,
   teardownExternalTestKeycloak,
+  ensureWorkspaceProjectCreatorViaUi,
   SYSTEM_ADMIN_PASSWORD,
   SYSTEM_ADMIN_USERNAME,
 } from './integration-real-helpers';
@@ -38,6 +39,8 @@ const GOVERNANCE_ONBOARDING_STORY = loadStoryDefinitionSync('project-governance-
 const GOVERNANCE_ONBOARDING_BINDING = buildTraceStoryBinding(GOVERNANCE_ONBOARDING_STORY);
 const MEMBERSHIP_CHANGE_STORY = loadStoryDefinitionSync('membership-change-and-effective-access');
 const MEMBERSHIP_CHANGE_BINDING = buildTraceStoryBinding(MEMBERSHIP_CHANGE_STORY);
+const WORKSPACE_ADMIN_BOUNDARY_STORY = loadStoryDefinitionSync('workspace-admin-boundary-and-project-creator');
+const WORKSPACE_ADMIN_BOUNDARY_BINDING = buildTraceStoryBinding(WORKSPACE_ADMIN_BOUNDARY_STORY);
 const MATRIX_SETUP = GOVERNANCE_ONBOARDING_STORY.runtimeData?.matrixSetup as
   | {
       workspaceNamePrefix?: string;
@@ -55,6 +58,43 @@ const MEMBERSHIP_RUNTIME = MEMBERSHIP_CHANGE_STORY.runtimeData?.membershipChange
       promotedMemberPermissions?: string[];
     }
   | undefined;
+
+type WorkspaceAdminBoundaryRuntime = {
+  creatorEmail: string;
+  projectNamePrefix: string;
+};
+
+function requireWorkspaceAdminBoundaryRuntime(): WorkspaceAdminBoundaryRuntime {
+  const runtimeRoot = WORKSPACE_ADMIN_BOUNDARY_STORY.runtimeData as Record<string, unknown> | undefined;
+  const runtime = runtimeRoot?.workspaceAdminProjectCreatorBoundary as Record<string, unknown> | undefined;
+  if (!runtime) {
+    throw new Error('missing_workspace_admin_boundary_runtime');
+  }
+  for (const field of ['creatorEmail', 'projectNamePrefix'] as const) {
+    if (typeof runtime[field] !== 'string' || runtime[field].trim().length === 0) {
+      throw new Error(`missing_workspace_admin_boundary_runtime:${field}`);
+    }
+  }
+  return runtime as unknown as WorkspaceAdminBoundaryRuntime;
+}
+
+async function createProjectViaProjectsUi(args: {
+  page: Page;
+  workspaceId: string;
+  projectName: string;
+}) {
+  await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects`);
+  await expect(args.page.getByTestId('projects__page')).toBeVisible({ timeout: 30_000 });
+  await expect(args.page.getByTestId('projects__create-btn')).toBeVisible({ timeout: 30_000 });
+  await args.page.getByTestId('projects__create-btn').click();
+  const dialog = args.page.getByRole('dialog');
+  await expect(dialog).toBeVisible({ timeout: 10_000 });
+  await dialog.locator('#project-name').fill(args.projectName);
+  await Promise.all([
+    args.page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${args.workspaceId}/projects/.+/overview(?:$|\\?)`), { timeout: 30_000 }),
+    dialog.getByRole('button', { name: /Create|创建/i }).click(),
+  ]);
+}
 
 type UserIdentity = {
   token: string;
@@ -684,6 +724,81 @@ test.describe('@lane-real integration workspace project governance matrix', () =
   });
 
 
+test('workspace admin delegates project creator without granting workspace admin capability', async ({ page }) => {
+    test.setTimeout(300_000);
+
+    const runtime = requireWorkspaceAdminBoundaryRuntime();
+    const workspaceId = (WORKSPACE_ADMIN_BOUNDARY_STORY.seedData?.[0] ?? 'ws_default').toString();
+    const projectName = `${runtime.projectNamePrefix} ${Date.now()}`;
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-workspace-project-governance-matrix',
+      storyId: WORKSPACE_ADMIN_BOUNDARY_STORY.storyId,
+      title: WORKSPACE_ADMIN_BOUNDARY_STORY.title,
+      actor: WORKSPACE_ADMIN_BOUNDARY_STORY.actor,
+      route: WORKSPACE_ADMIN_BOUNDARY_STORY.entryRoute,
+      specFile: 'e2e/integration-workspace-project-governance-matrix.spec.ts',
+      browser: 'chromium',
+      goal: WORKSPACE_ADMIN_BOUNDARY_STORY.goal,
+      preconditions: [...(WORKSPACE_ADMIN_BOUNDARY_STORY.preconditions ?? [])],
+      seedData: [...(WORKSPACE_ADMIN_BOUNDARY_STORY.seedData ?? [])],
+      storyBinding: WORKSPACE_ADMIN_BOUNDARY_BINDING,
+    });
+    let outcome: 'pass' | 'fail' = 'fail';
+
+    try {
+      await ensureIntegrationKeycloakUsers();
+      await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD, {
+        ensureProjectCreatorAccess: false,
+      });
+
+      await page.goto(`/${LOCALE}/workspaces/${workspaceId}/settings`);
+      await expect(page.getByTestId('ws-settings__project-creators')).toBeVisible({ timeout: 30_000 });
+      await trace.capture(page, { stepId: 'open-workspace-creator-management' });
+
+      await ensureWorkspaceProjectCreatorViaUi({
+        page,
+        workspaceId,
+        creatorEmail: runtime.creatorEmail,
+      });
+      await trace.capture(page, { stepId: 'save-project-creator' });
+
+      await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_INTEGRATION_USER_USERNAME, KEYCLOAK_INTEGRATION_USER_PASSWORD, {
+        ensureProjectCreatorAccess: false,
+      });
+      await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects`);
+      await expect(page.getByTestId('projects__create-btn')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('sidebar__nav-item--settings')).toHaveCount(0);
+      await trace.capture(page, { stepId: 'creator-project-entry' });
+
+      await page.goto(`/${LOCALE}/workspaces/${workspaceId}/settings`);
+      await expect(page.getByTestId('page-state__error')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('ws-settings__project-creators')).toHaveCount(0);
+      await trace.capture(page, { stepId: 'creator-workspace-boundary' });
+
+      await createProjectViaProjectsUi({
+        page,
+        workspaceId,
+        projectName,
+      });
+      await expect(page.getByTestId('project-hub__summary')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('sidebar__nav-item--settings')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('sidebar__nav-item--settings').click();
+      await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/.+/settings(?:$|\\?)`), { timeout: 30_000 });
+      await expect(page.getByTestId('settings__project-owner-save')).toBeVisible({ timeout: 30_000 });
+      await trace.capture(page, { stepId: 'creator-create-project' });
+
+      outcome = 'pass';
+    } finally {
+      await trace.finish({
+        outcome,
+        finishedAt: new Date().toISOString(),
+      });
+    }
+  });
+
+
   test('membership change updates effective access immediately for a joined member', async ({ page }) => {
     test.setTimeout(900_000);
 
@@ -731,6 +846,7 @@ test.describe('@lane-real integration workspace project governance matrix', () =
         projectId: project.projectId,
         invitedEmail: runtime.memberEmail,
       });
+      await trace.capture(page, { stepId: 'issue-project-invite' });
 
       const memberContext = await page.context().browser()?.newContext();
       if (!memberContext) {
@@ -745,6 +861,7 @@ test.describe('@lane-real integration workspace project governance matrix', () =
         await expect(memberPage.getByTestId('join__accept-btn')).toBeVisible({ timeout: 30_000 });
         await memberPage.getByTestId('join__accept-btn').click();
         await memberPage.waitForURL(/\/login\/workspace/, { timeout: 30_000 });
+        await trace.capture(memberPage, { stepId: 'accept-project-invite' });
 
         const memberToken = await readStoredAuthToken(memberPage);
         if (!memberToken) {

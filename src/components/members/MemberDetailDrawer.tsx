@@ -63,9 +63,9 @@ export interface MemberDetailDrawerProps {
   className?: string;
 }
 
-function resolveMemberAccessLabel(member: Member): string {
+function resolveMemberAccessLabel(groups?: Member['groups']): string {
   return getMemberAccessGroupLabel({
-    groups: member.groups,
+    groups,
   });
 }
 
@@ -127,6 +127,9 @@ export function MemberDetailDrawer({
 
   if (!member) return null;
 
+  const currentGroups = effectiveAccessSnapshot?.membership.groups ?? member.groups ?? [];
+  const currentAccessLabel = resolveMemberAccessLabel(currentGroups);
+
   const content = (
     <>
       <SheetHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-subtle">
@@ -142,8 +145,8 @@ export function MemberDetailDrawer({
             <p className="text-sm text-tertiary mt-1">{member.email}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline">
-              {t('table.access_group')}: {resolveMemberAccessLabel(member)}
+            <Badge variant="outline" data-testid="member-detail__access-group-badge">
+              {t('table.access_group')}: {currentAccessLabel}
             </Badge>
             {onViewHistory && (
               <Button
@@ -191,7 +194,7 @@ export function MemberDetailDrawer({
                   <p className="text-xs font-medium uppercase tracking-wide text-tertiary">
                     {t('effective_access.role_label')}
                   </p>
-                  <p className="mt-2 text-sm text-foreground">{resolveMemberAccessLabel(member)}</p>
+                  <p className="mt-2 text-sm text-foreground">{currentAccessLabel}</p>
                 </div>
               </div>
 
@@ -200,12 +203,12 @@ export function MemberDetailDrawer({
                   {t('table.access_group')}
                 </p>
                 <div className="flex flex-wrap gap-2" data-testid="member-detail__groups">
-                  {(member.groups ?? []).map((group) => (
+                  {currentGroups.map((group) => (
                     <Badge key={group.id} variant="outline">
                       {group.name}
                     </Badge>
                   ))}
-                  {(member.groups ?? []).length === 0 ? (
+                  {currentGroups.length === 0 ? (
                     <span className="text-sm text-tertiary">{t('effective_access.no_permissions')}</span>
                   ) : null}
                 </div>

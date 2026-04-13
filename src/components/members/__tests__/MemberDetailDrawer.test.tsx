@@ -107,6 +107,7 @@ describe('MemberDetailDrawer', () => {
 
     expect(screen.getByTestId('member-detail__effective-access-summary')).toBeInTheDocument();
     expect(screen.getByTestId('member-detail__membership-status')).toHaveTextContent('effective_access.membership_status.suspended');
+    expect(screen.getByTestId('member-detail__groups')).toHaveTextContent('Project Admins');
     expect(screen.getByTestId('member-detail__effective-permissions')).toHaveTextContent('project:endpoint:use');
     expect(screen.getByTestId('member-detail__authorize-result')).toBeInTheDocument();
     expect(screen.getByTestId('member-detail__authorize-result')).toHaveTextContent('Resource Policy');
@@ -116,6 +117,34 @@ describe('MemberDetailDrawer', () => {
       'href',
       '/en-US/workspaces/ws_1/projects/proj_1/resource-policy?resource_type=endpoint&resource_id=endpoint_1&explain_subject_type=user&explain_subject_id=u_1&explain_action=invoke',
     );
+  });
+
+  it('prefers effective access snapshot groups when presenting current access truth', () => {
+    render(
+      <MemberDetailDrawer
+        open
+        onOpenChange={() => {}}
+        member={baseMember}
+        permissions={{ platform_permissions: ['project:endpoint:use'] }}
+        effectiveAccessSnapshot={{
+          membership: {
+            project_id: 'proj_1',
+            user_id: 'u_1',
+            groups: [{ id: 'grp_project_members', name: 'Project Members', permission_template_id: 'tpl_project_member', built_in: true, system_key: 'members' }],
+            permissions: ['project:endpoint:use'],
+            status: 'active',
+            joined_at: '2026-02-01T00:00:00Z',
+          },
+          permissions: { platform_permissions: ['project:endpoint:use'] },
+          effective_permissions: ['project:endpoint:use'],
+          membership_status: 'active',
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('member-detail__access-group-badge')).toHaveTextContent('table.access_group: member');
+    expect(screen.getByTestId('member-detail__groups')).toHaveTextContent('Project Members');
+    expect(screen.getByTestId('member-detail__groups')).not.toHaveTextContent('Project Admins');
   });
 
   it('does not infer access group from governance permissions when groups are absent', () => {

@@ -133,6 +133,29 @@ describe('useSyncAuthFromUrl', () => {
   });
 
   describe('Workspace validation', () => {
+    it('preserves workspace-specific routes even when the workspace is absent from the generic workspace list', async () => {
+      mockParams.workspace = 'ws_removed';
+      vi.mocked(useAuthStoreHydration).mockReturnValue(true);
+      vi.mocked(useWorkspaces).mockReturnValue({
+        data: [],
+        isLoading: false,
+        isFetching: false,
+      } as any);
+      vi.mocked(useProjects).mockReturnValue({
+        data: [],
+        isLoading: false,
+      } as any);
+
+      const { result } = renderHook(() => useSyncAuthFromUrl(), {
+        wrapper: createTestWrapper(),
+      });
+
+      await waitFor(() => {
+        expect(result.current.workspaceId).toBe('ws_removed');
+        expect(mockRouter.replace).not.toHaveBeenCalled();
+      });
+    });
+
     it('should not redirect when workspace exists in user workspaces', async () => {
       mockParams.workspace = 'ws_default';
       vi.mocked(useAuthStoreHydration).mockReturnValue(true);
@@ -155,7 +178,7 @@ describe('useSyncAuthFromUrl', () => {
       });
     });
 
-    it('should redirect to workspace list when workspace_id is invalid', async () => {
+    it('should preserve workspace-specific URL when workspace_id is absent from the generic workspace list', async () => {
       mockParams.workspace = 'ws_nonexistent';
       vi.mocked(useAuthStoreHydration).mockReturnValue(true);
       vi.mocked(useWorkspaces).mockReturnValue({
@@ -173,7 +196,7 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces/overview');
+        expect(mockRouter.replace).not.toHaveBeenCalled();
       });
     });
 
@@ -261,7 +284,7 @@ describe('useSyncAuthFromUrl', () => {
       });
     });
 
-    it('should handle empty workspaces array', async () => {
+    it('should preserve workspace-specific URL when the generic workspace list is empty', async () => {
       mockParams.workspace = 'ws_any';
       vi.mocked(useAuthStoreHydration).mockReturnValue(true);
       vi.mocked(useWorkspaces).mockReturnValue({
@@ -279,7 +302,7 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces/overview');
+        expect(mockRouter.replace).not.toHaveBeenCalled();
       });
     });
 
@@ -447,7 +470,7 @@ describe('useSyncAuthFromUrl', () => {
       });
     });
 
-    it('should handle direct access to deep link with invalid workspace', async () => {
+    it('should preserve direct access to deep link with a workspace outside the generic workspace list', async () => {
       mockParams.workspace = 'ws_invalid';
       mockParams.project = 'proj_001';
       vi.mocked(useAuthStoreHydration).mockReturnValue(true);
@@ -466,7 +489,7 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces/overview');
+        expect(mockRouter.replace).not.toHaveBeenCalled();
       });
     });
 
@@ -515,7 +538,7 @@ describe('useSyncAuthFromUrl', () => {
   });
 
   describe('Browser back button navigation', () => {
-    it('should re-validate URL params on back navigation', async () => {
+    it('should preserve workspace-specific URL on back navigation even when the workspace is outside the generic list', async () => {
       // Simulate navigating from a valid page to an invalid one via back button
       mockParams.workspace = 'ws_invalid';
       mockParams.project = undefined;
@@ -535,7 +558,7 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces/overview');
+        expect(mockRouter.replace).not.toHaveBeenCalled();
       });
     });
 

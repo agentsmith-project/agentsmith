@@ -1,9 +1,9 @@
 ---
 {
   "storyId": "membership-change-and-effective-access",
-  "title": "Membership change and effective access",
+  "title": "Project governance access model",
   "actor": "project owner / project admin / joined member",
-  "family": "membership-change-and-effective-access",
+  "family": "project-governance-access-model",
   "personas": [
     "project owner",
     "project admin",
@@ -12,7 +12,7 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/ws_default/projects",
-  "goal": "成员的升权、降权和移除应该立即反映在 effective access 上，页面和 backend 都不能继续显示旧能力状态。",
+  "goal": "项目成员的邀请、接受邀请、升权、降权和移除都应该立即反映在 effective access 上，页面和 backend 都不能继续显示旧能力状态。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
@@ -59,7 +59,7 @@
       ]
     }
   },
-  "narrative": "成员心智上最重要的不是一个邀请成功，而是当他被升权、降权或移除之后，自己能做什么要马上变；effective access drawer 也必须同步讲真话，并且默认成员语义要对齐真实的项目成员权限状态。",
+  "narrative": "成员心智上最重要的不是一个邀请成功，而是当他接受邀请并变成项目成员之后，自己能做什么要马上变；effective access drawer 也必须同步讲真话，并且默认成员语义要对齐真实的项目成员权限状态。",
   "scenes": [
     {
       "sceneId": "project-members",
@@ -86,13 +86,37 @@
   ],
   "steps": [
     {
+      "stepId": "issue-project-invite",
+      "sceneId": "project-members",
+      "intent": "Create and share a project invite as the entry point for the membership flow.",
+      "action": "Issue project invite",
+      "target": "members__invite-btn",
+      "expectedFeedback": "项目 owner 能创建邀请链接，并把成员引导到正确的项目入口。",
+      "note": "先把成员拉进来，再看 effective access 如何变化。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "accept-project-invite",
+      "sceneId": "project-members",
+      "intent": "Accept the project invite so the member can enter the project and receive initial access.",
+      "action": "Accept project invite",
+      "target": "member-detail__effective-access-summary",
+      "expectedFeedback": "成员接受邀请后，默认立即显示 Project Members 的 member template permissions。",
+      "note": "先确认成员首次进入项目后的 effective access 是真实生效的 member template，而不是空白或缓存残留。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
       "stepId": "open-member-effective-access",
       "sceneId": "project-members",
-      "intent": "Open the member detail drawer and inspect the current effective access state.",
+      "intent": "Open the member drawer after invite acceptance and verify the first effective access truth.",
       "action": "Open member effective access",
       "target": "member-detail__effective-access-summary",
-      "expectedFeedback": "成员作为 Project Members 加入后，默认立即显示 Project Members 的 member template permissions。",
-      "note": "先看当前能力状态，再做 membership 变更，默认成员语义必须是真实的 Project Members template 能力，而不是空白或缓存残留。",
+      "expectedFeedback": "第一次打开 drawer 时，member 立即显示 Project Members 的 member template permissions，而不是旧缓存或空权限。",
+      "note": "首次可见的 effective access 必须反映真实成员模板，作为后续升权/降权变化的基线。",
       "evidence": [
         "trace"
       ]

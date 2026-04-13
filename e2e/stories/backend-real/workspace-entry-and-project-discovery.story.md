@@ -2,7 +2,7 @@
 {
   "storyId": "workspace-entry-and-project-discovery",
   "title": "Workspace entry and project discovery",
-  "actor": "workspace admin / project creator",
+  "actor": "workspace admin",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/ws_default/login",
   "goal": "workspace admin can enter the workspace and discover the project list without denied flicker.",
@@ -78,8 +78,7 @@
   ],
   "family": "workspace-entry-and-project-discovery",
   "personas": [
-    "workspace admin",
-    "project creator"
+    "workspace admin"
   ],
   "kind": "journey",
   "externalDependencies": []

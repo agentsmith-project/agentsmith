@@ -85,6 +85,12 @@ export function SystemWorkspaceCreatePage() {
   const workspaceSlug = slugifyWorkspaceId(draft.name || 'workspace');
   const workspaceLoginPath = `/${locale}/workspaces/${workspaceSlug}/login`;
   const workspaceCallbackPath = `/${locale}/workspaces/${workspaceSlug}/login/callback`;
+  const adminHandoffState = draft.adminMode === 'directory_user'
+    ? t('workspace_admin_bound_badge')
+    : t('workspace_admin_pending_badge');
+  const adminHandoffBody = draft.adminMode === 'directory_user'
+    ? t('workspace_admin_binding_ready_body')
+    : t('workspace_admin_binding_pending_body');
   const reviewRows = [
     { label: t('workspace_name'), value: draft.name || t('none') },
     { label: t('idp_title'), value: `${draft.loginIdpRealm || t('none')} · ${draft.loginClientId || t('none')}` },
@@ -568,6 +574,11 @@ export function SystemWorkspaceCreatePage() {
                         <p className="mt-1 break-all text-secondary" data-testid="system-workspace-create__callback-preview">{workspaceCallbackPath}</p>
                       </div>
                     </div>
+                  </div>
+                  <div className="border-l-2 border-border pl-3 text-sm" data-testid="system-workspace-create__handoff-summary">
+                    <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_admin_handoff_label')}</p>
+                    <p className="mt-1 font-medium text-foreground" data-testid="system-workspace-create__handoff-state">{adminHandoffState}</p>
+                    <p className="mt-1 text-secondary" data-testid="system-workspace-create__handoff-body">{adminHandoffBody}</p>
                   </div>
                   <div className="space-y-3 border-t border-subtle pt-4">
                     {reviewRows.map((row) => (

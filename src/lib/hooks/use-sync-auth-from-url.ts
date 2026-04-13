@@ -3,47 +3,24 @@
  *
  * After refactoring:
  * - Reads workspace/project from URL params
- * - Queries React Query for data
+ * - Queries React Query for data loading state
  * - No writing to Zustand for selection
- * - Handles deep links and redirects
+ * - Preserves workspace-specific deep links so pages can render truthful
+ *   empty/unavailable states instead of bouncing to generic workspace selection
  */
 
-import { useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { useRouter } from '@/lib/i18n/routing';
 import { useWorkspaces } from './use-workspaces';
-import { useAuthStoreHydration } from '@/lib/stores/authStore';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
-import { buildWorkspaceOverviewPath } from '@/lib/workspaces/workspace-paths';
 
 export function useSyncAuthFromUrl() {
   const params = useParams();
-  const router = useRouter();
-  const hydrated = useAuthStoreHydration();
 
-  const {
-    data: workspaces,
-    isLoading: workspacesLoading,
-    isFetching: workspacesFetching,
-    isError: workspacesError,
-  } = useWorkspaces();
+  const { isLoading: workspacesLoading } = useWorkspaces();
   const rawWorkspaceId = params?.workspace;
   const rawProjectId = params?.project;
   const workspaceId = validateWorkspaceParam(rawWorkspaceId);
   const projectId = validateProjectParam(rawProjectId);
-
-  // Validate workspace from URL
-  useEffect(() => {
-    if (!hydrated || workspacesLoading || workspacesFetching || workspacesError || !workspaceId) return;
-    if (!Array.isArray(workspaces)) return;
-
-    const workspaceExists = workspaces?.find((ws) => ws.id === workspaceId);
-
-    if (!workspaceExists) {
-      // Workspace not found for user, redirect to workspace list
-      router.replace(buildWorkspaceOverviewPath());
-    }
-  }, [hydrated, workspaceId, workspaces, workspacesLoading, workspacesFetching, workspacesError, router]);
 
   return {
     workspaceId,

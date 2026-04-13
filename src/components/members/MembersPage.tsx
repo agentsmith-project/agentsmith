@@ -76,6 +76,7 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
         header={(
           <PageHeader
             title={t('title')}
+            subtitle={t('people_workbench_description')}
             variant="compact"
             actions={(
               <Button
@@ -100,7 +101,7 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
         >
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <TabsList className="flex-shrink-0 rounded-none border-0 bg-transparent p-0">
-              <TabsTrigger value="people">
+              <TabsTrigger value="people" data-testid="members__people-tab">
                 <span className="inline-flex items-center gap-2">
                   <span>{t('tabs.people')}</span>
                   <span className="rounded-full border border-subtle bg-white/[0.06] px-2 py-0.5 text-[11px] text-tertiary">
@@ -109,7 +110,7 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
                 </span>
               </TabsTrigger>
               {canManageMembers ? (
-                <TabsTrigger value="requests">
+                <TabsTrigger value="requests" data-testid="members__requests-tab">
                   <span className="inline-flex items-center gap-2">
                     <span>{t('tabs.requests')}</span>
                     {joinRequestCount > 0 ? (
@@ -123,7 +124,7 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
                   </span>
                 </TabsTrigger>
               ) : null}
-              <TabsTrigger value="groups">{t('tabs.groups')}</TabsTrigger>
+              <TabsTrigger value="groups" data-testid="members__groups-tab">{t('tabs.groups')}</TabsTrigger>
             </TabsList>
           </div>
 

@@ -215,7 +215,7 @@ export function WorkspaceLoginCallbackClient({
         window.location.replace(
           pkce.desktopAuthRequestId
             ? buildDesktopAuthCompleteHref(locale, pkce.desktopAuthRequestId)
-            : `/${locale}/workspaces/${workspaceId}`,
+            : `/${locale}/workspaces/${workspaceId}/projects`,
         );
       }
     };

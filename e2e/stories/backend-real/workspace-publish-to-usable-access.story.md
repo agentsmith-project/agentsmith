@@ -11,7 +11,7 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/system/login",
-  "goal": "system 管理侧发布工作区后，被指定的 workspace admin 应该能立刻在浏览器和 API 里使用这个工作区，而不是再经历一轮人工排障。",
+  "goal": "system 管理侧完成工作区 bootstrap 并发布工作区后，被指定的 workspace admin 应该能立刻在浏览器和 API 里使用这个工作区，而不是再经历一轮人工排障。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
@@ -37,7 +37,7 @@
       "adminEmail": "dev-admin@example.com"
     }
   },
-  "narrative": "工作区发布主故事不是停留在 system 管理侧状态变为 ready，而是让指定 admin 立刻能在浏览器里进入工作区、在 API 里拿到项目入口数据，证明发布已经真正可用。",
+  "narrative": "工作区可用性的真相不是 system 管理侧看到 ready 就结束，而是先完成 bootstrap：验证身份源、确定管理员交接路径、发布工作区，再让指定 admin 立刻能在浏览器和 API 里进入工作区。",
   "scenes": [
     {
       "sceneId": "system-login",
@@ -77,11 +77,11 @@
     {
       "stepId": "publish-workspace",
       "sceneId": "system-workspaces",
-      "intent": "Create and publish a workspace for a designated admin.",
-      "action": "Publish workspace",
+      "intent": "Bootstrap workspace identity and administrator handoff, then publish the workspace for a designated admin.",
+      "action": "Bootstrap and publish workspace",
       "target": "system-workspaces__new-workspace",
-      "expectedFeedback": "新工作区创建、配置并发布完成。",
-      "note": "发布完成的定义不是按钮点过，而是工作区进入可访问状态。",
+      "expectedFeedback": "新工作区完成 bootstrap 并发布成功。",
+      "note": "这里的成功不是点击过发布，而是身份源、管理员交接和工作区状态都已经进入可访问真相。",
       "evidence": [
         "trace"
       ]

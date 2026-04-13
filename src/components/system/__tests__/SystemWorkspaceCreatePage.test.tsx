@@ -98,6 +98,7 @@ describe('SystemWorkspaceCreatePage', () => {
     expect(screen.getByText('Ops Workspace')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspace-create__login-preview')).toHaveTextContent('/en-US/workspaces/ops_workspace/login');
     expect(screen.getByTestId('system-workspace-create__callback-preview')).toHaveTextContent('/en-US/workspaces/ops_workspace/login/callback');
+    expect(screen.getByTestId('system-workspace-create__handoff-state')).toHaveTextContent('workspace_admin_bound_badge');
     expect(screen.getByTestId('system-workspace-create__create')).toHaveClass('bg-foreground/94');
     fireEvent.click(screen.getByTestId('system-workspace-create__create'));
 
@@ -142,6 +143,7 @@ describe('SystemWorkspaceCreatePage', () => {
       target: { value: 'owner@example.com' },
     });
     fireEvent.click(screen.getByTestId('system-workspace-create__next'));
+    expect(screen.getByTestId('system-workspace-create__handoff-state')).toHaveTextContent('workspace_admin_pending_badge');
     fireEvent.click(screen.getByTestId('system-workspace-create__create'));
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/en-US/system/workspaces?workspace=ws_pending'));

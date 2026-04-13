@@ -21,8 +21,8 @@ const PROJECT_ADMIN_TEMPLATE_PERMISSIONS = [
   'project:files:update',
 ];
 
-describe('membership change and effective access story', () => {
-  it('uses real project member and project admin template permissions as effective-access truth', () => {
+describe('project governance access model story', () => {
+  it('describes the access model from invite acceptance through effective-access changes', () => {
     const story = readStoryDefinitionFromMarkdownFileSync('e2e/stories/backend-real/membership-change-and-effective-access.story.md');
     const runtime = story.runtimeData?.membershipChange as
       | {
@@ -31,32 +31,46 @@ describe('membership change and effective access story', () => {
         }
       | undefined;
 
+    expect(story.title).toBe('Project governance access model');
+    expect(story.family).toBe('project-governance-access-model');
+    expect(story.goal).toContain('邀请');
+    expect(story.goal).toContain('effective access');
+    expect(story.narrative).toContain('接受邀请');
+    expect(story.narrative).toContain('effective access drawer');
+
     expect(runtime?.joinedMemberPermissions).toEqual(PROJECT_MEMBER_TEMPLATE_PERMISSIONS);
     expect(runtime?.promotedMemberPermissions).toEqual(PROJECT_ADMIN_TEMPLATE_PERMISSIONS);
 
-    const openStep = story.steps.find((step) => step.stepId === 'open-member-effective-access');
+    const inviteStep = story.steps.find((step) => step.stepId === 'issue-project-invite');
+    const acceptStep = story.steps.find((step) => step.stepId === 'accept-project-invite');
+    const firstAccessStep = story.steps.find((step) => step.stepId === 'open-member-effective-access');
     const promoteStep = story.steps.find((step) => step.stepId === 'promote-member-admin');
     const reopenStep = story.steps.find((step) => step.stepId === 'reopen-member-effective-access-after-promotion');
     const demoteStep = story.steps.find((step) => step.stepId === 'demote-member-back');
     const removedStep = story.steps.find((step) => step.stepId === 'verify-removed-access');
 
-    expect(openStep?.expectedFeedback).toContain('Project Members');
-    expect(openStep?.expectedFeedback).toContain('member template permissions');
+    expect(inviteStep?.target).toBe('members__invite-btn');
+    expect(inviteStep?.expectedFeedback).toContain('邀请链接');
+    expect(acceptStep?.target).toBe('member-detail__effective-access-summary');
+    expect(acceptStep?.expectedFeedback).toContain('Project Members');
+    expect(firstAccessStep?.target).toBe('member-detail__effective-access-summary');
+    expect(firstAccessStep?.expectedFeedback).toContain('Project Members');
     expect(promoteStep?.expectedFeedback).toContain('Project Admins');
-    expect(promoteStep?.expectedFeedback).toContain('admin template permissions');
     expect(reopenStep?.expectedFeedback).toContain('Project Admins');
-    expect(reopenStep?.expectedFeedback).toContain('admin template permissions');
     expect(demoteStep?.expectedFeedback).toContain('Project Members');
-    expect(demoteStep?.expectedFeedback).toContain('member template permissions');
     expect(removedStep?.expectedFeedback).toContain('Project unavailable');
-    expect(removedStep?.expectedFeedback).toContain('项目列表中发现');
     expect(removedStep?.note).toContain('fresh member session');
   });
 
-  it('drives the real spec with promoted-member permissions instead of reusing joined-member permissions', () => {
+  it('drives the real spec through invite acceptance and effective-access truth', () => {
     const specSource = readFileSync('e2e/integration-workspace-project-governance-matrix.spec.ts', 'utf8');
 
-    expect(specSource).toContain('promotedMemberPermissions');
+    expect(specSource).toContain('issue-project-invite');
+    expect(specSource).toContain('accept-project-invite');
+    expect(specSource).toContain('open-member-effective-access');
+    expect(specSource).toContain('members__invite-btn');
+    expect(specSource).toContain('member-detail__effective-access-summary');
+    expect(specSource).toContain('createInviteViaUi');
     expect(specSource).toContain('expectedPermissions: runtime.promotedMemberPermissions');
     expect(specSource).toContain('expectedPermissions: runtime.joinedMemberPermissions');
   });

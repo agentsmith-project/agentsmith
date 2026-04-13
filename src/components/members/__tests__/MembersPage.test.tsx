@@ -128,6 +128,10 @@ describe('MembersPage', () => {
     expect(body.classList.contains('p-6')).toBe(false);
     expect(screen.getByTestId('members__work-surface')).toBeInTheDocument();
     expect(screen.getByTestId('members__work-surface').className).not.toMatch(/shadow-card/);
+    expect(within(header).getByText('people_workbench_description')).toBeInTheDocument();
+    expect(screen.getByTestId('members__people-tab')).toHaveTextContent('tabs.people');
+    expect(screen.getByTestId('members__requests-tab')).toHaveTextContent('tabs.requests');
+    expect(screen.getByTestId('members__groups-tab')).toHaveTextContent('tabs.groups');
     expect(screen.queryByTestId('members__utility-links')).not.toBeInTheDocument();
     expect(screen.queryByText('tab_focus.people.title')).not.toBeInTheDocument();
     expect(screen.queryByText('tab_focus.people.description')).not.toBeInTheDocument();
@@ -139,6 +143,7 @@ describe('MembersPage', () => {
     render(<MembersPage workspaceId="ws_1" projectId="proj_1" />);
 
     expect(screen.getByTestId('members__invite-btn')).toBeDisabled();
+    expect(screen.getByText('people_workbench_description')).toBeInTheDocument();
   });
 
   it('hides join requests tab when the actor cannot manage member governance', () => {
@@ -146,7 +151,7 @@ describe('MembersPage', () => {
 
     render(<MembersPage workspaceId="ws_1" projectId="proj_1" />);
 
-    expect(screen.queryByText('tabs.requests')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('members__requests-tab')).not.toBeInTheDocument();
     expect(mockUseJoinRequests).toHaveBeenCalledWith('ws_1', 'proj_1', { enabled: false });
   });
 });

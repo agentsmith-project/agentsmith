@@ -129,6 +129,34 @@ describe('WorkspaceLoginCallbackClient', () => {
     });
   });
 
+  it('keeps the current workspace context by redirecting to the workspace project entry after sign in', async () => {
+    vi.stubGlobal(
+      'sessionStorage',
+      ({
+        getItem: vi.fn(() =>
+          JSON.stringify({
+            verifier: 'verifier_123',
+            state: 'state_123',
+            redirectUri: 'http://localhost:3001/workspaces/ws_alpha/login/callback',
+            createdAt: Date.now(),
+            workspaceId: 'ws_alpha',
+            locale: 'en-US',
+          }),
+        ),
+        removeItem: vi.fn(),
+        setItem: vi.fn(),
+      } as unknown) as Storage,
+    );
+
+    render(<WorkspaceLoginCallbackClient workspaceId="ws_alpha" />);
+
+    await waitFor(() => {
+      expect(mockSetAuth).toHaveBeenCalled();
+      expect(mockSetToken).toHaveBeenCalledWith('access_123');
+      expect(mockReplace).toHaveBeenCalledWith('/en-US/workspaces/ws_alpha/projects');
+    });
+  });
+
   it('keeps auth and returns to desktop handoff recovery when callback desktop completion fails', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);

@@ -53,6 +53,7 @@ test.describe('@lane-real integration workspace public login truth', () => {
       });
 
       await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeEnabled({ timeout: 30_000 });
       await expect(page.getByTestId('workspace-login__error')).toHaveCount(0);
       await trace.capture(page, {
         stepId: 'workspace-login-next-step',

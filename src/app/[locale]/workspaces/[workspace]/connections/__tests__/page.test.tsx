@@ -101,6 +101,10 @@ describe('WorkspaceConnectionsPage', () => {
     });
 
     expect(screen.getByTestId('workspace-connections__feishu-connect')).toBeDisabled();
+    expect(screen.getByTestId('workspace-connections__open-projects')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_1/projects',
+    );
     expect(screen.getAllByText('workspace_feishu_disabled_description').length).toBeGreaterThan(0);
     expect(screen.getByTestId('workspace-connections__capability-note')).toHaveTextContent('workspace_connections_capability_note');
     expect(screen.getByTestId('workspace-connections__resolver-note')).toHaveTextContent('workspace_connections_resolver_note_title');

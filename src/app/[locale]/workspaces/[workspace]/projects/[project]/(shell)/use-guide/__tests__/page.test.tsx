@@ -20,6 +20,10 @@ const mockUseApiAccessGuideData = vi.fn(() => ({
       capabilities: [{ type: 'chat_completion', enabled: true }],
     },
   ],
+  personalContextLoading: false,
+  workspacePersonalContextCount: 1,
+  projectPersonalContextCount: 1,
+  hasAnyPersonalContext: true,
 }));
 const mockReplace = vi.fn();
 
@@ -31,6 +35,10 @@ const translationMap: Record<string, string> = {
   'readiness.endpoint.pending': 'Create or activate an endpoint first',
   'readiness.endpoint.unavailable': 'Endpoint list is not available in this view',
   'readiness.policy.ready': 'Project policy is enforced automatically',
+  'readiness.context.ready_project_and_workspace': '{projectCount} project entries are ready and override {workspaceCount} workspace defaults when needed.',
+  'readiness.context.ready_project_only': '{projectCount} project personal context entries are ready for this project.',
+  'readiness.context.ready_workspace_only': '{workspaceCount} workspace personal context entries are ready for this project.',
+  'readiness.context.pending': 'Add workspace defaults or project overrides if this project needs personal working preferences.',
   'selection.empty': 'No active endpoint is available for API access yet',
   'selection.no_read_access': 'You can use project access, but this page cannot read the endpoint list.',
   'selection.placeholder': 'Select an endpoint',
@@ -73,6 +81,10 @@ describe('UseGuidePage route', () => {
           capabilities: [{ type: 'chat_completion', enabled: true }],
         },
       ],
+      personalContextLoading: false,
+      workspacePersonalContextCount: 1,
+      projectPersonalContextCount: 1,
+      hasAnyPersonalContext: true,
     });
   });
 
@@ -84,6 +96,7 @@ describe('UseGuidePage route', () => {
 
     expect(screen.getByTestId('use-guide__status-api-keys')).toHaveTextContent('2 active API keys ready');
     expect(screen.getByTestId('use-guide__status-endpoint')).toHaveTextContent('readiness.endpoint.title');
+    expect(screen.getByTestId('use-guide__status-context')).toHaveTextContent('1 project entries are ready and override 1 workspace defaults when needed.');
     expect(mockReplace).not.toHaveBeenCalled();
     expect(screen.getByTestId('use-guide__endpoint-select')).toBeInTheDocument();
     expect(screen.getByTestId('use-guide__endpoint-select')).toHaveTextContent('Select an endpoint');
@@ -96,6 +109,9 @@ describe('UseGuidePage route', () => {
     expect(screen.getByTestId('use-guide__tab-anthropic')).toBeEnabled();
     expect(screen.getByTestId('use-guide__openai-base-url__copy')).toBeInTheDocument();
     expect(screen.getByTestId('use-guide__codex-sample__copy')).toBeInTheDocument();
+    expect(screen.getByTestId('use-guide__link-api-keys')).toBeInTheDocument();
+    expect(screen.getByTestId('use-guide__link-workspace-context')).toBeInTheDocument();
+    expect(screen.getByTestId('use-guide__link-project-context')).toBeInTheDocument();
     expect(screen.queryByTestId('use-guide__link-resource-policy')).not.toBeInTheDocument();
   });
 
@@ -107,6 +123,10 @@ describe('UseGuidePage route', () => {
       hasActiveApiKey: false,
       endpointsLoading: false,
       usableEndpoints: [],
+      personalContextLoading: false,
+      workspacePersonalContextCount: 0,
+      projectPersonalContextCount: 0,
+      hasAnyPersonalContext: false,
     });
 
     render(<UseGuidePage params={Promise.resolve({ workspace: 'ws_1', project: 'proj_1', locale: 'en' })} />);
@@ -115,6 +135,7 @@ describe('UseGuidePage route', () => {
     });
 
     expect(screen.getByTestId('use-guide__status-api-keys')).toHaveTextContent('Create your first personal API key before using CLI, SDK, or curl examples.');
+    expect(screen.getByTestId('use-guide__status-context')).toHaveTextContent('Add workspace defaults or project overrides if this project needs personal working preferences.');
     expect(mockReplace).not.toHaveBeenCalled();
     expect(screen.queryByTestId('use-guide__endpoint-select')).not.toBeInTheDocument();
     expect(screen.getByTestId('use-guide__gateway-base-url')).toHaveTextContent('https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/<endpoint-id>/proxy');

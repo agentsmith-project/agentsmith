@@ -188,6 +188,14 @@ export default function WorkspaceConnectionsPage() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-3">
+                  <Button asChild type="button" variant="primary">
+                    <Link
+                      href={`/${locale}/workspaces/${workspaceId}/projects`}
+                      data-testid="workspace-connections__open-projects"
+                    >
+                      {t('workspace_connections_open_projects')}
+                    </Link>
+                  </Button>
                   {canManageWorkspace ? (
                     <Link
                       href={`/${locale}/workspaces/${workspaceId}/settings/feishu`}

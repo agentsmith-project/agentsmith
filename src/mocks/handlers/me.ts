@@ -17,6 +17,7 @@ import {
   toStoredExternalConnectionField,
   updateMockExternalConnection,
 } from '../state/me-external-connections';
+import { readMockAuthActorFromRequest } from '../utils/mock-auth-token';
 
 type MockExternalConnectionSeed = Parameters<typeof seedMockExternalConnections>[1][number];
 
@@ -47,14 +48,7 @@ function readMockJsonArray(request: Request, header: string): Array<Record<strin
 }
 
 function getRequestUserId(request: Request): string {
-  const authHeader = request.headers.get('authorization') ?? request.headers.get('Authorization');
-  if (!authHeader) return 'user_001';
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-  if (!token.startsWith('mock_token_')) return 'user_001';
-  const rest = token.slice('mock_token_'.length);
-  const separator = rest.lastIndexOf('_');
-  if (separator <= 0) return 'user_001';
-  return rest.slice(0, separator);
+  return readMockAuthActorFromRequest(request).userId;
 }
 
 export function resolveMockExternalConnectionsForRequest(args: {

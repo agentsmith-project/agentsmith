@@ -221,6 +221,7 @@
     "entry_system_hint": "仅面向系统管理员",
     "entry_action": "继续",
     "login_with_keycloak": "使用 Keycloak 登录",
+    "workspace_login_primary_action": "继续使用组织账号登录",
     "dev_mode": "开发模式",
     "select_workspace": "选择工作空间",
     "enter_user": "输入用户 ID 或邮箱",
@@ -1433,6 +1434,15 @@
         "title": "项目访问权限",
         "ready": "你已经具备打开当前接入手册的项目访问权限。",
         "action": "打开资源策略"
+      },
+      "context": {
+        "title": "个人上下文",
+        "ready_project_and_workspace": "已有 {projectCount} 条项目个人上下文，并会在需要时覆写 {workspaceCount} 条工作区默认值。",
+        "ready_project_only": "当前项目已有 {projectCount} 条项目个人上下文。",
+        "ready_workspace_only": "当前项目可继承 {workspaceCount} 条工作区个人默认值。",
+        "pending": "如果这个项目需要你的个人工作偏好，请先补充工作区默认值或项目覆写。",
+        "action_workspace": "打开我的工作区上下文",
+        "action_project": "打开我的项目上下文"
       }
     },
     "selection": {
@@ -1495,7 +1505,9 @@
       "api_keys": "打开 API 密钥",
       "endpoints": "打开 Endpoints",
       "resource_policy": "打开资源策略",
-      "usage": "打开我的用量"
+      "usage": "打开我的用量",
+      "workspace_context": "打开我的工作区上下文",
+      "project_context": "打开我的项目上下文"
     }
   },
   "dashboard": {
@@ -2016,7 +2028,9 @@
     "save": "保存条目",
     "saving": "保存中...",
     "delete": "删除条目",
-    "deleting": "删除中..."
+    "deleting": "删除中...",
+    "workspace_scope_note": "这里保存的是整个工作区共享的治理说明。成员自己的私有默认值仍然保留在“我的工作区上下文”里。",
+    "member_workspace_scope_note": "这些条目是你在当前工作区中的私有默认值。“我的项目上下文”可以只在某个项目里覆写它们，但不会回写这些默认值。"
   },
   "members": {
     "title": "成员",
@@ -2638,8 +2652,16 @@
     "delete_confirm_message": "确定要删除此项目吗？此操作不可撤销。"
   },
   "join": {
-    "title": "加入项目",
-    "description": "您已被邀请加入项目。点击接受继续。",
+    "title": "先确认邀请信息",
+    "description": "先查看这里的工作区和项目信息，再继续进入工作区登录，完成加入并开始第一次工作。",
+    "invite_badge": "邀请信息",
+    "invite_hint": "先确认被邀请的工作区和项目，再继续进入工作区登录流程。",
+    "continue_to_workspace_sign_in": "继续进入工作区登录",
+    "loading_title": "正在查看邀请",
+    "loading_description": "正在加载被邀请的工作区和项目信息。",
+    "loading_invite": "正在加载邀请信息...",
+    "accepting_and_opening": "正在接受邀请并打开被邀请的项目...",
+    "expired_description": "此邀请已过期。请让项目负责人重新发送邀请。",
     "accept": "接受邀请",
     "accepting": "接受中...",
     "decline": "拒绝",
@@ -2769,6 +2791,7 @@
     "workspace_connections_title": "个人连接",
     "workspace_connections_description": "工作区集成决定了 {workspace} 中哪些个人连接可以在这里使用。",
     "workspace_connections_manage_feishu": "管理工作区集成",
+    "workspace_connections_open_projects": "打开项目列表",
     "workspace_connections_forbidden_title": "需要工作区访问权限",
     "workspace_connections_forbidden_description": "你需要先获得工作区访问权限，才能在这里管理工作区集成。个人连接请到你的账户页。",
     "workspace_connections_load_failed_title": "无法加载个人连接",

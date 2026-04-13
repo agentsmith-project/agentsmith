@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
-import { projectFixtures, CURRENT_USER_ID } from '../fixtures/projects';
+import { projectFixtures } from '../fixtures/projects';
 import { memberProjectMembershipFixtures } from '../fixtures/members';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import { docProjectFixtures, docProjectMembershipFixtures } from '../doc-fixtures/workspace-projects';
@@ -8,6 +8,7 @@ import type { Project } from '@/lib/api/types';
 import { PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS } from '@/lib/constants/permissions';
 import { PROJECT_BUILT_IN_GROUP_IDS, PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 import { readWorkspacePermissionsForUser } from './workspace';
+import { readMockAuthActorFromRequest } from '../utils/mock-auth-token';
 
 export const projects = DOC_FIXTURES_ENABLED
   ? [...docProjectFixtures]
@@ -16,14 +17,7 @@ export const projects = DOC_FIXTURES_ENABLED
 const membershipsSource = DOC_FIXTURES_ENABLED ? docProjectMembershipFixtures : memberProjectMembershipFixtures;
 
 function getRequestUserId(request: Request): string {
-  const authHeader = request.headers.get('authorization') ?? request.headers.get('Authorization');
-  if (!authHeader) return CURRENT_USER_ID;
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-  if (!token.startsWith('mock_token_')) return CURRENT_USER_ID;
-  const rest = token.slice('mock_token_'.length);
-  const separator = rest.lastIndexOf('_');
-  if (separator <= 0) return CURRENT_USER_ID;
-  return rest.slice(0, separator);
+  return readMockAuthActorFromRequest(request).userId;
 }
 
 function getProjectMembershipForUser(projectId: string, userId: string) {

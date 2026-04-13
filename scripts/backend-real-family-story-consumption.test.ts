@@ -89,7 +89,7 @@ describe('backend-real family story consumption', () => {
     expect(apiKeySource).not.toContain("Reply exactly: ok");
     expect(apiKeySource).not.toContain("'ok'");
 
-    expect(contextSource).toContain("loadStoryDefinitionSync('workspace-project-personal-context')");
+    expect(contextSource).toContain("readStoryDefinitionFromMarkdownFileSync('e2e/stories/backend-real/workspace-project-personal-context.story.md')");
     expect(contextSource).toContain('buildTraceStoryBinding');
     expect(contextSource).toContain('user-menu__workspace-personal-context');
     expect(contextSource).toContain('user-menu__project-personal-context');
@@ -111,6 +111,8 @@ describe('backend-real family story consumption', () => {
     expect(publishSource).toContain("loadStoryDefinitionSync('workspace-publish-to-usable-access')");
     expect(publishSource).toContain('buildTraceStoryBinding');
     expect(publishSource).toContain('createUxTraceBundleWriter');
+    expect(publishSource).toContain("loadStoryDefinitionSync('workspace-idp-and-admin-handoff')");
+    expect(publishSource).toContain('system-workspaces__draft-admin');
     expect(publishSource).not.toContain('Publish Usable');
     expect(publishSource).not.toContain('dev-admin@example.com');
 
@@ -239,7 +241,7 @@ describe('backend-real family story consumption', () => {
     expect(publishStep?.target).toBe('system-workspaces__new-workspace');
     expect(publishSource).not.toContain("system-workspaces__heading");
     expect(publishSource).not.toContain("system-workspace-create__heading");
-    expect(publishSource).not.toContain("getByTestId('system-workspaces__draft-admin')");
+    expect(publishSource).toContain("getByTestId('system-workspaces__draft-admin')");
     expect(publishSource).toContain("system-workspaces__new-workspace");
     expect(publishSource).toContain("system-workspace-create__shell");
     expect(publishSource).toContain("system-workspaces__admin-mode--email");

@@ -78,7 +78,7 @@ export default function ProjectPersonalContextPage({ params }: ProjectPersonalCo
           />
         )}
       >
-        <div className="mb-4 max-w-3xl text-sm leading-6 text-tertiary">{t('member_project_scope_note')}</div>
+        <div className="mb-4 max-w-3xl text-sm leading-6 text-tertiary" data-testid="context-store__scope-note">{t('member_project_scope_note')}</div>
         <ContextManager
           scope="project_member"
           workspaceId={resolvedParams.workspace}

@@ -49,6 +49,7 @@ export default function WorkspaceContextPage() {
           />
         )}
       >
+        <div className="mb-4 max-w-3xl text-sm leading-6 text-tertiary" data-testid="context-store__scope-note">{t('workspace_scope_note')}</div>
         <ContextManager scope="workspace" workspaceId={workspaceId} />
       </PageLayout>
     </PageState>

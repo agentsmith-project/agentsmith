@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import {
   API_BASE,
@@ -21,11 +22,13 @@ import {
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 import { loadStoryDefinitionSync } from './story-loader';
-import { buildTraceStoryBinding } from './story-trace-binding';
+import { buildTraceStoryBinding, type TraceStoryBinding } from './story-trace-binding';
 import { createUxTraceBundleWriter } from './trace-bundle-support';
 
-const MEMBERS_INVITE_STORY = loadStoryDefinitionSync('members-invite-and-chat-privacy');
-const MEMBERS_INVITE_BINDING = buildTraceStoryBinding(MEMBERS_INVITE_STORY);
+const INVITE_TO_FIRST_EFFECTIVE_WORK_STORY = loadStoryDefinitionSync('invite-to-first-effective-work');
+const INVITE_TO_FIRST_EFFECTIVE_WORK_BINDING = buildTraceStoryBinding(INVITE_TO_FIRST_EFFECTIVE_WORK_STORY);
+const MEMBERS_INVITE_PRIVACY_STORY = loadStoryDefinitionSync('members-invite-and-chat-privacy');
+const MEMBERS_INVITE_PRIVACY_BINDING = buildTraceStoryBinding(MEMBERS_INVITE_PRIVACY_STORY);
 
 type MembersInviteRuntime = {
   privateProjectNamePrefix: string;
@@ -38,19 +41,22 @@ type MembersInviteRuntime = {
   memberTokenPrefix: string;
 };
 
-function resolveMembersInviteStep(stepId: string) {
-  const step = MEMBERS_INVITE_BINDING.steps.find((entry) => entry.stepId === stepId);
+function resolveStoryStep(binding: TraceStoryBinding, stepId: string, storyId: string) {
+  const step = binding.steps.find((entry) => entry.stepId === stepId);
   if (!step) {
-    throw new Error(`unknown_members_invite_step:${stepId}`);
+    throw new Error(`unknown_story_step:${storyId}:${stepId}`);
   }
   return step;
 }
 
-function requireMembersInviteRuntime(): MembersInviteRuntime {
-  const runtimeRoot = MEMBERS_INVITE_STORY.runtimeData as Record<string, unknown> | undefined;
-  const runtime = runtimeRoot?.membersInviteFirstUse as Record<string, unknown> | undefined;
+function requireMembersInviteRuntime(
+  story: { runtimeData?: unknown; storyId: string },
+  runtimeKey: 'inviteToFirstEffectiveWork' | 'membersInviteFirstUse',
+): MembersInviteRuntime {
+  const runtimeRoot = story.runtimeData as Record<string, unknown> | undefined;
+  const runtime = runtimeRoot?.[runtimeKey] as Record<string, unknown> | undefined;
   if (!runtime) {
-    throw new Error('missing_members_invite_runtime_data');
+    throw new Error(`missing_members_invite_runtime_data:${story.storyId}:${runtimeKey}`);
   }
   for (const key of [
     'privateProjectNamePrefix',
@@ -63,7 +69,7 @@ function requireMembersInviteRuntime(): MembersInviteRuntime {
     'memberTokenPrefix',
   ] as const) {
     if (typeof runtime[key] !== 'string' || runtime[key].trim().length === 0) {
-      throw new Error(`missing_members_invite_runtime_data:${key}`);
+      throw new Error(`missing_members_invite_runtime_data:${story.storyId}:${runtimeKey}:${key}`);
     }
   }
   return runtime as unknown as MembersInviteRuntime;
@@ -204,15 +210,16 @@ async function postChatMessage(page: import('@playwright/test').Page, workspaceI
 }
 
 test.describe('@lane-real invite flow and chat isolation', () => {
-  test('accepted invite joins as normal member and chat sessions stay private by user', async ({ browser, page }) => {
+  test('accepted invite takes member through correct workspace entry, overview, and first chat work', async ({ browser, page }) => {
     test.setTimeout(600_000);
     const workspaceId = 'ws_default';
     const apiKey = requireApiKey();
-    const runtime = requireMembersInviteRuntime();
+    const runtime = requireMembersInviteRuntime(INVITE_TO_FIRST_EFFECTIVE_WORK_STORY, 'inviteToFirstEffectiveWork');
     await ensureIntegrationKeycloakUsers();
 
     await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    const { projectId } = await createProjectInWorkspace(page, workspaceId, `${runtime.privateProjectNamePrefix} ${Date.now()}`, {
+    const projectName = `${runtime.privateProjectNamePrefix} ${Date.now()}`;
+    const { projectId } = await createProjectInWorkspace(page, workspaceId, projectName, {
       visibility: 'private',
       joinPolicy: 'approval_required',
     });
@@ -226,26 +233,27 @@ test.describe('@lane-real invite flow and chat isolation', () => {
       credentialName,
     });
 
-    const invitePath = await createInvite(page, workspaceId, projectId, 'integration-member@example.com');
+    const invitePath = await createInvite(page, workspaceId, projectId, KEYCLOAK_INTEGRATION_MEMBER_EMAIL);
     const ownerSessionId = await createChatSession(page, workspaceId, projectId, endpointId);
     await postChatMessage(page, workspaceId, projectId, ownerSessionId, `${runtime.ownerPrivateMessagePrefix}_${Date.now()}`);
+
     const trace = await createUxTraceBundleWriter({
       outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
       lane: 'backend-real',
       suite: 'integration-membership-chat-isolation',
-      storyId: MEMBERS_INVITE_STORY.storyId,
-      title: MEMBERS_INVITE_STORY.title,
-      actor: MEMBERS_INVITE_STORY.actor,
+      storyId: INVITE_TO_FIRST_EFFECTIVE_WORK_STORY.storyId,
+      title: INVITE_TO_FIRST_EFFECTIVE_WORK_STORY.title,
+      actor: INVITE_TO_FIRST_EFFECTIVE_WORK_STORY.actor,
       route: `/${LOCALE}/join`,
       specFile: 'e2e/integration-membership-chat-isolation.spec.ts',
       browser: 'chromium',
-      goal: MEMBERS_INVITE_STORY.goal,
-      preconditions: [...(MEMBERS_INVITE_STORY.preconditions ?? [])],
-      seedData: [...(MEMBERS_INVITE_STORY.seedData ?? [])],
-      storyBinding: MEMBERS_INVITE_BINDING,
+      goal: INVITE_TO_FIRST_EFFECTIVE_WORK_STORY.goal,
+      preconditions: [...(INVITE_TO_FIRST_EFFECTIVE_WORK_STORY.preconditions ?? [])],
+      seedData: [...(INVITE_TO_FIRST_EFFECTIVE_WORK_STORY.seedData ?? [])],
+      storyBinding: INVITE_TO_FIRST_EFFECTIVE_WORK_BINDING,
     });
-    const captureTrace = async (pageRef: import('@playwright/test').Page, stepId: string): Promise<void> => {
-      const storyStep = resolveMembersInviteStep(stepId);
+    const captureInviteFirstWorkTrace = async (pageRef: import('@playwright/test').Page, stepId: string) => {
+      const storyStep = resolveStoryStep(INVITE_TO_FIRST_EFFECTIVE_WORK_BINDING, stepId, INVITE_TO_FIRST_EFFECTIVE_WORK_STORY.storyId);
       await trace.capture(pageRef, {
         stepId,
         action: storyStep.action,
@@ -263,20 +271,44 @@ test.describe('@lane-real invite flow and chat isolation', () => {
         workspaceId,
         KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
         KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
+        { ensureProjectCreatorAccess: false },
       );
       await memberPage.goto(`/${LOCALE}${invitePath}`);
       await expect(memberPage.getByTestId('join__accept-btn')).toBeVisible({ timeout: 30_000 });
-      await captureTrace(memberPage, 'accept-invite');
+      await captureInviteFirstWorkTrace(memberPage, 'accept-invite');
       await memberPage.getByTestId('join__accept-btn').click();
-      await memberPage.waitForURL(/\/login\/workspace/, { timeout: 30_000 });
 
-      await memberPage.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview`);
+      await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/login/workspace(?:\\?project_id=${projectId})?$`), { timeout: 30_000 });
+      await expect(memberPage.getByTestId('workspace-select__list')).toBeVisible({ timeout: 30_000 });
+      await captureInviteFirstWorkTrace(memberPage, 'choose-invited-workspace');
+      const workspaceEntry = memberPage.getByTestId(`workspace-select__item--${workspaceId}`);
+      await expect(workspaceEntry).toBeVisible({ timeout: 30_000 });
+      await workspaceEntry.click();
+
+      await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/login(?:\\?project_id=${projectId})?$`), { timeout: 30_000 });
+      await expect(memberPage.getByTestId('workspace-login__heading')).toBeVisible({ timeout: 30_000 });
+      await captureInviteFirstWorkTrace(memberPage, 'enter-invited-workspace-login');
+
+      await keycloakLoginToWorkspace(
+        memberPage,
+        workspaceId,
+        KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
+        KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
+        { projectId, preserveCurrentWorkspaceLoginPage: true },
+      );
+
+      await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview$`), {
+        timeout: 30_000,
+      });
       await expect(memberPage.getByTestId('project-hub__page')).toBeVisible({ timeout: 30_000 });
-      await captureTrace(memberPage, 'verify-member-first-access');
+      await captureInviteFirstWorkTrace(memberPage, 'land-on-invited-project-overview');
 
-      await memberPage.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/chat`);
+      await memberPage.getByTestId('project-hub__next-step--chat').click();
+      await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/chat$`), {
+        timeout: 30_000,
+      });
       await expect(memberPage.getByTestId('chat__surface')).toBeVisible({ timeout: 30_000 });
-      await captureTrace(memberPage, 'start-first-chat-use');
+      await captureInviteFirstWorkTrace(memberPage, 'start-first-chat-work');
 
       const memberToken = await readStoredAuthToken(memberPage);
       const memberUserId = readUserIdFromJwt(memberToken);
@@ -313,7 +345,7 @@ test.describe('@lane-real invite flow and chat isolation', () => {
       const adminIds = groupsPayload.items?.find((group) => group.id === 'grp_project_admins')?.member_ids ?? [];
       expect(memberIds).toContain(memberUserId);
       expect(adminIds).not.toContain(memberUserId);
-      await captureTrace(memberPage, 'verify-chat-privacy');
+      await captureInviteFirstWorkTrace(memberPage, 'verify-private-chat-boundary');
       outcome = 'pass';
     } finally {
       await memberContext.close();
@@ -325,11 +357,12 @@ test.describe('@lane-real invite flow and chat isolation', () => {
     test.setTimeout(720_000);
     const workspaceId = 'ws_default';
     const apiKey = requireApiKey();
-    const runtime = requireMembersInviteRuntime();
+    const runtime = requireMembersInviteRuntime(MEMBERS_INVITE_PRIVACY_STORY, 'membersInviteFirstUse');
     await ensureIntegrationKeycloakUsers();
 
     await keycloakLoginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    const { projectId } = await createProjectInWorkspace(page, workspaceId, `${runtime.sharedRunnerProjectNamePrefix} ${Date.now()}`, {
+    const projectName = `${runtime.sharedRunnerProjectNamePrefix} ${Date.now()}`;
+    const { projectId } = await createProjectInWorkspace(page, workspaceId, projectName, {
       visibility: 'private',
       joinPolicy: 'approval_required',
     });
@@ -364,19 +397,19 @@ test.describe('@lane-real invite flow and chat isolation', () => {
       outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
       lane: 'backend-real',
       suite: 'integration-membership-chat-isolation',
-      storyId: MEMBERS_INVITE_STORY.storyId,
-      title: MEMBERS_INVITE_STORY.title,
-      actor: MEMBERS_INVITE_STORY.actor,
+      storyId: MEMBERS_INVITE_PRIVACY_STORY.storyId,
+      title: MEMBERS_INVITE_PRIVACY_STORY.title,
+      actor: MEMBERS_INVITE_PRIVACY_STORY.actor,
       route: `/${LOCALE}/join`,
       specFile: 'e2e/integration-membership-chat-isolation.spec.ts',
       browser: 'chromium',
-      goal: MEMBERS_INVITE_STORY.goal,
-      preconditions: [...(MEMBERS_INVITE_STORY.preconditions ?? [])],
-      seedData: [...(MEMBERS_INVITE_STORY.seedData ?? [])],
-      storyBinding: MEMBERS_INVITE_BINDING,
+      goal: MEMBERS_INVITE_PRIVACY_STORY.goal,
+      preconditions: [...(MEMBERS_INVITE_PRIVACY_STORY.preconditions ?? [])],
+      seedData: [...(MEMBERS_INVITE_PRIVACY_STORY.seedData ?? [])],
+      storyBinding: MEMBERS_INVITE_PRIVACY_BINDING,
     });
-    const captureTrace = async (pageRef: import('@playwright/test').Page, stepId: string): Promise<void> => {
-      const storyStep = resolveMembersInviteStep(stepId);
+    const capturePrivacyTrace = async (pageRef: import('@playwright/test').Page, stepId: string) => {
+      const storyStep = resolveStoryStep(MEMBERS_INVITE_PRIVACY_BINDING, stepId, MEMBERS_INVITE_PRIVACY_STORY.storyId);
       await trace.capture(pageRef, {
         stepId,
         action: storyStep.action,
@@ -408,16 +441,38 @@ test.describe('@lane-real invite flow and chat isolation', () => {
       const memberContext = await browser.newContext();
       const memberPage = await memberContext.newPage();
       try {
-        await keycloakLoginToWorkspace(memberPage, workspaceId, KEYCLOAK_INTEGRATION_MEMBER_USERNAME, KEYCLOAK_INTEGRATION_MEMBER_PASSWORD);
+        await keycloakLoginToWorkspace(
+          memberPage,
+          workspaceId,
+          KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
+          KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
+          { projectId, preserveCurrentWorkspaceLoginPage: true },
+        );
         await memberPage.goto(`/${LOCALE}${invitePath}`);
         await expect(memberPage.getByTestId('join__accept-btn')).toBeVisible({ timeout: 30_000 });
-        await captureTrace(memberPage, 'accept-invite');
+        await capturePrivacyTrace(memberPage, 'accept-invite');
         await memberPage.getByTestId('join__accept-btn').click();
-        await memberPage.waitForURL(/\/login\/workspace/, { timeout: 30_000 });
+        await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/login/workspace(?:\\?project_id=${projectId})?$`), { timeout: 30_000 });
+        await expect(memberPage.getByTestId('workspace-select__list')).toBeVisible({ timeout: 30_000 });
 
-        await memberPage.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/chat`);
+        const workspaceEntry = memberPage.getByTestId(`workspace-select__item--${workspaceId}`);
+        await expect(workspaceEntry).toBeVisible({ timeout: 30_000 });
+        await workspaceEntry.click();
+        await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/login(?:\\?project_id=${projectId})?$`), { timeout: 30_000 });
+        await expect(memberPage.getByTestId('workspace-login__heading')).toBeVisible({ timeout: 30_000 });
+
+        await keycloakLoginToWorkspace(
+          memberPage,
+          workspaceId,
+          KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
+          KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
+          { projectId, preserveCurrentWorkspaceLoginPage: true },
+        );
+        await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview$`), { timeout: 30_000 });
+        await expect(memberPage.getByTestId('project-hub__page')).toBeVisible({ timeout: 30_000 });
+        await memberPage.getByTestId('project-hub__next-step--chat').click();
         await expect(memberPage.getByTestId('chat__surface')).toBeVisible({ timeout: 30_000 });
-        await captureTrace(memberPage, 'start-first-chat-use');
+        await capturePrivacyTrace(memberPage, 'start-first-chat-use');
 
         const memberSessionId = (await createChatSessionViaApi({
           page: memberPage,
@@ -454,7 +509,7 @@ test.describe('@lane-real invite flow and chat isolation', () => {
         const memberMessages = await memberMessagesRes.json() as { items?: Array<{ role?: string; content?: string }> };
         expect((memberMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(memberToken))).toBe(true);
         expect((memberMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(ownerToken))).toBe(false);
-        await captureTrace(memberPage, 'verify-shared-runner-isolation');
+        await capturePrivacyTrace(memberPage, 'verify-shared-runner-isolation');
         outcome = 'pass';
       } finally {
         await memberContext.close();

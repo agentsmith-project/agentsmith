@@ -1,19 +1,88 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockReplace = vi.fn();
 const mockPush = vi.fn();
 const mockAssign = vi.fn();
-const mockSetAuth = vi.fn();
 const mockUseSearchParams = vi.fn();
+const mockApiPost = vi.fn();
+const mockDateNow = vi.spyOn(Date, 'now');
+
+const {
+  useAuthStoreMock,
+  mockSetAuth,
+  resetAuthStoreMock,
+} = vi.hoisted(() => {
+  const React = require('react') as typeof import('react');
+  const listeners = new Set<() => void>();
+  let snapshot = {
+    isAuthenticated: false,
+    token: null as string | null,
+  };
+
+  const notify = () => {
+    listeners.forEach((listener) => listener());
+  };
+
+  const mockSetAuth = vi.fn((user: { id: string; email: string; name: string; locale?: string }, token: string) => {
+    snapshot = {
+      ...snapshot,
+      isAuthenticated: true,
+      token,
+    };
+    notify();
+  });
+
+  const mockClearAuth = vi.fn(() => {
+    snapshot = {
+      isAuthenticated: false,
+      token: null,
+    };
+    notify();
+  });
+
+  const useAuthStoreMock = (selector?: (state: { isAuthenticated: boolean; token: string | null; setAuth: typeof mockSetAuth; clearAuth: typeof mockClearAuth }) => unknown) => {
+    const state = React.useSyncExternalStore(
+      (listener: () => void) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      () => snapshot,
+      () => snapshot,
+    );
+
+    const fullState = {
+      ...state,
+      setAuth: mockSetAuth,
+      clearAuth: mockClearAuth,
+    };
+
+    return typeof selector === 'function' ? selector(fullState) : fullState;
+  };
+
+  const resetAuthStoreMock = () => {
+    snapshot = {
+      isAuthenticated: false,
+      token: null,
+    };
+    listeners.clear();
+    mockSetAuth.mockClear();
+    mockClearAuth.mockClear();
+  };
+
+  return {
+    useAuthStoreMock,
+    mockSetAuth,
+    resetAuthStoreMock,
+  };
+});
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ locale: 'en-US', workspace: 'ws_alpha' }),
   useSearchParams: () => mockUseSearchParams(),
-}));
-
-vi.mock('@/lib/i18n/routing', () => ({
-  useRouter: () => ({ replace: mockReplace, push: mockPush }),
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
 }));
 
 vi.mock('next-intl', () => ({
@@ -30,10 +99,29 @@ vi.mock('@/components/theme/PublicThemeToggle', () => ({
 
 vi.mock('@/lib/stores/authStore', () => ({
   useAuthStoreHydration: () => true,
-  useAuthStore: () => ({
-    setAuth: mockSetAuth,
-    isAuthenticated: false,
+  useAuthStore: useAuthStoreMock,
+}));
+
+vi.mock('@/lib/api', () => ({
+  getApiClient: () => ({
+    post: mockApiPost,
+    setToken: vi.fn(),
   }),
+  MemberAPI: class {
+    private readonly client: { post: typeof mockApiPost };
+
+    constructor(client: { post: typeof mockApiPost }) {
+      this.client = client;
+    }
+
+    async acceptInvite(token: string) {
+      return this.client.post('/join/accept', { token });
+    }
+
+    async declineInvite(token: string) {
+      return this.client.post('/join/decline', { token });
+    }
+  },
 }));
 
 vi.mock('@/lib/auth/pkce', () => ({
@@ -52,10 +140,12 @@ describe('WorkspaceLoginPage', () => {
   beforeEach(() => {
     mockReplace.mockReset();
     mockPush.mockReset();
-    mockSetAuth.mockReset();
+    resetAuthStoreMock();
+    mockApiPost.mockReset();
     mockUseSearchParams.mockReset();
     mockUseSearchParams.mockReturnValue(new URLSearchParams());
     fetchMock.mockReset();
+    mockDateNow.mockReturnValue(12345);
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -87,6 +177,10 @@ describe('WorkspaceLoginPage', () => {
     });
   });
 
+  afterEach(() => {
+    mockDateNow.mockReset();
+  });
+
   it('loads workspace-specific login config', async () => {
     render(<WorkspaceLoginPage />);
 
@@ -98,9 +192,32 @@ describe('WorkspaceLoginPage', () => {
     expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-family', 'public-auth');
     expect(fetchMock).toHaveBeenCalledWith('/api/public/workspaces/ws_alpha', { cache: 'no-store' });
     expect(screen.queryByText('system_login_link')).not.toBeInTheDocument();
+    const primaryActionPanel = screen.getByTestId('workspace-login__primary-action-panel');
+    expect(primaryActionPanel).toBeVisible();
+    expect(primaryActionPanel).toHaveTextContent('workspace_login_primary_action');
+    expect(primaryActionPanel).toHaveTextContent('workspace_login_support_value');
+    expect(primaryActionPanel.textContent?.indexOf('workspace_login_primary_action') ?? -1).toBeGreaterThanOrEqual(0);
+    expect(primaryActionPanel.textContent?.indexOf('workspace_login_primary_action') ?? -1).toBeLessThan(primaryActionPanel.textContent?.indexOf('workspace_login_support_value') ?? 0);
+    expect(screen.getByTestId('workspace-login__keycloak-btn')).toBeVisible();
+    expect(screen.getByTestId('workspace-login__keycloak-btn')).toBeEnabled();
+    expect(screen.getByTestId('workspace-login__keycloak-btn')).toHaveClass('h-12');
+    expect(screen.getByTestId('workspace-login__keycloak-btn')).toHaveClass('rounded-[14px]');
+    expect(screen.getByTestId('workspace-login__keycloak-btn')).toHaveClass('bg-foreground');
+    expect(screen.getByTestId('workspace-login__keycloak-btn')).toHaveClass('text-background');
+    expect(screen.getByTestId('workspace-login__keycloak-btn')).toHaveClass('shadow-[0_20px_48px_rgba(15,23,42,0.24)]');
+    expect(screen.getByTestId('workspace-login__primary-action-panel')).toHaveClass('rounded-[18px]');
   });
 
-  it('redirects to workspace home after mock quick login', async () => {
+  it('redirects quick login into the invited project overview when project_id is only available from invite handoff storage', async () => {
+    vi.stubGlobal(
+      'sessionStorage',
+      ({
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        getItem: vi.fn(() => JSON.stringify({ workspaceId: 'ws_alpha', projectId: 'proj_alpha', storedAt: Date.now() })),
+      } as unknown) as Storage,
+    );
+
     render(<WorkspaceLoginPage />);
 
     expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'narrow');
@@ -111,7 +228,101 @@ describe('WorkspaceLoginPage', () => {
     fireEvent.click(screen.getByTestId('workspace-login__submit'));
 
     expect(mockSetAuth).toHaveBeenCalled();
-    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_alpha');
+    expect(mockSetAuth.mock.calls[0]?.[1]).toBe('mock_token_user_001__user%40example.com__12345');
+    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_alpha/projects/proj_alpha/overview');
+  });
+
+  it('accepts the pending invite during quick login and redirects directly to the invited project overview', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('project_id=proj_alpha'));
+    mockApiPost.mockImplementation(async (path: string, body: { token?: string }) => {
+      if (path === '/join/accept' && body.token === 'invite_token') {
+        return { ok: true, workspace_id: 'ws_alpha', project_id: 'proj_alpha' };
+      }
+      throw new Error(`Unexpected api post: ${path}`);
+    });
+    vi.stubGlobal(
+      'sessionStorage',
+      ({
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        getItem: vi.fn((key: string) => (key === 'agentsmith:pending-invite'
+          ? JSON.stringify({ inviteToken: 'invite_token', storedAt: Date.now() })
+          : null)),
+      } as unknown) as Storage,
+    );
+
+    render(<WorkspaceLoginPage />);
+
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'narrow');
+    expect(await screen.findByTestId('workspace-login__submit')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('workspace-login__email-input'), {
+      target: { value: 'user@example.com' },
+    });
+    fireEvent.click(screen.getByTestId('workspace-login__submit'));
+
+    await waitFor(() => {
+      expect(mockSetAuth).toHaveBeenCalled();
+      expect(mockApiPost).toHaveBeenCalledWith('/join/accept', { token: 'invite_token' });
+      expect(mockReplace).toHaveBeenCalledWith('/workspaces/ws_alpha/projects/proj_alpha/overview');
+    });
+  });
+
+  it('only accepts a pending invite once after quick login rerenders into the authenticated state', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('project_id=proj_alpha'));
+    let resolveInvite!: (value: { ok: true; workspace_id: string; project_id: string }) => void;
+    const inviteAccepted = new Promise<{ ok: true; workspace_id: string; project_id: string }>((resolve) => {
+      resolveInvite = resolve;
+    });
+    mockApiPost.mockImplementation(async (path: string, body: { token?: string }) => {
+      if (path === '/join/accept' && body.token === 'invite_token') {
+        return inviteAccepted;
+      }
+      throw new Error(`Unexpected api post: ${path}`);
+    });
+    vi.stubGlobal(
+      'sessionStorage',
+      ({
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        getItem: vi.fn((key: string) => (key === 'agentsmith:pending-invite'
+          ? JSON.stringify({ inviteToken: 'invite_token', storedAt: Date.now() })
+          : null)),
+      } as unknown) as Storage,
+    );
+
+    render(<WorkspaceLoginPage />);
+
+    expect(await screen.findByTestId('workspace-login__submit')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('workspace-login__email-input'), {
+      target: { value: 'user@example.com' },
+    });
+    fireEvent.click(screen.getByTestId('workspace-login__submit'));
+
+    await waitFor(() => expect(mockSetAuth).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(mockApiPost).toHaveBeenCalledTimes(1);
+    resolveInvite({ ok: true, workspace_id: 'ws_alpha', project_id: 'proj_alpha' });
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith('/workspaces/ws_alpha/projects/proj_alpha/overview');
+    });
+  });
+
+  it('redirects quick login into the invited project overview when project_id is present', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('project_id=proj_alpha'));
+
+    render(<WorkspaceLoginPage />);
+
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'narrow');
+    expect(await screen.findByTestId('workspace-login__submit')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('workspace-login__email-input'), {
+      target: { value: 'user@example.com' },
+    });
+    fireEvent.click(screen.getByTestId('workspace-login__submit'));
+
+    expect(mockSetAuth).toHaveBeenCalled();
+    expect(mockSetAuth.mock.calls[0]?.[1]).toBe('mock_token_user_001__user%40example.com__12345');
+    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_alpha/projects/proj_alpha/overview');
   });
 
   it('completes desktop auth request before leaving quick login when request id is present', async () => {
@@ -149,7 +360,7 @@ describe('WorkspaceLoginPage', () => {
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
-            authorization: expect.stringContaining('Bearer mock_token_ws_alpha_'),
+            authorization: expect.stringContaining('Bearer mock_token_user_001__user%40example.com__12345'),
           }),
         }),
       );
@@ -262,6 +473,15 @@ describe('WorkspaceLoginPage', () => {
     expect(await screen.findByTestId('workspace-login__keycloak-btn')).toBeInTheDocument();
     expect(screen.queryByTestId('workspace-login__error')).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves the invited project target in the back link when the workspace login was reached from an invite', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('project_id=proj_alpha'));
+
+    render(<WorkspaceLoginPage />);
+
+    expect(await screen.findByTestId('workspace-login__back-to-selection')).toHaveAttribute('href', '/en-US/login/workspace?project_id=proj_alpha');
+    expect(screen.queryByText('system_login_link')).not.toBeInTheDocument();
   });
 
   it('keeps only a back link to workspace selection on the direct workspace login page', async () => {

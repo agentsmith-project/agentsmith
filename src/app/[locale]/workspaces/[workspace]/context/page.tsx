@@ -22,7 +22,7 @@ export default function WorkspacePersonalContextPage() {
           <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
         </div>
       </PageState>
-      );
+    );
   }
 
   return (
@@ -36,6 +36,7 @@ export default function WorkspacePersonalContextPage() {
           />
         )}
       >
+        <div className="mb-4 max-w-3xl text-sm leading-6 text-tertiary" data-testid="context-store__scope-note">{t('member_workspace_scope_note')}</div>
         <ContextManager scope="member" workspaceId={workspaceId} surface="workspace" />
       </PageLayout>
     </PageState>

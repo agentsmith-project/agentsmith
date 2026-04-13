@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
-import { useRouter } from '@/lib/i18n/routing';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -21,12 +20,22 @@ import {
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import { createPkceChallenge, randomBase64Url } from '@/lib/auth/pkce';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
+import { getApiClient, MemberAPI } from '@/lib/api';
 import {
   buildDesktopAuthCompleteHref,
   buildDesktopAuthRequestHref,
   completeDesktopAuthRequest,
 } from '@/lib/auth/desktop-auth-request';
 import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
+import { createMockAuthToken } from '@/mocks/utils/mock-auth-token';
+import {
+  buildWorkspaceLoginLandingPath,
+  buildWorkspaceSelectionHref,
+  clearInviteHandoff,
+  clearPendingInviteToken,
+  readInviteHandoff,
+  readPendingInviteToken,
+} from '@/lib/auth/invite-handoff';
 import { ArrowRight, Globe2 } from 'lucide-react';
 
 const WORKSPACE_CONFIG_RETRY_ATTEMPTS = 3;
@@ -50,9 +59,12 @@ export default function WorkspaceLoginPage() {
   const t = useTranslations('auth');
   const hydrated = useAuthStoreHydration();
   const { setAuth, isAuthenticated } = useAuthStore();
+  const authToken = useAuthStore((state) => state.token);
   const locale = (params?.locale as string) || 'en-US';
   const workspaceId = (params?.workspace as string) || '';
   const desktopAuthRequestId = searchParams.get('desktop_auth_request_id')?.trim() ?? '';
+  const inviteHandoff = readInviteHandoff();
+  const projectId = searchParams.get('project_id')?.trim() ?? inviteHandoff?.projectId ?? '';
   const desktopAuthRequestHref = desktopAuthRequestId ? buildDesktopAuthRequestHref(locale, desktopAuthRequestId) : null;
   const [config, setConfig] = useState<WorkspaceLoginConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
@@ -61,11 +73,52 @@ export default function WorkspaceLoginPage() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [keycloakError, setKeycloakError] = useState<string | null>(null);
   const useMsw = getPublicRuntimeConfig().useMsw;
+  const memberApi = useMemo(() => new MemberAPI(getApiClient()), []);
 
   useEffect(() => {
-    if (!hydrated || !isAuthenticated || desktopAuthRequestId) return;
-    router.replace(`/workspaces/${workspaceId}`);
-  }, [desktopAuthRequestId, hydrated, isAuthenticated, locale, router, workspaceId]);
+    if (!hydrated || !isAuthenticated || !authToken) return;
+
+    const continueAuthenticatedWorkspaceLogin = async () => {
+      if (desktopAuthRequestId) {
+        try {
+          await completeDesktopAuthRequest(desktopAuthRequestId, authToken);
+          clearInviteHandoff();
+          router.replace(buildDesktopAuthCompleteHref(locale, desktopAuthRequestId));
+        } catch (error) {
+          console.error('Desktop auth completion failed after quick login:', error);
+          setIsLoggingIn(false);
+          if (desktopAuthRequestHref) {
+            clearInviteHandoff();
+            router.replace(desktopAuthRequestHref);
+          }
+        }
+        return;
+      }
+
+      const pendingInviteToken = readPendingInviteToken();
+      if (pendingInviteToken) {
+        try {
+          const invite = await memberApi.acceptInvite(pendingInviteToken);
+          clearPendingInviteToken();
+          clearInviteHandoff();
+          router.replace(buildWorkspaceLoginLandingPath(
+            invite.workspace_id ?? workspaceId,
+            (invite.project_id ?? projectId) || null,
+          ));
+        } catch (error) {
+          console.error('Invite acceptance failed after quick login:', error);
+          setKeycloakError(error instanceof Error ? error.message : 'invite_accept_failed');
+          setIsLoggingIn(false);
+        }
+        return;
+      }
+
+      clearInviteHandoff();
+      router.push(buildWorkspaceLoginLandingPath(workspaceId, projectId || null));
+    };
+
+    void continueAuthenticatedWorkspaceLogin();
+  }, [authToken, desktopAuthRequestHref, desktopAuthRequestId, hydrated, isAuthenticated, locale, memberApi, projectId, router, workspaceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,31 +160,22 @@ export default function WorkspaceLoginPage() {
   const handleQuickLogin = async () => {
     if (!userEmail.trim()) return;
     setIsLoggingIn(true);
+    setKeycloakError(null);
     try {
-      const accessToken = `mock_token_${workspaceId}_${Date.now()}`;
+      const trimmedEmail = userEmail.trim();
+      const accessToken = createMockAuthToken({
+        userId: 'user_001',
+        userEmail: trimmedEmail,
+      });
       setAuth(
         {
           id: 'user_001',
-          email: userEmail,
-          name: userEmail.split('@')[0],
+          email: trimmedEmail,
+          name: trimmedEmail.split('@')[0],
           locale: locale as 'en-US' | 'zh-CN',
         },
         accessToken,
       );
-      if (desktopAuthRequestId) {
-        try {
-          await completeDesktopAuthRequest(desktopAuthRequestId, accessToken);
-          router.replace(buildDesktopAuthCompleteHref(locale, desktopAuthRequestId));
-          return;
-        } catch (error) {
-          console.error('Desktop auth completion failed after quick login:', error);
-          if (desktopAuthRequestHref) {
-            router.replace(desktopAuthRequestHref);
-          }
-          return;
-        }
-      }
-      router.push(`/workspaces/${workspaceId}`);
     } catch (error) {
       console.error('Workspace login failed:', error);
       setKeycloakError(error instanceof Error ? error.message : 'desktop_auth_complete_failed');
@@ -169,6 +213,7 @@ export default function WorkspaceLoginPage() {
           workspaceId,
           locale,
           desktopAuthRequestId: desktopAuthRequestId || undefined,
+          projectId: projectId || undefined,
         }),
       );
 
@@ -215,24 +260,40 @@ export default function WorkspaceLoginPage() {
                     <div className="rounded-md border border-error/20 bg-error/8 px-4 py-3 text-sm text-error">
                       {t('workspace_not_found')}
                     </div>
-                    <Link href={`/${locale}/login/workspace`} className="text-sm text-accent underline underline-offset-4">
+                    <Link href={buildWorkspaceSelectionHref(locale, {
+                      desktopAuthRequestId: desktopAuthRequestId || null,
+                      projectId: projectId || null,
+                    })} className="text-sm text-accent underline underline-offset-4">
                       {t('back_to_workspace_select')}
                     </Link>
                   </div>
                 ) : (
                   <div className="space-y-5">
-                    <div className="space-y-3">
+                    <div
+                      className="space-y-4 rounded-[18px] border border-foreground/12 bg-background p-5 shadow-[0_16px_40px_rgba(15,23,42,0.08)] md:p-6"
+                      data-testid="workspace-login__primary-action-panel"
+                    >
+                      <div className="space-y-2">
+                        <p className="text-xs uppercase tracking-[0.18em] text-tertiary">
+                          {t('workspace_login_badge')}
+                        </p>
+                      </div>
                       <Button
                         data-testid="workspace-login__keycloak-btn"
                         onClick={handleKeycloakLogin}
                         disabled={isLoggingIn}
                         variant="primary"
-                        className="w-full justify-between"
+                        size="lg"
+                        className="h-12 w-full justify-between rounded-[14px] border border-foreground/10 bg-foreground px-4 text-[15px] font-semibold tracking-[0.01em] text-background shadow-[0_20px_48px_rgba(15,23,42,0.24)] ring-1 ring-foreground/5 hover:bg-foreground hover:shadow-[0_24px_56px_rgba(15,23,42,0.28)]"
                       >
-                        <span>{isLoggingIn ? t('keycloak_redirecting') : t('login_with_keycloak')}</span>
+                        <span>{isLoggingIn ? t('keycloak_redirecting') : t('workspace_login_primary_action')}</span>
                         <ArrowRight className="h-4 w-4" />
                       </Button>
-                      <p className="text-center text-xs text-tertiary">{t('keycloak_sign_in_hint')}</p>
+                      <div className="space-y-1">
+                        <p className="type-title text-foreground">{t('workspace_login_support_value')}</p>
+                        <p className="text-sm text-secondary">{t('keycloak_sign_in_hint')}</p>
+                        <p className="text-xs text-tertiary">{t('workspace_login_support_hint')}</p>
+                      </div>
                       {keycloakError ? (
                         <p className="rounded-md border border-error/20 bg-error/8 px-4 py-3 text-xs text-error" data-testid="workspace-login__keycloak-error">
                           {keycloakError}
@@ -272,7 +333,10 @@ export default function WorkspaceLoginPage() {
 
                     <div className="pt-1 text-center">
                       <Link
-                        href={`/${locale}/login/workspace`}
+                        href={buildWorkspaceSelectionHref(locale, {
+                          desktopAuthRequestId: desktopAuthRequestId || null,
+                          projectId: projectId || null,
+                        })}
                         className="text-xs text-tertiary transition-colors hover:text-secondary"
                         data-testid="workspace-login__back-to-selection"
                       >

@@ -1,5 +1,6 @@
 import { Page } from '@playwright/test';
 import { gotoAndWait, waitForPageReady } from '../utils/navigation';
+import { createMockAuthToken } from '@/mocks/utils/mock-auth-token';
 
 const DEFAULT_WS_ID = 'ws_default';
 const DEFAULT_USER_EMAIL = 'test@example.com';
@@ -14,7 +15,11 @@ export async function withAuth(
 ) {
   const inject = ({ wsId, userEmail, userId }: { wsId: string; userEmail: string; userId: string }) => {
     window.__MBOS_AUTH_SETUP__ = true;
-    const token = `mock_token_${userId}_${Date.now()}`;
+    const token = createMockAuthToken({
+      userId,
+      userEmail,
+      issuedAt: Date.now(),
+    });
     const refreshToken = `mock_refresh_${Date.now()}`;
     const tokenExpiresAt = Date.now() + 60 * 60 * 1000;
     window.__MBOS_AUTH_E2E_CONTEXT__ = { wsId, userEmail, userId, token };

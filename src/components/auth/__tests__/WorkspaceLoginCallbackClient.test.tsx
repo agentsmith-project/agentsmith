@@ -5,6 +5,7 @@ const mockReplace = vi.fn();
 const mockSetAuth = vi.fn();
 const mockSetToken = vi.fn();
 const mockUseSearchParams = vi.fn();
+const mockApiPost = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useSearchParams: () => mockUseSearchParams(),
@@ -19,6 +20,7 @@ vi.mock('@/lib/stores/authStore', () => ({
 vi.mock('@/lib/api/client', () => ({
   getApiClient: () => ({
     setToken: mockSetToken,
+    post: mockApiPost,
   }),
 }));
 
@@ -42,12 +44,27 @@ import { WorkspaceLoginCallbackClient } from '../WorkspaceLoginCallbackClient';
 
 describe('WorkspaceLoginCallbackClient', () => {
   const fetchMock = vi.fn();
+  const sessionStore = new Map<string, string>();
 
   beforeEach(() => {
     mockReplace.mockReset();
     mockSetAuth.mockReset();
     mockSetToken.mockReset();
+    mockApiPost.mockReset();
     mockUseSearchParams.mockReturnValue(new URLSearchParams('code=code_123&state=state_123'));
+    sessionStore.clear();
+    sessionStore.set(
+      'mbos:keycloak:pkce',
+      JSON.stringify({
+        verifier: 'verifier_123',
+        state: 'state_123',
+        redirectUri: 'http://localhost:3001/workspaces/ws_alpha/login/callback',
+        createdAt: Date.now(),
+        workspaceId: 'ws_alpha',
+        locale: 'en-US',
+        desktopAuthRequestId: 'req_123',
+      }),
+    );
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === '/api/public/workspaces/ws_alpha') {
@@ -83,23 +100,27 @@ describe('WorkspaceLoginCallbackClient', () => {
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
+    mockApiPost.mockImplementation(async (path: string) => {
+      if (path === '/join/accept') {
+        return {
+          ok: true,
+          workspace_id: 'ws_alpha',
+          project_id: 'proj_alpha',
+        };
+      }
+      throw new Error(`Unexpected api post: ${path}`);
+    });
     vi.stubGlobal('fetch', fetchMock);
     vi.stubGlobal(
       'sessionStorage',
       ({
-        getItem: vi.fn(() =>
-          JSON.stringify({
-            verifier: 'verifier_123',
-            state: 'state_123',
-            redirectUri: 'http://localhost:3001/workspaces/ws_alpha/login/callback',
-            createdAt: Date.now(),
-            workspaceId: 'ws_alpha',
-            locale: 'en-US',
-            desktopAuthRequestId: 'req_123',
-          }),
-        ),
-        removeItem: vi.fn(),
-        setItem: vi.fn(),
+        getItem: vi.fn((key: string) => sessionStore.get(key) ?? null),
+        removeItem: vi.fn((key: string) => {
+          sessionStore.delete(key);
+        }),
+        setItem: vi.fn((key: string, value: string) => {
+          sessionStore.set(key, value);
+        }),
       } as unknown) as Storage,
     );
     Object.defineProperty(window, 'location', {
@@ -130,22 +151,16 @@ describe('WorkspaceLoginCallbackClient', () => {
   });
 
   it('keeps the current workspace context by redirecting to the workspace project entry after sign in', async () => {
-    vi.stubGlobal(
-      'sessionStorage',
-      ({
-        getItem: vi.fn(() =>
-          JSON.stringify({
-            verifier: 'verifier_123',
-            state: 'state_123',
-            redirectUri: 'http://localhost:3001/workspaces/ws_alpha/login/callback',
-            createdAt: Date.now(),
-            workspaceId: 'ws_alpha',
-            locale: 'en-US',
-          }),
-        ),
-        removeItem: vi.fn(),
-        setItem: vi.fn(),
-      } as unknown) as Storage,
+    sessionStore.set(
+      'mbos:keycloak:pkce',
+      JSON.stringify({
+        verifier: 'verifier_123',
+        state: 'state_123',
+        redirectUri: 'http://localhost:3001/workspaces/ws_alpha/login/callback',
+        createdAt: Date.now(),
+        workspaceId: 'ws_alpha',
+        locale: 'en-US',
+      }),
     );
 
     render(<WorkspaceLoginCallbackClient workspaceId="ws_alpha" />);
@@ -154,6 +169,36 @@ describe('WorkspaceLoginCallbackClient', () => {
       expect(mockSetAuth).toHaveBeenCalled();
       expect(mockSetToken).toHaveBeenCalledWith('access_123');
       expect(mockReplace).toHaveBeenCalledWith('/en-US/workspaces/ws_alpha/projects');
+    });
+  });
+
+  it('completes pending invite acceptance after auth and lands directly on the invited project overview', async () => {
+    sessionStore.set(
+      'mbos:keycloak:pkce',
+      JSON.stringify({
+        verifier: 'verifier_123',
+        state: 'state_123',
+        redirectUri: 'http://localhost:3001/workspaces/ws_alpha/login/callback',
+        createdAt: Date.now(),
+        workspaceId: 'ws_alpha',
+        locale: 'en-US',
+      }),
+    );
+    sessionStore.set(
+      'agentsmith:pending-invite',
+      JSON.stringify({
+        inviteToken: 'invite_token',
+        storedAt: Date.now(),
+      }),
+    );
+
+    render(<WorkspaceLoginCallbackClient workspaceId="ws_alpha" />);
+
+    await waitFor(() => {
+      expect(mockApiPost).toHaveBeenCalledWith('/join/accept', { token: 'invite_token' });
+      expect(mockSetAuth).toHaveBeenCalled();
+      expect(mockSetToken).toHaveBeenCalledWith('access_123');
+      expect(mockReplace).toHaveBeenCalledWith('/en-US/workspaces/ws_alpha/projects/proj_alpha/overview');
     });
   });
 

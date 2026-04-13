@@ -35,7 +35,7 @@ import {
 } from './desktop-auth-store.js';
 import { buildUpstreamUrl } from './request-handler/build-upstream-url.js';
 import { handleInternalRoutes } from './request-handler/internal-routes.js';
-import { handleJoinInviteActionRoute } from './project-invite-routes.js';
+import { handleJoinInviteInspectRoute, handleJoinInviteActionRoute } from './project-invite-routes.js';
 import {
   isAgentRoute,
   isChatRoute,
@@ -96,6 +96,16 @@ export async function handleRequest(
   ) {
       return;
     }
+
+  if (await handleJoinInviteInspectRoute({
+    pathname: requestUrl.pathname,
+    method,
+    res,
+    deps,
+    json,
+  })) {
+    return;
+  }
 
   try {
     if (requestUrl.pathname === '/api/v1/desktop/auth/start' && method === 'POST') {

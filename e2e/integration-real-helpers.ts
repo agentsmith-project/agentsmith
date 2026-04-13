@@ -13,6 +13,7 @@ import {
   summarizeNotebookTraces,
 } from './notebook-execution-outcome';
 import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
+import { buildWorkspaceLoginLandingHref } from '../src/lib/auth/invite-handoff';
 
 export const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 export const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
@@ -193,6 +194,7 @@ async function clearAppState(page: Page, workspaceId: string): Promise<void> {
   });
 }
 
+
 async function gotoWithRetry(page: Page, path: string): Promise<void> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
@@ -230,12 +232,24 @@ export async function keycloakLoginToWorkspace(
   password = KEYCLOAK_DEV_ADMIN_PASSWORD,
   options?: {
     ensureProjectCreatorAccess?: boolean;
+    projectId?: string;
+    preserveCurrentWorkspaceLoginPage?: boolean;
   },
 ): Promise<void> {
-  await clearAppState(page, workspaceId);
+  const landingHref = buildWorkspaceLoginLandingHref(LOCALE, workspaceId, options?.projectId || null);
+  if (!options?.preserveCurrentWorkspaceLoginPage) {
+    await clearAppState(page, workspaceId);
+  }
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/login`);
+    if (!options?.preserveCurrentWorkspaceLoginPage) {
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/login`);
+    } else {
+      await page.waitForURL((url) => {
+        const parsed = new URL(url.toString());
+        return parsed.pathname === `/${LOCALE}/workspaces/${workspaceId}/login`;
+      }, { timeout: 30_000 });
+    }
     await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('workspace-login__keycloak-btn').click();
     const keycloakError = page.getByTestId('workspace-login__keycloak-error');
@@ -250,7 +264,10 @@ export async function keycloakLoginToWorkspace(
         enteredKeycloakForm = true;
         break;
       }
-      if (new RegExp(`/${LOCALE}/workspaces/${workspaceId}(?:$|/login/callback|/projects|/settings)`).test(currentUrl)) {
+      if (currentUrl.includes(landingHref) || new RegExp(`/${LOCALE}/workspaces/${workspaceId}/login/callback`).test(currentUrl)) {
+        break;
+      }
+      if (new RegExp(`/${LOCALE}/workspaces/${workspaceId}(?:$|/settings)`).test(currentUrl)) {
         break;
       }
       await page.waitForTimeout(500);
@@ -266,7 +283,7 @@ export async function keycloakLoginToWorkspace(
     let callbackError = false;
     for (let tick = 0; tick < 120; tick += 1) {
       const currentUrl = page.url();
-      if (new RegExp(`/${LOCALE}/workspaces/${workspaceId}(?:$|/projects|/settings)`).test(currentUrl)) {
+      if (currentUrl.includes(landingHref)) {
         reachedWorkspace = true;
         break;
       }
@@ -285,8 +302,11 @@ export async function keycloakLoginToWorkspace(
       if (options?.ensureProjectCreatorAccess !== false) {
         await ensureWorkspaceProjectCreatorAccess({ page, apiBase: API_BASE, token, username });
       }
-      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects`);
-      await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects(?:$|/)`), { timeout: 30_000 });
+      await gotoWithRetry(page, landingHref);
+      await page.waitForURL((url) => {
+        const currentHref = `${url.pathname}${url.search}`;
+        return currentHref === landingHref || currentHref.startsWith(`${landingHref}?`);
+      }, { timeout: 30_000 });
       return;
     }
 

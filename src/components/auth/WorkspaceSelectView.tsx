@@ -1,14 +1,15 @@
 'use client';
 
-import { useCallback } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
+import { useRouter } from '@/lib/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { Building2, ChevronRight } from 'lucide-react';
 import { Logo } from '@/components/app-shell/Logo';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
+import { buildWorkspaceLoginPath, buildWorkspaceSelectionPath, readInviteHandoff } from '@/lib/auth/invite-handoff';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { APIError } from '@/lib/api/errors';
 import { Button } from '@/components/ui/button';
@@ -37,18 +38,27 @@ export function WorkspaceSelectView() {
 
   const isUnauthorized = isError && error instanceof APIError && error.statusCode === 401;
   const desktopAuthRequestId = searchParams.get('desktop_auth_request_id')?.trim() ?? '';
+  const inviteHandoff = readInviteHandoff();
+  const projectId = searchParams.get('project_id')?.trim() ?? inviteHandoff?.projectId ?? '';
 
   const handleWorkspaceSelect = (workspaceId: string) => {
-    const suffix = desktopAuthRequestId
-      ? `?desktop_auth_request_id=${encodeURIComponent(desktopAuthRequestId)}`
-      : '';
-    router.push(`/${locale}/workspaces/${workspaceId}/login${suffix}`);
+    router.push(
+      buildWorkspaceLoginPath(workspaceId, {
+        desktopAuthRequestId: desktopAuthRequestId || null,
+        projectId: projectId || null,
+      }),
+    );
   };
 
-  const handleReLogin = useCallback(() => {
+  const handleReLogin = () => {
     clearAuth();
-    router.replace(`/${locale}/login/workspace`);
-  }, [clearAuth, locale, router]);
+    router.replace(
+      buildWorkspaceSelectionPath({
+        desktopAuthRequestId: desktopAuthRequestId || null,
+        projectId: projectId || null,
+      }),
+    );
+  };
 
   return (
     <PageState state="success">

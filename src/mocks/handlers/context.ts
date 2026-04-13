@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import { docProjectMembershipFixtures } from '../doc-fixtures/workspace-projects';
 import { memberProjectMembershipFixtures } from '../fixtures/members';
+import { readMockAuthActorFromRequest } from '../utils/mock-auth-token';
 
 type ContextScope = 'member' | 'task' | 'project_member' | 'project' | 'workspace';
 type ContextContentType = 'text' | 'json' | 'markdown' | 'yaml';
@@ -33,14 +34,7 @@ function nowIso(): string {
 }
 
 function getRequestUserId(request: Request): string {
-  const authHeader = request.headers.get('authorization') ?? request.headers.get('Authorization');
-  if (!authHeader) return 'user_001';
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-  if (!token.startsWith('mock_token_')) return 'user_001';
-  const rest = token.slice('mock_token_'.length);
-  const separator = rest.lastIndexOf('_');
-  if (separator <= 0) return 'user_001';
-  return rest.slice(0, separator);
+  return readMockAuthActorFromRequest(request).userId;
 }
 
 function buildContextId(entry: Pick<ContextEntry, 'scope' | 'key' | 'user_id' | 'workspace_id' | 'project_id' | 'task_id'>): string {

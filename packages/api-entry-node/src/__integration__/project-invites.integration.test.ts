@@ -3,6 +3,39 @@ import { apiFetchWithToken, startServer } from './test-support.js';
 import { getProjectMembership, listProjectGroups } from '../project-member-governance-persistence.js';
 
 describe('api-entry-node project invites', () => {
+  it('exposes a public inspect route with workspace and project truth for pending invites', async () => {
+    const { baseUrl } = startServer();
+
+    const createInvite = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/invites',
+      'test-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          email: 'alt@example.com',
+          expires_in_hours: 24,
+        }),
+      },
+    );
+    expect(createInvite.status).toBe(201);
+    const invite = (await createInvite.json()) as { invite_url: string };
+    const token = new URL(invite.invite_url, 'http://localhost').searchParams.get('token');
+    expect(token).toBeTruthy();
+
+    const inspectInvite = await fetch(`${baseUrl}/api/v1/join/invites/${encodeURIComponent(token ?? '')}`);
+    expect(inspectInvite.status).toBe(200);
+    await expect(inspectInvite.json()).resolves.toMatchObject({
+      invite_id: expect.any(String),
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      status: 'pending',
+      workspace_name: expect.any(String),
+      project_name: expect.any(String),
+    });
+  });
+
   it('accepts invite into default members group only', async () => {
     const { baseUrl, deps } = startServer();
 

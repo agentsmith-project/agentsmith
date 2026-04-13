@@ -32,6 +32,7 @@ describe('WorkspacePersonalContextPage', () => {
 
     expect(screen.getByText('member_workspace_title')).toBeInTheDocument();
     expect(screen.getByText('member_workspace_subtitle')).toBeInTheDocument();
+    expect(screen.getByText('member_workspace_scope_note')).toBeInTheDocument();
     expect(screen.getByTestId('context-manager')).toBeInTheDocument();
     expect(mockContextManager).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -51,23 +51,23 @@ test.describe('Join Page - Valid Invitation', () => {
     ).toBeVisible({ timeout: 10000 });
 
     // Should display accept and decline buttons
-    const acceptBtn = page.getByTestId('join__accept-btn');
+    const acceptBtn = page.getByTestId('join__continue-btn');
     const declineBtn = page.getByTestId('join__decline-btn');
 
     await expect(acceptBtn).toBeVisible();
     await expect(declineBtn).toBeVisible();
   });
 
-  test('should navigate to workspace selection on accept', async ({ page }) => {
+  test('should navigate to invited workspace login on continue', async ({ page }) => {
     await page.goto('/en-US/join?token=test-invitation-token');
     await waitForPageReady(page);
 
-    const acceptBtn = page.getByTestId('join__accept-btn');
+    const acceptBtn = page.getByTestId('join__continue-btn');
     await expect(acceptBtn).toBeVisible({ timeout: 10000 });
     await acceptBtn.click();
 
-    // Should redirect to workspace selection
-    await page.waitForURL(/\/login\/workspace/, { timeout: 10000 });
+    // Should redirect directly to the invited workspace login so the invited workspace can be carried forward explicitly
+    await page.waitForURL(/\/workspaces\/.*\/login/, { timeout: 10000 });
   });
 
   test('should navigate home on decline', async ({ page }) => {

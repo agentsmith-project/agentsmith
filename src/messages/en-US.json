@@ -219,6 +219,7 @@
     "entry_system_hint": "For system administrators only",
     "entry_action": "Continue",
     "login_with_keycloak": "Login with Keycloak",
+    "workspace_login_primary_action": "Continue with organization account",
     "dev_mode": "Development Mode",
     "select_workspace": "Select Workspace",
     "enter_user": "Enter User ID or Email",
@@ -1431,6 +1432,15 @@
         "title": "Project access",
         "ready": "You already have project-level access to open this guide.",
         "action": "Open Resource Policy"
+      },
+      "context": {
+        "title": "Personal context",
+        "ready_project_and_workspace": "{projectCount} project entries are ready and override {workspaceCount} workspace defaults when needed.",
+        "ready_project_only": "{projectCount} project personal context entries are ready for this project.",
+        "ready_workspace_only": "{workspaceCount} workspace personal context entries are ready for this project.",
+        "pending": "Add workspace defaults or project overrides if this project needs personal working preferences.",
+        "action_workspace": "Open My Workspace Context",
+        "action_project": "Open My Project Context"
       }
     },
     "selection": {
@@ -1493,7 +1503,9 @@
       "api_keys": "Open API Keys",
       "endpoints": "Open Endpoints",
       "resource_policy": "Open Resource Policy",
-      "usage": "Open My Usage"
+      "usage": "Open My Usage",
+      "workspace_context": "Open My Workspace Context",
+      "project_context": "Open My Project Context"
     }
   },
   "dashboard": {
@@ -2014,7 +2026,9 @@
     "save": "Save entry",
     "saving": "Saving...",
     "delete": "Delete entry",
-    "deleting": "Deleting..."
+    "deleting": "Deleting...",
+    "workspace_scope_note": "Shared guidance lives here for the whole workspace. Members keep their own private defaults in My Workspace Context.",
+    "member_workspace_scope_note": "These entries are your private workspace defaults. My Project Context can override them inside one project without changing these defaults."
   },
   "members": {
     "title": "Members",
@@ -2635,8 +2649,16 @@
     "delete_confirm_message": "Are you sure you want to delete this project? This action cannot be undone."
   },
   "join": {
-    "title": "Join Project",
-    "description": "You have been invited to join a project. Accept to continue.",
+    "title": "Review invite truth",
+    "description": "Check the workspace and project details here, then continue to workspace sign-in to finish joining and start your first work.",
+    "invite_badge": "Invite truth",
+    "invite_hint": "Review the invited workspace and project first, then continue to the workspace sign-in flow.",
+    "continue_to_workspace_sign_in": "Continue to workspace sign-in",
+    "loading_title": "Reviewing invite",
+    "loading_description": "We are loading the invited workspace and project details.",
+    "loading_invite": "Loading invite truth...",
+    "accepting_and_opening": "Accepting invite and opening the invited project...",
+    "expired_description": "This invitation has expired. Ask the project owner to send a new invite.",
     "accept": "Accept Invitation",
     "accepting": "Accepting...",
     "decline": "Decline",
@@ -2766,6 +2788,7 @@
     "workspace_connections_title": "Personal connections",
     "workspace_connections_description": "Workspace integrations decide which personal connections are available inside {workspace}.",
     "workspace_connections_manage_feishu": "Manage workspace integrations",
+    "workspace_connections_open_projects": "Open projects",
     "workspace_connections_forbidden_title": "Workspace access required",
     "workspace_connections_forbidden_description": "You need workspace access before you can manage workspace integrations here. Personal connections live on your account page.",
     "workspace_connections_load_failed_title": "Unable to load personal connections",

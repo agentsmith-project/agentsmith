@@ -11,7 +11,7 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/user/profile",
-  "goal": "成员把自己的个人身份和访问能力配置到可用状态后，应该能立即带着这些个人设置进入项目 access guide 并成功使用自己的访问入口，而不是在个人资料、连接和访问凭据之间来回排障。",
+  "goal": "成员先把自己的个人身份、访问能力和 personal context 配置到可用状态，再回到项目继续工作时，应该能一眼确认这些个人设置已经 ready，而不是在个人资料、连接、凭据和上下文之间来回排障。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
@@ -47,11 +47,14 @@
       "connectionCustomDomainSuffix": "story-personal-self-service.example.com",
       "connectionToken": "tok-story-personal-self-service",
       "connectionNote": "Personal custom connection for the self-service lifecycle story.",
+      "personalContextKey": "personal.preferences.response_mode",
+      "workspacePersonalContextValue": "workspace-default-brief",
+      "projectPersonalContextValue": "project-override-detailed",
       "model": "story-self-service-model",
       "expectedReplyText": "PERSONAL_SELF_SERVICE_READY"
     }
   },
-  "narrative": "个人自助主故事不是分别证明 profile、API key、personal connections 这些页面存在，而是验证成员能把自己的身份和访问能力整理到可用状态，然后带着这些自助配置进入项目并马上开始使用。",
+  "narrative": "个人自助主故事不是分别证明 profile、API key、personal connections 和 personal context 页面存在，而是验证成员能把这些个人设置整理到 ready 状态，然后顺着项目 access guide 继续工作，并明确感知 workspace 默认与 project override 已经生效。",
   "scenes": [
     {
       "sceneId": "user-profile",
@@ -75,6 +78,20 @@
       "stableMarkers": [
         "api-keys__create-btn",
         "api-keys__list-section"
+      ]
+    },
+    {
+      "sceneId": "workspace-personal-context",
+      "route": "/en-US/workspaces/{workspaceId}/context",
+      "stableMarkers": [
+        "context-store__list-card"
+      ]
+    },
+    {
+      "sceneId": "project-personal-context",
+      "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/my-context",
+      "stableMarkers": [
+        "context-store__list-card"
       ]
     },
     {
@@ -123,12 +140,60 @@
       ]
     },
     {
+      "stepId": "open-workspace-personal-context",
+      "sceneId": "workspace-personal-context",
+      "intent": "Open workspace personal context to set reusable private defaults for future project work.",
+      "action": "Open workspace personal context",
+      "target": "user-menu__workspace-personal-context",
+      "expectedFeedback": "成员进入 My Workspace Context，并看到这些默认值会在当前工作区内持续生效。",
+      "note": "workspace personal context 应该讲清楚它是跨项目可复用的私有默认值。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "save-workspace-personal-context",
+      "sceneId": "workspace-personal-context",
+      "intent": "Save a workspace-level private default for the member.",
+      "action": "Save workspace personal context",
+      "target": "context-store__save",
+      "expectedFeedback": "workspace personal context 保存成功，成员知道自己已经设置了工作区默认值。",
+      "note": "用户需要把私有默认值配置到 ready 状态，而不是只看到空白上下文页。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "open-project-personal-context",
+      "sceneId": "project-personal-context",
+      "intent": "Open project personal context to define a project-specific override.",
+      "action": "Open project personal context",
+      "target": "user-menu__project-personal-context",
+      "expectedFeedback": "成员进入 My Project Context，并看到这里的条目只影响当前项目。",
+      "note": "project personal context 应该明确表达它会覆盖当前项目，但不会回写 workspace 默认值。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "save-project-personal-context",
+      "sceneId": "project-personal-context",
+      "intent": "Save a project-specific override for the same working preference.",
+      "action": "Save project personal context",
+      "target": "context-store__save",
+      "expectedFeedback": "project personal context 保存成功，成员知道当前项目已经有自己的 override。",
+      "note": "用户需要感知 workspace 默认与 project override 的连续关系，而不是把两页当成无关设置。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
       "stepId": "review-project-access-guide",
       "sceneId": "project-use-guide",
-      "intent": "Review the project access guide after personal setup is complete.",
+      "intent": "Return to the project access guide after personal setup is complete.",
       "action": "Review project access guide",
       "target": "use-guide__page",
-      "expectedFeedback": "成员能看到项目当前可用的 canonical access guide，并确认下一步访问方式。",
+      "expectedFeedback": "成员回到项目 access guide 后，能看到 access readiness 和 personal context readiness 都已经准备好。",
       "note": "自助配置的完成标准之一，是能顺着 access guide 继续工作。",
       "evidence": [
         "trace"
@@ -139,9 +204,9 @@
       "sceneId": "project-use-guide",
       "intent": "Use the personal API key against the project endpoint and confirm access is truly ready.",
       "action": "Verify personal access ready",
-      "target": "use-guide__page",
-      "expectedFeedback": "成员用自己的访问 key 成功调用项目 endpoint，说明个人身份和访问能力已经真正配置完成。",
-      "note": "最终标准不是页面保存成功，而是用户能立即完成第一次真实访问。",
+      "target": "use-guide__status-context",
+      "expectedFeedback": "成员用自己的访问 key 成功调用项目 endpoint，并从页面上确认 workspace/project personal context 都已 ready。",
+      "note": "最终标准不是页面保存成功，而是用户能立即完成第一次真实访问，并知道这些个人设置已经生效。",
       "evidence": [
         "trace"
       ]

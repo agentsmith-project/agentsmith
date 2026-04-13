@@ -30,6 +30,7 @@ describe('WorkspaceContextPage', () => {
   it('renders context manager for the current workspace', () => {
     render(<WorkspaceContextPage />);
 
+    expect(screen.getByText('workspace_scope_note')).toBeInTheDocument();
     expect(screen.getByTestId('context-manager')).toBeInTheDocument();
     expect(mockContextManager).toHaveBeenCalledWith(
       expect.objectContaining({

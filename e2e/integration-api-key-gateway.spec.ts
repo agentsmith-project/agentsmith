@@ -7,6 +7,7 @@ import {
   createCredentialViaUi,
   createEndpointViaApi,
   createProjectInWorkspace,
+  getContextEntryViaApi,
   keycloakLoginToWorkspace,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
@@ -18,6 +19,7 @@ import { readStoredAuthToken } from './integration-workspace-access';
 import { loadStoryDefinitionSync } from './story-loader';
 import { buildTraceStoryBinding } from './story-trace-binding';
 import { createUxTraceBundleWriter } from './trace-bundle-support';
+import { openPersonalContextFromUserMenu, saveContextEntryViaUi } from './integration-context-ui-support';
 
 const API_KEY_ENDPOINT_STORY = loadStoryDefinitionSync('api-key-to-endpoint-consumption');
 const API_KEY_ENDPOINT_BINDING = buildTraceStoryBinding(API_KEY_ENDPOINT_STORY);
@@ -47,6 +49,9 @@ type PersonalSelfServiceRuntime = {
   connectionCustomDomainSuffix: string;
   connectionToken: string;
   connectionNote: string;
+  personalContextKey: string;
+  workspacePersonalContextValue: string;
+  projectPersonalContextValue: string;
   model: string;
   expectedReplyText: string;
 };
@@ -108,6 +113,9 @@ function requirePersonalSelfServiceRuntime(): PersonalSelfServiceRuntime {
     'connectionCustomDomainSuffix',
     'connectionToken',
     'connectionNote',
+    'personalContextKey',
+    'workspacePersonalContextValue',
+    'projectPersonalContextValue',
     'model',
     'expectedReplyText',
   ] as const) {
@@ -116,6 +124,26 @@ function requirePersonalSelfServiceRuntime(): PersonalSelfServiceRuntime {
     }
   }
   return runtime as unknown as PersonalSelfServiceRuntime;
+}
+
+async function getProjectPersonalContextViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  key: string;
+}): Promise<{ scope?: string; key?: string; content?: string }> {
+  const authToken = await readStoredAuthToken(args.page);
+  const params = new URLSearchParams({
+    scope: 'project_member',
+    workspace_id: args.workspaceId,
+    project_id: args.projectId,
+    key: args.key,
+  });
+  const response = await args.page.request.get(`${API_BASE}/api/v1/context?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  expect(response.ok()).toBeTruthy();
+  return response.json() as Promise<{ scope?: string; key?: string; content?: string }>;
 }
 
 async function startAnthropicCompatibleStreamingUpstream(replyText: string): Promise<{ baseUrl: string; stop: () => Promise<void> }> {
@@ -461,6 +489,10 @@ test.describe('@lane-real personal api key endpoint access', () => {
       await joinProjectNow(page, workspaceId, projectId);
 
       try {
+        const personalContextKey = `${runtime.personalContextKey}.${runId}`;
+        const workspacePersonalContextValue = `${runtime.workspacePersonalContextValue} [${runId}]`;
+        const projectPersonalContextValue = `${runtime.projectPersonalContextValue} [${runId}]`;
+
         await updatePersonalProfile(page, {
           workspaceId,
           projectId,
@@ -483,7 +515,64 @@ test.describe('@lane-real personal api key endpoint access', () => {
         });
         await captureSelfServiceTrace('create-personal-api-key');
 
+        await openPersonalContextFromUserMenu({
+          page,
+          entryPagePath: `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview`,
+          menuItemTestId: 'user-menu__workspace-personal-context',
+          expectedPath: new RegExp(`/workspaces/${workspaceId}/context$`),
+        });
+        await captureSelfServiceTrace('open-workspace-personal-context');
+        await saveContextEntryViaUi({
+          page,
+          key: personalContextKey,
+          value: workspacePersonalContextValue,
+        });
+        await captureSelfServiceTrace('save-workspace-personal-context');
+
+        const workspaceContext = await getContextEntryViaApi({
+          page,
+          scope: 'member',
+          workspaceId,
+          key: personalContextKey,
+        });
+        expect(workspaceContext.body).toEqual(expect.objectContaining({
+          scope: 'member',
+          key: personalContextKey,
+          content: workspacePersonalContextValue,
+        }));
+
+        await openPersonalContextFromUserMenu({
+          page,
+          entryPagePath: `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview`,
+          menuItemTestId: 'user-menu__project-personal-context',
+          expectedPath: new RegExp(`/workspaces/${workspaceId}/projects/${projectId}/my-context$`),
+        });
+        await captureSelfServiceTrace('open-project-personal-context');
+        await saveContextEntryViaUi({
+          page,
+          key: personalContextKey,
+          value: projectPersonalContextValue,
+        });
+        await captureSelfServiceTrace('save-project-personal-context');
+
+        const projectContext = await getProjectPersonalContextViaApi({
+          page,
+          workspaceId,
+          projectId,
+          key: personalContextKey,
+        });
+        expect(projectContext).toEqual(expect.objectContaining({
+          scope: 'project_member',
+          key: personalContextKey,
+          content: projectPersonalContextValue,
+        }));
+
         await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/use-guide`);
+        await expect(page.getByTestId('use-guide__status-context')).toBeVisible({ timeout: 30_000 });
+        await expect(page.getByTestId('use-guide__status-context')).toContainText('project entries are ready');
+        await expect(page.getByTestId('use-guide__status-context')).toContainText('workspace defaults');
+        await expect(page.getByTestId('use-guide__link-workspace-context')).toHaveAttribute('href', `/${LOCALE}/workspaces/${workspaceId}/context`);
+        await expect(page.getByTestId('use-guide__link-project-context')).toHaveAttribute('href', `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/my-context`);
         await page.getByTestId('use-guide__endpoint-select').click();
         await expect(page.getByRole('option', { name: endpointName })).toBeVisible({ timeout: 10_000 });
         await page.getByRole('option', { name: endpointName }).click();
@@ -522,6 +611,7 @@ test.describe('@lane-real personal api key endpoint access', () => {
           throw new Error(`personal_access_request_failed:${anthropicResponse.status()}:${await anthropicResponse.text()}`);
         }
         await expect(anthropicResponse.text()).resolves.toContain(runtime.expectedReplyText);
+        await expect(page.getByTestId('use-guide__status-context')).toContainText('project entries are ready');
         await captureSelfServiceTrace('verify-personal-access-ready');
         outcome = 'pass';
       } finally {

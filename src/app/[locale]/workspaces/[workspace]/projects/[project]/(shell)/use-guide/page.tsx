@@ -144,6 +144,10 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
     hasActiveApiKey,
     endpointsLoading,
     usableEndpoints,
+    personalContextLoading,
+    workspacePersonalContextCount,
+    projectPersonalContextCount,
+    hasAnyPersonalContext,
   } = useApiAccessGuideData({
     workspaceId,
     projectId,
@@ -268,6 +272,19 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
         ? t('readiness.endpoint.pending')
         : t('readiness.endpoint.unavailable');
 
+  const personalContextStatus = personalContextLoading
+    ? t('readiness.states.info')
+    : projectPersonalContextCount > 0 && workspacePersonalContextCount > 0
+      ? t('readiness.context.ready_project_and_workspace', {
+        projectCount: projectPersonalContextCount,
+        workspaceCount: workspacePersonalContextCount,
+      })
+      : projectPersonalContextCount > 0
+        ? t('readiness.context.ready_project_only', { projectCount: projectPersonalContextCount })
+        : workspacePersonalContextCount > 0
+          ? t('readiness.context.ready_workspace_only', { workspaceCount: workspacePersonalContextCount })
+          : t('readiness.context.pending');
+
   return (
     <PageState state="success">
       <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} variant="compact" />}>
@@ -327,12 +344,30 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
                       <p className="mt-2 text-tertiary">{endpointStatus}</p>
                     </div>
                   </div>
+
+                  <div className="border-t border-subtle pt-3">
+                    <div data-testid="use-guide__status-context">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-secondary">{t('readiness.context.title')}</span>
+                        <Badge variant={hasAnyPersonalContext ? 'default' : personalContextLoading ? 'secondary' : 'destructive'}>
+                          {personalContextLoading ? t('readiness.states.info') : hasAnyPersonalContext ? t('readiness.states.ready') : t('readiness.states.action_needed')}
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-tertiary">{personalContextStatus}</p>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-3 text-sm">
                   <Link href={`/${locale}/user/api-keys`} className="inline-flex items-center gap-2 rounded-full border border-subtle px-4 py-2 text-foreground transition hover:border-strong hover:bg-bg-base/60" data-testid="use-guide__link-api-keys">
                     <KeyRound className="h-4 w-4 text-secondary" />
                     {t('quick_links.api_keys')}
+                  </Link>
+                  <Link href={`/${locale}/workspaces/${workspaceId}/context`} className="inline-flex items-center rounded-full border border-subtle px-4 py-2 text-foreground transition hover:border-strong hover:bg-bg-base/60" data-testid="use-guide__link-workspace-context">
+                    {t('quick_links.workspace_context')}
+                  </Link>
+                  <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/my-context`} className="inline-flex items-center rounded-full border border-subtle px-4 py-2 text-foreground transition hover:border-strong hover:bg-bg-base/60" data-testid="use-guide__link-project-context">
+                    {t('quick_links.project_context')}
                   </Link>
                   <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/endpoints`} className="inline-flex items-center gap-2 rounded-full border border-subtle px-4 py-2 text-foreground transition hover:border-strong hover:bg-bg-base/60" data-testid="use-guide__link-endpoints">
                     <ServerCog className="h-4 w-4 text-secondary" />

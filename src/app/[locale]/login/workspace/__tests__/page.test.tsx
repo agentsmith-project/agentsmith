@@ -1,17 +1,22 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { APIError } from '@/lib/api/errors';
+import { clearInviteHandoff } from '@/lib/auth/invite-handoff';
 
 const mockPush = vi.fn();
 const mockReplace = vi.fn();
 const mockRefetch = vi.fn();
 const mockClearAuth = vi.fn();
 const mockUseWorkspaces = vi.fn();
+const mockUseSearchParams = vi.fn();
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: mockPush, replace: mockReplace }),
   useParams: () => ({ locale: 'en-US' }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => mockUseSearchParams(),
+}));
+
+vi.mock('@/lib/i18n/routing', () => ({
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
 }));
 
 vi.mock('@/lib/hooks/use-workspaces', () => ({
@@ -38,6 +43,13 @@ describe('WorkspaceSelectPage', () => {
     mockReplace.mockClear();
     mockRefetch.mockClear();
     mockClearAuth.mockClear();
+    mockUseSearchParams.mockReturnValue(new URLSearchParams());
+    clearInviteHandoff();
+    vi.stubGlobal('sessionStorage', ({
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    } as unknown) as Storage);
   });
 
   it('renders workspace cards when data is available', () => {
@@ -64,9 +76,53 @@ describe('WorkspaceSelectPage', () => {
     const workspaceButton = within(list).getByRole('button', { name: /workspace one/i });
     expect(workspaceButton).toHaveAttribute('data-testid', 'workspace-select__item--ws_1');
     fireEvent.click(workspaceButton);
-    expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/ws_1/login');
+    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_1/login');
     expect(screen.queryByTestId('workspace-select__card--ws_1')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /workspace one/i })).toBeInTheDocument();
+  });
+
+
+  it('keeps invited project continuation when the selection page gets the project_id from the query string', () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('project_id=proj_alpha'));
+    mockUseWorkspaces.mockReturnValue({
+      data: [{ id: 'ws_1', name: 'Workspace One' }],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: mockRefetch,
+    });
+
+    render(<WorkspaceSelectPage />);
+
+    fireEvent.click(screen.getByTestId('workspace-select__item--ws_1'));
+
+    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_1/login?project_id=proj_alpha');
+  });
+
+  it('preserves invited project continuation when the selection page falls back to invite handoff session state', () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams());
+    mockUseWorkspaces.mockReturnValue({
+      data: [{ id: 'ws_1', name: 'Workspace One' }],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: mockRefetch,
+    });
+    vi.stubGlobal(
+      'sessionStorage',
+      ({
+        getItem: vi.fn((key: string) => (key === 'agentsmith:invite-handoff'
+          ? JSON.stringify({ workspaceId: 'ws_1', projectId: 'proj_alpha', storedAt: Date.now() })
+          : null)),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+      } as unknown) as Storage,
+    );
+
+    render(<WorkspaceSelectPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /workspace one/i }));
+    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_1/login?project_id=proj_alpha');
   });
 
   it('keeps the system 管理侧入口 as a low-emphasis footer link', () => {
@@ -99,7 +155,7 @@ describe('WorkspaceSelectPage', () => {
     expect(screen.getByTestId('workspace-select__session-expired')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('workspace-select__relogin-btn'));
     expect(mockClearAuth).toHaveBeenCalledTimes(1);
-    expect(mockReplace).toHaveBeenCalledWith('/en-US/login/workspace');
+    expect(mockReplace).toHaveBeenCalledWith('/login/workspace');
   });
 
   it('shows retry state on non-401 errors', () => {

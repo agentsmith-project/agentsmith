@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getApiClient, UserAPIKeyService } from '@/lib/api';
+import { ContextAPI, getApiClient, UserAPIKeyService } from '@/lib/api';
 import type { Endpoint } from '@/lib/api/types';
 import { useEndpointsData } from '@/lib/endpoints/use-endpoints-data';
 
@@ -48,10 +48,28 @@ export function useApiAccessGuideData({
   });
 
   const userApiKeyService = useMemo(() => new UserAPIKeyService(getApiClient()), []);
+  const contextApi = useMemo(() => new ContextAPI(getApiClient()), []);
   const apiKeysQuery = useQuery({
     queryKey: ['user-api-keys', 'use-guide'],
     queryFn: () => userApiKeyService.list(),
     enabled: canUseProject,
+  });
+  const workspacePersonalContextQuery = useQuery({
+    queryKey: ['context-store', 'member', 'use-guide', workspaceId],
+    queryFn: () => contextApi.list({
+      scope: 'member',
+      workspace_id: workspaceId,
+    }),
+    enabled: canUseProject && workspaceId.trim().length > 0,
+  });
+  const projectPersonalContextQuery = useQuery({
+    queryKey: ['context-store', 'project_member', 'use-guide', workspaceId, projectId],
+    queryFn: () => contextApi.list({
+      scope: 'project_member',
+      workspace_id: workspaceId,
+      project_id: projectId,
+    }),
+    enabled: canUseProject && workspaceId.trim().length > 0 && projectId.trim().length > 0,
   });
 
   const usableEndpoints = useMemo(
@@ -64,11 +82,18 @@ export function useApiAccessGuideData({
     [apiKeysQuery.data],
   );
 
+  const workspacePersonalContextCount = workspacePersonalContextQuery.data?.length ?? 0;
+  const projectPersonalContextCount = projectPersonalContextQuery.data?.length ?? 0;
+
   return {
     apiKeysLoading: apiKeysQuery.isLoading,
     activeApiKeyCount,
     hasActiveApiKey: activeApiKeyCount > 0,
     endpointsLoading,
     usableEndpoints,
+    personalContextLoading: workspacePersonalContextQuery.isLoading || projectPersonalContextQuery.isLoading,
+    workspacePersonalContextCount,
+    projectPersonalContextCount,
+    hasAnyPersonalContext: workspacePersonalContextCount > 0 || projectPersonalContextCount > 0,
   };
 }

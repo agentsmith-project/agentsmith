@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { memberFixtures, memberProjectMembershipFixtures, joinRequestFixtures } from '../fixtures/members';
+import { workspaceFixtures } from '../fixtures/workspaces';
 import { appendMockNotification } from '../state/me-notifications';
 import { ensureWorkspaceMember } from './workspace';
 import { PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS } from '@/lib/constants/permissions';
@@ -10,6 +11,7 @@ import {
 } from '@/lib/governance/member-groups';
 import type { ChangeHistoryEntry } from '@/lib/api/types';
 import { projects } from './projects';
+import { readMockAuthActorFromRequest } from '../utils/mock-auth-token';
 
 const members: Array<{
   id: string;
@@ -75,31 +77,205 @@ const memberChangeHistoryStore: Record<string, ChangeHistoryEntry[]> = {};
 
 const joinRequests = [...joinRequestFixtures];
 
+type MockProjectInvite = {
+  invite_id: string;
+  token: string;
+  workspace_id: string;
+  project_id: string;
+  invited_email: string;
+  status: 'pending' | 'accepted' | 'declined' | 'expired';
+  expires_at: string;
+  created_at: string;
+  accepted_at?: string;
+  accepted_by_user_id?: string;
+  declined_at?: string;
+  declined_by_user_id?: string;
+};
+
+const projectInvites: MockProjectInvite[] = [];
+
+function getMockProjectInviteByToken(token: string): MockProjectInvite | null {
+  return projectInvites.find((invite) => invite.token === token) ?? null;
+}
+
+function normalizeMockProjectInvite(invite: MockProjectInvite): MockProjectInvite {
+  if (invite.status === 'pending' && new Date(invite.expires_at).getTime() <= Date.now()) {
+    return { ...invite, status: 'expired' };
+  }
+  return invite;
+}
+
+type MockInviteActor = {
+  user_id: string;
+  user_email: string;
+  user_name: string;
+};
+
+type MockInviteActionResult =
+  | {
+      status: 200 | 201;
+      body: Record<string, unknown>;
+    }
+  | {
+      status: 400 | 403 | 404 | 409 | 422;
+      body: Record<string, unknown>;
+    };
+
+export function createMockProjectInviteRecord(args: {
+  workspaceId: string;
+  projectId: string;
+  invitedEmail: string;
+  expiresInHours?: number;
+  now?: Date;
+}): MockProjectInvite {
+  const now = args.now ?? new Date();
+  const expiresInHours = typeof args.expiresInHours === 'number' && args.expiresInHours > 0
+    ? args.expiresInHours
+    : 24 * 7;
+  const stamp = Date.now();
+  const token = `invite_${stamp}`;
+  const invite: MockProjectInvite = {
+    invite_id: `invite_${stamp}`,
+    token,
+    workspace_id: args.workspaceId,
+    project_id: args.projectId,
+    invited_email: args.invitedEmail.trim().toLowerCase(),
+    status: 'pending',
+    expires_at: new Date(now.getTime() + expiresInHours * 60 * 60 * 1000).toISOString(),
+    created_at: now.toISOString(),
+  };
+  projectInvites.push(invite);
+  return invite;
+}
+
+function upsertMockProjectMembershipFromInvite(projectId: string, actor: MockInviteActor, joinedAt: string): void {
+  const existing = memberProjectMembershipFixtures.find(
+    (item) => item.project_id === projectId && item.user_id === actor.user_id,
+  );
+  if (existing) {
+    existing.status = 'active';
+    existing.joined_at = existing.joined_at ?? joinedAt;
+    if (!existing.groups || existing.groups.length === 0) {
+      existing.groups = [{
+        id: PROJECT_BUILT_IN_GROUP_IDS.members,
+        name: 'Project Members',
+        permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.member,
+        built_in: true,
+        system_key: 'members',
+      }];
+    }
+    if (!existing.permissions || existing.permissions.length === 0) {
+      existing.permissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member];
+    }
+  } else {
+    memberProjectMembershipFixtures.push({
+      project_id: projectId,
+      user_id: actor.user_id,
+      groups: [{
+        id: PROJECT_BUILT_IN_GROUP_IDS.members,
+        name: 'Project Members',
+        permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.member,
+        built_in: true,
+        system_key: 'members',
+      }],
+      permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member],
+      status: 'active',
+      joined_at: joinedAt,
+    });
+  }
+
+  const builtInState = getBuiltInProjectGroupState(projectId);
+  if (!builtInState.members.includes(actor.user_id)) {
+    builtInState.members.push(actor.user_id);
+  }
+}
+
+export function acceptMockProjectInviteRecord(args: {
+  token: string;
+  actor: MockInviteActor;
+  now?: Date;
+}): MockInviteActionResult {
+  const token = args.token.trim();
+  if (!token) {
+    return {
+      status: 422,
+      body: { error_code: 'VALIDATION_ERROR', message: 'invite_token_required' },
+    };
+  }
+  const invite = getMockProjectInviteByToken(token);
+  if (!invite) {
+    return {
+      status: 404,
+      body: { error: 'invite_not_found' },
+    };
+  }
+  const normalized = normalizeMockProjectInvite(invite);
+  if (normalized.status !== invite.status) {
+    Object.assign(invite, normalized);
+  }
+  if (invite.status !== 'pending') {
+    return {
+      status: 409,
+      body: { error: 'invite_not_pending' },
+    };
+  }
+  if (args.actor.user_email.trim().toLowerCase() !== invite.invited_email) {
+    return {
+      status: 403,
+      body: {
+        error_code: 'PERMISSION_DENIED',
+        message: 'invite_email_mismatch',
+      },
+    };
+  }
+
+  const joinedAt = (args.now ?? new Date()).toISOString();
+  upsertMockProjectMembershipFromInvite(invite.project_id, args.actor, joinedAt);
+  invite.status = 'accepted';
+  invite.accepted_at = joinedAt;
+  invite.accepted_by_user_id = args.actor.user_id;
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      workspace_id: invite.workspace_id,
+      project_id: invite.project_id,
+    },
+  };
+}
+
 type BuiltInProjectGroupState = {
   owner: string[];
   admins: string[];
   members: string[];
 };
 
-function getRequestUserId(request: Request): string {
-  const authHeader = request.headers.get('authorization') ?? request.headers.get('Authorization');
-  if (!authHeader) return 'user_001';
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-  if (!token.startsWith('mock_token_')) return 'user_001';
-  const rest = token.slice('mock_token_'.length);
-  const separator = rest.lastIndexOf('_');
-  if (separator <= 0) return 'user_001';
-  return rest.slice(0, separator);
+function getRequestActor(request: Request): { userId: string; userEmail: string | null } {
+  const actor = readMockAuthActorFromRequest(request);
+  return {
+    userId: actor.userId,
+    userEmail: actor.userEmail,
+  };
 }
 
-function getUserProfile(userId: string): { email: string; name: string } {
-  const member = members.find((item) => item.id === userId);
+function getRequestUserId(request: Request): string {
+  return getRequestActor(request).userId;
+}
+
+function getUserProfile(actor: { userId: string; userEmail: string | null }): { email: string; name: string } {
+  if (actor.userEmail) {
+    return {
+      email: actor.userEmail,
+      name: actor.userEmail.split('@')[0] ?? actor.userId,
+    };
+  }
+  const member = members.find((item) => item.id === actor.userId);
   if (member) {
     return { email: member.email, name: member.name };
   }
   return {
-    email: `${userId}@example.com`,
-    name: userId,
+    email: `${actor.userId}@example.com`,
+    name: actor.userId,
   };
 }
 
@@ -349,8 +525,9 @@ export const memberHandlers = [
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests', async ({ params, request }) => {
     const projectId = String(params.prj ?? '');
-    const userId = getRequestUserId(request);
-    const userProfile = getUserProfile(userId);
+    const actor = getRequestActor(request);
+    const userId = actor.userId;
+    const userProfile = getUserProfile(actor);
     const project = projects.find((item) => item.id === projectId);
     if (!project) {
       return HttpResponse.json({ error_code: 'not_found' }, { status: 404 });
@@ -402,7 +579,7 @@ export const memberHandlers = [
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests/:id/approve', ({ params, request }) => {
     const projectId = String(params.prj ?? '');
-    const actorUserId = getRequestUserId(request);
+      const actorUserId = getRequestActor(request).userId;
     if (!canManageProjectMembership(projectId, actorUserId)) {
       return HttpResponse.json({ error_code: 'PERMISSION_DENIED' }, { status: 403 });
     }
@@ -462,7 +639,7 @@ export const memberHandlers = [
     const joinRequest = joinRequests.find((item) => item.id === params.id);
     if (!joinRequest) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
     const projectId = String(params.prj ?? '');
-    const actorUserId = getRequestUserId(request);
+      const actorUserId = getRequestActor(request).userId;
     if (!canManageProjectMembership(projectId, actorUserId)) {
       return HttpResponse.json({ error_code: 'PERMISSION_DENIED' }, { status: 403 });
     }
@@ -488,34 +665,79 @@ export const memberHandlers = [
     });
     return HttpResponse.json({ ok: true });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/invites', async ({ request }) => {
+  http.post('/api/v1/workspaces/:ws/projects/:prj/invites', async ({ params, request }) => {
+    const workspaceId = String(params.ws ?? '');
+    const projectId = String(params.prj ?? '');
     const body = (await request.json().catch(() => ({}))) as {
       email?: string;
       expires_in_hours?: number;
     };
+    const invitedEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const ttlHours = typeof body.expires_in_hours === 'number' && body.expires_in_hours > 0 ? body.expires_in_hours : 72;
-    const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000).toISOString();
+    const invite = createMockProjectInviteRecord({
+      workspaceId,
+      projectId,
+      invitedEmail,
+      expiresInHours: ttlHours,
+    });
     return HttpResponse.json(
       {
-        invite_id: `invite_${Date.now()}`,
-        invite_url: `https://example.com/invite/${Date.now()}`,
-        expires_at: expiresAt,
+        invite_id: invite.invite_id,
+        invite_url: `/join?token=${encodeURIComponent(invite.token)}`,
+        expires_at: invite.expires_at,
       },
       { status: 201 },
     );
   }),
+  http.get('/api/v1/join/invites/:token', ({ params }) => {
+    const token = String(params.token ?? '').trim();
+    if (!token) {
+      return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'invite_token_required' }, { status: 422 });
+    }
+    const found = getMockProjectInviteByToken(token);
+    if (!found) {
+      return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND', message: 'invite_not_found' }, { status: 404 });
+    }
+    const invite = normalizeMockProjectInvite(found);
+    if (invite.status !== found.status) {
+      Object.assign(found, invite);
+    }
+    const workspace = workspaceFixtures.find((item) => item.id === invite.workspace_id);
+    const project = projects.find((item) => item.id === invite.project_id && item.workspace_id === invite.workspace_id);
+    return HttpResponse.json({
+      invite_id: invite.invite_id,
+      workspace_id: invite.workspace_id,
+      workspace_name: workspace?.name ?? invite.workspace_id,
+      project_id: invite.project_id,
+      project_name: project?.name ?? invite.project_id,
+      status: invite.status,
+      expires_at: invite.expires_at,
+    });
+  }),
   http.post('/api/v1/join/accept', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as { token?: string };
-    if (typeof body.token !== 'string' || body.token.trim().length === 0) {
-      return HttpResponse.json({ error: 'invalid_token' }, { status: 400 });
-    }
-    return HttpResponse.json({ ok: true, workspace_id: 'ws_default', project_id: 'proj_001' });
+    const actor = getRequestActor(request);
+    const actorProfile = getUserProfile(actor);
+    const result = acceptMockProjectInviteRecord({
+      token: typeof body.token === 'string' ? body.token : '',
+      actor: {
+        user_id: actor.userId,
+        user_email: actorProfile.email,
+        user_name: actorProfile.name,
+      },
+    });
+    return HttpResponse.json(result.body, { status: result.status });
   }),
   http.post('/api/v1/join/decline', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as { token?: string };
     if (typeof body.token !== 'string' || body.token.trim().length === 0) {
       return HttpResponse.json({ error: 'invalid_token' }, { status: 400 });
     }
+    const invite = getMockProjectInviteByToken(body.token.trim());
+    if (!invite) {
+      return HttpResponse.json({ error: 'invite_not_found' }, { status: 404 });
+    }
+    invite.status = 'declined';
     return HttpResponse.json({ ok: true });
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/members/:id/permissions', ({ params }) => {

@@ -155,6 +155,7 @@ async function loginToWorkspace(page: Page, workspaceId: string, username: strin
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await page.goto(`/${LOCALE}/workspaces/${workspaceId}/login`);
     await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeEnabled({ timeout: 30_000 });
     await page.getByTestId('workspace-login__keycloak-btn').click();
 
     const bootstrapError = page.getByTestId('workspace-login__keycloak-error');

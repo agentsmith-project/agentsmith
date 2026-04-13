@@ -5,6 +5,7 @@ import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { getProjectMembership, upsertProjectMembershipRecord } from './project-member-governance-persistence.js';
+import { getRegisteredWorkspaceConfig } from './workspace-registry.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
 
@@ -25,6 +26,16 @@ export interface ProjectInviteRecord {
 }
 
 const PROJECT_INVITE_COLLECTION = 'project_invites';
+
+export interface PublicProjectInviteDetails {
+  invite_id: string;
+  workspace_id: string;
+  workspace_name?: string;
+  project_id: string;
+  project_name?: string;
+  status: ProjectInviteRecord['status'];
+  expires_at: string;
+}
 
 export class JsonDocProjectInviteRepo {
   constructor(private readonly docStore: JsonDocStorePort) {}
@@ -48,6 +59,63 @@ function normalizeInviteStatus(record: ProjectInviteRecord): ProjectInviteRecord
     return { ...record, status: 'expired' };
   }
   return record;
+}
+
+export async function handleJoinInviteInspectRoute(args: {
+  pathname: string;
+  method: string;
+  res: http.ServerResponse;
+  deps: NodeApiDeps;
+  json: JsonResponder;
+}): Promise<boolean> {
+  const { pathname, method, res, deps, json } = args;
+  if (method !== 'GET') {
+    return false;
+  }
+  const matched = pathname.match(/^\/api\/v1\/join\/invites\/([^/]+)$/);
+  if (!matched) {
+    return false;
+  }
+
+  const token = decodeURIComponent(matched[1] ?? '').trim();
+  if (!token) {
+    json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'invite_token_required' });
+    return true;
+  }
+
+  const repo = new JsonDocProjectInviteRepo(deps.docStore);
+  const found = await repo.getByToken(token);
+  if (!found) {
+    json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'invite_not_found' });
+    return true;
+  }
+  const invite = normalizeInviteStatus(found);
+  if (invite.status !== found.status) {
+    await repo.save(invite);
+  }
+
+  const workspaceConfig = await getRegisteredWorkspaceConfig(invite.workspace_id).catch(() => null);
+  let projectName: string | undefined;
+  try {
+    const project = await deps.getProjectUseCase.execute({
+      workspaceId: invite.workspace_id,
+      projectId: invite.project_id,
+    });
+    projectName = project.name?.trim() || invite.project_id;
+  } catch {
+    projectName = invite.project_id;
+  }
+
+  json(res, 200, {
+    invite_id: invite.id,
+    workspace_id: invite.workspace_id,
+    workspace_name: workspaceConfig?.name?.trim() || undefined,
+    project_id: invite.project_id,
+    project_name: projectName,
+    status: invite.status,
+    expires_at: invite.expires_at,
+  } satisfies PublicProjectInviteDetails);
+  return true;
 }
 
 export async function handleProjectInviteCreateRoute(args: {

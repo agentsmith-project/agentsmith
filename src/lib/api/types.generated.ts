@@ -2120,7 +2120,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["listTaskTerminalSessions"];
         put?: never;
         post: operations["createTaskTerminalSession"];
         delete?: never;
@@ -2139,7 +2139,7 @@ export interface paths {
         get: operations["getTaskTerminalSession"];
         put?: never;
         post?: never;
-        delete?: never;
+        delete: operations["deleteTaskTerminalSession"];
         options?: never;
         head?: never;
         patch?: never;
@@ -7998,7 +7998,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-            /** @description TASK_STREAM_CONFLICT */
+            /** @description TASK_STREAM_CONFLICT or task_terminal_sessions_active */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8021,7 +8021,7 @@ export interface operations {
             };
         };
     };
-    createTaskTerminalSession: {
+    listTaskTerminalSessions: {
         parameters: {
             query?: never;
             header?: never;
@@ -8030,19 +8030,73 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Terminal session created */
+            /** @description Terminal session list */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        items: {
+                            close_reason: string | null;
+                            cols: number;
+                            /** Format: date-time */
+                            created_at: string;
+                            /** Format: date-time */
+                            ended_at: string | null;
+                            exit_code: number | null;
+                            id: string;
+                            /** Format: date-time */
+                            last_activity_at: string;
+                            rows: number;
+                            /** @enum {string} */
+                            status: "pending" | "active" | "disconnected" | "closed" | "failed";
+                            ws_url: string | null;
+                        }[];
+                        total: number;
                     };
                 };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createTaskTerminalSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    cols?: number;
+                    rows?: number;
+                    shell?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Terminal session created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        session_id: string;
+                        /** @enum {string} */
+                        status: "pending" | "active" | "disconnected" | "closed" | "failed";
+                        ws_url: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     getTaskTerminalSession: {
@@ -8061,12 +8115,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        close_reason: string | null;
+                        cols: number;
+                        /** Format: date-time */
+                        created_at: string;
+                        /** Format: date-time */
+                        ended_at: string | null;
+                        exit_code: number | null;
+                        id: string;
+                        /** Format: date-time */
+                        last_activity_at: string;
+                        rows: number;
+                        /** @enum {string} */
+                        status: "pending" | "active" | "disconnected" | "closed" | "failed";
+                        ws_url: string | null;
                     };
                 };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteTaskTerminalSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Terminal session deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getTaskWorkspaceAccess: {

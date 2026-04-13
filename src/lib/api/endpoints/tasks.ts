@@ -155,7 +155,8 @@ export class TaskAPI {
   }
 
   /**
-   * Send a message to the agent
+   * Send a message to the agent.
+   * The backend rejects a new user run when the task still has live terminal sessions.
    */
   async sendMessage(
     workspaceId: string,
@@ -273,6 +274,16 @@ export class TaskAPI {
     );
   }
 
+  async listTerminalSessions(
+    workspaceId: string,
+    projectId: string,
+    taskId: string,
+  ): Promise<{ total: number; items: TaskTerminalSessionStatus[] }> {
+    return this.client.get<{ total: number; items: TaskTerminalSessionStatus[] }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/terminal/sessions`,
+    );
+  }
+
   async getTerminalSession(
     workspaceId: string,
     projectId: string,
@@ -280,6 +291,17 @@ export class TaskAPI {
     terminalSessionId: string,
   ): Promise<TaskTerminalSessionStatus> {
     return this.client.get<TaskTerminalSessionStatus>(
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/terminal/sessions/${terminalSessionId}`,
+    );
+  }
+
+  async closeTerminalSession(
+    workspaceId: string,
+    projectId: string,
+    taskId: string,
+    terminalSessionId: string,
+  ): Promise<void> {
+    return this.client.delete<void>(
       `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/terminal/sessions/${terminalSessionId}`,
     );
   }

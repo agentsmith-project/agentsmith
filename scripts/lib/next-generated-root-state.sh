@@ -83,8 +83,8 @@ const originalInclude = Array.isArray(config.include)
 
 const requiredPatterns = [
   '.next*/types/**/*.ts',
-  'artifacts/backend-real/current-run/next-dist/types/**/*.ts',
-  'artifacts/mock-lane/current/next-dist/types/**/*.ts',
+  'artifacts/backend-real/current-run/next-dist/types/**/*.d.ts',
+  'artifacts/mock-lane/current/next-dist/types/**/*.d.ts',
 ];
 
 const managedEntryPattern =

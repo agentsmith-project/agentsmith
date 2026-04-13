@@ -2,8 +2,9 @@
  * Tests for TaskPage component
  */
 
+import * as React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, screen } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TaskPage } from '../TaskPage';
 import { ApiError } from '@/lib/api/client';
@@ -13,6 +14,16 @@ import {
   mockTask,
   renderWithNotebookQueryClient,
 } from './taskPageTestUtils';
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 const mockTaskApiListTraces = vi.fn();
 const {
@@ -29,6 +40,10 @@ const {
   latestTaskTerminalPanelPropsRef,
   latestUseTaskArtifactsArgsRef,
   mockTaskApiCancelRun,
+  mockTaskApiListTerminalSessions,
+  mockTaskApiCloseTerminalSession,
+  mockStoreTaskTerminalPanelSessionIdForScope,
+  mockClearTaskTerminalPanelSessionStateForScope,
 } = vi.hoisted(() => ({
   mockSendMessageMutateAsync: vi.fn(),
   mockSendMessageIsPending: { value: false },
@@ -43,12 +58,17 @@ const {
   latestTaskTerminalPanelPropsRef: { current: null as any },
   latestUseTaskArtifactsArgsRef: { current: null as any },
   mockTaskApiCancelRun: vi.fn(),
+  mockTaskApiListTerminalSessions: vi.fn(),
+  mockTaskApiCloseTerminalSession: vi.fn(),
+  mockStoreTaskTerminalPanelSessionIdForScope: vi.fn(),
+  mockClearTaskTerminalPanelSessionStateForScope: vi.fn(),
 }));
 
 vi.mock('next-intl', () => ({
-  useTranslations: (namespace?: string) => (key: string) => {
+  useTranslations: (namespace?: string) => (key: string, values?: Record<string, string | number>) => {
     const dict: Record<string, string> = {
       'common.cancel': 'Cancel',
+      'common.retry': 'Retry',
       'common.open_chat': 'Open Chat',
       'common.open_files': 'Open Files',
       'notebook.task.loading': 'Loading task...',
@@ -63,16 +83,32 @@ vi.mock('next-intl', () => ({
       'notebook.conversation.agent_offline_send_blocked': 'Agent is offline. Start/reconnect the external agent execution channel before sending.',
       'notebook.task.terminal_agent_run_blocked': 'End the terminal session before starting a new agent run.',
       'notebook.task.terminal_input_blocked_placeholder': 'End Terminal Session before starting a new agent run...',
-      'notebook.task.terminal_hidden_active_title': 'Terminal session still active',
-      'notebook.task.terminal_hidden_active_description': 'The terminal is hidden, but it still blocks new agent runs until you show it again or end the session.',
-      'notebook.task.terminal_hidden_failed_title': 'Terminal needs recovery',
-      'notebook.task.terminal_hidden_failed_description': 'The last terminal session failed. Reopen it to review the failure or end the session before starting a new run.',
-      'notebook.task.terminal_show': 'Show Terminal',
-      'notebook.task.terminal_recovery_show': 'Show Recovery',
+      'notebook.task.terminal_workspace': 'Terminal Workspace',
+      'notebook.task.terminal_session': 'Terminal Session',
+      'notebook.task.terminal_new_session': 'New Session',
       'notebook.task.terminal_close': 'End Session',
+      'notebook.task.terminal_end_all': 'End All Sessions',
+      'notebook.task.terminal_mode_conversation': 'Conversation',
+      'notebook.task.terminal_mode_terminal': 'Terminal',
+      'notebook.task.terminal_status_strip_active': '{count} terminal sessions active',
+      'notebook.task.terminal_status_strip_recovery': '{count} sessions need recovery',
+      'notebook.task.terminal_workspace_open': 'Open Terminal Workspace',
+      'notebook.task.terminal_max_sessions_reached': 'You can run up to 3 terminal sessions in one task.',
+      'notebook.task.delete_blocked_terminal_sessions': 'End all terminal sessions before deleting this task.',
+      'notebook.task.delete_blocked_terminal_sessions_pending': 'Checking terminal sessions before deleting this task.',
+      'notebook.task.delete_blocked_terminal_sessions_unavailable': 'Terminal session status is temporarily unavailable. Retry before deleting this task.',
+      'notebook.task.artifacts_show': 'Show Artifacts',
+      'notebook.task.artifacts_hide': 'Hide Artifacts',
+      'notebook.task.terminal_truth_unavailable_title': 'Terminal session status is temporarily unavailable',
+      'notebook.task.terminal_truth_unavailable_description': 'We could not confirm live terminal sessions for this task. Retry to refresh backend terminal truth before running or deleting.',
+      'notebook.task.terminal_truth_unavailable_action': 'Retry terminal status check',
+      'notebook.task.terminal_unavailable_terminal_truth': 'Retry after terminal session status is available again.',
     };
     const scoped = namespace ? `${namespace}.${key}` : key;
-    return dict[scoped] ?? scoped;
+    const template = dict[scoped];
+    if (!template) return scoped;
+    if (!values) return template;
+    return template.replace(/\{(\w+)\}/g, (_, name) => String(values?.[name] ?? ''));
   },
 }));
 
@@ -149,11 +185,25 @@ vi.mock('@/components/ui/toast', () => ({
 vi.mock('../TaskHeader', () => ({
   TaskHeader: (props: any) => {
     latestTaskHeaderPropsRef.current = props;
-    const { task, onDeleted, onCreateNew, onLeave, agentRunActivity } = props;
+    const {
+      task,
+      onDeleted,
+      onCreateNew,
+      onLeave,
+      agentRunActivity,
+      canCreateTerminalSession,
+      deleteBlockedReason,
+    } = props;
     return (
       <div data-testid="task-header">
       <div data-testid="task-title">{task.title}</div>
       <div data-testid="task-header-busy">{String(!!agentRunActivity?.active)}</div>
+      <div data-testid="task-header-terminal-create-enabled">
+        {String(!!canCreateTerminalSession)}
+      </div>
+      <div data-testid="task-header-delete-blocked-reason">
+        {deleteBlockedReason ?? ''}
+      </div>
       <button onClick={onLeave}>Leave</button>
       <button onClick={onDeleted}>Delete</button>
       <button onClick={onCreateNew}>New</button>
@@ -163,12 +213,21 @@ vi.mock('../TaskHeader', () => ({
 }));
 
 vi.mock('../TaskTerminalPanel', () => ({
+  storeTaskTerminalPanelSessionIdForScope: mockStoreTaskTerminalPanelSessionIdForScope,
+  clearTaskTerminalPanelSessionStateForScope: mockClearTaskTerminalPanelSessionStateForScope,
   TaskTerminalPanel: (props: any) => {
     latestTaskTerminalPanelPropsRef.current = props;
-    const visible = props.visible ?? props.open;
-    return (props.open && visible) ? (
-      <div data-testid="task-terminal-panel">
-        <button onClick={() => props.onOpenChange(false)}>Close Terminal</button>
+    const { closeRequestToken, onOpenChange, open, visible, tabId } = props;
+    React.useEffect(() => {
+      if (open && closeRequestToken > 0) {
+        onOpenChange(false);
+      }
+    }, [closeRequestToken, onOpenChange, open]);
+    const panelVisible = visible ?? open;
+    return (open && panelVisible) ? (
+      <div data-testid="task-terminal-panel-active">
+        <div data-testid={`task-terminal-panel-${tabId ?? 'active'}`} />
+        <button onClick={() => onOpenChange(false)}>Close Terminal</button>
       </div>
     ) : null;
   },
@@ -252,6 +311,8 @@ vi.mock('@/lib/api', () => ({
       listTraces: mockTaskApiListTraces,
       cancelRun: mockTaskApiCancelRun,
       downloadArtifact: vi.fn().mockResolvedValue(new Blob()),
+      listTerminalSessions: mockTaskApiListTerminalSessions,
+      closeTerminalSession: mockTaskApiCloseTerminalSession,
     };
   }),
   FilesAPI: vi.fn().mockImplementation(function FilesAPI() {
@@ -280,6 +341,7 @@ describe('TaskPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
     mockSendMessageMutateAsync.mockResolvedValue({
       id: 'new-msg-id',
       role: 'agent',
@@ -309,6 +371,12 @@ describe('TaskPage', () => {
       run_id: 'run-1',
       request_id: 'req-1',
     });
+    mockTaskApiListTerminalSessions.mockReset();
+    mockTaskApiListTerminalSessions.mockResolvedValue({ total: 0, items: [] });
+    mockTaskApiCloseTerminalSession.mockReset();
+    mockTaskApiCloseTerminalSession.mockResolvedValue(undefined);
+    mockStoreTaskTerminalPanelSessionIdForScope.mockReset();
+    mockClearTaskTerminalPanelSessionStateForScope.mockReset();
     mockToastInfo.mockReset();
     mockTaskArtifactsRefetch.mockReset();
     mockTaskArtifactsRefetch.mockResolvedValue({ data: mockArtifacts });
@@ -318,6 +386,7 @@ describe('TaskPage', () => {
     latestConversationPanelPropsRef.current = null;
     latestTaskHeaderPropsRef.current = null;
     latestUseTaskArtifactsArgsRef.current = null;
+    mockPush.mockReset();
   });
 
   const renderComponent = () => {
@@ -332,6 +401,15 @@ describe('TaskPage', () => {
         canUseTerminal={true}
       />,
     );
+  };
+
+  const renderComponentAndWaitForTerminalHydration = async () => {
+    renderComponent();
+    await waitFor(() => {
+      expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(1);
+      expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
+      expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+    });
   };
 
   describe('Loading State', () => {
@@ -396,6 +474,107 @@ describe('TaskPage', () => {
       expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
     });
 
+    it('stays conversation-first when storage prefers terminal but backend reports no live terminal sessions', async () => {
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'terminal',
+          preferredActiveSessionId: 'stale-session-id',
+          artifactsDrawerOpen: false,
+        }),
+      );
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({ total: 0, items: [] });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+      });
+      expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
+      expect(screen.queryByTestId('notebook__task-terminal-workspace')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('notebook__task-terminal-status-strip')).not.toBeInTheDocument();
+      expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
+      expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+    });
+
+    it('keeps terminal bootstrap blocked until backend terminal truth returns on reload', async () => {
+      const deferredSessions = createDeferred<{ total: number; items: Array<{ id: string; status: string; created_at: string }> }>();
+      mockTaskApiListTerminalSessions.mockReset();
+      mockTaskApiListTerminalSessions.mockReturnValueOnce(deferredSessions.promise as any);
+
+      renderComponent();
+
+      expect(latestTaskHeaderPropsRef.current.onCreateTerminalSession).toBeUndefined();
+      expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(false);
+      expect(latestTaskHeaderPropsRef.current.canDeleteTask).toBe(true);
+      expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBe(
+        'Checking terminal sessions before deleting this task.',
+      );
+      expect(latestConversationPanelPropsRef.current.disabled).toBe(true);
+
+      deferredSessions.resolve({
+        total: 0,
+        items: [],
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(true);
+        expect(latestTaskHeaderPropsRef.current.canDeleteTask).toBe(true);
+        expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBeNull();
+        expect(latestTaskHeaderPropsRef.current.onCreateTerminalSession).toBeTypeOf('function');
+        expect(latestConversationPanelPropsRef.current.disabled).toBe(false);
+      });
+    });
+
+    it('keeps run and delete blocked when terminal hydration fails until backend truth is retried successfully', async () => {
+      const user = userEvent.setup();
+      mockTaskApiListTerminalSessions.mockRejectedValue(
+        new Error('terminal list unavailable'),
+      );
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalled();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('task-header-terminal-create-enabled')).toHaveTextContent('false');
+        expect(screen.getByTestId('task-header-delete-blocked-reason')).toHaveTextContent(
+          'Terminal session status is temporarily unavailable. Retry before deleting this task.',
+        );
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
+        expect(screen.getByTestId('conversation-panel').querySelector('[data-disabled]')).toBeInTheDocument();
+      });
+
+      expect(
+        await screen.findByTestId('notebook__task-terminal-truth-unavailable'),
+      ).toHaveTextContent('Terminal session status is temporarily unavailable');
+      expect(
+        screen.getByRole('button', { name: 'Retry terminal status check' }),
+      ).toBeInTheDocument();
+
+      const listCallCountBeforeRetry =
+        mockTaskApiListTerminalSessions.mock.calls.length;
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({ total: 0, items: [] });
+      await user.click(
+        screen.getByRole('button', { name: 'Retry terminal status check' }),
+      );
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions.mock.calls.length).toBeGreaterThan(
+          listCallCountBeforeRetry,
+        );
+        expect(screen.getByTestId('task-header-terminal-create-enabled')).toHaveTextContent('true');
+        expect(screen.getByTestId('task-header-delete-blocked-reason')).toHaveTextContent('');
+        expect(screen.getByTestId('conversation-panel').querySelector('[data-disabled]')).not.toBeInTheDocument();
+      });
+    });
+
     it('renders artifacts panel', () => {
       renderComponent();
 
@@ -422,74 +601,311 @@ describe('TaskPage', () => {
       });
     });
 
-    it('opens, hides, and then fully closes the terminal session from the task header flow', async () => {
-      renderComponent();
+    it('opens terminal workspace in terminal mode and blocks conversation input', async () => {
+      await renderComponentAndWaitForTerminalHydration();
 
-      expect(screen.queryByTestId('task-terminal-panel')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('task-terminal-panel-active')).not.toBeInTheDocument();
 
       await act(async () => {
-        latestTaskHeaderPropsRef.current.onToggleTerminal();
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
       });
 
-      expect(screen.getByTestId('task-terminal-panel')).toBeInTheDocument();
-      expect(latestTaskHeaderPropsRef.current.hasTerminalSession).toBe(true);
-      expect(latestTaskHeaderPropsRef.current.terminalOpen).toBe(true);
-      expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
-        'End Terminal Session before starting a new agent run...',
-      );
-
-      await act(async () => {
-        latestTaskHeaderPropsRef.current.onToggleTerminal();
+      await waitFor(() => {
+        expect(screen.getByTestId('task-terminal-panel-active')).toBeInTheDocument();
+        expect(screen.getAllByTestId('notebook__task-terminal-workspace')).toHaveLength(1);
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(latestTaskHeaderPropsRef.current.onCreateTerminalSession).toBeUndefined();
+        expect(screen.queryByTestId('conversation-panel')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('notebook__task-terminal-status-strip')).not.toBeInTheDocument();
+        expect(screen.getByTestId('notebook__task-artifacts-toggle')).toHaveTextContent('Show Artifacts');
       });
 
-      expect(screen.queryByTestId('task-terminal-panel')).not.toBeInTheDocument();
-      expect(latestTaskHeaderPropsRef.current.hasTerminalSession).toBe(true);
-      expect(latestTaskHeaderPropsRef.current.terminalOpen).toBe(false);
-      expect(screen.getByTestId('notebook__task-terminal-notice')).toHaveTextContent('Terminal session still active');
-      expect(screen.getByTestId('notebook__task-terminal-notice')).toHaveTextContent(
-        'The terminal is hidden, but it still blocks new agent runs until you show it again or end the session.',
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onSetViewMode('conversation');
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).toHaveTextContent(
+          '1 terminal sessions active',
+        );
+        expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
+          'End Terminal Session before starting a new agent run...',
+        );
+      });
+    });
+
+    it('creates up to three terminal tabs and blocks a fourth creation', async () => {
+      const user = userEvent.setup();
+      await renderComponentAndWaitForTerminalHydration();
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-create')).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId('notebook__task-terminal-create'));
+      await user.click(screen.getByTestId('notebook__task-terminal-create'));
+
+      expect(screen.getAllByTestId(/^notebook__task-terminal-tab-terminal-session-\d+$/)).toHaveLength(3);
+      expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(false);
+      expect(screen.getByTestId('notebook__task-terminal-create')).toBeDisabled();
+      expect(screen.getByTestId('notebook__task-terminal-create')).toHaveAttribute(
+        'title',
+        'You can run up to 3 terminal sessions in one task.',
       );
-      expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
-        'End Terminal Session before starting a new agent run...',
-      );
+    });
+
+    it('reconciles optimistic terminal tabs back to backend truth when create is rejected at the session limit', async () => {
+      const user = userEvent.setup();
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({ total: 0, items: [] })
+        .mockResolvedValueOnce({
+          total: 3,
+          items: [
+            { id: 'backend-session-1', status: 'active', created_at: '2026-04-13T01:00:00.000Z' },
+            { id: 'backend-session-2', status: 'active', created_at: '2026-04-13T01:00:01.000Z' },
+            { id: 'backend-session-3', status: 'active', created_at: '2026-04-13T01:00:02.000Z' },
+          ],
+        });
+
+      await renderComponentAndWaitForTerminalHydration();
 
       await act(async () => {
-        latestTaskHeaderPropsRef.current.onCloseTerminalSession();
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved('backend-session-1');
+      });
+      await user.click(screen.getByTestId('notebook__task-terminal-create'));
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved('backend-session-2');
+      });
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(2);
+      });
+
+      await user.click(screen.getByTestId('notebook__task-terminal-create'));
+      expect(screen.getAllByTestId(/^notebook__task-terminal-tab-terminal-session-\d+$/)).toHaveLength(3);
+
+      await act(async () => {
+        await latestTaskTerminalPanelPropsRef.current.onSessionCreateRejected?.();
+      });
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenNthCalledWith(
+          2,
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(3);
+        expect(screen.getAllByTestId(/^notebook__task-terminal-tab-terminal-session-\d+$/)).toHaveLength(3);
+        expect(screen.queryByTestId('notebook__task-terminal-tab-terminal-session-3')).not.toBeInTheDocument();
+        expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(false);
+      });
+    });
+
+    it('shows a conversation status strip while sessions are active and supports reopening terminal workspace', async () => {
+      const user = userEvent.setup();
+      await renderComponentAndWaitForTerminalHydration();
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+      });
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onSetViewMode('conversation');
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).toHaveTextContent('1 terminal sessions active');
+      });
+      await user.click(screen.getByRole('button', { name: 'Open Terminal Workspace' }));
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+      });
+    });
+
+    it('reconciles local terminal tabs with backend truth when ending all sessions from the conversation strip', async () => {
+      const user = userEvent.setup();
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({ total: 0, items: [] })
+        .mockResolvedValueOnce({ total: 1, items: [{ id: 'backend-session-1' }] })
+        .mockResolvedValueOnce({ total: 0, items: [] });
+
+      await renderComponentAndWaitForTerminalHydration();
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved('backend-session-1');
+      });
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+      });
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onSetViewMode('conversation');
+      });
+
+      await user.click(screen.getByRole('button', { name: 'End All Sessions' }));
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenNthCalledWith(
+          2,
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+        expect(mockTaskApiCloseTerminalSession).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+          'backend-session-1',
+        );
+        expect(mockTaskApiListTerminalSessions).toHaveBeenNthCalledWith(
+          3,
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+        expect(screen.queryByTestId('notebook__task-terminal-status-strip')).not.toBeInTheDocument();
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+        expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBeUndefined();
+      });
+    });
+
+    it('keeps remaining terminal tabs if backend still reports live sessions after ending all from conversation strip', async () => {
+      const user = userEvent.setup();
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({ total: 0, items: [] })
+        .mockResolvedValueOnce({
+          total: 2,
+          items: [
+            { id: 'backend-session-1' },
+            { id: 'backend-session-2' },
+          ],
+        })
+        .mockResolvedValueOnce({ total: 1, items: [{ id: 'backend-session-2' }] });
+
+      await renderComponentAndWaitForTerminalHydration();
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved('backend-session-1');
+      });
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+      });
+      await user.click(screen.getByTestId('notebook__task-terminal-create'));
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved('backend-session-2');
+      });
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(2);
+      });
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onSetViewMode('conversation');
+      });
+
+      await user.click(screen.getByRole('button', { name: 'End All Sessions' }));
+
+      await waitFor(() => {
+        expect(mockTaskApiCloseTerminalSession).toHaveBeenCalledTimes(2);
+        expect(mockTaskApiCloseTerminalSession).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+          'backend-session-1',
+        );
+        expect(mockTaskApiCloseTerminalSession).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+          'backend-session-2',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).toHaveTextContent(
+          '1 terminal sessions active',
+        );
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
+          'End Terminal Session before starting a new agent run...',
+        );
+      });
+    });
+
+    it('returns to conversation mode when the last terminal tab closes', async () => {
+      await renderComponentAndWaitForTerminalHydration();
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+      });
+      await act(async () => {
         latestTaskTerminalPanelPropsRef.current.onOpenChange(false);
       });
 
-      expect(latestTaskHeaderPropsRef.current.hasTerminalSession).toBe(false);
-      expect(latestTaskHeaderPropsRef.current.terminalOpen).toBe(false);
-      expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBeUndefined();
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+        expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBeUndefined();
+      });
     });
 
-    it('shows a recovery notice when a failed terminal session is hidden', async () => {
-      renderComponent();
+    it('allows ending all sessions from the terminal workspace toolbar', async () => {
+      const user = userEvent.setup();
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({ total: 0, items: [] })
+        .mockResolvedValueOnce({
+          total: 2,
+          items: [{ id: 'backend-session-1' }, { id: 'backend-session-2' }],
+        })
+        .mockResolvedValueOnce({ total: 0, items: [] });
+      await renderComponentAndWaitForTerminalHydration();
 
       await act(async () => {
-        latestTaskHeaderPropsRef.current.onToggleTerminal();
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
       });
       await act(async () => {
-        latestTaskTerminalPanelPropsRef.current.onStatusChange('failed');
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved('backend-session-1');
       });
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+      });
+      await user.click(screen.getByTestId('notebook__task-terminal-create'));
       await act(async () => {
-        latestTaskHeaderPropsRef.current.onToggleTerminal();
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved('backend-session-2');
       });
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(2);
+      });
+      await user.click(screen.getByTestId('notebook__task-terminal-end-all'));
 
-      expect(latestTaskHeaderPropsRef.current.terminalStatus).toBe('failed');
-      expect(screen.getByTestId('notebook__task-terminal-notice')).toHaveTextContent('Terminal needs recovery');
-      expect(screen.getByRole('button', { name: 'Show Recovery' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'End Session' })).toBeInTheDocument();
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+      });
     });
 
-    it('disables terminal opening while a send is already pending', () => {
+    it('disables creating terminal sessions while a send is already pending', () => {
       mockSendMessageIsPending.value = true;
       renderComponent();
 
-      expect(latestTaskHeaderPropsRef.current.canOpenTerminal).toBe(false);
+      expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(false);
     });
 
-    it('disables terminal opening when the user lacks terminal permission', () => {
+    it('disables creating terminal sessions when the user lacks terminal permission', () => {
       renderWithNotebookQueryClient(
         <TaskPage
           workspaceId={mockWorkspaceId}
@@ -502,7 +918,61 @@ describe('TaskPage', () => {
         />,
       );
 
-      expect(latestTaskHeaderPropsRef.current.canOpenTerminal).toBe(false);
+      expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(false);
+    });
+
+    it('still hydrates backend terminal truth and keeps run/delete blocked when terminal permission is lost', async () => {
+      const deferredSessions = createDeferred<{
+        total: number;
+        items: Array<{ id: string; status: string; created_at: string }>;
+      }>();
+      mockTaskApiListTerminalSessions.mockReset();
+      mockTaskApiListTerminalSessions.mockReturnValueOnce(deferredSessions.promise as any);
+
+      renderWithNotebookQueryClient(
+        <TaskPage
+          workspaceId={mockWorkspaceId}
+          projectId={mockProjectId}
+          taskId={mockTaskId}
+          canCreateTask={true}
+          canUpdateTask={true}
+          canDeleteTask={true}
+          canUseTerminal={false}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+      });
+
+      expect(latestConversationPanelPropsRef.current.disabled).toBe(true);
+      expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(false);
+      expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBe(
+        'Checking terminal sessions before deleting this task.',
+      );
+
+      deferredSessions.resolve({
+        total: 1,
+        items: [
+          {
+            id: 'backend-session-1',
+            status: 'active',
+            created_at: '2026-04-13T00:00:00.000Z',
+          },
+        ],
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBe(
+          'End all terminal sessions before deleting this task.',
+        );
+        expect(latestConversationPanelPropsRef.current.disabled).toBe(true);
+      });
     });
 
     it('does not pass a global execution details mode into ConversationPanel', () => {
@@ -805,10 +1275,10 @@ describe('TaskPage', () => {
   });
 
   describe('Disabled States', () => {
-    it('keeps interaction enabled when task is active', () => {
+    it('keeps interaction enabled when task is active after terminal bootstrap resolves', async () => {
       mockTaskHookState.task = { ...mockTask, status: 'active' };
 
-      renderComponent();
+      await renderComponentAndWaitForTerminalHydration();
 
       expect(screen.getByTestId('conversation-panel').querySelector('[data-disabled]')).not.toBeInTheDocument();
       expect(screen.getByTestId('artifacts-panel').querySelector('[data-disabled]')).not.toBeInTheDocument();

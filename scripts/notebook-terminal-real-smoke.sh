@@ -129,9 +129,16 @@ function fail(message, extra) {
     `/projects/${encodeURIComponent(projectId)}` +
     `/tasks/${encodeURIComponent(taskId)}/terminal/sessions`;
 
+  async function requestJson(url, init = {}) {
+    const response = await fetch(url, init);
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : null;
+    return { response, payload, text };
+  }
+
   async function createSession() {
     for (let attempt = 0; attempt < 90; attempt += 1) {
-      const create = await fetch(createUrl, {
+      const { response, payload } = await requestJson(createUrl, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -139,29 +146,48 @@ function fail(message, extra) {
         },
         body: JSON.stringify({ cols: 80, rows: 24 }),
       });
-      const payload = await create.json();
-      if (create.ok) {
+      if (response.ok) {
         return payload;
       }
-      if (create.status === 409 && payload?.message === 'task_run_in_progress') {
+      if (response.status === 409 && payload?.message === 'task_run_in_progress') {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         continue;
       }
-      if (create.status === 409 && payload?.message === 'task_runner_offline') {
+      if (response.status === 409 && payload?.message === 'task_runner_offline') {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         continue;
       }
-      fail(`create_session_${create.status}`, payload);
+      fail(`create_session_${response.status}`, payload);
     }
     fail('create_session_timeout_waiting_for_runner');
   }
 
-  async function runSession({
-    label,
-    onStarted,
-    onOutput,
-    validate,
-  }) {
+  async function listSessions() {
+    const { response, payload, text } = await requestJson(createUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) {
+      fail(`list_sessions_${response.status}`, text);
+    }
+    return payload;
+  }
+
+  async function deleteSession(sessionId) {
+    const { response, text } = await requestJson(`${createUrl}/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (response.status !== 204) {
+      fail(`delete_session_${response.status}`, text);
+    }
+  }
+
+  async function openSession({ label }) {
     const created = await createSession();
     console.log(`[notebook-terminal-smoke] created ${label}`, created.session_id);
 
@@ -170,10 +196,18 @@ function fail(message, extra) {
         created.ws_url.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:'),
       );
       const state = {
+        label,
+        sessionId: created.session_id,
         sawStarted: false,
         sawWizard: false,
+        closed: false,
         exitCode: null,
+        output: '',
       };
+      let closedResolver = null;
+      const closed = new Promise((resolveClosed) => {
+        closedResolver = resolveClosed;
+      });
 
       const deadline = setTimeout(() => {
         try { ws.close(); } catch {}
@@ -184,11 +218,32 @@ function fail(message, extra) {
         const message = JSON.parse(String(buffer));
         if (message.type === 'started') {
           state.sawStarted = true;
-          onStarted(ws);
-          return;
-        }
-        if (message.type === 'output') {
+          clearTimeout(deadline);
+          resolve({
+            sessionId: created.session_id,
+            ws,
+            state,
+            send(data) {
+              ws.send(JSON.stringify({ type: 'terminal.stdin', data }));
+            },
+            async waitForOutput(fragment, timeoutMs = 30_000) {
+              const startedAt = Date.now();
+              while (Date.now() - startedAt < timeoutMs) {
+                if (state.output.includes(fragment)) return;
+                await new Promise((resume) => setTimeout(resume, 100));
+              }
+              throw new Error(`output_timeout:${label}:${fragment}`);
+            },
+            async waitForClosed(timeoutMs = 30_000) {
+              const timeout = new Promise((_, rejectTimeout) => {
+                setTimeout(() => rejectTimeout(new Error(`close_timeout:${label}`)), timeoutMs);
+              });
+              await Promise.race([closed, timeout]);
+            },
+          });
+        } else if (message.type === 'output') {
           const chunk = typeof message.chunk === 'string' ? message.chunk : '';
+          state.output += chunk;
           process.stdout.write(chunk);
           if (
             chunk.includes('zsh-newuser-install') ||
@@ -196,23 +251,13 @@ function fail(message, extra) {
           ) {
             state.sawWizard = true;
           }
-          onOutput(chunk, ws, state);
-          return;
-        }
-        if (message.type === 'error') {
+        } else if (message.type === 'error') {
           clearTimeout(deadline);
           reject(new Error(`terminal_error:${label}:${JSON.stringify(message)}`));
-          return;
-        }
-        if (message.type === 'exited' || message.type === 'closed') {
-          clearTimeout(deadline);
+        } else if (message.type === 'exited' || message.type === 'closed') {
+          state.closed = true;
           state.exitCode = message.exit_code ?? null;
-          try {
-            validate(state);
-            resolve({ sessionId: created.session_id, exitCode: state.exitCode });
-          } catch (error) {
-            reject(error);
-          }
+          if (closedResolver) closedResolver();
         }
       });
 
@@ -220,100 +265,66 @@ function fail(message, extra) {
         clearTimeout(deadline);
         reject(new Error(`socket_error:${label}:${error.message}`));
       });
+
+      ws.on('close', () => {
+        state.closed = true;
+        if (closedResolver) closedResolver();
+      });
     });
   }
 
-  const firstState = {
-    sawPwd: false,
-    sawEcho: false,
-    sawSessionVar: false,
-    sawInterrupted: false,
-  };
-  const first = await runSession({
-    label: 'session-one',
-    onStarted: (ws) => {
-      setTimeout(() => {
-        ws.send(JSON.stringify({
-          type: 'terminal.stdin',
-          data: 'pwd\nexport NOTEBOOK_SESSION_VAR=terminal_session_value\necho SESSION_VAR=$NOTEBOOK_SESSION_VAR\nsleep 30\n',
-        }));
-        setTimeout(() => {
-          ws.send(JSON.stringify({ type: 'terminal.stdin', data: '\u0003' }));
-          setTimeout(() => {
-            ws.send(JSON.stringify({
-              type: 'terminal.stdin',
-              data: 'echo INTERRUPTED_OK\nexit\n',
-            }));
-          }, 300);
-        }, 1000);
-      }, 500);
-    },
-    onOutput: (chunk, _ws, state) => {
-      if (chunk.includes('/home/percy/ags-workspaces/') || chunk.includes('/workspace')) {
-        firstState.sawPwd = true;
-      }
-      if (chunk.includes('SESSION_VAR=terminal_session_value')) {
-        firstState.sawSessionVar = true;
-      }
-      if (chunk.includes('INTERRUPTED_OK')) {
-        firstState.sawInterrupted = true;
-      }
-      if (chunk.includes('NOTEBOOK_SESSION_VAR')) {
-        firstState.sawEcho = true;
-      }
-      Object.assign(state, firstState);
-    },
-    validate: (state) => {
-      if (!state.sawStarted || !firstState.sawPwd || !firstState.sawSessionVar || !firstState.sawInterrupted || state.sawWizard) {
-        fail('unexpected_terminal_result', {
-          label: 'session-one',
-          sawStarted: state.sawStarted,
-          sawPwd: firstState.sawPwd,
-          sawSessionVar: firstState.sawSessionVar,
-          sawInterrupted: firstState.sawInterrupted,
-          sawWizard: state.sawWizard,
-          exitCode: state.exitCode,
-        });
-      }
-    },
-  });
+  const first = await openSession({ label: 'session-one' });
+  first.send('pwd\nexport NOTEBOOK_SESSION_VAR=terminal_session_value\necho SESSION_VAR=$NOTEBOOK_SESSION_VAR\nsleep 120\n');
+  await first.waitForOutput('SESSION_VAR=terminal_session_value');
+  if (
+    !first.state.output.includes('/home/percy/ags-workspaces/')
+    && !first.state.output.includes('/workspace')
+  ) {
+    fail('session_one_workspace_missing', first.state.output);
+  }
+  if (first.state.sawWizard) {
+    fail('session_one_unexpected_shell_wizard');
+  }
 
-  const secondState = {
-    sawSessionReset: false,
-  };
-  const second = await runSession({
-    label: 'session-two',
-    onStarted: (ws) => {
-      setTimeout(() => {
-        ws.send(JSON.stringify({
-          type: 'terminal.stdin',
-          data: 'echo SESSION_VAR_SECOND=${NOTEBOOK_SESSION_VAR:-unset}\nexit\n',
-        }));
-      }, 500);
-    },
-    onOutput: (chunk, _ws, state) => {
-      if (chunk.includes('SESSION_VAR_SECOND=unset')) {
-        secondState.sawSessionReset = true;
-      }
-      Object.assign(state, secondState);
-    },
-    validate: (state) => {
-      if (!state.sawStarted || !secondState.sawSessionReset || state.sawWizard) {
-        fail('unexpected_terminal_result', {
-          label: 'session-two',
-          sawStarted: state.sawStarted,
-          sawSessionReset: secondState.sawSessionReset,
-          sawWizard: state.sawWizard,
-          exitCode: state.exitCode,
-        });
-      }
-    },
-  });
+  const second = await openSession({ label: 'session-two' });
+  second.send('echo SESSION_VAR_SECOND=${NOTEBOOK_SESSION_VAR:-unset}\n');
+  await second.waitForOutput('SESSION_VAR_SECOND=unset');
+  if (second.state.sawWizard) {
+    fail('session_two_unexpected_shell_wizard');
+  }
 
+  const listedTogether = await listSessions();
+  const listedIds = new Set((listedTogether?.items ?? []).map((item) => item.id));
+  if (listedTogether?.total !== 2 || !listedIds.has(first.sessionId) || !listedIds.has(second.sessionId)) {
+    fail('expected_two_sessions_listed', listedTogether);
+  }
+
+  await deleteSession(first.sessionId);
+  await first.waitForClosed();
+  const remainingAfterFirstClose = await listSessions();
+  if (
+    remainingAfterFirstClose?.total !== 1
+    || remainingAfterFirstClose.items?.[0]?.id !== second.sessionId
+  ) {
+    fail('remaining_after_first_close', remainingAfterFirstClose);
+  }
+
+  second.send('echo SESSION_TWO_STILL_ACTIVE\n');
+  await second.waitForOutput('SESSION_TWO_STILL_ACTIVE');
+
+  await deleteSession(second.sessionId);
+  await second.waitForClosed();
+  const remainingAfterLastClose = await listSessions();
+  if (remainingAfterLastClose?.total !== 0) {
+    fail('remaining_after_last_close', remainingAfterLastClose);
+  }
+
+  console.log('\n[notebook-terminal-smoke] task released after last terminal session');
   console.log('\n[notebook-terminal-smoke] success', JSON.stringify({
     first_session_id: first.sessionId,
     second_session_id: second.sessionId,
-    exit_code: second.exitCode ?? first.exitCode ?? null,
+    remaining_after_first_close: remainingAfterFirstClose.total,
+    remaining_after_last_close: remainingAfterLastClose.total,
   }));
   process.exit(0);
 })();

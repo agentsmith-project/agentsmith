@@ -73,7 +73,7 @@ describe('run-next-dev-safe', () => {
 
     const tsconfig = readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8');
     const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
-    expect(tsconfig).toContain('artifacts/backend-real/current-run/next-dist/types/**/*.ts');
+    expect(tsconfig).toContain('artifacts/backend-real/current-run/next-dist/types/**/*.d.ts');
     expect(tsconfig).not.toContain('/integration-20260410T062839Z-3559213-15947/');
     expect(nextEnv).not.toContain('/integration-20260410T062839Z-3559213-15947/');
   });
@@ -116,7 +116,7 @@ while true; do sleep 1; done
 
     const tsconfig = readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8');
     const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
-    expect(tsconfig).toContain('artifacts/mock-lane/current/next-dist/types/**/*.ts');
+    expect(tsconfig).toContain('artifacts/mock-lane/current/next-dist/types/**/*.d.ts');
     expect(tsconfig).not.toContain('/mock-20260411T011449Z-1305939-19002/');
     expect(nextEnv).not.toContain('/mock-20260411T011449Z-1305939-19002/');
   });

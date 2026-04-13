@@ -1352,6 +1352,56 @@ export async function createTerminalSessionViaApi(args: {
   return { sessionId, wsUrl };
 }
 
+export async function listTerminalSessionsViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}): Promise<{
+  total: number;
+  items: Array<{
+    id: string;
+    status: string;
+    ws_url: string | null;
+    close_reason: string | null;
+    created_at: string;
+    last_activity_at: string;
+    ended_at: string | null;
+    exit_code: number | null;
+    cols: number;
+    rows: number;
+  }>;
+}> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/terminal/sessions`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  if (!response.ok()) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`list_terminal_sessions_failed:${response.status()}:${body}`);
+  }
+  return (await response.json()) as {
+    total: number;
+    items: Array<{
+      id: string;
+      status: string;
+      ws_url: string | null;
+      close_reason: string | null;
+      created_at: string;
+      last_activity_at: string;
+      ended_at: string | null;
+      exit_code: number | null;
+      cols: number;
+      rows: number;
+    }>;
+  };
+}
+
 export async function getTerminalSessionWsUrlViaApi(args: {
   page: Page;
   workspaceId: string;
@@ -1395,6 +1445,31 @@ export async function getTerminalSessionWsUrlViaApi(args: {
     throw new Error('terminal_session_ws_url_unavailable');
   }
   return wsUrl;
+}
+
+export async function deleteTerminalSessionViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  sessionId: string;
+}): Promise<void> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.delete(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}`
+      + `/projects/${args.projectId}`
+      + `/tasks/${args.taskId}`
+      + `/terminal/sessions/${args.sessionId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  if (response.status() !== 204) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`delete_terminal_session_failed:${response.status()}:${body}`);
+  }
 }
 
 export async function runTerminalCommandViaWs(args: {

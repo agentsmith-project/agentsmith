@@ -27,12 +27,14 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('next-intl', () => ({
-  useTranslations: () => (key: string) => {
+  useTranslations: () => (key: string, values?: Record<string, string | number>) => {
     const translations: Record<string, string> = {
       'leave': 'Leave',
       'delete': 'Delete',
       'delete_confirm_message': 'Are you sure you want to delete this task?',
       'delete_cancel': 'Cancel',
+      'delete_blocked_terminal_sessions': 'End all terminal sessions before deleting this task.',
+      'delete_blocked_terminal_sessions_pending': 'Checking terminal sessions before deleting this task.',
       'edit': 'Edit',
       'edit_title': 'Edit Task',
       'new': 'New',
@@ -43,14 +45,15 @@ vi.mock('next-intl', () => ({
       'workspace_file_library_label': 'Workspace',
       'workspace_file_library_unknown': 'No Workspace Library',
       'terminal_open': 'Open Terminal',
-      'terminal_show': 'Show Terminal',
-      'terminal_hide': 'Hide Terminal',
-      'terminal_recovery_show': 'Show Recovery',
-      'terminal_close': 'End Session',
-      'terminal_session_active_badge': 'Terminal Active',
-      'terminal_session_attention_badge': 'Recovery Needed',
+      'terminal_end_all': 'End All Sessions',
+      'terminal_mode_conversation': 'Conversation',
+      'terminal_mode_terminal': 'Terminal',
+      'terminal_status_strip_active': '{count} terminal sessions active',
+      'terminal_status_strip_recovery': '{count} sessions need recovery',
     };
-    return translations[key] || key;
+    const template = translations[key] || key;
+    if (!values) return template;
+    return template.replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ''));
   },
 }));
 
@@ -134,85 +137,69 @@ describe('TaskHeader', () => {
       expect(screen.getByTestId('notebook__task-header')).toBeInTheDocument();
     });
 
-    it('renders terminal toggle when provided', () => {
+    it('renders terminal create action when terminal controls are enabled', () => {
       renderComponent(mockTask, {
-        onToggleTerminal: vi.fn(),
-        canOpenTerminal: true,
+        onCreateTerminalSession: vi.fn(),
+        canCreateTerminalSession: true,
       });
 
-      expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Open Terminal');
+      expect(screen.getByTestId('notebook__task-header-terminal-create')).toHaveTextContent('Open Terminal');
     });
 
-    it('renders hide terminal label when terminal panel is already open', () => {
+    it('does not render a terminal create action once workspace tabs exist', () => {
       renderComponent(mockTask, {
-        onToggleTerminal: vi.fn(),
-        canOpenTerminal: true,
-        hasTerminalSession: true,
-        terminalOpen: true,
+        onCreateTerminalSession: vi.fn(),
+        canCreateTerminalSession: true,
+        terminalSessionCount: 1,
       });
 
-      expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Hide Terminal');
+      expect(screen.queryByTestId('notebook__task-header-terminal-create')).not.toBeInTheDocument();
     });
 
-    it('renders show terminal label when the session exists but the panel is hidden', () => {
+    it('renders terminal mode switch and summary once tabs exist', () => {
       renderComponent(mockTask, {
-        onToggleTerminal: vi.fn(),
-        hasTerminalSession: true,
-        canOpenTerminal: false,
-        terminalOpen: false,
+        viewMode: 'terminal' as const,
+        onSetViewMode: vi.fn(),
+        onCreateTerminalSession: vi.fn(),
+        canCreateTerminalSession: true,
+        terminalSessionCount: 1,
       });
 
-      expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Show Terminal');
-      expect(screen.getByTestId('notebook__task-header-terminal')).toBeEnabled();
+      expect(screen.getByTestId('notebook__task-header-mode-conversation')).toHaveTextContent('Conversation');
+      expect(screen.getByTestId('notebook__task-header-mode-terminal')).toHaveTextContent('Terminal');
+      expect(screen.getByTestId('notebook__task-header-terminal-summary')).toHaveTextContent('1 terminal sessions active');
     });
 
-    it('renders close terminal action whenever a terminal session exists', () => {
+    it('does not render end-all action in the header when tabs exist', () => {
       renderComponent(mockTask, {
-        onToggleTerminal: vi.fn(),
-        onCloseTerminalSession: vi.fn(),
-        canOpenTerminal: true,
-        hasTerminalSession: true,
-        terminalOpen: false,
-        terminalStatus: 'active' as const,
+        onCreateTerminalSession: vi.fn(),
+        onCloseAllTerminalSessions: vi.fn(),
+        canCreateTerminalSession: true,
+        terminalSessionCount: 1,
       });
 
-      expect(screen.getByTestId('notebook__task-header-terminal-close')).toHaveTextContent('End Session');
+      expect(screen.queryByTestId('notebook__task-header-terminal-end-all')).not.toBeInTheDocument();
     });
 
-    it('shows an active-session badge when the terminal is hidden but still blocking new runs', () => {
+    it('prefers recovery summary when any terminal tab needs attention', () => {
       renderComponent(mockTask, {
-        onToggleTerminal: vi.fn(),
-        onCloseTerminalSession: vi.fn(),
-        hasTerminalSession: true,
-        terminalOpen: false,
-        terminalStatus: 'active' as const,
+        onSetViewMode: vi.fn(),
+        onCreateTerminalSession: vi.fn(),
+        terminalSessionCount: 1,
+        terminalHasRecovery: true,
       });
 
-      expect(screen.getByTestId('notebook__task-header-terminal-status')).toHaveTextContent('Terminal Active');
-      expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Show Terminal');
-    });
-
-    it('prefers recovery language when a failed terminal session is hidden', () => {
-      renderComponent(mockTask, {
-        onToggleTerminal: vi.fn(),
-        onCloseTerminalSession: vi.fn(),
-        hasTerminalSession: true,
-        terminalOpen: false,
-        terminalStatus: 'failed' as const,
-      });
-
-      expect(screen.getByTestId('notebook__task-header-terminal-status')).toHaveTextContent('Recovery Needed');
-      expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Show Recovery');
+      expect(screen.getByTestId('notebook__task-header-terminal-summary')).toHaveTextContent('1 sessions need recovery');
     });
 
     it('exposes disabled reason when terminal access is unavailable', () => {
       renderComponent(mockTask, {
-        onToggleTerminal: vi.fn(),
-        canOpenTerminal: false,
+        onCreateTerminalSession: vi.fn(),
+        canCreateTerminalSession: false,
         terminalDisabledReason: 'Terminal access is restricted.',
       });
 
-      expect(screen.getByTestId('notebook__task-header-terminal')).toHaveAttribute('title', 'Terminal access is restricted.');
+      expect(screen.getByTestId('notebook__task-header-terminal-create')).toHaveAttribute('title', 'Terminal access is restricted.');
     });
   });
 
@@ -268,6 +255,21 @@ describe('TaskHeader', () => {
       expect(screen.getByText('Delete')).toBeInTheDocument();
     });
 
+    it('renders a disabled delete action when delete is blocked by terminal truth before hydration finishes', () => {
+      renderComponent(mockTask, {
+        canDeleteTask: true,
+        deleteBlockedReason: 'Checking terminal sessions before deleting this task.',
+      });
+
+      const deleteButton = screen.getByText('Delete').closest('button');
+      expect(deleteButton).toBeDisabled();
+      expect(deleteButton).toHaveAttribute(
+        'title',
+        'Checking terminal sessions before deleting this task.',
+      );
+      expect(screen.queryByText('Are you sure you want to delete this task?')).not.toBeInTheDocument();
+    });
+
     it('opens delete confirmation dialog when clicked', async () => {
       const user = userEvent.setup();
       renderComponent();
@@ -276,6 +278,20 @@ describe('TaskHeader', () => {
       await user.click(deleteButton);
 
       expect(screen.getByText('Are you sure you want to delete this task?')).toBeInTheDocument();
+    });
+
+    it('disables delete while terminal sessions are still active', async () => {
+      const user = userEvent.setup();
+      renderComponent(mockTask, {
+        terminalSessionCount: 1,
+      });
+
+      const deleteButton = screen.getByText('Delete');
+      expect(deleteButton).toBeDisabled();
+      expect(deleteButton).toHaveAttribute('title', 'End all terminal sessions before deleting this task.');
+
+      await user.click(deleteButton);
+      expect(screen.queryByText('Are you sure you want to delete this task?')).not.toBeInTheDocument();
     });
 
     it('closes dialog when cancel is clicked', async () => {
@@ -403,26 +419,39 @@ describe('TaskHeader', () => {
     });
   });
 
-  describe('Terminal Button', () => {
-    it('calls onToggleTerminal when clicked', async () => {
+  describe('Terminal Controls', () => {
+    it('calls onCreateTerminalSession when clicked', async () => {
       const user = userEvent.setup();
-      const onToggleTerminal = vi.fn();
+      const onCreateTerminalSession = vi.fn();
       renderComponent(mockTask, {
-        onToggleTerminal,
-        canOpenTerminal: true,
+        onCreateTerminalSession,
+        canCreateTerminalSession: true,
       });
 
-      await user.click(screen.getByTestId('notebook__task-header-terminal'));
-      expect(onToggleTerminal).toHaveBeenCalledTimes(1);
+      await user.click(screen.getByTestId('notebook__task-header-terminal-create'));
+      expect(onCreateTerminalSession).toHaveBeenCalledTimes(1);
     });
 
-    it('disables terminal button when unavailable', () => {
+    it('disables terminal create when unavailable', () => {
       renderComponent(mockTask, {
-        onToggleTerminal: vi.fn(),
-        canOpenTerminal: false,
+        onCreateTerminalSession: vi.fn(),
+        canCreateTerminalSession: false,
       });
 
-      expect(screen.getByTestId('notebook__task-header-terminal')).toBeDisabled();
+      expect(screen.getByTestId('notebook__task-header-terminal-create')).toBeDisabled();
+    });
+
+    it('calls onSetViewMode when switching between conversation and terminal', async () => {
+      const user = userEvent.setup();
+      const onSetViewMode = vi.fn();
+      renderComponent(mockTask, {
+        viewMode: 'conversation' as const,
+        onSetViewMode,
+        terminalSessionCount: 1,
+      });
+
+      await user.click(screen.getByTestId('notebook__task-header-mode-terminal'));
+      expect(onSetViewMode).toHaveBeenCalledWith('terminal');
     });
   });
 });

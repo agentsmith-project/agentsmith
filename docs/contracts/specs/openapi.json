@@ -3717,7 +3717,7 @@
             "$ref": "#/components/responses/Forbidden"
           },
           "409": {
-            "description": "TASK_STREAM_CONFLICT"
+            "description": "TASK_STREAM_CONFLICT or task_terminal_sessions_active"
           },
           "422": {
             "description": "Validation error (for example TASK_AGENT_ENDPOINT_NOT_CONFIGURED)"
@@ -3928,19 +3928,92 @@
       }
     },
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/terminal/sessions": {
-      "post": {
+      "get": {
         "tags": [
           "Notebook"
         ],
-        "operationId": "createTaskTerminalSession",
+        "operationId": "listTaskTerminalSessions",
         "responses": {
           "200": {
-            "description": "Terminal session created",
+            "description": "Terminal session list",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "required": [
+                    "total",
+                    "items"
+                  ],
+                  "properties": {
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "status",
+                          "cols",
+                          "rows",
+                          "created_at",
+                          "last_activity_at",
+                          "ended_at",
+                          "close_reason",
+                          "exit_code",
+                          "ws_url"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "active",
+                              "disconnected",
+                              "closed",
+                              "failed"
+                            ]
+                          },
+                          "cols": {
+                            "type": "integer"
+                          },
+                          "rows": {
+                            "type": "integer"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "last_activity_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "ended_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "close_reason": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "exit_code": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "ws_url": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -3950,6 +4023,83 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Notebook"
+        ],
+        "operationId": "createTaskTerminalSession",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cols": {
+                    "type": "integer"
+                  },
+                  "rows": {
+                    "type": "integer"
+                  },
+                  "shell": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Terminal session created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "session_id",
+                    "status",
+                    "ws_url"
+                  ],
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "active",
+                        "disconnected",
+                        "closed",
+                        "failed"
+                      ]
+                    },
+                    "ws_url": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }
@@ -3967,7 +4117,64 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "required": [
+                    "id",
+                    "status",
+                    "cols",
+                    "rows",
+                    "created_at",
+                    "last_activity_at",
+                    "ended_at",
+                    "close_reason",
+                    "exit_code",
+                    "ws_url"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "active",
+                        "disconnected",
+                        "closed",
+                        "failed"
+                      ]
+                    },
+                    "cols": {
+                      "type": "integer"
+                    },
+                    "rows": {
+                      "type": "integer"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "last_activity_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "ended_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "close_reason": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "exit_code": {
+                      "type": "integer",
+                      "nullable": true
+                    },
+                    "ws_url": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
                 }
               }
             }
@@ -3977,6 +4184,29 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Notebook"
+        ],
+        "operationId": "deleteTaskTerminalSession",
+        "responses": {
+          "204": {
+            "description": "Terminal session deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }

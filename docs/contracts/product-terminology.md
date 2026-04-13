@@ -111,6 +111,12 @@ Object-boundary rule:
 21. `Artifacts`
 - Notebook-generated outputs produced by task execution.
 
+22. `Terminal session`
+- Notebook task-scoped terminal execution session.
+- Scope: many `Terminal sessions` may exist under one task.
+- They share the same task workspace and task-scoped home; they are not isolated sandboxes.
+- Product-facing terminal UX must describe session lifecycle truth, not treat terminal as a generic floating panel.
+
 ## 2. Removed or restricted product-facing terms
 
 The following terms are not allowed as primary product-facing names in current UI, user guides, or product contract docs:

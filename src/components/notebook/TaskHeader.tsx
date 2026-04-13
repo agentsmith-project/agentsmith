@@ -29,42 +29,44 @@ export interface TaskHeaderProps {
   task: Task;
   workspaceId: string;
   projectId: string;
+  viewMode?: 'conversation' | 'terminal';
   agentMode?: 'external' | 'internal' | null;
   agentPresence?: 'online' | 'offline' | 'managed' | null;
   agentRunActivity?: { active: boolean; elapsedSeconds: number } | null;
   canDeleteTask?: boolean;
-  canOpenTerminal?: boolean;
-  hasTerminalSession?: boolean;
-  terminalOpen?: boolean;
-  terminalStatus?: 'idle' | 'preparing' | 'connecting' | 'active' | 'closed' | 'failed';
+  deleteBlockedReason?: string | null;
+  canCreateTerminalSession?: boolean;
+  terminalSessionCount?: number;
+  terminalHasRecovery?: boolean;
   terminalDisabledReason?: string | null;
-  onCloseTerminalSession?: () => void;
+  onSetViewMode?: (mode: 'conversation' | 'terminal') => void;
+  onCreateTerminalSession?: () => void;
   onCreateNew?: () => void;
   onEdit?: () => void;
   onDeleted?: () => void;
   onLeave?: () => void;
-  onToggleTerminal?: () => void;
 }
 
 export function TaskHeader({
   task,
   workspaceId,
   projectId,
+  viewMode = 'conversation',
   agentMode = null,
   agentPresence = null,
   agentRunActivity = null,
   canDeleteTask = true,
-  canOpenTerminal = false,
-  hasTerminalSession = false,
-  terminalOpen = false,
-  terminalStatus = 'idle',
+  deleteBlockedReason = null,
+  canCreateTerminalSession = false,
+  terminalSessionCount = 0,
+  terminalHasRecovery = false,
   terminalDisabledReason = null,
-  onCloseTerminalSession,
+  onSetViewMode,
+  onCreateTerminalSession,
   onCreateNew,
   onEdit,
   onDeleted,
   onLeave,
-  onToggleTerminal,
 }: TaskHeaderProps) {
   const router = useRouter();
   const params = useParams();
@@ -132,19 +134,18 @@ export function TaskHeader({
         : t('agent_mode_unknown')
   );
   const workspaceFileLibraryName = task.workspace_file_library_name?.trim() || t('workspace_file_library_unknown');
-  const canToggleTerminal = hasTerminalSession || canOpenTerminal;
-  const terminalToggleLabel = hasTerminalSession
-    ? terminalOpen
-      ? t('terminal_hide')
-      : terminalStatus === 'failed'
-        ? t('terminal_recovery_show')
-        : t('terminal_show')
-    : t('terminal_open');
-  const shouldShowTerminalStatus = hasTerminalSession && !terminalOpen;
-  const terminalStatusLabel = terminalStatus === 'failed'
-    ? t('terminal_session_attention_badge')
-    : t('terminal_session_active_badge');
-  const terminalStatusVariant: 'secondary' | 'destructive' = terminalStatus === 'failed' ? 'destructive' : 'secondary';
+  const hasTerminalTabs = terminalSessionCount > 0;
+  const canSwitchToTerminalWorkspace = hasTerminalTabs;
+  const terminalModeLabel = t('terminal_mode_terminal');
+  const conversationModeLabel = t('terminal_mode_conversation');
+  const terminalSessionSummary = terminalHasRecovery
+    ? t('terminal_status_strip_recovery', { count: terminalSessionCount })
+    : t('terminal_status_strip_active', { count: terminalSessionCount });
+  const shouldShowOpenTerminalAction = !!onCreateTerminalSession && !hasTerminalTabs;
+  const effectiveDeleteBlockedReason =
+    deleteBlockedReason
+    ?? (terminalSessionCount > 0 ? t('delete_blocked_terminal_sessions') : null);
+  const canOpenDeleteDialog = canDeleteTask && !effectiveDeleteBlockedReason;
 
   return (
     <div
@@ -196,14 +197,53 @@ export function TaskHeader({
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-2">
-        {shouldShowTerminalStatus ? (
+        {onSetViewMode ? (
+          <div className="inline-flex items-center rounded-md border border-subtle bg-surface-low/40 p-0.5">
+            <Button
+              type="button"
+              variant={viewMode === 'conversation' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 px-2.5 text-[11px]"
+              onClick={() => onSetViewMode('conversation')}
+              data-testid="notebook__task-header-mode-conversation"
+            >
+              {conversationModeLabel}
+            </Button>
+            <Button
+              type="button"
+              variant={viewMode === 'terminal' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 px-2.5 text-[11px]"
+              onClick={() => onSetViewMode('terminal')}
+              disabled={!canSwitchToTerminalWorkspace}
+              data-testid="notebook__task-header-mode-terminal"
+            >
+              {terminalModeLabel}
+            </Button>
+          </div>
+        ) : null}
+        {hasTerminalTabs ? (
           <Badge
-            variant={terminalStatusVariant}
+            variant={terminalHasRecovery ? 'destructive' : 'secondary'}
             className="text-[11px]"
-            data-testid="notebook__task-header-terminal-status"
+            data-testid="notebook__task-header-terminal-summary"
           >
-            {terminalStatusLabel}
+            {terminalSessionSummary}
           </Badge>
+        ) : null}
+        {shouldShowOpenTerminalAction ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 px-2.5 text-xs"
+            onClick={onCreateTerminalSession}
+            disabled={!canCreateTerminalSession}
+            title={!canCreateTerminalSession ? terminalDisabledReason ?? undefined : undefined}
+            data-testid="notebook__task-header-terminal-create"
+          >
+            <TerminalSquare className="mr-2 h-4 w-4" />
+            {t('terminal_open')}
+          </Button>
         ) : null}
         {onEdit && (
           <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={onEdit}>
@@ -211,64 +251,51 @@ export function TaskHeader({
             {t('edit')}
           </Button>
         )}
-        {onToggleTerminal ? (
-          <Button
-            variant={terminalOpen ? 'default' : 'outline'}
-            size="sm"
-            className="h-8 px-2.5 text-xs"
-            onClick={onToggleTerminal}
-            disabled={!canToggleTerminal}
-            title={!canToggleTerminal ? terminalDisabledReason ?? undefined : undefined}
-            data-testid="notebook__task-header-terminal"
-          >
-            <TerminalSquare className="mr-2 h-4 w-4" />
-            {terminalToggleLabel}
-          </Button>
-        ) : null}
-        {hasTerminalSession && onCloseTerminalSession ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 px-2.5 text-xs"
-            onClick={onCloseTerminalSession}
-            data-testid="notebook__task-header-terminal-close"
-          >
-            <TerminalSquare className="mr-2 h-4 w-4" />
-            {t('terminal_close')}
-          </Button>
-        ) : null}
-        {canDeleteTask && (
-          <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs text-error hover:text-error">
-                <Trash2 className="h-4 w-4 mr-2" />
-                {t('delete')}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t('delete')}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('delete_confirm_message')}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>{t('delete_cancel')}</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void handleDelete();
-                  }}
-                  disabled={deleteTask.isPending}
-                  variant="destructive"
-                >
-                  {deleteTask.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        {canDeleteTask ? (
+          canOpenDeleteDialog ? (
+            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs text-error hover:text-error">
+                  <Trash2 className="h-4 w-4 mr-2" />
                   {t('delete')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t('delete')}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {t('delete_confirm_message')}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('delete_cancel')}</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void handleDelete();
+                    }}
+                    disabled={deleteTask.isPending}
+                    variant="destructive"
+                  >
+                    {deleteTask.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {t('delete')}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2.5 text-xs text-error hover:text-error"
+              disabled
+              title={effectiveDeleteBlockedReason ?? undefined}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {t('delete')}
+            </Button>
+          )
+        ) : null}
 
         {/* New Task Button */}
         {onCreateNew && (

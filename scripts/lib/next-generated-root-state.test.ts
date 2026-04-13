@@ -38,8 +38,8 @@ EOF_NEXT_ENV
 
     const tsconfig = readFileSync(tsconfigPath, 'utf8');
     expect(tsconfig).toContain('.next*/types/**/*.ts');
-    expect(tsconfig).toContain('artifacts/backend-real/current-run/next-dist/types/**/*.ts');
-    expect(tsconfig).toContain('artifacts/mock-lane/current/next-dist/types/**/*.ts');
+    expect(tsconfig).toContain('artifacts/backend-real/current-run/next-dist/types/**/*.d.ts');
+    expect(tsconfig).toContain('artifacts/mock-lane/current/next-dist/types/**/*.d.ts');
     expect(tsconfig).toContain('custom/**/*.ts');
     expect(tsconfig).not.toContain('/integration-20260410T062839Z-3559213-15947/');
 
@@ -69,8 +69,8 @@ EOF_TSCONFIG
     const tsconfig = JSON.parse(readFileSync(tsconfigPath, 'utf8')) as { include: string[] };
     expect(tsconfig.include).toEqual([
       '.next*/types/**/*.ts',
-      'artifacts/backend-real/current-run/next-dist/types/**/*.ts',
-      'artifacts/mock-lane/current/next-dist/types/**/*.ts',
+      'artifacts/backend-real/current-run/next-dist/types/**/*.d.ts',
+      'artifacts/mock-lane/current/next-dist/types/**/*.d.ts',
       'src/**/*.ts',
       'src/**/*.tsx',
     ]);
@@ -143,7 +143,7 @@ EOF_TSCONFIG
     expect(output).toContain('current_link=removed');
 
     const tsconfig = readFileSync(tsconfigPath, 'utf8');
-    expect(tsconfig).toContain('artifacts/mock-lane/current/next-dist/types/**/*.ts');
+    expect(tsconfig).toContain('artifacts/mock-lane/current/next-dist/types/**/*.d.ts');
     expect(tsconfig).not.toContain('/mock-20260411T011449Z-1305939-19002/');
   });
 

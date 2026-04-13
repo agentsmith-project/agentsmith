@@ -13,6 +13,17 @@ import type { TaskRecord } from '../notebook-task/task-models.js';
 import { getTasks } from '../notebook-task/task-runtime-state.js';
 import { notebookTasksCollection } from '../notebook-task/task-store.js';
 import { issueInternalTicket } from '../internal-ticket-store.js';
+import { NotebookTerminalService } from '../notebook-terminal-service.js';
+import {
+  deleteProjectMembershipRecord,
+  saveProjectGroup,
+  saveProjectPermissionTemplate,
+  upsertProjectMembershipRecord,
+} from '../project-member-governance-persistence.js';
+import type {
+  ProjectGroupRecord,
+  ProjectPermissionTemplateRecord,
+} from '../project-member-governance-types.js';
 import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './test-support.js';
 
 const upstreamServers: Server[] = [];
@@ -83,10 +94,19 @@ function startUpstreamServer(): {
   };
 }
 
-async function createFileLibrary(baseUrl: string, name = 'Notebook Workspace'): Promise<{ id: string; name: string }> {
+async function createFileLibrary(
+  baseUrl: string,
+  name = 'Notebook Workspace',
+  options?: {
+    workspaceId?: string;
+    projectId?: string;
+  },
+): Promise<{ id: string; name: string }> {
+  const workspaceId = options?.workspaceId ?? 'ws_default';
+  const projectId = options?.projectId ?? 'proj_1';
   const createLibraryRes = await apiFetch(
     baseUrl,
-    '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries',
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/file-libraries`,
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -95,6 +115,81 @@ async function createFileLibrary(baseUrl: string, name = 'Notebook Workspace'): 
   );
   expect(createLibraryRes.status).toBe(201);
   return (await createLibraryRes.json()) as { id: string; name: string };
+}
+
+async function createActiveExternalTaskForTerminal(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+  baseUrl: string,
+  taskTitle: string,
+  options?: {
+    workspaceId?: string;
+    projectId?: string;
+    authToken?: string;
+    agentOwnerId?: string;
+    createNewWorkspace?: boolean;
+  },
+): Promise<{ taskId: string; agentId: string }> {
+  const workspaceId = options?.workspaceId ?? 'ws_default';
+  const projectId = options?.projectId ?? 'proj_1';
+  const authToken = options?.authToken ?? 'test-token';
+  const agentOwnerId = options?.agentOwnerId ?? 'user_test';
+  const createNewWorkspace = options?.createNewWorkspace ?? false;
+
+  const agent = await deps.agentResourceService.createAgent(workspaceId, projectId, {
+    name: `${taskTitle}-agent`,
+    mode: 'external',
+    interaction_kind: 'notebook',
+    status: 'enabled',
+    presence: 'online',
+    config: {
+      _external_key_source: 'generated',
+    } as never,
+    owner_id: agentOwnerId,
+    visibility: 'private',
+    execution_preferences_json: {
+      notebook: {
+        endpoint_id: 'ep_external',
+        wire_api: 'responses',
+        model: 'placeholder-model',
+      },
+    },
+  });
+  await deps.agentResourceService.markAgentConnected(agent.id, {
+    remote_ip: '127.0.0.1',
+    protocol_version: '1.0',
+    last_pong_at: new Date().toISOString(),
+  });
+
+  const workspaceLibrary = createNewWorkspace
+    ? null
+    : await createFileLibrary(baseUrl, `${taskTitle} Workspace`, {
+      workspaceId,
+      projectId,
+    });
+  const createTaskRes = await apiFetchWithToken(
+    baseUrl,
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks`,
+    authToken,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: taskTitle,
+        agent_id: agent.id,
+        ...(createNewWorkspace
+          ? {
+            workspace_mode: 'create_new',
+            workspace_name: `${taskTitle} Workspace`,
+          }
+          : {
+            workspace_file_library_id: workspaceLibrary?.id,
+          }),
+      }),
+    },
+  );
+  expect(createTaskRes.status).toBe(201);
+  const task = await createTaskRes.json() as { id: string };
+  return { taskId: task.id, agentId: agent.id };
 }
 
 describe('api-entry-node notebook task routes', () => {
@@ -1932,6 +2027,503 @@ describe('api-entry-node notebook task routes', () => {
     expect(capturedExecutionContext?.workspace_dir_name).toBe(workspaceLibrary.filesystem_name);
     expect(capturedExecutionContext?.interaction_kind).toBe('notebook');
     expect(capturedExecutionContext?.api_base).toBe(`${baseUrl}/api/v1`);
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('lists task terminal sessions for the owner and deletes one session without touching others', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    deps.agentExecutionService.getAgentSessionOnlineState = () => true;
+    deps.agentExecutionService.getAgentOnlineState = () => true;
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
+      const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'List and delete terminals');
+
+    const firstRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+      'test-token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cols: 80, rows: 24 }),
+      },
+    );
+    expect(firstRes.status).toBe(201);
+    const first = await firstRes.json() as { session_id: string };
+
+    const secondRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+      'test-token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cols: 90, rows: 28 }),
+      },
+    );
+    expect(secondRes.status).toBe(201);
+    const second = await secondRes.json() as { session_id: string };
+
+    const listBeforeDelete = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+      'test-token',
+    );
+    expect(listBeforeDelete.status).toBe(200);
+    const listBeforePayload = await listBeforeDelete.json() as {
+      total: number;
+      items: Array<{ id: string; status: string }>;
+    };
+    expect(listBeforePayload.total).toBe(2);
+    expect(listBeforePayload.items.map((item) => item.id)).toEqual([first.session_id, second.session_id]);
+
+    const deleteFirst = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${first.session_id}`,
+      'test-token',
+      { method: 'DELETE' },
+    );
+    expect(deleteFirst.status).toBe(204);
+
+    const listAfterDelete = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+      'test-token',
+    );
+    expect(listAfterDelete.status).toBe(200);
+    const listAfterPayload = await listAfterDelete.json() as {
+      total: number;
+      items: Array<{ id: string }>;
+    };
+    expect(listAfterPayload.total).toBe(1);
+    expect(listAfterPayload.items.map((item) => item.id)).toEqual([second.session_id]);
+
+      const deletedLookup = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${first.session_id}`,
+        'test-token',
+      );
+      expect(deletedLookup.status).toBe(404);
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('lets a downgraded task owner list and delete existing terminal sessions while keeping create gated', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    deps.agentExecutionService.getAgentSessionOnlineState = () => true;
+    deps.agentExecutionService.getAgentOnlineState = () => true;
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
+      const project = await deps.createProjectUseCase.execute({
+        workspaceId: 'ws_default',
+        actorId: 'user_owner',
+        input: {
+          name: 'Downgraded terminal owner project',
+          visibility: 'private',
+          join_policy: 'approval_required',
+        },
+      });
+      await upsertProjectMembershipRecord(deps.docStore, 'ws_default', project.id, {
+        project_id: project.id,
+        user_id: 'user_test',
+        user_email: 'test@example.com',
+        user_name: 'Test User',
+        status: 'active',
+        joined_at: new Date().toISOString(),
+      });
+      const { taskId } = await createActiveExternalTaskForTerminal(
+        deps,
+        baseUrl,
+        'Downgraded terminal owner',
+        {
+          projectId: project.id,
+          createNewWorkspace: true,
+        },
+      );
+
+      const createTerminalRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 80, rows: 24 }),
+        },
+      );
+      expect(createTerminalRes.status).toBe(201);
+      const createdTerminal = await createTerminalRes.json() as { session_id: string };
+
+      await deleteProjectMembershipRecord(deps.docStore, 'ws_default', project.id, 'user_test');
+      const downgradedTemplate: ProjectPermissionTemplateRecord = {
+        id: `tpl_task_use_only_${project.id}`,
+        project_id: project.id,
+        name: 'Task use only',
+        description: 'Allows notebook task work without opening new terminal sessions.',
+        permissions: ['project:endpoint:use', 'project:agent:use'],
+        built_in: false,
+        editable: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      await saveProjectPermissionTemplate(
+        deps.docStore,
+        'ws_default',
+        project.id,
+        downgradedTemplate,
+      );
+      const downgradedGroup: ProjectGroupRecord = {
+        id: `grp_task_use_only_${project.id}`,
+        project_id: project.id,
+        name: 'Task use only',
+        description: 'Carries task-use access after terminal permission is removed.',
+        permission_template_id: downgradedTemplate.id,
+        member_ids: ['user_test'],
+        built_in: false,
+        deletable: true,
+        created_at: downgradedTemplate.created_at,
+        updated_at: downgradedTemplate.updated_at,
+      };
+      await saveProjectGroup(
+        deps.docStore,
+        'ws_default',
+        project.id,
+        downgradedGroup,
+      );
+
+      const createAfterDowngrade = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 90, rows: 30 }),
+        },
+      );
+      expect(createAfterDowngrade.status).toBe(403);
+      await expect(createAfterDowngrade.json()).resolves.toMatchObject({
+        error_code: 'FORBIDDEN',
+        missing_permissions: ['project:terminal:use'],
+      });
+
+      const listAfterDowngrade = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+      );
+      expect(listAfterDowngrade.status).toBe(200);
+      await expect(listAfterDowngrade.json()).resolves.toMatchObject({
+        total: 1,
+        items: [
+          expect.objectContaining({
+            id: createdTerminal.session_id,
+          }),
+        ],
+      });
+
+      const getAfterDowngrade = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${taskId}/terminal/sessions/${createdTerminal.session_id}`,
+        'test-token',
+      );
+      expect(getAfterDowngrade.status).toBe(200);
+      await expect(getAfterDowngrade.json()).resolves.toMatchObject({
+        id: createdTerminal.session_id,
+      });
+
+      const deleteAfterDowngrade = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${taskId}/terminal/sessions/${createdTerminal.session_id}`,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(deleteAfterDowngrade.status).toBe(204);
+
+      const listAfterDelete = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/${project.id}/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+      );
+      expect(listAfterDelete.status).toBe(200);
+      await expect(listAfterDelete.json()).resolves.toMatchObject({
+        total: 0,
+        items: [],
+      });
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('rejects a new notebook run while the task still has live terminal sessions', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    deps.agentExecutionService.getAgentSessionOnlineState = () => true;
+    deps.agentExecutionService.getAgentOnlineState = () => true;
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
+      const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Terminal blocks notebook run');
+
+      const createTerminalRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 80, rows: 24 }),
+        },
+      );
+      expect(createTerminalRes.status).toBe(201);
+
+      const sendMessageRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/messages`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'user',
+            content: 'Please continue this notebook task.',
+          }),
+        },
+      );
+      expect(sendMessageRes.status).toBe(409);
+      expect(await sendMessageRes.json()).toMatchObject({
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'task_terminal_sessions_active',
+      });
+
+      const listMessagesRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/messages`,
+        'test-token',
+      );
+      expect(listMessagesRes.status).toBe(200);
+      expect(await listMessagesRes.json()).toEqual([]);
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('rejects deleting a task while live terminal sessions still exist and preserves the clean termination path', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    deps.agentExecutionService.getAgentSessionOnlineState = () => true;
+    deps.agentExecutionService.getAgentOnlineState = () => true;
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
+      const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Delete after ending terminals');
+
+      const createTerminalRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 80, rows: 24 }),
+        },
+      );
+      expect(createTerminalRes.status).toBe(201);
+      const createdTerminal = await createTerminalRes.json() as { session_id: string };
+
+      const deleteTaskWhileTerminalActive = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}`,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(deleteTaskWhileTerminalActive.status).toBe(409);
+      await expect(deleteTaskWhileTerminalActive.json()).resolves.toMatchObject({
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'task_terminal_sessions_active',
+      });
+
+      const listStillAvailable = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+      );
+      expect(listStillAvailable.status).toBe(200);
+      await expect(listStillAvailable.json()).resolves.toMatchObject({
+        total: 1,
+        items: [
+          expect.objectContaining({
+            id: createdTerminal.session_id,
+          }),
+        ],
+      });
+
+      const deleteTerminal = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${createdTerminal.session_id}`,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(deleteTerminal.status).toBe(204);
+
+      const deleteTaskAfterTerminalEnds = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}`,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(deleteTaskAfterTerminalEnds.status).toBe(200);
+      await expect(deleteTaskAfterTerminalEnds.json()).resolves.toEqual({ success: true });
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('marks a terminal session failed when runner never emits terminal start events', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    deps.notebookTerminalService = new NotebookTerminalService(
+      deps.cache,
+      deps.agentExecutionService,
+      { startupTimeoutMs: 50 },
+    );
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
+      const { taskId, agentId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Terminal start timeout');
+      const agent = await deps.agentResourceService.getAgent('ws_default', 'proj_1', agentId);
+      expect(agent).toBeTruthy();
+
+      const keyRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent!.id}/keys`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'terminal-timeout-runner' }),
+        },
+      );
+      expect(keyRes.status).toBe(201);
+      const keyPayload = await keyRes.json() as { key: string };
+
+      const connInfoRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent!.id}/connection-info`,
+      );
+      expect(connInfoRes.status).toBe(200);
+      const connInfo = await connInfoRes.json() as { ws_url: string };
+
+      const executionSocket = new WebSocket(
+        connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
+        { headers: { Authorization: `Bearer ${keyPayload.key}` } },
+      );
+      sockets.push(executionSocket);
+      await new Promise<void>((resolve) => {
+        executionSocket.on('message', (raw) => {
+          const msg = JSON.parse(raw.toString('utf-8')) as { type?: string };
+          if (msg.type !== 'server.hello') return;
+          executionSocket.send(JSON.stringify({
+            type: 'agent.ready',
+            payload: {
+              runner_spec: NOTEBOOK_RUNNER_SPEC,
+              capabilities: { wire_api: 'responses' },
+            },
+          }));
+          resolve();
+        });
+      });
+
+      const createTerminalRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 80, rows: 24 }),
+        },
+      );
+      expect(createTerminalRes.status).toBe(201);
+      const created = await createTerminalRes.json() as { session_id: string; ws_url: string };
+
+      const browserSocket = new WebSocket(created.ws_url);
+      sockets.push(browserSocket);
+      await new Promise<void>((resolve) => browserSocket.on('open', () => resolve()));
+
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const sessionRes = await apiFetchWithToken(
+          baseUrl,
+          `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${created.session_id}`,
+          'test-token',
+        );
+        expect(sessionRes.status).toBe(200);
+        const payload = await sessionRes.json() as { status: string; close_reason?: string | null; ws_url?: string | null };
+        if (payload.status === 'failed') {
+          expect(payload.close_reason).toBe('terminal_start_timeout');
+          expect(payload.ws_url).toBeNull();
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      throw new Error('terminal_start_timeout_not_observed');
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('returns 409 when creating a fourth terminal session for the same task owner', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    deps.agentExecutionService.getAgentSessionOnlineState = () => true;
+    deps.agentExecutionService.getAgentOnlineState = () => true;
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
+      const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Terminal session cap');
+
+    for (let index = 0; index < 3; index += 1) {
+      const createRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 80 + index, rows: 24 + index }),
+        },
+      );
+      expect(createRes.status).toBe(201);
+    }
+
+      const overflow = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 120, rows: 40 }),
+        },
+      );
+      expect(overflow.status).toBe(409);
+      expect(await overflow.json()).toMatchObject({
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'task_terminal_session_limit_reached',
+      });
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;

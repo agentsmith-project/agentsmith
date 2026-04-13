@@ -9,8 +9,8 @@ const include = Array.isArray(config.include) ? config.include.filter((item): it
 
 const requiredPatterns = [
   '.next*/types/**/*.ts',
-  'artifacts/mock-lane/current/next-dist/types/**/*.ts',
-  'artifacts/backend-real/current-run/next-dist/types/**/*.ts',
+  'artifacts/mock-lane/current/next-dist/types/**/*.d.ts',
+  'artifacts/backend-real/current-run/next-dist/types/**/*.d.ts',
 ];
 
 for (const pattern of requiredPatterns) {

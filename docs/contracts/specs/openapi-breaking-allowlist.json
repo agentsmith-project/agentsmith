@@ -303,6 +303,7 @@
     "put /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo} -> 401",
     "put /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo} -> 403",
     "put /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo} -> 404",
+    "post /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/terminal/sessions -> 200",
     "get /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources -> 200",
     "get /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources -> 401",
     "get /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources -> 403",

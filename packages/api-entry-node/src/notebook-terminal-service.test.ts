@@ -208,4 +208,147 @@ describe('NotebookTerminalService', () => {
     });
     expect(ws.closeCalls).toHaveLength(0);
   });
+
+  it('fails a pending session when the runner never emits terminal start events', async () => {
+    const cache = new InMemoryCache();
+    const runtimeClose = vi.fn();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput: vi.fn(),
+        resize: vi.fn(),
+        close: runtimeClose,
+        stream: (async function* stream() {
+          await new Promise(() => undefined);
+        })(),
+      })),
+    } as never, {
+      startupTimeoutMs: 25,
+    });
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+
+    await (service as unknown as {
+      bindBrowserSocket: (ws: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+
+    await waitForAssertion(async () => {
+      const updated = await service.getSession(created.sessionId);
+      expect(updated).toMatchObject({
+        id: created.sessionId,
+        status: 'failed',
+        closeReason: 'terminal_start_timeout',
+      });
+    });
+    expect(runtimeClose).toHaveBeenCalledTimes(1);
+    expect(ws.closeCalls.some((call) => call.reason === 'terminal_start_timeout')).toBe(true);
+  });
+
+  it('lists sessions for the same task in creation order and deleting one does not remove the other', async () => {
+    const cache = new InMemoryCache();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+
+    const first = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+    const second = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 100,
+      rows: 30,
+    });
+
+    await expect(
+      service.listSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+      }),
+    ).resolves.toMatchObject([
+      { id: first.sessionId, status: 'pending' },
+      { id: second.sessionId, status: 'pending' },
+    ]);
+
+    await service.deleteSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      userId: 'user_1',
+      sessionId: first.sessionId,
+    });
+
+    await expect(
+      service.listSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+      }),
+    ).resolves.toMatchObject([
+      { id: second.sessionId, status: 'pending' },
+    ]);
+    await expect(service.getSession(first.sessionId)).resolves.toBeNull();
+    await expect(service.getSession(second.sessionId)).resolves.toMatchObject({
+      id: second.sessionId,
+      status: 'pending',
+    });
+  });
+
+  it('rejects creating more than three sessions for the same task owner', async () => {
+    const cache = new InMemoryCache();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+
+    for (let index = 0; index < 3; index += 1) {
+      await service.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        agentId: 'agent_1',
+        runnerSessionId: 'task_1',
+        userId: 'user_1',
+        cols: 80,
+        rows: 24,
+      });
+    }
+
+    await expect(
+      service.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        agentId: 'agent_1',
+        runnerSessionId: 'task_1',
+        userId: 'user_1',
+        cols: 80,
+        rows: 24,
+      }),
+    ).rejects.toThrow('task_terminal_session_limit_reached');
+  });
 });

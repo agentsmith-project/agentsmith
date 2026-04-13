@@ -82,16 +82,21 @@ describe('backend-real family story consumption', () => {
     expect(notebookSource).toContain("].join('\\n')");
     expect(notebookSource).not.toContain('North America consumer electronics');
 
-    expect(notebookTerminalSource).toContain("loadStoryDefinitionSync('notebook-terminal-day-to-day-and-recovery')");
+    expect(notebookTerminalSource).toContain("loadStoryDefinitionSync('notebook-terminal-workspace-multi-session')");
     expect(notebookTerminalSource).toContain('buildTraceStoryBinding');
     expect(notebookTerminalSource).toContain('createUxTraceBundleWriter');
-    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'hide-terminal-without-ending-session')");
-    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'show-hidden-terminal-session')");
-    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'end-terminal-session-before-new-run')");
-    expect(notebookTerminalSource).toContain('Terminal session still active');
-    expect(notebookTerminalSource).toContain('End Session');
-    expect(notebookTerminalSource).not.toContain('Close failed terminal');
-    expect(notebookTerminalSource).not.toContain('Close this terminal, then reopen it from the task header when you are ready to retry.');
+    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'create-second-terminal-session')");
+    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'reload-task-and-restore-terminal-truth')");
+    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'reject-new-run-while-live-terminal-sessions-exist')");
+    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'reopen-terminal-workspace-after-reload')");
+    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'end-one-terminal-session-without-disrupting-others')");
+    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'end-last-terminal-session-and-resume-agent-work')");
+    expect(notebookTerminalSource).toContain("page.reload({ waitUntil: 'domcontentloaded' })");
+    expect(notebookTerminalSource).toContain("message: 'task_terminal_sessions_active'");
+    expect(notebookTerminalSource).toContain('notebook__task-terminal-status-strip');
+    expect(notebookTerminalSource).toContain('End All Sessions');
+    expect(notebookTerminalSource).not.toContain('Terminal session still active');
+    expect(notebookTerminalSource).not.toContain("captureTerminalTrace(page, 'show-hidden-terminal-session')");
 
     expect(apiKeySource).toContain("loadStoryDefinitionSync('api-key-to-endpoint-consumption')");
     expect(apiKeySource).toContain('buildTraceStoryBinding');

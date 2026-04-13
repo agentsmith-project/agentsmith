@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { requiredProjectPermissions } from './required-project-permissions.js';
 
 describe('requiredProjectPermissions', () => {
-  it('requires explicit terminal permission for terminal session routes', () => {
+  it('requires explicit terminal permission only for creating new terminal sessions', () => {
     expect(
       requiredProjectPermissions(
         {
@@ -14,7 +14,9 @@ describe('requiredProjectPermissions', () => {
         'POST',
       ),
     ).toEqual(['project:terminal:use']);
+  });
 
+  it('treats existing terminal session management as task-use access instead of terminal-create access', () => {
     expect(
       requiredProjectPermissions(
         {
@@ -26,7 +28,32 @@ describe('requiredProjectPermissions', () => {
         },
         'GET',
       ),
-    ).toEqual(['project:terminal:use']);
+    ).toEqual(['project:endpoint:use']);
+
+    expect(
+      requiredProjectPermissions(
+        {
+          kind: 'taskTerminalSessions',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_1',
+        },
+        'GET',
+      ),
+    ).toEqual(['project:endpoint:use']);
+
+    expect(
+      requiredProjectPermissions(
+        {
+          kind: 'taskTerminalSession',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_1',
+          terminalSessionId: 'term_1',
+        },
+        'DELETE',
+      ),
+    ).toEqual(['project:endpoint:use']);
   });
 
   it('requires project:files:update for file-library writes and project:endpoint:use for reads', () => {

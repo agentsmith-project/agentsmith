@@ -14,8 +14,123 @@ export type TerminalStatus = 'idle' | 'preparing' | 'connecting' | 'active' | 'c
 
 type TerminalProgressReason = 'runner_offline' | 'run_in_progress' | null;
 
-function getTerminalSessionStorageKey(workspaceId: string, projectId: string, taskId: string): string {
-  return `agentsmith-terminal-session:${workspaceId}:${projectId}:${taskId}`;
+export function getTaskTerminalSessionStorageKey(
+  workspaceId: string,
+  projectId: string,
+  taskId: string,
+  scope: string,
+): string {
+  const baseKey = `agentsmith-terminal-session:${workspaceId}:${projectId}:${taskId}`;
+  return scope === 'default' ? baseKey : `${baseKey}:${scope}`;
+}
+
+type TerminalSessionIdentity = {
+  id?: string;
+  session_id?: string;
+  ws_url?: string | null;
+};
+
+type TerminalSessionHandle = {
+  id: string;
+  wsUrl: string;
+};
+
+type TerminalSessionResolution =
+  | {
+      kind: 'connectable';
+      handle: TerminalSessionHandle;
+    }
+  | {
+      kind: 'failed';
+      sessionId: string;
+      reason: string | null;
+    }
+  | {
+      kind: 'closed';
+      sessionId: string;
+      reason: string | null;
+    };
+
+const resolvedTerminalSessionHandleCache = new Map<string, TerminalSessionHandle>();
+const terminalSessionResolutionCache = new Map<string, Promise<TerminalSessionResolution>>();
+
+function getResolvedTerminalSessionHandle(sessionStorageKey: string): TerminalSessionHandle | null {
+  return resolvedTerminalSessionHandleCache.get(sessionStorageKey) ?? null;
+}
+
+function setResolvedTerminalSessionHandle(
+  sessionStorageKey: string,
+  sessionHandle: TerminalSessionHandle,
+): TerminalSessionHandle {
+  resolvedTerminalSessionHandleCache.set(sessionStorageKey, sessionHandle);
+  return sessionHandle;
+}
+
+function getCachedTerminalSessionResolution(
+  sessionStorageKey: string,
+): Promise<TerminalSessionResolution> | null {
+  return terminalSessionResolutionCache.get(sessionStorageKey) ?? null;
+}
+
+function setCachedTerminalSessionResolution(
+  sessionStorageKey: string,
+  sessionResolutionPromise: Promise<TerminalSessionResolution>,
+): Promise<TerminalSessionResolution> {
+  terminalSessionResolutionCache.set(sessionStorageKey, sessionResolutionPromise);
+  return sessionResolutionPromise;
+}
+
+function clearCachedTerminalSessionResolution(sessionStorageKey: string) {
+  resolvedTerminalSessionHandleCache.delete(sessionStorageKey);
+  terminalSessionResolutionCache.delete(sessionStorageKey);
+}
+
+export function resetTaskTerminalPanelSessionHandleCacheForTests() {
+  resolvedTerminalSessionHandleCache.clear();
+  terminalSessionResolutionCache.clear();
+}
+
+export function storeTaskTerminalPanelSessionIdForScope(
+  workspaceId: string,
+  projectId: string,
+  taskId: string,
+  scope: string,
+  sessionId: string,
+) {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(
+    getTaskTerminalSessionStorageKey(workspaceId, projectId, taskId, scope),
+    sessionId,
+  );
+}
+
+export function clearTaskTerminalPanelSessionStateForScope(
+  workspaceId: string,
+  projectId: string,
+  taskId: string,
+  scope: string,
+) {
+  const sessionStorageKey = getTaskTerminalSessionStorageKey(
+    workspaceId,
+    projectId,
+    taskId,
+    scope,
+  );
+  clearCachedTerminalSessionResolution(sessionStorageKey);
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.removeItem(sessionStorageKey);
+}
+
+function normalizeTerminalSessionIdentity(session: TerminalSessionIdentity): TerminalSessionHandle {
+  const id = session.id ?? session.session_id;
+  const wsUrl = session.ws_url ?? null;
+  if (!id || !wsUrl) {
+    throw new Error('task_terminal_session_invalid');
+  }
+  return {
+    id,
+    wsUrl,
+  };
 }
 
 function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: string): string {
@@ -31,35 +146,46 @@ function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: st
   if (reason.includes('terminal_connection_failed')) {
     return t('terminal_error_connection_failed');
   }
+  if (reason.includes('task_terminal_session_limit_reached')) {
+    return t('terminal_max_sessions_reached');
+  }
   return reason;
 }
 
 export interface TaskTerminalPanelProps {
   open: boolean;
   visible?: boolean;
+  tabId?: string;
   workspaceId: string;
   projectId: string;
   taskId: string;
+  sessionStorageScope?: string;
   taskTitle: string;
   taskApi: TaskAPI;
   disabled?: boolean;
   closeRequestToken?: number;
   onOpenChange: (open: boolean) => void;
+  onSessionResolved?: (sessionId: string) => void;
   onStatusChange?: (status: TerminalStatus) => void;
+  onSessionCreateRejected?: () => void | Promise<void>;
 }
 
 export function TaskTerminalPanel({
   open,
   visible = open,
+  tabId,
   workspaceId,
   projectId,
   taskId,
+  sessionStorageScope = 'default',
   taskTitle,
   taskApi,
   disabled = false,
   closeRequestToken = 0,
   onOpenChange,
+  onSessionResolved,
   onStatusChange,
+  onSessionCreateRejected,
 }: TaskTerminalPanelProps) {
   const t = useTranslations('notebook.task');
   const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -78,11 +204,19 @@ export function TaskTerminalPanel({
   const closeRequestTokenRef = React.useRef(closeRequestToken);
   const previousVisibleRef = React.useRef(visible);
   const pendingTerminalFocusRef = React.useRef(false);
+  const pendingResolutionCloseRef = React.useRef(false);
+  const unmountingRef = React.useRef(false);
+  const sessionResolutionPromiseRef =
+    React.useRef<Promise<TerminalSessionResolution> | null>(null);
   const translationRef = React.useRef(t);
   const taskTitleRef = React.useRef(taskTitle);
+  const onOpenChangeRef = React.useRef(onOpenChange);
+  const onSessionResolvedRef = React.useRef(onSessionResolved);
+  const onStatusChangeRef = React.useRef(onStatusChange);
+  const onSessionCreateRejectedRef = React.useRef(onSessionCreateRejected);
   const sessionStorageKey = React.useMemo(
-    () => getTerminalSessionStorageKey(workspaceId, projectId, taskId),
-    [projectId, taskId, workspaceId],
+    () => getTaskTerminalSessionStorageKey(workspaceId, projectId, taskId, sessionStorageScope),
+    [projectId, sessionStorageScope, taskId, workspaceId],
   );
 
   React.useEffect(() => {
@@ -94,15 +228,38 @@ export function TaskTerminalPanel({
   }, [taskTitle]);
 
   React.useEffect(() => {
+    onOpenChangeRef.current = onOpenChange;
+  }, [onOpenChange]);
+
+  React.useEffect(() => {
+    onSessionResolvedRef.current = onSessionResolved;
+  }, [onSessionResolved]);
+
+  React.useEffect(() => {
+    onStatusChangeRef.current = onStatusChange;
+  }, [onStatusChange]);
+
+  React.useEffect(() => {
+    onSessionCreateRejectedRef.current = onSessionCreateRejected;
+  }, [onSessionCreateRejected]);
+
+  React.useEffect(() => {
     statusRef.current = status;
   }, [status]);
   const updateStatus = React.useCallback((nextStatus: TerminalStatus) => {
     if (statusRef.current !== nextStatus) {
       statusRef.current = nextStatus;
-      onStatusChange?.(nextStatus);
+      onStatusChangeRef.current?.(nextStatus);
     }
     setStatus(nextStatus);
-  }, [onStatusChange]);
+  }, []);
+
+  React.useEffect(() => {
+    unmountingRef.current = false;
+    return () => {
+      unmountingRef.current = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     if (!previousVisibleRef.current && open && visible) {
@@ -128,6 +285,33 @@ export function TaskTerminalPanel({
     if (typeof window === 'undefined') return;
     window.sessionStorage.removeItem(sessionStorageKey);
   }, [sessionStorageKey]);
+
+  const persistResolvedSessionHandle = React.useCallback((sessionHandle: TerminalSessionHandle) => {
+    setResolvedTerminalSessionHandle(sessionStorageKey, sessionHandle);
+    if (!pendingResolutionCloseRef.current) {
+      storeSessionId(sessionHandle.id);
+      onSessionResolvedRef.current?.(sessionHandle.id);
+    }
+  }, [sessionStorageKey, storeSessionId]);
+
+  const invalidateSessionHandle = React.useCallback(
+    ({ clearStored = false }: { clearStored?: boolean } = {}) => {
+      clearCachedTerminalSessionResolution(sessionStorageKey);
+      sessionResolutionPromiseRef.current = null;
+      if (clearStored) {
+        clearStoredSessionId();
+      }
+    },
+    [clearStoredSessionId, sessionStorageKey],
+  );
+
+  const finalizeClosedSession = React.useCallback(() => {
+    reconnectingRef.current = false;
+    setErrorMessage(null);
+    setProgressReason(null);
+    invalidateSessionHandle({ clearStored: true });
+    updateStatus('closed');
+  }, [invalidateSessionHandle, updateStatus]);
 
   const createSessionWithRetry = React.useCallback(async () => {
     let lastError: unknown = null;
@@ -157,40 +341,90 @@ export function TaskTerminalPanel({
     throw lastError instanceof Error ? lastError : new Error('task_runner_offline');
   }, [projectId, taskApi, taskId, updateStatus, workspaceId]);
 
-  const resolveSession = React.useCallback(async () => {
-    const storedSessionId = readStoredSessionId();
-    if (storedSessionId) {
-      try {
-        const session = await taskApi.getTerminalSession(workspaceId, projectId, taskId, storedSessionId);
-        if (
-          session.ws_url
-          && (session.status === 'pending' || session.status === 'active' || session.status === 'disconnected')
-        ) {
-          reconnectingRef.current = true;
-          return {
-            sessionId: session.id,
-            wsUrl: session.ws_url,
-          };
-        }
-      } catch {
-        // Ignore stale session metadata and fall back to a new session.
-      }
-      clearStoredSessionId();
+  const resolveSession = React.useCallback(async (): Promise<TerminalSessionResolution> => {
+    if (sessionResolutionPromiseRef.current) {
+      return sessionResolutionPromiseRef.current;
     }
 
-    const created = await createSessionWithRetry();
-    storeSessionId(created.session_id);
-    reconnectingRef.current = false;
-    return {
-      sessionId: created.session_id,
-      wsUrl: created.ws_url,
-    };
+    const resolvedHandle = getResolvedTerminalSessionHandle(sessionStorageKey);
+    if (resolvedHandle) {
+      return {
+        kind: 'connectable',
+        handle: resolvedHandle,
+      };
+    }
+
+    const cachedSessionResolution = getCachedTerminalSessionResolution(sessionStorageKey);
+    if (cachedSessionResolution) {
+      sessionResolutionPromiseRef.current = cachedSessionResolution;
+      return cachedSessionResolution;
+    }
+
+    const sessionPromise = (async (): Promise<TerminalSessionResolution> => {
+      const storedSessionId = readStoredSessionId();
+      if (storedSessionId) {
+        try {
+          const session = await taskApi.getTerminalSession(workspaceId, projectId, taskId, storedSessionId);
+          onSessionResolvedRef.current?.(storedSessionId);
+          if (
+            session.status === 'pending'
+            || session.status === 'active'
+            || session.status === 'disconnected'
+          ) {
+            const normalizedSession = normalizeTerminalSessionIdentity(session);
+            persistResolvedSessionHandle(normalizedSession);
+            reconnectingRef.current = true;
+            return {
+              kind: 'connectable',
+              handle: normalizedSession,
+            };
+          }
+          if (session.status === 'failed') {
+            return {
+              kind: 'failed',
+              sessionId: storedSessionId,
+              reason: session.close_reason ?? null,
+            };
+          }
+          if (session.status === 'closed') {
+            return {
+              kind: 'closed',
+              sessionId: storedSessionId,
+              reason: session.close_reason ?? null,
+            };
+          }
+        } catch {
+          invalidateSessionHandle({ clearStored: true });
+          // Ignore stale session metadata and fall back to a new session.
+        }
+      }
+
+      const created = await createSessionWithRetry();
+      const normalizedSession = normalizeTerminalSessionIdentity(created);
+      persistResolvedSessionHandle(normalizedSession);
+      reconnectingRef.current = false;
+      return {
+        kind: 'connectable',
+        handle: normalizedSession,
+      };
+    })();
+
+    const inFlightResolutionPromise = sessionPromise.finally(() => {
+      if (sessionResolutionPromiseRef.current === inFlightResolutionPromise) {
+        sessionResolutionPromiseRef.current = null;
+      }
+    });
+    sessionResolutionPromiseRef.current = inFlightResolutionPromise;
+    setCachedTerminalSessionResolution(sessionStorageKey, inFlightResolutionPromise);
+    void inFlightResolutionPromise.catch(() => undefined);
+    return inFlightResolutionPromise;
   }, [
-    clearStoredSessionId,
     createSessionWithRetry,
+    invalidateSessionHandle,
+    persistResolvedSessionHandle,
     projectId,
     readStoredSessionId,
-    storeSessionId,
+    sessionStorageKey,
     taskApi,
     taskId,
     workspaceId,
@@ -273,9 +507,33 @@ export function TaskTerminalPanel({
     setErrorMessage(null);
     setProgressReason(null);
     explicitCloseRequestedRef.current = false;
+    pendingResolutionCloseRef.current = false;
 
-    void resolveSession().then((session) => {
+    void resolveSession().then((resolution) => {
+      if (pendingResolutionCloseRef.current) {
+        return;
+      }
       if (cancelled || !terminalRef.current) return;
+      if (resolution.kind === 'failed') {
+        invalidateSessionHandle();
+        updateStatus('failed');
+        const friendlyReason = describeTerminalError(
+          translationRef.current,
+          resolution.reason ?? 'terminal_connection_failed',
+        );
+        setErrorMessage(friendlyReason);
+        setProgressReason(null);
+        terminalRef.current.writeln(
+          `\r\n${translationRef.current('terminal_failed', { reason: friendlyReason })}`,
+        );
+        return;
+      }
+      if (resolution.kind === 'closed') {
+        finalizeClosedSession();
+        onOpenChangeRef.current(false);
+        return;
+      }
+      const session = resolution.handle;
       updateStatus('connecting');
       setProgressReason(null);
       terminalRef.current.writeln(
@@ -283,7 +541,7 @@ export function TaskTerminalPanel({
           ? translationRef.current('terminal_reconnecting')
           : translationRef.current('terminal_connecting'),
       );
-      const socket = new WebSocket(session.wsUrl);
+        const socket = new WebSocket(session.wsUrl);
       socketRef.current = socket;
 
       const dataDisposable = terminalRef.current.onData((data) => {
@@ -352,15 +610,15 @@ export function TaskTerminalPanel({
           return;
         }
         if (message.type === 'exited') {
-          updateStatus('closed');
-          clearStoredSessionId();
+          finalizeClosedSession();
           terminalRef.current.writeln(`\r\n${translationRef.current('terminal_closed')}`);
           if (explicitCloseRequestedRef.current) {
-            onOpenChange(false);
+            onOpenChangeRef.current(false);
           }
           return;
         }
         if (message.type === 'error') {
+          invalidateSessionHandle();
           updateStatus('failed');
           const friendlyReason = describeTerminalError(translationRef.current, message.error_message);
           setErrorMessage(friendlyReason);
@@ -375,27 +633,36 @@ export function TaskTerminalPanel({
       };
       socket.onclose = (event) => {
         dataDisposable.dispose();
-        if (cancelled) return;
+        if (cancelled || unmountingRef.current) return;
         if (explicitCloseRequestedRef.current) {
-          clearStoredSessionId();
-          updateStatus('closed');
-          onOpenChange(false);
+          finalizeClosedSession();
+          onOpenChangeRef.current(false);
           return;
         }
         if (event.reason === 'terminal_replaced') {
+          invalidateSessionHandle();
           updateStatus('failed');
           setErrorMessage(translationRef.current('terminal_error_taken_over'));
           return;
         }
+        invalidateSessionHandle();
         updateStatus(statusRef.current === 'failed' ? 'failed' : 'closed');
       };
     }).catch((error) => {
       const message = error instanceof Error ? error.message : 'task_terminal_session_create_failed';
       const friendlyReason = describeTerminalError(translationRef.current, message);
+      if (message.includes('task_terminal_session_limit_reached')) {
+        finalizeClosedSession();
+        toast.error(friendlyReason);
+        void Promise.resolve(onSessionCreateRejectedRef.current?.()).finally(() => {
+          onOpenChangeRef.current(false);
+        });
+        return;
+      }
       updateStatus('failed');
       setErrorMessage(friendlyReason);
       setProgressReason(null);
-      clearStoredSessionId();
+      invalidateSessionHandle({ clearStored: true });
       toast.error(friendlyReason);
     });
 
@@ -404,11 +671,11 @@ export function TaskTerminalPanel({
       cleanupSocket();
     };
   }, [
-    clearStoredSessionId,
     cleanupSocket,
     disabled,
+    finalizeClosedSession,
     focusTerminalIfRequested,
-    onOpenChange,
+    invalidateSessionHandle,
     updateStatus,
     open,
     resolveSession,
@@ -418,15 +685,75 @@ export function TaskTerminalPanel({
 
   const handleEndSession = React.useCallback(() => {
     explicitCloseRequestedRef.current = true;
-    setErrorMessage(null);
-    setProgressReason(null);
+    const storedSessionId = readStoredSessionId();
+    const pendingResolution = sessionResolutionPromiseRef.current ?? getCachedTerminalSessionResolution(sessionStorageKey);
     clearStoredSessionId();
+    if (storedSessionId && statusRef.current === 'failed') {
+      cleanupSocket();
+      void taskApi
+        .closeTerminalSession(workspaceId, projectId, taskId, storedSessionId)
+        .catch(() => {
+          // Best-effort cleanup for failed sessions that still exist in backend state.
+        })
+        .finally(() => {
+          finalizeClosedSession();
+          onOpenChangeRef.current(false);
+        });
+      return;
+    }
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'terminal.close' }));
       return;
     }
-    onOpenChange(false);
-  }, [clearStoredSessionId, onOpenChange]);
+    if (pendingResolution) {
+      pendingResolutionCloseRef.current = true;
+      invalidateSessionHandle({ clearStored: true });
+      void pendingResolution
+        .then((resolution) => {
+          if (resolution.kind !== 'connectable') {
+            return;
+          }
+          return taskApi.closeTerminalSession(
+            workspaceId,
+            projectId,
+            taskId,
+            resolution.handle.id,
+          ).finally(() => {
+            invalidateSessionHandle({ clearStored: true });
+          });
+        })
+        .catch(() => {
+          // Best-effort cleanup for sessions that resolved after the tab was already closed.
+        });
+      onOpenChangeRef.current(false);
+      return;
+    }
+    if (storedSessionId) {
+      void taskApi
+        .closeTerminalSession(workspaceId, projectId, taskId, storedSessionId)
+        .catch(() => {
+          // Best-effort cleanup for hidden/disconnected sessions.
+        })
+        .finally(() => {
+          finalizeClosedSession();
+          onOpenChangeRef.current(false);
+        });
+      return;
+    }
+    finalizeClosedSession();
+    onOpenChangeRef.current(false);
+  }, [
+    cleanupSocket,
+    clearStoredSessionId,
+    finalizeClosedSession,
+    invalidateSessionHandle,
+    projectId,
+    readStoredSessionId,
+    sessionStorageKey,
+    taskApi,
+    taskId,
+    workspaceId,
+  ]);
 
   React.useEffect(() => {
     if (!open) {
@@ -445,7 +772,7 @@ export function TaskTerminalPanel({
   return (
     <div
       className="mt-3 overflow-hidden rounded-md border border-subtle bg-surface/70 shadow-ambient"
-      data-testid="notebook__task-terminal"
+      data-testid={tabId ? `notebook__task-terminal-${tabId}` : 'notebook__task-terminal'}
     >
       {(status !== 'active' || errorMessage) ? (
         <div className="flex items-center justify-between gap-3 border-b border-subtle px-4 py-2">

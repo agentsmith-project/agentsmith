@@ -237,6 +237,22 @@ export async function hasBlockingTaskRunForTerminal(
   return true;
 }
 
+export async function hasBlockingTerminalSessionsForTask(args: {
+  terminalService: NodeApiDeps['notebookTerminalService'];
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  userId: string;
+}): Promise<boolean> {
+  const sessions = await args.terminalService.listSessionsForTask({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    taskId: args.taskId,
+    userId: args.userId,
+  });
+  return sessions.length > 0;
+}
+
 export function resolveTerminalWebSocketBaseUrl(req: http.IncomingMessage): string {
   const configuredApiBase = resolveConfiguredPublicApiBase();
   const requestUrl = configuredApiBase ?? resolvePublicBaseUrl(req).replace(/\/+$/, '');
@@ -258,6 +274,45 @@ export function resolveTerminalWebSocketBaseUrl(req: http.IncomingMessage): stri
     return `ws://${requestUrl.slice('http://'.length)}`;
   }
   return requestUrl;
+}
+
+function serializeTerminalSessionResponse(input: {
+  session: {
+    id: string;
+    status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
+    cols: number;
+    rows: number;
+    createdAt: string;
+    lastActivityAt: string;
+    endedAt?: string;
+    closeReason?: string;
+    exitCode?: number | null;
+  };
+  wsUrl: string | null;
+}): {
+  id: string;
+  status: 'pending' | 'active' | 'disconnected' | 'closed' | 'failed';
+  cols: number;
+  rows: number;
+  created_at: string;
+  last_activity_at: string;
+  ended_at: string | null;
+  close_reason: string | null;
+  exit_code: number | null;
+  ws_url: string | null;
+} {
+  return {
+    id: input.session.id,
+    status: input.session.status,
+    cols: input.session.cols,
+    rows: input.session.rows,
+    created_at: input.session.createdAt,
+    last_activity_at: input.session.lastActivityAt,
+    ended_at: input.session.endedAt ?? null,
+    close_reason: input.session.closeReason ?? null,
+    exit_code: input.session.exitCode ?? null,
+    ws_url: input.wsUrl,
+  };
 }
 
 async function buildTaskTerminalExecutionContext(args: {
@@ -637,18 +692,28 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       agent,
       publicBaseUrl: resolveRequiredConfiguredPublicApiBase(),
     });
-    const created = await deps.notebookTerminalService.createSession({
-      workspaceId: task.workspace_id,
-      projectId: task.project_id,
-      taskId: task.id,
-      agentId: task.agent_id,
-      runnerSessionId: task.id,
-      userId: user.id,
-      cols,
-      rows,
-      ...(shell ? { shell } : {}),
-      executionContext,
-    });
+    let created: Awaited<ReturnType<typeof deps.notebookTerminalService.createSession>>;
+    try {
+      created = await deps.notebookTerminalService.createSession({
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        taskId: task.id,
+        agentId: task.agent_id,
+        runnerSessionId: task.id,
+        userId: user.id,
+        cols,
+        rows,
+        ...(shell ? { shell } : {}),
+        executionContext,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'task_terminal_session_create_failed';
+      if (message === 'task_terminal_session_limit_reached') {
+        json(res, 409, { error_code: 'RESOURCE_CONFLICT', message });
+        return true;
+      }
+      throw error;
+    }
     await writeProjectAuditEvent(deps, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -674,6 +739,37 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     return true;
   }
 
+  if (route.kind === 'taskTerminalSessions' && method === 'GET') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
+    if (!task) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
+    const sessions = await deps.notebookTerminalService.listSessionsForTask({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      taskId: route.taskId,
+      userId: user.id,
+    });
+    const items = await Promise.all(sessions.map(async (session) => {
+      const reconnectIssued = (
+        session.status === 'pending'
+        || session.status === 'active'
+        || session.status === 'disconnected'
+      ) ? await deps.notebookTerminalService.issueReconnectTicket(session.id) : null;
+      return serializeTerminalSessionResponse({
+        session,
+        wsUrl: reconnectIssued ? `${resolveTerminalWebSocketBaseUrl(req)}${reconnectIssued.wsPath}` : null,
+      });
+    }));
+    json(res, 200, {
+      total: items.length,
+      items,
+    });
+    return true;
+  }
+
   if (route.kind === 'taskTerminalSession' && method === 'GET') {
     const session = await deps.notebookTerminalService.getSession(route.terminalSessionId);
     if (!session || session.workspaceId !== route.workspaceId || session.projectId !== route.projectId || session.taskId !== route.taskId) {
@@ -687,18 +783,33 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const reconnectIssued = (session.status === 'pending' || session.status === 'active' || session.status === 'disconnected')
       ? await deps.notebookTerminalService.issueReconnectTicket(session.id)
       : null;
-    json(res, 200, {
-      id: session.id,
-      status: session.status,
-      cols: session.cols,
-      rows: session.rows,
-      created_at: session.createdAt,
-      last_activity_at: session.lastActivityAt,
-      ended_at: session.endedAt ?? null,
-      close_reason: session.closeReason ?? null,
-      exit_code: session.exitCode ?? null,
-      ws_url: reconnectIssued ? `${resolveTerminalWebSocketBaseUrl(req)}${reconnectIssued.wsPath}` : null,
+    json(res, 200, serializeTerminalSessionResponse({
+      session,
+      wsUrl: reconnectIssued ? `${resolveTerminalWebSocketBaseUrl(req)}${reconnectIssued.wsPath}` : null,
+    }));
+    return true;
+  }
+
+  if (route.kind === 'taskTerminalSession' && method === 'DELETE') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
+    if (!task) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
+    const deleted = await deps.notebookTerminalService.deleteSession({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      taskId: route.taskId,
+      userId: user.id,
+      sessionId: route.terminalSessionId,
     });
+    if (!deleted) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_terminal_session_not_found' });
+      return true;
+    }
+    res.statusCode = 204;
+    res.end();
     return true;
   }
 
@@ -815,6 +926,19 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const index = tasks.findIndex((item) => item.id === route.taskId && item.owner_user_id === user.id);
     if (index < 0) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
+    if (await hasBlockingTerminalSessionsForTask({
+      terminalService: deps.notebookTerminalService,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      taskId: route.taskId,
+      userId: user.id,
+    })) {
+      json(res, 409, {
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'task_terminal_sessions_active',
+      });
       return true;
     }
     const [removedTask] = tasks.splice(index, 1);
@@ -1040,6 +1164,19 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     let runId: string | null = null;
     let sharedRunState = null as ReturnType<typeof buildNotebookTaskRunState> | null;
     if (role === 'user') {
+      if (await hasBlockingTerminalSessionsForTask({
+        terminalService: deps.notebookTerminalService,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        taskId: route.taskId,
+        userId: user.id,
+      })) {
+        json(res, 409, {
+          error_code: 'RESOURCE_CONFLICT',
+          message: 'task_terminal_sessions_active',
+        });
+        return true;
+      }
       runId = buildId('run');
       const startedAt = nowIso();
       sharedRunState = buildNotebookTaskRunState({

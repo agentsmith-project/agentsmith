@@ -47,6 +47,7 @@ type RegisteredTerminalSession = {
     }>;
   };
   disconnectTimer?: NodeJS.Timeout;
+  startupTimer?: NodeJS.Timeout;
   streamBound?: boolean;
   createdAt: string;
   lastActivityAt: string;
@@ -66,12 +67,18 @@ export class NotebookTerminalService {
   private readonly sessions = new Map<string, RegisteredTerminalSession>();
   private hooks: NotebookTerminalLifecycleHooks = {};
   private readonly reconnectGraceMs = 10_000;
+  private readonly maxSessionsPerTask = 3;
+  private readonly startupTimeoutMs: number;
 
   constructor(
     private readonly cache: CachePort,
     private readonly agentExecutionService: AgentExecutionService,
+    options?: {
+      startupTimeoutMs?: number;
+    },
   ) {
     this.wsServer = new WebSocketServer({ noServer: true });
+    this.startupTimeoutMs = Math.max(25, options?.startupTimeoutMs ?? 15_000);
   }
 
   configureLifecycleHooks(hooks: NotebookTerminalLifecycleHooks): void {
@@ -100,6 +107,31 @@ export class NotebookTerminalService {
     return `notebook_terminal_session:${sessionId}`;
   }
 
+  private isCountedTaskSessionStatus(status: RegisteredTerminalSession['status']): boolean {
+    return status === 'pending' || status === 'active' || status === 'disconnected' || status === 'failed';
+  }
+
+  private countTaskSessions(input: {
+    workspaceId: string;
+    projectId: string;
+    taskId: string;
+    userId: string;
+  }): number {
+    let count = 0;
+    for (const session of this.sessions.values()) {
+      if (
+        session.workspaceId === input.workspaceId
+        && session.projectId === input.projectId
+        && session.taskId === input.taskId
+        && session.userId === input.userId
+        && this.isCountedTaskSessionStatus(session.status)
+      ) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   private async persistSession(session: RegisteredTerminalSession): Promise<void> {
     const payload: PersistedTerminalSession = {
       id: session.id,
@@ -123,6 +155,32 @@ export class NotebookTerminalService {
     await this.cache.set(this.sessionCacheKey(session.id), JSON.stringify(payload), 24 * 60 * 60);
   }
 
+  private clearStartupTimer(session: RegisteredTerminalSession): void {
+    if (!session.startupTimer) return;
+    clearTimeout(session.startupTimer);
+    session.startupTimer = undefined;
+  }
+
+  private armStartupTimer(session: RegisteredTerminalSession): void {
+    if (session.status !== 'pending') return;
+    if (!session.runtime) return;
+    if (session.startupTimer) return;
+    session.startupTimer = setTimeout(() => {
+      session.startupTimer = undefined;
+      if (!this.sessions.has(session.id)) return;
+      if (session.status !== 'pending') return;
+      this.sendToBrowserSocket(session.browserSocket, {
+        type: 'error',
+        session_id: session.id,
+        error_code: 'TERMINAL_START_TIMEOUT',
+        error_message: 'terminal_start_timeout',
+      });
+      this.closeBrowserSocket(session.browserSocket, 1011, 'terminal_start_timeout');
+      session.runtime?.close();
+      this.finishSession(session.id, 'failed', 'terminal_start_timeout');
+    }, this.startupTimeoutMs);
+  }
+
   async createSession(input: {
     workspaceId: string;
     projectId: string;
@@ -139,6 +197,9 @@ export class NotebookTerminalService {
     wsPath: string;
     wsTicket: string;
   }> {
+    if (this.countTaskSessions(input) >= this.maxSessionsPerTask) {
+      throw new Error('task_terminal_session_limit_reached');
+    }
     const sessionId = `term_${randomUUID().replace(/-/g, '')}`;
     const now = new Date().toISOString();
     this.sessions.set(sessionId, {
@@ -223,6 +284,58 @@ export class NotebookTerminalService {
     }
   }
 
+  async listSessionsForTask(input: {
+    workspaceId: string;
+    projectId: string;
+    taskId: string;
+    userId: string;
+  }): Promise<RegisteredTerminalSession[]> {
+    const sessions: RegisteredTerminalSession[] = [];
+    for (const session of this.sessions.values()) {
+      if (
+        session.workspaceId === input.workspaceId
+        && session.projectId === input.projectId
+        && session.taskId === input.taskId
+        && session.userId === input.userId
+        && this.isCountedTaskSessionStatus(session.status)
+      ) {
+        sessions.push(session);
+      }
+    }
+    sessions.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return sessions;
+  }
+
+  async deleteSession(input: {
+    workspaceId: string;
+    projectId: string;
+    taskId: string;
+    userId: string;
+    sessionId: string;
+  }): Promise<boolean> {
+    const session = this.sessions.get(input.sessionId);
+    if (!session) return false;
+    if (
+      session.workspaceId !== input.workspaceId
+      || session.projectId !== input.projectId
+      || session.taskId !== input.taskId
+      || session.userId !== input.userId
+    ) {
+      return false;
+    }
+    if (session.disconnectTimer) {
+      clearTimeout(session.disconnectTimer);
+      session.disconnectTimer = undefined;
+    }
+    this.clearStartupTimer(session);
+    session.runtime?.close();
+    this.closeBrowserSocket(session.browserSocket, 1000, 'terminal_closed_by_user');
+    this.finishSession(session.id, 'closed', 'ended_by_user');
+    this.sessions.delete(session.id);
+    await this.cache.del(this.sessionCacheKey(session.id));
+    return true;
+  }
+
   handleUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): void {
     const url = new URL(req.url ?? '', 'http://localhost');
     const matched = url.pathname.match(
@@ -292,6 +405,7 @@ export class NotebookTerminalService {
       session.status = session.status === 'failed' || session.status === 'closed'
         ? session.status
         : 'active';
+      this.clearStartupTimer(session);
     } else {
       session.status = 'pending';
     }
@@ -332,6 +446,7 @@ export class NotebookTerminalService {
         this.finishSession(session.id, 'failed', message);
         return;
       }
+      this.armStartupTimer(session);
     } else {
       this.sendToBrowserSocket(ws, {
         type: 'started',
@@ -389,9 +504,15 @@ export class NotebookTerminalService {
           type: event.type,
         });
         if (event.type === 'started') {
+          this.clearStartupTimer(session);
+          session.status = 'active';
+        }
+        if (event.type === 'output') {
+          this.clearStartupTimer(session);
           session.status = 'active';
         }
         if (event.type === 'exited' || event.type === 'error') {
+          this.clearStartupTimer(session);
           session.status = event.type === 'exited' ? 'closed' : 'failed';
           session.exitCode = typeof event.exit_code === 'number' ? event.exit_code : null;
           session.closeReason = event.type === 'exited'
@@ -465,6 +586,7 @@ export class NotebookTerminalService {
       clearTimeout(session.disconnectTimer);
       session.disconnectTimer = undefined;
     }
+    this.clearStartupTimer(session);
     session.status = status;
     const endedAt = new Date().toISOString();
     session.lastActivityAt = endedAt;

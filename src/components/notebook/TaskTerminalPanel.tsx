@@ -10,7 +10,7 @@ import type { TaskTerminalServerEvent } from '@/lib/types/task';
 import { toast } from '@/components/ui/toast';
 import { useTranslations } from 'next-intl';
 
-type TerminalStatus = 'idle' | 'preparing' | 'connecting' | 'active' | 'closed' | 'failed';
+export type TerminalStatus = 'idle' | 'preparing' | 'connecting' | 'active' | 'closed' | 'failed';
 
 type TerminalProgressReason = 'runner_offline' | 'run_in_progress' | null;
 
@@ -36,6 +36,7 @@ function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: st
 
 export interface TaskTerminalPanelProps {
   open: boolean;
+  visible?: boolean;
   workspaceId: string;
   projectId: string;
   taskId: string;
@@ -44,10 +45,12 @@ export interface TaskTerminalPanelProps {
   disabled?: boolean;
   closeRequestToken?: number;
   onOpenChange: (open: boolean) => void;
+  onStatusChange?: (status: TerminalStatus) => void;
 }
 
 export function TaskTerminalPanel({
   open,
+  visible = open,
   workspaceId,
   projectId,
   taskId,
@@ -56,6 +59,7 @@ export function TaskTerminalPanel({
   disabled = false,
   closeRequestToken = 0,
   onOpenChange,
+  onStatusChange,
 }: TaskTerminalPanelProps) {
   const t = useTranslations('notebook.task');
   const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -72,26 +76,43 @@ export function TaskTerminalPanel({
   const reconnectingRef = React.useRef(false);
   const fitFrameRef = React.useRef<number | null>(null);
   const closeRequestTokenRef = React.useRef(closeRequestToken);
-  const previousOpenRef = React.useRef(open);
+  const previousVisibleRef = React.useRef(visible);
   const pendingTerminalFocusRef = React.useRef(false);
+  const translationRef = React.useRef(t);
+  const taskTitleRef = React.useRef(taskTitle);
   const sessionStorageKey = React.useMemo(
     () => getTerminalSessionStorageKey(workspaceId, projectId, taskId),
     [projectId, taskId, workspaceId],
   );
 
   React.useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
+    translationRef.current = t;
+  }, [t]);
 
   React.useEffect(() => {
-    if (!previousOpenRef.current && open) {
+    taskTitleRef.current = taskTitle;
+  }, [taskTitle]);
+
+  React.useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+  const updateStatus = React.useCallback((nextStatus: TerminalStatus) => {
+    if (statusRef.current !== nextStatus) {
+      statusRef.current = nextStatus;
+      onStatusChange?.(nextStatus);
+    }
+    setStatus(nextStatus);
+  }, [onStatusChange]);
+
+  React.useEffect(() => {
+    if (!previousVisibleRef.current && open && visible) {
       pendingTerminalFocusRef.current = true;
     }
-    if (!open) {
+    if (!visible) {
       pendingTerminalFocusRef.current = false;
     }
-    previousOpenRef.current = open;
-  }, [open]);
+    previousVisibleRef.current = visible;
+  }, [open, visible]);
 
   const readStoredSessionId = React.useCallback(() => {
     if (typeof window === 'undefined') return null;
@@ -121,11 +142,11 @@ export function TaskTerminalPanel({
         const message = error instanceof Error ? error.message : 'task_terminal_session_create_failed';
         if (message.includes('task_runner_offline')) {
           setProgressReason('runner_offline');
-          setStatus('preparing');
+          updateStatus('preparing');
           setErrorMessage(null);
         } else if (message.includes('task_run_in_progress')) {
           setProgressReason('run_in_progress');
-          setStatus('preparing');
+          updateStatus('preparing');
           setErrorMessage(null);
         } else {
           throw error;
@@ -134,7 +155,7 @@ export function TaskTerminalPanel({
       }
     }
     throw lastError instanceof Error ? lastError : new Error('task_runner_offline');
-  }, [projectId, taskApi, taskId, workspaceId]);
+  }, [projectId, taskApi, taskId, updateStatus, workspaceId]);
 
   const resolveSession = React.useCallback(async () => {
     const storedSessionId = readStoredSessionId();
@@ -219,7 +240,7 @@ export function TaskTerminalPanel({
   }, [cleanupSocket]);
 
   React.useEffect(() => {
-    if (!open || !containerRef.current) return;
+    if (!open || !visible || !containerRef.current) return;
     if (!terminalRef.current) {
       const terminal = new Terminal({
         convertEol: true,
@@ -243,22 +264,24 @@ export function TaskTerminalPanel({
     return () => {
       disposeTerminal();
     };
-  }, [disposeTerminal, open, scheduleFit, t, taskTitle]);
+  }, [disposeTerminal, open, scheduleFit, t, taskTitle, visible]);
 
   React.useEffect(() => {
-    if (!open || disabled || !terminalRef.current || socketRef.current) return;
+    if (!open || !visible || disabled || !terminalRef.current || socketRef.current) return;
     let cancelled = false;
-    setStatus('connecting');
+    updateStatus('connecting');
     setErrorMessage(null);
     setProgressReason(null);
     explicitCloseRequestedRef.current = false;
 
     void resolveSession().then((session) => {
       if (cancelled || !terminalRef.current) return;
-      setStatus('connecting');
+      updateStatus('connecting');
       setProgressReason(null);
       terminalRef.current.writeln(
-        reconnectingRef.current ? t('terminal_reconnecting') : t('terminal_connecting'),
+        reconnectingRef.current
+          ? translationRef.current('terminal_reconnecting')
+          : translationRef.current('terminal_connecting'),
       );
       const socket = new WebSocket(session.wsUrl);
       socketRef.current = socket;
@@ -285,7 +308,7 @@ export function TaskTerminalPanel({
       window.addEventListener('resize', resizeHandler);
 
       socket.onopen = () => {
-        setStatus('connecting');
+        updateStatus('connecting');
         setErrorMessage(null);
         setProgressReason(null);
         reconnectingRef.current = false;
@@ -303,10 +326,10 @@ export function TaskTerminalPanel({
         }
         if (message.type === 'started') {
           if (!readyBannerWrittenRef.current && terminalRef.current) {
-            terminalRef.current.writeln(`${t('terminal_banner', { title: taskTitle })}\r\n`);
+            terminalRef.current.writeln(`${translationRef.current('terminal_banner', { title: taskTitleRef.current })}\r\n`);
             readyBannerWrittenRef.current = true;
           }
-          setStatus('active');
+          updateStatus('active');
           setErrorMessage(null);
           setProgressReason(null);
           scheduleFit();
@@ -315,11 +338,11 @@ export function TaskTerminalPanel({
         }
         if (message.type === 'output') {
           if (!readyBannerWrittenRef.current && terminalRef.current) {
-            terminalRef.current.writeln(`${t('terminal_banner', { title: taskTitle })}\r\n`);
+            terminalRef.current.writeln(`${translationRef.current('terminal_banner', { title: taskTitleRef.current })}\r\n`);
             readyBannerWrittenRef.current = true;
           }
           if (statusRef.current !== 'active') {
-            setStatus('active');
+            updateStatus('active');
             setErrorMessage(null);
             setProgressReason(null);
           }
@@ -329,25 +352,25 @@ export function TaskTerminalPanel({
           return;
         }
         if (message.type === 'exited') {
-          setStatus('closed');
+          updateStatus('closed');
           clearStoredSessionId();
-          terminalRef.current.writeln(`\r\n${t('terminal_closed')}`);
+          terminalRef.current.writeln(`\r\n${translationRef.current('terminal_closed')}`);
           if (explicitCloseRequestedRef.current) {
             onOpenChange(false);
           }
           return;
         }
         if (message.type === 'error') {
-          setStatus('failed');
-          const friendlyReason = describeTerminalError(t, message.error_message);
+          updateStatus('failed');
+          const friendlyReason = describeTerminalError(translationRef.current, message.error_message);
           setErrorMessage(friendlyReason);
           setProgressReason(null);
-          terminalRef.current.writeln(`\r\n${t('terminal_failed', { reason: friendlyReason })}`);
+          terminalRef.current.writeln(`\r\n${translationRef.current('terminal_failed', { reason: friendlyReason })}`);
         }
       };
       socket.onerror = () => {
-        setStatus('failed');
-        setErrorMessage(t('terminal_error_connection_failed'));
+        updateStatus('failed');
+        setErrorMessage(translationRef.current('terminal_error_connection_failed'));
         setProgressReason(null);
       };
       socket.onclose = (event) => {
@@ -355,21 +378,21 @@ export function TaskTerminalPanel({
         if (cancelled) return;
         if (explicitCloseRequestedRef.current) {
           clearStoredSessionId();
-          setStatus('closed');
+          updateStatus('closed');
           onOpenChange(false);
           return;
         }
         if (event.reason === 'terminal_replaced') {
-          setStatus('failed');
-          setErrorMessage(t('terminal_error_taken_over'));
+          updateStatus('failed');
+          setErrorMessage(translationRef.current('terminal_error_taken_over'));
           return;
         }
-        setStatus((current) => current === 'failed' ? 'failed' : 'closed');
+        updateStatus(statusRef.current === 'failed' ? 'failed' : 'closed');
       };
     }).catch((error) => {
       const message = error instanceof Error ? error.message : 'task_terminal_session_create_failed';
-      const friendlyReason = describeTerminalError(t, message);
-      setStatus('failed');
+      const friendlyReason = describeTerminalError(translationRef.current, message);
+      updateStatus('failed');
       setErrorMessage(friendlyReason);
       setProgressReason(null);
       clearStoredSessionId();
@@ -386,22 +409,22 @@ export function TaskTerminalPanel({
     disabled,
     focusTerminalIfRequested,
     onOpenChange,
+    updateStatus,
     open,
     resolveSession,
     scheduleFit,
-    t,
-    taskTitle,
+    visible,
   ]);
 
   const handleEndSession = React.useCallback(() => {
     explicitCloseRequestedRef.current = true;
     setErrorMessage(null);
     setProgressReason(null);
+    clearStoredSessionId();
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'terminal.close' }));
       return;
     }
-    clearStoredSessionId();
     onOpenChange(false);
   }, [clearStoredSessionId, onOpenChange]);
 
@@ -417,7 +440,7 @@ export function TaskTerminalPanel({
     }
   }, [closeRequestToken, handleEndSession, open]);
 
-  if (!open) return null;
+  if (!open || !visible) return null;
 
   return (
     <div
@@ -457,7 +480,7 @@ export function TaskTerminalPanel({
               className="h-7 shrink-0 border-error/30 bg-background/70 px-2.5 text-[11px] text-error hover:bg-background"
               onClick={handleEndSession}
             >
-              {t('terminal_recovery_close')}
+              {t('terminal_close')}
             </Button>
           </div>
         </div>

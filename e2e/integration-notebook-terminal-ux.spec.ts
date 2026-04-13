@@ -25,13 +25,15 @@ const TERMINAL_SESSION_ROUTE = new RegExp(`${API_BASE.replace(/[.*+?^${}()|[\]\\
 const NOTEBOOK_TERMINAL_STORY = loadStoryDefinitionSync('notebook-terminal-day-to-day-and-recovery');
 const NOTEBOOK_TERMINAL_BINDING = buildTraceStoryBinding(NOTEBOOK_TERMINAL_STORY);
 
-type TerminalRouteMode = 'warmup' | 'failure' | 'recovery';
-
 type TerminalReadyTask = {
   projectId: string;
   taskId: string;
-  stopRunner: () => Promise<void>;
-  runnerLogPath: string;
+  agentId: string;
+  runnerBundle: {
+    wsUrl: string;
+    agentKey: string;
+  };
+  runner: Awaited<ReturnType<typeof startCodexRunnerProcess>>;
 };
 
 function resolveTerminalStep(stepId: string) {
@@ -88,8 +90,12 @@ async function prepareTerminalReadyTask(page: Page): Promise<TerminalReadyTask> 
   return {
     projectId,
     taskId,
-    stopRunner: runner.stop,
-    runnerLogPath: runner.logPath,
+    agentId: agentBundle.agentId,
+    runnerBundle: {
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+    },
+    runner,
   };
 }
 
@@ -107,7 +113,26 @@ test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
     test.setTimeout(480_000);
 
     const terminalTask = await prepareTerminalReadyTask(page);
-    test.info().annotations.push({ type: 'codex_runner_log', description: terminalTask.runnerLogPath });
+    let activeRunner = terminalTask.runner;
+    let runnerStopped = false;
+    const stopActiveRunner = async () => {
+      if (runnerStopped) {
+        return;
+      }
+      runnerStopped = true;
+      await activeRunner.stop();
+    };
+    const restartRunner = async () => {
+      const restartedRunner = await startCodexRunnerProcess({
+        wsUrl: terminalTask.runnerBundle.wsUrl,
+        agentKey: terminalTask.runnerBundle.agentKey,
+      });
+      activeRunner = restartedRunner;
+      runnerStopped = false;
+      test.info().annotations.push({ type: 'codex_runner_log', description: restartedRunner.logPath });
+      await waitForAgentPresenceOnline(page, WORKSPACE_ID, terminalTask.projectId, terminalTask.agentId);
+    };
+    test.info().annotations.push({ type: 'codex_runner_log', description: terminalTask.runner.logPath });
 
     const trace = await createUxTraceBundleWriter({
       outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
@@ -134,7 +159,6 @@ test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
       });
     };
 
-    let routeMode: TerminalRouteMode = 'warmup';
     let warmupIntercepted = 0;
     let outcome: 'pass' | 'fail' = 'fail';
 
@@ -143,7 +167,7 @@ test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
         await route.continue();
         return;
       }
-      if (routeMode === 'warmup' && warmupIntercepted < 2) {
+      if (warmupIntercepted < 2) {
         warmupIntercepted += 1;
         await route.fulfill({
           status: 409,
@@ -151,17 +175,6 @@ test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
           body: JSON.stringify({
             error_code: 'RESOURCE_CONFLICT',
             message: 'task_runner_offline',
-          }),
-        });
-        return;
-      }
-      if (routeMode === 'failure') {
-        await route.fulfill({
-          status: 409,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            error_code: 'RESOURCE_CONFLICT',
-            message: 'task_agent_not_available',
           }),
         });
         return;
@@ -184,38 +197,59 @@ test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
       await expect(panel).toBeVisible({ timeout: 30_000 });
       await captureTerminalTrace(page, 'open-terminal-for-follow-up-work');
 
-      await expect(panel).toContainText('Preparing', { timeout: 10_000 });
-      await expect(panel).toContainText('Preparing the task environment before opening the terminal...', { timeout: 10_000 });
+      await expect
+        .poll(async () => (await panel.textContent()) ?? '', { timeout: 10_000 })
+        .toMatch(/Preparing|Connecting/);
       await captureTerminalTrace(page, 'stay-oriented-during-runner-warmup');
 
       await waitForTerminalReady(panel);
       await expect(terminalToggle).toContainText('Hide Terminal');
       await expect(page.getByTestId('notebook__conversation-input').getByRole('textbox')).toHaveAttribute(
         'placeholder',
-        'Close Terminal before starting a new agent run...',
+        'End Terminal Session before starting a new agent run...',
       );
       await expect(panel.locator('.xterm-screen')).toBeVisible({ timeout: 30_000 });
+      await terminalToggle.click();
+      await expect(panel).toHaveCount(0, { timeout: 30_000 });
+      const hiddenNotice = page.getByTestId('notebook__task-terminal-notice');
+      await expect(hiddenNotice).toBeVisible({ timeout: 30_000 });
+      await expect(hiddenNotice).toContainText('Terminal session still active');
+      await expect(hiddenNotice).toContainText(
+        'The terminal is hidden, but it still blocks new agent runs until you show it again or end the session.',
+      );
+      await captureTerminalTrace(page, 'hide-terminal-without-ending-session');
+
+      await hiddenNotice.getByRole('button', { name: 'Show Terminal' }).click();
+      await expect(panel).toBeVisible({ timeout: 30_000 });
+      await expect(panel.locator('.xterm-screen')).toBeVisible({ timeout: 30_000 });
+      await captureTerminalTrace(page, 'show-hidden-terminal-session');
+
       await page.getByTestId('notebook__task-header-terminal-close').click();
       await expect(panel).toHaveCount(0, { timeout: 30_000 });
-
-      routeMode = 'failure';
       await expect(terminalToggle).toHaveText('Open Terminal', { timeout: 30_000 });
-      await terminalToggle.click();
+      await captureTerminalTrace(page, 'end-terminal-session-before-new-run');
+
+      await stopActiveRunner();
+      await page.reload();
+      await expect(page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
+      await captureTerminalTrace(page, 'return-to-notebook-task');
+
+      await page.getByTestId('notebook__task-header-terminal').click();
 
       const failedPanel = page.getByTestId('notebook__task-terminal');
       await expect(failedPanel).toBeVisible({ timeout: 30_000 });
-      await expect(failedPanel).toContainText('Failed', { timeout: 10_000 });
+      await expect(failedPanel).toContainText('Failed', { timeout: 30_000 });
       await expect(failedPanel).toContainText("This task's runner is not available right now.");
       await expect(failedPanel).toContainText(
-        'Close this terminal, then reopen it from the task header when you are ready to retry.',
+        'End this terminal session, then reopen it from the task header when you are ready to retry.',
       );
       await page.screenshot({ path: testInfo.outputPath('notebook-terminal-recovery-guidance.png'), fullPage: true });
       await captureTerminalTrace(page, 'see-clear-terminal-recovery-guidance');
 
-      await failedPanel.getByRole('button', { name: 'Close failed terminal' }).click();
+      await failedPanel.getByRole('button', { name: 'End Session' }).click();
       await expect(failedPanel).toHaveCount(0, { timeout: 30_000 });
 
-      routeMode = 'recovery';
+      await restartRunner();
       await expect(terminalToggle).toHaveText('Open Terminal', { timeout: 30_000 });
       await terminalToggle.click();
       const recoveredPanel = page.getByTestId('notebook__task-terminal');
@@ -227,7 +261,7 @@ test.describe.serial('@lane-real notebook terminal UX walkthrough', () => {
       outcome = 'pass';
     } finally {
       await trace.finish({ outcome });
-      await terminalTask.stopRunner();
+      await stopActiveRunner();
     }
   });
 });

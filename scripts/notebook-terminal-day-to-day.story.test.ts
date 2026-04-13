@@ -22,12 +22,16 @@ describe('notebook terminal day-to-day and recovery story', () => {
     });
     expect(story.goal).toContain('继续工作');
     expect(story.goal).toContain('恢复');
+    expect(story.goal).toContain('隐藏');
     expect(story.goal).not.toContain('TaskTerminalPanel');
     expect(story.goal).not.toContain('terminal/sessions');
     expect(story.steps.map((step) => step.stepId)).toEqual([
       'return-to-notebook-task',
       'open-terminal-for-follow-up-work',
       'stay-oriented-during-runner-warmup',
+      'hide-terminal-without-ending-session',
+      'show-hidden-terminal-session',
+      'end-terminal-session-before-new-run',
       'see-clear-terminal-recovery-guidance',
       'recover-terminal-after-guidance',
     ]);
@@ -45,7 +49,14 @@ describe('notebook terminal day-to-day and recovery story', () => {
     expect(source).toContain("captureTerminalTrace(page, 'return-to-notebook-task')");
     expect(source).toContain("captureTerminalTrace(page, 'open-terminal-for-follow-up-work')");
     expect(source).toContain("captureTerminalTrace(page, 'stay-oriented-during-runner-warmup')");
+    expect(source).toContain("captureTerminalTrace(page, 'hide-terminal-without-ending-session')");
+    expect(source).toContain("captureTerminalTrace(page, 'show-hidden-terminal-session')");
+    expect(source).toContain("captureTerminalTrace(page, 'end-terminal-session-before-new-run')");
+    expect(source).toContain('Terminal session still active');
     expect(source).toContain("captureTerminalTrace(page, 'see-clear-terminal-recovery-guidance')");
     expect(source).toContain("captureTerminalTrace(page, 'recover-terminal-after-guidance')");
+    expect(source).toContain('End Session');
+    expect(source).not.toContain('Close failed terminal');
+    expect(source).not.toContain('Close this terminal, then reopen it from the task header when you are ready to retry.');
   });
 });

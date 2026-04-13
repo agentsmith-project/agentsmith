@@ -73,6 +73,7 @@ interface TaskPageContentProps {
   projectId: string;
   taskId: string;
   terminalPanel?: React.ReactNode;
+  terminalNotice?: React.ReactNode;
   inputPlaceholder?: string;
 }
 
@@ -113,6 +114,7 @@ export function TaskPageContent({
   streamingMessageId,
   taskId: _taskId,
   terminalPanel,
+  terminalNotice,
   inputPlaceholder,
   traceErrorByMessageId,
   traceEventsByMessageId,
@@ -124,6 +126,7 @@ export function TaskPageContent({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.03),_transparent_40%)]">
       {terminalPanel}
+      {terminalNotice}
       <div className="mt-3 flex min-h-0 flex-1 gap-3 overflow-hidden">
         <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border border-subtle bg-surface/70 p-1.5 shadow-ambient">
           {showSseDebugPanel ? (

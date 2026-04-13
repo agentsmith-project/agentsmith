@@ -26,6 +26,7 @@ const {
   latestTaskSseOptionsRef,
   latestConversationPanelPropsRef,
   latestTaskHeaderPropsRef,
+  latestTaskTerminalPanelPropsRef,
   latestUseTaskArtifactsArgsRef,
   mockTaskApiCancelRun,
 } = vi.hoisted(() => ({
@@ -39,6 +40,7 @@ const {
   latestTaskSseOptionsRef: { current: null as any },
   latestConversationPanelPropsRef: { current: null as any },
   latestTaskHeaderPropsRef: { current: null as any },
+  latestTaskTerminalPanelPropsRef: { current: null as any },
   latestUseTaskArtifactsArgsRef: { current: null as any },
   mockTaskApiCancelRun: vi.fn(),
 }));
@@ -59,8 +61,15 @@ vi.mock('next-intl', () => ({
       'notebook.conversation.send_conflict_title': 'Task run still in progress',
       'notebook.conversation.send_conflict_description': 'The previous turn has not finished yet. Wait for it to complete before sending.',
       'notebook.conversation.agent_offline_send_blocked': 'Agent is offline. Start/reconnect the external agent execution channel before sending.',
-      'notebook.task.terminal_agent_run_blocked': 'Close the terminal session before starting a new agent run.',
-      'notebook.task.terminal_input_blocked_placeholder': 'Close Terminal before starting a new agent run...',
+      'notebook.task.terminal_agent_run_blocked': 'End the terminal session before starting a new agent run.',
+      'notebook.task.terminal_input_blocked_placeholder': 'End Terminal Session before starting a new agent run...',
+      'notebook.task.terminal_hidden_active_title': 'Terminal session still active',
+      'notebook.task.terminal_hidden_active_description': 'The terminal is hidden, but it still blocks new agent runs until you show it again or end the session.',
+      'notebook.task.terminal_hidden_failed_title': 'Terminal needs recovery',
+      'notebook.task.terminal_hidden_failed_description': 'The last terminal session failed. Reopen it to review the failure or end the session before starting a new run.',
+      'notebook.task.terminal_show': 'Show Terminal',
+      'notebook.task.terminal_recovery_show': 'Show Recovery',
+      'notebook.task.terminal_close': 'End Session',
     };
     const scoped = namespace ? `${namespace}.${key}` : key;
     return dict[scoped] ?? scoped;
@@ -154,11 +163,15 @@ vi.mock('../TaskHeader', () => ({
 }));
 
 vi.mock('../TaskTerminalPanel', () => ({
-  TaskTerminalPanel: ({ open, onOpenChange }: any) => (open ? (
-    <div data-testid="task-terminal-panel">
-      <button onClick={() => onOpenChange(false)}>Close Terminal</button>
-    </div>
-  ) : null),
+  TaskTerminalPanel: (props: any) => {
+    latestTaskTerminalPanelPropsRef.current = props;
+    const visible = props.visible ?? props.open;
+    return (props.open && visible) ? (
+      <div data-testid="task-terminal-panel">
+        <button onClick={() => props.onOpenChange(false)}>Close Terminal</button>
+      </div>
+    ) : null;
+  },
 }));
 
 vi.mock('../ConversationPanel', () => ({
@@ -409,8 +422,7 @@ describe('TaskPage', () => {
       });
     });
 
-    it('opens and closes terminal panel from task header action', async () => {
-      const user = userEvent.setup();
+    it('opens, hides, and then fully closes the terminal session from the task header flow', async () => {
       renderComponent();
 
       expect(screen.queryByTestId('task-terminal-panel')).not.toBeInTheDocument();
@@ -420,11 +432,54 @@ describe('TaskPage', () => {
       });
 
       expect(screen.getByTestId('task-terminal-panel')).toBeInTheDocument();
+      expect(latestTaskHeaderPropsRef.current.hasTerminalSession).toBe(true);
+      expect(latestTaskHeaderPropsRef.current.terminalOpen).toBe(true);
       expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
-        'Close Terminal before starting a new agent run...',
+        'End Terminal Session before starting a new agent run...',
       );
-      await user.click(screen.getByText('Close Terminal'));
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onToggleTerminal();
+      });
+
       expect(screen.queryByTestId('task-terminal-panel')).not.toBeInTheDocument();
+      expect(latestTaskHeaderPropsRef.current.hasTerminalSession).toBe(true);
+      expect(latestTaskHeaderPropsRef.current.terminalOpen).toBe(false);
+      expect(screen.getByTestId('notebook__task-terminal-notice')).toHaveTextContent('Terminal session still active');
+      expect(screen.getByTestId('notebook__task-terminal-notice')).toHaveTextContent(
+        'The terminal is hidden, but it still blocks new agent runs until you show it again or end the session.',
+      );
+      expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
+        'End Terminal Session before starting a new agent run...',
+      );
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCloseTerminalSession();
+        latestTaskTerminalPanelPropsRef.current.onOpenChange(false);
+      });
+
+      expect(latestTaskHeaderPropsRef.current.hasTerminalSession).toBe(false);
+      expect(latestTaskHeaderPropsRef.current.terminalOpen).toBe(false);
+      expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBeUndefined();
+    });
+
+    it('shows a recovery notice when a failed terminal session is hidden', async () => {
+      renderComponent();
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onToggleTerminal();
+      });
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onStatusChange('failed');
+      });
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onToggleTerminal();
+      });
+
+      expect(latestTaskHeaderPropsRef.current.terminalStatus).toBe('failed');
+      expect(screen.getByTestId('notebook__task-terminal-notice')).toHaveTextContent('Terminal needs recovery');
+      expect(screen.getByRole('button', { name: 'Show Recovery' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'End Session' })).toBeInTheDocument();
     });
 
     it('disables terminal opening while a send is already pending', () => {

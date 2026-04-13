@@ -43,8 +43,12 @@ vi.mock('next-intl', () => ({
       'workspace_file_library_label': 'Workspace',
       'workspace_file_library_unknown': 'No Workspace Library',
       'terminal_open': 'Open Terminal',
+      'terminal_show': 'Show Terminal',
       'terminal_hide': 'Hide Terminal',
-      'terminal_close': 'Close terminal',
+      'terminal_recovery_show': 'Show Recovery',
+      'terminal_close': 'End Session',
+      'terminal_session_active_badge': 'Terminal Active',
+      'terminal_session_attention_badge': 'Recovery Needed',
     };
     return translations[key] || key;
   },
@@ -143,21 +147,62 @@ describe('TaskHeader', () => {
       renderComponent(mockTask, {
         onToggleTerminal: vi.fn(),
         canOpenTerminal: true,
+        hasTerminalSession: true,
         terminalOpen: true,
       });
 
       expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Hide Terminal');
     });
 
-    it('renders close terminal action next to hide when terminal is open', () => {
+    it('renders show terminal label when the session exists but the panel is hidden', () => {
+      renderComponent(mockTask, {
+        onToggleTerminal: vi.fn(),
+        hasTerminalSession: true,
+        canOpenTerminal: false,
+        terminalOpen: false,
+      });
+
+      expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Show Terminal');
+      expect(screen.getByTestId('notebook__task-header-terminal')).toBeEnabled();
+    });
+
+    it('renders close terminal action whenever a terminal session exists', () => {
       renderComponent(mockTask, {
         onToggleTerminal: vi.fn(),
         onCloseTerminalSession: vi.fn(),
         canOpenTerminal: true,
-        terminalOpen: true,
+        hasTerminalSession: true,
+        terminalOpen: false,
+        terminalStatus: 'active' as const,
       });
 
-      expect(screen.getByTestId('notebook__task-header-terminal-close')).toHaveTextContent('Close terminal');
+      expect(screen.getByTestId('notebook__task-header-terminal-close')).toHaveTextContent('End Session');
+    });
+
+    it('shows an active-session badge when the terminal is hidden but still blocking new runs', () => {
+      renderComponent(mockTask, {
+        onToggleTerminal: vi.fn(),
+        onCloseTerminalSession: vi.fn(),
+        hasTerminalSession: true,
+        terminalOpen: false,
+        terminalStatus: 'active' as const,
+      });
+
+      expect(screen.getByTestId('notebook__task-header-terminal-status')).toHaveTextContent('Terminal Active');
+      expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Show Terminal');
+    });
+
+    it('prefers recovery language when a failed terminal session is hidden', () => {
+      renderComponent(mockTask, {
+        onToggleTerminal: vi.fn(),
+        onCloseTerminalSession: vi.fn(),
+        hasTerminalSession: true,
+        terminalOpen: false,
+        terminalStatus: 'failed' as const,
+      });
+
+      expect(screen.getByTestId('notebook__task-header-terminal-status')).toHaveTextContent('Recovery Needed');
+      expect(screen.getByTestId('notebook__task-header-terminal')).toHaveTextContent('Show Recovery');
     });
 
     it('exposes disabled reason when terminal access is unavailable', () => {
@@ -341,7 +386,7 @@ describe('TaskHeader', () => {
       const { container } = renderComponent();
 
       const header = container.querySelector('[data-testid="notebook__task-header"]');
-      expect(header).toHaveClass('border-b', 'border-white/6', 'bg-surface/55');
+      expect(header).toHaveClass('border-b', 'border-subtle', 'bg-surface/55');
     });
 
     it('renders action buttons in correct order', () => {

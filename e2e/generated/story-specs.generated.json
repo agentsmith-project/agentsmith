@@ -1121,11 +1121,11 @@
     ],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/{workspaceId}/login",
-    "goal": "项目成员回到已有 notebook 任务继续工作时，terminal 应该在 runner 预热期间保持清晰可理解；如果这次打开失败，界面必须明确告诉用户下一步，并让他在同一条任务流里恢复成功。",
+    "goal": "项目成员回到已有 notebook 任务继续工作时，terminal 应该在 runner 预热期间保持清晰可理解；用户可以先把终端隐藏但保留会话、再重新显示，只有结束会话后才真正释放任务；如果这次打开失败，界面必须明确告诉用户下一步，并让他在同一条任务流里恢复成功。",
     "sourceRef": "e2e/stories/backend-real/notebook-terminal-day-to-day-and-recovery.story.md#notebook-terminal-day-to-day-and-recovery",
-    "sourceFingerprint": "fef18c39ebf2f282ec5db1471551038d0a480d9e87e6466dbfc6d28ec55910db",
-    "storyFingerprint": "bd6a8028aff130b313da3aad45304814eaf0e10956ed8a57234a466c50eb2ff3",
-    "stepMapFingerprint": "b1be894506f77018f1e6fab1c0275a8bf6ceb688cf3eaafa09105f89a024562c",
+    "sourceFingerprint": "352558a5bb5dc81d86f137b507c043ced78561269dce8ef0a4ade091ab18023e",
+    "storyFingerprint": "cb5545a034d55be2a4dd4433726a6d15da77fd57765c56cba38d5816d636cb20",
+    "stepMapFingerprint": "afb91e9a95c05af5704426a68873f98eb4b94fcbe45cb3853f314cb45cf0af3c",
     "sceneIds": [
       "notebook-task"
     ],
@@ -1133,6 +1133,9 @@
       "return-to-notebook-task",
       "open-terminal-for-follow-up-work",
       "stay-oriented-during-runner-warmup",
+      "hide-terminal-without-ending-session",
+      "show-hidden-terminal-session",
+      "end-terminal-session-before-new-run",
       "see-clear-terminal-recovery-guidance",
       "recover-terminal-after-guidance"
     ],
@@ -1140,6 +1143,9 @@
       "return-to-notebook-task",
       "open-terminal-for-follow-up-work",
       "stay-oriented-during-runner-warmup",
+      "hide-terminal-without-ending-session",
+      "show-hidden-terminal-session",
+      "end-terminal-session-before-new-run",
       "see-clear-terminal-recovery-guidance",
       "recover-terminal-after-guidance"
     ],

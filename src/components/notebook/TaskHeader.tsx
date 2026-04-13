@@ -34,7 +34,9 @@ export interface TaskHeaderProps {
   agentRunActivity?: { active: boolean; elapsedSeconds: number } | null;
   canDeleteTask?: boolean;
   canOpenTerminal?: boolean;
+  hasTerminalSession?: boolean;
   terminalOpen?: boolean;
+  terminalStatus?: 'idle' | 'preparing' | 'connecting' | 'active' | 'closed' | 'failed';
   terminalDisabledReason?: string | null;
   onCloseTerminalSession?: () => void;
   onCreateNew?: () => void;
@@ -53,7 +55,9 @@ export function TaskHeader({
   agentRunActivity = null,
   canDeleteTask = true,
   canOpenTerminal = false,
+  hasTerminalSession = false,
   terminalOpen = false,
+  terminalStatus = 'idle',
   terminalDisabledReason = null,
   onCloseTerminalSession,
   onCreateNew,
@@ -128,6 +132,19 @@ export function TaskHeader({
         : t('agent_mode_unknown')
   );
   const workspaceFileLibraryName = task.workspace_file_library_name?.trim() || t('workspace_file_library_unknown');
+  const canToggleTerminal = hasTerminalSession || canOpenTerminal;
+  const terminalToggleLabel = hasTerminalSession
+    ? terminalOpen
+      ? t('terminal_hide')
+      : terminalStatus === 'failed'
+        ? t('terminal_recovery_show')
+        : t('terminal_show')
+    : t('terminal_open');
+  const shouldShowTerminalStatus = hasTerminalSession && !terminalOpen;
+  const terminalStatusLabel = terminalStatus === 'failed'
+    ? t('terminal_session_attention_badge')
+    : t('terminal_session_active_badge');
+  const terminalStatusVariant: 'secondary' | 'destructive' = terminalStatus === 'failed' ? 'destructive' : 'secondary';
 
   return (
     <div
@@ -179,6 +196,15 @@ export function TaskHeader({
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-2">
+        {shouldShowTerminalStatus ? (
+          <Badge
+            variant={terminalStatusVariant}
+            className="text-[11px]"
+            data-testid="notebook__task-header-terminal-status"
+          >
+            {terminalStatusLabel}
+          </Badge>
+        ) : null}
         {onEdit && (
           <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={onEdit}>
             <Pencil className="h-4 w-4 mr-2" />
@@ -191,15 +217,15 @@ export function TaskHeader({
             size="sm"
             className="h-8 px-2.5 text-xs"
             onClick={onToggleTerminal}
-            disabled={!canOpenTerminal}
-            title={!canOpenTerminal ? terminalDisabledReason ?? undefined : undefined}
+            disabled={!canToggleTerminal}
+            title={!canToggleTerminal ? terminalDisabledReason ?? undefined : undefined}
             data-testid="notebook__task-header-terminal"
           >
             <TerminalSquare className="mr-2 h-4 w-4" />
-            {t(terminalOpen ? 'terminal_hide' : 'terminal_open')}
+            {terminalToggleLabel}
           </Button>
         ) : null}
-        {terminalOpen && onCloseTerminalSession ? (
+        {hasTerminalSession && onCloseTerminalSession ? (
           <Button
             variant="outline"
             size="sm"

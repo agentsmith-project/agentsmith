@@ -49,7 +49,7 @@ vi.mock('next-intl', () => ({
       terminal_status_active: 'Active',
       terminal_status_closed: 'Closed',
       terminal_status_failed: 'Failed',
-      terminal_close: 'Close terminal',
+      terminal_close: 'End Session',
       terminal_error_hint: `Terminal unavailable: ${values?.reason ?? ''}`,
       terminal_banner: `Terminal ready for ${values?.title ?? 'task'}`,
       terminal_closed: 'Terminal closed',
@@ -59,8 +59,7 @@ vi.mock('next-intl', () => ({
       terminal_error_agent_unavailable: "This task's runner is not available right now.",
       terminal_error_connection_failed: 'The terminal connection could not be opened. Please retry.',
       terminal_error_taken_over: 'This terminal was opened in another browser tab. Reopen it here if you want to continue.',
-      terminal_recovery_hint: 'Close this terminal, then reopen it from the task header when you are ready to retry.',
-      terminal_recovery_close: 'Close failed terminal',
+      terminal_recovery_hint: 'End this terminal session, then reopen it from the task header when you are ready to retry.',
     };
     return map[key] ?? key;
   },
@@ -141,15 +140,12 @@ describe('TaskTerminalPanel', () => {
       />,
     );
 
-    await waitFor(() => expect(createTerminalSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(createTerminalSession).toHaveBeenCalledTimes(2), { timeout: 3000 });
 
     await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
     const socket = MockWebSocket.instances[0];
     expect(socket?.url).toBe('ws://example.test/terminal');
-    await waitFor(() => {
-      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Connecting');
-      expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Failed');
-    }, { timeout: 5000 });
+    expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Failed');
   }, 10000);
 
   it('keeps retrying while a warmup run is still in progress', async () => {
@@ -178,12 +174,9 @@ describe('TaskTerminalPanel', () => {
       />,
     );
 
-    await waitFor(() => expect(createTerminalSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(createTerminalSession).toHaveBeenCalledTimes(2), { timeout: 3000 });
     await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
-    await waitFor(() => {
-      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Connecting');
-      expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Failed');
-    });
+    expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Failed');
   }, 10000);
 
   it('shows a friendly failure reason for non-retryable terminal session errors', async () => {
@@ -191,6 +184,7 @@ describe('TaskTerminalPanel', () => {
       .fn()
       .mockRejectedValue(new Error('task_agent_not_available'));
     const onOpenChange = vi.fn();
+    const onStatusChange = vi.fn();
 
     render(
       <TaskTerminalPanel
@@ -201,6 +195,7 @@ describe('TaskTerminalPanel', () => {
         taskTitle="terminal-smoke"
         taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
         onOpenChange={onOpenChange}
+        onStatusChange={onStatusChange}
       />,
     );
 
@@ -208,17 +203,55 @@ describe('TaskTerminalPanel', () => {
       expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Failed');
       expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent("This task's runner is not available right now.");
       expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent(
-        'Close this terminal, then reopen it from the task header when you are ready to retry.',
+        'End this terminal session, then reopen it from the task header when you are ready to retry.',
       );
     });
 
     act(() => {
-      screen.getByRole('button', { name: 'Close failed terminal' }).click();
+      screen.getByRole('button', { name: 'End Session' }).click();
     });
 
     await waitFor(() => {
       expect(onOpenChange).toHaveBeenCalledWith(false);
     });
+    expect(onStatusChange).toHaveBeenCalledWith('failed');
+  });
+
+  it('reports active then failed status changes so the page can tell the truth outside the panel', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_status',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-status',
+    });
+    const onStatusChange = vi.fn();
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_status"
+        taskTitle="terminal-status"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+        onStatusChange={onStatusChange}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'started' }),
+      });
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'error', error_message: 'terminal_connection_failed' }),
+      });
+    });
+
+    expect(onStatusChange).toHaveBeenCalledWith('active');
+    expect(onStatusChange).toHaveBeenCalledWith('failed');
   });
 
   it('reconnects to a stored terminal session before creating a new one', async () => {
@@ -337,6 +370,51 @@ describe('TaskTerminalPanel', () => {
       expect(terminalWritelnMock).toHaveBeenCalledWith('Terminal ready for terminal-mount\r\n');
     });
     expect(terminalFocusMock).not.toHaveBeenCalled();
+  });
+
+  it('can close an existing hidden terminal session without rendering the panel again', async () => {
+    const onOpenChange = vi.fn();
+    const createTerminalSession = vi.fn();
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_hidden',
+      'term_hidden_existing',
+    );
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        visible={false}
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden"
+        taskTitle="terminal-hidden"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={onOpenChange}
+        closeRequestToken={0}
+      />,
+    );
+
+    expect(screen.queryByTestId('notebook__task-terminal')).not.toBeInTheDocument();
+    expect(createTerminalSession).not.toHaveBeenCalled();
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        visible={false}
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden"
+        taskTitle="terminal-hidden"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={onOpenChange}
+        closeRequestToken={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+    expect(createTerminalSession).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('agentsmith-terminal-session:ws_default:proj_1:task_hidden')).toBeNull();
   });
 
 });

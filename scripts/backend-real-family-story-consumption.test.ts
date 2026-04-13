@@ -49,6 +49,7 @@ describe('backend-real family story consumption', () => {
     const filesCrudSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-files.spec.ts'), 'utf-8');
     const filesSyncSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-files-mount-sync.spec.ts'), 'utf-8');
     const notebookSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-notebook-codex-runner.spec.ts'), 'utf-8');
+    const notebookTerminalSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-notebook-terminal-ux.spec.ts'), 'utf-8');
     const apiKeySource = await readFile(path.resolve(process.cwd(), 'e2e/integration-api-key-gateway.spec.ts'), 'utf-8');
     const contextSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-context-store-isolation.spec.ts'), 'utf-8');
     const filesSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-files-management-ux.spec.ts'), 'utf-8');
@@ -80,6 +81,17 @@ describe('backend-real family story consumption', () => {
     expect(notebookSource).toContain('buildTraceStoryBinding');
     expect(notebookSource).toContain("].join('\\n')");
     expect(notebookSource).not.toContain('North America consumer electronics');
+
+    expect(notebookTerminalSource).toContain("loadStoryDefinitionSync('notebook-terminal-day-to-day-and-recovery')");
+    expect(notebookTerminalSource).toContain('buildTraceStoryBinding');
+    expect(notebookTerminalSource).toContain('createUxTraceBundleWriter');
+    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'hide-terminal-without-ending-session')");
+    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'show-hidden-terminal-session')");
+    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'end-terminal-session-before-new-run')");
+    expect(notebookTerminalSource).toContain('Terminal session still active');
+    expect(notebookTerminalSource).toContain('End Session');
+    expect(notebookTerminalSource).not.toContain('Close failed terminal');
+    expect(notebookTerminalSource).not.toContain('Close this terminal, then reopen it from the task header when you are ready to retry.');
 
     expect(apiKeySource).toContain("loadStoryDefinitionSync('api-key-to-endpoint-consumption')");
     expect(apiKeySource).toContain('buildTraceStoryBinding');

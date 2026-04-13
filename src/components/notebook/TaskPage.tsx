@@ -40,6 +40,7 @@ import { useTaskTraceState } from "@/components/notebook/task-page/useTaskTraceS
 import { useTaskInputActions } from "@/components/notebook/task-page/useTaskInputActions";
 import { getPublicRuntimeConfig } from "@/lib/public-runtime-config";
 import { makeClientId } from "@/lib/chat/ids";
+import type { TerminalStatus } from "./TaskTerminalPanel";
 
 export interface TaskPageProps {
   workspaceId: string;
@@ -98,7 +99,9 @@ export function TaskPage({
   const [realtimeFailureMessage, setRealtimeFailureMessage] = React.useState<
     string | null
   >(null);
+  const [hasTerminalSession, setHasTerminalSession] = React.useState(false);
   const [terminalOpen, setTerminalOpen] = React.useState(false);
+  const [terminalStatus, setTerminalStatus] = React.useState<TerminalStatus>("idle");
   const [terminalCloseRequestToken, setTerminalCloseRequestToken] = React.useState(0);
 
   const queryClient = useQueryClient();
@@ -560,7 +563,7 @@ export function TaskPage({
   const handleSendMessage = async (content: string) => {
     const normalized = content.trim();
     if (!normalized) return;
-    if (terminalOpen) {
+    if (hasTerminalSession) {
       toast.info(tTask("terminal_agent_run_blocked"));
       return;
     }
@@ -685,6 +688,13 @@ export function TaskPage({
       `/${locale}/workspaces/${workspaceId}/projects/${projectId}/notebook`,
     );
   };
+  const handleTerminalOpenChange = React.useCallback((open: boolean) => {
+    setHasTerminalSession(open);
+    if (!open) {
+      setTerminalOpen(false);
+      setTerminalStatus("idle");
+    }
+  }, []);
 
   if (taskLoading) {
     return <TaskPageLoadingState text={tTask("loading")} />;
@@ -770,7 +780,7 @@ export function TaskPage({
         item.status === "cancelled",
     );
   const isConversationInputDisabled =
-    isDisabled || !canUpdateTask || isExternalAgentOffline || terminalOpen;
+    isDisabled || !canUpdateTask || isExternalAgentOffline || hasTerminalSession;
   const terminalDisabledReason = !canUseTerminal
     ? tTask('terminal_unavailable_permission')
     : task.status !== "active"
@@ -783,6 +793,42 @@ export function TaskPage({
     && canUpdateTask
     && task.status === "active"
     && !agentIsBusy;
+  const hiddenTerminalTitle = terminalStatus === "failed"
+    ? tTask("terminal_hidden_failed_title")
+    : tTask("terminal_hidden_active_title");
+  const hiddenTerminalDescription = terminalStatus === "failed"
+    ? tTask("terminal_hidden_failed_description")
+    : tTask("terminal_hidden_active_description");
+  const hiddenTerminalPrimaryActionLabel = terminalStatus === "failed"
+    ? tTask("terminal_recovery_show")
+    : tTask("terminal_show");
+  const terminalNotice = hasTerminalSession && !terminalOpen ? (
+    <div
+      className="mt-3 flex items-start justify-between gap-3 rounded-md border border-subtle bg-surface/72 px-4 py-3 shadow-ambient"
+      data-testid="notebook__task-terminal-notice"
+    >
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-foreground">{hiddenTerminalTitle}</div>
+        <div className="mt-1 text-xs text-secondary">{hiddenTerminalDescription}</div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground"
+          onClick={() => setTerminalOpen(true)}
+        >
+          {hiddenTerminalPrimaryActionLabel}
+        </button>
+        <button
+          type="button"
+          className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground"
+          onClick={() => setTerminalCloseRequestToken((current) => current + 1)}
+        >
+          {tTask("terminal_close")}
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
@@ -798,14 +844,27 @@ export function TaskPage({
         }}
         canDeleteTask={canDeleteTask}
         canOpenTerminal={canOpenTerminal}
+        hasTerminalSession={hasTerminalSession}
         terminalOpen={terminalOpen}
+        terminalStatus={terminalStatus}
         terminalDisabledReason={terminalDisabledReason}
-        onCloseTerminalSession={terminalOpen ? () => setTerminalCloseRequestToken((current) => current + 1) : undefined}
+        onCloseTerminalSession={hasTerminalSession ? () => setTerminalCloseRequestToken((current) => current + 1) : undefined}
         onCreateNew={canCreateTask ? handleCreateNew : undefined}
         onEdit={canUpdateTask ? () => setEditDialogOpen(true) : undefined}
         onDeleted={handleTaskDeleted}
         onLeave={handleLeave}
-        onToggleTerminal={() => setTerminalOpen((current) => !current)}
+        onToggleTerminal={() => {
+          if (!hasTerminalSession) {
+            setHasTerminalSession(true);
+            setTerminalOpen(true);
+            return;
+          }
+          if (terminalStatus === "failed" && !terminalOpen) {
+            setTerminalOpen(true);
+            return;
+          }
+          setTerminalOpen((current) => !current);
+        }}
       />
       <TaskPageContent
         agentIsBusy={agentIsBusy}
@@ -856,19 +915,22 @@ export function TaskPage({
         sseDebugEvents={sseDebugEvents}
         streamingContent={streamingContent}
         streamingMessageId={streamingMessageId}
-        inputPlaceholder={terminalOpen ? tTask('terminal_input_blocked_placeholder') : undefined}
+        inputPlaceholder={hasTerminalSession ? tTask('terminal_input_blocked_placeholder') : undefined}
         taskId={taskId}
+        terminalNotice={terminalNotice}
         terminalPanel={(
           <TaskTerminalPanel
-            open={terminalOpen}
+            open={hasTerminalSession}
+            visible={terminalOpen}
             workspaceId={workspaceId}
             projectId={projectId}
             taskId={taskId}
             taskTitle={task.title}
             taskApi={taskAPI}
-            disabled={!canOpenTerminal}
+            disabled={!hasTerminalSession && !canOpenTerminal}
             closeRequestToken={terminalCloseRequestToken}
-            onOpenChange={setTerminalOpen}
+            onStatusChange={setTerminalStatus}
+            onOpenChange={handleTerminalOpenChange}
           />
         )}
         traceErrorByMessageId={traceErrorByMessageId}

@@ -172,6 +172,36 @@ describe('WorkspaceLoginCallbackClient', () => {
     });
   });
 
+  it('ignores stale invite handoff from another workspace during callback landing', async () => {
+    sessionStore.set(
+      'mbos:keycloak:pkce',
+      JSON.stringify({
+        verifier: 'verifier_123',
+        state: 'state_123',
+        redirectUri: 'http://localhost:3001/workspaces/ws_alpha/login/callback',
+        createdAt: Date.now(),
+        workspaceId: 'ws_alpha',
+        locale: 'en-US',
+      }),
+    );
+    sessionStore.set(
+      'agentsmith:invite-handoff',
+      JSON.stringify({
+        workspaceId: 'ws_other',
+        projectId: 'proj_other',
+        storedAt: Date.now(),
+      }),
+    );
+
+    render(<WorkspaceLoginCallbackClient workspaceId="ws_alpha" />);
+
+    await waitFor(() => {
+      expect(mockSetAuth).toHaveBeenCalled();
+      expect(mockSetToken).toHaveBeenCalledWith('access_123');
+      expect(mockReplace).toHaveBeenCalledWith('/en-US/workspaces/ws_alpha/projects');
+    });
+  });
+
   it('completes pending invite acceptance after auth and lands directly on the invited project overview', async () => {
     sessionStore.set(
       'mbos:keycloak:pkce',
@@ -199,6 +229,34 @@ describe('WorkspaceLoginCallbackClient', () => {
       expect(mockSetAuth).toHaveBeenCalled();
       expect(mockSetToken).toHaveBeenCalledWith('access_123');
       expect(mockReplace).toHaveBeenCalledWith('/en-US/workspaces/ws_alpha/projects/proj_alpha/overview');
+    });
+  });
+
+  it('handles callback completion only once even after rerendering the callback page', async () => {
+    sessionStore.set(
+      'mbos:keycloak:pkce',
+      JSON.stringify({
+        verifier: 'verifier_123',
+        state: 'state_123',
+        redirectUri: 'http://localhost:3001/workspaces/ws_alpha/login/callback',
+        createdAt: Date.now(),
+        workspaceId: 'ws_alpha',
+        locale: 'en-US',
+      }),
+    );
+
+    const { rerender } = render(<WorkspaceLoginCallbackClient workspaceId="ws_alpha" />);
+
+    await waitFor(() => {
+      expect(mockSetAuth).toHaveBeenCalled();
+      expect(mockSetToken).toHaveBeenCalledWith('access_123');
+      expect(mockReplace).toHaveBeenCalledWith('/en-US/workspaces/ws_alpha/projects');
+    });
+
+    rerender(<WorkspaceLoginCallbackClient workspaceId="ws_alpha" />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledTimes(1);
     });
   });
 

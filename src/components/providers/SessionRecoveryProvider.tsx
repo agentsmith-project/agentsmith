@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api/client';
 import { getKeycloakClientId, getKeycloakRealmBase } from '@/lib/auth/keycloak';
 import { addSessionRecoveryListener, setSessionRefreshHandler } from '@/lib/auth/session-recovery';
+import { buildWorkspaceSelectionHref, clearLogoutIntent, hasActiveLogoutIntent, isWorkspaceSelectionPath } from '@/lib/auth/invite-handoff';
 
 function resolveLocaleFromPathname(pathname: string | null): string {
   const first = pathname?.split('/').filter(Boolean)[0] ?? '';
@@ -15,19 +16,18 @@ function resolveLocaleFromPathname(pathname: string | null): string {
   return 'en-US';
 }
 
-function isWorkspaceSelectPath(pathname: string | null): boolean {
-  if (!pathname) return false;
-  return /^\/(en-US|zh-CN)\/login\/workspace\/?$/.test(pathname);
-}
-
 export function SessionRecoveryProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const params = useParams();
   const queryClient = useQueryClient();
   const { clearAuth } = useAuthStore();
   const handlingRef = useRef(false);
   const refreshInFlightRef = useRef<Promise<boolean> | null>(null);
-  const locale = useMemo(() => resolveLocaleFromPathname(pathname), [pathname]);
+  const locale = useMemo(() => {
+    const routeLocale = (params?.locale as string | undefined) ?? null;
+    return routeLocale || resolveLocaleFromPathname(pathname);
+  }, [pathname, params]);
 
   useEffect(() => {
     setSessionRefreshHandler(() => {
@@ -81,16 +81,25 @@ export function SessionRecoveryProvider({ children }: { children: React.ReactNod
     });
 
     const unsubscribe = addSessionRecoveryListener(() => {
-      if (isWorkspaceSelectPath(pathname)) {
+      if (!useAuthStore.getState().isAuthenticated) {
+        return;
+      }
+      if (hasActiveLogoutIntent()) {
+        return;
+      }
+      if (isWorkspaceSelectionPath(pathname)) {
         // Workspace select page has dedicated UX for session-expired/retry handling.
         // Avoid global hard-redirect loop that hides that state.
+        clearLogoutIntent();
         return;
       }
       if (handlingRef.current) return;
+      const redirectHref = buildWorkspaceSelectionHref(locale);
+      if (pathname === redirectHref) return;
       handlingRef.current = true;
       clearAuth();
       queryClient.clear();
-      router.replace(`/${locale}/login/workspace`);
+      router.replace(redirectHref);
       window.setTimeout(() => {
         handlingRef.current = false;
       }, 250);

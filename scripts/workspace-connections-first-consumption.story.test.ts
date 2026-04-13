@@ -14,20 +14,22 @@ describe('workspace connections first consumption story', () => {
     expect(story.goal).toContain('工作区连接页');
     expect(story.goal).toContain('项目列表');
     expect(story.goal).toContain('use-guide');
-    expect(story.goal).toContain('第一次真正消费');
+    expect(story.goal).toContain('第一次 endpoint 消费');
     expect(story.goal).not.toContain('Feishu token');
     expect(story.goal).not.toContain('workspace_feishu');
 
     expect(story.scenes.map((scene) => scene.sceneId)).toEqual([
       'workspace-connections',
-      'personal-connections',
       'project-use-guide',
+      'personal-api-keys',
     ]);
     expect(story.steps.map((step) => step.stepId)).toEqual([
       'review-workspace-connections',
-      'create-or-refresh-personal-connection',
       'open-project-use-guide',
       'verify-project-use-ready',
+      'create-personal-api-key',
+      'consume-project-endpoint',
+      'verify-first-consumption',
     ]);
   });
 

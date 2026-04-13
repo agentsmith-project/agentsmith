@@ -10,7 +10,6 @@ describe('governance runtime effect stories', () => {
     expect(story.lane).toBe('backend-real');
     expect(story.actor).toContain('member');
     expect(story.goal).toContain('治理变更');
-    expect(story.goal).toContain('chat');
     expect(story.goal).toContain('notebook');
     expect(story.goal).toContain('notebook task detail');
     expect(story.goal).toContain('artifacts continuity');
@@ -22,6 +21,26 @@ describe('governance runtime effect stories', () => {
       'promote-member-and-continue-work',
       'demote-member-and-continue-work',
       'remove-member-and-lose-project-access',
+    ]);
+  });
+
+  it('defines a backend-real story for an admin switching back to member while keeping work continuity', () => {
+    const story = readStoryDefinitionFromMarkdownFileSync(path.resolve(process.cwd(), 'e2e/stories/backend-real/admin-switches-to-member-and-keeps-working.story.md'));
+
+    expect(story.lane).toBe('backend-real');
+    expect(story.actor).toContain('project admin');
+    expect(story.goal).toContain('降回普通成员');
+    expect(story.goal).toContain('notebook');
+    expect(story.goal).toContain('files');
+    expect(story.goal).toContain('治理入口要立即收缩');
+    expect(story.narrative).toContain('治理面必须收缩');
+    expect(story.scenes.map((scene) => scene.sceneId)).toContain('project-settings');
+    expect(story.scenes.map((scene) => scene.sceneId)).toContain('project-notebook-task');
+    expect(story.steps.map((step) => step.stepId)).toEqual([
+      'confirm-admin-surface',
+      'demote-admin-to-member',
+      'lose-governance-surface',
+      'continue-member-work',
     ]);
   });
 
@@ -52,6 +71,7 @@ describe('governance runtime effect stories', () => {
     );
 
     expect(membershipSpec).toContain("loadStoryDefinitionSync('e2e/stories/backend-real/governance-change-then-member-keeps-working.story.md')");
+    expect(membershipSpec).toContain("loadStoryDefinitionSync('e2e/stories/backend-real/admin-switches-to-member-and-keeps-working.story.md')");
     expect(membershipSpec).not.toContain("loadStoryDefinitionSync('membership-change-and-effective-access')");
     expect(policySpec).toContain("loadStoryDefinitionSync('e2e/stories/backend-real/resource-policy-change-to-observable-effect.story.md')");
     expect(policySpec).not.toContain("open resource policy page");

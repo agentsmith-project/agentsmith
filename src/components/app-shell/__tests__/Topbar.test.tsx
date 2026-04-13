@@ -7,6 +7,9 @@ import { Topbar } from '../Topbar';
 const mockPush = vi.fn();
 const mockReplace = vi.fn();
 const mockUserMenu = vi.fn();
+const mockClearLoginContinuationState = vi.fn();
+const mockPersistLogoutIntent = vi.fn();
+const mockClearAuth = vi.fn();
 
 let mockProjects = [
   {
@@ -29,6 +32,7 @@ let mockCurrentProject: { id: string; name: string; permissions: string[] } | nu
   name: 'Chat Project',
   permissions: ['project:endpoint:use'],
 };
+let renderQueryClient: QueryClient;
 
 let canManageWorkspaceGovernance = false;
 let mockParams: { locale: string; workspace?: string; project?: string } = {
@@ -73,11 +77,17 @@ vi.mock('@/lib/stores/authStore', () => ({
   useAuthStore: (selector?: (state: { currentUser: { name: string; email: string } | null; clearAuth: () => void }) => unknown) => {
     const state = {
       currentUser: { name: 'Alice', email: 'alice@example.com' },
-      clearAuth: vi.fn(),
+      clearAuth: mockClearAuth,
     };
     return selector ? selector(state) : state;
   },
   selectCurrentUser: (state: { currentUser: { name: string; email: string } | null }) => state.currentUser,
+}));
+
+vi.mock('@/lib/auth/invite-handoff', () => ({
+  buildWorkspaceSelectionPath: () => '/login/workspace',
+  clearLoginContinuationState: () => mockClearLoginContinuationState(),
+  persistLogoutIntent: () => mockPersistLogoutIntent(),
 }));
 
 vi.mock('@/lib/hooks/use-workspaces', () => ({
@@ -111,14 +121,14 @@ vi.mock('@/lib/hooks/use-project-layout-mode', () => ({
 }));
 
 function renderTopbar(props?: { workspaceId?: string; projectId?: string }) {
-  const queryClient = new QueryClient({
+  renderQueryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
       mutations: { retry: false },
     },
   });
   return render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={renderQueryClient}>
       <Topbar {...props} />
     </QueryClientProvider>,
   );
@@ -148,6 +158,8 @@ describe('Topbar', () => {
     };
     mockPathname = '/en-US/workspaces/ws_1/projects/proj_chat/overview';
     mockUserMenu.mockReset();
+    mockClearLoginContinuationState.mockReset();
+    mockClearAuth.mockReset();
   });
 
   it('navigates to the first reachable surface instead of assuming overview', () => {
@@ -262,6 +274,27 @@ describe('Topbar', () => {
 
     expect(userMenuProps?.onWorkspacePersonalContext).toEqual(expect.any(Function));
     expect(userMenuProps?.onProjectPersonalContext).toEqual(expect.any(Function));
+  });
+
+  it('logout clears query state, tears down auth, and navigates to workspace selection once', () => {
+    renderTopbar();
+
+    const cancelSpy = vi.spyOn(renderQueryClient, 'cancelQueries');
+    const clearSpy = vi.spyOn(renderQueryClient, 'clear');
+    const userMenuProps = mockUserMenu.mock.calls.at(-1)?.[0] as {
+      onLogout?: () => void;
+    };
+
+    expect(userMenuProps?.onLogout).toEqual(expect.any(Function));
+    userMenuProps?.onLogout?.();
+
+    expect(cancelSpy).toHaveBeenCalledTimes(1);
+    expect(clearSpy).toHaveBeenCalledTimes(1);
+    expect(mockPersistLogoutIntent).toHaveBeenCalledTimes(1);
+    expect(mockClearLoginContinuationState).toHaveBeenCalledTimes(1);
+    expect(mockClearAuth).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith('/login/workspace');
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('expands the switcher with governable projects only when they have a reachable surface', () => {

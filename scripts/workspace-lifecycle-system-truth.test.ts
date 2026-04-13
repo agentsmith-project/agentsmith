@@ -34,6 +34,25 @@ describe('system/workspace lifecycle stories', () => {
     expect(story.narrative).toContain('bootstrap');
     expect(story.narrative).toContain('admin');
   });
+
+  it('defines a canonical backend-real story for system admins handling multiple workspaces and truthful re-entry later', () => {
+    const story = readStoryDefinitionFromMarkdownFileSync(
+      'e2e/stories/backend-real/system-admin-multi-workspace-handoff.story.md',
+    );
+
+    expect(story.storyId).toBe('system-admin-multi-workspace-handoff');
+    expect(story.goal).toContain('多个 workspace');
+    expect(story.goal).toContain('真实 workspace admin');
+    expect(story.goal).toContain('重新进入');
+    expect(story.steps.map((step) => step.stepId)).toEqual([
+      'open-system-login',
+      'bootstrap-workspace-alpha',
+      'bootstrap-workspace-beta',
+      'review-system-workspaces',
+      'reenter-workspace-alpha',
+      'reenter-workspace-beta',
+    ]);
+  });
 });
 
 describe('system/workspace lifecycle specs', () => {
@@ -44,6 +63,7 @@ describe('system/workspace lifecycle specs', () => {
     );
 
     expect(source).toContain("loadStoryDefinitionSync('system-admin-entry')");
+    expect(source).toContain("loadStoryDefinitionSync('system-admin-multi-workspace-handoff')");
     expect(source).not.toContain('workspace-lifecycle-admin-operations.story.md');
   });
 

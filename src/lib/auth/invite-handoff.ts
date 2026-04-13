@@ -15,13 +15,24 @@ type PendingInviteToken = {
   storedAt: number;
 };
 
+type LogoutIntent = {
+  storedAt: number;
+};
+
 const INVITE_HANDOFF_STORAGE_KEY = 'agentsmith:invite-handoff';
 const INVITE_HANDOFF_STORAGE_TTL_MS = 30 * 60 * 1000;
 const PENDING_INVITE_STORAGE_KEY = 'agentsmith:pending-invite';
 const PENDING_INVITE_STORAGE_TTL_MS = 30 * 60 * 1000;
+const LOGOUT_INTENT_STORAGE_KEY = 'agentsmith:logout-intent';
+const LOGOUT_INTENT_TTL_MS = 2 * 60 * 1000;
 
 function hasWindowStorage(): boolean {
-  return typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
+  if (typeof window === 'undefined') return false;
+  try {
+    return typeof window.sessionStorage !== 'undefined';
+  } catch {
+    return false;
+  }
 }
 
 function localePrefix(locale?: string | null): string {
@@ -70,6 +81,89 @@ export function buildWorkspaceSelectionPath(options?: InviteHandoffOptions): str
 
 export function buildWorkspaceSelectionHref(locale: string | null | undefined, options?: InviteHandoffOptions): string {
   return `${localePrefix(locale)}${buildWorkspaceSelectionPath(options)}`;
+}
+
+export function isWorkspaceSelectionPath(pathname: string | null | undefined): boolean {
+  if (!pathname) return false;
+  return /^\/(en-US|zh-CN)\/login\/workspace\/?$/.test(pathname);
+}
+
+type WorkspaceSelectionRedirectGuard = {
+  href: string;
+  requestedAt: number;
+};
+
+const WORKSPACE_SELECTION_REDIRECT_GUARD_TTL_MS = 2_000;
+let workspaceSelectionRedirectGuard: WorkspaceSelectionRedirectGuard | null = null;
+
+export function requestWorkspaceSelectionRedirectHref(
+  locale: string | null | undefined,
+  pathname: string | null | undefined,
+): string | null {
+  const href = buildWorkspaceSelectionHref(locale);
+  if (isWorkspaceSelectionPath(pathname)) {
+    workspaceSelectionRedirectGuard = null;
+    return null;
+  }
+
+  const now = Date.now();
+  if (
+    workspaceSelectionRedirectGuard
+    && workspaceSelectionRedirectGuard.href === href
+    && now - workspaceSelectionRedirectGuard.requestedAt < WORKSPACE_SELECTION_REDIRECT_GUARD_TTL_MS
+  ) {
+    return null;
+  }
+
+  workspaceSelectionRedirectGuard = {
+    href,
+    requestedAt: now,
+  };
+  return href;
+}
+
+export function persistLogoutIntent(): void {
+  if (!hasWindowStorage()) return;
+  try {
+    window.sessionStorage.setItem(
+      LOGOUT_INTENT_STORAGE_KEY,
+      JSON.stringify({ storedAt: Date.now() }),
+    );
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+export function readLogoutIntent(): LogoutIntent | null {
+  if (!hasWindowStorage()) return null;
+  try {
+    const raw = window.sessionStorage.getItem(LOGOUT_INTENT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const candidate = parsed as Partial<LogoutIntent>;
+    if (typeof candidate.storedAt !== 'number') return null;
+    if (Date.now() - candidate.storedAt > LOGOUT_INTENT_TTL_MS) {
+      window.sessionStorage.removeItem(LOGOUT_INTENT_STORAGE_KEY);
+      return null;
+    }
+    return { storedAt: candidate.storedAt };
+  } catch {
+    return null;
+  }
+}
+
+export function hasActiveLogoutIntent(): boolean {
+  return readLogoutIntent() !== null;
+}
+
+export function clearLogoutIntent(): void {
+  if (!hasWindowStorage()) return;
+  try {
+    window.sessionStorage.removeItem(LOGOUT_INTENT_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 export function buildWorkspaceLoginPath(workspaceId: string, options?: InviteHandoffOptions): string {
@@ -160,6 +254,23 @@ export function clearInviteHandoff(): void {
   } catch {
     // Ignore storage failures.
   }
+}
+
+export function readInviteHandoffForWorkspace(workspaceId: string): InviteHandoffContinuation | null {
+  const handoff = readInviteHandoff();
+  if (!handoff) {
+    return null;
+  }
+  if (handoff.workspaceId !== workspaceId) {
+    clearInviteHandoff();
+    return null;
+  }
+  return handoff;
+}
+
+export function clearLoginContinuationState(): void {
+  clearInviteHandoff();
+  clearPendingInviteToken();
 }
 
 export function persistPendingInviteToken(inviteToken: string): void {

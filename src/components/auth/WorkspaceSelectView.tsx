@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useRouter } from '@/lib/i18n/routing';
 import { useTranslations } from 'next-intl';
@@ -9,7 +10,7 @@ import { Logo } from '@/components/app-shell/Logo';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
-import { buildWorkspaceLoginPath, buildWorkspaceSelectionPath, readInviteHandoff } from '@/lib/auth/invite-handoff';
+import { buildWorkspaceLoginPath, buildWorkspaceSelectionPath, clearLoginContinuationState, clearLogoutIntent, readInviteHandoff } from '@/lib/auth/invite-handoff';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { APIError } from '@/lib/api/errors';
 import { Button } from '@/components/ui/button';
@@ -39,19 +40,29 @@ export function WorkspaceSelectView() {
   const isUnauthorized = isError && error instanceof APIError && error.statusCode === 401;
   const desktopAuthRequestId = searchParams.get('desktop_auth_request_id')?.trim() ?? '';
   const inviteHandoff = readInviteHandoff();
-  const projectId = searchParams.get('project_id')?.trim() ?? inviteHandoff?.projectId ?? '';
+  const projectId = searchParams.get('project_id')?.trim() ?? '';
+
+  useEffect(() => {
+    clearLoginContinuationState();
+    clearLogoutIntent();
+  }, []);
 
   const handleWorkspaceSelect = (workspaceId: string) => {
+    const workspaceInviteHandoff = inviteHandoff?.workspaceId === workspaceId ? inviteHandoff : null;
+    if (inviteHandoff && inviteHandoff.workspaceId !== workspaceId) {
+      clearLoginContinuationState();
+    }
     router.push(
       buildWorkspaceLoginPath(workspaceId, {
         desktopAuthRequestId: desktopAuthRequestId || null,
-        projectId: projectId || null,
+        projectId: projectId || workspaceInviteHandoff?.projectId || null,
       }),
     );
   };
 
   const handleReLogin = () => {
     clearAuth();
+    clearLoginContinuationState();
     router.replace(
       buildWorkspaceSelectionPath({
         desktopAuthRequestId: desktopAuthRequestId || null,

@@ -190,11 +190,19 @@ test.describe('@lane-real integration use-guide first consumption', () => {
       try {
         await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/use-guide`);
         await expect(page.getByTestId('use-guide__page')).toBeVisible({ timeout: 30_000 });
+        await expect(page.getByTestId('use-guide__status-context')).toBeVisible({ timeout: 30_000 });
+        await expect(page.getByTestId('use-guide__status-context')).toContainText('workspace personal context entries');
         await trace.capture(page, {
           stepId: 'open-use-guide',
           action: 'Open use guide',
           target: 'use-guide__page',
           note: 'use-guide 应该先把用户带到真实可用入口，而不是停在说明页。',
+        });
+        await trace.capture(page, {
+          stepId: 'verify-use-guide-readiness',
+          action: 'Verify use guide readiness',
+          target: 'use-guide__status-context',
+          note: 'use-guide 应该清楚讲出 workspace personal context entries 的 readiness。',
         });
 
         await page.getByTestId('use-guide__endpoint-select').click();

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -33,7 +33,7 @@ import {
   buildWorkspaceSelectionHref,
   clearInviteHandoff,
   clearPendingInviteToken,
-  readInviteHandoff,
+  readInviteHandoffForWorkspace,
   readPendingInviteToken,
 } from '@/lib/auth/invite-handoff';
 import { ArrowRight, Globe2 } from 'lucide-react';
@@ -63,7 +63,7 @@ export default function WorkspaceLoginPage() {
   const locale = (params?.locale as string) || 'en-US';
   const workspaceId = (params?.workspace as string) || '';
   const desktopAuthRequestId = searchParams.get('desktop_auth_request_id')?.trim() ?? '';
-  const inviteHandoff = readInviteHandoff();
+  const inviteHandoff = readInviteHandoffForWorkspace(workspaceId);
   const projectId = searchParams.get('project_id')?.trim() ?? inviteHandoff?.projectId ?? '';
   const desktopAuthRequestHref = desktopAuthRequestId ? buildDesktopAuthRequestHref(locale, desktopAuthRequestId) : null;
   const [config, setConfig] = useState<WorkspaceLoginConfig | null>(null);
@@ -72,11 +72,17 @@ export default function WorkspaceLoginPage() {
   const [userEmail, setUserEmail] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [keycloakError, setKeycloakError] = useState<string | null>(null);
+  const handledAuthenticatedContinuationRef = useRef(false);
   const useMsw = getPublicRuntimeConfig().useMsw;
   const memberApi = useMemo(() => new MemberAPI(getApiClient()), []);
 
   useEffect(() => {
-    if (!hydrated || !isAuthenticated || !authToken) return;
+    if (!hydrated || !isAuthenticated || !authToken) {
+      handledAuthenticatedContinuationRef.current = false;
+      return;
+    }
+    if (handledAuthenticatedContinuationRef.current) return;
+    handledAuthenticatedContinuationRef.current = true;
 
     const continueAuthenticatedWorkspaceLogin = async () => {
       if (desktopAuthRequestId) {

@@ -16,7 +16,7 @@ async function loginAsSystemAdmin(page: import('@playwright/test').Page) {
 async function openCreateWorkspace(page: import('@playwright/test').Page) {
   await page.getByTestId('system-workspaces__new-workspace').click();
   await page.waitForURL(/\/en-US\/system\/workspaces\/new$/, { timeout: 15_000 });
-  await expect(page.getByTestId('system-workspace-create__heading')).toBeVisible();
+  await expect(page.getByTestId('system-workspace-create__shell')).toBeVisible();
 }
 
 async function waitForWorkspaceId(page: import('@playwright/test').Page, workspaceName: string) {

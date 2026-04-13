@@ -17,11 +17,14 @@ describe('workspace shared context continuity story', () => {
     expect(story.goal).toContain('shared context');
     expect(story.goal).toContain('治理');
     expect(story.goal).toContain('继续');
+    expect(story.goal).toContain('加入项目');
     expect(story.steps.map((step) => step.stepId)).toEqual([
       'open-workspace-shared-context',
       'save-workspace-shared-context',
       'verify-member-shared-context-boundary',
+      'join-project-before-use-guide',
       'verify-member-private-context-boundary',
+      'verify-project-use-guide-readiness',
     ]);
   });
 

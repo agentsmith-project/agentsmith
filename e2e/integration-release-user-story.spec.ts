@@ -236,7 +236,7 @@ async function createAndPublishWorkspace(page: Page): Promise<string> {
   const workspaceName = `Release Story ${Date.now()}`;
   await page.getByTestId('system-workspaces__new-workspace').click();
   await page.waitForURL(new RegExp(`/${LOCALE}/system/workspaces/new$`), { timeout: 30_000 });
-  await expect(page.getByTestId('system-workspace-create__heading')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('system-workspace-create__shell')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
   await page.getByTestId('system-workspace-create__next').click();
   await page.getByTestId('system-workspaces__draft-idp-url').fill(KEYCLOAK_BASE_URL);

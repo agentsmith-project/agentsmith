@@ -71,6 +71,17 @@ interface WorkspaceProjectsEntryPageProps {
   workspaceIdOverride?: string | null;
 }
 
+const EMPTY_PROJECTS: Project[] = [];
+const EMPTY_WORKSPACE_MEMBERS: Array<{
+  id: string;
+  user_id: string;
+  name: string | null;
+  email: string;
+  groups: Array<{ id: string; name: string; permission_template_id?: string; built_in?: boolean; system_key?: string }>;
+  status: string;
+  joined_at: string;
+}> = [];
+
 export function WorkspaceProjectsEntryPage({
   showBackLink = true,
   workspaceIdOverride = null,
@@ -109,16 +120,18 @@ export function WorkspaceProjectsEntryPage({
     isFetched: isWorkspaceFetched,
   } = useWorkspace(workspaceId ?? '');
   const {
-    data: workspaceMembers = [],
+    data: workspaceMembersData,
     isFetched: isWorkspaceMembersFetched,
   } = useWorkspaceMembers(workspaceId ?? '');
   const {
-    data: allProjects = [],
+    data: allProjectsData,
     isLoading: isProjectsLoading,
     isError: isProjectsError,
     error: projectsError,
     refetch: refetchProjects,
   } = useProjects(workspaceId ?? '');
+  const workspaceMembers = workspaceMembersData ?? EMPTY_WORKSPACE_MEMBERS;
+  const allProjects = allProjectsData ?? EMPTY_PROJECTS;
   const pinnedStorageKey = useMemo(
     () => (workspaceId ? `mbos:projects:pinned:${workspaceId}` : ''),
     [workspaceId]

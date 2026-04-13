@@ -24,6 +24,7 @@ describe('use-guide first consumption story', () => {
     ]);
     expect(story.steps.map((step) => step.stepId)).toEqual([
       'open-use-guide',
+      'verify-use-guide-readiness',
       'choose-first-usable-endpoint',
       'create-personal-api-key',
       'consume-project-endpoint',

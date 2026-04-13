@@ -208,6 +208,30 @@ describe('WorkspaceLoginPage', () => {
     expect(screen.getByTestId('workspace-login__primary-action-panel')).toHaveClass('rounded-[18px]');
   });
 
+  it('ignores stale invite handoff from another workspace when computing the login target', async () => {
+    vi.stubGlobal(
+      'sessionStorage',
+      ({
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        getItem: vi.fn((key: string) => (key === 'agentsmith:invite-handoff'
+          ? JSON.stringify({ workspaceId: 'ws_other', projectId: 'proj_other', storedAt: Date.now() })
+          : null)),
+      } as unknown) as Storage,
+    );
+
+    render(<WorkspaceLoginPage />);
+
+    expect(await screen.findByTestId('workspace-login__submit')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('workspace-login__email-input'), {
+      target: { value: 'user@example.com' },
+    });
+    fireEvent.click(screen.getByTestId('workspace-login__submit'));
+
+    expect(mockSetAuth).toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_alpha/projects');
+  });
+
   it('redirects quick login into the invited project overview when project_id is only available from invite handoff storage', async () => {
     vi.stubGlobal(
       'sessionStorage',
@@ -230,6 +254,29 @@ describe('WorkspaceLoginPage', () => {
     expect(mockSetAuth).toHaveBeenCalled();
     expect(mockSetAuth.mock.calls[0]?.[1]).toBe('mock_token_user_001__user%40example.com__12345');
     expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_alpha/projects/proj_alpha/overview');
+  });
+
+  it('handles authenticated quick-login continuation only once even after rerendering the page', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('project_id=proj_alpha'));
+
+    const { rerender } = render(<WorkspaceLoginPage />);
+
+    expect(await screen.findByTestId('workspace-login__submit')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('workspace-login__email-input'), {
+      target: { value: 'user@example.com' },
+    });
+    fireEvent.click(screen.getByTestId('workspace-login__submit'));
+
+    await waitFor(() => {
+      expect(mockSetAuth).toHaveBeenCalled();
+      expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_alpha/projects/proj_alpha/overview');
+    });
+
+    rerender(<WorkspaceLoginPage />);
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('accepts the pending invite during quick login and redirects directly to the invited project overview', async () => {

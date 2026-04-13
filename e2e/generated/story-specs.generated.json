@@ -1,5 +1,55 @@
 [
   {
+    "storyId": "admin-switches-to-member-and-keeps-working",
+    "title": "Admin switches to member and keeps working",
+    "actor": "project admin / project owner",
+    "family": "project-admin-switch-to-member",
+    "personas": [
+      "project admin",
+      "project owner"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "integration-keycloak-users",
+        "kind": "integration",
+        "required": true,
+        "note": "backend-real admin-switch story needs integration Keycloak users to exercise real promotion and demotion."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/ws_default/projects",
+    "goal": "项目管理员被降回普通成员后，自己还能继续做 notebook 和 files 的真实工作，但治理入口要立即收缩，不允许旧的 admin surface 继续留在页面里。",
+    "sourceRef": "e2e/stories/backend-real/admin-switches-to-member-and-keeps-working.story.md#admin-switches-to-member-and-keeps-working",
+    "sourceFingerprint": "f40f8382fc5b4d54dbd75abd440e7b06091ee6e9306270c036353bbbed1d66c1",
+    "storyFingerprint": "918c860dff1fca5af57a5e341078cf295623ae8b382e14d3cf841771301613eb",
+    "stepMapFingerprint": "60e18a51a838c3143389b05c49ed9ad058d1fbfd8b480f6229b986d9c092762d",
+    "sceneIds": [
+      "project-settings",
+      "project-notebook-task",
+      "project-files"
+    ],
+    "stepIds": [
+      "confirm-admin-surface",
+      "demote-admin-to-member",
+      "lose-governance-surface",
+      "continue-member-work"
+    ],
+    "traceStepIds": [
+      "confirm-admin-surface",
+      "demote-admin-to-member",
+      "lose-governance-surface",
+      "continue-member-work"
+    ],
+    "visualStepIds": []
+  },
+  {
     "storyId": "ai-runtime-failure-and-recovery",
     "title": "AI runtime failure and recovery",
     "actor": "project operator",
@@ -1658,6 +1708,68 @@
     "visualStepIds": []
   },
   {
+    "storyId": "system-admin-multi-workspace-handoff",
+    "title": "System admin multi-workspace handoff and truthful re-entry",
+    "actor": "system 管理侧 / workspace admin",
+    "family": "system-admin-multi-workspace-handoff",
+    "personas": [
+      "system 管理侧",
+      "workspace admin"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "integration-keycloak-users",
+        "kind": "integration",
+        "required": true,
+        "note": "backend-real multi-workspace story needs real Keycloak users for the workspace admin re-entry checks."
+      },
+      {
+        "dependencyId": "workspace-idp-configuration",
+        "kind": "integration",
+        "required": true,
+        "note": "each workspace must be bootstrapped against a real IdP configuration before publish."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/system/login",
+    "goal": "system 管理侧连续处理多个 workspace：先把两个工作区都 bootstrap 并发布，再把它们分别交给真实 workspace admin，之后还能用各自的真实 admin 身份重新进入，页面不能把多个工作区混成一套状态。",
+    "sourceRef": "e2e/stories/backend-real/system-admin-multi-workspace-handoff.story.md#system-admin-multi-workspace-handoff",
+    "sourceFingerprint": "d7e32b4d0806d8dc0e9cce6cb6aee7860603794913756277ccdf6e8a62b503a7",
+    "storyFingerprint": "c45125dc5f770ae25b0322c77a96c44cd61be31b0ca9235a03d99ee78025fa86",
+    "stepMapFingerprint": "483b913b888fde33fee5a07497cad4e534b094b38ebc129f7f7dedb04b3e0975",
+    "sceneIds": [
+      "system-login",
+      "system-workspaces",
+      "workspace-login-alpha",
+      "workspace-login-beta",
+      "workspace-projects"
+    ],
+    "stepIds": [
+      "open-system-login",
+      "bootstrap-workspace-alpha",
+      "bootstrap-workspace-beta",
+      "review-system-workspaces",
+      "reenter-workspace-alpha",
+      "reenter-workspace-beta"
+    ],
+    "traceStepIds": [
+      "open-system-login",
+      "bootstrap-workspace-alpha",
+      "bootstrap-workspace-beta",
+      "review-system-workspaces",
+      "reenter-workspace-alpha",
+      "reenter-workspace-beta"
+    ],
+    "visualStepIds": []
+  },
+  {
     "storyId": "usage-self-scope-review",
     "title": "Usage self scope review",
     "actor": "project member",
@@ -1715,11 +1827,11 @@
     "externalDependencies": [],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/use-guide",
-    "goal": "项目成员第一次进入 use-guide 时，应该能先看懂项目的可用入口，再创建自己的 API key，最后完成第一次正确消费，而不是把 use-guide 当成一个静态说明页。",
+    "goal": "项目成员第一次进入 use-guide 时，应该能先看懂项目的可用入口，再创建自己的 API key，最后完成第一次正确消费，而且能清楚看到 workspace personal context entries 的准备状态，而不是把 use-guide 当成一个静态说明页。",
     "sourceRef": "e2e/stories/backend-real/use-guide-first-consumption.story.md#use-guide-first-consumption",
-    "sourceFingerprint": "2de4180555f55a1dd9905678e8dbedc07d58464962e658eff3d9d24bd34442fd",
-    "storyFingerprint": "bf1b83b9c1f045aa07878728888d2115f500de7c028510a410c90cfd4122ee0f",
-    "stepMapFingerprint": "460284b7882c2dfd62d2ce3d02b811a2f8c75c804b7ceed563799c9b3008c54f",
+    "sourceFingerprint": "b3649141af143a5af0259177b3fbb505944c79cc71803171ab2459a1ea8e2c21",
+    "storyFingerprint": "5d0057a8792c8b8cac882fa3497b8cf7c3a01bf8a4be8c6bcf90bbf410fed78f",
+    "stepMapFingerprint": "a59c2a2ea1c0bd4b4289aae4095bc11a86cd7ff71398780606340f853c6ce9b7",
     "sceneIds": [
       "project-use-guide",
       "personal-api-keys",
@@ -1727,6 +1839,7 @@
     ],
     "stepIds": [
       "open-use-guide",
+      "verify-use-guide-readiness",
       "choose-first-usable-endpoint",
       "create-personal-api-key",
       "consume-project-endpoint",
@@ -1734,6 +1847,7 @@
     ],
     "traceStepIds": [
       "open-use-guide",
+      "verify-use-guide-readiness",
       "choose-first-usable-endpoint",
       "create-personal-api-key",
       "consume-project-endpoint",
@@ -1805,27 +1919,31 @@
     "externalDependencies": [],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/{workspaceId}/connections",
-    "goal": "成员在工作区连接页确认共享集成和个人连接状态后，能够清楚地继续到项目使用的项目列表并打开 use-guide 作为第一次真正消费，而不是停在连接配置页。",
+    "goal": "成员在工作区连接页确认共享集成状态后，能够清楚地继续到项目使用的项目列表并打开 use-guide，最后真的完成第一次 endpoint 消费，而不是把连接页当成一个停住不动的设置页。",
     "sourceRef": "e2e/stories/backend-real/workspace-connections-to-project-use.story.md#workspace-connections-to-project-use",
-    "sourceFingerprint": "c95625a8b24af48e6480f350419d0fe28d983e9fe500652a221862d4a3ca2452",
-    "storyFingerprint": "4a3709f987b5d00f1bc7ccc156cd55944bc705acda3dbcddc939ede9f1e4d01c",
-    "stepMapFingerprint": "b6be4cfc7924a693852c933a6a1356a21455fbb9920c2d473fe7e1895d707674",
+    "sourceFingerprint": "76442b61627cf04f3780beccbc8fc8083e1f55364713c8eec178603e0a579489",
+    "storyFingerprint": "a478f4c07abbf00e3658e224f506c9f8f26b02d1f1fde31a28b78aff4ea03994",
+    "stepMapFingerprint": "fdb0a392b968c6e92b7e7c8b45a1b0947f38a30201039cd92af03c3ac8b40d57",
     "sceneIds": [
       "workspace-connections",
-      "personal-connections",
-      "project-use-guide"
+      "project-use-guide",
+      "personal-api-keys"
     ],
     "stepIds": [
       "review-workspace-connections",
-      "create-or-refresh-personal-connection",
       "open-project-use-guide",
-      "verify-project-use-ready"
+      "verify-project-use-ready",
+      "create-personal-api-key",
+      "consume-project-endpoint",
+      "verify-first-consumption"
     ],
     "traceStepIds": [
       "review-workspace-connections",
-      "create-or-refresh-personal-connection",
       "open-project-use-guide",
-      "verify-project-use-ready"
+      "verify-project-use-ready",
+      "create-personal-api-key",
+      "consume-project-endpoint",
+      "verify-first-consumption"
     ],
     "visualStepIds": []
   },
@@ -1865,6 +1983,56 @@
       "workspace-login",
       "workspace-projects",
       "project-discovery"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "workspace-identity-switch-truth",
+    "title": "Workspace identity switch truth",
+    "actor": "workspace member / invited user",
+    "family": "workspace-identity-switch-truth",
+    "personas": [
+      "workspace member",
+      "invited user"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/login/workspace",
+    "goal": "同一个人退出一个工作区后，再进入另一个工作区时，系统只保留新的工作区语境，不把旧 workspace 的 project continuation 或个人上下文带过去。",
+    "sourceRef": "e2e/stories/backend-real/workspace-identity-switch-truth.story.md#workspace-identity-switch-truth",
+    "sourceFingerprint": "440e0773f5a4a1c60aec78bf85ad65c864b836db2e6a6d8d75d2c11670de4d88",
+    "storyFingerprint": "69c3964f2b6b08bca1e2a7d454e46828da738d48a5df444256cd6ee988feeedd",
+    "stepMapFingerprint": "f81c7e497b2070e6ecff380456cb482ba08972f6c613bd96890c03daaf60efe0",
+    "sceneIds": [
+      "workspace-selection",
+      "source-workspace-login",
+      "target-workspace-login",
+      "target-workspace-projects"
+    ],
+    "stepIds": [
+      "open-workspace-selection",
+      "enter-source-workspace",
+      "sign-out-from-source-workspace",
+      "choose-target-workspace",
+      "confirm-target-login",
+      "sign-in-to-target-workspace",
+      "land-on-target-projects"
+    ],
+    "traceStepIds": [
+      "open-workspace-selection",
+      "enter-source-workspace",
+      "sign-out-from-source-workspace",
+      "choose-target-workspace",
+      "confirm-target-login",
+      "sign-in-to-target-workspace",
+      "land-on-target-projects"
     ],
     "visualStepIds": []
   },
@@ -2153,26 +2321,31 @@
     "externalDependencies": [],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/ws_default/settings/context",
-    "goal": "工作区管理员维护 shared context 后，成员应该继续清楚知道这属于治理面共享说明，而自己的 My Workspace Context 仍然是私有上下文，两者不会混淆。",
+    "goal": "工作区管理员维护 shared context 后，成员应该继续清楚知道这属于治理面共享说明，而自己的 My Workspace Context 仍然是私有上下文；当成员先通过项目列表加入项目，再进入 project use-guide 时，也应该能看见 workspace personal context entries 仍然在 readiness 里生效。",
     "sourceRef": "e2e/stories/backend-real/workspace-shared-context-continuity.story.md#workspace-shared-context-continuity",
-    "sourceFingerprint": "ad3d709d9c511b0f2facc606a5114785dc7cf786e123c068ed91969f099ea3e0",
-    "storyFingerprint": "723fddd5be3532a7e419208702d5c31e19301bb1215402e01a62f0d3e841c4b6",
-    "stepMapFingerprint": "69eddc47e373498945e2a8fa87ed7f1dc069c57efc70527301a69023ef6aaf74",
+    "sourceFingerprint": "7cb8b230b960191e56a783a1bb90e03c543a4a691e127d1b027642965f6d627b",
+    "storyFingerprint": "edf46845e9feaea49241b463bf1b5369b1f720590e24ebc3f25ab9726272463d",
+    "stepMapFingerprint": "bc77d10627131a6a5fdb8707125c0e97650b94b58e7d60a8d484de45307d120d",
     "sceneIds": [
       "workspace-shared-context",
-      "workspace-personal-context"
+      "workspace-personal-context",
+      "project-use-guide"
     ],
     "stepIds": [
       "open-workspace-shared-context",
       "save-workspace-shared-context",
       "verify-member-shared-context-boundary",
-      "verify-member-private-context-boundary"
+      "join-project-before-use-guide",
+      "verify-member-private-context-boundary",
+      "verify-project-use-guide-readiness"
     ],
     "traceStepIds": [
       "open-workspace-shared-context",
       "save-workspace-shared-context",
       "verify-member-shared-context-boundary",
-      "verify-member-private-context-boundary"
+      "join-project-before-use-guide",
+      "verify-member-private-context-boundary",
+      "verify-project-use-guide-readiness"
     ],
     "visualStepIds": []
   }

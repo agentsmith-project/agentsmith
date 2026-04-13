@@ -8,10 +8,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useParams } from 'next/navigation';
 import { useHasPermission, useHasAllPermissions, useIsAuthenticated } from '@/lib/hooks/use-permissions';
 import { useAuthStoreHydration } from '@/lib/stores/authStore';
 import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
+import { buildWorkspaceSelectionHref, hasActiveLogoutIntent } from '@/lib/auth/invite-handoff';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -26,9 +27,11 @@ export function ProtectedRoute({
 }: ProtectedRouteProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const params = useParams();
   const isAuthenticated = useIsAuthenticated();
   const hydrated = useAuthStoreHydration();
   const latestAuthRef = useRef(isAuthenticated);
+  const redirectedLoginPathRef = useRef<string | null>(null);
   latestAuthRef.current = isAuthenticated;
 
   // Normalize permission requirements defensively.
@@ -70,14 +73,13 @@ export function ProtectedRoute({
   const isDev = process.env.NODE_ENV === 'development';
   const bypassAuth = isDev && getPublicRuntimeConfig().bypassAuth;
 
-  // Extract locale from pathname for login redirect
-  const loginPath = useMemo(() => {
-    const segments = pathname.split('/');
-    const locale = segments[1] || 'en-US'; // Default to en-US if no locale in path
-    return `/${locale}/login/workspace`;
-  }, [pathname]);
+  // Extract locale from route params first so the login redirect stays aligned with the current route locale.
+  const locale = (params?.locale as string | undefined) || pathname.split('/')[1] || 'en-US';
 
   useEffect(() => {
+    if (isAuthenticated) {
+      redirectedLoginPathRef.current = null;
+    }
     if (!hydrated) return;
     // In development with E2E tests, check if mock auth is being set up
     const hasMockAuthSetup = typeof window !== 'undefined' && !!window.__MBOS_AUTH_SETUP__;
@@ -168,24 +170,32 @@ export function ProtectedRoute({
           clearInterval(interval);
           console.log('[ProtectedRoute] Mock auth check complete, attempts:', attempts, 'found:', checkMockAuth());
           // If still not authenticated after waiting, redirect to login
-          if (!checkMockAuth()) {
-            router.replace(loginPath);
+          if (!checkMockAuth() && !hasActiveLogoutIntent()) {
+            const redirectHref = buildWorkspaceSelectionHref(locale);
+            if (redirectHref) {
+              router.replace(redirectHref);
+            }
           }
         }
       }, 50);
 
       return () => clearInterval(interval);
     } else if (!bypassAuth && !isAuthenticated) {
+      const redirectHref = buildWorkspaceSelectionHref(locale);
+      if (redirectedLoginPathRef.current === redirectHref || pathname === redirectHref) {
+        return;
+      }
+      redirectedLoginPathRef.current = redirectHref;
       // Normal redirect to login (production or non-E2E dev).
       // Delay a tick to avoid hydration race causing redirect loops.
       const t = window.setTimeout(() => {
         if (!bypassAuth && !latestAuthRef.current) {
-          router.replace(loginPath);
+          router.replace(redirectHref);
         }
       }, 60);
       return () => window.clearTimeout(t);
     }
-  }, [hydrated, isAuthenticated, router, bypassAuth, loginPath]);
+  }, [hydrated, isAuthenticated, router, bypassAuth, locale, pathname]);
 
   // Show loading state while checking permissions
   if (!hydrated || (!bypassAuth && !isAuthenticated)) {

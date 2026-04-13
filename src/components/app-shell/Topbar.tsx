@@ -13,6 +13,7 @@ import { broadcastProjectLayoutMode, useProjectLayoutMode } from '@/lib/hooks/us
 import { useGovernableProjects, useProject, useProjects } from '@/lib/hooks/use-projects-queries';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
 import { useRouter, usePathname } from '@/lib/i18n/routing';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   buildProjectSurfacePath,
   listSwitchableProjects,
@@ -21,6 +22,7 @@ import {
 } from '@/lib/projects/project-surface-access';
 import { selectCurrentUser, useAuthStore } from '@/lib/stores/authStore';
 import { buildWorkspaceOverviewPath } from '@/lib/workspaces/workspace-paths';
+import { buildWorkspaceSelectionPath, clearLoginContinuationState, persistLogoutIntent } from '@/lib/auth/invite-handoff';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
 import { Logo } from './Logo';
@@ -72,6 +74,7 @@ export function Topbar({ className = '', workspaceId: workspaceIdProp, projectId
   const user = useAuthStore(selectCurrentUser);
   const { clearAuth } = useAuthStore();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const pathname = usePathname();
   const params = useParams();
   const locale = (params?.locale as string) || 'en-US';
@@ -178,8 +181,12 @@ export function Topbar({ className = '', workspaceId: workspaceIdProp, projectId
   };
 
   const handleLogout = () => {
+    persistLogoutIntent();
+    void queryClient.cancelQueries();
+    queryClient.clear();
+    clearLoginContinuationState();
     clearAuth();
-    router.push('/login/workspace');
+    router.replace(buildWorkspaceSelectionPath());
   };
 
   const handleLayoutToggle = React.useCallback(() => {

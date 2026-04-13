@@ -283,5 +283,8 @@ describe('backend-real family story consumption', () => {
     expect(specs.find((entry) => entry.storyId === 'workspace-settings-save-and-effect')?.sourceRef).toBe(
       'e2e/stories/backend-real/workspace-settings-save-and-effect.story.md#workspace-settings-save-and-effect',
     );
+    expect(specs.find((entry) => entry.storyId === 'system-admin-multi-workspace-handoff')?.sourceRef).toBe(
+      'e2e/stories/backend-real/system-admin-multi-workspace-handoff.story.md#system-admin-multi-workspace-handoff',
+    );
   });
 });

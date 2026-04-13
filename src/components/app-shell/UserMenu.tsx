@@ -145,6 +145,7 @@ export function UserMenu({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
+            type="button"
             data-testid="topbar__user-menu"
             className="control-pill flex h-10 items-center gap-2.5 px-2.5 py-1.5 text-primary transition-colors duration-150 hover:bg-surface-low/35 hover:text-foreground"
           >

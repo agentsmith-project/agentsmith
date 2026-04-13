@@ -16,6 +16,8 @@ import {
   KEYCLOAK_DEV_ADMIN_USERNAME,
   KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
   KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
+  KEYCLOAK_INTEGRATION_USER_PASSWORD,
+  KEYCLOAK_INTEGRATION_USER_USERNAME,
   keycloakLoginToWorkspace,
   putContextEntryViaApi,
   startCodexRunnerProcess,
@@ -44,6 +46,10 @@ type WorkspaceSharedContextRuntime = {
   sharedValue: string;
   privateKey: string;
   privateValue: string;
+  projectNamePrefix: string;
+  endpointNamePrefix: string;
+  credentialNamePrefix: string;
+  model: string;
 };
 
 function resolvePersonalContextStep(stepId: string) {
@@ -87,7 +93,19 @@ function requireWorkspaceSharedContextRuntime(): WorkspaceSharedContextRuntime {
       throw new Error(`missing_workspace_shared_context_runtime_data:${key}`);
     }
   }
-  return workspaceSharedContext as unknown as WorkspaceSharedContextRuntime;
+  const projectUseGuide = runtimeRoot?.projectUseGuide as Record<string, unknown> | undefined;
+  if (!projectUseGuide) {
+    throw new Error('missing_workspace_shared_context_project_use_guide_data');
+  }
+  for (const key of ['projectNamePrefix', 'endpointNamePrefix', 'credentialNamePrefix', 'model'] as const) {
+    if (typeof projectUseGuide[key] !== 'string' || projectUseGuide[key].trim().length === 0) {
+      throw new Error(`missing_workspace_shared_context_project_use_guide_data:${key}`);
+    }
+  }
+  return {
+    ...workspaceSharedContext,
+    ...projectUseGuide,
+  } as unknown as WorkspaceSharedContextRuntime;
 }
 
 async function joinProjectNow(page: import('@playwright/test').Page, workspaceId: string, projectId: string): Promise<void> {
@@ -127,6 +145,7 @@ async function saveContextEntryViaUi(args: {
   await expect(args.page.getByTestId(`context-store__item--${args.key}`)).toBeVisible({ timeout: 30_000 });
   await expect(args.page.getByTestId('context-store__content')).toHaveValue(args.value);
 }
+
 
 function requireRealLaneApiKey(): string {
   const value = process.env.BACKEND_REAL_API_KEY?.trim();
@@ -296,115 +315,153 @@ test.describe('@lane-real context store isolation', () => {
     const sharedValue = `${runtime.sharedValue} [${runId}]`;
     const privateKey = `${runtime.privateKey}.${runId}`;
     const privateValue = `${runtime.privateValue} [${runId}]`;
+    const projectName = `${runtime.projectNamePrefix} ${runId}`;
+    const endpointName = `${runtime.endpointNamePrefix} ${runId}`;
+    const credentialName = `${runtime.credentialNamePrefix} ${runId}`;
 
     await ensureIntegrationKeycloakUsers();
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
 
-    const trace = await createUxTraceBundleWriter({
-      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
-      lane: 'backend-real',
-      suite: 'integration-context-store-isolation',
-      storyId: WORKSPACE_SHARED_CONTEXT_STORY.storyId,
-      title: WORKSPACE_SHARED_CONTEXT_STORY.title,
-      actor: WORKSPACE_SHARED_CONTEXT_STORY.actor,
-      route: `/${LOCALE}/workspaces/ws_default/settings/context`,
-      specFile: 'e2e/integration-context-store-isolation.spec.ts',
-      browser: 'chromium',
-      goal: WORKSPACE_SHARED_CONTEXT_STORY.goal,
-      preconditions: [...(WORKSPACE_SHARED_CONTEXT_STORY.preconditions ?? [])],
-      seedData: [...(WORKSPACE_SHARED_CONTEXT_STORY.seedData ?? [])],
-      storyBinding: WORKSPACE_SHARED_CONTEXT_BINDING,
-    });
-    let sharedContextTracePage = page;
-    const captureSharedContextTrace = async (stepId: string): Promise<void> => {
-      const storyStep = resolveWorkspaceSharedContextStep(stepId);
-      await trace.capture(sharedContextTracePage, {
-        stepId,
-        action: storyStep.action,
-        target: storyStep.target,
-        note: storyStep.note ?? storyStep.expectedFeedback,
-      });
-    };
-    let outcome: 'pass' | 'fail' = 'fail';
-
+    const projectOwnerContext = await browser.newContext();
+    const projectOwnerPage = await projectOwnerContext.newPage();
     try {
-      await openWorkspaceSharedContextPage({ page, workspaceId: 'ws_default' });
-      await captureSharedContextTrace('open-workspace-shared-context');
-      await saveContextEntryViaUi({
-        page,
-        key: sharedKey,
-        value: sharedValue,
+      await keycloakLoginToWorkspace(
+        projectOwnerPage,
+        'ws_default',
+        KEYCLOAK_INTEGRATION_USER_USERNAME,
+        KEYCLOAK_INTEGRATION_USER_PASSWORD,
+        { ensureProjectCreatorAccess: false },
+      );
+      const { projectId } = await createProjectInWorkspace(projectOwnerPage, 'ws_default', projectName, {
+        visibility: 'public',
+        joinPolicy: 'open',
       });
-      await captureSharedContextTrace('save-workspace-shared-context');
-
-      const sharedLookupAsAdmin = await getContextEntryViaApi({
-        page,
-        scope: 'workspace',
-        workspaceId: 'ws_default',
-        key: sharedKey,
+      await createCredentialViaUi(projectOwnerPage, 'ws_default', projectId, credentialName, requireRealLaneApiKey());
+      await createEndpointViaApi(projectOwnerPage, 'ws_default', projectId, {
+        endpointName,
+        endpointModel: runtime.model,
+        upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+        credentialName,
+        upstreamProtocol: 'anthropic_messages',
       });
-      expect(sharedLookupAsAdmin.body).toEqual(expect.objectContaining({
-        scope: 'workspace',
-        key: sharedKey,
-        content: sharedValue,
-      }));
 
-      const memberContext = await browser.newContext();
-      const memberPage = await memberContext.newPage();
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+        lane: 'backend-real',
+        suite: 'integration-context-store-isolation',
+        storyId: WORKSPACE_SHARED_CONTEXT_STORY.storyId,
+        title: WORKSPACE_SHARED_CONTEXT_STORY.title,
+        actor: WORKSPACE_SHARED_CONTEXT_STORY.actor,
+        route: `/${LOCALE}/workspaces/ws_default/settings/context`,
+        specFile: 'e2e/integration-context-store-isolation.spec.ts',
+        browser: 'chromium',
+        goal: WORKSPACE_SHARED_CONTEXT_STORY.goal,
+        preconditions: [...(WORKSPACE_SHARED_CONTEXT_STORY.preconditions ?? [])],
+        seedData: [...(WORKSPACE_SHARED_CONTEXT_STORY.seedData ?? [])],
+        storyBinding: WORKSPACE_SHARED_CONTEXT_BINDING,
+      });
+      let sharedContextTracePage = page;
+      const captureSharedContextTrace = async (stepId: string): Promise<void> => {
+        const storyStep = resolveWorkspaceSharedContextStep(stepId);
+        await trace.capture(sharedContextTracePage, {
+          stepId,
+          action: storyStep.action,
+          target: storyStep.target,
+          note: storyStep.note ?? storyStep.expectedFeedback,
+        });
+      };
+      let outcome: 'pass' | 'fail' = 'fail';
+
       try {
-        await keycloakLoginToWorkspace(
-          memberPage,
-          'ws_default',
-          KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
-          KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
-        );
+        await openWorkspaceSharedContextPage({ page, workspaceId: 'ws_default' });
+        await captureSharedContextTrace('open-workspace-shared-context');
+        await saveContextEntryViaUi({
+          page,
+          key: sharedKey,
+          value: sharedValue,
+        });
+        await captureSharedContextTrace('save-workspace-shared-context');
 
-        const sharedLookup = await getContextEntryViaApi({
-          page: memberPage,
+        const sharedLookupAsAdmin = await getContextEntryViaApi({
+          page,
           scope: 'workspace',
           workspaceId: 'ws_default',
           key: sharedKey,
-          expectedStatus: 403,
         });
-        expect(sharedLookup.body).toEqual(expect.objectContaining({
-          error_code: 'FORBIDDEN',
-          message: 'context_workspace_forbidden',
+        expect(sharedLookupAsAdmin.body).toEqual(expect.objectContaining({
+          scope: 'workspace',
+          key: sharedKey,
+          content: sharedValue,
         }));
 
-        await openPersonalContextFromUserMenu({
-          page: memberPage,
-          entryPagePath: `/${LOCALE}/workspaces/ws_default/projects`,
-          menuItemTestId: 'user-menu__workspace-personal-context',
-          expectedPath: new RegExp(`/workspaces/ws_default/context$`),
-        });
-        await expect(memberPage.getByTestId('context-store__scope-note')).toBeVisible({ timeout: 30_000 });
-        sharedContextTracePage = memberPage;
-        await captureSharedContextTrace('verify-member-shared-context-boundary');
+        const memberContext = await browser.newContext();
+        const memberPage = await memberContext.newPage();
+        try {
+          await keycloakLoginToWorkspace(
+            memberPage,
+            'ws_default',
+            KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
+            KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
+          );
 
-        await saveContextEntryViaUi({
-          page: memberPage,
-          key: privateKey,
-          value: privateValue,
-        });
-        await captureSharedContextTrace('verify-member-private-context-boundary');
+          const sharedLookup = await getContextEntryViaApi({
+            page: memberPage,
+            scope: 'workspace',
+            workspaceId: 'ws_default',
+            key: sharedKey,
+            expectedStatus: 403,
+          });
+          expect(sharedLookup.body).toEqual(expect.objectContaining({
+            error_code: 'FORBIDDEN',
+            message: 'context_workspace_forbidden',
+          }));
 
-        const privateLookup = await getContextEntryViaApi({
-          page: memberPage,
-          scope: 'member',
-          workspaceId: 'ws_default',
-          key: privateKey,
-        });
-        expect(privateLookup.body).toEqual(expect.objectContaining({
-          scope: 'member',
-          key: privateKey,
-          content: privateValue,
-        }));
-        outcome = 'pass';
+          await joinProjectNow(memberPage, 'ws_default', projectId);
+          await captureSharedContextTrace('join-project-before-use-guide');
+
+          await openPersonalContextFromUserMenu({
+            page: memberPage,
+            entryPagePath: `/${LOCALE}/workspaces/ws_default/projects`,
+            menuItemTestId: 'user-menu__workspace-personal-context',
+            expectedPath: new RegExp(`/workspaces/ws_default/context$`),
+          });
+          await expect(memberPage.getByTestId('context-store__scope-note')).toBeVisible({ timeout: 30_000 });
+          sharedContextTracePage = memberPage;
+          await captureSharedContextTrace('verify-member-shared-context-boundary');
+
+          await saveContextEntryViaUi({
+            page: memberPage,
+            key: privateKey,
+            value: privateValue,
+          });
+          await captureSharedContextTrace('verify-member-private-context-boundary');
+
+          const privateLookup = await getContextEntryViaApi({
+            page: memberPage,
+            scope: 'member',
+            workspaceId: 'ws_default',
+            key: privateKey,
+          });
+          expect(privateLookup.body).toEqual(expect.objectContaining({
+            scope: 'member',
+            key: privateKey,
+            content: privateValue,
+          }));
+
+          await memberPage.goto(`/${LOCALE}/workspaces/ws_default/projects/${projectId}/use-guide`);
+          await expect(memberPage.getByTestId('use-guide__page')).toBeVisible({ timeout: 30_000 });
+          await expect(memberPage.getByTestId('use-guide__status-context')).toContainText('workspace personal context entries', { timeout: 30_000 });
+          sharedContextTracePage = memberPage;
+          await captureSharedContextTrace('verify-project-use-guide-readiness');
+          outcome = 'pass';
+        } finally {
+          await memberContext.close();
+        }
       } finally {
-        await memberContext.close();
+        await trace.finish({ outcome });
       }
     } finally {
-      await trace.finish({ outcome });
+      await projectOwnerContext.close();
     }
   });
 

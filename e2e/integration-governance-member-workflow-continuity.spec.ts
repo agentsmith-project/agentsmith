@@ -40,6 +40,8 @@ import { readStoredAuthToken } from './integration-workspace-access';
 const STORY = loadStoryDefinitionSync('e2e/stories/backend-real/governance-change-then-member-keeps-working.story.md');
 const BINDING = buildTraceStoryBinding(STORY);
 const WORKSPACE_ID = STORY.seedData?.[0] ?? 'ws_default';
+const ADMIN_SWITCH_STORY = loadStoryDefinitionSync('e2e/stories/backend-real/admin-switches-to-member-and-keeps-working.story.md');
+const ADMIN_SWITCH_BINDING = buildTraceStoryBinding(ADMIN_SWITCH_STORY);
 
 type RuntimeData = {
   projectNamePrefix: string;
@@ -96,10 +98,10 @@ async function runMemberWorkCycle(args: {
   taskWorkspaceName: string;
   notebookTaskTitle: string;
   notebookAgentId: string;
-  chatAgentId: string;
   notebookToken: string;
-  chatToken: string;
   artifactName: string;
+  chatAgentId?: string;
+  chatToken?: string;
 }) {
   const createdTask = await createNotebookTaskWithNewWorkspaceViaApi({
     page: args.page,
@@ -150,31 +152,172 @@ async function runMemberWorkCycle(args: {
   await expect(args.page.getByTestId('notebook__artifact-card')).toBeVisible({ timeout: 30_000 });
   await expect(args.page.getByTestId('notebook__task-header-workspace-library')).toBeVisible({ timeout: 30_000 });
 
-  const sessionId = (await createChatSessionViaApi({
-    page: args.page,
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    externalAgentId: args.chatAgentId,
-    title: `${args.notebookTaskTitle}-chat`,
-  })).id;
-  const stream = await runChatStreamTurn({
-    page: args.page,
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    sessionId,
-    content: `Reply with exactly ${args.chatToken}.`,
-  });
-  expect(stream).toContain(args.chatToken);
-  await waitForAssistantToken({
-    page: args.page,
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    sessionId,
-    token: args.chatToken,
-  });
+  if (args.chatAgentId && args.chatToken) {
+    const sessionId = (await createChatSessionViaApi({
+      page: args.page,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      externalAgentId: args.chatAgentId,
+      title: `${args.notebookTaskTitle}-chat`,
+    })).id;
+    const stream = await runChatStreamTurn({
+      page: args.page,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      sessionId,
+      content: `Reply with exactly ${args.chatToken}.`,
+    });
+    expect(stream).toContain(args.chatToken);
+    await waitForAssistantToken({
+      page: args.page,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      sessionId,
+      token: args.chatToken,
+    });
+  }
 }
 
 test.describe('@lane-real governance change then member keeps working', () => {
+  test('admin switches to member and keeps working through governance handoff', async ({ browser, page }) => {
+    test.setTimeout(1_200_000);
+    const runtime = requireRuntime();
+    const apiKey = requireApiKey();
+    await ensureIntegrationKeycloakUsers();
+
+    const trace = await createUxTraceBundleWriter({
+      outputRoot: process.env.UX_TRACE_OUTPUT_ROOT,
+      lane: 'backend-real',
+      suite: 'integration-governance-member-workflow-continuity',
+      storyId: ADMIN_SWITCH_STORY.storyId,
+      title: ADMIN_SWITCH_STORY.title,
+      actor: ADMIN_SWITCH_STORY.actor,
+      route: ADMIN_SWITCH_STORY.entryRoute,
+      specFile: 'e2e/integration-governance-member-workflow-continuity.spec.ts',
+      browser: 'chromium',
+      goal: ADMIN_SWITCH_STORY.goal,
+      preconditions: [...(ADMIN_SWITCH_STORY.preconditions ?? [])],
+      seedData: [...(ADMIN_SWITCH_STORY.seedData ?? [])],
+      storyBinding: ADMIN_SWITCH_BINDING,
+    });
+    let outcome: 'pass' | 'fail' = 'fail';
+
+    const runnerLogs: string[] = [];
+
+    try {
+      await keycloakLoginToWorkspace(page, WORKSPACE_ID, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD, {
+        ensureProjectCreatorAccess: false,
+      });
+      const { projectId } = await createProjectInWorkspace(page, WORKSPACE_ID, `${runtime.projectNamePrefix} ${Date.now()}`, {
+        visibility: 'private',
+        joinPolicy: 'approval_required',
+      });
+
+      const credentialName = `${runtime.credentialNamePrefix} ${Date.now()}`;
+      await createCredentialViaUi(page, WORKSPACE_ID, projectId, credentialName, apiKey);
+      const endpointId = await createEndpointViaApi(page, WORKSPACE_ID, projectId, {
+        endpointName: `${runtime.endpointNamePrefix} ${Date.now()}`,
+        endpointModel: BACKEND_REAL_MODEL,
+        upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+        credentialName,
+      });
+
+      const notebookBundle = await createExternalRunnerAgentBundle(page, {
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        endpointId,
+        title: `${runtime.notebookAgentTitlePrefix} ${Date.now()}`,
+        interactionKind: 'notebook',
+      });
+
+      const notebookRunner = await startCodexRunnerProcess({ wsUrl: notebookBundle.wsUrl, agentKey: notebookBundle.agentKey });
+      runnerLogs.push(notebookRunner.logPath);
+      test.info().annotations.push({ type: 'notebook_runner_log', description: notebookRunner.logPath });
+
+      await waitForAgentPresenceOnline(page, WORKSPACE_ID, projectId, notebookBundle.agentId);
+
+      const inviteToken = await createInviteViaUi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId,
+        invitedEmail: runtime.memberEmail,
+      });
+
+      const memberContext = await browser.newContext();
+      const memberPage = await memberContext.newPage();
+      try {
+        await keycloakLoginToWorkspace(memberPage, WORKSPACE_ID, KEYCLOAK_INTEGRATION_MEMBER_USERNAME, KEYCLOAK_INTEGRATION_MEMBER_PASSWORD, {
+          ensureProjectCreatorAccess: false,
+        });
+        await memberPage.goto(`/${LOCALE}/join?token=${inviteToken}`);
+        await expect(memberPage.getByTestId('join__auto-accepting')).toBeVisible({ timeout: 30_000 });
+        await memberPage.waitForURL((url) => {
+          const parsed = new URL(url.toString());
+          return parsed.pathname === `/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${projectId}/overview`;
+        }, { timeout: 30_000 });
+        await expect(memberPage.getByTestId('project-hub__page')).toBeVisible({ timeout: 30_000 });
+
+        const memberToken = await readStoredAuthToken(memberPage);
+        const memberUserId = readUserIdFromJwt(memberToken);
+
+        await setProjectAdminMembership({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          memberUserId,
+          shouldBeAdmin: true,
+        });
+
+        await memberPage.goto(`/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${projectId}/settings`);
+        await expect(memberPage.getByTestId('settings__project-admins-section')).toBeVisible({ timeout: 30_000 });
+        await trace.capture(memberPage, { stepId: 'confirm-admin-surface' });
+
+        await runMemberWorkCycle({
+          page: memberPage,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          taskWorkspaceName: `${runtime.taskWorkspacePrefix} admin ${Date.now()}`,
+          notebookTaskTitle: `${runtime.notebookTaskTitlePrefix} admin ${Date.now()}`,
+          notebookAgentId: notebookBundle.agentId,
+          notebookToken: `${runtime.notebookTokenPrefix}_ADMIN_${Date.now()}`,
+          artifactName: `${runtime.artifactNamePrefix}-admin-${Date.now()}.md`,
+        });
+
+        await setProjectAdminMembership({
+          page,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          memberUserId,
+          shouldBeAdmin: false,
+        });
+        await trace.capture(page, { stepId: 'demote-admin-to-member' });
+
+        await memberPage.goto(`/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${projectId}/settings`);
+        await expect(memberPage.getByTestId('page-state__error')).toBeVisible({ timeout: 30_000 });
+        await trace.capture(memberPage, { stepId: 'lose-governance-surface' });
+
+        await runMemberWorkCycle({
+          page: memberPage,
+          workspaceId: WORKSPACE_ID,
+          projectId,
+          taskWorkspaceName: `${runtime.taskWorkspacePrefix} member ${Date.now()}`,
+          notebookTaskTitle: `${runtime.notebookTaskTitlePrefix} member ${Date.now()}`,
+          notebookAgentId: notebookBundle.agentId,
+          notebookToken: `${runtime.notebookTokenPrefix}_MEMBER_${Date.now()}`,
+          artifactName: `${runtime.artifactNamePrefix}-member-${Date.now()}.md`,
+        });
+        await trace.capture(memberPage, { stepId: 'continue-member-work' });
+
+        outcome = 'pass';
+      } finally {
+        await memberContext.close();
+        await notebookRunner.stop();
+      }
+    } finally {
+      await trace.finish({ outcome, finishedAt: new Date().toISOString(), notes: [...runnerLogs] });
+    }
+  });
+
   test('member work continues across promotion and demotion, then disappears after removal', async ({ browser, page }) => {
     test.setTimeout(1_200_000);
     const runtime = requireRuntime();
@@ -219,13 +362,6 @@ test.describe('@lane-real governance change then member keeps working', () => {
         credentialName,
       });
 
-      const chatBundle = await createExternalRunnerAgentBundle(page, {
-        workspaceId: WORKSPACE_ID,
-        projectId,
-        endpointId,
-        title: `${runtime.chatAgentTitlePrefix} ${Date.now()}`,
-        interactionKind: 'chat',
-      });
       const notebookBundle = await createExternalRunnerAgentBundle(page, {
         workspaceId: WORKSPACE_ID,
         projectId,
@@ -358,7 +494,6 @@ test.describe('@lane-real governance change then member keeps working', () => {
         outcome = 'pass';
       } finally {
         await memberContext.close();
-        await chatRunner.stop();
         await notebookRunner.stop();
       }
     } finally {

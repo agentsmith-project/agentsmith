@@ -350,7 +350,7 @@ export async function loginAsSystemAdmin(page: Page): Promise<void> {
   await expect
     .poll(() => page.url(), { timeout: 30_000 })
     .toMatch(new RegExp(`/${LOCALE}/system/workspaces`));
-  await expect(page.getByTestId('system-workspaces__heading')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('system-workspaces__new-workspace')).toBeVisible({ timeout: 30_000 });
 }
 
 async function resolveWorkspaceIdByName(page: Page, workspaceName: string): Promise<string> {
@@ -396,7 +396,7 @@ export async function createAndPublishWorkspaceWithDirectoryAdmin(args: {
 
   await args.page.getByTestId('system-workspaces__new-workspace').click();
   await args.page.waitForURL(new RegExp(`/${LOCALE}/system/workspaces/new$`), { timeout: 30_000 });
-  await expect(args.page.getByTestId('system-workspace-create__heading')).toBeVisible({ timeout: 30_000 });
+  await expect(args.page.getByTestId('system-workspace-create__shell')).toBeVisible({ timeout: 30_000 });
   await args.page.getByTestId('system-workspaces__draft-name').fill(args.workspaceName);
   await args.page.getByTestId('system-workspace-create__next').click();
 
@@ -414,7 +414,6 @@ export async function createAndPublishWorkspaceWithDirectoryAdmin(args: {
   expect((await verifyResponse).ok()).toBeTruthy();
   await expect(args.page.getByTestId('system-workspaces__draft-admin')).toBeVisible({ timeout: 20_000 });
 
-  await args.page.getByTestId('system-workspace-create__next').click();
   await args.page.getByTestId('system-workspaces__admin-mode--directory').click();
   await selectWorkspaceAdminFromDirectory(args.page, adminEmail);
 

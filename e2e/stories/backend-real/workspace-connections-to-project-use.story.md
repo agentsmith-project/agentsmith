@@ -5,7 +5,7 @@
   "actor": "workspace admin / project member",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/{workspaceId}/connections",
-  "goal": "成员在工作区连接页确认共享集成和个人连接状态后，能够清楚地继续到项目使用的项目列表并打开 use-guide 作为第一次真正消费，而不是停在连接配置页。",
+  "goal": "成员在工作区连接页确认共享集成状态后，能够清楚地继续到项目使用的项目列表并打开 use-guide，最后真的完成第一次 endpoint 消费，而不是把连接页当成一个停住不动的设置页。",
   "preconditions": [
     "backend-real stack is ready",
     "workspace ws_default is published",
@@ -26,15 +26,14 @@
       "projectNamePrefix": "Story Workspace Connections",
       "endpointNamePrefix": "Story Workspace Connections Endpoint",
       "credentialNamePrefix": "Story Workspace Connections Credential",
-      "connectionDisplayNamePrefix": "Story Workspace Connections Connection",
-      "connectionCustomDomainSuffix": "workspace-connections.storybook.example",
-      "connectionToken": "workspace-connections-token",
-      "connectionNote": "Workspace connections story connection",
       "model": "story-workspace-connections-model",
-      "upstreamReplyText": "WORKSPACE_CONNECTIONS_READY"
+      "apiKeyLabelPrefix": "Story Workspace Connections API Key",
+      "apiKeyTtlDays": "7",
+      "consumeProtocol": "anthropic",
+      "expectedReplyText": "WORKSPACE_CONNECTIONS_READY"
     }
   },
-  "narrative": "Workspace connections should not be a dead-end settings page; after checking that the workspace integration and personal connection are ready, the member should have a clear project-use handoff and a stable first-use guide.",
+  "narrative": "Workspace connections should not be a dead-end settings page; after checking that the workspace integration is ready, the member should have a clear project-use handoff, see the use-guide, and complete one real endpoint call.",
   "scenes": [
     {
       "sceneId": "workspace-connections",
@@ -46,18 +45,18 @@
       ]
     },
     {
-      "sceneId": "personal-connections",
-      "route": "/en-US/user/third-party-accounts",
-      "stableMarkers": [
-        "third-party-accounts__create-btn"
-      ]
-    },
-    {
       "sceneId": "project-use-guide",
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/use-guide",
       "stableMarkers": [
         "use-guide__page",
         "use-guide__endpoint-select"
+      ]
+    },
+    {
+      "sceneId": "personal-api-keys",
+      "route": "/en-US/user/api-keys",
+      "stableMarkers": [
+        "api-keys__create-btn"
       ]
     }
   ],
@@ -70,18 +69,6 @@
       "target": "workspace-connections__next-step",
       "expectedFeedback": "用户能看到工作区集成状态，以及前往 project use 的明确下一步。",
       "note": "工作区连接页不能只停在状态说明，它必须把用户往项目使用带过去。",
-      "evidence": [
-        "trace"
-      ]
-    },
-    {
-      "stepId": "create-or-refresh-personal-connection",
-      "sceneId": "personal-connections",
-      "intent": "Create or refresh a personal connection that the member can reuse when moving into project use.",
-      "action": "Create or refresh personal connection",
-      "target": "third-party-accounts__create-btn",
-      "expectedFeedback": "用户能在个人连接页创建或刷新连接。",
-      "note": "个人连接页是成员真正进入项目使用前的自助准备面。",
       "evidence": [
         "trace"
       ]
@@ -106,6 +93,42 @@
       "target": "use-guide__endpoint-select",
       "expectedFeedback": "成员能选中 endpoint，并顺着 use-guide 进入真实调用路径。",
       "note": "use-guide 要独立承接第一次消费，而不是被其它故事顺手带到。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "create-personal-api-key",
+      "sceneId": "personal-api-keys",
+      "intent": "Create a personal API key needed for the first real consumption.",
+      "action": "Create personal API key",
+      "target": "api-keys__create-btn",
+      "expectedFeedback": "用户完成自助创建 API key。",
+      "note": "个人 API key 让成员真正能完成第一次 project consumption。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "consume-project-endpoint",
+      "sceneId": "project-use-guide",
+      "intent": "Use the personal API key to call the project endpoint through the documented gateway base URL.",
+      "action": "Consume project endpoint",
+      "target": "use-guide__gateway-base-url",
+      "expectedFeedback": "成员能按照 use-guide 成功完成第一次 endpoint 消费。",
+      "note": "workspace connections 的 handoff 必须真的把成员带到一次成功调用，而不是只停在链接页。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "verify-first-consumption",
+      "sceneId": "project-use-guide",
+      "intent": "Confirm the first real consumption returns the expected response.",
+      "action": "Verify first consumption",
+      "target": "use-guide__gateway-base-url",
+      "expectedFeedback": "第一次消费返回预期结果，说明 workspace connections 真的把人带到了可用的 project use。",
+      "note": "最终判断应该落在真实消费返回，而不是页面文本。",
       "evidence": [
         "trace"
       ]

@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
+import { persistLogoutIntent } from '@/lib/auth/invite-handoff';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const replaceMock = vi.fn();
 let pathnameMock = '/zh-CN/workspaces/lab';
+let paramsMock = { locale: 'zh-CN' as const };
 let recoveryListener: ((event: { type: 'unauthorized'; statusCode: 401; path: string }) => void) | null = null;
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: replaceMock }),
   usePathname: () => pathnameMock,
+  useParams: () => paramsMock,
 }));
 
 vi.mock('@/lib/auth/session-recovery', async (importOriginal) => {
@@ -60,6 +63,7 @@ describe('SessionRecoveryProvider', () => {
     replaceMock.mockReset();
     recoveryListener = null;
     pathnameMock = '/zh-CN/workspaces/lab';
+    paramsMock = { locale: 'zh-CN' };
     installMemoryStorage();
     (window as typeof window & {
       __MBOS_PUBLIC_RUNTIME_CONFIG__?: unknown;
@@ -154,6 +158,27 @@ describe('SessionRecoveryProvider', () => {
 
   it('redirects session recovery to the locale-aware workspace login path', async () => {
     pathnameMock = '/zh-CN/workspaces/lab';
+    paramsMock = { locale: 'zh-CN' };
+
+    await act(async () => {
+      storeModule.useAuthStore.getState().setAuth(
+        {
+          id: 'user_1',
+          email: 'user@example.com',
+          name: 'User',
+          locale: 'zh-CN',
+        },
+        'access_1',
+        {
+          refreshToken: 'refresh_1',
+          expiresIn: 300,
+          keycloakSession: {
+            realmBase: 'https://keycloak.imotion.ai/realms/master',
+            clientId: 'mbos',
+          },
+        },
+      );
+    });
 
     const queryClient = new QueryClient();
     const SessionRecoveryProvider = providerModule.SessionRecoveryProvider;
@@ -176,8 +201,60 @@ describe('SessionRecoveryProvider', () => {
     expect(replaceMock).toHaveBeenCalledWith('/zh-CN/login/workspace');
   });
 
+
+  it('does not redirect session recovery after auth has already been cleared', async () => {
+    pathnameMock = '/zh-CN/workspaces/lab';
+    paramsMock = { locale: 'zh-CN' };
+
+    const queryClient = new QueryClient();
+    const SessionRecoveryProvider = providerModule.SessionRecoveryProvider;
+    render(
+      <QueryClientProvider client={queryClient}>
+        <SessionRecoveryProvider>
+          <div>ok</div>
+        </SessionRecoveryProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(recoveryListener).toBeTypeOf('function');
+
+    await act(async () => {
+      storeModule.useAuthStore.getState().clearAuth();
+    });
+
+    await act(async () => {
+      recoveryListener?.({ type: 'unauthorized', statusCode: 401, path: '/api/v1/me' });
+    });
+
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
   it('does not redirect session recovery while already on workspace select', async () => {
     pathnameMock = '/zh-CN/login/workspace';
+
+    const queryClient = new QueryClient();
+    const SessionRecoveryProvider = providerModule.SessionRecoveryProvider;
+    render(
+      <QueryClientProvider client={queryClient}>
+        <SessionRecoveryProvider>
+          <div>ok</div>
+        </SessionRecoveryProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(recoveryListener).toBeTypeOf('function');
+
+    await act(async () => {
+      recoveryListener?.({ type: 'unauthorized', statusCode: 401, path: '/api/v1/me' });
+    });
+
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it('suppresses recovery redirects during an active deliberate logout transition', async () => {
+    pathnameMock = '/zh-CN/workspaces/lab';
+    paramsMock = { locale: 'zh-CN' };
+    persistLogoutIntent();
 
     const queryClient = new QueryClient();
     const SessionRecoveryProvider = providerModule.SessionRecoveryProvider;

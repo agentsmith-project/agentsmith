@@ -5,7 +5,7 @@
   "actor": "project member",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/use-guide",
-  "goal": "项目成员第一次进入 use-guide 时，应该能先看懂项目的可用入口，再创建自己的 API key，最后完成第一次正确消费，而不是把 use-guide 当成一个静态说明页。",
+  "goal": "项目成员第一次进入 use-guide 时，应该能先看懂项目的可用入口，再创建自己的 API key，最后完成第一次正确消费，而且能清楚看到 workspace personal context entries 的准备状态，而不是把 use-guide 当成一个静态说明页。",
   "preconditions": [
     "backend-real stack is ready",
     "workspace ws_default is published",
@@ -33,7 +33,7 @@
       "expectedReplyText": "USE_GUIDE_FIRST_CONSUMPTION_OK"
     }
   },
-  "narrative": "use-guide 的核心不是文档感，而是把成员带到第一次可以真实消费项目 endpoint 的位置：先看懂入口，再创建个人 API key，再完成第一次成功调用。",
+  "narrative": "use-guide 的核心不是文档感，而是把成员带到第一次可以真实消费项目 endpoint 的位置：先看懂入口，再创建个人 API key，再完成第一次成功调用，并且能看见 workspace personal context entries 的 readiness。",
   "scenes": [
     {
       "sceneId": "project-use-guide",
@@ -68,6 +68,18 @@
       "target": "use-guide__page",
       "expectedFeedback": "成员先看懂 use-guide，而不是直接被丢进接口细节。",
       "note": "use-guide 必须先承接用户理解，再承接第一次消费。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "verify-use-guide-readiness",
+      "sceneId": "project-use-guide",
+      "intent": "Confirm workspace personal context entries are visible before the first call.",
+      "action": "Verify use guide readiness",
+      "target": "use-guide__status-context",
+      "expectedFeedback": "成员能看见 workspace personal context entries 的 readiness。",
+      "note": "use-guide 不是静态说明页，它必须清楚讲出当前项目的 readiness。",
       "evidence": [
         "trace"
       ]

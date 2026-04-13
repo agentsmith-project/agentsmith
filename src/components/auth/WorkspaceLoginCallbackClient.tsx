@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -8,7 +8,7 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient, MemberAPI } from '@/lib/api';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
 import { readAccessTokenClaims } from '@/lib/auth/token-claims';
-import { buildWorkspaceLoginLandingHref, clearInviteHandoff, readInviteHandoff, readPendingInviteToken, clearPendingInviteToken } from '@/lib/auth/invite-handoff';
+import { buildWorkspaceLoginLandingHref, clearInviteHandoff, readInviteHandoffForWorkspace, readPendingInviteToken, clearPendingInviteToken } from '@/lib/auth/invite-handoff';
 import {
   buildDesktopAuthCompleteHref,
   buildDesktopAuthRequestHref,
@@ -98,6 +98,7 @@ export function WorkspaceLoginCallbackClient({
   const searchParams = useSearchParams();
   const { setAuth } = useAuthStore();
   const [error, setError] = useState<string | null>(null);
+  const handledCallbackRef = useRef(false);
   const code = searchParams.get('code');
   const state = searchParams.get('state');
   const providerError = searchParams.get('error');
@@ -131,6 +132,8 @@ export function WorkspaceLoginCallbackClient({
 
     const run = async () => {
       if (!config || !realmBase) return;
+      if (handledCallbackRef.current) return;
+
       if (providerError) {
         setError(providerError);
         return;
@@ -176,8 +179,10 @@ export function WorkspaceLoginCallbackClient({
         return;
       }
 
+      handledCallbackRef.current = true;
+
       const locale = pkce.locale || fallbackLocale;
-      const inviteHandoff = readInviteHandoff();
+      const inviteHandoff = readInviteHandoffForWorkspace(workspaceId);
       const resolvedProjectId = pkce.projectId || inviteHandoff?.projectId || null;
       const desktopAuthRequestHref = pkce.desktopAuthRequestId
         ? buildDesktopAuthRequestHref(locale, pkce.desktopAuthRequestId)

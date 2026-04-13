@@ -58,6 +58,12 @@ describe('UserMenu', () => {
     fireEvent.click(trigger);
   };
 
+  it('uses a non-submit trigger button so menu opening does not leak into surrounding forms', () => {
+    renderMenu();
+
+    expect(screen.getByTestId('topbar__user-menu')).toHaveAttribute('type', 'button');
+  });
+
   it('renders profile, integration, and theme controls without permission tokens', async () => {
     renderMenu();
 

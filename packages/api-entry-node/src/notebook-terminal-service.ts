@@ -21,10 +21,10 @@ const DEFAULT_TERMINAL_MOUNT_RETRY_COUNT = 2;
 const DEFAULT_TERMINAL_MOUNT_RETRY_DELAY_MS = 750;
 const DEFAULT_TERMINAL_BOOTSTRAP_OVERHEAD_MS = 10_000;
 const DEFAULT_TERMINAL_STARTUP_TIMEOUT_FLOOR_MS = 15_000;
-const DEFAULT_TERMINAL_RECONNECT_GRACE_MS = 30_000;
 const DEFAULT_TERMINAL_REENTRY_OVERHEAD_MS = 20_000;
 const DEFAULT_TERMINAL_RECONNECT_GRACE_FLOOR_MS = 90_000;
 const MAX_TERMINAL_RECONNECT_GRACE_MS = 2 * 60_000;
+const TERMINAL_SERVICE_RELOAD_CLOSE_REASON = 'terminal_connection_failed_service_reload';
 
 function parsePositiveIntegerEnv(name: string): number | null {
   const raw = process.env[name]?.trim();
@@ -189,6 +189,47 @@ export class NotebookTerminalService {
     return status === 'pending' || status === 'active' || status === 'disconnected' || status === 'failed';
   }
 
+  private isLiveBindableSessionStatus(status: RegisteredTerminalSession['status']): boolean {
+    return status === 'pending' || status === 'active' || status === 'disconnected';
+  }
+
+  private async reconcilePersistedSessionAfterServiceReload(
+    session: RegisteredTerminalSession,
+  ): Promise<RegisteredTerminalSession> {
+    if (!this.isLiveBindableSessionStatus(session.status)) {
+      return session;
+    }
+
+    const endedAt = new Date().toISOString();
+    const reconciled: RegisteredTerminalSession = {
+      ...session,
+      status: 'failed',
+      lastActivityAt: endedAt,
+      endedAt,
+      closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON,
+      exitCode: session.exitCode ?? null,
+      browserSocket: undefined,
+      runtime: undefined,
+      runtimeDispatchPromise: undefined,
+      disconnectTimer: undefined,
+      disconnectVersion: undefined,
+      startupTimer: undefined,
+      streamBound: false,
+      bindVersion: undefined,
+    };
+    await this.persistSession(reconciled);
+    return reconciled;
+  }
+
+  private async loadResolvedPersistedSession(sessionId: string): Promise<RegisteredTerminalSession | null> {
+    const persisted = await this.loadPersistedSession(sessionId);
+    if (!persisted) return null;
+    if (this.isLiveBindableSessionStatus(persisted.status)) {
+      return this.reconcilePersistedSessionAfterServiceReload(persisted);
+    }
+    return persisted;
+  }
+
   private async countTaskSessions(input: {
     workspaceId: string;
     projectId: string;
@@ -281,6 +322,19 @@ export class NotebookTerminalService {
     } catch {
       return null;
     }
+  }
+
+  private async resolveLiveBindableSession(sessionId: string): Promise<RegisteredTerminalSession | null> {
+    const live = this.sessions.get(sessionId);
+    if (live) {
+      return this.isLiveBindableSessionStatus(live.status) ? live : null;
+    }
+
+    const persisted = await this.loadPersistedSession(sessionId);
+    if (persisted && this.isLiveBindableSessionStatus(persisted.status)) {
+      await this.reconcilePersistedSessionAfterServiceReload(persisted);
+    }
+    return null;
   }
 
   private clearStartupTimer(session: RegisteredTerminalSession): void {
@@ -525,7 +579,7 @@ export class NotebookTerminalService {
     wsPath: string;
     wsTicket: string;
   } | null> {
-    const session = this.sessions.get(sessionId);
+    const session = await this.resolveLiveBindableSession(sessionId);
     if (!session) return null;
     const issued = await issueInternalTicket(this.cache, {
       purpose: 'terminal_ws_access',
@@ -552,7 +606,7 @@ export class NotebookTerminalService {
   async getSession(sessionId: string): Promise<RegisteredTerminalSession | null> {
     const live = this.sessions.get(sessionId);
     if (live) return live;
-    return this.loadPersistedSession(sessionId);
+    return this.loadResolvedPersistedSession(sessionId);
   }
 
   async listSessionsForTask(input: {
@@ -617,7 +671,8 @@ export class NotebookTerminalService {
     userId: string;
     sessionId: string;
   }): Promise<boolean> {
-    const session = this.sessions.get(input.sessionId) ?? await this.loadPersistedSession(input.sessionId);
+    const liveSession = this.sessions.get(input.sessionId);
+    const session = liveSession ?? await this.loadResolvedPersistedSession(input.sessionId);
     if (!session) return false;
     if (
       session.workspaceId !== input.workspaceId
@@ -632,9 +687,32 @@ export class NotebookTerminalService {
       session.disconnectTimer = undefined;
     }
     this.clearStartupTimer(session);
-    session.runtime?.close();
+    if (liveSession) {
+      session.runtime?.close();
+    } else if (session.closeReason === TERMINAL_SERVICE_RELOAD_CLOSE_REASON) {
+      const closeTerminalSession = (
+        this.agentExecutionService as Partial<AgentExecutionService> & {
+          closeTerminalSession?: (request: {
+            workspaceId: string;
+            projectId: string;
+            sessionId: string;
+            agentId: string;
+            terminalSessionId: string;
+          }) => Promise<unknown>;
+        }
+      ).closeTerminalSession;
+      if (typeof closeTerminalSession === 'function') {
+        await closeTerminalSession.call(this.agentExecutionService, {
+          workspaceId: session.workspaceId,
+          projectId: session.projectId,
+          sessionId: session.runnerSessionId,
+          agentId: session.agentId,
+          terminalSessionId: session.id,
+        }).catch(() => undefined);
+      }
+    }
     this.closeBrowserSocket(session.browserSocket, 1000, 'terminal_closed_by_user');
-    if (this.sessions.has(session.id)) {
+    if (liveSession && this.sessions.has(session.id)) {
       this.finishSession(session.id, 'closed', 'ended_by_user');
     }
     this.sessions.delete(session.id);
@@ -679,15 +757,19 @@ export class NotebookTerminalService {
         socket.destroy();
         return;
       }
-      const registered = this.sessions.get(sessionId);
-      if (!registered || registered.taskId !== taskId) {
-        socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-        socket.destroy();
-        return;
-      }
+      void this.resolveLiveBindableSession(sessionId).then((registered) => {
+        if (!registered || registered.taskId !== taskId) {
+          socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+          socket.destroy();
+          return;
+        }
 
-      this.wsServer.handleUpgrade(req, socket, head, (ws) => {
-        void this.bindBrowserSocket(ws, registered);
+        this.wsServer.handleUpgrade(req, socket, head, (ws) => {
+          void this.bindBrowserSocket(ws, registered);
+        });
+      }).catch(() => {
+        socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+        socket.destroy();
       });
     }).catch(() => {
       socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');

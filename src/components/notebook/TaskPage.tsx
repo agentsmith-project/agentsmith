@@ -166,6 +166,58 @@ function getNextTerminalTabOrdinal(tabs: TerminalWorkspaceTab[]) {
   );
 }
 
+function removeListedTerminalSessionById(
+  sessions: ListedTerminalSession[] | null,
+  sessionId: string | null | undefined,
+) {
+  if (!sessionId || sessions === null) {
+    return sessions;
+  }
+  const nextSessions = sessions.filter((session) => session.id !== sessionId);
+  return nextSessions.length === sessions.length ? sessions : nextSessions;
+}
+
+function isTerminalRecoveryTab(tab: TerminalWorkspaceTab) {
+  return tab.status === "failed" || tab.status === "recovering";
+}
+
+function isListedTerminalSessionRecoveryStatus(
+  status: ListedTerminalSession["status"],
+) {
+  return status === "failed" || status === "disconnected";
+}
+
+export function getPreferredRecoveryTerminalTabId(
+  tabs: TerminalWorkspaceTab[],
+  terminalTruthSessions: ListedTerminalSession[] | null,
+  activeTerminalTabId: string | null,
+) {
+  const recoverySessionIds = new Set(
+    (terminalTruthSessions ?? [])
+      .filter((session) => isListedTerminalSessionRecoveryStatus(session.status))
+      .map((session) => session.id),
+  );
+  const recoveryTabIds = new Set(
+    tabs
+      .filter(
+        (tab) =>
+          isTerminalRecoveryTab(tab) ||
+          (typeof tab.sessionId === "string" &&
+            recoverySessionIds.has(tab.sessionId)),
+      )
+      .map((tab) => tab.id),
+  );
+  const activeTabId =
+    tabs.find((tab) => tab.id === activeTerminalTabId)?.id ?? null;
+  return (
+    (activeTabId && recoveryTabIds.has(activeTabId) ? activeTabId : null) ??
+    tabs.find((tab) => recoveryTabIds.has(tab.id))?.id ??
+    activeTabId ??
+    tabs[0]?.id ??
+    null
+  );
+}
+
 export interface TaskPageProps {
   workspaceId: string;
   projectId: string;
@@ -244,7 +296,7 @@ export function TaskPage({
   const [terminalTabs, setTerminalTabs] = React.useState<TerminalWorkspaceTab[]>([]);
   const [activeTerminalTabId, setActiveTerminalTabId] = React.useState<string | null>(null);
   const [terminalTruthSessions, setTerminalTruthSessions] = React.useState<ListedTerminalSession[] | null>(null);
-  const [artifactsDrawerOpen, setArtifactsDrawerOpen] = React.useState(
+  const [preferredArtifactsDrawerOpen, setPreferredArtifactsDrawerOpen] = React.useState(
     initialStoredTerminalWorkspaceState?.artifactsDrawerOpen ?? true,
   );
   const [terminalWorkspaceHydrationState, setTerminalWorkspaceHydrationState] =
@@ -254,8 +306,9 @@ export function TaskPage({
   const nextTerminalTabOrdinalRef = React.useRef(1);
   const terminalTabsRef = React.useRef<TerminalWorkspaceTab[]>([]);
   const activeTerminalTabIdRef = React.useRef<string | null>(null);
+  const terminalTruthSessionsRef = React.useRef<ListedTerminalSession[] | null>(null);
   const viewModeRef = React.useRef<TerminalViewMode>("conversation");
-  const artifactsDrawerOpenRef = React.useRef(
+  const preferredArtifactsDrawerOpenRef = React.useRef(
     initialStoredTerminalWorkspaceState?.artifactsDrawerOpen ?? true,
   );
   const hydratedTerminalTaskScopeRef = React.useRef<string | null>(null);
@@ -440,12 +493,16 @@ export function TaskPage({
   }, [activeTerminalTabId]);
 
   React.useEffect(() => {
+    terminalTruthSessionsRef.current = terminalTruthSessions;
+  }, [terminalTruthSessions]);
+
+  React.useEffect(() => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
 
   React.useEffect(() => {
-    artifactsDrawerOpenRef.current = artifactsDrawerOpen;
-  }, [artifactsDrawerOpen]);
+    preferredArtifactsDrawerOpenRef.current = preferredArtifactsDrawerOpen;
+  }, [preferredArtifactsDrawerOpen]);
 
   React.useEffect(() => {
     const preferredActiveSessionId =
@@ -453,11 +510,11 @@ export function TaskPage({
     writeStoredTerminalWorkspaceState(workspaceId, projectId, taskId, {
       preferredViewMode: viewMode,
       preferredActiveSessionId,
-      artifactsDrawerOpen,
+      artifactsDrawerOpen: preferredArtifactsDrawerOpen,
     });
   }, [
     activeTerminalTabId,
-    artifactsDrawerOpen,
+    preferredArtifactsDrawerOpen,
     projectId,
     taskId,
     terminalTabs,
@@ -885,7 +942,6 @@ export function TaskPage({
       : terminalTabs.length;
     if (mode === "terminal" && terminalSessionCount === 0) return;
     setViewMode(mode);
-    setArtifactsDrawerOpen(mode === "conversation");
   }, [terminalTabs, terminalTruthSessions, terminalWorkspaceHydrationState]);
   const hasTask = task != null;
   const taskStatus = task?.status ?? "active";
@@ -952,6 +1008,8 @@ export function TaskPage({
     (terminalTruthResolved || terminalTruthUnavailable) && terminalSessionCount === 0
       ? "conversation"
       : viewMode;
+  const artifactsDrawerOpen =
+    effectiveViewMode === "conversation" ? preferredArtifactsDrawerOpen : false;
   const terminalRecoveryCount = terminalTruthResolved
     ? (terminalTruthSessions ?? []).filter(
         (session) =>
@@ -1026,8 +1084,33 @@ export function TaskPage({
     : hasTerminalSessions
       ? tTask("delete_blocked_terminal_sessions")
       : null;
+  const handleOpenTerminalWorkspace = React.useCallback(
+    (preferRecovery: boolean = false) => {
+      if (terminalTabsRef.current.length === 0) {
+        return;
+      }
+      const nextActiveTerminalTabId = preferRecovery
+        ? getPreferredRecoveryTerminalTabId(
+            terminalTabsRef.current,
+            terminalTruthSessions,
+            activeTerminalTabIdRef.current,
+          )
+        : terminalTabsRef.current.find(
+            (tab) => tab.id === activeTerminalTabIdRef.current,
+          )?.id ??
+          terminalTabsRef.current[0]?.id ??
+          null;
+      if (nextActiveTerminalTabId !== activeTerminalTabIdRef.current) {
+        setActiveTerminalTabId(nextActiveTerminalTabId);
+        activeTerminalTabIdRef.current = nextActiveTerminalTabId;
+      }
+      setViewMode("terminal");
+    },
+    [terminalTruthSessions],
+  );
 
   const resetTerminalWorkspaceState = React.useCallback(() => {
+    const nextArtifactsDrawerOpen = preferredArtifactsDrawerOpenRef.current;
     terminalTabsRef.current.forEach((tab) => {
       clearTaskTerminalPanelSessionStateForScope(
         workspaceId,
@@ -1041,15 +1124,14 @@ export function TaskPage({
     setActiveTerminalTabId(null);
     activeTerminalTabIdRef.current = null;
     setViewMode("conversation");
-    setArtifactsDrawerOpen(true);
     setTerminalTruthSessions([]);
     nextTerminalTabOrdinalRef.current = 1;
     initialStoredTerminalWorkspaceStateRef.current = {
       preferredViewMode: "conversation",
       preferredActiveSessionId: null,
-      artifactsDrawerOpen: true,
+      artifactsDrawerOpen: nextArtifactsDrawerOpen,
     };
-  }, [projectId, taskId, workspaceId]);
+  }, [preferredArtifactsDrawerOpenRef, projectId, taskId, workspaceId]);
 
   const clearTerminalWorkspaceStateFromBackend = React.useCallback(
     (artifactsDrawerPreference?: boolean) => {
@@ -1073,9 +1155,10 @@ export function TaskPage({
       if (viewModeRef.current !== "conversation") {
         setViewMode("conversation");
       }
-      const nextArtifactsDrawerOpen = artifactsDrawerPreference ?? true;
-      if (artifactsDrawerOpenRef.current !== nextArtifactsDrawerOpen) {
-        setArtifactsDrawerOpen(nextArtifactsDrawerOpen);
+      const nextArtifactsDrawerOpen =
+        artifactsDrawerPreference ?? preferredArtifactsDrawerOpenRef.current;
+      if (preferredArtifactsDrawerOpenRef.current !== nextArtifactsDrawerOpen) {
+        setPreferredArtifactsDrawerOpen(nextArtifactsDrawerOpen);
       }
       nextTerminalTabOrdinalRef.current = 1;
       initialStoredTerminalWorkspaceStateRef.current = {
@@ -1112,6 +1195,11 @@ export function TaskPage({
         initialStoredTerminalWorkspaceStateRef.current?.preferredActiveSessionId ??
         null;
       const modeStrategy = options?.modeStrategy ?? "restore-initial";
+      const preferredArtifactsDrawerOpen =
+        modeStrategy === "preserve-current"
+          ? preferredArtifactsDrawerOpenRef.current
+          : (initialStoredTerminalWorkspaceStateRef.current?.artifactsDrawerOpen ??
+            true);
       const shouldRestoreTerminalMode =
         modeStrategy === "preserve-current"
           ? viewModeRef.current === "terminal"
@@ -1164,10 +1252,7 @@ export function TaskPage({
       });
 
       if (nextTabs.length === 0) {
-        clearTerminalWorkspaceStateFromBackend(
-          initialStoredTerminalWorkspaceStateRef.current?.artifactsDrawerOpen ??
-            artifactsDrawerOpenRef.current,
-        );
+        clearTerminalWorkspaceStateFromBackend(preferredArtifactsDrawerOpen);
         return;
       }
 
@@ -1189,15 +1274,11 @@ export function TaskPage({
       setActiveTerminalTabId(nextActiveTerminalTabId);
       activeTerminalTabIdRef.current = nextActiveTerminalTabId;
       setViewMode(shouldRestoreTerminalMode ? "terminal" : "conversation");
-      setArtifactsDrawerOpen(
-        shouldRestoreTerminalMode
-          ? false
-          : (initialStoredTerminalWorkspaceStateRef.current?.artifactsDrawerOpen ??
-            true),
-      );
+      setPreferredArtifactsDrawerOpen(preferredArtifactsDrawerOpen);
     },
     [
       clearTerminalWorkspaceStateFromBackend,
+      preferredArtifactsDrawerOpenRef,
       projectId,
       tTask,
       taskId,
@@ -1303,7 +1384,7 @@ export function TaskPage({
     terminalWorkspaceHydrationState,
   ]);
 
-  const closeAllTerminalTabs = async () => {
+  const closeAllTerminalTabs = React.useCallback(async () => {
     if (terminalTabsRef.current.length === 0) return;
     try {
       const listedSessions = await taskAPI.listTerminalSessions(
@@ -1347,7 +1428,15 @@ export function TaskPage({
         logContext: "TaskPage.closeAllTerminalTabs",
       });
     }
-  };
+  }, [
+    handleError,
+    hydrateTerminalWorkspaceFromBackendSessions,
+    projectId,
+    resetTerminalWorkspaceState,
+    taskAPI,
+    taskId,
+    workspaceId,
+  ]);
 
   const handleRequestCloseAllTerminalTabs = React.useCallback(() => {
     if (terminalSessionCount === 0 || endAllTerminalPending) {
@@ -1434,7 +1523,6 @@ export function TaskPage({
     setActiveTerminalTabId(tabId);
     activeTerminalTabIdRef.current = tabId;
     setViewMode("terminal");
-    setArtifactsDrawerOpen(false);
   };
 
   const handleTerminalTabStatusChange = (tabId: string, status: TerminalStatus) => {
@@ -1491,10 +1579,36 @@ export function TaskPage({
     if (open) return;
     const currentTabs = terminalTabsRef.current;
     const closingIndex = currentTabs.findIndex((tab) => tab.id === tabId);
+    if (closingIndex < 0) {
+      return;
+    }
+    const closingTab = currentTabs[closingIndex];
     const nextTabs = relabelTerminalWorkspaceTabs(
       tTask,
       currentTabs.filter((tab) => tab.id !== tabId),
     );
+    const nextTerminalTruthSessions = removeListedTerminalSessionById(
+      terminalTruthSessionsRef.current,
+      closingTab?.sessionId,
+    );
+    clearTaskTerminalPanelSessionStateForScope(
+      workspaceId,
+      projectId,
+      taskId,
+      tabId,
+    );
+    terminalTruthSessionsRef.current = nextTerminalTruthSessions;
+    setTerminalTruthSessions(nextTerminalTruthSessions);
+    if (
+      nextTabs.length === 0
+      && nextTerminalTruthSessions !== null
+      && nextTerminalTruthSessions.length > 0
+    ) {
+      hydrateTerminalWorkspaceFromBackendSessions(nextTerminalTruthSessions, {
+        modeStrategy: "preserve-current",
+      });
+      return;
+    }
     terminalTabsRef.current = nextTabs;
     setTerminalTabs(nextTabs);
     nextTerminalTabOrdinalRef.current = getNextTerminalTabOrdinal(nextTabs);
@@ -1573,7 +1687,6 @@ export function TaskPage({
                       setActiveTerminalTabId(tab.id);
                       activeTerminalTabIdRef.current = tab.id;
                       setViewMode("terminal");
-                      setArtifactsDrawerOpen(false);
                     }}
                   >
                     <span className="truncate">{tab.label}</span>
@@ -1676,11 +1789,11 @@ export function TaskPage({
           tone: "critical" as const,
         }
       : effectiveViewMode === "conversation" && hasTerminalSessions
-        ? {
+      ? {
             title: terminalSessionSummaryLabel,
             description: terminalHiddenStateDescription,
             actionLabel: terminalWorkspaceActionLabel,
-            onAction: () => handleSetViewMode("terminal"),
+            onAction: () => handleOpenTerminalWorkspace(terminalHasRecovery),
             tone: terminalHasRecovery ? ("critical" as const) : ("default" as const),
           }
         : null;
@@ -1745,7 +1858,7 @@ export function TaskPage({
               <button
                 type="button"
                 className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground"
-                onClick={() => handleSetViewMode("terminal")}
+                onClick={() => handleOpenTerminalWorkspace(terminalHasRecovery)}
               >
                 {terminalWorkspaceActionLabel}
               </button>
@@ -1851,7 +1964,9 @@ export function TaskPage({
         terminalWorkspace={terminalWorkspace}
         terminalStatusStrip={terminalStatusStrip}
         artifactsDrawerOpen={artifactsDrawerOpen}
-        onToggleArtifactsDrawer={() => setArtifactsDrawerOpen((current) => !current)}
+        onToggleArtifactsDrawer={() =>
+          setPreferredArtifactsDrawerOpen((current) => !current)
+        }
         artifactsShowLabel={tTask("artifacts_show")}
         artifactsHideLabel={tTask("artifacts_hide")}
         inputPlaceholder={hasTerminalSessions ? tTask("terminal_input_blocked_placeholder") : undefined}

@@ -4,6 +4,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import {
+  buildGatewayOwnerEvidence,
+  classifyGatewayOwnerScope,
+  extractGatewayProcessIdentity,
+  isGatewayCommand,
+  loadGatewayOwnerLedgerSnapshot,
+  matchGatewayStateForProcess as matchGatewayStateForProcessFromOwnership,
+  type GatewayOwnerEvidence,
+} from '../packages/api-entry-node/src/file-library-gateway-ownership.js';
 import { resolveFileLibraryGatewayPaths } from '../packages/api-entry-node/src/file-library-gateway-paths.js';
 
 const execFileAsync = promisify(execFile);
@@ -19,6 +28,7 @@ export interface GatewayStateRecord {
   libraryId: string;
   pid: number | null;
   ownerProcessPid: number | null;
+  ownerScope: string | null;
   port: number | null;
   loopbackUrl: string | null;
   metadataUrl: string | null;
@@ -44,19 +54,15 @@ export interface TaskMountDecision {
   reason: string;
 }
 
-export interface GatewayProcessIdentity {
-  metadataUrl: string | null;
-  storageBucketUrl: string | null;
-  logPath: string | null;
-  stableKeys: string[];
-  label: string;
-}
+export { extractGatewayProcessIdentity };
+export type { GatewayProcessIdentity } from '../packages/api-entry-node/src/file-library-gateway-ownership.js';
 
 export type TaskMountpointStatus = 'exact_mount' | 'covered_by_parent_mount' | 'not_mounted';
 
 interface GatewayStateDiskShape {
   pid?: number;
   ownerProcessPid?: number;
+  ownerScope?: string;
   port?: number;
   loopbackUrl?: string;
   metadataUrl?: string;
@@ -80,6 +86,7 @@ interface PreflightOptions {
   apply: boolean;
   context: string;
   rootDir: string;
+  gatewayArtifactsRoot: string;
   gatewayStateDir: string;
   gatewayLogDir: string;
   taskMountRoot: string;
@@ -105,6 +112,7 @@ function normalizePid(value: unknown): number | null {
 export function classifyGatewayState(args: {
   state: GatewayStateRecord;
   livePids: ReadonlySet<number>;
+  ownerEvidence?: GatewayOwnerEvidence;
 }): GatewayStateDecision {
   const pidAlive = args.state.pid !== null && args.livePids.has(args.state.pid);
   const ownerAlive = args.state.ownerProcessPid !== null && args.livePids.has(args.state.ownerProcessPid);
@@ -130,6 +138,19 @@ export function classifyGatewayState(args: {
     };
   }
 
+  if (args.ownerEvidence) {
+    const ownerScopeStatus = classifyGatewayOwnerScope({
+      ownerScope: args.state.ownerScope,
+      ownerEvidence: args.ownerEvidence,
+    });
+    if (ownerScopeStatus === 'stale') {
+      return {
+        action: 'stop_gateway_and_remove_state',
+        reason: 'owner_boot_stale',
+      };
+    }
+  }
+
   return {
     action: 'keep',
     reason: 'owner_and_gateway_alive',
@@ -138,13 +159,48 @@ export function classifyGatewayState(args: {
 
 export function classifyGatewayProcessWithoutState(args: {
   processInfo: ManagedProcessInfo;
-  anyApiOwnerAlive: boolean;
+  ownerEvidence: GatewayOwnerEvidence;
   minAgeSeconds: number;
 }): GatewayProcessDecision {
-  if (args.anyApiOwnerAlive) {
+  const identity = extractGatewayProcessIdentity(args.processInfo.command);
+
+  if (!identity.ownerScope || !identity.libraryId) {
     return {
       action: 'keep',
-      reason: 'api_owner_alive',
+      reason: 'owner_scope_unknown',
+    };
+  }
+
+  const ownerScopeStatus = classifyGatewayOwnerScope({
+    ownerScope: identity.ownerScope,
+    ownerEvidence: args.ownerEvidence,
+  });
+
+  if (ownerScopeStatus === 'active') {
+    return {
+      action: 'keep',
+      reason: 'local_owner_boot_active',
+    };
+  }
+
+  if (ownerScopeStatus === 'foreign') {
+    return {
+      action: 'keep',
+      reason: 'foreign_owner_scope',
+    };
+  }
+
+  if (ownerScopeStatus === 'unverified') {
+    return {
+      action: 'keep',
+      reason: 'owner_scope_unverified',
+    };
+  }
+
+  if (ownerScopeStatus !== 'stale') {
+    return {
+      action: 'keep',
+      reason: 'owner_scope_unknown',
     };
   }
 
@@ -157,7 +213,7 @@ export function classifyGatewayProcessWithoutState(args: {
 
   return {
     action: 'stop_gateway',
-    reason: 'untracked_gateway_without_owner',
+    reason: 'local_owner_boot_stale',
   };
 }
 
@@ -265,6 +321,7 @@ async function loadGatewayStates(gatewayStateDir: string): Promise<GatewayStateR
         libraryId: entry.name.replace(/\.json$/, ''),
         pid: normalizePid(state.pid),
         ownerProcessPid: normalizePid(state.ownerProcessPid),
+        ownerScope: typeof state.ownerScope === 'string' && state.ownerScope.trim() ? state.ownerScope.trim() : null,
         port: normalizePid(state.port),
         loopbackUrl: typeof state.loopbackUrl === 'string' && state.loopbackUrl.trim() ? state.loopbackUrl.trim() : null,
         metadataUrl: typeof state.metadataUrl === 'string' && state.metadataUrl.trim() ? state.metadataUrl.trim() : null,
@@ -316,145 +373,15 @@ function escapeForRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function extractGatewayLogPath(command: string): string | null {
-  const match = command.match(/--log\s+([^\s]+)/);
-  return match?.[1] ?? null;
-}
-
-function extractGatewayMetadataUrl(command: string): string | null {
-  const match = command.match(/juicefs\s+gateway\s+([^\s]+)/);
-  return match?.[1] ?? null;
-}
-
-function extractGatewayStorageBucketUrl(command: string): string | null {
-  const match = command.match(/(?:^|\s)--bucket\s+([^\s]+)/);
-  return match?.[1] ?? null;
-}
-
-function normalizeGatewayIdentityValue(value: string): string {
-  return value.trim();
-}
-
-function extractDbNameFromMetadataUrl(metadataUrl: string | null): string | null {
-  if (!metadataUrl?.trim()) {
-    return null;
-  }
-  try {
-    const parsed = new URL(metadataUrl);
-    const dbName = parsed.pathname.replace(/^\/+/, '').trim();
-    return dbName || null;
-  } catch {
-    return null;
-  }
-}
-
-function extractBucketNameFromBucketUrl(storageBucketUrl: string | null): string | null {
-  if (!storageBucketUrl?.trim()) {
-    return null;
-  }
-  try {
-    const parsed = new URL(storageBucketUrl);
-    const bucketName = parsed.pathname.replace(/^\/+/, '').trim();
-    return bucketName || null;
-  } catch {
-    return null;
-  }
-}
-
-function buildGatewayStableKeys(args: {
-  metadataUrl?: string | null;
-  storageBucketUrl?: string | null;
-  logPath?: string | null;
-}): string[] {
-  const stableKeys = new Set<string>();
-  const metadataUrl = args.metadataUrl?.trim() ? normalizeGatewayIdentityValue(args.metadataUrl) : null;
-  const storageBucketUrl = args.storageBucketUrl?.trim() ? normalizeGatewayIdentityValue(args.storageBucketUrl) : null;
-  const logPath = args.logPath?.trim() ? path.resolve(args.logPath) : null;
-  const dbName = extractDbNameFromMetadataUrl(metadataUrl);
-  const bucketName = extractBucketNameFromBucketUrl(storageBucketUrl);
-
-  if (metadataUrl && dbName?.startsWith('jfs_lib_')) {
-    stableKeys.add(`metadata:${metadataUrl}`);
-  }
-  if (storageBucketUrl && bucketName?.startsWith('jfs-lib-')) {
-    stableKeys.add(`bucket:${storageBucketUrl}`);
-  }
-
-  if (dbName?.startsWith('jfs_lib_')) {
-    stableKeys.add(`db:${dbName}`);
-  }
-
-  if (bucketName?.startsWith('jfs-lib-')) {
-    stableKeys.add(`bucket_name:${bucketName}`);
-  }
-
-  if (logPath) {
-    stableKeys.add(`log:${logPath}`);
-  }
-
-  return [...stableKeys];
-}
-
-function labelGatewayStableKeys(stableKeys: readonly string[]): string {
-  return stableKeys.find((key) => key.startsWith('db:'))
-    ?? stableKeys.find((key) => key.startsWith('bucket_name:'))
-    ?? stableKeys.find((key) => key.startsWith('metadata:'))
-    ?? stableKeys.find((key) => key.startsWith('bucket:'))
-    ?? stableKeys.find((key) => key.startsWith('log:'))
-    ?? 'unidentified';
-}
-
-function buildGatewayStateIdentity(state: GatewayStateRecord): GatewayProcessIdentity {
-  const stableKeys = buildGatewayStableKeys({
-    metadataUrl: state.metadataUrl,
-    storageBucketUrl: state.storageBucketUrl,
-    logPath: state.logPath,
-  });
-  return {
-    metadataUrl: state.metadataUrl,
-    storageBucketUrl: state.storageBucketUrl,
-    logPath: state.logPath,
-    stableKeys,
-    label: labelGatewayStableKeys(stableKeys),
-  };
-}
-
-export function extractGatewayProcessIdentity(command: string): GatewayProcessIdentity {
-  const metadataUrl = extractGatewayMetadataUrl(command);
-  const storageBucketUrl = extractGatewayStorageBucketUrl(command);
-  const logPath = extractGatewayLogPath(command);
-  const stableKeys = buildGatewayStableKeys({
-    metadataUrl,
-    storageBucketUrl,
-    logPath,
-  });
-  return {
-    metadataUrl,
-    storageBucketUrl,
-    logPath,
-    stableKeys,
-    label: labelGatewayStableKeys(stableKeys),
-  };
-}
-
 export function matchGatewayStateForProcess(args: {
   processInfo: ManagedProcessInfo;
   gatewayStates: readonly GatewayStateRecord[];
 }): GatewayStateRecord | null {
-  const pidMatch = args.gatewayStates.find((state) => state.pid === args.processInfo.pid);
-  if (pidMatch) {
-    return pidMatch;
-  }
-
-  const processKeys = new Set(extractGatewayProcessIdentity(args.processInfo.command).stableKeys);
-  if (processKeys.size === 0) {
-    return null;
-  }
-
-  return args.gatewayStates.find((state) => {
-    const stateIdentity = buildGatewayStateIdentity(state);
-    return stateIdentity.stableKeys.some((stableKey) => processKeys.has(stableKey));
-  }) ?? null;
+  return matchGatewayStateForProcessFromOwnership({
+    processPid: args.processInfo.pid,
+    processCommand: args.processInfo.command,
+    gatewayStates: args.gatewayStates,
+  });
 }
 
 function extractTaskMountPath(command: string, taskMountRoot: string): string | null {
@@ -462,7 +389,7 @@ function extractTaskMountPath(command: string, taskMountRoot: string): string | 
   return match?.[0] ?? null;
 }
 
-function serializeGatewayState(state: GatewayStateRecord, ownerProcessPid: number): string {
+function serializeGatewayState(state: GatewayStateRecord, ownerProcessPid: number, ownerScope: string): string {
   return JSON.stringify({
     libraryId: state.libraryId,
     pid: state.pid,
@@ -473,6 +400,7 @@ function serializeGatewayState(state: GatewayStateRecord, ownerProcessPid: numbe
     logPath: state.logPath ?? undefined,
     lastStartedAt: state.lastStartedAt ?? undefined,
     ownerProcessPid,
+    ownerScope,
     status: 'ready',
   }, null, 2);
 }
@@ -692,16 +620,23 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
     (trackedRunnerPid && livePids.has(trackedRunnerPid))
       || processes.some((processInfo) => runnerProcessRegex.test(processInfo.command)),
   );
-  const anyApiOwnerAlive = Boolean(
-    (trackedApiPid && livePids.has(trackedApiPid))
-      || processes.some((processInfo) => apiProcessRegex.test(processInfo.command)),
-  );
   const adoptableApiPid = trackedApiPid && livePids.has(trackedApiPid)
     ? trackedApiPid
     : processes.find((processInfo) => apiProcessRegex.test(processInfo.command))?.pid ?? null;
+  const ownerLedger = await loadGatewayOwnerLedgerSnapshot(options.gatewayArtifactsRoot);
+  const ownerEvidence = buildGatewayOwnerEvidence({
+    ledger: ownerLedger,
+    now: new Date().toISOString(),
+  });
+  const activeLocalOwnerScopes = [...ownerEvidence.scopeStatusByScope.entries()]
+    .filter(([, status]) => status === 'active')
+    .map(([scope]) => scope);
+  const adoptableOwnerScope = activeLocalOwnerScopes.length === 1
+    ? activeLocalOwnerScopes[0]
+    : null;
 
   const gatewayStates = await loadGatewayStates(options.gatewayStateDir);
-  const gatewayProcesses = processes.filter((processInfo) => processInfo.command.includes('juicefs gateway'));
+  const gatewayProcesses = processes.filter((processInfo) => isGatewayCommand(processInfo.command));
   const managedGatewayProcesses = gatewayProcesses
     .map((processInfo) => ({
       processInfo,
@@ -718,7 +653,7 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
   let reclaimedMounts = 0;
 
   for (const state of gatewayStates) {
-    const decision = classifyGatewayState({ state, livePids });
+    const decision = classifyGatewayState({ state, livePids, ownerEvidence });
     if (decision.action === 'keep') {
       continue;
     }
@@ -728,7 +663,7 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
       continue;
     }
     if (decision.action === 'adopt_state') {
-      if (!adoptableApiPid || !state.pid || !await canReachGateway(state.loopbackUrl)) {
+      if (!adoptableApiPid || !adoptableOwnerScope || !state.pid || !await canReachGateway(state.loopbackUrl)) {
         if (state.pid) {
           await terminatePid(state.pid, `gateway:${state.libraryId}`);
           reclaimedGatewayProcesses += 1;
@@ -737,7 +672,7 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
         reclaimedGatewayStates += 1;
         continue;
       }
-      await writeFile(state.stateFilePath, serializeGatewayState(state, adoptableApiPid), 'utf8');
+      await writeFile(state.stateFilePath, serializeGatewayState(state, adoptableApiPid, adoptableOwnerScope), 'utf8');
       reclaimedGatewayStates += 1;
       continue;
     }
@@ -755,7 +690,7 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
     }
     const decision = classifyGatewayProcessWithoutState({
       processInfo,
-      anyApiOwnerAlive,
+      ownerEvidence,
       minAgeSeconds: options.noStateGatewayMinAgeSeconds,
     });
     if (decision.action === 'keep') {
@@ -856,6 +791,7 @@ export function resolvePreflightOptions(
     apply,
     context,
     rootDir,
+    gatewayArtifactsRoot: gatewayPaths.artifactsRoot,
     gatewayStateDir: gatewayPaths.gatewayStateDir,
     gatewayLogDir: gatewayPaths.gatewayLogDir,
     taskMountRoot: env.MBOS_AGENT_WORKSPACE_ROOT?.trim()

@@ -727,6 +727,270 @@ describe('TaskTerminalPanel', () => {
     expect(hiddenTerminal).not.toHaveAttribute('hidden');
   });
 
+  it('retries a disconnected session when a previously hidden terminal is reopened', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_hidden_reopen',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-hidden-reopen',
+    });
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      id: 'term_hidden_reopen',
+      status: 'disconnected',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-04-02T00:00:00Z',
+      last_activity_at: '2026-04-02T00:00:02Z',
+      ws_url: 'ws://example.test/terminal-hidden-reopen-recovered',
+    });
+    const taskApi = {
+      createTerminalSession,
+      getTerminalSession,
+    } as never;
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden_reopen"
+        taskTitle="terminal-hidden-reopen"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const firstSocket = MockWebSocket.instances[0];
+    act(() => {
+      firstSocket?.open();
+      firstSocket?.onmessage?.({
+        data: JSON.stringify({ type: 'started' }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        window.sessionStorage.getItem(
+          'agentsmith-terminal-session:ws_default:proj_1:task_hidden_reopen',
+        ),
+      ).toBe('term_hidden_reopen');
+    });
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        visible={false}
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden_reopen"
+        taskTitle="terminal-hidden-reopen"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    act(() => {
+      firstSocket?.onclose?.({ reason: '' });
+    });
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        visible
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden_reopen"
+        taskTitle="terminal-hidden-reopen"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(getTerminalSession).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        'task_hidden_reopen',
+        'term_hidden_reopen',
+      );
+      expect(MockWebSocket.instances).toHaveLength(2);
+    });
+    expect(MockWebSocket.instances[1]?.url).toBe(
+      'ws://example.test/terminal-hidden-reopen-recovered',
+    );
+    expect(createTerminalSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries the same stored session when a hidden terminal hits websocket onerror before onclose and is then reopened', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_hidden_transport_recovery',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-hidden-transport-recovery',
+    });
+    const getTerminalSession = vi.fn().mockResolvedValue({
+      id: 'term_hidden_transport_recovery',
+      status: 'disconnected',
+      cols: 80,
+      rows: 24,
+      created_at: '2026-04-02T00:00:00Z',
+      last_activity_at: '2026-04-02T00:00:02Z',
+      ws_url: 'ws://example.test/terminal-hidden-transport-recovery-restored',
+    });
+    const taskApi = {
+      createTerminalSession,
+      getTerminalSession,
+    } as never;
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden_transport_recovery"
+        taskTitle="terminal-hidden-transport-recovery"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const firstSocket = MockWebSocket.instances[0];
+    act(() => {
+      firstSocket?.open();
+      firstSocket?.onmessage?.({
+        data: JSON.stringify({ type: 'started' }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        window.sessionStorage.getItem(
+          'agentsmith-terminal-session:ws_default:proj_1:task_hidden_transport_recovery',
+        ),
+      ).toBe('term_hidden_transport_recovery');
+    });
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        visible={false}
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden_transport_recovery"
+        taskTitle="terminal-hidden-transport-recovery"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    act(() => {
+      firstSocket?.onerror?.();
+      firstSocket?.onclose?.({ reason: '' });
+    });
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        visible
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden_transport_recovery"
+        taskTitle="terminal-hidden-transport-recovery"
+        taskApi={taskApi}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(getTerminalSession).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        'task_hidden_transport_recovery',
+        'term_hidden_transport_recovery',
+      );
+      expect(MockWebSocket.instances).toHaveLength(2);
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Recovering');
+    });
+    expect(MockWebSocket.instances[1]?.url).toBe(
+      'ws://example.test/terminal-hidden-transport-recovery-restored',
+    );
+    expect(createTerminalSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not create a replacement session when a hidden recovered tab becomes visible and its stored session lookup misses, and instead reconciles closed state', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_hidden_replacement',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-hidden-replacement',
+    });
+    const getTerminalSession = vi
+      .fn()
+      .mockRejectedValue(new Error('task_terminal_session_missing'));
+    const closeTerminalSession = vi.fn().mockResolvedValue(undefined);
+    const onOpenChange = vi.fn();
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_hidden_lookup_miss:terminal-session-2',
+      'term_hidden_missing',
+    );
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        visible={false}
+        tabId="terminal-session-2"
+        sessionStorageScope="terminal-session-2"
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden_lookup_miss"
+        taskTitle="terminal-hidden-lookup-miss"
+        taskApi={{ createTerminalSession, getTerminalSession, closeTerminalSession } as never}
+        onOpenChange={onOpenChange}
+      />,
+    );
+
+    expect(createTerminalSession).not.toHaveBeenCalled();
+    expect(getTerminalSession).not.toHaveBeenCalled();
+    expect(MockWebSocket.instances).toHaveLength(0);
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        visible
+        tabId="terminal-session-2"
+        sessionStorageScope="terminal-session-2"
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden_lookup_miss"
+        taskTitle="terminal-hidden-lookup-miss"
+        taskApi={{ createTerminalSession, getTerminalSession, closeTerminalSession } as never}
+        onOpenChange={onOpenChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(getTerminalSession).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        'task_hidden_lookup_miss',
+        'term_hidden_missing',
+      );
+    });
+
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+    expect(createTerminalSession).not.toHaveBeenCalled();
+    expect(closeTerminalSession).not.toHaveBeenCalled();
+    expect(MockWebSocket.instances).toHaveLength(0);
+    expect(
+      window.sessionStorage.getItem(
+        'agentsmith-terminal-session:ws_default:proj_1:task_hidden_lookup_miss:terminal-session-2',
+      ),
+    ).toBeNull();
+    expect(screen.getByTestId('notebook__task-terminal-terminal-session-2')).toHaveTextContent('Closed');
+  });
+
   it('does not steal focus when an existing session reconnects on initial mount', async () => {
     window.sessionStorage.setItem(
       'agentsmith-terminal-session:ws_default:proj_1:task_mount',
@@ -846,6 +1110,144 @@ describe('TaskTerminalPanel', () => {
     expect(createTerminalSession).not.toHaveBeenCalled();
     expect(getTerminalSession).not.toHaveBeenCalled();
     expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  it('waits for a stored reconnectable session to expose ws_url instead of creating a replacement session', async () => {
+    let scheduledReconnect: (() => void) | null = null;
+    const originalSetTimeout = window.setTimeout;
+    const originalClearTimeout = window.clearTimeout;
+    const setTimeoutSpy = vi
+      .spyOn(window, 'setTimeout')
+      .mockImplementation(((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+        if (delay === 1000 && typeof callback === 'function') {
+          scheduledReconnect = () => {
+            callback(...args);
+          };
+          return 1 as unknown as number;
+        }
+        return originalSetTimeout(callback, delay, ...args);
+      }) as typeof window.setTimeout);
+    const clearTimeoutSpy = vi
+      .spyOn(window, 'clearTimeout')
+      .mockImplementation(((handle?: number) => {
+        if (handle === 1) {
+          return;
+        }
+        return originalClearTimeout(handle);
+      }) as typeof window.clearTimeout);
+
+    try {
+      window.sessionStorage.setItem(
+        'agentsmith-terminal-session:ws_default:proj_1:task_wait_for_ws_url',
+        'term_wait_for_ws_url',
+      );
+      const getTerminalSession = vi
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'term_wait_for_ws_url',
+          status: 'disconnected',
+          cols: 80,
+          rows: 24,
+          created_at: '2026-04-02T00:00:00Z',
+          last_activity_at: '2026-04-02T00:00:01Z',
+          ws_url: null,
+        })
+        .mockResolvedValueOnce({
+          id: 'term_wait_for_ws_url',
+          status: 'disconnected',
+          cols: 80,
+          rows: 24,
+          created_at: '2026-04-02T00:00:00Z',
+          last_activity_at: '2026-04-02T00:00:02Z',
+          ws_url: 'ws://example.test/terminal-wait-for-ws-url',
+        });
+      const createTerminalSession = vi.fn();
+
+      render(
+        <TaskTerminalPanel
+          open
+          workspaceId="ws_default"
+          projectId="proj_1"
+          taskId="task_wait_for_ws_url"
+          taskTitle="terminal-wait-for-ws-url"
+          taskApi={{ createTerminalSession, getTerminalSession } as never}
+          onOpenChange={vi.fn()}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(getTerminalSession).toHaveBeenCalledTimes(1);
+      });
+      expect(createTerminalSession).not.toHaveBeenCalled();
+      expect(MockWebSocket.instances).toHaveLength(0);
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Recovering');
+      expect(scheduledReconnect).toBeTypeOf('function');
+
+      await act(async () => {
+        scheduledReconnect?.();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(getTerminalSession).toHaveBeenCalledTimes(2);
+        expect(MockWebSocket.instances).toHaveLength(1);
+      });
+      expect(MockWebSocket.instances[0]?.url).toBe(
+        'ws://example.test/terminal-wait-for-ws-url',
+      );
+      expect(createTerminalSession).not.toHaveBeenCalled();
+    } finally {
+      setTimeoutSpy.mockRestore();
+      clearTimeoutSpy.mockRestore();
+    }
+  });
+
+  it('treats a stored session lookup miss as stale and does not create a replacement session', async () => {
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_lookup_miss_default',
+      'term_lookup_miss_default',
+    );
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_lookup_miss_replacement',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-lookup-miss-replacement',
+    });
+    const getTerminalSession = vi
+      .fn()
+      .mockRejectedValue(new Error('task_terminal_session_missing'));
+    const onOpenChange = vi.fn();
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_lookup_miss_default"
+        taskTitle="terminal-lookup-miss-default"
+        taskApi={{ createTerminalSession, getTerminalSession } as never}
+        onOpenChange={onOpenChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(getTerminalSession).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        'task_lookup_miss_default',
+        'term_lookup_miss_default',
+      );
+    });
+
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+    expect(createTerminalSession).not.toHaveBeenCalled();
+    expect(MockWebSocket.instances).toHaveLength(0);
+    expect(
+      window.sessionStorage.getItem(
+        'agentsmith-terminal-session:ws_default:proj_1:task_lookup_miss_default',
+      ),
+    ).toBeNull();
   });
 
   it('deduplicates the first terminal session create flow across StrictMode effect re-entry', async () => {
@@ -994,6 +1396,94 @@ describe('TaskTerminalPanel', () => {
     expect(
       window.sessionStorage.getItem('agentsmith-terminal-session:ws_default:proj_1:task_pending_close'),
     ).toBeNull();
+  });
+
+  it('closes the backend session when closeRequestToken lands during a pending stored-session resolution that is still awaiting reconnect', async () => {
+    let resolveStoredLookup: ((value: {
+      id: string;
+      status: 'disconnected';
+      cols: number;
+      rows: number;
+      created_at: string;
+      last_activity_at: string;
+        ws_url: null;
+    }) => void) | null = null;
+    const createTerminalSession = vi.fn();
+    const getTerminalSession = vi.fn().mockImplementation(
+      () => new Promise((resolve) => {
+        resolveStoredLookup = resolve;
+      }),
+    );
+    const closeTerminalSession = vi.fn().mockResolvedValue(undefined);
+    const onOpenChange = vi.fn();
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_pending_reconnect_close',
+      'term_pending_reconnect_close',
+    );
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_pending_reconnect_close"
+        taskTitle="terminal-pending-reconnect-close"
+        taskApi={{ createTerminalSession, getTerminalSession, closeTerminalSession } as never}
+        onOpenChange={onOpenChange}
+        closeRequestToken={0}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(getTerminalSession).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        'task_pending_reconnect_close',
+        'term_pending_reconnect_close',
+      );
+    });
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_pending_reconnect_close"
+        taskTitle="terminal-pending-reconnect-close"
+        taskApi={{ createTerminalSession, getTerminalSession, closeTerminalSession } as never}
+        onOpenChange={onOpenChange}
+        closeRequestToken={1}
+      />,
+    );
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+
+    act(() => {
+      resolveStoredLookup?.({
+        id: 'term_pending_reconnect_close',
+        status: 'disconnected',
+        cols: 80,
+        rows: 24,
+        created_at: '2026-04-02T00:00:00Z',
+        last_activity_at: '2026-04-02T00:00:01Z',
+        ws_url: null,
+      });
+    });
+
+    await waitFor(() => {
+      expect(closeTerminalSession).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        'task_pending_reconnect_close',
+        'term_pending_reconnect_close',
+      );
+    });
+    expect(createTerminalSession).not.toHaveBeenCalled();
+    expect(
+      window.sessionStorage.getItem(
+        'agentsmith-terminal-session:ws_default:proj_1:task_pending_reconnect_close',
+      ),
+    ).toBeNull();
+    expect(MockWebSocket.instances).toHaveLength(0);
   });
 
   it('does not create duplicate sessions when parent inline callbacks rerender during the initial connect phase', async () => {

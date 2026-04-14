@@ -619,6 +619,33 @@ export class AgentExecutionService {
     };
   }
 
+  async closeTerminalSession(input: {
+    workspaceId: string;
+    projectId: string;
+    sessionId: string;
+    agentId: string;
+    terminalSessionId: string;
+  }): Promise<'signaled' | 'agent_offline' | 'agent_workspace_mismatch'> {
+    const socket = this.resolveSocket(input.agentId, input.sessionId);
+    if (!socket || socket.ws.readyState !== socket.ws.OPEN) {
+      return 'agent_offline';
+    }
+    if (socket.workspaceId !== input.workspaceId || socket.projectId !== input.projectId) {
+      return 'agent_workspace_mismatch';
+    }
+
+    socket.ws.send(
+      JSON.stringify({
+        type: 'server.terminal.close',
+        session_id: input.sessionId,
+        terminal_session_id: input.terminalSessionId,
+        timestamp: new Date().toISOString(),
+        payload: {},
+      }),
+    );
+    return 'signaled';
+  }
+
   private handleSocketClose(socketKey: string, ws: WebSocket): void {
     const socket = this.socketsByKey.get(socketKey);
     if (!socket) return;

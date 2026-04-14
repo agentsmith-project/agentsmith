@@ -8,7 +8,11 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { flushSync } from 'react-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { TaskPage, mergeTerminalTabStatus } from '../TaskPage';
+import {
+  TaskPage,
+  getPreferredRecoveryTerminalTabId,
+  mergeTerminalTabStatus,
+} from '../TaskPage';
 import { TaskPageContent } from '../task-page/TaskPageContent';
 import { ApiError } from '@/lib/api/client';
 import {
@@ -573,6 +577,121 @@ describe('TaskPage', () => {
       expect(mergeTerminalTabStatus('closed', 'failed')).toBe('failed');
     });
 
+    it('prefers the active recovery tab before the first recovery tab, then active, then the first tab', () => {
+      const tabs = [
+        {
+          id: 'terminal-session-1',
+          label: 'Terminal Session 1',
+          status: 'recovering',
+          closeRequestToken: 0,
+          sessionId: 'backend-session-1',
+        },
+        {
+          id: 'terminal-session-2',
+          label: 'Terminal Session 2',
+          status: 'active',
+          closeRequestToken: 0,
+          sessionId: 'backend-session-2',
+        },
+        {
+          id: 'terminal-session-3',
+          label: 'Terminal Session 3',
+          status: 'active',
+          closeRequestToken: 0,
+          sessionId: 'backend-session-3',
+        },
+      ] as const;
+
+      expect(
+        getPreferredRecoveryTerminalTabId(
+          [...tabs],
+          [
+            {
+              id: 'backend-session-1',
+              status: 'disconnected',
+              cols: 120,
+              rows: 30,
+              last_activity_at: '2026-04-13T01:00:00.000Z',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+            {
+              id: 'backend-session-3',
+              status: 'failed',
+              cols: 120,
+              rows: 30,
+              last_activity_at: '2026-04-13T01:00:01.000Z',
+              created_at: '2026-04-13T01:00:01.000Z',
+            },
+          ],
+          'terminal-session-3',
+        ),
+      ).toBe('terminal-session-3');
+
+      expect(
+        getPreferredRecoveryTerminalTabId(
+          [...tabs],
+          [
+            {
+              id: 'backend-session-1',
+              status: 'disconnected',
+              cols: 120,
+              rows: 30,
+              last_activity_at: '2026-04-13T01:00:00.000Z',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+            {
+              id: 'backend-session-3',
+              status: 'failed',
+              cols: 120,
+              rows: 30,
+              last_activity_at: '2026-04-13T01:00:01.000Z',
+              created_at: '2026-04-13T01:00:01.000Z',
+            },
+          ],
+          'terminal-session-2',
+        ),
+      ).toBe('terminal-session-1');
+
+      expect(
+        getPreferredRecoveryTerminalTabId(
+          [
+            {
+              id: 'terminal-session-1',
+              label: 'Terminal Session 1',
+              status: 'active',
+              closeRequestToken: 0,
+              sessionId: 'backend-session-1',
+            },
+            {
+              id: 'terminal-session-2',
+              label: 'Terminal Session 2',
+              status: 'active',
+              closeRequestToken: 0,
+              sessionId: 'backend-session-2',
+            },
+          ],
+          null,
+          'terminal-session-2',
+        ),
+      ).toBe('terminal-session-2');
+
+      expect(
+        getPreferredRecoveryTerminalTabId(
+          [
+            {
+              id: 'terminal-session-1',
+              label: 'Terminal Session 1',
+              status: 'active',
+              closeRequestToken: 0,
+              sessionId: 'backend-session-1',
+            },
+          ],
+          null,
+          'terminal-session-missing',
+        ),
+      ).toBe('terminal-session-1');
+    });
+
     it('keeps the terminal workspace mounted in the background while removing the visible workspace shell from conversation layout', () => {
       const workspaceLifecycle = {
         mounts: 0,
@@ -763,9 +882,6 @@ describe('TaskPage', () => {
       renderComponent();
 
       await waitFor(() => {
-        const hiddenWorkspaceShell = screen.getByTestId(
-          'notebook__task-terminal-workspace-shell',
-        );
         expect(mockTaskApiListTerminalSessions).toHaveBeenCalledWith(
           mockWorkspaceId,
           mockProjectId,
@@ -1009,6 +1125,224 @@ describe('TaskPage', () => {
         setIntervalSpy.mockRestore();
         clearIntervalSpy.mockRestore();
       }
+    });
+
+    it('preserves the current artifacts drawer choice during preserve-current poll hydration instead of replaying boot storage', async () => {
+      const user = userEvent.setup();
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'conversation',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: false,
+        }),
+      );
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+          ],
+        })
+        .mockResolvedValue({
+          total: 1,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+          ],
+        });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).toBeInTheDocument();
+        expect(screen.getByTestId('notebook__task-artifacts-toggle')).toHaveTextContent('Show Artifacts');
+      });
+
+      await user.click(screen.getByTestId('notebook__task-artifacts-toggle'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-artifacts-toggle')).toHaveTextContent('Hide Artifacts');
+        expect(screen.getByTestId('notebook__task-artifacts-drawer')).toBeInTheDocument();
+      });
+
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved?.('backend-session-1');
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+        expect(screen.getByTestId('notebook__task-artifacts-toggle')).toHaveTextContent('Hide Artifacts');
+        expect(screen.getByTestId('notebook__task-artifacts-drawer')).toBeInTheDocument();
+      });
+    });
+
+    it('preserves the current artifacts drawer choice when terminal poll hydration clears backend sessions to zero', async () => {
+      const user = userEvent.setup();
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'conversation',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: false,
+        }),
+      );
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          total: 0,
+          items: [],
+        });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).toBeInTheDocument();
+        expect(screen.getByTestId('notebook__task-artifacts-toggle')).toHaveTextContent('Show Artifacts');
+      });
+
+      await user.click(screen.getByTestId('notebook__task-artifacts-toggle'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-artifacts-toggle')).toHaveTextContent('Hide Artifacts');
+        expect(screen.getByTestId('notebook__task-artifacts-drawer')).toBeInTheDocument();
+      });
+
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved?.('backend-session-1');
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+        expect(screen.queryByTestId('notebook__task-terminal-status-strip')).not.toBeInTheDocument();
+        expect(screen.getByTestId('notebook__task-artifacts-toggle')).toHaveTextContent('Hide Artifacts');
+        expect(screen.getByTestId('notebook__task-artifacts-drawer')).toBeInTheDocument();
+      });
+    });
+
+    it('keeps the conversation artifacts preference in storage while terminal mode temporarily hides the drawer', async () => {
+      const user = userEvent.setup();
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'conversation',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({
+        total: 1,
+        items: [
+          {
+            id: 'backend-session-1',
+            status: 'active',
+            created_at: '2026-04-13T01:00:00.000Z',
+          },
+        ],
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-artifacts-drawer')).toBeInTheDocument();
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).toBeInTheDocument();
+      });
+
+      await act(async () => {
+        await user.click(
+          within(screen.getByTestId('notebook__task-terminal-status-strip')).getByRole('button', {
+            name: 'Open Terminal Workspace',
+          }),
+        );
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(screen.queryByTestId('notebook__task-artifacts-drawer')).not.toBeInTheDocument();
+      });
+
+      expect(
+        JSON.parse(
+          window.sessionStorage.getItem(
+            `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+          ) ?? 'null',
+        ),
+      ).toMatchObject({
+        preferredViewMode: 'terminal',
+        artifactsDrawerOpen: true,
+      });
+    });
+
+    it('restores the conversation artifacts drawer after terminal mode ends without treating the temporary terminal hide as the new preference', async () => {
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'conversation',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          total: 0,
+          items: [],
+        });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-artifacts-drawer')).toBeInTheDocument();
+      });
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onSetViewMode('terminal');
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(screen.queryByTestId('notebook__task-artifacts-drawer')).not.toBeInTheDocument();
+      });
+
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved?.('backend-session-1');
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
+        expect(screen.getByTestId('notebook__task-artifacts-drawer')).toBeInTheDocument();
+        expect(screen.getByTestId('notebook__task-artifacts-toggle')).toHaveTextContent('Hide Artifacts');
+      });
     });
 
     it('treats a reloaded disconnected terminal session as recovering rather than preparing', async () => {
@@ -1678,6 +2012,281 @@ describe('TaskPage', () => {
         );
         expect(latestConversationPanelPropsRef.current.blockedState?.actionLabel).toBe(
           'Reopen Terminal Workspace',
+        );
+      });
+    });
+
+    it('immediately converges terminal summary and blocker copy after closing the broken session from a mixed recovery workspace', async () => {
+      const user = userEvent.setup();
+      mockTaskHookState.messages = [];
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'conversation',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({
+          total: 2,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+            {
+              id: 'backend-session-2',
+              status: 'failed',
+              created_at: '2026-04-13T01:00:01.000Z',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+          ],
+        });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+          '2 terminal sessions are using this task, 1 needs recovery',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+      });
+
+      await act(async () => {
+        (
+          screen.getByTestId('conversation-blocked-state').querySelector('button') as HTMLButtonElement
+        ).click();
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-2',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-shell-summary')).toHaveTextContent(
+          '2 terminal sessions are using this task, 1 needs recovery',
+        );
+      });
+
+      await user.click(screen.getByTestId('notebook__task-terminal-close-terminal-session-2'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-shell-summary')).toHaveTextContent(
+          '1 terminal session is using this task',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-shell-summary')).not.toHaveTextContent(
+          'needs recovery',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+      }, { timeout: 250 });
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onSetViewMode('conversation');
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).toHaveTextContent(
+          '1 terminal session is using this task',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).not.toHaveTextContent(
+          'needs recovery',
+        );
+        expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+          '1 terminal session is using this task',
+        );
+        expect(screen.getByTestId('conversation-blocked-description')).toHaveTextContent(
+          'The terminal workspace is hidden, but this session still blocks new agent runs until you open the terminal workspace or end the session.',
+        );
+        expect(latestConversationPanelPropsRef.current.blockedState?.actionLabel).toBe(
+          'Open Terminal Workspace',
+        );
+      }, { timeout: 250 });
+    });
+
+    it('focuses the recovery tab when reopen terminal workspace is used from a mixed hidden blocker', async () => {
+      mockTaskHookState.messages = [];
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'conversation',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({
+        total: 2,
+        items: [
+          {
+            id: 'backend-session-1',
+            status: 'active',
+            created_at: '2026-04-13T01:00:00.000Z',
+          },
+          {
+            id: 'backend-session-2',
+            status: 'disconnected',
+            created_at: '2026-04-13T01:00:01.000Z',
+          },
+        ],
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+          '2 terminal sessions are using this task, 1 needs recovery',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+      });
+
+      await act(async () => {
+        (
+          screen.getByTestId('conversation-blocked-state').querySelector('button') as HTMLButtonElement
+        ).click();
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-2',
+        );
+      });
+    });
+
+    it('reopens the backend-truth recovery tab even when local tab status drift marked it as active', async () => {
+      mockTaskHookState.messages = [];
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'conversation',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({
+        total: 2,
+        items: [
+          {
+            id: 'backend-session-1',
+            status: 'active',
+            created_at: '2026-04-13T01:00:00.000Z',
+          },
+          {
+            id: 'backend-session-2',
+            status: 'disconnected',
+            created_at: '2026-04-13T01:00:01.000Z',
+          },
+        ],
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+          '2 terminal sessions are using this task, 1 needs recovery',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+        expect(latestTaskTerminalPanelPropsRef.current.tabId).toBe('terminal-session-2');
+      });
+
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onStatusChange('active');
+      });
+
+      await act(async () => {
+        (
+          screen.getByTestId('conversation-blocked-state').querySelector('button') as HTMLButtonElement
+        ).click();
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-2',
+        );
+      });
+    });
+
+    it('keeps the preferred recovery tab focused when reopen terminal workspace is used and the active tab is already a recovery tab', async () => {
+      mockTaskHookState.messages = [];
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'conversation',
+          preferredActiveSessionId: 'backend-session-2',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({
+        total: 3,
+        items: [
+          {
+            id: 'backend-session-1',
+            status: 'disconnected',
+            created_at: '2026-04-13T01:00:00.000Z',
+          },
+          {
+            id: 'backend-session-2',
+            status: 'failed',
+            created_at: '2026-04-13T01:00:01.000Z',
+          },
+          {
+            id: 'backend-session-3',
+            status: 'active',
+            created_at: '2026-04-13T01:00:02.000Z',
+          },
+        ],
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+          '3 terminal sessions are using this task, 2 need recovery',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-2',
+        );
+      });
+
+      await act(async () => {
+        (
+          screen.getByTestId('conversation-blocked-state').querySelector('button') as HTMLButtonElement
+        ).click();
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-2',
         );
       });
     });

@@ -792,8 +792,13 @@ test.describe.serial('@lane-real notebook terminal workspace UX walkthrough', ()
       await reopenWorkspaceCta.click();
       await expect(terminalWorkspace).toBeVisible({ timeout: 30_000 });
       await expect(getTerminalTabs(page)).toHaveCount(3, { timeout: 30_000 });
+      await expect
+        .poll(async () => await getActiveTerminalTabId(page), {
+          timeout: 30_000,
+          intervals: [100, 250, 500],
+        })
+        .toBe('terminal-session-2');
       expect(createRequestsAfterReload).toHaveLength(0);
-      page.off('request', requestListener);
       await captureTerminalTrace(page, 'reopen-terminal-workspace-after-reload');
       const activeTabIdBeforeClose = await getActiveTerminalTabId(page);
       await page.getByTestId(`notebook__task-terminal-close-${activeTabIdBeforeClose}`).click();
@@ -808,6 +813,8 @@ test.describe.serial('@lane-real notebook terminal workspace UX walkthrough', ()
         [firstSessionId, thirdSessionId].sort(),
       );
       expect(remainingAfterSingleClose.items[0]?.id).not.toBe(secondSessionId);
+      expect(createRequestsAfterReload).toHaveLength(0);
+      page.off('request', requestListener);
       await expect(getTerminalTabs(page)).toHaveCount(2, { timeout: 30_000 });
       await expect(getTerminalTabs(page).nth(0)).toContainText('Terminal 1');
       await expect(getTerminalTabs(page).nth(1)).toContainText('Terminal 2');
@@ -1086,6 +1093,12 @@ test.describe.serial('@lane-real notebook terminal workspace UX walkthrough', ()
       await reopenRecoveredWorkspaceCta.click();
       await expect(getTerminalTabs(page)).toHaveCount(1, { timeout: 30_000 });
       await expect(getTerminalTabs(page).first()).toContainText('Terminal 1');
+      await expect
+        .poll(async () => await getActiveTerminalTabId(page), {
+          timeout: 30_000,
+          intervals: [100, 250, 500],
+        })
+        .toBe('terminal-session-1');
       await expect(await getActiveTerminalTab(page)).toContainText('Terminal 1');
       await expect(await getActiveTerminalTab(page)).not.toContainText('Failed');
       await expect(createRequestsDuringReconnect).toHaveLength(0);
@@ -1188,6 +1201,9 @@ test.describe.serial('@lane-real notebook terminal workspace UX walkthrough', ()
           1,
         ),
       ).toEqual([recoverableSessionId!]);
+      const recoveredShellSummary = page.getByTestId('notebook__task-terminal-shell-summary');
+      await expect(recoveredShellSummary).toContainText('1 terminal session is using this task');
+      await expect(recoveredShellSummary).not.toContainText('needs recovery');
       await captureRecoveryTrace(page, 'clear-broken-session-and-keep-task-owned');
 
       await page.getByTestId('notebook__task-terminal-create').click();

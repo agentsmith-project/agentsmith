@@ -2666,7 +2666,7 @@ describe('api-entry-node notebook task routes', () => {
     }
   });
 
-  it('keeps terminal session identity stable across api terminal-service reload and does not mint phantom sessions', async () => {
+  it('reconciles terminal session truth to failed after api terminal-service reload without minting phantom sessions', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
@@ -2714,7 +2714,9 @@ describe('api-entry-node notebook task routes', () => {
         total: 3,
         items: createdIds.map((id) => expect.objectContaining({
           id,
-          status: 'pending',
+          status: 'failed',
+          close_reason: 'terminal_connection_failed_service_reload',
+          ws_url: null,
         })),
       });
 
@@ -2744,7 +2746,9 @@ describe('api-entry-node notebook task routes', () => {
         total: 3,
         items: createdIds.map((id) => expect.objectContaining({
           id,
-          status: 'pending',
+          status: 'failed',
+          close_reason: 'terminal_connection_failed_service_reload',
+          ws_url: null,
         })),
       });
 

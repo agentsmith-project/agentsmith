@@ -6,7 +6,11 @@ import { FitAddon } from '@xterm/addon-fit';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { TaskAPI } from '@/lib/api/endpoints/tasks';
-import type { TaskTerminalServerEvent } from '@/lib/types/task';
+import type {
+  TaskTerminalServerEvent,
+  TaskTerminalSessionCreateResponse,
+  TaskTerminalSessionStatus,
+} from '@/lib/types/task';
 import { toast } from '@/components/ui/toast';
 import { useTranslations } from 'next-intl';
 
@@ -31,14 +35,20 @@ export function getTaskTerminalSessionStorageKey(
   return scope === 'default' ? baseKey : `${baseKey}:${scope}`;
 }
 
-type TerminalSessionIdentity = {
-  id?: string;
+type LegacyTaskTerminalSessionCreateResponse = Omit<
+  TaskTerminalSessionCreateResponse,
+  'session_id'
+> & {
+  id: string;
   session_id?: string;
-  ws_url?: string | null;
 };
 
+type TaskTerminalSessionCreateResponseCompat =
+  | TaskTerminalSessionCreateResponse
+  | LegacyTaskTerminalSessionCreateResponse;
+
 type TerminalSessionHandle = {
-  id: string;
+  sessionId: string;
   wsUrl: string;
 };
 
@@ -46,6 +56,10 @@ type TerminalSessionResolution =
   | {
       kind: 'connectable';
       handle: TerminalSessionHandle;
+    }
+  | {
+      kind: 'awaiting-reconnect';
+      sessionId: string;
     }
   | {
       kind: 'failed';
@@ -60,6 +74,24 @@ type TerminalSessionResolution =
 
 const resolvedTerminalSessionHandleCache = new Map<string, TerminalSessionHandle>();
 const terminalSessionResolutionCache = new Map<string, Promise<TerminalSessionResolution>>();
+const TERMINAL_RECOVERY_RETRY_DELAY_MS = 1000;
+
+function isTerminalSessionLookupMiss(error: unknown): boolean {
+  if (
+    typeof error === 'object'
+    && error !== null
+    && 'statusCode' in error
+    && error.statusCode === 404
+  ) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('task_terminal_session_missing')
+    || message.includes('terminal_session_missing')
+    || message.includes('404')
+  );
+}
 
 function getResolvedTerminalSessionHandle(sessionStorageKey: string): TerminalSessionHandle | null {
   return resolvedTerminalSessionHandleCache.get(sessionStorageKey) ?? null;
@@ -128,16 +160,59 @@ export function clearTaskTerminalPanelSessionStateForScope(
   window.sessionStorage.removeItem(sessionStorageKey);
 }
 
-function normalizeTerminalSessionIdentity(session: TerminalSessionIdentity): TerminalSessionHandle {
-  const id = session.id ?? session.session_id;
+function readTerminalSessionId(
+  session: TaskTerminalSessionStatus | TaskTerminalSessionCreateResponseCompat,
+): string | null {
+  if ('id' in session && typeof session.id === 'string' && session.id.length > 0) {
+    return session.id;
+  }
+  if (
+    'session_id' in session
+    && typeof session.session_id === 'string'
+    && session.session_id.length > 0
+  ) {
+    return session.session_id;
+  }
+  return null;
+}
+
+function normalizeCreatedTerminalSession(
+  session: TaskTerminalSessionCreateResponseCompat,
+): TerminalSessionHandle {
+  const sessionId = readTerminalSessionId(session);
   const wsUrl = session.ws_url ?? null;
-  if (!id || !wsUrl) {
+  if (!sessionId || !wsUrl) {
     throw new Error('task_terminal_session_invalid');
   }
   return {
-    id,
+    sessionId,
     wsUrl,
   };
+}
+
+function normalizeExistingTerminalSession(
+  session: TaskTerminalSessionStatus,
+): TerminalSessionHandle {
+  if (!session.id || !session.ws_url) {
+    throw new Error('task_terminal_session_invalid');
+  }
+  return {
+    sessionId: session.id,
+    wsUrl: session.ws_url,
+  };
+}
+
+function getClosableSessionIdFromResolution(
+  resolution: TerminalSessionResolution,
+): string {
+  switch (resolution.kind) {
+    case 'connectable':
+      return resolution.handle.sessionId;
+    case 'awaiting-reconnect':
+    case 'failed':
+    case 'closed':
+      return resolution.sessionId;
+  }
 }
 
 function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: string): string {
@@ -216,6 +291,7 @@ export function TaskTerminalPanel({
   const visibleRef = React.useRef(visible);
   const pendingTerminalFocusRef = React.useRef(false);
   const pendingResolutionCloseRef = React.useRef(false);
+  const pendingTransportReconnectRef = React.useRef(false);
   const unmountingRef = React.useRef(false);
   const [hasInteractiveMount, setHasInteractiveMount] = React.useState(open && visible);
   const [connectionRetryToken, setConnectionRetryToken] = React.useState(0);
@@ -316,13 +392,14 @@ export function TaskTerminalPanel({
   const persistResolvedSessionHandle = React.useCallback((sessionHandle: TerminalSessionHandle) => {
     setResolvedTerminalSessionHandle(sessionStorageKey, sessionHandle);
     if (!pendingResolutionCloseRef.current) {
-      storeSessionId(sessionHandle.id);
-      onSessionResolvedRef.current?.(sessionHandle.id);
+      storeSessionId(sessionHandle.sessionId);
+      onSessionResolvedRef.current?.(sessionHandle.sessionId);
     }
   }, [sessionStorageKey, storeSessionId]);
 
   const invalidateSessionHandle = React.useCallback(
     ({ clearStored = false }: { clearStored?: boolean } = {}) => {
+      pendingTransportReconnectRef.current = false;
       clearCachedTerminalSessionResolution(sessionStorageKey);
       sessionResolutionPromiseRef.current = null;
       if (clearStored) {
@@ -333,6 +410,7 @@ export function TaskTerminalPanel({
   );
 
   const finalizeClosedSession = React.useCallback(() => {
+    pendingTransportReconnectRef.current = false;
     reconnectingRef.current = false;
     setErrorMessage(null);
     setProgressReason(null);
@@ -398,7 +476,18 @@ export function TaskTerminalPanel({
             || session.status === 'active'
             || session.status === 'disconnected'
           ) {
-            const normalizedSession = normalizeTerminalSessionIdentity(session);
+            const sessionId = readTerminalSessionId(session) ?? storedSessionId;
+            if (!sessionId) {
+              throw new Error('task_terminal_session_invalid');
+            }
+            if (!session.ws_url) {
+              reconnectingRef.current = true;
+              return {
+                kind: 'awaiting-reconnect',
+                sessionId,
+              };
+            }
+            const normalizedSession = normalizeExistingTerminalSession(session);
             persistResolvedSessionHandle(normalizedSession);
             reconnectingRef.current = true;
             return {
@@ -420,14 +509,22 @@ export function TaskTerminalPanel({
               reason: session.close_reason ?? null,
             };
           }
-        } catch {
+        } catch (error) {
           invalidateSessionHandle({ clearStored: true });
-          // Ignore stale session metadata and fall back to a new session.
+          if (isTerminalSessionLookupMiss(error)) {
+            reconnectingRef.current = false;
+            return {
+              kind: 'closed',
+              sessionId: storedSessionId,
+              reason: 'task_terminal_session_missing',
+            };
+          }
+          throw error;
         }
       }
 
       const created = await createSessionWithRetry();
-      const normalizedSession = normalizeTerminalSessionIdentity(created);
+      const normalizedSession = normalizeCreatedTerminalSession(created);
       persistResolvedSessionHandle(normalizedSession);
       reconnectingRef.current = false;
       return {
@@ -550,6 +647,7 @@ export function TaskTerminalPanel({
   React.useEffect(() => {
     if (!open || !hasInteractiveMount || disabled || !terminalRef.current || socketRef.current) return;
     let cancelled = false;
+    let recoveryRetryTimer: number | null = null;
     updateStatus('preparing');
     setErrorMessage(null);
     setProgressReason(null);
@@ -578,6 +676,19 @@ export function TaskTerminalPanel({
       if (resolution.kind === 'closed') {
         finalizeClosedSession();
         onOpenChangeRef.current(false);
+        return;
+      }
+      if (resolution.kind === 'awaiting-reconnect') {
+        invalidateSessionHandle();
+        updateStatus('recovering');
+        setErrorMessage(null);
+        setProgressReason(null);
+        recoveryRetryTimer = window.setTimeout(() => {
+          if (cancelled || unmountingRef.current) return;
+          if (!visibleRef.current) return;
+          if (!readStoredSessionId()) return;
+          setConnectionRetryToken((current) => current + 1);
+        }, TERMINAL_RECOVERY_RETRY_DELAY_MS);
         return;
       }
       const session = resolution.handle;
@@ -623,6 +734,7 @@ export function TaskTerminalPanel({
         updateStatus('connecting');
         setErrorMessage(null);
         setProgressReason(null);
+        pendingTransportReconnectRef.current = false;
         reconnectingRef.current = false;
         fitAddonRef.current?.fit();
         scheduleFit();
@@ -637,6 +749,7 @@ export function TaskTerminalPanel({
           return;
         }
         if (message.type === 'started') {
+          pendingTransportReconnectRef.current = false;
           if (!readyBannerWrittenRef.current && terminalRef.current) {
             terminalRef.current.writeln(`${translationRef.current('terminal_banner', { title: taskTitleRef.current })}\r\n`);
             readyBannerWrittenRef.current = true;
@@ -649,6 +762,7 @@ export function TaskTerminalPanel({
           return;
         }
         if (message.type === 'output') {
+          pendingTransportReconnectRef.current = false;
           if (!readyBannerWrittenRef.current && terminalRef.current) {
             terminalRef.current.writeln(`${translationRef.current('terminal_banner', { title: taskTitleRef.current })}\r\n`);
             readyBannerWrittenRef.current = true;
@@ -672,6 +786,7 @@ export function TaskTerminalPanel({
           return;
         }
         if (message.type === 'error') {
+          pendingTransportReconnectRef.current = false;
           invalidateSessionHandle();
           updateStatus('failed');
           const friendlyReason = describeTerminalError(translationRef.current, message.error_message);
@@ -681,6 +796,7 @@ export function TaskTerminalPanel({
         }
       };
       socket.onerror = () => {
+        pendingTransportReconnectRef.current = true;
         updateStatus('failed');
         setErrorMessage(translationRef.current('terminal_error_connection_failed'));
         setProgressReason(null);
@@ -695,25 +811,45 @@ export function TaskTerminalPanel({
           return;
         }
         if (event.reason === 'terminal_replaced') {
+          pendingTransportReconnectRef.current = false;
           invalidateSessionHandle();
           updateStatus('failed');
           setErrorMessage(translationRef.current('terminal_error_taken_over'));
           return;
         }
-        invalidateSessionHandle();
+        clearCachedTerminalSessionResolution(sessionStorageKey);
+        sessionResolutionPromiseRef.current = null;
+        const hasStoredSession = Boolean(readStoredSessionId());
+        const shouldRetryStoredSession =
+          hasStoredSession
+          && pendingTransportReconnectRef.current
+          && statusRef.current === 'failed';
         if (
           visibleRef.current
-          && readStoredSessionId()
-          && statusRef.current !== 'failed'
-          && statusRef.current !== 'closed'
+          && hasStoredSession
+          && (
+            (statusRef.current !== 'failed' && statusRef.current !== 'closed')
+            || shouldRetryStoredSession
+          )
         ) {
           reconnectingRef.current = true;
+          pendingTransportReconnectRef.current = false;
           setErrorMessage(null);
           setProgressReason(null);
           updateStatus('recovering');
           setConnectionRetryToken((current) => current + 1);
           return;
         }
+        if (shouldRetryStoredSession) {
+          reconnectingRef.current = true;
+          pendingTransportReconnectRef.current = false;
+          setErrorMessage(null);
+          setProgressReason(null);
+          updateStatus('recovering');
+          return;
+        }
+        pendingTransportReconnectRef.current = false;
+        invalidateSessionHandle();
         updateStatus(statusRef.current === 'failed' ? 'failed' : 'closed');
       };
     }).catch((error) => {
@@ -739,6 +875,9 @@ export function TaskTerminalPanel({
 
     return () => {
       cancelled = true;
+      if (recoveryRetryTimer !== null) {
+        window.clearTimeout(recoveryRetryTimer);
+      }
       cleanupSocket();
     };
   }, [
@@ -756,7 +895,27 @@ export function TaskTerminalPanel({
     releaseSocketResources,
     resolveSession,
     scheduleFit,
+    sessionStorageKey,
   ]);
+
+  React.useEffect(() => {
+    if (!open || !visible || !hasInteractiveMount) return;
+    if (socketRef.current) return;
+    if (!readStoredSessionId()) return;
+    if (
+      statusRef.current !== 'closed'
+      && statusRef.current !== 'recovering'
+      && !(statusRef.current === 'failed' && pendingTransportReconnectRef.current)
+    ) {
+      return;
+    }
+    reconnectingRef.current = true;
+    pendingTransportReconnectRef.current = false;
+    setErrorMessage(null);
+    setProgressReason(null);
+    updateStatus('recovering');
+    setConnectionRetryToken((current) => current + 1);
+  }, [hasInteractiveMount, open, readStoredSessionId, updateStatus, visible]);
 
   const handleEndSession = React.useCallback(() => {
     explicitCloseRequestedRef.current = true;
@@ -783,22 +942,32 @@ export function TaskTerminalPanel({
     if (pendingResolution) {
       pendingResolutionCloseRef.current = true;
       invalidateSessionHandle({ clearStored: true });
+      if (storedSessionId) {
+        void taskApi
+          .closeTerminalSession(workspaceId, projectId, taskId, storedSessionId)
+          .catch(() => {
+            // Best-effort cleanup for hidden/disconnected stored sessions.
+          })
+          .finally(() => {
+            finalizeClosedSession();
+          });
+        onOpenChangeRef.current(false);
+        return;
+      }
       void pendingResolution
         .then((resolution) => {
-          if (resolution.kind !== 'connectable') {
-            return;
-          }
           return taskApi.closeTerminalSession(
             workspaceId,
             projectId,
             taskId,
-            resolution.handle.id,
-          ).finally(() => {
-            invalidateSessionHandle({ clearStored: true });
-          });
+            getClosableSessionIdFromResolution(resolution),
+          );
         })
         .catch(() => {
           // Best-effort cleanup for sessions that resolved after the tab was already closed.
+        })
+        .finally(() => {
+          finalizeClosedSession();
         });
       onOpenChangeRef.current(false);
       return;

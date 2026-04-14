@@ -120,6 +120,75 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+const TERMINAL_SERVICE_RELOAD_CLOSE_REASON = 'terminal_connection_failed_service_reload';
+
+async function seedSessionForServiceReload(status: 'pending' | 'active' | 'disconnected') {
+  const cache = new InMemoryCache();
+  const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+  const service = new NotebookTerminalService(cache, {
+    dispatchTerminalSession: vi.fn(async () => ({
+      writeInput: vi.fn(),
+      resize: vi.fn(),
+      close: vi.fn(),
+      stream: runtimeEvents.stream,
+    })),
+  } as never);
+
+  const created = await service.createSession({
+    workspaceId: 'ws_default',
+    projectId: 'proj_1',
+    taskId: 'task_1',
+    agentId: 'agent_1',
+    runnerSessionId: 'task_1',
+    userId: 'user_1',
+    cols: 80,
+    rows: 24,
+  });
+
+  let staleReconnectPath: string | null = null;
+  if (status !== 'pending') {
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+
+    await runtimeEvents.push({
+      type: 'started',
+      session_id: created.sessionId,
+      cols: 80,
+      rows: 24,
+    });
+
+    await waitForAssertion(async () => {
+      expect(await service.getSession(created.sessionId)).toMatchObject({
+        id: created.sessionId,
+        status: 'active',
+      });
+    });
+
+    if (status === 'disconnected') {
+      ws.close(1000, 'browser_tab_closed');
+      await waitForAssertion(async () => {
+        expect(await service.getSession(created.sessionId)).toMatchObject({
+          id: created.sessionId,
+          status: 'disconnected',
+        });
+      });
+
+      const reconnect = await service.issueReconnectTicket(created.sessionId);
+      staleReconnectPath = reconnect?.wsPath ?? null;
+    }
+  }
+
+  return {
+    cache,
+    service,
+    created,
+    staleReconnectPath,
+  };
+}
+
 describe('NotebookTerminalService', () => {
   it('creates an in-memory terminal session with a browser ws ticket', async () => {
     const cache = new InMemoryCache();
@@ -1255,7 +1324,7 @@ describe('NotebookTerminalService', () => {
     ).rejects.toThrow('task_terminal_session_limit_reached');
   });
 
-  it('restores live task session listings from persisted truth after service reload', async () => {
+  it('reconciles persisted pending terminal sessions to failed truth after service reload', async () => {
     const cache = new InMemoryCache();
     const firstService = new NotebookTerminalService(cache, {
       dispatchTerminalSession: vi.fn(),
@@ -1294,8 +1363,8 @@ describe('NotebookTerminalService', () => {
         userId: 'user_1',
       }),
     ).resolves.toMatchObject([
-      { id: first.sessionId, status: 'pending' },
-      { id: second.sessionId, status: 'pending' },
+      { id: first.sessionId, status: 'failed', closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON },
+      { id: second.sessionId, status: 'failed', closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON },
     ]);
   });
 
@@ -1344,10 +1413,171 @@ describe('NotebookTerminalService', () => {
         taskId: 'task_1',
         userId: 'user_1',
       }),
-    ).resolves.toMatchObject(createdIds.map((id) => ({ id, status: 'pending' })));
+    ).resolves.toMatchObject(createdIds.map((id) => ({
+      id,
+      status: 'failed',
+      closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON,
+    })));
   });
 
-  it('lets a reloaded service clean up a persisted failed session to clear backend truth', async () => {
+  it('lets a reloaded service clean up a persisted failed session to clear backend truth without runner close replay', async () => {
+    const cache = new InMemoryCache();
+    const firstService = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+
+    const created = await firstService.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    (firstService as unknown as {
+      finishSession: (
+        sessionId: string,
+        status: 'closed' | 'failed',
+        closeReason?: string,
+        exitCode?: number | null,
+      ) => void;
+    }).finishSession(created.sessionId, 'failed', 'terminal_stream_failed');
+
+    const closeTerminalSession = vi.fn(async () => 'signaled');
+    const reloadedService = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+      closeTerminalSession,
+    } as never);
+
+    await expect(
+      reloadedService.deleteSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+        sessionId: created.sessionId,
+      }),
+    ).resolves.toBe(true);
+    expect(closeTerminalSession).not.toHaveBeenCalled();
+    await expect(reloadedService.getSession(created.sessionId)).resolves.toBeNull();
+    await expect(
+      reloadedService.listSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  for (const persistedStatus of ['pending', 'active', 'disconnected'] as const) {
+    it(`does not advertise a persisted ${persistedStatus} terminal session as reconnectable after service reload`, async () => {
+      const seeded = await seedSessionForServiceReload(persistedStatus);
+      const reloadedDispatchTerminalSession = vi.fn(async () => ({
+        writeInput: vi.fn(),
+        resize: vi.fn(),
+        close: vi.fn(),
+        stream: createControlledRuntimeStream<TerminalRuntimeEvent>().stream,
+      }));
+      const reloadedService = new NotebookTerminalService(seeded.cache, {
+        dispatchTerminalSession: reloadedDispatchTerminalSession,
+      } as never);
+
+      await expect(reloadedService.issueReconnectTicket(seeded.created.sessionId)).resolves.toBeNull();
+      await expect(reloadedService.getSession(seeded.created.sessionId)).resolves.toMatchObject({
+        id: seeded.created.sessionId,
+        status: 'failed',
+        closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON,
+      });
+      expect(reloadedDispatchTerminalSession).not.toHaveBeenCalled();
+    });
+  }
+
+  it('rejects stale reconnect websocket upgrades after service reload and converges the session to failed truth', async () => {
+    const seeded = await seedSessionForServiceReload('disconnected');
+    expect(seeded.staleReconnectPath).toBeTruthy();
+
+    const reloadedDispatchTerminalSession = vi.fn();
+    const reloadedService = new NotebookTerminalService(seeded.cache, {
+      dispatchTerminalSession: reloadedDispatchTerminalSession,
+    } as never);
+
+    const upgradeSocket = {
+      write: vi.fn(),
+      destroy: vi.fn(),
+    };
+
+    reloadedService.handleUpgrade(
+      { url: seeded.staleReconnectPath! } as never,
+      upgradeSocket as never,
+      Buffer.alloc(0),
+    );
+
+    await waitForAssertion(() => {
+      expect(upgradeSocket.write).toHaveBeenCalledWith('HTTP/1.1 404 Not Found\r\n\r\n');
+    });
+    expect(reloadedDispatchTerminalSession).not.toHaveBeenCalled();
+    await expect(reloadedService.getSession(seeded.created.sessionId)).resolves.toMatchObject({
+      id: seeded.created.sessionId,
+      status: 'failed',
+      closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON,
+    });
+  });
+
+  it('sends a precise runner close for a persisted reload-interrupted terminal session before deleting backend truth', async () => {
+    const cache = new InMemoryCache();
+    const firstService = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+
+    const created = await firstService.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const closeTerminalSession = vi.fn(async () => 'signaled');
+    const reloadedService = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+      closeTerminalSession,
+    } as never);
+
+    await expect(
+      reloadedService.deleteSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+        sessionId: created.sessionId,
+      }),
+    ).resolves.toBe(true);
+    expect(closeTerminalSession).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_1',
+      agentId: 'agent_1',
+      terminalSessionId: created.sessionId,
+    });
+    await expect(reloadedService.getSession(created.sessionId)).resolves.toBeNull();
+    await expect(
+      reloadedService.listSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('does not advertise a persisted failed session as reconnectable after service reload', async () => {
     const cache = new InMemoryCache();
     const firstService = new NotebookTerminalService(cache, {
       dispatchTerminalSession: vi.fn(),
@@ -1377,23 +1607,11 @@ describe('NotebookTerminalService', () => {
       dispatchTerminalSession: vi.fn(),
     } as never);
 
-    await expect(
-      reloadedService.deleteSession({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        taskId: 'task_1',
-        userId: 'user_1',
-        sessionId: created.sessionId,
-      }),
-    ).resolves.toBe(true);
-    await expect(reloadedService.getSession(created.sessionId)).resolves.toBeNull();
-    await expect(
-      reloadedService.listSessionsForTask({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        taskId: 'task_1',
-        userId: 'user_1',
-      }),
-    ).resolves.toEqual([]);
+    await expect(reloadedService.issueReconnectTicket(created.sessionId)).resolves.toBeNull();
+    await expect(reloadedService.getSession(created.sessionId)).resolves.toMatchObject({
+      id: created.sessionId,
+      status: 'failed',
+      closeReason: 'terminal_stream_failed',
+    });
   });
 });

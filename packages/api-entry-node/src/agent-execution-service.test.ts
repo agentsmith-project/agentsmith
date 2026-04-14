@@ -514,6 +514,32 @@ describe('AgentExecutionService', () => {
     expect(executionService.getAgentOnlineState(agent.id)).toBe(true);
   });
 
+  it('sends a precise terminal close control message without requiring an active terminal dispatch queue', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const closeFrame = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.terminal.close') {
+          resolve(message);
+        }
+      });
+    });
+
+    await expect(executionService.closeTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_1',
+      agentId: agent.id,
+      terminalSessionId: 'term_persisted',
+    })).resolves.toBe('signaled');
+
+    await expect(closeFrame).resolves.toMatchObject({
+      type: 'server.terminal.close',
+      session_id: 'task_1',
+      terminal_session_id: 'term_persisted',
+    });
+  });
+
   it('emits protocol error when agent delta payload is invalid', async () => {
     const { executionService, agent, ws } = await setupExecutionService();
     ws.on('message', (raw) => {

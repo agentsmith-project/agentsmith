@@ -14,6 +14,11 @@ const DEFAULT_MOUNT_RETRY_DELAY_MS = 750;
 const MAX_RELEASE_ATTEMPTS_HISTORY = 5;
 
 export type RunnerMode = 'host_external' | 'docker_external' | 'k8s_internal';
+export type TaskWorkspaceLease = {
+  mountPath: string;
+  leaseId: string;
+  revision: number;
+};
 type MountRegistryState = 'mounted' | 'releasing' | 'release_failed' | 'released';
 type MountReleaseOutcome = 'not_started' | 'pending' | 'released' | 'failed';
 type PersistedMountReleaseAttempt = {
@@ -70,6 +75,8 @@ type MountedWorkspaceSession = {
   childExited: boolean;
   ownerProcessPid: number | null;
   runnerInstanceId: string | null;
+  leaseId: string | null;
+  leaseRevision: number;
   createdAt: string | null;
   mountedAt: string | null;
   lastRefChangeAt: string | null;
@@ -91,6 +98,8 @@ type PersistedMountedWorkspaceSession = {
   refs: number;
   owner_process_pid: number | null;
   owner_runner_instance_id: string | null;
+  lease_id: string | null;
+  lease_revision: number;
   created_at: string | null;
   mounted_at: string | null;
   last_ref_change_at: string | null;
@@ -107,7 +116,7 @@ const mountedWorkspaceByMountPath = new Map<string, MountedWorkspaceSession>();
 const releasedMountedWorkspaceByMountPath = new Set<string>();
 const RETRYABLE_TASK_WORKSPACE_WRITE_FAILURE_CODES = new Set(['EIO', 'ESTALE', 'ENOTCONN']);
 const TASK_WORKSPACE_MOUNT_SESSIONS_FILE = 'task-workspace-mount-sessions.json';
-const TASK_WORKSPACE_MOUNT_SESSIONS_VERSION = 2;
+const TASK_WORKSPACE_MOUNT_SESSIONS_VERSION = 3;
 const DEFAULT_MOUNT_RELEASE_TIMEOUT_MS = 10_000;
 const DEFAULT_MOUNT_CHILD_EXIT_TIMEOUT_MS = 5_000;
 let cleanupHooksRegistered = false;
@@ -131,6 +140,10 @@ function nowIsoString(): string {
 
 function normalizePositiveInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function normalizeNonNegativeInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function normalizeOptionalString(value: unknown): string | null {
@@ -393,6 +406,8 @@ function buildRegistrySessionSnapshot(session: MountedWorkspaceSession): Persist
     refs: session.refs,
     owner_process_pid: session.ownerProcessPid,
     owner_runner_instance_id: session.runnerInstanceId,
+    lease_id: session.leaseId,
+    lease_revision: session.leaseRevision,
     created_at: session.createdAt,
     mounted_at: session.mountedAt,
     last_ref_change_at: session.lastRefChangeAt,
@@ -447,6 +462,14 @@ function buildRegistrySessionFromPersisted(
       ?? (raw as { runner_instance_id?: unknown }).runner_instance_id
       ?? (raw as { ownerRunnerInstanceId?: unknown }).ownerRunnerInstanceId,
     ),
+    lease_id: normalizeOptionalString(
+      (raw as { lease_id?: unknown; leaseId?: unknown }).lease_id
+      ?? (raw as { leaseId?: unknown }).leaseId,
+    ),
+    lease_revision: normalizeNonNegativeInteger(
+      (raw as { lease_revision?: unknown; leaseRevision?: unknown }).lease_revision
+      ?? (raw as { leaseRevision?: unknown }).leaseRevision,
+    ) ?? 0,
     created_at: normalizeOptionalString(
       (raw as { created_at?: unknown; createdAt?: unknown }).created_at
       ?? (raw as { createdAt?: unknown }).createdAt,
@@ -531,6 +554,8 @@ function hydrateMountedWorkspaceSession(
     childExited: true,
     ownerProcessPid: session.owner_process_pid,
     runnerInstanceId: session.owner_runner_instance_id,
+    leaseId: session.lease_id,
+    leaseRevision: session.lease_revision,
     createdAt: session.created_at,
     mountedAt: session.mounted_at,
     lastRefChangeAt: session.last_ref_change_at,
@@ -551,11 +576,99 @@ function appendReleaseAttempt(
   session.releaseAttempts = [...session.releaseAttempts, attempt].slice(-MAX_RELEASE_ATTEMPTS_HISTORY);
 }
 
-function isMountedWorkspaceSessionOwnedByAnotherRunner(session: MountedWorkspaceSession): boolean {
-  if (session.runnerInstanceId) {
-    return session.runnerInstanceId !== RUNNER_INSTANCE_ID;
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code ?? '')
+      : '';
+    if (code === 'ESRCH') {
+      return false;
+    }
+    return true;
   }
-  return session.ownerProcessPid !== null && session.ownerProcessPid !== process.pid;
+}
+
+function isMountedWorkspaceSessionOwnedByCurrentRunner(session: MountedWorkspaceSession): boolean {
+  const sameRunnerInstance = session.runnerInstanceId
+    ? session.runnerInstanceId === RUNNER_INSTANCE_ID
+    : true;
+  const sameOwnerProcess = session.ownerProcessPid === null || session.ownerProcessPid === process.pid;
+  return sameRunnerInstance && sameOwnerProcess;
+}
+
+function isMountedWorkspaceSessionOwnedByAnotherRunner(session: MountedWorkspaceSession): boolean {
+  return !isMountedWorkspaceSessionOwnedByCurrentRunner(session)
+    && (session.runnerInstanceId !== null || session.ownerProcessPid !== null);
+}
+
+async function isMountedWorkspaceSessionOwnedByLiveForeignRunner(
+  session: MountedWorkspaceSession,
+): Promise<boolean> {
+  if (!isMountedWorkspaceSessionOwnedByAnotherRunner(session)) {
+    return false;
+  }
+  if (session.ownerProcessPid === null) {
+    return true;
+  }
+  return isProcessAlive(session.ownerProcessPid);
+}
+
+function ensureMountedWorkspaceLease(
+  session: MountedWorkspaceSession,
+  previousRevision?: number,
+): TaskWorkspaceLease {
+  if (session.leaseId && session.leaseRevision > 0) {
+    return {
+      mountPath: session.mountPath,
+      leaseId: session.leaseId,
+      revision: session.leaseRevision,
+    };
+  }
+  session.leaseId = randomUUID();
+  session.leaseRevision = Math.max(previousRevision ?? session.leaseRevision, 0) + 1;
+  return {
+    mountPath: session.mountPath,
+    leaseId: session.leaseId,
+    revision: session.leaseRevision,
+  };
+}
+
+function getMountedWorkspaceLease(
+  session: MountedWorkspaceSession,
+): TaskWorkspaceLease | null {
+  if (!session.leaseId || session.leaseRevision <= 0) {
+    return null;
+  }
+  return {
+    mountPath: session.mountPath,
+    leaseId: session.leaseId,
+    revision: session.leaseRevision,
+  };
+}
+
+function rotateMountedWorkspaceLease(
+  session: MountedWorkspaceSession,
+  previousRevision?: number,
+): TaskWorkspaceLease {
+  session.leaseId = randomUUID();
+  session.leaseRevision = Math.max(previousRevision ?? session.leaseRevision, 0) + 1;
+  return {
+    mountPath: session.mountPath,
+    leaseId: session.leaseId,
+    revision: session.leaseRevision,
+  };
+}
+
+function doesTaskWorkspaceLeaseMatchSession(
+  session: MountedWorkspaceSession,
+  lease: TaskWorkspaceLease,
+): boolean {
+  return lease.mountPath === session.mountPath
+    && lease.leaseId === session.leaseId
+    && lease.revision === session.leaseRevision;
 }
 
 function markMountedSessionAcquired(
@@ -569,6 +682,7 @@ function markMountedSessionAcquired(
   const timestamp = nowIsoString();
   session.ownerProcessPid = process.pid;
   session.runnerInstanceId = RUNNER_INSTANCE_ID;
+  ensureMountedWorkspaceLease(session);
   session.state = 'mounted';
   session.refs += 1;
   session.updatedAt = timestamp;
@@ -590,6 +704,8 @@ function buildMountedWorkspaceSession(input: {
   storageBucketUrl?: string;
   logPath: string;
   refs?: number;
+  leaseId?: string | null;
+  leaseRevision?: number;
   createdAt?: string | null;
   mountedAt?: string | null;
   lastReleaseAttemptAt?: string | null;
@@ -611,6 +727,8 @@ function buildMountedWorkspaceSession(input: {
     childExited: true,
     ownerProcessPid: process.pid,
     runnerInstanceId: RUNNER_INSTANCE_ID,
+    leaseId: input.leaseId ?? null,
+    leaseRevision: input.leaseRevision ?? 0,
     createdAt: input.createdAt ?? null,
     mountedAt: input.mountedAt ?? null,
     lastRefChangeAt: null,
@@ -1033,6 +1151,20 @@ async function releaseMountPathWithFallback(
   throw new Error(`task_workspace_umount_not_ready:${mountPath}`);
 }
 
+async function assertTrackedMountEvidenceOrThrow(
+  mountPath: string,
+  action: 'mount' | 'release',
+): Promise<void> {
+  if (!await isMountPointReady(mountPath)) {
+    return;
+  }
+  throw new Error(
+    action === 'mount'
+      ? `task_workspace_mount_untracked_live_mount:${mountPath}`
+      : `task_workspace_release_untracked_live_mount:${mountPath}`,
+  );
+}
+
 async function resolveTrackedMountedWorkspaceSession(
   mountPath: string,
 ): Promise<MountedWorkspaceSession | null> {
@@ -1050,11 +1182,32 @@ async function resolveTrackedMountedWorkspaceSession(
   return hydratedSession;
 }
 
-async function releaseMountedWorkspaceSession(mountPath: string, options?: { force?: boolean }): Promise<void> {
+async function releaseMountedWorkspaceSession(
+  mountPath: string,
+  options?: {
+    force?: boolean;
+    lease?: TaskWorkspaceLease;
+    allowForeignStaleRelease?: boolean;
+  },
+): Promise<void> {
   const session = await resolveTrackedMountedWorkspaceSession(mountPath);
   if (!session) {
-    await releaseMountPathWithFallback(mountPath);
+    await assertTrackedMountEvidenceOrThrow(mountPath, 'release');
     return;
+  }
+
+  const leaseMatches = options?.lease
+    ? doesTaskWorkspaceLeaseMatchSession(session, options.lease)
+    : false;
+  const allowForeignStaleRelease = options?.allowForeignStaleRelease === true;
+  if (allowForeignStaleRelease && await isMountedWorkspaceSessionOwnedByLiveForeignRunner(session)) {
+    throw new Error(`task_workspace_mount_owned_by_live_runner:${mountPath}`);
+  }
+  if (!leaseMatches && !allowForeignStaleRelease) {
+    if (options?.lease) {
+      throw new Error(`task_workspace_release_lease_mismatch:${mountPath}`);
+    }
+    throw new Error(`task_workspace_release_requires_lease:${mountPath}`);
   }
 
   if (session.state === 'released') {
@@ -1125,7 +1278,8 @@ async function acquireMountedWorkspaceSession(input: {
   metadataUrl: string;
   mountPath: string;
   storageBucketUrl?: string;
-}): Promise<MountedWorkspaceSession> {
+  priorLeaseRevisionFloor?: number;
+}): Promise<{ session: MountedWorkspaceSession; lease: TaskWorkspaceLease }> {
   ensureMountCleanupHooksRegistered();
   const existing = await resolveTrackedMountedWorkspaceSession(input.mountPath);
   let priorSessionEvidence: MountedWorkspaceSession | null = null;
@@ -1138,14 +1292,23 @@ async function acquireMountedWorkspaceSession(input: {
       existing.storageBucketUrl = input.storageBucketUrl;
       markMountedSessionAcquired(existing);
       await persistMountedWorkspaceSessions();
-      return existing;
+      return {
+        session: existing,
+        lease: ensureMountedWorkspaceLease(existing),
+      };
     }
     if (existing.state === 'mounted' && mountReady && ownedByAnotherRunner) {
+      const foreignOwnerLive = await isMountedWorkspaceSessionOwnedByLiveForeignRunner(existing);
       debugTaskWorkspace('reacquire_foreign_owned_mount', {
         mount_path: input.mountPath,
         owner_process_pid: existing.ownerProcessPid,
         owner_runner_instance_id: existing.runnerInstanceId,
+        owner_alive: foreignOwnerLive,
       });
+      if (foreignOwnerLive) {
+        mountedWorkspaceByMountPath.delete(input.mountPath);
+        throw new Error(`task_workspace_mount_owned_by_live_runner:${input.mountPath}`);
+      }
     }
     if (existing.state === 'released' || !mountReady) {
       priorSessionEvidence = {
@@ -1154,7 +1317,16 @@ async function acquireMountedWorkspaceSession(input: {
       };
       mountedWorkspaceByMountPath.delete(input.mountPath);
     } else {
-      await releaseMountedWorkspaceSession(input.mountPath, { force: true }).catch((error) => {
+      priorSessionEvidence = {
+        ...existing,
+        releaseAttempts: [...existing.releaseAttempts],
+      };
+      const sessionLease = !ownedByAnotherRunner ? ensureMountedWorkspaceLease(existing) : undefined;
+      await releaseMountedWorkspaceSession(input.mountPath, {
+        force: true,
+        lease: sessionLease,
+        allowForeignStaleRelease: ownedByAnotherRunner,
+      }).catch((error) => {
         debugTaskWorkspace('release_stale_mount_before_reacquire_failed', {
           mount_path: input.mountPath,
           message: error instanceof Error ? error.message : String(error),
@@ -1163,6 +1335,9 @@ async function acquireMountedWorkspaceSession(input: {
       });
     }
   }
+  if (!existing) {
+    await assertTrackedMountEvidenceOrThrow(input.mountPath, 'mount');
+  }
 
   const session = await mountTaskWorkspace(
     input.mode,
@@ -1170,6 +1345,13 @@ async function acquireMountedWorkspaceSession(input: {
     input.mountPath,
     input.storageBucketUrl,
   );
+  const priorLeaseRevision = Math.max(
+    priorSessionEvidence?.leaseRevision ?? 0,
+    input.priorLeaseRevisionFloor ?? 0,
+  );
+  const lease = priorLeaseRevision > 0
+    ? rotateMountedWorkspaceLease(session, priorLeaseRevision)
+    : ensureMountedWorkspaceLease(session);
   markMountedSessionAcquired(session, {
     preserveCreatedAt: session.createdAt !== null,
     preserveMountedAt: session.mountedAt !== null,
@@ -1179,13 +1361,19 @@ async function acquireMountedWorkspaceSession(input: {
   }
   mountedWorkspaceByMountPath.set(input.mountPath, session);
   await persistMountedWorkspaceSessions();
-  return session;
+  return { session, lease };
 }
 
 export async function releaseAllPreparedTaskWorkspaces(): Promise<void> {
-  for (const mountPath of Array.from(mountedWorkspaceByMountPath.keys())) {
+  for (const [mountPath, session] of Array.from(mountedWorkspaceByMountPath.entries())) {
     try {
-      await releaseMountedWorkspaceSession(mountPath, { force: true });
+      await releaseMountedWorkspaceSession(mountPath, {
+        force: true,
+        lease: isMountedWorkspaceSessionOwnedByAnotherRunner(session)
+          ? undefined
+          : getMountedWorkspaceLease(session) ?? ensureMountedWorkspaceLease(session),
+        allowForeignStaleRelease: isMountedWorkspaceSessionOwnedByAnotherRunner(session),
+      });
     } catch (error) {
       debugTaskWorkspace('release_all_mounts_failed', {
         mount_path: mountPath,
@@ -1203,6 +1391,7 @@ export async function prepareTaskWorkspace(input: {
   cwd: string;
   source: 'workspace_path' | 'mode_mount_path' | 'file_library_mount';
   paths: TaskWorkspacePaths;
+  lease?: TaskWorkspaceLease;
   release: () => Promise<void>;
 }> {
   const mode = resolveRunnerMode();
@@ -1226,20 +1415,34 @@ export async function prepareTaskWorkspace(input: {
       mode,
       taskId: workspaceAccess.task_id || input.taskId,
     });
+    let priorLeaseRevisionFloor = 0;
     const maxAttempts = Number.parseInt(process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_COUNT ?? '', 10)
       || DEFAULT_MOUNT_RETRY_COUNT;
     const retryDelayMs = Number.parseInt(process.env.MBOS_AGENT_JUICEFS_MOUNT_RETRY_DELAY_MS ?? '', 10)
       || DEFAULT_MOUNT_RETRY_DELAY_MS;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      let workspaceLease: TaskWorkspaceLease | null = null;
       try {
-        await acquireMountedWorkspaceSession({
+        const acquired = await acquireMountedWorkspaceSession({
           mode,
           metadataUrl: workspaceAccess.metadata_url,
           mountPath,
           storageBucketUrl: workspaceAccess.storage_bucket_url,
+          priorLeaseRevisionFloor,
         });
+        workspaceLease = acquired.lease;
         await ensureTaskWorkspaceWritable(mountPath);
-        break;
+        return {
+          cwd: mountPath,
+          source: 'file_library_mount',
+          paths: buildTaskWorkspacePaths(mountPath, mode),
+          lease: workspaceLease,
+          release: async () => {
+            await releaseMountedWorkspaceSession(mountPath, {
+              lease: workspaceLease ?? undefined,
+            });
+          },
+        };
       } catch (error) {
         const retryableMountFailure = shouldRetryTaskWorkspaceMount(error);
         const retryableWriteFailure = shouldRetryTaskWorkspaceWriteFailure(error);
@@ -1254,7 +1457,21 @@ export async function prepareTaskWorkspace(input: {
             : null,
         });
         if (retryableWriteFailure) {
-          await releaseMountedWorkspaceSession(mountPath, { force: true }).catch((releaseError) => {
+          const currentSession = await resolveTrackedMountedWorkspaceSession(mountPath);
+          priorLeaseRevisionFloor = Math.max(
+            priorLeaseRevisionFloor,
+            currentSession?.leaseRevision ?? 0,
+          );
+          const currentLease = currentSession && !isMountedWorkspaceSessionOwnedByAnotherRunner(currentSession)
+            ? getMountedWorkspaceLease(currentSession) ?? ensureMountedWorkspaceLease(currentSession)
+            : undefined;
+          await releaseMountedWorkspaceSession(mountPath, {
+            force: true,
+            lease: currentLease,
+            allowForeignStaleRelease: currentSession
+              ? isMountedWorkspaceSessionOwnedByAnotherRunner(currentSession)
+              : false,
+          }).catch((releaseError) => {
             debugTaskWorkspace('mount_workspace_release_before_retry_failed', {
               mount_path: mountPath,
               message: releaseError instanceof Error ? releaseError.message : String(releaseError),
@@ -1267,14 +1484,7 @@ export async function prepareTaskWorkspace(input: {
         await sleep(retryDelayMs);
       }
     }
-    return {
-      cwd: mountPath,
-      source: 'file_library_mount',
-      paths: buildTaskWorkspacePaths(mountPath, mode),
-      release: async () => {
-        await releaseMountedWorkspaceSession(mountPath);
-      },
-    };
+    throw new Error(`task_workspace_mount_exhausted:${mountPath}`);
   }
 
   const resolved = resolveTaskCwd({
@@ -1294,10 +1504,27 @@ export function clearPreparedTaskWorkspaces(): void {
   releasedMountedWorkspaceByMountPath.clear();
 }
 
-export async function releasePreparedTaskWorkspace(mountPath: string): Promise<void> {
-  await releaseMountedWorkspaceSession(mountPath, { force: true });
+export async function releasePreparedTaskWorkspace(
+  mountPath: string,
+  lease?: TaskWorkspaceLease,
+): Promise<void> {
+  await releaseMountedWorkspaceSession(mountPath, {
+    force: true,
+    lease,
+  });
 }
 
 export async function evictPreparedTaskWorkspace(mountPath: string): Promise<void> {
-  await releasePreparedTaskWorkspace(mountPath);
+  const session = await resolveTrackedMountedWorkspaceSession(mountPath);
+  if (!session) {
+    await assertTrackedMountEvidenceOrThrow(mountPath, 'release');
+    return;
+  }
+  await releaseMountedWorkspaceSession(mountPath, {
+    force: true,
+    lease: isMountedWorkspaceSessionOwnedByAnotherRunner(session)
+      ? undefined
+      : getMountedWorkspaceLease(session) ?? ensureMountedWorkspaceLease(session),
+    allowForeignStaleRelease: isMountedWorkspaceSessionOwnedByAnotherRunner(session),
+  });
 }

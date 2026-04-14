@@ -22,6 +22,7 @@ function buildGatewayState(overrides: Partial<GatewayStateRecord> = {}): Gateway
     libraryId: 'flib_demo',
     pid: 4100,
     ownerProcessPid: 5100,
+    ownerScope: 'api-pid-5100',
     port: 39001,
     loopbackUrl: 'http://127.0.0.1:39001',
     metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
@@ -40,6 +41,40 @@ function buildProcess(overrides: Partial<ManagedProcessInfo> = {}): ManagedProce
     ppid: 1,
     ageSeconds: 1200,
     command: 'juicefs gateway postgres://meta 127.0.0.1:39001 --log /tmp/flib_demo.log --no-banner',
+    ...overrides,
+  };
+}
+
+function buildOwnedGatewayCommand(args: {
+  ownerScope: string;
+  libraryId: string;
+  metadataUrl?: string;
+  listenAddress?: string;
+  storageBucketUrl?: string;
+  logPath?: string;
+}) {
+  return [
+    `juicefs owner_scope=${args.ownerScope} library_id=${args.libraryId}`,
+    'gateway',
+    args.metadataUrl ?? 'postgres://meta',
+    args.listenAddress ?? '127.0.0.1:39001',
+    ...(args.storageBucketUrl ? ['--bucket', args.storageBucketUrl] : []),
+    ...(args.logPath ? ['--log', args.logPath] : []),
+    '--no-banner',
+  ].join(' ');
+}
+
+function buildBootScopedOwnerScope(instanceId: string, bootId: string) {
+  return `api-v1:${instanceId}:${bootId}`;
+}
+
+function buildGatewayOwnerEvidence(overrides: {
+  localInstanceId?: string | null;
+  scopeStatusByScope?: Map<string, 'active' | 'stale'>;
+} = {}) {
+  return {
+    localInstanceId: 'instance-a',
+    scopeStatusByScope: new Map<string, 'active' | 'stale'>(),
     ...overrides,
   };
 }
@@ -66,6 +101,30 @@ describe('juicefs orphan preflight', () => {
     expect(decision).toEqual({
       action: 'stop_gateway_and_remove_state',
       reason: 'owner_pid_dead',
+    });
+  });
+
+  it('reclaims a state-backed gateway when its recorded owner pid was reused by a newer boot and the old boot heartbeat is stale', () => {
+    const staleOwnerScope = buildBootScopedOwnerScope('instance-a', 'boot-old');
+    const decision = classifyGatewayState({
+      state: buildGatewayState({
+        pid: 4100,
+        ownerProcessPid: 5100,
+        ownerScope: staleOwnerScope,
+      }),
+      livePids: new Set([4100, 5100]),
+      ownerEvidence: buildGatewayOwnerEvidence({
+        localInstanceId: 'instance-a',
+        scopeStatusByScope: new Map<string, 'active' | 'stale'>([
+          [staleOwnerScope, 'stale'],
+          [buildBootScopedOwnerScope('instance-a', 'boot-current'), 'active'],
+        ]),
+      }),
+    });
+
+    expect(decision).toEqual({
+      action: 'stop_gateway_and_remove_state',
+      reason: 'owner_boot_stale',
     });
   });
 
@@ -112,35 +171,49 @@ describe('juicefs orphan preflight', () => {
     })).toBe('not_mounted');
   });
 
-  it('extracts a stable managed gateway identity from metadata and bucket args even when --log is truncated', () => {
+  it('extracts a stable managed gateway identity from the explicit owner marker even when --log is truncated', () => {
     const identity = extractGatewayProcessIdentity(
-      'juicefs gateway postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable 127.0.0.1:39001 --bucket http://localhost:19000/jfs-lib-demo',
+      buildOwnedGatewayCommand({
+        ownerScope: 'api-pid-5100',
+        libraryId: 'flib_demo',
+        metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
+        listenAddress: '127.0.0.1:39001',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
+      }),
     );
 
     expect(identity).toEqual({
+      ownerScope: 'api-pid-5100',
+      libraryId: 'flib_demo',
+      listenAddress: '127.0.0.1:39001',
       metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
       storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
       logPath: null,
       stableKeys: [
-        'metadata:postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
-        'bucket:http://localhost:19000/jfs-lib-demo',
-        'db:jfs_lib_demo',
-        'bucket_name:jfs-lib-demo',
+        'scope_library:api-pid-5100:flib_demo',
       ],
-      label: 'db:jfs_lib_demo',
+      label: 'scope_library:api-pid-5100:flib_demo',
     });
   });
 
-  it('matches a live gateway process to persisted state by stable metadata identity instead of log path', () => {
+  it('matches a live gateway process to persisted state by its explicit owner scope marker', () => {
     const state = buildGatewayState({
       libraryId: 'flib_demo',
+      ownerScope: 'api-pid-5100',
+      pid: 4100,
       metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
       storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
       logPath: '/tmp/expected.log',
     });
     const processInfo = buildProcess({
       pid: 7100,
-      command: 'juicefs gateway postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable 127.0.0.1:39001 --bucket http://localhost:19000/jfs-lib-demo',
+      command: buildOwnedGatewayCommand({
+        ownerScope: 'api-pid-5100',
+        libraryId: 'flib_demo',
+        metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
+        listenAddress: '127.0.0.1:49001',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
+      }),
     });
 
     expect(matchGatewayStateForProcess({
@@ -149,28 +222,157 @@ describe('juicefs orphan preflight', () => {
     })?.libraryId).toBe('flib_demo');
   });
 
-  it('does not touch untracked managed gateways while an api owner is still alive', () => {
+  it('does not match a live gateway process to persisted state when the owner scope differs', () => {
+    const state = buildGatewayState({
+      libraryId: 'flib_demo',
+      ownerScope: 'api-pid-5100',
+      pid: 4100,
+      port: 39001,
+      loopbackUrl: 'http://127.0.0.1:39001',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
+      logPath: '/tmp/expected.log',
+    });
+    const processInfo = buildProcess({
+      pid: 7100,
+      command: buildOwnedGatewayCommand({
+        ownerScope: 'api-pid-5200',
+        libraryId: 'flib_demo',
+        metadataUrl: 'postgres://other-user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
+        listenAddress: '127.0.0.1:49001',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
+      }),
+    });
+
+    expect(matchGatewayStateForProcess({
+      processInfo,
+      gatewayStates: [state],
+    })).toBeNull();
+  });
+
+  it('does not match by pid reuse when the process owner scope boot identity differs', () => {
+    const state = buildGatewayState({
+      libraryId: 'flib_demo',
+      pid: 7100,
+      ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-old'),
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
+      logPath: '/tmp/expected.log',
+    });
+    const processInfo = buildProcess({
+      pid: 7100,
+      command: buildOwnedGatewayCommand({
+        ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-current'),
+        libraryId: 'flib_demo',
+        metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
+        listenAddress: '127.0.0.1:39001',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
+        logPath: '/tmp/expected.log',
+      }),
+    });
+
+    expect(matchGatewayStateForProcess({
+      processInfo,
+      gatewayStates: [state],
+    })).toBeNull();
+  });
+
+  it('does not match a reused pid to persisted state before owner identity matches', () => {
+    const state = buildGatewayState({
+      libraryId: 'flib_demo',
+      ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-old'),
+      pid: 7100,
+      port: 39001,
+      loopbackUrl: 'http://127.0.0.1:39001',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
+      logPath: '/tmp/expected.log',
+    });
+    const processInfo = buildProcess({
+      pid: 7100,
+      command: buildOwnedGatewayCommand({
+        ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-current'),
+        libraryId: 'flib_demo',
+        metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
+        listenAddress: '127.0.0.1:49001',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
+      }),
+    });
+
+    expect(matchGatewayStateForProcess({
+      processInfo,
+      gatewayStates: [state],
+    })).toBeNull();
+  });
+
+  it('fails open for untracked gateways without an explicit owner scope marker', () => {
     const decision = classifyGatewayProcessWithoutState({
       processInfo: buildProcess(),
-      anyApiOwnerAlive: true,
+      ownerEvidence: buildGatewayOwnerEvidence(),
       minAgeSeconds: 600,
     });
 
     expect(decision).toEqual({
       action: 'keep',
-      reason: 'api_owner_alive',
+      reason: 'owner_scope_unknown',
     });
   });
 
-  it('only reclaims an untracked managed gateway after it ages past the stale threshold', () => {
+  it('does not reclaim a stale foreign-owner gateway without local state', () => {
+    const decision = classifyGatewayProcessWithoutState({
+      processInfo: buildProcess({
+        command: buildOwnedGatewayCommand({
+          ownerScope: buildBootScopedOwnerScope('instance-b', 'boot-foreign'),
+          libraryId: 'flib_demo',
+        }),
+      }),
+      ownerEvidence: buildGatewayOwnerEvidence({
+        localInstanceId: 'instance-a',
+        scopeStatusByScope: new Map<string, 'active' | 'stale'>([
+          [buildBootScopedOwnerScope('instance-a', 'boot-current'), 'active'],
+        ]),
+      }),
+      minAgeSeconds: 600,
+    });
+
+    expect(decision).toEqual({
+      action: 'keep',
+      reason: 'foreign_owner_scope',
+    });
+  });
+
+  it('only reclaims an owner-scoped untracked gateway after its local owner scope goes stale and it ages past the threshold', () => {
+    const staleOwnerScope = buildBootScopedOwnerScope('instance-a', 'boot-old');
     const freshDecision = classifyGatewayProcessWithoutState({
-      processInfo: buildProcess({ ageSeconds: 120 }),
-      anyApiOwnerAlive: false,
+      processInfo: buildProcess({
+        ageSeconds: 120,
+        command: buildOwnedGatewayCommand({
+          ownerScope: staleOwnerScope,
+          libraryId: 'flib_demo',
+        }),
+      }),
+      ownerEvidence: buildGatewayOwnerEvidence({
+        localInstanceId: 'instance-a',
+        scopeStatusByScope: new Map<string, 'active' | 'stale'>([
+          [staleOwnerScope, 'stale'],
+        ]),
+      }),
       minAgeSeconds: 600,
     });
     const staleDecision = classifyGatewayProcessWithoutState({
-      processInfo: buildProcess({ ageSeconds: 1200 }),
-      anyApiOwnerAlive: false,
+      processInfo: buildProcess({
+        ageSeconds: 1200,
+        command: buildOwnedGatewayCommand({
+          ownerScope: staleOwnerScope,
+          libraryId: 'flib_demo',
+        }),
+      }),
+      ownerEvidence: buildGatewayOwnerEvidence({
+        localInstanceId: 'instance-a',
+        scopeStatusByScope: new Map<string, 'active' | 'stale'>([
+          [staleOwnerScope, 'stale'],
+        ]),
+      }),
       minAgeSeconds: 600,
     });
 
@@ -180,7 +382,32 @@ describe('juicefs orphan preflight', () => {
     });
     expect(staleDecision).toEqual({
       action: 'stop_gateway',
-      reason: 'untracked_gateway_without_owner',
+      reason: 'local_owner_boot_stale',
+    });
+  });
+
+  it('fails open when a same-instance owner scope has no ledger evidence yet', () => {
+    const unverifiedOwnerScope = buildBootScopedOwnerScope('instance-a', 'boot-unknown');
+    const decision = classifyGatewayProcessWithoutState({
+      processInfo: buildProcess({
+        ageSeconds: 1200,
+        command: buildOwnedGatewayCommand({
+          ownerScope: unverifiedOwnerScope,
+          libraryId: 'flib_demo',
+        }),
+      }),
+      ownerEvidence: buildGatewayOwnerEvidence({
+        localInstanceId: 'instance-a',
+        scopeStatusByScope: new Map<string, 'active' | 'stale'>([
+          [buildBootScopedOwnerScope('instance-a', 'boot-current'), 'active'],
+        ]),
+      }),
+      minAgeSeconds: 600,
+    });
+
+    expect(decision).toEqual({
+      action: 'keep',
+      reason: 'owner_scope_unverified',
     });
   });
 

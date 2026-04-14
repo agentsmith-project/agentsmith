@@ -281,7 +281,7 @@ describe('task-workspace', () => {
     );
     const registry = parseRegistryWrite();
     const session = findRegistrySession(registry, '/workspace/task_1');
-    expect(registry.version).toBe(2);
+    expect(registry.version).toBe(3);
     expect(session).toMatchObject({
       mount_path: '/workspace/task_1',
       mode: 'docker_external',
@@ -291,9 +291,12 @@ describe('task-workspace', () => {
       owner_process_pid: process.pid,
       state: 'mounted',
       last_release_outcome: 'not_started',
+      lease_revision: 1,
     });
     expect(typeof session?.owner_runner_instance_id).toBe('string');
     expect(String(session?.owner_runner_instance_id)).not.toHaveLength(0);
+    expect(typeof session?.lease_id).toBe('string');
+    expect(String(session?.lease_id)).not.toHaveLength(0);
     expectIsoTimestamp(session?.created_at);
     expectIsoTimestamp(session?.mounted_at);
     expectIsoTimestamp(session?.updated_at);
@@ -364,7 +367,7 @@ describe('task-workspace', () => {
     });
   });
 
-  it('reclaims a ready persisted mount before reuse when it belongs to another runner owner', async () => {
+  it('refuses to steal a ready persisted mount when it belongs to another live runner owner', async () => {
     process.env.MBOS_RUNNER_MODE = 'docker_external';
     process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
     readFileMock.mockResolvedValue(
@@ -378,6 +381,170 @@ describe('task-workspace', () => {
             log_path: '/tmp/legacy.log',
             refs: 1,
             owner_process_pid: process.pid + 1000,
+            owner_runner_instance_id: 'runner-legacy',
+            created_at: '2026-04-10T00:00:00.000Z',
+            mounted_at: '2026-04-10T00:00:01.000Z',
+            updated_at: '2026-04-10T00:00:02.000Z',
+            state: 'mounted',
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      }),
+    });
+    const foreignOwnerPid = process.pid + 1000;
+
+    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
+      const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
+      if (file === 'mountpoint') {
+        const mountPath = Array.isArray(args) ? String(args[1] ?? '') : '';
+        if (!mountedPaths.has(mountPath)) {
+          const error = new Error('not a mountpoint') as NodeJS.ErrnoException;
+          error.code = 1 as never;
+          callback(error);
+          return;
+        }
+        callback(null);
+        return;
+      }
+      callback(null);
+    });
+    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation(((pid: number, signal?: number | NodeJS.Signals) => {
+      if (pid === foreignOwnerPid && signal === 0) {
+        return true;
+      }
+      return true;
+    }) as typeof process.kill);
+
+    await expect(prepareTaskWorkspace({
+      executionContext: {
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      },
+      username: 'alice',
+      taskId: 'task_1',
+    })).rejects.toThrow('task_workspace_mount_owned_by_live_runner:/workspace/task_1');
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(writeFileMock).not.toHaveBeenCalled();
+    processKillSpy.mockRestore();
+  });
+
+  it('refuses to reuse a ready mount when registry evidence is missing', async () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      }),
+    });
+    readFileMock.mockResolvedValue('');
+
+    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
+      const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
+      if (file === 'mountpoint') {
+        const mountPath = Array.isArray(args) ? String(args[1] ?? '') : '';
+        if (!mountedPaths.has(mountPath)) {
+          const error = new Error('not a mountpoint') as NodeJS.ErrnoException;
+          error.code = 1 as never;
+          callback(error);
+          return;
+        }
+        callback(null);
+        return;
+      }
+      callback(null);
+    });
+
+    await expect(prepareTaskWorkspace({
+      executionContext: {
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      },
+      username: 'alice',
+      taskId: 'task_1',
+    })).rejects.toThrow('task_workspace_mount_untracked_live_mount:/workspace/task_1');
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(writeFileMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses to blind unmount a ready mount when registry evidence cannot be read', async () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    const registryReadError = new Error('permission denied') as NodeJS.ErrnoException;
+    registryReadError.code = 'EACCES';
+    readFileMock.mockRejectedValue(registryReadError);
+
+    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
+      const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
+      if (file === 'mountpoint') {
+        const mountPath = Array.isArray(args) ? String(args[1] ?? '') : '';
+        if (!mountedPaths.has(mountPath)) {
+          const error = new Error('not a mountpoint') as NodeJS.ErrnoException;
+          error.code = 1 as never;
+          callback(error);
+          return;
+        }
+        callback(null);
+        return;
+      }
+      callback(null);
+    });
+
+    await expect(releasePreparedTaskWorkspace('/workspace/task_1')).rejects.toThrow(
+      'task_workspace_release_untracked_live_mount:/workspace/task_1',
+    );
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(writeFileMock).not.toHaveBeenCalled();
+  });
+
+  it('reclaims a ready persisted mount before reuse when the foreign runner owner is dead', async () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    const foreignOwnerPid = process.pid + 1000;
+    readFileMock.mockResolvedValue(
+      JSON.stringify({
+        sessions: [
+          {
+            mount_path: '/workspace/task_1',
+            mode: 'docker_external',
+            metadata_url: 'postgres://legacy-meta',
+            storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
+            log_path: '/tmp/legacy.log',
+            refs: 1,
+            owner_process_pid: foreignOwnerPid,
             owner_runner_instance_id: 'runner-legacy',
             created_at: '2026-04-10T00:00:00.000Z',
             mounted_at: '2026-04-10T00:00:01.000Z',
@@ -447,6 +614,14 @@ describe('task-workspace', () => {
       });
       return child;
     });
+    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation(((pid: number, signal?: number | NodeJS.Signals) => {
+      if (pid === foreignOwnerPid && signal === 0) {
+        const error = new Error('no such process') as NodeJS.ErrnoException;
+        error.code = 'ESRCH';
+        throw error;
+      }
+      return true;
+    }) as typeof process.kill);
 
     await prepareTaskWorkspace({
       executionContext: {
@@ -492,6 +667,7 @@ describe('task-workspace', () => {
       last_release_outcome: 'not_started',
     });
     expect(session?.owner_runner_instance_id).not.toBe('runner-legacy');
+    processKillSpy.mockRestore();
   });
 
   it('forces a real unmount before remounting when task-root bootstrap hits a retryable write failure', async () => {
@@ -510,7 +686,7 @@ describe('task-workspace', () => {
       }),
     });
 
-    await prepareTaskWorkspace({
+    const initial = await prepareTaskWorkspace({
       executionContext: {
         api_base: 'http://localhost:20000',
         workspace_id: 'ws_default',
@@ -523,6 +699,10 @@ describe('task-workspace', () => {
       taskId: 'task_1',
     });
     expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(initial.lease).toMatchObject({
+      mountPath: '/workspace/task_1',
+      revision: 1,
+    });
 
     const mkdirCalls = new Map<string, number>();
     mkdirMock.mockImplementation(async (target: string) => {
@@ -570,6 +750,25 @@ describe('task-workspace', () => {
     );
     expect(resolved.cwd).toBe('/workspace/task_1');
     expect(resolved.source).toBe('file_library_mount');
+    expect(resolved.lease).toMatchObject({
+      mountPath: '/workspace/task_1',
+      revision: 2,
+    });
+    expect(resolved.lease?.leaseId).not.toBe(initial.lease?.leaseId);
+
+    await expect(initial.release()).rejects.toThrow(
+      'task_workspace_release_lease_mismatch:/workspace/task_1',
+    );
+    expect(spawnMock).toHaveBeenCalledTimes(3);
+
+    const registry = parseRegistryWrite();
+    const session = findRegistrySession(registry, '/workspace/task_1');
+    expect(session).toMatchObject({
+      mount_path: '/workspace/task_1',
+      refs: 1,
+      state: 'mounted',
+      lease_revision: 2,
+    });
   });
 
   it('releases the real mount path when a prepared workspace is released', async () => {
@@ -736,7 +935,7 @@ describe('task-workspace', () => {
       );
   });
 
-  it('can release a tracked workspace by mount path', async () => {
+  it('rejects releasing a tracked workspace by mount path without the owning lease', async () => {
     process.env.MBOS_RUNNER_MODE = 'docker_external';
     fetchMock.mockResolvedValue({
       ok: true,
@@ -765,7 +964,47 @@ describe('task-workspace', () => {
       taskId: 'task_1',
     });
 
-    await releasePreparedTaskWorkspace('/workspace/task_1');
+    await expect(releasePreparedTaskWorkspace('/workspace/task_1')).rejects.toThrow(
+      'task_workspace_release_requires_lease:/workspace/task_1',
+    );
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('can release a tracked workspace by mount path with the owning lease', async () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      }),
+    });
+
+    const resolved = await prepareTaskWorkspace({
+      executionContext: {
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      },
+      username: 'alice',
+      taskId: 'task_1',
+    });
+
+    expect(resolved.lease).toMatchObject({
+      mountPath: '/workspace/task_1',
+      revision: 1,
+    });
+    await releasePreparedTaskWorkspace('/workspace/task_1', resolved.lease!);
 
     expect(spawnMock).toHaveBeenNthCalledWith(
       2,
@@ -775,6 +1014,56 @@ describe('task-workspace', () => {
         stdio: 'ignore',
       }),
     );
+  });
+
+  it('rejects releasing a tracked workspace by mount path with the wrong lease', async () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      }),
+    });
+
+    const resolved = await prepareTaskWorkspace({
+      executionContext: {
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      },
+      username: 'alice',
+      taskId: 'task_1',
+    });
+
+    const wrongLease = {
+      ...resolved.lease!,
+      leaseId: 'lease-wrong',
+    };
+
+    await expect(releasePreparedTaskWorkspace('/workspace/task_1', wrongLease)).rejects.toThrow(
+      'task_workspace_release_lease_mismatch:/workspace/task_1',
+    );
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const registry = parseRegistryWrite();
+    const session = findRegistrySession(registry, '/workspace/task_1');
+    expect(session).toMatchObject({
+      mount_path: '/workspace/task_1',
+      refs: 1,
+      state: 'mounted',
+      lease_id: resolved.lease?.leaseId,
+      lease_revision: resolved.lease?.revision,
+    });
   });
 
   it('keeps release failure evidence in the registry when unmount cannot be completed', async () => {

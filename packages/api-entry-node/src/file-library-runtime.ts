@@ -7,6 +7,20 @@ import net from 'node:net';
 import process from 'node:process';
 import { Client as PgClient } from 'pg';
 import { Client as MinioClient } from 'minio';
+import {
+  buildGatewayOwnerEvidence,
+  classifyGatewayOwnerScope,
+  createGatewayOwnerRuntimeLease,
+  extractGatewayLibraryId,
+  extractGatewayProcessIdentity,
+  isGatewayCommand,
+  loadGatewayOwnerLedgerSnapshot,
+  matchGatewayStateForProcess,
+  parseGatewayOwnerScope,
+  type GatewayOwnerEvidence,
+  type GatewayOwnerRuntimeLease,
+  type GatewayProcessIdentity,
+} from './file-library-gateway-ownership.js';
 import { resolveFileLibraryGatewayPaths } from './file-library-gateway-paths.js';
 import type {
   FileLibraryGatewayManager,
@@ -40,6 +54,7 @@ interface PersistedGatewayState {
   logPath: string;
   lastStartedAt: string;
   ownerProcessPid: number;
+  ownerScope?: string;
   status: 'starting' | 'ready' | 'degraded';
 }
 
@@ -63,6 +78,7 @@ interface FileLibraryRuntimeConfig {
   gatewayPortBase: number;
   gatewayRootUserPrefix: string;
   gatewayRootPasswordSeed: string;
+  gatewayArtifactsRoot: string;
   gatewayLogDir: string;
   gatewayStateDir: string;
 }
@@ -71,14 +87,6 @@ interface GatewayProcessInfo {
   pid: number;
   args: string;
   libraryId: string | null;
-}
-
-interface GatewayProcessIdentity {
-  metadataUrl: string | null;
-  storageBucketUrl: string | null;
-  logPath: string | null;
-  stableKeys: string[];
-  label: string;
 }
 
 interface ManagedGatewayProcessInfo extends GatewayProcessInfo {
@@ -90,7 +98,7 @@ interface GatewayManagerPlatform {
   spawnGateway(
     cmd: string,
     args: string[],
-    options: { env: NodeJS.ProcessEnv },
+    options: { env: NodeJS.ProcessEnv; argv0?: string },
   ): ChildProcessWithoutNullStreams;
   listProcesses(): Promise<GatewayProcessInfo[]>;
   processExists(pid: number): boolean;
@@ -105,11 +113,91 @@ function hasRecordedOwnerProcess(state: PersistedGatewayState): boolean {
   return Number.isInteger(state.ownerProcessPid) && state.ownerProcessPid > 0;
 }
 
-function persistedGatewayOwnerIsAlive(
+function stateNeedsOwnerIdentityMigration(state: PersistedGatewayState): boolean {
+  return !hasRecordedOwnerProcess(state) || parseGatewayOwnerScope(state.ownerScope ?? null) === null;
+}
+
+function canAdoptWeakGatewayState(
   platform: GatewayManagerPlatform,
   state: PersistedGatewayState,
 ): boolean {
-  return hasRecordedOwnerProcess(state) && platform.processExists(state.ownerProcessPid);
+  return !hasRecordedOwnerProcess(state) || platform.processExists(state.ownerProcessPid);
+}
+
+function findLegacyGatewayMigrationCandidates(
+  state: PersistedGatewayState,
+  processes: readonly ManagedGatewayProcessInfo[],
+): ManagedGatewayProcessInfo[] {
+  const candidates = new Map<number, ManagedGatewayProcessInfo>();
+
+  for (const processInfo of processes) {
+    if (processInfo.matchedState?.libraryId !== state.libraryId) {
+      continue;
+    }
+    if (processInfo.identity.ownerScope?.trim()) {
+      continue;
+    }
+    candidates.set(processInfo.pid, processInfo);
+  }
+
+  return [...candidates.values()];
+}
+
+function classifyPersistedGatewayOwnerState(
+  platform: GatewayManagerPlatform,
+  state: PersistedGatewayState,
+  ownerEvidence: GatewayOwnerEvidence,
+): 'active' | 'stale' | 'unverified' {
+  if (!hasRecordedOwnerProcess(state)) {
+    return 'stale';
+  }
+  const ownerScopeStatus = classifyGatewayOwnerScope({
+    ownerScope: state.ownerScope ?? null,
+    ownerEvidence,
+  });
+  if (ownerScopeStatus === 'stale') {
+    return 'stale';
+  }
+  if (ownerScopeStatus === 'active') {
+    return 'active';
+  }
+  return platform.processExists(state.ownerProcessPid) ? 'unverified' : 'stale';
+}
+
+type PersistedGatewayAuthority = 'current_boot' | 'foreign_active_boot' | 'stale' | 'unverified';
+
+function classifyPersistedGatewayAuthority(args: {
+  platform: GatewayManagerPlatform;
+  state: PersistedGatewayState;
+  ownerEvidence: GatewayOwnerEvidence;
+  currentOwnerScope: string;
+}): PersistedGatewayAuthority {
+  const ownerState = classifyPersistedGatewayOwnerState(
+    args.platform,
+    args.state,
+    args.ownerEvidence,
+  );
+  if (ownerState === 'stale') {
+    return 'stale';
+  }
+  if (args.state.ownerScope?.trim() && args.state.ownerScope === args.currentOwnerScope) {
+    return 'current_boot';
+  }
+  if (ownerState === 'active') {
+    return 'foreign_active_boot';
+  }
+  if (
+    args.state.ownerScope?.trim()
+    && hasRecordedOwnerProcess(args.state)
+    && args.platform.processExists(args.state.ownerProcessPid)
+  ) {
+    return 'foreign_active_boot';
+  }
+  return 'unverified';
+}
+
+function createForeignActiveBootGatewayError(): Error {
+  return new Error('file_library_gateway_owned_by_another_active_boot');
 }
 
 async function isGatewayLoopbackHealthy(
@@ -131,23 +219,36 @@ async function adoptLegacyGatewayState(
   config: FileLibraryRuntimeConfig,
   platform: GatewayManagerPlatform,
   state: PersistedGatewayState,
+  ownerScope: string,
+  legacyCandidates: readonly ManagedGatewayProcessInfo[] = [],
 ): Promise<PersistedGatewayState | null> {
-  if (hasRecordedOwnerProcess(state)) {
+  if (!stateNeedsOwnerIdentityMigration(state)) {
     return state;
   }
-  if (!state.pid || !platform.processExists(state.pid)) {
+
+  const liveStatePid = state.pid && platform.processExists(state.pid)
+    ? state.pid
+    : null;
+  const adoptedPid = liveStatePid ?? (legacyCandidates.length === 1 ? legacyCandidates[0].pid : null);
+
+  if (!adoptedPid) {
+    if (legacyCandidates.length > 0) {
+      return state;
+    }
     await removeGatewayState(config, state.libraryId);
     return null;
   }
   if (!await isGatewayLoopbackHealthy(platform, state.loopbackUrl)) {
-    await terminateGatewayProcess(platform, state.pid);
+    await terminateGatewayProcess(platform, adoptedPid);
     await removeGatewayState(config, state.libraryId);
     return null;
   }
 
   const migratedState: PersistedGatewayState = {
     ...state,
+    pid: adoptedPid,
     ownerProcessPid: platform.ownerPid(),
+    ownerScope,
     status: 'ready',
   };
   await writeGatewayState(config, migratedState);
@@ -463,6 +564,7 @@ export function resolveFileLibraryRuntimeConfig(env: NodeJS.ProcessEnv = process
       env.FILE_LIBRARY_GATEWAY_ROOT_PASSWORD_SEED?.trim()
       || env.AGENTSMITH_SECRET_KEY?.trim()
       || 'agentsmith-file-library-gateway-seed',
+    gatewayArtifactsRoot: gatewayPaths.artifactsRoot,
     gatewayLogDir: gatewayPaths.gatewayLogDir,
     gatewayStateDir: gatewayPaths.gatewayStateDir,
   };
@@ -700,6 +802,7 @@ function buildRuntimeConfig(): FileLibraryRuntimeConfig {
 const gatewayManagerPlatform: GatewayManagerPlatform = {
   spawnGateway(cmd, args, options) {
     return spawn(cmd, args, {
+      argv0: options.argv0,
       env: options.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -771,161 +874,6 @@ function gatewayStateFilePath(config: FileLibraryRuntimeConfig, libraryId: strin
   return join(config.gatewayStateDir, `${libraryId}.json`);
 }
 
-function extractGatewayLogPath(args: string): string | null {
-  const match = args.match(/--log\s+([^\s]+)/);
-  return match?.[1] ?? null;
-}
-
-function extractGatewayMetadataUrl(args: string): string | null {
-  const match = args.match(/juicefs\s+gateway\s+([^\s]+)/);
-  return match?.[1] ?? null;
-}
-
-function extractGatewayStorageBucketUrl(args: string): string | null {
-  const match = args.match(/(?:^|\s)--bucket\s+([^\s]+)/);
-  return match?.[1] ?? null;
-}
-
-function extractGatewayLibraryId(args: string, gatewayLogDir: string): string | null {
-  if (!args.includes('juicefs gateway')) return null;
-  const logPath = extractGatewayLogPath(args);
-  if (!logPath) {
-    return null;
-  }
-  const resolvedLogPath = join(logPath);
-  const resolvedLogDir = gatewayLogDir;
-  if (!resolvedLogPath.startsWith(`${resolvedLogDir}/`) && !resolvedLogPath.startsWith(`${resolvedLogDir}\\`)) {
-    return null;
-  }
-  return resolvedLogPath.split(/[/\\]/).pop()?.replace(/\.log$/, '') ?? null;
-}
-
-function normalizeGatewayIdentityValue(value: string): string {
-  return value.trim();
-}
-
-function extractDbNameFromMetadataUrl(metadataUrl: string | null): string | null {
-  if (!metadataUrl?.trim()) {
-    return null;
-  }
-  try {
-    const parsed = new URL(metadataUrl);
-    const dbName = parsed.pathname.replace(/^\/+/, '').trim();
-    return dbName || null;
-  } catch {
-    return null;
-  }
-}
-
-function extractBucketNameFromBucketUrl(storageBucketUrl: string | null): string | null {
-  if (!storageBucketUrl?.trim()) {
-    return null;
-  }
-  try {
-    const parsed = new URL(storageBucketUrl);
-    const bucketName = parsed.pathname.replace(/^\/+/, '').trim();
-    return bucketName || null;
-  } catch {
-    return null;
-  }
-}
-
-function buildGatewayStableKeys(args: {
-  metadataUrl?: string | null;
-  storageBucketUrl?: string | null;
-  logPath?: string | null;
-}): string[] {
-  const stableKeys = new Set<string>();
-  const metadataUrl = args.metadataUrl?.trim() ? normalizeGatewayIdentityValue(args.metadataUrl) : null;
-  const storageBucketUrl = args.storageBucketUrl?.trim() ? normalizeGatewayIdentityValue(args.storageBucketUrl) : null;
-  const logPath = args.logPath?.trim() ? normalizeGatewayIdentityValue(args.logPath) : null;
-  const dbName = extractDbNameFromMetadataUrl(metadataUrl);
-  const bucketName = extractBucketNameFromBucketUrl(storageBucketUrl);
-
-  if (metadataUrl && dbName?.startsWith('jfs_lib_')) {
-    stableKeys.add(`metadata:${metadataUrl}`);
-  }
-  if (storageBucketUrl && bucketName?.startsWith('jfs-lib-')) {
-    stableKeys.add(`bucket:${storageBucketUrl}`);
-  }
-
-  if (dbName?.startsWith('jfs_lib_')) {
-    stableKeys.add(`db:${dbName}`);
-  }
-
-  if (bucketName?.startsWith('jfs-lib-')) {
-    stableKeys.add(`bucket_name:${bucketName}`);
-  }
-
-  if (logPath) {
-    stableKeys.add(`log:${logPath}`);
-  }
-
-  return [...stableKeys];
-}
-
-function labelGatewayStableKeys(stableKeys: readonly string[]): string {
-  return stableKeys.find((key) => key.startsWith('db:'))
-    ?? stableKeys.find((key) => key.startsWith('bucket_name:'))
-    ?? stableKeys.find((key) => key.startsWith('metadata:'))
-    ?? stableKeys.find((key) => key.startsWith('bucket:'))
-    ?? stableKeys.find((key) => key.startsWith('log:'))
-    ?? 'unidentified';
-}
-
-function buildGatewayProcessIdentity(args: string): GatewayProcessIdentity {
-  const metadataUrl = extractGatewayMetadataUrl(args);
-  const storageBucketUrl = extractGatewayStorageBucketUrl(args);
-  const logPath = extractGatewayLogPath(args);
-  const stableKeys = buildGatewayStableKeys({
-    metadataUrl,
-    storageBucketUrl,
-    logPath,
-  });
-  return {
-    metadataUrl,
-    storageBucketUrl,
-    logPath,
-    stableKeys,
-    label: labelGatewayStableKeys(stableKeys),
-  };
-}
-
-function buildGatewayStateIdentity(state: PersistedGatewayState): GatewayProcessIdentity {
-  const stableKeys = buildGatewayStableKeys({
-    metadataUrl: state.metadataUrl,
-    storageBucketUrl: state.storageBucketUrl,
-    logPath: state.logPath,
-  });
-  return {
-    metadataUrl: state.metadataUrl,
-    storageBucketUrl: state.storageBucketUrl,
-    logPath: state.logPath,
-    stableKeys,
-    label: labelGatewayStableKeys(stableKeys),
-  };
-}
-
-function matchGatewayStateForProcess(
-  processInfo: GatewayProcessInfo,
-  states: readonly PersistedGatewayState[],
-): PersistedGatewayState | null {
-  const pidMatch = states.find((state) => state.pid === processInfo.pid);
-  if (pidMatch) {
-    return pidMatch;
-  }
-
-  const processKeys = new Set(buildGatewayProcessIdentity(processInfo.args).stableKeys);
-  if (processKeys.size === 0) {
-    return null;
-  }
-
-  return states.find((state) => {
-    const stateIdentity = buildGatewayStateIdentity(state);
-    return stateIdentity.stableKeys.some((stableKey) => processKeys.has(stableKey));
-  }) ?? null;
-}
-
 async function readGatewayState(
   config: FileLibraryRuntimeConfig,
   libraryId: string,
@@ -972,6 +920,35 @@ async function listPersistedGatewayStates(config: FileLibraryRuntimeConfig): Pro
   const libraryIds = await listStateLibraryIds(config);
   const states = await Promise.all(libraryIds.map(async (libraryId) => readGatewayState(config, libraryId)));
   return states.filter((state): state is PersistedGatewayState => state !== null);
+}
+
+async function loadGatewayOwnerEvidence(
+  config: FileLibraryRuntimeConfig,
+  now: string,
+): Promise<GatewayOwnerEvidence> {
+  const ledger = await loadGatewayOwnerLedgerSnapshot(config.gatewayArtifactsRoot);
+  return buildGatewayOwnerEvidence({
+    ledger,
+    now,
+  });
+}
+
+function shouldReapNoStateGatewayProcess(args: {
+  processInfo: ManagedGatewayProcessInfo;
+  ownerEvidence: GatewayOwnerEvidence;
+  currentOwnerScope: string;
+}): boolean {
+  if (!args.processInfo.identity.ownerScope || !args.processInfo.libraryId) {
+    return false;
+  }
+  const ownerScopeStatus = classifyGatewayOwnerScope({
+    ownerScope: args.processInfo.identity.ownerScope,
+    ownerEvidence: args.ownerEvidence,
+  });
+  if (ownerScopeStatus === 'stale') {
+    return true;
+  }
+  return ownerScopeStatus === 'active' && args.processInfo.identity.ownerScope === args.currentOwnerScope;
 }
 
 async function terminateGatewayProcess(
@@ -1258,17 +1235,44 @@ export class InMemoryFileLibraryGatewayManager implements FileLibraryGatewayMana
 
 export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager {
   private readonly sessions = new Map<string, GatewaySession>();
+  private readonly ownerRuntimePromise: Promise<GatewayOwnerRuntimeLease>;
   private readonly reconcilePromise: Promise<void>;
+  private reconcileInFlight: Promise<void> | null = null;
+  private ownerHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly config: FileLibraryRuntimeConfig = buildRuntimeConfig(),
     private readonly platform: GatewayManagerPlatform = gatewayManagerPlatform,
   ) {
-    this.reconcilePromise = this.reconcile();
+    this.ownerRuntimePromise = this.initializeOwnerRuntime();
+    this.reconcilePromise = this.startReconcile();
+  }
+
+  private async initializeOwnerRuntime(): Promise<GatewayOwnerRuntimeLease> {
+    const lease = await createGatewayOwnerRuntimeLease({
+      artifactsRoot: this.config.gatewayArtifactsRoot,
+      ownerProcessPid: this.platform.ownerPid(),
+      now: () => this.platform.now(),
+    });
+    this.ownerHeartbeatTimer = setInterval(() => {
+      void lease.heartbeat().catch(() => undefined);
+    }, 10_000);
+    this.ownerHeartbeatTimer.unref?.();
+    return lease;
   }
 
   private async ensureReconciled(): Promise<void> {
     await this.reconcilePromise.catch(() => undefined);
+  }
+
+  private startReconcile(): Promise<void> {
+    if (!this.reconcileInFlight) {
+      this.reconcileInFlight = this.performReconcile()
+        .finally(() => {
+          this.reconcileInFlight = null;
+        });
+    }
+    return this.reconcileInFlight;
   }
 
   private async listManagedProcesses(
@@ -1279,12 +1283,16 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     return processes
       .map((processInfo) => ({
         ...processInfo,
-        identity: buildGatewayProcessIdentity(processInfo.args),
-        matchedState: matchGatewayStateForProcess(processInfo, resolvedStates),
+        identity: extractGatewayProcessIdentity(processInfo.args),
+        matchedState: matchGatewayStateForProcess({
+          processPid: processInfo.pid,
+          processCommand: processInfo.args,
+          gatewayStates: resolvedStates,
+        }),
         libraryId: processInfo.libraryId ?? extractGatewayLibraryId(processInfo.args, this.config.gatewayLogDir),
       }))
       .filter((processInfo): processInfo is ManagedGatewayProcessInfo => (
-        processInfo.args.includes('juicefs gateway')
+        isGatewayCommand(processInfo.args)
         && Boolean(processInfo.libraryId || processInfo.matchedState || processInfo.identity.stableKeys.length > 0)
       ));
   }
@@ -1294,22 +1302,74 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     inventory?: {
       stateByLibraryId: ReadonlyMap<string, PersistedGatewayState>;
       managedProcesses: readonly ManagedGatewayProcessInfo[];
+      ownerEvidence: GatewayOwnerEvidence;
+      ownerRuntime: GatewayOwnerRuntimeLease;
     },
   ): Promise<void> {
+    const ownerRuntime = inventory?.ownerRuntime ?? await this.ownerRuntimePromise;
+    const ownerEvidence = inventory?.ownerEvidence ?? await loadGatewayOwnerEvidence(this.config, this.platform.now());
+    const allManagedProcesses = inventory?.managedProcesses ?? await this.listManagedProcesses();
     let state = inventory?.stateByLibraryId.get(libraryId) ?? await readGatewayState(this.config, libraryId);
-    if (state && !hasRecordedOwnerProcess(state)) {
-      state = await adoptLegacyGatewayState(this.config, this.platform, state);
-    }
-    const processes = (inventory?.managedProcesses ?? await this.listManagedProcesses()).filter(
-      (processInfo) => processInfo.libraryId === libraryId || processInfo.matchedState?.libraryId === libraryId,
+    const legacyMigrationCandidatePids = new Set<number>(
+      state && stateNeedsOwnerIdentityMigration(state)
+        ? findLegacyGatewayMigrationCandidates(
+          state,
+          allManagedProcesses.filter((processInfo) => (
+            processInfo.matchedState?.libraryId === libraryId
+            || processInfo.libraryId === libraryId
+          )),
+        ).map((processInfo) => processInfo.pid)
+        : [],
     );
-    const hasLiveOwner = state ? persistedGatewayOwnerIsAlive(this.platform, state) : false;
+    if (state && stateNeedsOwnerIdentityMigration(state) && canAdoptWeakGatewayState(this.platform, state)) {
+      state = await adoptLegacyGatewayState(
+        this.config,
+        this.platform,
+        state,
+        ownerRuntime.ownerScope,
+        allManagedProcesses.filter((processInfo) => legacyMigrationCandidatePids.has(processInfo.pid)),
+      );
+    }
+    const stateAuthority = state
+      ? classifyPersistedGatewayAuthority({
+        platform: this.platform,
+        state,
+        ownerEvidence,
+        currentOwnerScope: ownerRuntime.ownerScope,
+      })
+      : 'stale';
+    if (state && stateAuthority === 'foreign_active_boot') {
+      return;
+    }
+    const processes = allManagedProcesses.filter(
+      (processInfo) => {
+        if (legacyMigrationCandidatePids.has(processInfo.pid)) {
+          return true;
+        }
+        if (processInfo.matchedState?.libraryId === libraryId) {
+          return true;
+        }
+        if (processInfo.libraryId !== libraryId) {
+          return false;
+        }
+        if (!state) {
+          return processInfo.identity.ownerScope === ownerRuntime.ownerScope;
+        }
+        if (!state.ownerScope?.trim()) {
+          return false;
+        }
+        return processInfo.identity.ownerScope === state.ownerScope;
+      },
+    );
+    const ownerState = stateAuthority === 'current_boot'
+      ? 'active'
+      : stateAuthority;
 
-    const keepPid = state && hasLiveOwner && this.platform.processExists(state.pid)
+    const keepPid = state && ownerState !== 'stale' && this.platform.processExists(state.pid)
       ? state.pid
       : null;
 
-    if (state && !hasLiveOwner && this.platform.processExists(state.pid)) {
+    if (state && ownerState === 'stale' && this.platform.processExists(state.pid)) {
       await terminateGatewayProcess(this.platform, state.pid);
     }
 
@@ -1323,8 +1383,11 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     }
   }
 
-  async reconcile(): Promise<void> {
+  private async performReconcile(): Promise<void> {
+    const ownerRuntime = await this.ownerRuntimePromise;
+    await ownerRuntime.heartbeat().catch(() => undefined);
     await mkdir(this.config.gatewayStateDir, { recursive: true });
+    const ownerEvidence = await loadGatewayOwnerEvidence(this.config, this.platform.now());
     const states = await listPersistedGatewayStates(this.config);
     const stateByLibraryId = new Map(states.map((state) => [state.libraryId, state]));
     const managedProcesses = await this.listManagedProcesses(states);
@@ -1337,18 +1400,33 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       await this.reconcileLibrary(libraryId, {
         stateByLibraryId,
         managedProcesses,
+        ownerEvidence,
+        ownerRuntime,
       });
     }
 
     for (const processInfo of managedProcesses) {
-      if (processInfo.libraryId || processInfo.matchedState) {
+      if (processInfo.matchedState) {
+        continue;
+      }
+      if (!shouldReapNoStateGatewayProcess({
+        processInfo,
+        ownerEvidence,
+        currentOwnerScope: ownerRuntime.ownerScope,
+      })) {
         continue;
       }
       await terminateGatewayProcess(this.platform, processInfo.pid);
     }
   }
 
+  async reconcile(): Promise<void> {
+    await this.startReconcile();
+  }
+
   async ensureGateway(input: EnsureFileLibraryGatewayInput): Promise<EnsureFileLibraryGatewayResult> {
+    const ownerRuntime = await this.ownerRuntimePromise;
+    await ownerRuntime.heartbeat().catch(() => undefined);
     await ensureExecutable(this.config.juicefsBin);
     await this.ensureReconciled();
     await this.reconcileLibrary(input.libraryId);
@@ -1368,9 +1446,26 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     }
 
     const persisted = await readGatewayState(this.config, input.libraryId);
+    const ownerEvidence = await loadGatewayOwnerEvidence(this.config, this.platform.now());
+    const persistedAuthority = persisted
+      ? classifyPersistedGatewayAuthority({
+        platform: this.platform,
+        state: persisted,
+        ownerEvidence,
+        currentOwnerScope: ownerRuntime.ownerScope,
+      })
+      : 'stale';
     if (
       persisted
-      && persistedGatewayOwnerIsAlive(this.platform, persisted)
+      && persistedAuthority === 'foreign_active_boot'
+      && this.platform.processExists(persisted.pid)
+    ) {
+      this.sessions.delete(input.libraryId);
+      throw createForeignActiveBootGatewayError();
+    }
+    if (
+      persisted
+      && persistedAuthority !== 'stale'
       && this.platform.processExists(persisted.pid)
       && persisted.metadataUrl === input.metadataUrl
       && persisted.storageBucketUrl === input.storageBucketUrl
@@ -1419,6 +1514,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         '--no-banner',
       ],
       {
+        argv0: `juicefs owner_scope=${ownerRuntime.ownerScope} library_id=${input.libraryId}`,
         env: {
           ...process.env,
           MINIO_ROOT_USER: rootUser,
@@ -1450,6 +1546,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         logPath,
         lastStartedAt: created.lastStartedAt,
         ownerProcessPid: this.platform.ownerPid(),
+        ownerScope: ownerRuntime.ownerScope,
         status: 'starting',
       });
     }
@@ -1484,6 +1581,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
           logPath,
           lastStartedAt: created.lastStartedAt,
           ownerProcessPid: this.platform.ownerPid(),
+          ownerScope: ownerRuntime.ownerScope,
           status: 'ready',
         });
       }
@@ -1502,20 +1600,35 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   async getHealth(libraryId: string): Promise<FileLibraryGatewayHealth> {
     const existing = this.sessions.get(libraryId);
     if (!existing) {
+      const ownerRuntime = await this.ownerRuntimePromise;
       await this.ensureReconciled();
       await this.reconcileLibrary(libraryId);
       const persisted = await readGatewayState(this.config, libraryId);
       if (persisted && this.platform.processExists(persisted.pid)) {
+        const ownerEvidence = await loadGatewayOwnerEvidence(this.config, this.platform.now());
+        const persistedAuthority = classifyPersistedGatewayAuthority({
+          platform: this.platform,
+          state: persisted,
+          ownerEvidence,
+          currentOwnerScope: ownerRuntime.ownerScope,
+        });
+        if (persistedAuthority === 'foreign_active_boot') {
+          this.sessions.delete(libraryId);
+          return {
+            status: 'stopped',
+            checkedAt: this.platform.now(),
+          };
+        }
         this.sessions.set(libraryId, {
           loopbackUrl: persisted.loopbackUrl,
           port: persisted.port,
           status: persisted.status,
-            lastStartedAt: persisted.lastStartedAt,
-            pid: persisted.pid,
-            metadataUrl: persisted.metadataUrl,
-            storageBucketUrl: persisted.storageBucketUrl,
-            logPath: persisted.logPath,
-          });
+          lastStartedAt: persisted.lastStartedAt,
+          pid: persisted.pid,
+          metadataUrl: persisted.metadataUrl,
+          storageBucketUrl: persisted.storageBucketUrl,
+          logPath: persisted.logPath,
+        });
       }
     }
     const current = this.sessions.get(libraryId);
@@ -1553,7 +1666,22 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
 
   async stopGateway(libraryId: string): Promise<void> {
     const existing = this.sessions.get(libraryId);
-    const pid = existing?.pid ?? (await readGatewayState(this.config, libraryId))?.pid;
+    const ownerRuntime = await this.ownerRuntimePromise;
+    const persisted = await readGatewayState(this.config, libraryId);
+    if (persisted && this.platform.processExists(persisted.pid)) {
+      const ownerEvidence = await loadGatewayOwnerEvidence(this.config, this.platform.now());
+      const persistedAuthority = classifyPersistedGatewayAuthority({
+        platform: this.platform,
+        state: persisted,
+        ownerEvidence,
+        currentOwnerScope: ownerRuntime.ownerScope,
+      });
+      if (persistedAuthority === 'foreign_active_boot') {
+        this.sessions.delete(libraryId);
+        return;
+      }
+    }
+    const pid = existing?.pid ?? persisted?.pid;
     if (pid) {
       await terminateGatewayProcess(this.platform, pid);
     }
@@ -1562,12 +1690,23 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   }
 
   async shutdown(): Promise<void> {
-    const libraryIds = new Set<string>([
-      ...this.sessions.keys(),
-      ...(await listStateLibraryIds(this.config)),
-    ]);
-    for (const libraryId of libraryIds) {
-      await this.stopGateway(libraryId);
+    try {
+      const libraryIds = new Set<string>([
+        ...this.sessions.keys(),
+        ...(await listStateLibraryIds(this.config)),
+      ]);
+      for (const libraryId of libraryIds) {
+        await this.stopGateway(libraryId);
+      }
+    } finally {
+      if (this.ownerHeartbeatTimer) {
+        clearInterval(this.ownerHeartbeatTimer);
+        this.ownerHeartbeatTimer = null;
+      }
+      const ownerRuntime = await this.ownerRuntimePromise.catch(() => null);
+      if (ownerRuntime) {
+        await ownerRuntime.release().catch(() => undefined);
+      }
     }
   }
 }

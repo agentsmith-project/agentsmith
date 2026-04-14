@@ -8,10 +8,11 @@ fi
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/internal-common.sh"
 
-stop_internal_runtime
-rm -f "${INTERNAL_SANDBOX_STATE_FILE}"
-if [[ "${NO_API_RESTART}" != "1" && -f "${API_READY_FILE}" ]]; then
-  restart_api_with_mode 0
+if [[ "${NO_API_RESTART}" == "1" ]]; then
+  stop_internal_runtime
+  rm -f "${INTERNAL_SANDBOX_STATE_FILE}"
+else
+  restore_local_manual_external_mode
 fi
 
 internal_info "down"

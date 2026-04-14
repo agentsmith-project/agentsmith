@@ -140,6 +140,12 @@ make bootstrap / api-dev / web / e2e / deps-down / deps-reset
 **测试失败**: 检查 mock, 验证 test ID, 用 `waitFor`
 **注意**: Turbopack 快速启动, MSW 快速登录, Storybook 组件开发, 优先编辑现有文件, 发布前移除过时 payload paths
 
+## 子代理约定
+
+**通用**: 所有子代理在任何情况下都必须使用 `xhigh` reasoning effort
+**explorer**: 默认使用 `gpt-5.4` + `xhigh`，只有任务特别简单，或者基本不需要逻辑分析时，才可以使用 `gpt-5.4-mini` + `xhigh`
+**worker**: 默认使用 `gpt-5.4` + `xhigh`，只有任务非常简单时，才可以使用 `gpt-5.4-mini` + `xhigh`
+
 ## Runner Home 约定
 
 当你是在 AgentSmith notebook / terminal runner 的 task workspace 里工作时，必须遵守以下运行时约定：

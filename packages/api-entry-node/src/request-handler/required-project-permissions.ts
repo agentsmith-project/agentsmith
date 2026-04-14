@@ -31,7 +31,7 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
       return ['project:endpoint:use', 'project:agent:use'];
     }
     if (route.kind === 'taskTerminalSessions' && method === 'POST') {
-      return ['project:terminal:use'];
+      return ['project:endpoint:use', 'project:terminal:use'];
     }
     if (route.kind === 'taskTerminalSessions' || route.kind === 'taskTerminalSession') {
       return ['project:endpoint:use'];

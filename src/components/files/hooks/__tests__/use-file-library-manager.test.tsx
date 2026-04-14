@@ -4,15 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileLibrary } from '@/lib/api/types';
 import { useFileLibraryManager } from '../use-file-library-manager';
 
-const mockToast = vi.hoisted(() => ({
-  success: vi.fn(),
-  error: vi.fn(),
-}));
-
-vi.mock('@/components/ui/toast', () => ({
-  toast: mockToast,
-}));
-
 const sampleLibrary: FileLibrary = {
   id: 'lib_a',
   workspace_id: 'ws_default',
@@ -74,7 +65,49 @@ describe('useFileLibraryManager', () => {
     });
     expect(setSelectedLibraryId).toHaveBeenCalledWith('lib_new');
     expect(navigateToPrefix).toHaveBeenCalledWith('');
-    expect(mockToast.success).toHaveBeenCalled();
+    expect(result.current.libraryCreateError).toBeNull();
+  });
+
+  it('captures create errors and clears them when the draft changes', async () => {
+    const setSelectedLibraryId = vi.fn();
+    const navigateToPrefix = vi.fn();
+    const createLibrary = vi.fn().mockRejectedValue(new Error('permission_denied'));
+
+    const { result } = renderHook(() =>
+      useFileLibraryManager({
+        workspaceId: 'ws_default',
+        projectId: 'proj_001',
+        selectedLibraryId: 'lib_a',
+        setSelectedLibraryId,
+        navigateToPrefix,
+        createLibrary,
+        updateLibrary: vi.fn(),
+        deleteLibrary: vi.fn(),
+        t,
+        tErrors,
+      }),
+    );
+
+    act(() => {
+      result.current.openCreateLibraryDialog();
+      result.current.setLibraryName('New Library');
+      result.current.setLibraryDescription('Draft description');
+    });
+
+    await act(async () => {
+      await result.current.handleCreateLibrary();
+    });
+
+    expect(createLibrary).toHaveBeenCalledTimes(1);
+    expect(setSelectedLibraryId).not.toHaveBeenCalled();
+    expect(navigateToPrefix).not.toHaveBeenCalled();
+    expect(result.current.libraryCreateError).toBe('permission_denied');
+
+    act(() => {
+      result.current.setLibraryName('Newer Library');
+    });
+
+    expect(result.current.libraryCreateError).toBeNull();
   });
 
   it('deletes currently selected library and clears selection', async () => {
@@ -112,6 +145,5 @@ describe('useFileLibraryManager', () => {
     });
     expect(setSelectedLibraryId).toHaveBeenCalledWith(null);
     expect(navigateToPrefix).toHaveBeenCalledWith('');
-    expect(mockToast.success).toHaveBeenCalled();
   });
 });

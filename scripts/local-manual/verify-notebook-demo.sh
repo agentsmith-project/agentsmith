@@ -4,7 +4,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_local_manual_env
 
-if [[ ! -f "${API_READY_FILE}" || ! -f "${WEB_READY_FILE}" || ! -f "${PROXY_READY_FILE}" ]]; then
+if ! local_manual_platform_is_ready; then
   err "local-manual platform is not ready; run make local-manual-up first"
   exit 1
 fi
@@ -31,8 +31,8 @@ if [[ -z "${PROJECT_ID}" || -z "${ENDPOINT_ID}" || -z "${AGENT_ID}" || -z "${WS_
   exit 1
 fi
 
-if [[ ! -f "${RUNNER_READY_FILE}" ]]; then
-  err "runner is not connected; run make local-manual-seed-notebook again"
+if ! runner_socket_is_connected; then
+  err "runner socket is not connected; run make local-manual-seed-notebook again"
   exit 1
 fi
 

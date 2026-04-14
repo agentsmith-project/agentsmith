@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mkdirMock, writeFileMock, prepareTaskWorkspaceMock, prepareNotebookWorkspaceAssetsMock } = vi.hoisted(() => ({
+const { accessMock, mkdirMock, writeFileMock, prepareTaskWorkspaceMock, prepareNotebookWorkspaceAssetsMock, releaseTaskWorkspaceMock } = vi.hoisted(() => ({
+  accessMock: vi.fn(),
   mkdirMock: vi.fn(),
   writeFileMock: vi.fn(),
   prepareTaskWorkspaceMock: vi.fn(),
   prepareNotebookWorkspaceAssetsMock: vi.fn(),
+  releaseTaskWorkspaceMock: vi.fn(),
 }));
 
 const { prepareLaunchCommandMock } = vi.hoisted(() => ({
@@ -33,9 +35,11 @@ const {
 }));
 
 vi.mock('node:fs/promises', () => ({
+  access: accessMock,
   mkdir: mkdirMock,
   writeFile: writeFileMock,
   default: {
+    access: accessMock,
     mkdir: mkdirMock,
     writeFile: writeFileMock,
   },
@@ -43,6 +47,12 @@ vi.mock('node:fs/promises', () => ({
 
 vi.mock('./task-workspace.js', () => ({
   prepareTaskWorkspace: prepareTaskWorkspaceMock,
+  shouldRetryTaskWorkspaceWriteFailure: vi.fn((error: unknown) => {
+    const code = typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code ?? '')
+      : '';
+    return code === 'EIO' || code === 'ESTALE' || code === 'ENOTCONN';
+  }),
 }));
 
 vi.mock('./notebook-assets.js', () => ({
@@ -71,10 +81,20 @@ vi.mock('node-pty', () => ({
 import { prepareTerminalWorkspace, startTerminalProcess } from './terminal-runtime.js';
 
 describe('terminal-runtime', () => {
+  const originalPath = process.env.PATH;
+  const originalHistfile = process.env.HISTFILE;
+  const originalZdotdir = process.env.ZDOTDIR;
+  const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+  const originalXdgStateHome = process.env.XDG_STATE_HOME;
+  const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
+  const originalXdgDataHome = process.env.XDG_DATA_HOME;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    accessMock.mockResolvedValue(undefined);
     mkdirMock.mockResolvedValue(undefined);
     writeFileMock.mockResolvedValue(undefined);
+    process.env.PATH = '/usr/bin:/bin';
     prepareTaskWorkspaceMock.mockResolvedValue({
       cwd: '/workspace',
       source: 'file_library_mount',
@@ -89,7 +109,9 @@ describe('terminal-runtime', () => {
         mbosDir: '/workspace/.mbos',
         skillsDir: '/workspace/.agents/skills',
       },
+      release: releaseTaskWorkspaceMock,
     });
+    releaseTaskWorkspaceMock.mockResolvedValue(undefined);
     prepareNotebookWorkspaceAssetsMock.mockResolvedValue(undefined);
     inspectBuiltinSkillsMock.mockResolvedValue({
       sourceDir: '/seed-skills',
@@ -115,6 +137,40 @@ describe('terminal-runtime', () => {
     });
   });
 
+  afterEach(() => {
+    process.env.PATH = originalPath;
+    if (originalHistfile === undefined) {
+      delete process.env.HISTFILE;
+    } else {
+      process.env.HISTFILE = originalHistfile;
+    }
+    if (originalZdotdir === undefined) {
+      delete process.env.ZDOTDIR;
+    } else {
+      process.env.ZDOTDIR = originalZdotdir;
+    }
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
+    if (originalXdgStateHome === undefined) {
+      delete process.env.XDG_STATE_HOME;
+    } else {
+      process.env.XDG_STATE_HOME = originalXdgStateHome;
+    }
+    if (originalXdgCacheHome === undefined) {
+      delete process.env.XDG_CACHE_HOME;
+    } else {
+      process.env.XDG_CACHE_HOME = originalXdgCacheHome;
+    }
+    if (originalXdgDataHome === undefined) {
+      delete process.env.XDG_DATA_HOME;
+    } else {
+      process.env.XDG_DATA_HOME = originalXdgDataHome;
+    }
+  });
+
   it('creates a minimal zshrc in task home for interactive zsh shells', async () => {
     await prepareTerminalWorkspace({
       executionContext: {
@@ -129,6 +185,90 @@ describe('terminal-runtime', () => {
       '# AgentSmith Terminal Session\n',
       { flag: 'a' },
     );
+    expect(mkdirMock.mock.calls.map((call) => call[0])).toContain('/workspace/.agents');
+  });
+
+  it('retries terminal workspace bootstrap after a retryable task-root write failure', async () => {
+    const mkdirCalls = new Map<string, number>();
+    mkdirMock.mockImplementation(async (target: string) => {
+      const seen = mkdirCalls.get(target) ?? 0;
+      mkdirCalls.set(target, seen + 1);
+      if (target === '/workspace/.agents/skills' && seen === 0) {
+        const error = new Error('stale mount write') as NodeJS.ErrnoException;
+        error.code = 'EIO';
+        throw error;
+      }
+    });
+
+    await prepareTerminalWorkspace({
+      executionContext: {
+        task_id: 'task_1',
+        interaction_kind: 'notebook',
+      },
+      shell: '/usr/bin/bash',
+    });
+
+    expect(prepareTaskWorkspaceMock).toHaveBeenCalledTimes(2);
+    expect(releaseTaskWorkspaceMock).toHaveBeenCalledTimes(1);
+    expect(seedBuiltinSkillsMock).toHaveBeenCalledTimes(1);
+    expect(prepareLaunchCommandMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the acquired task workspace when terminal bootstrap fails after workspace acquisition', async () => {
+    prepareLaunchCommandMock.mockRejectedValueOnce(new Error('launch command failed'));
+
+    await expect(prepareTerminalWorkspace({
+      executionContext: {
+        task_id: 'task_1',
+        interaction_kind: 'notebook',
+      },
+      shell: '/usr/bin/bash',
+    })).rejects.toThrowError('launch command failed');
+
+    expect(prepareTaskWorkspaceMock).toHaveBeenCalledTimes(1);
+    expect(releaseTaskWorkspaceMock).toHaveBeenCalledTimes(1);
+    expect(prepareNotebookWorkspaceAssetsMock).toHaveBeenCalledTimes(1);
+    expect(prepareLaunchCommandMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the acquired task workspace when terminal spawn fails', async () => {
+    nodePtySpawnMock.mockImplementationOnce(() => {
+      throw new Error('pty_spawn_failed');
+    });
+
+    await expect(startTerminalProcess({
+      executionContext: {
+        task_id: 'task_1',
+        interaction_kind: 'notebook',
+      },
+      shell: '/usr/bin/bash',
+    })).rejects.toThrowError('pty_spawn_failed');
+
+    expect(releaseTaskWorkspaceMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects invalid shell overrides before terminal workspace bootstrap starts', async () => {
+    accessMock.mockRejectedValueOnce(Object.assign(new Error('missing shell'), {
+      code: 'ENOENT',
+    }));
+
+    await expect(startTerminalProcess({
+      executionContext: {
+        task_id: 'task_1',
+        interaction_kind: 'notebook',
+      },
+      shell: '/definitely/not/a/real/shell',
+    })).rejects.toThrowError('invalid_shell');
+
+    expect(prepareTaskWorkspaceMock).not.toHaveBeenCalled();
+    expect(mkdirMock).not.toHaveBeenCalled();
+    expect(writeFileMock).not.toHaveBeenCalled();
+    expect(inspectBuiltinSkillsMock).not.toHaveBeenCalled();
+    expect(seedBuiltinSkillsMock).not.toHaveBeenCalled();
+    expect(prepareNotebookWorkspaceAssetsMock).not.toHaveBeenCalled();
+    expect(prepareLaunchCommandMock).not.toHaveBeenCalled();
+    expect(nodePtySpawnMock).not.toHaveBeenCalled();
+    expect(releaseTaskWorkspaceMock).not.toHaveBeenCalled();
   });
 
   it('starts a node-pty shell with provided cols and rows', async () => {
@@ -177,6 +317,39 @@ describe('terminal-runtime', () => {
     expect(nodePtyKillMock).toHaveBeenCalledWith('SIGTERM');
   });
 
+  it('re-homes leaked shell history and xdg paths before starting interactive terminals', async () => {
+    process.env.HISTFILE = '/home/percy/.zsh_history';
+    process.env.ZDOTDIR = '/home/percy/.config/zsh';
+    process.env.XDG_CONFIG_HOME = '/home/percy/.config';
+    process.env.XDG_STATE_HOME = '/home/percy/.local/state';
+    process.env.XDG_CACHE_HOME = '/home/percy/.cache';
+    process.env.XDG_DATA_HOME = '/home/percy/.local/share';
+
+    await startTerminalProcess({
+      executionContext: {
+        task_id: 'task_1',
+        interaction_kind: 'notebook',
+      },
+      shell: '/usr/bin/zsh',
+    });
+
+    expect(nodePtySpawnMock).toHaveBeenCalledWith(
+      '/usr/bin/zsh',
+      ['-i'],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          HOME: '/workspace',
+          HISTFILE: '/workspace/.zsh_history',
+          ZDOTDIR: '/workspace',
+          XDG_CONFIG_HOME: '/workspace/.config',
+          XDG_STATE_HOME: '/workspace/.local/state',
+          XDG_CACHE_HOME: '/workspace/.cache',
+          XDG_DATA_HOME: '/workspace/.local/share',
+        }),
+      }),
+    );
+  });
+
   it('rejects terminal execution context when task_id is missing', async () => {
     await expect(startTerminalProcess({
       executionContext: {
@@ -185,7 +358,7 @@ describe('terminal-runtime', () => {
         execution_ticket: 'ticket_chat',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-      },
+      } as unknown as Parameters<typeof startTerminalProcess>[0]['executionContext'],
       shell: '/usr/bin/bash',
     })).rejects.toThrowError('notebook_terminal_execution_context_invalid');
     expect(nodePtySpawnMock).not.toHaveBeenCalled();
@@ -195,13 +368,12 @@ describe('terminal-runtime', () => {
     await expect(startTerminalProcess({
       executionContext: {
         interaction_kind: 'chat',
-        // @ts-expect-error intentional invalid runtime input
         session_id: 'sess_chat',
         api_base: 'http://localhost:20000',
         execution_ticket: 'ticket_chat',
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-      },
+      } as unknown as Parameters<typeof startTerminalProcess>[0]['executionContext'],
       shell: '/usr/bin/bash',
     })).rejects.toThrowError('notebook_terminal_execution_context_invalid');
     expect(nodePtySpawnMock).not.toHaveBeenCalled();
@@ -223,6 +395,7 @@ describe('terminal-runtime', () => {
     expect(started.child.exitCode).toBeNull();
     onExitHandler?.({ exitCode: 7, signal: 15 });
     expect(started.child.exitCode).toBe(7);
+    expect(releaseTaskWorkspaceMock).toHaveBeenCalledTimes(1);
   });
 
   it('injects notebook-specific preamble for notebook terminals', async () => {

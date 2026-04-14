@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { requiredProjectPermissions } from './required-project-permissions.js';
 
 describe('requiredProjectPermissions', () => {
-  it('requires explicit terminal permission only for creating new terminal sessions', () => {
+  it('requires both task-use and terminal-use permissions for creating new terminal sessions', () => {
     expect(
       requiredProjectPermissions(
         {
@@ -13,7 +13,7 @@ describe('requiredProjectPermissions', () => {
         },
         'POST',
       ),
-    ).toEqual(['project:terminal:use']);
+    ).toEqual(['project:endpoint:use', 'project:terminal:use']);
   });
 
   it('treats existing terminal session management as task-use access instead of terminal-create access', () => {

@@ -80,6 +80,9 @@ interface TaskPageContentProps {
   artifactsShowLabel?: string;
   artifactsHideLabel?: string;
   inputPlaceholder?: string;
+  conversationBlockedState?: React.ComponentProps<
+    typeof ConversationPanel
+  >["blockedState"];
 }
 
 export function TaskPageContent({
@@ -126,6 +129,7 @@ export function TaskPageContent({
   artifactsShowLabel = "Show Artifacts",
   artifactsHideLabel = "Hide Artifacts",
   inputPlaceholder,
+  conversationBlockedState,
   traceErrorByMessageId,
   traceEventsByMessageId,
   traceHasMoreByMessageId,
@@ -135,6 +139,7 @@ export function TaskPageContent({
 }: TaskPageContentProps) {
   const showConversationMode = viewMode === "conversation";
   const showTerminalMode = viewMode === "terminal";
+  const hasTerminalWorkspace = terminalWorkspace != null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.03),_transparent_40%)]">
@@ -151,13 +156,27 @@ export function TaskPageContent({
           </button>
         ) : null}
       </div>
-      <div className="mt-2 flex min-h-0 flex-1 gap-3 overflow-hidden">
-        <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border border-subtle bg-surface/70 p-1.5 shadow-ambient">
-          {showTerminalMode ? (
-            <div className="h-full min-h-0 overflow-hidden">
+      <div className="relative mt-2 flex min-h-0 flex-1 gap-3 overflow-hidden">
+        {hasTerminalWorkspace ? (
+          <div
+            className={
+              showTerminalMode
+                ? "min-h-0 min-w-0 w-full flex-1 basis-0 overflow-hidden"
+                : "pointer-events-none absolute h-0 w-0 overflow-hidden"
+            }
+            data-testid="notebook__task-terminal-workspace-shell"
+            aria-hidden={!showTerminalMode}
+          >
+            <div className="flex h-full min-h-0 w-full flex-1">
               {terminalWorkspace}
             </div>
-          ) : (
+          </div>
+        ) : null}
+        {showConversationMode ? (
+          <div
+            className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border border-subtle bg-surface/70 p-1.5 shadow-ambient"
+            data-testid="notebook__task-conversation-shell"
+          >
             <>
               {showSseDebugPanel ? (
                 <NotebookSseDebugPanel events={sseDebugEvents} />
@@ -193,10 +212,11 @@ export function TaskPageContent({
                 activeAgentMessageId={activeAgentMessageId}
                 sending={sending}
                 inputPlaceholder={inputPlaceholder}
+                blockedState={conversationBlockedState}
               />
             </>
-          )}
-        </div>
+          </div>
+        ) : null}
         {artifactsDrawerOpen ? (
           <div
             className={`flex h-full min-h-0 flex-shrink-0 overflow-hidden rounded-md border border-subtle bg-surface/68 p-1.5 shadow-ambient ${

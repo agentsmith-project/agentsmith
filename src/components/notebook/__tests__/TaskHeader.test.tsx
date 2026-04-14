@@ -28,6 +28,23 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, string | number>) => {
+    if (key === 'terminal_status_strip_active') {
+      const count = Number(values?.count ?? 0);
+      return count === 1
+        ? '1 terminal session is using this task'
+        : `${count} terminal sessions are using this task`;
+    }
+    if (key === 'terminal_status_strip_recovery') {
+      const count = Number(values?.count ?? 0);
+      return count === 1
+        ? '1 terminal session on this task needs recovery'
+        : `${count} terminal sessions on this task need recovery`;
+    }
+    if (key === 'terminal_status_strip_mixed') {
+      const count = Number(values?.count ?? 0);
+      const recoveryCount = Number(values?.recoveryCount ?? 0);
+      return `${count} terminal sessions are using this task, ${recoveryCount} ${recoveryCount === 1 ? 'needs' : 'need'} recovery`;
+    }
     const translations: Record<string, string> = {
       'leave': 'Leave',
       'delete': 'Delete',
@@ -44,12 +61,10 @@ vi.mock('next-intl', () => ({
       'agent_mode_internal': 'Internal Runner',
       'workspace_file_library_label': 'Workspace',
       'workspace_file_library_unknown': 'No Workspace Library',
-      'terminal_open': 'Open Terminal',
+      'terminal_open': 'Open Terminal Workspace',
       'terminal_end_all': 'End All Sessions',
       'terminal_mode_conversation': 'Conversation',
       'terminal_mode_terminal': 'Terminal',
-      'terminal_status_strip_active': '{count} terminal sessions active',
-      'terminal_status_strip_recovery': '{count} sessions need recovery',
     };
     const template = translations[key] || key;
     if (!values) return template;
@@ -143,7 +158,9 @@ describe('TaskHeader', () => {
         canCreateTerminalSession: true,
       });
 
-      expect(screen.getByTestId('notebook__task-header-terminal-create')).toHaveTextContent('Open Terminal');
+      expect(screen.getByTestId('notebook__task-header-terminal-create')).toHaveTextContent('Open Terminal Workspace');
+      expect(screen.queryByTestId('notebook__task-header-mode-conversation')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('notebook__task-header-mode-terminal')).not.toBeInTheDocument();
     });
 
     it('does not render a terminal create action once workspace tabs exist', () => {
@@ -167,7 +184,9 @@ describe('TaskHeader', () => {
 
       expect(screen.getByTestId('notebook__task-header-mode-conversation')).toHaveTextContent('Conversation');
       expect(screen.getByTestId('notebook__task-header-mode-terminal')).toHaveTextContent('Terminal');
-      expect(screen.getByTestId('notebook__task-header-terminal-summary')).toHaveTextContent('1 terminal sessions active');
+      expect(screen.getByTestId('notebook__task-header-terminal-summary')).toHaveTextContent(
+        '1 terminal session is using this task',
+      );
     });
 
     it('does not render end-all action in the header when tabs exist', () => {
@@ -186,10 +205,39 @@ describe('TaskHeader', () => {
         onSetViewMode: vi.fn(),
         onCreateTerminalSession: vi.fn(),
         terminalSessionCount: 1,
+        terminalRecoveryCount: 1,
         terminalHasRecovery: true,
       });
 
-      expect(screen.getByTestId('notebook__task-header-terminal-summary')).toHaveTextContent('1 sessions need recovery');
+      expect(screen.getByTestId('notebook__task-header-terminal-summary')).toHaveTextContent(
+        '1 terminal session on this task needs recovery',
+      );
+    });
+
+    it('shows mixed occupancy wording when active and recovery sessions coexist', () => {
+      renderComponent(mockTask, {
+        onSetViewMode: vi.fn(),
+        onCreateTerminalSession: vi.fn(),
+        terminalSessionCount: 2,
+        terminalRecoveryCount: 1,
+        terminalHasRecovery: true,
+      });
+
+      expect(screen.getByTestId('notebook__task-header-terminal-summary')).toHaveTextContent(
+        '2 terminal sessions are using this task, 1 needs recovery',
+      );
+    });
+
+    it('uses plural occupancy wording when multiple sessions are active', () => {
+      renderComponent(mockTask, {
+        onSetViewMode: vi.fn(),
+        onCreateTerminalSession: vi.fn(),
+        terminalSessionCount: 2,
+      });
+
+      expect(screen.getByTestId('notebook__task-header-terminal-summary')).toHaveTextContent(
+        '2 terminal sessions are using this task',
+      );
     });
 
     it('exposes disabled reason when terminal access is unavailable', () => {

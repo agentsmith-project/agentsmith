@@ -1,4 +1,4 @@
-import { access, appendFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -64,6 +64,7 @@ export const KEYCLOAK_DIRECTORY_CLIENT_SECRET = process.env.KEYCLOAK_DIRECTORY_C
 export const EXTERNAL_KEYCLOAK_BASE_URL = process.env.EXTERNAL_KEYCLOAK_BASE_URL ?? 'http://localhost:18180';
 export const SYSTEM_ADMIN_USERNAME = process.env.SYSTEM_ADMIN_USERNAME ?? 'mbos-admin';
 export const SYSTEM_ADMIN_PASSWORD = process.env.SYSTEM_ADMIN_PASSWORD ?? 'mbos-admin';
+const TASK_WORKSPACE_MOUNT_SESSIONS_FILE = 'task-workspace-mount-sessions.json';
 
 async function collectChildPids(pid: number): Promise<number[]> {
   return new Promise((resolve) => {
@@ -120,6 +121,34 @@ async function unmountSingleWorkspace(mountPath: string): Promise<void> {
     proc.once('exit', () => resolve());
     setTimeout(() => resolve(), 5_000);
   });
+}
+
+export async function collectTrackedTaskWorkspaceMounts(workspaceRoot: string): Promise<string[]> {
+  try {
+    const registryPath = path.join(workspaceRoot, TASK_WORKSPACE_MOUNT_SESSIONS_FILE);
+    const content = await readFile(registryPath, 'utf8');
+    const parsed = JSON.parse(content) as {
+      sessions?: Array<{ mount_path?: unknown }>;
+    };
+    const seen = new Set<string>();
+    const mounts: string[] = [];
+    for (const session of Array.isArray(parsed.sessions) ? parsed.sessions : []) {
+      const mountPath = typeof session?.mount_path === 'string' ? session.mount_path.trim() : '';
+      if (!mountPath || seen.has(mountPath)) continue;
+      seen.add(mountPath);
+      mounts.push(mountPath);
+    }
+    return mounts;
+  } catch {
+    return [];
+  }
+}
+
+async function cleanupTrackedTaskWorkspaceMounts(workspaceRoot: string): Promise<void> {
+  const mountPaths = await collectTrackedTaskWorkspaceMounts(workspaceRoot);
+  for (const mountPath of mountPaths) {
+    await unmountSingleWorkspace(mountPath);
+  }
 }
 
 async function spawnAndCapture(command: string, args: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv }): Promise<{
@@ -2297,6 +2326,63 @@ export async function waitForAgentPresenceOnline(
     .toBe('online');
 }
 
+export async function expectNotebookTaskConversationSurface(args: {
+  page: Page;
+  openTerminalAction?: 'enabled' | 'disabled' | 'hidden';
+  terminalModeEnabled?: boolean;
+  blocked?: boolean;
+  statusStrip?: 'visible' | 'hidden';
+}): Promise<void> {
+  const {
+    page,
+    openTerminalAction = 'enabled',
+    terminalModeEnabled = false,
+    blocked = false,
+    statusStrip = 'hidden',
+  } = args;
+
+  await expect(page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
+  const conversationModeButton = page.getByTestId('notebook__task-header-mode-conversation');
+  const terminalModeButton = page.getByTestId('notebook__task-header-mode-terminal');
+
+  if (terminalModeEnabled) {
+    await expect(conversationModeButton).toBeVisible({ timeout: 30_000 });
+    await expect(terminalModeButton).toBeVisible({ timeout: 30_000 });
+    await expect(terminalModeButton).toBeEnabled();
+  } else {
+    await expect(conversationModeButton).toHaveCount(0);
+    await expect(terminalModeButton).toHaveCount(0);
+  }
+
+  const openTerminalActionButton = page.getByTestId('notebook__task-header-terminal-create');
+  if (openTerminalAction === 'hidden') {
+    await expect(openTerminalActionButton).toHaveCount(0);
+  } else if (openTerminalAction === 'disabled') {
+    await expect(openTerminalActionButton).toBeVisible({ timeout: 30_000 });
+    await expect(openTerminalActionButton).toBeDisabled();
+  } else {
+    await expect(openTerminalActionButton).toBeVisible({ timeout: 30_000 });
+    await expect(openTerminalActionButton).toBeEnabled();
+  }
+
+  const statusStripLocator = page.getByTestId('notebook__task-terminal-status-strip');
+  if (statusStrip === 'visible') {
+    await expect(statusStripLocator).toBeVisible({ timeout: 30_000 });
+  } else {
+    await expect(statusStripLocator).toHaveCount(0);
+  }
+
+  const blockedStateLocator = page.getByTestId('notebook__conversation-blocked-state');
+  if (blocked) {
+    await expect(blockedStateLocator).toBeVisible({ timeout: 30_000 });
+  } else {
+    await expect(blockedStateLocator).toHaveCount(0);
+    const conversationInput = page.getByTestId('notebook__conversation-input');
+    await expect(conversationInput).toBeVisible({ timeout: 30_000 });
+    await expect(conversationInput.locator('textarea').first()).toBeEnabled({ timeout: 30_000 });
+  }
+}
+
 export async function openChatSession(
   page: Page,
   workspaceId: string,
@@ -2380,6 +2466,7 @@ export async function startCodexRunnerProcess(args: {
                 });
               });
             }
+            await cleanupTrackedTaskWorkspaceMounts(workspaceRoot);
             await unmountWorkspaceTree(workspaceRoot);
             await rm(workspaceRoot, { recursive: true, force: true }).catch(() => undefined);
           },
@@ -2857,8 +2944,15 @@ export async function createFileLibraryViaUi(
   const dialog = page.getByTestId('files__dialog__library-create');
   await expect(dialog).toBeVisible();
   await dialog.getByTestId('files__library-create__name').fill(name);
+  const createResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && response.url().includes(`/workspaces/${workspaceId}/projects/${projectId}/file-libraries`),
+  );
   await dialog.getByTestId('files__library-create__submit').click();
-  await expect(dialog).toBeHidden({ timeout: 30_000 });
+  const createResponse = await createResponsePromise;
+  if (!createResponse.ok()) {
+    throw new Error(`create_file_library_failed:${createResponse.status()}:${await createResponse.text()}`);
+  }
   const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: name }).first();
   await expect(libraryItem).toBeVisible({
     timeout: 30_000,

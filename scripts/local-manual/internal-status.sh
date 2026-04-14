@@ -22,6 +22,7 @@ else
   echo "cleaner_pid="
   echo "cleaner_alive=0"
 fi
+echo "Runner socket: $(runner_socket_health_state)"
 echo "Namespace: ${K8S_NAMESPACE}"
 echo "Namespace exists: $(kubectl get namespace "${K8S_NAMESPACE}" >/dev/null 2>&1 && echo yes || echo no)"
 echo "CSI driver: ${CSI_DRIVER}"

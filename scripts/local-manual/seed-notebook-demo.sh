@@ -5,7 +5,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_local_manual_env
 require_preset_endpoint_env
 
-if [[ ! -f "${API_READY_FILE}" || ! -f "${WEB_READY_FILE}" || ! -f "${PROXY_READY_FILE}" ]]; then
+if ! local_manual_platform_is_ready; then
   err "local-manual platform is not ready; run make local-manual-up first"
   exit 1
 fi

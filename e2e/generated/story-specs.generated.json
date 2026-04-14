@@ -1097,6 +1097,112 @@
     "visualStepIds": []
   },
   {
+    "storyId": "notebook-terminal-reentry-recovery",
+    "title": "Notebook terminal re-entry and recovery in the same task",
+    "actor": "project member",
+    "family": "notebook-terminal-workspace",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "notebook-terminal-runtime",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real terminal recovery story needs a live terminal session service behind notebook tasks."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
+    "goal": "项目成员重新进入一个被 terminal work 打断的 notebook task 时，产品必须先 fail-closed 保护任务真相：如果 terminal 仍需恢复或状态已经坏掉，就不能假装 task 已经释放，也不能放行新的创建、run 或删除；用户应该能在同一 task 内重新连接 backend 仍持有的 session id，识别哪一条 terminal 现在需要恢复，结束那条问题 session，并立即开出新的 terminal 继续工作。",
+    "sourceRef": "e2e/stories/backend-real/notebook-terminal-reentry-recovery.story.md#notebook-terminal-reentry-recovery",
+    "sourceFingerprint": "6fe0d5f349da759ad0287ebfe461cd07822a97554319fbe04cf6ed98fa29a813",
+    "storyFingerprint": "48833fd4483ba283344242eb3a944842e472c40a5d8c6a9f01c1def579dc5e40",
+    "stepMapFingerprint": "27b904f9b6e966a497a4004454e8132725aa77c9f50dcc180c0cccd63193b616",
+    "sceneIds": [
+      "notebook-task"
+    ],
+    "stepIds": [
+      "return-to-interrupted-notebook-task",
+      "lose-terminal-connection-without-ending-task",
+      "reload-task-and-fail-closed-on-recovery-needed-terminal",
+      "keep-create-run-and-delete-fail-closed-until-terminal-truth-recovers",
+      "reopen-terminal-workspace-and-reconnect-existing-session",
+      "confirm-reconnected-terminal-is-still-usable",
+      "surface-broken-terminal-session-inside-same-task",
+      "clear-broken-session-and-keep-task-owned",
+      "start-fresh-terminal-session-after-recovery",
+      "end-recovered-terminal-session-and-return-to-agent-work"
+    ],
+    "traceStepIds": [
+      "return-to-interrupted-notebook-task",
+      "lose-terminal-connection-without-ending-task",
+      "reload-task-and-fail-closed-on-recovery-needed-terminal",
+      "keep-create-run-and-delete-fail-closed-until-terminal-truth-recovers",
+      "reopen-terminal-workspace-and-reconnect-existing-session",
+      "confirm-reconnected-terminal-is-still-usable",
+      "surface-broken-terminal-session-inside-same-task",
+      "clear-broken-session-and-keep-task-owned",
+      "start-fresh-terminal-session-after-recovery",
+      "end-recovered-terminal-session-and-return-to-agent-work"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "notebook-terminal-truth-unavailable-retry",
+    "title": "Notebook terminal truth must be retried before the task unlocks",
+    "actor": "project member",
+    "family": "notebook-terminal-workspace",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "notebook-terminal-runtime",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real notebook terminal truth story needs notebook task terminal status from the live backend."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
+    "goal": "当项目成员重新进入 notebook task 时，如果 terminal 真相暂时不可用，产品必须先 fail-closed：Conversation、运行和删除都继续锁定，直到用户在当前 task 里明确重试 terminal 状态检查，并在 backend terminal truth 恢复后立刻同步解锁。",
+    "sourceRef": "e2e/stories/backend-real/notebook-terminal-truth-unavailable-retry.story.md#notebook-terminal-truth-unavailable-retry",
+    "sourceFingerprint": "bc34bf9b49d3a00bcf6afe6fb5c6b5c49614ab40d349ecbf51d98d80a98b0a92",
+    "storyFingerprint": "ed5a9d6a73bebc314de4be8296adbe7f76cb4e5baabd4b6d1763752fdecffa16",
+    "stepMapFingerprint": "b5bbd8825a94a639e6b31a290012d3c9570a4a9744675246892d10ca53d87766",
+    "sceneIds": [
+      "notebook-task"
+    ],
+    "stepIds": [
+      "return-to-task-while-terminal-truth-is-unavailable",
+      "keep-run-and-delete-fail-closed-while-terminal-truth-is-missing",
+      "retry-terminal-truth-check-from-blocked-task",
+      "unlock-task-after-terminal-truth-recovers"
+    ],
+    "traceStepIds": [
+      "return-to-task-while-terminal-truth-is-unavailable",
+      "keep-run-and-delete-fail-closed-while-terminal-truth-is-missing",
+      "retry-terminal-truth-check-from-blocked-task",
+      "unlock-task-after-terminal-truth-recovers"
+    ],
+    "visualStepIds": []
+  },
+  {
     "storyId": "notebook-terminal-workspace-multi-session",
     "title": "Notebook terminal workspace with multiple sessions",
     "actor": "project member",
@@ -1121,11 +1227,11 @@
     ],
     "lane": "backend-real",
     "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
-    "goal": "项目成员回到已有 notebook task 继续工作时，应该先从 Conversation 进入 Terminal workspace，在同一 task 下面创建多个 terminal sessions 并在 tabs 间切换；即使刷新或重新进入 task 页，界面也必须按 backend list 恢复这些 live sessions 和任务仍被占用的真相；关闭一个 session 不能影响其他 session，直到最后一个 session 结束后才真正释放任务并恢复 agent 输入。",
+    "goal": "项目成员回到已有 notebook task 继续工作时，应该先从 Conversation 进入 Terminal workspace，在同一 task 下面创建多个 terminal sessions 并在 tabs 间切换；当 live terminal 仍存在时，任务删除必须继续被阻止，第四个 terminal 也不能以假 tab 的方式出现；即使刷新或重新进入 task 页，界面也必须按 backend list 和同一批 session id 恢复这些 live sessions 与任务仍被占用的真相；关闭一个 session 不能影响其他 session，直到最后一个 session 结束后才真正释放任务并恢复 agent 输入。",
     "sourceRef": "e2e/stories/backend-real/notebook-terminal-workspace-multi-session.story.md#notebook-terminal-workspace-multi-session",
-    "sourceFingerprint": "826bfd1e0285b0b8f45526f1cd089529aaeb518d42690ba4eea0c7985443aaff",
-    "storyFingerprint": "76602ed128b16a41ee9916ad28e2ddb3f9ee7173ff4945fd8baa2aa85da578f3",
-    "stepMapFingerprint": "2698cbdeed8499ff76ddd2418a08a4ac610516c1ef5a11307ac57b25bfccdfcd",
+    "sourceFingerprint": "3e24e9c80e760434a0548cb63ab9638f447b071940db8d7d9967641c8b4655ed",
+    "storyFingerprint": "9a298bee028702b6303403340d84fa78fcf3a22fdd4dfb2948d9121ab91b6350",
+    "stepMapFingerprint": "8c3a2d529f21561f473ce23cc507ac04512bed35dbac403e09418d50453a34b3",
     "sceneIds": [
       "notebook-task"
     ],
@@ -1134,9 +1240,12 @@
       "open-terminal-workspace",
       "wait-for-first-terminal-session",
       "create-second-terminal-session",
+      "create-third-terminal-session",
+      "keep-task-delete-blocked-while-live-terminal-sessions-exist",
+      "reject-phantom-fourth-terminal-session",
       "switch-between-terminal-sessions",
       "return-to-conversation-while-terminal-stays-active",
-      "reload-task-and-restore-terminal-truth",
+      "reload-task-and-preserve-backend-session-ids",
       "reject-new-run-while-live-terminal-sessions-exist",
       "reopen-terminal-workspace-after-reload",
       "end-one-terminal-session-without-disrupting-others",
@@ -1147,9 +1256,12 @@
       "open-terminal-workspace",
       "wait-for-first-terminal-session",
       "create-second-terminal-session",
+      "create-third-terminal-session",
+      "keep-task-delete-blocked-while-live-terminal-sessions-exist",
+      "reject-phantom-fourth-terminal-session",
       "switch-between-terminal-sessions",
       "return-to-conversation-while-terminal-stays-active",
-      "reload-task-and-restore-terminal-truth",
+      "reload-task-and-preserve-backend-session-ids",
       "reject-new-run-while-live-terminal-sessions-exist",
       "reopen-terminal-workspace-after-reload",
       "end-one-terminal-session-without-disrupting-others",

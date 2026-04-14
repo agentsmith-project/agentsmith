@@ -1,7 +1,6 @@
 import * as React from 'react';
 
 import type { FileLibrary } from '@/lib/api/types';
-import { toast } from '@/components/ui/toast';
 import { getOperationErrorDetail } from './error-utils';
 
 type UseFileLibraryManagerParams = {
@@ -43,6 +42,7 @@ export function useFileLibraryManager({
   const [libraryCreateOpen, setLibraryCreateOpen] = React.useState(false);
   const [libraryName, setLibraryName] = React.useState('');
   const [libraryDescription, setLibraryDescription] = React.useState('');
+  const [libraryCreateError, setLibraryCreateError] = React.useState<string | null>(null);
   const [libraryRenameOpen, setLibraryRenameOpen] = React.useState(false);
   const [libraryRenameTarget, setLibraryRenameTarget] = React.useState<FileLibrary | null>(null);
   const [libraryRenameName, setLibraryRenameName] = React.useState('');
@@ -54,7 +54,18 @@ export function useFileLibraryManager({
   const openCreateLibraryDialog = React.useCallback(() => {
     setLibraryName('');
     setLibraryDescription('');
+    setLibraryCreateError(null);
     setLibraryCreateOpen(true);
+  }, []);
+
+  const setCreateLibraryName = React.useCallback((value: string) => {
+    setLibraryCreateError(null);
+    setLibraryName(value);
+  }, []);
+
+  const setCreateLibraryDescription = React.useCallback((value: string) => {
+    setLibraryCreateError(null);
+    setLibraryDescription(value);
   }, []);
 
   const openRenameLibraryDialog = React.useCallback((library: FileLibrary) => {
@@ -84,6 +95,7 @@ export function useFileLibraryManager({
   const handleCreateLibrary = React.useCallback(async () => {
     const name = libraryName.trim();
     if (!name) return;
+    setLibraryCreateError(null);
     try {
       const created = await createLibrary({
         workspaceId,
@@ -91,13 +103,12 @@ export function useFileLibraryManager({
         name,
         description: libraryDescription.trim() || undefined,
       });
-      toast.success(t('file_manager.library_created'));
       setLibraryCreateOpen(false);
       setSelectedLibraryId(created.id);
       navigateToPrefix('');
     } catch (err) {
       const msg = getOperationErrorDetail(err, tErrors, t('file_manager.library_create_failed'));
-      toast.error(`${t('file_manager.library_create_failed')}: ${msg}`);
+      setLibraryCreateError(msg);
     }
   }, [
     createLibrary,
@@ -123,14 +134,12 @@ export function useFileLibraryManager({
         name,
         description: libraryRenameDescription.trim() || undefined,
       });
-      toast.success(t('file_manager.library_renamed'));
       setLibraryRenameOpen(false);
       setLibraryRenameTarget(null);
-    } catch (err) {
-      const msg = getOperationErrorDetail(err, tErrors, t('file_manager.library_rename_failed'));
-      toast.error(`${t('file_manager.library_rename_failed')}: ${msg}`);
+    } catch {
+      // Mutation hook surfaces the failure toast; keep dialog state local.
     }
-  }, [libraryRenameDescription, libraryRenameName, libraryRenameTarget, projectId, t, tErrors, updateLibrary, workspaceId]);
+  }, [libraryRenameDescription, libraryRenameName, libraryRenameTarget, projectId, updateLibrary, workspaceId]);
 
   const handleDeleteLibrary = React.useCallback(async () => {
     if (!libraryDeleteTarget) return;
@@ -140,7 +149,6 @@ export function useFileLibraryManager({
         projectId,
         libraryId: libraryDeleteTarget.id,
       });
-      toast.success(t('file_manager.library_deleted'));
       setLibraryDeleteOpen(false);
       const deletedId = libraryDeleteTarget.id;
       setLibraryDeleteTarget(null);
@@ -148,9 +156,8 @@ export function useFileLibraryManager({
         setSelectedLibraryId(null);
         navigateToPrefix('');
       }
-    } catch (err) {
-      const msg = getOperationErrorDetail(err, tErrors, t('file_manager.library_delete_failed'));
-      toast.error(`${t('file_manager.library_delete_failed')}: ${msg}`);
+    } catch {
+      // Mutation hook surfaces the failure toast; keep dialog state local.
     }
   }, [
     deleteLibrary,
@@ -159,8 +166,6 @@ export function useFileLibraryManager({
     projectId,
     selectedLibraryId,
     setSelectedLibraryId,
-    t,
-    tErrors,
     workspaceId,
   ]);
 
@@ -170,6 +175,7 @@ export function useFileLibraryManager({
     handleCreateLibrary,
     handleDeleteLibrary,
     handleRenameLibrary,
+    libraryCreateError,
     libraryCreateOpen,
     libraryDeleteConfirm,
     libraryDeleteOpen,
@@ -183,11 +189,13 @@ export function useFileLibraryManager({
     openCreateLibraryDialog,
     openDeleteLibraryDialog,
     openRenameLibraryDialog,
+    setCreateLibraryDescription,
+    setCreateLibraryName,
     setLibraryCreateOpen,
     setLibraryDeleteConfirm,
     setLibraryDeleteOpen,
-    setLibraryDescription,
-    setLibraryName,
+    setLibraryDescription: setCreateLibraryDescription,
+    setLibraryName: setCreateLibraryName,
     setLibraryRenameDescription,
     setLibraryRenameName,
     setLibraryRenameOpen,

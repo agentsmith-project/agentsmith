@@ -8,6 +8,7 @@ import {
   createExternalRunnerAgentBundle,
   createProjectInWorkspace,
   ensureIntegrationKeycloakUsers,
+  expectNotebookTaskConversationSurface,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
@@ -148,6 +149,12 @@ async function runMemberWorkCycle(args: {
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     taskId: createdTask.taskId,
+  });
+  await expectNotebookTaskConversationSurface({
+    page: args.page,
+    openTerminalAction: 'enabled',
+    terminalModeEnabled: false,
+    blocked: false,
   });
   await expect(args.page.getByTestId('notebook__artifact-card')).toBeVisible({ timeout: 30_000 });
   await expect(args.page.getByTestId('notebook__task-header-workspace-library')).toBeVisible({ timeout: 30_000 });

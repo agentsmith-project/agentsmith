@@ -12,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Loader2 } from 'lucide-react';
 
 interface LibraryDeleteTarget {
   name: string;
@@ -21,6 +22,7 @@ interface LibraryDeleteTarget {
 interface LibraryDialogsProps {
   createLibraryPending: boolean;
   deleteLibraryPending: boolean;
+  libraryCreateError: string | null;
   libraryCreateOpen: boolean;
   libraryDeleteConfirm: string;
   libraryDeleteOpen: boolean;
@@ -51,6 +53,7 @@ interface LibraryDialogsProps {
 export function LibraryDialogs({
   createLibraryPending,
   deleteLibraryPending,
+  libraryCreateError,
   libraryCreateOpen,
   libraryDeleteConfirm,
   libraryDeleteOpen,
@@ -78,13 +81,18 @@ export function LibraryDialogs({
   onSetLibraryRenameOpen,
 }: LibraryDialogsProps) {
   const isFailedLibraryDelete = libraryDeleteTarget?.status === 'failed' || libraryDeleteTarget?.status === 'degraded';
+  const handleCreateDialogOpenChange = (open: boolean) => {
+    if (!open && createLibraryPending) return;
+    onSetLibraryCreateOpen(open);
+  };
 
   return (
     <>
-      <Dialog open={libraryCreateOpen} onOpenChange={onSetLibraryCreateOpen}>
+      <Dialog open={libraryCreateOpen} onOpenChange={handleCreateDialogOpenChange}>
         <DialogContent className="sm:max-w-[560px]" data-testid="files__dialog__library-create">
           <DialogHeader>
             <DialogTitle>{t('file_manager.library_create')}</DialogTitle>
+            <DialogDescription>{t('file_manager.library_create_description')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -108,9 +116,27 @@ export function LibraryDialogs({
                 data-testid="files__library-create__description"
               />
             </div>
+            {createLibraryPending ? (
+              <div
+                className="flex items-start gap-2 rounded-md border border-accent/20 bg-accent/8 px-3 py-2 text-sm text-secondary"
+                data-testid="files__library-create__pending"
+              >
+                <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-accent" />
+                <div>{t('file_manager.library_create_pending')}</div>
+              </div>
+            ) : null}
+            {libraryCreateError ? (
+              <div
+                className="rounded-md border border-error/30 bg-error/10 px-3 py-2 text-sm text-error"
+                data-testid="files__library-create__error"
+                role="alert"
+              >
+                {libraryCreateError}
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onSetLibraryCreateOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => onSetLibraryCreateOpen(false)} disabled={createLibraryPending}>
               {t('file_manager.cancel')}
             </Button>
             <Button
@@ -119,6 +145,7 @@ export function LibraryDialogs({
               disabled={!libraryName.trim() || createLibraryPending}
               data-testid="files__library-create__submit"
             >
+              {createLibraryPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {t('file_manager.create')}
             </Button>
           </DialogFooter>

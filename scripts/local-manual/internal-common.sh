@@ -60,14 +60,14 @@ require_local_manual_context() {
 
 ensure_local_manual_ready() {
   require_local_manual_context
-  if [[ ! -f "${API_READY_FILE}" || ! -f "${WEB_READY_FILE}" || ! -f "${PROXY_READY_FILE}" ]]; then
+  if ! local_manual_platform_is_ready; then
     internal_info "starting default local-manual flow"
     LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/up.sh"
   fi
 }
 
 ensure_notebook_demo_seeded() {
-  if [[ ! -f "${RUNNER_READY_FILE}" || -z "$(state_get project.id)" || -z "$(state_get agent.id)" ]]; then
+  if ! runner_socket_is_connected || [[ -z "$(state_get project.id)" || -z "$(state_get agent.id)" ]]; then
     internal_info "seeding notebook demo resources"
     LOCAL_MANUAL_ENABLE_INTERNAL=0 bash "${ROOT_DIR}/scripts/local-manual/seed-notebook-demo.sh"
   fi
@@ -325,6 +325,12 @@ stop_internal_runtime() {
   fi
 }
 
+restore_local_manual_external_mode() {
+  stop_internal_runtime
+  rm -f "${INTERNAL_SANDBOX_STATE_FILE}"
+  restart_api_with_mode 0
+}
+
 start_internal_runtime() {
   write_internal_sandbox_config
   write_internal_state_env
@@ -357,8 +363,16 @@ ensure_internal_agent_state() {
   endpoint_id="$(state_get endpoint.id)"
   existing_agent="$(state_get internal_agent.id)"
   [[ -n "${token}" && -n "${project_id}" && -n "${endpoint_id}" ]] || {
-    internal_err "missing notebook demo state; run make local-manual-seed-notebook first"
-    exit 1
+    internal_info "notebook demo state missing after internal API restart; reseeding notebook demo resources"
+    ensure_notebook_demo_seeded
+    token="$(cat "$(backend_real_token_file)" 2>/dev/null || true)"
+    project_id="$(state_get project.id)"
+    endpoint_id="$(state_get endpoint.id)"
+    existing_agent="$(state_get internal_agent.id)"
+    [[ -n "${token}" && -n "${project_id}" && -n "${endpoint_id}" ]] || {
+      internal_err "missing notebook demo state; run make local-manual-seed-notebook first"
+      exit 1
+    }
   }
 
   if [[ -n "${existing_agent}" ]]; then

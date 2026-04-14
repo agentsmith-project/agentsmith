@@ -763,6 +763,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         wsUrl: reconnectIssued ? `${resolveTerminalWebSocketBaseUrl(req)}${reconnectIssued.wsPath}` : null,
       });
     }));
+    res.setHeader('Cache-Control', 'no-store');
     json(res, 200, {
       total: items.length,
       items,
@@ -783,6 +784,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const reconnectIssued = (session.status === 'pending' || session.status === 'active' || session.status === 'disconnected')
       ? await deps.notebookTerminalService.issueReconnectTicket(session.id)
       : null;
+    res.setHeader('Cache-Control', 'no-store');
     json(res, 200, serializeTerminalSessionResponse({
       session,
       wsUrl: reconnectIssued ? `${resolveTerminalWebSocketBaseUrl(req)}${reconnectIssued.wsPath}` : null,

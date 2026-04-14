@@ -24,6 +24,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { getTerminalSessionSummaryLabel } from './terminal-session-summary';
 
 export interface TaskHeaderProps {
   task: Task;
@@ -38,6 +39,7 @@ export interface TaskHeaderProps {
   canCreateTerminalSession?: boolean;
   terminalSessionCount?: number;
   terminalHasRecovery?: boolean;
+  terminalRecoveryCount?: number;
   terminalDisabledReason?: string | null;
   onSetViewMode?: (mode: 'conversation' | 'terminal') => void;
   onCreateTerminalSession?: () => void;
@@ -60,6 +62,7 @@ export function TaskHeader({
   canCreateTerminalSession = false,
   terminalSessionCount = 0,
   terminalHasRecovery = false,
+  terminalRecoveryCount,
   terminalDisabledReason = null,
   onSetViewMode,
   onCreateTerminalSession,
@@ -135,12 +138,16 @@ export function TaskHeader({
   );
   const workspaceFileLibraryName = task.workspace_file_library_name?.trim() || t('workspace_file_library_unknown');
   const hasTerminalTabs = terminalSessionCount > 0;
-  const canSwitchToTerminalWorkspace = hasTerminalTabs;
   const terminalModeLabel = t('terminal_mode_terminal');
   const conversationModeLabel = t('terminal_mode_conversation');
-  const terminalSessionSummary = terminalHasRecovery
-    ? t('terminal_status_strip_recovery', { count: terminalSessionCount })
-    : t('terminal_status_strip_active', { count: terminalSessionCount });
+  const terminalSessionSummary = getTerminalSessionSummaryLabel(t, {
+    count: terminalSessionCount,
+    recoveryCount: terminalRecoveryCount,
+    hasRecovery: terminalHasRecovery,
+  });
+  const hasTerminalRecoveryAttention = terminalRecoveryCount !== undefined
+    ? terminalRecoveryCount > 0
+    : terminalHasRecovery;
   const shouldShowOpenTerminalAction = !!onCreateTerminalSession && !hasTerminalTabs;
   const effectiveDeleteBlockedReason =
     deleteBlockedReason
@@ -197,7 +204,7 @@ export function TaskHeader({
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-2">
-        {onSetViewMode ? (
+        {onSetViewMode && hasTerminalTabs ? (
           <div className="inline-flex items-center rounded-md border border-subtle bg-surface-low/40 p-0.5">
             <Button
               type="button"
@@ -215,7 +222,6 @@ export function TaskHeader({
               size="sm"
               className="h-7 px-2.5 text-[11px]"
               onClick={() => onSetViewMode('terminal')}
-              disabled={!canSwitchToTerminalWorkspace}
               data-testid="notebook__task-header-mode-terminal"
             >
               {terminalModeLabel}
@@ -224,7 +230,7 @@ export function TaskHeader({
         ) : null}
         {hasTerminalTabs ? (
           <Badge
-            variant={terminalHasRecovery ? 'destructive' : 'secondary'}
+            variant={hasTerminalRecoveryAttention ? 'destructive' : 'secondary'}
             className="text-[11px]"
             data-testid="notebook__task-header-terminal-summary"
           >

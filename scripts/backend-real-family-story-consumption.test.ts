@@ -83,11 +83,16 @@ describe('backend-real family story consumption', () => {
     expect(notebookSource).not.toContain('North America consumer electronics');
 
     expect(notebookTerminalSource).toContain("loadStoryDefinitionSync('notebook-terminal-workspace-multi-session')");
+    expect(notebookTerminalSource).toContain("loadStoryDefinitionSync('notebook-terminal-truth-unavailable-retry')");
     expect(notebookTerminalSource).toContain('buildTraceStoryBinding');
     expect(notebookTerminalSource).toContain('createUxTraceBundleWriter');
     expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'create-second-terminal-session')");
-    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'reload-task-and-restore-terminal-truth')");
+    expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'reload-task-and-preserve-backend-session-ids')");
     expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'reject-new-run-while-live-terminal-sessions-exist')");
+    expect(notebookTerminalSource).toContain("captureTruthUnavailableTrace(page, 'return-to-task-while-terminal-truth-is-unavailable')");
+    expect(notebookTerminalSource).toContain("captureTruthUnavailableTrace(page, 'keep-run-and-delete-fail-closed-while-terminal-truth-is-missing')");
+    expect(notebookTerminalSource).toContain("captureTruthUnavailableTrace(page, 'retry-terminal-truth-check-from-blocked-task')");
+    expect(notebookTerminalSource).toContain("captureTruthUnavailableTrace(page, 'unlock-task-after-terminal-truth-recovers')");
     expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'reopen-terminal-workspace-after-reload')");
     expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'end-one-terminal-session-without-disrupting-others')");
     expect(notebookTerminalSource).toContain("captureTerminalTrace(page, 'end-last-terminal-session-and-resume-agent-work')");
@@ -95,6 +100,10 @@ describe('backend-real family story consumption', () => {
     expect(notebookTerminalSource).toContain("message: 'task_terminal_sessions_active'");
     expect(notebookTerminalSource).toContain('notebook__task-terminal-status-strip');
     expect(notebookTerminalSource).toContain('End All Sessions');
+    expect(notebookTerminalSource).toContain('Retry terminal status check');
+    expect(notebookTerminalSource).not.toContain("toContainText('No such file or directory')");
+    expect(notebookTerminalSource).not.toContain("toContainText('Terminal session closed.')");
+    expect(notebookTerminalSource).not.toContain("captureTerminalTrace(page, 'reload-task-and-restore-terminal-truth')");
     expect(notebookTerminalSource).not.toContain('Terminal session still active');
     expect(notebookTerminalSource).not.toContain("captureTerminalTrace(page, 'show-hidden-terminal-session')");
 
@@ -215,6 +224,42 @@ describe('backend-real family story consumption', () => {
     const notebookFirstStory = loadCommittedStoryDefinitionByIdSync('notebook-first-success');
     expect(notebookFirstStory.goal).toContain('第一次');
     expect(notebookFirstStory.goal).not.toContain('WebSocket');
+  });
+
+  it('keeps notebook terminal recovery stories in the generated catalog with canonical source refs', async () => {
+    const specs = await readGeneratedStorySpecs();
+    const notebookTerminalStories = [
+      loadCommittedStoryDefinitionByIdSync('notebook-terminal-reentry-recovery'),
+      loadCommittedStoryDefinitionByIdSync('notebook-terminal-truth-unavailable-retry'),
+      loadCommittedStoryDefinitionByIdSync('notebook-terminal-workspace-multi-session'),
+    ];
+
+    for (const story of notebookTerminalStories) {
+      const spec = specs.find((entry) => entry.storyId === story.storyId);
+
+      expect(story.family).toBe('notebook-terminal-workspace');
+      expect(spec?.sourceRef).toBe(expectedSourceRefForStory(story));
+      expect(spec?.stepIds).toEqual(story.steps.map((step) => step.stepId));
+      expect(spec?.traceStepIds).toEqual(story.steps.map((step) => step.stepId));
+    }
+  });
+
+  it('keeps notebook terminal recovery language aligned with broken-session product truth instead of a narrower failed-session label', async () => {
+    const recoveryStory = loadCommittedStoryDefinitionByIdSync('notebook-terminal-reentry-recovery');
+    const specs = await readGeneratedStorySpecs();
+    const recoverySpec = specs.find((entry) => entry.storyId === 'notebook-terminal-reentry-recovery');
+
+    expect(recoveryStory.goal).toContain('需要恢复');
+    expect(recoveryStory.goal).not.toContain('failed terminal');
+    expect(recoveryStory.narrative).toContain('需要恢复');
+    expect(recoveryStory.steps.find((step) => step.stepId === 'surface-broken-terminal-session-inside-same-task')?.action).toContain(
+      'needs recovery',
+    );
+    expect(
+      recoveryStory.steps.find((step) => step.stepId === 'clear-broken-session-and-keep-task-owned')?.action,
+    ).toContain('needs recovery');
+    expect(recoverySpec?.goal).toContain('需要恢复');
+    expect(recoverySpec?.goal).not.toContain('failed terminal');
   });
 
   it('keeps files story runtime data focused on stable fixtures instead of environment-derived deployment URLs', async () => {

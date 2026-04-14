@@ -19,16 +19,68 @@ export {
 export type { NodeApiDeps } from './node-api-deps';
 export { createDefaultNodeApiDeps } from './node-api-deps-factory';
 
+const DEFAULT_FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = 60_000;
+
+function logGatewayReconcileFailure(error: unknown): void {
+  const message = error instanceof Error ? error.message : 'unknown_error';
+  process.stderr.write(`[api-entry-node] file library gateway reconcile failed: ${message}\n`);
+}
+
+function resolveGatewayReconcileIntervalMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number.parseInt(env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS ?? '', 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return DEFAULT_FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS;
+}
+
+function startGatewayReconcileLoop(manager?: {
+  reconcile?: () => Promise<void>;
+}): { stop: () => Promise<void> } {
+  if (!manager?.reconcile) {
+    return {
+      stop: async () => undefined,
+    };
+  }
+
+  let inFlight: Promise<void> | null = null;
+  const runReconcile = (): Promise<void> => {
+    if (inFlight) {
+      return inFlight;
+    }
+    inFlight = Promise.resolve()
+      .then(() => manager.reconcile?.())
+      .catch((error: unknown) => {
+        logGatewayReconcileFailure(error);
+      })
+      .finally(() => {
+        inFlight = null;
+      });
+    return inFlight;
+  };
+
+  void runReconcile();
+
+  const intervalHandle = setInterval(() => {
+    void runReconcile();
+  }, resolveGatewayReconcileIntervalMs());
+  intervalHandle.unref?.();
+
+  return {
+    stop: async () => {
+      clearInterval(intervalHandle);
+      await inFlight?.catch(() => undefined);
+    },
+  };
+}
+
 export function createNodeApiServer(
   port = 3010,
   deps = createDefaultNodeApiDeps(),
   lifecycle?: Pick<ProjectRepoFactoryResult, 'shutdown'>,
   host?: string,
 ): http.Server {
-  void deps.fileLibraryGatewayManager?.reconcile?.().catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : 'unknown_error';
-    process.stderr.write(`[api-entry-node] file library gateway reconcile failed: ${message}\n`);
-  });
+  const gatewayReconcileLoop = startGatewayReconcileLoop(deps.fileLibraryGatewayManager);
 
   void ensureModelCatalogBootstrap(deps.docStore).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : 'unknown_error';
@@ -51,6 +103,30 @@ export function createNodeApiServer(
     deps.agentExecutionService.handleUpgrade(req, socket, head);
   });
 
+  let shutdownPromise: Promise<void> | null = null;
+  let shutdownPerformed = false;
+  const originalClose = server.close.bind(server);
+  const normalizeServerCloseError = (error: unknown): Error =>
+    error instanceof Error ? error : new Error('server_close_failed');
+
+  const shutdownServerResources = async (): Promise<void> => {
+    if (shutdownPerformed) return;
+    shutdownPerformed = true;
+    if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
+    await gatewayReconcileLoop.stop();
+    ACTIVE_CHAT_STREAMS.clear();
+    await deps.fileLibraryGatewayManager?.shutdown?.();
+    await lifecycle?.shutdown?.();
+  };
+
+  const ensureServerResourcesShutdown = (): Promise<void> => {
+    if (!shutdownPromise) {
+      shutdownPromise = shutdownServerResources();
+      void shutdownPromise.catch(() => undefined);
+    }
+    return shutdownPromise;
+  };
+
   const feishuRefreshEnabled = process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED !== 'false';
   const feishuRefreshIntervalMs = Number.parseInt(process.env.FEISHU_OAUTH_REFRESH_RUNNER_INTERVAL_MS ?? '300000', 10);
   const feishuRefreshInterval = feishuRefreshEnabled
@@ -62,20 +138,28 @@ export function createNodeApiServer(
     }, Number.isFinite(feishuRefreshIntervalMs) && feishuRefreshIntervalMs > 0 ? feishuRefreshIntervalMs : 300000)
     : null;
 
-  if (lifecycle) {
-    server.on('close', () => {
-      if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
-      ACTIVE_CHAT_STREAMS.clear();
-      void deps.fileLibraryGatewayManager?.shutdown?.();
-      void lifecycle.shutdown();
-    });
-  } else {
-    server.on('close', () => {
-      if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
-      ACTIVE_CHAT_STREAMS.clear();
-      void deps.fileLibraryGatewayManager?.shutdown?.();
-    });
-  }
+  server.close = ((callback?: (error?: Error) => void) => {
+    const resolveClose = (closeError?: Error) => {
+      const cleanup = ensureServerResourcesShutdown();
+      if (!callback) {
+        return;
+      }
+      void cleanup.then(
+        () => callback(closeError),
+        (cleanupError) => callback(closeError ?? normalizeServerCloseError(cleanupError)),
+      );
+    };
+
+    try {
+      originalClose((error?: Error) => {
+        resolveClose(error);
+      });
+    } catch (error) {
+      resolveClose(normalizeServerCloseError(error));
+    }
+
+    return server;
+  }) as typeof server.close;
 
   server.listen(port, host);
   return server;

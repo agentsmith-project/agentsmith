@@ -1,3 +1,6 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 type TokenResponse = {
   access_token: string;
 };
@@ -110,6 +113,86 @@ const seedUsers: SeedUser[] = [
     email: 'integration-invitee@example.com',
   },
 ];
+
+const defaultKeycloakInitAttempts = Number.parseInt(
+  process.env.INTEGRATION_KEYCLOAK_INIT_ATTEMPTS
+  ?? process.env.INTEGRATION_KEYCLOAK_INIT_MAX_ATTEMPTS
+  ?? '5',
+  10,
+);
+const defaultKeycloakInitDelayMs = Number.parseInt(
+  process.env.INTEGRATION_KEYCLOAK_INIT_DELAY_MS
+  ?? process.env.INTEGRATION_KEYCLOAK_INIT_RETRY_DELAY_MS
+  ?? '1000',
+  10,
+);
+
+type KeycloakInitRunner = () => Promise<void>;
+
+type RunKeycloakInitWithRetryOptions = {
+  run?: KeycloakInitRunner;
+  attempts?: number;
+  delayMs?: number;
+  maxAttempts?: number;
+  retryDelayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  isRetryableError?: (error: unknown) => boolean;
+};
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function resolveAttempts(value: number | undefined): number {
+  return Number.isInteger(value) && value > 0 ? value : 5;
+}
+
+function resolveDelayMs(value: number | undefined): number {
+  return Number.isFinite(value) && value >= 0 ? value : 1_000;
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+export function isRetryableKeycloakInitError(error: unknown): boolean {
+  const message = getErrorMessage(error);
+  return message.includes('keycloak_update_realm_failed:') && message.includes('Database operation failed');
+}
+
+export async function runKeycloakInitWithRetry(options: RunKeycloakInitWithRetryOptions = {}): Promise<void> {
+  const run = options.run ?? runKeycloakInitOnce;
+  const attempts = resolveAttempts(
+    options.attempts
+    ?? options.maxAttempts
+    ?? defaultKeycloakInitAttempts,
+  );
+  const delayMs = resolveDelayMs(
+    options.delayMs
+    ?? options.retryDelayMs
+    ?? defaultKeycloakInitDelayMs,
+  );
+  const sleep = options.sleep ?? sleepMs;
+  const isRetryableError = options.isRetryableError ?? isRetryableKeycloakInitError;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await run();
+      return;
+    } catch (error) {
+      if (!isRetryableError(error) || attempt === attempts) {
+        throw error;
+      }
+
+      process.stdout.write(
+        `[integration-keycloak-init] transient realm update failure; retrying ${attempt}/${attempts}\n`,
+      );
+      await sleep(delayMs * attempt);
+    }
+  }
+}
 
 async function getAdminToken(): Promise<string> {
   const url = `${keycloakBaseUrl}/realms/master/protocol/openid-connect/token`;
@@ -548,7 +631,7 @@ async function ensureRealmTokenLifespans(token: string): Promise<void> {
   );
 }
 
-async function main(): Promise<void> {
+export async function runKeycloakInitOnce(): Promise<void> {
   const token = await getAdminToken();
   await ensureRealmTokenLifespans(token);
   await ensureClientRedirects(token);
@@ -559,8 +642,13 @@ async function main(): Promise<void> {
   process.stdout.write('[integration-keycloak-init] done\n');
 }
 
-void main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`[integration-keycloak-init] failed: ${message}\n`);
-  process.exit(1);
-});
+export async function main(): Promise<void> {
+  await runKeycloakInitWithRetry();
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  void main().catch((error) => {
+    process.stderr.write(`[integration-keycloak-init] failed: ${getErrorMessage(error)}\n`);
+    process.exit(1);
+  });
+}

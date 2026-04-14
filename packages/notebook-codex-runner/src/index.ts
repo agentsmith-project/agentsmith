@@ -20,7 +20,10 @@ import {
   scanArtifactsDirectory,
   scanWorkspaceFilesSnapshot,
 } from './artifact-scan.js';
-import { prepareTaskWorkspace } from './task-workspace.js';
+import {
+  prepareTaskWorkspace,
+  releaseAllPreparedTaskWorkspaces,
+} from './task-workspace.js';
 import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
 import { selectLatestInstruction } from './prompt-selection.js';
 import { resolveRunnerSuccessPolicy } from './run-result-policy.js';
@@ -87,6 +90,7 @@ const commandCountByRequestId = new Map<string, number>();
 let connectedResourceProxyBase = '';
 type FilterStats = RunnerFilterStats;
 const filterStatsByRequestId = new Map<string, FilterStats>();
+let runnerShutdownPromise: Promise<void> | null = null;
 
 function getFilterStats(requestId: string): FilterStats {
   const existing = filterStatsByRequestId.get(requestId);
@@ -210,6 +214,45 @@ function debugLog(message: string, extra?: Record<string, unknown>): void {
   process.stdout.write(`[notebook-codex-runner][debug] ${message}${payload}\n`);
 }
 
+function killActiveRunnerProcesses(): void {
+  for (const child of runningByRequestId.values()) {
+    if (child.exitCode === null) {
+      child.kill('SIGTERM');
+    }
+  }
+  for (const terminalChild of runningTerminalBySessionId.values()) {
+    if (terminalChild.exitCode === null) {
+      terminalChild.kill('SIGTERM');
+    }
+  }
+}
+
+async function shutdownRunnerOnWebSocketClose(): Promise<void> {
+  if (runnerShutdownPromise) {
+    return runnerShutdownPromise;
+  }
+  runnerShutdownPromise = (async () => {
+    process.stdout.write('[notebook-codex-runner] disconnected; shutting down\n');
+    killActiveRunnerProcesses();
+    runningByRequestId.clear();
+    runningTerminalBySessionId.clear();
+    cancelRequestedByRequestId.clear();
+    connectedResourceProxyBase = '';
+    traceSeqByRequestId.clear();
+    runStartedAtByRequestId.clear();
+    try {
+      await releaseAllPreparedTaskWorkspaces();
+    } catch (error) {
+      process.stderr.write(
+        `[notebook-codex-runner] shutdown cleanup failed: ${error instanceof Error ? error.message : 'unknown'}\n`,
+      );
+    }
+  })().finally(() => {
+    process.exit(1);
+  });
+  return runnerShutdownPromise;
+}
+
 function closeTerminalSession(terminalSessionId: string, signal: NodeJS.Signals = 'SIGTERM'): void {
   const child = runningTerminalBySessionId.get(terminalSessionId);
   if (!child || child.exitCode !== null) return;
@@ -235,7 +278,7 @@ async function runTerminalSession(terminalSessionId: string, payload: {
     has_execution_context: !!payload.execution_context,
     shell: payload.shell ?? null,
   });
-  const executionContext = payload.execution_context ?? {};
+  const executionContext = (payload.execution_context ?? {}) as TerminalExecutionContext;
   const started = await startTerminalProcess({
     executionContext,
     shell: payload.shell,
@@ -1307,14 +1350,22 @@ ws.on('message', (raw) => {
   const startPayload = message.payload as ServerStartPayload;
   runStartedAtByRequestId.set(message.request_id, Date.now());
   sendRunLifecycleEvent(message.request_id, 'queued', 'running', 'Run queued');
+  const executionContext = startPayload.execution_context as {
+    model?: string;
+    wire_api?: string;
+    task_id?: string;
+    workspace_binding_mode?: string;
+    workspace_file_library_id?: string;
+    workspace_dir_name?: string;
+  } | undefined;
   debugLog('received start', {
     request_id: message.request_id,
-    model: startPayload.execution_context?.model ?? startPayload.model ?? null,
-    wire_api: startPayload.execution_context?.wire_api ?? null,
-    task_id: startPayload.execution_context?.task_id ?? null,
-    workspace_binding_mode: startPayload.execution_context?.workspace_binding_mode ?? null,
-    workspace_file_library_id: startPayload.execution_context?.workspace_file_library_id ?? null,
-    workspace_dir_name: startPayload.execution_context?.workspace_dir_name ?? null,
+    model: executionContext?.model ?? startPayload.model ?? null,
+    wire_api: executionContext?.wire_api ?? null,
+    task_id: executionContext?.task_id ?? null,
+    workspace_binding_mode: executionContext?.workspace_binding_mode ?? null,
+    workspace_file_library_id: executionContext?.workspace_file_library_id ?? null,
+    workspace_dir_name: executionContext?.workspace_dir_name ?? null,
   });
 
   void runCodexRequest(message.request_id, startPayload).catch((error) => {
@@ -1346,23 +1397,7 @@ ws.on('message', (raw) => {
 });
 
 ws.on('close', () => {
-  process.stdout.write('[notebook-codex-runner] disconnected\n');
-  for (const child of runningByRequestId.values()) {
-    if (child.exitCode === null) {
-      child.kill('SIGTERM');
-    }
-  }
-  for (const terminalChild of runningTerminalBySessionId.values()) {
-    if (terminalChild.exitCode === null) {
-      terminalChild.kill('SIGTERM');
-    }
-  }
-  runningByRequestId.clear();
-  runningTerminalBySessionId.clear();
-  cancelRequestedByRequestId.clear();
-  connectedResourceProxyBase = '';
-  traceSeqByRequestId.clear();
-  runStartedAtByRequestId.clear();
+  void shutdownRunnerOnWebSocketClose();
 });
 
 ws.on('error', (error) => {

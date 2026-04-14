@@ -39,6 +39,15 @@ info() { echo "[local-manual] $*"; }
 err() { echo "[local-manual] ERROR: $*" >&2; }
 warn() { echo "[local-manual] WARN: $*" >&2; }
 
+run_juicefs_orphan_preflight() {
+  local context="${1:-local-manual}"
+  if [[ "${LOCAL_MANUAL_SKIP_JUICEFS_ORPHAN_PREFLIGHT:-0}" == "1" ]]; then
+    info "skipping stale JuiceFS preflight for ${context}"
+    return 0
+  fi
+  "${ROOT_DIR}/node_modules/.bin/tsx" "${ROOT_DIR}/scripts/juicefs-orphan-preflight.ts" --apply --context "${context}"
+}
+
 detect_local_manual_file_library_client_postgres_host() {
   printf 'localhost\n'
 }
@@ -256,6 +265,62 @@ write_ready_file() {
   local file="$1"
   mkdir -p "$(dirname "${file}")"
   printf 'ready\n' > "${file}"
+}
+
+local_manual_platform_ready_state() {
+  local missing=()
+
+  [[ -f "${API_READY_FILE}" ]] || missing+=(api)
+  [[ -f "${WEB_READY_FILE}" ]] || missing+=(web)
+  [[ -f "${PROXY_READY_FILE}" ]] || missing+=(proxy)
+
+  if (( ${#missing[@]} == 0 )); then
+    printf 'ready\n'
+    return 0
+  fi
+
+  printf 'missing:%s\n' "$(IFS=,; echo "${missing[*]}")"
+}
+
+local_manual_platform_is_ready() {
+  [[ "$(local_manual_platform_ready_state)" == "ready" ]]
+}
+
+runner_socket_health_state() {
+  local pid current_state line
+  pid="$(cat "${RUNNER_PID_FILE}" 2>/dev/null || true)"
+  if [[ -z "${pid}" ]] || ! kill -0 "${pid}" >/dev/null 2>&1; then
+    printf 'disconnected\n'
+    return 0
+  fi
+
+  current_state="unknown"
+  if [[ -f "${RUNNER_LOG}" ]]; then
+    while IFS= read -r line; do
+      case "${line}" in
+        *"[notebook-codex-runner] connected"*) current_state="connected" ;;
+        *"[notebook-codex-runner] disconnected"*) current_state="disconnected" ;;
+      esac
+    done < "${RUNNER_LOG}"
+  fi
+
+  if [[ "${current_state}" == "connected" ]]; then
+    printf 'connected\n'
+  else
+    printf 'disconnected\n'
+  fi
+}
+
+runner_socket_is_connected() {
+  [[ "$(runner_socket_health_state)" == "connected" ]]
+}
+
+ensure_local_manual_runner_connected() {
+  if runner_socket_is_connected; then
+    return 0
+  fi
+  info "restarting local-manual runner because socket is $(runner_socket_health_state)"
+  bash "${ROOT_DIR}/scripts/local-manual/start-runner.sh"
 }
 
 remove_local_manual_runtime_files() {

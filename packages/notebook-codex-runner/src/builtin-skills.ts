@@ -9,7 +9,10 @@ const FALLBACK_DEV_SKILLS_DIR = resolve(MODULE_DIR, '../builtin-skills');
 const PACKAGED_IMAGE_SKILLS_DIR = '/etc/codex/skills';
 const DEFAULT_BUILTIN_SKILLS = ['mbos-context', 'feishu-docs', 'jira-ops'];
 const MANIFEST_FILENAME = 'builtin-skills-manifest.json';
+const BUILTIN_SKILLS_LOCK_DIRNAME = '.builtin-skills-seed.lock';
 const SHARED_RUNTIME_DIRNAME = '.mbos-runtime';
+const BUILTIN_SKILLS_LOCK_WAIT_TIMEOUT_MS = 5_000;
+const BUILTIN_SKILLS_LOCK_WAIT_INTERVAL_MS = 25;
 
 type BuiltinSkillManifest = {
   version: 2;
@@ -19,6 +22,98 @@ type BuiltinSkillManifest = {
   skill_contracts: Record<string, BuiltinSkillCapabilityContract>;
   installed_at: string;
 };
+
+function getBuiltinSkillManifestPath(manifestDir: string): string {
+  return join(manifestDir, MANIFEST_FILENAME);
+}
+
+async function readBuiltinSkillManifest(manifestPath: string): Promise<BuiltinSkillManifest | null> {
+  try {
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Partial<BuiltinSkillManifest>;
+    if (
+      manifest.version !== 2
+      || typeof manifest.source_dir !== 'string'
+      || !Array.isArray(manifest.installed_skills)
+      || !Array.isArray(manifest.runtime_helpers)
+      || typeof manifest.skill_contracts !== 'object'
+      || manifest.skill_contracts === null
+      || typeof manifest.installed_at !== 'string'
+    ) {
+      return null;
+    }
+    return manifest as BuiltinSkillManifest;
+  } catch {
+    return null;
+  }
+}
+
+function manifestMatchesSeedRequest(
+  manifest: BuiltinSkillManifest | null,
+  sourceDir: string,
+  skills: string[],
+  hasSharedRuntime: boolean,
+): boolean {
+  if (!manifest) return false;
+  if (manifest.source_dir !== sourceDir) return false;
+  const expectedSkills = [...skills].sort();
+  const installedSkills = [...manifest.installed_skills].sort();
+  if (
+    expectedSkills.length !== installedSkills.length
+    || expectedSkills.some((skill, index) => skill !== installedSkills[index])
+  ) {
+    return false;
+  }
+  const expectedRuntimeHelpers = hasSharedRuntime ? [SHARED_RUNTIME_DIRNAME] : [];
+  const installedRuntimeHelpers = [...manifest.runtime_helpers].sort();
+  if (
+    expectedRuntimeHelpers.length !== installedRuntimeHelpers.length
+    || expectedRuntimeHelpers.some((helper, index) => helper !== installedRuntimeHelpers[index])
+  ) {
+    return false;
+  }
+  return true;
+}
+
+async function acquireBuiltinSkillsLock(lockDir: string): Promise<boolean> {
+  try {
+    await mkdir(lockDir);
+    return true;
+  } catch (error) {
+    const errorCode = error instanceof Error && 'code' in error
+      ? (error as NodeJS.ErrnoException).code
+      : undefined;
+    if (errorCode === 'EEXIST') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function waitForBuiltinSkillsSeed(
+  lockDir: string,
+  manifestPath: string,
+  matcher: (manifest: BuiltinSkillManifest | null) => boolean,
+): Promise<void> {
+  const deadline = Date.now() + BUILTIN_SKILLS_LOCK_WAIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (matcher(await readBuiltinSkillManifest(manifestPath))) {
+      return;
+    }
+    if (!fs.existsSync(lockDir)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, BUILTIN_SKILLS_LOCK_WAIT_INTERVAL_MS));
+  }
+  throw new Error('builtin_skills_seed_wait_timeout');
+}
+
+function builtinSkillTargetsExist(targetDir: string, skills: string[], hasSharedRuntime: boolean): boolean {
+  const targetPaths = skills.map((skill) => resolve(targetDir, skill));
+  if (hasSharedRuntime) {
+    targetPaths.push(resolve(targetDir, SHARED_RUNTIME_DIRNAME));
+  }
+  return targetPaths.every((targetPath) => fs.existsSync(targetPath));
+}
 
 function parseBooleanFlag(input: string | undefined, fallback: boolean): boolean {
   if (typeof input !== 'string') return fallback;
@@ -53,8 +148,15 @@ function resolveSkillsSourceDir(fileExists: (path: string) => boolean = fs.exist
 }
 
 async function mirrorDirectory(sourceDir: string, targetDir: string): Promise<void> {
-  await rm(targetDir, { recursive: true, force: true });
-  await cp(sourceDir, targetDir, { recursive: true, force: true });
+  await mkdir(targetDir, { recursive: true });
+  const entries = await readdir(sourceDir, { withFileTypes: true });
+  for (const entry of entries) {
+    await cp(
+      join(sourceDir, entry.name),
+      join(targetDir, entry.name),
+      { recursive: true, force: true },
+    );
+  }
 }
 
 async function rewriteAbsoluteSkillPaths(rootDir: string, skillDir: string): Promise<void> {
@@ -162,37 +264,79 @@ export async function seedBuiltinSkills(args: {
 }> {
   await mkdir(args.targetDir, { recursive: true });
   await mkdir(args.manifestDir, { recursive: true });
-  const seeded: string[] = [];
-  const skillContracts: Record<string, BuiltinSkillCapabilityContract> = {};
-  for (const skill of args.skills) {
-    const sourceSkillDir = resolve(args.sourceDir, skill);
-    const targetSkillDir = resolve(args.targetDir, skill);
-    await mirrorDirectory(sourceSkillDir, targetSkillDir);
-    await rewriteAbsoluteSkillPaths(skill, targetSkillDir);
-    skillContracts[skill] = await readBuiltinSkillCapabilityContract(sourceSkillDir);
-    seeded.push(skill);
+  const manifestPath = getBuiltinSkillManifestPath(args.manifestDir);
+  const lockDir = join(args.manifestDir, BUILTIN_SKILLS_LOCK_DIRNAME);
+  const hasSharedRuntime = fs.existsSync(resolve(args.sourceDir, SHARED_RUNTIME_DIRNAME));
+  const matchesSeedRequest = (manifest: BuiltinSkillManifest | null) => manifestMatchesSeedRequest(
+    manifest,
+    args.sourceDir,
+    args.skills,
+    hasSharedRuntime,
+  );
+
+  while (true) {
+    const manifest = await readBuiltinSkillManifest(manifestPath);
+    if (matchesSeedRequest(manifest) && builtinSkillTargetsExist(args.targetDir, args.skills, hasSharedRuntime)) {
+      return {
+        targetDir: args.targetDir,
+        seeded: [...args.skills],
+        manifestPath,
+      };
+    }
+
+    const hasLock = await acquireBuiltinSkillsLock(lockDir);
+    if (!hasLock) {
+      await waitForBuiltinSkillsSeed(lockDir, manifestPath, matchesSeedRequest);
+      continue;
+    }
+
+    try {
+      const lockedManifest = await readBuiltinSkillManifest(manifestPath);
+      if (
+        matchesSeedRequest(lockedManifest)
+        && builtinSkillTargetsExist(args.targetDir, args.skills, hasSharedRuntime)
+      ) {
+        return {
+          targetDir: args.targetDir,
+          seeded: [...args.skills],
+          manifestPath,
+        };
+      }
+
+      const seeded: string[] = [];
+      const skillContracts: Record<string, BuiltinSkillCapabilityContract> = {};
+      for (const skill of args.skills) {
+        const sourceSkillDir = resolve(args.sourceDir, skill);
+        const targetSkillDir = resolve(args.targetDir, skill);
+        await mirrorDirectory(sourceSkillDir, targetSkillDir);
+        await rewriteAbsoluteSkillPaths(skill, targetSkillDir);
+        skillContracts[skill] = await readBuiltinSkillCapabilityContract(sourceSkillDir);
+        seeded.push(skill);
+      }
+      const runtimeHelpers: string[] = [];
+      const sharedRuntimeSourceDir = resolve(args.sourceDir, SHARED_RUNTIME_DIRNAME);
+      if (hasSharedRuntime) {
+        const sharedRuntimeTargetDir = resolve(args.targetDir, SHARED_RUNTIME_DIRNAME);
+        await mirrorDirectory(sharedRuntimeSourceDir, sharedRuntimeTargetDir);
+        await rewriteAbsoluteSkillPaths(SHARED_RUNTIME_DIRNAME, sharedRuntimeTargetDir);
+        runtimeHelpers.push(SHARED_RUNTIME_DIRNAME);
+      }
+      const nextManifest: BuiltinSkillManifest = {
+        version: 2,
+        source_dir: args.sourceDir,
+        installed_skills: seeded,
+        runtime_helpers: runtimeHelpers,
+        skill_contracts: skillContracts,
+        installed_at: new Date().toISOString(),
+      };
+      await writeFile(manifestPath, `${JSON.stringify(nextManifest, null, 2)}\n`, 'utf8');
+      return {
+        targetDir: args.targetDir,
+        seeded,
+        manifestPath,
+      };
+    } finally {
+      await rm(lockDir, { recursive: true, force: true });
+    }
   }
-  const runtimeHelpers: string[] = [];
-  const sharedRuntimeSourceDir = resolve(args.sourceDir, SHARED_RUNTIME_DIRNAME);
-  if (fs.existsSync(sharedRuntimeSourceDir)) {
-    const sharedRuntimeTargetDir = resolve(args.targetDir, SHARED_RUNTIME_DIRNAME);
-    await mirrorDirectory(sharedRuntimeSourceDir, sharedRuntimeTargetDir);
-    await rewriteAbsoluteSkillPaths(SHARED_RUNTIME_DIRNAME, sharedRuntimeTargetDir);
-    runtimeHelpers.push(SHARED_RUNTIME_DIRNAME);
-  }
-  const manifestPath = join(args.manifestDir, MANIFEST_FILENAME);
-  const manifest: BuiltinSkillManifest = {
-    version: 2,
-    source_dir: args.sourceDir,
-    installed_skills: seeded,
-    runtime_helpers: runtimeHelpers,
-    skill_contracts: skillContracts,
-    installed_at: new Date().toISOString(),
-  };
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-  return {
-    targetDir: args.targetDir,
-    seeded,
-    manifestPath,
-  };
 }

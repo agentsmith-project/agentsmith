@@ -5,6 +5,7 @@ import {
   KEYCLOAK_DEV_ADMIN_USERNAME,
   createCredentialViaUi,
   createProjectInWorkspace,
+  expectNotebookTaskConversationSurface,
   startCodexRunnerDockerProcess,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
@@ -521,7 +522,12 @@ async function createTaskViaUi(args: {
   await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/.+`), {
     timeout: 30_000,
   });
-  await expect(page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
+  await expectNotebookTaskConversationSurface({
+    page,
+    openTerminalAction: 'enabled',
+    terminalModeEnabled: false,
+    blocked: false,
+  });
   const taskId = page.url().match(/\/tasks\/([^/?#]+)/)?.[1];
   if (!taskId) throw new Error('task_id_not_found_after_create');
   const workspaceBadge = await page.getByTestId('notebook__task-header-workspace-library').textContent();
@@ -934,7 +940,12 @@ test.describe('@lane-real release user story end-to-end', () => {
 
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/${externalTaskOne.taskId}`);
-      await expect(page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
+      await expectNotebookTaskConversationSurface({
+        page,
+        openTerminalAction: 'enabled',
+        terminalModeEnabled: false,
+        blocked: false,
+      });
       await captureTrace('notebook-task-detail-external', 'Review task detail', 'notebook__task-header', 'external task 详情页');
 
       await deleteCurrentTaskViaUi(page, workspaceId, projectId);
@@ -980,6 +991,12 @@ test.describe('@lane-real release user story end-to-end', () => {
         projectId,
         taskId: externalTaskTwo.taskId,
         expectedPath: externalReuseFlow.turnTwo.expectedArtifactPath,
+      });
+      await expectNotebookTaskConversationSurface({
+        page,
+        openTerminalAction: 'enabled',
+        terminalModeEnabled: false,
+        blocked: false,
       });
       await captureTrace('notebook-task-detail-external-reuse', 'Review reused workspace task', 'notebook__task-header', 'external task B 复用 workspace 成功');
 

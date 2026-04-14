@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { APIRequestContext } from '@playwright/test';
-import { createExternalConnectionViaApi } from '../e2e/integration-real-helpers';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import {
+  collectTrackedTaskWorkspaceMounts,
+  createExternalConnectionViaApi,
+} from '../e2e/integration-real-helpers';
 
 describe('integration-real-helpers', () => {
   it('creates an external connection through the API without mutating page state', async () => {
@@ -45,5 +51,26 @@ describe('integration-real-helpers', () => {
       displayName: 'Seeded Connection',
       fields: [],
     })).rejects.toThrow('auth_token_not_found_for_external_connection_seed');
+  });
+
+  it('collects tracked host-external task mounts from the runner registry', async () => {
+    const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'integration-helper-runner-'));
+    await writeFile(
+      path.join(workspaceRoot, 'task-workspace-mount-sessions.json'),
+      JSON.stringify({
+        sessions: [
+          { mount_path: '/home/alice/ags-workspace/task_1' },
+          { mount_path: '/home/alice/ags-workspace/task_2' },
+          { mount_path: '/home/alice/ags-workspace/task_1' },
+          { mount_path: '' },
+        ],
+      }),
+      'utf8',
+    );
+
+    await expect(collectTrackedTaskWorkspaceMounts(workspaceRoot)).resolves.toEqual([
+      '/home/alice/ags-workspace/task_1',
+      '/home/alice/ags-workspace/task_2',
+    ]);
   });
 });

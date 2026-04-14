@@ -4,9 +4,12 @@
 
 import * as React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { TaskPage } from '../TaskPage';
+import { flushSync } from 'react-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { TaskPage, mergeTerminalTabStatus } from '../TaskPage';
+import { TaskPageContent } from '../task-page/TaskPageContent';
 import { ApiError } from '@/lib/api/client';
 import {
   mockArtifacts,
@@ -66,6 +69,41 @@ const {
 
 vi.mock('next-intl', () => ({
   useTranslations: (namespace?: string) => (key: string, values?: Record<string, string | number>) => {
+    const scoped = namespace ? `${namespace}.${key}` : key;
+    if (scoped === 'notebook.task.terminal_status_strip_active') {
+      const count = Number(values?.count ?? 0);
+      return count === 1
+        ? '1 terminal session is using this task'
+        : `${count} terminal sessions are using this task`;
+    }
+    if (scoped === 'notebook.task.terminal_status_strip_recovery') {
+      const count = Number(values?.count ?? 0);
+      return count === 1
+        ? '1 terminal session on this task needs recovery'
+        : `${count} terminal sessions on this task need recovery`;
+    }
+    if (scoped === 'notebook.task.terminal_status_strip_mixed') {
+      const count = Number(values?.count ?? 0);
+      const recoveryCount = Number(values?.recoveryCount ?? 0);
+      return `${count} terminal sessions are using this task, ${recoveryCount} ${recoveryCount === 1 ? 'needs' : 'need'} recovery`;
+    }
+    if (scoped === 'notebook.task.terminal_hidden_active_description') {
+      const count = Number(values?.count ?? 1);
+      return count === 1
+        ? 'The terminal workspace is hidden, but this session still blocks new agent runs until you open the terminal workspace or end the session.'
+        : 'The terminal workspace is hidden, but these sessions still block new agent runs until you open the terminal workspace or end the sessions.';
+    }
+    if (scoped === 'notebook.task.terminal_hidden_failed_description') {
+      const count = Number(values?.count ?? 1);
+      return count === 1
+        ? 'This terminal session needs recovery. Reopen it to reconnect or review the issue, or end the session before starting a new run.'
+        : `${count} terminal sessions need recovery. Reopen the terminal workspace to reconnect or review the issues, or end the sessions before starting a new run.`;
+    }
+    if (scoped === 'notebook.task.terminal_hidden_mixed_description') {
+      const count = Number(values?.count ?? 1);
+      const recoveryCount = Number(values?.recoveryCount ?? 0);
+      return `${count} terminal sessions are still using this task, and ${recoveryCount} of them needs recovery. Reopen the terminal workspace to reconnect or review the issue, or end the sessions before starting a new run.`;
+    }
     const dict: Record<string, string> = {
       'common.cancel': 'Cancel',
       'common.retry': 'Retry',
@@ -82,18 +120,26 @@ vi.mock('next-intl', () => ({
       'notebook.conversation.send_conflict_description': 'The previous turn has not finished yet. Wait for it to complete before sending.',
       'notebook.conversation.agent_offline_send_blocked': 'Agent is offline. Start/reconnect the external agent execution channel before sending.',
       'notebook.task.terminal_agent_run_blocked': 'End the terminal session before starting a new agent run.',
-      'notebook.task.terminal_input_blocked_placeholder': 'End Terminal Session before starting a new agent run...',
+      'notebook.task.terminal_input_blocked_placeholder': 'End terminal sessions before starting a new agent run.',
       'notebook.task.terminal_workspace': 'Terminal Workspace',
       'notebook.task.terminal_session': 'Terminal Session',
       'notebook.task.terminal_new_session': 'New Session',
       'notebook.task.terminal_close': 'End Session',
       'notebook.task.terminal_end_all': 'End All Sessions',
+      'notebook.task.terminal_end_all_confirm_title': 'End all terminal sessions?',
+      'notebook.task.terminal_end_all_confirm_description': 'This closes every terminal session on this task and lets agent work continue again.',
+      'notebook.task.terminal_end_all_confirm_action': 'End All Sessions',
       'notebook.task.terminal_mode_conversation': 'Conversation',
       'notebook.task.terminal_mode_terminal': 'Terminal',
-      'notebook.task.terminal_status_strip_active': '{count} terminal sessions active',
-      'notebook.task.terminal_status_strip_recovery': '{count} sessions need recovery',
       'notebook.task.terminal_workspace_open': 'Open Terminal Workspace',
       'notebook.task.terminal_max_sessions_reached': 'You can run up to 3 terminal sessions in one task.',
+      'notebook.task.terminal_status_idle': 'Idle',
+      'notebook.task.terminal_status_preparing': 'Preparing',
+      'notebook.task.terminal_status_recovering': 'Recovering',
+      'notebook.task.terminal_status_connecting': 'Connecting',
+      'notebook.task.terminal_status_active': 'Active',
+      'notebook.task.terminal_status_closed': 'Closed',
+      'notebook.task.terminal_status_failed': 'Failed',
       'notebook.task.delete_blocked_terminal_sessions': 'End all terminal sessions before deleting this task.',
       'notebook.task.delete_blocked_terminal_sessions_pending': 'Checking terminal sessions before deleting this task.',
       'notebook.task.delete_blocked_terminal_sessions_unavailable': 'Terminal session status is temporarily unavailable. Retry before deleting this task.',
@@ -103,8 +149,12 @@ vi.mock('next-intl', () => ({
       'notebook.task.terminal_truth_unavailable_description': 'We could not confirm live terminal sessions for this task. Retry to refresh backend terminal truth before running or deleting.',
       'notebook.task.terminal_truth_unavailable_action': 'Retry terminal status check',
       'notebook.task.terminal_unavailable_terminal_truth': 'Retry after terminal session status is available again.',
+      'notebook.task.terminal_description': 'Directly control the current task environment when you need to work by hand.',
+      'notebook.task.terminal_scope_hint': 'Changes you make here affect files in this task workspace. Temporary shell variables stay only in this terminal session.',
+      'notebook.task.terminal_recovery_show': 'Reopen Terminal Workspace',
+      'notebook.task.terminal_hidden_active_title': 'Terminal session still active',
+      'notebook.task.terminal_hidden_failed_title': 'Terminal needs recovery',
     };
-    const scoped = namespace ? `${namespace}.${key}` : key;
     const template = dict[scoped];
     if (!template) return scoped;
     if (!values) return template;
@@ -246,6 +296,7 @@ vi.mock('../ConversationPanel', () => ({
       disabled,
       sending,
       messages,
+      blockedState,
     } = props;
     return (
       <div data-testid="conversation-panel">
@@ -259,6 +310,17 @@ vi.mock('../ConversationPanel', () => ({
       )}
       <div data-testid="conversation-run-active">{String(!!runActivity?.active)}</div>
       <div data-testid="conversation-pending-count">{String((pendingQueue ?? []).length)}</div>
+      {blockedState && (!messages || messages.length === 0) ? (
+        <div data-testid="conversation-blocked-state">
+          <div data-testid="conversation-blocked-title">{blockedState.title}</div>
+          <div data-testid="conversation-blocked-description">{blockedState.description}</div>
+          {blockedState.actionLabel ? (
+            <button onClick={() => blockedState.onAction?.()}>
+              {blockedState.actionLabel}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {disabled && <div data-disabled>disabled</div>}
       {sending && <div data-sending>sending</div>}
     </div>
@@ -423,6 +485,51 @@ describe('TaskPage', () => {
 
       expect(screen.getByText(/Loading task/i)).toBeInTheDocument();
     });
+
+    it('keeps hook order stable when task detail loads after the initial loading render', async () => {
+      mockTaskHookState.task = undefined;
+      mockTaskHookState.taskLoading = true;
+      mockTaskHookState.messages = [];
+      mockTaskHookState.artifacts = [];
+
+      const view = renderWithNotebookQueryClient(
+        <TaskPage
+          workspaceId={mockWorkspaceId}
+          projectId={mockProjectId}
+          taskId={mockTaskId}
+          canCreateTask={true}
+          canUpdateTask={true}
+          canDeleteTask={true}
+          canUseTerminal={true}
+        />,
+      );
+
+      expect(screen.getByText(/Loading task/i)).toBeInTheDocument();
+
+      mockTaskHookState.task = mockTask;
+      mockTaskHookState.taskLoading = false;
+      mockTaskHookState.messages = mockMessages;
+      mockTaskHookState.artifacts = mockArtifacts;
+
+      view.rerender(
+        <QueryClientProvider client={view.queryClient}>
+          <TaskPage
+            workspaceId={mockWorkspaceId}
+            projectId={mockProjectId}
+            taskId={mockTaskId}
+            canCreateTask={true}
+            canUpdateTask={true}
+            canDeleteTask={true}
+            canUseTerminal={true}
+          />
+        </QueryClientProvider>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('task-header')).toBeInTheDocument();
+        expect(screen.queryByText(/Rendered more hooks than during the previous render/i)).not.toBeInTheDocument();
+      });
+    });
   });
 
   describe('Task Not Found', () => {
@@ -455,6 +562,133 @@ describe('TaskPage', () => {
   });
 
   describe('Task Rendering', () => {
+    it('prefers backend reconnectable truth over a stale local closed or failed tab state', () => {
+      expect(mergeTerminalTabStatus('failed', 'disconnected')).toBe('recovering');
+      expect(mergeTerminalTabStatus('closed', 'disconnected')).toBe('recovering');
+      expect(mergeTerminalTabStatus('connecting', 'disconnected')).toBe('recovering');
+      expect(mergeTerminalTabStatus('active', 'disconnected')).toBe('recovering');
+      expect(mergeTerminalTabStatus('failed', 'pending')).toBe('preparing');
+      expect(mergeTerminalTabStatus('closed', 'pending')).toBe('preparing');
+      expect(mergeTerminalTabStatus('failed', 'active')).toBe('active');
+      expect(mergeTerminalTabStatus('closed', 'failed')).toBe('failed');
+    });
+
+    it('keeps the terminal workspace mounted in the background while removing the visible workspace shell from conversation layout', () => {
+      const workspaceLifecycle = {
+        mounts: 0,
+        unmounts: 0,
+      };
+
+      function TerminalWorkspaceTracker() {
+        React.useEffect(() => {
+          workspaceLifecycle.mounts += 1;
+          return () => {
+            workspaceLifecycle.unmounts += 1;
+          };
+        }, []);
+
+        return <div data-testid="terminal-workspace-tracker">terminal workspace</div>;
+      }
+
+      const taskPageContentProps = {
+        agentIsBusy: false,
+        activeAgentMessageId: null,
+        artifacts: [],
+        artifactsRefreshing: false,
+        canUpdateTask: true,
+        connectionErrorCode: null,
+        connectionErrorMessage: null,
+        connectionStatus: 'connected' as const,
+        diagnosticsLinks: {
+          audit: '/audit',
+          usage: '/usage',
+          agent: null,
+        },
+        disabled: false,
+        fetchTracesForMessage: vi.fn(),
+        focusTraceMessageId: null,
+        focusTraceName: null,
+        focusTraceToken: 0,
+        handleCancelActiveRun: vi.fn(),
+        handleDownloadArtifact: vi.fn(),
+        handlePendingRemove: vi.fn(),
+        handleRefreshArtifacts: vi.fn(),
+        handlePendingUpdate: vi.fn(),
+        handleSendMessage: vi.fn(),
+        handleViewArtifact: vi.fn(),
+        isDisabled: false,
+        loadMoreTracesForMessage: vi.fn(),
+        messages: [],
+        onRunActionClick: vi.fn(),
+        pendingMessages: [],
+        projectId: mockProjectId,
+        runActivity: {
+          active: false,
+          elapsedSeconds: 0,
+          cancelling: false,
+          lastSummary: undefined,
+          lastKind: undefined,
+          recentActions: [],
+        },
+        sandboxStarting: false,
+        sending: false,
+        showSseDebugPanel: false,
+        sseDebugEvents: [],
+        streamingContent: '',
+        streamingMessageId: null,
+        taskId: mockTaskId,
+        terminalStatusStrip: null,
+        terminalWorkspace: <TerminalWorkspaceTracker />,
+        traceErrorByMessageId: {},
+        traceEventsByMessageId: {},
+        traceHasMoreByMessageId: {},
+        traceLoadMoreLoadingByMessageId: {},
+        traceLoadingByMessageId: {},
+        workspaceId: mockWorkspaceId,
+      } satisfies React.ComponentProps<typeof TaskPageContent>;
+
+      const { rerender } = render(
+        <TaskPageContent
+          {...taskPageContentProps}
+          viewMode="terminal"
+        />,
+      );
+
+      expect(
+        screen.getByTestId('notebook__task-terminal-workspace-shell'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId('notebook__task-terminal-workspace-shell'),
+      ).toHaveClass('w-full', 'basis-0');
+      expect(screen.getByTestId('terminal-workspace-tracker')).toBeInTheDocument();
+      expect(workspaceLifecycle.mounts).toBeGreaterThan(0);
+      expect(workspaceLifecycle.unmounts).toBe(0);
+
+      rerender(
+        <TaskPageContent
+          {...taskPageContentProps}
+          viewMode="conversation"
+        />,
+      );
+
+      const hiddenWorkspaceShell = screen.getByTestId(
+        'notebook__task-terminal-workspace-shell',
+      );
+      expect(screen.getByTestId('notebook__task-conversation-shell')).toBeInTheDocument();
+      expect(screen.getByTestId('terminal-workspace-tracker')).toBeInTheDocument();
+      expect(hiddenWorkspaceShell).toHaveClass(
+        'pointer-events-none',
+        'absolute',
+        'h-0',
+        'w-0',
+        'overflow-hidden',
+      );
+      expect(hiddenWorkspaceShell).not.toHaveClass('flex-1');
+      expect(hiddenWorkspaceShell).not.toHaveAttribute('hidden');
+      expect(workspaceLifecycle.mounts).toBeGreaterThan(0);
+      expect(workspaceLifecycle.unmounts).toBe(0);
+    });
+
     it('renders task header', () => {
       renderComponent();
 
@@ -501,6 +735,324 @@ describe('TaskPage', () => {
       expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
     });
 
+    it('restores directly into terminal workspace on reload when storage prefers terminal and backend reports live sessions', async () => {
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'terminal',
+          preferredActiveSessionId: 'backend-session-2',
+          artifactsDrawerOpen: false,
+        }),
+      );
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({
+        total: 2,
+        items: [
+          {
+            id: 'backend-session-1',
+            status: 'active',
+            created_at: '2026-04-13T01:00:00.000Z',
+          },
+          {
+            id: 'backend-session-2',
+            status: 'active',
+            created_at: '2026-04-13T01:00:01.000Z',
+          },
+        ],
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        const hiddenWorkspaceShell = screen.getByTestId(
+          'notebook__task-terminal-workspace-shell',
+        );
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+        expect(screen.getByTestId('task-terminal-panel-active')).toBeInTheDocument();
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-2',
+        );
+        expect(screen.queryByTestId('conversation-panel')).not.toBeInTheDocument();
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(2);
+      });
+    });
+
+    it('stays in conversation mode on reload without rendering the terminal workspace shell when storage prefers conversation and backend reports live sessions', async () => {
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'conversation',
+          preferredActiveSessionId: 'backend-session-2',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({
+        total: 2,
+        items: [
+          {
+            id: 'backend-session-1',
+            status: 'active',
+            created_at: '2026-04-13T01:00:00.000Z',
+          },
+          {
+            id: 'backend-session-2',
+            status: 'active',
+            created_at: '2026-04-13T01:00:01.000Z',
+          },
+        ],
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        const hiddenWorkspaceShell = screen.getByTestId(
+          'notebook__task-terminal-workspace-shell',
+        );
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+        expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
+        expect(
+          screen.getByTestId('notebook__task-terminal-status-strip'),
+        ).toHaveTextContent('2 terminal sessions are using this task');
+        expect(hiddenWorkspaceShell).toHaveClass(
+          'pointer-events-none',
+          'absolute',
+          'h-0',
+          'w-0',
+          'overflow-hidden',
+        );
+        expect(hiddenWorkspaceShell).not.toHaveClass('flex-1');
+        expect(hiddenWorkspaceShell).not.toHaveAttribute('hidden');
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(2);
+        expect(latestTaskTerminalPanelPropsRef.current.open).toBe(true);
+        expect(latestTaskTerminalPanelPropsRef.current.visible).toBe(false);
+        expect(latestTaskTerminalPanelPropsRef.current.tabId).toBe('terminal-session-2');
+      });
+    });
+
+    it('preserves the clicked terminal tab during preserve-current poll hydration instead of reapplying the boot preference', async () => {
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'terminal',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: false,
+        }),
+      );
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({
+          total: 2,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+            {
+              id: 'backend-session-2',
+              status: 'active',
+              created_at: '2026-04-13T01:00:01.000Z',
+            },
+          ],
+        })
+        .mockResolvedValue({
+          total: 2,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+            {
+              id: 'backend-session-2',
+              status: 'active',
+              created_at: '2026-04-13T01:00:01.000Z',
+            },
+          ],
+        });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-1',
+        );
+      });
+
+      const secondTerminalTabButton = screen
+        .getByTestId('notebook__task-terminal-tab-terminal-session-2')
+        .querySelector('button');
+      expect(secondTerminalTabButton).toBeTruthy();
+
+      await act(async () => {
+        (secondTerminalTabButton as HTMLButtonElement).click();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-2',
+        );
+        expect(latestTaskTerminalPanelPropsRef.current.tabId).toBe('terminal-session-2');
+      });
+
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved?.('backend-session-2');
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+        expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+          'data-active-terminal-tab-id',
+          'terminal-session-2',
+        );
+      });
+    });
+
+    it('syncs the active terminal tab ref immediately when the user clicks another tab before the next poll finishes, even if boot storage still prefers the previous session', async () => {
+      let pollTerminalWorkspace: (() => void) | null = null;
+      const setIntervalSpy = vi
+        .spyOn(window, 'setInterval')
+        .mockImplementation(((callback: TimerHandler) => {
+          pollTerminalWorkspace =
+            typeof callback === 'function' ? (callback as () => void) : null;
+          return 1 as unknown as number;
+        }) as typeof window.setInterval);
+      const clearIntervalSpy = vi
+        .spyOn(window, 'clearInterval')
+        .mockImplementation((() => {}) as typeof window.clearInterval);
+
+      try {
+        window.sessionStorage.setItem(
+          `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+          JSON.stringify({
+            preferredViewMode: 'terminal',
+            preferredActiveSessionId: 'backend-session-1',
+            artifactsDrawerOpen: false,
+          }),
+        );
+        mockTaskApiListTerminalSessions
+          .mockResolvedValueOnce({
+            total: 2,
+            items: [
+              {
+                id: 'backend-session-1',
+                status: 'active',
+                created_at: '2026-04-13T01:00:00.000Z',
+              },
+              {
+                id: 'backend-session-2',
+                status: 'active',
+                created_at: '2026-04-13T01:00:01.000Z',
+              },
+            ],
+          })
+          .mockResolvedValue({
+            total: 2,
+            items: [
+              {
+                id: 'backend-session-1',
+                status: 'active',
+                created_at: '2026-04-13T01:00:00.000Z',
+              },
+              {
+                id: 'backend-session-2',
+                status: 'active',
+                created_at: '2026-04-13T01:00:01.000Z',
+              },
+            ],
+          });
+
+        renderComponent();
+
+        await waitFor(() => {
+          expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+            'data-active-terminal-tab-id',
+            'terminal-session-1',
+          );
+          expect(pollTerminalWorkspace).toBeTypeOf('function');
+        });
+
+        const secondTerminalTabButton = screen
+          .getByTestId('notebook__task-terminal-tab-terminal-session-2')
+          .querySelector('button');
+        expect(secondTerminalTabButton).toBeTruthy();
+
+        await act(async () => {
+          flushSync(() => {
+            (secondTerminalTabButton as HTMLButtonElement).click();
+            pollTerminalWorkspace?.();
+          });
+          await Promise.resolve();
+        });
+
+        await waitFor(() => {
+          expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+          expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
+            'data-active-terminal-tab-id',
+            'terminal-session-2',
+          );
+          expect(latestTaskTerminalPanelPropsRef.current.tabId).toBe('terminal-session-2');
+        });
+      } finally {
+        setIntervalSpy.mockRestore();
+        clearIntervalSpy.mockRestore();
+      }
+    });
+
+    it('treats a reloaded disconnected terminal session as recovering rather than preparing', async () => {
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'terminal',
+          preferredActiveSessionId: 'backend-session-2',
+          artifactsDrawerOpen: false,
+        }),
+      );
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({
+        total: 2,
+        items: [
+          {
+            id: 'backend-session-1',
+            status: 'active',
+            created_at: '2026-04-13T01:00:00.000Z',
+          },
+          {
+            id: 'backend-session-2',
+            status: 'disconnected',
+            created_at: '2026-04-13T01:00:01.000Z',
+          },
+        ],
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+        expect(screen.getByTestId('task-terminal-panel-active')).toBeInTheDocument();
+        expect(screen.getByTestId('notebook__task-terminal-tab-terminal-session-2')).toHaveTextContent('Recovering');
+        expect(screen.getByTestId('notebook__task-terminal-tab-terminal-session-2')).not.toHaveTextContent('Connecting');
+        expect(screen.getByTestId('notebook__task-terminal-tab-terminal-session-2')).not.toHaveTextContent('Preparing');
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(2);
+      });
+    });
+
     it('keeps terminal bootstrap blocked until backend terminal truth returns on reload', async () => {
       const deferredSessions = createDeferred<{ total: number; items: Array<{ id: string; status: string; created_at: string }> }>();
       mockTaskApiListTerminalSessions.mockReset();
@@ -532,6 +1084,7 @@ describe('TaskPage', () => {
 
     it('keeps run and delete blocked when terminal hydration fails until backend truth is retried successfully', async () => {
       const user = userEvent.setup();
+      mockTaskHookState.messages = [];
       mockTaskApiListTerminalSessions.mockRejectedValue(
         new Error('terminal list unavailable'),
       );
@@ -541,6 +1094,14 @@ describe('TaskPage', () => {
       await waitFor(() => {
         expect(mockTaskApiListTerminalSessions).toHaveBeenCalled();
       });
+      expect(mockHandleError).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({
+          logContext: 'TaskPage.hydrateTerminalWorkspace',
+          showToast: false,
+        }),
+      );
+      expect(mockToastError).not.toHaveBeenCalled();
 
       await waitFor(() => {
         expect(screen.getByTestId('task-header-terminal-create-enabled')).toHaveTextContent('false');
@@ -549,21 +1110,27 @@ describe('TaskPage', () => {
         );
         expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
         expect(screen.getByTestId('conversation-panel').querySelector('[data-disabled]')).toBeInTheDocument();
+        expect(screen.getByTestId('notebook__task-terminal-truth-unavailable')).toBeInTheDocument();
       });
 
+      expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+        'Terminal session status is temporarily unavailable',
+      );
       expect(
-        await screen.findByTestId('notebook__task-terminal-truth-unavailable'),
-      ).toHaveTextContent('Terminal session status is temporarily unavailable');
+        screen.getByTestId('conversation-blocked-description'),
+      ).toHaveTextContent(
+        'We could not confirm live terminal sessions for this task. Retry to refresh backend terminal truth before running or deleting.',
+      );
+      const retryButton = screen.getByTestId('conversation-blocked-state').querySelector('button');
+      expect(retryButton).toHaveTextContent('Retry terminal status check');
       expect(
-        screen.getByRole('button', { name: 'Retry terminal status check' }),
-      ).toBeInTheDocument();
+        screen.getByTestId('notebook__task-terminal-truth-unavailable').querySelector('button'),
+      ).not.toBeInTheDocument();
 
       const listCallCountBeforeRetry =
         mockTaskApiListTerminalSessions.mock.calls.length;
       mockTaskApiListTerminalSessions.mockResolvedValueOnce({ total: 0, items: [] });
-      await user.click(
-        screen.getByRole('button', { name: 'Retry terminal status check' }),
-      );
+      await user.click(retryButton as HTMLButtonElement);
 
       await waitFor(() => {
         expect(mockTaskApiListTerminalSessions.mock.calls.length).toBeGreaterThan(
@@ -572,6 +1139,49 @@ describe('TaskPage', () => {
         expect(screen.getByTestId('task-header-terminal-create-enabled')).toHaveTextContent('true');
         expect(screen.getByTestId('task-header-delete-blocked-reason')).toHaveTextContent('');
         expect(screen.getByTestId('conversation-panel').querySelector('[data-disabled]')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('conversation-blocked-state')).not.toBeInTheDocument();
+      });
+    });
+
+    it('auto-unlocks conversation input and delete blocking when backend terminal truth refreshes from 1 to 0', async () => {
+      mockTaskHookState.messages = [];
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          total: 0,
+          items: [],
+        });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
+        expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBe(
+          'End all terminal sessions before deleting this task.',
+        );
+        expect(latestConversationPanelPropsRef.current.disabled).toBe(true);
+      });
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+      }, { timeout: 3000 });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+        expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBeNull();
+        expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(true);
+        expect(latestConversationPanelPropsRef.current.disabled).toBe(false);
+        expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBeUndefined();
+        expect(screen.queryByTestId('notebook__task-terminal-status-strip')).not.toBeInTheDocument();
       });
     });
 
@@ -612,6 +1222,13 @@ describe('TaskPage', () => {
 
       await waitFor(() => {
         expect(screen.getByTestId('task-terminal-panel-active')).toBeInTheDocument();
+        expect(screen.getByTestId('notebook__task-terminal-shell')).toBeInTheDocument();
+        expect(screen.getByText('Terminal Workspace')).toBeInTheDocument();
+        expect(
+          screen.getByText(
+            'Changes you make here affect files in this task workspace. Temporary shell variables stay only in this terminal session.',
+          ),
+        ).toBeInTheDocument();
         expect(screen.getAllByTestId('notebook__task-terminal-workspace')).toHaveLength(1);
         expect(screen.getByTestId('notebook__task-terminal-workspace')).toHaveAttribute(
           'data-active-terminal-tab-id',
@@ -631,10 +1248,11 @@ describe('TaskPage', () => {
 
       await waitFor(() => {
         expect(screen.getByTestId('notebook__task-terminal-status-strip')).toHaveTextContent(
-          '1 terminal sessions active',
+          '1 terminal session is using this task',
         );
+        expect(screen.queryByTestId('conversation-blocked-state')).not.toBeInTheDocument();
         expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
-          'End Terminal Session before starting a new agent run...',
+          'End terminal sessions before starting a new agent run.',
         );
       });
     });
@@ -664,6 +1282,19 @@ describe('TaskPage', () => {
       const user = userEvent.setup();
       mockTaskApiListTerminalSessions
         .mockResolvedValueOnce({ total: 0, items: [] })
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            { id: 'backend-session-1', status: 'active', created_at: '2026-04-13T01:00:00.000Z' },
+          ],
+        })
+        .mockResolvedValueOnce({
+          total: 2,
+          items: [
+            { id: 'backend-session-1', status: 'active', created_at: '2026-04-13T01:00:00.000Z' },
+            { id: 'backend-session-2', status: 'active', created_at: '2026-04-13T01:00:01.000Z' },
+          ],
+        })
         .mockResolvedValueOnce({
           total: 3,
           items: [
@@ -698,7 +1329,7 @@ describe('TaskPage', () => {
 
       await waitFor(() => {
         expect(mockTaskApiListTerminalSessions).toHaveBeenNthCalledWith(
-          2,
+          3,
           mockWorkspaceId,
           mockProjectId,
           mockTaskId,
@@ -710,8 +1341,9 @@ describe('TaskPage', () => {
       });
     });
 
-    it('shows a conversation status strip while sessions are active and supports reopening terminal workspace', async () => {
+    it('uses the conversation blocker as the single recovery entry while sessions are active and supports reopening terminal workspace', async () => {
       const user = userEvent.setup();
+      mockTaskHookState.messages = [];
       await renderComponentAndWaitForTerminalHydration();
 
       await act(async () => {
@@ -725,19 +1357,51 @@ describe('TaskPage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByTestId('notebook__task-terminal-status-strip')).toHaveTextContent('1 terminal sessions active');
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).toHaveTextContent(
+          '1 terminal session is using this task',
+        );
+        expect(
+          screen.getByTestId('notebook__task-terminal-status-strip').querySelector('button'),
+        ).toHaveTextContent('End All Sessions');
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).not.toHaveTextContent(
+          'The terminal workspace is hidden, but this session still blocks new agent runs until you open the terminal workspace or end the session.',
+        );
+        expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+          '1 terminal session is using this task',
+        );
+        expect(latestConversationPanelPropsRef.current.blockedState?.actionLabel).toBe(
+          'Open Terminal Workspace',
+        );
       });
-      await user.click(screen.getByRole('button', { name: 'Open Terminal Workspace' }));
+      expect(latestTaskTerminalPanelPropsRef.current.open).toBe(true);
+      expect(latestTaskTerminalPanelPropsRef.current.visible).toBe(false);
+      expect(screen.getAllByRole('button', { name: 'Open Terminal Workspace' })).toHaveLength(1);
+      await user.click(
+        screen.getByTestId('conversation-blocked-state').querySelector('button') as HTMLButtonElement,
+      );
       await waitFor(() => {
         expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
       });
+      expect(latestTaskTerminalPanelPropsRef.current.open).toBe(true);
+      expect(latestTaskTerminalPanelPropsRef.current.visible).toBe(true);
     });
 
     it('reconciles local terminal tabs with backend truth when ending all sessions from the conversation strip', async () => {
       const user = userEvent.setup();
       mockTaskApiListTerminalSessions
         .mockResolvedValueOnce({ total: 0, items: [] })
-        .mockResolvedValueOnce({ total: 1, items: [{ id: 'backend-session-1' }] })
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            { id: 'backend-session-1', status: 'active', created_at: '2026-04-13T01:00:00.000Z' },
+          ],
+        })
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            { id: 'backend-session-1', status: 'active', created_at: '2026-04-13T01:00:00.000Z' },
+          ],
+        })
         .mockResolvedValueOnce({ total: 0, items: [] });
 
       await renderComponentAndWaitForTerminalHydration();
@@ -756,6 +1420,10 @@ describe('TaskPage', () => {
       });
 
       await user.click(screen.getByRole('button', { name: 'End All Sessions' }));
+      expect(mockTaskApiCloseTerminalSession).not.toHaveBeenCalled();
+      const confirmDialog = await screen.findByRole('alertdialog');
+      expect(confirmDialog).toHaveTextContent('End all terminal sessions?');
+      await user.click(within(confirmDialog).getByRole('button', { name: 'End All Sessions' }));
 
       await waitFor(() => {
         expect(mockTaskApiListTerminalSessions).toHaveBeenNthCalledWith(
@@ -771,13 +1439,16 @@ describe('TaskPage', () => {
           'backend-session-1',
         );
         expect(mockTaskApiListTerminalSessions).toHaveBeenNthCalledWith(
-          3,
+          4,
           mockWorkspaceId,
           mockProjectId,
           mockTaskId,
         );
         expect(screen.queryByTestId('notebook__task-terminal-status-strip')).not.toBeInTheDocument();
         expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+        expect(latestTaskHeaderPropsRef.current.deleteBlockedReason).toBeNull();
+        expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(true);
+        expect(latestConversationPanelPropsRef.current.disabled).toBe(false);
         expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBeUndefined();
       });
     });
@@ -787,10 +1458,23 @@ describe('TaskPage', () => {
       mockTaskApiListTerminalSessions
         .mockResolvedValueOnce({ total: 0, items: [] })
         .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            { id: 'backend-session-1', status: 'active', created_at: '2026-04-13T01:00:00.000Z' },
+          ],
+        })
+        .mockResolvedValueOnce({
           total: 2,
           items: [
-            { id: 'backend-session-1' },
-            { id: 'backend-session-2' },
+            { id: 'backend-session-1', status: 'active', created_at: '2026-04-13T01:00:00.000Z' },
+            { id: 'backend-session-2', status: 'active', created_at: '2026-04-13T01:00:01.000Z' },
+          ],
+        })
+        .mockResolvedValueOnce({
+          total: 2,
+          items: [
+            { id: 'backend-session-1', status: 'active', created_at: '2026-04-13T01:00:00.000Z' },
+            { id: 'backend-session-2', status: 'active', created_at: '2026-04-13T01:00:01.000Z' },
           ],
         })
         .mockResolvedValueOnce({ total: 1, items: [{ id: 'backend-session-2' }] });
@@ -818,6 +1502,9 @@ describe('TaskPage', () => {
       });
 
       await user.click(screen.getByRole('button', { name: 'End All Sessions' }));
+      expect(mockTaskApiCloseTerminalSession).not.toHaveBeenCalled();
+      const confirmDialog = await screen.findByRole('alertdialog');
+      await user.click(within(confirmDialog).getByRole('button', { name: 'End All Sessions' }));
 
       await waitFor(() => {
         expect(mockTaskApiCloseTerminalSession).toHaveBeenCalledTimes(2);
@@ -834,11 +1521,191 @@ describe('TaskPage', () => {
           'backend-session-2',
         );
         expect(screen.getByTestId('notebook__task-terminal-status-strip')).toHaveTextContent(
-          '1 terminal sessions active',
+          '1 terminal session is using this task',
         );
         expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(1);
         expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
-          'End Terminal Session before starting a new agent run...',
+          'End terminal sessions before starting a new agent run.',
+        );
+      });
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onSetViewMode('terminal');
+      });
+
+      await waitFor(() => {
+        const remainingTabs = screen.getAllByTestId(
+          /^notebook__task-terminal-tab-terminal-session-\d+$/,
+        );
+        expect(remainingTabs).toHaveLength(1);
+        expect(remainingTabs[0]).toHaveTextContent('Terminal Session 1');
+        expect(remainingTabs[0]).not.toHaveTextContent('Terminal Session 2');
+      });
+    });
+
+    it('passes a blocked conversation state instead of empty conversation cues while a terminal session is occupying the task', async () => {
+      mockTaskHookState.messages = [];
+      await renderComponentAndWaitForTerminalHydration();
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+      });
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onSetViewMode('conversation');
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+          '1 terminal session is using this task',
+        );
+        expect(screen.getByTestId('conversation-blocked-description')).toHaveTextContent(
+          'The terminal workspace is hidden, but this session still blocks new agent runs until you open the terminal workspace or end the session.',
+        );
+        expect(latestConversationPanelPropsRef.current.blockedState?.actionLabel).toBe(
+          'Open Terminal Workspace',
+        );
+      });
+    });
+
+    it('uses plural blocker copy when multiple hidden terminal sessions are still active', async () => {
+      mockTaskHookState.messages = [];
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({
+        total: 2,
+        items: [
+          {
+            id: 'backend-session-1',
+            status: 'active',
+            created_at: '2026-04-13T01:00:00.000Z',
+          },
+          {
+            id: 'backend-session-2',
+            status: 'active',
+            created_at: '2026-04-13T01:00:01.000Z',
+          },
+        ],
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(2);
+        expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+          '2 terminal sessions are using this task',
+        );
+        expect(screen.getByTestId('conversation-blocked-description')).toHaveTextContent(
+          'The terminal workspace is hidden, but these sessions still block new agent runs until you open the terminal workspace or end the sessions.',
+        );
+      });
+    });
+
+    it('switches the blocker action to recovery guidance when a hidden terminal session has failed', async () => {
+      mockTaskHookState.messages = [];
+      await renderComponentAndWaitForTerminalHydration();
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+      });
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onStatusChange('failed');
+      });
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onSetViewMode('conversation');
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).toHaveTextContent(
+          '1 terminal session on this task needs recovery',
+        );
+        expect(
+          screen.getByTestId('notebook__task-terminal-status-strip').querySelector('button'),
+        ).toHaveTextContent('End All Sessions');
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).not.toHaveTextContent(
+          'This terminal session needs recovery. Reopen it to reconnect or review the issue, or end the session before starting a new run.',
+        );
+        expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+          '1 terminal session on this task needs recovery',
+        );
+        expect(screen.getByTestId('conversation-blocked-description')).toHaveTextContent(
+          'This terminal session needs recovery. Reopen it to reconnect or review the issue, or end the session before starting a new run.',
+        );
+        expect(latestConversationPanelPropsRef.current.blockedState?.actionLabel).toBe(
+          'Reopen Terminal Workspace',
+        );
+      });
+      expect(screen.getAllByRole('button', { name: 'Reopen Terminal Workspace' })).toHaveLength(1);
+    });
+
+    it('uses mixed occupancy copy when disconnected and active sessions coexist in the hidden blocker', async () => {
+      mockTaskHookState.messages = [];
+      mockTaskApiListTerminalSessions.mockResolvedValueOnce({
+        total: 2,
+        items: [
+          {
+            id: 'backend-session-1',
+            status: 'active',
+            created_at: '2026-04-13T01:00:00.000Z',
+          },
+          {
+            id: 'backend-session-2',
+            status: 'disconnected',
+            created_at: '2026-04-13T01:00:01.000Z',
+          },
+        ],
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalHasRecovery).toBe(true);
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).toHaveTextContent(
+          '2 terminal sessions are using this task, 1 needs recovery',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-status-strip')).not.toHaveTextContent(
+          '2 terminal sessions are still using this task, and 1 of them needs recovery. Reopen the terminal workspace to reconnect or review the issue, or end the sessions before starting a new run.',
+        );
+        expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+          '2 terminal sessions are using this task, 1 needs recovery',
+        );
+        expect(screen.getByTestId('conversation-blocked-description')).toHaveTextContent(
+          '2 terminal sessions are still using this task, and 1 of them needs recovery. Reopen the terminal workspace to reconnect or review the issue, or end the sessions before starting a new run.',
+        );
+        expect(latestConversationPanelPropsRef.current.blockedState?.actionLabel).toBe(
+          'Reopen Terminal Workspace',
+        );
+      });
+    });
+
+    it('passes a blocked conversation state while terminal truth is unavailable so empty-state prompts do not contradict the block', async () => {
+      mockTaskHookState.messages = [];
+      mockTaskApiListTerminalSessions.mockRejectedValue(
+        new Error('terminal list unavailable'),
+      );
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalled();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('conversation-blocked-title')).toHaveTextContent(
+          'Terminal session status is temporarily unavailable',
+        );
+        expect(screen.getByTestId('notebook__task-terminal-truth-unavailable')).not.toHaveTextContent(
+          'We could not confirm live terminal sessions for this task. Retry to refresh backend terminal truth before running or deleting.',
+        );
+        expect(screen.getByTestId('conversation-blocked-description')).toHaveTextContent(
+          'We could not confirm live terminal sessions for this task. Retry to refresh backend terminal truth before running or deleting.',
+        );
+        expect(latestConversationPanelPropsRef.current.blockedState?.actionLabel).toBe(
+          'Retry terminal status check',
         );
       });
     });
@@ -868,8 +1735,24 @@ describe('TaskPage', () => {
       mockTaskApiListTerminalSessions
         .mockResolvedValueOnce({ total: 0, items: [] })
         .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            { id: 'backend-session-1', status: 'active', created_at: '2026-04-13T01:00:00.000Z' },
+          ],
+        })
+        .mockResolvedValueOnce({
           total: 2,
-          items: [{ id: 'backend-session-1' }, { id: 'backend-session-2' }],
+          items: [
+            { id: 'backend-session-1', status: 'active', created_at: '2026-04-13T01:00:00.000Z' },
+            { id: 'backend-session-2', status: 'active', created_at: '2026-04-13T01:00:01.000Z' },
+          ],
+        })
+        .mockResolvedValueOnce({
+          total: 2,
+          items: [
+            { id: 'backend-session-1', status: 'active', created_at: '2026-04-13T01:00:00.000Z' },
+            { id: 'backend-session-2', status: 'active', created_at: '2026-04-13T01:00:01.000Z' },
+          ],
         })
         .mockResolvedValueOnce({ total: 0, items: [] });
       await renderComponentAndWaitForTerminalHydration();
@@ -891,6 +1774,9 @@ describe('TaskPage', () => {
         expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(2);
       });
       await user.click(screen.getByTestId('notebook__task-terminal-end-all'));
+      expect(mockTaskApiCloseTerminalSession).not.toHaveBeenCalled();
+      const confirmDialog = await screen.findByRole('alertdialog');
+      await user.click(within(confirmDialog).getByRole('button', { name: 'End All Sessions' }));
 
       await waitFor(() => {
         expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');

@@ -1,11 +1,16 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { constants as fsConstants } from 'node:fs';
+import { access, mkdir, writeFile } from 'node:fs/promises';
+import { delimiter, join } from 'node:path';
 import { spawn as spawnPty } from 'node-pty';
 import {
   buildNotebookHeadlessPreamble,
   prepareNotebookWorkspaceAssets,
 } from './notebook-assets.js';
-import { prepareTaskWorkspace, type TaskWorkspacePaths } from './task-workspace.js';
+import {
+  prepareTaskWorkspace,
+  shouldRetryTaskWorkspaceWriteFailure,
+  type TaskWorkspacePaths,
+} from './task-workspace.js';
 import { buildAgentRuntimeEnv } from './agent-runtime-env.js';
 import { prepareLaunchCommand } from './child-launcher.js';
 import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
@@ -46,29 +51,68 @@ function resolveTerminalShell(shellOverride?: string): string {
   return 'bash';
 }
 
-function buildInteractiveCommand(shellOverride?: string): {
+function isAbsoluteLikeExecutable(pathLike: string): boolean {
+  return pathLike.includes('/') || pathLike.includes('\\') || /^[a-zA-Z]:/.test(pathLike);
+}
+
+async function resolveTerminalShellExecutable(shellOverride?: string): Promise<string> {
+  const requestedShell = resolveTerminalShell(shellOverride).trim();
+  if (!requestedShell) {
+    throw new Error('invalid_shell');
+  }
+  if (isAbsoluteLikeExecutable(requestedShell)) {
+    try {
+      await access(requestedShell, fsConstants.X_OK);
+      return requestedShell;
+    } catch {
+      throw new Error('invalid_shell');
+    }
+  }
+  const pathEntries = (process.env.PATH ?? '')
+    .split(delimiter)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  for (const entry of pathEntries) {
+    const resolvedCandidate = join(entry, requestedShell);
+    try {
+      await access(resolvedCandidate, fsConstants.X_OK);
+      return resolvedCandidate;
+    } catch {
+      // keep searching PATH
+    }
+  }
+  throw new Error('invalid_shell');
+}
+
+function buildInteractiveCommand(shellFile: string): {
   file: string;
   args: string[];
 } {
-  const shell = resolveTerminalShell(shellOverride);
-  if (/pwsh(?:\.exe)?$/i.test(shell) || /powershell(?:\.exe)?$/i.test(shell)) {
+  if (/pwsh(?:\.exe)?$/i.test(shellFile) || /powershell(?:\.exe)?$/i.test(shellFile)) {
     return {
-      file: shell,
+      file: shellFile,
       args: ['-NoLogo'],
     };
   }
   return {
-    file: shell,
+    file: shellFile,
     args: ['-i'],
   };
 }
 
-async function primeShellDotfiles(homeDir: string, shellOverride?: string): Promise<void> {
-  const shell = resolveTerminalShell(shellOverride);
-  if (!/zsh$/i.test(shell)) return;
+async function primeShellDotfiles(homeDir: string, shellFile: string): Promise<void> {
+  if (!/zsh(?:\.exe)?$/i.test(shellFile)) return;
   await writeFile(join(homeDir, '.zshrc'), '# AgentSmith Terminal Session\n', {
     flag: 'a',
   });
+}
+
+async function ensureTerminalWorkspaceDirectories(cwd: string, taskPaths: TaskWorkspacePaths): Promise<void> {
+  await mkdir(cwd, { recursive: true });
+  await mkdir(taskPaths.codexDir, { recursive: true });
+  await mkdir(taskPaths.mbosDir, { recursive: true });
+  await mkdir(join(taskPaths.homeDir, '.agents'), { recursive: true });
+  await mkdir(taskPaths.skillsDir, { recursive: true });
 }
 
 export async function prepareTerminalWorkspace(input: {
@@ -80,6 +124,7 @@ export async function prepareTerminalWorkspace(input: {
   shellFile: string;
   shellArgs: string[];
   env: NodeJS.ProcessEnv;
+  release: () => Promise<void>;
 }> {
   const executionContext = input.executionContext;
   if (executionContext.interaction_kind !== 'notebook') {
@@ -88,6 +133,7 @@ export async function prepareTerminalWorkspace(input: {
   if (typeof executionContext.task_id !== 'string' || executionContext.task_id.trim().length === 0) {
     throw new Error('notebook_terminal_execution_context_invalid');
   }
+  const shellFile = await resolveTerminalShellExecutable(input.shell);
   debugTerminalRuntime('prepare_workspace_start', {
     task_id: executionContext.task_id ?? null,
     workspace_binding_mode: executionContext.workspace_binding_mode ?? null,
@@ -97,72 +143,97 @@ export async function prepareTerminalWorkspace(input: {
   });
   const username = sanitizePathPart(executionContext.username, 'unknown_user');
   const taskId = sanitizePathPart(executionContext.task_id, 'terminal-task');
-  const cwdResult = await prepareTaskWorkspace({
-    executionContext,
-    username,
-    taskId,
-  });
-  debugTerminalRuntime('prepare_workspace_task_ready', {
-    cwd: cwdResult.cwd,
-    source: cwdResult.source,
-  });
-  const cwd = cwdResult.cwd;
-  const taskPaths = cwdResult.paths;
-  await Promise.all([
-    mkdir(cwd, { recursive: true }),
-    mkdir(taskPaths.codexDir, { recursive: true }),
-    mkdir(taskPaths.mbosDir, { recursive: true }),
-    mkdir(taskPaths.skillsDir, { recursive: true }),
-  ]);
-  await primeShellDotfiles(taskPaths.homeDir, input.shell);
-  const builtinSkillsConfig = resolveBuiltinSkillsConfig();
-  const builtinSkillsResult = await inspectBuiltinSkills({
-    sourceDir: builtinSkillsConfig.sourceDir,
-    skills: builtinSkillsConfig.skills,
-    required: builtinSkillsConfig.required,
-  });
-  await seedBuiltinSkills({
-    sourceDir: builtinSkillsResult.sourceDir,
-    skills: builtinSkillsResult.available,
-    targetDir: taskPaths.skillsDir,
-    manifestDir: taskPaths.mbosDir,
-  });
+  const maxAttempts = 2;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const cwdResult = await prepareTaskWorkspace({
+      executionContext,
+      username,
+      taskId,
+    });
+    debugTerminalRuntime('prepare_workspace_task_ready', {
+      cwd: cwdResult.cwd,
+      source: cwdResult.source,
+      attempt,
+    });
+    const cwd = cwdResult.cwd;
+    const taskPaths = cwdResult.paths;
+    try {
+      await ensureTerminalWorkspaceDirectories(cwd, taskPaths);
+      await primeShellDotfiles(taskPaths.homeDir, shellFile);
+      const builtinSkillsConfig = resolveBuiltinSkillsConfig();
+      const builtinSkillsResult = await inspectBuiltinSkills({
+        sourceDir: builtinSkillsConfig.sourceDir,
+        skills: builtinSkillsConfig.skills,
+        required: builtinSkillsConfig.required,
+      });
+      await seedBuiltinSkills({
+        sourceDir: builtinSkillsResult.sourceDir,
+        skills: builtinSkillsResult.available,
+        targetDir: taskPaths.skillsDir,
+        manifestDir: taskPaths.mbosDir,
+      });
 
-  const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
-  await prepareNotebookWorkspaceAssets({
-    cwd,
-    paths: taskPaths,
-    executionContext,
-    taskInputs,
-  });
-  debugTerminalRuntime('prepare_workspace_assets_ready', {
-    cwd,
-    artifacts_dir: taskPaths.artifactsDir,
-  });
-  const env = buildTaskUserInstallEnv(taskPaths.homeDir, {
-    ...process.env,
-    TERM: process.env.TERM || 'xterm-256color',
-    NO_COLOR: '1',
-    ...buildAgentRuntimeEnv(executionContext),
-    MBOS_NOTEBOOK_PREAMBLE: buildNotebookHeadlessPreamble({
-      artifactsDir: taskPaths.artifactsDir,
-    }),
-  });
-  const interactiveCommand = buildInteractiveCommand(input.shell);
-  const launchCommand = await prepareLaunchCommand({
-    file: interactiveCommand.file,
-    args: interactiveCommand.args,
-    cwd,
-    env,
-  });
+      const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
+      await prepareNotebookWorkspaceAssets({
+        cwd,
+        paths: taskPaths,
+        executionContext,
+        taskInputs,
+      });
+      debugTerminalRuntime('prepare_workspace_assets_ready', {
+        cwd,
+        artifacts_dir: taskPaths.artifactsDir,
+      });
+      const env = buildTaskUserInstallEnv(taskPaths.homeDir, {
+        ...process.env,
+        TERM: process.env.TERM || 'xterm-256color',
+        NO_COLOR: '1',
+        ...buildAgentRuntimeEnv(executionContext),
+        MBOS_NOTEBOOK_PREAMBLE: buildNotebookHeadlessPreamble({
+          artifactsDir: taskPaths.artifactsDir,
+        }),
+      });
+      const interactiveCommand = buildInteractiveCommand(shellFile);
+      const launchCommand = await prepareLaunchCommand({
+        file: interactiveCommand.file,
+        args: interactiveCommand.args,
+        cwd,
+        env,
+      });
 
-  return {
-    cwd,
-    taskPaths,
-    shellFile: launchCommand.file,
-    shellArgs: launchCommand.args,
-    env: launchCommand.env,
-  };
+      return {
+        cwd,
+        taskPaths,
+        shellFile: launchCommand.file,
+        shellArgs: launchCommand.args,
+        env: launchCommand.env,
+        release: cwdResult.release,
+      };
+    } catch (error) {
+      lastError = error;
+      debugTerminalRuntime('prepare_workspace_attempt_failed', {
+        cwd,
+        source: cwdResult.source,
+        attempt,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      try {
+        await cwdResult.release();
+      } catch (releaseError) {
+        debugTerminalRuntime('prepare_workspace_release_failed', {
+          cwd,
+          source: cwdResult.source,
+          attempt,
+          message: releaseError instanceof Error ? releaseError.message : String(releaseError),
+        });
+      }
+      if (attempt >= maxAttempts || !shouldRetryTaskWorkspaceWriteFailure(error)) {
+        throw error;
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('terminal_workspace_prepare_failed');
 }
 
 export async function startTerminalProcess(input: {
@@ -180,20 +251,40 @@ export async function startTerminalProcess(input: {
     shell: prepared.shellFile,
     args: prepared.shellArgs,
   });
-  const child = spawnPty(prepared.shellFile, prepared.shellArgs, {
-    cwd: prepared.cwd,
-    env: prepared.env,
-    cols: input.cols ?? 120,
-    rows: input.rows ?? 30,
-    name: prepared.env.TERM || 'xterm-256color',
-  });
+  let child: ReturnType<typeof spawnPty>;
+  try {
+    child = spawnPty(prepared.shellFile, prepared.shellArgs, {
+      cwd: prepared.cwd,
+      env: prepared.env,
+      cols: input.cols ?? 120,
+      rows: input.rows ?? 30,
+      name: prepared.env.TERM || 'xterm-256color',
+    });
+  } catch (error) {
+    await prepared.release();
+    throw error;
+  }
   debugTerminalRuntime('spawn_pty_ready', {
     cwd: prepared.cwd,
   });
 
   let exitCode: number | null = null;
+  let releasePromise: Promise<void> | null = null;
+  const releasePreparedWorkspace = () => {
+    if (releasePromise) {
+      return releasePromise;
+    }
+    releasePromise = prepared.release().catch((error) => {
+      debugTerminalRuntime('release_workspace_failed', {
+        cwd: prepared.cwd,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
+    return releasePromise;
+  };
   child.onExit((event) => {
     exitCode = event.exitCode;
+    void releasePreparedWorkspace();
   });
 
   return {

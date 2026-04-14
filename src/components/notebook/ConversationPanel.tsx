@@ -65,6 +65,13 @@ export interface ConversationPanelProps {
   };
   sandboxStarting?: boolean;
   inputPlaceholder?: string;
+  blockedState?: {
+    title: string;
+    description: string;
+    actionLabel?: string;
+    onAction?: () => void;
+    tone?: 'default' | 'critical';
+  } | null;
 }
 
 export function ConversationPanel({
@@ -98,6 +105,7 @@ export function ConversationPanel({
   diagnosticsLinks,
   sandboxStarting = false,
   inputPlaceholder,
+  blockedState = null,
 }: ConversationPanelProps) {
   const t = useTranslations('notebook.conversation');
   const tCommon = useTranslations('common');
@@ -132,6 +140,10 @@ export function ConversationPanel({
     !streamingContent &&
     !sandboxStarting &&
     !runActivity?.active;
+  const showBlockedEmptyState = showEmptyOrientation && blockedState;
+  const blockedStateCardClassName = blockedState?.tone === 'critical'
+    ? 'border-error/30 bg-error/5'
+    : 'border-subtle bg-surface-low';
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-md bg-background/55">
@@ -216,7 +228,27 @@ export function ConversationPanel({
         </div>
       ) : null}
       <div className="min-h-0 flex-1 bg-[linear-gradient(180deg,rgba(255,255,255,0.012),transparent_12%)]">
-        {showEmptyOrientation ? (
+        {showBlockedEmptyState ? (
+          <div className="flex h-full items-center justify-center px-4 py-8" data-testid="notebook__conversation-blocked-state">
+            <div className={`w-full max-w-xl rounded-md border p-5 shadow-ambient ${blockedStateCardClassName}`}>
+              <div className="text-sm font-medium text-foreground">{blockedState.title}</div>
+              <div className="mt-2 text-sm text-secondary">{blockedState.description}</div>
+              {blockedState.actionLabel ? (
+                <div className="mt-4">
+                  <Button
+                    type="button"
+                    variant={blockedState.tone === 'critical' ? 'outline' : 'secondary'}
+                    size="sm"
+                    className="h-8"
+                    onClick={() => blockedState.onAction?.()}
+                  >
+                    {blockedState.actionLabel}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : showEmptyOrientation ? (
           <div className="flex h-full items-center justify-center px-4 py-8" data-testid="notebook__conversation-empty-state">
             <div className="w-full max-w-xl rounded-md border border-subtle bg-surface-low p-5 shadow-ambient">
               <div className="text-sm font-medium text-foreground">{t('empty')}</div>

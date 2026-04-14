@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
 import { parseBuiltinSkillCapabilityContract, readBuiltinSkillCapabilityContract } from './skill-capabilities.js';
+
+const resolveBuiltinSkillsConfigWithArgs = resolveBuiltinSkillsConfig as unknown as (
+  args?: {
+    fileExists?: (path: string) => boolean;
+  },
+) => ReturnType<typeof resolveBuiltinSkillsConfig>;
 
 describe('builtin-skills', () => {
   it('resolves dev fallback defaults when env vars are not set', () => {
@@ -36,8 +42,8 @@ describe('builtin-skills', () => {
     delete process.env.MBOS_AGENT_BUILTIN_SKILLS_REQUIRED;
     delete process.env.MBOS_AGENT_BUILTIN_SKILLS;
     try {
-      const config = resolveBuiltinSkillsConfig({
-        fileExists: (target) => target === '/etc/codex/skills',
+      const config = resolveBuiltinSkillsConfigWithArgs({
+        fileExists: (target: string) => target === '/etc/codex/skills',
       });
       expect(config.sourceDir).toBe('/etc/codex/skills');
       expect(config.required).toBe(true);
@@ -253,6 +259,92 @@ describe('builtin-skills', () => {
     }
   });
 
+  it('allows concurrent builtin-skill seeding into the same task workspace without EEXIST races', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
+    const targetRoot = mkdtempSync(join(tmpdir(), 'runner-skills-target-'));
+    const manifestRoot = mkdtempSync(join(tmpdir(), 'runner-skills-manifest-'));
+    try {
+      mkdirSync(join(sourceRoot, 'feishu-docs', 'scripts'), { recursive: true });
+      mkdirSync(join(sourceRoot, '.mbos-runtime', 'scripts'), { recursive: true });
+      writeFileSync(
+        join(sourceRoot, 'feishu-docs', 'SKILL.md'),
+        'python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py tools-list',
+      );
+      writeFileSync(
+        join(sourceRoot, 'feishu-docs', 'capabilities.json'),
+        JSON.stringify({ version: 1, skill_name: 'feishu-docs', dependencies: [] }),
+      );
+      writeFileSync(join(sourceRoot, 'feishu-docs', 'scripts', 'feishu_mcp.py'), 'print("feishu")\n');
+      writeFileSync(join(sourceRoot, '.mbos-runtime', 'scripts', 'capability_runtime.py'), 'RUNTIME = True\n');
+
+      const results = await Promise.all(
+        Array.from({ length: 12 }, () => seedBuiltinSkills({
+          sourceDir: sourceRoot,
+          skills: ['feishu-docs'],
+          targetDir: targetRoot,
+          manifestDir: manifestRoot,
+        })),
+      );
+
+      expect(results).toHaveLength(12);
+      for (const result of results) {
+        expect(result.seeded).toEqual(['feishu-docs']);
+        expect(result.manifestPath).toBe(join(manifestRoot, 'builtin-skills-manifest.json'));
+      }
+      expect(readFileSync(join(targetRoot, 'feishu-docs', 'SKILL.md'), 'utf8')).toContain(
+        `${targetRoot}/feishu-docs/scripts/feishu_mcp.py`,
+      );
+      expect(readFileSync(join(targetRoot, '.mbos-runtime', 'scripts', 'capability_runtime.py'), 'utf8')).toContain(
+        'RUNTIME = True',
+      );
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(targetRoot, { recursive: true, force: true });
+      rmSync(manifestRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps existing task-root state and skips replaying builtin-skill mirrors on repeated seeding', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
+    const targetRoot = mkdtempSync(join(tmpdir(), 'runner-skills-target-'));
+    const manifestRoot = mkdtempSync(join(tmpdir(), 'runner-skills-manifest-'));
+    try {
+      mkdirSync(join(sourceRoot, 'feishu-docs', 'scripts'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'feishu-docs', 'SKILL.md'), 'seeded-skill-v1');
+      writeFileSync(
+        join(sourceRoot, 'feishu-docs', 'capabilities.json'),
+        JSON.stringify({ version: 1, skill_name: 'feishu-docs', dependencies: [] }),
+      );
+      writeFileSync(join(sourceRoot, 'feishu-docs', 'scripts', 'seeded-tool.py'), 'print("v1")\n');
+
+      await seedBuiltinSkills({
+        sourceDir: sourceRoot,
+        skills: ['feishu-docs'],
+        targetDir: targetRoot,
+        manifestDir: manifestRoot,
+      });
+
+      writeFileSync(join(targetRoot, 'feishu-docs', 'local-state.txt'), 'keep-me');
+      writeFileSync(join(sourceRoot, 'feishu-docs', 'SKILL.md'), 'seeded-skill-v2');
+      writeFileSync(join(sourceRoot, 'feishu-docs', 'scripts', 'new-tool.py'), 'print("v2")\n');
+
+      await seedBuiltinSkills({
+        sourceDir: sourceRoot,
+        skills: ['feishu-docs'],
+        targetDir: targetRoot,
+        manifestDir: manifestRoot,
+      });
+
+      expect(readFileSync(join(targetRoot, 'feishu-docs', 'local-state.txt'), 'utf8')).toBe('keep-me');
+      expect(readFileSync(join(targetRoot, 'feishu-docs', 'SKILL.md'), 'utf8')).toBe('seeded-skill-v1');
+      expect(existsSync(join(targetRoot, 'feishu-docs', 'scripts', 'new-tool.py'))).toBe(false);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(targetRoot, { recursive: true, force: true });
+      rmSync(manifestRoot, { recursive: true, force: true });
+    }
+  });
+
   it('parses project_member as a first-class skill capability scope', () => {
     const contract = parseBuiltinSkillCapabilityContract({
       version: 1,
@@ -286,8 +378,8 @@ describe('builtin-skills', () => {
   });
 
   it('ships mbos-context with project_member readable but not agent-writable', async () => {
-    const config = resolveBuiltinSkillsConfig({
-      fileExists: (target) => target !== '/etc/codex/skills',
+    const config = resolveBuiltinSkillsConfigWithArgs({
+      fileExists: (target: string) => target !== '/etc/codex/skills',
     });
     const contract = await readBuiltinSkillCapabilityContract(join(config.sourceDir, 'mbos-context'));
     expect(contract.provides?.[0]).toMatchObject({
@@ -298,8 +390,8 @@ describe('builtin-skills', () => {
   });
 
   it('documents project_member as readable-only for agent execution in mbos-context skill docs', () => {
-    const config = resolveBuiltinSkillsConfig({
-      fileExists: (target) => target !== '/etc/codex/skills',
+    const config = resolveBuiltinSkillsConfigWithArgs({
+      fileExists: (target: string) => target !== '/etc/codex/skills',
     });
     const skillDoc = readFileSync(join(config.sourceDir, 'mbos-context', 'SKILL.md'), 'utf8');
     expect(skillDoc).toContain('read or write member/task');

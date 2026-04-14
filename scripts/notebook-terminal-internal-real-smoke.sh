@@ -3,11 +3,27 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"
+export ROOT_DIR
+INTERNAL_RUNTIME_CLEANUP_MARKER="${ROOT_DIR}/artifacts/backend-real/current/local-manual-internal-runtime.cleanup"
+export INTERNAL_RUNTIME_CLEANUP_MARKER
+
+INTERNAL_RUNTIME_BOOTSTRAPPED=0
+cleanup_on_exit() {
+  local exit_code="${1:-0}"
+  if [[ "${exit_code}" != "0" && ( "${INTERNAL_RUNTIME_BOOTSTRAPPED}" == "1" || -f "${INTERNAL_RUNTIME_CLEANUP_MARKER}" ) ]]; then
+    bash "${ROOT_DIR}/scripts/local-manual/internal-down.sh" --no-api-restart >/dev/null 2>&1 || true
+  fi
+  rm -f "${INTERNAL_RUNTIME_CLEANUP_MARKER}" >/dev/null 2>&1 || true
+}
+trap 'cleanup_on_exit $?' EXIT INT TERM
 
 ensure_local_manual_ready
 ensure_notebook_demo_seeded
 if [[ "${SKIP_INTERNAL_UP:-0}" != "1" ]]; then
   bash "${ROOT_DIR}/scripts/local-manual/internal-up.sh" >/dev/null
+  INTERNAL_RUNTIME_BOOTSTRAPPED=1
+  mkdir -p "$(dirname "${INTERNAL_RUNTIME_CLEANUP_MARKER}")"
+  : > "${INTERNAL_RUNTIME_CLEANUP_MARKER}"
 fi
 
 TOKEN="$(cat "$(backend_real_token_file)")"
@@ -110,6 +126,9 @@ fi
 export TOKEN API_BASE TASK_WS_ID TASK_PROJECT_ID="${PROJECT_ID}" TASK_ID
 
 node <<'NODE'
+const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
 const { WebSocket } = require('ws');
 
 const token = process.env.TOKEN;
@@ -117,10 +136,22 @@ const apiBase = process.env.API_BASE;
 const workspaceId = process.env.TASK_WS_ID;
 const projectId = process.env.TASK_PROJECT_ID;
 const taskId = process.env.TASK_ID;
+const rootDir = process.env.ROOT_DIR || process.cwd();
+const cleanupMarker = process.env.INTERNAL_RUNTIME_CLEANUP_MARKER || path.join(rootDir, 'artifacts/backend-real/current/local-manual-internal-runtime.cleanup');
 
 function fail(message, extra) {
   console.error('[notebook-terminal-internal-smoke] FAILED', message, extra ?? '');
   process.exit(1);
+}
+
+function restartInternalRuntime() {
+  execFileSync('bash', [path.join(rootDir, 'scripts/local-manual/internal-up.sh')], {
+    cwd: rootDir,
+    env: process.env,
+    stdio: 'inherit',
+  });
+  fs.mkdirSync(path.dirname(cleanupMarker), { recursive: true });
+  fs.writeFileSync(cleanupMarker, '1\n', 'utf8');
 }
 
 (async () => {
@@ -153,14 +184,21 @@ function fail(message, extra) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         continue;
       }
+      if (response.status === 409 && payload?.message === 'task_runner_offline') {
+        restartInternalRuntime();
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        continue;
+      }
       if (response.status === 400 && payload?.message === 'sandbox_startup_timeout') {
         await new Promise((resolve) => setTimeout(resolve, 1500));
         continue;
       }
-      if (
-        response.status >= 500
-        || (response.status === 409 && payload?.message === 'task_terminal_internal_runtime_unavailable')
-      ) {
+      if (response.status === 409 && payload?.message === 'task_terminal_internal_runtime_unavailable') {
+        restartInternalRuntime();
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        continue;
+      }
+      if (response.status >= 500) {
         await new Promise((resolve) => setTimeout(resolve, 1500));
         continue;
       }

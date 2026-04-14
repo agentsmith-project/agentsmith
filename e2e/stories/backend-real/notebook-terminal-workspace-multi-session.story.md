@@ -10,7 +10,7 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
-  "goal": "项目成员回到已有 notebook task 继续工作时，应该先从 Conversation 进入 Terminal workspace，在同一 task 下面创建多个 terminal sessions 并在 tabs 间切换；即使刷新或重新进入 task 页，界面也必须按 backend list 恢复这些 live sessions 和任务仍被占用的真相；关闭一个 session 不能影响其他 session，直到最后一个 session 结束后才真正释放任务并恢复 agent 输入。",
+  "goal": "项目成员回到已有 notebook task 继续工作时，应该先从 Conversation 进入 Terminal workspace，在同一 task 下面创建多个 terminal sessions 并在 tabs 间切换；当 live terminal 仍存在时，任务删除必须继续被阻止，第四个 terminal 也不能以假 tab 的方式出现；即使刷新或重新进入 task 页，界面也必须按 backend list 和同一批 session id 恢复这些 live sessions 与任务仍被占用的真相；关闭一个 session 不能影响其他 session，直到最后一个 session 结束后才真正释放任务并恢复 agent 输入。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
@@ -33,7 +33,7 @@
       "note": "backend-real terminal workspace story needs a live terminal session service behind notebook tasks."
     }
   ],
-  "narrative": "Notebook terminal 的真实故事不再是一个 panel 的 show/hide，而是用户在同一个 notebook task 里切换 Conversation 与 Terminal workspace；terminal workspace 允许同时保留多条 terminal session 来做不同的检查和修复，但这些 session 共享同一个 task workspace，所以用户必须清楚知道它们仍在占用当前任务。即使页面刷新或用户重新进入 task，界面也要按 backend list 讲真话，恢复 tabs 和 blocking 状态，直到最后一条 session 被结束，任务才真正释放回正常的 agent 输入流。",
+  "narrative": "Notebook terminal 的真实故事不再是一个 panel 的 show/hide，而是用户在同一个 notebook task 里切换 Conversation 与 Terminal workspace；terminal workspace 允许同时保留多条 terminal session 来做不同的检查和修复，但这些 session 共享同一个 task workspace，所以用户必须清楚知道它们仍在占用当前任务。产品不应该允许 live terminal 存在时误删 task，也不应该在达到上限后制造一个假的第四个 tab；即使页面刷新或用户重新进入 task，界面也要按 backend list 和原来的 session id 讲真话，恢复 tabs 和 blocking 状态，直到最后一条 session 被结束，任务才真正释放回正常的 agent 输入流。",
   "scenes": [
     {
       "sceneId": "notebook-task",
@@ -96,6 +96,42 @@
       ]
     },
     {
+      "stepId": "create-third-terminal-session",
+      "sceneId": "notebook-task",
+      "intent": "Use the same task workspace for a third terminal session when the work genuinely needs it.",
+      "action": "Create a third terminal session without losing the first two",
+      "target": "notebook__task-terminal-create",
+      "expectedFeedback": "用户能够在 Terminal workspace 里开到第三条 terminal session，并且前三条 session 仍然清晰可切换。",
+      "note": "三条 session 是并行工作的上限，不应靠隐藏旧 session 来假装支持更多。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "keep-task-delete-blocked-while-live-terminal-sessions-exist",
+      "sceneId": "notebook-task",
+      "intent": "Prevent the user from deleting the task while terminal sessions still occupy it.",
+      "action": "Try to delete the task while live terminal sessions still exist",
+      "target": "notebook__task-header-delete",
+      "expectedFeedback": "当 live terminal sessions 仍占用 task 时，删除入口继续明确阻止删除，而不是让用户先打开确认框再失败。",
+      "note": "删除阻止是 task truth 的一部分，不是 terminal workspace 内部的小提示。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
+      "stepId": "reject-phantom-fourth-terminal-session",
+      "sceneId": "notebook-task",
+      "intent": "Show the terminal session limit honestly instead of creating a fourth placeholder tab that cannot work.",
+      "action": "Attempt to create a fourth terminal session after reaching the session limit",
+      "target": "notebook__task-terminal-create",
+      "expectedFeedback": "达到 session 上限后，产品明确告诉用户不能再创建第四条 terminal，而不是出现一个并不存在的第四个 tab。",
+      "note": "会误导用户的 phantom tab 比直接告知上限更糟糕。",
+      "evidence": [
+        "trace"
+      ]
+    },
+    {
       "stepId": "switch-between-terminal-sessions",
       "sceneId": "notebook-task",
       "intent": "Switch between terminal session tabs and keep both sessions understandable.",
@@ -113,20 +149,20 @@
       "intent": "Return to the Conversation view for context while terminal sessions are still active.",
       "action": "Switch back to Conversation while terminal sessions stay active",
       "target": "notebook__task-header-mode-conversation",
-      "expectedFeedback": "用户回到 Conversation 后，界面仍明确告诉他 task 还被 terminal sessions 占用，并且新的 agent run 仍然不能开始。",
-      "note": "Conversation-first 不代表 terminal session 被隐藏后就自动释放任务。",
+      "expectedFeedback": "用户回到 Conversation 后，界面仍明确告诉他 task 还被 terminal sessions 占用、Terminal Workspace 只是退到后台，并且新的 agent run 仍然不能开始，直到他重新打开 Terminal Workspace 或结束这些 sessions。",
+      "note": "Conversation-first 不代表 terminal workspace 退到后台后就自动释放任务。",
       "evidence": [
         "trace"
       ]
     },
     {
-      "stepId": "reload-task-and-restore-terminal-truth",
+      "stepId": "reload-task-and-preserve-backend-session-ids",
       "sceneId": "notebook-task",
-      "intent": "Reload or re-enter the task page and trust the product to restore terminal truth from the backend instead of local optimistic state.",
+      "intent": "Reload or re-enter the task page and trust the product to restore the same terminal truth from the backend instead of local optimistic state.",
       "action": "Reload the task page while live terminal sessions still exist",
       "target": "notebook__task-terminal-status-strip",
-      "expectedFeedback": "页面刷新或重新进入后，Conversation 仍然是一号主工作面，但界面必须按 backend list 恢复 live terminal sessions 的 blocking truth，而不是假装任务已经释放。",
-      "note": "terminal session 是否存在的真相来自 backend list，不来自单页临时状态。",
+      "expectedFeedback": "页面刷新或重新进入后，Conversation 仍然是一号主工作面，但界面必须按 backend list 恢复 live terminal sessions 的 blocking truth 和同一批 session id。如果其中一条同源 session 在刷新后需要恢复处理，前台也必须立刻切到 recovery-aware 的占用文案和重新打开 Terminal Workspace 的动作，而不是继续假装所有 sessions 都只是隐藏在后台。",
+      "note": "terminal session 是否存在、哪些还在占用 task、哪些需要恢复，真相都来自 backend list，不来自单页临时状态。",
       "evidence": [
         "trace"
       ]

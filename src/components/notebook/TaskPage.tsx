@@ -45,6 +45,19 @@ import { useTaskInputActions } from "@/components/notebook/task-page/useTaskInpu
 import { getPublicRuntimeConfig } from "@/lib/public-runtime-config";
 import { makeClientId } from "@/lib/chat/ids";
 import type { TerminalStatus } from "./TaskTerminalPanel";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { getTerminalSessionSummaryLabel } from "./terminal-session-summary";
 
 type TerminalViewMode = "conversation" | "terminal";
 
@@ -68,14 +81,24 @@ type ListedTerminalSession = Awaited<
 
 type TerminalWorkspaceHydrationState = "pending" | "ready" | "unavailable";
 
+type TaskTranslationFn = ReturnType<typeof useTranslations>;
+
 function mapListedTerminalSessionStatusToTabStatus(
   status: ListedTerminalSession["status"],
 ): TerminalStatus {
   if (status === "pending") return "preparing";
-  if (status === "disconnected") return "connecting";
+  if (status === "disconnected") return "recovering";
   if (status === "failed") return "failed";
   if (status === "closed") return "closed";
   return "active";
+}
+
+export function mergeTerminalTabStatus(
+  currentStatus: TerminalStatus,
+  nextStatus: ListedTerminalSession["status"],
+): TerminalStatus {
+  void currentStatus;
+  return mapListedTerminalSessionStatusToTabStatus(nextStatus);
 }
 
 function getTaskTerminalWorkspaceStorageKey(
@@ -114,6 +137,32 @@ function writeStoredTerminalWorkspaceState(
   window.sessionStorage.setItem(
     getTaskTerminalWorkspaceStorageKey(workspaceId, projectId, taskId),
     JSON.stringify(state),
+  );
+}
+
+function getTerminalWorkspaceTabLabel(
+  tTask: TaskTranslationFn,
+  displayIndex: number,
+) {
+  return `${tTask("terminal_session")} ${displayIndex}`;
+}
+
+function relabelTerminalWorkspaceTabs(
+  tTask: TaskTranslationFn,
+  tabs: TerminalWorkspaceTab[],
+): TerminalWorkspaceTab[] {
+  return tabs.map((tab, index) => ({
+    ...tab,
+    label: getTerminalWorkspaceTabLabel(tTask, index + 1),
+  }));
+}
+
+function getNextTerminalTabOrdinal(tabs: TerminalWorkspaceTab[]) {
+  return (
+    tabs.reduce((maxOrdinal, tab) => {
+      const suffix = Number.parseInt(tab.id.replace("terminal-session-", ""), 10);
+      return Number.isFinite(suffix) ? Math.max(maxOrdinal, suffix) : maxOrdinal;
+    }, 0) + 1
   );
 }
 
@@ -194,11 +243,14 @@ export function TaskPage({
   );
   const [terminalTabs, setTerminalTabs] = React.useState<TerminalWorkspaceTab[]>([]);
   const [activeTerminalTabId, setActiveTerminalTabId] = React.useState<string | null>(null);
+  const [terminalTruthSessions, setTerminalTruthSessions] = React.useState<ListedTerminalSession[] | null>(null);
   const [artifactsDrawerOpen, setArtifactsDrawerOpen] = React.useState(
     initialStoredTerminalWorkspaceState?.artifactsDrawerOpen ?? true,
   );
   const [terminalWorkspaceHydrationState, setTerminalWorkspaceHydrationState] =
     React.useState<TerminalWorkspaceHydrationState>("pending");
+  const [endAllTerminalDialogOpen, setEndAllTerminalDialogOpen] = React.useState(false);
+  const [endAllTerminalPending, setEndAllTerminalPending] = React.useState(false);
   const nextTerminalTabOrdinalRef = React.useRef(1);
   const terminalTabsRef = React.useRef<TerminalWorkspaceTab[]>([]);
   const activeTerminalTabIdRef = React.useRef<string | null>(null);
@@ -828,10 +880,13 @@ export function TaskPage({
     );
   };
   const handleSetViewMode = React.useCallback((mode: TerminalViewMode) => {
-    if (mode === "terminal" && terminalTabs.length === 0) return;
+    const terminalSessionCount = terminalWorkspaceHydrationState === "ready"
+      ? (terminalTruthSessions?.length ?? 0) + terminalTabs.filter((tab) => !tab.sessionId).length
+      : terminalTabs.length;
+    if (mode === "terminal" && terminalSessionCount === 0) return;
     setViewMode(mode);
     setArtifactsDrawerOpen(mode === "conversation");
-  }, [terminalTabs.length]);
+  }, [terminalTabs, terminalTruthSessions, terminalWorkspaceHydrationState]);
   const hasTask = task != null;
   const taskStatus = task?.status ?? "active";
   const taskLastActivityAt = task?.last_activity_at ?? null;
@@ -879,7 +934,12 @@ export function TaskPage({
         item.status === "error" ||
         item.status === "cancelled",
     );
-  const hasTerminalSessions = terminalTabs.length > 0;
+  const terminalTruthResolved = terminalWorkspaceHydrationState === "ready";
+  const terminalSessionCount = terminalTruthResolved
+    ? (terminalTruthSessions?.length ?? 0) +
+      terminalTabs.filter((tab) => !tab.sessionId).length
+    : terminalTabs.length;
+  const hasTerminalSessions = terminalSessionCount > 0;
   const terminalBootstrapPending =
     hasTask &&
     taskStatus === "active" &&
@@ -889,8 +949,52 @@ export function TaskPage({
     taskStatus === "active" &&
     terminalWorkspaceHydrationState === "unavailable";
   const effectiveViewMode =
-    terminalTruthUnavailable && !hasTerminalSessions ? "conversation" : viewMode;
-  const terminalHasRecovery = terminalTabs.some((tab) => tab.status === "failed");
+    (terminalTruthResolved || terminalTruthUnavailable) && terminalSessionCount === 0
+      ? "conversation"
+      : viewMode;
+  const terminalRecoveryCount = terminalTruthResolved
+    ? (terminalTruthSessions ?? []).filter(
+        (session) =>
+          session.status === "failed" || session.status === "disconnected",
+      ).length +
+      terminalTabs.filter(
+        (tab) =>
+          !tab.sessionId &&
+          (tab.status === "failed" || tab.status === "recovering"),
+      ).length
+    : terminalTabs.filter(
+        (tab) => tab.status === "failed" || tab.status === "recovering",
+      ).length;
+  const terminalHasRecovery = terminalRecoveryCount > 0;
+  const terminalHasRecoveryOnly =
+    terminalHasRecovery && terminalRecoveryCount >= terminalSessionCount;
+  const terminalHasMixedRecovery =
+    terminalHasRecovery && terminalRecoveryCount < terminalSessionCount;
+  const terminalSessionSummaryLabel = getTerminalSessionSummaryLabel(tTask, {
+    count: terminalSessionCount,
+    recoveryCount: terminalRecoveryCount,
+    hasRecovery: terminalHasRecovery,
+  });
+  React.useEffect(() => {
+    if (terminalSessionCount === 0 && endAllTerminalDialogOpen) {
+      setEndAllTerminalDialogOpen(false);
+    }
+  }, [endAllTerminalDialogOpen, terminalSessionCount]);
+  const terminalHiddenStateDescription = terminalHasRecoveryOnly
+    ? tTask("terminal_hidden_failed_description", {
+        count: terminalSessionCount,
+      })
+    : terminalHasMixedRecovery
+      ? tTask("terminal_hidden_mixed_description", {
+          count: terminalSessionCount,
+          recoveryCount: terminalRecoveryCount,
+        })
+      : tTask("terminal_hidden_active_description", {
+          count: terminalSessionCount,
+        });
+  const terminalWorkspaceActionLabel = terminalHasRecovery
+    ? tTask("terminal_recovery_show")
+    : tTask("terminal_workspace_open");
   const isConversationInputDisabled =
     isDisabled ||
     !canUpdateTask ||
@@ -898,7 +1002,7 @@ export function TaskPage({
     terminalBootstrapPending ||
     terminalTruthUnavailable ||
     hasTerminalSessions;
-  const terminalDisabledReason = terminalTabs.length >= 3
+  const terminalDisabledReason = terminalSessionCount >= 3
     ? tTask("terminal_max_sessions_reached")
     : !canUseTerminal
       ? tTask("terminal_unavailable_permission")
@@ -914,7 +1018,7 @@ export function TaskPage({
     !terminalBootstrapPending &&
     !terminalTruthUnavailable &&
     !agentIsBusy &&
-    terminalTabs.length < 3;
+    terminalSessionCount < 3;
   const deleteBlockedReason = terminalBootstrapPending
     ? tTask("delete_blocked_terminal_sessions_pending")
     : terminalTruthUnavailable
@@ -938,6 +1042,7 @@ export function TaskPage({
     activeTerminalTabIdRef.current = null;
     setViewMode("conversation");
     setArtifactsDrawerOpen(true);
+    setTerminalTruthSessions([]);
     nextTerminalTabOrdinalRef.current = 1;
     initialStoredTerminalWorkspaceStateRef.current = {
       preferredViewMode: "conversation",
@@ -978,42 +1083,10 @@ export function TaskPage({
         preferredActiveSessionId: null,
         artifactsDrawerOpen: nextArtifactsDrawerOpen,
       };
+      setTerminalTruthSessions([]);
     },
     [projectId, taskId, workspaceId],
   );
-
-  const reconcileTerminalTabsWithSessionIds = (liveSessionIds: Set<string>) => {
-    if (liveSessionIds.size === 0) {
-      resetTerminalWorkspaceState();
-      return;
-    }
-    const currentTabs = terminalTabsRef.current;
-    const nextTabs = currentTabs.filter(
-      (tab) => tab.sessionId && liveSessionIds.has(tab.sessionId),
-    );
-    currentTabs
-      .filter((tab) => !nextTabs.some((nextTab) => nextTab.id === tab.id))
-      .forEach((tab) => {
-        clearTaskTerminalPanelSessionStateForScope(
-          workspaceId,
-          projectId,
-          taskId,
-          tab.id,
-        );
-      });
-    terminalTabsRef.current = nextTabs;
-    setTerminalTabs(nextTabs);
-    if (nextTabs.length === 0) {
-      resetTerminalWorkspaceState();
-      return;
-    }
-    const currentActiveTerminalTabId = activeTerminalTabIdRef.current;
-    if (!nextTabs.some((tab) => tab.id === currentActiveTerminalTabId)) {
-      const nextActiveTerminalTabId = nextTabs[0]?.id ?? null;
-      setActiveTerminalTabId(nextActiveTerminalTabId);
-      activeTerminalTabIdRef.current = nextActiveTerminalTabId;
-    }
-  };
 
   const hydrateTerminalWorkspaceFromBackendSessions = React.useCallback(
     (
@@ -1025,6 +1098,7 @@ export function TaskPage({
       const liveSessions = sessions
         .filter((session) => session.status !== "closed")
         .sort((left, right) => left.created_at.localeCompare(right.created_at));
+      setTerminalTruthSessions(liveSessions);
       const currentTabs = terminalTabsRef.current;
       const currentTabsBySessionId = new Map(
         currentTabs
@@ -1049,7 +1123,7 @@ export function TaskPage({
         if (existingTab) {
           return {
             ...existingTab,
-            status: mapListedTerminalSessionStatusToTabStatus(session.status),
+            status: mergeTerminalTabStatus(existingTab.status, session.status),
             sessionId: session.id,
           };
         }
@@ -1057,14 +1131,15 @@ export function TaskPage({
         nextTerminalTabOrdinalRef.current += 1;
         return {
           id: `terminal-session-${nextOrdinal}`,
-          label: `${tTask("terminal_session")} ${nextOrdinal}`,
+          label: getTerminalWorkspaceTabLabel(tTask, nextOrdinal),
           status: mapListedTerminalSessionStatusToTabStatus(session.status),
           closeRequestToken: 0,
           sessionId: session.id,
         };
       });
+      const relabeledTabs = relabelTerminalWorkspaceTabs(tTask, nextTabs);
 
-      const nextTabIds = new Set(nextTabs.map((tab) => tab.id));
+      const nextTabIds = new Set(relabeledTabs.map((tab) => tab.id));
       currentTabs
         .filter((tab) => !nextTabIds.has(tab.id))
         .forEach((tab) => {
@@ -1076,7 +1151,7 @@ export function TaskPage({
           );
         });
 
-      nextTabs.forEach((tab) => {
+      relabeledTabs.forEach((tab) => {
         if (typeof tab.sessionId === "string" && tab.sessionId.length > 0) {
           storeTaskTerminalPanelSessionIdForScope(
             workspaceId,
@@ -1096,14 +1171,21 @@ export function TaskPage({
         return;
       }
 
-      terminalTabsRef.current = nextTabs;
-      setTerminalTabs(nextTabs);
-      nextTerminalTabOrdinalRef.current = nextTabs.length + 1;
+      terminalTabsRef.current = relabeledTabs;
+      setTerminalTabs(relabeledTabs);
+      nextTerminalTabOrdinalRef.current = getNextTerminalTabOrdinal(relabeledTabs);
       const nextActiveTerminalTabId =
-        nextTabs.find((tab) => tab.sessionId === preferredActiveSessionId)?.id ??
-        nextTabs.find((tab) => tab.id === activeTerminalTabIdRef.current)?.id ??
-        nextTabs[0]?.id ??
-        null;
+        modeStrategy === "preserve-current"
+          ? (relabeledTabs.find((tab) => tab.id === activeTerminalTabIdRef.current)
+              ?.id ??
+            relabeledTabs[0]?.id ??
+            null)
+          : (relabeledTabs.find((tab) => tab.sessionId === preferredActiveSessionId)
+              ?.id ??
+            relabeledTabs.find((tab) => tab.id === activeTerminalTabIdRef.current)
+              ?.id ??
+            relabeledTabs[0]?.id ??
+            null);
       setActiveTerminalTabId(nextActiveTerminalTabId);
       activeTerminalTabIdRef.current = nextActiveTerminalTabId;
       setViewMode(shouldRestoreTerminalMode ? "terminal" : "conversation");
@@ -1168,6 +1250,7 @@ export function TaskPage({
         setTerminalWorkspaceHydrationState("unavailable");
         handleError(error, {
           logContext,
+          showToast: false,
         });
         throw error;
       }
@@ -1204,6 +1287,87 @@ export function TaskPage({
     hasTask,
     taskScopeKey,
   ]);
+
+  React.useEffect(() => {
+    if (taskStatus !== "active") return;
+    if (terminalWorkspaceHydrationState !== "ready") return;
+    if ((terminalTruthSessions?.length ?? 0) === 0) return;
+    const timer = window.setInterval(() => {
+      void syncTerminalWorkspaceFromBackend().catch(() => {});
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [
+    syncTerminalWorkspaceFromBackend,
+    taskStatus,
+    terminalTruthSessions,
+    terminalWorkspaceHydrationState,
+  ]);
+
+  const closeAllTerminalTabs = async () => {
+    if (terminalTabsRef.current.length === 0) return;
+    try {
+      const listedSessions = await taskAPI.listTerminalSessions(
+        workspaceId,
+        projectId,
+        taskId,
+      );
+      const sessionIdsToClose = new Set<string>([
+        ...listedSessions.items.map((session) => session.id),
+        ...terminalTabsRef.current
+          .map((tab) => tab.sessionId)
+          .filter(
+            (sessionId): sessionId is string =>
+              typeof sessionId === "string" && sessionId.length > 0,
+          ),
+      ]);
+      if (sessionIdsToClose.size === 0) {
+        resetTerminalWorkspaceState();
+        return;
+      }
+      await Promise.allSettled(
+        [...sessionIdsToClose].map((sessionId) =>
+          taskAPI.closeTerminalSession(
+            workspaceId,
+            projectId,
+            taskId,
+            sessionId,
+          ),
+        ),
+      );
+      const remainingSessions = await taskAPI.listTerminalSessions(
+        workspaceId,
+        projectId,
+        taskId,
+      );
+      hydrateTerminalWorkspaceFromBackendSessions(remainingSessions.items, {
+        modeStrategy: "preserve-current",
+      });
+    } catch (error) {
+      handleError(error, {
+        logContext: "TaskPage.closeAllTerminalTabs",
+      });
+    }
+  };
+
+  const handleRequestCloseAllTerminalTabs = React.useCallback(() => {
+    if (terminalSessionCount === 0 || endAllTerminalPending) {
+      return;
+    }
+    setEndAllTerminalDialogOpen(true);
+  }, [endAllTerminalPending, terminalSessionCount]);
+
+  const handleConfirmCloseAllTerminalTabs = React.useCallback(async () => {
+    if (endAllTerminalPending) {
+      return;
+    }
+    setEndAllTerminalPending(true);
+    try {
+      await closeAllTerminalTabs();
+      setEndAllTerminalDialogOpen(false);
+    } finally {
+      setEndAllTerminalPending(false);
+    }
+  }, [closeAllTerminalTabs, endAllTerminalPending]);
 
   if (taskLoading) {
     return <TaskPageLoadingState text={tTask("loading")} />;
@@ -1246,7 +1410,7 @@ export function TaskPage({
 
   const createTerminalSessionTab = () => {
     if (!canCreateTerminalSession) {
-      if (terminalTabs.length >= 3) {
+      if (terminalSessionCount >= 3) {
         toast.info(tTask("terminal_max_sessions_reached"));
       }
       return;
@@ -1256,13 +1420,17 @@ export function TaskPage({
     const tabId = `terminal-session-${nextOrdinal}`;
     const newTab: TerminalWorkspaceTab = {
       id: tabId,
-      label: `${tTask("terminal_session")} ${nextOrdinal}`,
+      label: getTerminalWorkspaceTabLabel(tTask, nextOrdinal),
       status: "idle",
       closeRequestToken: 0,
       sessionId: null,
     };
-    setTerminalTabs((prev) => [...prev, newTab]);
-    terminalTabsRef.current = [...terminalTabsRef.current, newTab];
+    const nextTabs = relabelTerminalWorkspaceTabs(tTask, [
+      ...terminalTabsRef.current,
+      newTab,
+    ]);
+    setTerminalTabs(nextTabs);
+    terminalTabsRef.current = nextTabs;
     setActiveTerminalTabId(tabId);
     activeTerminalTabIdRef.current = tabId;
     setViewMode("terminal");
@@ -1285,6 +1453,7 @@ export function TaskPage({
     terminalTabsRef.current = terminalTabsRef.current.map((tab) =>
       tab.id === tabId ? { ...tab, sessionId } : tab,
     );
+    void syncTerminalWorkspaceFromBackend().catch(() => {});
   };
 
   const closeTerminalTab = (tabId: string) => {
@@ -1300,36 +1469,6 @@ export function TaskPage({
         ? { ...tab, closeRequestToken: tab.closeRequestToken + 1 }
         : tab,
     );
-  };
-
-  const closeAllTerminalTabs = async () => {
-    if (terminalTabsRef.current.length === 0) return;
-    try {
-      const listedSessions = await taskAPI.listTerminalSessions(workspaceId, projectId, taskId);
-      const sessionIdsToClose = new Set<string>([
-        ...listedSessions.items.map((session) => session.id),
-        ...terminalTabsRef.current
-          .map((tab) => tab.sessionId)
-          .filter((sessionId): sessionId is string => typeof sessionId === "string" && sessionId.length > 0),
-      ]);
-      if (sessionIdsToClose.size === 0) {
-        resetTerminalWorkspaceState();
-        return;
-      }
-      await Promise.allSettled(
-        [...sessionIdsToClose].map((sessionId) =>
-          taskAPI.closeTerminalSession(workspaceId, projectId, taskId, sessionId),
-        ),
-      );
-      const remainingSessions = await taskAPI.listTerminalSessions(workspaceId, projectId, taskId);
-      reconcileTerminalTabsWithSessionIds(
-        new Set(remainingSessions.items.map((session) => session.id)),
-      );
-    } catch (error) {
-      handleError(error, {
-        logContext: "TaskPage.closeAllTerminalTabs",
-      });
-    }
   };
 
   const handleTerminalTabCreateRejected = async () => {
@@ -1352,9 +1491,13 @@ export function TaskPage({
     if (open) return;
     const currentTabs = terminalTabsRef.current;
     const closingIndex = currentTabs.findIndex((tab) => tab.id === tabId);
-    const nextTabs = currentTabs.filter((tab) => tab.id !== tabId);
+    const nextTabs = relabelTerminalWorkspaceTabs(
+      tTask,
+      currentTabs.filter((tab) => tab.id !== tabId),
+    );
     terminalTabsRef.current = nextTabs;
     setTerminalTabs(nextTabs);
+    nextTerminalTabOrdinalRef.current = getNextTerminalTabOrdinal(nextTabs);
     if (nextTabs.length === 0) {
       resetTerminalWorkspaceState();
       return;
@@ -1374,120 +1517,182 @@ export function TaskPage({
 
   const terminalWorkspace = hasTerminalSessions ? (
     <div
-      className="flex h-full min-h-0 flex-col"
-      data-testid="notebook__task-terminal-workspace"
-      data-active-terminal-tab-id={activeTerminalTabId ?? undefined}
+      className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border border-subtle bg-surface/72 shadow-ambient"
+      data-testid="notebook__task-terminal-shell"
     >
-      <div className="flex items-center justify-between gap-3 border-b border-subtle px-3 py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pr-2">
-          {terminalTabs.map((tab) => {
-            const isActive = tab.id === activeTerminalTabId;
-            const statusVariant =
-              tab.status === "failed"
-                ? "destructive"
-                : tab.status === "active"
-                  ? "secondary"
-                  : "outline";
-            return (
-              <div
-                key={tab.id}
-                className={`inline-flex items-center rounded-md border px-1 py-1 ${
-                  isActive
-                    ? "border-border/40 bg-surface-low/60"
-                    : "border-border/18 bg-transparent"
-                }`}
-                data-testid={`notebook__task-terminal-tab-${tab.id}`}
-              >
-                <button
-                  type="button"
-                  className={`inline-flex items-center gap-2 rounded-sm px-2 py-1 text-[12px] transition-colors ${
-                    isActive ? "text-foreground" : "text-secondary hover:text-foreground"
-                  }`}
-                  onClick={() => {
-                    setActiveTerminalTabId(tab.id);
-                    setViewMode("terminal");
-                    setArtifactsDrawerOpen(false);
-                  }}
-                >
-                  <span className="truncate">{tab.label}</span>
-                  <span className="hidden sm:inline-flex">
-                    <span className="sr-only">{tab.status}</span>
-                    <span
-                      className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] ${
-                        statusVariant === "destructive"
-                          ? "bg-error/12 text-error"
-                          : statusVariant === "secondary"
-                            ? "bg-accent/12 text-accent"
-                            : "bg-surface-low/60 text-tertiary"
-                      }`}
-                    >
-                      {tTask(`terminal_status_${tab.status}`)}
-                    </span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-sm text-secondary transition-colors hover:bg-surface-low/50 hover:text-foreground"
-                  onClick={() => closeTerminalTab(tab.id)}
-                  data-testid={`notebook__task-terminal-close-${tab.id}`}
-                  aria-label={`${tTask("terminal_close")} ${tab.label}`}
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-            onClick={createTerminalSessionTab}
-            disabled={!canCreateTerminalSession}
-            title={!canCreateTerminalSession ? terminalDisabledReason ?? undefined : undefined}
-            data-testid="notebook__task-terminal-create"
-          >
-            {tTask("terminal_new_session")}
-          </button>
-          <button
-            type="button"
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground"
-            onClick={() => {
-              void closeAllTerminalTabs();
-            }}
-            data-testid="notebook__task-terminal-end-all"
-          >
-            {tTask("terminal_end_all")}
-          </button>
-        </div>
-      </div>
-      <div className="mt-2 flex min-h-0 flex-1 overflow-hidden">
-        {terminalTabs.map((tab) => (
-          <div
-            key={tab.id}
-            className={`min-h-0 flex-1 overflow-hidden ${tab.id === activeTerminalTabId ? "block" : "hidden"}`}
-          >
-            <TaskTerminalPanel
-              open
-              visible={tab.id === activeTerminalTabId}
-              tabId={tab.id}
-              sessionStorageScope={tab.id}
-              workspaceId={workspaceId}
-              projectId={projectId}
-              taskId={taskId}
-              taskTitle={task.title}
-              taskApi={taskAPI}
-              closeRequestToken={tab.closeRequestToken}
-              onSessionResolved={(sessionId) => handleTerminalTabSessionResolved(tab.id, sessionId)}
-              onStatusChange={(status) => handleTerminalTabStatusChange(tab.id, status)}
-              onSessionCreateRejected={handleTerminalTabCreateRejected}
-              onOpenChange={(open) => handleTerminalTabOpenChange(tab.id, open)}
-            />
+      <div className="flex items-start justify-between gap-3 border-b border-subtle px-4 py-3">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">
+            {tTask("terminal_workspace")}
           </div>
-        ))}
+          <div className="mt-1 text-xs text-secondary">
+            {tTask("terminal_scope_hint")}
+          </div>
+        </div>
+        <Badge
+          variant={terminalHasRecovery ? "destructive" : "secondary"}
+          className="shrink-0 text-[11px]"
+          data-testid="notebook__task-terminal-shell-summary"
+        >
+          {terminalSessionSummaryLabel}
+        </Badge>
+      </div>
+      <div
+        className="flex min-h-0 w-full flex-1 flex-col"
+        data-testid="notebook__task-terminal-workspace"
+        data-active-terminal-tab-id={activeTerminalTabId ?? undefined}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-subtle px-3 py-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pr-2">
+            {terminalTabs.map((tab) => {
+              const isActive = tab.id === activeTerminalTabId;
+              const statusVariant =
+                tab.status === "failed" || tab.status === "recovering"
+                  ? "destructive"
+                  : tab.status === "active"
+                    ? "secondary"
+                    : "outline";
+              return (
+                <div
+                  key={tab.id}
+                  className={`inline-flex items-center rounded-md border px-1 py-1 ${
+                    isActive
+                      ? "border-border/40 bg-surface-low/60"
+                      : "border-border/18 bg-transparent"
+                  }`}
+                  data-testid={`notebook__task-terminal-tab-${tab.id}`}
+                >
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-2 rounded-sm px-2 py-1 text-[12px] transition-colors ${
+                      isActive
+                        ? "text-foreground"
+                        : "text-secondary hover:text-foreground"
+                    }`}
+                    onClick={() => {
+                      setActiveTerminalTabId(tab.id);
+                      activeTerminalTabIdRef.current = tab.id;
+                      setViewMode("terminal");
+                      setArtifactsDrawerOpen(false);
+                    }}
+                  >
+                    <span className="truncate">{tab.label}</span>
+                    <span className="hidden sm:inline-flex">
+                      <span className="sr-only">{tab.status}</span>
+                      <span
+                        className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] ${
+                          statusVariant === "destructive"
+                            ? "bg-error/12 text-error"
+                            : statusVariant === "secondary"
+                              ? "bg-accent/12 text-accent"
+                              : "bg-surface-low/60 text-tertiary"
+                        }`}
+                      >
+                        {tTask(`terminal_status_${tab.status}`)}
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-sm text-secondary transition-colors hover:bg-surface-low/50 hover:text-foreground"
+                    onClick={() => closeTerminalTab(tab.id)}
+                    data-testid={`notebook__task-terminal-close-${tab.id}`}
+                    aria-label={`${tTask("terminal_close")} ${tab.label}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+              onClick={createTerminalSessionTab}
+              disabled={!canCreateTerminalSession}
+              title={!canCreateTerminalSession ? terminalDisabledReason ?? undefined : undefined}
+              data-testid="notebook__task-terminal-create"
+            >
+              {tTask("terminal_new_session")}
+            </button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 border-error/30 px-3 text-[12px] text-error hover:bg-error/5 hover:text-error"
+              onClick={handleRequestCloseAllTerminalTabs}
+              disabled={endAllTerminalPending}
+              data-testid="notebook__task-terminal-end-all"
+            >
+              {tTask("terminal_end_all")}
+            </Button>
+          </div>
+        </div>
+        <div className="relative flex min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-3">
+          {terminalTabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={
+                effectiveViewMode === "terminal" && tab.id === activeTerminalTabId
+                  ? "flex min-h-0 w-full flex-1 overflow-hidden"
+                  : "pointer-events-none absolute h-0 w-0 overflow-hidden"
+              }
+            >
+              <TaskTerminalPanel
+                open
+                visible={effectiveViewMode === "terminal" && tab.id === activeTerminalTabId}
+                tabId={tab.id}
+                sessionStorageScope={tab.id}
+                workspaceId={workspaceId}
+                projectId={projectId}
+                taskId={taskId}
+                taskTitle={task.title}
+                taskApi={taskAPI}
+                closeRequestToken={tab.closeRequestToken}
+                onSessionResolved={(sessionId) =>
+                  handleTerminalTabSessionResolved(tab.id, sessionId)
+                }
+                onStatusChange={(status) =>
+                  handleTerminalTabStatusChange(tab.id, status)
+                }
+                onSessionCreateRejected={handleTerminalTabCreateRejected}
+                onOpenChange={(open) => handleTerminalTabOpenChange(tab.id, open)}
+              />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   ) : null;
+
+  const conversationBlockedState =
+    effectiveViewMode === "conversation" && terminalTruthUnavailable
+      ? {
+          title: tTask("terminal_truth_unavailable_title"),
+          description: tTask("terminal_truth_unavailable_description"),
+          actionLabel: tTask("terminal_truth_unavailable_action"),
+          onAction: handleRetryTerminalWorkspaceHydration,
+          tone: "critical" as const,
+        }
+      : effectiveViewMode === "conversation" && hasTerminalSessions
+        ? {
+            title: terminalSessionSummaryLabel,
+            description: terminalHiddenStateDescription,
+            actionLabel: terminalWorkspaceActionLabel,
+            onAction: () => handleSetViewMode("terminal"),
+            tone: terminalHasRecovery ? ("critical" as const) : ("default" as const),
+          }
+        : null;
+  const showConversationBlockedEmptyState =
+    effectiveViewMode === "conversation" &&
+    conversationBlockedState !== null &&
+    messagesForDisplay.length === 0 &&
+    !streamingMessageId &&
+    !(streamingContent ?? "").trim() &&
+    !showSandboxStarting &&
+    !agentIsBusy;
+  const showCompactTerminalStatusStrip = showConversationBlockedEmptyState;
 
   const terminalStatusStrip =
     terminalTruthUnavailable ||
@@ -1501,20 +1706,24 @@ export function TaskPage({
             <div className="text-sm font-medium text-foreground">
               {tTask("terminal_truth_unavailable_title")}
             </div>
-            <div className="mt-1 text-xs text-secondary">
-              {tTask("terminal_truth_unavailable_description")}
+            {!showCompactTerminalStatusStrip ? (
+              <div className="mt-1 text-xs text-secondary">
+                {tTask("terminal_truth_unavailable_description")}
+              </div>
+            ) : null}
+          </div>
+          {!showConversationBlockedEmptyState ? (
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                onClick={handleRetryTerminalWorkspaceHydration}
+                disabled={terminalBootstrapPending}
+              >
+                {tTask("terminal_truth_unavailable_action")}
+              </button>
             </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-              onClick={handleRetryTerminalWorkspaceHydration}
-              disabled={terminalBootstrapPending}
-            >
-              {tTask("terminal_truth_unavailable_action")}
-            </button>
-          </div>
+          ) : null}
         </div>
       ) : (
         <div
@@ -1523,35 +1732,34 @@ export function TaskPage({
         >
           <div className="min-w-0">
             <div className="text-sm font-medium text-foreground">
-              {terminalHasRecovery
-                ? tTask("terminal_status_strip_recovery", {
-                    count: terminalTabs.length,
-                  })
-                : tTask("terminal_status_strip_active", {
-                    count: terminalTabs.length,
-                  })}
+              {terminalSessionSummaryLabel}
             </div>
-            <div className="mt-1 text-xs text-secondary">
-              {tTask("terminal_agent_run_blocked")}
-            </div>
+            {!showCompactTerminalStatusStrip ? (
+              <div className="mt-1 text-xs text-secondary">
+                {terminalHiddenStateDescription}
+              </div>
+            ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button
+            {!showConversationBlockedEmptyState ? (
+              <button
+                type="button"
+                className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground"
+                onClick={() => handleSetViewMode("terminal")}
+              >
+                {terminalWorkspaceActionLabel}
+              </button>
+            ) : null}
+            <Button
               type="button"
-              className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground"
-              onClick={() => handleSetViewMode("terminal")}
-            >
-              {tTask("terminal_workspace_open")}
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground"
-              onClick={() => {
-                void closeAllTerminalTabs();
-              }}
+              variant="outline"
+              size="sm"
+              className="h-8 border-error/30 px-3 text-[12px] text-error hover:bg-error/5 hover:text-error"
+              onClick={handleRequestCloseAllTerminalTabs}
+              disabled={endAllTerminalPending}
             >
               {tTask("terminal_end_all")}
-            </button>
+            </Button>
           </div>
         </div>
       )
@@ -1573,8 +1781,9 @@ export function TaskPage({
         deleteBlockedReason={deleteBlockedReason}
         viewMode={effectiveViewMode}
         canCreateTerminalSession={canCreateTerminalSession}
-        terminalSessionCount={terminalTabs.length}
+        terminalSessionCount={terminalSessionCount}
         terminalHasRecovery={terminalHasRecovery}
+        terminalRecoveryCount={terminalRecoveryCount}
         terminalDisabledReason={terminalDisabledReason}
         onSetViewMode={handleSetViewMode}
         onCreateTerminalSession={
@@ -1646,6 +1855,7 @@ export function TaskPage({
         artifactsShowLabel={tTask("artifacts_show")}
         artifactsHideLabel={tTask("artifacts_hide")}
         inputPlaceholder={hasTerminalSessions ? tTask("terminal_input_blocked_placeholder") : undefined}
+        conversationBlockedState={conversationBlockedState}
         taskId={taskId}
         traceErrorByMessageId={traceErrorByMessageId}
         traceEventsByMessageId={traceEventsByMessageId}
@@ -1654,6 +1864,31 @@ export function TaskPage({
         traceLoadingByMessageId={traceLoadingByMessageId}
         workspaceId={workspaceId}
       />
+      <AlertDialog open={endAllTerminalDialogOpen} onOpenChange={setEndAllTerminalDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tTask("terminal_end_all_confirm_title")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {tTask("terminal_end_all_confirm_description")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={endAllTerminalPending}>
+              {tCommon("cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void handleConfirmCloseAllTerminalTabs();
+              }}
+              disabled={endAllTerminalPending}
+              variant="destructive"
+            >
+              {tTask("terminal_end_all_confirm_action")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <TaskPageDialogs
         canCreateTask={canCreateTask}

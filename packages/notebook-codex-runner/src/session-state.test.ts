@@ -133,7 +133,7 @@ describe('ensureCodexSessionStateCompatible', () => {
       model: 'placeholder-model',
       wireApi: 'responses' as const,
       resourceProxyBase: 'http://proxy-a',
-      interactionKind: 'notebook',
+      interactionKind: 'notebook' as const,
       modelContextWindow: 128000,
       modelAutoCompactTokenLimit: 121600,
       modelCatalogSignature: '{"input_modalities":["text"]}',

@@ -485,7 +485,7 @@ describe('ConversationPanel', () => {
   });
 
   describe('Empty Messages', () => {
-    it('renders with empty messages array', () => {
+    it('renders the conversation empty state when there are no messages and the task is not blocked', () => {
       render(
         <ConversationPanel
           messages={[]}
@@ -493,7 +493,39 @@ describe('ConversationPanel', () => {
         />
       );
 
-      expect(screen.getByTestId('message-list')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__conversation-empty-state')).toBeInTheDocument();
+      expect(screen.queryByTestId('message-list')).not.toBeInTheDocument();
+    });
+
+    it('renders a blocked state instead of start-a-conversation cues when terminal work is blocking the task', async () => {
+      const user = userEvent.setup();
+      const onAction = vi.fn();
+
+      render(
+        <ConversationPanel
+          messages={[]}
+          onSendMessage={mockOnSendMessage}
+          disabled
+          blockedState={{
+            title: '1 terminal session is using this task',
+            description:
+              'The terminal workspace is hidden, but this session still blocks new agent runs until you open the terminal workspace or end the session.',
+            actionLabel: 'Open Terminal Workspace',
+            onAction,
+          }}
+        />
+      );
+
+      expect(screen.getByTestId('notebook__conversation-blocked-state')).toHaveTextContent(
+        '1 terminal session is using this task',
+      );
+      expect(screen.getByTestId('notebook__conversation-blocked-state')).toHaveTextContent(
+        'The terminal workspace is hidden, but this session still blocks new agent runs until you open the terminal workspace or end the session.',
+      );
+      expect(screen.queryByTestId('notebook__conversation-empty-state')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Open Terminal Workspace' }));
+      expect(onAction).toHaveBeenCalledTimes(1);
     });
   });
 

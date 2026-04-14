@@ -28,9 +28,11 @@ service_status() {
 runner_status() {
   local pid
   local runner_count
+  local socket_state
   pid="$(cat "${RUNNER_PID_FILE}" 2>/dev/null || true)"
-  runner_count="$(count_matching_processes 'make notebook-runner')"
-  if [[ -f "${RUNNER_READY_FILE}" ]]; then
+  runner_count="$(count_matching_processes 'make notebook-agent-runner')"
+  socket_state="$(runner_socket_health_state)"
+  if [[ "${socket_state}" == "connected" ]]; then
     if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
       printf 'up (pid=%s)' "${pid}"
     else
@@ -43,7 +45,7 @@ runner_status() {
     fi
   else
     if (( runner_count > 0 )); then
-      printf 'down  WARN: %s untracked runner processes detected\n' "${runner_count}"
+      printf 'down  WARN: runner socket disconnected (pid=%s, processes=%s)\n' "${pid:-unknown}" "${runner_count}"
     else
       printf 'down\n'
     fi

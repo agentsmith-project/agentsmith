@@ -5,12 +5,28 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT_DIR}/scripts/local-manual/common.sh"
 
 init_local_manual_env
+export ROOT_DIR
+
+REAL_SMOKE_RESTARTED_RUNNER=0
+cleanup_on_exit() {
+  local exit_code="${1:-0}"
+  if [[ "${exit_code}" != "0" && "${REAL_SMOKE_RESTARTED_RUNNER}" == "1" ]]; then
+    stop_pid_file_if_running "${RUNNER_PID_FILE}" "runner" || true
+    rm -f "${RUNNER_READY_FILE}" || true
+  fi
+}
+trap 'cleanup_on_exit $?' EXIT INT TERM
 
 if [[ ! -f "${API_READY_FILE}" || ! -f "${WEB_READY_FILE}" || ! -f "${RUNNER_READY_FILE}" ]]; then
   bash "${ROOT_DIR}/scripts/local-manual/up.sh" >/dev/null
 fi
 
-if [[ ! -f "${RUNNER_READY_FILE}" || -z "$(state_get project.id)" || -z "$(state_get agent.id)" ]]; then
+if ! runner_socket_is_connected; then
+  REAL_SMOKE_RESTARTED_RUNNER=1
+  ensure_local_manual_runner_connected
+fi
+
+if [[ -z "$(state_get project.id)" || -z "$(state_get agent.id)" ]]; then
   for attempt in 1 2 3 4; do
     if bash "${ROOT_DIR}/scripts/local-manual/seed-notebook-demo.sh" >/dev/null; then
       break
@@ -110,6 +126,8 @@ NODE
 export TOKEN API_BASE TASK_WS_ID TASK_PROJECT_ID TASK_ID
 
 node <<'NODE'
+const { execFileSync } = require('node:child_process');
+const path = require('node:path');
 const { WebSocket } = require('ws');
 
 const token = process.env.TOKEN;
@@ -117,10 +135,42 @@ const apiBase = process.env.API_BASE;
 const workspaceId = process.env.TASK_WS_ID;
 const projectId = process.env.TASK_PROJECT_ID;
 const taskId = process.env.TASK_ID;
+const rootDir = process.env.ROOT_DIR || process.cwd();
+const expectedWorkspaceRoot = `${process.env.HOME || ''}/ags-workspace/${taskId}`;
 
 function fail(message, extra) {
   console.error('[notebook-terminal-smoke] FAILED', message, extra ?? '');
   process.exit(1);
+}
+
+function runnerSocketHealthState() {
+  const output = execFileSync(
+    'bash',
+    [
+      '-lc',
+      `set -euo pipefail
+source "${path.join(rootDir, 'scripts/local-manual/common.sh')}"
+runner_socket_health_state`,
+    ],
+    {
+      cwd: rootDir,
+      env: process.env,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    },
+  );
+  return output.trim();
+}
+
+function ensureLocalManualRunnerConnected() {
+  if (runnerSocketHealthState() === 'connected') {
+    return;
+  }
+  execFileSync('bash', [path.join(rootDir, 'scripts/local-manual/start-runner.sh')], {
+    cwd: rootDir,
+    env: process.env,
+    stdio: 'inherit',
+  });
 }
 
 (async () => {
@@ -154,6 +204,7 @@ function fail(message, extra) {
         continue;
       }
       if (response.status === 409 && payload?.message === 'task_runner_offline') {
+        ensureLocalManualRunnerConnected();
         await new Promise((resolve) => setTimeout(resolve, 1000));
         continue;
       }
@@ -276,10 +327,7 @@ function fail(message, extra) {
   const first = await openSession({ label: 'session-one' });
   first.send('pwd\nexport NOTEBOOK_SESSION_VAR=terminal_session_value\necho SESSION_VAR=$NOTEBOOK_SESSION_VAR\nsleep 120\n');
   await first.waitForOutput('SESSION_VAR=terminal_session_value');
-  if (
-    !first.state.output.includes('/home/percy/ags-workspaces/')
-    && !first.state.output.includes('/workspace')
-  ) {
+  if (!first.state.output.includes(expectedWorkspaceRoot)) {
     fail('session_one_workspace_missing', first.state.output);
   }
   if (first.state.sawWizard) {

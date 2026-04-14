@@ -9,7 +9,7 @@ const STORY_FILE = path.resolve(
 );
 
 describe('notebook terminal workspace multi-session story', () => {
-  it('defines a backend-real member journey around terminal workspace tabs and task release', () => {
+  it('defines a backend-real member journey around terminal workspace tabs, delete blocking, and task release', () => {
     const story = loadStoryDefinitionSync(STORY_FILE);
 
     expect(story.lane).toBe('backend-real');
@@ -26,6 +26,9 @@ describe('notebook terminal workspace multi-session story', () => {
     expect(story.goal).toContain('多个');
     expect(story.goal).toContain('刷新');
     expect(story.goal).toContain('释放');
+    expect(story.goal).toContain('删除');
+    expect(story.goal).toContain('第四');
+    expect(story.goal).toContain('session id');
     expect(story.goal).not.toContain('TaskTerminalPanel');
     expect(story.goal).not.toContain('terminal/sessions');
     expect(story.goal).not.toContain('hide/show');
@@ -34,9 +37,12 @@ describe('notebook terminal workspace multi-session story', () => {
       'open-terminal-workspace',
       'wait-for-first-terminal-session',
       'create-second-terminal-session',
+      'create-third-terminal-session',
+      'keep-task-delete-blocked-while-live-terminal-sessions-exist',
+      'reject-phantom-fourth-terminal-session',
       'switch-between-terminal-sessions',
       'return-to-conversation-while-terminal-stays-active',
-      'reload-task-and-restore-terminal-truth',
+      'reload-task-and-preserve-backend-session-ids',
       'reject-new-run-while-live-terminal-sessions-exist',
       'reopen-terminal-workspace-after-reload',
       'end-one-terminal-session-without-disrupting-others',
@@ -45,12 +51,27 @@ describe('notebook terminal workspace multi-session story', () => {
     expect(story.steps.find((step) => step.stepId === 'create-second-terminal-session')?.target).toBe(
       'notebook__task-terminal-create',
     );
+    expect(story.steps.find((step) => step.stepId === 'create-third-terminal-session')?.target).toBe(
+      'notebook__task-terminal-create',
+    );
+    expect(
+      story.steps.find((step) => step.stepId === 'keep-task-delete-blocked-while-live-terminal-sessions-exist')?.target,
+    ).toBe('notebook__task-header-delete');
+    expect(story.steps.find((step) => step.stepId === 'reject-phantom-fourth-terminal-session')?.target).toBe(
+      'notebook__task-terminal-create',
+    );
     expect(story.steps.find((step) => step.stepId === 'return-to-conversation-while-terminal-stays-active')?.target).toBe(
       'notebook__task-header-mode-conversation',
     );
-    expect(story.steps.find((step) => step.stepId === 'reload-task-and-restore-terminal-truth')?.target).toBe(
+    expect(story.steps.find((step) => step.stepId === 'reload-task-and-preserve-backend-session-ids')?.target).toBe(
       'notebook__task-terminal-status-strip',
     );
+    expect(
+      story.steps.find((step) => step.stepId === 'reload-task-and-preserve-backend-session-ids')?.expectedFeedback,
+    ).toContain('需要恢复处理');
+    expect(
+      story.steps.find((step) => step.stepId === 'reload-task-and-preserve-backend-session-ids')?.expectedFeedback,
+    ).toContain('同一批 session id');
   });
 
   it('binds the notebook terminal real-lane spec to the story and terminal workspace trace steps', async () => {
@@ -68,7 +89,7 @@ describe('notebook terminal workspace multi-session story', () => {
     expect(source).toContain("captureTerminalTrace(page, 'create-second-terminal-session')");
     expect(source).toContain("captureTerminalTrace(page, 'switch-between-terminal-sessions')");
     expect(source).toContain("captureTerminalTrace(page, 'return-to-conversation-while-terminal-stays-active')");
-    expect(source).toContain("captureTerminalTrace(page, 'reload-task-and-restore-terminal-truth')");
+    expect(source).toContain("captureTerminalTrace(page, 'reload-task-and-preserve-backend-session-ids')");
     expect(source).toContain("captureTerminalTrace(page, 'reject-new-run-while-live-terminal-sessions-exist')");
     expect(source).toContain("captureTerminalTrace(page, 'reopen-terminal-workspace-after-reload')");
     expect(source).toContain("captureTerminalTrace(page, 'end-one-terminal-session-without-disrupting-others')");
@@ -78,10 +99,13 @@ describe('notebook terminal workspace multi-session story', () => {
     expect(source).toContain('notebook__task-terminal-workspace');
     expect(source).toContain('notebook__task-terminal-status-strip');
     expect(source).toContain('Open Terminal Workspace');
+    expect(source).toContain('Reopen Terminal Workspace');
     expect(source).toContain('End All Sessions');
     expect(source).toContain('notebook__task-terminal-close-');
+    expect(source).toContain('const activeTabIdBeforeClose = await getActiveTerminalTabId(page);');
+    expect(source).toContain("statusStrip.getByRole('button', { name: 'End All Sessions' }).click()");
+    expect(source).not.toContain("captureTerminalTrace(page, 'reload-task-and-restore-terminal-truth')");
     expect(source).not.toContain('Terminal session still active');
     expect(source).not.toContain('Show the hidden terminal session again');
-    expect(source).not.toContain("getByRole('button', { name: 'End Session' })");
   });
 });

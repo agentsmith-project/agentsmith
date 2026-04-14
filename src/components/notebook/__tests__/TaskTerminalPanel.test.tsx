@@ -3,6 +3,9 @@ import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } 
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { TaskTerminalPanel, resetTaskTerminalPanelSessionHandleCacheForTests } from '../TaskTerminalPanel';
 
+const { mockToastError } = vi.hoisted(() => ({
+  mockToastError: vi.fn(),
+}));
 const terminalWritelnMock = vi.fn();
 const terminalWriteMock = vi.fn();
 const terminalDisposeMock = vi.fn();
@@ -45,6 +48,7 @@ vi.mock('next-intl', () => ({
       terminal_preparing_run_busy: 'Waiting for the current agent run to finish before opening the terminal...',
       terminal_status_idle: 'Idle',
       terminal_status_preparing: 'Preparing',
+      terminal_status_recovering: 'Recovering',
       terminal_status_connecting: 'Connecting',
       terminal_status_active: 'Active',
       terminal_status_closed: 'Closed',
@@ -57,6 +61,7 @@ vi.mock('next-intl', () => ({
       terminal_reconnecting: 'Reconnecting to the previous terminal session...',
       terminal_error_runner_offline: 'The runner is still getting ready for this task. Retry in a moment.',
       terminal_error_agent_unavailable: "This task's runner is not available right now.",
+      terminal_error_invalid_shell: "This task couldn't start a terminal in the current environment.",
       terminal_error_connection_failed: 'The terminal connection could not be opened. Please retry.',
       terminal_error_taken_over: 'This terminal was opened in another browser tab. Reopen it here if you want to continue.',
       terminal_recovery_hint: 'End this terminal session, then reopen it from the task header when you are ready to retry.',
@@ -68,7 +73,7 @@ vi.mock('next-intl', () => ({
 
 vi.mock('@/components/ui/toast', () => ({
   toast: {
-    error: vi.fn(),
+    error: mockToastError,
   },
 }));
 
@@ -181,6 +186,34 @@ describe('TaskTerminalPanel', () => {
     expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Failed');
   }, 10000);
 
+  it('renders as a full-height terminal surface for the dedicated terminal workspace shell', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_layout',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-layout',
+    });
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_layout"
+        taskTitle="terminal-layout"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    const panel = await screen.findByTestId('notebook__task-terminal');
+    expect(panel).toHaveClass('flex', 'min-h-0', 'w-full', 'flex-1', 'flex-col', 'overflow-hidden');
+    expect(panel).not.toHaveClass('mt-3');
+
+    const viewport = screen.getByTestId('notebook__task-terminal-viewport');
+    expect(viewport).toHaveClass('min-h-0', 'flex-1');
+    expect(viewport).not.toHaveClass('h-[360px]');
+  });
+
   it('shows a friendly failure reason for non-retryable terminal session errors', async () => {
     const createTerminalSession = vi
       .fn()
@@ -247,6 +280,38 @@ describe('TaskTerminalPanel', () => {
     });
     expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Failed');
     expect(onStatusChange).not.toHaveBeenCalledWith('failed');
+  });
+
+  it('shows the terminal session limit toast only once across StrictMode effect re-entry', async () => {
+    const createTerminalSession = vi
+      .fn()
+      .mockRejectedValue(new Error('task_terminal_session_limit_reached'));
+    const onSessionCreateRejected = vi.fn();
+    const onOpenChange = vi.fn();
+
+    render(
+      <React.StrictMode>
+        <TaskTerminalPanel
+          open
+          workspaceId="ws_default"
+          projectId="proj_1"
+          taskId="task_limit_strict"
+          taskTitle="terminal-limit-strict"
+          taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+          onOpenChange={onOpenChange}
+          onSessionCreateRejected={onSessionCreateRejected}
+        />
+      </React.StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(onSessionCreateRejected).toHaveBeenCalledTimes(1);
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+    expect(mockToastError).toHaveBeenCalledTimes(1);
+    expect(mockToastError).toHaveBeenCalledWith(
+      'You can run up to 3 terminal sessions in one task.',
+    );
   });
 
   it('reports active then failed status changes so the page can tell the truth outside the panel', async () => {
@@ -338,7 +403,7 @@ describe('TaskTerminalPanel', () => {
     ).toBeNull();
   });
 
-  it('reconnects to a stored terminal session before creating a new one', async () => {
+  it('reconnects to a stored terminal session before creating a new one and surfaces recovery state instead of preparing', async () => {
     window.sessionStorage.setItem(
       'agentsmith-terminal-session:ws_default:proj_1:task_3',
       'term_existing',
@@ -369,7 +434,123 @@ describe('TaskTerminalPanel', () => {
     await waitFor(() => expect(getTerminalSession).toHaveBeenCalledWith('ws_default', 'proj_1', 'task_3', 'term_existing'));
     await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
     expect(createTerminalSession).not.toHaveBeenCalled();
+    expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Recovering');
+    expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent(
+      'Reconnecting to the previous terminal session...',
+    );
+    expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Connecting');
+    expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Preparing');
     expect(terminalWritelnMock).toHaveBeenCalledWith('Reconnecting to the previous terminal session...');
+  });
+
+  it('retries the same stored session after an unexpected reconnect-time websocket close instead of getting stuck closed', async () => {
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_reconnect_retry',
+      'term_retry_existing',
+    );
+    const getTerminalSession = vi
+      .fn()
+      .mockResolvedValue({
+        id: 'term_retry_existing',
+        status: 'disconnected',
+        cols: 80,
+        rows: 24,
+        created_at: '2026-04-02T00:00:00Z',
+        last_activity_at: '2026-04-02T00:00:01Z',
+        ws_url: 'ws://example.test/terminal-retry-existing',
+      })
+      .mockResolvedValue({
+        id: 'term_retry_existing',
+        status: 'disconnected',
+        cols: 80,
+        rows: 24,
+        created_at: '2026-04-02T00:00:00Z',
+        last_activity_at: '2026-04-02T00:00:02Z',
+        ws_url: 'ws://example.test/terminal-retry-existing',
+      });
+    const createTerminalSession = vi.fn();
+    const onStatusChange = vi.fn();
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_reconnect_retry"
+        taskTitle="terminal-reconnect-retry"
+        taskApi={{ createTerminalSession, getTerminalSession } as never}
+        onStatusChange={onStatusChange}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(getTerminalSession).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        'task_reconnect_retry',
+        'term_retry_existing',
+      ),
+    );
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const firstSocket = MockWebSocket.instances[0];
+
+    act(() => {
+      firstSocket?.open();
+      firstSocket?.onmessage?.({
+        data: JSON.stringify({ type: 'started' }),
+      });
+      firstSocket?.onclose?.({ reason: '' });
+    });
+
+    await waitFor(() => {
+      expect(getTerminalSession).toHaveBeenCalledTimes(2);
+      expect(MockWebSocket.instances).toHaveLength(2);
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Recovering');
+      expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('Closed');
+    });
+
+    const secondSocket = MockWebSocket.instances[1];
+    act(() => {
+      secondSocket?.open();
+      secondSocket?.onmessage?.({
+        data: JSON.stringify({ type: 'started' }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(onStatusChange.mock.lastCall?.[0]).toBe('active');
+    });
+    expect(createTerminalSession).not.toHaveBeenCalled();
+  });
+
+  it('shows a human-readable invalid shell failure without exposing raw shell details', async () => {
+    const createTerminalSession = vi
+      .fn()
+      .mockRejectedValue(new Error('invalid_shell:/nix/store/bash'));
+
+    render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_invalid_shell"
+        taskTitle="terminal-invalid-shell"
+        taskApi={{ createTerminalSession, getTerminalSession: vi.fn() } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent('Failed');
+      expect(screen.getByTestId('notebook__task-terminal')).toHaveTextContent(
+        "This task couldn't start a terminal in the current environment.",
+      );
+    });
+    expect(screen.getByTestId('notebook__task-terminal')).not.toHaveTextContent('/nix/store/bash');
+    expect(mockToastError).toHaveBeenCalledWith(
+      "This task couldn't start a terminal in the current environment.",
+    );
   });
 
   it('reports the resolved id when reconnecting to an existing session', async () => {
@@ -476,6 +657,76 @@ describe('TaskTerminalPanel', () => {
     await waitFor(() => expect(terminalFocusMock).toHaveBeenCalledTimes(1));
   });
 
+  it('keeps an already connected live terminal session alive when the tab becomes hidden', async () => {
+    const createTerminalSession = vi.fn().mockResolvedValue({
+      session_id: 'term_hidden_live',
+      status: 'pending',
+      ws_url: 'ws://example.test/terminal-hidden-live',
+    });
+    const taskApi = {
+      createTerminalSession,
+      getTerminalSession: vi.fn(),
+    } as never;
+    const onOpenChange = vi.fn();
+    const { rerender } = render(
+      <TaskTerminalPanel
+        open
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden_live"
+        taskTitle="terminal-hidden-live"
+        taskApi={taskApi}
+        onOpenChange={onOpenChange}
+      />,
+    );
+
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket?.open();
+      socket?.onmessage?.({
+        data: JSON.stringify({ type: 'started' }),
+      });
+    });
+    await waitFor(() => {
+      expect(
+        window.sessionStorage.getItem(
+          'agentsmith-terminal-session:ws_default:proj_1:task_hidden_live',
+        ),
+      ).toBe('term_hidden_live');
+    });
+
+    rerender(
+      <TaskTerminalPanel
+        open
+        visible={false}
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden_live"
+        taskTitle="terminal-hidden-live"
+        taskApi={taskApi}
+        onOpenChange={onOpenChange}
+      />,
+    );
+
+    expect(screen.getByTestId('notebook__task-terminal')).toBeInTheDocument();
+    expect(socket?.close).not.toHaveBeenCalled();
+    expect(terminalDisposeMock).not.toHaveBeenCalled();
+    const hiddenTerminal = screen.getByTestId('notebook__task-terminal');
+    expect(hiddenTerminal).toHaveAttribute(
+      'data-visible',
+      'false',
+    );
+    expect(hiddenTerminal).toHaveClass(
+      'pointer-events-none',
+      'absolute',
+      'h-0',
+      'w-0',
+      'overflow-hidden',
+    );
+    expect(hiddenTerminal).not.toHaveAttribute('hidden');
+  });
+
   it('does not steal focus when an existing session reconnects on initial mount', async () => {
     window.sessionStorage.setItem(
       'agentsmith-terminal-session:ws_default:proj_1:task_mount',
@@ -521,6 +772,7 @@ describe('TaskTerminalPanel', () => {
   it('can close an existing hidden terminal session without rendering the panel again', async () => {
     const onOpenChange = vi.fn();
     const createTerminalSession = vi.fn();
+    const getTerminalSession = vi.fn();
     const closeTerminalSession = vi.fn().mockResolvedValue(undefined);
     window.sessionStorage.setItem(
       'agentsmith-terminal-session:ws_default:proj_1:task_hidden',
@@ -534,7 +786,7 @@ describe('TaskTerminalPanel', () => {
         projectId="proj_1"
         taskId="task_hidden"
         taskTitle="terminal-hidden"
-        taskApi={{ createTerminalSession, getTerminalSession: vi.fn(), closeTerminalSession } as never}
+        taskApi={{ createTerminalSession, getTerminalSession, closeTerminalSession } as never}
         onOpenChange={onOpenChange}
         closeRequestToken={0}
       />,
@@ -542,6 +794,8 @@ describe('TaskTerminalPanel', () => {
 
     expect(screen.queryByTestId('notebook__task-terminal')).not.toBeInTheDocument();
     expect(createTerminalSession).not.toHaveBeenCalled();
+    expect(getTerminalSession).not.toHaveBeenCalled();
+    expect(MockWebSocket.instances).toHaveLength(0);
 
     rerender(
       <TaskTerminalPanel
@@ -551,7 +805,7 @@ describe('TaskTerminalPanel', () => {
         projectId="proj_1"
         taskId="task_hidden"
         taskTitle="terminal-hidden"
-        taskApi={{ createTerminalSession, getTerminalSession: vi.fn(), closeTerminalSession } as never}
+        taskApi={{ createTerminalSession, getTerminalSession, closeTerminalSession } as never}
         onOpenChange={onOpenChange}
         closeRequestToken={1}
       />,
@@ -563,6 +817,35 @@ describe('TaskTerminalPanel', () => {
     expect(createTerminalSession).not.toHaveBeenCalled();
     expect(closeTerminalSession).toHaveBeenCalledWith('ws_default', 'proj_1', 'task_hidden', 'term_hidden_existing');
     expect(window.sessionStorage.getItem('agentsmith-terminal-session:ws_default:proj_1:task_hidden')).toBeNull();
+  });
+
+  it('does not reconnect or bootstrap a stored terminal session on an initially hidden mount', async () => {
+    const createTerminalSession = vi.fn();
+    const getTerminalSession = vi.fn();
+    window.sessionStorage.setItem(
+      'agentsmith-terminal-session:ws_default:proj_1:task_hidden_initial',
+      'term_hidden_initial',
+    );
+
+    render(
+      <TaskTerminalPanel
+        open
+        visible={false}
+        workspaceId="ws_default"
+        projectId="proj_1"
+        taskId="task_hidden_initial"
+        taskTitle="terminal-hidden-initial"
+        taskApi={{ createTerminalSession, getTerminalSession } as never}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('notebook__task-terminal')).not.toBeInTheDocument();
+    });
+    expect(createTerminalSession).not.toHaveBeenCalled();
+    expect(getTerminalSession).not.toHaveBeenCalled();
+    expect(MockWebSocket.instances).toHaveLength(0);
   });
 
   it('deduplicates the first terminal session create flow across StrictMode effect re-entry', async () => {

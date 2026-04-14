@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { CHAT_RUNNER_SPEC, NOTEBOOK_RUNNER_SPEC } from "@mbos/agent-runner";
 import { createDefaultNodeApiDeps } from "./index.js";
@@ -15,6 +15,17 @@ import {
   startServer,
   startServerWithDeps,
 } from "./__integration__/test-support.js";
+
+const originalGatewayReconcileInterval = process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS;
+const originalFeishuRefreshEnabled = process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  if (originalGatewayReconcileInterval === undefined) delete process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS;
+  else process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = originalGatewayReconcileInterval;
+  if (originalFeishuRefreshEnabled === undefined) delete process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED;
+  else process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = originalFeishuRefreshEnabled;
+});
 
 async function createFileLibrary(
   baseUrl: string,
@@ -81,6 +92,123 @@ describe("api-entry-node me routes", () => {
       });
     });
 
+    expect(shutdown).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for file library gateway shutdown before resolving server.close", async () => {
+    const deps = createDefaultNodeApiDeps();
+    let resolveShutdown: (() => void) | null = null;
+    const shutdown = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveShutdown = resolve;
+        }),
+    );
+    const { server } = startServerWithDeps({
+      ...deps,
+      fileLibraryGatewayManager: {
+        ...deps.fileLibraryGatewayManager,
+        reconcile: vi.fn(async () => undefined),
+        shutdown,
+      },
+    });
+
+    await new Promise<void>((resolve) => {
+      if (server.listening) {
+        resolve();
+        return;
+      }
+      server.once("listening", () => resolve());
+    });
+
+    let closeResolved = false;
+    const closePromise = new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        closeResolved = true;
+        resolve();
+      });
+    });
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    expect(closeResolved).toBe(false);
+
+    resolveShutdown?.();
+    await closePromise;
+
+    expect(closeResolved).toBe(true);
+  });
+
+  it("runs gateway reconcile on a single-flight interval and clears it during shutdown", async () => {
+    process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = "60000";
+    process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = "false";
+
+    const deps = createDefaultNodeApiDeps();
+    let resolveFirstReconcile: (() => void) | null = null;
+    const reconcile = vi.fn(() => new Promise<void>((resolve) => {
+      if (!resolveFirstReconcile) {
+        resolveFirstReconcile = resolve;
+        return;
+      }
+      resolve();
+    }));
+    const shutdown = vi.fn(async () => undefined);
+    const intervalCallbacks: Array<() => void> = [];
+    const intervalHandle = { unref: vi.fn() } as unknown as NodeJS.Timeout;
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval").mockImplementation(((callback: TimerHandler) => {
+      intervalCallbacks.push(callback as () => void);
+      return intervalHandle;
+    }) as typeof setInterval);
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => undefined);
+
+    const { server } = startServerWithDeps({
+      ...deps,
+      fileLibraryGatewayManager: {
+        ...deps.fileLibraryGatewayManager,
+        reconcile,
+        shutdown,
+      },
+    });
+
+    await new Promise<void>((resolve) => {
+      if (server.listening) {
+        resolve();
+        return;
+      }
+      server.once("listening", () => resolve());
+    });
+
+    expect(reconcile).toHaveBeenCalledTimes(1);
+    expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 60000);
+    expect(intervalCallbacks).toHaveLength(1);
+
+    intervalCallbacks[0]();
+    intervalCallbacks[0]();
+    await Promise.resolve();
+    expect(reconcile).toHaveBeenCalledTimes(1);
+
+    resolveFirstReconcile?.();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    intervalCallbacks[0]();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(reconcile).toHaveBeenCalledTimes(2);
+
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    expect(clearIntervalSpy).toHaveBeenCalledWith(intervalHandle);
     expect(shutdown).toHaveBeenCalledTimes(1);
   });
 

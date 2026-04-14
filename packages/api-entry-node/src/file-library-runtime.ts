@@ -7,6 +7,7 @@ import net from 'node:net';
 import process from 'node:process';
 import { Client as PgClient } from 'pg';
 import { Client as MinioClient } from 'minio';
+import { resolveFileLibraryGatewayPaths } from './file-library-gateway-paths.js';
 import type {
   FileLibraryGatewayManager,
   EnsureFileLibraryGatewayInput,
@@ -72,6 +73,19 @@ interface GatewayProcessInfo {
   libraryId: string | null;
 }
 
+interface GatewayProcessIdentity {
+  metadataUrl: string | null;
+  storageBucketUrl: string | null;
+  logPath: string | null;
+  stableKeys: string[];
+  label: string;
+}
+
+interface ManagedGatewayProcessInfo extends GatewayProcessInfo {
+  matchedState: PersistedGatewayState | null;
+  identity: GatewayProcessIdentity;
+}
+
 interface GatewayManagerPlatform {
   spawnGateway(
     cmd: string,
@@ -85,6 +99,59 @@ interface GatewayManagerPlatform {
   fetch(input: string, init?: RequestInit): Promise<Response>;
   now(): string;
   ownerPid(): number;
+}
+
+function hasRecordedOwnerProcess(state: PersistedGatewayState): boolean {
+  return Number.isInteger(state.ownerProcessPid) && state.ownerProcessPid > 0;
+}
+
+function persistedGatewayOwnerIsAlive(
+  platform: GatewayManagerPlatform,
+  state: PersistedGatewayState,
+): boolean {
+  return hasRecordedOwnerProcess(state) && platform.processExists(state.ownerProcessPid);
+}
+
+async function isGatewayLoopbackHealthy(
+  platform: GatewayManagerPlatform,
+  loopbackUrl: string | undefined,
+): Promise<boolean> {
+  if (!loopbackUrl?.trim()) {
+    return false;
+  }
+  try {
+    const response = await platform.fetch(`${loopbackUrl}/`, { method: 'GET' });
+    return response.status > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function adoptLegacyGatewayState(
+  config: FileLibraryRuntimeConfig,
+  platform: GatewayManagerPlatform,
+  state: PersistedGatewayState,
+): Promise<PersistedGatewayState | null> {
+  if (hasRecordedOwnerProcess(state)) {
+    return state;
+  }
+  if (!state.pid || !platform.processExists(state.pid)) {
+    await removeGatewayState(config, state.libraryId);
+    return null;
+  }
+  if (!await isGatewayLoopbackHealthy(platform, state.loopbackUrl)) {
+    await terminateGatewayProcess(platform, state.pid);
+    await removeGatewayState(config, state.libraryId);
+    return null;
+  }
+
+  const migratedState: PersistedGatewayState = {
+    ...state,
+    ownerProcessPid: platform.ownerPid(),
+    status: 'ready',
+  };
+  await writeGatewayState(config, migratedState);
+  return migratedState;
 }
 
 function envNumber(name: string, fallback: number): number {
@@ -359,6 +426,8 @@ export function resolveFileLibraryRuntimeConfig(env: NodeJS.ProcessEnv = process
     if (!raw) return false;
     return raw === '1' || raw.toLowerCase() === 'true';
   })();
+  const gatewayPaths = resolveFileLibraryGatewayPaths(env);
+
   return {
     juicefsBin: env.JUICEFS_BIN?.trim() || detectDefaultJuicefsBin(),
     mcBin: env.MC_BIN?.trim() || detectDefaultMcBin(),
@@ -394,8 +463,8 @@ export function resolveFileLibraryRuntimeConfig(env: NodeJS.ProcessEnv = process
       env.FILE_LIBRARY_GATEWAY_ROOT_PASSWORD_SEED?.trim()
       || env.AGENTSMITH_SECRET_KEY?.trim()
       || 'agentsmith-file-library-gateway-seed',
-    gatewayLogDir: env.FILE_LIBRARY_GATEWAY_LOG_DIR?.trim() || join(process.cwd(), 'artifacts/file-library-gateway'),
-    gatewayStateDir: env.FILE_LIBRARY_GATEWAY_STATE_DIR?.trim() || join(process.cwd(), 'artifacts/file-library-gateway-state'),
+    gatewayLogDir: gatewayPaths.gatewayLogDir,
+    gatewayStateDir: gatewayPaths.gatewayStateDir,
   };
 }
 
@@ -637,7 +706,7 @@ const gatewayManagerPlatform: GatewayManagerPlatform = {
   },
   async listProcesses() {
     const output = await new Promise<string>((resolve, reject) => {
-      const child = spawn('ps', ['-eo', 'pid=,args='], {
+      const child = spawn('ps', ['-ww', '-eo', 'pid=,args='], {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let stdout = '';
@@ -702,11 +771,159 @@ function gatewayStateFilePath(config: FileLibraryRuntimeConfig, libraryId: strin
   return join(config.gatewayStateDir, `${libraryId}.json`);
 }
 
+function extractGatewayLogPath(args: string): string | null {
+  const match = args.match(/--log\s+([^\s]+)/);
+  return match?.[1] ?? null;
+}
+
+function extractGatewayMetadataUrl(args: string): string | null {
+  const match = args.match(/juicefs\s+gateway\s+([^\s]+)/);
+  return match?.[1] ?? null;
+}
+
+function extractGatewayStorageBucketUrl(args: string): string | null {
+  const match = args.match(/(?:^|\s)--bucket\s+([^\s]+)/);
+  return match?.[1] ?? null;
+}
+
 function extractGatewayLibraryId(args: string, gatewayLogDir: string): string | null {
   if (!args.includes('juicefs gateway')) return null;
-  const normalizedDir = gatewayLogDir.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-  const match = args.match(new RegExp(`--log\\s+${normalizedDir}/([^\\s/]+)\\.log`));
-  return match?.[1] ?? null;
+  const logPath = extractGatewayLogPath(args);
+  if (!logPath) {
+    return null;
+  }
+  const resolvedLogPath = join(logPath);
+  const resolvedLogDir = gatewayLogDir;
+  if (!resolvedLogPath.startsWith(`${resolvedLogDir}/`) && !resolvedLogPath.startsWith(`${resolvedLogDir}\\`)) {
+    return null;
+  }
+  return resolvedLogPath.split(/[/\\]/).pop()?.replace(/\.log$/, '') ?? null;
+}
+
+function normalizeGatewayIdentityValue(value: string): string {
+  return value.trim();
+}
+
+function extractDbNameFromMetadataUrl(metadataUrl: string | null): string | null {
+  if (!metadataUrl?.trim()) {
+    return null;
+  }
+  try {
+    const parsed = new URL(metadataUrl);
+    const dbName = parsed.pathname.replace(/^\/+/, '').trim();
+    return dbName || null;
+  } catch {
+    return null;
+  }
+}
+
+function extractBucketNameFromBucketUrl(storageBucketUrl: string | null): string | null {
+  if (!storageBucketUrl?.trim()) {
+    return null;
+  }
+  try {
+    const parsed = new URL(storageBucketUrl);
+    const bucketName = parsed.pathname.replace(/^\/+/, '').trim();
+    return bucketName || null;
+  } catch {
+    return null;
+  }
+}
+
+function buildGatewayStableKeys(args: {
+  metadataUrl?: string | null;
+  storageBucketUrl?: string | null;
+  logPath?: string | null;
+}): string[] {
+  const stableKeys = new Set<string>();
+  const metadataUrl = args.metadataUrl?.trim() ? normalizeGatewayIdentityValue(args.metadataUrl) : null;
+  const storageBucketUrl = args.storageBucketUrl?.trim() ? normalizeGatewayIdentityValue(args.storageBucketUrl) : null;
+  const logPath = args.logPath?.trim() ? normalizeGatewayIdentityValue(args.logPath) : null;
+  const dbName = extractDbNameFromMetadataUrl(metadataUrl);
+  const bucketName = extractBucketNameFromBucketUrl(storageBucketUrl);
+
+  if (metadataUrl && dbName?.startsWith('jfs_lib_')) {
+    stableKeys.add(`metadata:${metadataUrl}`);
+  }
+  if (storageBucketUrl && bucketName?.startsWith('jfs-lib-')) {
+    stableKeys.add(`bucket:${storageBucketUrl}`);
+  }
+
+  if (dbName?.startsWith('jfs_lib_')) {
+    stableKeys.add(`db:${dbName}`);
+  }
+
+  if (bucketName?.startsWith('jfs-lib-')) {
+    stableKeys.add(`bucket_name:${bucketName}`);
+  }
+
+  if (logPath) {
+    stableKeys.add(`log:${logPath}`);
+  }
+
+  return [...stableKeys];
+}
+
+function labelGatewayStableKeys(stableKeys: readonly string[]): string {
+  return stableKeys.find((key) => key.startsWith('db:'))
+    ?? stableKeys.find((key) => key.startsWith('bucket_name:'))
+    ?? stableKeys.find((key) => key.startsWith('metadata:'))
+    ?? stableKeys.find((key) => key.startsWith('bucket:'))
+    ?? stableKeys.find((key) => key.startsWith('log:'))
+    ?? 'unidentified';
+}
+
+function buildGatewayProcessIdentity(args: string): GatewayProcessIdentity {
+  const metadataUrl = extractGatewayMetadataUrl(args);
+  const storageBucketUrl = extractGatewayStorageBucketUrl(args);
+  const logPath = extractGatewayLogPath(args);
+  const stableKeys = buildGatewayStableKeys({
+    metadataUrl,
+    storageBucketUrl,
+    logPath,
+  });
+  return {
+    metadataUrl,
+    storageBucketUrl,
+    logPath,
+    stableKeys,
+    label: labelGatewayStableKeys(stableKeys),
+  };
+}
+
+function buildGatewayStateIdentity(state: PersistedGatewayState): GatewayProcessIdentity {
+  const stableKeys = buildGatewayStableKeys({
+    metadataUrl: state.metadataUrl,
+    storageBucketUrl: state.storageBucketUrl,
+    logPath: state.logPath,
+  });
+  return {
+    metadataUrl: state.metadataUrl,
+    storageBucketUrl: state.storageBucketUrl,
+    logPath: state.logPath,
+    stableKeys,
+    label: labelGatewayStableKeys(stableKeys),
+  };
+}
+
+function matchGatewayStateForProcess(
+  processInfo: GatewayProcessInfo,
+  states: readonly PersistedGatewayState[],
+): PersistedGatewayState | null {
+  const pidMatch = states.find((state) => state.pid === processInfo.pid);
+  if (pidMatch) {
+    return pidMatch;
+  }
+
+  const processKeys = new Set(buildGatewayProcessIdentity(processInfo.args).stableKeys);
+  if (processKeys.size === 0) {
+    return null;
+  }
+
+  return states.find((state) => {
+    const stateIdentity = buildGatewayStateIdentity(state);
+    return stateIdentity.stableKeys.some((stableKey) => processKeys.has(stableKey));
+  }) ?? null;
 }
 
 async function readGatewayState(
@@ -749,6 +966,12 @@ async function listStateLibraryIds(config: FileLibraryRuntimeConfig): Promise<st
   } catch {
     return [];
   }
+}
+
+async function listPersistedGatewayStates(config: FileLibraryRuntimeConfig): Promise<PersistedGatewayState[]> {
+  const libraryIds = await listStateLibraryIds(config);
+  const states = await Promise.all(libraryIds.map(async (libraryId) => readGatewayState(config, libraryId)));
+  return states.filter((state): state is PersistedGatewayState => state !== null);
 }
 
 async function terminateGatewayProcess(
@@ -1048,23 +1271,47 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     await this.reconcilePromise.catch(() => undefined);
   }
 
-  private async listManagedProcesses(): Promise<GatewayProcessInfo[]> {
+  private async listManagedProcesses(
+    states?: readonly PersistedGatewayState[],
+  ): Promise<ManagedGatewayProcessInfo[]> {
+    const resolvedStates = states ?? await listPersistedGatewayStates(this.config);
     const processes = await this.platform.listProcesses();
     return processes
       .map((processInfo) => ({
         ...processInfo,
+        identity: buildGatewayProcessIdentity(processInfo.args),
+        matchedState: matchGatewayStateForProcess(processInfo, resolvedStates),
         libraryId: processInfo.libraryId ?? extractGatewayLibraryId(processInfo.args, this.config.gatewayLogDir),
       }))
-      .filter((processInfo) => Boolean(processInfo.libraryId));
+      .filter((processInfo): processInfo is ManagedGatewayProcessInfo => (
+        processInfo.args.includes('juicefs gateway')
+        && Boolean(processInfo.libraryId || processInfo.matchedState || processInfo.identity.stableKeys.length > 0)
+      ));
   }
 
-  private async reconcileLibrary(libraryId: string): Promise<void> {
-    const state = await readGatewayState(this.config, libraryId);
-    const processes = (await this.listManagedProcesses()).filter((processInfo) => processInfo.libraryId === libraryId);
+  private async reconcileLibrary(
+    libraryId: string,
+    inventory?: {
+      stateByLibraryId: ReadonlyMap<string, PersistedGatewayState>;
+      managedProcesses: readonly ManagedGatewayProcessInfo[];
+    },
+  ): Promise<void> {
+    let state = inventory?.stateByLibraryId.get(libraryId) ?? await readGatewayState(this.config, libraryId);
+    if (state && !hasRecordedOwnerProcess(state)) {
+      state = await adoptLegacyGatewayState(this.config, this.platform, state);
+    }
+    const processes = (inventory?.managedProcesses ?? await this.listManagedProcesses()).filter(
+      (processInfo) => processInfo.libraryId === libraryId || processInfo.matchedState?.libraryId === libraryId,
+    );
+    const hasLiveOwner = state ? persistedGatewayOwnerIsAlive(this.platform, state) : false;
 
-    const keepPid = state && this.platform.processExists(state.pid)
+    const keepPid = state && hasLiveOwner && this.platform.processExists(state.pid)
       ? state.pid
       : null;
+
+    if (state && !hasLiveOwner && this.platform.processExists(state.pid)) {
+      await terminateGatewayProcess(this.platform, state.pid);
+    }
 
     for (const processInfo of processes) {
       if (keepPid && processInfo.pid === keepPid) continue;
@@ -1078,14 +1325,26 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
 
   async reconcile(): Promise<void> {
     await mkdir(this.config.gatewayStateDir, { recursive: true });
-    const stateLibraryIds = await listStateLibraryIds(this.config);
+    const states = await listPersistedGatewayStates(this.config);
+    const stateByLibraryId = new Map(states.map((state) => [state.libraryId, state]));
+    const managedProcesses = await this.listManagedProcesses(states);
     const processLibraryIds = new Set(
-      (await this.listManagedProcesses())
-        .map((processInfo) => processInfo.libraryId)
+      managedProcesses
+        .map((processInfo) => processInfo.libraryId ?? processInfo.matchedState?.libraryId ?? null)
         .filter((libraryId): libraryId is string => Boolean(libraryId)),
     );
-    for (const libraryId of new Set([...stateLibraryIds, ...processLibraryIds])) {
-      await this.reconcileLibrary(libraryId);
+    for (const libraryId of new Set([...stateByLibraryId.keys(), ...processLibraryIds])) {
+      await this.reconcileLibrary(libraryId, {
+        stateByLibraryId,
+        managedProcesses,
+      });
+    }
+
+    for (const processInfo of managedProcesses) {
+      if (processInfo.libraryId || processInfo.matchedState) {
+        continue;
+      }
+      await terminateGatewayProcess(this.platform, processInfo.pid);
     }
   }
 
@@ -1111,6 +1370,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     const persisted = await readGatewayState(this.config, input.libraryId);
     if (
       persisted
+      && persistedGatewayOwnerIsAlive(this.platform, persisted)
       && this.platform.processExists(persisted.pid)
       && persisted.metadataUrl === input.metadataUrl
       && persisted.storageBucketUrl === input.storageBucketUrl
@@ -1242,6 +1502,8 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   async getHealth(libraryId: string): Promise<FileLibraryGatewayHealth> {
     const existing = this.sessions.get(libraryId);
     if (!existing) {
+      await this.ensureReconciled();
+      await this.reconcileLibrary(libraryId);
       const persisted = await readGatewayState(this.config, libraryId);
       if (persisted && this.platform.processExists(persisted.pid)) {
         this.sessions.set(libraryId, {

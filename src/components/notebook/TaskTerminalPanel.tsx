@@ -10,7 +10,14 @@ import type { TaskTerminalServerEvent } from '@/lib/types/task';
 import { toast } from '@/components/ui/toast';
 import { useTranslations } from 'next-intl';
 
-export type TerminalStatus = 'idle' | 'preparing' | 'connecting' | 'active' | 'closed' | 'failed';
+export type TerminalStatus =
+  | 'idle'
+  | 'preparing'
+  | 'recovering'
+  | 'connecting'
+  | 'active'
+  | 'closed'
+  | 'failed';
 
 type TerminalProgressReason = 'runner_offline' | 'run_in_progress' | null;
 
@@ -143,6 +150,9 @@ function describeTerminalError(t: ReturnType<typeof useTranslations>, reason: st
   if (reason.includes('task_agent_not_available')) {
     return t('terminal_error_agent_unavailable');
   }
+  if (reason.includes('invalid_shell')) {
+    return t('terminal_error_invalid_shell');
+  }
   if (reason.includes('terminal_connection_failed')) {
     return t('terminal_error_connection_failed');
   }
@@ -203,9 +213,12 @@ export function TaskTerminalPanel({
   const fitFrameRef = React.useRef<number | null>(null);
   const closeRequestTokenRef = React.useRef(closeRequestToken);
   const previousVisibleRef = React.useRef(visible);
+  const visibleRef = React.useRef(visible);
   const pendingTerminalFocusRef = React.useRef(false);
   const pendingResolutionCloseRef = React.useRef(false);
   const unmountingRef = React.useRef(false);
+  const [hasInteractiveMount, setHasInteractiveMount] = React.useState(open && visible);
+  const [connectionRetryToken, setConnectionRetryToken] = React.useState(0);
   const sessionResolutionPromiseRef =
     React.useRef<Promise<TerminalSessionResolution> | null>(null);
   const translationRef = React.useRef(t);
@@ -260,6 +273,20 @@ export function TaskTerminalPanel({
       unmountingRef.current = true;
     };
   }, []);
+
+  React.useEffect(() => {
+    if (!open) {
+      setHasInteractiveMount(false);
+      return;
+    }
+    if (visible) {
+      setHasInteractiveMount(true);
+    }
+  }, [open, visible]);
+
+  React.useEffect(() => {
+    visibleRef.current = visible;
+  }, [visible]);
 
   React.useEffect(() => {
     if (!previousVisibleRef.current && open && visible) {
@@ -430,17 +457,29 @@ export function TaskTerminalPanel({
     workspaceId,
   ]);
 
-  const cleanupSocket = React.useCallback(() => {
+  const releaseSocketResources = React.useCallback(({ close = true }: { close?: boolean } = {}) => {
     if (resizeHandlerRef.current) {
       window.removeEventListener('resize', resizeHandlerRef.current);
       resizeHandlerRef.current = null;
     }
-    if (socketRef.current) {
-      if (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING) {
-        socketRef.current.close();
+    const socket = socketRef.current;
+    socketRef.current = null;
+    if (socket) {
+      if (close && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        socket.close();
       }
-      socketRef.current = null;
     }
+  }, []);
+
+  const cleanupSocket = React.useCallback(() => {
+    releaseSocketResources();
+  }, [releaseSocketResources]);
+
+  const isTerminalContainerLaidOut = React.useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return false;
+    const rect = container.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
   }, []);
 
   const scheduleFit = React.useCallback(() => {
@@ -451,15 +490,23 @@ export function TaskTerminalPanel({
     }
     fitFrameRef.current = window.requestAnimationFrame(() => {
       fitFrameRef.current = null;
+      if (!isTerminalContainerLaidOut()) {
+        return;
+      }
       fitAddonRef.current?.fit();
     });
-  }, []);
+  }, [isTerminalContainerLaidOut]);
 
   const focusTerminalIfRequested = React.useCallback(() => {
     if (!pendingTerminalFocusRef.current) return;
     terminalRef.current?.focus();
     pendingTerminalFocusRef.current = false;
   }, []);
+
+  React.useEffect(() => {
+    if (!open || !visible || !hasInteractiveMount) return;
+    scheduleFit();
+  }, [hasInteractiveMount, open, scheduleFit, visible]);
 
   const disposeTerminal = React.useCallback(() => {
     cleanupSocket();
@@ -474,7 +521,7 @@ export function TaskTerminalPanel({
   }, [cleanupSocket]);
 
   React.useEffect(() => {
-    if (!open || !visible || !containerRef.current) return;
+    if (!open || !hasInteractiveMount || !containerRef.current) return;
     if (!terminalRef.current) {
       const terminal = new Terminal({
         convertEol: true,
@@ -498,12 +545,12 @@ export function TaskTerminalPanel({
     return () => {
       disposeTerminal();
     };
-  }, [disposeTerminal, open, scheduleFit, t, taskTitle, visible]);
+  }, [disposeTerminal, hasInteractiveMount, open, scheduleFit]);
 
   React.useEffect(() => {
-    if (!open || !visible || disabled || !terminalRef.current || socketRef.current) return;
+    if (!open || !hasInteractiveMount || disabled || !terminalRef.current || socketRef.current) return;
     let cancelled = false;
-    updateStatus('connecting');
+    updateStatus('preparing');
     setErrorMessage(null);
     setProgressReason(null);
     explicitCloseRequestedRef.current = false;
@@ -534,7 +581,7 @@ export function TaskTerminalPanel({
         return;
       }
       const session = resolution.handle;
-      updateStatus('connecting');
+      updateStatus(reconnectingRef.current ? 'recovering' : 'preparing');
       setProgressReason(null);
       terminalRef.current.writeln(
         reconnectingRef.current
@@ -553,7 +600,14 @@ export function TaskTerminalPanel({
       });
 
       const resizeHandler = () => {
-        if (!terminalRef.current || !fitAddonRef.current || socket.readyState !== WebSocket.OPEN) return;
+        if (
+          !terminalRef.current
+          || !fitAddonRef.current
+          || socket.readyState !== WebSocket.OPEN
+          || !isTerminalContainerLaidOut()
+        ) {
+          return;
+        }
         fitAddonRef.current.fit();
         scheduleFit();
         socket.send(JSON.stringify({
@@ -633,6 +687,7 @@ export function TaskTerminalPanel({
       };
       socket.onclose = (event) => {
         dataDisposable.dispose();
+        releaseSocketResources({ close: false });
         if (cancelled || unmountingRef.current) return;
         if (explicitCloseRequestedRef.current) {
           finalizeClosedSession();
@@ -646,9 +701,25 @@ export function TaskTerminalPanel({
           return;
         }
         invalidateSessionHandle();
+        if (
+          visibleRef.current
+          && readStoredSessionId()
+          && statusRef.current !== 'failed'
+          && statusRef.current !== 'closed'
+        ) {
+          reconnectingRef.current = true;
+          setErrorMessage(null);
+          setProgressReason(null);
+          updateStatus('recovering');
+          setConnectionRetryToken((current) => current + 1);
+          return;
+        }
         updateStatus(statusRef.current === 'failed' ? 'failed' : 'closed');
       };
     }).catch((error) => {
+      if (cancelled || unmountingRef.current) {
+        return;
+      }
       const message = error instanceof Error ? error.message : 'task_terminal_session_create_failed';
       const friendlyReason = describeTerminalError(translationRef.current, message);
       if (message.includes('task_terminal_session_limit_reached')) {
@@ -672,15 +743,19 @@ export function TaskTerminalPanel({
     };
   }, [
     cleanupSocket,
+    connectionRetryToken,
     disabled,
     finalizeClosedSession,
     focusTerminalIfRequested,
+    hasInteractiveMount,
     invalidateSessionHandle,
+    isTerminalContainerLaidOut,
     updateStatus,
     open,
+    readStoredSessionId,
+    releaseSocketResources,
     resolveSession,
     scheduleFit,
-    visible,
   ]);
 
   const handleEndSession = React.useCallback(() => {
@@ -767,17 +842,33 @@ export function TaskTerminalPanel({
     }
   }, [closeRequestToken, handleEndSession, open]);
 
-  if (!open || !visible) return null;
+  if (!open || (!visible && !hasInteractiveMount)) return null;
+
+  const panelClassName = visible
+    ? 'flex min-h-0 w-full flex-1 flex-col overflow-hidden'
+    : 'pointer-events-none absolute h-0 w-0 overflow-hidden';
+
+  const terminalViewportClassName = [
+    'min-h-0',
+    'flex-1',
+    'overflow-hidden',
+    'border',
+    'border-subtle',
+    'bg-[#0f141d]',
+    (status !== 'active' || errorMessage) ? 'rounded-b-md border-t-0' : 'rounded-md',
+  ].join(' ');
 
   return (
     <div
-      className="mt-3 overflow-hidden rounded-md border border-subtle bg-surface/70 shadow-ambient"
+      className={panelClassName}
+      data-visible={String(visible)}
+      aria-hidden={!visible}
       data-testid={tabId ? `notebook__task-terminal-${tabId}` : 'notebook__task-terminal'}
     >
       {(status !== 'active' || errorMessage) ? (
-        <div className="flex items-center justify-between gap-3 border-b border-subtle px-4 py-2">
+        <div className="flex items-center justify-between gap-3 rounded-t-md border border-subtle bg-surface/70 px-4 py-2">
           <Badge variant={
-            status === 'failed'
+            status === 'failed' || status === 'recovering'
               ? 'destructive'
               : status === 'preparing'
                 ? 'secondary'
@@ -785,6 +876,11 @@ export function TaskTerminalPanel({
           }>
             {t(`terminal_status_${status}`)}
           </Badge>
+          {status === 'recovering' ? (
+            <div className="min-w-0 text-xs text-foreground">
+              {t('terminal_reconnecting')}
+            </div>
+          ) : null}
           {status === 'preparing' ? (
             <div className="min-w-0 text-xs text-foreground">
               {progressReason === 'run_in_progress'
@@ -795,7 +891,7 @@ export function TaskTerminalPanel({
         </div>
       ) : null}
       {errorMessage ? (
-        <div className="border-b border-subtle bg-error/10 px-4 py-3 text-xs text-error">
+        <div className="border-x border-b border-subtle bg-error/10 px-4 py-3 text-xs text-error">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div>{t('terminal_error_hint', { reason: errorMessage })}</div>
@@ -812,10 +908,13 @@ export function TaskTerminalPanel({
           </div>
         </div>
       ) : null}
-      <div className="h-[360px] overflow-hidden bg-[#0f141d]">
+      <div
+        className={terminalViewportClassName}
+        data-testid="notebook__task-terminal-viewport"
+      >
         <div
           ref={containerRef}
-          className="h-full w-full overflow-hidden rounded-md border border-subtle bg-[#0f141d]"
+          className="h-full w-full overflow-hidden bg-[#0f141d]"
         />
       </div>
     </div>

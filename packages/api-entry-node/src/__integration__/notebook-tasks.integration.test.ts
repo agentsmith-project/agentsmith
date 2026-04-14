@@ -2391,6 +2391,94 @@ describe('api-entry-node notebook task routes', () => {
     }
   });
 
+  it('keeps notebook runs and task deletion blocked until the last live terminal session ends', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    deps.agentExecutionService.getAgentSessionOnlineState = () => true;
+    deps.agentExecutionService.getAgentOnlineState = () => true;
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
+      const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Last terminal session releases task');
+
+      const createdSessionIds: string[] = [];
+      for (let index = 0; index < 2; index += 1) {
+        const createTerminalRes = await apiFetchWithToken(
+          baseUrl,
+          `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+          'test-token',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cols: 80 + index, rows: 24 + index }),
+          },
+        );
+        expect(createTerminalRes.status).toBe(201);
+        const createdTerminal = await createTerminalRes.json() as { session_id: string };
+        createdSessionIds.push(createdTerminal.session_id);
+      }
+
+      const deleteFirst = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${createdSessionIds[0]}`,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(deleteFirst.status).toBe(204);
+
+      const blockedRun = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/messages`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'user',
+            content: 'Can the notebook continue now?',
+          }),
+        },
+      );
+      expect(blockedRun.status).toBe(409);
+      await expect(blockedRun.json()).resolves.toMatchObject({
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'task_terminal_sessions_active',
+      });
+
+      const blockedDelete = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}`,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(blockedDelete.status).toBe(409);
+      await expect(blockedDelete.json()).resolves.toMatchObject({
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'task_terminal_sessions_active',
+      });
+
+      const deleteSecond = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${createdSessionIds[1]}`,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(deleteSecond.status).toBe(204);
+
+      const deleteTaskAfterLastSessionEnds = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}`,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(deleteTaskAfterLastSessionEnds.status).toBe(200);
+      await expect(deleteTaskAfterLastSessionEnds.json()).resolves.toEqual({ success: true });
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
   it('marks a terminal session failed when runner never emits terminal start events', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
@@ -2524,6 +2612,280 @@ describe('api-entry-node notebook task routes', () => {
         error_code: 'RESOURCE_CONFLICT',
         message: 'task_terminal_session_limit_reached',
       });
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('marks terminal truth reads as no-store so reload recovery hydrates fresh backend state', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    deps.agentExecutionService.getAgentSessionOnlineState = () => true;
+    deps.agentExecutionService.getAgentOnlineState = () => true;
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
+      const { taskId } = await createActiveExternalTaskForTerminal(
+        deps,
+        baseUrl,
+        'Terminal no-store truth',
+      );
+
+      const createRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 120, rows: 40 }),
+        },
+      );
+      expect(createRes.status).toBe(201);
+      const created = await createRes.json() as { session_id: string };
+
+      const listRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+      );
+      expect(listRes.status).toBe(200);
+      expect(listRes.headers.get('cache-control')).toBe('no-store');
+
+      const sessionRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${created.session_id}`,
+        'test-token',
+      );
+      expect(sessionRes.status).toBe(200);
+      expect(sessionRes.headers.get('cache-control')).toBe('no-store');
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('keeps terminal session identity stable across api terminal-service reload and does not mint phantom sessions', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    deps.agentExecutionService.getAgentSessionOnlineState = () => true;
+    deps.agentExecutionService.getAgentOnlineState = () => true;
+    const firstServer = startServerWithDeps(deps);
+    try {
+      process.env.PUBLIC_API_BASE_URL = firstServer.baseUrl;
+      const { taskId } = await createActiveExternalTaskForTerminal(deps, firstServer.baseUrl, 'Terminal identity survives reload');
+
+      const createdIds: string[] = [];
+      for (let index = 0; index < 3; index += 1) {
+        const createRes = await apiFetchWithToken(
+          firstServer.baseUrl,
+          `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+          'test-token',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cols: 80 + index, rows: 24 + index }),
+          },
+        );
+        expect(createRes.status).toBe(201);
+        const created = await createRes.json() as { session_id: string };
+        createdIds.push(created.session_id);
+      }
+
+      firstServer.server.closeAllConnections?.();
+      firstServer.server.closeIdleConnections?.();
+      await new Promise<void>((resolve) => firstServer.server.close(() => resolve()));
+
+      deps.notebookTerminalService = new NotebookTerminalService(
+        deps.cache,
+        deps.agentExecutionService,
+      );
+      const secondServer = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = secondServer.baseUrl;
+
+      const listAfterReload = await apiFetchWithToken(
+        secondServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+      );
+      expect(listAfterReload.status).toBe(200);
+      await expect(listAfterReload.json()).resolves.toMatchObject({
+        total: 3,
+        items: createdIds.map((id) => expect.objectContaining({
+          id,
+          status: 'pending',
+        })),
+      });
+
+      const overflow = await apiFetchWithToken(
+        secondServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 120, rows: 40 }),
+        },
+      );
+      expect(overflow.status).toBe(409);
+      await expect(overflow.json()).resolves.toMatchObject({
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'task_terminal_session_limit_reached',
+      });
+
+      const listAfterOverflow = await apiFetchWithToken(
+        secondServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+      );
+      expect(listAfterOverflow.status).toBe(200);
+      await expect(listAfterOverflow.json()).resolves.toMatchObject({
+        total: 3,
+        items: createdIds.map((id) => expect.objectContaining({
+          id,
+          status: 'pending',
+        })),
+      });
+
+      secondServer.server.closeAllConnections?.();
+      secondServer.server.closeIdleConnections?.();
+      await new Promise<void>((resolve) => secondServer.server.close(() => resolve()));
+    } finally {
+      if (firstServer.server.listening) {
+        firstServer.server.closeAllConnections?.();
+        firstServer.server.closeIdleConnections?.();
+        await new Promise<void>((resolve) => firstServer.server.close(() => resolve()));
+      }
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('lets a reloaded api clear a failed terminal session and resume notebook work', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    deps.notebookTerminalService = new NotebookTerminalService(
+      deps.cache,
+      deps.agentExecutionService,
+      { startupTimeoutMs: 50 },
+    );
+    const firstServer = startServerWithDeps(deps);
+    try {
+      process.env.PUBLIC_API_BASE_URL = firstServer.baseUrl;
+      const { taskId, agentId } = await createActiveExternalTaskForTerminal(deps, firstServer.baseUrl, 'Reloaded failed terminal cleanup');
+      const agent = await deps.agentResourceService.getAgent('ws_default', 'proj_1', agentId);
+      expect(agent).toBeTruthy();
+
+      const keyRes = await apiFetch(
+        firstServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent!.id}/keys`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'reloaded-failed-terminal-runner' }),
+        },
+      );
+      expect(keyRes.status).toBe(201);
+      const keyPayload = await keyRes.json() as { key: string };
+
+      const connInfoRes = await apiFetch(
+        firstServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent!.id}/connection-info`,
+      );
+      expect(connInfoRes.status).toBe(200);
+      const connInfo = await connInfoRes.json() as { ws_url: string };
+
+      const executionSocket = new WebSocket(
+        connInfo.ws_url.replace('ws://localhost:20000', firstServer.baseUrl.replace('http://', 'ws://')),
+        { headers: { Authorization: `Bearer ${keyPayload.key}` } },
+      );
+      sockets.push(executionSocket);
+      await new Promise<void>((resolve) => {
+        executionSocket.on('message', (raw) => {
+          const msg = JSON.parse(raw.toString('utf-8')) as { type?: string };
+          if (msg.type !== 'server.hello') return;
+          executionSocket.send(JSON.stringify({
+            type: 'agent.ready',
+            payload: {
+              runner_spec: NOTEBOOK_RUNNER_SPEC,
+              capabilities: { wire_api: 'responses' },
+            },
+          }));
+          resolve();
+        });
+      });
+
+      const createTerminalRes = await apiFetchWithToken(
+        firstServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 80, rows: 24 }),
+        },
+      );
+      expect(createTerminalRes.status).toBe(201);
+      const created = await createTerminalRes.json() as { session_id: string; ws_url: string };
+
+      const browserSocket = new WebSocket(created.ws_url);
+      sockets.push(browserSocket);
+      await new Promise<void>((resolve) => browserSocket.on('open', () => resolve()));
+
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const sessionRes = await apiFetchWithToken(
+          firstServer.baseUrl,
+          `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${created.session_id}`,
+          'test-token',
+        );
+        expect(sessionRes.status).toBe(200);
+        const payload = await sessionRes.json() as { status: string };
+        if (payload.status === 'failed') break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      deps.notebookTerminalService = new NotebookTerminalService(
+        deps.cache,
+        deps.agentExecutionService,
+        { startupTimeoutMs: 50 },
+      );
+
+      const failedSessionRes = await apiFetchWithToken(
+        firstServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${created.session_id}`,
+        'test-token',
+      );
+      expect(failedSessionRes.status).toBe(200);
+      await expect(failedSessionRes.json()).resolves.toMatchObject({
+        id: created.session_id,
+        status: 'failed',
+        close_reason: 'terminal_start_timeout',
+        ws_url: null,
+      });
+
+      const deleteFailedSession = await apiFetchWithToken(
+        firstServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${created.session_id}`,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(deleteFailedSession.status).toBe(204);
+
+      const sendMessageRes = await apiFetchWithToken(
+        firstServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/messages`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'user',
+            content: 'Please resume the notebook after terminal recovery.',
+          }),
+        },
+      );
+      expect(sendMessageRes.status).toBe(200);
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;

@@ -277,6 +277,7 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
     handleCreateLibrary,
     handleDeleteLibrary,
     handleRenameLibrary,
+    libraryCreateError,
     libraryCreateOpen,
     libraryDeleteConfirm,
     libraryDeleteOpen,
@@ -515,6 +516,7 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
       <LibraryDialogs
         createLibraryPending={createLibrary.isPending}
         deleteLibraryPending={deleteLibrary.isPending}
+        libraryCreateError={libraryCreateError}
         libraryCreateOpen={libraryCreateOpen}
         libraryDeleteConfirm={libraryDeleteConfirm}
         libraryDeleteOpen={libraryDeleteOpen}

@@ -19,6 +19,7 @@ import {
   createFileLibraryViaUi,
   createProjectInWorkspace,
   ensureIntegrationKeycloakUsers,
+  expectNotebookTaskConversationSurface,
   getContextEntryViaApi,
   keycloakLoginToWorkspace,
   mountFileLibraryLocally,
@@ -249,7 +250,12 @@ async function createNotebookTaskViaDialog(args: {
   const taskId = payload?.id ?? payload?.data?.id;
   expect(taskId).toBeTruthy();
   await page.goto(`/en-US/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/${taskId}`);
-  await expect(page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
+  await expectNotebookTaskConversationSurface({
+    page,
+    openTerminalAction: 'enabled',
+    terminalModeEnabled: false,
+    blocked: false,
+  });
   return taskId!;
 }
 

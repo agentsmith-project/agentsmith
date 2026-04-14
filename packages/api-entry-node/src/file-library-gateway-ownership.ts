@@ -311,6 +311,29 @@ export function matchGatewayStateForProcess<State extends GatewayStateIdentityRe
   return legacyMatches.length === 1 ? legacyMatches[0] : null;
 }
 
+export function isPersistedGatewayPidAuthorityConfirmed<State extends GatewayStateIdentityRecord>(args: {
+  state: State;
+  processPid: number;
+  processCommand: string | null | undefined;
+}): boolean {
+  if (!args.processCommand?.trim()) {
+    return false;
+  }
+  if (matchGatewayStateForProcess({
+    processPid: args.processPid,
+    processCommand: args.processCommand,
+    gatewayStates: [args.state],
+  }) !== null) {
+    return true;
+  }
+
+  const processIdentity = extractGatewayProcessIdentity(args.processCommand);
+  return matchesLegacyGatewayState(processIdentity, {
+    ...args.state,
+    ownerScope: null,
+  });
+}
+
 export function resolveGatewayOwnerLedgerPaths(artifactsRoot: string): GatewayOwnerLedgerPaths {
   const ownershipDir = join(artifactsRoot, DEFAULT_OWNERSHIP_DIR);
   return {

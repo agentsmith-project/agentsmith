@@ -772,12 +772,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskTerminalSession' && method === 'GET') {
-    const session = await deps.notebookTerminalService.getSession(route.terminalSessionId);
-    if (!session || session.workspaceId !== route.workspaceId || session.projectId !== route.projectId || session.taskId !== route.taskId) {
-      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_terminal_session_not_found' });
-      return true;
-    }
-    if (session.userId !== user.id) {
+    const session = await deps.notebookTerminalService.getSessionWithinScope({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      taskId: route.taskId,
+      userId: user.id,
+      sessionId: route.terminalSessionId,
+    });
+    if (!session) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_terminal_session_not_found' });
       return true;
     }

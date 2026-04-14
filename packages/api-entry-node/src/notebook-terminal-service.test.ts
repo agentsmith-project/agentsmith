@@ -1496,6 +1496,60 @@ describe('NotebookTerminalService', () => {
     });
   }
 
+  for (const persistedStatus of ['pending', 'active', 'disconnected'] as const) {
+    it(`does not reconcile a persisted ${persistedStatus} session when scoped lookup misses after service reload`, async () => {
+      const seeded = await seedSessionForServiceReload(persistedStatus);
+      const reloadedService = new NotebookTerminalService(seeded.cache, {
+        dispatchTerminalSession: vi.fn(),
+      } as never);
+
+      await expect(
+        (reloadedService as unknown as {
+          getSessionWithinScope: (input: {
+            workspaceId: string;
+            projectId: string;
+            taskId: string;
+            userId: string;
+            sessionId: string;
+          }) => Promise<unknown>;
+        }).getSessionWithinScope({
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_1',
+          userId: 'user_other',
+          sessionId: seeded.created.sessionId,
+        }),
+      ).resolves.toBeNull();
+
+      await expect(seeded.cache.get(`notebook_terminal_session:${seeded.created.sessionId}`)).resolves.toEqual(
+        expect.stringContaining(`"status":"${persistedStatus}"`),
+      );
+    });
+  }
+
+  for (const persistedStatus of ['pending', 'active', 'disconnected'] as const) {
+    it(`does not reconcile a persisted ${persistedStatus} session when delete scope misses after service reload`, async () => {
+      const seeded = await seedSessionForServiceReload(persistedStatus);
+      const reloadedService = new NotebookTerminalService(seeded.cache, {
+        dispatchTerminalSession: vi.fn(),
+      } as never);
+
+      await expect(
+        reloadedService.deleteSession({
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_other',
+          userId: 'user_1',
+          sessionId: seeded.created.sessionId,
+        }),
+      ).resolves.toBe(false);
+
+      await expect(seeded.cache.get(`notebook_terminal_session:${seeded.created.sessionId}`)).resolves.toEqual(
+        expect.stringContaining(`"status":"${persistedStatus}"`),
+      );
+    });
+  }
+
   it('rejects stale reconnect websocket upgrades after service reload and converges the session to failed truth', async () => {
     const seeded = await seedSessionForServiceReload('disconnected');
     expect(seeded.staleReconnectPath).toBeTruthy();

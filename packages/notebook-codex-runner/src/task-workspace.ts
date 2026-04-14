@@ -5,6 +5,11 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
+import {
+  classifyMountedWorkspaceOwnerAuthority,
+  type MountedWorkspaceOwnerAuthority,
+  type RunnerProcessSnapshot,
+} from './task-workspace-ownership.js';
 
 const execFile = promisify(execFileCallback);
 const DEFAULT_MOUNT_READY_TIMEOUT_MS = 30_000;
@@ -122,6 +127,9 @@ const DEFAULT_MOUNT_CHILD_EXIT_TIMEOUT_MS = 5_000;
 let cleanupHooksRegistered = false;
 let releaseAllPreparedTaskWorkspacesPromise: Promise<void> | null = null;
 const RUNNER_INSTANCE_ID = (process.env.MBOS_AGENT_RUNNER_INSTANCE_ID ?? '').trim() || randomUUID();
+if (!(process.env.MBOS_AGENT_RUNNER_INSTANCE_ID ?? '').trim()) {
+  process.env.MBOS_AGENT_RUNNER_INSTANCE_ID = RUNNER_INSTANCE_ID;
+}
 
 function parseRunnerMode(raw: unknown): RunnerMode | null {
   switch (typeof raw === 'string' ? raw.trim() : '') {
@@ -178,6 +186,16 @@ function debugTaskWorkspace(message: string, extra?: Record<string, unknown>): v
   if (process.env.MBOS_AGENT_RUNNER_DEBUG !== '1') return;
   const payload = extra ? ` ${JSON.stringify(extra)}` : '';
   process.stdout.write(`[notebook-codex-runner][task-workspace] ${message}${payload}\n`);
+}
+
+function normalizeExecFileStdout(result: unknown): string {
+  if (typeof result === 'string') {
+    return result;
+  }
+  if (typeof result === 'object' && result !== null && 'stdout' in result) {
+    return String((result as { stdout?: unknown }).stdout ?? '');
+  }
+  return '';
 }
 
 export function shouldRetryTaskWorkspaceMount(error: unknown): boolean {
@@ -359,6 +377,146 @@ async function waitForMountPointReleased(mountPath: string): Promise<void> {
     await sleep(DEFAULT_MOUNT_READY_POLL_MS);
   }
   throw new Error(`task_workspace_umount_not_ready:${mountPath}`);
+}
+
+type MountedWorkspaceTruthVerification =
+  | {
+    status: 'match';
+    reason: 'findmnt_source_matches_filesystem' | 'findmnt_source_matches_metadata_url' | 'findmnt_source_matches_bucket_url';
+    source: string;
+    fstype: string | null;
+  }
+  | {
+    status: 'mismatch';
+    reason: 'findmnt_source_filesystem_mismatch' | 'findmnt_source_metadata_url_mismatch' | 'findmnt_source_non_juicefs';
+    source: string;
+    fstype: string | null;
+  }
+  | {
+    status: 'unverified';
+    reason: 'findmnt_unavailable' | 'findmnt_empty' | 'findmnt_source_unrecognized';
+    source: string | null;
+    fstype: string | null;
+  };
+
+function parseFindmntSourceRecord(stdout: string): { source: string | null; fstype: string | null } {
+  const record = stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!record) {
+    return {
+      source: null,
+      fstype: null,
+    };
+  }
+  const [source, fstype] = record.split(/\s+/, 2);
+  return {
+    source: source?.trim() || null,
+    fstype: fstype?.trim() || null,
+  };
+}
+
+function extractMountedFilesystemName(source: string): string | null {
+  const match = source.trim().match(/^juicefs:(.+)$/i);
+  return match?.[1]?.trim() || null;
+}
+
+async function verifyMountedWorkspaceTruth(args: {
+  mountPath: string;
+  filesystemName: string;
+  metadataUrl: string;
+  storageBucketUrl?: string;
+}): Promise<MountedWorkspaceTruthVerification> {
+  try {
+    const stdout = normalizeExecFileStdout(await execFile(
+      'findmnt',
+      ['-T', args.mountPath, '-n', '-o', 'SOURCE,FSTYPE'],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        maxBuffer: 1024 * 1024,
+      },
+    ));
+    const { source, fstype } = parseFindmntSourceRecord(stdout);
+    if (!source) {
+      return {
+        status: 'unverified',
+        reason: 'findmnt_empty',
+        source: null,
+        fstype,
+      };
+    }
+    if (fstype && !fstype.toLowerCase().includes('juicefs')) {
+      return {
+        status: 'mismatch',
+        reason: 'findmnt_source_non_juicefs',
+        source,
+        fstype,
+      };
+    }
+    const mountedFilesystemName = extractMountedFilesystemName(source);
+    if (mountedFilesystemName) {
+      return mountedFilesystemName === args.filesystemName
+        ? {
+          status: 'match',
+          reason: 'findmnt_source_matches_filesystem',
+          source,
+          fstype,
+        }
+        : {
+          status: 'mismatch',
+          reason: 'findmnt_source_filesystem_mismatch',
+          source,
+          fstype,
+        };
+    }
+    if (source === args.filesystemName) {
+      return {
+        status: 'match',
+        reason: 'findmnt_source_matches_filesystem',
+        source,
+        fstype,
+      };
+    }
+    if (source === args.metadataUrl) {
+      return {
+        status: 'match',
+        reason: 'findmnt_source_matches_metadata_url',
+        source,
+        fstype,
+      };
+    }
+    if (args.storageBucketUrl && source === args.storageBucketUrl) {
+      return {
+        status: 'match',
+        reason: 'findmnt_source_matches_bucket_url',
+        source,
+        fstype,
+      };
+    }
+    if (source.includes('://')) {
+      return {
+        status: 'mismatch',
+        reason: 'findmnt_source_metadata_url_mismatch',
+        source,
+        fstype,
+      };
+    }
+    return {
+      status: 'unverified',
+      reason: 'findmnt_source_unrecognized',
+      source,
+      fstype,
+    };
+  } catch {
+    return {
+      status: 'unverified',
+      reason: 'findmnt_unavailable',
+      source: null,
+      fstype: null,
+    };
+  }
 }
 
 function resolveTaskWorkspaceSessionRegistryPath(): string {
@@ -569,6 +727,22 @@ function hydrateMountedWorkspaceSession(
   };
 }
 
+function hasMountedWorkspaceOwnerEvidence(session: MountedWorkspaceSession): boolean {
+  return session.ownerProcessPid !== null
+    && typeof session.runnerInstanceId === 'string'
+    && session.runnerInstanceId.length > 0;
+}
+
+function hasMountedWorkspaceLeaseEvidence(session: MountedWorkspaceSession): boolean {
+  return typeof session.leaseId === 'string'
+    && session.leaseId.length > 0
+    && session.leaseRevision > 0;
+}
+
+function hasTrackedMountedWorkspaceEvidence(session: MountedWorkspaceSession): boolean {
+  return hasMountedWorkspaceOwnerEvidence(session) && hasMountedWorkspaceLeaseEvidence(session);
+}
+
 function appendReleaseAttempt(
   session: MountedWorkspaceSession,
   attempt: PersistedMountReleaseAttempt,
@@ -591,29 +765,107 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
+async function loadRunnerProcessTable(): Promise<{
+  loaded: boolean;
+  byPid: Map<number, RunnerProcessSnapshot>;
+}> {
+  try {
+    const stdout = normalizeExecFileStdout(await execFile(
+      'ps',
+      ['-ww', '-eo', 'pid=,command='],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        maxBuffer: 10 * 1024 * 1024,
+      },
+    ));
+    const byPid = new Map<number, RunnerProcessSnapshot>();
+    for (const line of stdout.split('\n').map((entry) => entry.trim()).filter(Boolean)) {
+      const match = line.match(/^(\d+)\s+(.*)$/);
+      if (!match) {
+        continue;
+      }
+      const pid = Number.parseInt(match[1], 10);
+      if (!Number.isInteger(pid) || pid <= 0) {
+        continue;
+      }
+      byPid.set(pid, {
+        pid,
+        command: match[2],
+      });
+    }
+    return {
+      loaded: true,
+      byPid,
+    };
+  } catch (error) {
+    debugTaskWorkspace('load_runner_process_table_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      loaded: false,
+      byPid: new Map(),
+    };
+  }
+}
+
+async function resolveMountedWorkspaceOwnerAuthority(
+  session: MountedWorkspaceSession,
+): Promise<MountedWorkspaceOwnerAuthority> {
+  const processTable = await loadRunnerProcessTable();
+  if (processTable.loaded) {
+    return classifyMountedWorkspaceOwnerAuthority({
+      ownerRecord: {
+        ownerProcessPid: session.ownerProcessPid,
+        runnerInstanceId: session.runnerInstanceId,
+      },
+      currentRunnerPid: process.pid,
+      currentRunnerInstanceId: RUNNER_INSTANCE_ID,
+      processTableByPid: processTable.byPid,
+    });
+  }
+
+  if (session.ownerProcessPid !== null) {
+    if (
+      session.ownerProcessPid === process.pid
+      && (!session.runnerInstanceId || session.runnerInstanceId === RUNNER_INSTANCE_ID)
+    ) {
+      return {
+        kind: 'current_runner',
+        reason: session.runnerInstanceId === RUNNER_INSTANCE_ID ? 'current_runner_instance' : 'current_runner_pid',
+      };
+    }
+    if (isProcessAlive(session.ownerProcessPid)) {
+      return {
+        kind: 'live_foreign_runner_legacy',
+        reason: 'foreign_runner_alive_without_instance_marker',
+      };
+    }
+    return {
+      kind: 'stale_owner',
+      reason: 'owner_pid_dead',
+    };
+  }
+
+  return {
+    kind: 'ownerless_other_runner_live',
+    reason: 'other_runner_alive_without_owner_evidence',
+  };
+}
+
+function isMountedWorkspaceOwnerLiveForeign(authority: MountedWorkspaceOwnerAuthority): boolean {
+  return authority.kind === 'live_foreign_runner' || authority.kind === 'live_foreign_runner_legacy';
+}
+
 function isMountedWorkspaceSessionOwnedByCurrentRunner(session: MountedWorkspaceSession): boolean {
-  const sameRunnerInstance = session.runnerInstanceId
-    ? session.runnerInstanceId === RUNNER_INSTANCE_ID
-    : true;
-  const sameOwnerProcess = session.ownerProcessPid === null || session.ownerProcessPid === process.pid;
-  return sameRunnerInstance && sameOwnerProcess;
+  return hasMountedWorkspaceOwnerEvidence(session)
+    && session.runnerInstanceId === RUNNER_INSTANCE_ID
+    && session.ownerProcessPid === process.pid;
 }
 
 function isMountedWorkspaceSessionOwnedByAnotherRunner(session: MountedWorkspaceSession): boolean {
   return !isMountedWorkspaceSessionOwnedByCurrentRunner(session)
     && (session.runnerInstanceId !== null || session.ownerProcessPid !== null);
-}
-
-async function isMountedWorkspaceSessionOwnedByLiveForeignRunner(
-  session: MountedWorkspaceSession,
-): Promise<boolean> {
-  if (!isMountedWorkspaceSessionOwnedByAnotherRunner(session)) {
-    return false;
-  }
-  if (session.ownerProcessPid === null) {
-    return true;
-  }
-  return isProcessAlive(session.ownerProcessPid);
 }
 
 function ensureMountedWorkspaceLease(
@@ -1195,12 +1447,20 @@ async function releaseMountedWorkspaceSession(
     await assertTrackedMountEvidenceOrThrow(mountPath, 'release');
     return;
   }
+  const allowForeignStaleRelease = options?.allowForeignStaleRelease === true;
+  const ownerAuthority = allowForeignStaleRelease
+    ? await resolveMountedWorkspaceOwnerAuthority(session)
+    : null;
+  if (await isMountPointReady(mountPath) && !hasTrackedMountedWorkspaceEvidence(session)) {
+    if (!(allowForeignStaleRelease && ownerAuthority?.kind === 'stale_owner')) {
+      throw new Error(`task_workspace_release_untracked_live_mount:${mountPath}`);
+    }
+  }
 
   const leaseMatches = options?.lease
     ? doesTaskWorkspaceLeaseMatchSession(session, options.lease)
     : false;
-  const allowForeignStaleRelease = options?.allowForeignStaleRelease === true;
-  if (allowForeignStaleRelease && await isMountedWorkspaceSessionOwnedByLiveForeignRunner(session)) {
+  if (allowForeignStaleRelease && ownerAuthority && ownerAuthority.kind !== 'stale_owner') {
     throw new Error(`task_workspace_mount_owned_by_live_runner:${mountPath}`);
   }
   if (!leaseMatches && !allowForeignStaleRelease) {
@@ -1275,6 +1535,7 @@ async function releaseMountedWorkspaceSession(
 
 async function acquireMountedWorkspaceSession(input: {
   mode: RunnerMode;
+  filesystemName: string;
   metadataUrl: string;
   mountPath: string;
   storageBucketUrl?: string;
@@ -1286,6 +1547,76 @@ async function acquireMountedWorkspaceSession(input: {
   if (existing) {
     const mountReady = await isMountPointReady(input.mountPath);
     const ownedByAnotherRunner = isMountedWorkspaceSessionOwnedByAnotherRunner(existing);
+    const ownerAuthority = existing.state === 'mounted' && mountReady
+      ? await resolveMountedWorkspaceOwnerAuthority(existing)
+      : null;
+    if (existing.state === 'mounted' && mountReady && !hasTrackedMountedWorkspaceEvidence(existing)) {
+      if (isMountedWorkspaceOwnerLiveForeign(ownerAuthority ?? {
+        kind: 'ownerless_other_runner_live',
+        reason: 'other_runner_alive_without_owner_evidence',
+      })) {
+        throw new Error(`task_workspace_mount_owned_by_live_runner:${input.mountPath}`);
+      }
+      const canAttemptLegacyAdoption = ownerAuthority?.kind === 'current_runner'
+        || ownerAuthority?.kind === 'ownerless_reclaimable';
+      const mountTruth = canAttemptLegacyAdoption
+        ? await verifyMountedWorkspaceTruth({
+          mountPath: input.mountPath,
+          filesystemName: input.filesystemName,
+          metadataUrl: input.metadataUrl,
+          storageBucketUrl: input.storageBucketUrl,
+        })
+        : null;
+      if (mountTruth) {
+        debugTaskWorkspace('legacy_mount_truth_verification', {
+          mount_path: input.mountPath,
+          owner_authority: ownerAuthority?.kind ?? null,
+          status: mountTruth.status,
+          reason: mountTruth.reason,
+          source: mountTruth.source,
+          fstype: mountTruth.fstype,
+        });
+        if (mountTruth.status === 'mismatch') {
+          throw new Error(`task_workspace_mount_truth_mismatch:${input.mountPath}`);
+        }
+      }
+      if (ownerAuthority?.kind === 'current_runner') {
+        if (mountTruth?.status !== 'match') {
+          throw new Error(`task_workspace_mount_untracked_live_mount:${input.mountPath}`);
+        }
+        existing.mode = input.mode;
+        existing.metadataUrl = input.metadataUrl;
+        existing.storageBucketUrl = input.storageBucketUrl;
+        markMountedSessionAcquired(existing);
+        await persistMountedWorkspaceSessions();
+        return {
+          session: existing,
+          lease: ensureMountedWorkspaceLease(existing),
+        };
+      }
+      if (ownerAuthority?.kind === 'ownerless_reclaimable') {
+        if (mountTruth?.status !== 'match') {
+          throw new Error(`task_workspace_mount_untracked_live_mount:${input.mountPath}`);
+        }
+        existing.mode = input.mode;
+        existing.metadataUrl = input.metadataUrl;
+        existing.storageBucketUrl = input.storageBucketUrl;
+        existing.refs = 0;
+        existing.ownerProcessPid = null;
+        existing.runnerInstanceId = null;
+        existing.leaseId = null;
+        existing.leaseRevision = 0;
+        markMountedSessionAcquired(existing);
+        await persistMountedWorkspaceSessions();
+        return {
+          session: existing,
+          lease: ensureMountedWorkspaceLease(existing),
+        };
+      }
+      if (ownerAuthority?.kind !== 'stale_owner') {
+        throw new Error(`task_workspace_mount_untracked_live_mount:${input.mountPath}`);
+      }
+    }
     if (existing.state === 'mounted' && mountReady && !ownedByAnotherRunner) {
       existing.mode = input.mode;
       existing.metadataUrl = input.metadataUrl;
@@ -1298,7 +1629,9 @@ async function acquireMountedWorkspaceSession(input: {
       };
     }
     if (existing.state === 'mounted' && mountReady && ownedByAnotherRunner) {
-      const foreignOwnerLive = await isMountedWorkspaceSessionOwnedByLiveForeignRunner(existing);
+      const foreignOwnerLive = isMountedWorkspaceOwnerLiveForeign(
+        ownerAuthority ?? await resolveMountedWorkspaceOwnerAuthority(existing),
+      );
       debugTaskWorkspace('reacquire_foreign_owned_mount', {
         mount_path: input.mountPath,
         owner_process_pid: existing.ownerProcessPid,
@@ -1321,11 +1654,13 @@ async function acquireMountedWorkspaceSession(input: {
         ...existing,
         releaseAttempts: [...existing.releaseAttempts],
       };
-      const sessionLease = !ownedByAnotherRunner ? ensureMountedWorkspaceLease(existing) : undefined;
+      const sessionLease = !ownedByAnotherRunner && hasTrackedMountedWorkspaceEvidence(existing)
+        ? ensureMountedWorkspaceLease(existing)
+        : undefined;
       await releaseMountedWorkspaceSession(input.mountPath, {
         force: true,
         lease: sessionLease,
-        allowForeignStaleRelease: ownedByAnotherRunner,
+        allowForeignStaleRelease: ownedByAnotherRunner || ownerAuthority?.kind === 'stale_owner',
       }).catch((error) => {
         debugTaskWorkspace('release_stale_mount_before_reacquire_failed', {
           mount_path: input.mountPath,
@@ -1425,6 +1760,7 @@ export async function prepareTaskWorkspace(input: {
       try {
         const acquired = await acquireMountedWorkspaceSession({
           mode,
+          filesystemName: workspaceAccess.filesystem_name,
           metadataUrl: workspaceAccess.metadata_url,
           mountPath,
           storageBucketUrl: workspaceAccess.storage_bucket_url,

@@ -13,6 +13,7 @@ import {
   createGatewayOwnerRuntimeLease,
   extractGatewayLibraryId,
   extractGatewayProcessIdentity,
+  isPersistedGatewayPidAuthorityConfirmed,
   isGatewayCommand,
   loadGatewayOwnerLedgerSnapshot,
   matchGatewayStateForProcess,
@@ -42,6 +43,10 @@ type GatewaySession = EnsureFileLibraryGatewayResult & {
   storageBucketUrl?: string;
   lastError?: string;
   logPath?: string;
+  ownerScope?: string;
+  sessionToken?: string;
+  hasExited?: boolean;
+  cleanupPromise?: Promise<void>;
 };
 
 interface PersistedGatewayState {
@@ -55,6 +60,7 @@ interface PersistedGatewayState {
   lastStartedAt: string;
   ownerProcessPid: number;
   ownerScope?: string;
+  sessionToken?: string;
   status: 'starting' | 'ready' | 'degraded';
 }
 
@@ -108,6 +114,10 @@ interface GatewayManagerPlatform {
   now(): string;
   ownerPid(): number;
 }
+
+type GatewayPidAuthorityStatus = 'confirmed' | 'missing' | 'unverified';
+
+type GatewayTerminationStatus = 'terminated' | 'missing' | 'unverified';
 
 function hasRecordedOwnerProcess(state: PersistedGatewayState): boolean {
   return Number.isInteger(state.ownerProcessPid) && state.ownerProcessPid > 0;
@@ -200,6 +210,115 @@ function createForeignActiveBootGatewayError(): Error {
   return new Error('file_library_gateway_owned_by_another_active_boot');
 }
 
+async function resolvePersistedGatewayPidAuthority(args: {
+  platform: GatewayManagerPlatform;
+  state: PersistedGatewayState;
+  processInventory?: readonly GatewayProcessInfo[];
+}): Promise<{
+  status: GatewayPidAuthorityStatus;
+  processInfo: GatewayProcessInfo | null;
+}> {
+  if (!args.platform.processExists(args.state.pid)) {
+    return {
+      status: 'missing',
+      processInfo: null,
+    };
+  }
+
+  const processInventory = args.processInventory ?? await args.platform.listProcesses();
+  const processInfo = processInventory.find((entry) => entry.pid === args.state.pid) ?? null;
+  if (!processInfo) {
+    return {
+      status: 'unverified',
+      processInfo: null,
+    };
+  }
+
+  return {
+    status: isPersistedGatewayPidAuthorityConfirmed({
+      state: args.state,
+      processPid: processInfo.pid,
+      processCommand: processInfo.args,
+    })
+      ? 'confirmed'
+      : 'unverified',
+    processInfo,
+  };
+}
+
+function resolveGatewayProcessLibraryId(
+  processInfo: GatewayProcessInfo,
+  gatewayLogDir: string,
+): string | null {
+  return processInfo.libraryId ?? extractGatewayLibraryId(processInfo.args, gatewayLogDir);
+}
+
+function isManagedGatewayPidAuthorityConfirmed(args: {
+  processInfo: ManagedGatewayProcessInfo;
+  currentProcessInfo: GatewayProcessInfo;
+  gatewayLogDir: string;
+}): boolean {
+  if (args.processInfo.matchedState) {
+    return isPersistedGatewayPidAuthorityConfirmed({
+      state: args.processInfo.matchedState,
+      processPid: args.currentProcessInfo.pid,
+      processCommand: args.currentProcessInfo.args,
+    });
+  }
+
+  const expectedOwnerScope = args.processInfo.identity.ownerScope?.trim() ?? null;
+  const expectedLibraryId = args.processInfo.libraryId?.trim() ?? null;
+  if (!expectedOwnerScope || !expectedLibraryId) {
+    return false;
+  }
+
+  const currentIdentity = extractGatewayProcessIdentity(args.currentProcessInfo.args);
+  const currentOwnerScope = currentIdentity.ownerScope?.trim() ?? null;
+  const currentLibraryId = resolveGatewayProcessLibraryId(
+    args.currentProcessInfo,
+    args.gatewayLogDir,
+  )?.trim() ?? null;
+
+  return currentOwnerScope === expectedOwnerScope && currentLibraryId === expectedLibraryId;
+}
+
+async function resolveManagedGatewayPidAuthority(args: {
+  platform: GatewayManagerPlatform;
+  processInfo: ManagedGatewayProcessInfo;
+  gatewayLogDir: string;
+  processInventory?: readonly GatewayProcessInfo[];
+}): Promise<{
+  status: GatewayPidAuthorityStatus;
+  processInfo: GatewayProcessInfo | null;
+}> {
+  if (!args.platform.processExists(args.processInfo.pid)) {
+    return {
+      status: 'missing',
+      processInfo: null,
+    };
+  }
+
+  const processInventory = args.processInventory ?? await args.platform.listProcesses();
+  const currentProcessInfo = processInventory.find((entry) => entry.pid === args.processInfo.pid) ?? null;
+  if (!currentProcessInfo) {
+    return {
+      status: 'unverified',
+      processInfo: null,
+    };
+  }
+
+  return {
+    status: isManagedGatewayPidAuthorityConfirmed({
+      processInfo: args.processInfo,
+      currentProcessInfo,
+      gatewayLogDir: args.gatewayLogDir,
+    })
+      ? 'confirmed'
+      : 'unverified',
+    processInfo: currentProcessInfo,
+  };
+}
+
 async function isGatewayLoopbackHealthy(
   platform: GatewayManagerPlatform,
   loopbackUrl: string | undefined,
@@ -239,7 +358,25 @@ async function adoptLegacyGatewayState(
     return null;
   }
   if (!await isGatewayLoopbackHealthy(platform, state.loopbackUrl)) {
-    await terminateGatewayProcess(platform, adoptedPid);
+    const legacyCandidate = legacyCandidates.find((processInfo) => processInfo.pid === adoptedPid) ?? null;
+    const terminationStatus = adoptedPid === state.pid
+      ? await terminatePersistedGatewayProcessIfConfirmed({
+        platform,
+        state: {
+          ...state,
+          pid: adoptedPid,
+        },
+      })
+      : legacyCandidate
+        ? await terminateManagedGatewayProcessIfConfirmed({
+          platform,
+          processInfo: legacyCandidate,
+          gatewayLogDir: config.gatewayLogDir,
+        })
+        : 'unverified';
+    if (terminationStatus === 'unverified') {
+      return state;
+    }
     await removeGatewayState(config, state.libraryId);
     return null;
   }
@@ -951,26 +1088,75 @@ function shouldReapNoStateGatewayProcess(args: {
   return ownerScopeStatus === 'active' && args.processInfo.identity.ownerScope === args.currentOwnerScope;
 }
 
-async function terminateGatewayProcess(
-  platform: GatewayManagerPlatform,
-  pid: number,
-): Promise<void> {
-  if (!platform.processExists(pid)) return;
+async function terminateGatewayProcess(args: {
+  platform: GatewayManagerPlatform;
+  pid: number;
+  resolveAuthorityStatus: () => Promise<GatewayPidAuthorityStatus>;
+}): Promise<GatewayTerminationStatus> {
+  const initialAuthorityStatus = await args.resolveAuthorityStatus();
+  if (initialAuthorityStatus !== 'confirmed') {
+    return initialAuthorityStatus;
+  }
   try {
-    platform.killProcess(pid, 'SIGTERM');
+    args.platform.killProcess(args.pid, 'SIGTERM');
   } catch {
-    return;
+    return args.platform.processExists(args.pid) ? 'unverified' : 'missing';
   }
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (!platform.processExists(pid)) return;
-    await platform.wait(100);
+    if (!args.platform.processExists(args.pid)) {
+      return 'terminated';
+    }
+    await args.platform.wait(100);
   }
-  if (!platform.processExists(pid)) return;
+  if (!args.platform.processExists(args.pid)) {
+    return 'terminated';
+  }
+
+  const escalatedAuthorityStatus = await args.resolveAuthorityStatus();
+  if (escalatedAuthorityStatus !== 'confirmed') {
+    return escalatedAuthorityStatus;
+  }
+
   try {
-    platform.killProcess(pid, 'SIGKILL');
+    args.platform.killProcess(args.pid, 'SIGKILL');
+    return 'terminated';
   } catch {
-    // ignore
+    return args.platform.processExists(args.pid) ? 'unverified' : 'missing';
   }
+}
+
+async function terminatePersistedGatewayProcessIfConfirmed(args: {
+  platform: GatewayManagerPlatform;
+  state: PersistedGatewayState;
+}): Promise<GatewayTerminationStatus> {
+  return terminateGatewayProcess({
+    platform: args.platform,
+    pid: args.state.pid,
+    resolveAuthorityStatus: async () => (
+      await resolvePersistedGatewayPidAuthority({
+        platform: args.platform,
+        state: args.state,
+      })
+    ).status,
+  });
+}
+
+async function terminateManagedGatewayProcessIfConfirmed(args: {
+  platform: GatewayManagerPlatform;
+  processInfo: ManagedGatewayProcessInfo;
+  gatewayLogDir: string;
+}): Promise<GatewayTerminationStatus> {
+  return terminateGatewayProcess({
+    platform: args.platform,
+    pid: args.processInfo.pid,
+    resolveAuthorityStatus: async () => (
+      await resolveManagedGatewayPidAuthority({
+        platform: args.platform,
+        processInfo: args.processInfo,
+        gatewayLogDir: args.gatewayLogDir,
+      })
+    ).status,
+  });
 }
 
 async function createPgDatabase(config: FileLibraryRuntimeConfig, libraryId: string): Promise<{ dbName: string; dbUser: string; dbPassword: string }> {
@@ -1275,11 +1461,213 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     return this.reconcileInFlight;
   }
 
+  private isCurrentSession(libraryId: string, session: GatewaySession): boolean {
+    return this.sessions.get(libraryId) === session;
+  }
+
+  private isOwnedGatewaySession(
+    session: GatewaySession | undefined,
+  ): session is GatewaySession & {
+    child: ChildProcessWithoutNullStreams;
+    pid: number;
+    ownerScope: string;
+    sessionToken: string;
+  } {
+    return Boolean(
+      session?.child
+      && session.pid
+      && session.ownerScope?.trim()
+      && session.sessionToken?.trim(),
+    );
+  }
+
+  private isOwnedGatewaySessionLive(
+    session: GatewaySession | undefined,
+  ): session is GatewaySession & {
+    child: ChildProcessWithoutNullStreams;
+    pid: number;
+    ownerScope: string;
+    sessionToken: string;
+  } {
+    return this.isOwnedGatewaySession(session)
+      && !session.hasExited
+      && this.platform.processExists(session.pid);
+  }
+
+  private doesSessionMatchGatewayInput(
+    session: GatewaySession,
+    input: EnsureFileLibraryGatewayInput,
+  ): boolean {
+    return session.metadataUrl === input.metadataUrl
+      && session.storageBucketUrl === input.storageBucketUrl;
+  }
+
+  private async waitForOwnedSessionExit(
+    session: GatewaySession & {
+      child: ChildProcessWithoutNullStreams;
+      pid: number;
+    },
+    attempts: number,
+  ): Promise<GatewayTerminationStatus> {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (session.hasExited || session.child.exitCode !== null) {
+        session.hasExited = true;
+        return 'terminated';
+      }
+      if (!this.platform.processExists(session.pid)) {
+        return 'missing';
+      }
+      await this.platform.wait(100);
+    }
+
+    if (session.hasExited || session.child.exitCode !== null) {
+      session.hasExited = true;
+      return 'terminated';
+    }
+    if (!this.platform.processExists(session.pid)) {
+      return 'missing';
+    }
+    return 'unverified';
+  }
+
+  private signalOwnedSessionChild(
+    session: GatewaySession & {
+      child: ChildProcessWithoutNullStreams;
+      pid: number;
+    },
+    signal: NodeJS.Signals,
+  ): boolean {
+    try {
+      const kill = (
+        session.child as ChildProcessWithoutNullStreams & {
+          kill?: (signal?: NodeJS.Signals) => boolean;
+        }
+      ).kill;
+      if (typeof kill === 'function') {
+        return kill.call(session.child, signal);
+      }
+    } catch {
+      // fall back to platform kill below
+    }
+
+    try {
+      this.platform.killProcess(session.pid, signal);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async terminateOwnedSessionChild(
+    session: GatewaySession & {
+      child: ChildProcessWithoutNullStreams;
+      pid: number;
+    },
+  ): Promise<GatewayTerminationStatus> {
+    if (session.hasExited || session.child.exitCode !== null) {
+      session.hasExited = true;
+      return 'terminated';
+    }
+    if (!this.platform.processExists(session.pid)) {
+      return 'missing';
+    }
+
+    if (!this.signalOwnedSessionChild(session, 'SIGTERM')) {
+      return this.platform.processExists(session.pid) ? 'unverified' : 'missing';
+    }
+
+    const terminatedBySigterm = await this.waitForOwnedSessionExit(session, 20);
+    if (terminatedBySigterm !== 'unverified') {
+      return terminatedBySigterm;
+    }
+
+    if (!this.signalOwnedSessionChild(session, 'SIGKILL')) {
+      return this.platform.processExists(session.pid) ? 'unverified' : 'missing';
+    }
+
+    return this.waitForOwnedSessionExit(session, 10);
+  }
+
+  private doesPersistedStateBelongToSession(
+    state: PersistedGatewayState,
+    session: GatewaySession & {
+      pid: number;
+      ownerScope: string;
+      sessionToken: string;
+    },
+  ): boolean {
+    const persistedSessionToken = state.sessionToken?.trim() ?? null;
+    const sessionToken = session.sessionToken.trim();
+    if (persistedSessionToken) {
+      return persistedSessionToken === sessionToken;
+    }
+    if (state.pid !== session.pid) {
+      return false;
+    }
+    if (state.ownerScope?.trim() && state.ownerScope !== session.ownerScope) {
+      return false;
+    }
+    return state.loopbackUrl === session.loopbackUrl;
+  }
+
+  private async removeOwnedSessionStateIfCurrent(
+    libraryId: string,
+    session: GatewaySession & {
+      pid: number;
+      ownerScope: string;
+      sessionToken: string;
+    },
+  ): Promise<void> {
+    const persisted = await readGatewayState(this.config, libraryId);
+    if (!persisted) {
+      return;
+    }
+    if (!this.doesPersistedStateBelongToSession(persisted, session)) {
+      return;
+    }
+    await removeGatewayState(this.config, libraryId);
+  }
+
+  private async cleanupOwnedSession(
+    libraryId: string,
+    session: GatewaySession & {
+      child: ChildProcessWithoutNullStreams;
+      pid: number;
+      ownerScope: string;
+      sessionToken: string;
+    },
+  ): Promise<void> {
+    if (session.cleanupPromise) {
+      await session.cleanupPromise;
+      return;
+    }
+
+    const cleanupPromise = (async () => {
+      const terminationStatus = await this.terminateOwnedSessionChild(session);
+      if (terminationStatus === 'unverified') {
+        throw new Error('file_library_gateway_current_boot_cleanup_unverified');
+      }
+      if (this.isCurrentSession(libraryId, session)) {
+        this.sessions.delete(libraryId);
+      }
+      await this.removeOwnedSessionStateIfCurrent(libraryId, session);
+    })();
+
+    session.cleanupPromise = cleanupPromise
+      .finally(() => {
+        if (session.cleanupPromise === cleanupPromise) {
+          session.cleanupPromise = undefined;
+        }
+      });
+    await session.cleanupPromise;
+  }
+
   private async listManagedProcesses(
     states?: readonly PersistedGatewayState[],
+    processInventory?: readonly GatewayProcessInfo[],
   ): Promise<ManagedGatewayProcessInfo[]> {
     const resolvedStates = states ?? await listPersistedGatewayStates(this.config);
-    const processes = await this.platform.listProcesses();
+    const processes = processInventory ?? await this.platform.listProcesses();
     return processes
       .map((processInfo) => ({
         ...processInfo,
@@ -1301,6 +1689,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     libraryId: string,
     inventory?: {
       stateByLibraryId: ReadonlyMap<string, PersistedGatewayState>;
+      processInventory: readonly GatewayProcessInfo[];
       managedProcesses: readonly ManagedGatewayProcessInfo[];
       ownerEvidence: GatewayOwnerEvidence;
       ownerRuntime: GatewayOwnerRuntimeLease;
@@ -1308,8 +1697,18 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   ): Promise<void> {
     const ownerRuntime = inventory?.ownerRuntime ?? await this.ownerRuntimePromise;
     const ownerEvidence = inventory?.ownerEvidence ?? await loadGatewayOwnerEvidence(this.config, this.platform.now());
-    const allManagedProcesses = inventory?.managedProcesses ?? await this.listManagedProcesses();
-    let state = inventory?.stateByLibraryId.get(libraryId) ?? await readGatewayState(this.config, libraryId);
+    const resolvedStates = inventory?.stateByLibraryId
+      ? [...inventory.stateByLibraryId.values()]
+      : await listPersistedGatewayStates(this.config);
+    const stateByLibraryId = inventory?.stateByLibraryId ?? new Map(
+      resolvedStates.map((state) => [state.libraryId, state]),
+    );
+    const processInventory = inventory?.processInventory ?? await this.platform.listProcesses();
+    const allManagedProcesses = inventory?.managedProcesses ?? await this.listManagedProcesses(
+      resolvedStates,
+      processInventory,
+    );
+    let state = stateByLibraryId.get(libraryId) ?? null;
     const legacyMigrationCandidatePids = new Set<number>(
       state && stateNeedsOwnerIdentityMigration(state)
         ? findLegacyGatewayMigrationCandidates(
@@ -1338,7 +1737,18 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         currentOwnerScope: ownerRuntime.ownerScope,
       })
       : 'stale';
-    if (state && stateAuthority === 'foreign_active_boot') {
+    const statePidAuthority = state
+      ? await resolvePersistedGatewayPidAuthority({
+        platform: this.platform,
+        state,
+        processInventory,
+      })
+      : { status: 'missing' as const, processInfo: null };
+    if (
+      state
+      && stateAuthority === 'foreign_active_boot'
+      && statePidAuthority.status === 'confirmed'
+    ) {
       return;
     }
     const processes = allManagedProcesses.filter(
@@ -1361,24 +1771,31 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         return processInfo.identity.ownerScope === state.ownerScope;
       },
     );
-    const ownerState = stateAuthority === 'current_boot'
-      ? 'active'
-      : stateAuthority;
-
-    const keepPid = state && ownerState !== 'stale' && this.platform.processExists(state.pid)
+    const keepPid = state && stateAuthority !== 'stale' && statePidAuthority.status === 'confirmed'
       ? state.pid
       : null;
 
-    if (state && ownerState === 'stale' && this.platform.processExists(state.pid)) {
-      await terminateGatewayProcess(this.platform, state.pid);
+    let finalStatePidAuthorityStatus = statePidAuthority.status;
+    if (state && stateAuthority === 'stale' && statePidAuthority.status === 'confirmed') {
+      const terminationStatus = await terminatePersistedGatewayProcessIfConfirmed({
+        platform: this.platform,
+        state,
+      });
+      finalStatePidAuthorityStatus = terminationStatus === 'terminated'
+        ? 'missing'
+        : terminationStatus;
     }
 
     for (const processInfo of processes) {
       if (keepPid && processInfo.pid === keepPid) continue;
-      await terminateGatewayProcess(this.platform, processInfo.pid);
+      await terminateManagedGatewayProcessIfConfirmed({
+        platform: this.platform,
+        processInfo,
+        gatewayLogDir: this.config.gatewayLogDir,
+      });
     }
 
-    if (state && !keepPid) {
+    if (state && !keepPid && finalStatePidAuthorityStatus !== 'unverified') {
       await removeGatewayState(this.config, libraryId);
     }
   }
@@ -1390,7 +1807,8 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     const ownerEvidence = await loadGatewayOwnerEvidence(this.config, this.platform.now());
     const states = await listPersistedGatewayStates(this.config);
     const stateByLibraryId = new Map(states.map((state) => [state.libraryId, state]));
-    const managedProcesses = await this.listManagedProcesses(states);
+    const processInventory = await this.platform.listProcesses();
+    const managedProcesses = await this.listManagedProcesses(states, processInventory);
     const processLibraryIds = new Set(
       managedProcesses
         .map((processInfo) => processInfo.libraryId ?? processInfo.matchedState?.libraryId ?? null)
@@ -1399,6 +1817,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     for (const libraryId of new Set([...stateByLibraryId.keys(), ...processLibraryIds])) {
       await this.reconcileLibrary(libraryId, {
         stateByLibraryId,
+        processInventory,
         managedProcesses,
         ownerEvidence,
         ownerRuntime,
@@ -1416,7 +1835,11 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       })) {
         continue;
       }
-      await terminateGatewayProcess(this.platform, processInfo.pid);
+      await terminateManagedGatewayProcessIfConfirmed({
+        platform: this.platform,
+        processInfo,
+        gatewayLogDir: this.config.gatewayLogDir,
+      });
     }
   }
 
@@ -1429,24 +1852,30 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     await ownerRuntime.heartbeat().catch(() => undefined);
     await ensureExecutable(this.config.juicefsBin);
     await this.ensureReconciled();
+    const currentSession = this.sessions.get(input.libraryId);
+    if (this.isOwnedGatewaySessionLive(currentSession) && this.doesSessionMatchGatewayInput(currentSession, input)) {
+      return currentSession;
+    }
+    if (this.isOwnedGatewaySession(currentSession)) {
+      await this.cleanupOwnedSession(input.libraryId, currentSession);
+    }
+
     await this.reconcileLibrary(input.libraryId);
     const existing = this.sessions.get(input.libraryId);
     if (
       existing?.pid
       && this.platform.processExists(existing.pid)
-      && existing.metadataUrl === input.metadataUrl
-      && existing.storageBucketUrl === input.storageBucketUrl
+      && this.doesSessionMatchGatewayInput(existing, input)
     ) {
       return existing;
     }
-    if (existing?.pid && this.platform.processExists(existing.pid)) {
-      await terminateGatewayProcess(this.platform, existing.pid);
+    if (existing) {
       this.sessions.delete(input.libraryId);
-      await removeGatewayState(this.config, input.libraryId);
     }
 
     const persisted = await readGatewayState(this.config, input.libraryId);
     const ownerEvidence = await loadGatewayOwnerEvidence(this.config, this.platform.now());
+    const processInventory = persisted?.pid ? await this.platform.listProcesses() : [];
     const persistedAuthority = persisted
       ? classifyPersistedGatewayAuthority({
         platform: this.platform,
@@ -1455,10 +1884,17 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         currentOwnerScope: ownerRuntime.ownerScope,
       })
       : 'stale';
+    const persistedPidAuthority = persisted
+      ? await resolvePersistedGatewayPidAuthority({
+        platform: this.platform,
+        state: persisted,
+        processInventory,
+      })
+      : { status: 'missing' as const, processInfo: null };
     if (
       persisted
       && persistedAuthority === 'foreign_active_boot'
-      && this.platform.processExists(persisted.pid)
+      && persistedPidAuthority.status === 'confirmed'
     ) {
       this.sessions.delete(input.libraryId);
       throw createForeignActiveBootGatewayError();
@@ -1466,7 +1902,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     if (
       persisted
       && persistedAuthority !== 'stale'
-      && this.platform.processExists(persisted.pid)
+      && persistedPidAuthority.status === 'confirmed'
       && persisted.metadataUrl === input.metadataUrl
       && persisted.storageBucketUrl === input.storageBucketUrl
     ) {
@@ -1477,22 +1913,34 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
             loopbackUrl: persisted.loopbackUrl,
             port: persisted.port,
             status: 'ready',
-            lastStartedAt: persisted.lastStartedAt,
-            pid: persisted.pid,
-            metadataUrl: persisted.metadataUrl,
-            storageBucketUrl: persisted.storageBucketUrl,
-            logPath: persisted.logPath,
-          };
-          this.sessions.set(input.libraryId, restored);
-          return restored;
+          lastStartedAt: persisted.lastStartedAt,
+          pid: persisted.pid,
+          metadataUrl: persisted.metadataUrl,
+          storageBucketUrl: persisted.storageBucketUrl,
+          logPath: persisted.logPath,
+          ownerScope: persisted.ownerScope,
+          sessionToken: persisted.sessionToken,
+        };
+        this.sessions.set(input.libraryId, restored);
+        return restored;
         }
       } catch {
-        await terminateGatewayProcess(this.platform, persisted.pid);
+        const terminationStatus = await terminatePersistedGatewayProcessIfConfirmed({
+          platform: this.platform,
+          state: persisted,
+        });
+        if (terminationStatus !== 'unverified') {
+          await removeGatewayState(this.config, input.libraryId);
+        }
+      }
+    } else if (persisted && persistedPidAuthority.status === 'confirmed') {
+      const terminationStatus = await terminatePersistedGatewayProcessIfConfirmed({
+        platform: this.platform,
+        state: persisted,
+      });
+      if (terminationStatus !== 'unverified') {
         await removeGatewayState(this.config, input.libraryId);
       }
-    } else if (persisted?.pid && this.platform.processExists(persisted.pid)) {
-      await terminateGatewayProcess(this.platform, persisted.pid);
-      await removeGatewayState(this.config, input.libraryId);
     }
 
     await mkdir(this.config.gatewayLogDir, { recursive: true });
@@ -1533,6 +1981,8 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       metadataUrl: input.metadataUrl,
       storageBucketUrl: input.storageBucketUrl,
       logPath,
+      ownerScope: ownerRuntime.ownerScope,
+      sessionToken: randomUUID(),
     };
     this.sessions.set(input.libraryId, created);
     if (child.pid) {
@@ -1547,6 +1997,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         lastStartedAt: created.lastStartedAt,
         ownerProcessPid: this.platform.ownerPid(),
         ownerScope: ownerRuntime.ownerScope,
+        sessionToken: created.sessionToken,
         status: 'starting',
       });
     }
@@ -1556,6 +2007,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       created.lastError = stderr.trim().slice(-2000);
     });
     child.on('exit', (code) => {
+      created.hasExited = true;
       if (code !== 0 && created.status !== 'ready') {
         created.status = 'failed';
       } else if (code !== 0) {
@@ -1563,8 +2015,12 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       } else {
         created.status = 'stopped';
       }
-      this.sessions.delete(input.libraryId);
-      void removeGatewayState(this.config, input.libraryId);
+      if (this.isCurrentSession(input.libraryId, created)) {
+        this.sessions.delete(input.libraryId);
+      }
+      if (this.isOwnedGatewaySession(created)) {
+        void this.removeOwnedSessionStateIfCurrent(input.libraryId, created);
+      }
     });
 
     try {
@@ -1582,6 +2038,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
           lastStartedAt: created.lastStartedAt,
           ownerProcessPid: this.platform.ownerPid(),
           ownerScope: ownerRuntime.ownerScope,
+          sessionToken: created.sessionToken,
           status: 'ready',
         });
       }
@@ -1590,9 +2047,29 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       created.status = 'failed';
       created.lastError = error instanceof Error ? error.message : 'file_library_gateway_start_failed';
       if (child.pid) {
-        await terminateGatewayProcess(this.platform, child.pid);
+        const terminationStatus = await terminatePersistedGatewayProcessIfConfirmed({
+          platform: this.platform,
+          state: {
+            libraryId: input.libraryId,
+            pid: child.pid,
+            port,
+            loopbackUrl,
+            metadataUrl: input.metadataUrl,
+            storageBucketUrl: input.storageBucketUrl,
+            logPath,
+            lastStartedAt: created.lastStartedAt,
+            ownerProcessPid: this.platform.ownerPid(),
+            ownerScope: ownerRuntime.ownerScope,
+            sessionToken: created.sessionToken,
+            status: created.status,
+          },
+        });
+        if (terminationStatus !== 'unverified') {
+          await removeGatewayState(this.config, input.libraryId);
+        }
+      } else {
+        await removeGatewayState(this.config, input.libraryId);
       }
-      await removeGatewayState(this.config, input.libraryId);
       throw error;
     }
   }
@@ -1604,7 +2081,15 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       await this.ensureReconciled();
       await this.reconcileLibrary(libraryId);
       const persisted = await readGatewayState(this.config, libraryId);
-      if (persisted && this.platform.processExists(persisted.pid)) {
+      const processInventory = persisted?.pid ? await this.platform.listProcesses() : [];
+      const persistedPidAuthority = persisted
+        ? await resolvePersistedGatewayPidAuthority({
+          platform: this.platform,
+          state: persisted,
+          processInventory,
+        })
+        : { status: 'missing' as const, processInfo: null };
+      if (persisted && persistedPidAuthority.status === 'confirmed') {
         const ownerEvidence = await loadGatewayOwnerEvidence(this.config, this.platform.now());
         const persistedAuthority = classifyPersistedGatewayAuthority({
           platform: this.platform,
@@ -1628,6 +2113,8 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
           metadataUrl: persisted.metadataUrl,
           storageBucketUrl: persisted.storageBucketUrl,
           logPath: persisted.logPath,
+          ownerScope: persisted.ownerScope,
+          sessionToken: persisted.sessionToken,
         });
       }
     }
@@ -1665,10 +2152,24 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   }
 
   async stopGateway(libraryId: string): Promise<void> {
-    const existing = this.sessions.get(libraryId);
     const ownerRuntime = await this.ownerRuntimePromise;
+    const currentSession = this.sessions.get(libraryId);
+    if (this.isOwnedGatewaySession(currentSession)) {
+      await this.cleanupOwnedSession(libraryId, currentSession);
+    } else if (currentSession) {
+      this.sessions.delete(libraryId);
+    }
+
     const persisted = await readGatewayState(this.config, libraryId);
-    if (persisted && this.platform.processExists(persisted.pid)) {
+    const processInventory = persisted?.pid ? await this.platform.listProcesses() : [];
+    const persistedPidAuthority = persisted
+      ? await resolvePersistedGatewayPidAuthority({
+        platform: this.platform,
+        state: persisted,
+        processInventory,
+      })
+      : { status: 'missing' as const, processInfo: null };
+    if (persisted && persistedPidAuthority.status === 'confirmed') {
       const ownerEvidence = await loadGatewayOwnerEvidence(this.config, this.platform.now());
       const persistedAuthority = classifyPersistedGatewayAuthority({
         platform: this.platform,
@@ -1681,12 +2182,20 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         return;
       }
     }
-    const pid = existing?.pid ?? persisted?.pid;
-    if (pid) {
-      await terminateGatewayProcess(this.platform, pid);
+    let finalPersistedPidAuthorityStatus = persistedPidAuthority.status;
+    if (persisted && persistedPidAuthority.status === 'confirmed') {
+      const terminationStatus = await terminatePersistedGatewayProcessIfConfirmed({
+        platform: this.platform,
+        state: persisted,
+      });
+      finalPersistedPidAuthorityStatus = terminationStatus === 'terminated'
+        ? 'missing'
+        : terminationStatus;
     }
     this.sessions.delete(libraryId);
-    await removeGatewayState(this.config, libraryId);
+    if (persisted && finalPersistedPidAuthorityStatus !== 'unverified') {
+      await removeGatewayState(this.config, libraryId);
+    }
   }
 
   async shutdown(): Promise<void> {

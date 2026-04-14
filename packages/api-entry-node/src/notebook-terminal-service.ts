@@ -125,6 +125,14 @@ type NotebookTerminalLifecycleHooks = {
   onSessionClosed?: (session: RegisteredTerminalSession) => void | Promise<void>;
 };
 
+type TerminalSessionScopeInput = {
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  userId: string;
+  sessionId: string;
+};
+
 export class NotebookTerminalService {
   private readonly wsServer: WebSocketServer;
   private readonly sessions = new Map<string, RegisteredTerminalSession>();
@@ -322,6 +330,30 @@ export class NotebookTerminalService {
     } catch {
       return null;
     }
+  }
+
+  private matchesSessionScope(
+    session: Pick<RegisteredTerminalSession, 'workspaceId' | 'projectId' | 'taskId' | 'userId'>,
+    input: Omit<TerminalSessionScopeInput, 'sessionId'>,
+  ): boolean {
+    return (
+      session.workspaceId === input.workspaceId
+      && session.projectId === input.projectId
+      && session.taskId === input.taskId
+      && session.userId === input.userId
+    );
+  }
+
+  private async peekSession(sessionId: string): Promise<RegisteredTerminalSession | null> {
+    return this.sessions.get(sessionId) ?? this.loadPersistedSession(sessionId);
+  }
+
+  private async peekSessionWithinScope(
+    input: TerminalSessionScopeInput,
+  ): Promise<RegisteredTerminalSession | null> {
+    const session = await this.peekSession(input.sessionId);
+    if (!session) return null;
+    return this.matchesSessionScope(session, input) ? session : null;
   }
 
   private async resolveLiveBindableSession(sessionId: string): Promise<RegisteredTerminalSession | null> {
@@ -609,6 +641,12 @@ export class NotebookTerminalService {
     return this.loadResolvedPersistedSession(sessionId);
   }
 
+  async getSessionWithinScope(input: TerminalSessionScopeInput): Promise<RegisteredTerminalSession | null> {
+    const scoped = await this.peekSessionWithinScope(input);
+    if (!scoped) return null;
+    return this.getSession(input.sessionId);
+  }
+
   async listSessionsForTask(input: {
     workspaceId: string;
     projectId: string;
@@ -672,14 +710,16 @@ export class NotebookTerminalService {
     sessionId: string;
   }): Promise<boolean> {
     const liveSession = this.sessions.get(input.sessionId);
+    if (liveSession && !this.matchesSessionScope(liveSession, input)) {
+      return false;
+    }
+    if (!liveSession) {
+      const scopedPersisted = await this.peekSessionWithinScope(input);
+      if (!scopedPersisted) return false;
+    }
     const session = liveSession ?? await this.loadResolvedPersistedSession(input.sessionId);
     if (!session) return false;
-    if (
-      session.workspaceId !== input.workspaceId
-      || session.projectId !== input.projectId
-      || session.taskId !== input.taskId
-      || session.userId !== input.userId
-    ) {
+    if (!this.matchesSessionScope(session, input)) {
       return false;
     }
     if (session.disconnectTimer) {

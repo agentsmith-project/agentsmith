@@ -33,6 +33,7 @@ import { startTerminalProcess, type TerminalExecutionContext, type TerminalProce
 import { prepareLaunchCommand } from './child-launcher.js';
 import { buildAgentRuntimeEnv } from './agent-runtime-env.js';
 import { buildTaskUserInstallEnv } from './user-install-env.js';
+import { installNotebookRunnerProcessIdentity } from './task-workspace-ownership.js';
 import {
   assertNotebookExecutionContext,
   NOTEBOOK_RUNNER_SPEC,
@@ -66,6 +67,11 @@ const cancelKillDelayMs = (() => {
   if (Number.isFinite(raw) && raw >= 1_000) return raw;
   return 8_000;
 })();
+const runnerInstanceId = (process.env.MBOS_AGENT_RUNNER_INSTANCE_ID ?? '').trim();
+
+if (runnerInstanceId) {
+  installNotebookRunnerProcessIdentity(runnerInstanceId);
+}
 
 if (!wsUrl || !key) {
   process.stderr.write(

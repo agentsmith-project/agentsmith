@@ -10,6 +10,7 @@ import {
   classifyGatewayState,
   classifyTaskMountProcess,
   extractGatewayProcessIdentity,
+  hasAnyNotebookRunnerAlive,
   loadTaskMountRegistryOwners,
   matchGatewayStateForProcess,
   resolvePreflightOptions,
@@ -40,9 +41,40 @@ function buildProcess(overrides: Partial<ManagedProcessInfo> = {}): ManagedProce
     pid: 7100,
     ppid: 1,
     ageSeconds: 1200,
+    cwd: null,
     command: 'juicefs gateway postgres://meta 127.0.0.1:39001 --log /tmp/flib_demo.log --no-banner',
     ...overrides,
   };
+}
+
+function buildRunnerProcess(pid: number, instanceId?: string): ManagedProcessInfo {
+  return buildProcess({
+    pid,
+    command: `node /workspace/packages/notebook-codex-runner/dist/index.js${instanceId ? ` runner_instance_id=${instanceId}` : ''}`,
+  });
+}
+
+function buildCanonicalTsxRunnerProcess(pid: number, overrides: Partial<ManagedProcessInfo> = {}): ManagedProcessInfo {
+  return buildProcess({
+    pid,
+    cwd: '/home/percy/works/mbos-v1/agentsmith/packages/notebook-codex-runner',
+    command: 'tsx src/index.ts',
+    ...overrides,
+  });
+}
+
+function buildRunnerTitleProcess(pid: number, instanceId: string): ManagedProcessInfo {
+  return buildProcess({
+    pid,
+    command: `agentsmith-notebook-codex-runner runner_instance_id=${instanceId}`,
+  });
+}
+
+function buildNonRunnerNotebookCommandProcess(pid: number): ManagedProcessInfo {
+  return buildProcess({
+    pid,
+    command: 'vitest packages/notebook-codex-runner/src/index.ts --runInBand',
+  });
 }
 
 function buildOwnedGatewayCommand(args: {
@@ -128,10 +160,58 @@ describe('juicefs orphan preflight', () => {
     });
   });
 
+  it('fails open when a stale persisted gateway pid was reused by an unrelated live process', () => {
+    const decision = classifyGatewayState({
+      state: buildGatewayState({
+        pid: 4100,
+        ownerProcessPid: 5100,
+        ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-old'),
+      }),
+      livePids: new Set([4100, 5100]),
+      processTableByPid: new Map<number, ManagedProcessInfo>([
+        [
+          4100,
+          buildProcess({
+            pid: 4100,
+            command: 'node /tmp/unrelated-server.js',
+          }),
+        ],
+      ]),
+      ownerEvidence: buildGatewayOwnerEvidence({
+        localInstanceId: 'instance-a',
+        scopeStatusByScope: new Map<string, 'active' | 'stale'>([
+          [buildBootScopedOwnerScope('instance-a', 'boot-old'), 'stale'],
+          [buildBootScopedOwnerScope('instance-a', 'boot-current'), 'active'],
+        ]),
+      }),
+    });
+
+    expect(decision).toEqual({
+      action: 'keep',
+      reason: 'pid_authority_unverified',
+    });
+  });
+
   it('keeps a state-backed gateway when both owner and gateway pid are alive', () => {
     const decision = classifyGatewayState({
       state: buildGatewayState({ pid: 4100, ownerProcessPid: 5100 }),
       livePids: new Set([4100, 5100]),
+      processTableByPid: new Map<number, ManagedProcessInfo>([
+        [
+          4100,
+          buildProcess({
+            pid: 4100,
+            command: buildOwnedGatewayCommand({
+              ownerScope: 'api-pid-5100',
+              libraryId: 'flib_demo',
+              metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
+              listenAddress: '127.0.0.1:39001',
+              storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
+              logPath: '/tmp/flib_demo.log',
+            }),
+          }),
+        ],
+      ]),
     });
 
     expect(decision).toEqual({
@@ -144,6 +224,15 @@ describe('juicefs orphan preflight', () => {
     const decision = classifyGatewayState({
       state: buildGatewayState({ ownerProcessPid: null }),
       livePids: new Set([4100]),
+      processTableByPid: new Map<number, ManagedProcessInfo>([
+        [
+          4100,
+          buildProcess({
+            pid: 4100,
+            command: 'juicefs gateway postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable 127.0.0.1:39001 --log /tmp/flib_demo.log --no-banner',
+          }),
+        ],
+      ]),
     });
 
     expect(decision).toEqual({
@@ -427,6 +516,141 @@ describe('juicefs orphan preflight', () => {
     });
   });
 
+  it('recognizes the runner process title used by notebook-codex-runner when deciding ownerless mount liveness', () => {
+    const runnerProcess = buildRunnerTitleProcess(8100, 'runner-live');
+    const livePids = new Set([runnerProcess.pid]);
+    const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+      trackedRunnerPid: null,
+      livePids,
+      processes: [runnerProcess],
+    });
+
+    const decision = classifyTaskMountProcess({
+      processInfo: buildProcess({
+        command: `juicefs mount postgres://meta ${path.join('/home/percy', 'ags-workspace', 'task_demo')}`,
+      }),
+      anyRunnerAlive,
+      livePids,
+      ownerProcessPid: null,
+      processTableByPid: new Map<number, ManagedProcessInfo>([
+        [runnerProcess.pid, runnerProcess],
+      ]),
+    });
+
+    expect(anyRunnerAlive).toBe(true);
+    expect(decision).toEqual({
+      action: 'keep',
+      reason: 'runner_alive',
+    });
+  });
+
+  it('recognizes canonical tsx src/index.ts launches only when cwd resolves to notebook-codex-runner', () => {
+    const runnerProcess = buildCanonicalTsxRunnerProcess(8100);
+    const livePids = new Set([runnerProcess.pid]);
+
+    const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+      trackedRunnerPid: null,
+      livePids,
+      processes: [runnerProcess],
+    });
+
+    expect(anyRunnerAlive).toBe(true);
+  });
+
+  it('does not treat another package tsx src/index.ts launch as notebook runner liveness', () => {
+    const apiProcess = buildCanonicalTsxRunnerProcess(8100, {
+      cwd: '/home/percy/works/mbos-v1/agentsmith/packages/api-entry-node',
+    });
+    const livePids = new Set([apiProcess.pid]);
+
+    const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+      trackedRunnerPid: null,
+      livePids,
+      processes: [apiProcess],
+    });
+
+    expect(anyRunnerAlive).toBe(false);
+  });
+
+  it('does not treat test-style commands that merely mention notebook-codex-runner as live runners', () => {
+    const noisyProcess = buildNonRunnerNotebookCommandProcess(8100);
+    const livePids = new Set([noisyProcess.pid]);
+    const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+      trackedRunnerPid: null,
+      livePids,
+      processes: [noisyProcess],
+    });
+
+    expect(anyRunnerAlive).toBe(false);
+  });
+
+  it('does not reclaim ownerless mounts when the tracked runner pid is a live supervisor whose child is the canonical tsx runner', () => {
+    const supervisorProcess = buildProcess({
+      pid: 8100,
+      command: 'make notebook-agent-runner',
+    });
+    const runnerProcess = buildCanonicalTsxRunnerProcess(8101, {
+      ppid: supervisorProcess.pid,
+    });
+    const livePids = new Set([supervisorProcess.pid, runnerProcess.pid]);
+    const processTableByPid = new Map<number, ManagedProcessInfo>([
+      [supervisorProcess.pid, supervisorProcess],
+      [runnerProcess.pid, runnerProcess],
+    ]);
+    const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+      trackedRunnerPid: supervisorProcess.pid,
+      livePids,
+      processes: [supervisorProcess, runnerProcess],
+    });
+
+    const decision = classifyTaskMountProcess({
+      processInfo: buildProcess({
+        command: `juicefs mount postgres://meta ${path.join('/home/percy', 'ags-workspace', 'task_demo')}`,
+      }),
+      anyRunnerAlive,
+      livePids,
+      ownerProcessPid: null,
+      processTableByPid,
+    });
+
+    expect(anyRunnerAlive).toBe(true);
+    expect(decision).toEqual({
+      action: 'keep',
+      reason: 'runner_alive',
+    });
+  });
+
+  it('does not suppress ownerless mount cleanup when the persisted runner pid was reused by an unrelated process', () => {
+    const reusedPidProcess = buildProcess({
+      pid: 8100,
+      command: 'node /tmp/unrelated-service.js',
+    });
+    const livePids = new Set([reusedPidProcess.pid]);
+    const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+      trackedRunnerPid: reusedPidProcess.pid,
+      livePids,
+      processes: [reusedPidProcess],
+    });
+
+    const decision = classifyTaskMountProcess({
+      processInfo: buildProcess({
+        command: `juicefs mount postgres://meta ${path.join('/home/percy', 'ags-workspace', 'task_demo')}`,
+      }),
+      anyRunnerAlive,
+      livePids,
+      ownerProcessPid: null,
+      processTableByPid: new Map<number, ManagedProcessInfo>([
+        [reusedPidProcess.pid, reusedPidProcess],
+      ]),
+    });
+
+    expect(anyRunnerAlive).toBe(false);
+    expect(decision).toEqual({
+      action: 'reclaim_mount',
+      reason: 'runner_absent_for_host_mount',
+    });
+  });
+
   it('reclaims host task mounts after the runner ownership disappears', () => {
     const decision = classifyTaskMountProcess({
       processInfo: buildProcess({
@@ -467,11 +691,36 @@ describe('juicefs orphan preflight', () => {
       anyRunnerAlive: false,
       livePids: new Set([5100]),
       ownerProcessPid: 5100,
+      processTableByPid: new Map<number, ManagedProcessInfo>([
+        [5100, buildRunnerProcess(5100, 'runner-live')],
+      ]),
     });
 
     expect(decision).toEqual({
       action: 'keep',
       reason: 'mount_owner_alive',
+    });
+  });
+
+  it('reclaims a mount when its recorded owner pid was reused by an unrelated process', () => {
+    const decision = classifyTaskMountProcess({
+      processInfo: buildProcess({
+        command: `juicefs mount postgres://meta ${path.join('/home/percy', 'ags-workspace', 'task_demo')}`,
+      }),
+      anyRunnerAlive: true,
+      livePids: new Set([5100]),
+      ownerProcessPid: 5100,
+      processTableByPid: new Map<number, ManagedProcessInfo>([
+        [5100, buildProcess({
+          pid: 5100,
+          command: 'node /tmp/unrelated-service.js',
+        })],
+      ]),
+    });
+
+    expect(decision).toEqual({
+      action: 'reclaim_mount',
+      reason: 'mount_owner_pid_reused',
     });
   });
 

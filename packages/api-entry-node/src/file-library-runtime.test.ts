@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -51,7 +51,10 @@ function createGatewayConfig(overrides: Partial<ConstructorParameters<typeof Rea
   } as ConstructorParameters<typeof RealFileLibraryGatewayManager>[0];
 }
 
-function createChild(pid: number) {
+function createChild(
+  pid: number,
+  options?: { onKill?: (signal: NodeJS.Signals) => void },
+) {
   const stdout = new EventEmitter();
   const stderr = new EventEmitter();
   const child = new EventEmitter() as EventEmitter & {
@@ -59,12 +62,27 @@ function createChild(pid: number) {
     stdout: EventEmitter;
     stderr: EventEmitter;
     exitCode: number | null;
+    kill: ReturnType<typeof vi.fn>;
   };
   child.pid = pid;
   child.stdout = stdout;
   child.stderr = stderr;
   child.exitCode = null;
+  child.kill = vi.fn((signal: NodeJS.Signals = 'SIGTERM') => {
+    options?.onKill?.(signal);
+    return true;
+  });
   return child as never;
+}
+
+function emitChildExit(
+  child: EventEmitter & {
+    exitCode: number | null;
+  },
+  code: number | null,
+) {
+  child.exitCode = code;
+  child.emit('exit', code);
 }
 
 function mockFreePortProbe() {
@@ -796,6 +814,390 @@ describe('file-library-runtime readiness', () => {
     expect(spawnGateway).not.toHaveBeenCalled();
   });
 
+  it('does not restore or kill a persisted gateway when its pid was reused by an unrelated process', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-pid-unrelated-ensure-'));
+    await mkdir(join(root, 'state'), { recursive: true });
+    await writeFile(join(root, 'state', 'flib_pid_unrelated.json'), JSON.stringify({
+      libraryId: 'flib_pid_unrelated',
+      pid: 501,
+      port: 39051,
+      loopbackUrl: 'http://127.0.0.1:39051',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_pid_unrelated?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-pid-unrelated',
+      logPath: join(root, 'logs', 'flib_pid_unrelated.log'),
+      lastStartedAt: '2026-04-02T18:31:00.000Z',
+      ownerProcessPid: 321,
+      ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-current'),
+      status: 'ready',
+    }), 'utf8');
+    await writeOwnerLedgerRecord({
+      artifactsRoot: root,
+      instanceId: 'instance-a',
+      bootId: 'boot-current',
+      ownerProcessPid: 321,
+      heartbeatAt: '2026-04-02T18:31:45.000Z',
+    });
+
+    const kills: Array<{ pid: number; signal: string }> = [];
+    const spawnGateway = vi.fn(() => createChild(901));
+    const freePortProbe = mockFreePortProbe();
+    const globalFetch = vi.fn(async () => new Response('ok', { status: 200 }));
+    const platformFetch = vi.fn(async () => new Response('unexpected', { status: 500 }));
+    vi.stubGlobal('fetch', globalFetch);
+
+    try {
+      const manager = new RealFileLibraryGatewayManager(
+        createGatewayConfig({
+          gatewayArtifactsRoot: root,
+          gatewayLogDir: join(root, 'logs'),
+          gatewayStateDir: join(root, 'state'),
+        }),
+        {
+          spawnGateway,
+          async listProcesses() {
+            return [
+              {
+                pid: 501,
+                args: 'node /tmp/unrelated-server.js',
+                libraryId: null,
+              },
+            ];
+          },
+          processExists(pid) {
+            return pid === 321 || pid === 501 || pid === 901;
+          },
+          killProcess(pid, signal) {
+            kills.push({ pid, signal });
+          },
+          wait: async () => undefined,
+          fetch: platformFetch,
+          now: () => '2026-04-02T18:32:00.000Z',
+          ownerPid: () => 1000,
+        },
+      );
+
+      const gateway = await manager.ensureGateway({
+        libraryId: 'flib_pid_unrelated',
+        filesystemName: 'flib-pid-unrelated',
+        metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_pid_unrelated?sslmode=disable',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-pid-unrelated',
+      });
+
+      expect(gateway.pid).toBe(901);
+      expect(spawnGateway).toHaveBeenCalledTimes(1);
+      expect(platformFetch).not.toHaveBeenCalled();
+      expect(kills).toEqual([]);
+    } finally {
+      freePortProbe.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('does not kill a reused pid from a stale managed-process snapshot during direct ensure reconciliation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-ensure-sequential-pid-reuse-'));
+    await mkdir(join(root, 'state'), { recursive: true });
+    await writeFile(join(root, 'state', 'flib_ensure_sequential.json'), JSON.stringify({
+      libraryId: 'flib_ensure_sequential',
+      pid: 551,
+      port: 39051,
+      loopbackUrl: 'http://127.0.0.1:39051',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_ensure_sequential?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-ensure-sequential',
+      logPath: join(root, 'logs', 'flib_ensure_sequential.log'),
+      lastStartedAt: '2026-04-02T18:31:00.000Z',
+      ownerProcessPid: 445,
+      ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-old'),
+      status: 'ready',
+    }), 'utf8');
+    await writeOwnerLedgerRecord({
+      artifactsRoot: root,
+      instanceId: 'instance-a',
+      bootId: 'boot-old',
+      ownerProcessPid: 445,
+      heartbeatAt: '2026-04-02T18:00:00.000Z',
+    });
+
+    const kills: Array<{ pid: number; signal: string }> = [];
+    const spawnGateway = vi.fn(() => createChild(901));
+    const freePortProbe = mockFreePortProbe();
+    const globalFetch = vi.fn(async () => new Response('ok', { status: 200 }));
+    const platformFetch = vi.fn(async () => new Response('unexpected', { status: 500 }));
+    let listProcessesCall = 0;
+    vi.stubGlobal('fetch', globalFetch);
+
+    try {
+      const manager = new RealFileLibraryGatewayManager(
+        createGatewayConfig({
+          gatewayArtifactsRoot: root,
+          gatewayLogDir: join(root, 'logs'),
+          gatewayStateDir: join(root, 'state'),
+        }),
+        {
+          spawnGateway,
+          async listProcesses() {
+            listProcessesCall += 1;
+            if (listProcessesCall === 1) {
+              return [];
+            }
+            if (listProcessesCall === 2) {
+              return [
+                {
+                  pid: 551,
+                  args: buildOwnedGatewayArgs({
+                    ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-old'),
+                    libraryId: 'flib_ensure_sequential',
+                    metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_ensure_sequential?sslmode=disable',
+                    listenAddress: '127.0.0.1:39051',
+                    storageBucketUrl: 'http://localhost:19000/jfs-lib-ensure-sequential',
+                    logPath: join(root, 'logs', 'flib_ensure_sequential.log'),
+                  }),
+                  libraryId: null,
+                },
+              ];
+            }
+            return [
+              {
+                pid: 551,
+                args: 'node /tmp/unrelated-server.js',
+                libraryId: null,
+              },
+            ];
+          },
+          processExists(pid) {
+            return pid === 445 || pid === 551 || pid === 901;
+          },
+          killProcess(pid, signal) {
+            kills.push({ pid, signal });
+          },
+          wait: async () => undefined,
+          fetch: platformFetch,
+          now: () => '2026-04-02T18:32:00.000Z',
+          ownerPid: () => 1000,
+        },
+      );
+
+      const gateway = await manager.ensureGateway({
+        libraryId: 'flib_ensure_sequential',
+        filesystemName: 'flib-ensure-sequential',
+        metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_ensure_sequential?sslmode=disable',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-ensure-sequential',
+      });
+
+      expect(gateway.pid).toBe(901);
+      expect(spawnGateway).toHaveBeenCalledTimes(1);
+      expect(kills).toEqual([]);
+    } finally {
+      freePortProbe.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  for (const persistedMode of ['missing', 'unverified'] as const) {
+    it(`replaces a live current-boot child when persisted authority is ${persistedMode} without leaving the old process behind`, async () => {
+      const root = await mkdtemp(join(tmpdir(), `gateway-owned-replacement-${persistedMode}-`));
+      const libraryId = `flib_owned_replacement_${persistedMode}`;
+      const kills: Array<{ pid: number; signal: string }> = [];
+      const alive = new Set<number>([1000]);
+      const children = new Map<number, ReturnType<typeof createChild>>();
+      let nextPid = 901;
+
+      const terminatePid = (pid: number, signal: NodeJS.Signals) => {
+        kills.push({ pid, signal });
+        alive.delete(pid);
+        const child = children.get(pid);
+        if (child) {
+          emitChildExit(child, signal === 'SIGKILL' ? 137 : 0);
+        }
+      };
+
+      const spawnGateway = vi.fn(() => {
+        const pid = nextPid;
+        nextPid += 1;
+        alive.add(pid);
+        const child = createChild(pid, {
+          onKill(signal) {
+            terminatePid(pid, signal);
+          },
+        });
+        children.set(pid, child);
+        return child;
+      });
+
+      const freePortProbe = mockFreePortProbe();
+      const globalFetch = vi.fn(async () => new Response('ok', { status: 200 }));
+      vi.stubGlobal('fetch', globalFetch);
+
+      try {
+        const manager = new RealFileLibraryGatewayManager(
+          createGatewayConfig({
+            gatewayArtifactsRoot: root,
+            gatewayLogDir: join(root, 'logs'),
+            gatewayStateDir: join(root, 'state'),
+          }),
+          {
+            spawnGateway,
+            async listProcesses() {
+              if (persistedMode === 'unverified') {
+                return [
+                  {
+                    pid: 901,
+                    args: 'node /tmp/unrelated-server.js',
+                    libraryId: null,
+                  },
+                ];
+              }
+              return [];
+            },
+            processExists(pid) {
+              return alive.has(pid);
+            },
+            killProcess(pid, signal) {
+              terminatePid(pid, signal);
+            },
+            wait: async () => undefined,
+            fetch: vi.fn(async () => new Response('ok', { status: 200 })),
+            now: () => '2026-04-02T18:40:00.000Z',
+            ownerPid: () => 1000,
+          },
+        );
+
+        const first = await manager.ensureGateway({
+          libraryId,
+          filesystemName: libraryId,
+          metadataUrl: `postgres://user:pass@localhost:15432/jfs_${libraryId}?sslmode=disable`,
+          storageBucketUrl: `http://localhost:19000/${libraryId}`,
+        });
+
+        if (persistedMode === 'missing') {
+          await rm(join(root, 'state', `${libraryId}.json`), { force: true });
+        }
+
+        const second = await manager.ensureGateway({
+          libraryId,
+          filesystemName: libraryId,
+          metadataUrl: `postgres://user:pass@localhost:15432/jfs_${libraryId}_replacement?sslmode=disable`,
+          storageBucketUrl: `http://localhost:19000/${libraryId}-replacement`,
+        });
+
+        expect(first.pid).toBe(901);
+        expect(second.pid).toBe(902);
+        expect(spawnGateway).toHaveBeenCalledTimes(2);
+        expect(kills).toEqual(expect.arrayContaining([{ pid: 901, signal: 'SIGTERM' }]));
+        expect(alive.has(901)).toBe(false);
+        expect(alive.has(902)).toBe(true);
+
+        const sessions = Reflect.get(manager as object, 'sessions') as Map<string, { pid?: number }>;
+        expect(sessions.get(libraryId)?.pid).toBe(902);
+
+        const persisted = JSON.parse(await readFile(join(root, 'state', `${libraryId}.json`), 'utf8')) as {
+          pid: number;
+          metadataUrl: string;
+          storageBucketUrl?: string;
+        };
+        expect(persisted.pid).toBe(902);
+        expect(persisted.metadataUrl).toBe(`postgres://user:pass@localhost:15432/jfs_${libraryId}_replacement?sslmode=disable`);
+        expect(persisted.storageBucketUrl).toBe(`http://localhost:19000/${libraryId}-replacement`);
+      } finally {
+        freePortProbe.mockRestore();
+        vi.unstubAllGlobals();
+      }
+    });
+  }
+
+  it('does not let an exited old child clear a newer session or persisted state for the same library', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-exit-handler-race-'));
+    const libraryId = 'flib_exit_race';
+    const alive = new Set<number>([1000]);
+    const freePortProbe = mockFreePortProbe();
+    const globalFetch = vi.fn(async () => new Response('ok', { status: 200 }));
+    vi.stubGlobal('fetch', globalFetch);
+
+    try {
+      const manager = new RealFileLibraryGatewayManager(
+        createGatewayConfig({
+          gatewayArtifactsRoot: root,
+          gatewayLogDir: join(root, 'logs'),
+          gatewayStateDir: join(root, 'state'),
+        }),
+        {
+          spawnGateway: vi.fn(() => {
+            alive.add(901);
+            return createChild(901);
+          }),
+          async listProcesses() {
+            return [];
+          },
+          processExists(pid) {
+            return alive.has(pid);
+          },
+          killProcess: vi.fn(),
+          wait: async () => undefined,
+          fetch: vi.fn(async () => new Response('ok', { status: 200 })),
+          now: () => '2026-04-02T18:40:00.000Z',
+          ownerPid: () => 1000,
+        },
+      );
+
+      await manager.ensureGateway({
+        libraryId,
+        filesystemName: libraryId,
+        metadataUrl: 'postgres://user:pass@localhost:15432/jfs_flib_exit_race?sslmode=disable',
+        storageBucketUrl: 'http://localhost:19000/jfs-flib-exit-race',
+      });
+
+      const sessions = Reflect.get(manager as object, 'sessions') as Map<string, Record<string, unknown>>;
+      const oldSession = sessions.get(libraryId) as {
+        child: ReturnType<typeof createChild>;
+      };
+      const oldPersisted = JSON.parse(await readFile(join(root, 'state', `${libraryId}.json`), 'utf8')) as {
+        ownerScope?: string;
+      };
+      const replacementSession = {
+        loopbackUrl: 'http://127.0.0.1:39001',
+        port: 39001,
+        status: 'ready',
+        lastStartedAt: '2026-04-02T18:41:00.000Z',
+        pid: 902,
+        child: createChild(902),
+        metadataUrl: 'postgres://user:pass@localhost:15432/jfs_flib_exit_race_replacement?sslmode=disable',
+        storageBucketUrl: 'http://localhost:19000/jfs-flib-exit-race-replacement',
+        logPath: join(root, 'logs', `${libraryId}.log`),
+        ownerScope: oldPersisted.ownerScope,
+        sessionToken: 'replacement-session-token',
+      };
+      alive.delete(901);
+      alive.add(902);
+      sessions.set(libraryId, replacementSession);
+      await writeFile(join(root, 'state', `${libraryId}.json`), JSON.stringify({
+        libraryId,
+        pid: 902,
+        port: 39001,
+        loopbackUrl: replacementSession.loopbackUrl,
+        metadataUrl: replacementSession.metadataUrl,
+        storageBucketUrl: replacementSession.storageBucketUrl,
+        logPath: replacementSession.logPath,
+        lastStartedAt: replacementSession.lastStartedAt,
+        ownerProcessPid: 1000,
+        ownerScope: replacementSession.ownerScope,
+        sessionToken: replacementSession.sessionToken,
+        status: 'ready',
+      }, null, 2), 'utf8');
+
+      emitChildExit(oldSession.child, 1);
+
+      expect(sessions.get(libraryId)).toBe(replacementSession);
+      const persisted = JSON.parse(await readFile(join(root, 'state', `${libraryId}.json`), 'utf8')) as {
+        pid: number;
+        sessionToken?: string;
+      };
+      expect(persisted.pid).toBe(902);
+      expect(persisted.sessionToken).toBe('replacement-session-token');
+    } finally {
+      freePortProbe.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('fails closed when another active boot owns a healthy persisted gateway', async () => {
     const root = await mkdtemp(join(tmpdir(), 'gateway-foreign-ensure-'));
     await mkdir(join(root, 'state'), { recursive: true });
@@ -924,6 +1326,89 @@ describe('file-library-runtime readiness', () => {
     expect(kills).toEqual([{ pid: 601, signal: 'SIGTERM' }]);
     expect(fetchSpy).not.toHaveBeenCalled();
     await expect(readFile(join(root, 'state', 'flib_orphan.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('reconfirms authority before killing a stale persisted gateway when pid reuse happens after reconcile snapshotting', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-reconcile-sequential-pid-reuse-'));
+    await mkdir(join(root, 'state'), { recursive: true });
+    await writeFile(join(root, 'state', 'flib_reconcile_sequential.json'), JSON.stringify({
+      libraryId: 'flib_reconcile_sequential',
+      pid: 621,
+      port: 39061,
+      loopbackUrl: 'http://127.0.0.1:39061',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_reconcile_sequential?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-reconcile-sequential',
+      logPath: join(root, 'logs', 'flib_reconcile_sequential.log'),
+      lastStartedAt: '2026-04-02T18:05:00.000Z',
+      ownerProcessPid: 445,
+      ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-old'),
+      status: 'ready',
+    }), 'utf8');
+    await writeOwnerLedgerRecord({
+      artifactsRoot: root,
+      instanceId: 'instance-a',
+      bootId: 'boot-old',
+      ownerProcessPid: 445,
+      heartbeatAt: '2026-04-02T18:05:00.000Z',
+    });
+
+    const kills: Array<{ pid: number; signal: string }> = [];
+    let listProcessesCall = 0;
+    const manager = new RealFileLibraryGatewayManager(
+      createGatewayConfig({
+        gatewayArtifactsRoot: root,
+        gatewayLogDir: join(root, 'logs'),
+        gatewayStateDir: join(root, 'state'),
+      }),
+      {
+        spawnGateway: vi.fn(),
+        async listProcesses() {
+          listProcessesCall += 1;
+          if (listProcessesCall === 1) {
+            return [];
+          }
+          if (listProcessesCall === 2) {
+            return [
+              {
+                pid: 621,
+                args: buildOwnedGatewayArgs({
+                  ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-old'),
+                  libraryId: 'flib_reconcile_sequential',
+                  metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_reconcile_sequential?sslmode=disable',
+                  listenAddress: '127.0.0.1:39061',
+                  storageBucketUrl: 'http://localhost:19000/jfs-lib-reconcile-sequential',
+                  logPath: join(root, 'logs', 'flib_reconcile_sequential.log'),
+                }),
+                libraryId: null,
+              },
+            ];
+          }
+          return [
+            {
+              pid: 621,
+              args: 'node /tmp/unrelated-server.js',
+              libraryId: null,
+            },
+          ];
+        },
+        processExists(pid) {
+          return pid === 445 || pid === 621;
+        },
+        killProcess(pid, signal) {
+          kills.push({ pid, signal });
+        },
+        wait: async () => undefined,
+        fetch: vi.fn(async () => new Response('ok', { status: 200 })),
+        now: () => '2026-04-02T18:40:00.000Z',
+        ownerPid: () => 444,
+      },
+    );
+
+    await Reflect.get(manager as object, 'reconcilePromise');
+    await manager.reconcile();
+
+    expect(kills).toEqual([]);
+    await expect(readFile(join(root, 'state', 'flib_reconcile_sequential.json'), 'utf8')).resolves.toContain('"libraryId":"flib_reconcile_sequential"');
   });
 
   it('migrates ownerless persisted gateways after validating the live loopback', async () => {
@@ -1182,6 +1667,69 @@ describe('file-library-runtime readiness', () => {
     await expect(readFile(join(root, 'state', 'flib_orphan_after_start.json'), 'utf8')).rejects.toThrow();
   });
 
+  it('fails open when a stale persisted gateway pid was reused by an unrelated process during health reconciliation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-health-pid-unrelated-'));
+    await mkdir(join(root, 'state'), { recursive: true });
+    await writeFile(join(root, 'state', 'flib_health_pid_unrelated.json'), JSON.stringify({
+      libraryId: 'flib_health_pid_unrelated',
+      pid: 602,
+      port: 39062,
+      loopbackUrl: 'http://127.0.0.1:39062',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_health_pid_unrelated?sslmode=disable',
+      logPath: join(root, 'logs', 'flib_health_pid_unrelated.log'),
+      lastStartedAt: '2026-04-02T18:34:00.000Z',
+      ownerProcessPid: 445,
+      ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-old'),
+      status: 'ready',
+    }), 'utf8');
+    await writeOwnerLedgerRecord({
+      artifactsRoot: root,
+      instanceId: 'instance-a',
+      bootId: 'boot-old',
+      ownerProcessPid: 445,
+      heartbeatAt: '2026-04-02T18:00:00.000Z',
+    });
+
+    const kills: Array<{ pid: number; signal: string }> = [];
+    const fetchSpy = vi.fn(async () => new Response('ok', { status: 200 }));
+    const manager = new RealFileLibraryGatewayManager(
+      createGatewayConfig({
+        gatewayArtifactsRoot: root,
+        gatewayLogDir: join(root, 'logs'),
+        gatewayStateDir: join(root, 'state'),
+      }),
+      {
+        spawnGateway: vi.fn(),
+        async listProcesses() {
+          return [
+            {
+              pid: 602,
+              args: 'node /tmp/unrelated-server.js',
+              libraryId: null,
+            },
+          ];
+        },
+        processExists(pid) {
+          return pid === 445 || pid === 602;
+        },
+        killProcess(pid, signal) {
+          kills.push({ pid, signal });
+        },
+        wait: async () => undefined,
+        fetch: fetchSpy,
+        now: () => '2026-04-02T18:34:00.000Z',
+        ownerPid: () => 1001,
+      },
+    );
+
+    const health = await manager.getHealth('flib_health_pid_unrelated');
+
+    expect(health.status).toBe('stopped');
+    expect(kills).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    await expect(readFile(join(root, 'state', 'flib_health_pid_unrelated.json'), 'utf8')).resolves.toContain('"libraryId":"flib_health_pid_unrelated"');
+  });
+
   it('keeps foreign active persisted gateways out of sessions so shutdown stays read-only', async () => {
     const root = await mkdtemp(join(tmpdir(), 'gateway-foreign-health-'));
     await mkdir(join(root, 'state'), { recursive: true });
@@ -1280,7 +1828,13 @@ describe('file-library-runtime readiness', () => {
       {
         spawnGateway: vi.fn(() => createChild(888)),
         async listProcesses() {
-          return [];
+          return [
+            {
+              pid: 777,
+              args: `juicefs gateway postgres://user:pass@localhost:15432/jfs_lib_stop?sslmode=disable 127.0.0.1:39077 --log ${join(root, 'logs', 'flib_stop.log')} --no-banner`,
+              libraryId: null,
+            },
+          ];
         },
         processExists() {
           return alive;
@@ -1354,5 +1908,66 @@ describe('file-library-runtime readiness', () => {
 
     expect(kills).toEqual([]);
     await expect(readFile(join(root, 'state', 'flib_stop_foreign.json'), 'utf8')).resolves.toContain('"libraryId":"flib_stop_foreign"');
+  });
+
+  it('does not stop or remove a persisted gateway when its pid was reused by an unrelated process', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-stop-unrelated-'));
+    await mkdir(join(root, 'state'), { recursive: true });
+    await writeFile(join(root, 'state', 'flib_stop_unrelated.json'), JSON.stringify({
+      libraryId: 'flib_stop_unrelated',
+      pid: 778,
+      port: 39078,
+      loopbackUrl: 'http://127.0.0.1:39078',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_stop_unrelated?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-stop-unrelated',
+      logPath: join(root, 'logs', 'flib_stop_unrelated.log'),
+      lastStartedAt: '2026-04-02T18:33:00.000Z',
+      ownerProcessPid: 222,
+      ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-current'),
+      status: 'ready',
+    }), 'utf8');
+    await writeOwnerLedgerRecord({
+      artifactsRoot: root,
+      instanceId: 'instance-a',
+      bootId: 'boot-current',
+      ownerProcessPid: 222,
+      heartbeatAt: '2026-04-02T18:35:45.000Z',
+    });
+
+    const kills: Array<{ pid: number; signal: string }> = [];
+    const manager = new RealFileLibraryGatewayManager(
+      createGatewayConfig({
+        gatewayArtifactsRoot: root,
+        gatewayLogDir: join(root, 'logs'),
+        gatewayStateDir: join(root, 'state'),
+      }),
+      {
+        spawnGateway: vi.fn(() => createChild(888)),
+        async listProcesses() {
+          return [
+            {
+              pid: 778,
+              args: 'node /tmp/unrelated-server.js',
+              libraryId: null,
+            },
+          ];
+        },
+        processExists(pid) {
+          return pid === 222 || pid === 778;
+        },
+        killProcess(pid, signal) {
+          kills.push({ pid, signal });
+        },
+        wait: async () => undefined,
+        fetch: vi.fn(),
+        now: () => '2026-04-02T18:34:00.000Z',
+        ownerPid: () => 2000,
+      },
+    );
+
+    await manager.stopGateway('flib_stop_unrelated');
+
+    expect(kills).toEqual([]);
+    await expect(readFile(join(root, 'state', 'flib_stop_unrelated.json'), 'utf8')).resolves.toContain('"libraryId":"flib_stop_unrelated"');
   });
 });

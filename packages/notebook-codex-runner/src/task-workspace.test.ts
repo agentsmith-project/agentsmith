@@ -42,6 +42,7 @@ import {
   shouldRetryTaskWorkspaceMount,
   shouldRetryTaskWorkspaceWriteFailure,
 } from './task-workspace.js';
+import { classifyMountedWorkspaceOwnerAuthority } from './task-workspace-ownership.js';
 
 type PersistedMountRegistry = {
   version?: number;
@@ -66,6 +67,25 @@ function findRegistrySession(
 function expectIsoTimestamp(value: unknown): void {
   expect(typeof value).toBe('string');
   expect(Number.isNaN(Date.parse(String(value)))).toBe(false);
+}
+
+function buildRunnerProcessCommand(args: {
+  pid: number;
+  instanceId?: string;
+}): string {
+  const marker = args.instanceId ? ` runner_instance_id=${args.instanceId}` : '';
+  return `${args.pid} node /workspace/packages/notebook-codex-runner/dist/index.js${marker}`;
+}
+
+function buildNonRunnerNotebookCommand(pid: number): string {
+  return `${pid} vitest packages/notebook-codex-runner/src/index.ts --runInBand`;
+}
+
+function buildFindmntSourceOutput(args: {
+  source: string;
+  fstype?: string;
+}): string {
+  return `${args.source} ${args.fstype ?? 'fuse.juicefs'}\n`;
 }
 
 describe('task-workspace', () => {
@@ -134,6 +154,32 @@ describe('task-workspace', () => {
   it('resolves runner mode from explicit env', () => {
     process.env.MBOS_RUNNER_MODE = 'docker_external';
     expect(resolveRunnerMode()).toBe('docker_external');
+  });
+
+  it('recognizes canonical node tsx cli launches from the notebook runner package cwd as live foreign owners', () => {
+    const authority = classifyMountedWorkspaceOwnerAuthority({
+      ownerRecord: {
+        ownerProcessPid: 5100,
+        runnerInstanceId: null,
+      },
+      currentRunnerPid: process.pid,
+      currentRunnerInstanceId: process.env.MBOS_AGENT_RUNNER_INSTANCE_ID ?? 'runner-current',
+      processTableByPid: new Map([
+        [
+          5100,
+          {
+            pid: 5100,
+            cwd: '/workspace/packages/notebook-codex-runner',
+            command: 'node /workspace/node_modules/tsx/dist/cli.mjs src/index.ts',
+          },
+        ],
+      ]),
+    });
+
+    expect(authority).toEqual({
+      kind: 'live_foreign_runner_legacy',
+      reason: 'foreign_runner_alive_without_instance_marker',
+    });
   });
 
   it('builds host external task mount paths under ~/ags-workspace/<task_id>', () => {
@@ -382,6 +428,8 @@ describe('task-workspace', () => {
             refs: 1,
             owner_process_pid: process.pid + 1000,
             owner_runner_instance_id: 'runner-legacy',
+            lease_id: 'lease-foreign-live',
+            lease_revision: 1,
             created_at: '2026-04-10T00:00:00.000Z',
             mounted_at: '2026-04-10T00:00:01.000Z',
             updated_at: '2026-04-10T00:00:02.000Z',
@@ -419,14 +467,12 @@ describe('task-workspace', () => {
         callback(null);
         return;
       }
+      if (file === 'ps') {
+        callback(null, `${buildRunnerProcessCommand({ pid: foreignOwnerPid, instanceId: 'runner-legacy' })}\n`, '');
+        return;
+      }
       callback(null);
     });
-    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation(((pid: number, signal?: number | NodeJS.Signals) => {
-      if (pid === foreignOwnerPid && signal === 0) {
-        return true;
-      }
-      return true;
-    }) as typeof process.kill);
 
     await expect(prepareTaskWorkspace({
       executionContext: {
@@ -443,7 +489,6 @@ describe('task-workspace', () => {
 
     expect(spawnMock).not.toHaveBeenCalled();
     expect(writeFileMock).not.toHaveBeenCalled();
-    processKillSpy.mockRestore();
   });
 
   it('refuses to reuse a ready mount when registry evidence is missing', async () => {
@@ -530,10 +575,22 @@ describe('task-workspace', () => {
     expect(writeFileMock).not.toHaveBeenCalled();
   });
 
-  it('reclaims a ready persisted mount before reuse when the foreign runner owner is dead', async () => {
+  it('adopts a ready legacy mount in place when the same host startup can confirm no other runner owns it', async () => {
     process.env.MBOS_RUNNER_MODE = 'docker_external';
     process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
-    const foreignOwnerPid = process.pid + 1000;
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      }),
+    });
     readFileMock.mockResolvedValue(
       JSON.stringify({
         sessions: [
@@ -544,8 +601,365 @@ describe('task-workspace', () => {
             storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
             log_path: '/tmp/legacy.log',
             refs: 1,
-            owner_process_pid: foreignOwnerPid,
+            owner_process_pid: null,
+            owner_runner_instance_id: null,
+            lease_id: null,
+            lease_revision: 0,
+            created_at: '2026-04-10T00:00:00.000Z',
+            mounted_at: '2026-04-10T00:00:01.000Z',
+            updated_at: '2026-04-10T00:00:02.000Z',
+            state: 'mounted',
+          },
+        ],
+      }),
+    );
+
+    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
+      const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
+      if (file === 'mountpoint') {
+        const mountPath = Array.isArray(args) ? String(args[1] ?? '') : '';
+        if (!mountedPaths.has(mountPath)) {
+          const error = new Error('not a mountpoint') as NodeJS.ErrnoException;
+          error.code = 1 as never;
+          callback(error);
+          return;
+        }
+        callback(null);
+        return;
+      }
+      if (file === 'ps') {
+        callback(null, `${buildRunnerProcessCommand({
+          pid: process.pid,
+          instanceId: process.env.MBOS_AGENT_RUNNER_INSTANCE_ID,
+        })}\n`, '');
+        return;
+      }
+      if (file === 'findmnt') {
+        callback(null, buildFindmntSourceOutput({
+          source: 'JuiceFS:flib-market-analysis-q1',
+        }), '');
+        return;
+      }
+      callback(null);
+    });
+
+    const resolved = await prepareTaskWorkspace({
+      executionContext: {
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      },
+      username: 'alice',
+      taskId: 'task_1',
+    });
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(resolved.cwd).toBe('/workspace/task_1');
+    expect(resolved.source).toBe('file_library_mount');
+
+    const registry = parseRegistryWrite();
+    const session = findRegistrySession(registry, '/workspace/task_1');
+    expect(session).toMatchObject({
+      mount_path: '/workspace/task_1',
+      refs: 1,
+      owner_process_pid: process.pid,
+      state: 'mounted',
+      lease_revision: 1,
+    });
+    expect(typeof session?.owner_runner_instance_id).toBe('string');
+    expect(String(session?.owner_runner_instance_id)).not.toHaveLength(0);
+    expect(typeof session?.lease_id).toBe('string');
+    expect(String(session?.lease_id)).not.toHaveLength(0);
+  });
+
+  it('fails closed instead of adopting a ready legacy mount when the live filesystem source mismatches workspace access truth', async () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      }),
+    });
+    readFileMock.mockResolvedValue(
+      JSON.stringify({
+        sessions: [
+          {
+            mount_path: '/workspace/task_1',
+            mode: 'docker_external',
+            metadata_url: 'postgres://legacy-meta',
+            storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
+            log_path: '/tmp/legacy.log',
+            refs: 1,
+            owner_process_pid: null,
+            owner_runner_instance_id: null,
+            lease_id: null,
+            lease_revision: 0,
+            created_at: '2026-04-10T00:00:00.000Z',
+            mounted_at: '2026-04-10T00:00:01.000Z',
+            updated_at: '2026-04-10T00:00:02.000Z',
+            state: 'mounted',
+          },
+        ],
+      }),
+    );
+
+    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
+      const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
+      if (file === 'mountpoint') {
+        const mountPath = Array.isArray(args) ? String(args[1] ?? '') : '';
+        if (!mountedPaths.has(mountPath)) {
+          const error = new Error('not a mountpoint') as NodeJS.ErrnoException;
+          error.code = 1 as never;
+          callback(error);
+          return;
+        }
+        callback(null);
+        return;
+      }
+      if (file === 'ps') {
+        callback(null, `${buildRunnerProcessCommand({
+          pid: process.pid,
+          instanceId: process.env.MBOS_AGENT_RUNNER_INSTANCE_ID,
+        })}\n`, '');
+        return;
+      }
+      if (file === 'findmnt') {
+        callback(null, buildFindmntSourceOutput({
+          source: 'JuiceFS:flib-wrong-filesystem',
+        }), '');
+        return;
+      }
+      callback(null);
+    });
+
+    await expect(prepareTaskWorkspace({
+      executionContext: {
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      },
+      username: 'alice',
+      taskId: 'task_1',
+    })).rejects.toThrow('task_workspace_mount_truth_mismatch:/workspace/task_1');
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(writeFileMock).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on a ready legacy mount when another runner is still alive and ownership stays unverified', async () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      }),
+    });
+    readFileMock.mockResolvedValue(
+      JSON.stringify({
+        sessions: [
+          {
+            mount_path: '/workspace/task_1',
+            mode: 'docker_external',
+            metadata_url: 'postgres://legacy-meta',
+            storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
+            log_path: '/tmp/legacy.log',
+            refs: 1,
+            owner_process_pid: null,
+            owner_runner_instance_id: null,
+            lease_id: null,
+            lease_revision: 0,
+            created_at: '2026-04-10T00:00:00.000Z',
+            mounted_at: '2026-04-10T00:00:01.000Z',
+            updated_at: '2026-04-10T00:00:02.000Z',
+            state: 'mounted',
+          },
+        ],
+      }),
+    );
+
+    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
+      const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
+      if (file === 'mountpoint') {
+        const mountPath = Array.isArray(args) ? String(args[1] ?? '') : '';
+        if (!mountedPaths.has(mountPath)) {
+          const error = new Error('not a mountpoint') as NodeJS.ErrnoException;
+          error.code = 1 as never;
+          callback(error);
+          return;
+        }
+        callback(null);
+        return;
+      }
+      if (file === 'ps') {
+        callback(null, `${buildRunnerProcessCommand({ pid: process.pid + 1000, instanceId: 'runner-foreign' })}\n`, '');
+        return;
+      }
+      callback(null);
+    });
+
+    await expect(prepareTaskWorkspace({
+      executionContext: {
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      },
+      username: 'alice',
+      taskId: 'task_1',
+    })).rejects.toThrow('task_workspace_mount_untracked_live_mount:/workspace/task_1');
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(writeFileMock).not.toHaveBeenCalled();
+  });
+
+  it('ignores test-style commands that only mention notebook-codex-runner when deciding whether a legacy mount is still owned by another runner', async () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      }),
+    });
+    readFileMock.mockResolvedValue(
+      JSON.stringify({
+        sessions: [
+          {
+            mount_path: '/workspace/task_1',
+            mode: 'docker_external',
+            metadata_url: 'postgres://legacy-meta',
+            storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
+            log_path: '/tmp/legacy.log',
+            refs: 1,
+            owner_process_pid: null,
+            owner_runner_instance_id: null,
+            lease_id: null,
+            lease_revision: 0,
+            created_at: '2026-04-10T00:00:00.000Z',
+            mounted_at: '2026-04-10T00:00:01.000Z',
+            updated_at: '2026-04-10T00:00:02.000Z',
+            state: 'mounted',
+          },
+        ],
+      }),
+    );
+
+    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
+      const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
+      if (file === 'mountpoint') {
+        const mountPath = Array.isArray(args) ? String(args[1] ?? '') : '';
+        if (!mountedPaths.has(mountPath)) {
+          const error = new Error('not a mountpoint') as NodeJS.ErrnoException;
+          error.code = 1 as never;
+          callback(error);
+          return;
+        }
+        callback(null);
+        return;
+      }
+      if (file === 'ps') {
+        callback(
+          null,
+          [
+            buildRunnerProcessCommand({
+              pid: process.pid,
+              instanceId: process.env.MBOS_AGENT_RUNNER_INSTANCE_ID,
+            }),
+            buildNonRunnerNotebookCommand(process.pid + 1000),
+          ].join('\n'),
+          '',
+        );
+        return;
+      }
+      if (file === 'findmnt') {
+        callback(null, buildFindmntSourceOutput({
+          source: 'JuiceFS:flib-market-analysis-q1',
+        }), '');
+        return;
+      }
+      callback(null);
+    });
+
+    const resolved = await prepareTaskWorkspace({
+      executionContext: {
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      },
+      username: 'alice',
+      taskId: 'task_1',
+    });
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(resolved.cwd).toBe('/workspace/task_1');
+    expect(resolved.source).toBe('file_library_mount');
+
+    const registry = parseRegistryWrite();
+    const session = findRegistrySession(registry, '/workspace/task_1');
+    expect(session).toMatchObject({
+      mount_path: '/workspace/task_1',
+      refs: 1,
+      owner_process_pid: process.pid,
+      state: 'mounted',
+      lease_revision: 1,
+    });
+  });
+
+  it('quarantines an incomplete foreign legacy mount before remounting when its recorded owner is gone', async () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    readFileMock.mockResolvedValue(
+      JSON.stringify({
+        sessions: [
+          {
+            mount_path: '/workspace/task_1',
+            mode: 'docker_external',
+            metadata_url: 'postgres://legacy-meta',
+            storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
+            log_path: '/tmp/legacy.log',
+            refs: 1,
+            owner_process_pid: process.pid + 1000,
             owner_runner_instance_id: 'runner-legacy',
+            lease_id: null,
+            lease_revision: 0,
             created_at: '2026-04-10T00:00:00.000Z',
             mounted_at: '2026-04-10T00:00:01.000Z',
             updated_at: '2026-04-10T00:00:02.000Z',
@@ -582,6 +996,13 @@ describe('task-workspace', () => {
         callback(null);
         return;
       }
+      if (file === 'ps') {
+        callback(null, `${buildRunnerProcessCommand({
+          pid: process.pid,
+          instanceId: process.env.MBOS_AGENT_RUNNER_INSTANCE_ID,
+        })}\n`, '');
+        return;
+      }
       callback(null);
     });
     spawnMock.mockImplementation((command: string, args?: string[]) => {
@@ -614,15 +1035,145 @@ describe('task-workspace', () => {
       });
       return child;
     });
-    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation(((pid: number, signal?: number | NodeJS.Signals) => {
-      if (pid === foreignOwnerPid && signal === 0) {
-        const error = new Error('no such process') as NodeJS.ErrnoException;
-        error.code = 'ESRCH';
-        throw error;
-      }
-      return true;
-    }) as typeof process.kill);
 
+    await prepareTaskWorkspace({
+      executionContext: {
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      },
+      username: 'alice',
+      taskId: 'task_1',
+    });
+
+    expect(spawnMock).toHaveBeenNthCalledWith(
+      1,
+      'juicefs',
+      ['umount', '/workspace/task_1'],
+      expect.objectContaining({
+        stdio: 'ignore',
+      }),
+    );
+    expect(spawnMock).toHaveBeenNthCalledWith(
+      2,
+      'juicefs',
+      expect.arrayContaining([
+        'mount',
+        'postgres://juicefs-meta',
+        '/workspace/task_1',
+      ]),
+      expect.objectContaining({
+        stdio: 'ignore',
+      }),
+    );
+
+    const registry = parseRegistryWrite();
+    const session = findRegistrySession(registry, '/workspace/task_1');
+    expect(session).toMatchObject({
+      mount_path: '/workspace/task_1',
+      refs: 1,
+      owner_process_pid: process.pid,
+      state: 'mounted',
+      lease_revision: 1,
+    });
+  });
+
+  it('reclaims a ready persisted mount before reuse when the foreign runner owner is dead', async () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    const foreignOwnerPid = process.pid + 1000;
+    readFileMock.mockResolvedValue(
+      JSON.stringify({
+        sessions: [
+          {
+            mount_path: '/workspace/task_1',
+            mode: 'docker_external',
+            metadata_url: 'postgres://legacy-meta',
+            storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
+            log_path: '/tmp/legacy.log',
+            refs: 1,
+            owner_process_pid: foreignOwnerPid,
+            owner_runner_instance_id: 'runner-legacy',
+            lease_id: 'lease-foreign-dead',
+            lease_revision: 1,
+            created_at: '2026-04-10T00:00:00.000Z',
+            mounted_at: '2026-04-10T00:00:01.000Z',
+            updated_at: '2026-04-10T00:00:02.000Z',
+            state: 'mounted',
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      }),
+    });
+
+    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
+      const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
+      if (file === 'mountpoint') {
+        const mountPath = Array.isArray(args) ? String(args[1] ?? '') : '';
+        if (!mountedPaths.has(mountPath)) {
+          const error = new Error('not a mountpoint') as NodeJS.ErrnoException;
+          error.code = 1 as never;
+          callback(error);
+          return;
+        }
+        callback(null);
+        return;
+      }
+      if (file === 'ps') {
+        callback(null, `${buildRunnerProcessCommand({
+          pid: process.pid,
+          instanceId: process.env.MBOS_AGENT_RUNNER_INSTANCE_ID,
+        })}\n`, '');
+        return;
+      }
+      callback(null);
+    });
+    spawnMock.mockImplementation((command: string, args?: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        exitCode: number | null;
+        unref: () => void;
+        kill: () => void;
+      };
+      child.exitCode = null;
+      child.unref = vi.fn();
+      child.kill = vi.fn(() => {
+        child.exitCode = 0;
+        child.emit('exit', 0);
+      });
+      queueMicrotask(() => {
+        if (command === 'juicefs' && Array.isArray(args)) {
+          if (args[0] === 'umount') {
+            mountedPaths.delete(String(args[1] ?? ''));
+            child.exitCode = 0;
+            child.emit('exit', 0);
+            return;
+          }
+          if (args[0] === 'mount') {
+            mountedPaths.add(String(args[2] ?? ''));
+            child.emit('spawn');
+            return;
+          }
+        }
+        child.emit('spawn');
+      });
+      return child;
+    });
     await prepareTaskWorkspace({
       executionContext: {
         api_base: 'http://localhost:20000',
@@ -667,7 +1218,142 @@ describe('task-workspace', () => {
       last_release_outcome: 'not_started',
     });
     expect(session?.owner_runner_instance_id).not.toBe('runner-legacy');
-    processKillSpy.mockRestore();
+  });
+
+  it('treats a reused foreign owner pid as stale when the live pid now belongs to an unrelated process', async () => {
+    process.env.MBOS_RUNNER_MODE = 'docker_external';
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/tmp/runner-root';
+    const foreignOwnerPid = process.pid + 1000;
+    readFileMock.mockResolvedValue(
+      JSON.stringify({
+        sessions: [
+          {
+            mount_path: '/workspace/task_1',
+            mode: 'docker_external',
+            metadata_url: 'postgres://legacy-meta',
+            storage_bucket_url: 'http://localhost:19000/jfs-lib-legacy',
+            log_path: '/tmp/legacy.log',
+            refs: 1,
+            owner_process_pid: foreignOwnerPid,
+            owner_runner_instance_id: 'runner-legacy',
+            lease_id: 'lease-foreign-stale',
+            lease_revision: 1,
+            created_at: '2026-04-10T00:00:00.000Z',
+            mounted_at: '2026-04-10T00:00:01.000Z',
+            updated_at: '2026-04-10T00:00:02.000Z',
+            state: 'mounted',
+          },
+        ],
+      }),
+    );
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        workspace_dir_name: 'ignored-in-v2',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
+      }),
+    });
+
+    const mountedPaths = new Set<string>(['/workspace/task_1']);
+    execFileMock.mockImplementation((file, args, maybeOptions, maybeCallback) => {
+      const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
+      if (file === 'mountpoint') {
+        const mountPath = Array.isArray(args) ? String(args[1] ?? '') : '';
+        if (!mountedPaths.has(mountPath)) {
+          const error = new Error('not a mountpoint') as NodeJS.ErrnoException;
+          error.code = 1 as never;
+          callback(error);
+          return;
+        }
+        callback(null);
+        return;
+      }
+      if (file === 'ps') {
+        callback(
+          null,
+          [
+            buildRunnerProcessCommand({
+              pid: process.pid,
+              instanceId: process.env.MBOS_AGENT_RUNNER_INSTANCE_ID,
+            }),
+            `${foreignOwnerPid} node /tmp/unrelated-server.js`,
+          ].join('\n'),
+          '',
+        );
+        return;
+      }
+      callback(null);
+    });
+    spawnMock.mockImplementation((command: string, args?: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        exitCode: number | null;
+        unref: () => void;
+        kill: () => void;
+      };
+      child.exitCode = null;
+      child.unref = vi.fn();
+      child.kill = vi.fn(() => {
+        child.exitCode = 0;
+        child.emit('exit', 0);
+      });
+      queueMicrotask(() => {
+        if (command === 'juicefs' && Array.isArray(args)) {
+          if (args[0] === 'umount') {
+            mountedPaths.delete(String(args[1] ?? ''));
+            child.exitCode = 0;
+            child.emit('exit', 0);
+            return;
+          }
+          if (args[0] === 'mount') {
+            mountedPaths.add(String(args[2] ?? ''));
+            child.emit('spawn');
+            return;
+          }
+        }
+        child.emit('spawn');
+      });
+      return child;
+    });
+
+    await prepareTaskWorkspace({
+      executionContext: {
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_1',
+        execution_ticket: 'test-token',
+        workspace_binding_mode: 'file_library',
+      },
+      username: 'alice',
+      taskId: 'task_1',
+    });
+
+    expect(spawnMock).toHaveBeenNthCalledWith(
+      1,
+      'juicefs',
+      ['umount', '/workspace/task_1'],
+      expect.objectContaining({
+        stdio: 'ignore',
+      }),
+    );
+    expect(spawnMock).toHaveBeenNthCalledWith(
+      2,
+      'juicefs',
+      expect.arrayContaining([
+        'mount',
+        'postgres://juicefs-meta',
+        '/workspace/task_1',
+      ]),
+      expect.objectContaining({
+        stdio: 'ignore',
+      }),
+    );
   });
 
   it('forces a real unmount before remounting when task-root bootstrap hits a retryable write failure', async () => {

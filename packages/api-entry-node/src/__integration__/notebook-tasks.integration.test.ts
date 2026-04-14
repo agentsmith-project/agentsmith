@@ -2766,6 +2766,100 @@ describe('api-entry-node notebook task routes', () => {
     }
   });
 
+  it('does not mutate a persisted terminal session when wrong-task terminal routes miss scope after api reload', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    deps.agentExecutionService.getAgentSessionOnlineState = () => true;
+    deps.agentExecutionService.getAgentOnlineState = () => true;
+    const firstServer = startServerWithDeps(deps);
+    try {
+      process.env.PUBLIC_API_BASE_URL = firstServer.baseUrl;
+      const ownerTask = await createActiveExternalTaskForTerminal(
+        deps,
+        firstServer.baseUrl,
+        'Scoped terminal owner task',
+      );
+      const otherTask = await createActiveExternalTaskForTerminal(
+        deps,
+        firstServer.baseUrl,
+        'Scoped terminal other task',
+      );
+
+      const createRes = await apiFetchWithToken(
+        firstServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${ownerTask.taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 80, rows: 24 }),
+        },
+      );
+      expect(createRes.status).toBe(201);
+      const created = await createRes.json() as { session_id: string };
+
+      firstServer.server.closeAllConnections?.();
+      firstServer.server.closeIdleConnections?.();
+      await new Promise<void>((resolve) => firstServer.server.close(() => resolve()));
+
+      deps.notebookTerminalService = new NotebookTerminalService(
+        deps.cache,
+        deps.agentExecutionService,
+      );
+      const secondServer = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = secondServer.baseUrl;
+
+      const sessionCacheKey = `notebook_terminal_session:${created.session_id}`;
+      const wrongTaskPath = `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${otherTask.taskId}/terminal/sessions/${created.session_id}`;
+
+      const wrongTaskGet = await apiFetchWithToken(
+        secondServer.baseUrl,
+        wrongTaskPath,
+        'test-token',
+      );
+      expect(wrongTaskGet.status).toBe(404);
+      await expect(deps.cache.get(sessionCacheKey)).resolves.toEqual(
+        expect.stringContaining('"status":"pending"'),
+      );
+
+      const wrongTaskDelete = await apiFetchWithToken(
+        secondServer.baseUrl,
+        wrongTaskPath,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(wrongTaskDelete.status).toBe(404);
+      await expect(deps.cache.get(sessionCacheKey)).resolves.toEqual(
+        expect.stringContaining('"status":"pending"'),
+      );
+
+      const correctTaskGet = await apiFetchWithToken(
+        secondServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${ownerTask.taskId}/terminal/sessions/${created.session_id}`,
+        'test-token',
+      );
+      expect(correctTaskGet.status).toBe(200);
+      await expect(correctTaskGet.json()).resolves.toMatchObject({
+        id: created.session_id,
+        status: 'failed',
+        close_reason: 'terminal_connection_failed_service_reload',
+        ws_url: null,
+      });
+
+      secondServer.server.closeAllConnections?.();
+      secondServer.server.closeIdleConnections?.();
+      await new Promise<void>((resolve) => secondServer.server.close(() => resolve()));
+    } finally {
+      if (firstServer.server.listening) {
+        firstServer.server.closeAllConnections?.();
+        firstServer.server.closeIdleConnections?.();
+        await new Promise<void>((resolve) => firstServer.server.close(() => resolve()));
+      }
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
   it('lets a reloaded api clear a failed terminal session and resume notebook work', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();

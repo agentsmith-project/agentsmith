@@ -8,11 +8,16 @@ import {
   buildGatewayOwnerEvidence,
   classifyGatewayOwnerScope,
   extractGatewayProcessIdentity,
+  isPersistedGatewayPidAuthorityConfirmed,
   isGatewayCommand,
   loadGatewayOwnerLedgerSnapshot,
   matchGatewayStateForProcess as matchGatewayStateForProcessFromOwnership,
   type GatewayOwnerEvidence,
 } from '../packages/api-entry-node/src/file-library-gateway-ownership.js';
+import {
+  isNotebookRunnerProcessSnapshot,
+  notebookRunnerProcessNeedsCwd,
+} from '../packages/notebook-codex-runner/src/task-workspace-ownership.js';
 import { resolveFileLibraryGatewayPaths } from '../packages/api-entry-node/src/file-library-gateway-paths.js';
 
 const execFileAsync = promisify(execFile);
@@ -22,6 +27,7 @@ export interface ManagedProcessInfo {
   ppid: number;
   ageSeconds: number;
   command: string;
+  cwd: string | null;
 }
 
 export interface GatewayStateRecord {
@@ -112,6 +118,7 @@ function normalizePid(value: unknown): number | null {
 export function classifyGatewayState(args: {
   state: GatewayStateRecord;
   livePids: ReadonlySet<number>;
+  processTableByPid?: ReadonlyMap<number, ManagedProcessInfo>;
   ownerEvidence?: GatewayOwnerEvidence;
 }): GatewayStateDecision {
   const pidAlive = args.state.pid !== null && args.livePids.has(args.state.pid);
@@ -122,6 +129,20 @@ export function classifyGatewayState(args: {
       action: 'remove_state',
       reason: 'state_pid_dead',
     };
+  }
+
+  if (args.processTableByPid) {
+    const processInfo = args.processTableByPid.get(args.state.pid!);
+    if (!processInfo || !isPersistedGatewayPidAuthorityConfirmed({
+      state: args.state,
+      processPid: processInfo.pid,
+      processCommand: processInfo.command,
+    })) {
+      return {
+        action: 'keep',
+        reason: 'pid_authority_unverified',
+      };
+    }
   }
 
   if (args.state.ownerProcessPid === null) {
@@ -222,8 +243,22 @@ export function classifyTaskMountProcess(args: {
   anyRunnerAlive: boolean;
   livePids: ReadonlySet<number>;
   ownerProcessPid: number | null;
+  processTableByPid?: ReadonlyMap<number, ManagedProcessInfo>;
 }): TaskMountDecision {
   if (args.ownerProcessPid !== null) {
+    const ownerProcess = args.processTableByPid?.get(args.ownerProcessPid) ?? null;
+    if (ownerProcess) {
+      if (isNotebookRunnerProcessSnapshot(ownerProcess)) {
+        return {
+          action: 'keep',
+          reason: 'mount_owner_alive',
+        };
+      }
+      return {
+        action: 'reclaim_mount',
+        reason: 'mount_owner_pid_reused',
+      };
+    }
     if (args.livePids.has(args.ownerProcessPid)) {
       return {
         action: 'keep',
@@ -247,6 +282,71 @@ export function classifyTaskMountProcess(args: {
     action: 'reclaim_mount',
     reason: 'runner_absent_for_host_mount',
   };
+}
+
+function buildProcessTableByPid(processes: readonly ManagedProcessInfo[]): Map<number, ManagedProcessInfo> {
+  return new Map(processes.map((processInfo) => [processInfo.pid, processInfo]));
+}
+
+function buildProcessChildrenByPid(processes: readonly ManagedProcessInfo[]): Map<number, ManagedProcessInfo[]> {
+  const childrenByPid = new Map<number, ManagedProcessInfo[]>();
+  for (const processInfo of processes) {
+    const siblings = childrenByPid.get(processInfo.ppid) ?? [];
+    siblings.push(processInfo);
+    childrenByPid.set(processInfo.ppid, siblings);
+  }
+  return childrenByPid;
+}
+
+function hasTrackedNotebookRunnerAlive(args: {
+  trackedRunnerPid: number | null;
+  livePids: ReadonlySet<number>;
+  processTableByPid: ReadonlyMap<number, ManagedProcessInfo>;
+  processes: readonly ManagedProcessInfo[];
+}): boolean {
+  if (args.trackedRunnerPid === null || !args.livePids.has(args.trackedRunnerPid)) {
+    return false;
+  }
+  const trackedProcess = args.processTableByPid.get(args.trackedRunnerPid) ?? null;
+  if (trackedProcess && isNotebookRunnerProcessSnapshot(trackedProcess)) {
+    return true;
+  }
+
+  const childrenByPid = buildProcessChildrenByPid(args.processes);
+  const visited = new Set<number>();
+  const queue = [...(childrenByPid.get(args.trackedRunnerPid) ?? [])];
+
+  while (queue.length > 0) {
+    const processInfo = queue.shift();
+    if (!processInfo || visited.has(processInfo.pid)) {
+      continue;
+    }
+    visited.add(processInfo.pid);
+    if (args.livePids.has(processInfo.pid) && isNotebookRunnerProcessSnapshot(processInfo)) {
+      return true;
+    }
+    queue.push(...(childrenByPid.get(processInfo.pid) ?? []));
+  }
+
+  return false;
+}
+
+export function hasAnyNotebookRunnerAlive(args: {
+  trackedRunnerPid: number | null;
+  livePids: ReadonlySet<number>;
+  processes: readonly ManagedProcessInfo[];
+}): boolean {
+  const processTableByPid = buildProcessTableByPid(args.processes);
+  const trackedRunnerAlive = hasTrackedNotebookRunnerAlive({
+    trackedRunnerPid: args.trackedRunnerPid,
+    livePids: args.livePids,
+    processTableByPid,
+    processes: args.processes,
+  });
+  return Boolean(
+    trackedRunnerAlive
+      || args.processes.some((processInfo) => isNotebookRunnerProcessSnapshot(processInfo)),
+  );
 }
 
 export function buildTaskMountUmountAttempts(mountPath: string): Array<{ command: string; args: string[] }> {
@@ -346,7 +446,7 @@ async function loadProcessTable(): Promise<ManagedProcessInfo[]> {
     maxBuffer: 10 * 1024 * 1024,
   });
 
-  return stdout
+  const processes = stdout
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
@@ -360,9 +460,34 @@ async function loadProcessTable(): Promise<ManagedProcessInfo[]> {
         ppid: Number.parseInt(match[2], 10),
         ageSeconds: Number.parseInt(match[3], 10),
         command: match[4],
+        cwd: null,
       } satisfies ManagedProcessInfo;
     })
     .filter((value): value is ManagedProcessInfo => value !== null);
+  await Promise.all(processes.map(async (processInfo) => {
+    if (!notebookRunnerProcessNeedsCwd(processInfo.command)) {
+      return;
+    }
+    processInfo.cwd = await loadProcessCwd(processInfo.pid);
+  }));
+  return processes;
+}
+
+async function loadProcessCwd(pid: number): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync('ps', ['-ww', '-o', 'cwd=', '-p', String(pid)], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
+    });
+    const cwd = stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .find(Boolean);
+    return cwd && cwd !== '-' ? cwd : null;
+  } catch {
+    return null;
+  }
 }
 
 function buildLivePidSet(processes: ManagedProcessInfo[]): Set<number> {
@@ -613,13 +738,13 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
   const { apiPidFile, runnerPidFile } = trackedOwnerPidFiles(options.rootDir);
   const trackedApiPid = await safeReadPidFile(apiPidFile);
   const trackedRunnerPid = await safeReadPidFile(runnerPidFile);
-  const runnerProcessRegex = /(make\s+notebook-agent-runner|make\s+notebook-runner|@mbos\/notebook-codex-runner)/;
   const apiProcessRegex = new RegExp(`${escapeForRegExp(options.rootDir)}.*node_modules/.bin/tsx\\s+src/index.ts`);
 
-  const anyRunnerAlive = Boolean(
-    (trackedRunnerPid && livePids.has(trackedRunnerPid))
-      || processes.some((processInfo) => runnerProcessRegex.test(processInfo.command)),
-  );
+  const anyRunnerAlive = hasAnyNotebookRunnerAlive({
+    trackedRunnerPid,
+    livePids,
+    processes,
+  });
   const adoptableApiPid = trackedApiPid && livePids.has(trackedApiPid)
     ? trackedApiPid
     : processes.find((processInfo) => apiProcessRegex.test(processInfo.command))?.pid ?? null;
@@ -637,6 +762,7 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
 
   const gatewayStates = await loadGatewayStates(options.gatewayStateDir);
   const gatewayProcesses = processes.filter((processInfo) => isGatewayCommand(processInfo.command));
+  const processTableByPid = new Map(processes.map((processInfo) => [processInfo.pid, processInfo]));
   const managedGatewayProcesses = gatewayProcesses
     .map((processInfo) => ({
       processInfo,
@@ -653,7 +779,12 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
   let reclaimedMounts = 0;
 
   for (const state of gatewayStates) {
-    const decision = classifyGatewayState({ state, livePids, ownerEvidence });
+    const decision = classifyGatewayState({
+      state,
+      livePids,
+      processTableByPid,
+      ownerEvidence,
+    });
     if (decision.action === 'keep') {
       continue;
     }
@@ -728,6 +859,7 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
       anyRunnerAlive,
       livePids,
       ownerProcessPid: taskMountOwners.get(mountPath) ?? null,
+      processTableByPid,
     });
     if (decision.action === 'keep') {
       continue;
@@ -754,6 +886,7 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
       anyRunnerAlive,
       livePids,
       ownerProcessPid: taskMountOwners.get(mountPath) ?? null,
+      processTableByPid,
     });
     if (decision.action === 'keep') {
       continue;

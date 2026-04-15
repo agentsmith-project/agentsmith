@@ -34,6 +34,8 @@ PROXY_READY_FILE="${SUBSTRATE_PROXY_READY_FILE}"
 
 API_PORT_FILE="${LOCAL_MANUAL_ROOT}/api.port"
 WEB_PORT_FILE="${LOCAL_MANUAL_ROOT}/web.port"
+API_PROCESS_STATE_FILE="${LOCAL_MANUAL_ROOT}/api.process.json"
+WEB_PROCESS_STATE_FILE="${LOCAL_MANUAL_ROOT}/web.process.json"
 
 API_LOG="${LOCAL_MANUAL_ROOT}/api.log"
 WEB_LOG="${LOCAL_MANUAL_ROOT}/web.log"
@@ -318,6 +320,15 @@ local_manual_tracked_service_port_file() {
   esac
 }
 
+local_manual_tracked_service_process_state_file() {
+  local kind="$1"
+  case "${kind}" in
+    web) printf '%s\n' "${WEB_PROCESS_STATE_FILE}" ;;
+    api) printf '%s\n' "${API_PROCESS_STATE_FILE}" ;;
+    *) return 1 ;;
+  esac
+}
+
 local_manual_tracked_service_port() {
   local kind="$1"
   case "${kind}" in
@@ -332,6 +343,57 @@ local_manual_service_stop_evidence_file() {
   printf '%s/%s/stop-authority.json\n' "${LOCAL_MANUAL_EVIDENCE_DIR}" "${kind}"
 }
 
+local_manual_live_process_identity() {
+  local pid="$1"
+  node - <<'NODE' "${pid}"
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+
+const pid = Number.parseInt(process.argv[2] ?? '', 10);
+if (!Number.isFinite(pid) || pid <= 0) {
+  process.exit(1);
+}
+
+function linuxIdentity(targetPid) {
+  try {
+    const bootId = fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+    const statRaw = fs.readFileSync(`/proc/${targetPid}/stat`, 'utf8');
+    const closeParen = statRaw.lastIndexOf(')');
+    if (!bootId || closeParen === -1) {
+      return null;
+    }
+    const trailing = statRaw.slice(closeParen + 2).trim().split(/\s+/);
+    const startTime = trailing[19];
+    if (!startTime) {
+      return null;
+    }
+    return {
+      token: `linux:boot=${bootId}:start=${startTime}`,
+      source: 'linux_boot_id_proc_stat',
+    };
+  } catch {
+    return null;
+  }
+}
+
+const linux = process.platform === 'linux' ? linuxIdentity(pid) : null;
+if (linux) {
+  process.stdout.write(`${linux.token}|${linux.source}\n`);
+  process.exit(0);
+}
+
+const ps = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+  encoding: 'utf8',
+  stdio: ['ignore', 'pipe', 'ignore'],
+});
+const startedAt = String(ps.stdout ?? '').trim();
+if (!startedAt) {
+  process.exit(1);
+}
+process.stdout.write(`${startedAt}|ps_lstart_raw\n`);
+NODE
+}
+
 local_manual_process_command_line() {
   local pid="$1"
   ps -o command= -p "${pid}" 2>/dev/null | head -n 1
@@ -344,6 +406,112 @@ local_manual_process_cwd() {
     return 0
   fi
   ps -o cwd= -p "${pid}" 2>/dev/null | head -n 1 | xargs
+}
+
+local_manual_write_tracked_service_process_state() {
+  local kind="$1"
+  local pid="$2"
+  local captured_by="${3:-local-manual}"
+  local port="${4:-}"
+  local state_file command_line cwd identity token source
+  state_file="$(local_manual_tracked_service_process_state_file "${kind}")"
+  [[ -n "${pid}" ]] || return 1
+  if [[ -z "${port}" ]]; then
+    port="$(local_manual_tracked_service_port "${kind}")"
+  fi
+  command_line="$(local_manual_process_command_line "${pid}")"
+  cwd="$(local_manual_process_cwd "${pid}")"
+  identity="$(local_manual_live_process_identity "${pid}" 2>/dev/null || true)"
+  IFS='|' read -r token source <<< "${identity}"
+  [[ -n "${command_line}" && -n "${cwd}" && -n "${token}" && -n "${source}" ]] || return 1
+
+  node - <<'NODE' "${state_file}" "${kind}" "${pid}" "${port}" "${command_line}" "${cwd}" "${token}" "${source}" "${captured_by}"
+const fs = require('node:fs');
+const path = require('node:path');
+const [file, kind, pidRaw, portRaw, command, cwd, token, source, capturedBy] = process.argv.slice(2);
+const pid = Number.parseInt(pidRaw, 10);
+const port = Number.parseInt(portRaw, 10);
+if (!Number.isFinite(pid) || !Number.isFinite(port) || !command || !cwd || !token || !source) {
+  process.exit(1);
+}
+const payload = {
+  schema_version: 1,
+  kind,
+  pid,
+  port,
+  command,
+  cwd,
+  process_identity: {
+    token,
+    source,
+  },
+  captured_at: new Date().toISOString(),
+  captured_by: capturedBy,
+};
+fs.mkdirSync(path.dirname(file), { recursive: true });
+fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`);
+NODE
+}
+
+local_manual_read_tracked_service_process_state_status() {
+  local kind="$1"
+  local pid="$2"
+  local state_file parsed status stored_token stored_source identity current_token current_source
+  state_file="$(local_manual_tracked_service_process_state_file "${kind}")"
+  if [[ ! -f "${state_file}" ]]; then
+    printf 'missing\tprocess_state_missing\n'
+    return 0
+  fi
+
+  parsed="$(
+    node - <<'NODE' "${state_file}" "${kind}" "${pid}"
+const fs = require('node:fs');
+const [file, expectedKind, expectedPidRaw] = process.argv.slice(2);
+const expectedPid = Number.parseInt(expectedPidRaw, 10);
+let payload;
+try {
+  payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+} catch {
+  process.exit(1);
+}
+if (
+  payload?.schema_version !== 1
+  || payload?.kind !== expectedKind
+  || payload?.pid !== expectedPid
+  || !Number.isFinite(payload?.port)
+  || typeof payload?.command !== 'string'
+  || typeof payload?.cwd !== 'string'
+  || typeof payload?.process_identity?.token !== 'string'
+  || typeof payload?.process_identity?.source !== 'string'
+  || typeof payload?.captured_at !== 'string'
+  || typeof payload?.captured_by !== 'string'
+) {
+  process.exit(1);
+}
+process.stdout.write(`valid\t${payload.process_identity.token}\t${payload.process_identity.source}\n`);
+NODE
+  )" || {
+    printf 'invalid\ttracked_state_invalid\n'
+    return 0
+  }
+
+  IFS=$'\t' read -r status stored_token stored_source <<< "${parsed}"
+  if ! kill -0 "${pid}" >/dev/null 2>&1; then
+    printf 'stale\ttracked_pid_missing\n'
+    return 0
+  fi
+  identity="$(local_manual_live_process_identity "${pid}" 2>/dev/null || true)"
+  IFS='|' read -r current_token current_source <<< "${identity}"
+  if [[ -z "${current_token}" || -z "${current_source}" ]]; then
+    printf 'invalid\ttracked_state_invalid\n'
+    return 0
+  fi
+  if [[ "${stored_token}" != "${current_token}" ]]; then
+    printf 'reused\ttracked_pid_reused\n'
+    return 0
+  fi
+
+  printf 'valid\t%s\t%s\n' "${stored_token}" "${stored_source}"
 }
 
 local_manual_service_launch_root() {
@@ -405,18 +573,27 @@ local_manual_service_pid_matches_expected_port() {
   local kind="$1"
   local pid="$2"
   local command_line="${3:-}"
-  local expected_port
-  expected_port="$(local_manual_tracked_service_port "${kind}")"
-  if lsof -tiTCP:"${expected_port}" -sTCP:LISTEN 2>/dev/null | grep -Fxq "${pid}"; then
+  local listeners
+  listeners="$(local_manual_service_listener_pids "${kind}")"
+  if [[ -n "${listeners}" ]] && grep -Fxq "${pid}" <<< "${listeners}"; then
     return 0
   fi
+  local expected_port
+  expected_port="$(local_manual_tracked_service_port "${kind}")"
   [[ "${command_line}" == *"--port ${expected_port}"* || "${command_line}" == *"--port=${expected_port}"* ]]
+}
+
+local_manual_service_listener_pids() {
+  local kind="$1"
+  local expected_port
+  expected_port="$(local_manual_tracked_service_port "${kind}")"
+  lsof -tiTCP:"${expected_port}" -sTCP:LISTEN 2>/dev/null || true
 }
 
 local_manual_classify_tracked_service_authority() {
   local kind="$1"
   local pid="${2:-}"
-  local pid_file command_line cwd
+  local pid_file command_line cwd state_status state_reason state_token state_source
   pid_file="$(local_manual_tracked_service_pid_file "${kind}")"
   if [[ -z "${pid}" ]]; then
     pid="$(cat "${pid_file}" 2>/dev/null || true)"
@@ -425,6 +602,34 @@ local_manual_classify_tracked_service_authority() {
     printf 'stale_reclaimable|tracked_pid_missing\n'
     return 0
   fi
+
+  state_status="$(local_manual_read_tracked_service_process_state_status "${kind}" "${pid}")"
+  IFS=$'\t' read -r state_reason state_token state_source <<< "${state_status}"
+  case "${state_reason}" in
+    valid)
+      printf 'current_active|tracked_local_manual_%s|%s|%s\n' "${kind}" "${state_token}" "${state_source}"
+      return 0
+      ;;
+    reused)
+      printf 'unverified|tracked_pid_reused\n'
+      return 0
+      ;;
+    stale)
+      printf 'stale_reclaimable|tracked_pid_missing\n'
+      return 0
+      ;;
+    invalid)
+      printf 'unverified|tracked_state_invalid\n'
+      return 0
+      ;;
+    missing)
+      ;;
+    *)
+      printf 'unverified|tracked_state_invalid\n'
+      return 0
+      ;;
+  esac
+
   if ! kill -0 "${pid}" >/dev/null 2>&1; then
     printf 'stale_reclaimable|tracked_pid_missing\n'
     return 0
@@ -453,7 +658,31 @@ local_manual_classify_tracked_service_authority() {
     return 0
   fi
 
-  printf 'current_active|tracked_local_manual_%s\n' "${kind}"
+  if ! local_manual_write_tracked_service_process_state "${kind}" "${pid}" "legacy_adopt" "$(local_manual_tracked_service_port "${kind}")"; then
+    printf 'unverified|tracked_state_invalid\n'
+    return 0
+  fi
+
+  state_status="$(local_manual_read_tracked_service_process_state_status "${kind}" "${pid}")"
+  IFS=$'\t' read -r state_reason state_token state_source <<< "${state_status}"
+  case "${state_reason}" in
+    valid)
+      printf 'current_active|tracked_local_manual_%s|%s|%s\n' "${kind}" "${state_token}" "${state_source}"
+      return 0
+      ;;
+    reused)
+      printf 'unverified|tracked_pid_reused\n'
+      return 0
+      ;;
+    stale)
+      printf 'stale_reclaimable|tracked_pid_missing\n'
+      return 0
+      ;;
+    *)
+      printf 'unverified|tracked_state_invalid\n'
+      return 0
+      ;;
+  esac
 }
 
 local_manual_write_service_stop_evidence() {
@@ -487,7 +716,8 @@ local_manual_clear_tracked_service_state() {
   local kind="$1"
   rm -f \
     "$(local_manual_tracked_service_ready_file "${kind}")" \
-    "$(local_manual_tracked_service_port_file "${kind}")"
+    "$(local_manual_tracked_service_port_file "${kind}")" \
+    "$(local_manual_tracked_service_process_state_file "${kind}")"
 }
 
 local_manual_tracked_service_pid_value() {
@@ -499,12 +729,11 @@ local_manual_tracked_service_pid_value() {
 
 local_manual_capture_tracked_service_stop_snapshot() {
   local kind="$1"
-  local pid classification authority reason
+  local pid classification authority reason token token_source
   pid="$(local_manual_tracked_service_pid_value "${kind}")"
   classification="$(local_manual_classify_tracked_service_authority "${kind}" "${pid}")"
-  authority="${classification%%|*}"
-  reason="${classification#*|}"
-  printf '%s|%s|%s\n' "${authority}" "${reason}" "${pid}"
+  IFS='|' read -r authority reason token token_source <<< "${classification}"
+  printf '%s\t%s\t%s\t%s\n' "${authority}" "${reason}" "${pid}" "${token}"
 }
 
 local_manual_apply_tracked_service_stop_authority() {
@@ -531,40 +760,86 @@ local_manual_apply_tracked_service_stop_authority() {
 local_manual_signal_tracked_service_pid() {
   local signal_name="$1"
   local pid="$2"
+  local expected_token="${3:-}"
   [[ -n "${pid}" ]] || return 0
+  if [[ -n "${expected_token}" ]]; then
+    local current_identity current_token
+    current_identity="$(local_manual_live_process_identity "${pid}" 2>/dev/null || true)"
+    IFS='|' read -r current_token _ <<< "${current_identity}"
+    if [[ -z "${current_token}" || "${current_token}" != "${expected_token}" ]]; then
+      return 0
+    fi
+  fi
   kill "-${signal_name}" "${pid}" >/dev/null 2>&1 || true
+}
+
+local_manual_recheck_tracked_service_identity_authority() {
+  local kind="$1"
+  local pid="$2"
+  local expected_token="${3:-}"
+  local identity current_token classification
+  if [[ -z "${pid}" ]]; then
+    printf 'stale_reclaimable|tracked_pid_missing\n'
+    return 0
+  fi
+  if ! kill -0 "${pid}" >/dev/null 2>&1; then
+    printf 'stale_reclaimable|tracked_pid_missing\n'
+    return 0
+  fi
+  if [[ -n "${expected_token}" ]]; then
+    identity="$(local_manual_live_process_identity "${pid}" 2>/dev/null || true)"
+    IFS='|' read -r current_token _ <<< "${identity}"
+    if [[ -z "${current_token}" || "${current_token}" != "${expected_token}" ]]; then
+      printf 'unverified|tracked_pid_reused\n'
+      return 0
+    fi
+  fi
+  classification="$(local_manual_classify_tracked_service_authority "${kind}" "${pid}")"
+  printf '%s\n' "${classification}"
 }
 
 local_manual_verify_tracked_service_stop_contract() {
   local kind="$1"
   local pid="$2"
-  local expected_port listeners
+  local expected_token="${3:-}"
+  local listeners identity_authority identity_reason
 
   if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
-    return 1
+    IFS='|' read -r identity_authority identity_reason <<< "$(local_manual_recheck_tracked_service_identity_authority "${kind}" "${pid}" "${expected_token}")"
+    if [[ "${identity_authority}" == "current_active" ]]; then
+      return 1
+    fi
   fi
 
-  expected_port="$(local_manual_tracked_service_port "${kind}")"
-  listeners="$(lsof -tiTCP:"${expected_port}" -sTCP:LISTEN 2>/dev/null || true)"
+  listeners="$(local_manual_service_listener_pids "${kind}")"
   [[ -z "${listeners}" ]]
 }
 
 local_manual_actuate_tracked_service_stop_contract() {
   local kind="$1"
   local pid="$2"
-  local _i
+  local expected_token="${3:-}"
+  local _i identity_authority identity_reason
 
-  local_manual_signal_tracked_service_pid TERM "${pid}"
+  IFS='|' read -r identity_authority identity_reason <<< "$(local_manual_recheck_tracked_service_identity_authority "${kind}" "${pid}" "${expected_token}")"
+  if [[ "${identity_authority}" != "current_active" ]]; then
+    return 2
+  fi
+  local_manual_signal_tracked_service_pid TERM "${pid}" "${expected_token}"
   for _i in $(seq 1 20); do
-    if local_manual_verify_tracked_service_stop_contract "${kind}" "${pid}"; then
+    if local_manual_verify_tracked_service_stop_contract "${kind}" "${pid}" "${expected_token}"; then
       return 0
     fi
     sleep 0.25
   done
 
-  local_manual_signal_tracked_service_pid KILL "${pid}"
+  IFS='|' read -r identity_authority identity_reason <<< "$(local_manual_recheck_tracked_service_identity_authority "${kind}" "${pid}" "${expected_token}")"
+  if [[ "${identity_authority}" != "current_active" ]]; then
+    return 0
+  fi
+  local_manual_signal_tracked_service_pid KILL "${pid}" "${expected_token}"
   for _i in $(seq 1 20); do
-    if local_manual_verify_tracked_service_stop_contract "${kind}" "${pid}"; then
+    if local_manual_verify_tracked_service_stop_contract "${kind}" "${pid}" "${expected_token}"; then
       return 0
     fi
     sleep 0.25
@@ -573,34 +848,65 @@ local_manual_actuate_tracked_service_stop_contract() {
   return 0
 }
 
+local_manual_restore_errexit_state() {
+  local was_enabled="${1:-0}"
+  if [[ "${was_enabled}" == "1" ]]; then
+    set -e
+  else
+    set +e
+  fi
+}
+
 stop_local_manual_tracked_service_owner_aware() {
   local kind="$1"
-  local pid_file snapshot authority reason pid final_snapshot final_authority final_reason final_pid
+  local pid_file snapshot authority reason pid expected_token final_snapshot final_authority final_reason final_pid final_token actuation_status
+  local errexit_was_enabled=0
+  if [[ "$-" == *e* ]]; then
+    errexit_was_enabled=1
+  fi
   pid_file="$(local_manual_tracked_service_pid_file "${kind}")"
   [[ -f "${pid_file}" ]] || return 0
   snapshot="$(local_manual_capture_tracked_service_stop_snapshot "${kind}")"
-  IFS='|' read -r authority reason pid <<< "${snapshot}"
+  IFS=$'\t' read -r authority reason pid expected_token <<< "${snapshot}"
 
   if [[ "${authority}" == "current_active" ]]; then
     final_snapshot="$(local_manual_capture_tracked_service_stop_snapshot "${kind}")"
-    IFS='|' read -r final_authority final_reason final_pid <<< "${final_snapshot}"
+    IFS=$'\t' read -r final_authority final_reason final_pid final_token <<< "${final_snapshot}"
 
     if [[ "${final_authority}" != "current_active" ]]; then
       local_manual_apply_tracked_service_stop_authority "${kind}" "${final_authority}" "${final_reason}" "${final_pid}"
+      local_manual_restore_errexit_state "${errexit_was_enabled}"
       return 0
     fi
 
-    local_manual_actuate_tracked_service_stop_contract "${kind}" "${final_pid}"
-    if ! local_manual_verify_tracked_service_stop_contract "${kind}" "${final_pid}"; then
+    set +e
+    local_manual_actuate_tracked_service_stop_contract "${kind}" "${final_pid}" "${final_token}"
+    actuation_status=$?
+    local_manual_restore_errexit_state "${errexit_was_enabled}"
+    if [[ "${actuation_status}" -eq 2 ]]; then
+      final_snapshot="$(local_manual_capture_tracked_service_stop_snapshot "${kind}")"
+      IFS=$'\t' read -r final_authority final_reason final_pid final_token <<< "${final_snapshot}"
+      local_manual_apply_tracked_service_stop_authority "${kind}" "${final_authority}" "${final_reason}" "${final_pid}"
+      local_manual_restore_errexit_state "${errexit_was_enabled}"
+      return 0
+    fi
+    set +e
+    local_manual_verify_tracked_service_stop_contract "${kind}" "${final_pid}" "${final_token}"
+    actuation_status=$?
+    local_manual_restore_errexit_state "${errexit_was_enabled}"
+    if [[ "${actuation_status}" -ne 0 ]]; then
       warn "${kind} stop verification failed; keeping tracked state until the verified local-manual process exits"
+      local_manual_restore_errexit_state "${errexit_was_enabled}"
       return 1
     fi
     rm -f "${pid_file}"
     local_manual_clear_tracked_service_state "${kind}"
+    local_manual_restore_errexit_state "${errexit_was_enabled}"
     return 0
   fi
 
   local_manual_apply_tracked_service_stop_authority "${kind}" "${authority}" "${reason}" "${pid}"
+  local_manual_restore_errexit_state "${errexit_was_enabled}"
 }
 
 runner_socket_health_state() {
@@ -644,6 +950,7 @@ remove_local_manual_runtime_files() {
   rm -f \
     "${API_READY_FILE}" "${WEB_READY_FILE}" "${RUNNER_READY_FILE}" \
     "${API_PORT_FILE}" "${WEB_PORT_FILE}" \
+    "${API_PROCESS_STATE_FILE}" "${WEB_PROCESS_STATE_FILE}" \
     "${API_PID_FILE}" "${WEB_PID_FILE}" "${RUNNER_PID_FILE}" \
     "${LOCAL_MANUAL_INTERNAL_RUNTIME_CLEANUP_MARKER}"
 }

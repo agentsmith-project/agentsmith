@@ -1,9 +1,10 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { deriveInvalidLocalManualRunnerNormalizationCases } from './owner-janitor.js';
 
 const repoRoot = process.cwd();
 
@@ -51,6 +52,58 @@ function isPidAlive(pid: number): boolean {
 
 function readOptionalFile(file: string): string {
   return existsSync(file) ? readFileSync(file, 'utf8') : '';
+}
+
+function execBashCapture(args: {
+  script: string;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}): { status: number; stdout: string; stderr: string } {
+  const result = spawnSync('bash', ['-lc', args.script], {
+    cwd: args.cwd,
+    env: args.env,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  if (result.error) {
+    throw result.error;
+  }
+  return {
+    status: result.status ?? 1,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+  };
+}
+
+function writeProcessStateFile(args: {
+  file: string;
+  kind: 'web' | 'api';
+  pid: number;
+  port: number;
+  token?: string;
+  tokenSource?: string;
+  command?: string;
+  cwd?: string;
+  capturedBy?: string;
+}) {
+  writeFileSync(
+    args.file,
+    `${JSON.stringify({
+      schema_version: 1,
+      kind: args.kind,
+      pid: args.pid,
+      port: args.port,
+      command: args.command ?? `test-${args.kind}`,
+      cwd: args.cwd ?? repoRoot,
+      process_identity: {
+        token: args.token ?? `token-${args.pid}`,
+        source: args.tokenSource ?? 'test',
+      },
+      captured_at: '2026-04-14T00:00:00.000Z',
+      captured_by: args.capturedBy ?? 'process-cleanup.test',
+    }, null, 2)}\n`,
+    'utf8',
+  );
 }
 
 async function waitForPidExit(pid: number, timeoutMs = 5_000): Promise<boolean> {
@@ -310,8 +363,12 @@ PORT_WEB=${args?.webPort ?? 3001}
     runnerPidFile: path.join(runtimeLinesRoot, 'local-manual/current/runner.pid'),
     runnerReadyFile: path.join(runtimeLinesRoot, 'local-manual/current/runner.ready'),
     webPidFile: path.join(runtimeLinesRoot, 'local-manual/current/web.pid'),
+    webPortFile: path.join(runtimeLinesRoot, 'local-manual/current/web.port'),
+    webProcessFile: path.join(runtimeLinesRoot, 'local-manual/current/web.process.json'),
     webReadyFile: path.join(runtimeLinesRoot, 'local-manual/current/web.ready'),
     apiPidFile: path.join(runtimeLinesRoot, 'local-manual/current/api.pid'),
+    apiPortFile: path.join(runtimeLinesRoot, 'local-manual/current/api.port'),
+    apiProcessFile: path.join(runtimeLinesRoot, 'local-manual/current/api.process.json'),
     apiReadyFile: path.join(runtimeLinesRoot, 'local-manual/current/api.ready'),
     webEvidenceFile: path.join(runtimeLinesRoot, 'local-manual/current/evidence/web/stop-authority.json'),
     apiEvidenceFile: path.join(runtimeLinesRoot, 'local-manual/current/evidence/api/stop-authority.json'),
@@ -449,10 +506,12 @@ cat "${planFile}"
     webPidFile: path.join(runtimeRoot, 'web.pid'),
     webReadyFile: path.join(runtimeRoot, 'web.ready'),
     webPortFile: path.join(runtimeRoot, 'web.port'),
+    webProcessFile: path.join(runtimeRoot, 'web.process.json'),
     webEvidenceFile: path.join(runtimeRoot, 'evidence/web/stop-authority.json'),
     apiPidFile: path.join(runtimeRoot, 'api.pid'),
     apiReadyFile: path.join(runtimeRoot, 'api.ready'),
     apiPortFile: path.join(runtimeRoot, 'api.port'),
+    apiProcessFile: path.join(runtimeRoot, 'api.process.json'),
     apiEvidenceFile: path.join(runtimeRoot, 'evidence/api/stop-authority.json'),
     degradedEvidenceFile: path.join(runtimeRoot, 'evidence/runner/stop-owner-janitor.json'),
   };
@@ -470,33 +529,25 @@ const plannerFallbackCases = [
     planContent: '{bad json',
     reason: 'planner_malformed',
   },
-  {
-    label: 'missing stop contract',
-    planContent: `${JSON.stringify({
-      kind: 'runner',
-      authority: 'current_active',
-      action: 'stop_runner_tree',
-      reason: 'tracked_runner_supervisor',
-    }, null, 2)}\n`,
-    reason: 'planner_malformed',
-  },
-  {
-    label: 'empty owned_pids',
-    planContent: `${JSON.stringify({
-      kind: 'runner',
-      authority: 'current_active',
-      action: 'stop_runner_tree',
-      reason: 'tracked_runner_supervisor',
-      stop: {
-        scope: 'owned_runner_tree',
-        root_pid: 4100,
-        owned_pids: [],
-        verification: 'all_owned_pids_exited',
-      },
-    }, null, 2)}\n`,
-    reason: 'planner_malformed',
-  },
 ] as const;
+
+const derivedPlannerMalformedSentinelCases = (() => {
+  const invalidCases = deriveInvalidLocalManualRunnerNormalizationCases();
+  const replaceRunnerCase = invalidCases.find((invalidCase) => (
+    invalidCase.intent === 'replace_runner'
+    && invalidCase.expectedFallback.action === 'block'
+  ));
+  const stopLineCase = invalidCases.find((invalidCase) => (
+    invalidCase.intent === 'stop_line'
+    && invalidCase.expectedFallback.action === 'mark_degraded'
+  ));
+
+  if (!replaceRunnerCase || !stopLineCase) {
+    throw new Error('missing derived planner malformed sentinel cases');
+  }
+
+  return [replaceRunnerCase, stopLineCase] as const;
+})();
 
 afterEach(() => {
   while (tempRoots.length > 0) {
@@ -747,18 +798,14 @@ describe('local-manual process cleanup contract', () => {
     expect(readFileSync(fixture.eventsFile, 'utf8')).toContain('verify');
   });
 
-  it('replace_runner with semantically inconsistent remove_state_only does not clear runner state', () => {
+  it('replace_runner with a shared derived malformed runner tuple does not clear runner state', () => {
     const fixture = setupCommonFixture();
     tempRoots.push(fixture.tempRoot);
+    const derivedCase = derivedPlannerMalformedSentinelCases[0];
 
     writeFileSync(
       fixture.planFile,
-      `${JSON.stringify({
-        kind: 'runner',
-        authority: 'stale_reclaimable',
-        action: 'remove_state_only',
-        reason: 'planner_malformed',
-      }, null, 2)}\n`,
+      `${JSON.stringify(derivedCase.payload, null, 2)}\n`,
       'utf8',
     );
 
@@ -809,21 +856,11 @@ describe('local-manual process cleanup contract', () => {
   it('stop_line with semantically inconsistent stop_runner_tree degrades instead of actuating', () => {
     const fixture = setupCommonFixture();
     tempRoots.push(fixture.tempRoot);
+    const derivedCase = derivedPlannerMalformedSentinelCases[1];
 
     writeFileSync(
       fixture.planFile,
-      `${JSON.stringify({
-        kind: 'runner',
-        authority: 'current_active',
-        action: 'stop_runner_tree',
-        reason: 'planner_unavailable',
-        stop: {
-          scope: 'owned_runner_tree',
-          root_pid: 4100,
-          owned_pids: [4100, 4101],
-          verification: 'all_owned_pids_exited',
-        },
-      }, null, 2)}\n`,
+      `${JSON.stringify(derivedCase.payload, null, 2)}\n`,
       'utf8',
     );
 
@@ -870,6 +907,182 @@ describe('local-manual process cleanup contract', () => {
     const fixture = setupCommonFixture();
     tempRoots.push(fixture.tempRoot);
 
+    const result = execBashCapture({
+      script: `
+        source "${fixture.commonScript}"
+        init_local_manual_env
+        local_manual_classify_tracked_service_authority() {
+          printf 'current_active|tracked_local_manual_%s\\n' "$1"
+        }
+        local_manual_actuate_tracked_service_stop_contract() {
+          printf 'actuate:%s|%s\\n' "$1" "$2" >> "${fixture.eventsFile}"
+          return 0
+        }
+        local_manual_verify_tracked_service_stop_contract() {
+          printf 'verify:%s|%s\\n' "$1" "$2" >> "${fixture.eventsFile}"
+          return 1
+        }
+        printf '5100\\n' > "${fixture.webPidFile}"
+        printf 'ready\\n' > "${fixture.webReadyFile}"
+        printf '3001\\n' > "${path.join(fixture.runtimeRoot, 'web.port')}"
+        if stop_local_manual_tracked_service_owner_aware web; then
+          printf 'status=0\\n'
+        else
+          status=$?
+          printf 'status=%s\\n' "\${status}"
+        fi
+        if [[ -f "${fixture.webPidFile}" ]]; then
+          printf 'web_pid=present\\n'
+        else
+          printf 'web_pid=missing\\n'
+        fi
+        if [[ -f "${fixture.webReadyFile}" ]]; then
+          printf 'web_ready=present\\n'
+        else
+          printf 'web_ready=missing\\n'
+        fi
+        if [[ -f "${path.join(fixture.runtimeRoot, 'web.port')}" ]]; then
+          printf 'web_port=present\\n'
+        else
+          printf 'web_port=missing\\n'
+        fi
+        exit 0
+      `,
+      cwd: fixture.tempRoot,
+      env: {
+        ...process.env,
+        LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+        PATH: `${path.join(fixture.tempRoot, 'node_modules/.bin')}:${process.env.PATH ?? ''}`,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('status=1');
+    expect(result.stdout).toContain('web_pid=present');
+    expect(result.stdout).toContain('web_ready=present');
+    expect(result.stdout).toContain('web_port=present');
+    expect(existsSync(fixture.webPidFile)).toBe(true);
+    expect(existsSync(fixture.webReadyFile)).toBe(true);
+    expect(existsSync(path.join(fixture.runtimeRoot, 'web.port'))).toBe(true);
+    expect(readFileSync(fixture.eventsFile, 'utf8')).toContain('actuate:web|5100');
+    expect(readFileSync(fixture.eventsFile, 'utf8')).toContain('verify:web|5100');
+    expect(readFileSync(fixture.eventsFile, 'utf8')).not.toContain('stop-pid:web');
+  });
+
+  it('preserves caller set +e when the stop actuation helper enables errexit internally', () => {
+    const fixture = setupCommonFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    const result = execBashCapture({
+      script: `
+        source "${fixture.commonScript}"
+        init_local_manual_env
+        local_manual_classify_tracked_service_authority() {
+          printf 'current_active|tracked_local_manual_%s\\n' "$1"
+        }
+        local_manual_actuate_tracked_service_stop_contract() {
+          set -e
+          printf 'actuate:%s|%s\\n' "$1" "$2" >> "${fixture.eventsFile}"
+          return 0
+        }
+        local_manual_verify_tracked_service_stop_contract() {
+          printf 'verify:%s|%s\\n' "$1" "$2" >> "${fixture.eventsFile}"
+          return 0
+        }
+        printf '5100\\n' > "${fixture.webPidFile}"
+        printf 'ready\\n' > "${fixture.webReadyFile}"
+        printf '3001\\n' > "${path.join(fixture.runtimeRoot, 'web.port')}"
+        set +e
+        if [[ "$-" == *e* ]]; then
+          printf 'before=on\\n'
+        else
+          printf 'before=off\\n'
+        fi
+        stop_local_manual_tracked_service_owner_aware web
+        status=$?
+        if [[ "$-" == *e* ]]; then
+          printf 'after=on\\n'
+        else
+          printf 'after=off\\n'
+        fi
+        printf 'status=%s\\n' "\${status}"
+        exit 0
+      `,
+      cwd: fixture.tempRoot,
+      env: {
+        ...process.env,
+        LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+        PATH: `${path.join(fixture.tempRoot, 'node_modules/.bin')}:${process.env.PATH ?? ''}`,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('before=off');
+    expect(result.stdout).toContain('after=off');
+    expect(result.stdout).toContain('status=0');
+    expect(readFileSync(fixture.eventsFile, 'utf8')).toContain('actuate:web|5100');
+    expect(readFileSync(fixture.eventsFile, 'utf8')).toContain('verify:web|5100');
+  });
+
+  it('preserves caller set -e when the stop actuation helper toggles errexit internally', () => {
+    const fixture = setupCommonFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    const result = execBashCapture({
+      script: `
+        source "${fixture.commonScript}"
+        init_local_manual_env
+        local_manual_classify_tracked_service_authority() {
+          printf 'current_active|tracked_local_manual_%s\\n' "$1"
+        }
+        local_manual_actuate_tracked_service_stop_contract() {
+          set +e
+          printf 'actuate:%s|%s\\n' "$1" "$2" >> "${fixture.eventsFile}"
+          return 0
+        }
+        local_manual_verify_tracked_service_stop_contract() {
+          printf 'verify:%s|%s\\n' "$1" "$2" >> "${fixture.eventsFile}"
+          return 0
+        }
+        printf '5100\\n' > "${fixture.webPidFile}"
+        printf 'ready\\n' > "${fixture.webReadyFile}"
+        printf '3001\\n' > "${path.join(fixture.runtimeRoot, 'web.port')}"
+        set -e
+        if [[ "$-" == *e* ]]; then
+          printf 'before=on\\n'
+        else
+          printf 'before=off\\n'
+        fi
+        stop_local_manual_tracked_service_owner_aware web
+        status=$?
+        if [[ "$-" == *e* ]]; then
+          printf 'after=on\\n'
+        else
+          printf 'after=off\\n'
+        fi
+        printf 'status=%s\\n' "\${status}"
+        exit 0
+      `,
+      cwd: fixture.tempRoot,
+      env: {
+        ...process.env,
+        LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+        PATH: `${path.join(fixture.tempRoot, 'node_modules/.bin')}:${process.env.PATH ?? ''}`,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('before=on');
+    expect(result.stdout).toContain('after=on');
+    expect(result.stdout).toContain('status=0');
+    expect(readFileSync(fixture.eventsFile, 'utf8')).toContain('actuate:web|5100');
+    expect(readFileSync(fixture.eventsFile, 'utf8')).toContain('verify:web|5100');
+  });
+
+  it('rechecks tracked web identity tokens immediately before actuation and degrades on token mismatch', () => {
+    const fixture = setupCommonFixture();
+    tempRoots.push(fixture.tempRoot);
+
     const output = execFileSync(
       'bash',
       [
@@ -877,25 +1090,44 @@ describe('local-manual process cleanup contract', () => {
         `
           source "${fixture.commonScript}"
           init_local_manual_env
+          tracked_pid="$$"
+          classify_count_file="${path.join(fixture.tempRoot, 'classify-count-token.txt')}"
+          printf '0\\n' > "\${classify_count_file}"
           local_manual_classify_tracked_service_authority() {
-            printf 'current_active|tracked_local_manual_%s\\n' "$1"
+            classify_count="$(cat "\${classify_count_file}")"
+            classify_count=$((classify_count + 1))
+            printf '%s\\n' "\${classify_count}" > "\${classify_count_file}"
+            if [[ "\${classify_count}" -le 2 ]]; then
+              printf 'current_active|tracked_local_manual_%s|token-a|linux_boot_id_proc_stat\\n' "$1"
+              return 0
+            fi
+            printf 'unverified|tracked_pid_reused\\n'
           }
           local_manual_actuate_tracked_service_stop_contract() {
-            printf 'actuate:%s|%s\\n' "$1" "$2" >> "${fixture.eventsFile}"
-            return 0
+            printf 'actuate:%s|%s|%s\\n' "$1" "$2" "$3" >> "${fixture.eventsFile}"
+            return 2
           }
-          local_manual_verify_tracked_service_stop_contract() {
-            printf 'verify:%s|%s\\n' "$1" "$2" >> "${fixture.eventsFile}"
-            return 1
-          }
-          printf '5100\\n' > "${fixture.webPidFile}"
+          printf '%s\\n' "\${tracked_pid}" > "${fixture.webPidFile}"
           printf 'ready\\n' > "${fixture.webReadyFile}"
-          printf '3001\\n' > "${path.join(fixture.runtimeRoot, 'web.port')}"
-          set +e
+          printf '3001\\n' > "${fixture.webPortFile}"
+          cat > "${fixture.webProcessFile}" <<EOF_PROCESS_STATE
+{
+  "schema_version": 1,
+  "kind": "web",
+  "pid": \${tracked_pid},
+  "port": 3001,
+  "command": "npm run dev:test -- --port 3001",
+  "cwd": "${repoRoot}",
+  "process_identity": {
+    "token": "token-a",
+    "source": "linux_boot_id_proc_stat"
+  },
+  "captured_at": "2026-04-14T00:00:00.000Z",
+  "captured_by": "process-cleanup.test"
+}
+EOF_PROCESS_STATE
           stop_local_manual_tracked_service_owner_aware web
-          status=$?
-          set -e
-          printf 'status=%s\\n' "\${status}"
+          printf 'classify_calls=%s\\n' "$(cat "\${classify_count_file}")"
           if [[ -f "${fixture.webPidFile}" ]]; then
             printf 'web_pid=present\\n'
           else
@@ -906,10 +1138,139 @@ describe('local-manual process cleanup contract', () => {
           else
             printf 'web_ready=missing\\n'
           fi
-          if [[ -f "${path.join(fixture.runtimeRoot, 'web.port')}" ]]; then
+          if [[ -f "${fixture.webPortFile}" ]]; then
             printf 'web_port=present\\n'
           else
             printf 'web_port=missing\\n'
+          fi
+          if [[ -f "${fixture.webProcessFile}" ]]; then
+            printf 'web_process=present\\n'
+          else
+            printf 'web_process=missing\\n'
+          fi
+          exit 0
+        `,
+      ],
+      {
+        cwd: fixture.tempRoot,
+        env: {
+          ...process.env,
+          LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+          PATH: `${path.join(fixture.tempRoot, 'node_modules/.bin')}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+
+    expect(output).toContain('classify_calls=3');
+    expect(output).toContain('web_pid=present');
+    expect(output).toContain('web_ready=missing');
+    expect(output).toContain('web_port=present');
+    expect(output).toContain('web_process=present');
+    expect(readFileSync(fixture.webEvidenceFile, 'utf8')).toContain('"authority": "unverified"');
+    expect(readFileSync(fixture.webEvidenceFile, 'utf8')).toContain('"reason": "tracked_pid_reused"');
+  });
+
+  it('verifies tracked web stop with token-aware pid identity and listener checks', () => {
+    const fixture = setupCommonFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    const output = execFileSync(
+      'bash',
+      [
+        '-lc',
+        `
+          source "${fixture.commonScript}"
+          init_local_manual_env
+          tracked_pid="$$"
+          local_manual_process_command_line() {
+            printf 'npm run dev:test -- --port 3001\\n'
+          }
+          local_manual_process_cwd() {
+            printf '%s\\n' "${repoRoot}"
+          }
+          local_manual_live_process_identity() {
+            case "$1" in
+              "\${tracked_pid}") printf 'token-b|linux_boot_id_proc_stat\\n' ;;
+              5200) printf 'listener-token|linux_boot_id_proc_stat\\n' ;;
+            esac
+          }
+          local_manual_service_listener_pids() {
+            if [[ "\${LISTENER_STATE:-busy}" == "busy" ]]; then
+              printf '5200\\n'
+            fi
+          }
+          set +e
+          local_manual_verify_tracked_service_stop_contract web "\${tracked_pid}" token-a
+          busy_status=$?
+          LISTENER_STATE=clear
+          local_manual_verify_tracked_service_stop_contract web "\${tracked_pid}" token-a
+          clear_status=$?
+          set -e
+          printf 'busy_status=%s\\n' "\${busy_status}"
+          printf 'clear_status=%s\\n' "\${clear_status}"
+        `,
+      ],
+      {
+        cwd: fixture.tempRoot,
+        env: {
+          ...process.env,
+          LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+          PATH: `${path.join(fixture.tempRoot, 'node_modules/.bin')}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+
+    expect(output).toContain('busy_status=1');
+    expect(output).toContain('clear_status=0');
+  });
+
+  it('preserves tracked pid, port, and malformed sidecar state while clearing ready', () => {
+    const fixture = setupCommonFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    writeFileSync(fixture.webProcessFile, '{bad json\n', 'utf8');
+
+    const output = execFileSync(
+      'bash',
+      [
+        '-lc',
+        `
+          source "${fixture.commonScript}"
+          init_local_manual_env
+          tracked_pid="$$"
+          local_manual_process_command_line() {
+            printf 'npm run dev:test -- --port 3001\\n'
+          }
+          local_manual_process_cwd() {
+            printf '%s\\n' "${repoRoot}"
+          }
+          printf '%s\\n' "\${tracked_pid}" > "${fixture.webPidFile}"
+          printf 'ready\\n' > "${fixture.webReadyFile}"
+          printf '3001\\n' > "${fixture.webPortFile}"
+          stop_local_manual_tracked_service_owner_aware web
+          if [[ -f "${fixture.webPidFile}" ]]; then
+            printf 'web_pid=present\\n'
+          else
+            printf 'web_pid=missing\\n'
+          fi
+          if [[ -f "${fixture.webReadyFile}" ]]; then
+            printf 'web_ready=present\\n'
+          else
+            printf 'web_ready=missing\\n'
+          fi
+          if [[ -f "${fixture.webPortFile}" ]]; then
+            printf 'web_port=present\\n'
+          else
+            printf 'web_port=missing\\n'
+          fi
+          if [[ -f "${fixture.webProcessFile}" ]]; then
+            printf 'web_process=present\\n'
+          else
+            printf 'web_process=missing\\n'
           fi
         `,
       ],
@@ -925,13 +1286,12 @@ describe('local-manual process cleanup contract', () => {
       },
     );
 
-    expect(output).toContain('status=1');
     expect(output).toContain('web_pid=present');
-    expect(output).toContain('web_ready=present');
+    expect(output).toContain('web_ready=missing');
     expect(output).toContain('web_port=present');
-    expect(readFileSync(fixture.eventsFile, 'utf8')).toContain('actuate:web|5100');
-    expect(readFileSync(fixture.eventsFile, 'utf8')).toContain('verify:web|5100');
-    expect(readFileSync(fixture.eventsFile, 'utf8')).not.toContain('stop-pid:web');
+    expect(output).toContain('web_process=present');
+    expect(readFileSync(fixture.webEvidenceFile, 'utf8')).toContain('"authority": "unverified"');
+    expect(readFileSync(fixture.webEvidenceFile, 'utf8')).toContain('"reason": "tracked_state_invalid"');
   });
 
   it('rechecks tracked web authority immediately before actuation and degrades instead of killing a reused pid', () => {
@@ -1134,6 +1494,274 @@ describe('local-manual process cleanup contract', () => {
     expect(readFileSync(fixture.eventsFile, 'utf8')).not.toContain('verify:web|6100');
   });
 
+  it('rechecks tracked web identity before both TERM and KILL escalation', () => {
+    const fixture = setupCommonFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    execFileSync(
+      'bash',
+      [
+        '-lc',
+        `
+          source "${fixture.commonScript}"
+          init_local_manual_env
+          tracked_pid="$$"
+          identity_checks_file="${path.join(fixture.tempRoot, 'identity-check-count.txt')}"
+          printf '0\\n' > "\${identity_checks_file}"
+          local_manual_recheck_tracked_service_identity_authority() {
+            current_count="$(cat "\${identity_checks_file}")"
+            current_count=$((current_count + 1))
+            printf '%s\\n' "\${current_count}" > "\${identity_checks_file}"
+            printf 'identity:%s|%s|%s\\n' "$1" "$2" "\${current_count}" >> "${fixture.eventsFile}"
+            printf 'current_active|tracked_local_manual_%s\\n' "$1"
+          }
+          seq() { printf '1\\n'; }
+          sleep() { :; }
+          local_manual_signal_tracked_service_pid() {
+            printf 'signal:%s|%s\\n' "$1" "$2" >> "${fixture.eventsFile}"
+          }
+          local_manual_verify_tracked_service_stop_contract() {
+            printf 'verify:%s|%s|%s\\n' "$1" "$2" "$3" >> "${fixture.eventsFile}"
+            if grep -q '^signal:KILL|' "${fixture.eventsFile}" 2>/dev/null; then
+              return 0
+            fi
+            return 1
+          }
+          local_manual_actuate_tracked_service_stop_contract web "\${tracked_pid}" token-expected
+        `,
+      ],
+      {
+        cwd: fixture.tempRoot,
+        env: {
+          ...process.env,
+          LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+          PATH: `${path.join(fixture.tempRoot, 'node_modules/.bin')}:${process.env.PATH ?? ''}`,
+        },
+        stdio: 'pipe',
+      },
+    );
+
+    const eventLog = readFileSync(fixture.eventsFile, 'utf8');
+    expect(eventLog.match(/^identity:/gm)?.length ?? 0).toBe(2);
+    expect(eventLog).toContain('signal:TERM|');
+    expect(eventLog).toContain('signal:KILL|');
+    expect(eventLog).toContain('verify:web|');
+  });
+
+  it('degrades instead of killing live tracked web/api services when their process-state token mismatches the live pid identity', async () => {
+    const apiPort = await reserveTcpPort();
+    const webPort = await reserveTcpPort();
+    const fixture = setupRealCommonFixture({ apiPort, webPort });
+    tempRoots.push(fixture.tempRoot);
+
+    const webPid = spawnDetachedServiceProcess({
+      tempRoot: fixture.tempRoot,
+      kind: 'web',
+      port: webPort,
+      label: 'local-manual-web-token-mismatch',
+    });
+    const apiPid = spawnDetachedServiceProcess({
+      tempRoot: fixture.tempRoot,
+      kind: 'api',
+      port: apiPort,
+      cwd: path.join(repoRoot, 'packages/api-entry-node'),
+      label: 'local-manual-api-token-mismatch',
+    });
+
+    try {
+      await sleep(500);
+      mkdirSync(fixture.localManualRoot, { recursive: true });
+      writeFileSync(fixture.webPidFile, `${webPid}\n`, 'utf8');
+      writeFileSync(fixture.webPortFile, `${webPort}\n`, 'utf8');
+      writeFileSync(fixture.webReadyFile, 'ready\n', 'utf8');
+      writeProcessStateFile({
+        file: fixture.webProcessFile,
+        kind: 'web',
+        pid: webPid,
+        port: webPort,
+        token: 'bogus-web-token',
+      });
+
+      writeFileSync(fixture.apiPidFile, `${apiPid}\n`, 'utf8');
+      writeFileSync(fixture.apiPortFile, `${apiPort}\n`, 'utf8');
+      writeFileSync(fixture.apiReadyFile, 'ready\n', 'utf8');
+      writeProcessStateFile({
+        file: fixture.apiProcessFile,
+        kind: 'api',
+        pid: apiPid,
+        port: apiPort,
+        token: 'bogus-api-token',
+        cwd: path.join(repoRoot, 'packages/api-entry-node'),
+      });
+
+      execFileSync(
+        'bash',
+        [
+          '-lc',
+          `
+            source "${path.join(repoRoot, 'scripts/local-manual/common.sh')}"
+            init_local_manual_env
+            setup_local_manual_runtime_evidence
+            stop_local_manual_processes
+          `,
+        ],
+        {
+          cwd: repoRoot,
+          env: {
+            ...process.env,
+            ENV_FILE: fixture.envFile,
+            BACKEND_REAL_STATE_DIR: fixture.backendRealRoot,
+            RUNTIME_LINES_ROOT: fixture.runtimeLinesRoot,
+            LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+          },
+          stdio: 'pipe',
+        },
+      );
+
+      expect(isPidAlive(webPid)).toBe(true);
+      expect(isPidAlive(apiPid)).toBe(true);
+      expect(existsSync(fixture.webPidFile)).toBe(true);
+      expect(existsSync(fixture.apiPidFile)).toBe(true);
+      expect(existsSync(fixture.webPortFile)).toBe(true);
+      expect(existsSync(fixture.apiPortFile)).toBe(true);
+      expect(existsSync(fixture.webProcessFile)).toBe(true);
+      expect(existsSync(fixture.apiProcessFile)).toBe(true);
+      expect(existsSync(fixture.webReadyFile)).toBe(false);
+      expect(existsSync(fixture.apiReadyFile)).toBe(false);
+      expect(readFileSync(fixture.webEvidenceFile, 'utf8')).toContain('"reason": "tracked_pid_reused"');
+      expect(readFileSync(fixture.apiEvidenceFile, 'utf8')).toContain('"reason": "tracked_pid_reused"');
+    } finally {
+      killProcessTreeGroup(webPid);
+      killProcessTreeGroup(apiPid);
+    }
+  }, 20_000);
+
+  it('degrades malformed tracked process-state and preserves pid, port, and sidecar', async () => {
+    const webPort = await reserveTcpPort();
+    const fixture = setupRealCommonFixture({ webPort });
+    tempRoots.push(fixture.tempRoot);
+
+    const webPid = spawnDetachedServiceProcess({
+      tempRoot: fixture.tempRoot,
+      kind: 'web',
+      port: webPort,
+      label: 'local-manual-web-malformed-state',
+    });
+
+    try {
+      await sleep(500);
+      mkdirSync(fixture.localManualRoot, { recursive: true });
+      writeFileSync(fixture.webPidFile, `${webPid}\n`, 'utf8');
+      writeFileSync(fixture.webPortFile, `${webPort}\n`, 'utf8');
+      writeFileSync(fixture.webReadyFile, 'ready\n', 'utf8');
+      writeFileSync(fixture.webProcessFile, '{not-json', 'utf8');
+
+      execFileSync(
+        'bash',
+        [
+          '-lc',
+          `
+            source "${path.join(repoRoot, 'scripts/local-manual/common.sh')}"
+            init_local_manual_env
+            setup_local_manual_runtime_evidence
+            stop_local_manual_processes
+          `,
+        ],
+        {
+          cwd: repoRoot,
+          env: {
+            ...process.env,
+            ENV_FILE: fixture.envFile,
+            BACKEND_REAL_STATE_DIR: fixture.backendRealRoot,
+            RUNTIME_LINES_ROOT: fixture.runtimeLinesRoot,
+            LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+          },
+          stdio: 'pipe',
+        },
+      );
+
+      expect(isPidAlive(webPid)).toBe(true);
+      expect(existsSync(fixture.webPidFile)).toBe(true);
+      expect(existsSync(fixture.webPortFile)).toBe(true);
+      expect(existsSync(fixture.webProcessFile)).toBe(true);
+      expect(existsSync(fixture.webReadyFile)).toBe(false);
+      expect(readFileSync(fixture.webEvidenceFile, 'utf8')).toContain('"reason": "tracked_state_invalid"');
+    } finally {
+      killProcessTreeGroup(webPid);
+    }
+  }, 20_000);
+
+  it('adopts legacy live web/api pid tracking by materializing process-state sidecars before stop', async () => {
+    const apiPort = await reserveTcpPort();
+    const webPort = await reserveTcpPort();
+    const fixture = setupRealCommonFixture({ apiPort, webPort });
+    tempRoots.push(fixture.tempRoot);
+
+    const webPid = spawnDetachedServiceProcess({
+      tempRoot: fixture.tempRoot,
+      kind: 'web',
+      port: webPort,
+      label: 'local-manual-web-legacy-adopt',
+    });
+    const apiPid = spawnDetachedServiceProcess({
+      tempRoot: fixture.tempRoot,
+      kind: 'api',
+      port: apiPort,
+      cwd: path.join(repoRoot, 'packages/api-entry-node'),
+      label: 'local-manual-api-legacy-adopt',
+    });
+
+    try {
+      await sleep(500);
+      mkdirSync(fixture.localManualRoot, { recursive: true });
+      writeFileSync(fixture.webPidFile, `${webPid}\n`, 'utf8');
+      writeFileSync(fixture.webReadyFile, 'ready\n', 'utf8');
+      writeFileSync(fixture.apiPidFile, `${apiPid}\n`, 'utf8');
+      writeFileSync(fixture.apiReadyFile, 'ready\n', 'utf8');
+
+      const output = execFileSync(
+        'bash',
+        [
+          '-lc',
+          `
+            source "${path.join(repoRoot, 'scripts/local-manual/common.sh')}"
+            init_local_manual_env
+            setup_local_manual_runtime_evidence
+            printf 'web_classification=%s\\n' "$(local_manual_classify_tracked_service_authority web)"
+            printf 'api_classification=%s\\n' "$(local_manual_classify_tracked_service_authority api)"
+            printf 'web_process_state=%s\\n' "$(if [[ -f "${fixture.webProcessFile}" ]]; then echo present; else echo missing; fi)"
+            printf 'api_process_state=%s\\n' "$(if [[ -f "${fixture.apiProcessFile}" ]]; then echo present; else echo missing; fi)"
+            stop_local_manual_processes
+          `,
+        ],
+        {
+          cwd: repoRoot,
+          env: {
+            ...process.env,
+            ENV_FILE: fixture.envFile,
+            BACKEND_REAL_STATE_DIR: fixture.backendRealRoot,
+            RUNTIME_LINES_ROOT: fixture.runtimeLinesRoot,
+            LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+          },
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
+
+      expect(output).toContain('web_classification=current_active|tracked_local_manual_web');
+      expect(output).toContain('api_classification=current_active|tracked_local_manual_api');
+      expect(output).toContain('web_process_state=present');
+      expect(output).toContain('api_process_state=present');
+      expect(await waitForPidExit(webPid)).toBe(true);
+      expect(await waitForPidExit(apiPid)).toBe(true);
+      expect(existsSync(fixture.webProcessFile)).toBe(false);
+      expect(existsSync(fixture.apiProcessFile)).toBe(false);
+    } finally {
+      killProcessTreeGroup(webPid);
+      killProcessTreeGroup(apiPid);
+    }
+  }, 20_000);
+
   it('preserves tracked web/api pid files and records degraded evidence when tracked pids were reused by unrelated live processes', async () => {
     const apiPort = await reserveTcpPort();
     const webPort = await reserveTcpPort();
@@ -1191,6 +1819,165 @@ describe('local-manual process cleanup contract', () => {
     }
   }, 20_000);
 
+  it('degrades web/api stop when the tracked pid sidecars have token mismatches and preserves pid, port, and process state', async () => {
+    const apiPort = await reserveTcpPort();
+    const webPort = await reserveTcpPort();
+    const fixture = setupRealCommonFixture({ apiPort, webPort });
+    tempRoots.push(fixture.tempRoot);
+
+    const webPid = spawnDetachedServiceProcess({
+      tempRoot: fixture.tempRoot,
+      kind: 'web',
+      port: webPort,
+      label: 'local-manual-web-token-mismatch',
+    });
+    const apiPid = spawnDetachedServiceProcess({
+      tempRoot: fixture.tempRoot,
+      kind: 'api',
+      port: apiPort,
+      cwd: path.join(repoRoot, 'packages/api-entry-node'),
+      label: 'local-manual-api-token-mismatch',
+    });
+
+    try {
+      await sleep(500);
+      mkdirSync(fixture.localManualRoot, { recursive: true });
+      writeFileSync(fixture.webPidFile, `${webPid}\n`, 'utf8');
+      writeFileSync(fixture.apiPidFile, `${apiPid}\n`, 'utf8');
+      writeFileSync(fixture.webReadyFile, 'ready\n', 'utf8');
+      writeFileSync(fixture.apiReadyFile, 'ready\n', 'utf8');
+      writeFileSync(fixture.webPortFile, `${webPort}\n`, 'utf8');
+      writeFileSync(fixture.apiPortFile, `${apiPort}\n`, 'utf8');
+      writeProcessStateFile({
+        file: fixture.webProcessFile,
+        kind: 'web',
+        pid: webPid,
+        port: webPort,
+        token: 'wrong-web-token',
+        tokenSource: 'linux_boot_id_proc_stat',
+      });
+      writeProcessStateFile({
+        file: fixture.apiProcessFile,
+        kind: 'api',
+        pid: apiPid,
+        port: apiPort,
+        token: 'wrong-api-token',
+        tokenSource: 'linux_boot_id_proc_stat',
+        cwd: path.join(repoRoot, 'packages/api-entry-node'),
+      });
+
+      execFileSync(
+        'bash',
+        [
+          '-lc',
+          `
+            source "${path.join(repoRoot, 'scripts/local-manual/common.sh')}"
+            init_local_manual_env
+            setup_local_manual_runtime_evidence
+            stop_local_manual_processes
+          `,
+        ],
+        {
+          cwd: repoRoot,
+          env: {
+            ...process.env,
+            ENV_FILE: fixture.envFile,
+            BACKEND_REAL_STATE_DIR: fixture.backendRealRoot,
+            RUNTIME_LINES_ROOT: fixture.runtimeLinesRoot,
+            LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+          },
+          stdio: 'pipe',
+        },
+      );
+
+      expect(isPidAlive(webPid)).toBe(true);
+      expect(isPidAlive(apiPid)).toBe(true);
+      expect(readFileSync(fixture.webPidFile, 'utf8')).toBe(`${webPid}\n`);
+      expect(readFileSync(fixture.apiPidFile, 'utf8')).toBe(`${apiPid}\n`);
+      expect(readFileSync(fixture.webPortFile, 'utf8')).toBe(`${webPort}\n`);
+      expect(readFileSync(fixture.apiPortFile, 'utf8')).toBe(`${apiPort}\n`);
+      expect(existsSync(fixture.webReadyFile)).toBe(false);
+      expect(existsSync(fixture.apiReadyFile)).toBe(false);
+      expect(existsSync(fixture.webProcessFile)).toBe(true);
+      expect(existsSync(fixture.apiProcessFile)).toBe(true);
+      expect(readFileSync(fixture.webEvidenceFile, 'utf8')).toContain('"reason": "tracked_pid_reused"');
+      expect(readFileSync(fixture.apiEvidenceFile, 'utf8')).toContain('"reason": "tracked_pid_reused"');
+    } finally {
+      killProcessTreeGroup(webPid);
+      killProcessTreeGroup(apiPid);
+    }
+  }, 20_000);
+
+  it('legacy-adopts a verified live web pid into sidecar state before continuing the stop contract', async () => {
+    const webPort = await reserveTcpPort();
+    const fixture = setupRealCommonFixture({ webPort });
+    tempRoots.push(fixture.tempRoot);
+
+    const webPid = spawnDetachedServiceProcess({
+      tempRoot: fixture.tempRoot,
+      kind: 'web',
+      port: webPort,
+      label: 'local-manual-web-legacy-adopt',
+    });
+
+    try {
+      await sleep(500);
+      mkdirSync(fixture.localManualRoot, { recursive: true });
+      writeFileSync(fixture.webPidFile, `${webPid}\n`, 'utf8');
+      writeFileSync(fixture.webReadyFile, 'ready\n', 'utf8');
+      writeFileSync(fixture.webPortFile, `${webPort}\n`, 'utf8');
+
+      const result = execBashCapture({
+        script: `
+          source "${path.join(repoRoot, 'scripts/local-manual/common.sh')}"
+          init_local_manual_env
+          setup_local_manual_runtime_evidence
+          local_manual_actuate_tracked_service_stop_contract() {
+            printf 'actuate:%s|%s|%s\\n' "$1" "$2" "$3" >> "${path.join(fixture.tempRoot, 'legacy-events.log')}"
+            return 0
+          }
+          local_manual_verify_tracked_service_stop_contract() {
+            return 1
+          }
+          if stop_local_manual_tracked_service_owner_aware web; then
+            printf 'status=0\\n'
+          else
+            status=$?
+            printf 'status=%s\\n' "\${status}"
+          fi
+          if [[ -f "${fixture.webProcessFile}" ]]; then
+            printf 'web_process=present\\n'
+          else
+            printf 'web_process=missing\\n'
+          fi
+        `,
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          ENV_FILE: fixture.envFile,
+          BACKEND_REAL_STATE_DIR: fixture.backendRealRoot,
+          RUNTIME_LINES_ROOT: fixture.runtimeLinesRoot,
+          LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('status=1');
+      expect(result.stdout).toContain('web_process=present');
+      expect(existsSync(fixture.webProcessFile)).toBe(true);
+      const sidecar = JSON.parse(readFileSync(fixture.webProcessFile, 'utf8')) as {
+        kind: string;
+        pid: number;
+        port: number;
+      };
+      expect(sidecar.kind).toBe('web');
+      expect(sidecar.pid).toBe(webPid);
+      expect(sidecar.port).toBe(webPort);
+    } finally {
+      killProcessTreeGroup(webPid);
+    }
+  }, 20_000);
+
   it('removes stale web/api pid files without killing anything when tracked pids are dead', async () => {
     const apiPort = await reserveTcpPort();
     const webPort = await reserveTcpPort();
@@ -1209,9 +1996,23 @@ describe('local-manual process cleanup contract', () => {
 
       mkdirSync(fixture.localManualRoot, { recursive: true });
       writeFileSync(fixture.webPidFile, `${staleWebPid}\n`, 'utf8');
+      writeFileSync(fixture.webPortFile, `${webPort}\n`, 'utf8');
       writeFileSync(fixture.apiPidFile, `${staleApiPid}\n`, 'utf8');
+      writeFileSync(fixture.apiPortFile, `${apiPort}\n`, 'utf8');
       writeFileSync(fixture.webReadyFile, 'ready\n', 'utf8');
       writeFileSync(fixture.apiReadyFile, 'ready\n', 'utf8');
+      writeProcessStateFile({
+        file: fixture.webProcessFile,
+        kind: 'web',
+        pid: staleWebPid,
+        port: webPort,
+      });
+      writeProcessStateFile({
+        file: fixture.apiProcessFile,
+        kind: 'api',
+        pid: staleApiPid,
+        port: apiPort,
+      });
 
       execFileSync(
         'bash',
@@ -1239,6 +2040,10 @@ describe('local-manual process cleanup contract', () => {
 
       expect(existsSync(fixture.webPidFile)).toBe(false);
       expect(existsSync(fixture.apiPidFile)).toBe(false);
+      expect(existsSync(fixture.webPortFile)).toBe(false);
+      expect(existsSync(fixture.apiPortFile)).toBe(false);
+      expect(existsSync(fixture.webProcessFile)).toBe(false);
+      expect(existsSync(fixture.apiProcessFile)).toBe(false);
       expect(existsSync(fixture.webReadyFile)).toBe(false);
       expect(existsSync(fixture.apiReadyFile)).toBe(false);
       expect(existsSync(fixture.webEvidenceFile)).toBe(false);
@@ -1248,6 +2053,70 @@ describe('local-manual process cleanup contract', () => {
       killProcessTreeGroup(staleApiPid);
     }
   }, 20_000);
+
+  it('deletes stale tracked web process sidecar files together with stale pid, ready, and port state', () => {
+    const fixture = setupCommonFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    writeProcessStateFile({
+      file: fixture.webProcessFile,
+      kind: 'web',
+      pid: 999999,
+      port: 3001,
+      token: 'stale-token',
+      tokenSource: 'linux_boot_id_proc_stat',
+    });
+
+    execFileSync(
+      'bash',
+      [
+        '-lc',
+        `
+          source "${fixture.commonScript}"
+          init_local_manual_env
+          printf '999999\\n' > "${fixture.webPidFile}"
+          printf 'ready\\n' > "${fixture.webReadyFile}"
+          printf '3001\\n' > "${fixture.webPortFile}"
+          stop_local_manual_tracked_service_owner_aware web
+          if [[ -f "${fixture.webPidFile}" ]]; then
+            printf 'web_pid=present\\n'
+          else
+            printf 'web_pid=missing\\n'
+          fi
+          if [[ -f "${fixture.webReadyFile}" ]]; then
+            printf 'web_ready=present\\n'
+          else
+            printf 'web_ready=missing\\n'
+          fi
+          if [[ -f "${fixture.webPortFile}" ]]; then
+            printf 'web_port=present\\n'
+          else
+            printf 'web_port=missing\\n'
+          fi
+          if [[ -f "${fixture.webProcessFile}" ]]; then
+            printf 'web_process=present\\n'
+          else
+            printf 'web_process=missing\\n'
+          fi
+        `,
+      ],
+      {
+        cwd: fixture.tempRoot,
+        env: {
+          ...process.env,
+          LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION: '1',
+          PATH: `${path.join(fixture.tempRoot, 'node_modules/.bin')}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+
+    expect(existsSync(fixture.webPidFile)).toBe(false);
+    expect(existsSync(fixture.webReadyFile)).toBe(false);
+    expect(existsSync(fixture.webPortFile)).toBe(false);
+    expect(existsSync(fixture.webProcessFile)).toBe(false);
+  });
 
   it('treats api workspace child cwd as a verified current_active local-manual process and stops it without killing an unrelated sibling', async () => {
     const apiPort = await reserveTcpPort();

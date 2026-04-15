@@ -22,6 +22,9 @@ launch_detached "${WEB_PID_FILE}" "${WEB_LOG}" "
     MONGO_DB_NAME='${MONGO_DB_NAME}' \
     NEXT_DEV_PID_FILE='${WEB_PID_FILE}' \
     NEXT_DEV_PORT_FILE='${WEB_PORT_FILE}' \
+    NEXT_DEV_PROCESS_STATE_FILE='${WEB_PROCESS_STATE_FILE}' \
+    NEXT_DEV_PROCESS_KIND='web' \
+    NEXT_DEV_PROCESS_CAPTURED_BY='run-next-dev-safe' \
     NEXT_DEV_PORT='${PORT_WEB}' && \
   exec npm run dev:test -- --port '${PORT_WEB}'
 "

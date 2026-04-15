@@ -546,6 +546,77 @@ while true; do sleep 1; done
     expect(childStillAlive).toBe(false);
   });
 
+  it('writes the web process sidecar when the authoritative child pid is established', async () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const readyFile = path.join(rootDir, 'writer-ready');
+    const processStateFile = path.join(rootDir, 'artifacts/runtime/lines/local-manual/current/web.process.json');
+    const pidFile = path.join(rootDir, 'artifacts/runtime/lines/local-manual/current/web.pid');
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf 'ready\\n' > "${readyFile}"
+trap 'exit 0' TERM INT
+while true; do sleep 1; done
+`,
+      { mode: 0o755 },
+    );
+
+    const child = spawn('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        ROOT_DIR: rootDir,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        NEXT_DEV_PID_FILE: pidFile,
+        NEXT_DEV_PORT_FILE: path.join(rootDir, 'artifacts/runtime/lines/local-manual/current/web.port'),
+        NEXT_DEV_PORT: '3101',
+        NEXT_DEV_PROCESS_STATE_FILE: processStateFile,
+      },
+      stdio: 'pipe',
+    });
+
+    const deadline = Date.now() + 5000;
+    while ((!existsSync(readyFile) || !existsSync(processStateFile)) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    expect(existsSync(readyFile)).toBe(true);
+    expect(existsSync(processStateFile)).toBe(true);
+
+    const authoritativePid = Number.parseInt(readFileSync(pidFile, 'utf8').trim(), 10);
+    const sidecar = JSON.parse(readFileSync(processStateFile, 'utf8')) as {
+      schema_version: number;
+      kind: string;
+      pid: number;
+      port: number;
+      command: string;
+      cwd: string;
+      process_identity: {
+        token: string;
+        source: string;
+      };
+      captured_by: string;
+    };
+
+    expect(sidecar.schema_version).toBe(1);
+    expect(sidecar.kind).toBe('web');
+    expect(sidecar.pid).toBe(authoritativePid);
+    expect(sidecar.port).toBe(3101);
+    expect(sidecar.command).toContain(path.join(fakeBin, 'next'));
+    expect(sidecar.cwd).toBe(rootDir);
+    expect(sidecar.process_identity.token.length).toBeGreaterThan(0);
+    expect(sidecar.process_identity.source.length).toBeGreaterThan(0);
+    expect(sidecar.captured_by).toBe('run-next-dev-safe');
+
+    child.kill('SIGTERM');
+    await new Promise<number>((resolve, reject) => {
+      child.on('exit', (code) => resolve(code ?? 0));
+      child.on('error', reject);
+    });
+  });
+
   it('reports child signal exits for observability when next dev terminates unexpectedly', () => {
     const { rootDir, fakeBin } = setupTempRoot();
 
@@ -621,6 +692,81 @@ kill -KILL $$
     expect(exitMarker.signal).toBe(9);
     expect(exitMarker.wrapper_pid).toBeGreaterThan(0);
     expect(exitMarker.child_pid).toBeGreaterThan(0);
+  });
+
+  it('writes process-state from the authoritative next-dev child pid when configured', async () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const readyFile = path.join(rootDir, 'child-ready');
+    const processStateFile = path.join(rootDir, 'artifacts/runtime/web.process.json');
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf 'ready\\n' > "${readyFile}"
+trap 'exit 0' TERM INT
+while true; do sleep 1; done
+`,
+      { mode: 0o755 },
+    );
+
+    const child = spawn('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        ROOT_DIR: rootDir,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        NEXT_DEV_PID_FILE: path.join(rootDir, 'artifacts/runtime/web.pid'),
+        NEXT_DEV_PORT_FILE: path.join(rootDir, 'artifacts/runtime/web.port'),
+        NEXT_DEV_PORT: '3101',
+        NEXT_DEV_PROCESS_STATE_FILE: processStateFile,
+        NEXT_DEV_PROCESS_KIND: 'web',
+        NEXT_DEV_PROCESS_CAPTURED_BY: 'run-next-dev-safe.test',
+      },
+      stdio: 'pipe',
+    });
+
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (existsSync(readyFile) && existsSync(processStateFile)) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    expect(existsSync(readyFile)).toBe(true);
+    expect(existsSync(processStateFile)).toBe(true);
+
+    const trackedPid = Number.parseInt(readFileSync(path.join(rootDir, 'artifacts/runtime/web.pid'), 'utf8').trim(), 10);
+    const processState = JSON.parse(readFileSync(processStateFile, 'utf8')) as {
+      schema_version: number;
+      kind: string;
+      pid: number;
+      port: number;
+      command: string;
+      cwd: string;
+      process_identity: {
+        token: string;
+        source: string;
+      };
+      captured_by: string;
+    };
+
+    expect(processState.schema_version).toBe(1);
+    expect(processState.kind).toBe('web');
+    expect(processState.pid).toBe(trackedPid);
+    expect(processState.port).toBe(3101);
+    expect(processState.command.length).toBeGreaterThan(0);
+    expect(processState.cwd).toBe(rootDir);
+    expect(processState.process_identity.token.length).toBeGreaterThan(0);
+    expect(processState.process_identity.source.length).toBeGreaterThan(0);
+    expect(processState.captured_by).toBe('run-next-dev-safe.test');
+
+    child.kill('SIGTERM');
+    await new Promise<number>((resolve, reject) => {
+      child.on('exit', (code) => resolve(code ?? 0));
+      child.on('error', reject);
+    });
   });
 
   it('fails fast in managed mode when the source root is already polluted before launch', () => {

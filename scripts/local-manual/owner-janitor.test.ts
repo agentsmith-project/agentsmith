@@ -5,7 +5,11 @@ import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ManagedProcessInfo } from '../juicefs-orphan-preflight.js';
 import {
+  buildCanonicalLocalManualRunnerPlan,
   buildLocalManualOwnerJanitorPlan,
+  deriveInvalidLocalManualRunnerNormalizationCases,
+  LOCAL_MANUAL_CANONICAL_RUNNER_NORMALIZATION_ROWS,
+  type LocalManualCanonicalRunnerNormalizationRow,
   normalizeLocalManualOwnerJanitorRunnerPlan,
 } from './owner-janitor.js';
 
@@ -86,7 +90,95 @@ afterEach(() => {
   }
 });
 
+function canonicalRunnerRowKey(row: LocalManualCanonicalRunnerNormalizationRow): string {
+  return `${row.action}|${row.authority}|${row.reason}|${row.intent}|${row.lifecycle ?? '-'}`;
+}
+
+function expectedMutationKindsForRow(
+  row: LocalManualCanonicalRunnerNormalizationRow,
+): string[] {
+  const mutations = ['authority', 'reason', 'lifecycle'];
+  if (row.action === 'stop_runner_tree') {
+    mutations.push('stop_missing');
+  } else {
+    mutations.push('stop_unexpected');
+  }
+  if (row.action === 'block' || row.action === 'mark_degraded') {
+    mutations.push('intent');
+  }
+  return mutations.sort();
+}
+
 describe('local-manual owner janitor', () => {
+  it('exposes the canonical runner normalization rows as a single structured truth', () => {
+    const canonicalRows = LOCAL_MANUAL_CANONICAL_RUNNER_NORMALIZATION_ROWS;
+    const canonicalRowRefs = new Set(canonicalRows);
+    const invalidCases = deriveInvalidLocalManualRunnerNormalizationCases();
+
+    expect(Object.isFrozen(canonicalRows)).toBe(true);
+    expect(canonicalRows.every((row) => Object.isFrozen(row))).toBe(true);
+    expect(new Set(canonicalRows.map(canonicalRunnerRowKey)).size).toBe(canonicalRows.length);
+    expect(new Set(invalidCases.map((invalidCase) => invalidCase.sourceRow)).size).toBe(canonicalRows.length);
+    expect(invalidCases.every((invalidCase) => canonicalRowRefs.has(invalidCase.sourceRow))).toBe(true);
+  });
+
+  it('keeps the canonical runner normalization rows approval-gated', () => {
+    expect(LOCAL_MANUAL_CANONICAL_RUNNER_NORMALIZATION_ROWS).toEqual([
+      { action: 'stop_runner_tree', authority: 'current_active', reason: 'tracked_runner_supervisor', intent: 'replace_runner', lifecycle: undefined, requiresStopContract: true },
+      { action: 'stop_runner_tree', authority: 'current_active', reason: 'tracked_runner_supervisor', intent: 'rollback_launch', lifecycle: undefined, requiresStopContract: true },
+      { action: 'stop_runner_tree', authority: 'current_active', reason: 'tracked_runner_supervisor', intent: 'stop_line', lifecycle: undefined, requiresStopContract: true },
+      { action: 'block', authority: 'unverified', reason: 'tracked_pid_reused', intent: 'replace_runner', lifecycle: undefined, requiresStopContract: false },
+      { action: 'block', authority: 'unverified', reason: 'tracked_pid_reused', intent: 'rollback_launch', lifecycle: undefined, requiresStopContract: false },
+      { action: 'block', authority: 'unverified', reason: 'planner_malformed', intent: 'replace_runner', lifecycle: undefined, requiresStopContract: false },
+      { action: 'block', authority: 'unverified', reason: 'planner_malformed', intent: 'rollback_launch', lifecycle: undefined, requiresStopContract: false },
+      { action: 'block', authority: 'unverified', reason: 'planner_unavailable', intent: 'replace_runner', lifecycle: undefined, requiresStopContract: false },
+      { action: 'block', authority: 'unverified', reason: 'planner_unavailable', intent: 'rollback_launch', lifecycle: undefined, requiresStopContract: false },
+      { action: 'mark_degraded', authority: 'unverified', reason: 'tracked_pid_reused', intent: 'stop_line', lifecycle: 'stop_line', requiresStopContract: false },
+      { action: 'mark_degraded', authority: 'unverified', reason: 'planner_malformed', intent: 'stop_line', lifecycle: 'stop_line', requiresStopContract: false },
+      { action: 'mark_degraded', authority: 'unverified', reason: 'planner_unavailable', intent: 'stop_line', lifecycle: 'stop_line', requiresStopContract: false },
+      { action: 'remove_state_only', authority: 'stale_reclaimable', reason: 'tracked_pid_missing', intent: 'replace_runner', lifecycle: undefined, requiresStopContract: false },
+      { action: 'remove_state_only', authority: 'stale_reclaimable', reason: 'tracked_pid_missing', intent: 'rollback_launch', lifecycle: undefined, requiresStopContract: false },
+      { action: 'remove_state_only', authority: 'stale_reclaimable', reason: 'tracked_pid_missing', intent: 'stop_line', lifecycle: undefined, requiresStopContract: false },
+    ]);
+  });
+
+  it('accepts every canonical runner row for every allowed intent and reason pairing', () => {
+    for (const row of LOCAL_MANUAL_CANONICAL_RUNNER_NORMALIZATION_ROWS) {
+      const canonicalPlan = buildCanonicalLocalManualRunnerPlan(row);
+
+      expect(
+        normalizeLocalManualOwnerJanitorRunnerPlan(row.intent, JSON.stringify(canonicalPlan)),
+        canonicalRunnerRowKey(row),
+      ).toEqual(canonicalPlan);
+    }
+  });
+
+  it('rejects every non-canonical runner tuple by falling back per intent', () => {
+    const invalidCases = deriveInvalidLocalManualRunnerNormalizationCases();
+    const mutationsByRow = new Map<string, string[]>();
+
+    for (const invalidCase of invalidCases) {
+      const rowKey = canonicalRunnerRowKey(invalidCase.sourceRow);
+      const existing = mutationsByRow.get(rowKey) ?? [];
+      existing.push(invalidCase.mutation);
+      mutationsByRow.set(rowKey, existing);
+
+      expect(
+        normalizeLocalManualOwnerJanitorRunnerPlan(invalidCase.intent, JSON.stringify(invalidCase.payload)),
+        invalidCase.label,
+      ).toEqual(invalidCase.expectedFallback);
+    }
+
+    expect(new Set(invalidCases.map((invalidCase) => invalidCase.label)).size).toBe(invalidCases.length);
+
+    for (const row of LOCAL_MANUAL_CANONICAL_RUNNER_NORMALIZATION_ROWS) {
+      expect(
+        (mutationsByRow.get(canonicalRunnerRowKey(row)) ?? []).sort(),
+        canonicalRunnerRowKey(row),
+      ).toEqual(expectedMutationKindsForRow(row));
+    }
+  });
+
   it('blocks runner cleanup when the tracked pid was reused by an unrelated process', () => {
     const plan = buildLocalManualOwnerJanitorPlan({
       intent: 'replace_runner',

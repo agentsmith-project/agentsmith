@@ -3,11 +3,35 @@ import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:f
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  deriveInvalidLocalManualRunnerNormalizationCases,
+  normalizeLocalManualOwnerJanitorRunnerPlan,
+} from './owner-janitor.js';
 
 const repoRoot = process.cwd();
 const ownerJanitorCli = path.join(repoRoot, 'scripts/local-manual/owner-janitor.ts');
 const tsxBin = path.join(repoRoot, 'node_modules/.bin/tsx');
 const tempRoots: string[] = [];
+
+function sortedUnique(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
+}
+
+function deriveRepresentativeCliParityCases() {
+  const representativeCases = [];
+  const seenParityKeys = new Set<string>();
+
+  for (const invalidCase of deriveInvalidLocalManualRunnerNormalizationCases()) {
+    const parityKey = `${invalidCase.sourceRow.action}|${invalidCase.mutation}|${invalidCase.expectedFallback.action}`;
+    if (seenParityKeys.has(parityKey)) {
+      continue;
+    }
+    seenParityKeys.add(parityKey);
+    representativeCases.push(invalidCase);
+  }
+
+  return representativeCases;
+}
 
 afterEach(() => {
   while (tempRoots.length > 0) {
@@ -141,5 +165,79 @@ exit 1
       action: 'block',
       reason: 'planner_malformed',
     });
+  });
+
+  it('keeps the CLI parity subset structurally coverage-gated', () => {
+    const representativeCases = deriveRepresentativeCliParityCases();
+
+    expect(representativeCases).toHaveLength(26);
+    expect(sortedUnique(representativeCases.map((invalidCase) => invalidCase.mutation))).toEqual([
+      'authority',
+      'intent',
+      'lifecycle',
+      'reason',
+      'stop_missing',
+      'stop_unexpected',
+    ]);
+    expect(sortedUnique(representativeCases.map((invalidCase) => invalidCase.intent))).toEqual([
+      'replace_runner',
+      'stop_line',
+    ]);
+    expect(sortedUnique(
+      representativeCases.map((invalidCase) => invalidCase.expectedFallback.action),
+    )).toEqual([
+      'block',
+      'mark_degraded',
+    ]);
+    expect(sortedUnique(
+      representativeCases.map((invalidCase) => `${invalidCase.sourceRow.action}|${invalidCase.mutation}|${invalidCase.expectedFallback.action}`),
+    )).toEqual([
+      'block|authority|block',
+      'block|intent|mark_degraded',
+      'block|lifecycle|block',
+      'block|reason|block',
+      'block|stop_unexpected|block',
+      'mark_degraded|authority|mark_degraded',
+      'mark_degraded|intent|block',
+      'mark_degraded|lifecycle|mark_degraded',
+      'mark_degraded|reason|mark_degraded',
+      'mark_degraded|stop_unexpected|mark_degraded',
+      'remove_state_only|authority|block',
+      'remove_state_only|authority|mark_degraded',
+      'remove_state_only|lifecycle|block',
+      'remove_state_only|lifecycle|mark_degraded',
+      'remove_state_only|reason|block',
+      'remove_state_only|reason|mark_degraded',
+      'remove_state_only|stop_unexpected|block',
+      'remove_state_only|stop_unexpected|mark_degraded',
+      'stop_runner_tree|authority|block',
+      'stop_runner_tree|authority|mark_degraded',
+      'stop_runner_tree|lifecycle|block',
+      'stop_runner_tree|lifecycle|mark_degraded',
+      'stop_runner_tree|reason|block',
+      'stop_runner_tree|reason|mark_degraded',
+      'stop_runner_tree|stop_missing|block',
+      'stop_runner_tree|stop_missing|mark_degraded',
+    ]);
+  });
+
+  it('keeps CLI fallback semantics aligned with in-process normalization for representative derived invalid runner tuples', () => {
+    for (const invalidCase of deriveRepresentativeCliParityCases()) {
+      const output = execFileSync(
+        tsxBin,
+        [ownerJanitorCli, '--kind', 'runner', '--intent', invalidCase.intent, '--normalize-plan-stdin'],
+        {
+          cwd: repoRoot,
+          env: process.env,
+          encoding: 'utf8',
+          input: `${JSON.stringify(invalidCase.payload, null, 2)}\n`,
+          stdio: 'pipe',
+        },
+      ).trim();
+
+      expect(JSON.parse(output), invalidCase.label).toEqual(
+        normalizeLocalManualOwnerJanitorRunnerPlan(invalidCase.intent, JSON.stringify(invalidCase.payload)),
+      );
+    }
   });
 });

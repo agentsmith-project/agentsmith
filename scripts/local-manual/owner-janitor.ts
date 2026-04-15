@@ -28,12 +28,37 @@ type RunnerJanitorReason =
 type RunnerPlannerFallbackReason = Extract<RunnerJanitorReason, 'planner_malformed' | 'planner_unavailable'>;
 type RunnerUnverifiedReason = Extract<RunnerJanitorReason, 'tracked_pid_reused' | RunnerPlannerFallbackReason>;
 type RunnerNormalizedAction = Extract<JanitorAction, 'stop_runner_tree' | 'block' | 'mark_degraded' | 'remove_state_only'>;
+type RunnerDerivedInvalidMutation =
+  | 'authority'
+  | 'reason'
+  | 'intent'
+  | 'lifecycle'
+  | 'stop_missing'
+  | 'stop_unexpected';
 
 interface RunnerStopContract {
   scope: 'owned_runner_tree';
   root_pid: number;
   owned_pids: number[];
   verification: 'all_owned_pids_exited';
+}
+
+export interface LocalManualCanonicalRunnerNormalizationRow {
+  readonly action: RunnerNormalizedAction;
+  readonly authority: RunnerOwnerJanitorPlanItem['authority'];
+  readonly reason: RunnerJanitorReason;
+  readonly intent: LocalManualLifecycleIntent;
+  readonly lifecycle: 'stop_line' | undefined;
+  readonly requiresStopContract: boolean;
+}
+
+export interface LocalManualDerivedInvalidRunnerNormalizationCase {
+  readonly label: string;
+  readonly sourceRow: LocalManualCanonicalRunnerNormalizationRow;
+  readonly mutation: RunnerDerivedInvalidMutation;
+  readonly intent: LocalManualLifecycleIntent;
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly expectedFallback: RunnerOwnerJanitorPlanItem;
 }
 
 interface ManagedProcessInfoLike {
@@ -158,32 +183,42 @@ function isRunnerStopContract(value: unknown): value is RunnerStopContract {
     && value.verification === 'all_owned_pids_exited';
 }
 
+const LOCAL_MANUAL_LIFECYCLE_INTENTS = ['replace_runner', 'rollback_launch', 'stop_line'] as const;
+const RUNNER_JANITOR_AUTHORITIES = ['current_active', 'unverified', 'stale_reclaimable'] as const;
+const RUNNER_JANITOR_REASONS = [
+  'tracked_runner_supervisor',
+  'tracked_pid_reused',
+  'tracked_pid_missing',
+  'planner_malformed',
+  'planner_unavailable',
+] as const;
+
 const RUNNER_NORMALIZED_PLAN_MATRIX = {
   stop_runner_tree: {
     authority: 'current_active',
-    intents: new Set<LocalManualLifecycleIntent>(['replace_runner', 'rollback_launch', 'stop_line']),
-    reasons: new Set<RunnerJanitorReason>(['tracked_runner_supervisor']),
+    intents: ['replace_runner', 'rollback_launch', 'stop_line'] as const,
+    reasons: ['tracked_runner_supervisor'] as const,
     lifecycle: undefined,
     requiresStopContract: true,
   },
   block: {
     authority: 'unverified',
-    intents: new Set<LocalManualLifecycleIntent>(['replace_runner', 'rollback_launch']),
-    reasons: new Set<RunnerJanitorReason>(['tracked_pid_reused', 'planner_malformed', 'planner_unavailable']),
+    intents: ['replace_runner', 'rollback_launch'] as const,
+    reasons: ['tracked_pid_reused', 'planner_malformed', 'planner_unavailable'] as const,
     lifecycle: undefined,
     requiresStopContract: false,
   },
   mark_degraded: {
     authority: 'unverified',
-    intents: new Set<LocalManualLifecycleIntent>(['stop_line']),
-    reasons: new Set<RunnerJanitorReason>(['tracked_pid_reused', 'planner_malformed', 'planner_unavailable']),
+    intents: ['stop_line'] as const,
+    reasons: ['tracked_pid_reused', 'planner_malformed', 'planner_unavailable'] as const,
     lifecycle: 'stop_line' as const,
     requiresStopContract: false,
   },
   remove_state_only: {
     authority: 'stale_reclaimable',
-    intents: new Set<LocalManualLifecycleIntent>(['replace_runner', 'rollback_launch', 'stop_line']),
-    reasons: new Set<RunnerJanitorReason>(['tracked_pid_missing']),
+    intents: ['replace_runner', 'rollback_launch', 'stop_line'] as const,
+    reasons: ['tracked_pid_missing'] as const,
     lifecycle: undefined,
     requiresStopContract: false,
   },
@@ -191,12 +226,220 @@ const RUNNER_NORMALIZED_PLAN_MATRIX = {
   RunnerNormalizedAction,
   {
     authority: RunnerOwnerJanitorPlanItem['authority'];
-    intents: Set<LocalManualLifecycleIntent>;
-    reasons: Set<RunnerJanitorReason>;
+    intents: readonly LocalManualLifecycleIntent[];
+    reasons: readonly RunnerJanitorReason[];
     lifecycle: 'stop_line' | undefined;
     requiresStopContract: boolean;
   }
 >;
+
+const DEFAULT_CANONICAL_RUNNER_STOP_CONTRACT = Object.freeze({
+  scope: 'owned_runner_tree',
+  root_pid: 4100,
+  owned_pids: [4100, 4101],
+  verification: 'all_owned_pids_exited',
+} satisfies RunnerStopContract);
+
+function freezeCanonicalRunnerRows(
+  rows: LocalManualCanonicalRunnerNormalizationRow[],
+): readonly LocalManualCanonicalRunnerNormalizationRow[] {
+  return Object.freeze(rows.map((row) => Object.freeze({ ...row })));
+}
+
+function freezeInvalidRunnerCases(
+  cases: LocalManualDerivedInvalidRunnerNormalizationCase[],
+): readonly LocalManualDerivedInvalidRunnerNormalizationCase[] {
+  return Object.freeze(cases.map((invalidCase) => Object.freeze({
+    ...invalidCase,
+    // Preserve the exported canonical row object identity so every derived case
+    // points back to the same structured source of truth.
+    sourceRow: invalidCase.sourceRow,
+    payload: Object.freeze({ ...invalidCase.payload }),
+    expectedFallback: Object.freeze({
+      ...invalidCase.expectedFallback,
+      stop: invalidCase.expectedFallback.action === 'stop_runner_tree'
+        ? {
+            ...invalidCase.expectedFallback.stop,
+            owned_pids: [...invalidCase.expectedFallback.stop.owned_pids],
+          }
+        : undefined,
+    }),
+  })));
+}
+
+function buildCanonicalRunnerRows(): readonly LocalManualCanonicalRunnerNormalizationRow[] {
+  const rows: LocalManualCanonicalRunnerNormalizationRow[] = [];
+
+  for (const action of Object.keys(RUNNER_NORMALIZED_PLAN_MATRIX) as RunnerNormalizedAction[]) {
+    const actionContract = RUNNER_NORMALIZED_PLAN_MATRIX[action];
+    for (const reason of actionContract.reasons) {
+      for (const intent of actionContract.intents) {
+        rows.push({
+          action,
+          authority: actionContract.authority,
+          reason,
+          intent,
+          lifecycle: actionContract.lifecycle,
+          requiresStopContract: actionContract.requiresStopContract,
+        });
+      }
+    }
+  }
+
+  return freezeCanonicalRunnerRows(rows);
+}
+
+export const LOCAL_MANUAL_CANONICAL_RUNNER_NORMALIZATION_ROWS = buildCanonicalRunnerRows();
+
+function cloneCanonicalRunnerStopContract(): RunnerStopContract {
+  return {
+    ...DEFAULT_CANONICAL_RUNNER_STOP_CONTRACT,
+    owned_pids: [...DEFAULT_CANONICAL_RUNNER_STOP_CONTRACT.owned_pids],
+  };
+}
+
+export function buildCanonicalLocalManualRunnerPlan(
+  row: LocalManualCanonicalRunnerNormalizationRow,
+): RunnerOwnerJanitorPlanItem {
+  if (row.action === 'stop_runner_tree') {
+    return {
+      kind: 'runner',
+      authority: row.authority,
+      action: row.action,
+      reason: row.reason,
+      stop: cloneCanonicalRunnerStopContract(),
+    };
+  }
+
+  if (row.action === 'mark_degraded') {
+    return {
+      kind: 'runner',
+      authority: row.authority,
+      action: row.action,
+      reason: row.reason,
+      lifecycle: 'stop_line',
+    };
+  }
+
+  return {
+    kind: 'runner',
+    authority: row.authority,
+    action: row.action,
+    reason: row.reason,
+  };
+}
+
+function runnerFallbackForMalformedPlan(intent: LocalManualLifecycleIntent): RunnerOwnerJanitorPlanItem {
+  return fallbackRunnerPlan(intent, 'planner_malformed');
+}
+
+function runnerCanonicalPayloadWithMutation(
+  row: LocalManualCanonicalRunnerNormalizationRow,
+  mutation: RunnerDerivedInvalidMutation,
+): { intent: LocalManualLifecycleIntent; payload: Readonly<Record<string, unknown>> } {
+  const payload = { ...buildCanonicalLocalManualRunnerPlan(row) } as Record<string, unknown>;
+
+  if (mutation === 'authority') {
+    const nextAuthority = RUNNER_JANITOR_AUTHORITIES.find((authority) => authority !== row.authority);
+    if (!nextAuthority) {
+      throw new Error(`missing alternate authority for ${row.action}`);
+    }
+    payload.authority = nextAuthority;
+    return {
+      intent: row.intent,
+      payload: Object.freeze(payload),
+    };
+  }
+
+  if (mutation === 'reason') {
+    const nextReason = RUNNER_JANITOR_REASONS.find((reason) => (
+      reason !== row.reason && !RUNNER_NORMALIZED_PLAN_MATRIX[row.action].reasons.includes(reason)
+    ));
+    if (!nextReason) {
+      throw new Error(`missing alternate reason for ${row.action}`);
+    }
+    payload.reason = nextReason;
+    return {
+      intent: row.intent,
+      payload: Object.freeze(payload),
+    };
+  }
+
+  if (mutation === 'intent') {
+    const nextIntent = LOCAL_MANUAL_LIFECYCLE_INTENTS.find((intent) => (
+      intent !== row.intent && !RUNNER_NORMALIZED_PLAN_MATRIX[row.action].intents.includes(intent)
+    ));
+    if (!nextIntent) {
+      throw new Error(`missing alternate intent for ${row.action}`);
+    }
+    return {
+      intent: nextIntent,
+      payload: Object.freeze(payload),
+    };
+  }
+
+  if (mutation === 'lifecycle') {
+    if (row.lifecycle === 'stop_line') {
+      delete payload.lifecycle;
+    } else {
+      payload.lifecycle = 'stop_line';
+    }
+    return {
+      intent: row.intent,
+      payload: Object.freeze(payload),
+    };
+  }
+
+  if (mutation === 'stop_missing') {
+    delete payload.stop;
+    return {
+      intent: row.intent,
+      payload: Object.freeze(payload),
+    };
+  }
+
+  payload.stop = cloneCanonicalRunnerStopContract();
+  return {
+    intent: row.intent,
+    payload: Object.freeze(payload),
+  };
+}
+
+function expectedDerivedInvalidMutationsForRow(
+  row: LocalManualCanonicalRunnerNormalizationRow,
+): readonly RunnerDerivedInvalidMutation[] {
+  const mutations: RunnerDerivedInvalidMutation[] = ['authority', 'reason', 'lifecycle'];
+  if (row.action === 'stop_runner_tree') {
+    mutations.push('stop_missing');
+  } else {
+    mutations.push('stop_unexpected');
+  }
+  if (row.action === 'block' || row.action === 'mark_degraded') {
+    mutations.push('intent');
+  }
+  return Object.freeze(mutations);
+}
+
+export function deriveInvalidLocalManualRunnerNormalizationCases():
+readonly LocalManualDerivedInvalidRunnerNormalizationCase[] {
+  const invalidCases: LocalManualDerivedInvalidRunnerNormalizationCase[] = [];
+
+  for (const row of LOCAL_MANUAL_CANONICAL_RUNNER_NORMALIZATION_ROWS) {
+    for (const mutation of expectedDerivedInvalidMutationsForRow(row)) {
+      const mutated = runnerCanonicalPayloadWithMutation(row, mutation);
+      invalidCases.push({
+        label: `${row.action}|${row.reason}|${row.intent}|${mutation}`,
+        sourceRow: row,
+        mutation,
+        intent: mutated.intent,
+        payload: mutated.payload,
+        expectedFallback: runnerFallbackForMalformedPlan(mutated.intent),
+      });
+    }
+  }
+
+  return freezeInvalidRunnerCases(invalidCases);
+}
 
 function isRunnerNormalizedAction(value: unknown): value is RunnerNormalizedAction {
   return typeof value === 'string' && value in RUNNER_NORMALIZED_PLAN_MATRIX;
@@ -237,11 +480,14 @@ function isNormalizedRunnerOwnerJanitorPlanItem(
   }
 
   const actionContract = RUNNER_NORMALIZED_PLAN_MATRIX[value.action];
-  if (!actionContract.intents.has(intent)) {
+  if (!actionContract.intents.includes(intent)) {
     return false;
   }
 
-  if (value.authority !== actionContract.authority || !actionContract.reasons.has(value.reason as RunnerJanitorReason)) {
+  if (
+    value.authority !== actionContract.authority
+    || !actionContract.reasons.includes(value.reason as RunnerJanitorReason)
+  ) {
     return false;
   }
 

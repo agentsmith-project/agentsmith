@@ -55,4 +55,7 @@ launch_detached "${API_PID_FILE}" "${API_LOG}" "
 wait_http "http://localhost:${PORT_API}/api/v1/openapi.json" "api" 120
 capture_listener_pid "${PORT_API}" "${API_PID_FILE}" "api"
 printf '%s\n' "${PORT_API}" > "${API_PORT_FILE}"
+if [[ -f "${API_PID_FILE}" ]]; then
+  local_manual_write_tracked_service_process_state api "$(cat "${API_PID_FILE}")" "start-api" "${PORT_API}" || true
+fi
 write_ready_file "${API_READY_FILE}"

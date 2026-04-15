@@ -72,6 +72,98 @@ EOF
   NEXT_DEV_EXIT_MARKER_WRITTEN=1
 }
 
+write_next_dev_process_state() {
+  [[ -n "${NEXT_DEV_PROCESS_STATE_FILE:-}" && -n "${NEXT_DEV_CHILD_PID:-}" && -n "${NEXT_DEV_PORT:-}" ]] || return 0
+  local kind="${NEXT_DEV_PROCESS_KIND:-web}"
+  local captured_by="${NEXT_DEV_PROCESS_CAPTURED_BY:-run-next-dev-safe}"
+  node - <<'NODE' "${NEXT_DEV_PROCESS_STATE_FILE}" "${kind}" "${NEXT_DEV_CHILD_PID}" "${NEXT_DEV_PORT}" "${captured_by}"
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+
+const [file, kind, pidRaw, portRaw, capturedBy] = process.argv.slice(2);
+const pid = Number.parseInt(pidRaw, 10);
+const port = Number.parseInt(portRaw, 10);
+if (!Number.isFinite(pid) || pid <= 0 || !Number.isFinite(port)) {
+  process.exit(1);
+}
+
+function readCommand(targetPid) {
+  const result = spawnSync('ps', ['-o', 'command=', '-p', String(targetPid)], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  return String(result.stdout ?? '').trim();
+}
+
+function readCwd(targetPid) {
+  try {
+    return fs.realpathSync(`/proc/${targetPid}/cwd`);
+  } catch {
+    const result = spawnSync('ps', ['-o', 'cwd=', '-p', String(targetPid)], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return String(result.stdout ?? '').trim();
+  }
+}
+
+function readIdentity(targetPid) {
+  if (process.platform === 'linux') {
+    try {
+      const bootId = fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+      const statRaw = fs.readFileSync(`/proc/${targetPid}/stat`, 'utf8');
+      const closeParen = statRaw.lastIndexOf(')');
+      const trailing = closeParen === -1 ? [] : statRaw.slice(closeParen + 2).trim().split(/\s+/);
+      const startTime = trailing[19];
+      if (bootId && startTime) {
+        return {
+          token: `linux:boot=${bootId}:start=${startTime}`,
+          source: 'linux_boot_id_proc_stat',
+        };
+      }
+    } catch {
+      // Fall through to ps-based fallback.
+    }
+  }
+
+  const ps = spawnSync('ps', ['-o', 'lstart=', '-p', String(targetPid)], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  const startedAt = String(ps.stdout ?? '').trim();
+  if (!startedAt) {
+    return null;
+  }
+  return {
+    token: startedAt,
+    source: 'ps_lstart_raw',
+  };
+}
+
+const command = readCommand(pid);
+const cwd = readCwd(pid);
+const identity = readIdentity(pid);
+if (!command || !cwd || !identity) {
+  process.exit(1);
+}
+
+const payload = {
+  schema_version: 1,
+  kind,
+  pid,
+  port,
+  command,
+  cwd,
+  process_identity: identity,
+  captured_at: new Date().toISOString(),
+  captured_by: capturedBy,
+};
+fs.mkdirSync(path.dirname(file), { recursive: true });
+fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`);
+NODE
+}
+
 finalize_managed_root_contract() {
   [[ "${NEXT_GENERATED_ROOT_MANAGED}" == "1" && -n "${NEXT_DEV_CHILD_PID}" ]] || return 0
 
@@ -135,6 +227,7 @@ if [[ -n "${NEXT_DEV_PID_FILE:-}" ]]; then
   mkdir -p "$(dirname "${NEXT_DEV_PID_FILE}")"
   printf '%s\n' "${NEXT_DEV_CHILD_PID}" > "${NEXT_DEV_PID_FILE}"
 fi
+write_next_dev_process_state || true
 
 set +e
 wait "${NEXT_DEV_CHILD_PID}"

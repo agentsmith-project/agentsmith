@@ -22,6 +22,7 @@ describe('local-manual start-web', () => {
     expect(script).toContain("NEXT_DIST_DIR='${LOCAL_MANUAL_NEXT_DIST_DIR}'");
     expect(script).toContain("NEXT_GENERATED_ROOT_MANAGED='1'");
     expect(script).toContain("NEXT_GENERATED_ROOT_STATE_DIR='${LOCAL_MANUAL_NEXT_ROOT_CONTRACT_DIR}'");
+    expect(script).toContain("NEXT_DEV_PROCESS_STATE_FILE='${WEB_PROCESS_STATE_FILE}'");
     expect(script).toContain("exec npm run dev:test -- --port '${PORT_WEB}'");
   });
 
@@ -54,6 +55,7 @@ LOCAL_MANUAL_NEXT_DIST_DIR="${runtimeRoot}/next-dist"
 LOCAL_MANUAL_NEXT_ROOT_CONTRACT_DIR="${runtimeRoot}/next-root-contract"
 WEB_PID_FILE="${runtimeRoot}/web.pid"
 WEB_PORT_FILE="${runtimeRoot}/web.port"
+WEB_PROCESS_STATE_FILE="${runtimeRoot}/web.process.json"
 WEB_READY_FILE="${runtimeRoot}/web.ready"
 WEB_LOG="${runtimeRoot}/web.log"
 KEYCLOAK_URL="http://localhost:18080/realms"
@@ -94,6 +96,7 @@ write_ready_file() {
     expect(launchCommand).toContain("NEXT_GENERATED_ROOT_MANAGED='1'");
     expect(launchCommand).toContain(`NEXT_DIST_DIR='${path.join(runtimeRoot, 'next-dist')}'`);
     expect(launchCommand).toContain(`NEXT_GENERATED_ROOT_STATE_DIR='${path.join(runtimeRoot, 'next-root-contract')}'`);
+    expect(launchCommand).toContain(`NEXT_DEV_PROCESS_STATE_FILE='${path.join(runtimeRoot, 'web.process.json')}'`);
     expect(launchCommand).toContain("exec npm run dev:test -- --port '3101'");
     expect(readFileSync(path.join(runtimeRoot, 'web.ready'), 'utf8')).toBe('ready\n');
   });

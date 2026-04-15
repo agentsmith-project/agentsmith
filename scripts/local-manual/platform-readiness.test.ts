@@ -10,6 +10,10 @@ function runPlatformReadiness(args: {
   proxyReady?: boolean;
   apiPid?: string;
   webPid?: string;
+  apiProcess?: boolean;
+  webProcess?: boolean;
+  apiProcessContent?: string;
+  webProcessContent?: string;
 }): { state: string; isReady: string } {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'local-manual-platform-readiness-'));
@@ -38,6 +42,12 @@ function runPlatformReadiness(args: {
     }
     if (args.webPid) {
       writeFileSync(path.join(localManualRoot, 'web.pid'), `${args.webPid}\n`, 'utf8');
+    }
+    if (args.apiProcess) {
+      writeFileSync(path.join(localManualRoot, 'api.process.json'), args.apiProcessContent ?? '{"schema_version":1}\n', 'utf8');
+    }
+    if (args.webProcess) {
+      writeFileSync(path.join(localManualRoot, 'web.process.json'), args.webProcessContent ?? '{"schema_version":1}\n', 'utf8');
     }
 
     const output = execFileSync(
@@ -104,6 +114,34 @@ describe('local-manual platform readiness', () => {
       proxyReady: true,
       apiPid: '5100',
       webPid: '6100',
+    });
+
+    expect(readiness.state).toBe('missing:api,web');
+    expect(readiness.isReady).toBe('no');
+  });
+
+  it('does not let process-state sidecars keep the platform ready when readiness markers are absent', () => {
+    const readiness = runPlatformReadiness({
+      apiReady: false,
+      webReady: false,
+      proxyReady: true,
+      apiProcess: true,
+      webProcess: true,
+    });
+
+    expect(readiness.state).toBe('missing:api,web');
+    expect(readiness.isReady).toBe('no');
+  });
+
+  it('ignores malformed process-state sidecars for readiness truth', () => {
+    const readiness = runPlatformReadiness({
+      apiReady: false,
+      webReady: false,
+      proxyReady: true,
+      apiProcess: true,
+      webProcess: true,
+      apiProcessContent: '{bad-json',
+      webProcessContent: '{still-bad-json',
     });
 
     expect(readiness.state).toBe('missing:api,web');

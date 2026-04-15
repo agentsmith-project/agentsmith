@@ -32,6 +32,9 @@
 ### Engineering and testing reference
 - [Engineering Docs Index](./engineering/README.md)
 - [Testing Docs Index](./testing/README.md)
+- [Verification Campaigns v1](./testing/verification-campaigns-v1.md)
+  - release-grade automated verification campaign guide
+  - use this when you need the current testing principles, evidence model, and execution advice
 
 ### Methodology reference
 - [Product Engineering Governance Methodology](./design/agentsmith-product-engineering-governance-methodology-v1.md)

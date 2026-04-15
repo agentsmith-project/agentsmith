@@ -31,12 +31,23 @@ Current gate truth:
   - `test:backend-real:core` / `lane:backend-real:core` own default-tier daily/self-service trace bundles under `artifacts/backend-real/runs/<run-id>/ux-traces`
   - `gate:release` / `lane:backend-real:release` own release-grade trace bundles under `artifacts/backend-real-visual/<run-id>/ux-traces`
 - missing story evidence is blocking only for the tiers declared in `storyEvidenceRequiredFor`; this rule is machine-readable and must not live only in prose.
-- `scripts/governance/current-gate-result-schema.ts` is the machine-readable source for canonical `result.json` output, gate-level `failure_class`, and backend-real runtime result writers.
-- canonical gate-result artifact location is always `<evidence_dir>/result.json`; fixed `current/result.json` paths are not valid governance truth.
+- `scripts/governance/current-gate-result-schema.ts` is the machine-readable source for canonical `result.json` output, gate-level `failure_class`, and the currently registered backend-real runtime result writers.
+- for gate/lane pairs registered in `scripts/governance/current-gate-result-schema.ts`, canonical gate-result artifact location is `<evidence_dir>/result.json`; fixed `current/result.json` paths are not valid governance truth.
 - gate-result writer truth is `gate_id + line_kind`; adapter fields such as `npm_script` and `ci_job` are runtime metadata, not identity.
 - `failure_class` is a gate-level verdict field, not a best-effort log tag. Current enum: `none`, `product_regression`, `infra_setup_failure`, `environment_conflict`, `contract_drift`, `evidence_missing`.
 - `gate:default` does not own the full visual lane.
 - `lane:visual` is the only current command that owns full visual verification.
+
+Verification governance rules:
+- Focused `测试` commands and targeted `验证通道` runs are diagnosis paths used to localize failures, verify one subsystem, or regenerate one evidence family.
+- Stable engineering acceptance still comes from the machine-readable gate ids in `scripts/governance/current-gate-manifest.ts`; focused reruns never replace the final gate verdict they support.
+- `gate:fast`, `gate:default`, and `gate:release` are authoritative gate verdict surfaces for their tiers, and `gate:release:full` is the terminal automated release-grade verdict.
+- `lane:visual` and `lane:backend-real:release` remain authoritative evidence-owning lanes for full visual review and release-grade backend-real evidence, but they do not replace the final release verdict.
+- For any gate or lane that owns required machine-readable evidence, `command passed` and evidence completeness are same-level acceptance conditions. Missing required review artifacts, missing `visual_scene_catalog`, or missing required `ux_trace_bundle` output is a failure, not a soft warning.
+- Where a current result writer is registered in `scripts/governance/current-gate-result-schema.ts`, evidence completeness also requires canonical `<evidence_dir>/result.json`.
+- `failure_class` in canonical `result.json` is a gate-verdict taxonomy only. It must not be treated as the same thing as troubleshooting categories produced by local diagnosis tools or incident notes.
+- Automated release-grade verification and operator-only checks must stay separated. Current manual Feishu steps belong in release operator guidance, not in machine-readable gate identity or gate-result truth.
+- Human-oriented campaign guidance lives in [Verification Campaigns v1](./testing/verification-campaigns-v1.md); if it conflicts with manifests or contracts, machine-readable governance truth wins.
 
 <!-- current-runtime-lines:governance-model:start -->
 For current runtime-line methodology and release/rehearsal topology, use:
@@ -147,6 +158,7 @@ npm run test:notebook:backend-real:smoke
 npm run gate:fast
 npm run gate:default
 npm run gate:release
+npm run gate:release:full
 ```
 
 ### 验证通道
@@ -156,6 +168,8 @@ npm run lane:mock
 npm run lane:visual
 npm run lane:backend-real:core
 npm run lane:backend-real:release
+npm run lane:demo-rehearsal
+npm run lane:cluster-rehearsal
 ```
 
 ### 发布
@@ -243,6 +257,7 @@ Historical provider-specific names and descriptions do not belong in current wor
 - `README.md`
 - `DEVELOPMENT.md`
 - `docs/CURRENT_BASELINE.md` if current baseline meaning changes
+- `docs/testing/verification-campaigns-v1.md` if command inventory or verification semantics changed
 - `Makefile` help
 - workflow/governance static checks
 
@@ -257,4 +272,4 @@ Current delivery governance for AgentSmith companion surfaces:
 - the shared address truth changes
 - a required joint verification path fails
 4. Repository-local gates must stay local by default. Cross-surface verification belongs in explicit joint rehearsal or release guidance, not in unrelated default gates.
-Canonical `result.json` 应以 `snake_case` 作为唯一真相，并且只写到 `<evidence_dir>/result.json`；示例以 `docs/contracts/current-gate-result-schema-contract.md` 为准。
+For gate/lane pairs currently registered in `scripts/governance/current-gate-result-schema.ts`, canonical `result.json` must use `snake_case` only and live at `<evidence_dir>/result.json`; examples remain anchored in `docs/contracts/current-gate-result-schema-contract.md`.

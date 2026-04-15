@@ -110,6 +110,7 @@ npm run test:backend-real:core
 ```bash
 npm run gate:fast
 npm run gate:default
+npm run gate:release:full
 ```
 
 ### 验证通道
@@ -118,6 +119,8 @@ npm run gate:default
 npm run lane:mock
 npm run lane:visual
 npm run lane:backend-real:release
+npm run lane:demo-rehearsal
+npm run lane:cluster-rehearsal
 ```
 
 ### 发布
@@ -165,20 +168,31 @@ This validates the required behavior for MVP deployment without sandbox:
 npm run gate:fast
 npm run gate:default
 npm run gate:release
+npm run gate:release:full
 ```
 
-Recommended release flow:
+Recommended automated release-grade flow:
 
 ```bash
 npm run backend-real:reset
 npm run backend-real:bootstrap
 npm run backend-real:ready
+npm run backend-real:run
+npm run backend-real:report
+npm run gate:release
+npm run lane:visual
+npm run lane:demo-rehearsal
+npm run lane:cluster-rehearsal
+npm run gate:release:full
+```
+
+Optional operator-only Feishu checks when the current release scope includes Feishu:
+
+```bash
 make manual-feishu-admin
 make manual-feishu-check
 make manual-feishu-user
 make manual-feishu-check
-npm run backend-real:run
-npm run backend-real:report
 ```
 
 ### Dependency Recovery (only when the environment is broken)
@@ -247,6 +261,7 @@ src/
 - [Current Engineering Governance Model](./docs/current-engineering-governance-model.md) — 当前唯一工程治理模型与术语表
 - [Current Baseline (Whitelist)](./docs/CURRENT_BASELINE.md) — 当前唯一白名单入口
 - [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
+- [Verification Campaigns v1](./docs/testing/verification-campaigns-v1.md) — release-grade automated verification、evidence、story、visual 与 verdict 的执行说明
 - [User Guides Index](./docs/user-guides/README.md) — 用户手册总入口（MVP-first）
 - [Personal Connections & Workspace Integrations](./docs/user-guides/third-party-accounts-feishu.md) — 用户级个人连接、workspace integrations 与 Feishu 连接说明
 - [File Library Client Mount](./docs/user-guides/file-library-local-mount.md) — 本地挂载 project file library 与双向同步校验

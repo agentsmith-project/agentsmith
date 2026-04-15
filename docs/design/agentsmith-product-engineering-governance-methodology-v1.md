@@ -1,6 +1,6 @@
 # AgentSmith 产品研发与治理方法论 v1
 
-更新时间：2026-03-12  
+更新时间：2026-04-14
 状态：`current-baseline`
 
 ## 1. 方法论目标
@@ -107,7 +107,24 @@ AgentSmith 当前只采用一条治理主线：
 2. unit
 3. integration
 4. e2e
-5. backend-real
+5. visual
+6. backend-real
+7. engineering gate verdict
+
+补充验证方法：
+- `test:*`、focused integration、targeted Playwright spec、以及某条 lane 的局部执行，主要承担诊断和定位作用。
+- authoritative verdict 仍然来自当前 gate manifest 定义的稳定 gate id；发布级 automated verdict 以当前 release guidance 中的最终 gate 为准。
+- full visual 是独立验证层，不能被默认 e2e 或 `gate:default` 代替。
+- backend-real 既有日常/默认层验证，也有 release-grade 验证；二者共享证据模型，但不共享同一个 verdict 层级。
+- 对 evidence-owning 验证链路，`command passed` 与 machine-readable evidence completeness 同级；缺少 machine-readable story evidence、visual review artifacts 或 trace bundle 都不能算通过。
+- 对当前在 `scripts/governance/current-gate-result-schema.ts` 注册了 writer 的 gate/lane，还必须生成 canonical `<evidence_dir>/result.json`。
+- `failure_class` 属于 canonical gate verdict，不等于本地 troubleshooting 分类或 incident 复盘标签。
+- 手工联调步骤属于发布操作说明，不应伪装成 automated gate truth。
+
+当前 authoritative 执行真相统一看：
+1. `docs/current-engineering-governance-model.md`
+2. `docs/contracts/current-gate-result-schema-contract.md`
+3. `docs/user-guides/release-readiness-checklist.md`
 
 补充发布验证原则：
 - 对真实发布最脆弱的检查点，必须更早在开发 gate 和本地预检中做一遍

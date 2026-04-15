@@ -62,6 +62,7 @@ npm run test:backend-real:core
 ```bash
 npm run gate:fast
 npm run gate:default
+npm run gate:release:full
 ```
 
 ### 验证通道
@@ -70,6 +71,8 @@ npm run gate:default
 npm run lane:mock
 npm run lane:visual
 npm run lane:backend-real:release
+npm run lane:demo-rehearsal
+npm run lane:cluster-rehearsal
 ```
 
 ### 发布
@@ -83,6 +86,42 @@ npm run backend-real:report
 Gate adapter fidelity notes:
 - adapter fidelity 统一看 `scripts/governance/current-gate-manifest.ts` 里的 `npmScript`、可选 `ciJob` 与 structured `executionTargets`
 - free-form `command` 只作为 operator hint / 展示面，不再承担 enforcement truth
+
+## Verification Guidance
+
+给新开发者的执行边界：
+
+1. 先区分诊断路径和 authoritative verdict
+- `npm run test:*`、某个 focused Playwright spec、某条 targeted `lane:*`，主要用于诊断、复现和缩小问题范围。
+- `npm run gate:*` 才是当前工程门禁 verdict surface；要回答“这次改动在当前层级是否可接受”，最终看对应 gate，而不是某个临时诊断命令。
+- `npm run gate:default` 不是 full visual，也不是 release-grade verdict。full visual 统一看 `npm run lane:visual`，最终 automated release verdict 看 `npm run gate:release:full`。
+
+2. `command passed` 不等于验收通过
+- 对 evidence-owning gates 和 lanes，证据完整性与命令返回同级。
+- 需要检查的证据包括 visual review artifacts、`visual_scene_catalog`、`ux_trace_bundle` 等当前文档或 contract 明确要求的产物。
+- 对当前在 `scripts/governance/current-gate-result-schema.ts` 注册了 writer 的 gate/lane，还要检查 canonical `<evidence_dir>/result.json`。
+- 如果命令成功但 required machine-readable evidence 缺失，按治理规则仍然算失败。
+
+3. 日常开发、功能收口、release-grade 自动化是三种不同路径
+- 日常开发：先跑 contract / type / unit / targeted integration，尽量用最小成本定位问题。
+- 功能收口：补跑与改动直接相关的 integration、e2e、story、backend-real smoke 或 targeted visual。
+- release-grade 自动化：统一按照 [`docs/user-guides/release-readiness-checklist.md`](./docs/user-guides/release-readiness-checklist.md) 的自动化 campaign 执行，最终以 `gate:release:full` 作为 automated verdict。
+- 如果需要理解 wave、证据、rerun 策略与常见误区，再看 [`docs/testing/verification-campaigns-v1.md`](./docs/testing/verification-campaigns-v1.md)。
+
+4. 手工 Feishu 操作与自动化 gate 分层
+- `make manual-feishu-*` 属于 release operator 手工联调/验收说明，不属于 machine-readable gate identity。
+- 是否需要执行这些手工步骤，看当前 release scope；不要把它们写成“自动化门禁已经覆盖”的替代说法。
+
+5. `failure_class` 是 gate verdict，不是 troubleshooting 标签
+- `result.json` 里的 `failure_class` 只用于 canonical gate verdict。
+- 本地排障脚本、incident note、人工 triage 可以有更细的分类，但不能拿来替代 canonical gate result，也不能把二者混写成同一套真相。
+
+推荐阅读顺序：
+- 当前治理真相：[`docs/current-engineering-governance-model.md`](./docs/current-engineering-governance-model.md)
+- campaign 执行说明：[`docs/testing/verification-campaigns-v1.md`](./docs/testing/verification-campaigns-v1.md)
+- release-grade 自动化与手工边界：[`docs/user-guides/release-readiness-checklist.md`](./docs/user-guides/release-readiness-checklist.md)
+- gate verdict schema：[`docs/contracts/current-gate-result-schema-contract.md`](./docs/contracts/current-gate-result-schema-contract.md)
+- 方法论背景：[`docs/design/agentsmith-product-engineering-governance-methodology-v1.md`](./docs/design/agentsmith-product-engineering-governance-methodology-v1.md)
 
 ## Current Runtime Lines
 

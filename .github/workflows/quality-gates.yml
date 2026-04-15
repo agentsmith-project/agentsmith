@@ -80,7 +80,7 @@ jobs:
 
   lane-visual:
     name: lane-visual
-    needs: gate-default
+    needs: gate-fast
     if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.run_visual_lane) }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -107,9 +107,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: visual-manual-artifacts
+          name: lane-visual-artifacts
           if-no-files-found: ignore
           path: |
+            artifacts/gate-results/lane-visual/**
+            artifacts/visual-baseline-reviews/**
             test-results/**
             playwright-report/**
 
@@ -157,6 +159,6 @@ jobs:
           name: lane-backend-real-core-artifacts
           if-no-files-found: ignore
           path: |
-            artifacts/backend-real/current/**
+            artifacts/backend-real/runs/**
             test-results/**
             playwright-report/**

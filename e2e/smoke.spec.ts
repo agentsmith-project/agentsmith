@@ -5,7 +5,7 @@
  * authenticated pages render the expected app shell.
  */
 
-import { test, expect, goTo, goToProject, projectUrl, WS_ID } from './fixtures/test-base';
+import { test, expect, goTo, goToProject, WS_ID } from './fixtures/test-base';
 import { ROUTES } from './fixtures/routes';
 import { withAuth } from './fixtures/authenticated';
 import { gotoAndWait, waitForPageReady } from './utils/navigation';
@@ -104,6 +104,10 @@ test.describe('Smoke: Public Routes', () => {
         await expect(
           page.getByRole('heading', { name: route.title }).first(),
         ).toBeVisible({ timeout: 5_000 });
+      }
+
+      if (route.testId) {
+        await expect(page.getByTestId(route.testId)).toBeVisible({ timeout: 5_000 });
       }
 
       expect(errors, `Unexpected console errors on ${route.path}`).toHaveLength(0);

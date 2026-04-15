@@ -101,7 +101,7 @@ export function WorkspaceProjectsEntryPage({
   const canDeleteProjectByWorkspacePermission = useHasWorkspacePermission('workspace:governance:update');
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [pinnedProjectIds, setPinnedProjectIds] = useState<Set<string>>(() => new Set());
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogProject, setDeleteDialogProject] = useState<Project | null>(null);
   const [pendingJoinRequestIds, setPendingJoinRequestIds] = useState<Set<string>>(new Set());
@@ -151,12 +151,16 @@ export function WorkspaceProjectsEntryPage({
         pinnedIds = new Set();
       }
     }
-    const projectsWithPin = allProjects.map((p) => ({
-      ...p,
-      pinned: pinnedIds.has(p.id),
-    })) as Project[];
-    setProjects(projectsWithPin);
-  }, [hydrated, allProjects, pinnedStorageKey]);
+    setPinnedProjectIds(pinnedIds);
+  }, [hydrated, pinnedStorageKey]);
+
+  const projects = useMemo(
+    () => allProjects.map((project) => ({
+      ...project,
+      pinned: pinnedProjectIds.has(project.id),
+    })) as Project[],
+    [allProjects, pinnedProjectIds]
+  );
 
   const handleProjectClick = (project: Project) => {
     if (requiresProjectJoinFlow(project) || pendingJoinRequestIds.has(project.id)) {
@@ -177,11 +181,15 @@ export function WorkspaceProjectsEntryPage({
 
   const togglePin = (projectId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setProjects((prev) => {
-      const next = prev.map((p) => (p.id === projectId ? { ...p, pinned: !p.pinned } : p));
+    setPinnedProjectIds((current) => {
+      const next = new Set(current);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
       if (pinnedStorageKey) {
-        const pinnedIds = next.filter((p) => p.pinned).map((p) => p.id);
-        window.localStorage.setItem(pinnedStorageKey, JSON.stringify(pinnedIds));
+        window.localStorage.setItem(pinnedStorageKey, JSON.stringify([...next]));
       }
       return next;
     });
@@ -247,14 +255,6 @@ export function WorkspaceProjectsEntryPage({
     const refreshed = await projectAPI.list(workspaceId);
     const items = (refreshed.items ?? []) as ProjectWithMembership[];
     const createdProject = items.find((project) => project.id === projectId);
-
-    setProjects((prev) => {
-      const pinnedMap = new Map(prev.map((project) => [project.id, project.pinned]));
-      return items.map((project) => ({
-        ...project,
-        pinned: pinnedMap.get(project.id) ?? false,
-      }));
-    });
 
     if (!createdProject) {
       toast.error(tErrors('permission_denied_hint'));

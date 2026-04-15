@@ -37,6 +37,67 @@ make notebook-agent-refresh-token
 - CI / integration： [CI Integration Troubleshooting](./ci-integration-troubleshooting.md)
 - 文件库本地挂载： [File Library Client Mount](./user-guides/file-library-local-mount.md)
 
+## Token Issues
+
+这些分区是给新人快速定位用的稳定锚点，不取代上面的统一排障顺序。遇到 token / login state 问题时，先确认当前运行线已启动，再检查浏览器登录态和本地 token 刷新链路。
+
+Common symptoms:
+- 页面跳回登录页或工作区选择页。
+- SSE / backend-real 请求返回 `401` 或 `403`。
+- notebook / terminal runner 显示认证上下文不可用。
+
+Recommended checks:
+```bash
+make substrate-status
+make local-manual-status
+make notebook-agent-refresh-token
+```
+
+## Network Issues
+
+网络问题通常表现为前端、API、Keycloak、provider 或本地代理之间无法互通。先确认服务是否在线，再判断是本地端口、代理环境变量还是上游 provider 抖动。
+
+Common symptoms:
+- `curl` health check 失败。
+- Playwright 页面长时间停在 loading。
+- provider callback 超时或短时 `429`。
+
+Recommended checks:
+```bash
+curl http://localhost:20000/health
+curl http://localhost:3001/en-US/login
+```
+
+## Backend Issues
+
+后端问题的判断标准是 contract、权限、数据真相或治理证据不一致，而不是单个前端断言失败。先保留 run-scoped evidence，再用 backend-real 入口复现。
+
+Common symptoms:
+- mock lane 正常但 real backend 行为不同。
+- Policy、Audit、Usage 或 membership 状态与后端返回不一致。
+- backend-real evidence 缺少 `result.json`、review 或 ux-trace。
+
+Recommended checks:
+```bash
+npm run backend-real:ready
+make governance-smoke
+```
+
+## Timeout Issues
+
+超时问题要先区分可恢复的上游慢响应和结构性等待条件错误。不要只延长 timeout；应确认等待对象、runner 状态、SSE 或 callback 是否有明确完成信号。
+
+Common symptoms:
+- visual / e2e 停在 loading 或 skeleton。
+- Feishu callback、terminal truth、runner status 长时间未收敛。
+- retry 后偶发恢复，但 evidence 没有记录最终状态。
+
+Recommended checks:
+```bash
+make local-manual-status
+npm run backend-real:ready
+```
+
 ## 3. 最常用恢复命令
 
 ### 重启本地真实手测环境

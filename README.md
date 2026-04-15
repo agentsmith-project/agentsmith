@@ -42,6 +42,16 @@ Use:
 
 Runtime baseline: `Node 24.14.1 LTS` with `npm 11.11.0` for local development, CI, build images, and deployment images.
 
+Before you run commands, choose one entry path:
+
+| Entry path | Choose it when | Start here |
+| --- | --- | --- |
+| `ui_only` | You are changing frontend UI, copy, client state, or mock-only behavior. | `npm install`, `npm run dev`, then `npm run gate:fast` or `npm run test:e2e` |
+| `local_manual` | You need the real local API, Notebook, Terminal, runner, files, or backend behavior. | `make substrate-up`, `make local-manual-up`, `make local-manual-seed-notebook` |
+| `release_grade` | You need a release-level answer after a large change, release prep, or incident fix. | Run `npm run release:campaign:full`; read [Verification Campaigns v1](./docs/testing/verification-campaigns-v1.md) and [Release Readiness Checklist](./docs/user-guides/release-readiness-checklist.md) first if you need the evidence model. |
+
+Use the [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) when you need the smallest command that can reproduce or narrow a failure. Diagnostic commands help you find the problem; gates give the final verdict for a layer.
+
 ```bash
 # Install dependencies
 npm install
@@ -110,7 +120,7 @@ npm run test:backend-real:core
 ```bash
 npm run gate:fast
 npm run gate:default
-npm run gate:release:full
+npm run gate:release
 ```
 
 ### 验证通道
@@ -126,8 +136,7 @@ npm run lane:cluster-rehearsal
 ### 发布
 
 ```bash
-npm run backend-real:run
-npm run backend-real:report
+npm run release:campaign:full
 ```
 <!-- current-workflow:readme:end -->
 
@@ -168,22 +177,20 @@ This validates the required behavior for MVP deployment without sandbox:
 npm run gate:fast
 npm run gate:default
 npm run gate:release
-npm run gate:release:full
+npm run release:campaign:full
 ```
 
-Recommended automated release-grade flow:
+`npm run release:campaign:full` is the official one-shot release campaign. It orchestrates the required gates, lanes, evidence owners, rehearsal lanes, and terminal aggregate verdict.
+
+Use `npm run gate:release:full` only to aggregate an existing campaign with explicit campaign context such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>`. It does not run suites.
+
+Release evidence owners you may rerun while diagnosing a failed campaign:
 
 ```bash
-npm run backend-real:reset
-npm run backend-real:bootstrap
-npm run backend-real:ready
-npm run backend-real:run
-npm run backend-real:report
 npm run gate:release
 npm run lane:visual
 npm run lane:demo-rehearsal
 npm run lane:cluster-rehearsal
-npm run gate:release:full
 ```
 
 Optional operator-only Feishu checks when the current release scope includes Feishu:

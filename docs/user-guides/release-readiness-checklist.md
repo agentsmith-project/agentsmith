@@ -15,11 +15,12 @@
 4. full visual、machine-readable story evidence 与两条部署排演通过
 
 补充判定规则：
-1. 当前 automated release-grade verdict 统一以 `npm run gate:release:full` 为准。
+1. 当前 automated release-grade 执行入口统一是 `npm run release:campaign:full`。
 2. `npm run gate:default` 不能代替 full visual，也不能代替 release-grade backend-real 或最终 release verdict。
 3. 对 evidence-owning gates 和 lanes，`command passed` 与 machine-readable evidence completeness 同级；缺少 required review artifacts、`visual_scene_catalog` 或 `ux_trace_bundle`，都不能算通过。
 4. 对当前在 `scripts/governance/current-gate-result-schema.ts` 注册了 writer 的 gate/lane，还必须存在 canonical `<evidence_dir>/result.json`。
 5. `result.json` 里的 `failure_class` 是 gate verdict 字段，不等于排障脚本或 incident 复盘里的 troubleshooting 分类。
+6. `npm run gate:release:full` 是 aggregate-only terminal verdict 复核，只能在显式 campaign context 下使用，例如 `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full`；它不会执行 suite。
 
 ## 环境前提
 
@@ -38,28 +39,43 @@
 
 ### 1. 自动化 release-grade campaign
 
+日常 release-grade 自动化入口只跑：
+
 ```bash
-npm run gate:fast
-npm run gate:default
-npm run lane:visual
-npm run backend-real:reset
-npm run backend-real:bootstrap
-npm run backend-real:ready
-npm run backend-real:run
-npm run backend-real:report
-npm run gate:release
-npm run lane:demo-rehearsal
-npm run lane:cluster-rehearsal
-npm run gate:release:full
+npm run release:campaign:full
 ```
+
+该命令会编排下面所有 required steps，并在 campaign context 内调用 terminal aggregate verdict。下面的 role table 用于理解证据所有权、排障和复核，不是要求新人手工维护第二套命令顺序。
+
+按 role 执行，而不是把某个 README 命令块当成第二套 release truth：
+
+| Role | Command | 必须证明什么 |
+| --- | --- | --- |
+| campaign launcher | `npm run release:campaign:full` | 官方 one-shot release campaign，编排所有 required steps |
+| preflight | `npm run gate:fast` | 基础 contract、static、cheap checks 没先坏 |
+| tier verdict | `npm run gate:default` | 默认工程门禁通过 |
+| evidence owner | `npm run lane:visual` | full visual 与 `visual_scene_catalog` 完整 |
+| evidence owner | `npm run backend-real:reset` / `npm run backend-real:bootstrap` / `npm run backend-real:ready` / `npm run backend-real:run` / `npm run backend-real:report` / `npm run gate:release` | release-grade backend-real 与 `ux_trace_bundle` 完整 |
+| evidence owner | `npm run lane:demo-rehearsal` | demo deployment rehearsal 证据完整 |
+| evidence owner | `npm run lane:cluster-rehearsal` | cluster deployment rehearsal 证据完整 |
+| terminal aggregate verdict | `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full` | 聚合已有 campaign evidence，不执行任何 suite |
 
 说明：
 1. `npm run gate:default` 只覆盖默认业务链与治理门禁，以及它们自己的 targeted visual。
 2. `npm run lane:visual` 是唯一 full visual 验证通道，不能被 `gate:default` 代替，并且它承担 `visual_scene_catalog` 证据所有权。
 3. `npm run gate:release` / `npm run lane:backend-real:release` 承担 `ux_trace_bundle` 证据所有权。
 4. `npm run lane:demo-rehearsal` 与 `npm run lane:cluster-rehearsal` 都必须从各自 scenario-owned local kind world 的 clean reset 开始。
-5. `npm run gate:release:full` 是完整发布验收命令，也是最终 release verdict 入口。
-6. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代上面这条 automated verdict 链。
+5. `npm run gate:release:full` 是 terminal aggregate verifier；它的结论必须建立在前面 evidence owners 的结果和证据完整性之上，并且需要显式 campaign context。
+6. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代 `npm run release:campaign:full`。
+
+### 1.1 CI green 的含义
+
+CI green 不是完整 release sign-off：
+
+1. PR 默认 CI 代表 `gate:fast` 和 `gate:default` 通过。
+2. `lane:visual` 在 push 或手动 workflow dispatch 时运行，并且在 CI 图里只依赖 `gate:fast`，不需要等待 `gate:default` 才开始。
+3. `lane-backend-real-core` 仍然是手动 dispatch，并且依赖 backend-real secret。
+4. release-grade sign-off 仍然必须看 `npm run release:campaign:full` 产生的 campaign evidence、`lane:visual`、backend-real release、两条 rehearsal lane 与 terminal aggregate verdict。
 
 ### 2. 手工 Feishu 联调步骤
 
@@ -74,21 +90,58 @@ make manual-feishu-check
 
 说明：
 1. 这组步骤属于 operator 手工联调，不属于 automated gate。
-2. 它们可以作为 release sign-off 的补充条件，但不能替代 `gate:release:full`。
+2. 它们可以作为 release sign-off 的补充条件，但不能替代 `npm run release:campaign:full`。
 3. 如果这里失败，应在 release 结论中单独记录为手工集成阻塞，而不是改写 automated gate truth。
 
 ## 当前证据路径
 
-- full visual scene catalog：
+### Official campaign-scoped evidence
+
+`npm run release:campaign:full` 的 canonical release evidence root 是：
+
+```text
+artifacts/release-runs/<campaign-run-id>
+```
+
+在下面示例里用 `<campaign-root>` 表示这个目录。最终 release 结论必须优先看 campaign-scoped evidence，而不是看 standalone lane 上一次留下的默认 artifacts。
+
+- terminal aggregate verdict：
+  - `<campaign-root>/gate-release-full/result.json`
+  - `<campaign-root>/gate-release-full/evidence.json`
+- full visual scene catalog and review evidence：
   - `e2e/visual-baseline-support.ts`
   - `e2e/__screenshots__/visual.spec.ts`
-- backend-real visual review：
+  - `<campaign-root>/lane-visual/native/result.json`
+  - `<campaign-root>/lane-visual/evidence.json`
+  - `<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<scenario-id>/review.md`
+- release backend-real review and trace evidence：
+  - `<campaign-root>/gate-release/native/result.json`
+  - `<campaign-root>/gate-release/evidence.json`
+  - `<campaign-root>/gate-release/backend-real-visual/review.md`
+  - `<campaign-root>/gate-release/backend-real-visual/ux-traces/<lane>/<suite>/<story-id>/<run-id>/review.md`
+  - `<campaign-root>/gate-release/backend-real-visual/ux-traces`
+- demo rehearsal evidence：
+  - `<campaign-root>/lane-demo-rehearsal/native/result.json`
+  - `<campaign-root>/lane-demo-rehearsal/evidence.json`
+  - `<campaign-root>/lane-demo-rehearsal/scenario/reports/<timestamp>.md`
+- cluster rehearsal evidence：
+  - `<campaign-root>/lane-cluster-rehearsal/native/result.json`
+  - `<campaign-root>/lane-cluster-rehearsal/evidence.json`
+  - `<campaign-root>/lane-cluster-rehearsal/scenario/reports/<timestamp>.md`
+
+`gate:release:full` 会按当前 `CURRENT_VERIFICATION_CAMPAIGN_MANIFEST` 的 `evidenceChecks` 重新计算这些证据是否存在，并校验 wrapper/native `result.json` 的 `schema_version`、`gate_id`、`line_kind`、`gate_adapter.npm_script`、`evidence_dir` 和 `failure_class`。旧格式 `evidence.json` 只写 dummy `required_paths`，或者缺少当前 required check id，都不能得到绿色 release verdict。
+
+### Standalone lane evidence
+
+下面路径只表示单独运行某个 lane/gate 时的默认产物位置，可用于诊断或人工查看；它们不能替代 official `release:campaign:full` 的 campaign-scoped evidence。
+
+- standalone backend-real visual review：
   - `artifacts/backend-real-visual/<run-id>/review.md`
   - `artifacts/backend-real-visual/<run-id>/ux-traces/<lane>/<suite>/<story-id>/<run-id>/review.md`
   - `artifacts/backend-real-visual/<run-id>/ux-traces`
-- demo rehearsal report：
+- standalone demo rehearsal report：
   - `artifacts/runtime/scenario/demo-rehearsal/reports/<timestamp>.md`
-- cluster rehearsal report：
+- standalone cluster rehearsal report：
   - `artifacts/runtime/scenario/cluster-rehearsal/reports/<timestamp>.md`
 
 ## 当前 story evidence 真相
@@ -98,7 +151,8 @@ make manual-feishu-check
   - source: `e2e/visual-baseline-support.ts`
 - `ux_trace_bundle`
   - owner: `gate:release`, `lane:backend-real:release`
-  - root: `artifacts/backend-real-visual/<run-id>/ux-traces`
+  - release campaign root: `<campaign-root>/gate-release/backend-real-visual/ux-traces`
+  - standalone diagnostic root: `artifacts/backend-real-visual/<run-id>/ux-traces`
 
 ## 失败时的处理原则
 

@@ -1,7 +1,7 @@
 export const ROUTES = {
   public: [
     { path: '/', title: /Workspace|Select|工作区|工作空间/i },
-    { path: '/app-shell', title: /App Shell/i },
+    { path: '/app-shell', title: /App Shell/i, testId: 'app-shell__preview' },
     { path: '/zh-CN', title: /Workspace|Select|工作区|工作空间/i },
     { path: '/zh-CN/login', title: /Workspace|Select|工作区|工作空间/i },
     { path: '/zh-CN/login/workspace', title: /Workspace|Select|工作区|工作空间/i },

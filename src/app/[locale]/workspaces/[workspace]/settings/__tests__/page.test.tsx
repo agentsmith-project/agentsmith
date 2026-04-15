@@ -264,6 +264,8 @@ describe('WorkspaceSettingsPage', () => {
     expect(screen.getByTestId('page-layout')).toBeInTheDocument();
     expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
     expect(screen.queryByTestId('topbar')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Corp Workspace' })).toBeInTheDocument();
+    expect(screen.getByText('workspace_settings_description')).toBeInTheDocument();
     expect(screen.queryByText('workspace_admin_subtitle')).not.toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__name')).toHaveTextContent('ws_1');
     expect(screen.getByTestId('ws-settings__open-projects')).toHaveAttribute(
@@ -280,6 +282,11 @@ describe('WorkspaceSettingsPage', () => {
     expect(screen.getByTestId('ws-settings__integrations').className).not.toMatch(/border-t|rounded-|shadow-/);
     expect(screen.queryByText('workspace_can_create_projects')).not.toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__summary-line')).toHaveTextContent('ws_1');
+    expect(screen.getByTestId('ws-settings__summary-line')).toHaveTextContent('workspace_projects_count');
+    expect(screen.getByTestId('ws-settings__summary-line')).toHaveTextContent('workspace_active_projects_count');
+    expect(screen.getByTestId('ws-settings__workspace')).toHaveTextContent('workspace_general');
+    expect(screen.getByTestId('ws-settings__projects')).toHaveTextContent('workspace_projects_title');
+    expect(screen.getByTestId('ws-settings__project-creators')).toHaveTextContent('workspace_project_creators_title');
   });
 
   it('renders project administration list', async () => {

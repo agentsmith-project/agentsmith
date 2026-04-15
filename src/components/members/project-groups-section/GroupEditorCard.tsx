@@ -305,7 +305,10 @@ export const GroupEditorCard = React.forwardRef<HTMLDivElement, GroupEditorCardP
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-subtle pt-1">
+      <div
+        className="sticky bottom-0 z-10 -mx-5 -mb-5 flex flex-wrap items-center gap-2 border-t border-subtle bg-surface/95 px-5 py-3"
+        data-testid="members__group-action-bar"
+      >
         <Button
           type="button"
           onClick={onSave}

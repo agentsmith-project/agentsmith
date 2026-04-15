@@ -10,9 +10,7 @@ export default defineConfig({
     // Use a single fork worker to avoid intermittent OOM in large jsdom suites.
     pool: 'forks',
     maxWorkers: 1,
-    minWorkers: 1,
-    // Recycle process between files to avoid heap growth across large suites.
-    singleFork: false,
+    execArgv: ['--max-old-space-size=6144'],
     setupFiles: ['./src/test/setup.ts'],
     env: {
       NEXT_PUBLIC_USE_MSW: 'true',

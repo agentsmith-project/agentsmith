@@ -32,6 +32,7 @@ vi.mock('next-intl', () => ({
       user_keys: {
         create_success_title: 'API Key Created',
         create_success_hint: 'Copy this key now. You will not be able to see it again.',
+        create_success_prefix_only: 'The API only returned the key prefix. Use it to identify this key in the list.',
       },
       common: {
         confirm: 'Done',
@@ -150,7 +151,7 @@ describe('KeyCreatedDialog', () => {
       expect(screen.getByText('usk-***onlyprefix')).toBeInTheDocument();
     });
 
-    it('shows fallback message when only prefix available', () => {
+    it('shows the prefix-only warning and disables full-key copy when only prefix is available', () => {
       render(
         <KeyCreatedDialog
           {...defaultProps}
@@ -159,7 +160,8 @@ describe('KeyCreatedDialog', () => {
         />
       );
 
-      expect(screen.getByText(/full key was not returned by the api/i)).toBeInTheDocument();
+      expect(screen.getByText(/api only returned the key prefix/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /copy/i })).toBeDisabled();
     });
 
     it('handles empty string key value', () => {

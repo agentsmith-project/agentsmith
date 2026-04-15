@@ -142,10 +142,15 @@ describe('ThreadsPane', () => {
       expect(screen.getByText('no_threads')).toBeInTheDocument();
     });
 
-    it('should show "No threads" when search returns no results', () => {
+    it('should show search-empty guidance and let users clear search when search returns no results', () => {
       render(<ThreadsPane {...defaultProps} searchQuery="nonexistent" />);
 
-      expect(screen.getByText('no_threads')).toBeInTheDocument();
+      expect(screen.queryByText('no_threads')).not.toBeInTheDocument();
+      expect(screen.getByText('threads_empty_search_title')).toBeInTheDocument();
+      expect(screen.getByText('threads_empty_search_description')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('chat__threads-empty-clear-search'));
+      expect(defaultProps.onSearchQueryChange).toHaveBeenCalledWith('');
     });
   });
 

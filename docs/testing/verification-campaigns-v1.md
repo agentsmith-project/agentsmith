@@ -65,7 +65,25 @@ Status: `current reference`
 - 某个 incident 修复后，需要做跨层复验
 - 涉及 notebook / terminal / files / governance / backend-real / visual 等跨域链路调整
 
-## 3. 诊断路径 vs verdict 路径
+## 3. gate / lane / e2e / campaign 的关系
+
+直白理解：
+
+- `e2e` 是验证手段，回答“怎么测”。当前仓库通常用 Playwright 从用户视角走完整流程。
+- `lane` 是验证通道，回答“在哪条真相路径下测”。例如 `lane:mock`、`lane:visual`、`lane:backend-real:release`。
+- `gate` 是验收裁决，回答“这一层是否算通过”。稳定 gate identity 看 `current-gate-manifest.ts` 里的 `id`。
+- `campaign` 是围绕一个目标组织的一组动作，例如 release-grade automated verification。campaign 消费 gate / lane truth，不发明第二套 gate。
+- `diagnostic` 是定位路径，目标是更快找到失败层。
+- `verdict` 是正式结论，必须同时看命令结果和 required evidence completeness。
+
+最容易混淆的点：
+
+- 一个 lane 里可以跑 e2e，但 lane 不是 e2e。
+- 一个 gate 可以消费 lane 结果，也可以直接跑某些 tests，但 gate 的本质是 verdict。
+- `lane:mock` 是 current workflow 里的 diagnostic lane surface；它有价值，但不是 release evidence。
+- `release:campaign:full` 是正式 one-shot release campaign 入口；`gate:release:full` 只是在显式 campaign context 下做 terminal aggregate verdict，不执行任何 suite。
+
+## 4. 诊断路径 vs verdict 路径
 
 这是最容易被新人搞混的一件事。
 
@@ -91,20 +109,21 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 - `npm run gate:fast`
 - `npm run gate:default`
 - `npm run gate:release`
-- `npm run gate:release:full`
+- `npm run release:campaign:full`
 
 其中：
 - `gate:default` 不是 full visual，也不是 full release
 - `lane:visual` 是 full visual 的唯一 owner
 - `gate:release` 不替代 `lane:visual`
-- `gate:release:full` 才是当前 automated release-grade 最终 verdict
+- `release:campaign:full` 编排 release-grade 所有 required steps，并在最后调用 aggregate-only 的 `gate:release:full`
+- `gate:release:full` 只能在显式 campaign root / run id context 下复核已有 evidence，不是日常执行入口
 
 结论：
 - 诊断路径可以帮助你修问题
 - verdict 路径负责给出最后结论
-- 不能用前者代替后者，也不应该每修一个小问题就直接从头跑到 `gate:release:full`
+- 不能用前者代替后者，也不应该每修一个小问题就直接从头跑完整 `release:campaign:full`
 
-## 4. 当前 campaign taxonomy
+## 5. 当前 campaign taxonomy
 
 这里的 taxonomy 是**对现有治理真相的解释**，不是新增一套 gate truth。
 
@@ -133,7 +152,7 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 - `npm run gate:fast`
 - `npm run gate:default`
 - `npm run gate:release`
-- `npm run gate:release:full`
+- `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full`（aggregate-only，必须已有 campaign context）
 
 适合：
 - 合并前验收
@@ -161,18 +180,24 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 用途：
 - 在自动化范围内给出 release-grade 最终 verdict
 
-当前应以现有 gate / lane 组合理解，而不是发明新的 machine-readable campaign id：
-1. 先完成当前改动所需的诊断路径
-2. 再完成 `gate:fast`
-3. 再完成 `gate:default`
-4. 再完成 `lane:visual`
-5. 再完成 `gate:release`
-6. 再完成 `lane:demo-rehearsal` 与 `lane:cluster-rehearsal`
-7. 最终以 `gate:release:full` 收口
+当前应按角色理解，而不是在多份文档里各自维护一套冲突顺序：
+
+| Role | Current command surface | What it proves |
+| --- | --- | --- |
+| campaign launcher | `npm run release:campaign:full` | 官方 one-shot release campaign，编排所有 required steps 并调用 terminal aggregate verdict |
+| preflight | `npm run gate:fast` | 快速确认基础 contract / static / cheap checks 没先坏 |
+| tier verdict | `npm run gate:default` | 默认工程层是否可接受 |
+| evidence owner | `npm run lane:visual` | full visual 和 `visual_scene_catalog` 证据 |
+| evidence owner | `npm run gate:release` / `npm run lane:backend-real:release` | release-grade backend-real 与 `ux_trace_bundle` 证据 |
+| rehearsal evidence owner | `npm run lane:demo-rehearsal` | demo release path 排演证据 |
+| rehearsal evidence owner | `npm run lane:cluster-rehearsal` | cluster release path 排演证据 |
+| terminal aggregate verdict | `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full` | 只聚合已有 campaign evidence，不执行任何 suite |
+
+`npm run release:campaign:full` 必须消费同一组 role 和 evidence truth；不能绕过这些 owner 自己发明 release 判断。`gate:release:full` 如果没有显式 campaign context，就不应该被新人当作 release 执行入口。
 
 手工 Feishu 操作位于 [Release Readiness Checklist](../user-guides/release-readiness-checklist.md) 的 operator 流程中，不属于这份文档定义的 automated campaign 默认范围。
 
-## 5. 证据完整性和命令通过同等重要
+## 6. 证据完整性和命令通过同等重要
 
 对 evidence-owning gate 和 lane 来说，`command passed` 不等于“真的通过”。
 
@@ -180,16 +205,20 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 - 命令通过
 - canonical machine-readable evidence 生成完整
 - 对当前已注册 writer 的 gate/lane，canonical `result.json` 写到了正确 evidence root
+- terminal aggregate verifier 按当前 `CURRENT_VERIFICATION_CAMPAIGN_MANIFEST.evidenceChecks` 重新计算 evidence completeness
+- campaign wrapper result、native result 和 `evidence.json` 的 `step_id` / `gate_id` / `line_kind` / `gate_adapter.npm_script` / `evidence_dir` 必须与当前 campaign step 匹配
 
 当前关键证据关系：
 
 1. `visual_scene_catalog`
 - owner: `test:visual` / `lane:visual`
 - canonical linkage 见 gate manifest contract
+- release campaign review root: `<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<scenario-id>/review.md`
 
 2. `ux_trace_bundle`
 - default-tier owner: `test:backend-real:core` / `lane:backend-real:core`
 - release-tier owner: `gate:release` / `lane:backend-real:release`
+- release campaign trace root: `<campaign-root>/gate-release/backend-real-visual/ux-traces`
 
 3. `result.json`
 - canonical truth 见 [Current Gate Result Schema Contract](../contracts/current-gate-result-schema-contract.md)
@@ -199,7 +228,7 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 如果证据应该存在但不存在，不能把它当成“只是少了附件”。
 对声明了 blocking tier 的 gate，这属于正式失败。
 
-## 6. story truth 与 story evidence 的关系
+## 7. story truth 与 story evidence 的关系
 
 这是第二个最容易被误解的点。
 
@@ -231,7 +260,7 @@ story evidence 仍然是 gate truth 的一部分。
 
 不要把 generated specs 当真相，也不要把 trace bundle 当真相。
 
-## 7. visual baseline 更新准入
+## 8. visual baseline 更新准入
 
 visual baseline 更新不是“修测试”，而是一个受控审查动作。
 
@@ -256,7 +285,7 @@ visual baseline 更新不是“修测试”，而是一个受控审查动作。
 - 用“解释上说得通”代替截图审查
 - 把 `gate:default` 当成 full visual 替代品
 
-## 8. 失败分类后的下一动作
+## 9. 失败分类后的下一动作
 
 这里要区分两层：
 
@@ -277,7 +306,7 @@ visual baseline 更新不是“修测试”，而是一个受控审查动作。
 | `evidence_missing` | 应该生成的 review、trace、catalog、result 没有完整落盘 | 先查 evidence root、writer、artifact path、run-root，再重跑 evidence owner |
 | `none` | 当前 gate 没有失败 | 继续向下一层 verdict path 推进 |
 
-## 9. 给经验较少开发者的执行步骤
+## 10. 给经验较少开发者的执行步骤
 
 如果你第一次负责一次较大的验证活动，按这个顺序做：
 
@@ -303,11 +332,12 @@ visual baseline 更新不是“修测试”，而是一个受控审查动作。
 - `test:backend-real:core` / `lane:backend-real:core` 更像默认层真实验证
 - `gate:release` / `lane:backend-real:release` 才是 release-grade backend-real 义务
 
-6. 最后才看 `gate:release:full`
-- 它是最终 automated verdict
-- 不要把它当成第一轮问题定位工具
+6. 发布级最终入口看 `release:campaign:full`
+- 它是 official one-shot automated release campaign
+- 它会在 campaign context 内调用 aggregate-only 的 `gate:release:full`
+- 不要把 `gate:release:full` 当成第一轮问题定位工具或 suite launcher
 
-## 10. 常见误区
+## 11. 常见误区
 
 1. `gate:default` 过了，就等于发布可接受
 - 错。它不拥有 full visual，也不是 full release verdict
@@ -327,7 +357,7 @@ visual baseline 更新不是“修测试”，而是一个受控审查动作。
 6. README 或 checklist 上的命令顺序就是唯一工程真相
 - 错。machine-readable manifests 与 contracts 才是 enforcement truth
 
-## 11. 如何把这份文档和其他入口一起使用
+## 12. 如何把这份文档和其他入口一起使用
 
 如果你想：
 
@@ -335,6 +365,7 @@ visual baseline 更新不是“修测试”，而是一个受控审查动作。
 先看：
 - [Current Engineering Governance Model](../current-engineering-governance-model.md)
 - [Current Gate Manifest Contract](../contracts/current-gate-manifest-contract.md)
+- [Diagnostic Catalog v1](./diagnostic-catalog-v1.md)
 - 这份文档
 
 ### 找 canonical result / story / visual 规则

@@ -1,9 +1,11 @@
 import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
 import {
   CURRENT_GATE_MANIFEST,
+  findCurrentGateDefinition,
   findCurrentGateDefinitionById,
   listCurrentGateDefinitionsByKind,
 } from '../current-gate-manifest';
@@ -48,21 +50,21 @@ describe('current gate governance', () => {
 
   it('keeps adapter fidelity in structured execution targets instead of free-form command text', () => {
     const gateDefault = findCurrentGateDefinitionById('gate-default');
+    const laneMock = findCurrentGateDefinitionById('lane-mock');
     const laneVisual = findCurrentGateDefinitionById('lane-visual');
     const releaseFull = findCurrentGateDefinitionById('gate-release-full');
 
     expect(gateDefault?.executionTargets).toEqual([
-      { kind: 'npm_script', npmScript: 'test:default-e2e' },
-      { kind: 'npm_script', npmScript: 'test:governance' },
+      { kind: 'shell_script', scriptPath: 'scripts/default-gate.sh', args: [] },
+    ]);
+    expect(laneMock?.executionTargets).toEqual([
+      { kind: 'npm_script', npmScript: 'test:e2e' },
     ]);
     expect(laneVisual?.executionTargets).toEqual([
       { kind: 'npm_script', npmScript: 'test:visual' },
     ]);
     expect(releaseFull?.executionTargets).toEqual([
-      { kind: 'npm_script', npmScript: 'gate:release' },
-      { kind: 'npm_script', npmScript: 'lane:visual' },
-      { kind: 'npm_script', npmScript: 'lane:demo-rehearsal' },
-      { kind: 'npm_script', npmScript: 'lane:cluster-rehearsal' },
+      { kind: 'shell_script', scriptPath: 'scripts/release-full-aggregate-gate.sh', args: [] },
     ]);
   });
 
@@ -73,23 +75,32 @@ describe('current gate governance', () => {
     const laneVisual = lanes.find((definition) => definition.npmScript === 'lane:visual');
 
     expect(gateDefault?.visualPolicy).toBe('targeted');
-    expect(gateDefault?.command).not.toContain('test:visual');
+    expect(gateDefault?.command).toBe('bash scripts/default-gate.sh');
     expect(laneVisual?.visualPolicy).toBe('full');
     expect(laneVisual?.command).toBe('npm run test:visual');
   });
 
-  it('keeps release-full semantics explicit', () => {
+  it('keeps release-full semantics explicit and aggregate-only', () => {
     const releaseFull = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'gate:release:full');
     const demoLane = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'lane:demo-rehearsal');
     const clusterLane = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'lane:cluster-rehearsal');
 
     expect(releaseFull?.requiredFor).toContain('release');
-    expect(releaseFull?.command).toContain('npm run gate:release');
-    expect(releaseFull?.command).toContain('npm run lane:visual');
-    expect(releaseFull?.command).toContain('npm run lane:demo-rehearsal');
-    expect(releaseFull?.command).toContain('npm run lane:cluster-rehearsal');
+    expect(releaseFull?.command).toBe('bash scripts/release-full-aggregate-gate.sh');
+    expect(releaseFull?.command).not.toContain('npm run gate:release');
+    expect(releaseFull?.command).not.toContain('npm run lane:visual');
     expect(demoLane?.requiredFor).toContain('release');
     expect(clusterLane?.requiredFor).toContain('release');
+  });
+
+  it('models lane:mock as a canonical lane object with adapter alias support', () => {
+    const mockLane = findCurrentGateDefinitionById('lane-mock');
+
+    expect(mockLane?.kind).toBe('lane');
+    expect(mockLane?.npmScript).toBe('lane:mock');
+    expect(mockLane?.adapterAliases).toContain('test:e2e');
+    expect(findCurrentGateDefinition('lane:mock')).toBe(mockLane);
+    expect(findCurrentGateDefinition('test:e2e')).toBe(mockLane);
   });
 
   it('keeps machine-readable story evidence ownership aligned with visual and release lanes', () => {
@@ -140,5 +151,13 @@ describe('current gate governance', () => {
       stdio: 'pipe',
       encoding: 'utf8',
     })).not.toThrow();
+  });
+
+  it('keeps the release contract checker aligned with campaign launcher and aggregate verifier roles', () => {
+    const checker = readFileSync('scripts/contracts/check-current-gates.ts', 'utf8');
+
+    expect(checker).toContain('npm run release:campaign:full');
+    expect(checker).toMatch(/aggregate-only terminal verifier/);
+    expect(checker).not.toContain('release checklist must define npm run gate:release:full as the full release command');
   });
 });

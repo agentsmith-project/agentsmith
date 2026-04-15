@@ -152,6 +152,12 @@ describe('TaskHeader', () => {
       expect(screen.getByTestId('notebook__task-header')).toBeInTheDocument();
     });
 
+    it('exposes terminal truth hydration state for visual readiness checks', () => {
+      renderComponent(mockTask, { terminalTruthState: 'ready' });
+
+      expect(screen.getByTestId('notebook__task-header')).toHaveAttribute('data-terminal-truth-state', 'ready');
+    });
+
     it('renders terminal create action when terminal controls are enabled', () => {
       renderComponent(mockTask, {
         onCreateTerminalSession: vi.fn(),

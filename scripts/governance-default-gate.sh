@@ -6,6 +6,20 @@ unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
+SKIP_SHARED_PREFLIGHT=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-shared-preflight)
+      SKIP_SHARED_PREFLIGHT=1
+      shift
+      ;;
+    *)
+      echo "[governance-gate] unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 
 info() { echo "[governance-gate] $*"; }
 
@@ -14,11 +28,15 @@ run_cmd() {
   (cd "${ROOT_DIR}" && eval "$*")
 }
 
-next_generated_root_prepare_for_validation
+if [[ "${SKIP_SHARED_PREFLIGHT}" != "1" ]]; then
+  next_generated_root_prepare_for_validation
 
-run_cmd "npm run contracts:check"
-run_cmd "npm run contracts:check-openapi"
-run_cmd "npm run openapi:check-generated"
+  run_cmd "npm run contracts:check"
+  run_cmd "npm run contracts:check-openapi"
+  run_cmd "npm run openapi:check-generated"
+  run_cmd "npx tsc --noEmit"
+fi
+
 run_cmd "npx eslint \
   'src/components/members/MemberDetailDrawer.tsx' \
   'src/components/members/PeopleTab.tsx' \
@@ -29,7 +47,6 @@ run_cmd "npx eslint \
   'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/resource-policy/_components/ResourcePolicyExplainabilityPanel.tsx' \
   'src/lib/governance-explainability-presenter.ts' \
   'src/lib/hooks/use-governance-explainability.ts'"
-run_cmd "npx tsc --noEmit"
 
 run_cmd "npm run test:run -- \
   'src/components/members/__tests__/JoinRequestsTab.test.tsx' \

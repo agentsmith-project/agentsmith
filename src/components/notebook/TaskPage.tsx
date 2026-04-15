@@ -1895,6 +1895,7 @@ export function TaskPage({
         viewMode={effectiveViewMode}
         canCreateTerminalSession={canCreateTerminalSession}
         terminalSessionCount={terminalSessionCount}
+        terminalTruthState={terminalWorkspaceHydrationState}
         terminalHasRecovery={terminalHasRecovery}
         terminalRecoveryCount={terminalRecoveryCount}
         terminalDisabledReason={terminalDisabledReason}

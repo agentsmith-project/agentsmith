@@ -8,22 +8,29 @@ test.describe('Workspace Settings Page', () => {
     await goTo(authedPage, wsSettingsPath);
   });
 
-test('shows workspace administration summary and project entry links', async ({ authedPage }) => {
-  await expect(
-    authedPage.getByRole('heading', { name: /Workspace Settings/i }),
-  ).toBeVisible();
-  await expect(authedPage.getByTestId('ws-settings__workspace')).toBeVisible();
-  await expect(authedPage.getByTestId('ws-settings__projects')).toBeVisible();
+  test('shows workspace administration summary and project entry links', async ({ authedPage }) => {
+    await expect(
+      authedPage.getByRole('heading', { level: 1, name: 'Default Workspace' }),
+    ).toBeVisible();
+    await expect(authedPage.getByText(/Review current projects, manage project creators/i)).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__summary-line')).toContainText('ws_default');
+    await expect(authedPage.getByTestId('ws-settings__summary-line')).toContainText(/Projects:\s*\d+/);
+    await expect(authedPage.getByTestId('ws-settings__summary-line')).toContainText(/Active projects:\s*\d+/);
+    await expect(authedPage.getByTestId('ws-settings__workspace')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__workspace')).toContainText('Default Workspace');
+    await expect(authedPage.getByTestId('ws-settings__projects')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__projects')).toContainText('Projects');
     await expect(authedPage.getByTestId('ws-settings__name')).toBeVisible();
-  await expect(authedPage.getByTestId('ws-settings__open-projects')).toBeVisible();
-  await expect(authedPage.getByTestId('ws-settings__create-project')).toBeVisible();
-  await expect(authedPage.getByTestId('ws-settings__project-creators')).toBeVisible();
-  await expect(authedPage.getByTestId('ws-settings__project-open-overview--proj_001')).toBeVisible();
-  await expect(authedPage.getByTestId('ws-settings__project-open-members--proj_001')).toBeVisible();
-  await expect(authedPage.getByTestId('ws-settings__project-open-settings--proj_001')).toBeVisible();
-  await expect(authedPage.getByTestId('ws-settings__project-owner-select--proj_001')).toBeVisible();
-  await expect(authedPage.getByTestId('ws-settings__project-owner-save--proj_001')).toBeVisible();
-});
+    await expect(authedPage.getByTestId('ws-settings__open-projects')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__create-project')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-creators')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-creators')).toContainText('Project creators');
+    await expect(authedPage.getByTestId('ws-settings__project-open-overview--proj_001')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-open-members--proj_001')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-open-settings--proj_001')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-owner-select--proj_001')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-owner-save--proj_001')).toBeVisible();
+  });
 
   test('workspace manager can open create project dialog and create a project', async ({ authedPage }) => {
     await authedPage.getByTestId('ws-settings__create-project').click();

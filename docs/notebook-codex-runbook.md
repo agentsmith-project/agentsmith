@@ -163,4 +163,7 @@ npm run test:skills:backend-real
 
 如果需要 current release verdict，看：
 - [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
-- `npm run gate:release:full`
+- official release execution entrypoint: `npm run release:campaign:full`
+- aggregate-only verifier for an existing campaign: `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full`
+
+不要把裸 `gate:release:full` 当成 release 执行入口；它只复核已有 campaign evidence，不执行 suite。

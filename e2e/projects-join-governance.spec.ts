@@ -59,31 +59,29 @@ test.describe('Projects Join Governance', () => {
     await goToProject(authedPage, 'members');
     await authedPage.getByRole('tab', { name: 'Join Requests' }).click();
 
-    const requestCard = authedPage
-      .locator('[data-testid^="members__join-request-card--"]')
-      .filter({ hasText: 'frank@example.com' })
-      .first();
-    await expect(requestCard).toBeVisible();
-    await requestCard.locator('[data-testid^="members__join-request-approve--"]').click();
-    await expect(requestCard.getByText('Approved', { exact: true })).toBeVisible({ timeout: 10000 });
-    await expect(requestCard.getByText(/Approved as a project member/i)).toBeVisible();
+    const requestRow = authedPage.getByTestId('members__join-request-row--join_001');
+    await expect(requestRow).toBeVisible();
+    await expect(requestRow).toContainText('frank@example.com');
+    await expect(requestRow).toContainText('Pending');
+    await requestRow.getByTestId('members__join-request-approve--join_001').click();
+    await expect(requestRow.getByText('Approved', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(requestRow.getByText(/Approved as a project member/i)).toBeVisible();
   });
 
   test('manager can reject a pending join request with a reason', async ({ authedPage }) => {
     await goToProject(authedPage, 'members');
     await authedPage.getByRole('tab', { name: 'Join Requests' }).click();
 
-    const requestCard = authedPage
-      .locator('[data-testid^="members__join-request-card--"]')
-      .filter({ hasText: 'grace@example.com' })
-      .first();
-    await expect(requestCard).toBeVisible();
-    await requestCard.locator('[data-testid^="members__join-request-reject--"]').click();
+    const requestRow = authedPage.getByTestId('members__join-request-row--join_002');
+    await expect(requestRow).toBeVisible();
+    await expect(requestRow).toContainText('grace@example.com');
+    await expect(requestRow).toContainText('Pending');
+    await requestRow.getByTestId('members__join-request-reject--join_002').click();
     await expect(authedPage.getByTestId('members__join-request-reject-dialog')).toBeVisible();
     await authedPage.getByPlaceholder('e.g. Not in scope for this project').fill('Not in scope for this project');
     await authedPage.getByRole('button', { name: 'Confirm Reject' }).click();
-    await expect(requestCard.getByText('Rejected')).toBeVisible({ timeout: 10000 });
-    await expect(requestCard.getByText('Not in scope for this project')).toBeVisible();
+    await expect(requestRow.getByText('Rejected')).toBeVisible({ timeout: 10000 });
+    await expect(requestRow.getByText('Not in scope for this project')).toBeVisible();
   });
 
   test('guest notification center shows join request outcome notifications', async ({ guestPage }) => {

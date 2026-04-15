@@ -26,6 +26,7 @@ const EXPECTED_USAGE_VIEW_KEYS = [
   'no_data',
   'no_data_hint',
   'panel_title',
+  'scope_note',
   'trend_last_30_days',
   'trend_section_title',
   'window',

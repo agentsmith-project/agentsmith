@@ -3,6 +3,7 @@ import type { FileLibrary } from '@/lib/api/types';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import { docFileLibraries } from '../doc-fixtures/workspace-projects';
 import { docObjectDbByLibraryId } from '../doc-fixtures/files';
+import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 
 type ObjectRow =
   | { kind: 'prefix'; prefix: string; name: string }
@@ -71,7 +72,8 @@ const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibrari
   },
 ];
 
-const nowIso = () => new Date().toISOString();
+export const mockFileNowIso = () => VISUAL_TEST_REFERENCE_NOW_ISO;
+const nowIso = mockFileNowIso;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const failOnceCounters: Record<string, number> = {};
 
@@ -240,7 +242,7 @@ export const fileHandlers = [
         { status: 400 },
       );
     }
-    const now = new Date().toISOString();
+    const now = nowIso();
     const id = `flib_${Date.now()}`;
     const slug = body.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'filelib';
     const created = {
@@ -278,7 +280,7 @@ export const fileHandlers = [
     sourceLibraries[index] = {
       ...sourceLibraries[index],
       ...body,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso(),
     };
     return HttpResponse.json(sourceLibraries[index]);
   }),
@@ -477,7 +479,7 @@ export const fileHandlers = [
     if (!obj) {
       return HttpResponse.json({ error_code: 'object_not_found', message: 'object_not_found' }, { status: 404 });
     }
-    const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
+    const expiresAt = new Date(new Date(nowIso()).getTime() + expiresInSeconds * 1000).toISOString();
     const url = `https://mock-juicefs.local/${encodeURIComponent(libraryId)}/${encodeURIComponent(path)}?X-Amz-Expires=${expiresInSeconds}&X-Amz-Signature=mock`;
     return HttpResponse.json({
       key: path,

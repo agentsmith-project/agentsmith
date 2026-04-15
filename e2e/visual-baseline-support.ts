@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   loadAllStoryDefinitionsSync,
@@ -51,6 +52,51 @@ export type VisualBaselineBuildRecord = {
   fingerprint: string;
   startedAt: string;
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isVisualBaselineBuildLane(value: unknown): value is VisualBaselineBuildLane {
+  return value === 'mock-lane' || value === 'backend-real';
+}
+
+function readRequiredBuildString(
+  payload: Record<string, unknown>,
+  field: 'run_id' | 'git_sha' | 'fingerprint' | 'started_at',
+  sourceLabel: string,
+): string {
+  const value = payload[field];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${sourceLabel} must define non-empty snake_case visual build metadata field: ${field}`);
+  }
+  return value;
+}
+
+export function parseVisualBaselineBuildRecord(
+  payload: unknown,
+  sourceLabel = 'visual build metadata',
+): VisualBaselineBuildRecord {
+  if (!isRecord(payload)) {
+    throw new Error(`${sourceLabel} must be a JSON object.`);
+  }
+  if (!isVisualBaselineBuildLane(payload.lane)) {
+    throw new Error(`${sourceLabel} must define lane as mock-lane or backend-real.`);
+  }
+
+  return {
+    lane: payload.lane,
+    runId: readRequiredBuildString(payload, 'run_id', sourceLabel),
+    gitSha: readRequiredBuildString(payload, 'git_sha', sourceLabel),
+    fingerprint: readRequiredBuildString(payload, 'fingerprint', sourceLabel),
+    startedAt: readRequiredBuildString(payload, 'started_at', sourceLabel),
+  };
+}
+
+export function readVisualBaselineBuildRecord(filePath: string): VisualBaselineBuildRecord {
+  const payload = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
+  return parseVisualBaselineBuildRecord(payload, filePath);
+}
 
 export type VisualBaselineCatalogEntry = {
   id: string;

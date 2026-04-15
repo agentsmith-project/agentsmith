@@ -6,6 +6,10 @@ Canonical `result.json` rules:
 - Canonical file location is `<evidence_dir>/result.json`.
 - Canonical JSON keys use `snake_case` only; `camelCase` aliases are forbidden.
 - Writer truth is defined by `gate_id + line_kind`.
+- A campaign is not a writer identity. `npm run release:campaign:full` may orchestrate multiple gate/lane results, but each canonical writer still belongs to a registered gate/lane pair.
+- `npm run gate:release:full` is an aggregate-only terminal verifier for an explicit campaign context. It does not create or replace the evidence owners' native canonical `result.json` files.
+- `npm run gate:release:full` must validate campaign wrapper results and native results with the same canonical traceability fields: `schema_version`, `gate_id`, `line_kind`, `gate_adapter.npm_script`, `evidence_dir`, and enum-safe `failure_class`.
+- `npm run gate:release:full` must recompute required evidence from the current verification campaign manifest instead of trusting stale or incomplete `evidence.json.required_paths`.
 - For registered writers, `status` and evidence completeness are same-level verdict conditions. If the command exits successfully but the canonical `result.json` is missing from the evidence root, the canonical verdict is still failure.
 - `failure_class` is a gate-level verdict field and must use one of:
   `none`, `product_regression`, `infra_setup_failure`, `environment_conflict`, `contract_drift`, `evidence_missing`.

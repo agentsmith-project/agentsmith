@@ -214,8 +214,6 @@ run_real_cmd() {
   )
 }
 
-run_cmd "npm run gate:default"
-gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "default_gate" "passed" "npm run gate:default"
 run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_bootstrap" "passed" "backend-real bootstrap completed"
 prewarm_internal_kind_cluster
@@ -228,6 +226,21 @@ gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_ready" "passed" "b
 record_service backend_ready ready "backend-real ready"
 run_real_cmd 20050 3051 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' npm run backend-real:run"
 run_real_cmd 20080 3081 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' npm run test:visual:backend-real:review"
+mapfile -t visual_review_files < <(find "${ARTIFACT_DIR}/ux-traces" -type f -name review.md 2>/dev/null | sort)
+if [[ "${#visual_review_files[@]}" -eq 0 ]]; then
+  gate_record_failure "${LOCAL_READY_LOG_DIR}" "evidence_missing" "backend_real_visual_review" "missing backend-real visual review.md under ${ARTIFACT_DIR}/ux-traces"
+  exit 1
+fi
+{
+  printf '# Backend-real visual review\n\n'
+  printf -- '- run_id: %s\n' "${RUN_ID}"
+  printf -- '- artifact_dir: %s\n' "${ARTIFACT_DIR}"
+  printf -- '- ux_trace_review_count: %s\n\n' "${#visual_review_files[@]}"
+  printf '## Review Bundles\n\n'
+  for review_file in "${visual_review_files[@]}"; do
+    printf -- '- %s\n' "${review_file}"
+  done
+} > "${ARTIFACT_DIR}/review.md"
 run_cmd "npm run backend-real:report"
 
 info "release-grade real verification passed"

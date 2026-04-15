@@ -20,6 +20,13 @@ Use this contract when you need to answer:
 
 Stable gate ids are the gate identity truth. Fields such as `npmScript`, `command`, and `ciJob` are adapter surfaces that point presentation and automation layers back to that stable id. Structured execution target fidelity lives in manifest `executionTargets` plus `npmScript` / optional `ciJob`; free-form `command` is only an operator hint for generated docs and human operators.
 
+Plain-language boundary:
+- `gate` means verdict identity and acceptance responsibility.
+- `lane` means verification channel and evidence responsibility.
+- `e2e` means one testing method that a gate or lane may use.
+- `campaign` means a release or incident verification plan that consumes gates and lanes; it is not a stable gate id.
+- `diagnostic lane surface` means a lane-like command used for diagnosis and local narrowing, without release evidence ownership.
+
 ## 1. Scope
 
 This contract only covers engineering-governance truth:
@@ -73,14 +80,24 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - are not part of the default CI path, but are part of release evidence
 
 7. `gate:release:full`
-- the full release acceptance command
-- combines `gate:release`, `lane:visual`, `lane:demo-rehearsal`, and `lane:cluster-rehearsal`
+- the terminal aggregate verifier for an existing release campaign
+- depends on the release evidence owned by `gate:release`, `lane:visual`, `lane:demo-rehearsal`, and `lane:cluster-rehearsal`
 - requires both `visual_scene_catalog` and `ux_trace_bundle` evidence to be present in their canonical roots
+- does not execute suites, gates, or lanes itself; the official release execution entrypoint is `npm run release:campaign:full`
+- must be used with explicit campaign context such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>` or an equivalent explicit run id context
+- must evaluate evidence completeness from the current verification campaign manifest, not from whatever paths an older `evidence.json` happened to declare
+- must reject stale evidence pointers that omit current required check ids, even when all referenced dummy paths exist
 
 8. domain gates such as `test:default-e2e` and `test:governance`
 - may own targeted visual checks with explicit `--grep` scopes
 - must not silently expand into the full visual lane
 - do not become implicit owners of `visual_scene_catalog` or `ux_trace_bundle`
+
+9. `lane:mock`
+- stable gate id: `lane-mock`
+- is a current workflow diagnostic lane surface exposed by `scripts/governance/current-workflow-manifest.ts`
+- is useful for mock-channel diagnosis and daily narrowing
+- does not own release evidence and must not replace `gate:default`
 
 ## 3. Story evidence kinds
 
@@ -93,9 +110,12 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - owned by default-tier and release-tier backend-real owners
 - default-tier evidence root:
   - `artifacts/backend-real/runs/<run-id>/ux-traces`
-- release evidence roots:
+- standalone release backend-real evidence roots:
   - `artifacts/backend-real-visual/<run-id>/review.md`
   - `artifacts/backend-real-visual/<run-id>/ux-traces`
+- official release campaign evidence roots:
+  - `<campaign-root>/gate-release/backend-real-visual/review.md`
+  - `<campaign-root>/gate-release/backend-real-visual/ux-traces`
 
 ## 4. Missing-evidence semantics
 

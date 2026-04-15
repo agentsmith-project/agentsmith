@@ -18,6 +18,10 @@ describe("current gate result schema", () => {
     expect(CURRENT_GATE_RESULT_WRITERS).toEqual([
       { gate_id: "lane-backend-real-core", line_kind: "backend_real" },
       { gate_id: "lane-backend-real-release", line_kind: "release_backend_real" },
+      { gate_id: "lane-visual", line_kind: "visual" },
+      { gate_id: "lane-demo-rehearsal", line_kind: "demo_rehearsal" },
+      { gate_id: "lane-cluster-rehearsal", line_kind: "cluster_rehearsal" },
+      { gate_id: "gate-release-full", line_kind: "release_full_verdict" },
     ]);
   });
 
@@ -25,6 +29,58 @@ describe("current gate result schema", () => {
     for (const writer of CURRENT_GATE_RESULT_WRITERS) {
       expect(findCurrentGateResultWriter(writer.gate_id)).toEqual(writer);
     }
+  });
+
+  it("routes standalone release evidence lanes through the canonical result wrapper", () => {
+    const packageJson = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+
+    for (const scriptName of [
+      "lane:visual",
+      "lane:demo-rehearsal",
+      "lane:cluster-rehearsal",
+    ]) {
+      expect(packageJson.scripts[scriptName]).toContain("scripts/run-current-gate-result-wrapped.sh");
+    }
+  });
+
+  it("the standalone result wrapper writes a native result for a wrapped lane command", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-"));
+    const evidenceDir = join(tempRoot, "lane-visual", "native");
+
+    execFileSync(
+      "bash",
+      [
+        "scripts/run-current-gate-result-wrapped.sh",
+        "lane-visual",
+        "visual",
+        "lane:visual",
+        "--",
+        "bash",
+        "-lc",
+        "true",
+      ],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          CURRENT_GATE_RESULT_EVIDENCE_DIR: evidenceDir,
+        },
+        stdio: "pipe",
+      },
+    );
+
+    const payload = JSON.parse(
+      readFileSync(join(evidenceDir, CURRENT_GATE_RESULT_ARTIFACT_NAME), "utf8"),
+    ) as { gate_id: string; status: string; failure_class: string; evidence_dir: string };
+
+    expect(payload).toMatchObject({
+      gate_id: "lane-visual",
+      status: "passed",
+      failure_class: "none",
+      evidence_dir: evidenceDir,
+    });
   });
 
   it.each(CURRENT_GATE_RESULT_WRITERS)(

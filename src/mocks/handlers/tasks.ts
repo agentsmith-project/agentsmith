@@ -1,4 +1,10 @@
 import { http, HttpResponse } from 'msw';
+import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
+import type {
+  CreateTaskTerminalSessionRequest,
+  TaskTerminalSessionCreateResponse,
+  TaskTerminalSessionStatus,
+} from '@/lib/types/task';
 import {
   taskFixtures,
   taskMessageFixtures,
@@ -17,6 +23,70 @@ const tasks = DOC_FIXTURES_ENABLED ? [...docTaskFixtures] : [...taskFixtures];
 const taskMessages = DOC_FIXTURES_ENABLED ? [...docTaskMessageFixtures] : [...taskMessageFixtures];
 const artifacts = DOC_FIXTURES_ENABLED ? [...docArtifactFixtures] : [...artifactFixtures];
 const taskTraces = DOC_FIXTURES_ENABLED ? [...docTaskTraceFixtures] : [...taskTraceFixtures];
+const terminalSessionsByScope = new Map<string, TaskTerminalSessionStatus[]>();
+let nextTerminalSessionOrdinal = 1;
+
+function taskTerminalScopeKey(args: { workspaceId: string; projectId: string; taskId: string }) {
+  return `${args.workspaceId}:${args.projectId}:${args.taskId}`;
+}
+
+function listLiveTerminalSessionsForScope(scopeKey: string): TaskTerminalSessionStatus[] {
+  return (terminalSessionsByScope.get(scopeKey) ?? [])
+    .filter((session) => session.status !== 'closed')
+    .map((session) => ({ ...session }));
+}
+
+function terminalTruthUnavailable(request: Request) {
+  return request.headers.get('x-mock-terminal-truth') === 'unavailable';
+}
+
+export function resetMockTaskTerminalSessions() {
+  terminalSessionsByScope.clear();
+  nextTerminalSessionOrdinal = 1;
+}
+
+export function listMockTaskTerminalSessions(args: {
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}): { total: number; items: TaskTerminalSessionStatus[] } {
+  const items = listLiveTerminalSessionsForScope(taskTerminalScopeKey(args));
+  return { total: items.length, items };
+}
+
+export function createMockTaskTerminalSession(args: {
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  cols?: number;
+  rows?: number;
+}): TaskTerminalSessionCreateResponse {
+  const sessionId = `mock_terminal_${String(nextTerminalSessionOrdinal).padStart(3, '0')}`;
+  nextTerminalSessionOrdinal += 1;
+  const scopeKey = taskTerminalScopeKey(args);
+  const now = VISUAL_TEST_REFERENCE_NOW_ISO;
+  const session: TaskTerminalSessionStatus = {
+    id: sessionId,
+    status: 'active',
+    cols: args.cols ?? 120,
+    rows: args.rows ?? 30,
+    created_at: now,
+    last_activity_at: now,
+    ended_at: null,
+    close_reason: null,
+    exit_code: null,
+    ws_url: `ws://mock.agentsmith.local/terminal/${sessionId}`,
+  };
+  terminalSessionsByScope.set(scopeKey, [
+    ...(terminalSessionsByScope.get(scopeKey) ?? []),
+    session,
+  ]);
+  return {
+    session_id: session.id,
+    status: session.status,
+    ws_url: session.ws_url ?? '',
+  };
+}
 
 export const taskHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/tasks', ({ request }) => {
@@ -191,6 +261,61 @@ export const taskHandlers = [
     task.attached_inputs = (task.attached_inputs ?? []).filter((item: any) => item.id !== inputId);
     task.updated_at = new Date().toISOString();
     return HttpResponse.json(task);
+  }),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/terminal/sessions', ({ request, params }) => {
+    if (terminalTruthUnavailable(request)) {
+      return HttpResponse.json({ error_code: 'terminal_truth_unavailable', message: 'terminal_truth_unavailable' }, { status: 503 });
+    }
+    return HttpResponse.json(listMockTaskTerminalSessions({
+      workspaceId: String(params.ws ?? ''),
+      projectId: String(params.prj ?? ''),
+      taskId: String(params.id ?? ''),
+    }));
+  }),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/terminal/sessions', async ({ request, params }) => {
+    const body = (await request.json().catch(() => ({}))) as CreateTaskTerminalSessionRequest;
+    return HttpResponse.json(createMockTaskTerminalSession({
+      workspaceId: String(params.ws ?? ''),
+      projectId: String(params.prj ?? ''),
+      taskId: String(params.id ?? ''),
+      cols: body.cols,
+      rows: body.rows,
+    }), { status: 201 });
+  }),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/terminal/sessions/:terminalSessionId', ({ request, params }) => {
+    if (terminalTruthUnavailable(request)) {
+      return HttpResponse.json({ error_code: 'terminal_truth_unavailable', message: 'terminal_truth_unavailable' }, { status: 503 });
+    }
+    const scopeKey = taskTerminalScopeKey({
+      workspaceId: String(params.ws ?? ''),
+      projectId: String(params.prj ?? ''),
+      taskId: String(params.id ?? ''),
+    });
+    const session = listLiveTerminalSessionsForScope(scopeKey)
+      .find((item) => item.id === String(params.terminalSessionId ?? ''));
+    if (!session) {
+      return HttpResponse.json({ error_code: 'task_terminal_session_missing', message: 'task_terminal_session_missing' }, { status: 404 });
+    }
+    return HttpResponse.json(session);
+  }),
+  http.delete('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/terminal/sessions/:terminalSessionId', ({ params }) => {
+    const scopeKey = taskTerminalScopeKey({
+      workspaceId: String(params.ws ?? ''),
+      projectId: String(params.prj ?? ''),
+      taskId: String(params.id ?? ''),
+    });
+    const sessions = terminalSessionsByScope.get(scopeKey) ?? [];
+    terminalSessionsByScope.set(scopeKey, sessions.map((session) =>
+      session.id === String(params.terminalSessionId ?? '')
+        ? {
+            ...session,
+            status: 'closed',
+            ended_at: VISUAL_TEST_REFERENCE_NOW_ISO,
+            close_reason: 'user_closed',
+          }
+        : session,
+    ));
+    return HttpResponse.json(null, { status: 204 });
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/messages', ({ params }) => {
     const taskId = params.id as string;

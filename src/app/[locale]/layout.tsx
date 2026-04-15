@@ -1,13 +1,7 @@
 import { notFound } from "next/navigation";
+import type { AbstractIntlMessages } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
-import { NextIntlClientProvider } from "next-intl";
-import { QueryProvider } from "@/components/providers/QueryProvider";
-import { MSWProvider } from "@/components/providers/MSWProvider";
-import { AuthProvider } from "@/components/providers/AuthProvider";
-import { RealtimeProvider } from "@/components/providers/RealtimeProvider";
-import { SessionRecoveryProvider } from "@/components/providers/SessionRecoveryProvider";
-import { ThemeProvider } from "@/components/providers/ThemeProvider";
-import { ToastContainer } from "@/components/ui/toast";
+import { AppRootProviders } from "@/components/providers/AppRootProviders";
 import { type Locale } from "@/lib/i18n/config";
 import { routing } from "@/lib/i18n/routing";
 
@@ -30,7 +24,7 @@ export default async function LocaleLayout({
 
   setRequestLocale(locale);
 
-  let messages;
+  let messages: AbstractIntlMessages;
   try {
     messages = await getMessages();
   } catch {
@@ -38,23 +32,8 @@ export default async function LocaleLayout({
   }
 
   return (
-    <AuthProvider>
-      <MSWProvider>
-        <RealtimeProvider mode="disabled">
-          <QueryProvider>
-            <SessionRecoveryProvider>
-              <NextIntlClientProvider locale={locale} messages={messages}>
-                <ThemeProvider>
-                  <div data-testid="page-layout" className="h-full">
-                    {children}
-                  </div>
-                  <ToastContainer />
-                </ThemeProvider>
-              </NextIntlClientProvider>
-            </SessionRecoveryProvider>
-          </QueryProvider>
-        </RealtimeProvider>
-      </MSWProvider>
-    </AuthProvider>
+    <AppRootProviders locale={locale} messages={messages}>
+      {children}
+    </AppRootProviders>
   );
 }

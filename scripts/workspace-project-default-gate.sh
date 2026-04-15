@@ -8,11 +8,16 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-gate-ports.sh"
 source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 WITH_REAL_LANE=0
+SKIP_SHARED_PREFLIGHT=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --with-backend-real)
       WITH_REAL_LANE=1
+      shift
+      ;;
+    --skip-shared-preflight)
+      SKIP_SHARED_PREFLIGHT=1
       shift
       ;;
     *)
@@ -29,11 +34,16 @@ run_cmd() {
   (cd "${ROOT_DIR}" && eval "$*")
 }
 
-next_generated_root_prepare_for_validation
+if [[ "${SKIP_SHARED_PREFLIGHT}" != "1" ]]; then
+  next_generated_root_prepare_for_validation
 
-run_cmd "npm run contracts:check"
-run_cmd "npm run contracts:check-openapi"
-run_cmd "npm run openapi:check-generated"
+  run_cmd "npm run contracts:check"
+  run_cmd "npm run contracts:check-openapi"
+  run_cmd "npm run openapi:check-generated"
+  run_cmd "npx next typegen ."
+  run_cmd "npx tsc --noEmit"
+fi
+
 run_cmd "npm run test:client-public-runtime"
 run_cmd "npm run test:demo-rendered-env"
 run_cmd "npx eslint \
@@ -46,10 +56,8 @@ run_cmd "npx eslint \
   'src/components/projects/CreateProjectDialog.tsx' \
   'src/components/system/SystemWorkspacesPage.tsx' \
   'src/lib/system-admin/**/*.ts' \
-  'packages/api-entry-node/src/project-workspace-governance-routes.ts' \
+    'packages/api-entry-node/src/project-workspace-governance-routes.ts' \
   'packages/api-entry-node/src/workspace-registry.ts'"
-run_cmd "npx next typegen ."
-run_cmd "npx tsc --noEmit"
 run_cmd "npm run test:member-isolation:default"
 
 run_cmd "npm run test:run -- \

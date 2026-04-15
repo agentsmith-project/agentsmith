@@ -462,6 +462,16 @@ is_transient_playwright_failure() {
     'ERR_CONNECTION_REFUSED|ERR_EMPTY_RESPONSE|ECONNRESET|EPIPE|socket hang up|Target closed' \
     "${LAST_PLAYWRIGHT_LOG}"
 }
+
+is_visual_baseline_run() {
+  local arg
+  for arg in "$@"; do
+    if [[ "${arg}" == "e2e/visual.spec.ts" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
 cleanup_stale_mock_processes
 start_mock_server
 write_visual_build_info
@@ -469,6 +479,9 @@ write_visual_build_info
 attempt=1
 while [[ "${attempt}" -le "${MAX_ATTEMPTS}" ]]; do
   if run_playwright_once "$@"; then
+    if is_visual_baseline_run "$@"; then
+      (cd "${ROOT_DIR}" && npx tsx scripts/governance/write-visual-baseline-reviews.ts)
+    fi
     RUN_SUCCEEDED=1
     exit 0
   fi

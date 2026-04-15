@@ -31,6 +31,35 @@ function forbidMatch(content: string, pattern: RegExp, message: string, failures
   }
 }
 
+function assertReleaseCampaignEntrypointSurface(
+  content: string,
+  owner: string,
+  failures: string[],
+): void {
+  requireMatch(
+    content,
+    /npm run release:campaign:full/,
+    `${owner} must point release-grade execution to npm run release:campaign:full`,
+    failures,
+  );
+  requireMatch(
+    content,
+    /RELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full/,
+    `${owner} must show gate:release:full only with explicit campaign context`,
+    failures,
+  );
+  forbidMatch(
+    content,
+    /(?:^|\n)\s*(?:-\s*)?`npm run gate:release:full`\s*(?:\n|$)|(?:^|\n)```bash\s*\n\s*npm run gate:release:full\s*\n```/m,
+    `${owner} must not present bare npm run gate:release:full as a copyable release entrypoint`,
+    failures,
+  );
+}
+
+function countMatches(content: string, pattern: RegExp): number {
+  return [...content.matchAll(pattern)].length;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -99,14 +128,19 @@ const readme = read('README.md');
 const development = read('DEVELOPMENT.md');
 const governanceModel = read('docs/current-engineering-governance-model.md');
 const gateContract = read('docs/contracts/current-gate-manifest-contract.md');
+const notebookCodexRunbook = read('docs/notebook-codex-runbook.md');
+const verificationCampaigns = read('docs/testing/verification-campaigns-v1.md');
 const workspaceDefaultChecklist = read('docs/user-guides/workspace-project-default-engineering-gate-checklist.md');
 const governanceDefaultChecklist = read('docs/user-guides/governance-default-engineering-gate-checklist.md');
 const releaseChecklist = read('docs/user-guides/release-readiness-checklist.md');
+const defaultGateScript = read('scripts/default-gate.sh');
 const workspaceDefaultGate = read('scripts/workspace-project-default-gate.sh');
 const governanceDefaultGate = read('scripts/governance-default-gate.sh');
 const backendRealRun = read('scripts/backend-real-run.sh');
 const backendRealFullGate = read('scripts/backend-real-full-gate.sh');
 const integrationE2EFull = read('scripts/run-integration-e2e-full.sh');
+const releaseFullAggregateGate = read('scripts/release-full-aggregate-gate.sh');
+const releaseFullCampaign = read('scripts/release-full-campaign.sh');
 
 const failures: string[] = [];
 const workflowJobNames = collectWorkflowJobNames(workflow);
@@ -154,6 +188,17 @@ for (const command of listCurrentWorkflowCommands()) {
   }
 }
 
+const releaseCampaignWorkflow = listCurrentWorkflowCommands()
+  .find((command) => command.npmScript === 'release:campaign:full');
+const releaseFullAggregateWorkflow = listCurrentWorkflowCommands()
+  .find((command) => command.npmScript === 'gate:release:full');
+if (releaseCampaignWorkflow?.command !== 'npm run release:campaign:full') {
+  failures.push('workflow command surface must define npm run release:campaign:full as the official full release entrypoint');
+}
+if (releaseFullAggregateWorkflow?.command !== 'RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full') {
+  failures.push('workflow command surface must show gate:release:full as an aggregate-only terminal verifier with explicit campaign context');
+}
+
 const gateDefault = findCurrentGateDefinitionById('gate-default');
 const laneVisual = findCurrentGateDefinitionById('lane-visual');
 const testVisual = findCurrentGateDefinitionById('visual-lane-command');
@@ -162,11 +207,29 @@ const backendRealCore = findCurrentGateDefinitionById('lane-backend-real-core');
 const laneDemoRehearsal = findCurrentGateDefinitionById('lane-demo-rehearsal');
 const laneClusterRehearsal = findCurrentGateDefinitionById('lane-cluster-rehearsal');
 const gateReleaseFull = findCurrentGateDefinitionById('gate-release-full');
+const laneMock = findCurrentGateDefinitionById('lane-mock');
 
-if (!gateDefault || !laneVisual || !testVisual || !testBackendRealCore || !backendRealCore || !laneDemoRehearsal || !laneClusterRehearsal || !gateReleaseFull) {
+if (!gateDefault || !laneVisual || !testVisual || !testBackendRealCore || !backendRealCore || !laneDemoRehearsal || !laneClusterRehearsal || !gateReleaseFull || !laneMock) {
   failures.push('current gate manifest is missing required default/visual/backend-real/rehearsal definitions');
 }
 
+requireMatch(defaultGateScript, /npm run contracts:check[\s\S]*npm run contracts:check-openapi[\s\S]*npm run openapi:check-generated[\s\S]*npx next typegen \.[\s\S]*npx tsc --noEmit/, 'default gate must run shared repo preflight exactly once before domain gates', failures);
+for (const [command, pattern] of [
+  ['npm run contracts:check', /npm run contracts:check(?!-openapi)/g],
+  ['npm run contracts:check-openapi', /npm run contracts:check-openapi/g],
+  ['npm run openapi:check-generated', /npm run openapi:check-generated/g],
+  ['npx next typegen .', /npx next typegen \./g],
+  ['npx tsc --noEmit', /npx tsc --noEmit/g],
+] as const) {
+  const count = countMatches(defaultGateScript, pattern);
+  if (count !== 1) {
+    failures.push(`default gate must run shared preflight command exactly once: ${command} (found ${count})`);
+  }
+}
+requireMatch(defaultGateScript, /workspace-project-default-gate\.sh --skip-shared-preflight/, 'default gate must delegate workspace-project domain checks with shared preflight skipped', failures);
+requireMatch(defaultGateScript, /governance-default-gate\.sh --skip-shared-preflight/, 'default gate must delegate governance domain checks with shared preflight skipped', failures);
+requireMatch(workspaceDefaultGate, /--skip-shared-preflight/, 'workspace-project default gate must expose --skip-shared-preflight for gate:default dedupe', failures);
+requireMatch(governanceDefaultGate, /--skip-shared-preflight/, 'governance default gate must expose --skip-shared-preflight for gate:default dedupe', failures);
 requireMatch(workspaceDefaultGate, /e2e\/visual\.spec\.ts[\s\S]*--project=visual[\s\S]*--grep /, 'workspace-project default gate must keep targeted visual coverage with --grep', failures);
 requireMatch(governanceDefaultGate, /e2e\/visual\.spec\.ts[\s\S]*--project=visual[\s\S]*--grep /, 'governance default gate must keep targeted visual coverage with --grep', failures);
 forbidMatch(workspaceDefaultGate, /npm run test:visual/, 'workspace-project default gate must not delegate to the full visual lane', failures);
@@ -174,8 +237,20 @@ forbidMatch(governanceDefaultGate, /npm run test:visual/, 'governance default ga
 requireMatch(workspaceDefaultGate, /source "\$\{ROOT_DIR\}\/scripts\/lib\/backend-real-gate-ports\.sh"/, 'workspace-project default gate must source backend-real-gate-ports when backend-real is enabled', failures);
 requireMatch(workspaceDefaultGate, /cleanup_gate_ports "\$\{real_api_port\}" "\$\{real_web_port\}" "\$\{real_spec\}"/, 'workspace-project default gate must clean stale backend-real ports before running integration-minimal', failures);
 
-requireMatch(backendRealFullGate, /npm run gate:default/, 'backend-real full gate must continue to include gate:default before release verification', failures);
+forbidMatch(backendRealFullGate, /npm run gate:default/, 'backend-real release lane must not rerun gate:default; release campaign owns that ordering', failures);
 requireMatch(backendRealFullGate, /npm run test:visual:backend-real:review/, 'backend-real full gate must keep backend-real visual review as a release-only evidence step', failures);
+requireMatch(releaseFullAggregateGate, /run-release-full-aggregate\.ts/, 'gate:release:full adapter must be aggregate-only and execute run-release-full-aggregate.ts', failures);
+requireMatch(releaseFullAggregateGate, /run-release-full-aggregate\.ts "\$@"/, 'gate:release:full adapter must pass operator flags through to the terminal aggregate verifier', failures);
+requireMatch(releaseFullCampaign, /run-current-verification-campaign\.ts release-full/, 'release:campaign:full adapter must execute the release-full campaign runner', failures);
+forbidMatch(packageJson.scripts?.['gate:release:full'] ?? '', /npm run gate:release|npm run lane:visual|npm run lane:demo-rehearsal|npm run lane:cluster-rehearsal/, 'gate:release:full package adapter must not rerun release campaign steps', failures);
+for (const scriptName of ['lane:visual', 'lane:demo-rehearsal', 'lane:cluster-rehearsal'] as const) {
+  requireMatch(
+    packageJson.scripts?.[scriptName] ?? '',
+    /scripts\/run-current-gate-result-wrapped\.sh/,
+    `${scriptName} must route standalone execution through the canonical result writer wrapper`,
+    failures,
+  );
+}
 requireMatch(backendRealRun, /cleanup_gate_ports 20040 3041 e2e\/integration-minimal\.spec\.ts/, 'backend-real-run must clean stale ports before the external default backend-real lane', failures);
 requireMatch(backendRealRun, /cleanup_gate_ports 20060 3061 e2e\/integration-system-notebook-default\.spec\.ts/, 'backend-real-run must clean stale ports before the notebook backend-real smoke lane', failures);
 requireMatch(backendRealRun, /cleanup_gate_ports 20064 3065 e2e\/integration-chat-llm-runner\.spec\.ts/, 'backend-real-run must clean stale ports before the external chat runner backend-real lane', failures);
@@ -238,7 +313,11 @@ requireMatch(releaseChecklist, /npm run gate:default/, 'release checklist must r
 requireMatch(releaseChecklist, /npm run lane:visual/, 'release checklist must require npm run lane:visual', failures);
 requireMatch(releaseChecklist, /npm run lane:demo-rehearsal/, 'release checklist must require npm run lane:demo-rehearsal', failures);
 requireMatch(releaseChecklist, /npm run lane:cluster-rehearsal/, 'release checklist must require npm run lane:cluster-rehearsal', failures);
-requireMatch(releaseChecklist, /npm run gate:release:full/, 'release checklist must define npm run gate:release:full as the full release command', failures);
+requireMatch(releaseChecklist, /npm run release:campaign:full/, 'release checklist must define npm run release:campaign:full as the official full release entrypoint', failures);
+requireMatch(releaseChecklist, /RELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full/, 'release checklist must describe gate:release:full as an aggregate-only terminal verifier with explicit campaign context', failures);
+forbidMatch(releaseChecklist, /gate:release:full as the full release command/, 'release checklist must not describe gate:release:full as the full release command', failures);
+assertReleaseCampaignEntrypointSurface(notebookCodexRunbook, 'notebook codex runbook', failures);
+assertReleaseCampaignEntrypointSurface(verificationCampaigns, 'verification campaigns guide', failures);
 requireMatch(releaseChecklist, /does not run the full visual lane|不能被 `gate:default` 代替/, 'release checklist must explain that gate:default does not run the full visual lane', failures);
 requireMatch(releaseChecklist, /visual_scene_catalog/, 'release checklist must identify visual_scene_catalog as a required release evidence kind', failures);
 requireMatch(releaseChecklist, /ux_trace_bundle/, 'release checklist must identify ux_trace_bundle as a required release evidence kind', failures);

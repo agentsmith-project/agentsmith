@@ -1,10 +1,18 @@
+import { execFileSync } from 'node:child_process';
+import {
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadStoryDefinition } from '../e2e/story-loader';
 import {
   groupVisualBaselineCatalogByScenario,
   listVisualBaselineCatalogEntries,
+  parseVisualBaselineBuildRecord,
   renderVisualBaselineScenarioReviewMarkdown,
   resolveVisualBaselineStoryEvidence,
   resolveVisualBaselineStableMarkers,
@@ -43,6 +51,38 @@ describe('visual baseline support', () => {
       expect(entry.storySourceFile).toMatch(/^e2e\/stories\/mock-lane\//);
       expect(entry.storySceneId.length).toBeGreaterThan(0);
     }
+  });
+
+  it('models desktop-auth-request visual truth as public missing-link recovery, not an authenticated handoff', async () => {
+    const story = await loadStoryDefinition('mock-lane-entry-access');
+    const scene = story.scenes.find((entry) => entry.sceneId === 'desktop-auth-request');
+    const visualScene = story.runtimeData?.visualReview?.scenes.find((entry) => entry.sceneId === 'desktop-auth-request');
+    const grouped = groupVisualBaselineCatalogByScenario();
+    const scenario = grouped.get('desktop-auth-request');
+
+    expect(scene).toMatchObject({
+      route: '/en-US/desktop/auth/request',
+      authLane: 'public',
+      stableMarkers: ['desktop-auth-request__title'],
+    });
+    expect(visualScene).toMatchObject({
+      scenarioId: 'desktop-auth-request',
+      authLane: 'public',
+      scenario: expect.stringContaining('missing-link'),
+    });
+    expect(scenario).toMatchObject({
+      route: '/en-US/desktop/auth/request',
+      authLane: 'public',
+      recipeFamily: 'public_auth_split',
+    });
+  });
+
+  it('keeps visual auth lane metadata explicit and outlaws legacy auth booleans in visual specs', async () => {
+    const visualSpec = await readFile(path.resolve('e2e/visual.spec.ts'), 'utf-8');
+
+    expect(visualSpec).toContain('requireMockVisualRuntime');
+    expect(visualSpec).toContain('ensureVisualMockAuth');
+    expect(visualSpec).not.toContain('requiresMockAuthLane');
   });
 
   it('groups paired light/dark screenshots under the same scenario record', () => {
@@ -92,6 +132,7 @@ describe('visual baseline support', () => {
     expect(markdown).toContain('- build_run_id: run-20260412-001');
     expect(markdown).toContain('- build_git_sha: abc123');
     expect(markdown).toContain('- build_fingerprint: abc123:mock-lane:visual');
+    expect(markdown).toContain('- build_started_at: 2026-04-12T11:59:00.000Z');
     expect(markdown).toContain('- story_evidence_policy: required');
     expect(markdown).toContain('- story_evidence_kind: visual_scene_catalog');
     expect(markdown).toContain('- story_evidence_owner: lane:visual');
@@ -519,6 +560,111 @@ describe('visual baseline support', () => {
     );
   });
 
+  it('parses the visual build metadata file using the snake_case on-disk schema', () => {
+    expect(parseVisualBaselineBuildRecord({
+      lane: 'mock-lane',
+      run_id: 'run-20260412-001',
+      git_sha: 'abc123',
+      fingerprint: 'fingerprint-001',
+      started_at: '2026-04-12T11:59:00.000Z',
+      base_url: 'http://127.0.0.1:3001',
+    })).toEqual({
+      lane: 'mock-lane',
+      runId: 'run-20260412-001',
+      gitSha: 'abc123',
+      fingerprint: 'fingerprint-001',
+      startedAt: '2026-04-12T11:59:00.000Z',
+    });
+  });
+
+  it('rejects missing or camelCase-only visual build metadata instead of silently omitting review metadata', () => {
+    expect(() => parseVisualBaselineBuildRecord({
+      lane: 'mock-lane',
+      run_id: 'run-20260412-001',
+      git_sha: 'abc123',
+      fingerprint: 'fingerprint-001',
+    }, 'fixture-build-info.json')).toThrow(/started_at/);
+
+    expect(() => parseVisualBaselineBuildRecord({
+      lane: 'mock-lane',
+      runId: 'run-20260412-001',
+      gitSha: 'abc123',
+      fingerprint: 'fingerprint-001',
+      startedAt: '2026-04-12T11:59:00.000Z',
+    }, 'fixture-build-info.json')).toThrow(/run_id/);
+  });
+
+  it('writes review artifacts with required visual build metadata from the snake_case build info file', () => {
+    const tempRoot = mkdtempSync(path.join(tmpdir(), 'visual-review-writer-'));
+    const buildInfoPath = path.join(tempRoot, 'visual-build-info.json');
+    const outputRoot = path.join(tempRoot, 'reviews');
+    const runId = 'run-20260412-001';
+    writeFileSync(buildInfoPath, `${JSON.stringify({
+      lane: 'mock-lane',
+      run_id: runId,
+      git_sha: 'abc123',
+      fingerprint: 'fingerprint-001',
+      started_at: '2026-04-12T11:59:00.000Z',
+    }, null, 2)}\n`);
+
+    execFileSync('npx', ['tsx', 'scripts/governance/write-visual-baseline-reviews.ts'], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MOCK_RUN_ID: runId,
+        VISUAL_BASELINE_BUILD_INFO_FILE: buildInfoPath,
+        VISUAL_BASELINE_REVIEW_ROOT: outputRoot,
+      },
+      stdio: 'pipe',
+    });
+
+    const review = readFileSync(
+      path.join(outputRoot, runId, 'desktop-auth-complete', 'review.md'),
+      'utf8',
+    );
+    expect(review).toContain('- build_run_id: run-20260412-001');
+    expect(review).toContain('- build_git_sha: abc123');
+    expect(review).toContain('- build_fingerprint: fingerprint-001');
+    expect(review).toContain('- build_started_at: 2026-04-12T11:59:00.000Z');
+  });
+
+  it('fails the review writer when an explicit build info file is incomplete', () => {
+    const tempRoot = mkdtempSync(path.join(tmpdir(), 'visual-review-writer-invalid-'));
+    const buildInfoPath = path.join(tempRoot, 'visual-build-info.json');
+    writeFileSync(buildInfoPath, `${JSON.stringify({
+      lane: 'mock-lane',
+      run_id: 'run-20260412-001',
+      git_sha: 'abc123',
+      fingerprint: 'fingerprint-001',
+    }, null, 2)}\n`);
+
+    expect(() => execFileSync('npx', ['tsx', 'scripts/governance/write-visual-baseline-reviews.ts'], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MOCK_RUN_ID: 'run-20260412-001',
+        VISUAL_BASELINE_BUILD_INFO_FILE: buildInfoPath,
+        VISUAL_BASELINE_REVIEW_ROOT: path.join(tempRoot, 'reviews'),
+      },
+      stdio: 'pipe',
+    })).toThrow();
+  });
+
+  it('fails the review writer when the required build info env is missing', () => {
+    const tempRoot = mkdtempSync(path.join(tmpdir(), 'visual-review-writer-missing-env-'));
+    const { VISUAL_BASELINE_BUILD_INFO_FILE: _omitted, ...envWithoutBuildInfo } = process.env;
+
+    expect(() => execFileSync('npx', ['tsx', 'scripts/governance/write-visual-baseline-reviews.ts'], {
+      cwd: process.cwd(),
+      env: {
+        ...envWithoutBuildInfo,
+        MOCK_RUN_ID: 'run-20260412-001',
+        VISUAL_BASELINE_REVIEW_ROOT: path.join(tempRoot, 'reviews'),
+      },
+      stdio: 'pipe',
+    })).toThrow();
+  });
+
   it('forces the mock lane to write explicit visual build metadata before Playwright starts', async () => {
     const script = await readFile('scripts/run-mock-lane-playwright.sh', 'utf-8');
 
@@ -526,6 +672,19 @@ describe('visual baseline support', () => {
     expect(script).toContain('write_visual_build_info');
     expect(script).toContain('VISUAL_BASELINE_BUILD_INFO_FILE');
     expect(script).toContain('VISUAL_BASELINE_BUILD_FINGERPRINT');
+    expect(script).toContain('"run_id":');
+    expect(script).toContain('"git_sha":');
+    expect(script).toContain('"started_at":');
+  });
+
+  it('publishes canonical lane-visual result and review evidence artifacts from CI', async () => {
+    const workflow = await readFile('.github/workflows/quality-gates.yml', 'utf-8');
+
+    expect(workflow).toContain('name: lane-visual-artifacts');
+    expect(workflow).toContain('artifacts/gate-results/lane-visual/**');
+    expect(workflow).toContain('artifacts/visual-baseline-reviews/**');
+    expect(workflow).toContain('test-results/**');
+    expect(workflow).toContain('playwright-report/**');
   });
 
   it('links every visual scene back to the lane:visual story-evidence policy', () => {

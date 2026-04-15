@@ -23,13 +23,29 @@ Canonical entrypoint rule:
 - structured execution target fidelity lives in `npmScript`, optional `ciJob`, and manifest `executionTargets`, not in scattered prose.
 - free-form `command` is an operator hint for humans and generated command blocks, not enforcement truth.
 
+Plain-language glossary:
+- `e2e`: a testing method. It means walking a complete user flow, usually with Playwright in this repo. It is not a gate or a lane.
+- `lane`: a verification channel. It says which truth path is being used, such as mock, full visual, backend-real, or deployment rehearsal.
+- `gate`: an acceptance point. It gives the formal pass/fail verdict for one engineering tier.
+- `campaign`: a group of verification actions for one goal, such as release-grade verification. It consumes gates and lanes; it is not a second gate truth.
+- `diagnostic`: a focused command or lane used to locate a problem. It helps fix the issue but does not replace the owning gate.
+- `verdict`: the formal conclusion for a layer. A verdict must include required evidence completeness when the owning gate or lane declares evidence.
+
+Workflow role model:
+- `scripts/governance/current-workflow-manifest.ts` classifies command surfaces as `environment_setup`, `diagnostic`, `diagnostic_lane`, `evidence_lane`, `gate_verdict`, `terminal_gate_verdict`, or `release_operation`.
+- `lane:mock` uses stable gate id `lane-mock`, but its workflow role is still diagnostic lane surface. It is useful for mock-channel diagnosis, but it is not release evidence and does not replace `gate:default`.
+- `release:campaign:full` is the official one-shot release campaign launcher. It orchestrates required gates, evidence lanes, rehearsal lanes, and the terminal aggregate verdict.
+- `gate:release:full` is aggregate-only. It should be used only with explicit campaign context, such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>`, and must not be described as a suite launcher or daily release entrypoint.
+- `gate:release:full` recomputes required release evidence from the current verification campaign manifest. It must not trust stale `evidence.json.required_paths` from an older campaign shape.
+
 Current gate truth:
 - `scripts/governance/current-gate-manifest.ts` is the machine-readable source for stable gate ids, gate composition, visual ownership, backend-real ownership, and CI/checklist alignment.
 - story evidence is part of current gate truth, not a release-only prose convention.
 - `visual_scene_catalog` is the machine-readable evidence kind owned by `test:visual` / `lane:visual`, with scene linkage defined in `e2e/visual-baseline-support.ts`.
 - `ux_trace_bundle` is the machine-readable evidence kind owned by both default-tier and release-tier backend-real commands:
   - `test:backend-real:core` / `lane:backend-real:core` own default-tier daily/self-service trace bundles under `artifacts/backend-real/runs/<run-id>/ux-traces`
-  - `gate:release` / `lane:backend-real:release` own release-grade trace bundles under `artifacts/backend-real-visual/<run-id>/ux-traces`
+  - standalone `gate:release` / `lane:backend-real:release` runs own release-grade trace bundles under `artifacts/backend-real-visual/<run-id>/ux-traces`
+  - official `release:campaign:full` runs own release-grade trace bundles under `<campaign-root>/gate-release/backend-real-visual/ux-traces`
 - missing story evidence is blocking only for the tiers declared in `storyEvidenceRequiredFor`; this rule is machine-readable and must not live only in prose.
 - `scripts/governance/current-gate-result-schema.ts` is the machine-readable source for canonical `result.json` output, gate-level `failure_class`, and the currently registered backend-real runtime result writers.
 - for gate/lane pairs registered in `scripts/governance/current-gate-result-schema.ts`, canonical gate-result artifact location is `<evidence_dir>/result.json`; fixed `current/result.json` paths are not valid governance truth.
@@ -41,7 +57,7 @@ Current gate truth:
 Verification governance rules:
 - Focused `测试` commands and targeted `验证通道` runs are diagnosis paths used to localize failures, verify one subsystem, or regenerate one evidence family.
 - Stable engineering acceptance still comes from the machine-readable gate ids in `scripts/governance/current-gate-manifest.ts`; focused reruns never replace the final gate verdict they support.
-- `gate:fast`, `gate:default`, and `gate:release` are authoritative gate verdict surfaces for their tiers, and `gate:release:full` is the terminal automated release-grade verdict.
+- `gate:fast`, `gate:default`, and `gate:release` are authoritative gate verdict surfaces for their tiers. `release:campaign:full` is the release-grade execution entrypoint, and `gate:release:full` is the terminal aggregate verifier inside or after an explicit campaign context.
 - `lane:visual` and `lane:backend-real:release` remain authoritative evidence-owning lanes for full visual review and release-grade backend-real evidence, but they do not replace the final release verdict.
 - For any gate or lane that owns required machine-readable evidence, `command passed` and evidence completeness are same-level acceptance conditions. Missing required review artifacts, missing `visual_scene_catalog`, or missing required `ux_trace_bundle` output is a failure, not a soft warning.
 - Where a current result writer is registered in `scripts/governance/current-gate-result-schema.ts`, evidence completeness also requires canonical `<evidence_dir>/result.json`.
@@ -158,7 +174,7 @@ npm run test:notebook:backend-real:smoke
 npm run gate:fast
 npm run gate:default
 npm run gate:release
-npm run gate:release:full
+RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full
 ```
 
 ### 验证通道
@@ -180,6 +196,7 @@ npm run backend-real:bootstrap
 npm run backend-real:ready
 npm run backend-real:run
 npm run backend-real:report
+npm run release:campaign:full
 ```
 <!-- current-workflow:governance-model:end -->
 

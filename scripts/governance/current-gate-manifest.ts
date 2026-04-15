@@ -43,6 +43,7 @@ export type CurrentGateExecutionTarget =
 export interface CurrentGateDefinition {
   id: string;
   npmScript: string;
+  adapterAliases: readonly string[];
   command: string;
   executionTargets: readonly CurrentGateExecutionTarget[];
   description: string;
@@ -62,16 +63,25 @@ export interface CurrentGateDefinition {
 function defineCurrentGate(
   definition: Omit<
     CurrentGateDefinition,
-    'storyEvidencePolicy' | 'storyEvidenceKinds' | 'storyEvidenceArtifacts' | 'storyEvidenceRequiredFor'
+    | 'adapterAliases'
+    | 'storyEvidencePolicy'
+    | 'storyEvidenceKinds'
+    | 'storyEvidenceArtifacts'
+    | 'storyEvidenceRequiredFor'
   > &
     Partial<
       Pick<
         CurrentGateDefinition,
-        'storyEvidencePolicy' | 'storyEvidenceKinds' | 'storyEvidenceArtifacts' | 'storyEvidenceRequiredFor'
+        | 'adapterAliases'
+        | 'storyEvidencePolicy'
+        | 'storyEvidenceKinds'
+        | 'storyEvidenceArtifacts'
+        | 'storyEvidenceRequiredFor'
       >
     >,
 ): CurrentGateDefinition {
   return {
+    adapterAliases: [],
     storyEvidencePolicy: 'none',
     storyEvidenceKinds: [],
     storyEvidenceArtifacts: [],
@@ -104,6 +114,19 @@ function npxCommandTarget(command: string, args: readonly string[] = []): Curren
 }
 
 export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
+  defineCurrentGate({
+    id: 'lane-mock',
+    npmScript: 'lane:mock',
+    adapterAliases: ['test:e2e'],
+    command: 'npm run test:e2e',
+    executionTargets: [npmScriptTarget('test:e2e')],
+    description: 'run the mock diagnostic verification channel',
+    kind: 'lane',
+    visualPolicy: 'none',
+    backendRealPolicy: 'none',
+    checklistDocs: ['docs/testing/diagnostic-catalog-v1.md'],
+    requiredFor: [],
+  }),
   defineCurrentGate({
     id: 'workspace-project-default',
     npmScript: 'test:default-e2e',
@@ -195,11 +218,8 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
   defineCurrentGate({
     id: 'gate-default',
     npmScript: 'gate:default',
-    command: 'npm run test:default-e2e && npm run test:governance',
-    executionTargets: [
-      npmScriptTarget('test:default-e2e'),
-      npmScriptTarget('test:governance'),
-    ],
+    command: 'bash scripts/default-gate.sh',
+    executionTargets: [shellScriptTarget('scripts/default-gate.sh')],
     description: 'run the default engineering gate without the full visual lane',
     kind: 'gate',
     visualPolicy: 'targeted',
@@ -330,14 +350,9 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
   defineCurrentGate({
     id: 'gate-release-full',
     npmScript: 'gate:release:full',
-    command: 'npm run gate:release && npm run lane:visual && npm run lane:demo-rehearsal && npm run lane:cluster-rehearsal',
-    executionTargets: [
-      npmScriptTarget('gate:release'),
-      npmScriptTarget('lane:visual'),
-      npmScriptTarget('lane:demo-rehearsal'),
-      npmScriptTarget('lane:cluster-rehearsal'),
-    ],
-    description: 'run the full release gate including visual and both deployment rehearsals',
+    command: 'bash scripts/release-full-aggregate-gate.sh',
+    executionTargets: [shellScriptTarget('scripts/release-full-aggregate-gate.sh')],
+    description: 'evaluate the aggregate automated release-grade verdict from release campaign results',
     kind: 'gate',
     visualPolicy: 'full',
     backendRealPolicy: 'required',
@@ -366,7 +381,8 @@ export function listCurrentGateDefinitionsByKind(kind: CurrentGateKind): readonl
 
 export function findCurrentGateDefinition(npmScript: string): CurrentGateDefinition | undefined {
   return findCurrentGateDefinitionById(npmScript)
-    ?? CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === npmScript);
+    ?? CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === npmScript)
+    ?? CURRENT_GATE_MANIFEST.find((definition) => definition.adapterAliases.includes(npmScript));
 }
 
 export function findCurrentGateDefinitionById(id: string): CurrentGateDefinition | undefined {

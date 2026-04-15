@@ -8,8 +8,8 @@
  * Update baselines: npx playwright test e2e/visual.spec.ts --project=visual --update-snapshots
  */
 
-import { test as base, expect, type Page } from '@playwright/test';
-import { ensureAuthenticatedSession, withAuth } from './fixtures/authenticated';
+import { test as base, expect, type Locator, type Page } from '@playwright/test';
+import { ensureAuthenticatedSession, readMockAuthTokenFromContext, withAuth } from './fixtures/authenticated';
 import { gotoAndWait, waitForPageReady } from './utils/navigation';
 import { setVisualTheme, themedScreenshotName, VISUAL_THEMES } from './utils/visual-theme';
 import { resolveVisualBaselineStableMarkers } from './visual-baseline-support';
@@ -17,6 +17,7 @@ import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 
 const WS_ID = 'ws_default';
 const PROJECT_ID = 'proj_001';
+type VisualAuthLane = 'public' | 'mock_auth' | 'guest' | 'system_admin' | 'authed';
 
 const test = base.extend<{ authedPage: Page; guestPage: Page }>({
   authedPage: async ({ page }, use) => {
@@ -186,6 +187,24 @@ async function waitForStableRecipeMarkers(page: Page, scenarioId: string) {
   }
 }
 
+async function waitForNotebookTerminalTruthReady(page: Page) {
+  await expect(page.getByTestId('notebook__task-header')).toHaveAttribute('data-terminal-truth-state', 'ready', {
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId('notebook__task-terminal-truth-unavailable')).toHaveCount(0);
+}
+
+async function expectLocatorWithinViewport(page: Page, locator: Locator) {
+  const [box, viewport] = await Promise.all([
+    locator.boundingBox(),
+    page.viewportSize(),
+  ]);
+  expect(box).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height);
+}
+
 async function resetPublicVisualState(page: Page) {
   await page.context().clearCookies().catch(() => {});
   await page.evaluate(() => {
@@ -194,17 +213,66 @@ async function resetPublicVisualState(page: Page) {
   }).catch(() => {});
 }
 
-async function requireMockVisualAuthLane(page: Page, bootstrapPath = `/en-US/workspaces/${WS_ID}/projects`) {
+async function requireMockVisualRuntime(page: Page) {
   await stableNavigate(page, '/en-US/login/workspace');
   const useMsw = await page.evaluate(
     () => window.__MBOS_PUBLIC_RUNTIME_CONFIG__?.useMsw ?? false,
   ).catch(() => false);
-  test.skip(!useMsw, 'Mock-auth visual pages require NEXT_PUBLIC_USE_MSW=true.');
+  test.skip(!useMsw, 'Mock visual pages require NEXT_PUBLIC_USE_MSW=true.');
+}
+
+async function ensureVisualMockAuth(
+  page: Page,
+  options: {
+    bootstrapPath?: string;
+    wsId?: string;
+    userEmail?: string;
+    userId?: string;
+  } = {},
+) {
+  const wsId = options.wsId ?? WS_ID;
+  const userEmail = options.userEmail ?? 'test@example.com';
+  const userId = options.userId ?? 'user_001';
+  const bootstrapPath = options.bootstrapPath ?? `/en-US/workspaces/${wsId}/projects`;
+
+  await requireMockVisualRuntime(page);
+  const seed = await withAuth(page, wsId, userEmail, userId);
   await ensureAuthenticatedSession(page, bootstrapPath, {
-    wsId: WS_ID,
-    userEmail: 'test@example.com',
-    userId: 'user_001',
+    wsId,
+    userEmail,
+    userId,
   });
+  return seed;
+}
+
+async function prepareVisualAuthLane(
+  page: Page,
+  authLane: VisualAuthLane,
+  options: {
+    bootstrapPath?: string;
+    wsId?: string;
+    userEmail?: string;
+    userId?: string;
+  } = {},
+) {
+  if (authLane === 'public') {
+    await resetPublicVisualState(page);
+    return;
+  }
+  if (authLane === 'system_admin') {
+    return;
+  }
+  if (authLane === 'guest') {
+    await ensureVisualMockAuth(page, {
+      ...options,
+      userEmail: options.userEmail ?? 'guest@example.com',
+      userId: options.userId ?? 'user_009',
+    });
+    return;
+  }
+  if (authLane === 'mock_auth' || authLane === 'authed') {
+    await ensureVisualMockAuth(page, options);
+  }
 }
 
 // ─── Workspace Pages ────────────────────────────────────────────────────────
@@ -430,11 +498,13 @@ test.describe('Visual - Project Pages', () => {
   test('notebook task detail', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('notebook/tasks/task_001'));
     await expect(authedPage.getByTestId('notebook__task-header')).toBeVisible();
+    await waitForNotebookTerminalTruthReady(authedPage);
     await expect(authedPage).toHaveScreenshot('notebook-task-detail.png', { fullPage: true });
   });
 
   test('notebook task detail - artifact hover', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('notebook/tasks/task_001'));
+    await waitForNotebookTerminalTruthReady(authedPage);
     const firstArtifact = authedPage.getByTestId('notebook__artifact-card').first();
     await expect(firstArtifact).toBeVisible();
     await firstArtifact.hover();
@@ -526,6 +596,7 @@ const THEMED_WALKTHROUGH_PAGES = [
     run: async (page: Page) => {
       await stableNavigate(page, projectPath('notebook/tasks/task_001'));
       await expect(page.getByTestId('notebook__task-header')).toBeVisible();
+      await waitForNotebookTerminalTruthReady(page);
       await expect(page.getByTestId('notebook__conversation-input')).toBeVisible();
       await expect(page.getByTestId('notebook__send-btn')).toBeVisible();
     },
@@ -536,6 +607,7 @@ const THEMED_WALKTHROUGH_PAGES = [
     run: async (page: Page) => {
       await stableNavigate(page, projectPath('notebook/tasks/task_001'));
       await expect(page.getByTestId('notebook__task-header')).toBeVisible();
+      await waitForNotebookTerminalTruthReady(page);
       const artifact = page.getByTestId('notebook__artifact-card').first();
       await expect(artifact).toBeVisible();
       await artifact.hover();
@@ -590,11 +662,13 @@ const THEMED_PUBLIC_PAGES = [
   {
     name: 'join',
     path: '/en-US/join',
+    authLane: 'public',
     run: async () => {},
   },
   {
     name: 'system-login',
     path: '/en-US/system/login',
+    authLane: 'public',
     run: async (page: Page) => {
       await expect(page.getByTestId('system-login__heading')).toBeVisible();
     },
@@ -602,6 +676,7 @@ const THEMED_PUBLIC_PAGES = [
   {
     name: 'workspace-select',
     path: '/en-US/login/workspace',
+    authLane: 'public',
     run: async (page: Page) => {
       await expect(page.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'single');
       await expect(page.getByTestId('workspace-select__list')).toBeVisible();
@@ -611,6 +686,7 @@ const THEMED_PUBLIC_PAGES = [
   {
     name: 'workspace-login',
     path: `/en-US/workspaces/${WS_ID}/login`,
+    authLane: 'public',
     run: async (page: Page) => {
       await expect(page.getByTestId('workspace-login__heading')).toBeVisible();
     },
@@ -618,7 +694,7 @@ const THEMED_PUBLIC_PAGES = [
   {
     name: 'desktop-auth-request',
     path: '/en-US/desktop/auth/request',
-    requiresMockAuthLane: true,
+    authLane: 'public',
     run: async (page: Page) => {
       await expect(page.getByTestId('desktop-auth-request__title')).toHaveText('This Desktop handoff link is incomplete');
       await expect(page.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'split');
@@ -627,6 +703,7 @@ const THEMED_PUBLIC_PAGES = [
   {
     name: 'desktop-auth-complete',
     path: '/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001',
+    authLane: 'public',
     run: async (page: Page) => {
       await expect(page.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'single');
       await expect(page.getByTestId('desktop-auth-complete__request-meta')).toBeVisible();
@@ -695,7 +772,7 @@ const THEMED_USER_PAGES = [
   {
     name: 'profile',
     path: `/en-US/user/profile?workspace=${WS_ID}&project=${PROJECT_ID}`,
-    requiresMockAuthLane: true,
+    authLane: 'mock_auth',
     run: async (page: Page) => {
       await expect(page.getByTestId('profile__save-btn')).toBeVisible();
     },
@@ -703,7 +780,7 @@ const THEMED_USER_PAGES = [
   {
     name: 'api-keys',
     path: '/en-US/user/api-keys',
-    requiresMockAuthLane: true,
+    authLane: 'mock_auth',
     run: async (page: Page) => {
       await expect(page.getByTestId('api-keys__create-btn')).toBeVisible();
     },
@@ -711,7 +788,7 @@ const THEMED_USER_PAGES = [
   {
     name: 'third-party-accounts',
     path: '/en-US/user/third-party-accounts',
-    requiresMockAuthLane: true,
+    authLane: 'mock_auth',
     run: async (page: Page) => {
       await expect(page.getByTestId('third-party-accounts__create-btn')).toBeVisible();
       await expect(page.getByTestId('third-party-accounts__capability-note')).toBeVisible();
@@ -831,7 +908,7 @@ const THEMED_OVERLAY_CASES = [
   {
     name: 'api-keys-create-dialog',
     path: '/en-US/user/api-keys',
-    requiresMockAuthLane: true,
+    authLane: 'mock_auth',
     stableMarkers: ['api-keys__create-dialog'],
     setup: async (page: Page) => {
       await expect(page.getByTestId('api-keys__create-btn')).toBeVisible();
@@ -842,7 +919,7 @@ const THEMED_OVERLAY_CASES = [
   {
     name: 'api-keys-key-created-dialog',
     path: '/en-US/user/api-keys',
-    requiresMockAuthLane: true,
+    authLane: 'mock_auth',
     stableMarkers: ['api-keys__key-created-dialog'],
     setup: async (page: Page) => {
       await expect(page.getByTestId('api-keys__create-btn')).toBeVisible();
@@ -857,7 +934,7 @@ const THEMED_OVERLAY_CASES = [
   {
     name: 'third-party-accounts-create-sheet',
     path: '/en-US/user/third-party-accounts',
-    requiresMockAuthLane: true,
+    authLane: 'mock_auth',
     stableMarkers: ['third-party-accounts__sheet'],
     setup: async (page: Page) => {
       await expect(page.getByTestId('third-party-accounts__create-btn')).toBeVisible();
@@ -868,7 +945,7 @@ const THEMED_OVERLAY_CASES = [
   {
     name: 'third-party-accounts-edit-sheet',
     path: '/en-US/user/third-party-accounts',
-    requiresMockAuthLane: true,
+    authLane: 'mock_auth',
     stableMarkers: ['third-party-accounts__sheet'],
     setup: async (page: Page) => {
       await expect(page.getByTestId('third-party-accounts__create-btn')).toBeVisible();
@@ -933,14 +1010,10 @@ test.describe('Visual - Public Pages (Light/Dark)', () => {
     test.describe(`${theme} theme`, () => {
       for (const pageCase of THEMED_PUBLIC_PAGES) {
         test(pageCase.name, async ({ page }) => {
-          if ('requiresMockAuthLane' in pageCase && pageCase.requiresMockAuthLane) {
-            await requireMockVisualAuthLane(page);
-          }
+          await requireMockVisualRuntime(page);
+          await prepareVisualAuthLane(page, pageCase.authLane);
           if ('prepare' in pageCase && typeof pageCase.prepare === 'function') {
             await pageCase.prepare(page);
-          }
-          if (pageCase.authLane === 'public') {
-            await resetPublicVisualState(page);
           }
           await setVisualTheme(page, theme);
           await stableNavigate(page, pageCase.path);
@@ -951,6 +1024,30 @@ test.describe('Visual - Public Pages (Light/Dark)', () => {
       }
     });
   }
+});
+
+test.describe('Visual Auth Contract', () => {
+  test('desktop-auth-request public missing-link recovery does not trigger auth bootstrap', async ({ page }) => {
+    await requireMockVisualRuntime(page);
+    await resetPublicVisualState(page);
+    await stableNavigate(page, '/en-US/desktop/auth/request');
+
+    await expect(page.getByTestId('desktop-auth-request__title')).toHaveText('This Desktop handoff link is incomplete');
+    await expect(page.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'split');
+    await expect(await readMockAuthTokenFromContext(page)).toBeNull();
+  });
+
+  test('mock_auth visual bootstrap creates a complete token seed before protected navigation', async ({ page }) => {
+    const seed = await ensureVisualMockAuth(page, {
+      bootstrapPath: `/en-US/workspaces/${WS_ID}/projects`,
+      userEmail: 'test@example.com',
+      userId: 'user_001',
+    });
+
+    expect(seed.token).toMatch(/^mock_token_user_001__/);
+    await expect(page.getByTestId('projects__page')).toBeVisible({ timeout: 30_000 });
+    await expect(await readMockAuthTokenFromContext(page)).toBe(seed.token);
+  });
 });
 
 test.describe('Visual - Workspace Pages (Light/Dark)', () => {
@@ -994,10 +1091,8 @@ test.describe('Visual - User Pages (Light/Dark)', () => {
     test.describe(`${theme} theme`, () => {
       for (const pageCase of THEMED_USER_PAGES) {
         test(pageCase.name, async ({ authedPage, page }) => {
-          const targetPage = pageCase.auth === 'plain' ? page : authedPage;
-          if (pageCase.requiresMockAuthLane) {
-            await requireMockVisualAuthLane(targetPage);
-          }
+          const targetPage = 'auth' in pageCase && pageCase.auth === 'plain' ? page : authedPage;
+          await prepareVisualAuthLane(targetPage, pageCase.authLane);
           await setVisualTheme(targetPage, theme);
           await stableNavigate(targetPage, pageCase.path);
           await pageCase.run(targetPage);
@@ -1032,6 +1127,7 @@ test.describe('Visual - Overlays (Light/Dark)', () => {
     test.describe(`${theme} theme`, () => {
       for (const pageCase of THEMED_OVERLAY_CASES) {
         test(pageCase.name, async ({ authedPage }) => {
+          await prepareVisualAuthLane(authedPage, 'authLane' in pageCase ? pageCase.authLane : 'authed');
           await setVisualTheme(authedPage, theme);
           await seedVisualTestNow(authedPage);
           if ('prepare' in pageCase && pageCase.prepare) {
@@ -1227,6 +1323,9 @@ test.describe('Visual - Overlays', () => {
   test('members templates - project groups tab', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('members'));
     await authedPage.getByRole('tab', { name: /groups/i }).first().click();
+    const saveButton = authedPage.getByTestId('members__group-save-btn');
+    await expect(saveButton).toBeVisible();
+    await expectLocatorWithinViewport(authedPage, saveButton);
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('members-project-groups.png', { fullPage: true });
   });

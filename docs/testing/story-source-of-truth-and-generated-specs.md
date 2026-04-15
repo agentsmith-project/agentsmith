@@ -38,3 +38,17 @@ Verification:
 - `scripts/story-trace-binding.test.ts`
 - `scripts/story-product-surface-coverage.test.ts`
 - `scripts/release-user-story-contract.test.ts`
+
+## Story Edit Loop
+
+When a user story changes, edit the story markdown first. Do not start from generated JSON, trace metadata, or Playwright assertions.
+
+Use this order:
+
+1. Update the canonical `*.story.md` file under `e2e/stories/backend-real/` or `e2e/stories/mock-lane/`.
+2. Regenerate the derived artifacts that project the story contract into generated specs or trace bindings.
+3. Re-run the smallest affected story contract test.
+4. Re-run the owning evidence producer, such as the affected mock lane, backend-real story lane, or visual lane.
+5. Only after the owner is green, rerun the gate that needs the story evidence.
+
+Do not accept a generated artifact diff if the canonical story markdown does not explain the product behavior and user expectation.

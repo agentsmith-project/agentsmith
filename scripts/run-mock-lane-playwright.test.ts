@@ -1,7 +1,12 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 describe('run-mock-lane-playwright', () => {
+  it('stays shell-syntax valid so visual wrapper regressions fail before Playwright starts', () => {
+    expect(() => execFileSync('bash', ['-n', 'scripts/run-mock-lane-playwright.sh'])).not.toThrow();
+  });
+
   it('uses lane-local generated-root cleanup instead of global validation cleanup on exit', () => {
     const script = readFileSync('scripts/run-mock-lane-playwright.sh', 'utf8');
 

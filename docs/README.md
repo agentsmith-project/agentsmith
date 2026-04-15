@@ -32,8 +32,12 @@
 ### Engineering and testing reference
 - [Engineering Docs Index](./engineering/README.md)
 - [Testing Docs Index](./testing/README.md)
+- [Diagnostic Catalog v1](./testing/diagnostic-catalog-v1.md)
+  - choose `ui_only`, `local_manual`, or `release_grade`
+  - pick the smallest diagnostic command before an expensive gate
 - [Verification Campaigns v1](./testing/verification-campaigns-v1.md)
   - release-grade automated verification campaign guide
+  - official release entrypoint: `npm run release:campaign:full`
   - use this when you need the current testing principles, evidence model, and execution advice
 
 ### Methodology reference

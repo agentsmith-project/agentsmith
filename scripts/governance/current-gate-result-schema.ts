@@ -71,6 +71,22 @@ export const CURRENT_GATE_RESULT_WRITERS = [
     gate_id: "lane-backend-real-release",
     line_kind: "release_backend_real",
   },
+  {
+    gate_id: "lane-visual",
+    line_kind: "visual",
+  },
+  {
+    gate_id: "lane-demo-rehearsal",
+    line_kind: "demo_rehearsal",
+  },
+  {
+    gate_id: "lane-cluster-rehearsal",
+    line_kind: "cluster_rehearsal",
+  },
+  {
+    gate_id: "gate-release-full",
+    line_kind: "release_full_verdict",
+  },
 ] as const satisfies readonly CurrentGateResultWriter[];
 
 export function findCurrentGateResultWriter(gateId: string) {

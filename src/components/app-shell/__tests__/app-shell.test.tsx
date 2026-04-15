@@ -26,9 +26,7 @@ describe('Logo', () => {
     render(<Logo />);
 
     expect(screen.getByText('MBOS')).toBeInTheDocument();
-    // Check for the icon container
-    const iconContainer = document.querySelector('.w-8.h-8');
-    expect(iconContainer).toBeInTheDocument();
+    expect(screen.getByTestId('logo__mark')).toBeInTheDocument();
   });
 
   it('should apply custom className', () => {
@@ -38,11 +36,13 @@ describe('Logo', () => {
     expect(wrapper).toBeInTheDocument();
   });
 
-  it('should have correct styling classes', () => {
-    const { container } = render(<Logo />);
+  it('should keep the logo mark quiet and token-based', () => {
+    render(<Logo />);
 
-    const wrapper = container.querySelector('.flex.items-center.gap-2');
-    expect(wrapper).toBeInTheDocument();
+    const mark = screen.getByTestId('logo__mark');
+    expect(mark).toHaveClass('bg-transparent');
+    expect(mark.className).not.toMatch(/shadow-/);
+    expect(screen.getByText('MBOS')).toHaveClass('type-title');
   });
 });
 

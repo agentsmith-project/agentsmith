@@ -260,6 +260,13 @@ describe('ProjectGroupsSection', () => {
     expect(screen.getByTestId('members__group-create-template-btn')).toBeInTheDocument();
   });
 
+  it('keeps the create group primary action in a sticky action bar for the default visual viewport', () => {
+    render(<ProjectGroupsSection workspaceId="ws_1" projectId="proj_1" />);
+
+    expect(screen.getByTestId('members__group-action-bar')).toHaveClass('sticky', 'bottom-0');
+    expect(screen.getByTestId('members__group-save-btn')).toBeInTheDocument();
+  });
+
   it('renders group management controls as read-only for project admins', () => {
     vi.mocked(useMemberPageCapabilities).mockReturnValue({ canRead: true, canManage: false });
 

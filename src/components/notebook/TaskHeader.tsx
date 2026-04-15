@@ -38,6 +38,7 @@ export interface TaskHeaderProps {
   deleteBlockedReason?: string | null;
   canCreateTerminalSession?: boolean;
   terminalSessionCount?: number;
+  terminalTruthState?: 'pending' | 'ready' | 'unavailable';
   terminalHasRecovery?: boolean;
   terminalRecoveryCount?: number;
   terminalDisabledReason?: string | null;
@@ -61,6 +62,7 @@ export function TaskHeader({
   deleteBlockedReason = null,
   canCreateTerminalSession = false,
   terminalSessionCount = 0,
+  terminalTruthState = 'ready',
   terminalHasRecovery = false,
   terminalRecoveryCount,
   terminalDisabledReason = null,
@@ -158,6 +160,7 @@ export function TaskHeader({
     <div
       className="flex items-center justify-between gap-3 border-b border-subtle bg-surface/55 px-3.5 py-1.5"
       data-testid="notebook__task-header"
+      data-terminal-truth-state={terminalTruthState}
     >
       <div className="flex items-center gap-3 flex-1 min-w-0">
         {/* Leave Task Button */}

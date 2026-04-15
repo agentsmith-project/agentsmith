@@ -49,9 +49,9 @@
     },
     {
       "sceneId": "desktop-auth-request",
-      "route": "/en-US/desktop/auth/request?desktop_auth_request_id=req_visual_001",
+      "route": "/en-US/desktop/auth/request",
       "recipeFamily": "public_auth_split",
-      "authLane": "mock_auth",
+      "authLane": "public",
       "stableMarkers": [
         "desktop-auth-request__title"
       ]
@@ -163,14 +163,14 @@
         {
           "sceneId": "desktop-auth-request",
           "scenarioId": "desktop-auth-request",
-          "scenario": "Desktop handoff request page with guidance and retry path.",
+          "scenario": "Desktop handoff missing-link recovery page with guidance back to workspace login.",
           "group": "public_pages",
           "codeRefs": [
             "e2e/visual.spec.ts",
             "src/app/[locale]/desktop/auth/request/page.tsx"
           ],
           "capture": "full_page",
-          "authLane": "mock_auth",
+          "authLane": "public",
           "themes": [
             "light",
             "dark"

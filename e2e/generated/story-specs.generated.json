@@ -738,8 +738,8 @@
     "entryRoute": "/en-US/join",
     "goal": "用一份 mock-lane story family 统一描述入口、登录和桌面接续的 visual scene 真相。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-entry-access.story.md#mock-lane-entry-access",
-    "sourceFingerprint": "4b5563f16d6af6285ae25f6bc2495aada0cdb5602b8dfd1bb9219d48577644cb",
-    "storyFingerprint": "17eecb49041c5c83eea862cea3649bc4dcccc2f7611000a0e9aa28ce123e1741",
+    "sourceFingerprint": "3c80493f6d8d92eecd45001751a7140de64c1bc3f95f2aac2c73ad5466abc857",
+    "storyFingerprint": "a602fc5a6e60bf49b116a0ed3e0940cba6ce25c96c4e37b17065affd23625021",
     "stepMapFingerprint": "f7cdac1a4b147dcbd621405867b50a6c177058c8280f5b2584d3db8b5cd1c0f6",
     "sceneIds": [
       "join",
@@ -1229,9 +1229,9 @@
     "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
     "goal": "项目成员回到已有 notebook task 继续工作时，应该先从 Conversation 进入 Terminal workspace，在同一 task 下面创建多个 terminal sessions 并在 tabs 间切换；当 live terminal 仍存在时，任务删除必须继续被阻止，第四个 terminal 也不能以假 tab 的方式出现；即使刷新或重新进入 task 页，界面也必须按 backend list 和同一批 session id 恢复这些 live sessions 与任务仍被占用的真相；关闭一个 session 不能影响其他 session，直到最后一个 session 结束后才真正释放任务并恢复 agent 输入。",
     "sourceRef": "e2e/stories/backend-real/notebook-terminal-workspace-multi-session.story.md#notebook-terminal-workspace-multi-session",
-    "sourceFingerprint": "3e24e9c80e760434a0548cb63ab9638f447b071940db8d7d9967641c8b4655ed",
-    "storyFingerprint": "9a298bee028702b6303403340d84fa78fcf3a22fdd4dfb2948d9121ab91b6350",
-    "stepMapFingerprint": "8c3a2d529f21561f473ce23cc507ac04512bed35dbac403e09418d50453a34b3",
+    "sourceFingerprint": "1d85c950baf5b367bf36097a0dd2a2b01ea58f2befc079ad0f3d2d56dff6c4d6",
+    "storyFingerprint": "b8d2486291457c7e1ca9c394148ea29fb4adad3bad7ab07e36933ad28aafd8d7",
+    "stepMapFingerprint": "7d613e26db6e80c12b24f2dca797119c11d60d4da441912560c89609c9b0f4e1",
     "sceneIds": [
       "notebook-task"
     ],

@@ -9,6 +9,12 @@
 
 ## 1. 先从哪开始
 
+先选入口：
+
+- `ui_only`: 如果只是前端 UI、文案、mock 交互，先回到 [README](../../README.md) 和 [Diagnostic Catalog v1](../testing/diagnostic-catalog-v1.md)，不要从 release runbook 开始。
+- `local_manual`: 如果要真实本地 API / Web / Notebook / Terminal / runner 行为，从 [Local Runtime Flows](./local-runtime-flows.md) 开始。
+- `release_grade`: 如果要发布级自动化验证或大改动收口，从 `npm run release:campaign:full`、[Release Readiness Checklist](./release-readiness-checklist.md) 和 [Verification Campaigns v1](../testing/verification-campaigns-v1.md) 开始。
+
 ### 日常运行与切线
 <!-- current-runtime-lines:user-guides-index:start -->
 - [Local Runtime Flows](./local-runtime-flows.md)
@@ -25,6 +31,7 @@ runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/c
 
 ### 发布与排演
 - [Release Readiness Checklist](./release-readiness-checklist.md)
+  - official automated release entrypoint: `npm run release:campaign:full`
 - [Cluster Upgrade Operations](./cluster-upgrade-operations.md)
 - [Cluster Admin Runbook](./cluster-admin-runbook.md)
 

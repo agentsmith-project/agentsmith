@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -70,7 +70,7 @@ vi.mock('@/lib/hooks/use-join-requests', () => ({
 
 const mockRequests = [
   {
-    id: 'jr_1',
+    id: 'join_001',
     project_id: 'proj_1',
     user_id: 'user_alt',
     user_name: 'Alt User',
@@ -122,6 +122,22 @@ describe('JoinRequestsTab', () => {
     expect(screen.getByTestId('members__join-requests-list')).toBeInTheDocument();
     expect(screen.queryByText('pending_help')).not.toBeInTheDocument();
     expect(screen.queryByTestId('members__join-request-decision-paths')).not.toBeInTheDocument();
+  });
+
+  it('exposes pending join requests as stable governance rows with identity, status, and actions', () => {
+    vi.mocked(useMemberPageCapabilities).mockReturnValue({ canRead: true, canManage: true });
+
+    renderTab();
+
+    const list = screen.getByTestId('members__join-requests-list');
+    const requestRow = within(list).getByTestId('members__join-request-row--join_001');
+
+    expect(requestRow).toHaveTextContent('Alt User');
+    expect(requestRow).toHaveTextContent('alt@example.com');
+    expect(requestRow).toHaveTextContent('status.pending');
+    expect(within(requestRow).getByTestId('members__join-request-approve--join_001')).toBeInTheDocument();
+    expect(within(requestRow).getByTestId('members__join-request-approve-admin--join_001')).toBeInTheDocument();
+    expect(within(requestRow).getByTestId('members__join-request-reject--join_001')).toBeInTheDocument();
   });
 
   it('hides approve and reject actions for project admins without owner controls', () => {

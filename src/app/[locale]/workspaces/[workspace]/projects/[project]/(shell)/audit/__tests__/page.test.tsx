@@ -257,10 +257,12 @@ describe('AuditPage route', () => {
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
     const toolbar = screen.getByTestId('page-layout__toolbar');
     expect(within(toolbar).getByRole('button', { name: 'refresh' })).toBeInTheDocument();
-    expect(screen.getByTestId('audit__summary')).toBeInTheDocument();
-    expect(screen.getByTestId('audit__summary-card--changes')).toHaveTextContent('1');
-    expect(screen.getByTestId('audit__summary-card--anomalies')).toHaveTextContent('1');
-    expect(screen.getByTestId('audit__summary-card--resources')).toHaveTextContent('2');
+    const summary = screen.getByTestId('audit__summary');
+    expect(summary).toBeInTheDocument();
+    expect(within(summary).getByTestId('audit__summary-line')).toBeInTheDocument();
+    expect(within(summary).getByTestId('audit__summary-metric--changes')).toHaveTextContent('1 overview.changes');
+    expect(within(summary).getByTestId('audit__summary-metric--anomalies')).toHaveTextContent('1 overview.anomalies');
+    expect(within(summary).getByTestId('audit__summary-metric--resources')).toHaveTextContent('2 overview.resources');
     expect(screen.getByText('total_items')).toBeInTheDocument();
   });
 

@@ -1,5 +1,5 @@
 import { test as base, type Page } from '@playwright/test';
-import { ensureAuthenticatedSession, withAuth } from './authenticated';
+import { ensureAuthenticatedSession, ensureProtectedRouteAuthenticated, withAuth } from './authenticated';
 import { gotoAndWait, waitForPageReady } from '../utils/navigation';
 
 /** Default test constants */
@@ -10,7 +10,6 @@ export const LIMITED_TEST_EMAIL = 'viewer@example.com';
 export const ADMIN_TEST_EMAIL = 'bob.smith@example.com';
 export const GUEST_TEST_EMAIL = 'guest@example.com';
 export const LOCALE = 'en-US';
-const LOGIN_PATH_REGEX = /^\/(en-US|zh-CN)\/login(?:\/workspace)?\/?$/;
 const PROTECTED_ROUTE_REGEX = /^\/(en-US|zh-CN)\/(?:user|workspaces)\//;
 
 /** Build a project-scoped URL */
@@ -30,25 +29,25 @@ export const test = base.extend<{
   adminPage: Page;
   guestPage: Page;
 }>({
-  authedPage: async ({ page }, use) => {
+  authedPage: async ({ page }, fixtureUse) => {
     await withAuth(page, WS_ID, TEST_EMAIL);
     await ensureAuthenticatedSession(page, `/${LOCALE}/workspaces/${WS_ID}/projects`);
-    await use(page);
+    await fixtureUse(page);
   },
-  limitedPage: async ({ page }, use) => {
+  limitedPage: async ({ page }, fixtureUse) => {
     await withAuth(page, WS_ID, LIMITED_TEST_EMAIL, 'user_004');
     await ensureAuthenticatedSession(page, `/${LOCALE}/workspaces/${WS_ID}/projects`);
-    await use(page);
+    await fixtureUse(page);
   },
-  adminPage: async ({ page }, use) => {
+  adminPage: async ({ page }, fixtureUse) => {
     await withAuth(page, WS_ID, ADMIN_TEST_EMAIL, 'user_002');
     await ensureAuthenticatedSession(page, `/${LOCALE}/workspaces/${WS_ID}/projects`);
-    await use(page);
+    await fixtureUse(page);
   },
-  guestPage: async ({ page }, use) => {
+  guestPage: async ({ page }, fixtureUse) => {
     await withAuth(page, WS_ID, GUEST_TEST_EMAIL, 'user_009');
     await ensureAuthenticatedSession(page, `/${LOCALE}/workspaces/${WS_ID}/projects`);
-    await use(page);
+    await fixtureUse(page);
   },
 });
 
@@ -93,32 +92,11 @@ export async function goTo(page: Page, path: string) {
 
   if (!isProtectedRoute) return;
 
-  const reseedAuth = async () => {
-    const ctx = await page.evaluate(() => window.__MBOS_AUTH_E2E_CONTEXT__ ?? null).catch(() => null);
-    if (ctx && typeof ctx.userEmail === 'string' && typeof ctx.userId === 'string') {
-      await withAuth(page, ctx.wsId || WS_ID, ctx.userEmail, ctx.userId);
-      return;
-    }
-    await withAuth(page, WS_ID, TEST_EMAIL);
-  };
-
-  const maybeRecoverFromLoginRedirect = async () => {
-    const currentPath = new URL(page.url()).pathname;
-    if (!LOGIN_PATH_REGEX.test(currentPath)) return;
-    await reseedAuth();
-    await gotoAndWait(page, path);
-    await waitForPageReady(page);
-  };
-
-  for (let i = 0; i < 3; i += 1) {
-    await maybeRecoverFromLoginRedirect();
-    if (!LOGIN_PATH_REGEX.test(new URL(page.url()).pathname)) {
-      break;
-    }
-  }
-
-  const finalPath = new URL(page.url()).pathname;
-  if (LOGIN_PATH_REGEX.test(finalPath)) {
-    throw new Error(`Protected route redirected to login after recovery: ${path}`);
-  }
+  await ensureProtectedRouteAuthenticated(page, path, {
+    wsId: WS_ID,
+    userEmail: TEST_EMAIL,
+    userId: 'user_001',
+  }, {
+    label: 'go_to',
+  });
 }

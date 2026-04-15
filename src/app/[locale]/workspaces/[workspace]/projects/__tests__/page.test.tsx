@@ -572,31 +572,36 @@ describe('ProjectsPage route', () => {
   it('does not spin when logout temporarily clears project data on the projects entry page', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let currentProjects: MockProject[] | undefined = mockProjectsData;
+    const freshEmptyProjects = () => [] as MockProject[];
     mockUseProjects.mockImplementation(() => ({
-      data: currentProjects ?? [],
+      data: currentProjects ?? freshEmptyProjects(),
       isLoading: false,
       isError: false,
       error: null,
-      refetch: vi.fn(async () => ({ data: currentProjects ?? [] })),
+      refetch: vi.fn(async () => ({ data: currentProjects ?? freshEmptyProjects() })),
     }));
 
-    const { rerender } = render(<ProjectsPage />);
+    try {
+      const { rerender } = render(<ProjectsPage />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('projects__create-btn')).toBeInTheDocument();
-    });
+      await waitFor(() => {
+        expect(screen.getByTestId('projects__create-btn')).toBeInTheDocument();
+      });
 
-    mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: false, token: null }));
-    currentProjects = undefined;
+      mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: false, token: null }));
+      currentProjects = undefined;
 
-    rerender(<ProjectsPage />);
+      rerender(<ProjectsPage />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('projects__page')).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId('page-state__error')).not.toBeInTheDocument();
-    expect(consoleErrorSpy).not.toHaveBeenCalledWith(expect.stringContaining('Maximum update depth exceeded'));
-    consoleErrorSpy.mockRestore();
+      await waitFor(() => {
+        expect(screen.getByTestId('projects__page')).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('page-state__error')).not.toBeInTheDocument();
+      expect(mockUseProjects.mock.calls.length).toBeLessThan(20);
+      expect(consoleErrorSpy).not.toHaveBeenCalledWith(expect.stringContaining('Maximum update depth exceeded'));
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
 

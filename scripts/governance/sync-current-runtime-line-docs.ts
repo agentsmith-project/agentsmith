@@ -5,6 +5,7 @@ import {
   CURRENT_RUNTIME_SHARED_RULES,
   listCurrentLocalRuntimeLines,
   type CurrentRuntimeLineDefinition,
+  type CurrentRuntimeSharedRuleBinding,
 } from './current-runtime-line-manifest';
 
 const ROOT = process.cwd();
@@ -30,17 +31,23 @@ function replaceBlock(content: string, startMarker: string, endMarker: string, n
   return content.replace(pattern, `${startMarker}\n${nextBlock}\n${endMarker}`);
 }
 
-function renderRuleList(): string[] {
-  return CURRENT_RUNTIME_SHARED_RULES.map((rule) => `- ${rule.summary}`);
+function renderRuleList(binding: CurrentRuntimeSharedRuleBinding): string[] {
+  return CURRENT_RUNTIME_SHARED_RULES
+    .filter((rule) => rule.binding === binding)
+    .map((rule) => `- ${rule.summary}`);
 }
 
-function renderRuleListZh(): string[] {
-  return [
-    '- 本机共享一套 substrate，`local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用它。',
-    '- 同一时间只允许一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。',
-    '- `demo-rehearsal` 和 `cluster-rehearsal` 都拥有自己的 scenario-owned local kind world 与 local registry，不再共用一个泛化本地集群。',
-    '- rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。',
-  ];
+function renderRuleListZh(binding: CurrentRuntimeSharedRuleBinding): string[] {
+  const summaries: Record<string, string> = {
+    'shared-local-substrate': '- 本机共享一套 substrate，`local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用它。',
+    'single-active-local-flow': '- 同一时间只建议一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。',
+    'scenario-owned-kind-worlds': '- `demo-rehearsal` 和 `cluster-rehearsal` 都拥有自己的 scenario-owned local kind world 与 local registry，不再共用一个泛化本地集群。',
+    'deploy-vs-rehearsal-boundary': '- rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。',
+  };
+
+  return CURRENT_RUNTIME_SHARED_RULES
+    .filter((rule) => rule.binding === binding)
+    .map((rule) => summaries[rule.id] ?? `- ${rule.summary}`);
 }
 
 function renderLocalFlowList(lines: readonly CurrentRuntimeLineDefinition[]): string[] {
@@ -67,7 +74,7 @@ function renderLocalFlowListZh(lines: readonly CurrentRuntimeLineDefinition[]): 
   });
 }
 
-function renderReadmeRuntimeBlock(): string {
+function _renderReadmeRuntimeBlock(): string {
   return [
     'Current runtime-line truth:',
     '- Human guides: [Runtime Lines Matrix](./docs/user-guides/runtime-lines-matrix.md) and [Local Runtime Flows](./docs/user-guides/local-runtime-flows.md)',
@@ -89,13 +96,16 @@ function renderDevelopmentRuntimeBlock(): string {
     '- 人类入口：[`Runtime Lines Matrix`](./docs/user-guides/runtime-lines-matrix.md) 与 [`Local Runtime Flows`](./docs/user-guides/local-runtime-flows.md)',
     '- machine-readable source: [`scripts/governance/current-runtime-line-manifest.ts`](./scripts/governance/current-runtime-line-manifest.ts)',
     '',
-    '当前本机基线：',
-    ...renderRuleListZh(),
+    '当前本机操作基线：',
+    ...renderRuleListZh('operational_baseline'),
+    '',
+    '持续生效的 runtime contract：',
+    ...renderRuleListZh('contract'),
     '',
     '当前本机工作线：',
     ...renderLocalFlowListZh(listCurrentLocalRuntimeLines()),
     '',
-    '本文件只保留开发/排障入口；具体运行线拓扑与切换规则统一看 runtime-line 文档。',
+    '本文件只保留开发/排障入口；操作基线不再等同于系统正确性的前提，具体运行线拓扑与 contract 统一看 runtime-line 文档。',
   ].join('\n');
 }
 
@@ -107,12 +117,15 @@ function renderGovernanceRuntimeBlock(): string {
     '- [Local Runtime Flows](./user-guides/local-runtime-flows.md)',
     '- Machine-readable source: `scripts/governance/current-runtime-line-manifest.ts`',
     '',
-    'Current local baseline:',
-    ...renderRuleList(),
+    'Current local operational baseline:',
+    ...renderRuleList('operational_baseline'),
+    '',
+    'Still-binding runtime contracts:',
+    ...renderRuleList('contract'),
   ].join('\n');
 }
 
-function renderDocsIndexRuntimeBlock(): string {
+function _renderDocsIndexRuntimeBlock(): string {
   return [
     '- [Local Runtime Flows](./user-guides/local-runtime-flows.md)',
     '  - 由 `scripts/governance/current-runtime-line-manifest.ts` 生成；当前本机最短运行手册。',
@@ -128,7 +141,7 @@ function renderDocsIndexRuntimeBlock(): string {
 function renderUserGuidesRuntimeBlock(): string {
   return [
     '- [Local Runtime Flows](./local-runtime-flows.md)',
-    '  - 由 `scripts/governance/current-runtime-line-manifest.ts` 生成；共享 substrate + 一次只跑一条本地工作线的最短手册。',
+    '  - 由 `scripts/governance/current-runtime-line-manifest.ts` 生成；当前本机操作基线与切线手册。',
     '- [Runtime Lines Matrix](./runtime-lines-matrix.md)',
     '  - 当前 runtime / deploy / rehearsal 线与 mode 边界的总表。',
     '- [Demo Deploy Operations](./demo-deploy-operations.md)',
@@ -148,13 +161,17 @@ function renderLocalRuntimeFlowsBlock(): string {
     '',
     '- `scripts/governance/current-runtime-line-manifest.ts`',
     '',
-    '## 一句话规则',
+    '## 一句话基线',
     '',
-    '先起共享底座，再跑一条工作线；同一时间只跑一条。',
+    '先起共享底座，再跑一条工作线；这是一条当前操作基线，不是系统正确性的前提。',
     '',
-    '## 固定规则',
+    '## 当前操作基线',
     '',
-    ...renderRuleListZh().map((rule, index) => `${index + 1}. ${rule.slice(2)}`),
+    ...renderRuleListZh('operational_baseline').map((rule, index) => `${index + 1}. ${rule.slice(2)}`),
+    '',
+    '## 持续生效的 runtime contract',
+    '',
+    ...renderRuleListZh('contract').map((rule, index) => `${index + 1}. ${rule.slice(2)}`),
     '',
     '## 当前本机工作线',
     '',
@@ -172,9 +189,13 @@ function renderRuntimeLinesMatrixBlock(): string {
   ];
 
   return [
-    '## 核心方法论',
+    '## 当前本机操作基线',
     '',
-    ...renderRuleListZh().map((rule, index) => `${index + 1}. ${rule.slice(2)}`),
+    ...renderRuleListZh('operational_baseline').map((rule, index) => `${index + 1}. ${rule.slice(2)}`),
+    '',
+    '## 持续生效的 runtime contract',
+    '',
+    ...renderRuleListZh('contract').map((rule, index) => `${index + 1}. ${rule.slice(2)}`),
     '',
     '## 运行线矩阵',
     '',
@@ -201,6 +222,7 @@ function main(): void {
   const mode: Mode = process.argv.includes('--check') ? 'check' : 'write';
   const mismatches: string[] = [];
   const files = [
+    ['DEVELOPMENT.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:development:start -->', '<!-- current-runtime-lines:development:end -->', renderDevelopmentRuntimeBlock())],
     ['docs/current-engineering-governance-model.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:governance-model:start -->', '<!-- current-runtime-lines:governance-model:end -->', renderGovernanceRuntimeBlock())],
     ['docs/user-guides/README.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:user-guides-index:start -->', '<!-- current-runtime-lines:user-guides-index:end -->', renderUserGuidesRuntimeBlock())],
     ['docs/user-guides/local-runtime-flows.md', (content: string) => replaceBlock(content, '<!-- current-runtime-lines:local-runtime-flows:start -->', '<!-- current-runtime-lines:local-runtime-flows:end -->', renderLocalRuntimeFlowsBlock())],

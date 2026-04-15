@@ -299,6 +299,136 @@ gate_resolve_verify_source_file() {
   return 1
 }
 
+gate_result_failure_class() {
+  local classification="${1:-}"
+  case "${classification}" in
+    ""|none)
+      printf 'none\n'
+      ;;
+    scenario_assertion_failed)
+      printf 'product_regression\n'
+      ;;
+    infra_dependency_unready|identity_bootstrap_failed|runner_launch_failed)
+      printf 'infra_setup_failure\n'
+      ;;
+    environment_conflict|contract_drift|evidence_missing)
+      printf '%s\n' "${classification}"
+      ;;
+    *)
+      printf 'infra_setup_failure\n'
+      ;;
+  esac
+}
+
+gate_result_status() {
+  local classification="${1:-}"
+  if [[ -z "${classification}" || "${classification}" == "none" ]]; then
+    printf 'passed\n'
+    return 0
+  fi
+  printf 'failed\n'
+}
+
+gate_resolve_result_line_kind() {
+  local evidence_dir="$1"
+  if [[ -n "${CURRENT_GATE_RESULT_LINE_KIND:-}" ]]; then
+    printf '%s\n' "${CURRENT_GATE_RESULT_LINE_KIND}"
+    return 0
+  fi
+  node - <<'NODE' "${evidence_dir}/preflight.json"
+const fs = require('node:fs');
+const [file] = process.argv.slice(2);
+try {
+  const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const lineKind = typeof payload?.line_kind === 'string' ? payload.line_kind.trim() : '';
+  if (lineKind) {
+    process.stdout.write(lineKind);
+  }
+} catch {}
+NODE
+}
+
+gate_write_result_json() {
+  local evidence_dir="$1"
+  local classification="$2"
+  local stage="$3"
+  local message="${4:-}"
+
+  local gate_id="${CURRENT_GATE_RESULT_GATE_ID:-}"
+  if [[ -z "${gate_id}" ]]; then
+    return 0
+  fi
+
+  local line_kind
+  line_kind="$(gate_resolve_result_line_kind "${evidence_dir}")"
+  if [[ -z "${line_kind}" ]]; then
+    line_kind="unknown"
+  fi
+
+  local status failure_class summary npm_script ci_job
+  status="$(gate_result_status "${classification}")"
+  failure_class="$(gate_result_failure_class "${classification}")"
+  npm_script="${CURRENT_GATE_RESULT_NPM_SCRIPT:-}"
+  ci_job="${CURRENT_GATE_RESULT_CI_JOB:-}"
+
+  if [[ "${status}" == "passed" ]]; then
+    summary="Gate ${gate_id} passed during ${stage}."
+  else
+    summary="Gate ${gate_id} failed during ${stage}: ${message}"
+  fi
+
+  mkdir -p "${evidence_dir}"
+  node - <<'NODE' \
+    "${evidence_dir}/result.json" \
+    "${gate_id}" \
+    "${npm_script}" \
+    "${ci_job}" \
+    "${status}" \
+    "${failure_class}" \
+    "${stage}" \
+    "${line_kind}" \
+    "${evidence_dir}" \
+    "${summary}"
+const fs = require('node:fs');
+const path = require('node:path');
+const [
+  file,
+  gateId,
+  npmScript,
+  ciJob,
+  status,
+  failureClass,
+  stage,
+  lineKind,
+  evidenceDir,
+  summary,
+] = process.argv.slice(2);
+fs.mkdirSync(path.dirname(file), { recursive: true });
+fs.writeFileSync(
+  file,
+  `${JSON.stringify(
+    {
+      schema_version: '1.0.0',
+      gate_id: gateId,
+      gate_adapter: {
+        npm_script: npmScript || null,
+        ci_job: ciJob || null,
+      },
+      status,
+      failure_class: failureClass,
+      stage,
+      line_kind: lineKind,
+      evidence_dir: evidenceDir,
+      summary,
+      generated_at: new Date().toISOString(),
+    },
+    null,
+    2,
+  )}\n`,
+);
+NODE
+}
+
 gate_record_failure() {
   local evidence_dir="$1"
   local classification="$2"
@@ -316,6 +446,7 @@ fs.writeFileSync(file, `${JSON.stringify({
   recorded_at: new Date().toISOString(),
 }, null, 2)}\n`);
 NODE
+  gate_write_result_json "${evidence_dir}" "${classification}" "${stage}" "${message}"
 }
 
 gate_record_success() {

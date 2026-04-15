@@ -1,6 +1,6 @@
 # Current Gate Manifest Contract
 
-Last updated: 2026-04-10  
+Last updated: 2026-04-14
 Status: `authoritative`
 
 This contract defines the current engineering gate truth for AgentSmith.
@@ -11,12 +11,14 @@ Machine-readable source:
 
 Use this contract when you need to answer:
 
-1. which `npm run` commands are the canonical engineering gates and verification lanes
+1. which stable gate ids define the current engineering gates and verification lanes
 2. whether a command owns no visual, targeted visual, or full visual evidence
 3. whether a command requires backend-real infrastructure
-4. which checklist or CI job is supposed to carry that gate
+4. which checklist, launcher surface, or CI job is supposed to carry that gate
 5. which machine-readable story evidence kinds and artifact roots that gate must produce
 6. for which tiers missing story evidence is blocking
+
+Stable gate ids are the gate identity truth. Fields such as `npmScript`, `command`, and `ciJob` are adapter surfaces that point presentation and automation layers back to that stable id. Structured execution target fidelity lives in manifest `executionTargets` plus `npmScript` / optional `ciJob`; free-form `command` is only an operator hint for generated docs and human operators.
 
 ## 1. Scope
 
@@ -127,7 +129,12 @@ The following must stay aligned with `current-gate-manifest.ts`:
 - `README.md`
 - `DEVELOPMENT.md`
 - `docs/current-engineering-governance-model.md`
+- `docs/contracts/current-gate-result-schema-contract.md`
 - default/release engineering gate checklists
 - contracts checks
 
 If one of those changes, update the manifest first, then sync the rest.
+
+For canonical `result.json` output and `failure_class` semantics, use:
+
+- `scripts/governance/current-gate-result-schema.ts`

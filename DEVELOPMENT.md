@@ -31,10 +31,11 @@ Repo version files:
 - [docs/current-engineering-governance-model.md](./docs/current-engineering-governance-model.md)
 - machine-readable source: [`scripts/governance/current-workflow-manifest.ts`](./scripts/governance/current-workflow-manifest.ts)
 - machine-readable gate source: [`scripts/governance/current-gate-manifest.ts`](./scripts/governance/current-gate-manifest.ts)
+- gate result schema: [`scripts/governance/current-gate-result-schema.ts`](./scripts/governance/current-gate-result-schema.ts)
 
 命令命名约定：
-- `make` 是环境与排演编排的 current canonical entrypoint
-- `npm run` 是测试、门禁、验证通道与发布验证的 current canonical entrypoint
+- `make` 与 `npm run` 是当前 command surface / adapter，不是 gate identity truth
+- gate identity 统一看 `scripts/governance/current-gate-manifest.ts` 里的稳定 `id`
 
 ### 环境
 
@@ -79,6 +80,10 @@ npm run backend-real:report
 ```
 <!-- current-workflow:development:end -->
 
+Gate adapter fidelity notes:
+- adapter fidelity 统一看 `scripts/governance/current-gate-manifest.ts` 里的 `npmScript`、可选 `ciJob` 与 structured `executionTargets`
+- free-form `command` 只作为 operator hint / 展示面，不再承担 enforcement truth
+
 ## Current Runtime Lines
 
 <!-- current-runtime-lines:development:start -->
@@ -86,9 +91,11 @@ npm run backend-real:report
 - 人类入口：[`Runtime Lines Matrix`](./docs/user-guides/runtime-lines-matrix.md) 与 [`Local Runtime Flows`](./docs/user-guides/local-runtime-flows.md)
 - machine-readable source: [`scripts/governance/current-runtime-line-manifest.ts`](./scripts/governance/current-runtime-line-manifest.ts)
 
-当前本机基线：
+当前本机操作基线：
 - 本机共享一套 substrate，`local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用它。
-- 同一时间只允许一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。
+- 同一时间只建议一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。
+
+持续生效的 runtime contract：
 - `demo-rehearsal` 和 `cluster-rehearsal` 都拥有自己的 scenario-owned local kind world 与 local registry，不再共用一个泛化本地集群。
 - rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。
 
@@ -97,7 +104,7 @@ npm run backend-real:report
 - `demo-rehearsal` — demo 发布线的本机排演入口，使用 `agentsmith-demo` / `agentsmith-demo-registry`。
 - `cluster-rehearsal` — cluster 发布线的本机排演入口，使用 `agentsmith-cluster` / `agentsmith-cluster-registry`。
 
-本文件只保留开发/排障入口；具体运行线拓扑与切换规则统一看 runtime-line 文档。
+本文件只保留开发/排障入口；操作基线不再等同于系统正确性的前提，具体运行线拓扑与 contract 统一看 runtime-line 文档。
 <!-- current-runtime-lines:development:end -->
 
 ### Focused Helpers

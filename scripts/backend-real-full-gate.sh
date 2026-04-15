@@ -19,7 +19,13 @@ WEB_PORT="${PORT_WEB:-3001}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
 RUN_ID="${RELEASE_REAL_VISUAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/${RUN_ID}}"
-LOCAL_READY_LOG_DIR="${RELEASE_REAL_READY_LOG_DIR:-${ROOT_DIR}/artifacts/backend-real/current/release-ready}"
+RELEASE_RUN_ROOT="${RELEASE_REAL_RUN_ROOT:-$(BACKEND_REAL_RUN_ID="${RUN_ID}" backend_real_new_run_dir release-real)}"
+LOCAL_READY_LOG_DIR="${RELEASE_REAL_READY_LOG_DIR:-${RELEASE_RUN_ROOT}/release-ready}"
+export CURRENT_GATE_RESULT_GATE_ID="${CURRENT_GATE_RESULT_GATE_ID:-lane-backend-real-release}"
+export CURRENT_GATE_RESULT_NPM_SCRIPT="${CURRENT_GATE_RESULT_NPM_SCRIPT:-lane:backend-real:release}"
+export CURRENT_GATE_RESULT_LINE_KIND="${CURRENT_GATE_RESULT_LINE_KIND:-release_backend_real}"
+backend_real_prune_forbidden_current_entries
+backend_real_mark_run_status "${RELEASE_RUN_ROOT}" incomplete
 gate_evidence_init "${LOCAL_READY_LOG_DIR}" "release_backend_real"
 export RUNTIME_LINE_ID="${RUN_ID}"
 export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host}"
@@ -32,6 +38,7 @@ WEB_LOG="${LOCAL_READY_LOG_DIR}/web.log"
 NEXT_WEB_PID_FILE="${LOCAL_READY_LOG_DIR}/next-dev.pid"
 LOCAL_API_PID=""
 LOCAL_WEB_PID=""
+FINAL_STATUS="failed"
 
 record_service() {
   local service_name="$1"
@@ -178,6 +185,7 @@ cleanup() {
   stop_background_job "${LOCAL_WEB_PID}"
   stop_background_job "${LOCAL_API_PID}"
   rm -f "${NEXT_WEB_PID_FILE}"
+  backend_real_mark_run_status "${RELEASE_RUN_ROOT}" "${FINAL_STATUS}"
 }
 trap cleanup EXIT
 
@@ -215,7 +223,7 @@ gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "kind_cluster_ready" "passe
 ensure_local_release_stack
 ACCESS_TOKEN="$(gate_run_auth_preflight "${LOCAL_READY_LOG_DIR}" "${KEYCLOAK_BASE_URL}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}" "${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" "${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" "${RUNTIME_HOST_API_BASE_URL}/api/v1/me/profile" "failed to obtain release-ready token" "release-ready token missing access_token" "authenticated /api/v1/me/profile unavailable")" || exit 1
 record_service auth ready "release-ready dev-admin token bootstrap"
-run_cmd "API_BASE='${RUNTIME_HOST_API_BASE_URL}' BASE_URL='${RUNTIME_BROWSER_WEB_BASE_URL}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
+run_cmd "BACKEND_REAL_STATE_DIR='${RELEASE_RUN_ROOT}' API_BASE='${RUNTIME_HOST_API_BASE_URL}' BASE_URL='${RUNTIME_BROWSER_WEB_BASE_URL}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_ready" "passed" "backend-real ready"
 record_service backend_ready ready "backend-real ready"
 run_real_cmd 20050 3051 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' npm run backend-real:run"
@@ -225,3 +233,4 @@ run_cmd "npm run backend-real:report"
 info "release-grade real verification passed"
 info "artifacts written to ${ARTIFACT_DIR}"
 gate_record_success "${LOCAL_READY_LOG_DIR}" "release_backend_real"
+FINAL_STATUS="success"

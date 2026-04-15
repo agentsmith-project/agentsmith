@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT_DIR}/scripts/local-manual/internal-common.sh"
 export ROOT_DIR
-INTERNAL_RUNTIME_CLEANUP_MARKER="${ROOT_DIR}/artifacts/backend-real/current/local-manual-internal-runtime.cleanup"
+INTERNAL_RUNTIME_CLEANUP_MARKER="${LOCAL_MANUAL_INTERNAL_RUNTIME_CLEANUP_MARKER}"
 export INTERNAL_RUNTIME_CLEANUP_MARKER
 
 INTERNAL_RUNTIME_BOOTSTRAPPED=0
@@ -137,7 +137,9 @@ const workspaceId = process.env.TASK_WS_ID;
 const projectId = process.env.TASK_PROJECT_ID;
 const taskId = process.env.TASK_ID;
 const rootDir = process.env.ROOT_DIR || process.cwd();
-const cleanupMarker = process.env.INTERNAL_RUNTIME_CLEANUP_MARKER || path.join(rootDir, 'artifacts/backend-real/current/local-manual-internal-runtime.cleanup');
+const cleanupMarker =
+  process.env.INTERNAL_RUNTIME_CLEANUP_MARKER ||
+  path.join(rootDir, 'artifacts/runtime/lines/local-manual/current/local-manual-internal-runtime.cleanup');
 
 function fail(message, extra) {
   console.error('[notebook-terminal-internal-smoke] FAILED', message, extra ?? '');

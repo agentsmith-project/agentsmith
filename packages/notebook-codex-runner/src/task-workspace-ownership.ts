@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import type { OwnershipDecision } from '@mbos/domain';
 
 export interface RunnerProcessSnapshot {
   pid: number;
@@ -272,6 +273,16 @@ export function isNotebookRunnerProcessCommand(command: string): boolean {
   });
 }
 
+function isNotebookRunnerChildProcessOfPid(
+  processInfo: RunnerProcessSnapshot,
+  parentPid: number,
+): boolean {
+  return 'ppid' in processInfo
+    && typeof processInfo.ppid === 'number'
+    && processInfo.ppid === parentPid
+    && isNotebookRunnerProcessSnapshot(processInfo);
+}
+
 export function classifyMountedWorkspaceOwnerAuthority(args: {
   ownerRecord: MountedWorkspaceOwnerRecord;
   currentRunnerPid: number;
@@ -333,4 +344,56 @@ export function classifyMountedWorkspaceOwnerAuthority(args: {
       kind: 'ownerless_reclaimable',
       reason: 'no_other_runner_alive',
     };
+}
+
+export function classifyMountedWorkspaceJanitorAuthority(args: {
+  ownerRecord: MountedWorkspaceOwnerRecord;
+  currentRunnerPid: number;
+  currentRunnerInstanceId: string;
+  processTableByPid: ReadonlyMap<number, RunnerProcessSnapshot>;
+}): OwnershipDecision {
+  const ownerAuthority = classifyMountedWorkspaceOwnerAuthority(args);
+
+  if (
+    ownerAuthority.kind === 'stale_owner'
+    && ownerAuthority.reason === 'owner_pid_reused'
+    && args.ownerRecord.ownerProcessPid !== null
+    && [...args.processTableByPid.values()].some((processInfo) => (
+      isNotebookRunnerChildProcessOfPid(processInfo, args.ownerRecord.ownerProcessPid!)
+    ))
+  ) {
+    return {
+      authority: 'foreign_active',
+      reason: 'foreign_runner_supervisor_alive',
+    } as OwnershipDecision;
+  }
+
+  switch (ownerAuthority.kind) {
+    case 'current_runner':
+      return {
+        authority: 'current_active',
+        reason: ownerAuthority.reason,
+      } as OwnershipDecision;
+    case 'live_foreign_runner':
+    case 'live_foreign_runner_legacy':
+      return {
+        authority: 'foreign_active',
+        reason: ownerAuthority.reason,
+      } as OwnershipDecision;
+    case 'stale_owner':
+      return {
+        authority: 'stale_reclaimable',
+        reason: ownerAuthority.reason,
+      } as OwnershipDecision;
+    case 'ownerless_reclaimable':
+      return {
+        authority: 'ownerless_adoptable',
+        reason: ownerAuthority.reason,
+      } as OwnershipDecision;
+    case 'ownerless_other_runner_live':
+      return {
+        authority: 'unverified',
+        reason: ownerAuthority.reason,
+      } as OwnershipDecision;
+  }
 }

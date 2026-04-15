@@ -5,6 +5,7 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-line-state.sh"
 ensure_backend_real_state
 
 API_BASE="${API_BASE:-http://localhost:${PORT_API:-21000}}"
@@ -13,7 +14,7 @@ WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
 TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 PROMPT="${PROMPT:-check credential sync}"
-RUNNER_LOG="${RUNNER_LOG:-$(backend_real_state_root)/local-manual/runner.log}"
+RUNNER_LOG="${RUNNER_LOG:-$(local_manual_runtime_path runner.log)}"
 TASK_LOG="${TASK_LOG:-$(backend_real_state_root)/credential-sync-smoke-task.log}"
 
 if [[ -z "${PROJECT_ID}" ]]; then

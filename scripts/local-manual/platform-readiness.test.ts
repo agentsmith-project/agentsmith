@@ -8,11 +8,14 @@ function runPlatformReadiness(args: {
   apiReady?: boolean;
   webReady?: boolean;
   proxyReady?: boolean;
+  apiPid?: string;
+  webPid?: string;
 }): { state: string; isReady: string } {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'local-manual-platform-readiness-'));
   const backendRealRoot = path.join(tempRoot, 'backend-real', 'current');
-  const localManualRoot = path.join(backendRealRoot, 'local-manual');
+  const runtimeLinesRoot = path.join(tempRoot, 'artifacts', 'runtime', 'lines');
+  const localManualRoot = path.join(runtimeLinesRoot, 'local-manual', 'current');
   const substrateRoot = path.join(tempRoot, 'runtime', 'substrate', 'local-dev');
   const envFile = path.join(tempRoot, '.env.local-manual');
 
@@ -30,6 +33,12 @@ function runPlatformReadiness(args: {
     if (args.proxyReady ?? true) {
       writeFileSync(path.join(substrateRoot, 'proxy.ready'), 'ready\n', 'utf8');
     }
+    if (args.apiPid) {
+      writeFileSync(path.join(localManualRoot, 'api.pid'), `${args.apiPid}\n`, 'utf8');
+    }
+    if (args.webPid) {
+      writeFileSync(path.join(localManualRoot, 'web.pid'), `${args.webPid}\n`, 'utf8');
+    }
 
     const output = execFileSync(
       'bash',
@@ -39,6 +48,7 @@ function runPlatformReadiness(args: {
           set -euo pipefail
           export ENV_FILE="${envFile}"
           export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+          export RUNTIME_LINES_ROOT="${runtimeLinesRoot}"
           source "${repoRoot}/scripts/local-manual/common.sh"
           printf 'state=%s\\n' "$(local_manual_platform_ready_state)"
           if local_manual_platform_is_ready; then
@@ -84,6 +94,19 @@ describe('local-manual platform readiness', () => {
     });
 
     expect(readiness.state).toBe('missing:web,proxy');
+    expect(readiness.isReady).toBe('no');
+  });
+
+  it('does not let tracked web/api pid files keep the platform ready after stop-line cleared their readiness markers', () => {
+    const readiness = runPlatformReadiness({
+      apiReady: false,
+      webReady: false,
+      proxyReady: true,
+      apiPid: '5100',
+      webPid: '6100',
+    });
+
+    expect(readiness.state).toBe('missing:api,web');
     expect(readiness.isReady).toBe('no');
   });
 });

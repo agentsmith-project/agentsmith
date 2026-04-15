@@ -33,6 +33,40 @@ backend_real_tmp_file() {
   printf '%s/%s\n' "$(backend_real_state_root)" "$1"
 }
 
+backend_real_current_boundary_violations() {
+  local root path
+  root="$(backend_real_state_root)"
+  local forbidden_paths=(
+    "${root}/local-manual"
+    "${root}/release-ready"
+    "${root}/api.pid"
+    "${root}/web.pid"
+    "${root}/runner.pid"
+    "${root}/api.ready"
+    "${root}/web.ready"
+    "${root}/runner.ready"
+    "${root}/api.port"
+    "${root}/web.port"
+    "${root}/api.log"
+    "${root}/web.log"
+    "${root}/runner.log"
+    "${root}/local-manual-internal-runtime.cleanup"
+  )
+  for path in "${forbidden_paths[@]}"; do
+    if [[ -e "${path}" ]]; then
+      printf '%s\n' "${path}"
+    fi
+  done
+}
+
+backend_real_prune_forbidden_current_entries() {
+  local path
+  while IFS= read -r path; do
+    [[ -n "${path}" ]] || continue
+    rm -rf "${path}"
+  done < <(backend_real_current_boundary_violations)
+}
+
 backend_real_runs_root() {
   local root_dir="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
   printf '%s\n' "${BACKEND_REAL_RUNS_DIR:-${root_dir}/artifacts/backend-real/runs}"

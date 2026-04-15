@@ -1,5 +1,6 @@
 import {
   findCurrentGateDefinition,
+  findCurrentGateDefinitionById,
   type CurrentGateRequirement,
   type CurrentGateStoryEvidenceKind,
   type CurrentGateStoryEvidencePolicy,
@@ -21,6 +22,7 @@ export interface CurrentWorkflowCommand {
   canonical: 'npm' | 'make';
   makeTarget?: string;
   npmScript?: string;
+  gateId?: string;
   recommended?: boolean;
   storyEvidencePolicy: CurrentGateStoryEvidencePolicy;
   storyEvidenceKinds: readonly CurrentGateStoryEvidenceKind[];
@@ -71,7 +73,11 @@ type RawCurrentWorkflowSection = {
 };
 
 function hydrateCurrentWorkflowCommand(command: RawCurrentWorkflowCommand): CurrentWorkflowCommand {
-  const storyEvidence = command.npmScript ? findCurrentGateDefinition(command.npmScript) : undefined;
+  const storyEvidence = command.gateId
+    ? findCurrentGateDefinitionById(command.gateId)
+    : command.npmScript
+      ? findCurrentGateDefinition(command.npmScript)
+      : undefined;
 
   return {
     storyEvidencePolicy: 'none',
@@ -280,6 +286,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'run the default mock UI regression range',
         canonical: 'npm',
         npmScript: 'test:default-e2e',
+        gateId: 'workspace-project-default',
         recommended: true,
       },
       {
@@ -287,6 +294,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'run the visual verification suite',
         canonical: 'npm',
         npmScript: 'test:visual',
+        gateId: 'visual-lane-command',
         recommended: true,
       },
       {
@@ -294,6 +302,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'run governance-focused verification',
         canonical: 'npm',
         npmScript: 'test:governance',
+        gateId: 'governance-default',
         recommended: true,
       },
       {
@@ -301,6 +310,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'run the core real-backend verification suite',
         canonical: 'npm',
         npmScript: 'test:backend-real:core',
+        gateId: 'test-backend-real-core',
         recommended: true,
       },
       {
@@ -332,6 +342,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'run the fast engineering gate',
         canonical: 'npm',
         npmScript: 'gate:fast',
+        gateId: 'gate-fast',
         makeTarget: 'gate-fast',
         recommended: true,
       },
@@ -340,6 +351,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'run the default engineering gate',
         canonical: 'npm',
         npmScript: 'gate:default',
+        gateId: 'gate-default',
         makeTarget: 'gate-default',
         recommended: true,
       },
@@ -348,6 +360,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'run the release-grade engineering gate',
         canonical: 'npm',
         npmScript: 'gate:release',
+        gateId: 'gate-release',
         makeTarget: 'gate-release',
       },
     ],
@@ -369,6 +382,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'run the visual verification channel',
         canonical: 'npm',
         npmScript: 'lane:visual',
+        gateId: 'lane-visual',
         makeTarget: 'lane-visual',
         recommended: true,
       },
@@ -377,6 +391,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'run the core real-backend verification channel',
         canonical: 'npm',
         npmScript: 'lane:backend-real:core',
+        gateId: 'lane-backend-real-core',
         makeTarget: 'lane-real-core',
       },
       {
@@ -384,6 +399,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'run the full real-backend verification channel',
         canonical: 'npm',
         npmScript: 'lane:backend-real:release',
+        gateId: 'lane-backend-real-release',
         makeTarget: 'lane-real-release',
         recommended: true,
       },

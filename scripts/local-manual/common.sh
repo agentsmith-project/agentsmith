@@ -9,15 +9,19 @@ LOCAL_MANUAL_ENABLE_INTERNAL="${LOCAL_MANUAL_ENABLE_INTERNAL:-0}"
 LOCAL_MANUAL_INTERNAL_ENV_FILE="${LOCAL_MANUAL_INTERNAL_ENV_FILE:-${ROOT_DIR}/infra/flows/local-manual-internal.env}"
 
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-line-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-config.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
 source "${ROOT_DIR}/scripts/substrate/common.sh"
 ensure_backend_real_state
+backend_real_prune_forbidden_current_entries
 
-LOCAL_MANUAL_ROOT="$(backend_real_state_root)/local-manual"
-mkdir -p "${LOCAL_MANUAL_ROOT}"
+LOCAL_MANUAL_ROOT="$(ensure_runtime_line_current_root local-manual)"
 LOCAL_MANUAL_EVIDENCE_DIR="${LOCAL_MANUAL_ROOT}/evidence"
+LOCAL_MANUAL_NEXT_DIST_DIR="${LOCAL_MANUAL_NEXT_DIST_DIR:-$(local_manual_next_dist_dir)}"
+LOCAL_MANUAL_NEXT_ROOT_CONTRACT_DIR="${LOCAL_MANUAL_NEXT_ROOT_CONTRACT_DIR:-${LOCAL_MANUAL_ROOT}/next-generated-root}"
+LOCAL_MANUAL_INTERNAL_RUNTIME_CLEANUP_MARKER="${LOCAL_MANUAL_ROOT}/local-manual-internal-runtime.cleanup"
 
 API_PID_FILE="${LOCAL_MANUAL_ROOT}/api.pid"
 WEB_PID_FILE="${LOCAL_MANUAL_ROOT}/web.pid"
@@ -103,6 +107,7 @@ init_local_manual_env() {
   PORT_API="${PORT_API:-20000}"
   PORT_WEB="${PORT_WEB:-3001}"
   LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP="${LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP:-0}"
+  LOCAL_MANUAL_ALLOW_UNTRACKED_PROCESS_RESCUE="${LOCAL_MANUAL_ALLOW_UNTRACKED_PROCESS_RESCUE:-0}"
   LOCALE="${LOCALE:-zh-CN}"
   WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 
@@ -286,6 +291,318 @@ local_manual_platform_is_ready() {
   [[ "$(local_manual_platform_ready_state)" == "ready" ]]
 }
 
+local_manual_tracked_service_pid_file() {
+  local kind="$1"
+  case "${kind}" in
+    web) printf '%s\n' "${WEB_PID_FILE}" ;;
+    api) printf '%s\n' "${API_PID_FILE}" ;;
+    *) return 1 ;;
+  esac
+}
+
+local_manual_tracked_service_ready_file() {
+  local kind="$1"
+  case "${kind}" in
+    web) printf '%s\n' "${WEB_READY_FILE}" ;;
+    api) printf '%s\n' "${API_READY_FILE}" ;;
+    *) return 1 ;;
+  esac
+}
+
+local_manual_tracked_service_port_file() {
+  local kind="$1"
+  case "${kind}" in
+    web) printf '%s\n' "${WEB_PORT_FILE}" ;;
+    api) printf '%s\n' "${API_PORT_FILE}" ;;
+    *) return 1 ;;
+  esac
+}
+
+local_manual_tracked_service_port() {
+  local kind="$1"
+  case "${kind}" in
+    web) printf '%s\n' "${PORT_WEB}" ;;
+    api) printf '%s\n' "${PORT_API}" ;;
+    *) return 1 ;;
+  esac
+}
+
+local_manual_service_stop_evidence_file() {
+  local kind="$1"
+  printf '%s/%s/stop-authority.json\n' "${LOCAL_MANUAL_EVIDENCE_DIR}" "${kind}"
+}
+
+local_manual_process_command_line() {
+  local pid="$1"
+  ps -o command= -p "${pid}" 2>/dev/null | head -n 1
+}
+
+local_manual_process_cwd() {
+  local pid="$1"
+  if [[ -e "/proc/${pid}/cwd" ]]; then
+    readlink -f "/proc/${pid}/cwd" 2>/dev/null || true
+    return 0
+  fi
+  ps -o cwd= -p "${pid}" 2>/dev/null | head -n 1 | xargs
+}
+
+local_manual_service_launch_root() {
+  local kind="$1"
+  case "${kind}" in
+    web | api) printf '%s\n' "${ROOT_DIR}" ;;
+    *) return 1 ;;
+  esac
+}
+
+local_manual_service_allowed_cwds() {
+  local kind="$1"
+  local launch_root
+  launch_root="$(local_manual_service_launch_root "${kind}")"
+  case "${kind}" in
+    web)
+      printf '%s\n' "${launch_root}"
+      ;;
+    api)
+      printf '%s\n' "${launch_root}"
+      printf '%s\n' "${launch_root}/packages/api-entry-node"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+local_manual_service_command_matches_kind() {
+  local kind="$1"
+  local command_line="$2"
+  case "${kind}" in
+    web)
+      [[ "${command_line}" == *"run-next-dev-safe.sh"* || "${command_line}" == *"next/dist/bin/next"* || "${command_line}" == *"next dev"* || "${command_line}" == *"npm run dev:test"* ]]
+      ;;
+    api)
+      [[ "${command_line}" == *"@mbos/api-entry-node"* || "${command_line}" == *"packages/api-entry-node"* || "${command_line}" == *"api-entry-node"* || ( "${command_line}" == *"tsx"* && "${command_line}" == *"src/index.ts"* ) ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+local_manual_service_cwd_matches_kind() {
+  local kind="$1"
+  local cwd="$2"
+  local allowed_cwd
+  while IFS= read -r allowed_cwd; do
+    [[ -n "${allowed_cwd}" ]] || continue
+    if [[ "${cwd}" == "${allowed_cwd}" ]]; then
+      return 0
+    fi
+  done < <(local_manual_service_allowed_cwds "${kind}")
+  return 1
+}
+
+local_manual_service_pid_matches_expected_port() {
+  local kind="$1"
+  local pid="$2"
+  local command_line="${3:-}"
+  local expected_port
+  expected_port="$(local_manual_tracked_service_port "${kind}")"
+  if lsof -tiTCP:"${expected_port}" -sTCP:LISTEN 2>/dev/null | grep -Fxq "${pid}"; then
+    return 0
+  fi
+  [[ "${command_line}" == *"--port ${expected_port}"* || "${command_line}" == *"--port=${expected_port}"* ]]
+}
+
+local_manual_classify_tracked_service_authority() {
+  local kind="$1"
+  local pid="${2:-}"
+  local pid_file command_line cwd
+  pid_file="$(local_manual_tracked_service_pid_file "${kind}")"
+  if [[ -z "${pid}" ]]; then
+    pid="$(cat "${pid_file}" 2>/dev/null || true)"
+  fi
+  if [[ -z "${pid}" ]]; then
+    printf 'stale_reclaimable|tracked_pid_missing\n'
+    return 0
+  fi
+  if ! kill -0 "${pid}" >/dev/null 2>&1; then
+    printf 'stale_reclaimable|tracked_pid_missing\n'
+    return 0
+  fi
+
+  command_line="$(local_manual_process_command_line "${pid}")"
+  cwd="$(local_manual_process_cwd "${pid}")"
+  if [[ -z "${command_line}" ]]; then
+    printf 'unverified|tracked_pid_command_unavailable\n'
+    return 0
+  fi
+  if [[ -z "${cwd}" || "${cwd}" == "-" ]]; then
+    printf 'unverified|tracked_pid_cwd_unavailable\n'
+    return 0
+  fi
+  if ! local_manual_service_cwd_matches_kind "${kind}" "${cwd}"; then
+    printf 'unverified|tracked_pid_foreign_cwd\n'
+    return 0
+  fi
+  if ! local_manual_service_command_matches_kind "${kind}" "${command_line}"; then
+    printf 'unverified|tracked_pid_reused\n'
+    return 0
+  fi
+  if ! local_manual_service_pid_matches_expected_port "${kind}" "${pid}" "${command_line}"; then
+    printf 'unverified|tracked_pid_unexpected_port\n'
+    return 0
+  fi
+
+  printf 'current_active|tracked_local_manual_%s\n' "${kind}"
+}
+
+local_manual_write_service_stop_evidence() {
+  local kind="$1"
+  local authority="$2"
+  local action="$3"
+  local reason="$4"
+  local pid="$5"
+  local evidence_file
+  evidence_file="$(local_manual_service_stop_evidence_file "${kind}")"
+  mkdir -p "$(dirname "${evidence_file}")"
+  node - <<'NODE' "${evidence_file}" "${kind}" "${authority}" "${action}" "${reason}" "${pid}"
+const fs = require('node:fs');
+const path = require('node:path');
+const [file, kind, authority, action, reason, pid] = process.argv.slice(2);
+const payload = {
+  kind,
+  authority,
+  action,
+  reason,
+  pid,
+  lifecycle: 'stop_line',
+  recorded_at: new Date().toISOString(),
+};
+fs.mkdirSync(path.dirname(file), { recursive: true });
+fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`);
+NODE
+}
+
+local_manual_clear_tracked_service_state() {
+  local kind="$1"
+  rm -f \
+    "$(local_manual_tracked_service_ready_file "${kind}")" \
+    "$(local_manual_tracked_service_port_file "${kind}")"
+}
+
+local_manual_tracked_service_pid_value() {
+  local kind="$1"
+  local pid_file
+  pid_file="$(local_manual_tracked_service_pid_file "${kind}")"
+  cat "${pid_file}" 2>/dev/null || true
+}
+
+local_manual_capture_tracked_service_stop_snapshot() {
+  local kind="$1"
+  local pid classification authority reason
+  pid="$(local_manual_tracked_service_pid_value "${kind}")"
+  classification="$(local_manual_classify_tracked_service_authority "${kind}" "${pid}")"
+  authority="${classification%%|*}"
+  reason="${classification#*|}"
+  printf '%s|%s|%s\n' "${authority}" "${reason}" "${pid}"
+}
+
+local_manual_apply_tracked_service_stop_authority() {
+  local kind="$1"
+  local authority="$2"
+  local reason="$3"
+  local pid="$4"
+  local pid_file
+  pid_file="$(local_manual_tracked_service_pid_file "${kind}")"
+
+  if [[ "${authority}" == "stale_reclaimable" ]]; then
+    rm -f "${pid_file}"
+    local_manual_clear_tracked_service_state "${kind}"
+    return 0
+  fi
+
+  rm -f "$(local_manual_tracked_service_ready_file "${kind}")"
+  local_manual_write_service_stop_evidence "${kind}" "${authority}" "mark_degraded" "${reason}" "${pid}"
+  gate_record_preflight_check "${LOCAL_MANUAL_EVIDENCE_DIR}" "${kind}_stop_authority" "warning" "${kind} ownership is unverified during stop_line cleanup: ${reason}"
+  warn "${kind} ownership is unverified; preserving tracked pid file until ownership can be verified"
+  return 0
+}
+
+local_manual_signal_tracked_service_pid() {
+  local signal_name="$1"
+  local pid="$2"
+  [[ -n "${pid}" ]] || return 0
+  kill "-${signal_name}" "${pid}" >/dev/null 2>&1 || true
+}
+
+local_manual_verify_tracked_service_stop_contract() {
+  local kind="$1"
+  local pid="$2"
+  local expected_port listeners
+
+  if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
+    return 1
+  fi
+
+  expected_port="$(local_manual_tracked_service_port "${kind}")"
+  listeners="$(lsof -tiTCP:"${expected_port}" -sTCP:LISTEN 2>/dev/null || true)"
+  [[ -z "${listeners}" ]]
+}
+
+local_manual_actuate_tracked_service_stop_contract() {
+  local kind="$1"
+  local pid="$2"
+  local _i
+
+  local_manual_signal_tracked_service_pid TERM "${pid}"
+  for _i in $(seq 1 20); do
+    if local_manual_verify_tracked_service_stop_contract "${kind}" "${pid}"; then
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  local_manual_signal_tracked_service_pid KILL "${pid}"
+  for _i in $(seq 1 20); do
+    if local_manual_verify_tracked_service_stop_contract "${kind}" "${pid}"; then
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  return 0
+}
+
+stop_local_manual_tracked_service_owner_aware() {
+  local kind="$1"
+  local pid_file snapshot authority reason pid final_snapshot final_authority final_reason final_pid
+  pid_file="$(local_manual_tracked_service_pid_file "${kind}")"
+  [[ -f "${pid_file}" ]] || return 0
+  snapshot="$(local_manual_capture_tracked_service_stop_snapshot "${kind}")"
+  IFS='|' read -r authority reason pid <<< "${snapshot}"
+
+  if [[ "${authority}" == "current_active" ]]; then
+    final_snapshot="$(local_manual_capture_tracked_service_stop_snapshot "${kind}")"
+    IFS='|' read -r final_authority final_reason final_pid <<< "${final_snapshot}"
+
+    if [[ "${final_authority}" != "current_active" ]]; then
+      local_manual_apply_tracked_service_stop_authority "${kind}" "${final_authority}" "${final_reason}" "${final_pid}"
+      return 0
+    fi
+
+    local_manual_actuate_tracked_service_stop_contract "${kind}" "${final_pid}"
+    if ! local_manual_verify_tracked_service_stop_contract "${kind}" "${final_pid}"; then
+      warn "${kind} stop verification failed; keeping tracked state until the verified local-manual process exits"
+      return 1
+    fi
+    rm -f "${pid_file}"
+    local_manual_clear_tracked_service_state "${kind}"
+    return 0
+  fi
+
+  local_manual_apply_tracked_service_stop_authority "${kind}" "${authority}" "${reason}" "${pid}"
+}
+
 runner_socket_health_state() {
   local pid current_state line
   pid="$(cat "${RUNNER_PID_FILE}" 2>/dev/null || true)"
@@ -327,7 +644,8 @@ remove_local_manual_runtime_files() {
   rm -f \
     "${API_READY_FILE}" "${WEB_READY_FILE}" "${RUNNER_READY_FILE}" \
     "${API_PORT_FILE}" "${WEB_PORT_FILE}" \
-    "${API_PID_FILE}" "${WEB_PID_FILE}" "${RUNNER_PID_FILE}"
+    "${API_PID_FILE}" "${WEB_PID_FILE}" "${RUNNER_PID_FILE}" \
+    "${LOCAL_MANUAL_INTERNAL_RUNTIME_CLEANUP_MARKER}"
 }
 
 reset_local_manual_state() {
@@ -368,6 +686,230 @@ stop_matching_processes() {
   xargs -r kill -9 >/dev/null 2>&1 <<< "${pids}" || true
 }
 
+local_manual_runner_stop_evidence_file() {
+  printf '%s/runner/stop-owner-janitor.json\n' "${LOCAL_MANUAL_EVIDENCE_DIR}"
+}
+
+local_manual_runner_owner_janitor_plan() {
+  local intent="${1:-stop_line}"
+  "${ROOT_DIR}/node_modules/.bin/tsx" "${ROOT_DIR}/scripts/local-manual/owner-janitor.ts" \
+    --kind runner \
+    --intent "${intent}" \
+    --runner-pid-file "${RUNNER_PID_FILE}" 2>/dev/null || true
+}
+
+local_manual_runner_owner_janitor_fallback_plan() {
+  local intent="${1:-stop_line}"
+  local reason="${2:-planner_unavailable}"
+  if [[ "${intent}" == "stop_line" ]]; then
+    printf '{"kind":"runner","authority":"unverified","action":"mark_degraded","reason":"%s","lifecycle":"stop_line"}\n' "${reason}"
+    return 0
+  fi
+
+  printf '{"kind":"runner","authority":"unverified","action":"block","reason":"%s"}\n' "${reason}"
+}
+
+local_manual_runner_owner_janitor_normalize_plan() {
+  local intent="${1:-stop_line}"
+  local raw_plan="${2:-}"
+  local normalized_output normalized_trimmed fallback_reason
+  normalized_output="$(
+    printf '%s' "${raw_plan}" \
+      | "${ROOT_DIR}/node_modules/.bin/tsx" "${ROOT_DIR}/scripts/local-manual/owner-janitor.ts" \
+        --kind runner \
+        --intent "${intent}" \
+        --normalize-plan-stdin 2>/dev/null || true
+  )"
+  normalized_trimmed="$(printf '%s' "${normalized_output}" | tr -d '[:space:]')"
+  if [[ -n "${normalized_trimmed}" ]]; then
+    printf '%s\n' "${normalized_output}"
+    return 0
+  fi
+
+  fallback_reason="planner_malformed"
+  if [[ -z "$(printf '%s' "${raw_plan}" | tr -d '[:space:]')" ]]; then
+    fallback_reason="planner_unavailable"
+  fi
+  local_manual_runner_owner_janitor_fallback_plan "${intent}" "${fallback_reason}"
+}
+
+local_manual_write_runner_stop_evidence() {
+  local plan_json="$1"
+  local intent="${2:-stop_line}"
+  local evidence_file
+  evidence_file="$(local_manual_runner_stop_evidence_file)"
+  mkdir -p "$(dirname "${evidence_file}")"
+  node - <<'NODE' "${evidence_file}" "${intent}" "${plan_json}"
+const fs = require('node:fs');
+const path = require('node:path');
+const [file, intent, rawPlan] = process.argv.slice(2);
+const raw = String(rawPlan ?? '').trim();
+const payload = raw ? JSON.parse(raw) : {};
+const next = {
+  ...payload,
+  intent,
+  recorded_at: new Date().toISOString(),
+};
+fs.mkdirSync(path.dirname(file), { recursive: true });
+fs.writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
+NODE
+}
+
+local_manual_mark_runner_degraded() {
+  local plan_json="$1"
+  local reason
+  reason="$(node - <<'NODE' "${plan_json}"
+const [rawPlan] = process.argv.slice(2);
+const raw = String(rawPlan ?? '').trim();
+if (!raw) {
+  process.exit(0);
+}
+const plan = JSON.parse(raw);
+process.stdout.write(String(plan.reason ?? 'runner_unverified'));
+NODE
+)"
+  local_manual_write_runner_stop_evidence "${plan_json}" "stop_line"
+  rm -f "${RUNNER_READY_FILE}"
+  gate_record_preflight_check "${LOCAL_MANUAL_EVIDENCE_DIR}" "runner_stop_authority" "warning" "runner ownership is unverified during stop_line cleanup: ${reason}"
+}
+
+local_manual_runner_stop_contract_root_pid() {
+  local plan_json="$1"
+  node - <<'NODE' "${plan_json}"
+const [rawPlan] = process.argv.slice(2);
+const raw = String(rawPlan ?? '').trim();
+if (!raw) {
+  process.exit(0);
+}
+const plan = JSON.parse(raw);
+process.stdout.write(String(plan.stop?.root_pid ?? ''));
+NODE
+}
+
+local_manual_runner_stop_contract_owned_pids() {
+  local plan_json="$1"
+  node - <<'NODE' "${plan_json}"
+const [rawPlan] = process.argv.slice(2);
+const raw = String(rawPlan ?? '').trim();
+if (!raw) {
+  process.exit(0);
+}
+const plan = JSON.parse(raw);
+process.stdout.write((plan.stop?.owned_pids ?? []).join(' '));
+NODE
+}
+
+local_manual_runner_stop_contract_action() {
+  local plan_json="$1"
+  node - <<'NODE' "${plan_json}"
+const [rawPlan] = process.argv.slice(2);
+const raw = String(rawPlan ?? '').trim();
+if (!raw) {
+  process.exit(0);
+}
+const plan = JSON.parse(raw);
+process.stdout.write(String(plan.action ?? ''));
+NODE
+}
+
+local_manual_signal_runner_pid_list() {
+  local signal_name="$1"
+  shift || true
+  local pid
+  for pid in "$@"; do
+    [[ -n "${pid}" ]] || continue
+    kill "-${signal_name}" "${pid}" >/dev/null 2>&1 || true
+  done
+}
+
+local_manual_runner_process_group_id() {
+  local pid="$1"
+  [[ -n "${pid}" ]] || return 0
+  ps -o pgid= -p "${pid}" 2>/dev/null | tr -d '[:space:]'
+}
+
+local_manual_verify_runner_stop_contract() {
+  local plan_json="$1"
+  local owned_pids_line pid
+  owned_pids_line="$(local_manual_runner_stop_contract_owned_pids "${plan_json}")"
+  [[ -n "${owned_pids_line}" ]] || return 0
+  read -r -a owned_pids <<< "${owned_pids_line}"
+  for pid in "${owned_pids[@]}"; do
+    [[ -n "${pid}" ]] || continue
+    if kill -0 "${pid}" >/dev/null 2>&1; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+local_manual_actuate_runner_stop_contract() {
+  local plan_json="$1"
+  local root_pid owned_pids_line pgid
+  root_pid="$(local_manual_runner_stop_contract_root_pid "${plan_json}")"
+  owned_pids_line="$(local_manual_runner_stop_contract_owned_pids "${plan_json}")"
+  local -a owned_pids=()
+  if [[ -n "${owned_pids_line}" ]]; then
+    read -r -a owned_pids <<< "${owned_pids_line}"
+  fi
+
+  pgid="$(local_manual_runner_process_group_id "${root_pid}")"
+  if [[ -n "${pgid}" && "${pgid}" == "${root_pid}" && "${pgid}" != "$$" ]]; then
+    kill -TERM -- "-${pgid}" >/dev/null 2>&1 || true
+  fi
+  local_manual_signal_runner_pid_list TERM "${owned_pids[@]}"
+
+  local _i
+  for _i in $(seq 1 20); do
+    if local_manual_verify_runner_stop_contract "${plan_json}"; then
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  if [[ -n "${pgid}" && "${pgid}" == "${root_pid}" && "${pgid}" != "$$" ]]; then
+    kill -KILL -- "-${pgid}" >/dev/null 2>&1 || true
+  fi
+  local_manual_signal_runner_pid_list KILL "${owned_pids[@]}"
+}
+
+stop_local_manual_runner_owner_aware() {
+  local intent="${1:-stop_line}"
+  if [[ ! -f "${RUNNER_PID_FILE}" ]]; then
+    return 0
+  fi
+
+  local owner_janitor_raw_output owner_janitor_output
+  owner_janitor_raw_output="$(local_manual_runner_owner_janitor_plan "${intent}")"
+  owner_janitor_output="$(local_manual_runner_owner_janitor_normalize_plan "${intent}" "${owner_janitor_raw_output}")"
+  local owner_janitor_action
+  owner_janitor_action="$(local_manual_runner_stop_contract_action "${owner_janitor_output}")"
+
+  if [[ "${owner_janitor_action}" == "stop_runner_tree" ]]; then
+    local_manual_actuate_runner_stop_contract "${owner_janitor_output}"
+    if ! local_manual_verify_runner_stop_contract "${owner_janitor_output}"; then
+      warn "runner full-stop verification failed; keeping tracking state until the owned runner tree exits"
+      return 1
+    fi
+    rm -f "${RUNNER_PID_FILE}"
+    rm -f "${RUNNER_READY_FILE}"
+    return 0
+  fi
+
+  if [[ "${owner_janitor_action}" == "remove_state_only" ]]; then
+    rm -f "${RUNNER_PID_FILE}" "${RUNNER_READY_FILE}"
+    return 0
+  fi
+
+  if [[ "${owner_janitor_action}" == "mark_degraded" ]]; then
+    local_manual_mark_runner_degraded "${owner_janitor_output}"
+    return 0
+  fi
+
+  warn "runner ownership is unverified; refusing to stop tracked local-manual runner"
+  return 1
+}
+
 count_matching_processes() {
   local pattern="$1"
   local pids
@@ -379,25 +921,25 @@ count_matching_processes() {
   printf '%s\n' "${pids}" | awk 'NF { count += 1 } END { print count + 0 }'
 }
 
-maybe_stop_untracked_port() {
-  local port="$1"
-  if [[ "${LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP}" != "1" ]]; then
+rescue_stop_untracked_local_manual_processes() {
+  if [[ "${LOCAL_MANUAL_ALLOW_UNTRACKED_PROCESS_RESCUE}" != "1" ]]; then
     return 0
   fi
-  stop_listeners_on_port "${port}"
-}
-
-stop_local_manual_processes() {
-  stop_pid_file_if_running "${RUNNER_PID_FILE}" "runner"
-  stop_pid_file_if_running "${WEB_PID_FILE}" "web"
-  stop_pid_file_if_running "${API_PID_FILE}" "api"
-
   stop_matching_processes "run-next-dev-safe.sh --port ${PORT_WEB}"
-  stop_matching_processes "npm run dev:test --port ${PORT_WEB}"
+  stop_matching_processes "npm run dev:test -- --port ${PORT_WEB}"
   stop_matching_processes "next dev --port ${PORT_WEB}"
   stop_matching_processes 'node .*/node_modules/.bin/tsx src/index.ts'
   stop_matching_processes 'make notebook-runner'
+  if [[ "${LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP}" == "1" ]]; then
+    stop_listeners_on_port "${PORT_WEB}"
+    stop_listeners_on_port "${PORT_API}"
+  fi
+}
 
-  maybe_stop_untracked_port "${PORT_WEB}"
-  maybe_stop_untracked_port "${PORT_API}"
+stop_local_manual_processes() {
+  stop_local_manual_runner_owner_aware stop_line
+  stop_local_manual_tracked_service_owner_aware web
+  stop_local_manual_tracked_service_owner_aware api
+
+  rescue_stop_untracked_local_manual_processes
 }

@@ -9,7 +9,7 @@ import {
   listRecommendedCurrentWorkflowSections,
 } from '../current-workflow-manifest';
 import { GOVERNANCE_CHECK_DEFINITIONS } from '../check-definitions';
-import { findCurrentGateDefinition } from '../current-gate-manifest';
+import { findCurrentGateDefinition, findCurrentGateDefinitionById } from '../current-gate-manifest';
 
 describe('current workflow governance', () => {
   it('keeps the expected top-level workflow terms and section order', () => {
@@ -40,6 +40,15 @@ describe('current workflow governance', () => {
       expect(Array.isArray(command.storyEvidenceKinds)).toBe(true);
       expect(Array.isArray(command.storyEvidenceArtifacts)).toBe(true);
       expect(Array.isArray(command.storyEvidenceRequiredFor)).toBe(true);
+
+      if (command.gateId) {
+        const gate = findCurrentGateDefinitionById(command.gateId);
+        expect(gate).toBeDefined();
+        expect(gate?.executionTargets.length).toBeGreaterThan(0);
+        if (command.npmScript) {
+          expect(gate?.npmScript).toBe(command.npmScript);
+        }
+      }
 
       if (command.canonical === 'npm') {
         expect(command.npmScript).toBeTruthy();
@@ -95,7 +104,9 @@ describe('current workflow governance', () => {
     const commands = listCurrentWorkflowCommands().filter((command) => command.npmScript);
 
     for (const command of commands) {
-      const gate = findCurrentGateDefinition(command.npmScript!);
+      const gate = command.gateId
+        ? findCurrentGateDefinitionById(command.gateId)
+        : findCurrentGateDefinition(command.npmScript!);
       if (!gate) {
         continue;
       }
@@ -104,6 +115,18 @@ describe('current workflow governance', () => {
       expect(command.storyEvidenceKinds).toEqual(gate.storyEvidenceKinds);
       expect(command.storyEvidenceArtifacts).toEqual(gate.storyEvidenceArtifacts);
       expect(command.storyEvidenceRequiredFor).toEqual(gate.storyEvidenceRequiredFor);
+    }
+  });
+
+  it('keeps workflow gate bindings anchored to structured adapters, not free-form command text', () => {
+    const workflowCommands = listCurrentWorkflowCommands().filter((command) => command.gateId && command.npmScript);
+
+    for (const command of workflowCommands) {
+      const gate = findCurrentGateDefinitionById(command.gateId!);
+
+      expect(gate).toBeDefined();
+      expect(gate?.npmScript).toBe(command.npmScript);
+      expect(gate?.executionTargets.length).toBeGreaterThan(0);
     }
   });
 

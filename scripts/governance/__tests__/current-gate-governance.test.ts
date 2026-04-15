@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CURRENT_GATE_MANIFEST,
+  findCurrentGateDefinitionById,
   listCurrentGateDefinitionsByKind,
 } from '../current-gate-manifest';
 
@@ -18,6 +19,8 @@ describe('current gate governance', () => {
       expect(definition.id.length).toBeGreaterThan(0);
       expect(definition.npmScript.length).toBeGreaterThan(0);
       expect(definition.command.length).toBeGreaterThan(0);
+      expect(Array.isArray(definition.executionTargets)).toBe(true);
+      expect(definition.executionTargets.length).toBeGreaterThan(0);
       expect(definition.description.length).toBeGreaterThan(0);
       expect(['test', 'gate', 'lane']).toContain(definition.kind);
       expect(['none', 'targeted', 'full']).toContain(definition.visualPolicy);
@@ -28,9 +31,39 @@ describe('current gate governance', () => {
       expect(Array.isArray(definition.storyEvidenceRequiredFor)).toBe(true);
       expect(ids.has(definition.id)).toBe(false);
       expect(npmScripts.has(definition.npmScript)).toBe(false);
+      expect(findCurrentGateDefinitionById(definition.id)).toBe(definition);
       ids.add(definition.id);
       npmScripts.add(definition.npmScript);
     }
+  });
+
+  it('treats stable gate ids as the primary gate identity', () => {
+    const gateDefaultById = findCurrentGateDefinitionById('gate-default');
+    const gateDefaultByAdapter = CURRENT_GATE_MANIFEST.find((definition) => definition.npmScript === 'gate:default');
+
+    expect(gateDefaultById).toBeDefined();
+    expect(gateDefaultByAdapter).toBeDefined();
+    expect(gateDefaultById).toBe(gateDefaultByAdapter);
+  });
+
+  it('keeps adapter fidelity in structured execution targets instead of free-form command text', () => {
+    const gateDefault = findCurrentGateDefinitionById('gate-default');
+    const laneVisual = findCurrentGateDefinitionById('lane-visual');
+    const releaseFull = findCurrentGateDefinitionById('gate-release-full');
+
+    expect(gateDefault?.executionTargets).toEqual([
+      { kind: 'npm_script', npmScript: 'test:default-e2e' },
+      { kind: 'npm_script', npmScript: 'test:governance' },
+    ]);
+    expect(laneVisual?.executionTargets).toEqual([
+      { kind: 'npm_script', npmScript: 'test:visual' },
+    ]);
+    expect(releaseFull?.executionTargets).toEqual([
+      { kind: 'npm_script', npmScript: 'gate:release' },
+      { kind: 'npm_script', npmScript: 'lane:visual' },
+      { kind: 'npm_script', npmScript: 'lane:demo-rehearsal' },
+      { kind: 'npm_script', npmScript: 'lane:cluster-rehearsal' },
+    ]);
   });
 
   it('keeps gate:default and lane:visual semantics separated', () => {

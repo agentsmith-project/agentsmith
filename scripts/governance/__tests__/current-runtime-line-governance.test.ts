@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 
 import { describe, expect, it } from 'vitest';
 
@@ -27,6 +27,12 @@ describe('current runtime-line governance', () => {
       expect(ids.has(line.id)).toBe(false);
       ids.add(line.id);
     }
+
+    const bindings = Object.fromEntries(CURRENT_RUNTIME_SHARED_RULES.map((rule) => [rule.id, rule.binding]));
+    expect(bindings['shared-local-substrate']).toBe('operational_baseline');
+    expect(bindings['single-active-local-flow']).toBe('operational_baseline');
+    expect(bindings['scenario-owned-kind-worlds']).toBe('contract');
+    expect(bindings['deploy-vs-rehearsal-boundary']).toBe('contract');
   });
 
   it('keeps the expected local runtime lines visible', () => {
@@ -35,6 +41,48 @@ describe('current runtime-line governance', () => {
       'demo-rehearsal',
       'cluster-rehearsal',
     ]);
+  });
+
+  it('keeps runtime-line artifact roots machine-readable and aligned with the shell helper', () => {
+    for (const line of CURRENT_RUNTIME_LINE_MANIFEST) {
+      const helperOutput = execFileSync(
+        'bash',
+        [
+          '-lc',
+          `
+            set -euo pipefail
+            source "${process.cwd()}/scripts/lib/runtime-line-state.sh"
+            printf 'lines_root_relative=%s\\n' "$(runtime_lines_root_relative)"
+            printf 'line_root_relative=%s\\n' "$(runtime_line_root_relative "${line.id}")"
+            printf 'current_root_relative=%s\\n' "$(runtime_line_current_relative "${line.id}")"
+          `,
+        ],
+        {
+          cwd: process.cwd(),
+          stdio: 'pipe',
+          encoding: 'utf8',
+        },
+      );
+
+      const helperValues = Object.fromEntries(
+        helperOutput
+          .trim()
+          .split('\n')
+          .map((entry) => entry.split(/=(.+)/, 2) as [string, string]),
+      );
+
+      const runtimePath = (line as unknown as {
+        runtimePath?: {
+          linesRootRelative?: string;
+          lineRootRelative?: string;
+          currentRootRelative?: string;
+        };
+      }).runtimePath;
+
+      expect(runtimePath?.linesRootRelative).toBe(helperValues.lines_root_relative);
+      expect(runtimePath?.lineRootRelative).toBe(helperValues.line_root_relative);
+      expect(runtimePath?.currentRootRelative).toBe(helperValues.current_root_relative);
+    }
   });
 
   it('keeps generated runtime-line docs in sync with the repository state', () => {

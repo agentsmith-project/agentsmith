@@ -12,12 +12,15 @@
 如果你只想记住当前方法论，这一页就是总入口；其它 runbook 只负责展开具体步骤。
 
 <!-- current-runtime-lines:runtime-matrix:start -->
-## 核心方法论
+## 当前本机操作基线
 
 1. 本机共享一套 substrate，`local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用它。
-2. 同一时间只允许一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。
-3. `demo-rehearsal` 和 `cluster-rehearsal` 都拥有自己的 scenario-owned local kind world 与 local registry，不再共用一个泛化本地集群。
-4. rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。
+2. 同一时间只建议一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。
+
+## 持续生效的 runtime contract
+
+1. `demo-rehearsal` 和 `cluster-rehearsal` 都拥有自己的 scenario-owned local kind world 与 local registry，不再共用一个泛化本地集群。
+2. rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。
 
 ## 运行线矩阵
 
@@ -29,6 +32,18 @@
 | cluster 本机排演线 | `cluster-rehearsal` | 本机排演真实集群发布线 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 共享本地 substrate | 使用 scenario-owned `agentsmith-cluster` 与 `agentsmith-cluster-registry` |
 | cluster 正式发布线 | `cluster-deploy` | 真实集群发布 | 始终包含 external runner | 始终包含 internal k8s 执行面 | 目标主机上的 compose substrate | mode 描述自动化边界，不是 external/internal 能力差异 |
 <!-- current-runtime-lines:runtime-matrix:end -->
+
+## Runtime 状态目录真相
+
+当前 runtime-line 的 current state root 统一使用 `artifacts/runtime/lines/<line>/current`。
+
+| 运行线 | current state root |
+|-------|--------------------|
+| `local-manual` | `artifacts/runtime/lines/local-manual/current` |
+| `demo-rehearsal` | `artifacts/runtime/lines/demo-rehearsal/current` |
+| `demo-deploy` | `artifacts/runtime/lines/demo-deploy/current` |
+| `cluster-rehearsal` | `artifacts/runtime/lines/cluster-rehearsal/current` |
+| `cluster-deploy` | `artifacts/runtime/lines/cluster-deploy/current` |
 
 ## 词典
 

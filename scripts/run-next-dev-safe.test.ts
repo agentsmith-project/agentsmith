@@ -1,8 +1,22 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
+const canonicalInclude = [
+  '.next/types/**/*.ts',
+  'next-env.d.ts',
+  'src/**/*.ts',
+  'src/**/*.tsx',
+];
+
+const canonicalNextEnv = `/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+`;
 
 function setupTempRoot(): { rootDir: string; fakeBin: string } {
   const rootDir = mkdtempSync(path.join(os.tmpdir(), 'run-next-dev-safe-'));
@@ -12,12 +26,9 @@ function setupTempRoot(): { rootDir: string; fakeBin: string } {
 
   writeFileSync(
     path.join(rootDir, 'tsconfig.json'),
-    `${JSON.stringify({ include: ['.next*/types/**/*.ts', 'next-env.d.ts', 'src/**/*.ts'] }, null, 2)}\n`,
+    `${JSON.stringify({ include: canonicalInclude }, null, 2)}\n`,
   );
-  writeFileSync(
-    path.join(rootDir, 'next-env.d.ts'),
-    '/// <reference types="next" />\n/// <reference types="next/image-types/global" />\n',
-  );
+  writeFileSync(path.join(rootDir, 'next-env.d.ts'), canonicalNextEnv);
 
   const fakeBin = path.join(rootDir, 'bin');
   mkdirSync(fakeBin, { recursive: true });
@@ -39,6 +50,90 @@ exit 0
   return { rootDir, fakeBin };
 }
 
+function installProbeRaceHook(args: {
+  rootDir: string;
+  restoredTsconfig?: string;
+  restoreDelaySeconds?: number;
+}): void {
+  const helperPath = path.join(args.rootDir, 'scripts/lib/next-generated-root-state.sh');
+  const tsconfigPath = path.join(args.rootDir, 'tsconfig.json');
+  const restoreSnippet = args.restoredTsconfig
+    ? `(
+  sleep ${args.restoreDelaySeconds ?? 0.12}
+  cat > "${tsconfigPath}" <<'EOF_RESTORED_TSCONFIG'
+${args.restoredTsconfig}
+EOF_RESTORED_TSCONFIG
+) &`
+    : '';
+
+  writeFileSync(
+    helperPath,
+    `${readFileSync(helperPath, 'utf8')}
+eval "$(declare -f next_generated_root_probe_source_contract_once | sed '1s/next_generated_root_probe_source_contract_once/next_generated_root_test_original_probe_source_contract_once/')"
+next_generated_root_probe_source_contract_once() {
+  local output
+  output="$(next_generated_root_test_original_probe_source_contract_once "$@")"
+  if [[ -z "\${NEXT_GENERATED_ROOT_TEST_RACE_TRIGGERED:-}" && "\${output}" == $'semantic_drift\\t'* ]]; then
+    export NEXT_GENERATED_ROOT_TEST_RACE_TRIGGERED=1
+    cat > "${tsconfigPath}" <<'EOF_HALF_WRITTEN_TSCONFIG'
+{"compilerOptions":
+EOF_HALF_WRITTEN_TSCONFIG
+${restoreSnippet}
+  fi
+  printf '%s\\n' "\${output}"
+}
+`,
+    'utf8',
+  );
+}
+
+function runBackgroundRestoreTsconfig(args: {
+  rootDir: string;
+  delaySeconds: number;
+}): ReturnType<typeof spawn> {
+  return spawn(
+    'bash',
+    [
+      '-lc',
+      `
+        sleep ${args.delaySeconds}
+        cat > "${path.join(args.rootDir, 'tsconfig.json')}" <<'EOF_TSCONFIG'
+{"include":[".next/types/**/*.ts","next-env.d.ts","src/**/*.ts","src/**/*.tsx"]}
+EOF_TSCONFIG
+      `,
+    ],
+    {
+      cwd: args.rootDir,
+      env: {
+        ...process.env,
+      },
+      stdio: 'pipe',
+    },
+  );
+}
+
+function installDedicatedFinalReconcileProbe(rootDir: string): string {
+  const helperPath = path.join(rootDir, 'scripts/lib/next-generated-root-state.sh');
+  const markerFile = path.join(rootDir, 'artifacts/runtime/final-reconcile.log');
+
+  writeFileSync(
+    helperPath,
+    `${readFileSync(helperPath, 'utf8')}
+next_generated_root_finalize_source_contract() {
+  return 0
+}
+
+next_generated_root_final_reconcile_source_contract() {
+  mkdir -p "$(dirname "${markerFile}")"
+  printf 'final_reconcile\\n' >> "${markerFile}"
+  next_generated_root_repair_source_contract final_reconcile
+}
+`,
+  );
+
+  return markerFile;
+}
+
 describe('run-next-dev-safe', () => {
   it('does not normalize root files unless NEXT_GENERATED_ROOT_MANAGED=1', () => {
     const { rootDir, fakeBin } = setupTempRoot();
@@ -57,39 +152,21 @@ describe('run-next-dev-safe', () => {
     expect(readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8')).toContain('/integration-20260410T062839Z-3559213-15947/');
   });
 
-  it('normalizes root files when NEXT_GENERATED_ROOT_MANAGED=1', () => {
+  it('preserves concurrent non-include tsconfig edits while managed mode repairs include drift', async () => {
     const { rootDir, fakeBin } = setupTempRoot();
+    const readyFile = path.join(rootDir, 'managed-ready');
 
-    execFileSync('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
-      cwd: rootDir,
-      env: {
-        ...process.env,
-        ROOT_DIR: rootDir,
-        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
-        NEXT_GENERATED_ROOT_MANAGED: '1',
-      },
-      stdio: 'pipe',
-    });
-
-    const tsconfig = readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8');
-    const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
-    expect(tsconfig).toContain('artifacts/backend-real/current-run/next-dist/types/**/*.d.ts');
-    expect(tsconfig).not.toContain('/integration-20260410T062839Z-3559213-15947/');
-    expect(nextEnv).not.toContain('/integration-20260410T062839Z-3559213-15947/');
-  });
-
-  it('normalizes root files when the wrapper receives SIGTERM in managed mode', async () => {
-    const { rootDir, fakeBin } = setupTempRoot();
     writeFileSync(
       path.join(fakeBin, 'next'),
       `#!/usr/bin/env bash
 set -euo pipefail
 cat > "${rootDir}/tsconfig.json" <<'EOF_TSCONFIG'
-{"include":["artifacts/mock-lane/runs/mock-20260411T011449Z-1305939-19002/next-dist/types/**/*.ts","next-env.d.ts"]}
+{"include":["artifacts/backend-real/runs/integration-20260410T062839Z-3559213-15947/next-dist/types/**/*.ts","next-env.d.ts"]}
 EOF_TSCONFIG
 cat > "${rootDir}/next-env.d.ts" <<'EOF_NEXT_ENV'
-/// <reference path="./artifacts/mock-lane/runs/mock-20260411T011449Z-1305939-19002/next-dist/types/routes.d.ts" />
+/// <reference path="./artifacts/backend-real/runs/integration-20260410T062839Z-3559213-15947/next-dist/types/routes.d.ts" />
 EOF_NEXT_ENV
+printf 'ready\\n' > "${readyFile}"
 trap 'exit 0' TERM INT
 while true; do sleep 1; done
 `,
@@ -103,22 +180,322 @@ while true; do sleep 1; done
         ROOT_DIR: rootDir,
         PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
         NEXT_GENERATED_ROOT_MANAGED: '1',
+        NEXT_GENERATED_ROOT_STATE_DIR: path.join(rootDir, 'artifacts/runtime/local-manual-root-contract'),
       },
       stdio: 'pipe',
     });
 
     await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(existsSync(readyFile)).toBe(true);
+
+    writeFileSync(
+      path.join(rootDir, 'tsconfig.json'),
+      `${JSON.stringify({
+        compilerOptions: {
+          strict: false,
+          baseUrl: '.',
+          paths: {
+            '@custom/*': ['custom/*'],
+          },
+        },
+        include: ['artifacts/runtime/lines/local-manual/current/next-dist/types/**/*.ts', 'next-env.d.ts'],
+        references: [{ path: './tsconfig.node.json' }],
+      }, null, 2)}\n`,
+    );
+
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const tsconfig = JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8')) as {
+        compilerOptions?: { strict?: boolean; baseUrl?: string; paths?: Record<string, string[]> };
+        include: string[];
+        references?: Array<{ path: string }>;
+      };
+      const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
+      if (
+        JSON.stringify(tsconfig.include) === JSON.stringify(canonicalInclude)
+        && tsconfig.compilerOptions?.strict === false
+        && tsconfig.compilerOptions?.baseUrl === '.'
+        && JSON.stringify(tsconfig.compilerOptions?.paths) === JSON.stringify({ '@custom/*': ['custom/*'] })
+        && JSON.stringify(tsconfig.references) === JSON.stringify([{ path: './tsconfig.node.json' }])
+        && nextEnv === canonicalNextEnv
+      ) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    const tsconfig = JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8')) as {
+      compilerOptions?: { strict?: boolean; baseUrl?: string; paths?: Record<string, string[]> };
+      include: string[];
+      references?: Array<{ path: string }>;
+    };
+    const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
+    expect(tsconfig.include).toEqual(canonicalInclude);
+    expect(tsconfig.compilerOptions).toEqual({
+      strict: false,
+      baseUrl: '.',
+      paths: {
+        '@custom/*': ['custom/*'],
+      },
+    });
+    expect(tsconfig.references).toEqual([{ path: './tsconfig.node.json' }]);
+    expect(nextEnv).toBe(canonicalNextEnv);
+
+    child.kill('SIGTERM');
+    await new Promise<number>((resolve, reject) => {
+      child.on('exit', (code) => resolve(code ?? 0));
+      child.on('error', reject);
+    });
+  });
+
+  it('keeps root files canonical while managed next dev is still running', async () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const readyFile = path.join(rootDir, 'child-ready');
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+cat > "${rootDir}/tsconfig.json" <<'EOF_TSCONFIG'
+{"include":["artifacts/runtime/lines/local-manual/current/next-dist/types/**/*.ts","next-env.d.ts"]}
+EOF_TSCONFIG
+cat > "${rootDir}/next-env.d.ts" <<'EOF_NEXT_ENV'
+/// <reference path="./artifacts/runtime/lines/local-manual/current/next-dist/types/routes.d.ts" />
+EOF_NEXT_ENV
+printf 'ready\\n' > "${readyFile}"
+trap 'exit 0' TERM INT
+while true; do sleep 1; done
+`,
+      { mode: 0o755 },
+    );
+
+    const child = spawn('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        ROOT_DIR: rootDir,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        NEXT_GENERATED_ROOT_MANAGED: '1',
+        NEXT_GENERATED_ROOT_STATE_DIR: path.join(rootDir, 'artifacts/runtime/local-manual-root-contract'),
+      },
+      stdio: 'pipe',
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(existsSync(readyFile)).toBe(true);
+
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const tsconfig = JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8')) as {
+        include: string[];
+      };
+      const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
+      if (
+        JSON.stringify(tsconfig.include) === JSON.stringify(canonicalInclude)
+        && nextEnv === canonicalNextEnv
+      ) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    const tsconfig = JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8')) as {
+      include: string[];
+    };
+    const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
+    expect(tsconfig.include).toEqual(canonicalInclude);
+    expect(nextEnv).toBe(canonicalNextEnv);
+
+    child.kill('SIGTERM');
+    await new Promise<number>((resolve, reject) => {
+      child.on('exit', (code) => resolve(code ?? 0));
+      child.on('error', reject);
+    });
+  });
+
+  it('repairs the contract-owned root surface after a managed child exits immediately with drift', () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const finalReconcileMarker = installDedicatedFinalReconcileProbe(rootDir);
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'cat > "${rootDir}/tsconfig.json" <<'"'"'EOF_TSCONFIG'"'"'
+{"include":["artifacts/backend-real/runs/integration-20260410T062839Z-3559213-15947/next-dist/types/**/*.ts","next-env.d.ts"],"compilerOptions":{"strict":false}}
+EOF_TSCONFIG
+cat > "${rootDir}/next-env.d.ts" <<'"'"'EOF_NEXT_ENV'"'"'
+/// <reference path="./artifacts/backend-real/runs/integration-20260410T062839Z-3559213-15947/next-dist/types/routes.d.ts" />
+EOF_NEXT_ENV
+' EXIT
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    execFileSync('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        ROOT_DIR: rootDir,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        NEXT_GENERATED_ROOT_MANAGED: '1',
+        NEXT_GENERATED_ROOT_GUARD_INTERVAL_SEC: '5',
+        NEXT_GENERATED_ROOT_STATE_DIR: path.join(rootDir, 'artifacts/runtime/local-manual-root-contract'),
+      },
+      stdio: 'pipe',
+    });
+
+    const tsconfig = JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8')) as {
+      compilerOptions?: { strict?: boolean };
+      include: string[];
+    };
+    const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
+    expect(tsconfig.include).toEqual(canonicalInclude);
+    expect(tsconfig.compilerOptions).toEqual({ strict: false });
+    expect(nextEnv).toBe(canonicalNextEnv);
+    expect(readFileSync(finalReconcileMarker, 'utf8')).toContain('final_reconcile');
+  });
+
+  it('repairs the contract-owned root surface after wrapper cleanup terminates the managed child', async () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const readyFile = path.join(rootDir, 'cleanup-final-reconcile.ready');
+    const finalReconcileMarker = installDedicatedFinalReconcileProbe(rootDir);
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'cat > "${rootDir}/tsconfig.json" <<'"'"'EOF_TSCONFIG'"'"'
+{"include":["artifacts/runtime/lines/local-manual/current/next-dist/types/**/*.ts","next-env.d.ts"],"compilerOptions":{"jsx":"preserve"}}
+EOF_TSCONFIG
+cat > "${rootDir}/next-env.d.ts" <<'"'"'EOF_NEXT_ENV'"'"'
+/// <reference path="./artifacts/runtime/lines/local-manual/current/next-dist/types/routes.d.ts" />
+EOF_NEXT_ENV
+exit 0' EXIT
+trap 'exit 0' TERM INT
+printf 'ready\\n' > "${readyFile}"
+while true; do sleep 1; done
+`,
+      { mode: 0o755 },
+    );
+
+    const child = spawn('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        ROOT_DIR: rootDir,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        NEXT_GENERATED_ROOT_MANAGED: '1',
+        NEXT_GENERATED_ROOT_GUARD_INTERVAL_SEC: '5',
+        NEXT_GENERATED_ROOT_STATE_DIR: path.join(rootDir, 'artifacts/runtime/local-manual-root-contract'),
+      },
+      stdio: 'pipe',
+    });
+
+    const deadline = Date.now() + 5000;
+    while (!existsSync(readyFile) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(existsSync(readyFile)).toBe(true);
+
     child.kill('SIGTERM');
     await new Promise<number>((resolve, reject) => {
       child.on('exit', (code) => resolve(code ?? 0));
       child.on('error', reject);
     });
 
-    const tsconfig = readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8');
+    const tsconfig = JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8')) as {
+      compilerOptions?: { jsx?: string };
+      include: string[];
+    };
     const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
-    expect(tsconfig).toContain('artifacts/mock-lane/current/next-dist/types/**/*.d.ts');
-    expect(tsconfig).not.toContain('/mock-20260411T011449Z-1305939-19002/');
-    expect(nextEnv).not.toContain('/mock-20260411T011449Z-1305939-19002/');
+    expect(tsconfig.include).toEqual(canonicalInclude);
+    expect(tsconfig.compilerOptions).toEqual({ jsx: 'preserve' });
+    expect(nextEnv).toBe(canonicalNextEnv);
+    expect(readFileSync(finalReconcileMarker, 'utf8')).toContain('final_reconcile');
+  });
+
+  it('does not resurrect or delete next-env.d.ts on cleanup based on startup presence', async () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const readyFile = path.join(rootDir, 'cleanup-ready');
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf 'ready\\n' > "${readyFile}"
+trap 'exit 0' TERM INT
+while true; do sleep 1; done
+`,
+      { mode: 0o755 },
+    );
+
+    const cases = [
+      {
+        label: 'keeps a file deleted during the run deleted',
+        initialState: 'present' as const,
+        mutateDuringRun() {
+          writeFileSync(path.join(rootDir, 'next-env.d.ts'), canonicalNextEnv);
+          writeFileSync(
+            path.join(rootDir, 'tsconfig.json'),
+            `${JSON.stringify({ include: canonicalInclude }, null, 2)}\n`,
+          );
+          rmSync(path.join(rootDir, 'next-env.d.ts'));
+        },
+        expectState() {
+          expect(existsSync(path.join(rootDir, 'next-env.d.ts'))).toBe(false);
+        },
+      },
+      {
+        label: 'keeps a file created during the run present',
+        initialState: 'absent' as const,
+        mutateDuringRun() {
+          rmSync(path.join(rootDir, 'next-env.d.ts'), { force: true });
+          writeFileSync(
+            path.join(rootDir, 'tsconfig.json'),
+            `${JSON.stringify({ include: canonicalInclude }, null, 2)}\n`,
+          );
+          writeFileSync(path.join(rootDir, 'next-env.d.ts'), canonicalNextEnv);
+        },
+        expectState() {
+          expect(readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8')).toBe(canonicalNextEnv);
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      if (testCase.initialState === 'present') {
+        writeFileSync(path.join(rootDir, 'next-env.d.ts'), canonicalNextEnv);
+      } else {
+        rmSync(path.join(rootDir, 'next-env.d.ts'), { force: true });
+      }
+
+      const child = spawn('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+        cwd: rootDir,
+        env: {
+          ...process.env,
+          ROOT_DIR: rootDir,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          NEXT_GENERATED_ROOT_MANAGED: '1',
+          NEXT_GENERATED_ROOT_STATE_DIR: path.join(rootDir, 'artifacts/runtime/local-manual-root-contract'),
+        },
+        stdio: 'pipe',
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(existsSync(readyFile)).toBe(true);
+      testCase.mutateDuringRun();
+
+      child.kill('SIGTERM');
+      await new Promise<number>((resolve, reject) => {
+        child.on('exit', (code) => resolve(code ?? 0));
+        child.on('error', reject);
+      });
+
+      testCase.expectState();
+      rmSync(readyFile, { force: true });
+    }
   });
 
   it('stops the spawned Next process tree when the wrapper exits', async () => {
@@ -244,5 +621,252 @@ kill -KILL $$
     expect(exitMarker.signal).toBe(9);
     expect(exitMarker.wrapper_pid).toBeGreaterThan(0);
     expect(exitMarker.child_pid).toBeGreaterThan(0);
+  });
+
+  it('fails fast in managed mode when the source root is already polluted before launch', () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const launchedMarker = path.join(rootDir, 'child-launched');
+
+    writeFileSync(
+      path.join(rootDir, 'tsconfig.json'),
+      `${JSON.stringify({ include: ['artifacts/runtime/lines/local-manual/current/next-dist/types/**/*.ts', 'next-env.d.ts'] }, null, 2)}\n`,
+    );
+    writeFileSync(
+      path.join(rootDir, 'next-env.d.ts'),
+      '/// <reference path="./artifacts/runtime/lines/local-manual/current/next-dist/types/routes.d.ts" />\n',
+    );
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf 'launched\\n' > "${launchedMarker}"
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    let error: unknown;
+    try {
+      execFileSync('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+        cwd: rootDir,
+        env: {
+          ...process.env,
+          ROOT_DIR: rootDir,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          NEXT_GENERATED_ROOT_MANAGED: '1',
+          NEXT_GENERATED_ROOT_STATE_DIR: path.join(rootDir, 'artifacts/runtime/local-manual-root-contract'),
+        },
+        stdio: 'pipe',
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeDefined();
+    const stderr = String((error as { stderr?: Buffer | string }).stderr ?? '');
+    expect(stderr).toContain('root source contract drift detected');
+    expect(existsSync(launchedMarker)).toBe(false);
+  });
+
+  it('waits through a transient unreadable root contract before launching the managed child', async () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const launchedMarker = path.join(rootDir, 'child-launched');
+
+    writeFileSync(path.join(rootDir, 'tsconfig.json'), '{"include":\n');
+    writeFileSync(path.join(rootDir, 'next-env.d.ts'), canonicalNextEnv);
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf 'launched\\n' > "${launchedMarker}"
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    const restore = runBackgroundRestoreTsconfig({
+      rootDir,
+      delaySeconds: 0.15,
+    });
+
+    execFileSync('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        ROOT_DIR: rootDir,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        NEXT_GENERATED_ROOT_MANAGED: '1',
+        NEXT_GENERATED_ROOT_PREPARE_RETRY_COUNT: '8',
+        NEXT_GENERATED_ROOT_PREPARE_RETRY_DELAY_SEC: '0.05',
+        NEXT_GENERATED_ROOT_STATE_DIR: path.join(rootDir, 'artifacts/runtime/local-manual-root-contract'),
+      },
+      stdio: 'pipe',
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      restore.on('exit', () => resolve());
+      restore.on('error', reject);
+    });
+
+    expect(existsSync(launchedMarker)).toBe(true);
+    expect(JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8'))).toEqual({
+      include: canonicalInclude,
+    });
+  });
+
+  it('fails managed startup with unreadable-root-specific semantics when the root stays half-written', () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const launchedMarker = path.join(rootDir, 'child-launched');
+    const eventFile = path.join(
+      rootDir,
+      'artifacts/runtime/local-manual-root-contract/source-contract-events.jsonl',
+    );
+
+    writeFileSync(path.join(rootDir, 'tsconfig.json'), '{"include":\n');
+    writeFileSync(path.join(rootDir, 'next-env.d.ts'), canonicalNextEnv);
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf 'launched\\n' > "${launchedMarker}"
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    let error: unknown;
+    try {
+      execFileSync('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+        cwd: rootDir,
+        env: {
+          ...process.env,
+          ROOT_DIR: rootDir,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          NEXT_GENERATED_ROOT_MANAGED: '1',
+          NEXT_GENERATED_ROOT_PREPARE_RETRY_COUNT: '2',
+          NEXT_GENERATED_ROOT_PREPARE_RETRY_DELAY_SEC: '0.02',
+          NEXT_GENERATED_ROOT_STATE_DIR: path.join(rootDir, 'artifacts/runtime/local-manual-root-contract'),
+        },
+        stdio: 'pipe',
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeDefined();
+    const stderr = String((error as { stderr?: Buffer | string }).stderr ?? '');
+    expect(stderr).toContain('persistent_unreadable');
+    expect(stderr).not.toContain('root source contract drift detected');
+    expect(existsSync(launchedMarker)).toBe(false);
+    expect(existsSync(eventFile)).toBe(true);
+    expect(readFileSync(eventFile, 'utf8')).toContain('"status":"persistent_unreadable"');
+    expect(readFileSync(eventFile, 'utf8')).toContain('"phase":"prepare_for_validation"');
+  });
+
+  it('managed fast-exit finalize waits through transient unreadable after drift before reconciling', async () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    installProbeRaceHook({
+      rootDir,
+      restoredTsconfig: '{"compilerOptions":{"strict":false},"include":["artifacts/runtime/lines/local-manual/current/next-dist/types/**/*.ts","next-env.d.ts"],"references":[{"path":"./tsconfig.node.json"}]}',
+      restoreDelaySeconds: 0.12,
+    });
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'cat > "${rootDir}/tsconfig.json" <<'"'"'EOF_DIRTY'"'"'
+{"compilerOptions":{"strict":false},"include":["artifacts/runtime/lines/local-manual/current/next-dist/types/**/*.ts","next-env.d.ts"],"references":[{"path":"./tsconfig.node.json"}]}
+EOF_DIRTY
+cat > "${rootDir}/next-env.d.ts" <<'"'"'EOF_NEXT_ENV'"'"'
+/// <reference path="./artifacts/runtime/lines/local-manual/current/next-dist/types/routes.d.ts" />
+EOF_NEXT_ENV
+' EXIT
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    execFileSync('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        ROOT_DIR: rootDir,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        NEXT_GENERATED_ROOT_MANAGED: '1',
+        NEXT_GENERATED_ROOT_GUARD_INTERVAL_SEC: '5',
+        NEXT_GENERATED_ROOT_FINALIZE_RETRY_COUNT: '8',
+        NEXT_GENERATED_ROOT_FINALIZE_RETRY_DELAY_SEC: '0.05',
+        NEXT_GENERATED_ROOT_STATE_DIR: path.join(rootDir, 'artifacts/runtime/local-manual-root-contract'),
+      },
+      stdio: 'pipe',
+    });
+
+    const tsconfig = JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8')) as {
+      compilerOptions?: { strict?: boolean };
+      include: string[];
+      references?: Array<{ path: string }>;
+    };
+    const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
+    expect(tsconfig.include).toEqual(canonicalInclude);
+    expect(tsconfig.compilerOptions).toEqual({ strict: false });
+    expect(tsconfig.references).toEqual([{ path: './tsconfig.node.json' }]);
+    expect(nextEnv).toBe(canonicalNextEnv);
+  });
+
+  it('managed fast-exit finalize surfaces persistent_unreadable semantics instead of raw parse failure', () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const eventFile = path.join(
+      rootDir,
+      'artifacts/runtime/local-manual-root-contract/source-contract-events.jsonl',
+    );
+    installProbeRaceHook({
+      rootDir,
+    });
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'cat > "${rootDir}/tsconfig.json" <<'"'"'EOF_DIRTY'"'"'
+{"compilerOptions":{"strict":false},"include":["artifacts/runtime/lines/local-manual/current/next-dist/types/**/*.ts","next-env.d.ts"]}
+EOF_DIRTY
+cat > "${rootDir}/next-env.d.ts" <<'"'"'EOF_NEXT_ENV'"'"'
+/// <reference path="./artifacts/runtime/lines/local-manual/current/next-dist/types/routes.d.ts" />
+EOF_NEXT_ENV
+' EXIT
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    let error: unknown;
+    try {
+      execFileSync('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh')], {
+        cwd: rootDir,
+        env: {
+          ...process.env,
+          ROOT_DIR: rootDir,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          NEXT_GENERATED_ROOT_MANAGED: '1',
+          NEXT_GENERATED_ROOT_GUARD_INTERVAL_SEC: '5',
+          NEXT_GENERATED_ROOT_FINALIZE_RETRY_COUNT: '2',
+          NEXT_GENERATED_ROOT_FINALIZE_RETRY_DELAY_SEC: '0.02',
+          NEXT_GENERATED_ROOT_STATE_DIR: path.join(rootDir, 'artifacts/runtime/local-manual-root-contract'),
+        },
+        stdio: 'pipe',
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeDefined();
+    const stderr = String((error as { stderr?: Buffer | string }).stderr ?? '');
+    expect(stderr).toContain('persistent_unreadable');
+    expect(stderr).not.toContain('Unexpected token');
+    expect(stderr).not.toContain('JSON');
+    expect(existsSync(eventFile)).toBe(true);
+    expect(readFileSync(eventFile, 'utf8')).toContain('"phase":"final_reconcile"');
+    expect(readFileSync(eventFile, 'utf8')).toContain('"status":"persistent_unreadable"');
   });
 });

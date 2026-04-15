@@ -1,9 +1,9 @@
 # Current Engineering Governance Model
 
-Last updated: 2026-03-30  
+Last updated: 2026-04-14
 Status: `authoritative`
 
-This document defines the current engineering governance model for AgentSmith. README, DEVELOPMENT, Make help, workflow checks, and current runbooks must follow this document and the machine-readable manifests in `scripts/governance/current-workflow-manifest.ts`, `scripts/governance/current-gate-manifest.ts`, and `scripts/governance/current-runtime-line-manifest.ts`.
+This document defines the current engineering governance model for AgentSmith. Machine-readable manifests and contracts are the enforcement truth; README, DEVELOPMENT, Make help, workflow checks, and current runbooks are synchronized presentation surfaces that must follow `scripts/governance/current-workflow-manifest.ts`, `scripts/governance/current-gate-manifest.ts`, `scripts/governance/current-gate-result-schema.ts`, and `scripts/governance/current-runtime-line-manifest.ts`.
 
 Product terminology alignment:
 - `docs/contracts/product-terminology.md` is the authoritative source for product-facing object names and IA boundaries.
@@ -17,18 +17,24 @@ UI design guide alignment:
 - `docs/testing/visual-baseline-policy-v1.md` owns visual evidence policy; it does not replace `DESIGN.md`.
 
 Canonical entrypoint rule:
-- `make` is the authoritative entrypoint for environment and rehearsal orchestration.
-- `npm run` is the authoritative entrypoint for tests, gates, verification lanes, and release validation.
-- `make` and `npm run` are both current command surfaces, but they must not describe the same path with conflicting semantics.
+- `make` and `npm run` are the current command surfaces and adapter layers.
+- stable gate identity lives in `scripts/governance/current-gate-manifest.ts` `id`, not in a launcher string.
+- adapter surfaces such as `npmScript`, `command`, and `ciJob` may change presentation, but they must keep pointing back to the same stable gate id.
+- structured execution target fidelity lives in `npmScript`, optional `ciJob`, and manifest `executionTargets`, not in scattered prose.
+- free-form `command` is an operator hint for humans and generated command blocks, not enforcement truth.
 
 Current gate truth:
-- `scripts/governance/current-gate-manifest.ts` is the machine-readable source for gate composition, visual ownership, backend-real ownership, and CI/checklist alignment.
+- `scripts/governance/current-gate-manifest.ts` is the machine-readable source for stable gate ids, gate composition, visual ownership, backend-real ownership, and CI/checklist alignment.
 - story evidence is part of current gate truth, not a release-only prose convention.
 - `visual_scene_catalog` is the machine-readable evidence kind owned by `test:visual` / `lane:visual`, with scene linkage defined in `e2e/visual-baseline-support.ts`.
 - `ux_trace_bundle` is the machine-readable evidence kind owned by both default-tier and release-tier backend-real commands:
   - `test:backend-real:core` / `lane:backend-real:core` own default-tier daily/self-service trace bundles under `artifacts/backend-real/runs/<run-id>/ux-traces`
   - `gate:release` / `lane:backend-real:release` own release-grade trace bundles under `artifacts/backend-real-visual/<run-id>/ux-traces`
 - missing story evidence is blocking only for the tiers declared in `storyEvidenceRequiredFor`; this rule is machine-readable and must not live only in prose.
+- `scripts/governance/current-gate-result-schema.ts` is the machine-readable source for canonical `result.json` output, gate-level `failure_class`, and backend-real runtime result writers.
+- canonical gate-result artifact location is always `<evidence_dir>/result.json`; fixed `current/result.json` paths are not valid governance truth.
+- gate-result writer truth is `gate_id + line_kind`; adapter fields such as `npm_script` and `ci_job` are runtime metadata, not identity.
+- `failure_class` is a gate-level verdict field, not a best-effort log tag. Current enum: `none`, `product_regression`, `infra_setup_failure`, `environment_conflict`, `contract_drift`, `evidence_missing`.
 - `gate:default` does not own the full visual lane.
 - `lane:visual` is the only current command that owns full visual verification.
 
@@ -39,9 +45,11 @@ For current runtime-line methodology and release/rehearsal topology, use:
 - [Local Runtime Flows](./user-guides/local-runtime-flows.md)
 - Machine-readable source: `scripts/governance/current-runtime-line-manifest.ts`
 
-Current local baseline:
+Current local operational baseline:
 - One shared local substrate backs local-manual, demo-rehearsal, and cluster-rehearsal on a development host.
 - Only one local flow should be active at a time; switch flows by stopping or resetting the current one first.
+
+Still-binding runtime contracts:
 - Demo and cluster rehearsal each own their local kind world and registry identity instead of sharing one generic local cluster.
 - Rehearsal lines validate release paths on a development host; deploy lines operate on target-host release roots.
 <!-- current-runtime-lines:governance-model:end -->
@@ -249,3 +257,4 @@ Current delivery governance for AgentSmith companion surfaces:
 - the shared address truth changes
 - a required joint verification path fails
 4. Repository-local gates must stay local by default. Cross-surface verification belongs in explicit joint rehearsal or release guidance, not in unrelated default gates.
+Canonical `result.json` 应以 `snake_case` 作为唯一真相，并且只写到 `<evidence_dir>/result.json`；示例以 `docs/contracts/current-gate-result-schema-contract.md` 为准。

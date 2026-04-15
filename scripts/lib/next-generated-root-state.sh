@@ -19,6 +19,301 @@ next_generated_root_lane_owner_file() {
   printf '%s/.lane-owner.env\n' "${run_root}"
 }
 
+next_generated_root_state_dir() {
+  local repo_dir
+  repo_dir="$(next_generated_root_repo_dir)"
+  printf '%s\n' "${NEXT_GENERATED_ROOT_STATE_DIR:-${repo_dir}/artifacts/runtime/next-generated-root}"
+}
+
+next_generated_root_snapshot_file() {
+  local name="$1"
+  printf '%s/%s\n' "$(next_generated_root_state_dir)" "${name}"
+}
+
+next_generated_root_contract_event_file() {
+  next_generated_root_snapshot_file "source-contract-events.jsonl"
+}
+
+next_generated_root_contract_latest_file() {
+  next_generated_root_snapshot_file "source-contract-latest"
+}
+
+next_generated_root_parse_nonnegative_integer() {
+  local raw="${1:-}"
+  local fallback="${2:-0}"
+  if [[ "${raw}" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "${raw}"
+    return 0
+  fi
+  printf '%s\n' "${fallback}"
+}
+
+next_generated_root_parse_delay_seconds() {
+  local raw="${1:-}"
+  local fallback="${2:-0.05}"
+  if [[ "${raw}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    printf '%s\n' "${raw}"
+    return 0
+  fi
+  printf '%s\n' "${fallback}"
+}
+
+next_generated_root_retry_count_for_phase() {
+  local phase="$1"
+  case "${phase}" in
+    prepare_for_validation)
+      next_generated_root_parse_nonnegative_integer "${NEXT_GENERATED_ROOT_PREPARE_RETRY_COUNT:-}" 6
+      ;;
+    guard)
+      next_generated_root_parse_nonnegative_integer "${NEXT_GENERATED_ROOT_GUARD_RETRY_COUNT:-}" 2
+      ;;
+    final_reconcile)
+      next_generated_root_parse_nonnegative_integer "${NEXT_GENERATED_ROOT_FINALIZE_RETRY_COUNT:-}" 6
+      ;;
+    *)
+      next_generated_root_parse_nonnegative_integer "${NEXT_GENERATED_ROOT_CONTRACT_RETRY_COUNT:-}" 6
+      ;;
+  esac
+}
+
+next_generated_root_retry_delay_for_phase() {
+  local phase="$1"
+  case "${phase}" in
+    prepare_for_validation)
+      next_generated_root_parse_delay_seconds "${NEXT_GENERATED_ROOT_PREPARE_RETRY_DELAY_SEC:-}" 0.05
+      ;;
+    guard)
+      next_generated_root_parse_delay_seconds "${NEXT_GENERATED_ROOT_GUARD_RETRY_DELAY_SEC:-}" 0.02
+      ;;
+    final_reconcile)
+      next_generated_root_parse_delay_seconds "${NEXT_GENERATED_ROOT_FINALIZE_RETRY_DELAY_SEC:-}" 0.05
+      ;;
+    *)
+      next_generated_root_parse_delay_seconds "${NEXT_GENERATED_ROOT_CONTRACT_RETRY_DELAY_SEC:-}" 0.05
+      ;;
+  esac
+}
+
+next_generated_root_record_contract_event() {
+  local phase="$1"
+  local status="$2"
+  local reason="$3"
+  local attempts="$4"
+  local state_dir event_file latest_file signature
+  state_dir="$(next_generated_root_state_dir)"
+  mkdir -p "${state_dir}"
+  event_file="$(next_generated_root_contract_event_file)"
+  latest_file="$(next_generated_root_contract_latest_file)"
+  signature="${phase}:${status}:${reason}"
+  if [[ -f "${latest_file}" ]] && [[ "$(cat "${latest_file}" 2>/dev/null || true)" == "${signature}" ]]; then
+    return 0
+  fi
+  printf '%s\n' "${signature}" > "${latest_file}"
+  printf '{"timestamp":"%s","phase":"%s","status":"%s","reason":"%s","attempts":%s}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
+    "${phase}" \
+    "${status}" \
+    "${reason}" \
+    "${attempts}" >> "${event_file}"
+}
+
+next_generated_root_probe_source_contract_once() {
+  local repo_dir
+  repo_dir="$(next_generated_root_repo_dir)"
+  node - <<'NODE' "${repo_dir}"
+const fs = require('node:fs');
+const path = require('node:path');
+
+const repoDir = process.argv[2];
+const canonicalInclude = [
+  '.next/types/**/*.ts',
+  'next-env.d.ts',
+  'src/**/*.ts',
+  'src/**/*.tsx',
+];
+const canonicalNextEnv = `/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+`;
+const forbiddenIncludePatterns = [
+  /\.next\*\/types\/\*\*\/\*\.ts$/,
+  /(?:^|\/)artifacts\/(?:backend-real\/current-run|mock-lane\/current)\/next-dist(?:\/|$)/,
+  /(?:^|\/)\.next-local-manual-[^/]+\/types\/\*\*\/\*\.ts$/,
+  /(?:^|\/)artifacts\/recovery-manual-next(?:\/|$)/,
+  /playwright-managed-/,
+  /(?:^|\/)artifacts\/[^/]+\/runs\/[^/]+\/next-dist(?:\/|$)/,
+];
+const forbiddenNextEnvPatterns = [
+  /artifacts\/backend-real\/current-run\/next-dist\//,
+  /artifacts\/mock-lane\/current\/next-dist\//,
+  /\.next-local-manual-/,
+  /artifacts\/recovery-manual-next/,
+  /playwright-managed-/,
+  /artifacts\/[^/\n]+\/runs\/[^/\n]+\/next-dist\//,
+  /\/\/\/ <reference path=/,
+];
+const transientReadErrorCodes = new Set(['ENOENT', 'EBUSY']);
+const unexpectedIoErrorCodes = new Set(['EACCES', 'EPERM', 'EISDIR', 'ENOTDIR', 'EMFILE']);
+
+function emit(status, reason) {
+  process.stdout.write(`${status}\t${reason}\n`);
+}
+
+function classifyIoError(error, fallbackReason) {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? String(error.code ?? '')
+    : '';
+  const normalizedCode = code.toLowerCase() || 'unknown';
+  if (transientReadErrorCodes.has(code)) {
+    emit('transient_unreadable', `${fallbackReason}_${normalizedCode}`);
+    return true;
+  }
+  if (unexpectedIoErrorCodes.has(code) || code) {
+    emit('unexpected_io_failure', `${fallbackReason}_${normalizedCode}`);
+    return true;
+  }
+  return false;
+}
+
+const tsconfigPath = path.join(repoDir, 'tsconfig.json');
+let tsconfigRaw;
+try {
+  tsconfigRaw = fs.readFileSync(tsconfigPath, 'utf8');
+} catch (error) {
+  if (!classifyIoError(error, 'tsconfig_read_failed')) {
+    emit('unexpected_io_failure', 'tsconfig_read_failed_unknown');
+  }
+  process.exit(0);
+}
+
+let config;
+try {
+  config = JSON.parse(tsconfigRaw);
+} catch (error) {
+  emit('transient_unreadable', 'tsconfig_json_parse_failed');
+  process.exit(0);
+}
+
+const include = Array.isArray(config.include) ? config.include.filter((entry) => typeof entry === 'string') : [];
+for (const entry of include) {
+  if (forbiddenIncludePatterns.some((pattern) => pattern.test(entry))) {
+    emit('semantic_drift', 'tsconfig_generated_lane_state');
+    process.exit(0);
+  }
+}
+
+if (include.length !== canonicalInclude.length || include.some((entry, index) => entry !== canonicalInclude[index])) {
+  emit('semantic_drift', 'tsconfig_include_mismatch');
+  process.exit(0);
+}
+
+const nextEnvPath = path.join(repoDir, 'next-env.d.ts');
+if (!fs.existsSync(nextEnvPath)) {
+  emit('canonical', 'source_contract_canonical');
+  process.exit(0);
+}
+
+let nextEnv;
+try {
+  nextEnv = fs.readFileSync(nextEnvPath, 'utf8');
+} catch (error) {
+  if (!classifyIoError(error, 'next_env_read_failed')) {
+    emit('unexpected_io_failure', 'next_env_read_failed_unknown');
+  }
+  process.exit(0);
+}
+
+if (forbiddenNextEnvPatterns.some((pattern) => pattern.test(nextEnv))) {
+  emit('semantic_drift', 'next_env_generated_lane_state');
+  process.exit(0);
+}
+if (nextEnv !== canonicalNextEnv) {
+  emit('semantic_drift', 'next_env_mismatch');
+  process.exit(0);
+}
+
+emit('canonical', 'source_contract_canonical');
+NODE
+}
+
+NEXT_GENERATED_ROOT_LAST_STATUS=""
+NEXT_GENERATED_ROOT_LAST_REASON=""
+NEXT_GENERATED_ROOT_LAST_ATTEMPTS=0
+NEXT_GENERATED_ROOT_LAST_PAYLOAD=""
+
+next_generated_root_resolve_source_contract_with_once() {
+  local phase="$1"
+  local once_function="$2"
+  local fallback_reason="${3:-resolver_failed}"
+  local max_retries retry_delay output status reason payload attempt
+  max_retries="$(next_generated_root_retry_count_for_phase "${phase}")"
+  retry_delay="$(next_generated_root_retry_delay_for_phase "${phase}")"
+  attempt=1
+
+  while true; do
+    output="$("${once_function}" 2>/dev/null || true)"
+    IFS=$'\t' read -r status reason payload <<< "${output}"
+    status="${status:-unexpected_io_failure}"
+    reason="${reason:-${fallback_reason}}"
+    payload="${payload:-}"
+
+    if [[ "${status}" == "transient_unreadable" ]]; then
+      if (( attempt > max_retries )); then
+        NEXT_GENERATED_ROOT_LAST_STATUS="persistent_unreadable"
+        NEXT_GENERATED_ROOT_LAST_REASON="${reason}"
+        NEXT_GENERATED_ROOT_LAST_ATTEMPTS="${attempt}"
+        NEXT_GENERATED_ROOT_LAST_PAYLOAD=""
+        return 0
+      fi
+      attempt=$((attempt + 1))
+      sleep "${retry_delay}"
+      continue
+    fi
+
+    NEXT_GENERATED_ROOT_LAST_STATUS="${status}"
+    NEXT_GENERATED_ROOT_LAST_REASON="${reason}"
+    NEXT_GENERATED_ROOT_LAST_ATTEMPTS="${attempt}"
+    NEXT_GENERATED_ROOT_LAST_PAYLOAD="${payload}"
+    return 0
+  done
+}
+
+next_generated_root_resolve_source_contract_status() {
+  local phase="$1"
+  next_generated_root_resolve_source_contract_with_once \
+    "${phase}" \
+    next_generated_root_probe_source_contract_once \
+    "probe_failed"
+}
+
+next_generated_root_report_source_contract_failure() {
+  local phase="$1"
+  local status="${NEXT_GENERATED_ROOT_LAST_STATUS:-unexpected_io_failure}"
+  local reason="${NEXT_GENERATED_ROOT_LAST_REASON:-probe_failed}"
+  local attempts="${NEXT_GENERATED_ROOT_LAST_ATTEMPTS:-0}"
+  next_generated_root_record_contract_event "${phase}" "${status}" "${reason}" "${attempts}"
+  case "${status}" in
+    semantic_drift)
+      printf '[next-generated-root] root source contract drift detected; validation will not rewrite tsconfig.json or next-env.d.ts.\n' >&2
+      return 1
+      ;;
+    persistent_unreadable)
+      printf '[next-generated-root] persistent_unreadable: root source contract stayed unreadable after retry budget (%s, attempts=%s).\n' "${reason}" "${attempts}" >&2
+      return 2
+      ;;
+    unexpected_io_failure)
+      printf '[next-generated-root] unexpected_io_failure: root source contract check failed unexpectedly (%s).\n' "${reason}" >&2
+      return 3
+      ;;
+    *)
+      printf '[next-generated-root] unexpected_io_failure: unrecognized source contract status (%s:%s).\n' "${status}" "${reason}" >&2
+      return 3
+      ;;
+  esac
+}
+
 next_generated_root_write_lane_owner() {
   local run_root="$1"
   local lane_name="$2"
@@ -70,51 +365,308 @@ next_generated_root_is_lane_owner_active() {
 }
 
 next_generated_root_normalize() {
+  next_generated_root_repair_source_contract
+}
+
+next_generated_root_repair_acquire_tsconfig_once() {
   local repo_dir
   repo_dir="$(next_generated_root_repo_dir)"
 
-  node - <<'NODE' "${repo_dir}/tsconfig.json"
+  node - <<'NODE' "${repo_dir}"
 const fs = require('node:fs');
-const tsconfigPath = process.argv[2];
-const config = JSON.parse(fs.readFileSync(tsconfigPath, 'utf8'));
-const originalInclude = Array.isArray(config.include)
-  ? config.include.filter((entry) => typeof entry === 'string')
-  : [];
+const path = require('node:path');
 
-const requiredPatterns = [
-  '.next*/types/**/*.ts',
-  'artifacts/backend-real/current-run/next-dist/types/**/*.d.ts',
-  'artifacts/mock-lane/current/next-dist/types/**/*.d.ts',
+const repoDir = process.argv[2];
+const tsconfigPath = path.join(repoDir, 'tsconfig.json');
+const transientReadErrorCodes = new Set(['ENOENT', 'EBUSY']);
+const unexpectedIoErrorCodes = new Set(['EACCES', 'EPERM', 'EISDIR', 'ENOTDIR', 'EMFILE']);
+
+function emit(status, reason, payload = '') {
+  process.stdout.write(`${status}\t${reason}${payload ? `\t${payload}` : ''}\n`);
+}
+
+function classifyIoError(error, fallbackReason) {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? String(error.code ?? '')
+    : '';
+  const normalizedCode = code.toLowerCase() || 'unknown';
+  if (transientReadErrorCodes.has(code)) {
+    emit('transient_unreadable', `${fallbackReason}_${normalizedCode}`);
+    return true;
+  }
+  if (unexpectedIoErrorCodes.has(code) || code) {
+    emit('unexpected_io_failure', `${fallbackReason}_${normalizedCode}`);
+    return true;
+  }
+  return false;
+}
+
+let raw;
+try {
+  raw = fs.readFileSync(tsconfigPath, 'utf8');
+} catch (error) {
+  if (!classifyIoError(error, 'tsconfig_read_failed')) {
+    emit('unexpected_io_failure', 'tsconfig_read_failed_unknown');
+  }
+  process.exit(0);
+}
+
+try {
+  JSON.parse(raw);
+} catch {
+  emit('transient_unreadable', 'tsconfig_json_parse_failed');
+  process.exit(0);
+}
+
+emit('readable', 'source_contract_readable', Buffer.from(raw, 'utf8').toString('base64'));
+NODE
+}
+
+next_generated_root_repair_acquire_next_env_once() {
+  local repo_dir
+  repo_dir="$(next_generated_root_repo_dir)"
+
+  node - <<'NODE' "${repo_dir}"
+const fs = require('node:fs');
+const path = require('node:path');
+
+const repoDir = process.argv[2];
+const nextEnvPath = path.join(repoDir, 'next-env.d.ts');
+const transientReadErrorCodes = new Set(['ENOENT', 'EBUSY']);
+const unexpectedIoErrorCodes = new Set(['EACCES', 'EPERM', 'EISDIR', 'ENOTDIR', 'EMFILE']);
+
+function emit(status, reason, payload = '') {
+  process.stdout.write(`${status}\t${reason}${payload ? `\t${payload}` : ''}\n`);
+}
+
+function classifyIoError(error, fallbackReason) {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? String(error.code ?? '')
+    : '';
+  const normalizedCode = code.toLowerCase() || 'unknown';
+  if (transientReadErrorCodes.has(code)) {
+    emit('transient_unreadable', `${fallbackReason}_${normalizedCode}`);
+    return true;
+  }
+  if (unexpectedIoErrorCodes.has(code) || code) {
+    emit('unexpected_io_failure', `${fallbackReason}_${normalizedCode}`);
+    return true;
+  }
+  emit('unexpected_io_failure', `${fallbackReason}_${normalizedCode}`);
+  return true;
+}
+
+try {
+  fs.statSync(nextEnvPath);
+} catch (error) {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? String(error.code ?? '')
+    : '';
+  if (code === 'ENOENT') {
+    emit('absent', 'next_env_absent');
+    process.exit(0);
+  }
+  classifyIoError(error, 'next_env_read_failed');
+  process.exit(0);
+}
+
+let raw;
+try {
+  raw = fs.readFileSync(nextEnvPath, 'utf8');
+} catch (error) {
+  classifyIoError(error, 'next_env_read_failed');
+  process.exit(0);
+}
+
+emit('readable', 'source_contract_readable', Buffer.from(raw, 'utf8').toString('base64'));
+NODE
+}
+
+next_generated_root_apply_canonical_tsconfig_include() {
+  local tsconfig_path="$1"
+  local raw_payload="$2"
+
+  node - <<'NODE' "${tsconfig_path}" "${raw_payload}"
+const fs = require('node:fs');
+
+const tsconfigPath = process.argv[2];
+const raw = Buffer.from(process.argv[3], 'base64').toString('utf8');
+const canonicalInclude = [
+  '.next/types/**/*.ts',
+  'next-env.d.ts',
+  'src/**/*.ts',
+  'src/**/*.tsx',
 ];
 
-const managedEntryPattern =
-  /(?:^|\/)(?:mock|integration)-\d{8}T\d{6}Z-\d+-\d+(?:\/|$)|\.next-backend-real-|\.next-mock-|\/next-dist\/types\//;
-
-const filtered = originalInclude.filter((entry) => !managedEntryPattern.test(entry));
-const deduped = [];
-for (const entry of filtered) {
-  if (!deduped.includes(entry)) {
-    deduped.push(entry);
-  }
+const config = JSON.parse(raw);
+const nextConfig = { ...config, include: canonicalInclude };
+const nextContent = `${JSON.stringify(nextConfig, null, 2)}\n`;
+if (raw !== nextContent) {
+  fs.writeFileSync(tsconfigPath, nextContent);
 }
-
-const normalizedInclude = [];
-for (const pattern of requiredPatterns) {
-  if (!normalizedInclude.includes(pattern)) {
-    normalizedInclude.push(pattern);
-  }
-}
-for (const entry of deduped) {
-  if (!normalizedInclude.includes(entry)) {
-    normalizedInclude.push(entry);
-  }
-}
-
-config.include = normalizedInclude;
-fs.writeFileSync(tsconfigPath, `${JSON.stringify(config, null, 2)}\n`);
 NODE
+}
 
-  next_generated_root_canonical_next_env > "${repo_dir}/next-env.d.ts"
+next_generated_root_apply_canonical_next_env() {
+  local next_env_path="$1"
+  local raw_payload="$2"
+
+  node - <<'NODE' "${next_env_path}" "${raw_payload}"
+const fs = require('node:fs');
+
+const nextEnvPath = process.argv[2];
+const raw = Buffer.from(process.argv[3], 'base64').toString('utf8');
+const canonicalNextEnv = `/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+`;
+
+if (raw !== canonicalNextEnv) {
+  fs.writeFileSync(nextEnvPath, canonicalNextEnv);
+}
+NODE
+}
+
+next_generated_root_repair_source_contract() {
+  local phase="${1:-final_reconcile}"
+  local repo_dir
+  local tsconfig_path
+  local next_env_path
+  local raw_payload
+  local next_env_payload
+  repo_dir="$(next_generated_root_repo_dir)"
+  tsconfig_path="${repo_dir}/tsconfig.json"
+  next_env_path="${repo_dir}/next-env.d.ts"
+
+  next_generated_root_resolve_source_contract_with_once \
+    "${phase}" \
+    next_generated_root_repair_acquire_tsconfig_once \
+    "repair_tsconfig_acquisition_failed"
+  case "${NEXT_GENERATED_ROOT_LAST_STATUS}" in
+    readable)
+      raw_payload="${NEXT_GENERATED_ROOT_LAST_PAYLOAD:-}"
+      ;;
+    persistent_unreadable|unexpected_io_failure)
+      return 1
+      ;;
+    *)
+      NEXT_GENERATED_ROOT_LAST_STATUS="unexpected_io_failure"
+      NEXT_GENERATED_ROOT_LAST_REASON="invalid_tsconfig_repair_acquisition_status"
+      NEXT_GENERATED_ROOT_LAST_ATTEMPTS="${NEXT_GENERATED_ROOT_LAST_ATTEMPTS:-1}"
+      NEXT_GENERATED_ROOT_LAST_PAYLOAD=""
+      return 1
+      ;;
+  esac
+
+  if ! next_generated_root_apply_canonical_tsconfig_include "${tsconfig_path}" "${raw_payload}"; then
+    NEXT_GENERATED_ROOT_LAST_STATUS="unexpected_io_failure"
+    NEXT_GENERATED_ROOT_LAST_REASON="tsconfig_repair_apply_failed"
+    NEXT_GENERATED_ROOT_LAST_ATTEMPTS="${NEXT_GENERATED_ROOT_LAST_ATTEMPTS:-1}"
+    NEXT_GENERATED_ROOT_LAST_PAYLOAD=""
+    return 1
+  fi
+
+  next_generated_root_resolve_source_contract_with_once \
+    "${phase}" \
+    next_generated_root_repair_acquire_next_env_once \
+    "repair_next_env_acquisition_failed"
+  case "${NEXT_GENERATED_ROOT_LAST_STATUS}" in
+    absent)
+      return 0
+      ;;
+    readable)
+      next_env_payload="${NEXT_GENERATED_ROOT_LAST_PAYLOAD:-}"
+      ;;
+    persistent_unreadable|unexpected_io_failure)
+      return 1
+      ;;
+    *)
+      NEXT_GENERATED_ROOT_LAST_STATUS="unexpected_io_failure"
+      NEXT_GENERATED_ROOT_LAST_REASON="invalid_next_env_repair_acquisition_status"
+      NEXT_GENERATED_ROOT_LAST_ATTEMPTS="${NEXT_GENERATED_ROOT_LAST_ATTEMPTS:-1}"
+      NEXT_GENERATED_ROOT_LAST_PAYLOAD=""
+      return 1
+      ;;
+  esac
+
+  if ! next_generated_root_apply_canonical_next_env "${next_env_path}" "${next_env_payload}"; then
+    NEXT_GENERATED_ROOT_LAST_STATUS="unexpected_io_failure"
+    NEXT_GENERATED_ROOT_LAST_REASON="next_env_repair_apply_failed"
+    NEXT_GENERATED_ROOT_LAST_ATTEMPTS="${NEXT_GENERATED_ROOT_LAST_ATTEMPTS:-1}"
+    NEXT_GENERATED_ROOT_LAST_PAYLOAD=""
+    return 1
+  fi
+}
+
+next_generated_root_capture_source_snapshot() {
+  :
+}
+
+next_generated_root_restore_source_snapshot() {
+  next_generated_root_final_reconcile_source_contract
+}
+
+next_generated_root_clear_source_snapshot() {
+  :
+}
+
+next_generated_root_finalize_source_contract() {
+  next_generated_root_final_reconcile_source_contract
+}
+
+next_generated_root_final_reconcile_source_contract() {
+  next_generated_root_reconcile_source_contract final_reconcile
+}
+
+next_generated_root_assert_source_contract() {
+  local phase="${1:-prepare_for_validation}"
+  next_generated_root_resolve_source_contract_status "${phase}"
+  case "${NEXT_GENERATED_ROOT_LAST_STATUS}" in
+    canonical)
+      return 0
+      ;;
+    semantic_drift|persistent_unreadable|unexpected_io_failure)
+      next_generated_root_report_source_contract_failure "${phase}"
+      return $?
+      ;;
+    *)
+      NEXT_GENERATED_ROOT_LAST_STATUS="unexpected_io_failure"
+      NEXT_GENERATED_ROOT_LAST_REASON="invalid_probe_status"
+      NEXT_GENERATED_ROOT_LAST_ATTEMPTS="${NEXT_GENERATED_ROOT_LAST_ATTEMPTS:-1}"
+      next_generated_root_report_source_contract_failure "${phase}"
+      return $?
+      ;;
+  esac
+}
+
+next_generated_root_reconcile_source_contract() {
+  local phase="${1:-final_reconcile}"
+  next_generated_root_resolve_source_contract_status "${phase}"
+  case "${NEXT_GENERATED_ROOT_LAST_STATUS}" in
+    canonical)
+      return 0
+      ;;
+    semantic_drift)
+      if next_generated_root_repair_source_contract "${phase}"; then
+        return 0
+      fi
+      next_generated_root_report_source_contract_failure "${phase}"
+      return $?
+      ;;
+    persistent_unreadable|unexpected_io_failure)
+      next_generated_root_report_source_contract_failure "${phase}"
+      return $?
+      ;;
+    *)
+      NEXT_GENERATED_ROOT_LAST_STATUS="unexpected_io_failure"
+      NEXT_GENERATED_ROOT_LAST_REASON="invalid_probe_status"
+      NEXT_GENERATED_ROOT_LAST_ATTEMPTS="${NEXT_GENERATED_ROOT_LAST_ATTEMPTS:-1}"
+      next_generated_root_report_source_contract_failure "${phase}"
+      return $?
+      ;;
+  esac
 }
 
 next_generated_root_stop_pid_tree_gracefully() {
@@ -126,25 +678,29 @@ next_generated_root_stop_pid_tree_gracefully() {
   fi
 
   local child
+  local child_pids=()
   while read -r child; do
     [[ -n "${child}" ]] || continue
-    next_generated_root_stop_pid_tree_gracefully "${child}" "${wait_seconds}"
+    child_pids+=("${child}")
   done < <(pgrep -P "${pid}" 2>/dev/null || true)
 
   kill -TERM "${pid}" >/dev/null 2>&1 || true
   local _i
-  for _i in $(seq 1 "${wait_seconds}"); do
+  for _i in $(seq 1 "$((wait_seconds * 20))"); do
     if ! kill -0 "${pid}" >/dev/null 2>&1; then
-      return 0
+      break
     fi
-    sleep 1
+    sleep 0.05
   done
 
-  while read -r child; do
+  for child in "${child_pids[@]}"; do
     [[ -n "${child}" ]] || continue
-    kill -KILL "${child}" >/dev/null 2>&1 || true
-  done < <(pgrep -P "${pid}" 2>/dev/null || true)
-  kill -KILL "${pid}" >/dev/null 2>&1 || true
+    next_generated_root_stop_pid_tree_gracefully "${child}" "${wait_seconds}"
+  done
+
+  if kill -0 "${pid}" >/dev/null 2>&1; then
+    kill -KILL "${pid}" >/dev/null 2>&1 || true
+  fi
 }
 
 next_generated_root_remove_lane_current_links() {
@@ -201,19 +757,47 @@ next_generated_root_stop_lane_web_processes() {
 }
 
 next_generated_root_prepare_for_validation() {
-  next_generated_root_stop_lane_web_processes
-  local status=$?
-  if [[ "${status}" -eq 2 ]]; then
-    return 1
-  fi
-  if [[ "${status}" -ne 0 ]]; then
-    return "${status}"
-  fi
-  next_generated_root_remove_lane_current_links
-  next_generated_root_normalize
+  next_generated_root_assert_source_contract prepare_for_validation
+}
+
+next_generated_root_guard_source_contract() {
+  local child_pid="$1"
+  local interval_seconds="${2:-${NEXT_GENERATED_ROOT_GUARD_INTERVAL_SEC:-0.1}}"
+  while kill -0 "${child_pid}" >/dev/null 2>&1; do
+    if ! next_generated_root_reconcile_source_contract guard; then
+      :
+    fi
+    sleep "${interval_seconds}"
+  done
+}
+
+next_generated_root_start_contract_guard() {
+  local guard_interval="${1:-${NEXT_GENERATED_ROOT_GUARD_INTERVAL_SEC:-0.1}}"
+  (
+    while true; do
+      if ! next_generated_root_reconcile_source_contract guard; then
+        :
+      fi
+      sleep "${guard_interval}"
+    done
+  ) >/dev/null 2>&1 < /dev/null &
+  printf '%s\n' "$!"
+}
+
+next_generated_root_stop_contract_guard() {
+  local guard_pid="${1:-}"
+  [[ -n "${guard_pid}" ]] || return 0
+  kill "${guard_pid}" >/dev/null 2>&1 || true
+  local _i
+  for _i in $(seq 1 20); do
+    if ! kill -0 "${guard_pid}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  kill -KILL "${guard_pid}" >/dev/null 2>&1 || true
 }
 
 next_generated_root_finalize_lane_cleanup() {
-  next_generated_root_remove_lane_current_links
-  next_generated_root_normalize
+  :
 }

@@ -5,6 +5,7 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-line-state.sh"
 ensure_backend_real_state
 
 read_summary_value() {
@@ -37,7 +38,7 @@ try {
 read_local_manual_port() {
   local name="$1"
   local port_file
-  port_file="$(backend_real_state_root)/local-manual/${name}.port"
+  port_file="$(local_manual_runtime_path "${name}.port")"
   [[ -f "${port_file}" ]] || return 1
   tr -d '[:space:]' < "${port_file}"
 }

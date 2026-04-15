@@ -12,7 +12,7 @@
 ### 日常运行与切线
 <!-- current-runtime-lines:user-guides-index:start -->
 - [Local Runtime Flows](./local-runtime-flows.md)
-  - 由 `scripts/governance/current-runtime-line-manifest.ts` 生成；共享 substrate + 一次只跑一条本地工作线的最短手册。
+  - 由 `scripts/governance/current-runtime-line-manifest.ts` 生成；当前本机操作基线与切线手册。
 - [Runtime Lines Matrix](./runtime-lines-matrix.md)
   - 当前 runtime / deploy / rehearsal 线与 mode 边界的总表。
 - [Demo Deploy Operations](./demo-deploy-operations.md)
@@ -20,6 +20,8 @@
 - [Cluster Deploy Operations](./cluster-deploy-operations.md)
   - 目标主机上的 real-cluster 发布线：registry-backed bundle release、target-host install flow、namespace-only automation model。
 <!-- current-runtime-lines:user-guides-index:end -->
+
+runtime-line 当前状态目录统一收敛到 `artifacts/runtime/lines/<line>/current`；具体 line 列表与 machine-readable truth 以 `scripts/governance/current-runtime-line-manifest.ts` 为准。
 
 ### 发布与排演
 - [Release Readiness Checklist](./release-readiness-checklist.md)

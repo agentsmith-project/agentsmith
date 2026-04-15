@@ -23,6 +23,8 @@ const testingIndex = read('docs/testing/README.md');
 const agentsDoc = read('AGENTS.md');
 const visualPolicy = read('docs/testing/visual-baseline-policy-v1.md');
 const contractsIndex = read('docs/contracts/README.md');
+const gateManifestContract = read('docs/contracts/current-gate-manifest-contract.md');
+const gateResultContract = read('docs/contracts/current-gate-result-schema-contract.md');
 const productTerminology = read('docs/contracts/product-terminology.md');
 const demoDeployReset = read('scripts/demo-deploy/reset.sh');
 const clusterDeployReset = read('scripts/cluster-deploy/reset.sh');
@@ -48,6 +50,37 @@ function forbidMatch(content: string, pattern: RegExp, message: string): void {
     failures.push(message);
   }
 }
+
+function extractBlock(content: string, startMarker: string, endMarker: string, label: string): string {
+  const startIndex = content.indexOf(startMarker);
+  const endIndex = content.indexOf(endMarker);
+
+  if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
+    failures.push(`${label} is missing its generated block markers`);
+    return '';
+  }
+
+  return content.slice(startIndex + startMarker.length, endIndex);
+}
+
+const readmeWorkflowBlock = extractBlock(
+  readme,
+  '<!-- current-workflow:readme:start -->',
+  '<!-- current-workflow:readme:end -->',
+  'README current workflow block',
+);
+const developmentWorkflowBlock = extractBlock(
+  development,
+  '<!-- current-workflow:development:start -->',
+  '<!-- current-workflow:development:end -->',
+  'DEVELOPMENT current workflow block',
+);
+const governanceWorkflowBlock = extractBlock(
+  governanceModel,
+  '<!-- current-workflow:governance-model:start -->',
+  '<!-- current-workflow:governance-model:end -->',
+  'current engineering governance model workflow block',
+);
 
 requireMatch(readme, /current-engineering-governance-model\.md/, 'README is missing the current engineering governance model reference');
 requireMatch(readme, /DESIGN\.md/, 'README must reference DESIGN.md as the UI design guide');
@@ -81,11 +114,26 @@ requireMatch(governanceModel, /current-runtime-line-manifest\.ts/, 'current engi
 requireMatch(readme, /current-gate-manifest\.ts/, 'README is missing the current gate manifest reference');
 requireMatch(development, /current-gate-manifest\.ts/, 'DEVELOPMENT is missing the current gate manifest reference');
 requireMatch(governanceModel, /current-gate-manifest\.ts/, 'current engineering governance model is missing the gate manifest reference');
+requireMatch(development, /current-gate-result-schema\.ts/, 'DEVELOPMENT is missing the current gate result schema reference');
+requireMatch(governanceModel, /current-gate-result-schema\.ts/, 'current engineering governance model is missing the gate result schema reference');
+requireMatch(governanceModel, /failure_class/, 'current engineering governance model must describe the gate-level failure_class contract');
+requireMatch(governanceModel, /result\.json/, 'current engineering governance model must describe canonical gate result.json output');
+requireMatch(governanceModel, /gate id/i, 'current engineering governance model must describe gate id as the stable gate identity');
+requireMatch(governanceModel, /operational baseline/i, 'current engineering governance model must keep runtime baselines separate from correctness contracts');
+requireMatch(gateManifestContract, /stable gate id/i, 'current gate manifest contract must explain stable gate ids');
+requireMatch(gateManifestContract, /adapter surface/i, 'current gate manifest contract must explain adapter surfaces');
+requireMatch(gateManifestContract, /execution target/i, 'current gate manifest contract must explain structured execution targets');
+requireMatch(gateManifestContract, /operator hint/i, 'current gate manifest contract must describe command as an operator hint');
+requireMatch(gateResultContract, /result\.json/, 'current gate result schema contract must explain canonical result.json output');
+requireMatch(gateResultContract, /failure_class/, 'current gate result schema contract must define failure_class');
 requireMatch(governanceModel, /story evidence/i, 'current engineering governance model must describe story evidence as part of gate truth');
 requireMatch(governanceModel, /visual_scene_catalog/, 'current engineering governance model must define visual_scene_catalog ownership');
 requireMatch(governanceModel, /ux_trace_bundle/, 'current engineering governance model must define ux_trace_bundle ownership');
 requireMatch(governanceModel, /test:backend-real:core/, 'current engineering governance model must describe test:backend-real:core as a default-tier backend-real story-evidence owner');
 requireMatch(governanceModel, /lane:backend-real:core/, 'current engineering governance model must describe lane:backend-real:core as a default-tier backend-real story-evidence owner');
+requireMatch(governanceModel, /execution target/i, 'current engineering governance model must describe structured execution targets');
+requireMatch(governanceModel, /operator hint/i, 'current engineering governance model must describe command as an operator hint');
+requireMatch(development, /operator hint/i, 'DEVELOPMENT must describe command as an operator hint');
 requireMatch(contractsIndex, /product-terminology\.md/, 'contracts README is missing the product terminology contract reference');
 requireMatch(contractsIndex, /Execution target/, 'contracts README must describe Execution target as part of the current terminology contract');
 requireMatch(contractsIndex, /Shared context/, 'contracts README must describe Shared context as part of the current terminology contract');
@@ -98,13 +146,13 @@ for (const term of CURRENT_WORKFLOW_TOP_LEVEL_TERMS) {
 
 for (const command of listRecommendedCurrentWorkflowCommands()) {
   const escapedCommand = command.command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  requireMatch(readme, new RegExp(escapedCommand), `README is missing recommended current workflow command: ${command.command}`);
-  requireMatch(development, new RegExp(escapedCommand), `DEVELOPMENT is missing recommended current workflow command: ${command.command}`);
+  requireMatch(readmeWorkflowBlock, new RegExp(escapedCommand), `README current workflow block is missing recommended command: ${command.command}`);
+  requireMatch(developmentWorkflowBlock, new RegExp(escapedCommand), `DEVELOPMENT current workflow block is missing recommended command: ${command.command}`);
 }
 
 for (const command of listCurrentWorkflowCommands()) {
   const escapedCommand = command.command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  requireMatch(governanceModel, new RegExp(escapedCommand), `current engineering governance model is missing current workflow command: ${command.command}`);
+  requireMatch(governanceWorkflowBlock, new RegExp(escapedCommand), `current engineering governance model workflow block is missing command: ${command.command}`);
 
   if (command.npmScript && !packageJson.scripts?.[command.npmScript]) {
     failures.push(`package.json is missing current workflow script: ${command.npmScript}`);
@@ -229,6 +277,9 @@ if (!fullMockE2EScript || !/test:e2e\b/.test(fullMockE2EScript) || !/test:e2e:la
 }
 
 requireMatch(constitution, /视觉验证属于独立证据通道/, 'constitution must describe visual verification as an independent evidence channel');
+requireMatch(constitution, /源码根目录不得承载 lane 运行态/, 'constitution must forbid runtime coordination state from living in the source root');
+requireMatch(constitution, /环境失败不得伪装成功能回归/, 'constitution must keep infra failures separate from product regressions');
+requireMatch(constitution, /ownership 未证实前不得 destructive cleanup/, 'constitution must require authority before destructive cleanup');
 forbidMatch(constitution, /smoke \+ chromium/, 'constitution still uses legacy smoke + chromium wording');
 
 const requiredProductTerminologyChecks: Array<{ pattern: RegExp; message: string }> = [

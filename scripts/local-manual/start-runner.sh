@@ -3,12 +3,12 @@ set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_local_manual_env
+RUNNER_LAUNCH_STARTED=0
 
 cleanup_on_exit() {
   local exit_code="${1:-0}"
-  if [[ "${exit_code}" != "0" ]]; then
-    stop_pid_file_if_running "${RUNNER_PID_FILE}" "runner" || true
-    rm -f "${RUNNER_READY_FILE}" || true
+  if [[ "${exit_code}" != "0" && "${RUNNER_LAUNCH_STARTED}" == "1" ]]; then
+    stop_local_manual_runner_owner_aware rollback_launch || true
   fi
 }
 trap 'cleanup_on_exit $?' EXIT
@@ -32,10 +32,12 @@ wait_runner_connected() {
 }
 
 info "ensuring a single local external runner instance"
+# common.sh delegates tracked runner ownership checks to owner-janitor.ts.
+if ! stop_local_manual_runner_owner_aware replace_runner; then
+  err "runner ownership is unverified; refusing to replace the tracked local-manual runner"
+  exit 1
+fi
 rm -f "${RUNNER_READY_FILE}"
-stop_pid_file_if_running "${RUNNER_PID_FILE}" "runner"
-stop_matching_processes 'make notebook-agent-runner'
-stop_matching_processes 'make notebook-runner'
 rm -f "${RUNNER_LOG}"
 
 launch_detached "${RUNNER_PID_FILE}" "${RUNNER_LOG}" "
@@ -46,6 +48,7 @@ launch_detached "${RUNNER_PID_FILE}" "${RUNNER_LOG}" "
     MBOS_AGENT_CODEX_YOLO='${MBOS_AGENT_CODEX_YOLO:-1}' && \
   exec make notebook-agent-runner
 "
+RUNNER_LAUNCH_STARTED=1
 wait_runner_connected 60
 write_ready_file "${RUNNER_READY_FILE}"
 trap - EXIT

@@ -14,6 +14,7 @@ import {
   loadTaskMountRegistryOwners,
   matchGatewayStateForProcess,
   resolvePreflightOptions,
+  trackedOwnerPidFiles,
   type GatewayStateRecord,
   type ManagedProcessInfo,
 } from './juicefs-orphan-preflight';
@@ -102,16 +103,23 @@ function buildBootScopedOwnerScope(instanceId: string, bootId: string) {
 
 function buildGatewayOwnerEvidence(overrides: {
   localInstanceId?: string | null;
-  scopeStatusByScope?: Map<string, 'active' | 'stale'>;
+  scopeStatusByScope?: Map<string, 'active' | 'stale' | 'released'>;
 } = {}) {
   return {
     localInstanceId: 'instance-a',
-    scopeStatusByScope: new Map<string, 'active' | 'stale'>(),
+    scopeStatusByScope: new Map<string, 'active' | 'stale' | 'released'>(),
     ...overrides,
   };
 }
 
 describe('juicefs orphan preflight', () => {
+  it('tracks local-manual owner pid files from the runtime line root instead of backend-real/current', () => {
+    expect(trackedOwnerPidFiles('/repo')).toEqual({
+      apiPidFile: path.join('/repo', 'artifacts/runtime/lines/local-manual/current/api.pid'),
+      runnerPidFile: path.join('/repo', 'artifacts/runtime/lines/local-manual/current/runner.pid'),
+    });
+  });
+
   it('removes gateway state when the persisted gateway pid is already gone', () => {
     const decision = classifyGatewayState({
       state: buildGatewayState({ pid: 4100, ownerProcessPid: 5100 }),
@@ -160,6 +168,46 @@ describe('juicefs orphan preflight', () => {
     });
   });
 
+  it('reclaims a state-backed gateway when its owner boot was explicitly released', () => {
+    const releasedOwnerScope = buildBootScopedOwnerScope('instance-a', 'boot-released');
+    const decision = classifyGatewayState({
+      state: buildGatewayState({
+        pid: 4100,
+        ownerProcessPid: 5100,
+        ownerScope: releasedOwnerScope,
+      }),
+      livePids: new Set([4100, 5100]),
+      processTableByPid: new Map<number, ManagedProcessInfo>([
+        [
+          4100,
+          buildProcess({
+            pid: 4100,
+            command: buildOwnedGatewayCommand({
+              ownerScope: releasedOwnerScope,
+              libraryId: 'flib_demo',
+              metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_demo?sslmode=disable',
+              listenAddress: '127.0.0.1:39001',
+              storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
+              logPath: '/tmp/flib_demo.log',
+            }),
+          }),
+        ],
+      ]),
+      ownerEvidence: buildGatewayOwnerEvidence({
+        localInstanceId: 'instance-a',
+        scopeStatusByScope: new Map<string, 'active' | 'stale' | 'released'>([
+          [releasedOwnerScope, 'released'],
+          [buildBootScopedOwnerScope('instance-a', 'boot-current'), 'active'],
+        ]),
+      }),
+    });
+
+    expect(decision).toEqual({
+      action: 'stop_gateway_and_remove_state',
+      reason: 'owner_boot_released',
+    });
+  });
+
   it('fails open when a stale persisted gateway pid was reused by an unrelated live process', () => {
     const decision = classifyGatewayState({
       state: buildGatewayState({
@@ -192,7 +240,7 @@ describe('juicefs orphan preflight', () => {
     });
   });
 
-  it('keeps a state-backed gateway when both owner and gateway pid are alive', () => {
+  it('fails open for a legacy state-backed gateway when both owner and gateway pid are alive but owner scope authority is unverified', () => {
     const decision = classifyGatewayState({
       state: buildGatewayState({ pid: 4100, ownerProcessPid: 5100 }),
       livePids: new Set([4100, 5100]),
@@ -216,7 +264,77 @@ describe('juicefs orphan preflight', () => {
 
     expect(decision).toEqual({
       action: 'keep',
-      reason: 'owner_and_gateway_alive',
+      reason: 'owner_scope_unverified',
+    });
+  });
+
+  it('fails open for a state-backed gateway owned by a foreign active boot', () => {
+    const foreignOwnerScope = buildBootScopedOwnerScope('instance-b', 'boot-foreign');
+    const decision = classifyGatewayState({
+      state: buildGatewayState({
+        pid: 4100,
+        ownerProcessPid: 5100,
+        ownerScope: foreignOwnerScope,
+      }),
+      livePids: new Set([4100, 5100]),
+      processTableByPid: new Map<number, ManagedProcessInfo>([
+        [
+          4100,
+          buildProcess({
+            pid: 4100,
+            command: buildOwnedGatewayCommand({
+              ownerScope: foreignOwnerScope,
+              libraryId: 'flib_demo',
+            }),
+          }),
+        ],
+      ]),
+      ownerEvidence: buildGatewayOwnerEvidence({
+        localInstanceId: 'instance-a',
+        scopeStatusByScope: new Map<string, 'active' | 'stale' | 'released'>([
+          [buildBootScopedOwnerScope('instance-a', 'boot-current'), 'active'],
+        ]),
+      }),
+    });
+
+    expect(decision).toEqual({
+      action: 'keep',
+      reason: 'foreign_owner_scope',
+    });
+  });
+
+  it('fails open for a state-backed gateway when same-instance owner scope has no ledger evidence yet', () => {
+    const unverifiedOwnerScope = buildBootScopedOwnerScope('instance-a', 'boot-unknown');
+    const decision = classifyGatewayState({
+      state: buildGatewayState({
+        pid: 4100,
+        ownerProcessPid: 5100,
+        ownerScope: unverifiedOwnerScope,
+      }),
+      livePids: new Set([4100, 5100]),
+      processTableByPid: new Map<number, ManagedProcessInfo>([
+        [
+          4100,
+          buildProcess({
+            pid: 4100,
+            command: buildOwnedGatewayCommand({
+              ownerScope: unverifiedOwnerScope,
+              libraryId: 'flib_demo',
+            }),
+          }),
+        ],
+      ]),
+      ownerEvidence: buildGatewayOwnerEvidence({
+        localInstanceId: 'instance-a',
+        scopeStatusByScope: new Map<string, 'active' | 'stale' | 'released'>([
+          [buildBootScopedOwnerScope('instance-a', 'boot-current'), 'active'],
+        ]),
+      }),
+    });
+
+    expect(decision).toEqual({
+      action: 'keep',
+      reason: 'owner_scope_unverified',
     });
   });
 
@@ -472,6 +590,32 @@ describe('juicefs orphan preflight', () => {
     expect(staleDecision).toEqual({
       action: 'stop_gateway',
       reason: 'local_owner_boot_stale',
+    });
+  });
+
+  it('reclaims a released owner-scoped untracked gateway immediately without waiting for stale age', () => {
+    const releasedOwnerScope = buildBootScopedOwnerScope('instance-a', 'boot-released');
+    const decision = classifyGatewayProcessWithoutState({
+      processInfo: buildProcess({
+        ageSeconds: 5,
+        command: buildOwnedGatewayCommand({
+          ownerScope: releasedOwnerScope,
+          libraryId: 'flib_demo',
+        }),
+      }),
+      ownerEvidence: buildGatewayOwnerEvidence({
+        localInstanceId: 'instance-a',
+        scopeStatusByScope: new Map<string, 'active' | 'stale' | 'released'>([
+          [releasedOwnerScope, 'released'],
+          [buildBootScopedOwnerScope('instance-a', 'boot-current'), 'active'],
+        ]),
+      }),
+      minAgeSeconds: 600,
+    });
+
+    expect(decision).toEqual({
+      action: 'stop_gateway',
+      reason: 'owner_boot_released',
     });
   });
 

@@ -4,8 +4,10 @@ import path from 'node:path';
 import {
   CURRENT_GATE_DOCUMENT_FILES,
   CURRENT_GATE_MANIFEST,
-  findCurrentGateDefinition,
+  type CurrentGateExecutionTarget,
+  findCurrentGateDefinitionById,
 } from '../governance/current-gate-manifest';
+import { listCurrentWorkflowCommands } from '../governance/current-workflow-manifest';
 
 const rootDir = process.cwd();
 
@@ -29,6 +31,68 @@ function forbidMatch(content: string, pattern: RegExp, message: string, failures
   }
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function collectWorkflowJobNames(content: string): Set<string> {
+  const jobNames = new Set<string>();
+  for (const match of content.matchAll(/^  ([a-z0-9][a-z0-9-]*):$/gm)) {
+    jobNames.add(match[1]);
+  }
+  return jobNames;
+}
+
+function assertExecutionTarget(
+  actualCommand: string,
+  target: CurrentGateExecutionTarget,
+  owner: string,
+  failures: string[],
+): void {
+  if (target.kind === 'npm_script') {
+    requireMatch(
+      actualCommand,
+      new RegExp(`\\bnpm run ${escapeRegExp(target.npmScript)}(?:\\b|\\s)`),
+      `${owner} adapter must invoke npm run ${target.npmScript}`,
+      failures,
+    );
+    return;
+  }
+
+  if (target.kind === 'shell_script') {
+    requireMatch(
+      actualCommand,
+      new RegExp(`\\bbash\\s+${escapeRegExp(target.scriptPath)}(?:\\b|\\s)`),
+      `${owner} adapter must invoke bash ${target.scriptPath}`,
+      failures,
+    );
+    for (const arg of target.args ?? []) {
+      requireMatch(
+        actualCommand,
+        new RegExp(escapeRegExp(arg)),
+        `${owner} adapter must include shell target argument: ${arg}`,
+        failures,
+      );
+    }
+    return;
+  }
+
+  requireMatch(
+    actualCommand,
+    new RegExp(`\\bnpx\\s+${escapeRegExp(target.command)}(?:\\b|\\s)`),
+    `${owner} adapter must invoke npx ${target.command}`,
+    failures,
+  );
+  for (const arg of target.args ?? []) {
+    requireMatch(
+      actualCommand,
+      new RegExp(escapeRegExp(arg)),
+      `${owner} adapter must include npx target argument: ${arg}`,
+      failures,
+    );
+  }
+}
+
 const packageJson = readJson('package.json') as { scripts?: Record<string, string> };
 const workflow = read('.github/workflows/quality-gates.yml');
 const readme = read('README.md');
@@ -45,11 +109,22 @@ const backendRealFullGate = read('scripts/backend-real-full-gate.sh');
 const integrationE2EFull = read('scripts/run-integration-e2e-full.sh');
 
 const failures: string[] = [];
+const workflowJobNames = collectWorkflowJobNames(workflow);
 
 for (const definition of CURRENT_GATE_MANIFEST) {
   const actualCommand = packageJson.scripts?.[definition.npmScript];
-  if (actualCommand !== definition.command) {
-    failures.push(`package.json script ${definition.npmScript} must equal: ${definition.command}`);
+  if (!actualCommand) {
+    failures.push(`package.json is missing gate adapter script: ${definition.npmScript}`);
+    continue;
+  }
+  if (definition.executionTargets.length === 0) {
+    failures.push(`${definition.id} must declare at least one structured execution target`);
+  }
+  for (const target of definition.executionTargets) {
+    assertExecutionTarget(actualCommand, target, definition.id, failures);
+  }
+  if (definition.ciJob && !workflowJobNames.has(definition.ciJob)) {
+    failures.push(`${definition.id} references missing quality-gates ci job: ${definition.ciJob}`);
   }
   if (definition.storyEvidencePolicy === 'required' && definition.storyEvidenceKinds.length === 0) {
     failures.push(`${definition.npmScript} must declare at least one required story evidence kind`);
@@ -65,14 +140,28 @@ for (const definition of CURRENT_GATE_MANIFEST) {
   }
 }
 
-const gateDefault = findCurrentGateDefinition('gate:default');
-const laneVisual = findCurrentGateDefinition('lane:visual');
-const testVisual = findCurrentGateDefinition('test:visual');
-const testBackendRealCore = findCurrentGateDefinition('test:backend-real:core');
-const backendRealCore = findCurrentGateDefinition('lane:backend-real:core');
-const laneDemoRehearsal = findCurrentGateDefinition('lane:demo-rehearsal');
-const laneClusterRehearsal = findCurrentGateDefinition('lane:cluster-rehearsal');
-const gateReleaseFull = findCurrentGateDefinition('gate:release:full');
+for (const command of listCurrentWorkflowCommands()) {
+  if (!command.gateId) {
+    continue;
+  }
+  const gate = findCurrentGateDefinitionById(command.gateId);
+  if (!gate) {
+    failures.push(`workflow command ${command.command} references unknown gate id: ${command.gateId}`);
+    continue;
+  }
+  if (command.npmScript && gate.npmScript !== command.npmScript) {
+    failures.push(`workflow command ${command.command} must map gate id ${command.gateId} back to npm adapter ${gate.npmScript}`);
+  }
+}
+
+const gateDefault = findCurrentGateDefinitionById('gate-default');
+const laneVisual = findCurrentGateDefinitionById('lane-visual');
+const testVisual = findCurrentGateDefinitionById('visual-lane-command');
+const testBackendRealCore = findCurrentGateDefinitionById('test-backend-real-core');
+const backendRealCore = findCurrentGateDefinitionById('lane-backend-real-core');
+const laneDemoRehearsal = findCurrentGateDefinitionById('lane-demo-rehearsal');
+const laneClusterRehearsal = findCurrentGateDefinitionById('lane-cluster-rehearsal');
+const gateReleaseFull = findCurrentGateDefinitionById('gate-release-full');
 
 if (!gateDefault || !laneVisual || !testVisual || !testBackendRealCore || !backendRealCore || !laneDemoRehearsal || !laneClusterRehearsal || !gateReleaseFull) {
   failures.push('current gate manifest is missing required default/visual/backend-real/rehearsal definitions');
@@ -100,15 +189,19 @@ requireMatch(workflow, /^  lane-visual:\n/m, 'quality-gates workflow is missing 
 requireMatch(workflow, /^  lane-backend-real-core:\n/m, 'quality-gates workflow is missing the lane-backend-real-core job', failures);
 requireMatch(workflow, /run_visual_lane:/, 'quality-gates workflow must expose the run_visual_lane manual input', failures);
 requireMatch(workflow, /run_backend_real_core:/, 'quality-gates workflow must expose the run_backend_real_core manual input', failures);
-requireMatch(workflow, /run: npm run gate:fast/, 'quality-gates workflow must run npm run gate:fast', failures);
-requireMatch(workflow, /run: npm run gate:default/, 'quality-gates workflow must run npm run gate:default', failures);
-requireMatch(workflow, /run: npm run lane:visual/, 'quality-gates workflow must run npm run lane:visual', failures);
-requireMatch(workflow, /run: npm run lane:backend-real:core/, 'quality-gates workflow must run npm run lane:backend-real:core', failures);
 forbidMatch(workflow, /run_l2:|run_l3:|visual-manual:|lane-mock:/, 'quality-gates workflow must use current gate job/input names instead of legacy lane-mock or run_l2/run_l3 inputs', failures);
 
 for (const content of [readme, development, governanceModel]) {
   requireMatch(content, /current-gate-manifest\.ts/, 'README/DEVELOPMENT/current engineering governance model must reference current-gate-manifest.ts', failures);
 }
+
+requireMatch(gateContract, /stable gate id/i, 'current gate manifest contract must describe stable gate ids as the gate identity truth', failures);
+requireMatch(gateContract, /adapter surface/i, 'current gate manifest contract must describe npmScript\\/command\\/ciJob as adapter surfaces', failures);
+requireMatch(gateContract, /execution target/i, 'current gate manifest contract must describe structured execution targets', failures);
+requireMatch(gateContract, /operator hint/i, 'current gate manifest contract must describe command as an operator hint', failures);
+requireMatch(governanceModel, /gate id/i, 'current engineering governance model must describe gate ids as the stable identity', failures);
+requireMatch(governanceModel, /execution target/i, 'current engineering governance model must describe structured execution targets', failures);
+requireMatch(governanceModel, /operator hint/i, 'current engineering governance model must describe command as an operator hint', failures);
 
 requireMatch(gateContract, /gate:default/, 'current gate manifest contract must define gate:default', failures);
 requireMatch(gateContract, /lane:visual/, 'current gate manifest contract must define lane:visual', failures);

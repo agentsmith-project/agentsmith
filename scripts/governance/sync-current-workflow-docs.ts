@@ -79,10 +79,11 @@ function renderDevelopmentWorkflowBlock(): string {
     '- [docs/current-engineering-governance-model.md](./docs/current-engineering-governance-model.md)',
     '- machine-readable source: [`scripts/governance/current-workflow-manifest.ts`](./scripts/governance/current-workflow-manifest.ts)',
     '- machine-readable gate source: [`scripts/governance/current-gate-manifest.ts`](./scripts/governance/current-gate-manifest.ts)',
+    '- gate result schema: [`scripts/governance/current-gate-result-schema.ts`](./scripts/governance/current-gate-result-schema.ts)',
     '',
     '命令命名约定：',
-    '- `make` 是环境与排演编排的 current canonical entrypoint',
-    '- `npm run` 是测试、门禁、验证通道与发布验证的 current canonical entrypoint',
+    '- `make` 与 `npm run` 是当前 command surface / adapter，不是 gate identity truth',
+    '- gate identity 统一看 `scripts/governance/current-gate-manifest.ts` 里的稳定 `id`',
     '',
     ...recommendedSections.flatMap((section, index) => {
       const block = renderCommandList(section).split('\n');

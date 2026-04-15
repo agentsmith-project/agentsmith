@@ -59,6 +59,10 @@ INTEGRATION_RUN_ID="${INTEGRATION_RUN_ID:-$(lane_generate_run_id integration)}"
 INTEGRATION_RUN_ROOT="${INTEGRATION_RUN_ROOT:-$(lane_prepare_run_root backend-real "${INTEGRATION_RUN_ID}" current-run)}"
 UX_TRACE_OUTPUT_ROOT="${UX_TRACE_OUTPUT_ROOT:-${INTEGRATION_RUN_ROOT}/ux-traces}"
 INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-${INTEGRATION_RUN_ROOT}/integration}"
+export CURRENT_GATE_RESULT_GATE_ID="${CURRENT_GATE_RESULT_GATE_ID:-lane-backend-real-core}"
+export CURRENT_GATE_RESULT_NPM_SCRIPT="${CURRENT_GATE_RESULT_NPM_SCRIPT:-lane:backend-real:core}"
+export CURRENT_GATE_RESULT_CI_JOB="${CURRENT_GATE_RESULT_CI_JOB:-lane-backend-real-core}"
+export CURRENT_GATE_RESULT_LINE_KIND="${CURRENT_GATE_RESULT_LINE_KIND:-backend_real}"
 export RUNTIME_LINE_ID="${RUNTIME_LINE_ID:-$(basename "${INTEGRATION_RUN_ROOT}")}"
 export UX_TRACE_OUTPUT_ROOT
 clear_runtime_stack_env

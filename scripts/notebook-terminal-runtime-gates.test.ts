@@ -3,6 +3,35 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadCanonicalStoryCatalog } from './story-catalog-support';
 
+function extractFunctionBody(source: string, functionName: string): string {
+  const signature = `${functionName}() {`;
+  const start = source.indexOf(signature);
+  if (start === -1) {
+    throw new Error(`missing function: ${functionName}`);
+  }
+
+  let depth = 0;
+  let bodyStart = -1;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '{') {
+      depth += 1;
+      if (bodyStart === -1) {
+        bodyStart = index + 1;
+      }
+      continue;
+    }
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(bodyStart, index);
+      }
+    }
+  }
+
+  throw new Error(`unterminated function: ${functionName}`);
+}
+
 describe('notebook terminal runtime gates', () => {
   it('keeps the external and internal smokes focused on multi-session coexistence and task release', async () => {
     const externalSmoke = await readFile(
@@ -85,12 +114,23 @@ describe('notebook terminal runtime gates', () => {
       path.resolve(process.cwd(), 'scripts/local-manual/start-runner.sh'),
       'utf-8',
     );
+    const localManualCommon = await readFile(
+      path.resolve(process.cwd(), 'scripts/local-manual/common.sh'),
+      'utf-8',
+    );
+    const stopProcesses = extractFunctionBody(localManualCommon, 'stop_local_manual_processes');
 
     expect(startRunner).toContain('make notebook-agent-runner');
     expect(startRunner).not.toContain('exec make notebook-runner');
-    expect(startRunner).toContain("stop_matching_processes 'make notebook-agent-runner'");
+    expect(startRunner).not.toContain("stop_matching_processes 'make notebook-agent-runner'");
     expect(startRunner).toContain('trap');
-    expect(startRunner).toContain('stop_pid_file_if_running "${RUNNER_PID_FILE}" "runner"');
+    expect(startRunner).toContain('stop_local_manual_runner_owner_aware');
+    expect(startRunner).toContain('runner ownership is unverified');
+    expect(localManualCommon).toContain('owner-janitor.ts');
+    expect(localManualCommon).toContain('LOCAL_MANUAL_ALLOW_UNTRACKED_PROCESS_RESCUE');
+    expect(stopProcesses).toContain('stop_local_manual_runner_owner_aware');
+    expect(stopProcesses).not.toContain('stop_matching_processes');
+    expect(stopProcesses).not.toContain('stop_listeners_on_port');
   });
 
   it('runs stale JuiceFS preflight before rebuilding the local-manual world so developer gates clear only historical leftovers', async () => {
@@ -207,6 +247,17 @@ describe('notebook terminal runtime gates', () => {
     expect(internalCommon).toContain('restore_local_manual_external_mode()');
     expect(internalUp).toContain('trap');
     expect(internalUp).toContain('bash "${ROOT_DIR}/scripts/local-manual/internal-down.sh" --no-api-restart');
+  });
+
+  it('keeps local-manual web on a lane-private next output while explicitly protecting the root contract', async () => {
+    const startWeb = await readFile(
+      path.resolve(process.cwd(), 'scripts/local-manual/start-web.sh'),
+      'utf-8',
+    );
+
+    expect(startWeb).toContain("NEXT_DIST_DIR='${LOCAL_MANUAL_NEXT_DIST_DIR}'");
+    expect(startWeb).toContain("NEXT_GENERATED_ROOT_MANAGED='1'");
+    expect(startWeb).toContain("NEXT_GENERATED_ROOT_STATE_DIR='${LOCAL_MANUAL_NEXT_ROOT_CONTRACT_DIR}'");
   });
 
   it('keeps the notebook terminal story catalog gated around canonical workspace and recovery journeys', async () => {

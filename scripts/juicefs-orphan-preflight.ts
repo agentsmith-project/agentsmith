@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import {
   buildGatewayOwnerEvidence,
-  classifyGatewayOwnerScope,
+  classifyGatewayManagedProcessAuthority,
+  classifyPersistedGatewayJanitorAuthority,
   extractGatewayProcessIdentity,
   isPersistedGatewayPidAuthorityConfirmed,
   isGatewayCommand,
@@ -100,6 +101,11 @@ interface PreflightOptions {
   noStateGatewayMinAgeSeconds: number;
 }
 
+const EMPTY_GATEWAY_OWNER_EVIDENCE: GatewayOwnerEvidence = {
+  localInstanceId: null,
+  scopeStatusByScope: new Map(),
+};
+
 function logLine(message: string): void {
   process.stdout.write(`[juicefs-orphan-preflight] ${message}\n`);
 }
@@ -120,9 +126,9 @@ export function classifyGatewayState(args: {
   livePids: ReadonlySet<number>;
   processTableByPid?: ReadonlyMap<number, ManagedProcessInfo>;
   ownerEvidence?: GatewayOwnerEvidence;
+  currentOwnerScope?: string | null;
 }): GatewayStateDecision {
   const pidAlive = args.state.pid !== null && args.livePids.has(args.state.pid);
-  const ownerAlive = args.state.ownerProcessPid !== null && args.livePids.has(args.state.ownerProcessPid);
 
   if (!pidAlive) {
     return {
@@ -145,43 +151,46 @@ export function classifyGatewayState(args: {
     }
   }
 
-  if (args.state.ownerProcessPid === null) {
-    return {
-      action: 'adopt_state',
-      reason: 'owner_pid_missing',
-    };
-  }
+  const authorityDecision = classifyPersistedGatewayJanitorAuthority({
+    ownerScope: args.state.ownerScope,
+    ownerProcessPid: args.state.ownerProcessPid,
+    currentOwnerScope: args.currentOwnerScope,
+    ownerEvidence: args.ownerEvidence ?? EMPTY_GATEWAY_OWNER_EVIDENCE,
+    pidAuthorityStatus: 'confirmed',
+    processExists: (pid) => args.livePids.has(pid),
+  });
 
-  if (!ownerAlive) {
-    return {
-      action: 'stop_gateway_and_remove_state',
-      reason: 'owner_pid_dead',
-    };
-  }
-
-  if (args.ownerEvidence) {
-    const ownerScopeStatus = classifyGatewayOwnerScope({
-      ownerScope: args.state.ownerScope,
-      ownerEvidence: args.ownerEvidence,
-    });
-    if (ownerScopeStatus === 'stale') {
+  switch (authorityDecision.authority) {
+    case 'ownerless_adoptable':
+      return {
+        action: 'adopt_state',
+        reason: authorityDecision.reason,
+      };
+    case 'stale_reclaimable':
+    case 'released':
       return {
         action: 'stop_gateway_and_remove_state',
-        reason: 'owner_boot_stale',
+        reason: authorityDecision.reason,
       };
-    }
+    case 'foreign_active':
+    case 'unverified':
+      return {
+        action: 'keep',
+        reason: authorityDecision.reason,
+      };
+    case 'current_active':
+      return {
+        action: 'keep',
+        reason: 'owner_and_gateway_alive',
+      };
   }
-
-  return {
-    action: 'keep',
-    reason: 'owner_and_gateway_alive',
-  };
 }
 
 export function classifyGatewayProcessWithoutState(args: {
   processInfo: ManagedProcessInfo;
   ownerEvidence: GatewayOwnerEvidence;
   minAgeSeconds: number;
+  currentOwnerScope?: string | null;
 }): GatewayProcessDecision {
   const identity = extractGatewayProcessIdentity(args.processInfo.command);
 
@@ -192,33 +201,41 @@ export function classifyGatewayProcessWithoutState(args: {
     };
   }
 
-  const ownerScopeStatus = classifyGatewayOwnerScope({
+  const authorityDecision = classifyGatewayManagedProcessAuthority({
     ownerScope: identity.ownerScope,
+    currentOwnerScope: args.currentOwnerScope,
     ownerEvidence: args.ownerEvidence,
   });
 
-  if (ownerScopeStatus === 'active') {
+  if (authorityDecision.authority === 'current_active') {
     return {
       action: 'keep',
       reason: 'local_owner_boot_active',
     };
   }
 
-  if (ownerScopeStatus === 'foreign') {
+  if (authorityDecision.authority === 'foreign_active') {
     return {
       action: 'keep',
       reason: 'foreign_owner_scope',
     };
   }
 
-  if (ownerScopeStatus === 'unverified') {
+  if (authorityDecision.authority === 'unverified') {
     return {
       action: 'keep',
       reason: 'owner_scope_unverified',
     };
   }
 
-  if (ownerScopeStatus !== 'stale') {
+  if (authorityDecision.authority === 'released') {
+    return {
+      action: 'stop_gateway',
+      reason: authorityDecision.reason,
+    };
+  }
+
+  if (authorityDecision.authority !== 'stale_reclaimable') {
     return {
       action: 'keep',
       reason: 'owner_scope_unknown',
@@ -721,10 +738,10 @@ function parseArgs(argv: string[]): { apply: boolean; context: string } {
   return { apply, context };
 }
 
-function trackedOwnerPidFiles(rootDir: string): { apiPidFile: string; runnerPidFile: string } {
+export function trackedOwnerPidFiles(rootDir: string): { apiPidFile: string; runnerPidFile: string } {
   return {
-    apiPidFile: path.join(rootDir, 'artifacts/backend-real/current/local-manual/api.pid'),
-    runnerPidFile: path.join(rootDir, 'artifacts/backend-real/current/local-manual/runner.pid'),
+    apiPidFile: path.join(rootDir, 'artifacts/runtime/lines/local-manual/current/api.pid'),
+    runnerPidFile: path.join(rootDir, 'artifacts/runtime/lines/local-manual/current/runner.pid'),
   };
 }
 
@@ -784,6 +801,7 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
       livePids,
       processTableByPid,
       ownerEvidence,
+      currentOwnerScope: adoptableOwnerScope,
     });
     if (decision.action === 'keep') {
       continue;
@@ -823,6 +841,7 @@ async function runPreflight(options: PreflightOptions): Promise<void> {
       processInfo,
       ownerEvidence,
       minAgeSeconds: options.noStateGatewayMinAgeSeconds,
+      currentOwnerScope: adoptableOwnerScope,
     });
     if (decision.action === 'keep') {
       continue;

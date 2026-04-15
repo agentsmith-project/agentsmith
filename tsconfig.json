@@ -45,24 +45,14 @@
     }
   },
   "include": [
-    ".next*/types/**/*.ts",
-    ".next-local-manual-3101/types/**/*.ts",
     ".next/types/**/*.ts",
-    "artifacts/backend-real/current-run/next-dist/types/**/*.d.ts",
-    "artifacts/mock-lane/current/next-dist/types/**/*.d.ts",
-    "artifacts/recovery-manual-next/types/**/*.ts",
     "next-env.d.ts",
     "src/**/*.ts",
-    "src/**/*.tsx",
-    "artifacts/mock-lane/runs/playwright-managed-1776167402066-1748658/next-dist/types/**/*.ts"
+    "src/**/*.tsx"
   ],
   "exclude": [
     "node_modules",
     "e2e",
-    "playwright.config.ts",
-    "artifacts/backend-real/current-run/**",
-    "artifacts/mock-lane/current/**",
-    "artifacts/backend-real/runs/*/next-dist/**",
-    "artifacts/mock-lane/runs/*/next-dist/**"
+    "playwright.config.ts"
   ]
 }

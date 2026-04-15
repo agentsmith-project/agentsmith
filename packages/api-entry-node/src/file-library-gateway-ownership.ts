@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path, { basename, join } from 'node:path';
+import type { OwnershipDecision } from '@mbos/domain';
 
 export interface GatewayProcessIdentity {
   ownerScope: string | null;
@@ -51,7 +52,7 @@ export interface GatewayOwnerLedgerSnapshot {
 
 export interface GatewayOwnerEvidence {
   localInstanceId: string | null;
-  scopeStatusByScope: Map<string, 'active' | 'stale'>;
+  scopeStatusByScope: Map<string, 'active' | 'stale' | 'released'>;
 }
 
 export interface GatewayOwnerRuntimeLease {
@@ -61,6 +62,18 @@ export interface GatewayOwnerRuntimeLease {
   heartbeat(): Promise<void>;
   release(): Promise<void>;
 }
+
+export type GatewayPidAuthorityStatus = 'confirmed' | 'unverified';
+
+type GatewayOwnershipReason =
+  | 'current_owner_scope'
+  | 'foreign_owner_scope'
+  | 'owner_boot_released'
+  | 'owner_boot_stale'
+  | 'owner_pid_missing'
+  | 'pid_authority_unverified'
+  | 'owner_scope_unverified'
+  | 'owner_pid_dead';
 
 const OWNER_SCOPE_PREFIX = 'api-v1';
 const OWNER_SCOPE_PATTERN = /^api-v1:([^:\s]+):([^:\s]+)$/;
@@ -517,7 +530,7 @@ export function buildGatewayOwnerEvidence(args: {
 }): GatewayOwnerEvidence {
   const heartbeatStaleMs = args.heartbeatStaleMs ?? DEFAULT_OWNER_HEARTBEAT_STALE_MS;
   const nowMs = Date.parse(args.now);
-  const scopeStatusByScope = new Map<string, 'active' | 'stale'>();
+  const scopeStatusByScope = new Map<string, 'active' | 'stale' | 'released'>();
 
   if (!args.ledger.localInstanceId || !Number.isFinite(nowMs)) {
     return {
@@ -536,7 +549,11 @@ export function buildGatewayOwnerEvidence(args: {
     if (!Number.isFinite(heartbeatMs)) {
       continue;
     }
-    const isActive = record.releasedAt === null && nowMs - heartbeatMs <= heartbeatStaleMs;
+    if (record.releasedAt !== null) {
+      scopeStatusByScope.set(scope, 'released');
+      continue;
+    }
+    const isActive = nowMs - heartbeatMs <= heartbeatStaleMs;
     scopeStatusByScope.set(scope, isActive ? 'active' : 'stale');
   }
 
@@ -549,7 +566,7 @@ export function buildGatewayOwnerEvidence(args: {
 export function classifyGatewayOwnerScope(args: {
   ownerScope: string | null | undefined;
   ownerEvidence: GatewayOwnerEvidence;
-}): 'active' | 'stale' | 'foreign' | 'unverified' | 'unknown' {
+}): 'active' | 'stale' | 'released' | 'foreign' | 'unverified' | 'unknown' {
   if (!args.ownerScope?.trim()) {
     return 'unknown';
   }
@@ -564,8 +581,120 @@ export function classifyGatewayOwnerScope(args: {
     return 'foreign';
   }
   const status = args.ownerEvidence.scopeStatusByScope.get(args.ownerScope);
-  if (status === 'active' || status === 'stale') {
+  if (status === 'active' || status === 'stale' || status === 'released') {
     return status;
   }
   return 'unverified';
+}
+
+export function classifyPersistedGatewayJanitorAuthority(args: {
+  ownerScope: string | null | undefined;
+  ownerProcessPid: number | null;
+  currentOwnerScope: string | null | undefined;
+  ownerEvidence: GatewayOwnerEvidence;
+  pidAuthorityStatus: GatewayPidAuthorityStatus;
+  processExists: (pid: number) => boolean;
+}): OwnershipDecision<GatewayOwnershipReason> {
+  if (args.pidAuthorityStatus === 'unverified') {
+    return {
+      authority: 'unverified',
+      reason: 'pid_authority_unverified',
+    };
+  }
+
+  if (args.ownerProcessPid === null) {
+    return {
+      authority: 'ownerless_adoptable',
+      reason: 'owner_pid_missing',
+    };
+  }
+
+  if (!args.processExists(args.ownerProcessPid)) {
+    return {
+      authority: 'stale_reclaimable',
+      reason: 'owner_pid_dead',
+    };
+  }
+
+  if (args.ownerScope?.trim() && args.ownerScope === args.currentOwnerScope) {
+    return {
+      authority: 'current_active',
+      reason: 'current_owner_scope',
+    };
+  }
+
+  const ownerScopeStatus = classifyGatewayOwnerScope({
+    ownerScope: args.ownerScope,
+    ownerEvidence: args.ownerEvidence,
+  });
+
+  if (ownerScopeStatus === 'stale') {
+    return {
+      authority: 'stale_reclaimable',
+      reason: 'owner_boot_stale',
+    };
+  }
+
+  if (ownerScopeStatus === 'released') {
+    return {
+      authority: 'released',
+      reason: 'owner_boot_released',
+    };
+  }
+
+  if (ownerScopeStatus === 'active' || ownerScopeStatus === 'foreign') {
+    return {
+      authority: 'foreign_active',
+      reason: 'foreign_owner_scope',
+    };
+  }
+
+  return {
+    authority: 'unverified',
+    reason: 'owner_scope_unverified',
+  };
+}
+
+export function classifyGatewayManagedProcessAuthority(args: {
+  ownerScope: string | null | undefined;
+  currentOwnerScope: string | null | undefined;
+  ownerEvidence: GatewayOwnerEvidence;
+}): OwnershipDecision<GatewayOwnershipReason> {
+  if (args.ownerScope?.trim() && args.ownerScope === args.currentOwnerScope) {
+    return {
+      authority: 'current_active',
+      reason: 'current_owner_scope',
+    };
+  }
+
+  const ownerScopeStatus = classifyGatewayOwnerScope({
+    ownerScope: args.ownerScope,
+    ownerEvidence: args.ownerEvidence,
+  });
+
+  if (ownerScopeStatus === 'stale') {
+    return {
+      authority: 'stale_reclaimable',
+      reason: 'owner_boot_stale',
+    };
+  }
+
+  if (ownerScopeStatus === 'released') {
+    return {
+      authority: 'released',
+      reason: 'owner_boot_released',
+    };
+  }
+
+  if (ownerScopeStatus === 'active' || ownerScopeStatus === 'foreign') {
+    return {
+      authority: 'foreign_active',
+      reason: 'foreign_owner_scope',
+    };
+  }
+
+  return {
+    authority: 'unverified',
+    reason: 'owner_scope_unverified',
+  };
 }

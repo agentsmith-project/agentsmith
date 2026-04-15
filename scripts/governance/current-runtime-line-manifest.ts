@@ -1,6 +1,17 @@
+export type CurrentRuntimeSharedRuleBinding = 'contract' | 'operational_baseline';
+
+export const CURRENT_RUNTIME_LINES_ROOT_RELATIVE = 'artifacts/runtime/lines' as const;
+
 export interface CurrentRuntimeSharedRule {
   id: string;
   summary: string;
+  binding: CurrentRuntimeSharedRuleBinding;
+}
+
+export interface CurrentRuntimeLinePathTruth {
+  linesRootRelative: string;
+  lineRootRelative: string;
+  currentRootRelative: string;
 }
 
 export interface CurrentRuntimeLineDefinition {
@@ -14,10 +25,20 @@ export interface CurrentRuntimeLineDefinition {
   substrate: string;
   note: string;
   guidePath: string;
+  runtimePath: CurrentRuntimeLinePathTruth;
   localKindClusterName?: string;
   localRegistryName?: string;
   localRegistryHostPort?: number;
   k8sRegistryHost?: string;
+}
+
+function defineRuntimeLinePathTruth(lineId: string): CurrentRuntimeLinePathTruth {
+  const lineRootRelative = `${CURRENT_RUNTIME_LINES_ROOT_RELATIVE}/${lineId}`;
+  return {
+    linesRootRelative: CURRENT_RUNTIME_LINES_ROOT_RELATIVE,
+    lineRootRelative,
+    currentRootRelative: `${lineRootRelative}/current`,
+  };
 }
 
 export const CURRENT_RUNTIME_LINE_DOCUMENT_FILES = [
@@ -35,18 +56,22 @@ export const CURRENT_RUNTIME_SHARED_RULES: readonly CurrentRuntimeSharedRule[] =
   {
     id: 'shared-local-substrate',
     summary: 'One shared local substrate backs local-manual, demo-rehearsal, and cluster-rehearsal on a development host.',
+    binding: 'operational_baseline',
   },
   {
     id: 'single-active-local-flow',
     summary: 'Only one local flow should be active at a time; switch flows by stopping or resetting the current one first.',
+    binding: 'operational_baseline',
   },
   {
     id: 'scenario-owned-kind-worlds',
     summary: 'Demo and cluster rehearsal each own their local kind world and registry identity instead of sharing one generic local cluster.',
+    binding: 'contract',
   },
   {
     id: 'deploy-vs-rehearsal-boundary',
     summary: 'Rehearsal lines validate release paths on a development host; deploy lines operate on target-host release roots.',
+    binding: 'contract',
   },
 ] as const;
 
@@ -62,6 +87,7 @@ export const CURRENT_RUNTIME_LINE_MANIFEST: readonly CurrentRuntimeLineDefinitio
     substrate: 'Shared local substrate.',
     note: 'Recommended local real-backend entrypoint.',
     guidePath: 'docs/user-guides/local-runtime-flows.md',
+    runtimePath: defineRuntimeLinePathTruth('local-manual'),
   },
   {
     id: 'demo-rehearsal',
@@ -74,6 +100,7 @@ export const CURRENT_RUNTIME_LINE_MANIFEST: readonly CurrentRuntimeLineDefinitio
     substrate: 'Shared local substrate.',
     note: 'Scenario-owned local kind world for demo release rehearsal.',
     guidePath: 'docs/user-guides/local-runtime-flows.md',
+    runtimePath: defineRuntimeLinePathTruth('demo-rehearsal'),
     localKindClusterName: 'agentsmith-demo',
     localRegistryName: 'agentsmith-demo-registry',
     localRegistryHostPort: 5001,
@@ -89,6 +116,7 @@ export const CURRENT_RUNTIME_LINE_MANIFEST: readonly CurrentRuntimeLineDefinitio
     substrate: 'Compose substrate on the target host.',
     note: 'Target-host release line, not a local rehearsal flow.',
     guidePath: 'docs/user-guides/demo-deploy-operations.md',
+    runtimePath: defineRuntimeLinePathTruth('demo-deploy'),
   },
   {
     id: 'cluster-rehearsal',
@@ -101,6 +129,7 @@ export const CURRENT_RUNTIME_LINE_MANIFEST: readonly CurrentRuntimeLineDefinitio
     substrate: 'Shared local substrate.',
     note: 'Scenario-owned local kind world for real-cluster release rehearsal.',
     guidePath: 'docs/user-guides/local-runtime-flows.md',
+    runtimePath: defineRuntimeLinePathTruth('cluster-rehearsal'),
     localKindClusterName: 'agentsmith-cluster',
     localRegistryName: 'agentsmith-cluster-registry',
     localRegistryHostPort: 5002,
@@ -117,6 +146,7 @@ export const CURRENT_RUNTIME_LINE_MANIFEST: readonly CurrentRuntimeLineDefinitio
     substrate: 'Compose substrate on the target host.',
     note: 'Mode describes automation boundary, not external-only versus internal-enabled capability.',
     guidePath: 'docs/user-guides/cluster-deploy-operations.md',
+    runtimePath: defineRuntimeLinePathTruth('cluster-deploy'),
   },
 ] as const;
 

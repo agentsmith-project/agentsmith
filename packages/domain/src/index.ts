@@ -64,3 +64,5 @@ export class Project {
     };
   }
 }
+
+export * from './ownership.js';

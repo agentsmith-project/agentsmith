@@ -11,16 +11,19 @@ Machine-readable source:
 
 - `scripts/governance/current-runtime-line-manifest.ts`
 
-## 一句话规则
+## 一句话基线
 
-先起共享底座，再跑一条工作线；同一时间只跑一条。
+先起共享底座，再跑一条工作线；这是一条当前操作基线，不是系统正确性的前提。
 
-## 固定规则
+## 当前操作基线
 
 1. 本机共享一套 substrate，`local-manual`、`demo-rehearsal`、`cluster-rehearsal` 都复用它。
-2. 同一时间只允许一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。
-3. `demo-rehearsal` 和 `cluster-rehearsal` 都拥有自己的 scenario-owned local kind world 与 local registry，不再共用一个泛化本地集群。
-4. rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。
+2. 同一时间只建议一条本地工作线处于 active；切换前先停掉或 reset 当前工作线。
+
+## 持续生效的 runtime contract
+
+1. `demo-rehearsal` 和 `cluster-rehearsal` 都拥有自己的 scenario-owned local kind world 与 local registry，不再共用一个泛化本地集群。
+2. rehearsal 线负责在开发机上排演 release 路径；deploy 线负责目标主机上的正式发布。
 
 ## 当前本机工作线
 
@@ -28,6 +31,14 @@ Machine-readable source:
 - `demo-rehearsal` — demo 发布线的本机排演入口，使用 `agentsmith-demo` / `agentsmith-demo-registry`。
 - `cluster-rehearsal` — cluster 发布线的本机排演入口，使用 `agentsmith-cluster` / `agentsmith-cluster-registry`。
 <!-- current-runtime-lines:local-runtime-flows:end -->
+
+## Runtime 状态目录
+
+当前 runtime-line 的 current state root 统一使用 `artifacts/runtime/lines/<line>/current`。
+
+- `local-manual` → `artifacts/runtime/lines/local-manual/current`
+- `demo-rehearsal` → `artifacts/runtime/lines/demo-rehearsal/current`
+- `cluster-rehearsal` → `artifacts/runtime/lines/cluster-rehearsal/current`
 
 ## 先管底座
 

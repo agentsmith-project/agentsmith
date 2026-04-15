@@ -58,6 +58,7 @@ def load_json(name: str):
 evidence = {
     "dir": str(evidence_dir),
     "runtime": load_json("runtime.json"),
+    "result": load_json("result.json"),
     "resolved_env": load_json("resolved-env.json"),
     "preflight": load_json("preflight.json"),
     "failure_classification": load_json("failure-classification.json"),

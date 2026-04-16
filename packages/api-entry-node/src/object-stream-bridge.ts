@@ -12,6 +12,13 @@ export interface GatewayObjectDownloadHandle {
   cancel: (reason?: unknown) => Promise<void>;
 }
 
+type MultipartUploadFilePart = Readable & {
+  on(event: 'limit', listener: () => void): void;
+  resume(): void;
+  destroy(error?: Error): void;
+  destroyed?: boolean;
+};
+
 function createAbortError(
   reason?: unknown,
   fallbackMessage = 'stream_aborted',
@@ -248,7 +255,7 @@ export async function parseMultipartUploadAndExecute(
       event: 'file',
       listener: (
         name: string,
-        file: Readable & { on(event: 'limit', listener: () => void): void; resume(): void },
+        file: MultipartUploadFilePart,
         info: { filename?: string; mimeType?: string },
       ) => void,
     ): void;
@@ -264,11 +271,20 @@ export async function parseMultipartUploadAndExecute(
     let uploadPromise: Promise<unknown> | null = null;
     let fileSeen = false;
     let settled = false;
+    let requestDetached = false;
+    let activeFile: MultipartUploadFilePart | null = null;
+    let suppressSignalSettle = false;
+
+    const fileAbortError = (reason?: unknown) =>
+      createAbortError(reason, 'file_library_upload_aborted');
 
     const cleanup = () => {
       req.removeListener('aborted', handleAbort);
       req.removeListener('error', handleRequestError);
       abortController.signal.removeEventListener('abort', handleSignalAbort);
+      if (activeFile) {
+        activeFile.removeListener('limit', handleLimit);
+      }
     };
 
     const settle = (fn: () => void) => {
@@ -278,15 +294,73 @@ export async function parseMultipartUploadAndExecute(
       fn();
     };
 
-    const abortUpload = (reason?: unknown) => {
-      if (abortController.signal.aborted) return;
-      abortController.abort(createAbortError(reason, 'file_library_upload_aborted'));
+    const detachRequest = () => {
+      if (requestDetached) {
+        return;
+      }
+      requestDetached = true;
+      req.unpipe(busboy);
+      if (!req.complete) {
+        req.resume();
+      }
+    };
+
+    const disposeMultipartFile = (
+      file: MultipartUploadFilePart | null,
+      reason?: unknown,
+    ) => {
+      if (!file) {
+        return;
+      }
+      file.removeListener('limit', handleLimit);
+      if (file.destroyed) {
+        return;
+      }
+      if (file.listenerCount('error') === 0) {
+        file.once('error', () => {});
+      }
+      file.resume();
+      file.destroy(fileAbortError(reason));
+    };
+
+    const disposeActiveFile = (reason?: unknown) => {
+      const file = activeFile;
+      activeFile = null;
+      disposeMultipartFile(file, reason);
+    };
+
+    const closeEnvelope = (reason?: unknown) => {
+      detachRequest();
+      disposeActiveFile(reason);
+    };
+
+    const abortUpload = (
+      reason?: unknown,
+      options: {
+        preserveOriginalError?: boolean;
+      } = {},
+    ) => {
+      closeEnvelope(reason);
+      if (options.preserveOriginalError) {
+        suppressSignalSettle = true;
+      }
+      if (!abortController.signal.aborted) {
+        abortController.abort(fileAbortError(reason));
+      }
     };
 
     const handleAbort = () => abortUpload('file_library_upload_aborted');
     const handleRequestError = (error: Error) => abortUpload(error);
-    const handleSignalAbort = () =>
-      settle(() => reject(createAbortError(abortController.signal.reason, 'file_library_upload_aborted')));
+    const handleSignalAbort = () => {
+      closeEnvelope(abortController.signal.reason);
+      if (suppressSignalSettle) {
+        return;
+      }
+      settle(() => reject(fileAbortError(abortController.signal.reason)));
+    };
+    const handleLimit = () => {
+      abortUpload('file_library_max_file_size_exceeded');
+    };
 
     req.on('aborted', handleAbort);
     req.on('error', handleRequestError);
@@ -305,26 +379,52 @@ export async function parseMultipartUploadAndExecute(
         file.resume();
         return;
       }
+      if (fileSeen) {
+        const duplicateFileError = new Error(
+          'file_library_multiple_files_not_supported',
+        );
+        disposeMultipartFile(file, duplicateFileError);
+        abortUpload(duplicateFileError, { preserveOriginalError: true });
+        settle(() => reject(duplicateFileError));
+        return;
+      }
       fileSeen = true;
+      activeFile = file;
+      file.on('limit', handleLimit);
       const fileStream = Readable.toWeb(file) as unknown as WebReadableStream<Uint8Array>;
-      uploadPromise = execute({
-        fileName: info.filename || 'upload.bin',
-        fileStream,
-        contentType: info.mimeType || 'application/octet-stream',
-        contentLength: undefined,
-        prefix,
-        overwrite,
-        signal: abortController.signal,
-      });
-      uploadPromise.catch((error) => settle(() => reject(error)));
-      file.on('limit', () => {
-        abortUpload('file_library_max_file_size_exceeded');
+      try {
+        uploadPromise = Promise.resolve(
+          execute({
+            fileName: info.filename || 'upload.bin',
+            fileStream,
+            contentType: info.mimeType || 'application/octet-stream',
+            contentLength: undefined,
+            prefix,
+            overwrite,
+            signal: abortController.signal,
+          }),
+        );
+      } catch (error) {
+        abortUpload(error, { preserveOriginalError: true });
+        settle(() => reject(error));
+        return;
+      }
+      uploadPromise.catch((error) => {
+        abortUpload(error, { preserveOriginalError: true });
+        settle(() => reject(error));
       });
     });
 
-    busboy.on('error', (error) => settle(() => reject(error)));
+    busboy.on('error', (error) => {
+      abortUpload(error, { preserveOriginalError: true });
+      settle(() => reject(error));
+    });
     busboy.on('finish', async () => {
+      if (settled) {
+        return;
+      }
       if (!fileSeen || !uploadPromise) {
+        closeEnvelope('file_required');
         settle(() => reject(new Error('file_required')));
         return;
       }

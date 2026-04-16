@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -93,6 +93,224 @@ function runnerHealthArtifact(state: 'connected' | 'shutting_down' | 'disconnect
 }
 
 describe('local-manual runner health', () => {
+  it.each(['connected', 'shutting_down'] as const)(
+    'degrades %s when the runner pid is alive but owner/process identity no longer matches',
+    (artifactState) => {
+      const repoRoot = process.cwd();
+
+      withRunnerHealthFixture({
+        logContent: '',
+        pidValue: process.pid,
+        healthContent: runnerHealthArtifact(artifactState),
+      }, ({ tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile }) => {
+        const child = spawn('bash', ['-lc', 'sleep 120'], {
+          cwd: repoRoot,
+          stdio: 'ignore',
+        });
+
+        if (!child.pid) {
+          throw new Error('failed to create a live runner pid for owner mismatch test');
+        }
+
+        const processStateDir = path.join(tempRoot, 'local-runtime-processes');
+
+        try {
+          writeFileSync(pidFile, `${child.pid}\n`, 'utf8');
+          writeFileSync(healthFile, runnerHealthArtifact(artifactState, child.pid), 'utf8');
+
+          const sidecarFile = execFileSync(
+            'bash',
+            [
+              '-lc',
+              `
+                set -euo pipefail
+                export ROOT_DIR="${repoRoot}"
+                export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+                export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+                export LOCAL_RUNTIME_OWNER_TOKEN="runner-health-test-owner"
+                source "${repoRoot}/scripts/local-manual/common.sh"
+                source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+                local_runtime_write_process_sidecar runner "${child.pid}" "0" "sleep 120"
+                local_runtime_sidecar_file_for runner "${child.pid}" "0"
+              `,
+            ],
+            {
+              cwd: repoRoot,
+              env: { ...process.env },
+              encoding: 'utf8',
+              stdio: 'pipe',
+            },
+          ).trim();
+
+          const sidecarPayload = JSON.parse(readFileSync(sidecarFile, 'utf8')) as {
+            process_identity: { token: string };
+          };
+          sidecarPayload.process_identity.token = 'mismatched-owner-identity-token';
+          writeFileSync(sidecarFile, `${JSON.stringify(sidecarPayload, null, 2)}\n`, 'utf8');
+
+          const state = execFileSync(
+            'bash',
+            [
+              '-lc',
+              `
+                set -euo pipefail
+                export ROOT_DIR="${repoRoot}"
+                export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+                export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+                export LOCAL_RUNTIME_OWNER_TOKEN="runner-health-test-owner"
+                source "${repoRoot}/scripts/local-manual/common.sh"
+                source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+                if local_runtime_verify_owned_process "${child.pid}" runner "0" >/dev/null 2>&1; then
+                  echo "owner verification unexpectedly succeeded for mismatched runner pid" >&2
+                  exit 99
+                fi
+                RUNNER_LOG="${logFile}"
+                RUNNER_PID_FILE="${pidFile}"
+                RUNNER_READY_FILE="${readyFile}"
+                RUNNER_HEALTH_FILE="${healthFile}"
+                runner_socket_health_state
+              `,
+            ],
+            {
+              cwd: repoRoot,
+              env: { ...process.env },
+              encoding: 'utf8',
+              stdio: 'pipe',
+            },
+          ).trim();
+
+          expect(['stale', 'disconnected']).toContain(state);
+        } finally {
+          child.kill('SIGKILL');
+        }
+      });
+    },
+  );
+
+  it.each(['connected', 'shutting_down'] as const)(
+    'degrades %s when the runner pid is alive but the sidecar is missing and stale online artifacts remain',
+    (artifactState) => {
+      const repoRoot = process.cwd();
+
+      withRunnerHealthFixture({
+        logContent: '[notebook-codex-runner] runner_state=connected reason=websocket_open\n',
+        pidValue: process.pid,
+        readyFileContent: 'ready',
+        healthContent: runnerHealthArtifact(artifactState),
+      }, ({ tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile }) => {
+        const child = spawn('bash', ['-lc', 'sleep 120'], {
+          cwd: repoRoot,
+          stdio: 'ignore',
+        });
+
+        if (!child.pid) {
+          throw new Error('failed to create a live runner pid for missing sidecar test');
+        }
+
+        const processStateDir = path.join(tempRoot, 'local-runtime-processes');
+
+        try {
+          mkdirSync(processStateDir, { recursive: true });
+          writeFileSync(pidFile, `${child.pid}\n`, 'utf8');
+          writeFileSync(healthFile, runnerHealthArtifact(artifactState, child.pid), 'utf8');
+
+          const state = execFileSync(
+            'bash',
+            [
+              '-lc',
+              `
+                set -euo pipefail
+                export ROOT_DIR="${repoRoot}"
+                export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+                export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+                export LOCAL_RUNTIME_OWNER_TOKEN="runner-health-test-owner"
+                source "${repoRoot}/scripts/local-manual/common.sh"
+                source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+                RUNNER_LOG="${logFile}"
+                RUNNER_PID_FILE="${pidFile}"
+                RUNNER_READY_FILE="${readyFile}"
+                RUNNER_HEALTH_FILE="${healthFile}"
+                runner_socket_health_state
+              `,
+            ],
+            {
+              cwd: repoRoot,
+              env: { ...process.env },
+              encoding: 'utf8',
+              stdio: 'pipe',
+            },
+          ).trim();
+
+          expect(['stale', 'disconnected']).toContain(state);
+        } finally {
+          child.kill('SIGKILL');
+        }
+      });
+    },
+  );
+
+  it('writes a stale health artifact when the runner pid is alive but the sidecar is missing', () => {
+    const repoRoot = process.cwd();
+
+    withRunnerHealthFixture({
+      logContent: '[notebook-codex-runner] runner_state=connected reason=websocket_open\n',
+      pidValue: process.pid,
+      readyFileContent: 'ready',
+    }, ({ tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile }) => {
+      const child = spawn('bash', ['-lc', 'sleep 120'], {
+        cwd: repoRoot,
+        stdio: 'ignore',
+      });
+
+      if (!child.pid) {
+        throw new Error('failed to create a live runner pid for missing sidecar monitor test');
+      }
+
+      const processStateDir = path.join(tempRoot, 'local-runtime-processes');
+
+      try {
+        mkdirSync(processStateDir, { recursive: true });
+        writeFileSync(pidFile, `${child.pid}\n`, 'utf8');
+
+        const output = execFileSync(
+          'bash',
+          [
+            '-lc',
+            `
+              set -euo pipefail
+              export ROOT_DIR="${repoRoot}"
+              export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+              export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+              export LOCAL_RUNTIME_OWNER_TOKEN="runner-health-test-owner"
+              source "${repoRoot}/scripts/local-manual/common.sh"
+              source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+              RUNNER_LOG="${logFile}"
+              RUNNER_PID_FILE="${pidFile}"
+              RUNNER_READY_FILE="${readyFile}"
+              RUNNER_HEALTH_FILE="${healthFile}"
+              local_manual_runner_health_monitor_once || true
+              node - <<'NODE' "\${RUNNER_HEALTH_FILE}"
+const fs = require('node:fs');
+const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+process.stdout.write([payload.state, payload.reason].join(':'));
+NODE
+            `,
+          ],
+          {
+            cwd: repoRoot,
+            env: { ...process.env },
+            encoding: 'utf8',
+            stdio: 'pipe',
+          },
+        ).trim();
+
+        expect(output).toBe('stale:runner_sidecar_missing');
+      } finally {
+        child.kill('SIGKILL');
+      }
+    });
+  });
+
   it('reports connected from a fresh runner health artifact even when logs are empty', () => {
     const state = runRunnerHealthState({
       logContent: '',

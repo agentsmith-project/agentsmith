@@ -21,6 +21,7 @@ import {
   assertVisualBaselineActualUrlMatchesRoute,
   buildVisualBaselineScenarioEvidence,
   groupVisualBaselineCatalogByScenario,
+  parseVisualBaselineBuildRecord,
   type VisualBaselineScenarioRecord,
 } from '../../e2e/visual-baseline-support';
 import { validateUxTraceBundleArtifact } from '../../e2e/trace-bundle-support';
@@ -222,6 +223,10 @@ function readMarkdownMetadata(markdown: string): Map<string, string> {
   return metadata;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function requiredMetadata(
   metadata: Map<string, string>,
   field: string,
@@ -290,6 +295,317 @@ function parseSha256HashMap(value: string | null): { ok: true; hashes: Map<strin
     hashes.set(match[1], match[2]);
   }
   return { ok: true, hashes };
+}
+
+function normalizeVisualBaselineManifestUrlPath(value: string): string {
+  return new URL(value, 'http://agentsmith.visual.local').pathname;
+}
+
+function validateVisualBaselineRunManifestScreenshotEntries(args: {
+  scenario: VisualBaselineScenarioRecord;
+  screenshots: unknown;
+  path: string;
+}): { ok: true } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
+  if (!Array.isArray(args.screenshots)) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} must include screenshots[].`,
+    );
+  }
+
+  const expectedEvidence = buildVisualBaselineScenarioEvidence(args.scenario);
+  const expectedByFileName = new Map(
+    expectedEvidence.screenshots.map((entry) => [
+      entry.fileName,
+      {
+        actualSha256: `sha256:${entry.screenshotSha256}`,
+        baselineSha256: `sha256:${entry.baselineSha256}`,
+      },
+    ]),
+  );
+  const seenFiles = new Set<string>();
+
+  for (const screenshot of args.screenshots) {
+    if (!isRecord(screenshot)) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} includes a malformed screenshot entry.`,
+      );
+    }
+
+    const fileName = typeof screenshot.file_name === 'string' ? screenshot.file_name : null;
+    const actualSha256 = typeof screenshot.actual_sha256 === 'string' ? screenshot.actual_sha256 : null;
+    const baselineSha256 = typeof screenshot.baseline_sha256 === 'string' ? screenshot.baseline_sha256 : null;
+
+    if (!fileName || !actualSha256 || !baselineSha256) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} must include file_name, actual_sha256, and baseline_sha256 for every screenshot.`,
+      );
+    }
+    if (seenFiles.has(fileName)) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} includes duplicate screenshot ${fileName}.`,
+      );
+    }
+
+    const expected = expectedByFileName.get(fileName);
+    if (!expected) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} includes unexpected screenshot ${fileName}.`,
+      );
+    }
+
+    if (!/^sha256:[a-f0-9]{64}$/.test(actualSha256) || !/^sha256:[a-f0-9]{64}$/.test(baselineSha256)) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} must use sha256:<hex> screenshot hashes.`,
+      );
+    }
+    if (actualSha256 !== expected.actualSha256) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json actual screenshot hash drift for ${args.scenario.scenarioId}: ${fileName}.`,
+      );
+    }
+    if (baselineSha256 !== expected.baselineSha256) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json baseline screenshot hash drift for ${args.scenario.scenarioId}: ${fileName}.`,
+      );
+    }
+
+    seenFiles.add(fileName);
+  }
+
+  for (const fileName of expectedByFileName.keys()) {
+    if (!seenFiles.has(fileName)) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} is missing screenshot ${fileName}.`,
+      );
+    }
+  }
+
+  return { ok: true };
+}
+
+function validateVisualBaselineRunManifestArtifact(args: {
+  path: string;
+  campaignRoot: string;
+  scenarios: readonly VisualBaselineScenarioRecord[];
+}): { ok: true; path: string } | { ok: false; path: string; failureClass: CurrentGateResultFailureClass; message: string } {
+  const path = args.path;
+  let payload: unknown;
+
+  try {
+    if (!statSync(path).isFile()) {
+      return {
+        ...visualReviewValidationFailure(
+          'evidence_missing',
+          `Missing visual authority artifact run-manifest.json: ${path}.`,
+        ),
+        path,
+      };
+    }
+    payload = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+  } catch (error) {
+    if (!existsSync(path)) {
+      return {
+        ...visualReviewValidationFailure(
+          'evidence_missing',
+          `Missing visual authority artifact run-manifest.json: ${path}.`,
+        ),
+        path,
+      };
+    }
+    return {
+      ...visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json at ${path} is malformed: ${error instanceof Error ? error.message : String(error)}.`,
+      ),
+      path,
+    };
+  }
+
+  if (!isRecord(payload)) {
+    return {
+      ...visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json at ${path} must be a JSON object.`,
+      ),
+      path,
+    };
+  }
+  if (payload.schema !== 'visual_baseline_run_manifest/v1') {
+    return {
+      ...visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json at ${path} must include schema: visual_baseline_run_manifest/v1.`,
+      ),
+      path,
+    };
+  }
+
+  const expectedRunId = resolveCampaignRunId(args.campaignRoot);
+  if (payload.run_id !== expectedRunId) {
+    return {
+      ...visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json at ${path} must bind run_id to the current campaign run.`,
+      ),
+      path,
+    };
+  }
+
+  let buildRecord: ReturnType<typeof parseVisualBaselineBuildRecord>;
+  try {
+    buildRecord = parseVisualBaselineBuildRecord(payload.build, 'visual run-manifest.json build');
+  } catch (error) {
+    return {
+      ...visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json at ${path} has invalid build metadata: ${error instanceof Error ? error.message : String(error)}.`,
+      ),
+      path,
+    };
+  }
+
+  if (buildRecord.runId !== expectedRunId) {
+    return {
+      ...visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json at ${path} must bind build.run_id to the current campaign run.`,
+      ),
+      path,
+    };
+  }
+  if (Number.isNaN(Date.parse(buildRecord.startedAt))) {
+    return {
+      ...visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json at ${path} has an invalid build.started_at value.`,
+      ),
+      path,
+    };
+  }
+
+  if (!Array.isArray(payload.scenarios)) {
+    return {
+      ...visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json at ${path} must include scenarios[].`,
+      ),
+      path,
+    };
+  }
+
+  const scenarioEntries = new Map<string, Record<string, unknown>>();
+  for (const scenarioEntry of payload.scenarios) {
+    if (!isRecord(scenarioEntry)) {
+      return {
+        ...visualReviewValidationFailure(
+          'contract_drift',
+          `visual run-manifest.json at ${path} includes a malformed scenario entry.`,
+        ),
+        path,
+      };
+    }
+
+    const scenarioId = typeof scenarioEntry.scenario_id === 'string' ? scenarioEntry.scenario_id : null;
+    if (!scenarioId) {
+      return {
+        ...visualReviewValidationFailure(
+          'contract_drift',
+          `visual run-manifest.json at ${path} must include scenario_id for every scenario.`,
+        ),
+        path,
+      };
+    }
+    if (scenarioEntries.has(scenarioId)) {
+      return {
+        ...visualReviewValidationFailure(
+          'contract_drift',
+          `visual run-manifest.json at ${path} includes duplicate scenario ${scenarioId}.`,
+        ),
+        path,
+      };
+    }
+
+    scenarioEntries.set(scenarioId, scenarioEntry);
+  }
+
+  for (const actualScenarioId of scenarioEntries.keys()) {
+    if (!args.scenarios.some((scenario) => scenario.scenarioId === actualScenarioId)) {
+      return {
+        ...visualReviewValidationFailure(
+          'contract_drift',
+          `visual run-manifest.json at ${path} includes unexpected scenario ${actualScenarioId}.`,
+        ),
+        path,
+      };
+    }
+  }
+
+  for (const scenario of args.scenarios) {
+    const entry = scenarioEntries.get(scenario.scenarioId);
+    if (!entry) {
+      return {
+        ...visualReviewValidationFailure(
+          'contract_drift',
+          `visual run-manifest.json at ${path} is missing scenario ${scenario.scenarioId}.`,
+        ),
+        path,
+      };
+    }
+
+    const actualUrl = typeof entry.actual_url === 'string' ? entry.actual_url : null;
+    if (!actualUrl) {
+      return {
+        ...visualReviewValidationFailure(
+          'contract_drift',
+          `visual run-manifest.json for ${scenario.scenarioId} at ${path} must include actual_url.`,
+        ),
+        path,
+      };
+    }
+    if (normalizeVisualBaselineManifestUrlPath(actualUrl) !== normalizeVisualBaselineManifestUrlPath(scenario.route)) {
+      return {
+        ...visualReviewValidationFailure(
+          'contract_drift',
+          `visual run-manifest.json route drift for ${scenario.scenarioId}.`,
+        ),
+        path,
+      };
+    }
+
+    const expectedEvidence = buildVisualBaselineScenarioEvidence(scenario);
+    if (entry.story_fingerprint !== expectedEvidence.storyFingerprint) {
+      return {
+        ...visualReviewValidationFailure(
+          'contract_drift',
+          `visual run-manifest.json story_fingerprint drift for ${scenario.scenarioId}.`,
+        ),
+        path,
+      };
+    }
+
+    const screenshotValidation = validateVisualBaselineRunManifestScreenshotEntries({
+      scenario,
+      screenshots: entry.screenshots,
+      path,
+    });
+    if (!screenshotValidation.ok) {
+      return {
+        ...screenshotValidation,
+        path,
+      };
+    }
+  }
+
+  return { ok: true, path };
 }
 
 function validateVisualHashMetadata(args: {
@@ -538,7 +854,8 @@ function evaluateVisualBaselineReviews(
 ): ReleaseCampaignEvidencePointer['required_paths'] {
   const grouped = groupVisualBaselineCatalogByScenario();
   const records: ReleaseCampaignEvidencePointer['required_paths'] = [];
-  for (const [scenarioId, scenario] of [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+  const scenarios = [...grouped.values()].sort((left, right) => left.scenarioId.localeCompare(right.scenarioId));
+  for (const [scenarioId, scenario] of scenarios.map((scenario) => [scenario.scenarioId, scenario] as const)) {
     const path = materializeCampaignPath(
       campaignRoot,
       check.path.replaceAll('<visual-scenario-id>', scenarioId),
@@ -562,6 +879,33 @@ function evaluateVisualBaselineReviews(
     });
   }
   return records;
+}
+
+function evaluateVisualRunManifest(
+  campaignRoot: string,
+  check: CurrentVerificationCampaignEvidenceCheck,
+): ReleaseCampaignEvidencePointer['required_paths'] {
+  const scenarios = [...groupVisualBaselineCatalogByScenario().values()]
+    .sort((left, right) => left.scenarioId.localeCompare(right.scenarioId));
+  const path = materializeCampaignPath(campaignRoot, check.path);
+  const validation = validateVisualBaselineRunManifestArtifact({
+    path,
+    campaignRoot,
+    scenarios,
+  });
+
+  return [{
+    id: check.id,
+    path: validation.path,
+    kind: check.kind,
+    exists: validation.ok,
+    ...(validation.ok
+      ? {}
+      : {
+          error: validation.message,
+          failure_class: validation.failureClass,
+        }),
+  }];
 }
 
 function evaluateUxTraceBundles(
@@ -635,55 +979,61 @@ function evaluateEvidenceCheck(
   step: CurrentVerificationCampaignStep,
   check: CurrentVerificationCampaignEvidenceCheck,
 ): ReleaseCampaignEvidencePointer['required_paths'] {
-  if (check.kind === 'visual_baseline_reviews') {
-    return evaluateVisualBaselineReviews(campaignRoot, check);
-  }
   if (check.semantic === 'ux_trace_bundle') {
     return evaluateUxTraceBundles(campaignRoot, step, check);
   }
 
   const path = materializeCampaignPath(campaignRoot, check.path);
-  if (check.kind === 'file') {
-    let exists = false;
-    try {
-      exists = statSync(path).isFile();
-    } catch {
-      exists = false;
+  switch (check.kind) {
+    case 'visual_run_manifest':
+      return evaluateVisualRunManifest(campaignRoot, check);
+    case 'visual_baseline_reviews':
+      return evaluateVisualBaselineReviews(campaignRoot, check);
+    case 'file': {
+      let exists = false;
+      try {
+        exists = statSync(path).isFile();
+      } catch {
+        exists = false;
+      }
+      return [{ id: check.id, path, kind: check.kind, exists }];
     }
-    return [{ id: check.id, path, kind: check.kind, exists }];
-  }
-
-  if (check.kind === 'directory') {
-    let exists = false;
-    try {
-      exists = statSync(path).isDirectory();
-    } catch {
-      exists = false;
+    case 'directory': {
+      let exists = false;
+      try {
+        exists = statSync(path).isDirectory();
+      } catch {
+        exists = false;
+      }
+      return [{ id: check.id, path, kind: check.kind, exists }];
     }
-    return [{ id: check.id, path, kind: check.kind, exists }];
-  }
-
-  if (check.kind === 'directory_non_empty') {
-    let exists = false;
-    try {
-      exists = statSync(path).isDirectory() && readdirSync(path).length > 0;
-    } catch {
-      exists = false;
+    case 'directory_non_empty': {
+      let exists = false;
+      try {
+        exists = statSync(path).isDirectory() && readdirSync(path).length > 0;
+      } catch {
+        exists = false;
+      }
+      return [{ id: check.id, path, kind: check.kind, exists }];
     }
-    return [{ id: check.id, path, kind: check.kind, exists }];
+    case 'recursive_file': {
+      const minCount = check.minCount ?? 1;
+      const fileName = check.fileName ?? 'review.md';
+      const matches = listRecursiveFiles(path).filter((candidate) => matchesFileName(candidate, fileName));
+      return [{
+        id: check.id,
+        path,
+        kind: check.kind,
+        exists: matches.length >= minCount,
+        matches,
+        min_count: minCount,
+      }];
+    }
+    default: {
+      const exhaustiveCheck: never = check.kind;
+      throw new Error(`Unsupported evidence check kind: ${String(exhaustiveCheck)}`);
+    }
   }
-
-  const minCount = check.minCount ?? 1;
-  const fileName = check.fileName ?? 'review.md';
-  const matches = listRecursiveFiles(path).filter((candidate) => matchesFileName(candidate, fileName));
-  return [{
-    id: check.id,
-    path,
-    kind: check.kind,
-    exists: matches.length >= minCount,
-    matches,
-    min_count: minCount,
-  }];
 }
 
 export function evaluateCampaignEvidenceChecks(

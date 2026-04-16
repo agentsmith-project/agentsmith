@@ -1,5 +1,6 @@
 import type http from 'node:http';
 import type { AuthenticatedUser } from './auth.js';
+import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
   observeNotebookTraceQueryLatency,
@@ -278,6 +279,12 @@ export function resolveTerminalWebSocketBaseUrl(req: http.IncomingMessage): stri
     return `ws://${requestUrl.slice('http://'.length)}`;
   }
   return requestUrl;
+}
+
+export function mapRunnerSessionAuthorityToTaskRouteError(
+  authority: RunnerSessionDispatchAuthority,
+): string | null {
+  return authority === 'remote_owned_not_local_dispatchable' ? 'task_runner_remote_owned' : null;
 }
 
 function serializeTerminalSessionResponse(input: {
@@ -686,8 +693,16 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       });
     } else if (!deps.agentExecutionService.getAgentSessionOnlineState(agent.id, task.id)
       && !deps.agentExecutionService.getAgentOnlineState(agent.id)) {
-      json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_runner_offline' });
-      return true;
+      const authority = await deps.agentExecutionService.getAgentSessionDispatchAuthority(agent.id, task.id);
+      const authorityError = mapRunnerSessionAuthorityToTaskRouteError(authority);
+      if (authorityError) {
+        json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: authorityError });
+        return true;
+      }
+      if (authority === 'offline') {
+        json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_runner_offline' });
+        return true;
+      }
     }
 
     const executionContext = await buildTaskTerminalExecutionContext({

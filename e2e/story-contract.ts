@@ -6,6 +6,8 @@ export const STORY_LANE_VALUES = ['mock-lane', 'backend-real'] as const;
 export type StoryLane = (typeof STORY_LANE_VALUES)[number];
 export const STORY_EVIDENCE_VALUES = ['trace', 'visual', 'doc'] as const;
 export type StoryEvidence = (typeof STORY_EVIDENCE_VALUES)[number];
+export const STORY_TRACE_ORDER_MODE_VALUES = ['strict_sequence'] as const;
+export type StoryTraceOrderMode = (typeof STORY_TRACE_ORDER_MODE_VALUES)[number];
 export type StoryTargetMatch = 'exact' | 'prefix';
 export const STORY_KIND_VALUES = ['journey', 'review'] as const;
 export type StoryKind = (typeof STORY_KIND_VALUES)[number];
@@ -95,6 +97,11 @@ export type StoryStepDefinition = {
   evidence: readonly StoryEvidence[];
   optional?: boolean;
   note?: string;
+};
+
+export type StoryTraceOrderContract = {
+  mode: StoryTraceOrderMode;
+  orderedStepIds: readonly string[];
 };
 
 export type StoryGatePolicy = {
@@ -421,6 +428,15 @@ export function buildStoryStepMapFingerprint(story: StoryDefinition): string {
       note: step.note,
     })),
   );
+}
+
+export function resolveStoryTraceOrderContract(story: Pick<StoryDefinition, 'steps'>): StoryTraceOrderContract {
+  return {
+    mode: 'strict_sequence',
+    orderedStepIds: story.steps
+      .filter((step) => step.evidence.includes('trace') && !step.optional)
+      .map((step) => step.stepId),
+  };
 }
 
 export function validateStoryDefinition(story: StoryDefinition) {

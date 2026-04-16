@@ -12,6 +12,9 @@ source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-line-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-config.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
+if [[ -f "${ROOT_DIR}/scripts/lib/local-runtime-processes.sh" ]]; then
+  source "${ROOT_DIR}/scripts/lib/local-runtime-processes.sh"
+fi
 if [[ -f "${ROOT_DIR}/scripts/lib/runner-lifecycle-log.sh" ]]; then
   source "${ROOT_DIR}/scripts/lib/runner-lifecycle-log.sh"
 else
@@ -995,12 +998,65 @@ local_manual_runner_latest_socket_log_state() {
   runner_lifecycle_latest_log_state_file "${RUNNER_LOG}"
 }
 
+local_manual_runner_health_authority_verification_enabled() {
+  [[ -n "${LOCAL_RUNTIME_OWNER_TOKEN:-}" ]]
+}
+
+local_manual_runner_health_authority_status() {
+  local pid="${1:-}"
+  local service_kind="${2:-runner}"
+  local port="${3:-0}"
+  if [[ -z "${pid}" ]]; then
+    printf 'unverified\trunner_pid_missing\n'
+    return 0
+  fi
+
+  if ! local_manual_runner_health_authority_verification_enabled; then
+    printf 'verified\trunner_authority_not_enforced\n'
+    return 0
+  fi
+
+  if ! declare -F local_runtime_find_sidecar >/dev/null 2>&1 \
+    || ! declare -F local_runtime_verify_owned_process >/dev/null 2>&1; then
+    printf 'unknown\trunner_authority_checks_unavailable\n'
+    return 0
+  fi
+
+  if ! local_runtime_find_sidecar "${pid}" "${service_kind}" "${port}" >/dev/null 2>&1; then
+    printf 'unverified\trunner_sidecar_missing\n'
+    return 0
+  fi
+
+  if local_runtime_verify_owned_process "${pid}" "${service_kind}" "${port}" >/dev/null 2>&1; then
+    printf 'verified\trunner_authority_verified\n'
+    return 0
+  fi
+
+  printf 'unverified\trunner_authority_mismatch\n'
+}
+
+local_manual_runner_health_authority_is_verified() {
+  local authority_status="${1:-}"
+  [[ "${authority_status}" == "verified" ]]
+}
+
+local_manual_runner_health_authority_requires_degrade() {
+  local authority_status="${1:-}"
+  ! local_manual_runner_health_authority_is_verified "${authority_status}"
+}
+
 local_manual_runner_health_monitor_once() {
-  local pid transition state reason
+  local pid transition state reason authority_status authority_reason
   pid="$(cat "${RUNNER_PID_FILE}" 2>/dev/null || true)"
   if [[ -z "${pid}" ]] || ! kill -0 "${pid}" >/dev/null 2>&1; then
     local_manual_write_runner_health_artifact disconnected "${pid}" pid_missing
     return 1
+  fi
+
+  IFS=$'\t' read -r authority_status authority_reason <<< "$(local_manual_runner_health_authority_status "${pid}")"
+  if local_manual_runner_health_authority_requires_degrade "${authority_status}"; then
+    local_manual_write_runner_health_artifact stale "${pid}" "${authority_reason:-runner_authority_mismatch}"
+    return 0
   fi
 
   transition="$(local_manual_runner_latest_socket_log_transition)"
@@ -1037,10 +1093,16 @@ start_runner_health_monitor() {
 }
 
 runner_socket_health_state() {
-  local pid artifact_status state reason
+  local pid artifact_status state reason authority_status authority_reason
   pid="$(cat "${RUNNER_PID_FILE}" 2>/dev/null || true)"
   if [[ -z "${pid}" ]] || ! kill -0 "${pid}" >/dev/null 2>&1; then
     printf 'disconnected\n'
+    return 0
+  fi
+
+  IFS=$'\t' read -r authority_status authority_reason <<< "$(local_manual_runner_health_authority_status "${pid}")"
+  if local_manual_runner_health_authority_requires_degrade "${authority_status}"; then
+    printf 'stale\n'
     return 0
   fi
 

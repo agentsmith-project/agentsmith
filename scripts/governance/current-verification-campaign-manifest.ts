@@ -22,6 +22,7 @@ export type CurrentVerificationCampaignEvidenceCheckKind =
   | 'directory'
   | 'directory_non_empty'
   | 'recursive_file'
+  | 'visual_run_manifest'
   | 'visual_baseline_reviews';
 export type CurrentVerificationCampaignEvidenceSemantic = 'ux_trace_bundle';
 

@@ -1,7 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildStoryFingerprint, buildStoryStepMapFingerprint, type StoryDefinition } from '../e2e/story-contract';
+import {
+  buildStoryFingerprint,
+  buildStoryStepMapFingerprint,
+  resolveStoryTraceOrderContract,
+  type StoryDefinition,
+} from '../e2e/story-contract';
 import { loadAllStoryDefinitions, loadStoryDefinition, parseStoryDefinition } from '../e2e/story-loader';
 
 function expectStableStory(story: StoryDefinition) {
@@ -42,6 +47,18 @@ describe('story contract', () => {
     expect(story.steps.map((step) => step.stepId)).toContain('system-login');
     expect(buildStoryFingerprint(story)).toBe(buildStoryFingerprint(story));
     expect(buildStoryStepMapFingerprint(story)).toBe(buildStoryStepMapFingerprint(story));
+  });
+
+  it('derives the default trace order contract from canonical story step order', async () => {
+    const story = await loadStoryDefinition('release-user-story-end-to-end');
+    const expectedOrderedStepIds = story.steps
+      .filter((step) => step.evidence.includes('trace') && !step.optional)
+      .map((step) => step.stepId);
+
+    expect(resolveStoryTraceOrderContract(story)).toEqual({
+      mode: 'strict_sequence',
+      orderedStepIds: expectedOrderedStepIds,
+    });
   });
 
   it('loads story markdown parsing through story-loader instead of story-contract', () => {

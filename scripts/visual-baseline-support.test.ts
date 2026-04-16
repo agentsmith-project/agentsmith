@@ -363,6 +363,35 @@ describe('visual baseline support', () => {
     expect(markdown).not.toContain('- reviewer_id:');
   });
 
+  it('renders automated visual pass artifacts with explicit run-local actual screenshot hashes and build ids', () => {
+    const scenario = groupVisualBaselineCatalogByScenario().get('desktop-auth-complete');
+    expect(scenario).toBeDefined();
+    const evidence = buildVisualBaselineScenarioEvidence(scenario!);
+
+    const markdown = renderVisualBaselineAutomatedPassMarkdown({
+      scenario: scenario!,
+      build: {
+        runId: 'run-local-20260412-001',
+        gitSha: 'abc123',
+        fingerprint: 'abc123:mock-lane:visual',
+        startedAt: '2026-04-12T11:59:00.000Z',
+        lane: 'mock-lane',
+      },
+      automated: {
+        generatedAt: '2026-04-12T12:00:00.000Z',
+        automatedVerdict: 'passed',
+        semanticVerdict: 'passed',
+        actualUrl: '/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001',
+        notes: ['Playwright visual lane completed for this scenario.'],
+      },
+    });
+
+    expect(markdown).toContain('- actual_build_run_id: run-local-20260412-001');
+    expect(markdown).toContain(
+      `- actual_screenshot_hashes: ${evidence.screenshots[0]?.fileName}=sha256:`,
+    );
+  });
+
   it('includes stable marker metadata in review markdown for non-public recipe families', () => {
     const grouped = groupVisualBaselineCatalogByScenario();
     const scenario = grouped.get('system-workspaces');
@@ -855,6 +884,64 @@ describe('visual baseline support', () => {
     expect(review).toContain('- build_started_at: 2026-04-12T11:59:00.000Z');
     expect(review).toContain('- automated_verdict: passed');
     expect(review).not.toContain('- verdict: accepted');
+  });
+
+  it('writes a run-scoped visual evidence manifest with current-run build metadata and actual screenshot hashes', () => {
+    const tempRoot = mkdtempSync(path.join(tmpdir(), 'visual-review-manifest-writer-'));
+    const buildInfoPath = path.join(tempRoot, 'visual-build-info.json');
+    const outputRoot = path.join(tempRoot, 'reviews');
+    const runId = 'run-20260412-001';
+    writeFileSync(buildInfoPath, `${JSON.stringify({
+      lane: 'mock-lane',
+      run_id: runId,
+      git_sha: 'abc123',
+      fingerprint: 'fingerprint-001',
+      started_at: '2026-04-12T11:59:00.000Z',
+    }, null, 2)}\n`);
+
+    execFileSync('npx', ['tsx', 'scripts/governance/write-visual-baseline-reviews.ts'], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MOCK_RUN_ID: runId,
+        VISUAL_BASELINE_BUILD_INFO_FILE: buildInfoPath,
+        VISUAL_BASELINE_REVIEW_ROOT: outputRoot,
+      },
+      stdio: 'pipe',
+    });
+
+    const manifest = JSON.parse(
+      readFileSync(path.join(outputRoot, runId, 'run-manifest.json'), 'utf8'),
+    ) as {
+      schema?: string;
+      run_id?: string;
+      build?: Record<string, unknown>;
+      scenarios?: Array<{
+        scenario_id: string;
+        actual_url: string;
+        screenshots: Array<Record<string, unknown>>;
+      }>;
+    };
+
+    expect(manifest).toMatchObject({
+      schema: 'visual_baseline_run_manifest/v1',
+      run_id: runId,
+      build: {
+        lane: 'mock-lane',
+        run_id: runId,
+        git_sha: 'abc123',
+        fingerprint: 'fingerprint-001',
+        started_at: '2026-04-12T11:59:00.000Z',
+      },
+    });
+
+    const scenario = manifest.scenarios?.find((entry) => entry.scenario_id === 'desktop-auth-complete');
+    expect(scenario?.actual_url).toBe('/en-US/desktop/auth/complete');
+    expect(scenario?.screenshots[0]).toMatchObject({
+      file_name: expect.any(String),
+      actual_sha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      baseline_sha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    });
   });
 
   it('fails the review writer when an explicit build info file is incomplete', () => {

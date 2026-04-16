@@ -1,3 +1,4 @@
+import { useState, type ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -139,6 +140,66 @@ function renderWithProviders(node: React.ReactNode) {
   );
 }
 
+type OpenChangeSpy = ReturnType<typeof vi.fn>;
+
+function renderControlledDialog(
+  renderDialog: (props: { open: boolean; onOpenChange: (next: boolean) => void }) => ReactNode,
+) {
+  const onOpenChange = vi.fn();
+
+  function ControlledDialog() {
+    const [open, setOpen] = useState(true);
+
+    const handleOpenChange = (next: boolean) => {
+      onOpenChange(next);
+      setOpen(next);
+    };
+
+    return <>{renderDialog({ open, onOpenChange: handleOpenChange })}</>;
+  }
+
+  renderWithProviders(<ControlledDialog />);
+  return { onOpenChange };
+}
+
+function renderCreateDialog() {
+  return renderControlledDialog(({ open, onOpenChange }) => (
+    <CreateAgentDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      workspaceId="ws_1"
+      projectId="proj_1"
+    />
+  ));
+}
+
+function renderEditDialog(agent: unknown) {
+  return renderControlledDialog(({ open, onOpenChange }) => (
+    <EditAgentDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      workspaceId="ws_1"
+      projectId="proj_1"
+      agent={agent as any}
+      canSetVisibility={false}
+    />
+  ));
+}
+
+async function expectDialogClosed(testId: string, onOpenChange: OpenChangeSpy) {
+  await waitFor(() => {
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+  await waitFor(() => {
+    expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
+  });
+}
+
+async function closeDialog(testId: string, onOpenChange: OpenChangeSpy) {
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  await expectDialogClosed(testId, onOpenChange);
+}
+
 describe("Agent dialogs", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -165,14 +226,7 @@ describe("Agent dialogs", () => {
   });
 
   it("CreateAgentDialog defaults to chat and submits chat execution preferences", async () => {
-    renderWithProviders(
-      <CreateAgentDialog
-        open
-        onOpenChange={vi.fn()}
-        workspaceId="ws_1"
-        projectId="proj_1"
-      />,
-    );
+    const { onOpenChange } = renderCreateDialog();
 
     const nameInput = await screen.findByLabelText("Name");
     fireEvent.change(nameInput, { target: { value: "agent-a" } });
@@ -202,6 +256,7 @@ describe("Agent dialogs", () => {
     await waitFor(() => {
       expect(mockCreate).toHaveBeenCalled();
     });
+    await expectDialogClosed("agents__create-dialog", onOpenChange);
     const payload = mockCreate.mock.calls[0][2];
     expect(payload.interaction_kind).toBe("chat");
     expect(payload.execution_preferences?.chat?.endpoint_id).toBe(
@@ -215,14 +270,7 @@ describe("Agent dialogs", () => {
   });
 
   it("CreateAgentDialog switches to notebook and submits notebook execution preferences", async () => {
-    renderWithProviders(
-      <CreateAgentDialog
-        open
-        onOpenChange={vi.fn()}
-        workspaceId="ws_1"
-        projectId="proj_1"
-      />,
-    );
+    const { onOpenChange } = renderCreateDialog();
 
     fireEvent.change(await screen.findByLabelText("Name"), {
       target: { value: "agent-notebook" },
@@ -250,6 +298,7 @@ describe("Agent dialogs", () => {
     await waitFor(() => {
       expect(mockCreate).toHaveBeenCalled();
     });
+    await expectDialogClosed("agents__create-dialog", onOpenChange);
 
     const payload = mockCreate.mock.calls[0][2];
     expect(payload.interaction_kind).toBe("notebook");
@@ -283,16 +332,7 @@ describe("Agent dialogs", () => {
       updated_at: "2026-03-04T00:00:00.000Z",
     };
 
-    renderWithProviders(
-      <EditAgentDialog
-        open
-        onOpenChange={vi.fn()}
-        workspaceId="ws_1"
-        projectId="proj_1"
-        agent={internalAgent as any}
-        canSetVisibility={false}
-      />,
-    );
+    const { onOpenChange } = renderEditDialog(internalAgent);
 
     const endpointSelect = await waitFor(() => {
       const candidate = screen
@@ -316,6 +356,7 @@ describe("Agent dialogs", () => {
     await waitFor(() => {
       expect(mockUpdate).toHaveBeenCalled();
     });
+    await expectDialogClosed("agents__edit-dialog", onOpenChange);
     const payload = mockUpdate.mock.calls[0][3];
     expect(payload.config.env).toEqual({ FOO: "baz" });
     expect(payload.interaction_kind).toBe("notebook");
@@ -342,16 +383,7 @@ describe("Agent dialogs", () => {
       updated_at: "2026-03-04T00:00:00.000Z",
     };
 
-    renderWithProviders(
-      <EditAgentDialog
-        open
-        onOpenChange={vi.fn()}
-        workspaceId="ws_1"
-        projectId="proj_1"
-        agent={externalAgent as any}
-        canSetVisibility={false}
-      />,
-    );
+    const { onOpenChange } = renderEditDialog(externalAgent);
 
     await waitFor(() => {
       expect(
@@ -373,6 +405,7 @@ describe("Agent dialogs", () => {
     await waitFor(() => {
       expect(mockUpdate).toHaveBeenCalled();
     });
+    await expectDialogClosed("agents__edit-dialog", onOpenChange);
 
     const payload = mockUpdate.mock.calls[0][3];
     expect(payload.interaction_kind).toBe("chat");
@@ -382,14 +415,7 @@ describe("Agent dialogs", () => {
   });
 
   it("CreateAgentDialog uses the normalized internal sandbox defaults", async () => {
-    renderWithProviders(
-      <CreateAgentDialog
-        open
-        onOpenChange={vi.fn()}
-        workspaceId="ws_1"
-        projectId="proj_1"
-      />,
-    );
+    const { onOpenChange } = renderCreateDialog();
 
     fireEvent.change(await screen.findByLabelText("Name"), {
       target: { value: "agent-internal" },
@@ -418,17 +444,11 @@ describe("Agent dialogs", () => {
     expect(maxLifetimeInput.value).toBe(
       String(INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS),
     );
+    await closeDialog("agents__create-dialog", onOpenChange);
   });
 
   it("CreateAgentDialog does not submit while advancing from product to deployment", async () => {
-    renderWithProviders(
-      <CreateAgentDialog
-        open
-        onOpenChange={vi.fn()}
-        workspaceId="ws_1"
-        projectId="proj_1"
-      />,
-    );
+    const { onOpenChange } = renderCreateDialog();
 
     fireEvent.change(await screen.findByLabelText("Name"), {
       target: { value: "agent-transition-check" },
@@ -449,17 +469,11 @@ describe("Agent dialogs", () => {
       ).toBeInTheDocument();
     });
     expect(mockCreate).not.toHaveBeenCalled();
+    await closeDialog("agents__create-dialog", onOpenChange);
   });
 
   it("CreateAgentDialog updates endpoint wording when switching agent type", async () => {
-    renderWithProviders(
-      <CreateAgentDialog
-        open
-        onOpenChange={vi.fn()}
-        workspaceId="ws_1"
-        projectId="proj_1"
-      />,
-    );
+    const { onOpenChange } = renderCreateDialog();
 
     expect(await screen.findByLabelText("Execution target")).toBeInTheDocument();
     expect(
@@ -475,5 +489,6 @@ describe("Agent dialogs", () => {
     expect(
       screen.getByText("Choose the endpoint this notebook agent will use for task execution."),
     ).toBeInTheDocument();
+    await closeDialog("agents__create-dialog", onOpenChange);
   });
 });

@@ -147,12 +147,17 @@ run_resource_recovery_step() {
   shift 3
 
   local smoke_status=0
+  local smoke_message=""
   set +e
   "$@"
   smoke_status=$?
   set -e
+  if [[ "${smoke_status}" -ne 0 ]]; then
+    smoke_message="${step_name} exited with status ${smoke_status}"
+  fi
 
   local verify_status=0
+  local fallback_status=0
   local verify_args=(
     tsx
     "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
@@ -160,7 +165,11 @@ run_resource_recovery_step() {
     --baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
     --step "${step_name}"
     --output "${report_path}"
+    --smoke-status "${smoke_status}"
   )
+  if [[ -n "${smoke_message}" ]]; then
+    verify_args+=(--smoke-message "${smoke_message}")
+  fi
   if [[ -n "${probe_path}" ]]; then
     verify_args+=(--probe "${probe_path}")
   fi
@@ -170,7 +179,40 @@ run_resource_recovery_step() {
   verify_status=$?
   set -e
 
-  if [[ "${smoke_status}" -ne 0 || "${verify_status}" -ne 0 ]]; then
+  if [[ ! -f "${report_path}" ]]; then
+    local fallback_reason="resource recovery verify did not write the step report for ${step_name}"
+    if [[ "${verify_status}" -ne 0 ]]; then
+      fallback_reason="resource recovery verify exited with status ${verify_status} before writing the step report for ${step_name}"
+    fi
+    local fallback_args=(
+      tsx
+      "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
+      fallback-report
+      --baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
+      --step "${step_name}"
+      --output "${report_path}"
+      --reason "${fallback_reason}"
+      --smoke-status "${smoke_status}"
+    )
+    if [[ -n "${smoke_message}" ]]; then
+      fallback_args+=(--smoke-message "${smoke_message}")
+    fi
+    if [[ -n "${probe_path}" ]]; then
+      fallback_args+=(--probe "${probe_path}")
+    fi
+
+    set +e
+    npx "${fallback_args[@]}"
+    fallback_status=$?
+    set -e
+  fi
+
+  if [[ ! -f "${report_path}" ]]; then
+    echo "File library gate missing required recovery report: ${report_path}" >&2
+    return 1
+  fi
+
+  if [[ "${smoke_status}" -ne 0 || "${verify_status}" -ne 0 || "${fallback_status}" -ne 0 ]]; then
     return 1
   fi
 
@@ -233,7 +275,8 @@ npx tsx "${ROOT_DIR}/scripts/file-library-resource-recovery.ts" \
   snapshot \
   --output "${RESOURCE_RECOVERY_BASELINE_JSON}"
 
-run_resource_recovery_step "file-library-real-smoke" "${RESOURCE_RECOVERY_SMOKE_JSON}" "" \
+overall_status=0
+if ! run_resource_recovery_step "file-library-real-smoke" "${RESOURCE_RECOVERY_SMOKE_JSON}" "" \
   env \
     API_BASE="${API_BASE}" \
     KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
@@ -243,9 +286,11 @@ run_resource_recovery_step "file-library-real-smoke" "${RESOURCE_RECOVERY_SMOKE_
     INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
     KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
     INTEGRATION_KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
-    bash "${ROOT_DIR}/scripts/file-library-real-smoke.sh"
+    bash "${ROOT_DIR}/scripts/file-library-real-smoke.sh"; then
+  overall_status=1
+fi
 
-run_resource_recovery_step "file-library-mount-sync-smoke" "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}" "${RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON}" \
+if ! run_resource_recovery_step "file-library-mount-sync-smoke" "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}" "${RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON}" \
   env \
     API_BASE="${API_BASE}" \
     KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
@@ -256,7 +301,12 @@ run_resource_recovery_step "file-library-mount-sync-smoke" "${RESOURCE_RECOVERY_
     KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
     INTEGRATION_KEYCLOAK_PORT="${KEYCLOAK_PORT}" \
     FILE_LIBRARY_RESOURCE_RECOVERY_PROBE_PATH="${RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON}" \
-    bash "${ROOT_DIR}/scripts/file-library-mount-sync-smoke.sh"
+    bash "${ROOT_DIR}/scripts/file-library-mount-sync-smoke.sh"; then
+  overall_status=1
+fi
 
 write_resource_recovery_summary
 printf 'File library resource recovery report: %s\n' "${RESOURCE_RECOVERY_REPORT_MD}"
+if [[ "${overall_status}" -ne 0 ]]; then
+  exit 1
+fi

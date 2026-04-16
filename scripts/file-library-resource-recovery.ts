@@ -74,6 +74,24 @@ export interface FileLibraryResourceRecoverySummary {
   markdown: string;
 }
 
+interface FinalizeResourceRecoveryStepReportInput {
+  report: FileLibraryResourceRecoveryStepReport;
+  smoke_status?: number;
+  smoke_message?: string | null;
+  extra_findings?: readonly string[];
+}
+
+interface BuildResourceRecoveryFailureReportInput {
+  step: string;
+  baseline: FileLibraryResourceRecoverySnapshot;
+  current: FileLibraryResourceRecoverySnapshot;
+  reason: string;
+  probe?: FileLibraryResourceRecoveryProbe | null;
+  smoke_status?: number;
+  smoke_message?: string | null;
+  extra_findings?: readonly string[];
+}
+
 function sortUnique(values: Iterable<string>): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
@@ -385,6 +403,53 @@ export function compareResourceRecoveryBaseline(args: {
   };
 }
 
+function appendUniqueFindings(findings: readonly string[], extras: readonly string[]): string[] {
+  const nextFindings = [...findings];
+  for (const extra of extras) {
+    const normalized = extra.trim();
+    if (!normalized || nextFindings.includes(normalized)) {
+      continue;
+    }
+    nextFindings.push(normalized);
+  }
+  return nextFindings;
+}
+
+export function finalizeResourceRecoveryStepReport(
+  args: FinalizeResourceRecoveryStepReportInput,
+): FileLibraryResourceRecoveryStepReport {
+  const extraFindings = [...(args.extra_findings ?? [])];
+  if ((args.smoke_status ?? 0) !== 0) {
+    const smokeFinding = args.smoke_message
+      ? `smoke step failed for ${args.report.step} with exit code ${args.smoke_status}: ${args.smoke_message}`
+      : `smoke step failed for ${args.report.step} with exit code ${args.smoke_status}`;
+    extraFindings.push(smokeFinding);
+  }
+  const findings = appendUniqueFindings(args.report.findings, extraFindings);
+  return {
+    ...args.report,
+    status: findings.length === 0 ? 'pass' : 'fail',
+    findings,
+  };
+}
+
+export function buildResourceRecoveryFailureReport(
+  args: BuildResourceRecoveryFailureReportInput,
+): FileLibraryResourceRecoveryStepReport {
+  const compared = compareResourceRecoveryBaseline({
+    step: args.step,
+    baseline: args.baseline,
+    current: args.current,
+    probe: args.probe ?? null,
+  });
+  return finalizeResourceRecoveryStepReport({
+    report: compared,
+    smoke_status: args.smoke_status,
+    smoke_message: args.smoke_message,
+    extra_findings: [args.reason, ...(args.extra_findings ?? [])],
+  });
+}
+
 function renderResourceRecoveryMarkdown(summary: Omit<FileLibraryResourceRecoverySummary, 'markdown'>): string {
   const lines = [
     '# File Library Resource Recovery Report',
@@ -483,6 +548,8 @@ async function runVerify(argv: string[]): Promise<void> {
   const outputPath = parseOption(argv, '--output');
   const step = parseOption(argv, '--step');
   const probePath = parseOption(argv, '--probe');
+  const smokeStatus = Number.parseInt(parseOption(argv, '--smoke-status') ?? '', 10) || 0;
+  const smokeMessage = parseOption(argv, '--smoke-message');
   const waitMs = Number.parseInt(parseOption(argv, '--wait-ms') ?? '', 10) || 15000;
   const intervalMs = Number.parseInt(parseOption(argv, '--interval-ms') ?? '', 10) || 500;
 
@@ -519,10 +586,45 @@ async function runVerify(argv: string[]): Promise<void> {
     throw new Error(`unable to verify resource recovery for ${step}`);
   }
 
-  await writeJsonFile(outputPath, report);
-  if (report.status !== 'pass') {
-    throw new Error(report.findings.join('; '));
+  const finalizedReport = finalizeResourceRecoveryStepReport({
+    report,
+    smoke_status: smokeStatus,
+    smoke_message: smokeMessage,
+  });
+
+  await writeJsonFile(outputPath, finalizedReport);
+  if (finalizedReport.status !== 'pass') {
+    throw new Error(finalizedReport.findings.join('; '));
   }
+}
+
+async function runFallbackReport(argv: string[]): Promise<void> {
+  const baselinePath = parseOption(argv, '--baseline');
+  const outputPath = parseOption(argv, '--output');
+  const step = parseOption(argv, '--step');
+  const reason = parseOption(argv, '--reason');
+  const probePath = parseOption(argv, '--probe');
+  const smokeStatus = Number.parseInt(parseOption(argv, '--smoke-status') ?? '', 10) || 0;
+  const smokeMessage = parseOption(argv, '--smoke-message');
+
+  if (!baselinePath || !outputPath || !step || !reason) {
+    throw new Error('fallback-report requires --baseline <path> --output <path> --step <name> --reason <message>');
+  }
+
+  const baseline = await readJsonFile<FileLibraryResourceRecoverySnapshot>(baselinePath);
+  const probeInput = probePath ? await readJsonFile<FileLibraryResourceRecoveryProbeInput>(probePath) : null;
+  const current = await captureResourceRecoverySnapshot();
+  const hydratedProbe = await hydrateProbe(probeInput ? { ...probeInput } : null);
+  const report = buildResourceRecoveryFailureReport({
+    step,
+    baseline,
+    current,
+    reason,
+    probe: hydratedProbe,
+    smoke_status: smokeStatus,
+    smoke_message: smokeMessage,
+  });
+  await writeJsonFile(outputPath, report);
 }
 
 async function runSummary(argv: string[]): Promise<void> {
@@ -561,11 +663,14 @@ async function main(argv: string[]): Promise<void> {
     case 'verify':
       await runVerify(rest);
       return;
+    case 'fallback-report':
+      await runFallbackReport(rest);
+      return;
     case 'summary':
       await runSummary(rest);
       return;
     default:
-      throw new Error('expected one of: snapshot, verify, summary');
+      throw new Error('expected one of: snapshot, verify, fallback-report, summary');
   }
 }
 

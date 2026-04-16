@@ -444,6 +444,12 @@ function formatScreenshotHashMap(
     .join('; ');
 }
 
+export function formatVisualBaselineActualScreenshotHashes(
+  screenshots: readonly VisualBaselineScenarioScreenshotEvidence[],
+): string {
+  return formatScreenshotHashMap(screenshots, 'screenshotSha256');
+}
+
 export function buildVisualBaselineScenarioEvidence(
   scenario: VisualBaselineScenarioRecord,
 ): VisualBaselineScenarioEvidence {
@@ -487,13 +493,14 @@ export function buildVisualBaselineScenarioEvidence(
 function pushScenarioEvidenceMetadata(
   lines: string[],
   scenario: VisualBaselineScenarioRecord,
-): void {
-  const evidence = buildVisualBaselineScenarioEvidence(scenario);
+  evidence: VisualBaselineScenarioEvidence = buildVisualBaselineScenarioEvidence(scenario),
+): VisualBaselineScenarioEvidence {
   lines.push(
     `- story_fingerprint: ${evidence.storyFingerprint}`,
     `- accepted_screenshot_hashes: ${formatScreenshotHashMap(evidence.screenshots, 'screenshotSha256')}`,
     `- accepted_baseline_hashes: ${formatScreenshotHashMap(evidence.screenshots, 'baselineSha256')}`,
   );
+  return evidence;
 }
 
 function pushVisualBaselineBuildMetadata(
@@ -595,6 +602,7 @@ export function renderVisualBaselineAutomatedPassMarkdown(args: {
   automated: VisualBaselineAutomatedPassRecord;
 }): string {
   const { scenario, build, automated } = args;
+  const evidence = buildVisualBaselineScenarioEvidence(scenario);
   const lines = [
     `# ${scenario.scenarioId}`,
     '',
@@ -602,9 +610,11 @@ export function renderVisualBaselineAutomatedPassMarkdown(args: {
     ...visualBaselineScenarioMetadataLines(scenario),
     `- actual_url: ${automated.actualUrl}`,
   ];
-  pushScenarioEvidenceMetadata(lines, scenario);
+  pushScenarioEvidenceMetadata(lines, scenario, evidence);
   pushVisualBaselineBuildMetadata(lines, build);
   lines.push(
+    `- actual_build_run_id: ${build.runId}`,
+    `- actual_screenshot_hashes: ${formatVisualBaselineActualScreenshotHashes(evidence.screenshots)}`,
     `- generated_at: ${automated.generatedAt}`,
     `- automated_verdict: ${automated.automatedVerdict}`,
     `- semantic_verdict: ${automated.semanticVerdict}`,

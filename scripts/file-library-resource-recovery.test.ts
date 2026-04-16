@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildResourceRecoverySummary,
   compareResourceRecoveryBaseline,
+  finalizeResourceRecoveryStepReport,
+  buildResourceRecoveryFailureReport,
   type FileLibraryResourceRecoveryProbe,
   type FileLibraryResourceRecoverySnapshot,
 } from './file-library-resource-recovery';
@@ -253,6 +255,44 @@ describe('file library resource recovery', () => {
     expect(report.findings).toContain(
       'mount cleanup probe could not prove cleanup after file-library-mount-sync-smoke: findmnt is required to verify mount cleanup but was not found; ps is required to verify mount cleanup but was not found',
     );
+  });
+
+  it('marks the step as failed when the smoke command fails even if recovery returns to the baseline', () => {
+    const verified = compareResourceRecoveryBaseline({
+      step: 'file-library-real-smoke',
+      baseline: buildSnapshot(),
+      current: buildSnapshot(),
+    });
+
+    const report = finalizeResourceRecoveryStepReport({
+      report: verified,
+      smoke_status: 23,
+      smoke_message: 'file-library-real-smoke exited with status 23',
+    });
+
+    expect(report.status).toBe('fail');
+    expect(report.findings).toContain(
+      'smoke step failed for file-library-real-smoke with exit code 23: file-library-real-smoke exited with status 23',
+    );
+  });
+
+  it('builds a failure report when verify cannot materialize its normal recovery report', () => {
+    const report = buildResourceRecoveryFailureReport({
+      step: 'file-library-mount-sync-smoke',
+      baseline: buildSnapshot(),
+      current: buildSnapshot(),
+      reason: 'resource recovery verify exited before writing the step report',
+      probe: buildProbe(),
+    });
+
+    expect(report.status).toBe('fail');
+    expect(report.findings).toContain(
+      'resource recovery verify exited before writing the step report',
+    );
+    expect(report.probe).toMatchObject({
+      step: 'file-library-mount-sync-smoke',
+      mount_point: '/tmp/file-library-mount',
+    });
   });
 
   it('renders a structured summary that preserves per-step verdicts and carries failures upward', () => {

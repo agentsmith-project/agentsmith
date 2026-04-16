@@ -154,10 +154,22 @@ describe('current gate governance', () => {
     const releaseFull = findCurrentGateDefinitionById('gate-release-full');
 
     expect(visualLane?.standaloneEvidenceArtifacts).toContain(
-      'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
+      'artifacts/visual-baseline-reviews/<run-id>/run-manifest.json',
     );
     expect(visualLane?.campaignEvidenceArtifacts).toContain(
-      '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
+      '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/run-manifest.json',
+    );
+    expect(visualLane?.standaloneEvidenceArtifacts).toEqual([
+      'artifacts/visual-baseline-reviews/<run-id>/run-manifest.json',
+    ]);
+    expect(visualLane?.campaignEvidenceArtifacts).toEqual([
+      '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/run-manifest.json',
+    ]);
+    expect(visualLane?.standaloneEvidenceArtifacts).not.toContain(
+      'artifacts/visual-baseline-reviews/<run-id>/review.md',
+    );
+    expect(visualLane?.campaignEvidenceArtifacts).not.toContain(
+      '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/review.md',
     );
 
     expect(releaseGate?.standaloneEvidenceArtifacts).toContain(
@@ -178,9 +190,15 @@ describe('current gate governance', () => {
     expect(releaseFull?.campaignEvidenceArtifacts.length).toBeGreaterThan(0);
     expect(releaseFull?.storyEvidenceArtifacts).toEqual(releaseFull?.campaignEvidenceArtifacts);
     expect(releaseFull?.campaignEvidenceArtifacts.every((path) => path.startsWith('<campaign-root>'))).toBe(true);
+    expect(releaseFull?.campaignEvidenceArtifacts).toContain(
+      '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/run-manifest.json',
+    );
+    expect(releaseFull?.campaignEvidenceArtifacts).not.toContain(
+      '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
+    );
     expect(releaseFull?.campaignEvidenceArtifacts).not.toEqual(
       expect.arrayContaining([
-        'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
+        'artifacts/visual-baseline-reviews/<run-id>/run-manifest.json',
         'artifacts/backend-real-visual/<run-id>/review.md',
         'artifacts/backend-real-visual/<run-id>/ux-traces',
       ]),

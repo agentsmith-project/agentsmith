@@ -124,6 +124,45 @@ describe("current gate result schema", () => {
     });
   });
 
+  it("treats wrapped visual native results as incomplete until evidence_dir/run-manifest.json exists", () => {
+    const payload = runWrappedGateResult({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+    });
+
+    expect(existsSync(join(payload.evidence_dir, "run-manifest.json"))).toBe(true);
+  });
+
+  it("expects lane-visual to emit a machine-readable run-manifest.json bound to the current visual build", () => {
+    const payload = runWrappedGateResult({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+    });
+
+    const manifest = JSON.parse(
+      readFileSync(join(payload.evidence_dir, "run-manifest.json"), "utf8"),
+    ) as {
+      schema?: string;
+      build?: Record<string, unknown>;
+      scenarios?: unknown[];
+    };
+
+    expect(manifest).toMatchObject({
+      schema: "visual_baseline_run_manifest/v1",
+      build: {
+        lane: expect.any(String),
+        run_id: expect.any(String),
+        git_sha: expect.any(String),
+        fingerprint: expect.any(String),
+        started_at: expect.any(String),
+      },
+    });
+    expect(Array.isArray(manifest.scenarios)).toBe(true);
+    expect(manifest.scenarios?.length).toBeGreaterThan(0);
+  });
+
   it("prefers explicit CURRENT_GATE_RESULT_CI_JOB over manifest and GitHub job names", () => {
     const payload = runWrappedGateResult({
       gateId: "lane-visual",

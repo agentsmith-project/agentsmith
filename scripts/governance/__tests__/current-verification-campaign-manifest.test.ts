@@ -82,10 +82,15 @@ describe('current verification campaign manifest', () => {
       expect(step.evidenceChecks.length).toBeGreaterThan(0);
     }
 
-    expect(releaseFull.steps.find((step) => step.id === 'lane-visual')?.evidenceChecks).toEqual(
+    const visualStep = releaseFull.steps.find((step) => step.id === 'lane-visual');
+    const visualEvidenceKinds = visualStep?.evidenceChecks.map((check) => (check as { kind: string }).kind);
+    expect(visualStep?.evidenceChecks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'visual_baseline_reviews' }),
       ]),
+    );
+    expect(visualEvidenceKinds).toEqual(
+      expect.arrayContaining(['visual_run_manifest', 'visual_baseline_reviews']),
     );
     expect(releaseFull.steps.find((step) => step.id === 'gate-release')?.evidenceChecks).toEqual(
       expect.arrayContaining([
@@ -109,7 +114,10 @@ describe('current verification campaign manifest', () => {
     for (const step of releaseFull.steps.filter((candidate) => candidate.workflowRole === 'evidence_owner')) {
       const gate = findCurrentGateDefinitionById(step.gateId);
 
-      expect(gate?.campaignEvidenceArtifacts).toEqual(step.evidenceChecks.map((check) => check.path));
+      expect(step.evidenceHints).toEqual(gate?.campaignEvidenceArtifacts);
+      expect(step.evidenceChecks.map((check) => check.path)).toEqual(
+        expect.arrayContaining(gate?.campaignEvidenceArtifacts ?? []),
+      );
       expect(gate?.campaignEvidenceArtifacts.length).toBeGreaterThan(0);
       expect(gate?.campaignEvidenceArtifacts.every((path) => path.includes('<campaign-root>') || path.startsWith('e2e/'))).toBe(true);
     }
@@ -120,5 +128,33 @@ describe('current verification campaign manifest', () => {
     expect(terminalStep?.evidenceHints).toEqual(terminalGate?.campaignEvidenceArtifacts);
     expect(terminalGate?.standaloneEvidenceArtifacts).toEqual([]);
     expect(terminalGate?.campaignEvidenceArtifacts.every((path) => path.startsWith('<campaign-root>'))).toBe(true);
+  });
+
+  it('keeps lane-visual authority hints narrow while runtime checks stay wide', () => {
+    const releaseFull = findCurrentVerificationCampaignById('release-full');
+    if (!releaseFull) {
+      throw new Error('Missing release-full campaign.');
+    }
+
+    const visualStep = releaseFull.steps.find((step) => step.id === 'lane-visual');
+    const visualGate = findCurrentGateDefinitionById('lane-visual');
+    const visualCheckKinds = visualStep?.evidenceChecks.map((check) => (check as { kind: string }).kind) ?? [];
+
+    expect(visualStep?.evidenceHints).toEqual([
+      '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/run-manifest.json',
+    ]);
+    expect(visualStep?.evidenceHints).toEqual(visualGate?.campaignEvidenceArtifacts);
+    expect(visualStep?.evidenceHints).not.toContain(
+      '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
+    );
+    expect(visualStep?.evidenceChecks.map((check) => check.path)).toEqual(
+      expect.arrayContaining([
+        '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/run-manifest.json',
+        '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
+      ]),
+    );
+    expect(visualCheckKinds).toEqual(
+      expect.arrayContaining(['visual_run_manifest', 'visual_baseline_reviews']),
+    );
   });
 });

@@ -2,12 +2,13 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildStorySourceFingerprint } from '../e2e/story-contract';
+import { buildStorySourceFingerprint, type StoryDefinition, type StoryStepDefinition } from '../e2e/story-contract';
 import { loadStoryDefinition } from '../e2e/story-loader';
 import { buildTraceStoryBinding } from '../e2e/story-trace-binding';
 import {
   createUxTraceBundleWriter,
   buildUxTraceCaptureEvent,
+  validateUxTraceBundleArtifact,
   resolveUxTraceBundleDir,
   type UxTracePageLike,
 } from '../e2e/trace-bundle-support';
@@ -19,6 +20,11 @@ function makeFakePage(url: string): UxTracePageLike {
       await writeFile(screenshotPath, 'fake screenshot', 'utf-8');
     },
   };
+}
+
+function stepRoute(story: StoryDefinition, step: StoryStepDefinition): string {
+  const scene = story.scenes.find((candidate) => candidate.sceneId === step.sceneId);
+  return scene?.route ?? story.entryRoute;
 }
 
 describe('ux trace bundle support', () => {
@@ -322,5 +328,232 @@ describe('ux trace bundle support', () => {
       note: 'system 管理侧登录入口',
       route: '/en-US/system/login',
     });
+  });
+
+  it('fails validation when required trace steps all appear but are recorded out of canonical order', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-ux-trace-ordering-'));
+    try {
+      const story = await loadStoryDefinition('release-user-story-end-to-end');
+      const binding = buildTraceStoryBinding(story);
+      const suite = 'integration-release-user-story';
+      const runId = 'run-ordering-drift';
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: rootDir,
+        lane: story.lane,
+        suite,
+        storyId: story.storyId,
+        title: story.title,
+        actor: story.actor,
+        route: story.entryRoute,
+        specFile: 'e2e/integration-release-user-story.spec.ts',
+        browser: 'chromium',
+        runId,
+        startedAt: '2026-04-12T05:03:04.000Z',
+        goal: story.goal,
+        preconditions: story.preconditions ?? [],
+        seedData: story.seedData ?? [],
+        storyBinding: binding,
+      });
+
+      const requiredTraceSteps = binding.steps.filter((step) => step.evidence.includes('trace') && !step.optional);
+      expect(requiredTraceSteps.length).toBeGreaterThan(1);
+
+      for (const step of requiredTraceSteps) {
+        await trace.capture(makeFakePage(stepRoute(story, step)), { stepId: step.stepId });
+      }
+
+      await trace.finish({
+        outcome: 'pass',
+        finishedAt: '2026-04-12T05:04:04.000Z',
+      });
+
+      const bundleDir = resolveUxTraceBundleDir({
+        outputRoot: rootDir,
+        lane: story.lane,
+        suite,
+        storyId: story.storyId,
+        runId,
+      });
+      const eventsPath = path.join(bundleDir, 'events.jsonl');
+      const originalEvents = (await readFile(eventsPath, 'utf-8'))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as {
+          seq: number;
+          step_id: string;
+        });
+      const reorderedEvents = [originalEvents[1], originalEvents[0], ...originalEvents.slice(2)].map((event, index) => ({
+        ...event,
+        seq: index + 1,
+      }));
+
+      await writeFile(eventsPath, `${reorderedEvents.map((event) => JSON.stringify(event)).join('\n')}\n`, 'utf-8');
+
+      const validation = validateUxTraceBundleArtifact({
+        bundleDir,
+        expectedLane: story.lane,
+        expectedSuite: suite,
+      });
+
+      expect(validation.ok).toBe(false);
+      if (validation.ok) {
+        throw new Error('expected UX trace bundle validation to fail for sequence drift');
+      }
+      expect(validation.failureClass).toBe('contract_drift');
+      expect(validation.message).toMatch(/order|sequence/i);
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a producer-owned trace bundle when manifest.json omits trace_order_contract', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-ux-trace-order-contract-missing-'));
+    try {
+      const story = await loadStoryDefinition('release-user-story-end-to-end');
+      const binding = buildTraceStoryBinding(story);
+      const suite = 'integration-release-user-story';
+      const runId = 'run-missing-trace-order-contract';
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: rootDir,
+        lane: story.lane,
+        suite,
+        storyId: story.storyId,
+        title: story.title,
+        actor: story.actor,
+        route: story.entryRoute,
+        specFile: 'e2e/integration-release-user-story.spec.ts',
+        browser: 'chromium',
+        runId,
+        startedAt: '2026-04-12T06:03:04.000Z',
+        goal: story.goal,
+        preconditions: story.preconditions ?? [],
+        seedData: story.seedData ?? [],
+        storyBinding: binding,
+      });
+
+      const requiredTraceSteps = binding.steps.filter((step) => step.evidence.includes('trace') && !step.optional);
+      expect(requiredTraceSteps.length).toBeGreaterThan(1);
+
+      for (const step of requiredTraceSteps) {
+        await trace.capture(makeFakePage(stepRoute(story, step)), { stepId: step.stepId });
+      }
+
+      await trace.finish({
+        outcome: 'pass',
+        finishedAt: '2026-04-12T06:04:04.000Z',
+      });
+
+      const bundleDir = resolveUxTraceBundleDir({
+        outputRoot: rootDir,
+        lane: story.lane,
+        suite,
+        storyId: story.storyId,
+        runId,
+      });
+      const manifestPath = path.join(bundleDir, 'manifest.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as Record<string, unknown>;
+      const baselineValidation = validateUxTraceBundleArtifact({
+        bundleDir,
+        expectedLane: story.lane,
+        expectedSuite: suite,
+      });
+
+      expect(baselineValidation.ok).toBe(true);
+      expect(manifest.trace_order_contract).toBeDefined();
+
+      delete manifest.trace_order_contract;
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf-8');
+
+      const validation = validateUxTraceBundleArtifact({
+        bundleDir,
+        expectedLane: story.lane,
+        expectedSuite: suite,
+      });
+
+      expect(validation.ok).toBe(false);
+      if (validation.ok) {
+        throw new Error(
+          'expected validator to reject a producer-owned trace bundle when manifest.json omits trace_order_contract',
+        );
+      }
+      expect(validation.failureClass).toBe('contract_drift');
+      expect(
+        validation.issues.some(
+          (issue) => issue.failureClass === 'contract_drift' && /trace_order_contract/i.test(issue.message),
+        ),
+      ).toBe(true);
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails validation with contract_drift when manifest trace_order_contract is malformed instead of falling back to local story order', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-ux-trace-order-contract-malformed-'));
+    try {
+      const story = await loadStoryDefinition('release-user-story-end-to-end');
+      const binding = buildTraceStoryBinding(story);
+      const suite = 'integration-release-user-story';
+      const runId = 'run-malformed-trace-order-contract';
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: rootDir,
+        lane: story.lane,
+        suite,
+        storyId: story.storyId,
+        title: story.title,
+        actor: story.actor,
+        route: story.entryRoute,
+        specFile: 'e2e/integration-release-user-story.spec.ts',
+        browser: 'chromium',
+        runId,
+        startedAt: '2026-04-12T07:03:04.000Z',
+        goal: story.goal,
+        preconditions: story.preconditions ?? [],
+        seedData: story.seedData ?? [],
+        storyBinding: binding,
+      });
+
+      const requiredTraceSteps = binding.steps.filter((step) => step.evidence.includes('trace') && !step.optional);
+      expect(requiredTraceSteps.length).toBeGreaterThan(1);
+
+      for (const step of requiredTraceSteps) {
+        await trace.capture(makeFakePage(stepRoute(story, step)), { stepId: step.stepId });
+      }
+
+      await trace.finish({
+        outcome: 'pass',
+        finishedAt: '2026-04-12T07:04:04.000Z',
+      });
+
+      const bundleDir = resolveUxTraceBundleDir({
+        outputRoot: rootDir,
+        lane: story.lane,
+        suite,
+        storyId: story.storyId,
+        runId,
+      });
+      const manifestPath = path.join(bundleDir, 'manifest.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as Record<string, unknown>;
+      manifest.trace_order_contract = null;
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf-8');
+
+      let validation: ReturnType<typeof validateUxTraceBundleArtifact> | undefined;
+      expect(() => {
+        validation = validateUxTraceBundleArtifact({
+          bundleDir,
+          expectedLane: story.lane,
+          expectedSuite: suite,
+        });
+      }).not.toThrow();
+
+      expect(validation).toBeDefined();
+      expect(validation?.ok).toBe(false);
+      if (!validation || validation.ok) {
+        throw new Error('expected UX trace bundle validation to fail for malformed manifest trace_order_contract');
+      }
+      expect(validation.failureClass).toBe('contract_drift');
+      expect(validation.message).toMatch(/trace_order_contract/i);
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
   });
 });

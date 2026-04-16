@@ -4,9 +4,11 @@ import path from 'node:path';
 import { bindTraceEventToStory, type TraceStoryBinding } from './story-trace-binding';
 import {
   buildStoryFingerprint,
+  resolveStoryTraceOrderContract,
   buildStorySourceFingerprint,
   buildStoryStepMapFingerprint,
   type StoryDefinition,
+  type StoryTraceOrderContract,
   type StoryStepDefinition,
   type StoryTargetMatch,
 } from './story-contract';
@@ -100,6 +102,7 @@ export type UxTraceBundleManifest = {
   seed_data?: string[];
   required_trace_steps: string[];
   required_screenshot_steps: string[];
+  trace_order_contract?: StoryTraceOrderContract;
   started_at: string;
   finished_at: string;
   outcome: 'pass' | 'fail';
@@ -227,6 +230,18 @@ function requiredScreenshotStepIds(storyBinding?: TraceStoryBinding): string[] {
   return storyBinding?.steps
     .filter((step) => step.evidence.includes('trace') && !step.optional && step.sceneId)
     .map((step) => step.stepId) ?? [];
+}
+
+function resolveBindingTraceOrderContract(storyBinding?: TraceStoryBinding): StoryTraceOrderContract | undefined {
+  if (!storyBinding) {
+    return undefined;
+  }
+  return {
+    mode: 'strict_sequence',
+    orderedStepIds: storyBinding.steps
+      .filter((step) => step.evidence.includes('trace') && !step.optional)
+      .map((step) => step.stepId),
+  };
 }
 
 function reviewVerdictForOutcome(outcome: UxTraceBundleManifest['outcome']): 'accepted' | 'blocked' {
@@ -468,6 +483,36 @@ function requiredStringArray(value: unknown): string[] | null {
   return strings.length === value.length ? strings : null;
 }
 
+function resolveManifestTraceOrderContract(
+  value: unknown,
+  issues: UxTraceBundleValidationIssue[],
+): StoryTraceOrderContract | null {
+  if (value === undefined) {
+    traceValidationIssue(issues, 'contract_drift', 'UX trace manifest must include trace_order_contract.');
+    return null;
+  }
+  if (!isRecord(value)) {
+    traceValidationIssue(issues, 'contract_drift', 'UX trace manifest trace_order_contract must be an object.');
+    return null;
+  }
+
+  if (value.mode !== 'strict_sequence') {
+    traceValidationIssue(issues, 'contract_drift', 'UX trace manifest trace_order_contract.mode must be strict_sequence.');
+  }
+  const orderedStepIds = requiredStringArray(value.orderedStepIds);
+  if (!orderedStepIds) {
+    traceValidationIssue(issues, 'contract_drift', 'UX trace manifest trace_order_contract must include orderedStepIds.');
+  }
+  if (value.mode !== 'strict_sequence' || !orderedStepIds) {
+    return null;
+  }
+
+  return {
+    mode: 'strict_sequence',
+    orderedStepIds,
+  };
+}
+
 function listsEqual(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
@@ -521,7 +566,7 @@ function validateTraceBundlePath(
 function validateManifestShape(
   manifest: UxTraceBundleManifest,
   issues: UxTraceBundleValidationIssue[],
-): void {
+): StoryTraceOrderContract | null {
   if (manifest.version !== 1) {
     traceValidationIssue(issues, 'contract_drift', 'UX trace manifest version must be 1.');
   }
@@ -559,17 +604,21 @@ function validateManifestShape(
   if (!Array.isArray(manifest.screenshots)) {
     traceValidationIssue(issues, 'contract_drift', 'UX trace manifest screenshots must be an array.');
   }
+  const traceOrderContract = resolveManifestTraceOrderContract(manifest.trace_order_contract, issues);
   if (Number.isNaN(Date.parse(String(manifest.started_at)))) {
     traceValidationIssue(issues, 'contract_drift', 'UX trace manifest started_at is invalid.');
   }
   if (Number.isNaN(Date.parse(String(manifest.finished_at)))) {
     traceValidationIssue(issues, 'contract_drift', 'UX trace manifest finished_at is invalid.');
   }
+
+  return traceOrderContract;
 }
 
 function validateStoryBindingSemantics(
   manifest: UxTraceBundleManifest,
   story: StoryDefinition,
+  traceOrderContract: StoryTraceOrderContract | null,
   issues: UxTraceBundleValidationIssue[],
 ): void {
   if (manifest.lane !== story.lane) {
@@ -595,11 +644,17 @@ function validateStoryBindingSemantics(
 
   const expectedTraceSteps = storyTraceSteps(story).map((step) => step.stepId);
   const expectedScreenshotSteps = storyTraceScreenshotSteps(story).map((step) => step.stepId);
+  const expectedTraceOrderContract = resolveStoryTraceOrderContract(story);
   if (!listsEqual(manifest.required_trace_steps ?? [], expectedTraceSteps)) {
     traceValidationIssue(issues, 'contract_drift', `UX trace required_trace_steps drift for ${manifest.story_id}.`);
   }
   if (!listsEqual(manifest.required_screenshot_steps ?? [], expectedScreenshotSteps)) {
     traceValidationIssue(issues, 'contract_drift', `UX trace required_screenshot_steps drift for ${manifest.story_id}.`);
+  }
+  if (traceOrderContract
+    && (traceOrderContract.mode !== expectedTraceOrderContract.mode
+      || !listsEqual(traceOrderContract.orderedStepIds, expectedTraceOrderContract.orderedStepIds))) {
+    traceValidationIssue(issues, 'contract_drift', `UX trace trace_order_contract drift for ${manifest.story_id}.`);
   }
 }
 
@@ -607,11 +662,13 @@ function validateTraceEvents(args: {
   bundleDir: string;
   manifest: UxTraceBundleManifest;
   story: StoryDefinition;
+  traceOrderContract: StoryTraceOrderContract | null;
   events: readonly TraceEventJson[];
   issues: UxTraceBundleValidationIssue[];
 }): void {
   const storyStepsById = new Map(args.story.steps.map((step) => [step.stepId, step]));
   const eventsByStep = new Map<string, TraceEventJson[]>();
+  const firstEventIndexByStep = new Map<string, number>();
   for (const event of args.events) {
     if (!Number.isInteger(event.seq) || event.seq < 1) {
       traceValidationIssue(args.issues, 'contract_drift', 'UX trace event seq must be a positive integer.');
@@ -641,6 +698,9 @@ function validateTraceEvents(args: {
     }
     const previous = eventsByStep.get(event.step_id) ?? [];
     eventsByStep.set(event.step_id, [...previous, event]);
+    if (!firstEventIndexByStep.has(event.step_id)) {
+      firstEventIndexByStep.set(event.step_id, args.events.indexOf(event));
+    }
   }
 
   if (args.manifest.event_count !== args.events.length) {
@@ -681,6 +741,27 @@ function validateTraceEvents(args: {
     }
     if (eventWithScreenshot.screenshot !== manifestScreenshot.file) {
       traceValidationIssue(args.issues, 'contract_drift', `UX trace screenshot record drift for step: ${stepId}.`);
+    }
+  }
+
+  if (args.traceOrderContract?.mode === 'strict_sequence') {
+    let previousIndex = -1;
+    let previousStepId: string | null = null;
+    for (const stepId of args.traceOrderContract.orderedStepIds) {
+      const firstIndex = firstEventIndexByStep.get(stepId);
+      if (firstIndex === undefined) {
+        continue;
+      }
+      if (firstIndex < previousIndex) {
+        traceValidationIssue(
+          args.issues,
+          'contract_drift',
+          `UX trace sequence drift: step ${stepId} appears before ${previousStepId ?? 'the previous required step'}.`,
+        );
+        break;
+      }
+      previousIndex = firstIndex;
+      previousStepId = stepId;
     }
   }
 }
@@ -769,7 +850,7 @@ export function validateUxTraceBundleArtifact(options: UxTraceBundleValidationOp
     return traceValidationResult(issues);
   }
 
-  validateManifestShape(manifest, issues);
+  const traceOrderContract = validateManifestShape(manifest, issues);
   if (options.expectedLane && manifest.lane !== options.expectedLane) {
     traceValidationIssue(issues, 'contract_drift', `UX trace lane mismatch: expected ${options.expectedLane}, received ${manifest.lane}.`);
   }
@@ -789,7 +870,7 @@ export function validateUxTraceBundleArtifact(options: UxTraceBundleValidationOp
   }
 
   if (story) {
-    validateStoryBindingSemantics(manifest, story, issues);
+    validateStoryBindingSemantics(manifest, story, traceOrderContract, issues);
   }
   validateTraceBundlePath({ ...options, bundleDir }, manifest, issues);
 
@@ -799,6 +880,7 @@ export function validateUxTraceBundleArtifact(options: UxTraceBundleValidationOp
       bundleDir,
       manifest,
       story,
+      traceOrderContract,
       events,
       issues,
     });
@@ -917,6 +999,7 @@ export async function createUxTraceBundleWriter(options: UxTraceBundleOptions): 
         seed_data: options.seedData,
         required_trace_steps: requiredTraceStepIds(options.storyBinding),
         required_screenshot_steps: requiredScreenshotStepIds(options.storyBinding),
+        trace_order_contract: resolveBindingTraceOrderContract(options.storyBinding),
         started_at: startedAt,
         finished_at: finishOptions.finishedAt ?? nowIso(),
         outcome: finishOptions.outcome,

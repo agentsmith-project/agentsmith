@@ -1,5 +1,6 @@
 import type { AgentRecord } from './resource-models.js';
 import type { ExecResponse, PodStatusResponse, SandboxPodCreateBody } from './sandbox-manager-client.js';
+import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
 import type { InternalAgentWorkspaceMount } from './internal-agent-workspace-provisioner.js';
 import {
   INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
@@ -31,6 +32,10 @@ interface SandboxManagerClientLike {
 interface AgentExecutionLike {
   getAgentOnlineState(agentId: string): boolean;
   getAgentSessionOnlineState?: (agentId: string, sessionId?: string) => boolean;
+  getAgentSessionDispatchAuthority?: (
+    agentId: string,
+    sessionId: string,
+  ) => Promise<RunnerSessionDispatchAuthority>;
 }
 
 export interface InternalAgentPodManager {
@@ -63,6 +68,12 @@ function defaultSleep(ms: number): Promise<void> {
 
 function isTerminalPodPhase(phase: string | undefined): boolean {
   return phase === 'Failed' || phase === 'Succeeded' || phase === 'Completed';
+}
+
+export function mapRunnerSessionAuthorityToSandboxError(
+  authority: RunnerSessionDispatchAuthority,
+): string | null {
+  return authority === 'remote_owned_not_local_dispatchable' ? 'sandbox_remote_owned' : null;
 }
 
 export function sanitizeWorkloadId(id: string): string {
@@ -244,6 +255,13 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
   private async waitForAgentSessionOnline(agentId: string, sessionId: string, deadline: number): Promise<void> {
     while (Date.now() < deadline) {
       if (this.getOnlineState(agentId, sessionId)) return;
+      if (typeof this.agentExecution.getAgentSessionDispatchAuthority === 'function') {
+        const authority = await this.agentExecution.getAgentSessionDispatchAuthority(agentId, sessionId);
+        const authorityError = mapRunnerSessionAuthorityToSandboxError(authority);
+        if (authorityError) {
+          throw Object.assign(new Error(authorityError), { code: 'AGENT_SANDBOX_REMOTE_OWNED' });
+        }
+      }
       await this.sleep(this.onlinePollIntervalMs);
     }
     throw Object.assign(new Error('sandbox_startup_timeout'), { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' });

@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -31,6 +32,7 @@ import {
   buildStorySourceFingerprint,
   buildStoryStepMapFingerprint,
   buildStoryFingerprint,
+  resolveStoryTraceOrderContract,
   type StoryDefinition,
   type StoryStepDefinition,
   type StoryTargetMatch,
@@ -53,6 +55,14 @@ import {
 type RunAggregateOptions = {
   env?: NodeJS.ProcessEnv;
 };
+
+type AggregateFixtureEvidenceKind =
+  | 'file'
+  | 'directory'
+  | 'directory_non_empty'
+  | 'recursive_file'
+  | 'visual_baseline_reviews'
+  | 'visual_run_manifest';
 
 const UPSTREAM_STEP_IDS = [
   'gate-fast',
@@ -132,6 +142,42 @@ function createDirectory(path: string): void {
   mkdirSync(path, { recursive: true });
 }
 
+function aggregateFixtureEvidenceKind(check: CurrentVerificationCampaignEvidenceCheck): AggregateFixtureEvidenceKind {
+  return (check as { kind: AggregateFixtureEvidenceKind }).kind;
+}
+
+function getVisualRunManifestPath(campaignRoot: string): string {
+  return resolve(
+    campaignRoot,
+    'lane-visual',
+    'visual-baseline-reviews',
+    resolveCampaignRunId(campaignRoot),
+    'run-manifest.json',
+  );
+}
+
+function getVisualReviewCheck(): CurrentVerificationCampaignEvidenceCheck {
+  const visualStep = getCampaignStep('lane-visual');
+  const visualReviewCheck = visualStep.evidenceChecks.find(
+    (check) => aggregateFixtureEvidenceKind(check) === 'visual_baseline_reviews',
+  );
+  if (!visualReviewCheck) {
+    throw new Error('Missing visual review evidence check.');
+  }
+  return visualReviewCheck;
+}
+
+function getVisualRunManifestCheck(): CurrentVerificationCampaignEvidenceCheck {
+  const visualStep = getCampaignStep('lane-visual');
+  const visualRunManifestCheck = visualStep.evidenceChecks.find(
+    (check) => aggregateFixtureEvidenceKind(check) === 'visual_run_manifest',
+  );
+  if (!visualRunManifestCheck) {
+    throw new Error('Missing visual run manifest evidence check.');
+  }
+  return visualRunManifestCheck;
+}
+
 function createManifestEvidenceForCheck(
   campaignRoot: string,
   check: CurrentVerificationCampaignEvidenceCheck,
@@ -141,7 +187,14 @@ function createManifestEvidenceForCheck(
     return;
   }
 
-  if (check.kind === 'visual_baseline_reviews') {
+  const kind = aggregateFixtureEvidenceKind(check);
+
+  if (kind === 'visual_run_manifest') {
+    writeVisualRunManifestFixture(campaignRoot);
+    return;
+  }
+
+  if (kind === 'visual_baseline_reviews') {
     for (const scenario of groupVisualBaselineCatalogByScenario().values()) {
       createFile(
         materializeCampaignPath(
@@ -155,19 +208,19 @@ function createManifestEvidenceForCheck(
   }
 
   const path = materializeCampaignPath(campaignRoot, check.path);
-  if (check.kind === 'file') {
+  if (kind === 'file') {
     if (!existsSync(path)) {
       createFile(path);
     }
     return;
   }
 
-  if (check.kind === 'directory') {
+  if (kind === 'directory') {
     createDirectory(path);
     return;
   }
 
-  if (check.kind === 'directory_non_empty') {
+  if (kind === 'directory_non_empty') {
     createDirectory(path);
     if (path.startsWith(`${campaignRoot}/`)) {
       createFile(join(path, '.aggregate-fixture'));
@@ -175,8 +228,15 @@ function createManifestEvidenceForCheck(
     return;
   }
 
-  createFile(
-    join(path, 'aggregate-fixture', check.fileName === '.md' ? 'report.md' : (check.fileName ?? 'review.md')),
+  if (kind === 'recursive_file') {
+    createFile(
+      join(path, 'aggregate-fixture', check.fileName === '.md' ? 'report.md' : (check.fileName ?? 'review.md')),
+    );
+    return;
+  }
+
+  throw new Error(
+    `Unhandled aggregate fixture evidence kind: ${String(kind)} for ${check.id} (${check.path})`,
   );
 }
 
@@ -217,16 +277,72 @@ function renderVisualReviewFixture(
   });
 }
 
+function writeVisualRunManifestFixture(
+  campaignRoot: string,
+  overrides: Partial<{
+    run_id: string;
+    build: Partial<{
+      lane: string;
+      run_id: string;
+      git_sha: string;
+      fingerprint: string;
+      started_at: string;
+    }>;
+    scenarioOverrides: Record<
+      string,
+      Partial<{
+        actual_url: string;
+        screenshots: Array<{
+          file_name: string;
+          actual_sha256: string;
+          baseline_sha256: string;
+        }>;
+      }>
+    >;
+  }> = {},
+): void {
+  const runId = overrides.run_id ?? resolveCampaignRunId(campaignRoot);
+  const scenarios = [...groupVisualBaselineCatalogByScenario().values()]
+    .sort((left, right) => left.scenarioId.localeCompare(right.scenarioId))
+    .map((scenario) => {
+      const evidence = buildVisualBaselineScenarioEvidence(scenario);
+      const scenarioOverride = overrides.scenarioOverrides?.[scenario.scenarioId];
+      return {
+        scenario_id: scenario.scenarioId,
+        actual_url: scenarioOverride?.actual_url ?? scenario.route,
+        story_fingerprint: evidence.storyFingerprint,
+        screenshots: scenarioOverride?.screenshots
+          ?? evidence.screenshots.map((entry) => ({
+            file_name: entry.fileName,
+            actual_sha256: `sha256:${entry.screenshotSha256}`,
+            baseline_sha256: `sha256:${entry.baselineSha256}`,
+          })),
+      };
+    });
+
+  writeJson(
+    getVisualRunManifestPath(campaignRoot),
+    {
+      schema: 'visual_baseline_run_manifest/v1',
+      run_id: runId,
+      build: {
+        lane: overrides.build?.lane ?? 'mock-lane',
+        run_id: overrides.build?.run_id ?? runId,
+        git_sha: overrides.build?.git_sha ?? 'aggregate-test-git-sha',
+        fingerprint: overrides.build?.fingerprint ?? `${runId}:mock-lane:visual`,
+        started_at: overrides.build?.started_at ?? '2026-04-12T11:59:00.000Z',
+      },
+      scenarios,
+    },
+  );
+}
+
 function overwriteVisualReviewFixture(
   campaignRoot: string,
   scenarioId: string,
   content: string,
 ): void {
-  const visualStep = getCampaignStep('lane-visual');
-  const visualReviewCheck = visualStep.evidenceChecks.find((check) => check.kind === 'visual_baseline_reviews');
-  if (!visualReviewCheck) {
-    throw new Error('Missing visual review evidence check.');
-  }
+  const visualReviewCheck = getVisualReviewCheck();
   createFile(
     materializeCampaignPath(
       campaignRoot,
@@ -369,6 +485,7 @@ function writeSemanticUxTraceBundle(
     seed_data: story.seedData ?? [],
     required_trace_steps: requiredStepIds,
     required_screenshot_steps: requiredScreenshotStepIds,
+    trace_order_contract: resolveStoryTraceOrderContract(story),
     started_at: '2026-04-12T11:59:00.000Z',
     finished_at: '2026-04-12T12:00:00.000Z',
     outcome: 'pass',
@@ -539,6 +656,43 @@ describe('release-full aggregate gate', () => {
     expect(evidence.required_paths.some((record) => record.path.includes(campaignRoot))).toBe(true);
   });
 
+  it('keeps lane-visual authority manifest generation separate from review artifact generation', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-visual-fixture-ownership-'));
+    const visualReviewCheck = getVisualReviewCheck();
+    const visualRunManifestCheck = getVisualRunManifestCheck();
+    const manifestPath = getVisualRunManifestPath(campaignRoot);
+
+    createManifestEvidenceForCheck(campaignRoot, visualReviewCheck);
+
+    expect(existsSync(manifestPath)).toBe(false);
+    expect(
+      existsSync(
+        materializeCampaignPath(
+          campaignRoot,
+          visualReviewCheck.path.replaceAll('<visual-scenario-id>', 'desktop-auth-complete'),
+        ),
+      ),
+    ).toBe(true);
+
+    createManifestEvidenceForCheck(campaignRoot, visualRunManifestCheck);
+
+    expect(statSync(manifestPath).isFile()).toBe(true);
+    expect(statSync(dirname(manifestPath)).isDirectory()).toBe(true);
+  });
+
+  it('fails fast in aggregate test fixtures when a new evidence kind is unhandled', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-unhandled-evidence-kind-'));
+
+    expect(() => createManifestEvidenceForCheck(
+      campaignRoot,
+      {
+        id: 'future_contract_kind',
+        path: '<campaign-root>/future/contract-kind',
+        kind: 'future_contract_kind',
+      } as unknown as CurrentVerificationCampaignEvidenceCheck,
+    )).toThrow('Unhandled aggregate fixture evidence kind');
+  });
+
   it('passes when every required campaign step result and current manifest evidence check is present', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-pass-'));
     seedPassedCampaign(campaignRoot);
@@ -697,6 +851,81 @@ describe('release-full aggregate gate', () => {
       failure_class: 'contract_drift',
     });
     expect(terminalResult.summary).toContain('visual UX acceptance metadata');
+  });
+
+  it('hard fails when lane-visual evidence keeps review markdown but loses run-manifest.json', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-manifest-missing-'));
+    seedPassedCampaign(campaignRoot);
+    rmSync(
+      resolve(
+        campaignRoot,
+        'lane-visual',
+        'visual-baseline-reviews',
+        resolveCampaignRunId(campaignRoot),
+        'run-manifest.json',
+      ),
+      { force: true },
+    );
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'evidence_missing',
+    });
+    expect(terminalResult.summary).toContain('run-manifest.json');
+  });
+
+  it('hard fails when lane-visual run-manifest.json is polluted', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-manifest-polluted-'));
+    seedPassedCampaign(campaignRoot);
+    writeFileSync(
+      resolve(
+        campaignRoot,
+        'lane-visual',
+        'visual-baseline-reviews',
+        resolveCampaignRunId(campaignRoot),
+        'run-manifest.json',
+      ),
+      '{ polluted',
+    );
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('run-manifest.json');
+  });
+
+  it('hard fails when lane-visual run-manifest.json binds the visual evidence to a different build run', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-manifest-foreign-run-'));
+    seedPassedCampaign(campaignRoot);
+    writeVisualRunManifestFixture(campaignRoot, {
+      run_id: 'run-foreign-20260412-999',
+      build: {
+        run_id: 'run-foreign-20260412-999',
+        fingerprint: 'run-foreign-20260412-999:mock-lane:visual',
+      },
+    });
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('run-manifest.json');
   });
 
   it('fails when an automated visual pass artifact is copied into the UX acceptance slot', () => {

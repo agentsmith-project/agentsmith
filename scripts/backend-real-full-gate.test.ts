@@ -8,6 +8,7 @@ import {
   buildStoryFingerprint,
   buildStorySourceFingerprint,
   buildStoryStepMapFingerprint,
+  resolveStoryTraceOrderContract,
   type StoryDefinition,
   type StoryStepDefinition,
 } from '../e2e/story-contract';
@@ -111,6 +112,7 @@ function writeSemanticTraceBundle(root: string, options: Partial<{
     seed_data: story.seedData ?? [],
     required_trace_steps: traceSteps.map((step) => step.stepId),
     required_screenshot_steps: traceSteps.filter((step) => step.sceneId).map((step) => step.stepId),
+    trace_order_contract: resolveStoryTraceOrderContract(story),
     started_at: '2026-04-12T11:59:00.000Z',
     finished_at: '2026-04-12T12:00:00.000Z',
     outcome: 'pass',
@@ -187,6 +189,18 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('if [[ ! -f "${report_path}" ]]; then');
     expect(script).toContain('missing required recovery report');
     expect(script).not.toContain('if [[ -f "${report_path}" ]]');
+  });
+
+  it('continues through later resource-recovery envelopes after an earlier step fails and writes fallback reports when verify crashes', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+
+    expect(script).toContain('overall_status=0');
+    expect(script).toContain('if ! run_resource_recovery_step "file-library-real-smoke"');
+    expect(script).toContain('if ! run_resource_recovery_step "file-library-mount-sync-smoke"');
+    expect(script).toContain('fallback-report');
+    expect(script).not.toMatch(
+      /\nrun_resource_recovery_step "file-library-real-smoke" "\$\{RESOURCE_RECOVERY_SMOKE_JSON\}" "" \\/,
+    );
   });
 
   it('fails closed for mount truth probes instead of treating missing commands as not mounted', () => {

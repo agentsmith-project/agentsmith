@@ -533,6 +533,16 @@ export class AgentResourceService {
     return snapshot.latestConnection;
   }
 
+  async getSessionConnectionInfo(agentId: string, sessionId?: string): Promise<AgentConnectionState | null> {
+    const snapshot = await this.agentPresenceStore.getPresence(agentId);
+    if (!sessionId) {
+      return snapshot.latestConnection;
+    }
+    return snapshot.connections.find((connection) => connection.session_id === sessionId)
+      ?? snapshot.connections.find((connection) => connection.session_id === undefined)
+      ?? null;
+  }
+
   buildConnectionInfo(agent: Pick<AgentRecord, 'id' | 'mode' | 'config'>): AgentConnectionInfo {
     const wsBase = resolveConnectionWsBase(agent);
     return {

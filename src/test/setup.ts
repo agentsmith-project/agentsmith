@@ -2,9 +2,39 @@ import '@testing-library/jest-dom';
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 
-// Cleanup after each test
-afterEach(() => {
+async function drainCleanupMacrotasks() {
+  await Promise.resolve();
+
+  if (vi.isFakeTimers()) {
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    return;
+  }
+
+  const realmWindow =
+    typeof document !== 'undefined' ? document.defaultView : undefined;
+  const scheduleMacrotask =
+    realmWindow && typeof realmWindow.setTimeout === 'function'
+      ? realmWindow.setTimeout.bind(realmWindow)
+      : typeof window !== 'undefined' && typeof window.setTimeout === 'function'
+        ? window.setTimeout.bind(window)
+        : typeof globalThis.setTimeout === 'function'
+          ? globalThis.setTimeout.bind(globalThis)
+          : null;
+
+  if (!scheduleMacrotask) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    scheduleMacrotask(resolve, 0);
+  });
+}
+
+// Cleanup after each test and settle zero-delay unmount work like Radix FocusScope
+afterEach(async () => {
   cleanup();
+  await drainCleanupMacrotasks();
 });
 
 // ResizeObserver polyfill for Radix UI components

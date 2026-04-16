@@ -320,4 +320,14 @@ describe('internal-agent-pod-manager', () => {
     expect(deletePod).toHaveBeenCalledWith('ws_1', 'proj_1', 'task_1');
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
   });
+
+  it('maps remote-owned session authority to a distinct sandbox outcome instead of sandbox_startup_timeout', async () => {
+    const internalAgentPodManagerModule = await import('./internal-agent-pod-manager.js') as typeof import('./internal-agent-pod-manager.js') & {
+      mapRunnerSessionAuthorityToSandboxError?: (authority: string) => string | null;
+    };
+
+    expect(
+      internalAgentPodManagerModule.mapRunnerSessionAuthorityToSandboxError?.('remote_owned_not_local_dispatchable'),
+    ).toBe('sandbox_remote_owned');
+  });
 });

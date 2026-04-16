@@ -487,4 +487,14 @@ describe('task-route-handler workspace access', () => {
 
     expect(destroySpy).toHaveBeenCalledTimes(1);
   });
+
+  it('maps remote-owned runner authority to a distinct route error instead of task_runner_offline', async () => {
+    const taskRouteHandlerModule = await import('./task-route-handler.js') as typeof import('./task-route-handler.js') & {
+      mapRunnerSessionAuthorityToTaskRouteError?: (authority: string) => string | null;
+    };
+
+    expect(
+      taskRouteHandlerModule.mapRunnerSessionAuthorityToTaskRouteError?.('remote_owned_not_local_dispatchable'),
+    ).toBe('task_runner_remote_owned');
+  });
 });

@@ -131,11 +131,20 @@ describe('visual baseline support', () => {
   it('runs semantic assertions before visual screenshots and keeps workspace overview exact', async () => {
     const visualSpec = await readFile(path.resolve('e2e/visual.spec.ts'), 'utf-8');
     const semanticIndex = visualSpec.indexOf('expectVisualSemanticAssertions(page, scenario.semanticAssertions, scenario.scenarioId)');
-    const screenshotIndex = visualSpec.indexOf('toHaveScreenshot(entry.screenshot');
+    const helperIndex = visualSpec.indexOf('async function captureSnapshotBoundActualScreenshot');
+    const captureIndex = visualSpec.indexOf('const actualCapture = await captureSnapshotBoundActualScreenshot({');
+    const snapshotIndex = visualSpec.indexOf('._expectScreenshot({');
+    const writeCaptureIndex = visualSpec.indexOf('actualCapture,');
 
     expect(semanticIndex).toBeGreaterThan(-1);
-    expect(screenshotIndex).toBeGreaterThan(-1);
-    expect(semanticIndex).toBeLessThan(screenshotIndex);
+    expect(helperIndex).toBeGreaterThan(-1);
+    expect(captureIndex).toBeGreaterThan(-1);
+    expect(snapshotIndex).toBeGreaterThan(-1);
+    expect(writeCaptureIndex).toBeGreaterThan(-1);
+    expect(helperIndex).toBeLessThan(captureIndex);
+    expect(semanticIndex).toBeLessThan(captureIndex);
+    expect(snapshotIndex).toBeLessThan(writeCaptureIndex);
+    expect(visualSpec).not.toContain('toHaveScreenshot(entry.screenshot');
     expect(visualSpec).toMatch(/'workspace-overview':[\s\S]*screenshotOptions:[\s\S]*maxDiffPixelRatio: 0/);
     expect(visualSpec).toContain('scenario.semanticAssertions.requiredViewportTestIds.length > 0');
     expect(visualSpec).toContain('maxDiffPixelRatio: 0');
@@ -1059,7 +1068,16 @@ describe('visual baseline support', () => {
         fingerprint: 'fingerprint-001',
         started_at: '2026-04-12T11:59:00.000Z',
       },
+      coverage: {
+        scope: 'full_catalog',
+        expected_scenario_ids: expect.any(Array),
+        captured_scenario_ids: expect.any(Array),
+      },
     });
+    expect(manifest.coverage?.expected_scenario_ids).toEqual(
+      [...groupVisualBaselineCatalogByScenario().keys()].sort((left, right) => left.localeCompare(right)),
+    );
+    expect(manifest.coverage?.captured_scenario_ids).toEqual(manifest.coverage?.expected_scenario_ids);
 
     const scenario = manifest.scenarios?.find((entry) => entry.scenario_id === scenarioId);
     expect(scenario?.actual_url).toBe(scenarioRoute);
@@ -1121,9 +1139,21 @@ describe('visual baseline support', () => {
     const manifest = JSON.parse(
       readFileSync(path.join(outputRoot, runId, 'run-manifest.json'), 'utf8'),
     ) as {
+      coverage?: {
+        scope?: string;
+        expected_scenario_ids?: string[];
+        captured_scenario_ids?: string[];
+      };
       scenarios?: Array<{ scenario_id: string; screenshots?: Array<{ file_name: string }> }>;
     };
 
+    expect(manifest.coverage).toMatchObject({
+      scope: 'partial_catalog',
+      captured_scenario_ids: ['desktop-auth-complete'],
+    });
+    expect(manifest.coverage?.expected_scenario_ids).toEqual(
+      [...groupVisualBaselineCatalogByScenario().keys()].sort((left, right) => left.localeCompare(right)),
+    );
     expect(manifest.scenarios?.map((entry) => entry.scenario_id)).toEqual(['desktop-auth-complete']);
     expect(manifest.scenarios?.[0]?.screenshots).toEqual([
       expect.objectContaining({ file_name: 'desktop-auth-complete-light.png' }),

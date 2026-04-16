@@ -213,19 +213,20 @@ if (!gateDefault || !laneVisual || !testVisual || !testBackendRealCore || !backe
   failures.push('current gate manifest is missing required default/visual/backend-real/rehearsal definitions');
 }
 
-requireMatch(defaultGateScript, /npm run contracts:check[\s\S]*npm run contracts:check-openapi[\s\S]*npm run openapi:check-generated[\s\S]*npx next typegen \.[\s\S]*npx tsc --noEmit/, 'default gate must run shared repo preflight exactly once before domain gates', failures);
+requireMatch(defaultGateScript, /npm run contracts:check[\s\S]*npm run contracts:check-openapi[\s\S]*npm run openapi:check-generated[\s\S]*npm run lint/, 'default gate must run shared repo preflight and lint before domain gates', failures);
 for (const [command, pattern] of [
   ['npm run contracts:check', /npm run contracts:check(?!-openapi)/g],
   ['npm run contracts:check-openapi', /npm run contracts:check-openapi/g],
   ['npm run openapi:check-generated', /npm run openapi:check-generated/g],
-  ['npx next typegen .', /npx next typegen \./g],
-  ['npx tsc --noEmit', /npx tsc --noEmit/g],
+  ['npm run lint', /npm run lint/g],
 ] as const) {
   const count = countMatches(defaultGateScript, pattern);
   if (count !== 1) {
     failures.push(`default gate must run shared preflight command exactly once: ${command} (found ${count})`);
   }
 }
+requireMatch(defaultGateScript, /next_generated_root_run_locked_type_state_gate_sequence/, 'default gate must run typegen, tsc, and build through the shared locked type-state helper', failures);
+requireMatch(defaultGateScript, /npx next typegen \.[\s\S]*npx tsc --noEmit[\s\S]*npm run build/, 'default gate locked type-state helper callback must keep typegen -> tsc -> build order', failures);
 requireMatch(defaultGateScript, /workspace-project-default-gate\.sh --skip-shared-preflight/, 'default gate must delegate workspace-project domain checks with shared preflight skipped', failures);
 requireMatch(defaultGateScript, /governance-default-gate\.sh --skip-shared-preflight/, 'default gate must delegate governance domain checks with shared preflight skipped', failures);
 requireMatch(workspaceDefaultGate, /--skip-shared-preflight/, 'workspace-project default gate must expose --skip-shared-preflight for gate:default dedupe', failures);

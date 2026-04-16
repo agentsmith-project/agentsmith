@@ -57,6 +57,60 @@ describe('project-resource-policy-enforcer', () => {
     });
   });
 
+  it('resets endpoint requests_per_minute after the minute bucket changes', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const policy: ProjectResourcePolicyRecord = {
+      resource_type: 'endpoint',
+      resource_id: 'ep_bucket_boundary',
+      access_mode: 'allow_all_members',
+      allowed_subjects: [],
+      rate_limits: {
+        rules: [{ key: 'endpoint.requests_per_minute', value: 1 }],
+      },
+    };
+    const first = await checkProjectEndpointRateLimitsForUser({
+      cache,
+      docStore,
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      resourceId: 'ep_bucket_boundary',
+      userId: 'user_1',
+      policy,
+      nowMs: Date.UTC(2026, 1, 26, 12, 0, 59, 500),
+    });
+    const second = await checkProjectEndpointRateLimitsForUser({
+      cache,
+      docStore,
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      resourceId: 'ep_bucket_boundary',
+      userId: 'user_1',
+      policy,
+      nowMs: Date.UTC(2026, 1, 26, 12, 1, 0, 100),
+    });
+    expect(first).toMatchObject({
+      allowed: true,
+      limits: expect.arrayContaining([
+        expect.objectContaining({
+          key: 'endpoint.requests_per_minute',
+          current_requests: 1,
+          effective_limit: 1,
+        }),
+      ]),
+    });
+    expect(second).toMatchObject({
+      allowed: true,
+      limits: expect.arrayContaining([
+        expect.objectContaining({
+          key: 'endpoint.requests_per_minute',
+          current_requests: 1,
+          effective_limit: 1,
+        }),
+      ]),
+    });
+  });
+
   it('supports subject-level override via group rule', async () => {
     __resetProjectResourcePolicyRateCountersForTests();
     const docStore = new InMemoryJsonDocStore();

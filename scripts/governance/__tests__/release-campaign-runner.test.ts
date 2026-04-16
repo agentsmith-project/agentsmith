@@ -202,7 +202,11 @@ exit 0
       expect(defaultGateScript).toContain('DEFAULT_GATE_PROFILE');
       expect(defaultGateScript).toContain('campaign_after_gate_fast');
       expect(defaultGateScript).toContain('run_cmd "npm run contracts:check"');
+      expect(defaultGateScript).toContain('run_cmd "npm run lint"');
+      expect(defaultGateScript).toContain('next_generated_root_run_locked_type_state_gate_sequence');
+      expect(defaultGateScript).toContain('run_cmd "npx next typegen ."');
       expect(defaultGateScript).toContain('run_cmd "npx tsc --noEmit"');
+      expect(defaultGateScript).toContain('run_cmd "npm run build"');
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(fakeBin, { recursive: true, force: true });

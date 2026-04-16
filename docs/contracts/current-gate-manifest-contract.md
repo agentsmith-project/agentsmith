@@ -63,6 +63,7 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - current schema: `visual_baseline_run_manifest/v2`
 - each screenshot entry must bind `actual_url`, `actual_relpath`, `actual_sha256`, and `baseline_sha256`
 - `actual_url` uses canonical `pathname + search`
+- standalone `lane:visual` must still reject partial catalog evidence; campaign context does not change its full-visual ownership semantics
 - wrappers and aggregate verifiers may copy or validate this manifest, but must not synthesize a replacement manifest from committed baselines or current checkout metadata
 
 4. `test:backend-real:core` and `lane:backend-real:core`
@@ -79,6 +80,11 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - required producer-owned release trace root contents:
   - `ux-trace-index.json` at the trace root
   - `contract-snapshot.json` inside every bundle directory
+- standalone release trace validation and release aggregate must bind bundle acceptance to the current `gate-release` campaign topology membership, not just “any self-consistent backend-real bundle”
+- current authoritative release membership:
+  - `suite = integration-release-user-story`
+  - `story_id = release-user-story-end-to-end`
+  - `scenario_id = integration-release-user-story`
 - aggregate verification must consume those producer snapshots and must not rebuild trace truth from current repo story files
 
 6. `lane:demo-rehearsal` and `lane:cluster-rehearsal`
@@ -127,6 +133,7 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
   - `<campaign-root>/gate-release/backend-real-visual/review.md`
   - `<campaign-root>/gate-release/backend-real-visual/ux-traces`
 - official release trace root must include `ux-trace-index.json`, and each bundle under it must include `contract-snapshot.json`
+- for release-tier evidence, bundle membership is authoritative only through the current `gate-release` topology declaration in `scripts/governance/current-gate-manifest.ts`
 
 ## 4. Missing-evidence semantics
 

@@ -28,8 +28,20 @@ run_cmd() {
   (cd "${ROOT_DIR}" && eval "$*")
 }
 
+run_default_gate_typegen() {
+  run_cmd "npx next typegen ."
+}
+
+run_default_gate_typecheck() {
+  run_cmd "npx tsc --noEmit"
+}
+
+run_default_gate_build() {
+  run_cmd "npm run build"
+}
+
 case "${DEFAULT_GATE_PROFILE}" in
-  standalone|campaign_after_gate_fast)
+  standalone|fast|campaign_after_gate_fast)
     ;;
   *)
     echo "[default-gate] unknown DEFAULT_GATE_PROFILE: ${DEFAULT_GATE_PROFILE}" >&2
@@ -37,17 +49,27 @@ case "${DEFAULT_GATE_PROFILE}" in
     ;;
 esac
 
-next_generated_root_prepare_for_validation
+next_generated_root_with_source_contract_lock default_gate_shared_preflight \
+  next_generated_root_prepare_for_validation
 
 if [[ "${DEFAULT_GATE_PROFILE}" != "campaign_after_gate_fast" ]]; then
   run_cmd "npm run contracts:check"
 fi
 run_cmd "npm run contracts:check-openapi"
 run_cmd "npm run openapi:check-generated"
-run_cmd "npx next typegen ."
-if [[ "${DEFAULT_GATE_PROFILE}" != "campaign_after_gate_fast" ]]; then
-  run_cmd "npx tsc --noEmit"
+run_cmd "npm run lint"
+next_generated_root_run_locked_type_state_gate_sequence \
+  default_gate_type_state \
+  run_default_gate_typegen \
+  run_default_gate_typecheck \
+  run_default_gate_build
+
+if [[ "${DEFAULT_GATE_PROFILE}" == "fast" ]]; then
+  run_cmd "npm run test:e2e:lane:mock:smoke"
+  info "fast engineering gate passed"
+  exit 0
 fi
+
 run_cmd "bash scripts/workspace-project-default-gate.sh --skip-shared-preflight"
 run_cmd "bash scripts/governance-default-gate.sh --skip-shared-preflight"
 

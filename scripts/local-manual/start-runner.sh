@@ -4,12 +4,36 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_local_manual_env
 RUNNER_LAUNCH_STARTED=0
+RUNNER_LAUNCH_PID=""
+RUNNER_LAUNCH_OWNER_TOKEN=""
+
+rollback_untracked_runner_launch() {
+  local pid="${RUNNER_LAUNCH_PID:-}"
+  [[ -n "${pid}" ]] || return 0
+
+  if declare -F local_runtime_stop_owned_process_tree >/dev/null 2>&1; then
+    LOCAL_RUNTIME_OWNER_TOKEN="${RUNNER_LAUNCH_OWNER_TOKEN:-}" \
+      local_runtime_stop_owned_process_tree "${pid}" runner "0" || true
+  fi
+
+  rm -f \
+    "${RUNNER_PID_FILE}" \
+    "${RUNNER_READY_FILE}" \
+    "${RUNNER_HEALTH_FILE}" \
+    "${RUNNER_HEALTH_MONITOR_PID_FILE}" \
+    "${RUNNER_OWNER_STATE_FILE}"
+}
 
 cleanup_on_exit() {
   local exit_code="${1:-0}"
-  if [[ "${exit_code}" != "0" && "${RUNNER_LAUNCH_STARTED}" == "1" ]]; then
-    stop_local_manual_runner_owner_aware rollback_launch || true
+  if [[ "${exit_code}" == "0" ]]; then
+    return 0
   fi
+  if [[ "${RUNNER_LAUNCH_STARTED}" == "1" ]]; then
+    stop_local_manual_runner_owner_aware rollback_launch || true
+    return 0
+  fi
+  rollback_untracked_runner_launch || true
 }
 trap 'cleanup_on_exit $?' EXIT
 
@@ -50,17 +74,29 @@ if ! stop_local_manual_runner_owner_aware replace_runner; then
   exit 1
 fi
 rm -f "${RUNNER_READY_FILE}"
-rm -f "${RUNNER_HEALTH_FILE}" "${RUNNER_HEALTH_MONITOR_PID_FILE}"
+rm -f "${RUNNER_HEALTH_FILE}" "${RUNNER_HEALTH_MONITOR_PID_FILE}" "${RUNNER_OWNER_STATE_FILE}"
 rm -f "${RUNNER_LOG}"
 
-launch_detached "${RUNNER_PID_FILE}" "${RUNNER_LOG}" "
+if ! declare -F local_runtime_start_owned_service >/dev/null 2>&1; then
+  err "local runtime ownership helpers are unavailable; refusing to launch an untracked runner"
+  exit 1
+fi
+
+RUNNER_OWNER_TOKEN="$(local_manual_resolve_runner_owner_token)"
+export LOCAL_RUNTIME_OWNER_TOKEN="${RUNNER_OWNER_TOKEN}"
+export LOCAL_RUNTIME_LINE_KIND="${LOCAL_RUNTIME_LINE_KIND:-local_manual}"
+runner_pid="$(local_runtime_start_owned_service runner "0" "${RUNNER_LOG}" bash -lc "
   cd '${ROOT_DIR}' && \
   export MBOS_RUNNER_MODE='${MBOS_RUNNER_MODE:-host_external}' \
     MBOS_AGENT_RUNNER_DEBUG='${MBOS_AGENT_RUNNER_DEBUG:-1}' \
     MBOS_AGENT_TASK_TIMEOUT_SEC='${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}' \
     MBOS_AGENT_CODEX_YOLO='${MBOS_AGENT_CODEX_YOLO:-1}' && \
   exec make notebook-agent-runner
-"
+")"
+RUNNER_LAUNCH_PID="${runner_pid}"
+RUNNER_LAUNCH_OWNER_TOKEN="${RUNNER_OWNER_TOKEN}"
+printf '%s\n' "${runner_pid}" > "${RUNNER_PID_FILE}"
+local_manual_write_runner_owner_state "${RUNNER_OWNER_STATE_FILE}" "${runner_pid}" "${RUNNER_OWNER_TOKEN}"
 RUNNER_LAUNCH_STARTED=1
 start_runner_health_monitor
 wait_runner_connected 60

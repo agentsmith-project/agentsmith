@@ -24,6 +24,11 @@ export type CurrentGateBackendRealPolicy = 'none' | 'optional' | 'required';
 export type CurrentGateRequirement = 'default' | 'release' | 'visual';
 export type CurrentGateStoryEvidencePolicy = 'none' | 'required';
 export type CurrentGateStoryEvidenceKind = 'visual_scene_catalog' | 'ux_trace_bundle';
+export type CurrentGateUxTraceExpectedMembership = {
+  suite: string;
+  storyId: string;
+  scenarioId?: string;
+};
 export type CurrentGateEvidenceArtifactKind =
   | 'file'
   | 'directory'
@@ -53,6 +58,7 @@ export interface CurrentGateEvidenceArtifact {
   kind: CurrentGateEvidenceArtifactKind;
   fileName?: string;
   minCount?: number;
+  expectedMembership?: readonly CurrentGateUxTraceExpectedMembership[];
 }
 
 export interface CurrentGateDefinition {
@@ -143,6 +149,14 @@ function npxCommandTarget(command: string, args: readonly string[] = []): Curren
   };
 }
 
+export const CURRENT_RELEASE_BACKEND_REAL_UX_TRACE_MEMBERSHIP = [
+  {
+    suite: 'integration-release-user-story',
+    storyId: 'release-user-story-end-to-end',
+    scenarioId: 'integration-release-user-story',
+  },
+] as const satisfies readonly CurrentGateUxTraceExpectedMembership[];
+
 export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
   laneVisual: [
     {
@@ -187,7 +201,8 @@ export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
       path: '<campaign-root>/gate-release/backend-real-visual/ux-traces',
       kind: 'recursive_file',
       fileName: 'review.md',
-      minCount: 1,
+      minCount: CURRENT_RELEASE_BACKEND_REAL_UX_TRACE_MEMBERSHIP.length,
+      expectedMembership: CURRENT_RELEASE_BACKEND_REAL_UX_TRACE_MEMBERSHIP,
     },
   ],
   laneDemoRehearsal: [
@@ -338,12 +353,8 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
   defineCurrentGate({
     id: 'gate-fast',
     npmScript: 'gate:fast',
-    command: 'npm run contracts:check && npx tsc --noEmit && npm run test:e2e:lane:mock:smoke',
-    executionTargets: [
-      npmScriptTarget('contracts:check'),
-      npxCommandTarget('tsc', ['--noEmit']),
-      npmScriptTarget('test:e2e:lane:mock:smoke'),
-    ],
+    command: 'DEFAULT_GATE_PROFILE=fast bash scripts/default-gate.sh',
+    executionTargets: [shellScriptTarget('scripts/default-gate.sh')],
     description: 'run the fast engineering gate',
     kind: 'gate',
     visualPolicy: 'none',
@@ -520,4 +531,12 @@ export function findCurrentGateDefinition(npmScript: string): CurrentGateDefinit
 
 export function findCurrentGateDefinitionById(id: string): CurrentGateDefinition | undefined {
   return CURRENT_GATE_MANIFEST.find((definition) => definition.id === id);
+}
+
+export function findCurrentReleaseCampaignEvidenceArtifact(
+  key: CurrentReleaseCampaignEvidenceTopologyKey,
+  artifactId: string,
+): CurrentGateEvidenceArtifact | undefined {
+  return CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY[key]
+    .find((artifact) => artifact.id === artifactId);
 }

@@ -84,7 +84,7 @@
     "test:demo-rendered-env": "bash scripts/demo-deploy/check-rendered-env.sh",
     "test:cluster-rendered-env": "bash scripts/cluster-deploy/check-rendered-env.sh",
     "test:client-public-runtime": "bash scripts/check-client-public-runtime.sh",
-    "gate:fast": "npm run contracts:check && npx tsc --noEmit && npm run test:e2e:lane:mock:smoke",
+    "gate:fast": "DEFAULT_GATE_PROFILE=fast bash scripts/default-gate.sh",
     "gate:default": "bash scripts/default-gate.sh",
     "gate:release": "npm run lane:backend-real:release",
     "gate:release:full": "bash scripts/release-full-aggregate-gate.sh",

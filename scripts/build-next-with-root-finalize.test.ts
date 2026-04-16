@@ -68,4 +68,54 @@ ${rootGeneratedNextEnv}EOF_NEXT_ENV
       stdio: 'pipe',
     })).not.toThrow();
   });
+
+  it('does not self-deadlock when the build wrapper runs inside the locked type-state gate sequence', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'build-next-root-finalize-locked-'));
+    writeFixtureRoot(tempRoot);
+
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const wrapper = path.join(process.cwd(), 'scripts/build-next-with-root-finalize.sh');
+    const stateDir = path.join(tempRoot, 'artifacts/runtime/next-root-contract');
+
+    const output = execFileSync(
+      'bash',
+      ['-lc', `
+        set -euo pipefail
+        source "${helper}"
+        export NEXT_GENERATED_ROOT_STATE_DIR="${stateDir}"
+        typegen_callback() {
+          mkdir -p "${tempRoot}/.next/types"
+          printf 'declare module "next";\\n' > "${tempRoot}/.next/types/routes.d.ts"
+        }
+        tsc_callback() {
+          :
+        }
+        build_callback() {
+          NEXT_GENERATED_ROOT_BUILD_ROOT="${tempRoot}" \
+          NEXT_GENERATED_ROOT_BUILD_COMMAND='
+            mkdir -p .next/types
+            cat > next-env.d.ts <<'"'"'EOF_NEXT_ENV'"'"'
+${rootGeneratedNextEnv}EOF_NEXT_ENV
+            printf '"'"'"'"'"'"'"'"'declare module "next";\\n'"'"'"'"'"'"'"'"' > .next/types/routes.d.ts
+          ' \
+          bash "${wrapper}"
+          printf 'build_wrapper_completed\\n'
+        }
+        next_generated_root_run_locked_type_state_gate_sequence gate typegen_callback tsc_callback build_callback
+      `],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          ROOT_DIR: tempRoot,
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+        timeout: 4_000,
+      },
+    );
+
+    expect(output).toContain('build_wrapper_completed');
+    expect(readFileSync(path.join(tempRoot, 'next-env.d.ts'), 'utf8')).toBe(canonicalNextEnv);
+  });
 });

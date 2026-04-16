@@ -329,6 +329,7 @@ function writeVisualRunManifestFixture(
   campaignRoot: string,
   overrides: Partial<{
     run_id: string;
+    included_scenario_ids: string[];
     build: Partial<{
       lane: string;
       run_id: string;
@@ -350,11 +351,22 @@ function writeVisualRunManifestFixture(
         }>;
       }>
     >;
+    coverage: Partial<{
+      scope: string;
+      expected_scenario_ids: string[];
+      captured_scenario_ids: string[];
+    }>;
   }> = {},
 ): void {
   const runId = overrides.run_id ?? resolveCampaignRunId(campaignRoot);
+  const includedScenarioIds = overrides.included_scenario_ids
+    ? new Set(overrides.included_scenario_ids)
+    : null;
+  const allScenarioIds = [...groupVisualBaselineCatalogByScenario().keys()]
+    .sort((left, right) => left.localeCompare(right));
   const scenarios = [...groupVisualBaselineCatalogByScenario().values()]
     .sort((left, right) => left.scenarioId.localeCompare(right.scenarioId))
+    .filter((scenario) => !includedScenarioIds || includedScenarioIds.has(scenario.scenarioId))
     .map((scenario) => {
       const evidence = buildVisualBaselineScenarioEvidence(scenario);
       const scenarioOverride = overrides.scenarioOverrides?.[scenario.scenarioId];
@@ -368,9 +380,10 @@ function writeVisualRunManifestFixture(
             actual_relpath: `captured/${scenario.scenarioId}/${entry.fileName}`,
             actual_sha256: `sha256:${entry.screenshotSha256}`,
             baseline_sha256: `sha256:${entry.baselineSha256}`,
-          })),
+        })),
       };
     });
+  const capturedScenarioIds = scenarios.map((scenario) => scenario.scenario_id);
 
   for (const scenario of scenarios) {
     for (const screenshot of scenario.screenshots) {
@@ -398,6 +411,11 @@ function writeVisualRunManifestFixture(
         git_sha: overrides.build?.git_sha ?? 'aggregate-test-git-sha',
         fingerprint: overrides.build?.fingerprint ?? `${runId}:mock-lane:visual`,
         started_at: overrides.build?.started_at ?? '2026-04-12T11:59:00.000Z',
+      },
+      coverage: {
+        scope: overrides.coverage?.scope ?? 'full_catalog',
+        expected_scenario_ids: overrides.coverage?.expected_scenario_ids ?? allScenarioIds,
+        captured_scenario_ids: overrides.coverage?.captured_scenario_ids ?? capturedScenarioIds,
       },
       scenarios,
     },
@@ -435,6 +453,9 @@ type SemanticUxTraceFixtureOptions = Partial<{
   omitRequiredStep: string;
   omitRequiredScreenshotStep: string;
   reviewVerdict: UxTraceReviewVerdict;
+  suite: string;
+  scenarioId: string;
+  storyId: string;
 }>;
 
 function stepTargetMatches(expected: string, actual: string, mode: StoryTargetMatch = 'exact'): boolean {
@@ -493,11 +514,14 @@ function writeSemanticUxTraceBundle(
   const binding = buildTraceStoryBinding(story);
   const traceRoot = getGateReleaseUxTraceRoot(campaignRoot);
   const runId = 'release-trace-run';
+  const suite = options.suite ?? 'integration-release-user-story';
+  const storyId = options.storyId ?? story.storyId;
+  const scenarioId = options.scenarioId ?? 'integration-release-user-story';
   const bundleDir = resolveUxTraceBundleDir({
     outputRoot: traceRoot,
     lane: 'backend-real',
-    suite: 'integration-release-user-story',
-    storyId: story.storyId,
+    suite,
+    storyId,
     runId,
   });
   const requiredSteps = requiredTraceSteps(story);
@@ -532,16 +556,16 @@ function writeSemanticUxTraceBundle(
     });
   const manifest: UxTraceBundleManifest = {
     version: 1,
-    story_id: story.storyId,
+    story_id: storyId,
     story_source: binding.storySource,
     story_source_fingerprint: buildStorySourceFingerprint(readFileSync(resolve(sourceFile), 'utf8')),
     story_fingerprint: storyFingerprint,
     step_map_fingerprint: stepMapFingerprint,
-    scenario_id: 'integration-release-user-story',
+    scenario_id: scenarioId,
     title: story.title,
     actor: story.actor,
     lane: 'backend-real',
-    suite: 'integration-release-user-story',
+    suite,
     route: story.entryRoute,
     spec_file: 'e2e/integration-release-user-story.spec.ts',
     browser: 'chromium',
@@ -605,10 +629,10 @@ function writeSemanticUxTraceBundle(
       story_id: manifest.story_id,
       scenario_id: manifest.scenario_id,
       run_id: manifest.run_id,
-      bundle_relpath: 'backend-real/integration-release-user-story/release-user-story-end-to-end/release-trace-run',
-      review_relpath: 'backend-real/integration-release-user-story/release-user-story-end-to-end/release-trace-run/review.md',
-      manifest_relpath: 'backend-real/integration-release-user-story/release-user-story-end-to-end/release-trace-run/manifest.json',
-      contract_snapshot_relpath: 'backend-real/integration-release-user-story/release-user-story-end-to-end/release-trace-run/contract-snapshot.json',
+      bundle_relpath: `backend-real/${suite}/${storyId}/${runId}`,
+      review_relpath: `backend-real/${suite}/${storyId}/${runId}/review.md`,
+      manifest_relpath: `backend-real/${suite}/${storyId}/${runId}/manifest.json`,
+      contract_snapshot_relpath: `backend-real/${suite}/${storyId}/${runId}/contract-snapshot.json`,
     }],
   });
 
@@ -914,6 +938,29 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('project-overview');
   });
 
+  it('fails when backend-real UX trace evidence is semantically self-consistent but outside the current release story membership', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-trace-membership-'));
+    seedPassedCampaign(campaignRoot);
+    replaceGateReleaseUxTraceWithSemanticBundle(campaignRoot, {
+      suite: 'integration-governance-member-workflow-continuity',
+      scenarioId: 'integration-governance-member-workflow-continuity',
+      storyId: 'governance-member-workflow-continuity',
+    });
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'evidence_missing',
+    });
+    expect(terminalResult.summary).toContain('integration-release-user-story');
+    expect(terminalResult.summary).toContain('release-user-story-end-to-end');
+  });
+
   it.each(['needs_work', 'blocked'] as const)(
     'fails with product regression when backend-real UX trace review verdict is %s',
     (reviewVerdict) => {
@@ -1075,6 +1122,30 @@ describe('release-full aggregate gate', () => {
       failure_class: 'contract_drift',
     });
     expect(terminalResult.summary).toContain('actual_url drift');
+  });
+
+  it('hard fails when lane-visual run-manifest.json declares partial catalog coverage for a release-grade run', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-partial-coverage-'));
+    seedPassedCampaign(campaignRoot);
+    writeVisualRunManifestFixture(campaignRoot, {
+      included_scenario_ids: ['desktop-auth-complete'],
+      coverage: {
+        scope: 'partial_catalog',
+        expected_scenario_ids: ['access-guide', 'desktop-auth-complete'],
+        captured_scenario_ids: ['desktop-auth-complete'],
+      },
+    });
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'evidence_missing',
+    });
+    expect(terminalResult.summary).toContain('full catalog');
   });
 
   it('fails when backend-real UX trace evidence loses ux-trace-index.json even if review markdown still exists', () => {

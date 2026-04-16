@@ -6,6 +6,7 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { isMatchingRunnerSpec, type AgentRunnerSpec } from '@mbos/agent-runner';
 import type { AgentResourceService } from './agent-resource-service.js';
 import { resolveRequiredConfiguredPublicApiBase } from './agent-execution-api-base.js';
+import { AGENT_CONNECTION_TTL_MS } from './agent-presence-store.js';
 import {
   readAgentExecutionPreferences,
   resolveAgentInteractionKind,
@@ -109,6 +110,8 @@ interface AgentSocketState {
   presenceRegistered: boolean;
   releasePromise?: Promise<void>;
   refreshChain?: Promise<void>;
+  readyChain?: Promise<void>;
+  heartbeatInFlight?: Promise<void>;
 }
 
 interface AsyncQueue<T> {
@@ -325,6 +328,8 @@ const DEFAULT_AGENT_TERMINAL_MAX_RUNTIME_MS = 24 * 60 * 60_000;
 const SOCKET_PRESENCE_RELEASE_MAX_ATTEMPTS = 6;
 const SOCKET_PRESENCE_RELEASE_BACKOFF_BASE_MS = 20;
 const SOCKET_PRESENCE_RELEASE_BACKOFF_MAX_MS = 250;
+const SOCKET_PRESENCE_RELEASE_REPAIR_WINDOW_MS = AGENT_CONNECTION_TTL_MS;
+const SOCKET_HANDOFF_SETTLE_MS = 20;
 
 function resolvePositiveMs(value: number | undefined, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return fallback;
@@ -653,7 +658,15 @@ export class AgentExecutionService {
 
   private startHeartbeat(socketKey: string, socket: AgentSocketState): void {
     socket.heartbeatTimer = setInterval(() => {
-      void this.runHeartbeatTick(socketKey, socket);
+      if (socket.heartbeatInFlight) {
+        return;
+      }
+      const tick = this.trackBackgroundTask(this.runHeartbeatTick(socketKey, socket).finally(() => {
+        if (socket.heartbeatInFlight === tick) {
+          socket.heartbeatInFlight = undefined;
+        }
+      }));
+      socket.heartbeatInFlight = tick;
     }, this.options.heartbeatIntervalMs);
     socket.heartbeatTimer.unref?.();
   }
@@ -662,6 +675,7 @@ export class AgentExecutionService {
     if (!socket.heartbeatTimer) return;
     clearInterval(socket.heartbeatTimer);
     socket.heartbeatTimer = undefined;
+    socket.heartbeatInFlight = undefined;
   }
 
   private trackBackgroundTask<T>(task: Promise<T>): Promise<T> {
@@ -697,7 +711,8 @@ export class AgentExecutionService {
   }
 
   private async releaseSocketPresenceWithRetry(socket: AgentSocketState): Promise<void> {
-    for (let attempt = 1; attempt <= SOCKET_PRESENCE_RELEASE_MAX_ATTEMPTS; attempt += 1) {
+    const deadline = Date.now() + SOCKET_PRESENCE_RELEASE_REPAIR_WINDOW_MS;
+    for (let attempt = 1; ; attempt += 1) {
       try {
         await this.agentResourceService.releaseAgentConnection({
           workspaceId: socket.workspaceId,
@@ -708,7 +723,15 @@ export class AgentExecutionService {
         socket.presenceRegistered = false;
         return;
       } catch (error) {
-        if (attempt >= SOCKET_PRESENCE_RELEASE_MAX_ATTEMPTS) {
+        const stale = await this.agentResourceService.isAgentConnectionCurrent(
+          socket.agentId,
+          socket.connectionId,
+        ).then((isCurrent) => !isCurrent).catch(() => false);
+        if (stale) {
+          socket.presenceRegistered = false;
+          return;
+        }
+        if (attempt >= SOCKET_PRESENCE_RELEASE_MAX_ATTEMPTS && Date.now() >= deadline) {
           debugExecution(
             `release presence failed agent_id=${socket.agentId} connection_id=${socket.connectionId} attempts=${attempt} error=${error instanceof Error ? error.message : String(error)}`,
           );
@@ -723,6 +746,58 @@ export class AgentExecutionService {
         );
         await delay(backoffMs);
       }
+    }
+  }
+
+  private async waitForSocketRegistrationTurn(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+  }
+
+  private async waitForSocketHandoffSettle(): Promise<void> {
+    await delay(SOCKET_HANDOFF_SETTLE_MS);
+  }
+
+  private async restorePreviousSocketAuthority(args: {
+    socketKey: string;
+    socket: AgentSocketState;
+    previousSocket?: AgentSocketState;
+  }): Promise<void> {
+    const previousSocket = args.previousSocket;
+    if (!previousSocket || previousSocket.lifecyclePhase === 'closed' || !this.isSocketOpen(previousSocket)) {
+      await this.scheduleSocketPresenceRelease(args.socket);
+      return;
+    }
+
+    try {
+      await this.agentResourceService.registerAgentConnection({
+        agentId: previousSocket.agentId,
+        workspaceId: previousSocket.workspaceId,
+        projectId: previousSocket.projectId,
+        connectionId: previousSocket.connectionId,
+        socketKey: previousSocket.socketKey,
+        apiInstanceId: previousSocket.apiInstanceId,
+        ...(previousSocket.sessionId ? { sessionId: previousSocket.sessionId } : {}),
+        protocolVersion: '1.0',
+        connectedAt: previousSocket.connectedAt,
+        lastPongAt: previousSocket.lastPongAt,
+      });
+      args.socket.presenceRegistered = false;
+      previousSocket.presenceRegistered = true;
+      previousSocket.lifecyclePhase = 'active';
+      this.socketsByKey.set(args.socketKey, previousSocket);
+    } catch (error) {
+      debugExecution(
+        `rollback restore failed agent_id=${previousSocket.agentId} connection_id=${previousSocket.connectionId} error=${error instanceof Error ? error.message : String(error)}`,
+      );
+      void this.scheduleSocketPresenceRelease(args.socket);
+      this.releaseSocketState(previousSocket, {
+        errorCode: 'AGENT_CONNECTION_AUTHORITY_FAILED',
+        errorMessage: 'agent_connection_authority_failed',
+        closeCode: 1011,
+        closeReason: 'agent_connection_authority_failed',
+      });
     }
   }
 
@@ -848,18 +923,16 @@ export class AgentExecutionService {
       if (!input.socket.terminalBySessionId.has(input.terminalSessionId)) {
         return;
       }
-      if (input.socket.ws.readyState !== input.socket.ws.OPEN) {
+      const sent = this.trySendSocketFrame(input.socket, {
+        type: input.type,
+        session_id: input.sessionId,
+        terminal_session_id: input.terminalSessionId,
+        timestamp: new Date().toISOString(),
+        payload: input.payload,
+      }, 'agent_dispatch_send_failed');
+      if (!sent) {
         return;
       }
-      input.socket.ws.send(
-        JSON.stringify({
-          type: input.type,
-          session_id: input.sessionId,
-          terminal_session_id: input.terminalSessionId,
-          timestamp: new Date().toISOString(),
-          payload: input.payload,
-        }),
-      );
     }).catch((error) => {
       debugExecution(
         `terminal control authority failed agent_id=${input.socket.agentId} connection_id=${input.socket.connectionId} terminal_session=${input.terminalSessionId} error=${error instanceof Error ? error.message : String(error)}`,
@@ -923,25 +996,12 @@ export class AgentExecutionService {
       return;
     }
     if (!this.isSocketOpen(args.socket)) {
-      if (args.previousSocket && args.previousSocket.lifecyclePhase !== 'closed' && this.isSocketOpen(args.previousSocket)) {
-        await this.agentResourceService.registerAgentConnection({
-          agentId: args.previousSocket.agentId,
-          workspaceId: args.previousSocket.workspaceId,
-          projectId: args.previousSocket.projectId,
-          connectionId: args.previousSocket.connectionId,
-          socketKey: args.previousSocket.socketKey,
-          apiInstanceId: args.previousSocket.apiInstanceId,
-          ...(args.previousSocket.sessionId ? { sessionId: args.previousSocket.sessionId } : {}),
-          protocolVersion: '1.0',
-          connectedAt: args.previousSocket.connectedAt,
-          lastPongAt: args.previousSocket.lastPongAt,
-        }).catch(() => undefined);
-        args.previousSocket.presenceRegistered = true;
-        args.previousSocket.lifecyclePhase = 'active';
-        this.socketsByKey.set(args.socketKey, args.previousSocket);
-      } else {
-        await this.scheduleSocketPresenceRelease(args.socket);
-      }
+      await this.restorePreviousSocketAuthority(args);
+      return;
+    }
+    await this.waitForSocketRegistrationTurn();
+    if (args.socket.lifecyclePhase !== 'registering' || !this.isSocketOpen(args.socket)) {
+      await this.restorePreviousSocketAuthority(args);
       return;
     }
     args.socket.lifecyclePhase = 'active';
@@ -949,13 +1009,20 @@ export class AgentExecutionService {
     this.startHeartbeat(args.socketKey, args.socket);
     if (args.previousSocket && args.previousSocket !== args.socket && args.previousSocket.lifecyclePhase !== 'closed') {
       args.previousSocket.lifecyclePhase = 'superseded';
-      this.releaseSocketState(args.previousSocket, {
-        errorCode: 'AGENT_DISCONNECTED',
-        errorMessage: 'agent_reconnected',
-        closeCode: 1012,
-        closeReason: 'agent_replaced',
-        skipPresenceUpdate: true,
-      });
+      await this.waitForSocketHandoffSettle();
+      if (args.socket.lifecyclePhase !== 'active' || !this.isSocketOpen(args.socket)) {
+        await this.restorePreviousSocketAuthority(args);
+        return;
+      }
+      if (args.previousSocket.lifecyclePhase === 'superseded') {
+        this.releaseSocketState(args.previousSocket, {
+          errorCode: 'AGENT_DISCONNECTED',
+          errorMessage: 'agent_reconnected',
+          closeCode: 1012,
+          closeReason: 'agent_replaced',
+          skipPresenceUpdate: true,
+        });
+      }
     }
   }
 
@@ -1012,11 +1079,13 @@ export class AgentExecutionService {
     const now = new Date().toISOString();
     socket.lastPingAt = now;
     socket.missedPongs += 1;
-    socket.ws.send(JSON.stringify({
+    if (!this.trySendSocketFrame(socket, {
       type: 'server.ping',
       timestamp: now,
       payload: {},
-    }));
+    }, 'agent_heartbeat_send_failed')) {
+      return;
+    }
   }
 
   private releaseSocketState(
@@ -1065,11 +1134,60 @@ export class AgentExecutionService {
     }
 
     if (!options.skipPresenceUpdate) {
-      void this.scheduleSocketPresenceRelease(socket).catch(() => undefined);
+      void this.scheduleSocketPresenceRelease(socket);
     } else {
       socket.presenceRegistered = false;
     }
     socket.lifecyclePhase = 'closed';
+  }
+
+  private trySendSocketFrame(
+    socket: AgentSocketState,
+    frame: Record<string, unknown>,
+    failureReason: 'agent_dispatch_send_failed' | 'agent_heartbeat_send_failed',
+  ): boolean {
+    if (socket.ws.readyState !== socket.ws.OPEN) {
+      this.releaseSocketState(socket, {
+        errorCode: 'AGENT_DISCONNECTED',
+        errorMessage: 'agent_disconnected',
+        closeCode: 1006,
+        closeReason: 'agent_disconnected',
+        skipCloseFrame: true,
+      });
+      return false;
+    }
+    try {
+      socket.ws.send(JSON.stringify(frame));
+      return true;
+    } catch (error) {
+      debugExecution(
+        `socket send failed agent_id=${socket.agentId} connection_id=${socket.connectionId} reason=${failureReason} error=${error instanceof Error ? error.message : String(error)}`,
+      );
+      this.releaseSocketState(socket, {
+        errorCode: 'AGENT_DISPATCH_SEND_FAILED',
+        errorMessage: failureReason,
+        closeCode: 1011,
+        closeReason: failureReason,
+      });
+      return false;
+    }
+  }
+
+  private async sendDispatchFrameWithAuthorityFence(input: {
+    socket: AgentSocketState;
+    sessionId: string;
+    scope: DispatchScope;
+    frame: Record<string, unknown>;
+  }): Promise<boolean> {
+    const authoritative = await this.resolveDispatchSocket({
+      agentId: input.socket.agentId,
+      sessionId: input.sessionId,
+      scope: input.scope,
+    });
+    if (!authoritative || authoritative !== input.socket) {
+      return false;
+    }
+    return this.trySendSocketFrame(authoritative, input.frame, 'agent_dispatch_send_failed');
   }
 
   async dispatchStreamingRequest(input: {
@@ -1109,8 +1227,11 @@ export class AgentExecutionService {
     socket.pendingByRequestId.set(requestId, pending);
     this.armStreamTimeouts(socket, requestId, pending);
 
-    socket.ws.send(
-      JSON.stringify({
+    const sent = await this.sendDispatchFrameWithAuthorityFence({
+      socket,
+      sessionId: input.sessionId,
+      scope: dispatchScope,
+      frame: {
         type: 'server.request.start',
         request_id: requestId,
         session_id: input.sessionId,
@@ -1121,8 +1242,12 @@ export class AgentExecutionService {
           messages: input.messages,
           ...(input.executionContext ? { execution_context: input.executionContext } : {}),
         },
-      }),
-    );
+      },
+    });
+    if (!sent) {
+      this.failPendingStream(socket, requestId, 'AGENT_OFFLINE', 'agent_offline');
+      throw new Error('agent_offline');
+    }
 
     return {
       requestId,
@@ -1219,8 +1344,11 @@ export class AgentExecutionService {
     socket.terminalBySessionId.set(input.terminalSessionId, pending);
     this.armTerminalTimeouts(socket, input.terminalSessionId, pending);
 
-    socket.ws.send(
-      JSON.stringify({
+    const sent = await this.sendDispatchFrameWithAuthorityFence({
+      socket,
+      sessionId: input.sessionId,
+      scope: 'session_strict',
+      frame: {
         type: 'server.terminal.start',
         session_id: input.sessionId,
         terminal_session_id: input.terminalSessionId,
@@ -1236,8 +1364,12 @@ export class AgentExecutionService {
             : {}),
           ...(input.payload.executionContext ? { execution_context: input.payload.executionContext } : {}),
         },
-      }),
-    );
+      },
+    });
+    if (!sent) {
+      this.failPendingTerminal(socket, input.terminalSessionId, 'AGENT_OFFLINE', 'agent_offline');
+      throw new Error('agent_offline');
+    }
     debugExecution(
       `dispatch_terminal_sent agent_id=${input.agentId} runner_session=${input.sessionId} terminal_session=${input.terminalSessionId}`,
     );
@@ -1293,16 +1425,184 @@ export class AgentExecutionService {
       return 'agent_workspace_mismatch';
     }
 
-    socket.ws.send(
-      JSON.stringify({
+    const sent = await this.sendDispatchFrameWithAuthorityFence({
+      socket,
+      sessionId: input.sessionId,
+      scope: 'session_strict',
+      frame: {
         type: 'server.terminal.close',
         session_id: input.sessionId,
         terminal_session_id: input.terminalSessionId,
         timestamp: new Date().toISOString(),
         payload: {},
-      }),
-    );
+      },
+    });
+    if (!sent) {
+      return 'agent_offline';
+    }
     return 'signaled';
+  }
+
+  private queueReadyHandshake(socket: AgentSocketState, payload: Record<string, unknown> | undefined): void {
+    const previous = socket.readyChain ?? Promise.resolve();
+    const readyTask = previous
+      .catch(() => undefined)
+      .then(() => this.processReadyMessage(socket, payload));
+    const trackedReadyTask = this.trackBackgroundTask(readyTask.finally(() => {
+      if (socket.readyChain === trackedReadyTask) {
+        socket.readyChain = undefined;
+      }
+    }));
+    socket.readyChain = trackedReadyTask;
+  }
+
+  private async recheckReadyAuthority(socket: AgentSocketState): Promise<boolean> {
+    if (socket.lifecyclePhase === 'closed' || socket.lifecyclePhase === 'closing' || socket.lifecyclePhase === 'superseded') {
+      return false;
+    }
+
+    const currentLocal = this.socketsByKey.get(socket.socketKey);
+    if (currentLocal && currentLocal !== socket) {
+      this.releaseSocketState(socket, {
+        errorCode: 'AGENT_STALE_CONNECTION',
+        errorMessage: 'agent_stale_connection',
+        closeCode: 4001,
+        closeReason: 'agent_stale_connection',
+      });
+      return false;
+    }
+
+    if (socket.presenceRegistered) {
+      const authoritative = await this.agentResourceService.getSessionConnectionInfo(
+        socket.agentId,
+        socket.sessionId,
+        socket.sessionId ? { allowAgentFallback: false } : undefined,
+      );
+      if (!authoritative || authoritative.connection_id !== socket.connectionId) {
+        this.releaseSocketState(socket, {
+          errorCode: 'AGENT_STALE_CONNECTION',
+          errorMessage: 'agent_stale_connection',
+          closeCode: 4001,
+          closeReason: 'agent_stale_connection',
+        });
+        return false;
+      }
+      if (authoritative.api_instance_id && authoritative.api_instance_id !== this.apiInstanceId) {
+        this.releaseSocketState(socket, {
+          errorCode: 'AGENT_STALE_CONNECTION',
+          errorMessage: 'agent_stale_connection',
+          closeCode: 4001,
+          closeReason: 'agent_stale_connection',
+        });
+        return false;
+      }
+    }
+
+    if (socket.lifecyclePhase === 'closed' || socket.lifecyclePhase === 'closing' || socket.lifecyclePhase === 'superseded') {
+      return false;
+    }
+    const latestLocal = this.socketsByKey.get(socket.socketKey);
+    if (latestLocal && latestLocal !== socket) {
+      this.releaseSocketState(socket, {
+        errorCode: 'AGENT_STALE_CONNECTION',
+        errorMessage: 'agent_stale_connection',
+        closeCode: 4001,
+        closeReason: 'agent_stale_connection',
+      });
+      return false;
+    }
+    return true;
+  }
+
+  private async processReadyMessage(
+    socket: AgentSocketState,
+    payload: Record<string, unknown> | undefined,
+  ): Promise<void> {
+    if (socket.lifecyclePhase === 'closed' || socket.lifecyclePhase === 'closing') {
+      return;
+    }
+    try {
+      const current = await this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, socket.agentId);
+      const interactionKind = current ? resolveAgentInteractionKind(current) : null;
+      if (!(await this.recheckReadyAuthority(socket))) {
+        return;
+      }
+      if (!interactionKind) {
+        await this.agentResourceService.updateAgentRuntimeState(
+          socket.workspaceId,
+          socket.projectId,
+          socket.agentId,
+          {
+            last_error: 'agent_interaction_kind_required',
+            last_error_at: new Date().toISOString(),
+          },
+        );
+        this.releaseSocketState(socket, {
+          errorCode: 'AGENT_INTERACTION_KIND_REQUIRED',
+          errorMessage: 'agent_interaction_kind_required',
+          closeCode: 1008,
+          closeReason: 'agent_interaction_kind_required',
+        });
+        return;
+      }
+
+      const runnerSpec = readRunnerSpec(payload);
+      if (runnerSpec && !isMatchingRunnerSpec(interactionKind, runnerSpec)) {
+        await this.agentResourceService.updateAgentRuntimeState(
+          socket.workspaceId,
+          socket.projectId,
+          socket.agentId,
+          {
+            last_error: 'agent_runner_spec_mismatch',
+            last_error_at: new Date().toISOString(),
+            runner_spec_mismatch: {
+              expected_interaction_kind: interactionKind,
+              actual_runner_spec: runnerSpec as Record<string, unknown>,
+            },
+          },
+        );
+        this.releaseSocketState(socket, {
+          errorCode: 'AGENT_RUNNER_SPEC_MISMATCH',
+          errorMessage: 'agent_runner_spec_mismatch',
+          closeCode: 1008,
+          closeReason: 'agent_runner_spec_mismatch',
+        });
+        return;
+      }
+
+      const incoming = isPlainObject(payload) ? payload : {};
+      const metadata = Object.fromEntries(
+        Object.entries(incoming).filter(([key]) => key !== 'runner_spec'),
+      );
+      if (!(await this.recheckReadyAuthority(socket))) {
+        return;
+      }
+      await this.agentResourceService.updateAgentRuntimeState(
+        socket.workspaceId,
+        socket.projectId,
+        socket.agentId,
+        {
+          last_error: undefined,
+          last_error_at: undefined,
+          metadata: {
+            ...metadata,
+            ready_at: new Date().toISOString(),
+            ...(runnerSpec ? { runner_spec: runnerSpec as Record<string, unknown> } : {}),
+          },
+          ...(runnerSpec ? { runner_spec_mismatch: undefined } : {}),
+        },
+      );
+    } catch (error) {
+      debugExecution(
+        `agent.ready validation failed agent_id=${socket.agentId} connection_id=${socket.connectionId} error=${error instanceof Error ? error.message : String(error)}`,
+      );
+      this.releaseSocketState(socket, {
+        errorCode: 'AGENT_READY_VALIDATION_FAILED',
+        errorMessage: 'agent_ready_validation_failed',
+        closeCode: 1011,
+        closeReason: 'agent_ready_validation_failed',
+      });
+    }
   }
 
   private handleSocketClose(ws: WebSocket): void {
@@ -1349,61 +1649,7 @@ export class AgentExecutionService {
     }
 
     if (payload.type === 'agent.ready') {
-      void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, socket.agentId).then((current) => {
-        const interactionKind = current ? resolveAgentInteractionKind(current) : null;
-        if (!interactionKind) {
-          void this.agentResourceService.updateAgentRuntimeState(
-            socket.workspaceId,
-            socket.projectId,
-            socket.agentId,
-            {
-              last_error: 'agent_interaction_kind_required',
-              last_error_at: new Date().toISOString(),
-            },
-          );
-          socket.ws.close(1008, 'agent_interaction_kind_required');
-          return;
-        }
-
-        const runnerSpec = readRunnerSpec(payload.payload);
-        if (runnerSpec && !isMatchingRunnerSpec(interactionKind, runnerSpec)) {
-          void this.agentResourceService.updateAgentRuntimeState(
-            socket.workspaceId,
-            socket.projectId,
-            socket.agentId,
-            {
-              last_error: 'agent_runner_spec_mismatch',
-              last_error_at: new Date().toISOString(),
-              runner_spec_mismatch: {
-                expected_interaction_kind: interactionKind,
-                actual_runner_spec: runnerSpec as Record<string, unknown>,
-              },
-            },
-          );
-          socket.ws.close(1008, 'agent_runner_spec_mismatch');
-          return;
-        }
-
-        const incoming = isPlainObject(payload.payload) ? payload.payload : {};
-        const metadata = Object.fromEntries(
-          Object.entries(incoming).filter(([key]) => key !== 'runner_spec'),
-        );
-        return this.agentResourceService.updateAgentRuntimeState(
-          socket.workspaceId,
-          socket.projectId,
-          socket.agentId,
-          {
-            last_error: undefined,
-            last_error_at: undefined,
-            metadata: {
-              ...metadata,
-              ready_at: new Date().toISOString(),
-              ...(runnerSpec ? { runner_spec: runnerSpec as Record<string, unknown> } : {}),
-            },
-            ...(runnerSpec ? { runner_spec_mismatch: undefined } : {}),
-          },
-        );
-      });
+      this.queueReadyHandshake(socket, payload.payload);
       return;
     }
 

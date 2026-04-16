@@ -32,6 +32,7 @@ RUNNER_READY_FILE="${runtimeRoot}/runner.ready"
 RUNNER_LOG="${runtimeRoot}/runner.log"
 RUNNER_HEALTH_FILE="${runtimeRoot}/runner.health.json"
 RUNNER_HEALTH_MONITOR_PID_FILE="${runtimeRoot}/runner.health-monitor.pid"
+RUNNER_OWNER_STATE_FILE="${runtimeRoot}/runner.owner.json"
 
 info() { :; }
 err() { echo "$*" >&2; }
@@ -56,6 +57,48 @@ launch_detached() {
   printf 'launch\\n' >> "${tempRoot}/events.log"
   printf '%s\\n' "999999" > "$1"
   : > "$2"
+}
+local_manual_resolve_runner_owner_token() {
+  printf 'runner-owner-token\\n'
+}
+local_runtime_start_owned_service() {
+  printf 'owned-launch:%s\\n' "\${LOCAL_RUNTIME_OWNER_TOKEN:-missing}" >> "${tempRoot}/events.log"
+  if [[ "\${START_RUNNER_FAIL_PID_FILE_WRITE:-0}" == "1" ]]; then
+    ln -snf /dev/full "${runtimeRoot}/runner.pid"
+  fi
+  if [[ "\${START_RUNNER_REAL_CHILD:-0}" == "1" ]]; then
+    local pid
+    pid="$(setsid bash -lc 'exec sleep 300' >/dev/null 2>&1 < /dev/null & echo $!)"
+    printf '%s\\n' "\${pid}" > "${tempRoot}/launched.pid"
+    printf '%s\\n' "\${pid}"
+    return 0
+  fi
+  printf '%s\\n' "999999"
+}
+local_runtime_stop_owned_process_tree() {
+  printf 'stop-owned-tree:%s:%s:%s\\n' "$1" "$2" "$3" >> "${tempRoot}/events.log"
+  kill "$1" >/dev/null 2>&1 || true
+  sleep 0.1
+  kill -9 "$1" >/dev/null 2>&1 || true
+  return 0
+}
+local_manual_write_runner_owner_state() {
+  if [[ "\${START_RUNNER_FAIL_OWNER_STATE_WRITE:-0}" == "1" ]]; then
+    printf '{\\"partial\\":true}\\n' > "$1"
+    return 1
+  fi
+  node - <<'NODE' "$1" "$2" "$3"
+const fs = require('node:fs');
+const [file, pidRaw, ownerToken] = process.argv.slice(2);
+const payload = {
+  schema_version: 1,
+  pid: Number.parseInt(pidRaw, 10),
+  owner_token: ownerToken,
+  recorded_at: new Date().toISOString(),
+  captured_by: 'start-runner.test',
+};
+fs.writeFileSync(file, JSON.stringify(payload, null, 2) + '\\n');
+NODE
 }
 write_ready_file() {
   printf 'ready\\n' > "$1"
@@ -102,6 +145,8 @@ exec /bin/date "$@"
     fakeBin,
     runnerPidFile: path.join(runtimeRoot, 'runner.pid'),
     runnerReadyFile: path.join(runtimeRoot, 'runner.ready'),
+    runnerOwnerStateFile: path.join(runtimeRoot, 'runner.owner.json'),
+    launchedPidFile: path.join(tempRoot, 'launched.pid'),
     eventsFile: path.join(tempRoot, 'events.log'),
     script: path.join(scriptsDir, 'start-runner.sh'),
   };
@@ -142,6 +187,10 @@ function killProcessTreeGroup(pid: number): void {
   } catch {
     // Ignore cleanup failures.
   }
+}
+
+function readLaunchedPid(file: string): number {
+  return Number.parseInt(readFileSync(file, 'utf8').trim(), 10);
 }
 
 function errorStderr(error: unknown): string {
@@ -367,7 +416,7 @@ describe('local-manual start-runner', () => {
     expect(readFileSync(fixture.runnerPidFile, 'utf8')).toBe('4100\n');
     expect(readFileSync(fixture.runnerReadyFile, 'utf8')).toBe('ready\n');
     expect(readFileSync(fixture.eventsFile, 'utf8')).toContain('owner-aware:replace_runner');
-    expect(readFileSync(fixture.eventsFile, 'utf8')).not.toContain('launch');
+    expect(readFileSync(fixture.eventsFile, 'utf8')).not.toContain('owned-launch:');
   });
 
   it('uses owner-aware rollback cleanup instead of generic pid-file stop after post-launch failure', () => {
@@ -391,9 +440,73 @@ describe('local-manual start-runner', () => {
 
     expect(error).toBeDefined();
     const events = readFileSync(fixture.eventsFile, 'utf8');
-    expect(events).toContain('launch');
+    expect(events).toContain('owned-launch:runner-owner-token');
     expect(events).toContain('owner-aware:rollback_launch');
     expect(events).not.toContain('stop-pid:runner');
+  });
+
+  it('kills an uncommitted launched runner and clears tracking files when runner.pid cannot be written', async () => {
+    const fixture = setupStartRunnerFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    let error: unknown;
+    try {
+      execFileSync('bash', [fixture.script], {
+        cwd: fixture.tempRoot,
+        env: {
+          ...process.env,
+          PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
+          START_RUNNER_REAL_CHILD: '1',
+          START_RUNNER_FAIL_PID_FILE_WRITE: '1',
+        },
+        stdio: 'pipe',
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeDefined();
+    const launchedPid = readLaunchedPid(fixture.launchedPidFile);
+    expect(await waitForPidExit(launchedPid)).toBe(true);
+    const events = readFileSync(fixture.eventsFile, 'utf8');
+    expect(events).toContain('owned-launch:runner-owner-token');
+    expect(events).toContain(`stop-owned-tree:${launchedPid}:runner:0`);
+    expect(events).not.toContain('owner-aware:rollback_launch');
+    expect(existsSync(fixture.runnerPidFile)).toBe(false);
+    expect(existsSync(fixture.runnerOwnerStateFile)).toBe(false);
+    expect(existsSync(fixture.runnerReadyFile)).toBe(false);
+  });
+
+  it('kills an uncommitted launched runner and clears partial tracking files when runner owner state write fails', async () => {
+    const fixture = setupStartRunnerFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    let error: unknown;
+    try {
+      execFileSync('bash', [fixture.script], {
+        cwd: fixture.tempRoot,
+        env: {
+          ...process.env,
+          PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
+          START_RUNNER_REAL_CHILD: '1',
+          START_RUNNER_FAIL_OWNER_STATE_WRITE: '1',
+        },
+        stdio: 'pipe',
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeDefined();
+    const launchedPid = readLaunchedPid(fixture.launchedPidFile);
+    expect(await waitForPidExit(launchedPid)).toBe(true);
+    const events = readFileSync(fixture.eventsFile, 'utf8');
+    expect(events).toContain('owned-launch:runner-owner-token');
+    expect(events).toContain(`stop-owned-tree:${launchedPid}:runner:0`);
+    expect(events).not.toContain('owner-aware:rollback_launch');
+    expect(existsSync(fixture.runnerPidFile)).toBe(false);
+    expect(existsSync(fixture.runnerOwnerStateFile)).toBe(false);
+    expect(existsSync(fixture.runnerReadyFile)).toBe(false);
   });
 
   it('preserves runner tracking state when post-launch rollback is blocked by owner resolution', () => {
@@ -438,9 +551,15 @@ describe('local-manual start-runner', () => {
     });
 
     const events = readFileSync(fixture.eventsFile, 'utf8');
-    expect(events).toContain('launch');
+    expect(events).toContain('owned-launch:runner-owner-token');
     expect(events).toContain('health-monitor');
     expect(readFileSync(fixture.runnerReadyFile, 'utf8')).toBe('ready\n');
+    const ownerState = JSON.parse(readFileSync(fixture.runnerOwnerStateFile, 'utf8')) as {
+      pid: number;
+      owner_token: string;
+    };
+    expect(ownerState.pid).toBe(999999);
+    expect(ownerState.owner_token).toBe('runner-owner-token');
   });
 
   it('fails fast and rolls back when the launched runner enters shutting_down before becoming connected', () => {
@@ -466,7 +585,7 @@ describe('local-manual start-runner', () => {
     expect(error).toBeDefined();
     expect(errorStderr(error)).toContain('runner entered shutting_down before it became connected');
     const events = readFileSync(fixture.eventsFile, 'utf8');
-    expect(events).toContain('launch');
+    expect(events).toContain('owned-launch:runner-owner-token');
     expect(events).toContain('owner-aware:rollback_launch');
     expect(existsSync(fixture.runnerReadyFile)).toBe(false);
   });

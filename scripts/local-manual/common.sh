@@ -43,6 +43,7 @@ WEB_READY_FILE="${LOCAL_MANUAL_ROOT}/web.ready"
 RUNNER_READY_FILE="${LOCAL_MANUAL_ROOT}/runner.ready"
 RUNNER_HEALTH_FILE="${LOCAL_MANUAL_ROOT}/runner.health.json"
 RUNNER_HEALTH_MONITOR_PID_FILE="${LOCAL_MANUAL_ROOT}/runner.health-monitor.pid"
+RUNNER_OWNER_STATE_FILE="${LOCAL_MANUAL_ROOT}/runner.owner.json"
 PROXY_READY_FILE="${SUBSTRATE_PROXY_READY_FILE}"
 
 API_PORT_FILE="${LOCAL_MANUAL_ROOT}/api.port"
@@ -57,6 +58,86 @@ RUNNER_LOG="${LOCAL_MANUAL_ROOT}/runner.log"
 info() { echo "[local-manual] $*"; }
 err() { echo "[local-manual] ERROR: $*" >&2; }
 warn() { echo "[local-manual] WARN: $*" >&2; }
+
+local_manual_resolve_runner_owner_token() {
+  if [[ -n "${LOCAL_RUNTIME_OWNER_TOKEN:-}" ]]; then
+    printf '%s\n' "${LOCAL_RUNTIME_OWNER_TOKEN}"
+    return 0
+  fi
+  printf 'local-manual-runner:%s:%s:%s\n' \
+    "${WORKSPACE_ID:-ws_default}" \
+    "${BASHPID:-$$}" \
+    "$(date -u +%s%N 2>/dev/null || date -u +%s)"
+}
+
+local_manual_write_runner_owner_state() {
+  local file="$1"
+  local pid="$2"
+  local owner_token="$3"
+  node - <<'NODE' "${file}" "${pid}" "${owner_token}"
+const fs = require('node:fs');
+const path = require('node:path');
+
+const [file, pidRaw, ownerToken] = process.argv.slice(2);
+const pid = Number.parseInt(pidRaw, 10);
+if (!file || !Number.isFinite(pid) || pid <= 0 || typeof ownerToken !== 'string' || ownerToken.length === 0) {
+  process.exit(1);
+}
+
+const payload = {
+  schema_version: 1,
+  pid,
+  owner_token: ownerToken,
+  recorded_at: new Date().toISOString(),
+  captured_by: 'local-manual',
+};
+
+fs.mkdirSync(path.dirname(file), { recursive: true });
+fs.writeFileSync(file, JSON.stringify(payload, null, 2) + '\n');
+NODE
+}
+
+local_manual_read_runner_owner_state_token() {
+  local pid="$1"
+  node - <<'NODE' "${RUNNER_OWNER_STATE_FILE}" "${pid}"
+const fs = require('node:fs');
+
+const [file, pidRaw] = process.argv.slice(2);
+const expectedPid = Number.parseInt(pidRaw, 10);
+let payload;
+try {
+  payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+} catch {
+  process.exit(1);
+}
+
+if (
+  payload?.schema_version !== 1
+  || payload?.pid !== expectedPid
+  || typeof payload?.owner_token !== 'string'
+  || payload.owner_token.length === 0
+  || typeof payload?.recorded_at !== 'string'
+  || typeof payload?.captured_by !== 'string'
+) {
+  process.exit(1);
+}
+
+process.stdout.write(payload.owner_token + '\n');
+NODE
+}
+
+local_manual_runner_owner_token_for_pid() {
+  local pid="$1"
+  if [[ -n "${LOCAL_RUNTIME_OWNER_TOKEN:-}" ]]; then
+    printf '%s\n' "${LOCAL_RUNTIME_OWNER_TOKEN}"
+    return 0
+  fi
+  if [[ -f "${RUNNER_OWNER_STATE_FILE}" ]]; then
+    local_manual_read_runner_owner_state_token "${pid}" 2>/dev/null || true
+    return 0
+  fi
+  return 0
+}
 
 run_juicefs_orphan_preflight() {
   local context="${1:-local-manual}"
@@ -636,59 +717,11 @@ local_manual_classify_tracked_service_authority() {
       return 0
       ;;
     missing)
-      ;;
-    *)
-      printf 'unverified|tracked_state_invalid\n'
-      return 0
-      ;;
-  esac
-
-  if ! kill -0 "${pid}" >/dev/null 2>&1; then
-    printf 'stale_reclaimable|tracked_pid_missing\n'
-    return 0
-  fi
-
-  command_line="$(local_manual_process_command_line "${pid}")"
-  cwd="$(local_manual_process_cwd "${pid}")"
-  if [[ -z "${command_line}" ]]; then
-    printf 'unverified|tracked_pid_command_unavailable\n'
-    return 0
-  fi
-  if [[ -z "${cwd}" || "${cwd}" == "-" ]]; then
-    printf 'unverified|tracked_pid_cwd_unavailable\n'
-    return 0
-  fi
-  if ! local_manual_service_cwd_matches_kind "${kind}" "${cwd}"; then
-    printf 'unverified|tracked_pid_foreign_cwd\n'
-    return 0
-  fi
-  if ! local_manual_service_command_matches_kind "${kind}" "${command_line}"; then
-    printf 'unverified|tracked_pid_reused\n'
-    return 0
-  fi
-  if ! local_manual_service_pid_matches_expected_port "${kind}" "${pid}" "${command_line}"; then
-    printf 'unverified|tracked_pid_unexpected_port\n'
-    return 0
-  fi
-
-  if ! local_manual_write_tracked_service_process_state "${kind}" "${pid}" "legacy_adopt" "$(local_manual_tracked_service_port "${kind}")"; then
-    printf 'unverified|tracked_state_invalid\n'
-    return 0
-  fi
-
-  state_status="$(local_manual_read_tracked_service_process_state_status "${kind}" "${pid}")"
-  IFS=$'\t' read -r state_reason state_token state_source <<< "${state_status}"
-  case "${state_reason}" in
-    valid)
-      printf 'current_active|tracked_local_manual_%s|%s|%s\n' "${kind}" "${state_token}" "${state_source}"
-      return 0
-      ;;
-    reused)
-      printf 'unverified|tracked_pid_reused\n'
-      return 0
-      ;;
-    stale)
-      printf 'stale_reclaimable|tracked_pid_missing\n'
+      if ! kill -0 "${pid}" >/dev/null 2>&1; then
+        printf 'stale_reclaimable|tracked_pid_missing\n'
+        return 0
+      fi
+      printf 'unverified|tracked_state_missing\n'
       return 0
       ;;
     *)
@@ -999,26 +1032,28 @@ local_manual_runner_latest_socket_log_state() {
 }
 
 local_manual_runner_health_authority_verification_enabled() {
-  [[ -n "${LOCAL_RUNTIME_OWNER_TOKEN:-}" ]]
+  local pid="${1:-}"
+  [[ -n "$(local_manual_runner_owner_token_for_pid "${pid}")" ]]
 }
 
 local_manual_runner_health_authority_status() {
   local pid="${1:-}"
   local service_kind="${2:-runner}"
   local port="${3:-0}"
+  local owner_token
   if [[ -z "${pid}" ]]; then
     printf 'unverified\trunner_pid_missing\n'
     return 0
   fi
 
-  if ! local_manual_runner_health_authority_verification_enabled; then
-    printf 'verified\trunner_authority_not_enforced\n'
+  if ! local_manual_runner_health_authority_verification_enabled "${pid}"; then
+    printf 'unverified\trunner_owner_token_missing\n'
     return 0
   fi
 
   if ! declare -F local_runtime_find_sidecar >/dev/null 2>&1 \
     || ! declare -F local_runtime_verify_owned_process >/dev/null 2>&1; then
-    printf 'unknown\trunner_authority_checks_unavailable\n'
+    printf 'unverified\trunner_authority_checks_unavailable\n'
     return 0
   fi
 
@@ -1027,7 +1062,9 @@ local_manual_runner_health_authority_status() {
     return 0
   fi
 
-  if local_runtime_verify_owned_process "${pid}" "${service_kind}" "${port}" >/dev/null 2>&1; then
+  owner_token="$(local_manual_runner_owner_token_for_pid "${pid}")"
+  if [[ -n "${owner_token}" ]] \
+    && (export LOCAL_RUNTIME_OWNER_TOKEN="${owner_token}"; local_runtime_verify_owned_process "${pid}" "${service_kind}" "${port}") >/dev/null 2>&1; then
     printf 'verified\trunner_authority_verified\n'
     return 0
   fi
@@ -1135,7 +1172,7 @@ remove_local_manual_runtime_files() {
     "${RUNNER_HEALTH_FILE}" "${RUNNER_HEALTH_MONITOR_PID_FILE}" \
     "${API_PORT_FILE}" "${WEB_PORT_FILE}" \
     "${API_PROCESS_STATE_FILE}" "${WEB_PROCESS_STATE_FILE}" \
-    "${API_PID_FILE}" "${WEB_PID_FILE}" "${RUNNER_PID_FILE}" \
+    "${API_PID_FILE}" "${WEB_PID_FILE}" "${RUNNER_PID_FILE}" "${RUNNER_OWNER_STATE_FILE}" \
     "${LOCAL_MANUAL_INTERNAL_RUNTIME_CLEANUP_MARKER}"
 }
 
@@ -1384,13 +1421,13 @@ stop_local_manual_runner_owner_aware() {
     fi
     stop_runner_health_monitor
     rm -f "${RUNNER_PID_FILE}"
-    rm -f "${RUNNER_READY_FILE}" "${RUNNER_HEALTH_FILE}"
+    rm -f "${RUNNER_READY_FILE}" "${RUNNER_HEALTH_FILE}" "${RUNNER_OWNER_STATE_FILE}"
     return 0
   fi
 
   if [[ "${owner_janitor_action}" == "remove_state_only" ]]; then
     stop_runner_health_monitor
-    rm -f "${RUNNER_PID_FILE}" "${RUNNER_READY_FILE}" "${RUNNER_HEALTH_FILE}"
+    rm -f "${RUNNER_PID_FILE}" "${RUNNER_READY_FILE}" "${RUNNER_HEALTH_FILE}" "${RUNNER_OWNER_STATE_FILE}"
     return 0
   fi
 

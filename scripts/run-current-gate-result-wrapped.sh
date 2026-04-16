@@ -54,6 +54,9 @@ if (!rootDir || !evidenceDir || !fallbackRunId) {
 const support = await import(pathToFileURL(join(rootDir, "e2e/visual-baseline-support.ts")).href);
 const supportModule = support.default ?? support;
 const { readVisualBaselineBuildRecord } = supportModule;
+const governance = await import(pathToFileURL(join(rootDir, "scripts/governance/release-campaign-io.ts")).href);
+const governanceModule = governance.default ?? governance;
+const { readVisualBaselineRunManifestArtifact } = governanceModule;
 
 function resolveBuild() {
   if (buildInfoFile) {
@@ -76,6 +79,7 @@ const reviewRoot = process.env.VISUAL_BASELINE_REVIEW_ROOT?.trim()
   || join(rootDir, "artifacts", "visual-baseline-reviews");
 const sourceManifestPath = join(reviewRoot, build.runId, "run-manifest.json");
 const targetManifestPath = join(evidenceDir, "run-manifest.json");
+const requiredCompleteness = "require_full_catalog";
 
 function isSafeRelativeFilePath(value) {
   return typeof value === "string"
@@ -86,6 +90,15 @@ function isSafeRelativeFilePath(value) {
 }
 
 if (existsSync(sourceManifestPath)) {
+  const validation = readVisualBaselineRunManifestArtifact({
+    path: sourceManifestPath,
+    expectedRunId: build.runId,
+    requiredCompleteness,
+  });
+  if (!validation.ok) {
+    process.stderr.write(`${validation.failureClass}::${validation.message}\n`);
+    process.exit(1);
+  }
   copyFileSync(sourceManifestPath, targetManifestPath);
   const manifest = JSON.parse(readFileSync(sourceManifestPath, "utf8"));
   const screenshots = Array.isArray(manifest?.scenarios)
@@ -105,7 +118,8 @@ if (existsSync(sourceManifestPath)) {
     copyFileSync(sourceCapturePath, targetCapturePath);
   }
 } else {
-  throw new Error(`missing lane-visual run manifest: ${sourceManifestPath}`);
+  process.stderr.write(`evidence_missing::missing lane-visual run manifest: ${sourceManifestPath}\n`);
+  process.exit(1);
 }
 NODE
 }
@@ -117,7 +131,24 @@ set -e
 
 if [[ "${status}" -eq 0 ]]; then
   if [[ "${GATE_ID}" == "lane-visual" ]]; then
-    gate_write_visual_run_manifest "${EVIDENCE_DIR}"
+    validation_log="$(mktemp)"
+    if ! gate_write_visual_run_manifest "${EVIDENCE_DIR}" 2>"${validation_log}"; then
+      validation_error="$(tail -n 1 "${validation_log}" || true)"
+      rm -f "${validation_log}"
+      validation_failure_class="contract_drift"
+      validation_summary="lane-visual evidence validation failed"
+      if [[ "${validation_error}" == evidence_missing::* ]]; then
+        validation_failure_class="evidence_missing"
+        validation_summary="${validation_error#evidence_missing::}"
+      elif [[ "${validation_error}" == contract_drift::* ]]; then
+        validation_summary="${validation_error#contract_drift::}"
+      elif [[ -n "${validation_error}" ]]; then
+        validation_summary="${validation_error}"
+      fi
+      gate_record_failure "${EVIDENCE_DIR}" "${validation_failure_class}" "evidence" "${validation_summary}"
+      exit 1
+    fi
+    rm -f "${validation_log}"
   fi
   gate_record_success "${EVIDENCE_DIR}" "${LINE_KIND}"
   exit 0

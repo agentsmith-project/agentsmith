@@ -1538,50 +1538,62 @@ describe("api-entry-node projects routes", () => {
     expect(createSessionRes.status).toBe(201);
     const session = (await createSessionRes.json()) as { id: string };
 
-    const firstStreamRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          endpoint_id: endpoint.id,
-          model: "deepseek-chat",
-          input: { role: "user", content: "first" },
-        }),
-      },
-    );
-    expect(firstStreamRes.status).toBe(200);
-    await firstStreamRes.text();
+    // Keep both preflight checks inside the same minute bucket so this route test
+    // validates policy enforcement instead of depending on wall-clock rollover.
+    const currentNow = Date.now();
+    const sameMinuteBucketNow =
+      Math.floor(currentNow / 60_000) * 60_000 + 10_000;
+    const nowSpy = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(sameMinuteBucketNow);
+    try {
+      const firstStreamRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            endpoint_id: endpoint.id,
+            model: "deepseek-chat",
+            input: { role: "user", content: "first" },
+          }),
+        },
+      );
+      expect(firstStreamRes.status).toBe(200);
+      await firstStreamRes.text();
 
-    const secondStreamRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          endpoint_id: endpoint.id,
-          model: "deepseek-chat",
-          input: { role: "user", content: "second" },
-        }),
-      },
-    );
-    expect(secondStreamRes.status).toBe(429);
-    const secondBody = (await secondStreamRes.json()) as {
-      error_code?: string;
-      message?: string;
-      resource_type?: string;
-      resource_id?: string;
-      retry_after_seconds?: number;
-    };
-    expect(secondBody).toMatchObject({
-      error_code: "RESOURCE_POLICY_RATE_LIMITED",
-      message: "resource_policy_rate_limited",
-      resource_type: "endpoint",
-      resource_id: endpoint.id,
-    });
-    expect(typeof secondBody.retry_after_seconds).toBe("number");
+      const secondStreamRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            endpoint_id: endpoint.id,
+            model: "deepseek-chat",
+            input: { role: "user", content: "second" },
+          }),
+        },
+      );
+      expect(secondStreamRes.status).toBe(429);
+      const secondBody = (await secondStreamRes.json()) as {
+        error_code?: string;
+        message?: string;
+        resource_type?: string;
+        resource_id?: string;
+        retry_after_seconds?: number;
+      };
+      expect(secondBody).toMatchObject({
+        error_code: "RESOURCE_POLICY_RATE_LIMITED",
+        message: "resource_policy_rate_limited",
+        resource_type: "endpoint",
+        resource_id: endpoint.id,
+      });
+      expect(typeof secondBody.retry_after_seconds).toBe("number");
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("returns AGENT_OFFLINE when external agent session streams without active execution socket", async () => {

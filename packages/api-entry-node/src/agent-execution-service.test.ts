@@ -628,6 +628,207 @@ describe('AgentExecutionService', () => {
     });
   });
 
+  it('closes the socket without unhandled rejections when agent.ready authority validation throws', async () => {
+    const { agentResourceService, executionService, agent, ws } = await setupExecutionService({
+      interactionKind: 'chat',
+    });
+    vi.spyOn(agentResourceService, 'getAgent').mockRejectedValue(new Error('agent_lookup_failed'));
+    const unhandled = captureUnhandledRejections();
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    try {
+      ws.send(JSON.stringify({
+        type: 'agent.ready',
+        payload: {
+          capabilities: {
+            streaming_completion: true,
+          },
+        },
+      }));
+
+      await expect(closed).resolves.toEqual({
+        code: 1011,
+        reason: 'agent_ready_validation_failed',
+      });
+      expect(unhandled.errors).toEqual([]);
+      expect(executionService.getAgentOnlineState(agent.id)).toBe(false);
+    } finally {
+      unhandled.dispose();
+      await executionService.shutdown();
+    }
+  });
+
+  it('closes the socket without unhandled rejections when agent.ready runtime state persistence throws', async () => {
+    const { agentResourceService, executionService, agent, ws } = await setupExecutionService({
+      interactionKind: 'chat',
+    });
+    vi.spyOn(agentResourceService, 'updateAgentRuntimeState').mockRejectedValue(new Error('runtime_state_update_failed'));
+    const unhandled = captureUnhandledRejections();
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    try {
+      ws.send(JSON.stringify({
+        type: 'agent.ready',
+        payload: {
+          runner_spec: {
+            interaction_kind: 'chat',
+            app_family: 'llm_runner',
+            protocol_version: '1.0',
+          },
+        },
+      }));
+
+      await expect(closed).resolves.toEqual({
+        code: 1011,
+        reason: 'agent_ready_validation_failed',
+      });
+      expect(unhandled.errors).toEqual([]);
+      expect(executionService.getAgentOnlineState(agent.id)).toBe(false);
+    } finally {
+      unhandled.dispose();
+      await executionService.shutdown();
+    }
+  });
+
+  it('does not write ready metadata from a stale local socket after same-instance takeover supersedes it', async () => {
+    const { agentResourceService, executionService, agent, keyPair, ws, wsBase } = await setupExecutionService({
+      interactionKind: 'chat',
+    });
+    const first = ws;
+    const originalGetAgent = agentResourceService.getAgent.bind(agentResourceService);
+    let resolveGetAgentEntered!: () => void;
+    const getAgentEntered = new Promise<void>((resolve) => {
+      resolveGetAgentEntered = resolve;
+    });
+    let releaseGetAgent!: () => void;
+    const getAgentResume = new Promise<void>((resolve) => {
+      releaseGetAgent = resolve;
+    });
+    let pauseNextReadyLookup = true;
+    vi.spyOn(agentResourceService, 'getAgent').mockImplementation(async (...args) => {
+      if (pauseNextReadyLookup) {
+        pauseNextReadyLookup = false;
+        resolveGetAgentEntered();
+        await getAgentResume;
+      }
+      return originalGetAgent(...args);
+    });
+
+    try {
+      first.send(JSON.stringify({
+        type: 'agent.ready',
+        payload: {
+          capabilities: {
+            streaming_completion: true,
+          },
+        },
+      }));
+
+      await getAgentEntered;
+      const firstClosed = new Promise<void>((resolve) => {
+        first.once('close', () => resolve());
+      });
+      await openAgentWebSocket({
+        wsBase,
+        agentId: agent.id,
+        key: keyPair.key,
+      });
+      await firstClosed;
+      releaseGetAgent();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const runtime = await agentResourceService.getAgentRuntimeState('ws_default', 'proj_1', agent.id);
+      expect(runtime?.metadata).toBeUndefined();
+    } finally {
+      await executionService.shutdown();
+    }
+  });
+
+  it('does not write runtime truth when agent.ready loses authority to a remote owner before persistence', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const resourceA = new AgentResourceService(docStore, cache);
+    const resourceB = new AgentResourceService(docStore, cache);
+    const reader = new AgentResourceService(docStore, cache);
+    const serviceA = new AgentExecutionService(resourceA, { heartbeatIntervalMs: 10_000 });
+    const serviceB = new AgentExecutionService(resourceB, { heartbeatIntervalMs: 10_000 });
+    const wsBaseA = await startExecutionServer(serviceA);
+    const wsBaseB = await startExecutionServer(serviceB);
+    const agent = await resourceA.createAgent('ws_default', 'proj_1', {
+      name: 'ready-authority-agent',
+      mode: 'external',
+      interaction_kind: 'chat',
+    });
+    const keyPair = await resourceA.createAgentKey('ws_default', 'proj_1', agent.id);
+    const first = await openAgentWebSocket({
+      wsBase: wsBaseA,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_ready',
+    });
+    const initialConnection = await waitForConnectionInfo(reader, agent.id, (connection) =>
+      connection?.connection_id !== undefined,
+    );
+
+    const originalGetAgent = resourceA.getAgent.bind(resourceA);
+    let resolveGetAgentEntered!: () => void;
+    const getAgentEntered = new Promise<void>((resolve) => {
+      resolveGetAgentEntered = resolve;
+    });
+    let releaseGetAgent!: () => void;
+    const getAgentResume = new Promise<void>((resolve) => {
+      releaseGetAgent = resolve;
+    });
+    let pauseNextReadyLookup = true;
+    vi.spyOn(resourceA, 'getAgent').mockImplementation(async (...args) => {
+      if (pauseNextReadyLookup) {
+        pauseNextReadyLookup = false;
+        resolveGetAgentEntered();
+        await getAgentResume;
+      }
+      return originalGetAgent(...args);
+    });
+
+    try {
+      first.send(JSON.stringify({
+        type: 'agent.ready',
+        payload: {
+          capabilities: {
+            streaming_completion: true,
+          },
+        },
+      }));
+
+      await getAgentEntered;
+      await openAgentWebSocket({
+        wsBase: wsBaseB,
+        agentId: agent.id,
+        key: keyPair.key,
+        sessionId: 'task_ready',
+      });
+      await waitForConnectionInfo(reader, agent.id, (connection) =>
+        connection?.connection_id !== undefined
+          && connection.connection_id !== initialConnection.connection_id,
+      );
+      releaseGetAgent();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const runtime = await reader.getAgentRuntimeState('ws_default', 'proj_1', agent.id);
+      expect(runtime?.metadata).toBeUndefined();
+    } finally {
+      await serviceA.shutdown();
+      await serviceB.shutdown();
+    }
+  });
+
   it('keeps replacement websocket online when the previous runner connection closes', async () => {
     const { agentResourceService, executionService, agent, ws, wsBase } = await setupExecutionService();
     const firstSocket = ws;
@@ -802,6 +1003,62 @@ describe('AgentExecutionService', () => {
     await expect(serviceA.getAgentSessionDispatchAuthority(agent.id, 'task_dispatch_fence')).resolves.toBe(
       'remote_owned_not_local_dispatchable',
     );
+  });
+
+  it('rechecks shared authority before notebook dispatch send so takeover cannot slip through the resolve/send window', async () => {
+    const { agentResourceService, executionService, agent, keyPair, wsBase } = await setupExecutionService({
+      interactionKind: 'notebook',
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    const scoped = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_send_window',
+    });
+    const localConnection = await waitForConnectionInfo(
+      agentResourceService,
+      agent.id,
+      (connection) => connection?.session_id === 'task_send_window',
+    );
+    const frames: Array<Record<string, unknown>> = [];
+    scoped.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.request.start') {
+        frames.push(message);
+      }
+    });
+
+    let lookupCount = 0;
+    vi.spyOn(agentResourceService, 'getSessionConnectionInfo').mockImplementation(async (_agentId, _sessionId, _options) => {
+      lookupCount += 1;
+      if (lookupCount === 1) {
+        return localConnection;
+      }
+      return {
+        ...localConnection!,
+        connection_id: 'conn_remote_owner',
+        api_instance_id: 'api_remote',
+      };
+    });
+
+    await expect(executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_send_window',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'hello' }],
+      executionContext: {
+        interaction_kind: 'notebook',
+      },
+    })).rejects.toThrow('agent_offline');
+
+    expect(lookupCount).toBeGreaterThanOrEqual(2);
+    expect(frames).toEqual([]);
   });
 
   it('dispatches immediately through the new owner after session takeover without waiting for stale heartbeat expiry', async () => {
@@ -1187,6 +1444,62 @@ describe('AgentExecutionService', () => {
     ]);
   });
 
+  it('degrades the previous socket instead of marking it active when rollback cannot restore shared presence', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const agentResourceService = new AgentResourceService(docStore, cache);
+    const executionService = new AgentExecutionService(agentResourceService, {
+      heartbeatIntervalMs: 10_000,
+      heartbeatMaxMisses: 100,
+    });
+    const wsBase = await startExecutionServer(executionService);
+    const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'rollback-restore-failure-agent',
+      mode: 'external',
+      interaction_kind: 'chat',
+    });
+    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
+    const first = await openAgentWebSocket({ wsBase, agentId: agent.id, key: keyPair.key });
+    const initialConnection = await waitForConnectionInfo(
+      agentResourceService,
+      agent.id,
+      (connection) => connection?.active_connection_count === 1,
+    );
+    const firstClosed = new Promise<{ code: number; reason: string }>((resolve) => {
+      first.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    const originalRegister = agentResourceService.registerAgentConnection.bind(agentResourceService);
+    let releaseSecondRegistration!: () => void;
+    const secondRegistrationGate = new Promise<void>((resolve) => {
+      releaseSecondRegistration = resolve;
+    });
+    let secondConnectionId: string | null = null;
+    vi.spyOn(agentResourceService, 'registerAgentConnection').mockImplementation(async (input) => {
+      if (input.connectionId === initialConnection?.connection_id && secondConnectionId) {
+        throw new Error('presence_restore_failed');
+      }
+      if (input.connectionId !== initialConnection?.connection_id && secondConnectionId === null) {
+        secondConnectionId = input.connectionId;
+        await secondRegistrationGate;
+      }
+      return originalRegister(input);
+    });
+
+    const second = await openAgentWebSocket({ wsBase, agentId: agent.id, key: keyPair.key });
+    second.close();
+    releaseSecondRegistration();
+
+    await expect(firstClosed).resolves.toEqual({
+      code: 1011,
+      reason: 'agent_connection_authority_failed',
+    });
+    await expect(agentResourceService.getConnectionInfo(agent.id)).resolves.toBeNull();
+    expect(executionService.getAgentOnlineState(agent.id)).toBe(false);
+  });
+
   it('sends a precise terminal close control message without requiring an active terminal dispatch queue', async () => {
     const { executionService, agent, keyPair, wsBase } = await setupExecutionService({ interactionKind: 'notebook' });
     const ws = await openAgentWebSocket({
@@ -1314,6 +1627,82 @@ describe('AgentExecutionService', () => {
     );
   });
 
+  it('drops pending notebook stream state immediately when request.start send fails', async () => {
+    const { executionService, agent, keyPair, wsBase } = await setupExecutionService({
+      interactionKind: 'notebook',
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_stream_send_failure',
+    });
+    const socketState = (executionService as unknown as {
+      socketsByKey: Map<string, { ws: WebSocket; pendingByRequestId: Map<string, unknown> }>;
+    }).socketsByKey.get(`${agent.id}::task_stream_send_failure`);
+    expect(socketState).toBeTruthy();
+    vi.spyOn(socketState!.ws, 'send').mockImplementation(() => {
+      throw new Error('send_failed');
+    });
+
+    await expect(executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_stream_send_failure',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'hello' }],
+      executionContext: {
+        interaction_kind: 'notebook',
+      },
+    })).rejects.toThrow('agent_offline');
+
+    expect(socketState!.pendingByRequestId.size).toBe(0);
+    expect(executionService.getAgentSessionOnlineState(agent.id, 'task_stream_send_failure')).toBe(false);
+  });
+
+  it('drops pending terminal state immediately when terminal start send fails', async () => {
+    const { executionService, agent, keyPair, wsBase } = await setupExecutionService({
+      interactionKind: 'notebook',
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_terminal_send_failure',
+    });
+    const socketState = (executionService as unknown as {
+      socketsByKey: Map<string, { ws: WebSocket; terminalBySessionId: Map<string, unknown> }>;
+    }).socketsByKey.get(`${agent.id}::task_terminal_send_failure`);
+    expect(socketState).toBeTruthy();
+    vi.spyOn(socketState!.ws, 'send').mockImplementation(() => {
+      throw new Error('send_failed');
+    });
+
+    await expect(executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_terminal_send_failure',
+      agentId: agent.id,
+      terminalSessionId: 'term_send_failure',
+      payload: {
+        cols: 80,
+        rows: 24,
+      },
+    })).rejects.toThrow('agent_offline');
+
+    expect(socketState!.terminalBySessionId.size).toBe(0);
+    expect(executionService.getAgentSessionOnlineState(agent.id, 'task_terminal_send_failure')).toBe(false);
+  });
+
   it('closes a stale runner socket when server heartbeat pings are missed and clears pending streams', async () => {
     const { agentResourceService, executionService, agent, ws } = await setupExecutionService({
       executionServiceOptions: {
@@ -1388,6 +1777,42 @@ describe('AgentExecutionService', () => {
       });
     } finally {
       unhandled.dispose();
+      await executionService.shutdown();
+    }
+  });
+
+  it('skips overlapping heartbeat ticks while a previous authority check is still in flight', async () => {
+    const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
+    let releaseAuthorityLookup!: () => void;
+    const authorityLookupGate = new Promise<void>((resolve) => {
+      releaseAuthorityLookup = resolve;
+    });
+    let authorityCalls = 0;
+    vi.spyOn(agentResourceService, 'isAgentConnectionCurrent').mockImplementation(async () => {
+      authorityCalls += 1;
+      if (authorityCalls === 1) {
+        await authorityLookupGate;
+      }
+      return true;
+    });
+    const executionService = new AgentExecutionService(agentResourceService, {
+      heartbeatIntervalMs: 25,
+      heartbeatMaxMisses: 100,
+    });
+    const wsBase = await startExecutionServer(executionService);
+    const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'heartbeat-serialization-agent',
+      mode: 'external',
+      interaction_kind: 'chat',
+    });
+    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
+
+    try {
+      await openAgentWebSocket({ wsBase, agentId: agent.id, key: keyPair.key });
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(authorityCalls).toBe(1);
+    } finally {
+      releaseAuthorityLookup();
       await executionService.shutdown();
     }
   });
@@ -1702,7 +2127,7 @@ describe('AgentExecutionService', () => {
     let attempts = 0;
     vi.spyOn(agentResourceService, 'releaseAgentConnection').mockImplementation(async (input) => {
       attempts += 1;
-      if (attempts === 1) {
+      if (attempts <= 8) {
         throw new Error('transient_release_failure');
       }
       return originalRelease(input);
@@ -1715,15 +2140,15 @@ describe('AgentExecutionService', () => {
         ws.close();
       });
 
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        if (attempts >= 2) {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (attempts >= 9) {
           const current = await agentResourceService.getConnectionInfo(agent.id);
           if (!current) break;
         }
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await new Promise((resolve) => setTimeout(resolve, 25));
       }
 
-      expect(attempts).toBeGreaterThanOrEqual(2);
+      expect(attempts).toBeGreaterThanOrEqual(9);
       expect(unhandled.errors).toEqual([]);
       expect(executionService.getAgentOnlineState(agent.id)).toBe(false);
       await expect(agentResourceService.getConnectionInfo(agent.id)).resolves.toBeNull();

@@ -59,15 +59,21 @@ function writeSemanticTraceBundle(root: string, options: Partial<{
   storyFingerprint: string;
   omitEvents: boolean;
   omitFirstScreenshotFile: boolean;
+  suite: string;
+  scenarioId: string;
+  storyId: string;
 }> = {}): string {
   const story = getReleaseStoryDefinition();
   const binding = buildTraceStoryBinding(story);
   const runId = 'standalone-trace-run';
+  const suite = options.suite ?? 'integration-release-user-story';
+  const storyId = options.storyId ?? story.storyId;
+  const scenarioId = options.scenarioId ?? 'integration-release-user-story';
   const bundleDir = resolveUxTraceBundleDir({
     outputRoot: root,
     lane: 'backend-real',
-    suite: 'integration-release-user-story',
-    storyId: story.storyId,
+    suite,
+    storyId,
     runId,
   });
   const traceSteps = requiredTraceSteps(story);
@@ -94,16 +100,16 @@ function writeSemanticTraceBundle(root: string, options: Partial<{
   const sourceFile = story.sourceFile ?? story.filePath;
   const manifest: UxTraceBundleManifest = {
     version: 1,
-    story_id: story.storyId,
+    story_id: storyId,
     story_source: binding.storySource,
     story_source_fingerprint: buildStorySourceFingerprint(readFileSync(resolve(sourceFile), 'utf8')),
     story_fingerprint: options.storyFingerprint ?? canonicalStoryFingerprint,
     step_map_fingerprint: stepMapFingerprint,
-    scenario_id: 'integration-release-user-story',
+    scenario_id: scenarioId,
     title: story.title,
     actor: story.actor,
     lane: 'backend-real',
-    suite: 'integration-release-user-story',
+    suite,
     route: story.entryRoute,
     spec_file: 'e2e/integration-release-user-story.spec.ts',
     browser: 'chromium',
@@ -182,13 +188,14 @@ function runTraceValidator(root: string, reportPath = join(root, 'validation.jso
     'npx',
     [
       'tsx',
-      'scripts/validate-ux-trace-bundles.ts',
-      '--root',
+      'scripts/governance/run-release-full-aggregate.ts',
+      'validate-ux-trace-root',
+      '--campaign-id',
+      'release-full',
+      '--step-id',
+      'gate-release',
+      '--path',
       root,
-      '--expected-lane',
-      'backend-real',
-      '--min-count',
-      '1',
       '--report',
       reportPath,
       '--valid-paths',
@@ -210,15 +217,25 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('verify');
     expect(script).toContain('summary');
     expect(script).toContain('run_resource_recovery_step');
-    expect(script).toContain('--report "${RESOURCE_RECOVERY_SMOKE_JSON}"');
-    expect(script).toContain('--report "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}"');
+    expect(script).toContain('summary_args+=');
+    expect(script).toContain('report_paths=(');
+    expect(script).toContain('"${RESOURCE_RECOVERY_SMOKE_JSON}"');
+    expect(script).toContain('"${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}"');
     expect(script).toContain('FILE_LIBRARY_RESOURCE_RECOVERY_PROBE_PATH');
     expect(script).toContain('resource-recovery');
     expect(script).toContain('boot-baseline.json');
     expect(script).toContain('baseline.json');
+    expect(script).toContain('file-library-api-startup.json');
     expect(script).toContain('report.json');
     expect(script).toContain('report.md');
+    expect(script).toContain('startup-report');
+    expect(script).toContain('rm -f');
+    expect(script).toContain('"${RESOURCE_RECOVERY_STARTUP_JSON}"');
     expect(script).toContain('--boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"');
+    expect(script).toContain('--allow-api-remote-port "${POSTGRES_PORT}"');
+    expect(script).toContain('--allow-api-remote-port "${MONGO_PORT}"');
+    expect(script).not.toContain('--allow-api-remote-port "${MINIO_PORT}"');
+    expect(script).toContain('"${RESOURCE_RECOVERY_STARTUP_JSON}"');
     expect(script).toContain('--api-pid "${API_PID}"');
     expect(script).not.toContain('npx "${args[@]}" >/dev/null 2>&1 || true');
   });
@@ -244,6 +261,20 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).not.toMatch(
       /\nrun_resource_recovery_step "file-library-real-smoke" "\$\{RESOURCE_RECOVERY_SMOKE_JSON\}" "" \\/,
     );
+  });
+
+  it('materializes startup evidence and summary even when the api never reaches ready', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+
+    expect(script).toContain('RESOURCE_RECOVERY_PRE_READY_FAILURE=0');
+    expect(script).toContain('materialize_pre_ready_failure_evidence()');
+    expect(script).toContain('write_startup_resource_recovery_report');
+    expect(script).toContain('RESOURCE_RECOVERY_PRE_READY_FAILURE=1');
+    expect(script).toContain('--failure-message "${failure_message}"');
+    expect(script).toContain('if [[ "${RESOURCE_RECOVERY_PRE_READY_FAILURE}" == "1" ]]; then');
+    expect(script).toContain('report_paths=("${RESOURCE_RECOVERY_STARTUP_JSON}")');
+    expect(script).toContain('capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"');
+    expect(script).toContain('File library gate could not materialize startup resource recovery evidence before exiting.');
   });
 
   it('fails closed for mount truth probes instead of treating missing commands as not mounted', () => {
@@ -305,10 +336,13 @@ describe('backend-real full gate runtime ownership contract', () => {
   it('delegates standalone UX trace evidence acceptance to the semantic validator instead of find review.md', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
 
-    expect(script).toContain('scripts/validate-ux-trace-bundles.ts');
+    expect(script).toContain('scripts/governance/run-release-full-aggregate.ts validate-ux-trace-root');
+    expect(script).toContain('--campaign-id release-full');
+    expect(script).toContain('--step-id gate-release');
     expect(script).toContain('UX_TRACE_VALIDATION_REPORT');
     expect(script).toContain('UX_TRACE_VALID_BUNDLES');
     expect(script).toContain('backend_real_ux_trace_bundle');
+    expect(script).not.toContain('scripts/validate-ux-trace-bundles.ts');
     expect(script).not.toContain('find "${ARTIFACT_DIR}/ux-traces" -type f -name review.md');
   });
 
@@ -320,7 +354,7 @@ describe('backend-real full gate runtime ownership contract', () => {
       const result = runTraceValidator(root);
 
       expect(result.status).not.toBe(0);
-      expect(`${result.stdout}\n${result.stderr}`).toContain('manifest.json');
+      expect(`${result.stdout}\n${result.stderr}`).toContain('ux-trace-index.json');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -343,6 +377,25 @@ describe('backend-real full gate runtime ownership contract', () => {
       expect(report.valid_count).toBe(1);
       expect(report.valid_bundle_paths).toEqual([bundleDir]);
       expect(readFileSync(join(root, 'valid-bundles.txt'), 'utf8')).toBe(`${bundleDir}\n`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects standalone UX trace evidence that is semantically valid but outside the current release story membership', () => {
+    const root = mkdtempSync(join(tmpdir(), 'backend-real-trace-membership-'));
+    try {
+      writeSemanticTraceBundle(root, {
+        suite: 'integration-governance-member-workflow-continuity',
+        scenarioId: 'integration-governance-member-workflow-continuity',
+        storyId: 'governance-member-workflow-continuity',
+      });
+
+      const result = runTraceValidator(root);
+
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain('integration-release-user-story');
+      expect(`${result.stdout}\n${result.stderr}`).toContain('release-user-story-end-to-end');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

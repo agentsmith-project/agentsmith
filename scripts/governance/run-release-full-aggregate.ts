@@ -15,6 +15,7 @@ import {
   buildReleaseCampaignEvidencePathRecord,
   evidencePointerPath,
   evaluateCampaignEvidenceChecks,
+  evaluateUxTraceEvidenceRoot,
   nativeResultPath,
   type ParsedGateResult,
   type ReleaseCampaignEvidencePathRecord,
@@ -36,6 +37,14 @@ interface ExpectedGateResultTrace {
   lineKind: string;
   npmScript: string;
   evidenceDir: string;
+}
+
+interface ValidateUxTraceRootCliOptions {
+  campaignId: string;
+  stepId: string;
+  path: string;
+  reportPath?: string;
+  validPathsPath?: string;
 }
 
 function asFailureClass(value: unknown): CurrentGateResultFailureClass {
@@ -365,6 +374,118 @@ function validateCurrentEvidenceChecks(
   }
 }
 
+function usageValidateUxTraceRoot(): string {
+  return [
+    'Usage: tsx scripts/governance/run-release-full-aggregate.ts validate-ux-trace-root [options]',
+    '',
+    'Options:',
+    '  --campaign-id <id>   Verification campaign id. Default: release-full.',
+    '  --step-id <id>       Evidence-owning campaign step id to validate.',
+    '  --path <path>        UX trace evidence root to validate.',
+    '  --report <path>      Write a machine-readable validation report.',
+    '  --valid-paths <path> Write accepted bundle directories, one per line.',
+  ].join('\n');
+}
+
+function parseValidateUxTraceRootArgs(argv: readonly string[]): ValidateUxTraceRootCliOptions {
+  const options: Partial<ValidateUxTraceRootCliOptions> = {
+    campaignId: 'release-full',
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    const next = argv[index + 1];
+    switch (arg) {
+      case '--campaign-id':
+        options.campaignId = next;
+        index += 1;
+        break;
+      case '--step-id':
+        options.stepId = next;
+        index += 1;
+        break;
+      case '--path':
+        options.path = next;
+        index += 1;
+        break;
+      case '--report':
+        options.reportPath = next;
+        index += 1;
+        break;
+      case '--valid-paths':
+        options.validPathsPath = next;
+        index += 1;
+        break;
+      case '--help':
+      case '-h':
+        process.stdout.write(`${usageValidateUxTraceRoot()}\n`);
+        process.exit(0);
+        break;
+      default:
+        throw new Error(`Unknown validate-ux-trace-root argument: ${arg}`);
+    }
+  }
+  if (!options.stepId?.trim()) {
+    throw new Error('validate-ux-trace-root requires --step-id.');
+  }
+  if (!options.path?.trim()) {
+    throw new Error('validate-ux-trace-root requires --path.');
+  }
+  return options as ValidateUxTraceRootCliOptions;
+}
+
+function runValidateUxTraceRootCli(argv: readonly string[]): void {
+  const options = parseValidateUxTraceRootArgs(argv);
+  const campaign = findCurrentVerificationCampaignById(options.campaignId);
+  if (!campaign) {
+    throw new Error(`Unknown verification campaign: ${options.campaignId}`);
+  }
+  const step = campaign.steps.find((candidate) => candidate.id === options.stepId);
+  if (!step) {
+    throw new Error(`Unknown verification campaign step: ${options.stepId}`);
+  }
+  const check = step.evidenceChecks.find((candidate) => candidate.semantic === 'ux_trace_bundle');
+  if (!check) {
+    throw new Error(`Campaign step ${options.stepId} does not own ux_trace_bundle evidence.`);
+  }
+
+  const evaluation = evaluateUxTraceEvidenceRoot(resolve(options.path), step, check);
+  const report = {
+    schema: 'release_campaign_ux_trace_validation/v1',
+    campaign_id: options.campaignId,
+    step_id: options.stepId,
+    path: resolve(options.path),
+    min_count: evaluation.minCount,
+    valid_count: evaluation.validBundlePaths.length,
+    valid_bundle_paths: evaluation.validBundlePaths,
+    required_paths: evaluation.records,
+    generated_at: new Date().toISOString(),
+  };
+
+  if (options.reportPath) {
+    mkdirSync(dirname(resolve(options.reportPath)), { recursive: true });
+    writeFileSync(resolve(options.reportPath), `${JSON.stringify(report, null, 2)}\n`);
+  }
+  if (options.validPathsPath) {
+    mkdirSync(dirname(resolve(options.validPathsPath)), { recursive: true });
+    writeFileSync(
+      resolve(options.validPathsPath),
+      `${evaluation.validBundlePaths.join('\n')}${evaluation.validBundlePaths.length > 0 ? '\n' : ''}`,
+    );
+  }
+
+  const failures = evaluation.records.filter((record) => !record.exists);
+  if (failures.length > 0) {
+    for (const failure of failures) {
+      process.stderr.write(`${failure.error ?? `Invalid evidence path: ${failure.path}`}\n`);
+    }
+    process.exit(1);
+  }
+
+  for (const bundlePath of evaluation.validBundlePaths) {
+    process.stdout.write(`${bundlePath}\n`);
+  }
+}
+
 function main(): void {
   const campaign = findCurrentVerificationCampaignById('release-full');
   if (!campaign) {
@@ -580,7 +701,14 @@ function main(): void {
 }
 
 try {
-  main();
+  const [command, ...argv] = process.argv.slice(2);
+  if (command === 'validate-ux-trace-root') {
+    runValidateUxTraceRootCli(argv);
+  } else if (command) {
+    throw new Error(`Unknown command: ${command}`);
+  } else {
+    main();
+  }
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`[gate:release:full] ${message}`);

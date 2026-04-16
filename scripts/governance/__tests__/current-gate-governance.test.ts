@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CURRENT_GATE_MANIFEST,
+  CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY,
   findCurrentGateDefinition,
   findCurrentGateDefinitionById,
   listCurrentGateDefinitionsByKind,
@@ -204,6 +205,24 @@ describe('current gate governance', () => {
         'artifacts/backend-real-visual/<run-id>/ux-traces',
       ]),
     );
+  });
+
+  it('declares the release backend-real UX trace membership in the campaign topology instead of accepting arbitrary bundles', () => {
+    const traceArtifact = CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY.gateRelease.find(
+      (artifact) => artifact.id === 'backend_real_ux_trace_reviews',
+    );
+
+    expect(traceArtifact).toBeDefined();
+    expect(traceArtifact?.minCount).toBeGreaterThan(0);
+    expect(traceArtifact).toMatchObject({
+      expectedMembership: [
+        {
+          suite: 'integration-release-user-story',
+          storyId: 'release-user-story-end-to-end',
+          scenarioId: 'integration-release-user-story',
+        },
+      ],
+    });
   });
 
   it('keeps generated gate contracts in sync with the repository state', () => {

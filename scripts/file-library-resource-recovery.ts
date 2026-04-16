@@ -111,6 +111,12 @@ interface FinalizeResourceRecoveryStepReportInput {
   extra_findings?: readonly string[];
 }
 
+interface StartupApiRemotePortAllowance {
+  remote_port: number;
+  state: string;
+  max_count: number;
+}
+
 interface BuildResourceRecoveryFailureReportInput {
   step: string;
   baseline: FileLibraryResourceRecoverySnapshot;
@@ -510,6 +516,66 @@ function buildTcpConnectionMap(
   ]));
 }
 
+function buildStartupApiRemotePortAllowances(
+  remotePorts: readonly number[],
+): StartupApiRemotePortAllowance[] {
+  return [...new Set(remotePorts)]
+    .sort((left, right) => left - right)
+    .map((remotePort) => ({
+      remote_port: remotePort,
+      state: 'ESTABLISHED',
+      max_count: 1,
+    }));
+}
+
+function stripStartupApiTcpTruth(
+  snapshot: FileLibraryResourceRecoverySnapshot,
+): FileLibraryResourceRecoverySnapshot {
+  return {
+    ...snapshot,
+    tcp_connections: snapshot.tcp_connections.filter((connection) => connection.process_label !== 'api-entry'),
+  };
+}
+
+function buildStartupApiConnectionFindings(args: {
+  readyBaseline: FileLibraryResourceRecoverySnapshot;
+  allowedApiRemotePorts: readonly number[];
+}): string[] {
+  const findings: string[] = [];
+  const allowances = buildStartupApiRemotePortAllowances(args.allowedApiRemotePorts);
+  const allowanceMap = new Map(
+    allowances.map((allowance) => [`${allowance.remote_port}|${allowance.state}`, allowance]),
+  );
+  const observedCounts = new Map<string, number>();
+
+  for (const connection of args.readyBaseline.tcp_connections) {
+    if (connection.process_label !== 'api-entry') {
+      continue;
+    }
+    const key = `${connection.remote_port}|${connection.state}`;
+    const allowance = allowanceMap.get(key);
+    if (!allowance) {
+      findings.push(
+        `unexpected api startup tcp connections remained before smoke steps: ${connection.process_label} -> ${connection.remote_host}:${connection.remote_port} [${connection.state}] x${connection.count}`,
+      );
+      continue;
+    }
+    observedCounts.set(key, (observedCounts.get(key) ?? 0) + connection.count);
+  }
+
+  for (const allowance of allowances) {
+    const key = `${allowance.remote_port}|${allowance.state}`;
+    const observedCount = observedCounts.get(key) ?? 0;
+    if (observedCount > allowance.max_count) {
+      findings.push(
+        `startup api tcp connection count exceeded the declared steady-state allowance before smoke steps for api-entry remote_port ${allowance.remote_port} [${allowance.state}]: expected <= ${allowance.max_count}, found ${observedCount}`,
+      );
+    }
+  }
+
+  return findings;
+}
+
 async function detectMountCleanupStatus(
   mountPoint: string,
 ): Promise<{ status: TaskMountpointStatus | null; error: string | null }> {
@@ -823,6 +889,37 @@ export function compareResourceRecoveryBaseline(args: {
   };
 }
 
+export function buildStartupResourceRecoveryReport(args: {
+  bootBaseline: FileLibraryResourceRecoverySnapshot;
+  readyBaseline: FileLibraryResourceRecoverySnapshot;
+  allowedApiRemotePorts?: readonly number[];
+  extraFindings?: readonly string[];
+}): FileLibraryResourceRecoveryStepReport {
+  const step = 'file-library-api-startup';
+  const compared = compareResourceRecoveryBaseline({
+    step,
+    baseline: stripStartupApiTcpTruth(args.bootBaseline),
+    current: stripStartupApiTcpTruth(args.readyBaseline),
+  });
+  const findings = appendUniqueFindings(
+    compared.findings,
+    [
+      ...buildStartupApiConnectionFindings({
+        readyBaseline: args.readyBaseline,
+        allowedApiRemotePorts: args.allowedApiRemotePorts ?? [],
+      }),
+      ...(args.extraFindings ?? []),
+    ],
+  );
+  return {
+    ...compared,
+    baseline: args.bootBaseline,
+    current: args.readyBaseline,
+    status: findings.length === 0 ? 'pass' : 'fail',
+    findings,
+  };
+}
+
 function appendUniqueFindings(findings: readonly string[], extras: readonly string[]): string[] {
   const nextFindings = [...findings];
   for (const extra of extras) {
@@ -1040,6 +1137,35 @@ async function runVerify(argv: string[]): Promise<void> {
   }
 }
 
+async function runStartupReport(argv: string[]): Promise<void> {
+  const bootBaselinePath = parseOption(argv, '--boot-baseline');
+  const baselinePath = parseOption(argv, '--baseline');
+  const outputPath = parseOption(argv, '--output');
+  const allowedApiRemotePorts = parseMultiOption(argv, '--allow-api-remote-port')
+    .map((rawPort) => Number.parseInt(rawPort, 10));
+  const failureMessage = parseOption(argv, '--failure-message');
+
+  if (!bootBaselinePath || !baselinePath || !outputPath) {
+    throw new Error('startup-report requires --boot-baseline <path> --baseline <path> --output <path>');
+  }
+  if (allowedApiRemotePorts.some((port) => !Number.isInteger(port) || port <= 0)) {
+    throw new Error('startup-report --allow-api-remote-port values must be positive integers');
+  }
+
+  const bootBaseline = await readJsonFile<FileLibraryResourceRecoverySnapshot>(bootBaselinePath);
+  const readyBaseline = await readJsonFile<FileLibraryResourceRecoverySnapshot>(baselinePath);
+  const report = buildStartupResourceRecoveryReport({
+    bootBaseline,
+    readyBaseline,
+    allowedApiRemotePorts,
+    extraFindings: failureMessage ? [failureMessage] : [],
+  });
+  await writeJsonFile(outputPath, report);
+  if (report.status !== 'pass') {
+    throw new Error(report.findings.join('; '));
+  }
+}
+
 async function runFallbackReport(argv: string[]): Promise<void> {
   const baselinePath = parseOption(argv, '--baseline');
   const outputPath = parseOption(argv, '--output');
@@ -1110,6 +1236,9 @@ async function main(argv: string[]): Promise<void> {
     case 'snapshot':
       await runSnapshot(rest);
       return;
+    case 'startup-report':
+      await runStartupReport(rest);
+      return;
     case 'verify':
       await runVerify(rest);
       return;
@@ -1120,7 +1249,7 @@ async function main(argv: string[]): Promise<void> {
       await runSummary(rest);
       return;
     default:
-      throw new Error('expected one of: snapshot, verify, fallback-report, summary');
+      throw new Error('expected one of: snapshot, startup-report, verify, fallback-report, summary');
   }
 }
 

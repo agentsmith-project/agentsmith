@@ -10,8 +10,9 @@
  * Update baselines: npx playwright test e2e/visual.spec.ts --project=visual --update-snapshots
  */
 
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { test as base, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { ensureAuthenticatedSession, readMockAuthTokenFromContext, withAuth } from './fixtures/authenticated';
 import { gotoAndWait, waitForPageReady } from './utils/navigation';
@@ -28,6 +29,29 @@ import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 
 const WS_ID = 'ws_default';
 const test = base;
+type ScreenshotComparator = (
+  actual: Buffer,
+  expected: Buffer,
+  options: {
+    comparator?: string;
+    maxDiffPixels?: number;
+    maxDiffPixelRatio?: number;
+    threshold?: number;
+  },
+) => { errorMessage: string; diff?: Buffer } | null;
+let screenshotComparatorPromise: Promise<ScreenshotComparator> | null = null;
+
+function getScreenshotComparator(): Promise<ScreenshotComparator> {
+  if (!screenshotComparatorPromise) {
+    screenshotComparatorPromise = import(
+      pathToFileURL(path.resolve(process.cwd(), 'node_modules/playwright-core/lib/server/utils/comparators.js')).href
+    ).then((module) => {
+      const getComparator = (module as { getComparator: (mimeType: string) => ScreenshotComparator }).getComparator;
+      return getComparator('image/png');
+    });
+  }
+  return screenshotComparatorPromise;
+}
 
 type VisualAuthOptions = {
   bootstrapPath?: string;
@@ -966,10 +990,9 @@ function resolveRunBoundActualCaptureRoot(): string | null {
 }
 
 async function writeRunBoundActualCapture(args: {
-  page: Page;
+  actualCapture: Buffer;
   scenario: VisualBaselineExecutorScenario;
   entry: VisualBaselineCatalogEntry;
-  screenshotOptions: VisualScreenshotOptions;
 }) {
   const captureRoot = resolveRunBoundActualCaptureRoot();
   if (!captureRoot) {
@@ -978,10 +1001,87 @@ async function writeRunBoundActualCapture(args: {
 
   const targetPath = path.join(captureRoot, args.scenario.scenarioId, args.entry.screenshot);
   mkdirSync(path.dirname(targetPath), { recursive: true });
-  await args.page.screenshot({
-    path: targetPath,
-    ...(args.screenshotOptions.fullPage ? { fullPage: true } : {}),
+  writeFileSync(targetPath, args.actualCapture);
+}
+
+async function captureSnapshotBoundActualScreenshot(args: {
+  page: Page;
+  entry: VisualBaselineCatalogEntry;
+  screenshotOptions: VisualScreenshotOptions;
+}): Promise<Buffer> {
+  const testInfo = test.info() as {
+    snapshotPath: (name: string, options: { kind: 'screenshot' }) => string;
+    _projectInternal?: {
+      expect?: {
+        toHaveScreenshot?: {
+          animations?: 'disabled' | 'allow';
+          caret?: 'hide' | 'initial';
+          comparator?: string;
+          maskColor?: string;
+          maxDiffPixels?: number;
+          maxDiffPixelRatio?: number;
+          omitBackground?: boolean;
+          scale?: 'css' | 'device';
+          threshold?: number;
+          timeout?: number;
+        };
+      };
+    };
+  };
+  const configOptions = testInfo._projectInternal?.expect?.toHaveScreenshot ?? {};
+  const expectedPath = testInfo.snapshotPath(args.entry.screenshot, { kind: 'screenshot' });
+  const expected = readFileSync(expectedPath);
+  const screenshotComparator = await getScreenshotComparator();
+  const result = await (args.page as Page & {
+    _expectScreenshot: (options: {
+      expected?: Buffer;
+      isNot: boolean;
+      locator?: Locator;
+      animations?: 'disabled' | 'allow';
+      caret?: 'hide' | 'initial';
+      comparator?: string;
+      fullPage?: boolean;
+      maskColor?: string;
+      maxDiffPixels?: number;
+      maxDiffPixelRatio?: number;
+      omitBackground?: boolean;
+      scale?: 'css' | 'device';
+      threshold?: number;
+      timeout: number;
+    }) => Promise<{
+      actual?: Buffer;
+      errorMessage?: string;
+    }>;
+  })._expectScreenshot({
+    isNot: false,
+    animations: configOptions.animations ?? 'disabled',
+    caret: configOptions.caret ?? 'hide',
+    comparator: configOptions.comparator,
+    fullPage: args.screenshotOptions.fullPage,
+    maskColor: configOptions.maskColor,
+    maxDiffPixels: configOptions.maxDiffPixels,
+    maxDiffPixelRatio: args.screenshotOptions.maxDiffPixelRatio ?? configOptions.maxDiffPixelRatio,
+    omitBackground: configOptions.omitBackground,
+    scale: configOptions.scale ?? 'css',
+    threshold: configOptions.threshold,
+    timeout: configOptions.timeout ?? 5_000,
   });
+
+  if (result.errorMessage || !result.actual) {
+    throw new Error(result.errorMessage ?? `Playwright screenshot assertion did not return an actual buffer for ${args.entry.screenshot}`);
+  }
+
+  const comparison = screenshotComparator(result.actual, expected, {
+    comparator: configOptions.comparator,
+    maxDiffPixels: configOptions.maxDiffPixels,
+    maxDiffPixelRatio: args.screenshotOptions.maxDiffPixelRatio ?? configOptions.maxDiffPixelRatio,
+    threshold: configOptions.threshold,
+  });
+  if (comparison) {
+    throw new Error(comparison.errorMessage);
+  }
+
+  return result.actual;
 }
 
 async function runVisualScenario(context: VisualScenarioContext) {
@@ -1014,12 +1114,15 @@ async function runVisualScenario(context: VisualScenarioContext) {
 
   await waitForStableRecipeMarkers(page, scenario);
   await expectVisualSemanticAssertions(page, scenario.semanticAssertions, scenario.scenarioId);
-  await expect(page).toHaveScreenshot(entry.screenshot, screenshotOptions);
-  await writeRunBoundActualCapture({
+  const actualCapture = await captureSnapshotBoundActualScreenshot({
     page,
-    scenario,
     entry,
     screenshotOptions,
+  });
+  await writeRunBoundActualCapture({
+    actualCapture,
+    scenario,
+    entry,
   });
 }
 

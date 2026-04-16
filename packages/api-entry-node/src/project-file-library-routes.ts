@@ -26,6 +26,8 @@ import {
 } from './file-library-gateway-client.js';
 import {
   awaitAbortableOperation,
+  bindAbortSignal,
+  createAbortError,
   createHttpOperationEnvelope,
   openGatewayObjectDownload,
   parseMultipartUploadAndExecute,
@@ -64,6 +66,7 @@ async function listGatewayObjects(
     prefix: string;
     pageSize: number;
     continuationToken?: string;
+    signal?: AbortSignal;
   },
 ): Promise<{
   path: string;
@@ -81,6 +84,14 @@ async function listGatewayObjects(
   const commonPrefixes: string[] = [];
   let lastKey: string | null = null;
   let truncated = false;
+  let removeAbortListener: () => void = () => {};
+  const destroyStream = (reason?: unknown) => {
+    const destroy = (stream as unknown as { destroy?: (error?: Error) => void }).destroy;
+    if (typeof destroy === 'function') {
+      destroy.call(stream, createAbortError(reason, 'file_library_gateway_list_aborted'));
+    }
+  };
+  removeAbortListener = bindAbortSignal(options.signal, destroyStream);
   try {
     for await (const item of stream as unknown as AsyncIterable<{
       name?: string;
@@ -89,6 +100,9 @@ async function listGatewayObjects(
       etag?: string;
       lastModified?: Date;
     }>) {
+      if (options.signal?.aborted) {
+        throw createAbortError(options.signal.reason, 'file_library_gateway_list_aborted');
+      }
       if (typeof item.prefix === 'string') {
         commonPrefixes.push(item.prefix);
         lastKey = item.prefix;
@@ -103,14 +117,23 @@ async function listGatewayObjects(
       }
       if (objects.length + commonPrefixes.length >= options.pageSize) {
         truncated = true;
-        if (typeof (stream as unknown as { destroy?: () => void }).destroy === 'function') {
-          (stream as unknown as { destroy: () => void }).destroy();
-        }
+        destroyStream('file_library_gateway_list_truncated');
         break;
       }
     }
-  } catch {
+  } catch (error) {
+    if (options.signal?.aborted) {
+      throw createAbortError(options.signal.reason, 'file_library_gateway_list_aborted');
+    }
+    if (!truncated) {
+      throw error;
+    }
     // stream may throw after destroy; treat as normal truncation
+  } finally {
+    removeAbortListener();
+  }
+  if (options.signal?.aborted) {
+    throw createAbortError(options.signal.reason, 'file_library_gateway_list_aborted');
   }
   return {
     path: options.prefix,
@@ -144,10 +167,18 @@ async function copyObject(
   fromKey: string,
   toKey: string,
   overwrite = false,
+  signal?: AbortSignal,
+  abortMessage = 'file_library_move_aborted',
 ): Promise<void> {
   if (!overwrite) {
     try {
-      await client.statObject(bucket, toKey);
+      await awaitAbortableOperation(
+        client.statObject(bucket, toKey),
+        {
+          signal,
+          abortMessage,
+        },
+      );
       throw new Error('destination_exists');
     } catch (error) {
       if (error instanceof Error && error.message === 'destination_exists') {
@@ -155,18 +186,42 @@ async function copyObject(
       }
     }
   }
-  await client.copyObject(bucket, toKey, `/${bucket}/${fromKey}`);
+  await awaitAbortableOperation(
+    client.copyObject(bucket, toKey, `/${bucket}/${fromKey}`),
+    {
+      signal,
+      abortMessage,
+    },
+  );
 }
 
-async function deleteMany(client: MinioClient, bucket: string, keys: string[]): Promise<void> {
+async function deleteMany(
+  client: MinioClient,
+  bucket: string,
+  keys: string[],
+  signal?: AbortSignal,
+  abortMessage = 'file_library_move_aborted',
+): Promise<void> {
   if (keys.length === 0) return;
   if (typeof (client as unknown as { removeObjects?: unknown }).removeObjects === 'function') {
-    await (client as unknown as { removeObjects: (bucketName: string, keysToDelete: string[]) => Promise<void> })
-      .removeObjects(bucket, keys);
+    await awaitAbortableOperation(
+      (client as unknown as { removeObjects: (bucketName: string, keysToDelete: string[]) => Promise<void> })
+        .removeObjects(bucket, keys),
+      {
+        signal,
+        abortMessage,
+      },
+    );
     return;
   }
   for (const key of keys) {
-    await client.removeObject(bucket, key);
+    await awaitAbortableOperation(
+      client.removeObject(bucket, key),
+      {
+        signal,
+        abortMessage,
+      },
+    );
   }
 }
 
@@ -632,35 +687,72 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_move_request' });
       return true;
     }
-    const client = await createFileLibraryGatewayClient({
-      deps,
-      workspaceId,
-      projectId,
-      libraryId,
-      filesystemName: library.filesystem_name,
-    });
-    const bucket = fileLibraryBucketName(library.filesystem_name);
-    const overwrite = parsed.data.overwrite ?? false;
-    if (parsed.data.from_path.endsWith('/')) {
-      const fromPath = ensureDirectoryPath(parsed.data.from_path);
-      const toPath = ensureDirectoryPath(parsed.data.to_path);
-      const listed = await listGatewayObjects(client, bucket, { prefix: fromPath, pageSize: 1000 });
-      await client.putObject(bucket, toPath, Buffer.alloc(0), 0, { 'Content-Type': 'application/x-directory' });
-      for (const item of listed.objects) {
-        const target = `${toPath}${item.key.slice(fromPath.length)}`;
-        await copyObject(client, bucket, item.key, target, overwrite);
+    let operation: ReturnType<typeof createHttpOperationEnvelope> | null = null;
+    try {
+      operation = createHttpOperationEnvelope({ req, res });
+      const client = await awaitAbortableOperation(
+        createFileLibraryGatewayClient({
+          deps,
+          workspaceId,
+          projectId,
+          libraryId,
+          filesystemName: library.filesystem_name,
+          signal: operation.signal,
+        }),
+        {
+          signal: operation.signal,
+          abortMessage: 'file_library_move_aborted',
+        },
+      );
+      const bucket = fileLibraryBucketName(library.filesystem_name);
+      const overwrite = parsed.data.overwrite ?? false;
+      if (parsed.data.from_path.endsWith('/')) {
+        const fromPath = ensureDirectoryPath(parsed.data.from_path);
+        const toPath = ensureDirectoryPath(parsed.data.to_path);
+        const listed = await listGatewayObjects(client, bucket, {
+          prefix: fromPath,
+          pageSize: 1000,
+          signal: operation.signal,
+        });
+        await awaitAbortableOperation(
+          client.putObject(bucket, toPath, Buffer.alloc(0), 0, { 'Content-Type': 'application/x-directory' }),
+          {
+            signal: operation.signal,
+            abortMessage: 'file_library_move_aborted',
+          },
+        );
+        for (const item of listed.objects) {
+          const target = `${toPath}${item.key.slice(fromPath.length)}`;
+          await copyObject(client, bucket, item.key, target, overwrite, operation.signal);
+        }
+        const keysToDelete = [fromPath, ...listed.objects.map((item) => item.key)];
+        await deleteMany(client, bucket, keysToDelete, operation.signal);
+      } else {
+        const fromPath = normalizeFileLibraryPath(parsed.data.from_path);
+        const toPath = normalizeFileLibraryPath(parsed.data.to_path);
+        await copyObject(client, bucket, fromPath, toPath, overwrite, operation.signal);
+        await awaitAbortableOperation(
+          client.removeObject(bucket, fromPath),
+          {
+            signal: operation.signal,
+            abortMessage: 'file_library_move_aborted',
+          },
+        );
       }
-      const keysToDelete = [fromPath, ...listed.objects.map((item) => item.key)];
-      await deleteMany(client, bucket, keysToDelete);
-    } else {
-      const fromPath = normalizeFileLibraryPath(parsed.data.from_path);
-      const toPath = normalizeFileLibraryPath(parsed.data.to_path);
-      await copyObject(client, bucket, fromPath, toPath, overwrite);
-      await client.removeObject(bucket, fromPath);
+      if (operation.signal.aborted) {
+        return true;
+      }
+      res.statusCode = 204;
+      res.end();
+      return true;
+    } catch (error) {
+      if (operation?.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+        return true;
+      }
+      throw error;
+    } finally {
+      operation?.cleanup();
     }
-    res.statusCode = 204;
-    res.end();
-    return true;
   }
 
   if (routeKind === 'fileLibraryUpload' && method === 'POST') {
@@ -832,16 +924,34 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_meta_query' });
       return true;
     }
+    let operation: ReturnType<typeof createHttpOperationEnvelope> | null = null;
     try {
+      operation = createHttpOperationEnvelope({ req, res });
       const objectPath = normalizeFileLibraryPath(path);
-      const client = await createFileLibraryGatewayClient({
-        deps,
-        workspaceId,
-        projectId,
-        libraryId,
-        filesystemName: library.filesystem_name,
-      });
-      const stat = await client.statObject(fileLibraryBucketName(library.filesystem_name), objectPath);
+      const client = await awaitAbortableOperation(
+        createFileLibraryGatewayClient({
+          deps,
+          workspaceId,
+          projectId,
+          libraryId,
+          filesystemName: library.filesystem_name,
+          signal: operation.signal,
+        }),
+        {
+          signal: operation.signal,
+          abortMessage: 'file_library_meta_aborted',
+        },
+      );
+      const stat = await awaitAbortableOperation(
+        client.statObject(fileLibraryBucketName(library.filesystem_name), objectPath),
+        {
+          signal: operation.signal,
+          abortMessage: 'file_library_meta_aborted',
+        },
+      );
+      if (operation.signal.aborted) {
+        return true;
+      }
       json(res, 200, {
         key: objectPath,
         size_bytes: stat.size,
@@ -851,10 +961,15 @@ export async function handleProjectFileLibraryRoutes(args: {
         user_metadata: stat.metaData,
       });
     } catch (error) {
+      if (operation?.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+        return true;
+      }
       json(res, 404, {
         error_code: 'RESOURCE_NOT_FOUND',
         message: error instanceof Error ? error.message : 'file_library_meta_not_found',
       });
+    } finally {
+      operation?.cleanup();
     }
     return true;
   }

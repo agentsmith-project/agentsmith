@@ -25,7 +25,7 @@ type MultipartUploadFilePart = Readable & {
   destroyed?: boolean;
 };
 
-function createAbortError(
+export function createAbortError(
   reason?: unknown,
   fallbackMessage = 'stream_aborted',
 ): Error {
@@ -46,7 +46,7 @@ function createAbortError(
   return error;
 }
 
-function bindAbortSignal(
+export function bindAbortSignal(
   signal: AbortSignal | undefined,
   onAbort: (reason?: unknown) => void,
 ): () => void {

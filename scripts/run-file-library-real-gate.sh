@@ -107,42 +107,114 @@ FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR="${FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR:-${RO
 RESOURCE_RECOVERY_DIR="${FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR}/resource-recovery"
 RESOURCE_RECOVERY_BOOT_BASELINE_JSON="${RESOURCE_RECOVERY_DIR}/boot-baseline.json"
 RESOURCE_RECOVERY_BASELINE_JSON="${RESOURCE_RECOVERY_DIR}/baseline.json"
+RESOURCE_RECOVERY_STARTUP_JSON="${RESOURCE_RECOVERY_DIR}/file-library-api-startup.json"
 RESOURCE_RECOVERY_SMOKE_JSON="${RESOURCE_RECOVERY_DIR}/file-library-real-smoke.json"
 RESOURCE_RECOVERY_MOUNT_SYNC_JSON="${RESOURCE_RECOVERY_DIR}/file-library-mount-sync-smoke.json"
 RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON="${RESOURCE_RECOVERY_DIR}/file-library-mount-sync-probe.json"
 RESOURCE_RECOVERY_REPORT_JSON="${RESOURCE_RECOVERY_DIR}/report.json"
 RESOURCE_RECOVERY_REPORT_MD="${RESOURCE_RECOVERY_DIR}/report.md"
 RESOURCE_RECOVERY_SUMMARY_WRITTEN=0
+RESOURCE_RECOVERY_PRE_READY_FAILURE=0
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 mkdir -p "${RESOURCE_RECOVERY_DIR}"
+rm -f \
+  "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}" \
+  "${RESOURCE_RECOVERY_BASELINE_JSON}" \
+  "${RESOURCE_RECOVERY_STARTUP_JSON}" \
+  "${RESOURCE_RECOVERY_SMOKE_JSON}" \
+  "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}" \
+  "${RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON}" \
+  "${RESOURCE_RECOVERY_REPORT_JSON}" \
+  "${RESOURCE_RECOVERY_REPORT_MD}"
 
 npx tsx "${ROOT_DIR}/scripts/file-library-resource-recovery.ts" \
   snapshot \
   --output "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
+
+capture_resource_recovery_baseline() {
+  local output_path="$1"
+  local -a snapshot_args=(
+    tsx
+    "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
+    snapshot
+    --output "${output_path}"
+  )
+
+  if kill -0 "${API_PID}" >/dev/null 2>&1; then
+    local -a api_snapshot_args=("${snapshot_args[@]}" --api-pid "${API_PID}")
+    if npx "${api_snapshot_args[@]}"; then
+      return 0
+    fi
+  fi
+
+  npx "${snapshot_args[@]}"
+}
+
+write_startup_resource_recovery_report() {
+  local failure_message="${1:-}"
+  local -a startup_args=(
+    tsx
+    "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
+    startup-report
+    --boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
+    --baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
+    --allow-api-remote-port "${POSTGRES_PORT}"
+    --allow-api-remote-port "${MONGO_PORT}"
+    --output "${RESOURCE_RECOVERY_STARTUP_JSON}"
+  )
+  if [[ -n "${failure_message}" ]]; then
+    startup_args+=(--failure-message "${failure_message}")
+  fi
+  npx "${startup_args[@]}"
+}
+
+materialize_pre_ready_failure_evidence() {
+  local failure_message="$1"
+  RESOURCE_RECOVERY_PRE_READY_FAILURE=1
+  capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
+  write_startup_resource_recovery_report "${failure_message}"
+}
 
 write_resource_recovery_summary() {
   if [[ ! -f "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}" || ! -f "${RESOURCE_RECOVERY_BASELINE_JSON}" ]]; then
     return 0
   fi
 
+  local -a report_paths
+  if [[ "${RESOURCE_RECOVERY_PRE_READY_FAILURE}" == "1" ]]; then
+    report_paths=("${RESOURCE_RECOVERY_STARTUP_JSON}")
+  else
+    report_paths=(
+      "${RESOURCE_RECOVERY_STARTUP_JSON}"
+      "${RESOURCE_RECOVERY_SMOKE_JSON}"
+      "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}"
+    )
+  fi
+
   local report_path
-  for report_path in "${RESOURCE_RECOVERY_SMOKE_JSON}" "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}"; do
+  for report_path in "${report_paths[@]}"; do
     if [[ ! -f "${report_path}" ]]; then
       echo "File library gate missing required recovery report: ${report_path}" >&2
       return 1
     fi
   done
 
-  npx tsx "${ROOT_DIR}/scripts/file-library-resource-recovery.ts" \
-    summary \
-    --boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}" \
-    --baseline "${RESOURCE_RECOVERY_BASELINE_JSON}" \
-    --output-json "${RESOURCE_RECOVERY_REPORT_JSON}" \
-    --output-markdown "${RESOURCE_RECOVERY_REPORT_MD}" \
-    --report "${RESOURCE_RECOVERY_SMOKE_JSON}" \
-    --report "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}"
+  local -a summary_args=(
+    tsx
+    "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
+    summary
+    --boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
+    --baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
+    --output-json "${RESOURCE_RECOVERY_REPORT_JSON}"
+    --output-markdown "${RESOURCE_RECOVERY_REPORT_MD}"
+  )
+  for report_path in "${report_paths[@]}"; do
+    summary_args+=(--report "${report_path}")
+  done
+
+  npx "${summary_args[@]}"
   RESOURCE_RECOVERY_SUMMARY_WRITTEN=1
 }
 
@@ -274,17 +346,22 @@ for _ in $(seq 1 90); do
 done
 
 if [[ "${ready}" -ne 1 ]]; then
+  pre_ready_failure_reason="file-library gate api did not become ready in time (last status: ${code:-n/a})"
+  if ! materialize_pre_ready_failure_evidence "${pre_ready_failure_reason}"; then
+    echo "File library gate could not materialize startup resource recovery evidence before exiting." >&2
+  fi
   echo "File library gate API did not become ready in time (last status: ${code:-n/a})." >&2
   echo "API log: ${API_LOG}" >&2
   exit 1
 fi
 
-npx tsx "${ROOT_DIR}/scripts/file-library-resource-recovery.ts" \
-  snapshot \
-  --api-pid "${API_PID}" \
-  --output "${RESOURCE_RECOVERY_BASELINE_JSON}"
+capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
 
 overall_status=0
+if ! write_startup_resource_recovery_report; then
+  overall_status=1
+fi
+
 if ! run_resource_recovery_step "file-library-real-smoke" "${RESOURCE_RECOVERY_SMOKE_JSON}" "" \
   env \
     API_BASE="${API_BASE}" \

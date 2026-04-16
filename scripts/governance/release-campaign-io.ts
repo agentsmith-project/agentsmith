@@ -19,6 +19,10 @@ import type {
   CurrentVerificationCampaignStep,
 } from './current-verification-campaign-manifest';
 import {
+  findCurrentReleaseCampaignEvidenceArtifact,
+  type CurrentGateUxTraceExpectedMembership,
+} from './current-gate-manifest';
+import {
   parseVisualBaselineBuildRecord,
 } from '../../e2e/visual-baseline-support';
 import {
@@ -343,12 +347,23 @@ type VisualRunManifestScenarioRecord = {
   screenshots: readonly VisualRunManifestScreenshotRecord[];
 };
 
+type VisualRunManifestCoverageScope = 'full_catalog' | 'partial_catalog';
+
+type VisualRunManifestCoverageRecord = {
+  scope: VisualRunManifestCoverageScope;
+  expectedScenarioIds: readonly string[];
+  capturedScenarioIds: readonly string[];
+};
+
 type VisualRunManifestSnapshot = {
   path: string;
   runId: string;
   build: ReturnType<typeof parseVisualBaselineBuildRecord>;
+  coverage: VisualRunManifestCoverageRecord;
   scenarios: readonly VisualRunManifestScenarioRecord[];
 };
+
+export type VisualRunManifestCompletenessRequirement = 'allow_partial' | 'require_full_catalog';
 
 function resolveVisualRunManifestPath(campaignRoot: string): string {
   return join(
@@ -358,6 +373,130 @@ function resolveVisualRunManifestPath(campaignRoot: string): string {
     resolveCampaignRunId(campaignRoot),
     'run-manifest.json',
   );
+}
+
+function parseUniqueScenarioIdList(
+  value: unknown,
+  sourceLabel: string,
+): { ok: true; values: readonly string[] } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
+  if (!Array.isArray(value) || value.length === 0) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `${sourceLabel} must be a non-empty string array.`,
+    );
+  }
+
+  const values: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== 'string' || entry.trim().length === 0) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `${sourceLabel} must contain only non-empty scenario ids.`,
+      );
+    }
+    if (seen.has(entry)) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `${sourceLabel} must not include duplicate scenario ids.`,
+      );
+    }
+    seen.add(entry);
+    values.push(entry);
+  }
+
+  return {
+    ok: true,
+    values: [...values].sort((left, right) => left.localeCompare(right)),
+  };
+}
+
+function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function parseVisualRunManifestCoverage(args: {
+  coverage: unknown;
+  scenarioIds: readonly string[];
+  path: string;
+  requiredCompleteness: VisualRunManifestCompletenessRequirement;
+}): { ok: true; coverage: VisualRunManifestCoverageRecord } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
+  if (!isRecord(args.coverage)) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual run-manifest.json at ${args.path} must include coverage { scope, expected_scenario_ids, captured_scenario_ids }.`,
+    );
+  }
+
+  const scope = args.coverage.scope;
+  if (scope !== 'full_catalog' && scope !== 'partial_catalog') {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual run-manifest.json at ${args.path} must define coverage.scope as full_catalog or partial_catalog.`,
+    );
+  }
+
+  const expectedIds = parseUniqueScenarioIdList(
+    args.coverage.expected_scenario_ids,
+    `visual run-manifest.json coverage.expected_scenario_ids at ${args.path}`,
+  );
+  if (!expectedIds.ok) {
+    return expectedIds;
+  }
+  const capturedIds = parseUniqueScenarioIdList(
+    args.coverage.captured_scenario_ids,
+    `visual run-manifest.json coverage.captured_scenario_ids at ${args.path}`,
+  );
+  if (!capturedIds.ok) {
+    return capturedIds;
+  }
+
+  const scenarioIds = [...args.scenarioIds].sort((left, right) => left.localeCompare(right));
+  if (!arraysEqual(capturedIds.values, scenarioIds)) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual run-manifest.json at ${args.path} must bind coverage.captured_scenario_ids to scenarios[].`,
+    );
+  }
+
+  const expectedScenarioIdSet = new Set(expectedIds.values);
+  for (const scenarioId of capturedIds.values) {
+    if (!expectedScenarioIdSet.has(scenarioId)) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json at ${args.path} must keep coverage.captured_scenario_ids within coverage.expected_scenario_ids.`,
+      );
+    }
+  }
+
+  const isFullCatalog = arraysEqual(expectedIds.values, capturedIds.values);
+  if (scope === 'full_catalog' && !isFullCatalog) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual run-manifest.json at ${args.path} cannot declare coverage.scope=full_catalog unless every expected scenario was captured.`,
+    );
+  }
+  if (scope === 'partial_catalog' && isFullCatalog) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual run-manifest.json at ${args.path} must declare coverage.scope=full_catalog when it captures the full catalog.`,
+    );
+  }
+  if (args.requiredCompleteness === 'require_full_catalog' && scope !== 'full_catalog') {
+    return visualReviewValidationFailure(
+      'evidence_missing',
+      `visual run-manifest.json at ${args.path} must declare full catalog coverage for release-grade evidence.`,
+    );
+  }
+
+  return {
+    ok: true,
+    coverage: {
+      scope,
+      expectedScenarioIds: expectedIds.values,
+      capturedScenarioIds: capturedIds.values,
+    },
+  };
 }
 
 function parseVisualRunManifestScreenshotEntries(args: {
@@ -451,9 +590,10 @@ function parseVisualRunManifestScreenshotEntries(args: {
   };
 }
 
-function readVisualBaselineRunManifestArtifact(args: {
+export function readVisualBaselineRunManifestArtifact(args: {
   path: string;
-  campaignRoot: string;
+  expectedRunId: string;
+  requiredCompleteness?: VisualRunManifestCompletenessRequirement;
 }): { ok: true; snapshot: VisualRunManifestSnapshot } | { ok: false; path: string; failureClass: CurrentGateResultFailureClass; message: string } {
   const path = args.path;
   let payload: unknown;
@@ -507,7 +647,7 @@ function readVisualBaselineRunManifestArtifact(args: {
     };
   }
 
-  const expectedRunId = resolveCampaignRunId(args.campaignRoot);
+  const expectedRunId = args.expectedRunId;
   if (payload.run_id !== expectedRunId) {
     return {
       ...visualReviewValidationFailure(
@@ -653,13 +793,28 @@ function readVisualBaselineRunManifestArtifact(args: {
     });
   }
 
+  const scenarioValues = [...scenarioEntries.values()].sort((left, right) => left.scenarioId.localeCompare(right.scenarioId));
+  const coverageValidation = parseVisualRunManifestCoverage({
+    coverage: payload.coverage,
+    scenarioIds: scenarioValues.map((scenario) => scenario.scenarioId),
+    path,
+    requiredCompleteness: args.requiredCompleteness ?? 'allow_partial',
+  });
+  if (!coverageValidation.ok) {
+    return {
+      ...coverageValidation,
+      path,
+    };
+  }
+
   return {
     ok: true,
     snapshot: {
       path,
       runId: expectedRunId,
       build: buildRecord,
-      scenarios: [...scenarioEntries.values()].sort((left, right) => left.scenarioId.localeCompare(right.scenarioId)),
+      coverage: coverageValidation.coverage,
+      scenarios: scenarioValues,
     },
   };
 }
@@ -899,7 +1054,8 @@ function evaluateVisualBaselineReviews(
   const manifestPath = resolveVisualRunManifestPath(campaignRoot);
   const manifest = readVisualBaselineRunManifestArtifact({
     path: manifestPath,
-    campaignRoot,
+    expectedRunId: resolveCampaignRunId(campaignRoot),
+    requiredCompleteness: 'require_full_catalog',
   });
   if (!manifest.ok) {
     return [{
@@ -946,7 +1102,8 @@ function evaluateVisualRunManifest(
   const path = materializeCampaignPath(campaignRoot, check.path);
   const validation = readVisualBaselineRunManifestArtifact({
     path,
-    campaignRoot,
+    expectedRunId: resolveCampaignRunId(campaignRoot),
+    requiredCompleteness: 'require_full_catalog',
   });
 
   return [{
@@ -963,78 +1120,219 @@ function evaluateVisualRunManifest(
   }];
 }
 
-function evaluateUxTraceBundles(
-  campaignRoot: string,
+type UxTraceIndexBundleEntry = {
+  bundleRelPath: string;
+  reviewPath: string;
+  suite?: string;
+  storyId?: string;
+  scenarioId?: string;
+};
+
+export interface EvaluatedUxTraceEvidenceRoot {
+  records: ReleaseCampaignEvidencePointer['required_paths'];
+  validBundlePaths: readonly string[];
+  minCount: number;
+}
+
+type ReleaseCampaignTopologyKey = Parameters<typeof findCurrentReleaseCampaignEvidenceArtifact>[0];
+
+function resolveReleaseCampaignTopologyKey(
+  step: CurrentVerificationCampaignStep,
+): ReleaseCampaignTopologyKey | null {
+  switch (step.id) {
+    case 'lane-visual':
+      return 'laneVisual';
+    case 'gate-release':
+      return 'gateRelease';
+    case 'lane-demo-rehearsal':
+      return 'laneDemoRehearsal';
+    case 'lane-cluster-rehearsal':
+      return 'laneClusterRehearsal';
+    default:
+      return null;
+  }
+}
+
+function expectedUxTraceMembershipKey(membership: CurrentGateUxTraceExpectedMembership): string {
+  return `${membership.suite}::${membership.storyId}::${membership.scenarioId ?? ''}`;
+}
+
+function actualUxTraceMembershipKey(entry: UxTraceIndexBundleEntry): string | null {
+  if (!entry.suite || !entry.storyId) {
+    return null;
+  }
+  return `${entry.suite}::${entry.storyId}::${entry.scenarioId ?? ''}`;
+}
+
+function describeUxTraceMembership(membership: CurrentGateUxTraceExpectedMembership): string {
+  return `suite=${membership.suite}, story_id=${membership.storyId}, scenario_id=${membership.scenarioId ?? '(any)'}`;
+}
+
+function readExpectedUxTraceMembership(
   step: CurrentVerificationCampaignStep,
   check: CurrentVerificationCampaignEvidenceCheck,
-): ReleaseCampaignEvidencePointer['required_paths'] {
-  const path = materializeCampaignPath(campaignRoot, check.path);
-  const minCount = check.minCount ?? 1;
+): readonly CurrentGateUxTraceExpectedMembership[] {
+  const topologyKey = resolveReleaseCampaignTopologyKey(step);
+  if (!topologyKey) {
+    return [];
+  }
+  return findCurrentReleaseCampaignEvidenceArtifact(topologyKey, check.id)?.expectedMembership ?? [];
+}
+
+export function evaluateUxTraceEvidenceRoot(
+  path: string,
+  step: CurrentVerificationCampaignStep,
+  check: CurrentVerificationCampaignEvidenceCheck,
+): EvaluatedUxTraceEvidenceRoot {
+  const expectedMembership = readExpectedUxTraceMembership(step, check);
+  const minCount = Math.max(check.minCount ?? 1, expectedMembership.length);
   const indexPath = join(path, UX_TRACE_INDEX_FILE);
   let indexPayload: unknown;
   try {
     indexPayload = JSON.parse(readFileSync(indexPath, 'utf8')) as unknown;
   } catch (error) {
-    return [{
-      id: check.id,
-      path,
-      kind: 'ux_trace_bundle',
-      exists: false,
-      matches: [],
-      min_count: minCount,
-      error: existsSync(indexPath)
-        ? `Malformed UX trace ${UX_TRACE_INDEX_FILE}: ${error instanceof Error ? error.message : String(error)}`
-        : `Missing UX trace ${UX_TRACE_INDEX_FILE}: ${indexPath}`,
-      failure_class: existsSync(indexPath) ? 'contract_drift' : 'evidence_missing',
-    }];
+    return {
+      records: [{
+        id: check.id,
+        path,
+        kind: 'ux_trace_bundle',
+        exists: false,
+        matches: [],
+        min_count: minCount,
+        error: existsSync(indexPath)
+          ? `Malformed UX trace ${UX_TRACE_INDEX_FILE}: ${error instanceof Error ? error.message : String(error)}`
+          : `Missing UX trace ${UX_TRACE_INDEX_FILE}: ${indexPath}`,
+        failure_class: existsSync(indexPath) ? 'contract_drift' : 'evidence_missing',
+      }],
+      validBundlePaths: [],
+      minCount,
+    };
   }
   if (!isRecord(indexPayload) || indexPayload.version !== 1 || !Array.isArray(indexPayload.bundles)) {
-    return [{
-      id: check.id,
-      path,
-      kind: 'ux_trace_bundle',
-      exists: false,
-      matches: [indexPath],
-      min_count: minCount,
-      error: `Malformed UX trace ${UX_TRACE_INDEX_FILE}: ${indexPath}`,
-      failure_class: 'contract_drift',
-    }];
+    return {
+      records: [{
+        id: check.id,
+        path,
+        kind: 'ux_trace_bundle',
+        exists: false,
+        matches: [indexPath],
+        min_count: minCount,
+        error: `Malformed UX trace ${UX_TRACE_INDEX_FILE}: ${indexPath}`,
+        failure_class: 'contract_drift',
+      }],
+      validBundlePaths: [],
+      minCount,
+    };
   }
 
   const records: ReleaseCampaignEvidencePointer['required_paths'] = [];
   let validCount = 0;
+  const validBundlePaths: string[] = [];
   const bundleEntries = indexPayload.bundles
     .filter((entry): entry is Record<string, unknown> => isRecord(entry) && typeof entry.bundle_relpath === 'string')
-    .sort((left, right) => String(left.bundle_relpath).localeCompare(String(right.bundle_relpath)));
+    .map((entry): UxTraceIndexBundleEntry => ({
+      bundleRelPath: String(entry.bundle_relpath),
+      reviewPath: typeof entry.review_relpath === 'string'
+        ? String(entry.review_relpath)
+        : `${String(entry.bundle_relpath)}/review.md`,
+      suite: typeof entry.suite === 'string' ? entry.suite : undefined,
+      storyId: typeof entry.story_id === 'string' ? entry.story_id : undefined,
+      scenarioId: typeof entry.scenario_id === 'string' ? entry.scenario_id : undefined,
+    }))
+    .sort((left, right) => left.bundleRelPath.localeCompare(right.bundleRelPath));
   if (bundleEntries.length === 0) {
-    return [{
-      id: check.id,
-      path,
+    return {
+      records: [{
+        id: check.id,
+        path,
+        kind: 'ux_trace_bundle',
+        exists: false,
+        matches: [indexPath],
+        min_count: minCount,
+        error: `UX trace ${UX_TRACE_INDEX_FILE} does not declare any bundles under ${path}.`,
+        failure_class: 'evidence_missing',
+      }],
+      validBundlePaths: [],
+      minCount,
+    };
+  }
+
+  const expectedMembershipKeys = new Set(expectedMembership.map(expectedUxTraceMembershipKey));
+  const actualMembershipEntries = new Map<string, UxTraceIndexBundleEntry[]>();
+  for (const entry of bundleEntries) {
+    const membershipKey = actualUxTraceMembershipKey(entry);
+    if (!membershipKey) {
+      continue;
+    }
+    const matches = actualMembershipEntries.get(membershipKey) ?? [];
+    matches.push(entry);
+    actualMembershipEntries.set(membershipKey, matches);
+  }
+
+  for (const membership of expectedMembership) {
+    const membershipKey = expectedUxTraceMembershipKey(membership);
+    const matches = actualMembershipEntries.get(membershipKey) ?? [];
+    if (matches.length === 0) {
+      records.push({
+        id: `${check.id}:expected:${membershipKey}`,
+        path,
+        kind: 'ux_trace_bundle',
+        exists: false,
+        matches: [indexPath],
+        min_count: minCount,
+        error: `Missing expected backend-real UX trace bundle membership for ${step.id}: ${describeUxTraceMembership(membership)}.`,
+        failure_class: 'evidence_missing',
+      });
+    } else if (matches.length > 1) {
+      records.push({
+        id: `${check.id}:duplicate:${membershipKey}`,
+        path,
+        kind: 'ux_trace_bundle',
+        exists: false,
+        matches: matches.map((entry) => join(path, entry.bundleRelPath)),
+        min_count: minCount,
+        error: `Duplicate backend-real UX trace bundle membership for ${step.id}: ${describeUxTraceMembership(membership)}.`,
+        failure_class: 'contract_drift',
+      });
+    }
+  }
+
+  for (const [membershipKey, entries] of actualMembershipEntries.entries()) {
+    if (expectedMembershipKeys.has(membershipKey)) {
+      continue;
+    }
+    const [sample] = entries;
+    records.push({
+      id: `${check.id}:unexpected:${membershipKey}`,
+      path: join(path, sample?.bundleRelPath ?? ''),
       kind: 'ux_trace_bundle',
       exists: false,
-      matches: [indexPath],
+      matches: entries.map((entry) => join(path, entry.bundleRelPath)),
       min_count: minCount,
-      error: `UX trace ${UX_TRACE_INDEX_FILE} does not declare any bundles under ${path}.`,
-      failure_class: 'evidence_missing',
-    }];
+      error: `Unexpected backend-real UX trace bundle membership for ${step.id}: suite=${sample?.suite ?? '(missing)'}, story_id=${sample?.storyId ?? '(missing)'}, scenario_id=${sample?.scenarioId ?? '(missing)'}.`,
+      failure_class: 'contract_drift',
+    });
   }
 
   for (const entry of bundleEntries) {
-    const bundleRelPath = String(entry.bundle_relpath);
-    const bundleDir = join(path, bundleRelPath);
-    const reviewPath = join(path, typeof entry.review_relpath === 'string' ? entry.review_relpath : `${bundleRelPath}/review.md`);
+    const bundleDir = join(path, entry.bundleRelPath);
+    const reviewPath = join(path, entry.reviewPath);
     const validation = validateUxTraceBundleArtifact({
       bundleDir,
       expectedLane: 'backend-real',
-      expectedSuite: typeof entry.suite === 'string' ? entry.suite : undefined,
+      expectedSuite: entry.suite,
       expectedEvidenceRoot: path,
       expectedCampaignStepId: step.id,
     });
-    if (validation.ok) {
+    const membershipKey = actualUxTraceMembershipKey(entry);
+    const membershipAccepted = expectedMembership.length === 0
+      || (membershipKey !== null && expectedMembershipKeys.has(membershipKey));
+    if (validation.ok && membershipAccepted) {
       validCount += 1;
+      validBundlePaths.push(bundleDir);
     }
     records.push({
-      id: `${check.id}:${bundleRelPath}`,
+      id: `${check.id}:${entry.bundleRelPath}`,
       path: bundleDir,
       kind: 'ux_trace_bundle',
       exists: validation.ok,
@@ -1055,14 +1353,27 @@ function evaluateUxTraceBundles(
       path,
       kind: 'ux_trace_bundle',
       exists: false,
-      matches: bundleEntries.map((entry) => join(path, String(entry.bundle_relpath))),
+      matches: bundleEntries.map((entry) => join(path, entry.bundleRelPath)),
       min_count: minCount,
       error: `Expected at least ${minCount} semantically valid UX trace bundle(s), found ${validCount}.`,
       failure_class: 'evidence_missing',
     });
   }
 
-  return records;
+  return {
+    records,
+    validBundlePaths,
+    minCount,
+  };
+}
+
+function evaluateUxTraceBundles(
+  campaignRoot: string,
+  step: CurrentVerificationCampaignStep,
+  check: CurrentVerificationCampaignEvidenceCheck,
+): ReleaseCampaignEvidencePointer['required_paths'] {
+  const path = materializeCampaignPath(campaignRoot, check.path);
+  return evaluateUxTraceEvidenceRoot(path, step, check).records;
 }
 
 function evaluateEvidenceCheck(

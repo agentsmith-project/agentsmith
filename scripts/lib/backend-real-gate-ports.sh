@@ -70,14 +70,20 @@ backend_real_gate_stop_matching_supervisors() {
 backend_real_gate_cleanup_listener() {
   local port="$1"
   local service_kind="$2"
-  local pid owner_pid failed=0
+  local pid owner_pid failed=0 stop_output
 
   for pid in $(port_listener_pids "${port}"); do
     [[ -n "${pid}" ]] || continue
     # Port preflight may need to clean a verified sidecar from a previous run,
     # so identity proof is required here while same-token ownership is not.
-    owner_pid="$((unset LOCAL_RUNTIME_OWNER_TOKEN; local_runtime_verified_owner_pid_for_tree_member "${pid}" "${service_kind}" "${port}") 2>/dev/null || true)"
-    if [[ -n "${owner_pid}" ]] && (unset LOCAL_RUNTIME_OWNER_TOKEN; local_runtime_stop_owned_process_tree "${owner_pid}" "${service_kind}" "${port}") >/dev/null 2>&1; then
+    owner_pid="$( (unset LOCAL_RUNTIME_OWNER_TOKEN; local_runtime_verified_owner_pid_for_tree_member "${pid}" "${service_kind}" "${port}") 2>/dev/null || true )"
+    if [[ -n "${owner_pid}" ]]; then
+      stop_output="$( (unset LOCAL_RUNTIME_OWNER_TOKEN; local_runtime_stop_owned_process_tree "${owner_pid}" "${service_kind}" "${port}") 2>&1 )" || {
+        [[ -z "${stop_output}" ]] || printf '%s\n' "${stop_output}" >&2
+        echo "[backend-real-gate-ports] owned listener cleanup failed for ${service_kind} port ${port} (listener pid ${pid}, owner root pid ${owner_pid})" >&2
+        failed=1
+        continue
+      }
       echo "[backend-real-gate-ports] stopped owned ${service_kind} listener pid ${pid} via owner root pid ${owner_pid} on port ${port}" >&2
       continue
     fi

@@ -1962,6 +1962,299 @@ describe('file-library-runtime readiness', () => {
     await expect(readFile(join(root, 'state', 'flib_foreign_health.json'), 'utf8')).resolves.toContain('"libraryId":"flib_foreign_health"');
   });
 
+  it('does not report ready for a cached restored session once persisted authority belongs to another active boot', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-cached-foreign-health-'));
+    await mkdir(join(root, 'state'), { recursive: true });
+    await writeOwnerLedgerRecord({
+      artifactsRoot: root,
+      instanceId: 'instance-a',
+      bootId: 'boot-other',
+      ownerProcessPid: 654,
+      heartbeatAt: '2026-04-02T18:33:45.000Z',
+    });
+    await writeFile(join(root, 'state', 'flib_cached_foreign_health.json'), JSON.stringify({
+      libraryId: 'flib_cached_foreign_health',
+      pid: 605,
+      port: 39065,
+      loopbackUrl: 'http://127.0.0.1:39065',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_cached_foreign_health?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-cached-foreign-health',
+      logPath: join(root, 'logs', 'flib_cached_foreign_health.log'),
+      lastStartedAt: '2026-04-02T18:33:00.000Z',
+      ownerProcessPid: 654,
+      ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-other'),
+      status: 'ready',
+    }), 'utf8');
+
+    const manager = new RealFileLibraryGatewayManager(
+      createGatewayConfig({
+        gatewayArtifactsRoot: root,
+        gatewayLogDir: join(root, 'logs'),
+        gatewayStateDir: join(root, 'state'),
+      }),
+      {
+        spawnGateway: vi.fn(),
+        async listProcesses() {
+          return [
+            {
+              pid: 605,
+              args: buildOwnedGatewayArgs({
+                ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-other'),
+                libraryId: 'flib_cached_foreign_health',
+                metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_cached_foreign_health?sslmode=disable',
+                listenAddress: '127.0.0.1:39065',
+                storageBucketUrl: 'http://localhost:19000/jfs-lib-cached-foreign-health',
+                logPath: join(root, 'logs', 'flib_cached_foreign_health.log'),
+              }),
+              libraryId: null,
+            },
+          ];
+        },
+        processExists(pid) {
+          return pid === 605 || pid === 654;
+        },
+        killProcess: vi.fn(),
+        wait: async () => undefined,
+        fetch: vi.fn(async () => new Response('ok', { status: 200 })),
+        now: () => '2026-04-02T18:34:00.000Z',
+        ownerPid: () => 1001,
+      },
+    );
+    (
+      Reflect.get(manager as object, 'sessions') as Map<string, {
+        loopbackUrl: string;
+        port: number;
+        status: 'ready';
+        lastStartedAt: string;
+        pid: number;
+        metadataUrl: string;
+        storageBucketUrl: string;
+        logPath: string;
+        ownerScope: string;
+      }>
+    ).set('flib_cached_foreign_health', {
+      loopbackUrl: 'http://127.0.0.1:39065',
+      port: 39065,
+      status: 'ready',
+      lastStartedAt: '2026-04-02T18:33:00.000Z',
+      pid: 605,
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_cached_foreign_health?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-cached-foreign-health',
+      logPath: join(root, 'logs', 'flib_cached_foreign_health.log'),
+      ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-other'),
+    });
+
+    const health = await manager.getHealth('flib_cached_foreign_health');
+
+    expect(health.status).toBe('stopped');
+    expect((Reflect.get(manager as object, 'sessions') as Map<string, unknown>).has('flib_cached_foreign_health')).toBe(false);
+  });
+
+  it('does not reuse a cached restored session when persisted authority belongs to another active boot', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-cached-foreign-ensure-'));
+    await mkdir(join(root, 'state'), { recursive: true });
+    await writeOwnerLedgerRecord({
+      artifactsRoot: root,
+      instanceId: 'instance-a',
+      bootId: 'boot-other',
+      ownerProcessPid: 654,
+      heartbeatAt: '2026-04-02T18:33:45.000Z',
+    });
+    await writeFile(join(root, 'state', 'flib_cached_foreign_ensure.json'), JSON.stringify({
+      libraryId: 'flib_cached_foreign_ensure',
+      pid: 606,
+      port: 39066,
+      loopbackUrl: 'http://127.0.0.1:39066',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_cached_foreign_ensure?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-cached-foreign-ensure',
+      logPath: join(root, 'logs', 'flib_cached_foreign_ensure.log'),
+      lastStartedAt: '2026-04-02T18:33:00.000Z',
+      ownerProcessPid: 654,
+      ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-other'),
+      status: 'ready',
+    }), 'utf8');
+
+    const manager = new RealFileLibraryGatewayManager(
+      createGatewayConfig({
+        gatewayArtifactsRoot: root,
+        gatewayLogDir: join(root, 'logs'),
+        gatewayStateDir: join(root, 'state'),
+      }),
+      {
+        spawnGateway: vi.fn(),
+        async listProcesses() {
+          return [
+            {
+              pid: 606,
+              args: buildOwnedGatewayArgs({
+                ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-other'),
+                libraryId: 'flib_cached_foreign_ensure',
+                metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_cached_foreign_ensure?sslmode=disable',
+                listenAddress: '127.0.0.1:39066',
+                storageBucketUrl: 'http://localhost:19000/jfs-lib-cached-foreign-ensure',
+                logPath: join(root, 'logs', 'flib_cached_foreign_ensure.log'),
+              }),
+              libraryId: null,
+            },
+          ];
+        },
+        processExists(pid) {
+          return pid === 606 || pid === 654;
+        },
+        killProcess: vi.fn(),
+        wait: async () => undefined,
+        fetch: vi.fn(async () => new Response('ok', { status: 200 })),
+        now: () => '2026-04-02T18:34:00.000Z',
+        ownerPid: () => 1001,
+      },
+    );
+    (
+      Reflect.get(manager as object, 'sessions') as Map<string, {
+        loopbackUrl: string;
+        port: number;
+        status: 'ready';
+        lastStartedAt: string;
+        pid: number;
+        metadataUrl: string;
+        storageBucketUrl: string;
+        logPath: string;
+        ownerScope: string;
+      }>
+    ).set('flib_cached_foreign_ensure', {
+      loopbackUrl: 'http://127.0.0.1:39066',
+      port: 39066,
+      status: 'ready',
+      lastStartedAt: '2026-04-02T18:33:00.000Z',
+      pid: 606,
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_cached_foreign_ensure?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-cached-foreign-ensure',
+      logPath: join(root, 'logs', 'flib_cached_foreign_ensure.log'),
+      ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-other'),
+    });
+
+    await expect(manager.ensureGateway({
+      libraryId: 'flib_cached_foreign_ensure',
+      filesystemName: 'flib-cached-foreign-ensure',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_cached_foreign_ensure?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-cached-foreign-ensure',
+    })).rejects.toThrow('file_library_gateway_owned_by_another_active_boot');
+  });
+
+  it('fails closed instead of ready for a stale persisted gateway with a live loopback', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-stale-health-'));
+    await mkdir(join(root, 'state'), { recursive: true });
+    await writeOwnerLedgerRecord({
+      artifactsRoot: root,
+      instanceId: 'instance-a',
+      bootId: 'boot-old',
+      ownerProcessPid: 644,
+      heartbeatAt: '2026-04-02T18:20:00.000Z',
+    });
+    await writeFile(join(root, 'state', 'flib_stale_health.json'), JSON.stringify({
+      libraryId: 'flib_stale_health',
+      pid: 607,
+      port: 39067,
+      loopbackUrl: 'http://127.0.0.1:39067',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_stale_health?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-stale-health',
+      logPath: join(root, 'logs', 'flib_stale_health.log'),
+      lastStartedAt: '2026-04-02T18:20:00.000Z',
+      ownerProcessPid: 644,
+      ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-old'),
+      status: 'ready',
+    }), 'utf8');
+
+    const manager = new RealFileLibraryGatewayManager(
+      createGatewayConfig({
+        gatewayArtifactsRoot: root,
+        gatewayLogDir: join(root, 'logs'),
+        gatewayStateDir: join(root, 'state'),
+      }),
+      {
+        spawnGateway: vi.fn(),
+        async listProcesses() {
+          return [
+            {
+              pid: 607,
+              args: buildOwnedGatewayArgs({
+                ownerScope: buildBootScopedOwnerScope('instance-a', 'boot-old'),
+                libraryId: 'flib_stale_health',
+                metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_stale_health?sslmode=disable',
+                listenAddress: '127.0.0.1:39067',
+                storageBucketUrl: 'http://localhost:19000/jfs-lib-stale-health',
+                logPath: join(root, 'logs', 'flib_stale_health.log'),
+              }),
+              libraryId: null,
+            },
+          ];
+        },
+        processExists(pid) {
+          return pid === 607;
+        },
+        killProcess: vi.fn(),
+        wait: async () => undefined,
+        fetch: vi.fn(async () => new Response('ok', { status: 200 })),
+        now: () => '2026-04-02T18:35:00.000Z',
+        ownerPid: () => 1001,
+      },
+    );
+
+    const health = await manager.getHealth('flib_stale_health');
+
+    expect(health.status).toBe('stopped');
+    expect((Reflect.get(manager as object, 'sessions') as Map<string, unknown>).has('flib_stale_health')).toBe(false);
+  });
+
+  it('reports degraded instead of ready for an unverified ownerless persisted gateway with a live loopback', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-unverified-health-'));
+    await mkdir(join(root, 'state'), { recursive: true });
+    await writeFile(join(root, 'state', 'flib_unverified_health.json'), JSON.stringify({
+      libraryId: 'flib_unverified_health',
+      pid: 608,
+      port: 39068,
+      loopbackUrl: 'http://127.0.0.1:39068',
+      metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_unverified_health?sslmode=disable',
+      storageBucketUrl: 'http://localhost:19000/jfs-lib-unverified-health',
+      logPath: join(root, 'logs', 'flib_unverified_health.log'),
+      lastStartedAt: '2026-04-02T18:32:00.000Z',
+      ownerProcessPid: 645,
+      status: 'ready',
+    }), 'utf8');
+
+    const manager = new RealFileLibraryGatewayManager(
+      createGatewayConfig({
+        gatewayArtifactsRoot: root,
+        gatewayLogDir: join(root, 'logs'),
+        gatewayStateDir: join(root, 'state'),
+      }),
+      {
+        spawnGateway: vi.fn(),
+        async listProcesses() {
+          return [
+            {
+              pid: 608,
+              args: `juicefs gateway postgres://user:pass@localhost:15432/jfs_lib_unverified_health?sslmode=disable 127.0.0.1:39068 --bucket http://localhost:19000/jfs-lib-unverified-health --log ${join(root, 'logs', 'flib_unverified_health.log')} --no-banner`,
+              libraryId: null,
+            },
+          ];
+        },
+        processExists(pid) {
+          return pid === 608 || pid === 645;
+        },
+        killProcess: vi.fn(),
+        wait: async () => undefined,
+        fetch: vi.fn(async () => new Response('ok', { status: 200 })),
+        now: () => '2026-04-02T18:36:00.000Z',
+        ownerPid: () => 1001,
+      },
+    );
+
+    const health = await manager.getHealth('flib_unverified_health');
+
+    expect(health.status).toBe('degraded');
+    expect((Reflect.get(manager as object, 'sessions') as Map<string, unknown>).has('flib_unverified_health')).toBe(false);
+  });
+
   it('replaces a degraded persisted gateway after getHealth instead of reusing its cached session', async () => {
     const root = await mkdtemp(join(tmpdir(), 'gateway-health-ensure-interleave-'));
     await mkdir(join(root, 'state'), { recursive: true });

@@ -34,33 +34,91 @@ next_generated_root_source_contract_lock_file() {
   next_generated_root_snapshot_file "source-contract.lock"
 }
 
+next_generated_root_source_contract_lock_context_token() {
+  printf '%s\n' "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN:-}"
+}
+
+next_generated_root_source_contract_lock_context_active() {
+  [[ "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD:-0}" == "1" ]] \
+    && [[ -n "$(next_generated_root_source_contract_lock_context_token)" ]]
+}
+
+next_generated_root_source_contract_reentry_scope() {
+  printf '%s\n' "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_SCOPE:-}"
+}
+
+next_generated_root_source_contract_reentry_context_token() {
+  printf '%s\n' "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_CONTEXT_TOKEN:-}"
+}
+
+next_generated_root_source_contract_reentry_allowed_for_phase() {
+  local phase="${1:-}"
+  local reentry_scope reentry_token
+  reentry_scope="$(next_generated_root_source_contract_reentry_scope)"
+  reentry_token="$(next_generated_root_source_contract_reentry_context_token)"
+  [[ -n "${reentry_token}" ]] || return 1
+
+  case "${reentry_scope}:${phase}" in
+    build_finalize:build_next_with_root_finalize|build_finalize:build_finalize_trap|build_finalize:repair_prepare_source_safe_for_tsc)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+next_generated_root_source_contract_lock_new_context_token() {
+  printf 'source-contract:%s:%s\n' \
+    "$(next_generated_root_source_contract_lock_current_process_id)" \
+    "$(date -u +%s%N 2>/dev/null || date -u +%s)"
+}
+
 next_generated_root_with_source_contract_lock() {
   local _phase="${1:-source_contract}"
   shift || true
-  local state_dir lock_file status previous_lock_held previous_lock_was_set
-  if [[ "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD:-0}" == "1" ]]; then
+  local state_dir lock_file status previous_lock_held previous_lock_was_set previous_lock_owner_pid previous_lock_owner_pid_was_set current_lock_owner_pid previous_lock_context_token previous_lock_context_token_was_set current_lock_context_token
+  if next_generated_root_source_contract_lock_owned_by_current_process \
+    || next_generated_root_source_contract_lock_context_active \
+    || next_generated_root_source_contract_reentry_allowed_for_phase "${_phase}"; then
     "$@"
     return $?
   fi
 
   state_dir="$(next_generated_root_state_dir)"
   lock_file="$(next_generated_root_source_contract_lock_file)"
+  current_lock_owner_pid="$(next_generated_root_source_contract_lock_current_process_id)"
+  current_lock_context_token="$(next_generated_root_source_contract_lock_new_context_token)"
   mkdir -p "${state_dir}"
   previous_lock_held="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD:-}"
   previous_lock_was_set=0
   if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD+x}" ]]; then
     previous_lock_was_set=1
   fi
+  previous_lock_owner_pid="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID:-}"
+  previous_lock_owner_pid_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID+x}" ]]; then
+    previous_lock_owner_pid_was_set=1
+  fi
+  previous_lock_context_token="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN:-}"
+  previous_lock_context_token_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN+x}" ]]; then
+    previous_lock_context_token_was_set=1
+  fi
 
   if command -v flock >/dev/null 2>&1; then
     {
       flock -x 9
       export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD=1
+      export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID="${current_lock_owner_pid}"
+      export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN="${current_lock_context_token}"
       "$@"
       status=$?
     } 9>"${lock_file}"
   else
     export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD=1
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID="${current_lock_owner_pid}"
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN="${current_lock_context_token}"
     "$@"
     status=$?
   fi
@@ -70,7 +128,26 @@ next_generated_root_with_source_contract_lock() {
   else
     unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD
   fi
+  if [[ "${previous_lock_owner_pid_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID="${previous_lock_owner_pid}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID
+  fi
+  if [[ "${previous_lock_context_token_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN="${previous_lock_context_token}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN
+  fi
   return "${status}"
+}
+
+next_generated_root_source_contract_lock_current_process_id() {
+  printf '%s\n' "${BASHPID:-$$}"
+}
+
+next_generated_root_source_contract_lock_owned_by_current_process() {
+  local owner_pid="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID:-}"
+  [[ -n "${owner_pid}" && "${owner_pid}" == "$(next_generated_root_source_contract_lock_current_process_id)" ]]
 }
 
 next_generated_root_contract_event_file() {
@@ -834,7 +911,7 @@ NODE
 
 next_generated_root_repair_source_contract() {
   local phase="${1:-final_reconcile}"
-  if [[ "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD:-0}" == "1" ]]; then
+  if next_generated_root_source_contract_lock_owned_by_current_process; then
     next_generated_root_repair_source_contract_locked "${phase}"
     return $?
   fi
@@ -1115,6 +1192,274 @@ next_generated_root_cleanup_lane_runtime_state_for_validation() {
 next_generated_root_prepare_for_validation() {
   next_generated_root_cleanup_lane_runtime_state_for_validation || return $?
   next_generated_root_assert_source_contract prepare_for_validation
+}
+
+next_generated_root_root_types_dir() {
+  local repo_dir
+  repo_dir="$(next_generated_root_repo_dir)"
+  printf '%s/.next/types\n' "${repo_dir}"
+}
+
+next_generated_root_root_routes_types_file() {
+  printf '%s/routes.d.ts\n' "$(next_generated_root_root_types_dir)"
+}
+
+next_generated_root_reset_root_typegen_artifacts() {
+  rm -rf "$(next_generated_root_root_types_dir)"
+}
+
+next_generated_root_require_callback_function() {
+  local callback_name="$1"
+  if declare -F "${callback_name}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  printf '[next-generated-root] missing callback function for locked type-state sequence: %s\n' "${callback_name}" >&2
+  return 2
+}
+
+next_generated_root_export_all_shell_functions() {
+  local function_name
+  while IFS= read -r function_name; do
+    [[ -n "${function_name}" ]] || continue
+    export -f "${function_name}"
+  done < <(compgen -A function)
+}
+
+next_generated_root_run_callback_without_lock_context() {
+  local callback_name="$1"
+  local previous_lock_held previous_lock_held_was_set previous_lock_owner_pid previous_lock_owner_pid_was_set previous_lock_context_token previous_lock_context_token_was_set previous_reentry_scope previous_reentry_scope_was_set previous_reentry_context_token previous_reentry_context_token_was_set callback_status
+
+  previous_lock_held="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD:-}"
+  previous_lock_held_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD+x}" ]]; then
+    previous_lock_held_was_set=1
+  fi
+  previous_lock_owner_pid="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID:-}"
+  previous_lock_owner_pid_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID+x}" ]]; then
+    previous_lock_owner_pid_was_set=1
+  fi
+  previous_lock_context_token="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN:-}"
+  previous_lock_context_token_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN+x}" ]]; then
+    previous_lock_context_token_was_set=1
+  fi
+  previous_reentry_scope="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_SCOPE:-}"
+  previous_reentry_scope_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_SCOPE+x}" ]]; then
+    previous_reentry_scope_was_set=1
+  fi
+  previous_reentry_context_token="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_CONTEXT_TOKEN:-}"
+  previous_reentry_context_token_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_CONTEXT_TOKEN+x}" ]]; then
+    previous_reentry_context_token_was_set=1
+  fi
+
+  unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD
+  unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID
+  unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN
+  unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_SCOPE
+  unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_CONTEXT_TOKEN
+  "${callback_name}"
+  callback_status=$?
+
+  if [[ "${previous_lock_held_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD="${previous_lock_held}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD
+  fi
+  if [[ "${previous_lock_owner_pid_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID="${previous_lock_owner_pid}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID
+  fi
+  if [[ "${previous_lock_context_token_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN="${previous_lock_context_token}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN
+  fi
+  if [[ "${previous_reentry_scope_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_SCOPE="${previous_reentry_scope}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_SCOPE
+  fi
+  if [[ "${previous_reentry_context_token_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_CONTEXT_TOKEN="${previous_reentry_context_token}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_CONTEXT_TOKEN
+  fi
+
+  return "${callback_status}"
+}
+
+next_generated_root_run_build_callback_with_reentry_context() {
+  local callback_name="$1"
+  local previous_lock_held previous_lock_held_was_set previous_lock_owner_pid previous_lock_owner_pid_was_set previous_lock_context_token previous_lock_context_token_was_set previous_reentry_scope previous_reentry_scope_was_set previous_reentry_context_token previous_reentry_context_token_was_set callback_status
+
+  previous_lock_held="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD:-}"
+  previous_lock_held_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD+x}" ]]; then
+    previous_lock_held_was_set=1
+  fi
+  previous_lock_owner_pid="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID:-}"
+  previous_lock_owner_pid_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID+x}" ]]; then
+    previous_lock_owner_pid_was_set=1
+  fi
+  previous_lock_context_token="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN:-}"
+  previous_lock_context_token_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN+x}" ]]; then
+    previous_lock_context_token_was_set=1
+  fi
+  previous_reentry_scope="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_SCOPE:-}"
+  previous_reentry_scope_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_SCOPE+x}" ]]; then
+    previous_reentry_scope_was_set=1
+  fi
+  previous_reentry_context_token="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_CONTEXT_TOKEN:-}"
+  previous_reentry_context_token_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_CONTEXT_TOKEN+x}" ]]; then
+    previous_reentry_context_token_was_set=1
+  fi
+
+  unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD
+  unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID
+  unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN
+  export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_SCOPE="build_finalize"
+  export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_CONTEXT_TOKEN="${previous_lock_context_token}"
+  "${callback_name}"
+  callback_status=$?
+
+  if [[ "${previous_lock_held_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD="${previous_lock_held}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD
+  fi
+  if [[ "${previous_lock_owner_pid_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID="${previous_lock_owner_pid}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID
+  fi
+  if [[ "${previous_lock_context_token_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN="${previous_lock_context_token}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN
+  fi
+  if [[ "${previous_reentry_scope_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_SCOPE="${previous_reentry_scope}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_SCOPE
+  fi
+  if [[ "${previous_reentry_context_token_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_CONTEXT_TOKEN="${previous_reentry_context_token}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_REENTRY_CONTEXT_TOKEN
+  fi
+
+  return "${callback_status}"
+}
+
+next_generated_root_assert_root_routes_types_present() {
+  local phase="${1:-typegen}"
+  local routes_file
+  routes_file="$(next_generated_root_root_routes_types_file)"
+  if [[ -s "${routes_file}" ]]; then
+    return 0
+  fi
+
+  NEXT_GENERATED_ROOT_LAST_STATUS="semantic_drift"
+  NEXT_GENERATED_ROOT_LAST_REASON="root_typegen_routes_missing"
+  NEXT_GENERATED_ROOT_LAST_ATTEMPTS=1
+  NEXT_GENERATED_ROOT_LAST_PAYLOAD=""
+  next_generated_root_report_source_contract_failure "${phase}"
+}
+
+next_generated_root_run_locked_type_state_gate_sequence_locked() {
+  local phase="$1"
+  local typegen_callback="$2"
+  local tsc_callback="$3"
+  local build_callback="${4:-}"
+
+  next_generated_root_require_callback_function "${typegen_callback}" || return $?
+  next_generated_root_require_callback_function "${tsc_callback}" || return $?
+  if [[ -n "${build_callback}" ]]; then
+    next_generated_root_require_callback_function "${build_callback}" || return $?
+  fi
+
+  next_generated_root_prepare_source_safe_for_tsc || return $?
+  next_generated_root_reset_root_typegen_artifacts
+
+  next_generated_root_run_callback_without_lock_context "${typegen_callback}" || return $?
+  next_generated_root_assert_root_routes_types_present "${phase}_typegen" || return $?
+  next_generated_root_assert_source_contract "${phase}_typegen" || return $?
+
+  next_generated_root_run_callback_without_lock_context "${tsc_callback}" || return $?
+
+  if [[ -n "${build_callback}" ]]; then
+    next_generated_root_run_build_callback_with_reentry_context "${build_callback}" || return $?
+  fi
+
+  next_generated_root_prepare_source_safe_for_tsc
+}
+
+next_generated_root_run_locked_type_state_gate_sequence() {
+  local phase="$1"
+  local typegen_callback="$2"
+  local tsc_callback="$3"
+  local build_callback="${4:-}"
+  local helper_path lock_file state_dir lock_context_token status repo_dir
+
+  if next_generated_root_source_contract_lock_owned_by_current_process; then
+    next_generated_root_run_locked_type_state_gate_sequence_locked \
+      "${phase}" \
+      "${typegen_callback}" \
+      "${tsc_callback}" \
+      "${build_callback}"
+    return $?
+  fi
+
+  if ! command -v flock >/dev/null 2>&1; then
+    next_generated_root_with_source_contract_lock "${phase}" \
+      next_generated_root_run_locked_type_state_gate_sequence_locked \
+      "${phase}" \
+      "${typegen_callback}" \
+      "${tsc_callback}" \
+      "${build_callback}"
+    return $?
+  fi
+
+  next_generated_root_require_callback_function "${typegen_callback}" || return $?
+  next_generated_root_require_callback_function "${tsc_callback}" || return $?
+  if [[ -n "${build_callback}" ]]; then
+    next_generated_root_require_callback_function "${build_callback}" || return $?
+  fi
+
+  next_generated_root_export_all_shell_functions
+  helper_path="${BASH_SOURCE[0]}"
+  repo_dir="$(next_generated_root_repo_dir)"
+  state_dir="$(next_generated_root_state_dir)"
+  lock_file="$(next_generated_root_source_contract_lock_file)"
+  lock_context_token="$(next_generated_root_source_contract_lock_new_context_token)"
+  mkdir -p "${state_dir}"
+
+  ROOT_DIR="${repo_dir}" \
+  NEXT_GENERATED_ROOT_LOCK_HELPER_PATH="${helper_path}" \
+  NEXT_GENERATED_ROOT_LOCK_STATE_DIR="${state_dir}" \
+  NEXT_GENERATED_ROOT_LOCK_CONTEXT_TOKEN="${lock_context_token}" \
+  flock -x -o "${lock_file}" \
+    bash -lc '
+      set -euo pipefail
+      source "${NEXT_GENERATED_ROOT_LOCK_HELPER_PATH}"
+      export NEXT_GENERATED_ROOT_STATE_DIR="${NEXT_GENERATED_ROOT_LOCK_STATE_DIR}"
+      export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD=1
+      export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_OWNER_PID="$(next_generated_root_source_contract_lock_current_process_id)"
+      export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_CONTEXT_TOKEN="${NEXT_GENERATED_ROOT_LOCK_CONTEXT_TOKEN}"
+      next_generated_root_run_locked_type_state_gate_sequence_locked "$@"
+    ' bash "${phase}" "${typegen_callback}" "${tsc_callback}" "${build_callback}"
+  status=$?
+
+  return "${status}"
 }
 
 next_generated_root_prepare_source_safe_for_tsc() {

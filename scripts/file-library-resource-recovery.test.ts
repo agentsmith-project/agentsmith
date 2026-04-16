@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildStartupResourceRecoveryReport,
   buildResourceRecoverySummary,
   compareResourceRecoveryBaseline,
   finalizeResourceRecoveryStepReport,
@@ -43,6 +44,204 @@ function buildProbe(
 }
 
 describe('file library resource recovery', () => {
+  it('passes startup verification when only declared api-entry steady-state resources appear between boot and ready baselines', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+    });
+    const readyBaseline = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 17017,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+      ],
+    });
+
+    const report = buildStartupResourceRecoveryReport({
+      bootBaseline,
+      readyBaseline,
+      allowedApiRemotePorts: [15432, 17017],
+    });
+
+    expect(report.step).toBe('file-library-api-startup');
+    expect(report.status).toBe('pass');
+    expect(report.findings).toEqual([]);
+  });
+
+  it('fails startup verification when startup-side api-entry tcp leaks are already present before any smoke step runs', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+    });
+    const readyBaseline = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 2,
+        },
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 19000,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+      ],
+    });
+
+    const report = buildStartupResourceRecoveryReport({
+      bootBaseline,
+      readyBaseline,
+      allowedApiRemotePorts: [15432, 17017],
+    });
+
+    expect(report.status).toBe('fail');
+    expect(report.findings).toEqual(
+      expect.arrayContaining([
+        'startup api tcp connection count exceeded the declared steady-state allowance before smoke steps for api-entry remote_port 15432 [ESTABLISHED]: expected <= 1, found 2',
+        'unexpected api startup tcp connections remained before smoke steps: api-entry -> 127.0.0.1:19000 [ESTABLISHED] x1',
+      ]),
+    );
+  });
+
+  it('fails startup verification when helper or gateway resources already drift before any smoke step runs', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+    });
+    const readyBaseline = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      helper_labels: ['helper:mc'],
+      helper_processes: [
+        {
+          pid: 5102,
+          label: 'helper:mc',
+          command: 'mc rb --force fladmin/jfs-lib-helper',
+          open_fd_count: 9,
+          socket_fd_count: 3,
+        },
+      ],
+      gateway_state_files: ['library-smoke.json'],
+      managed_gateway_labels: ['state:library-smoke'],
+      managed_gateway_processes: [
+        {
+          pid: 4123,
+          label: 'state:library-smoke',
+          library_id: 'library-smoke',
+          owner_scope: 'api-v1:instance-a:boot-current',
+          state_file: 'library-smoke.json',
+          open_fd_count: 12,
+          socket_fd_count: 4,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+        {
+          process_label: 'helper:mc',
+          remote_host: '127.0.0.1',
+          remote_port: 19000,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+      ],
+    });
+
+    const report = buildStartupResourceRecoveryReport({
+      bootBaseline,
+      readyBaseline,
+      allowedApiRemotePorts: [15432, 17017],
+    });
+
+    expect(report.status).toBe('fail');
+    expect(report.findings).toEqual(
+      expect.arrayContaining([
+        'unexpected gateway state files remained after file-library-api-startup: library-smoke.json',
+        'unexpected managed gateway labels remained after file-library-api-startup: state:library-smoke',
+        'unexpected helper labels remained after file-library-api-startup: helper:mc',
+        'unexpected tcp connections remained after file-library-api-startup: helper:mc -> 127.0.0.1:19000 [ESTABLISHED] x1',
+      ]),
+    );
+  });
+
+  it('fails startup verification when the api never reaches ready even if startup resources stay within allowance', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+    });
+    const readyBaseline = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+      ],
+    });
+
+    const report = buildStartupResourceRecoveryReport({
+      bootBaseline,
+      readyBaseline,
+      allowedApiRemotePorts: [15432],
+      extraFindings: ['file-library gate api did not become ready before smoke steps'],
+    });
+
+    expect(report.status).toBe('fail');
+    expect(report.findings).toEqual(
+      expect.arrayContaining([
+        'file-library gate api did not become ready before smoke steps',
+      ]),
+    );
+  });
+
   it('passes when the runtime state returns to the baseline and the mount cleanup probe is clean', () => {
     const baseline = buildSnapshot({
       gateway_state_files: ['existing-library.json'],

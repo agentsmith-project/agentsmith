@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -34,6 +34,18 @@ function runBash(script: string, rootDir: string): string {
       ROOT_DIR: rootDir,
     },
     encoding: 'utf8',
+  }).trim();
+}
+
+function runBashWithTimeout(script: string, rootDir: string, timeout: number): string {
+  return execFileSync('bash', ['-lc', script], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      ROOT_DIR: rootDir,
+    },
+    encoding: 'utf8',
+    timeout,
   }).trim();
 }
 
@@ -176,6 +188,110 @@ ${rootGeneratedNextEnv}EOF_NEXT_ENV
     const elapsed = Number(output.match(/elapsed_ms=(\d+)/)?.[1] ?? '0');
     expect(output).toContain('waiter=entered');
     expect(elapsed).toBeGreaterThanOrEqual(220);
+  });
+
+  it('reuses an inherited lock context inside nested child shells instead of deadlocking on a second lock acquisition', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-nested-lock-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const stateDir = path.join(tempRoot, 'artifacts/runtime/next-root-contract');
+
+    const output = runBashWithTimeout(
+      `
+        source "${helper}"
+        export NEXT_GENERATED_ROOT_STATE_DIR="${stateDir}"
+        next_generated_root_with_source_contract_lock outer bash -lc '
+          set -euo pipefail
+          source "'"${helper}"'"
+          export NEXT_GENERATED_ROOT_STATE_DIR="'"${stateDir}"'"
+          next_generated_root_with_source_contract_lock inner bash -lc "printf nested_lock_reused"
+        '
+      `,
+      tempRoot,
+      3_000,
+    );
+
+    expect(output).toContain('nested_lock_reused');
+  });
+
+  it('keeps repo-root context available to locked callbacks inside the flock child shell', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-root-context-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const stateDir = path.join(tempRoot, 'artifacts/runtime/next-root-contract');
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+    const markerPath = path.join(tempRoot, 'locked-callback-root.txt');
+
+    const output = runBash(
+      `
+        source "${helper}"
+        unset ROOT_DIR
+        ROOT_DIR="${tempRoot}"
+        export NEXT_GENERATED_ROOT_STATE_DIR="${stateDir}"
+        cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
+{"include":[".next/types/**/*.ts","next-env.d.ts","src/**/*.ts","src/**/*.tsx"]}
+EOF_TSCONFIG
+        cat > "${nextEnvPath}" <<'EOF_NEXT_ENV'
+${canonicalNextEnv}EOF_NEXT_ENV
+        typegen_callback() {
+          mkdir -p "\${ROOT_DIR}/.next/types"
+          printf 'declare module "next";\\n' > "\${ROOT_DIR}/.next/types/routes.d.ts"
+        }
+        tsc_callback() {
+          printf '%s\\n' "\${ROOT_DIR}" > "\${ROOT_DIR}/locked-callback-root.txt"
+        }
+        next_generated_root_run_locked_type_state_gate_sequence gate typegen_callback tsc_callback
+        cat "${markerPath}"
+      `,
+      tempRoot,
+    );
+
+    expect(output).toContain(tempRoot);
+  });
+
+  it('allows build callbacks to reenter the source-contract lock in child shells without leaking full lock context to regular callbacks', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-build-reentry-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const stateDir = path.join(tempRoot, 'artifacts/runtime/next-root-contract');
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+
+    const output = runBashWithTimeout(
+      `
+        source "${helper}"
+        export NEXT_GENERATED_ROOT_STATE_DIR="${stateDir}"
+        cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
+{"include":[".next/types/**/*.ts","next-env.d.ts","src/**/*.ts","src/**/*.tsx"]}
+EOF_TSCONFIG
+        cat > "${nextEnvPath}" <<'EOF_NEXT_ENV'
+${canonicalNextEnv}EOF_NEXT_ENV
+        typegen_callback() {
+          printf 'typegen_lock_held=%s\\n' "\${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD:-unset}"
+          mkdir -p "${tempRoot}/.next/types"
+          printf 'declare module "next";\\n' > "${tempRoot}/.next/types/routes.d.ts"
+        }
+        tsc_callback() {
+          printf 'tsc_lock_held=%s\\n' "\${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD:-unset}"
+        }
+        build_callback() {
+          printf 'build_lock_held=%s\\n' "\${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD:-unset}"
+          bash -lc '
+            set -euo pipefail
+            source "'"${helper}"'"
+            export NEXT_GENERATED_ROOT_STATE_DIR="'"${stateDir}"'"
+            next_generated_root_with_source_contract_lock build_next_with_root_finalize bash -lc "printf nested_build_reentry"
+          '
+          printf '\\n'
+        }
+        next_generated_root_run_locked_type_state_gate_sequence gate typegen_callback tsc_callback build_callback
+      `,
+      tempRoot,
+      3_000,
+    );
+
+    expect(output).toContain('typegen_lock_held=unset');
+    expect(output).toContain('tsc_lock_held=unset');
+    expect(output).toContain('build_lock_held=unset');
+    expect(output).toContain('nested_build_reentry');
   });
 
   it('normalizes polluted root files back to the canonical tsconfig include set', () => {
@@ -420,6 +536,119 @@ EOF_NEXT_ENV
     expect(tsconfig.compilerOptions).toEqual({ strict: false });
     expect(tsconfig.references).toEqual([{ path: './tsconfig.node.json' }]);
     expect(readFileSync(nextEnvPath, 'utf8')).toBe(canonicalNextEnv);
+  });
+
+  it('runs typegen, tsc, and build under one locked type-state sequence while forcing fresh root route types', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-locked-type-state-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const fakeBin = path.join(tempRoot, 'bin');
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+    const routesPath = path.join(tempRoot, '.next/types/routes.d.ts');
+    const lockWaiterFile = path.join(tempRoot, 'waiter-entered');
+    const commandLog = path.join(tempRoot, 'command.log');
+
+    writeFileSync(tsconfigPath, `${JSON.stringify({ include: canonicalInclude }, null, 2)}\n`);
+    writeFileSync(nextEnvPath, canonicalNextEnv);
+    mkdirSync(path.dirname(routesPath), { recursive: true });
+    writeFileSync(routesPath, 'declare const staleRoutes: true;\n');
+    cpSync(path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh'), path.join(tempRoot, 'next-generated-root-state.sh'));
+    execFileSync('bash', ['-lc', `mkdir -p "${fakeBin}"`], { stdio: 'pipe' });
+
+    writeFileSync(
+      path.join(fakeBin, 'npx'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "next" && "$2" == "typegen" && "$3" == "." ]]; then
+  if [[ -f "${routesPath}" ]]; then
+    printf 'typegen:stale-routes-present\\n' >> "${commandLog}"
+  else
+    printf 'typegen:stale-routes-cleared\\n' >> "${commandLog}"
+  fi
+  mkdir -p "$(dirname "${routesPath}")"
+  cat > "${nextEnvPath}" <<'EOF_NEXT_ENV'
+${rootGeneratedNextEnv}EOF_NEXT_ENV
+  printf 'declare module "next";\\n' > "${routesPath}"
+  exit 0
+fi
+if [[ "$1" == "tsc" && "$2" == "--noEmit" ]]; then
+  printf 'tsc\\n' >> "${commandLog}"
+  exit 0
+fi
+printf 'unexpected npx invocation: %s\\n' "$*" >&2
+exit 1
+`,
+      { mode: 0o755 },
+    );
+    writeFileSync(
+      path.join(fakeBin, 'npm'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "run" && "$2" == "build" ]]; then
+  printf 'build\\n' >> "${commandLog}"
+  exit 0
+fi
+printf 'unexpected npm invocation: %s\\n' "$*" >&2
+exit 1
+`,
+      { mode: 0o755 },
+    );
+
+    const output = runBash(
+      `
+        source "${helper}"
+        export PATH="${fakeBin}:\${PATH}"
+        export NEXT_GENERATED_ROOT_STATE_DIR="${tempRoot}/artifacts/runtime/next-root-contract"
+        export waiter_pid=''
+        start_waiter() {
+          if [[ -n "\${waiter_pid}" ]]; then
+            return 0
+          fi
+          next_generated_root_with_source_contract_lock waiter bash -lc 'printf entered > "${lockWaiterFile}"' &
+          waiter_pid=$!
+          sleep 0.05
+          if [[ -f "${lockWaiterFile}" ]]; then
+            printf 'waiter:entered-while-locked\\n' >> "${commandLog}"
+          else
+            printf 'waiter:blocked-while-locked\\n' >> "${commandLog}"
+          fi
+        }
+        run_typegen() {
+          start_waiter
+          npx next typegen .
+        }
+        run_tsc() {
+          start_waiter
+          npx tsc --noEmit
+        }
+        run_build() {
+          start_waiter
+          npm run build
+        }
+        next_generated_root_run_locked_type_state_gate_sequence default_gate_root_state run_typegen run_tsc run_build
+        for _i in $(seq 1 100); do
+          if [[ -f "${lockWaiterFile}" ]]; then
+            break
+          fi
+          sleep 0.02
+        done
+        if [[ -f "${lockWaiterFile}" ]]; then
+          printf 'waiter:entered-after-unlock\\n' >> "${commandLog}"
+        else
+          printf 'waiter:missing-after-unlock\\n' >> "${commandLog}"
+          exit 1
+        fi
+        cat "${commandLog}"
+      `,
+      tempRoot,
+    );
+
+    expect(output).toContain('waiter:blocked-while-locked');
+    expect(output).toContain('waiter:entered-after-unlock');
+    expect(output).toContain('typegen:stale-routes-cleared');
+    expect(output).toMatch(/typegen:stale-routes-cleared[\s\S]*tsc[\s\S]*build/);
+    expect(readFileSync(nextEnvPath, 'utf8')).toBe(canonicalNextEnv);
+    expect(readFileSync(routesPath, 'utf8')).toContain('declare module "next"');
   });
 
   it('blocks validation prep when a live lane owner is still active even if the root contract is canonical', () => {

@@ -106,6 +106,21 @@ function writeProcessStateFile(args: {
   );
 }
 
+function readLinuxBootProcessIdentityToken(pid: number): string {
+  const bootId = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+  const statRaw = readFileSync(`/proc/${pid}/stat`, 'utf8');
+  const closeParen = statRaw.lastIndexOf(')');
+  if (!bootId || closeParen === -1) {
+    throw new Error(`failed to read live process identity for pid ${pid}`);
+  }
+  const trailing = statRaw.slice(closeParen + 2).trim().split(/\s+/);
+  const startTime = trailing[19];
+  if (!startTime) {
+    throw new Error(`missing process start time for pid ${pid}`);
+  }
+  return `linux:boot=${bootId}:start=${startTime}`;
+}
+
 async function waitForPidExit(pid: number, timeoutMs = 5_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -1691,7 +1706,7 @@ EOF_PROCESS_STATE
     }
   }, 20_000);
 
-  it('adopts legacy live web/api pid tracking by materializing process-state sidecars before stop', async () => {
+  it('fails closed for live web/api pids when tracked process-state evidence is missing', async () => {
     const apiPort = await reserveTcpPort();
     const webPort = await reserveTcpPort();
     const fixture = setupRealCommonFixture({ apiPort, webPort });
@@ -1748,14 +1763,18 @@ EOF_PROCESS_STATE
         },
       );
 
-      expect(output).toContain('web_classification=current_active|tracked_local_manual_web');
-      expect(output).toContain('api_classification=current_active|tracked_local_manual_api');
-      expect(output).toContain('web_process_state=present');
-      expect(output).toContain('api_process_state=present');
-      expect(await waitForPidExit(webPid)).toBe(true);
-      expect(await waitForPidExit(apiPid)).toBe(true);
+      expect(output).toContain('web_classification=unverified|tracked_state_missing');
+      expect(output).toContain('api_classification=unverified|tracked_state_missing');
+      expect(output).toContain('web_process_state=missing');
+      expect(output).toContain('api_process_state=missing');
+      expect(isPidAlive(webPid)).toBe(true);
+      expect(isPidAlive(apiPid)).toBe(true);
       expect(existsSync(fixture.webProcessFile)).toBe(false);
       expect(existsSync(fixture.apiProcessFile)).toBe(false);
+      expect(readFileSync(fixture.webPidFile, 'utf8')).toBe(`${webPid}\n`);
+      expect(readFileSync(fixture.apiPidFile, 'utf8')).toBe(`${apiPid}\n`);
+      expect(readFileSync(fixture.webEvidenceFile, 'utf8')).toContain('"reason": "tracked_state_missing"');
+      expect(readFileSync(fixture.apiEvidenceFile, 'utf8')).toContain('"reason": "tracked_state_missing"');
     } finally {
       killProcessTreeGroup(webPid);
       killProcessTreeGroup(apiPid);
@@ -1908,7 +1927,7 @@ EOF_PROCESS_STATE
     }
   }, 20_000);
 
-  it('legacy-adopts a verified live web pid into sidecar state before continuing the stop contract', async () => {
+  it('does not legacy-adopt a live web pid into process-state before stop-line cleanup', async () => {
     const webPort = await reserveTcpPort();
     const fixture = setupRealCommonFixture({ webPort });
     tempRoots.push(fixture.tempRoot);
@@ -1932,13 +1951,6 @@ EOF_PROCESS_STATE
           source "${path.join(repoRoot, 'scripts/local-manual/common.sh')}"
           init_local_manual_env
           setup_local_manual_runtime_evidence
-          local_manual_actuate_tracked_service_stop_contract() {
-            printf 'actuate:%s|%s|%s\\n' "$1" "$2" "$3" >> "${path.join(fixture.tempRoot, 'legacy-events.log')}"
-            return 0
-          }
-          local_manual_verify_tracked_service_stop_contract() {
-            return 1
-          }
           if stop_local_manual_tracked_service_owner_aware web; then
             printf 'status=0\\n'
           else
@@ -1962,17 +1974,12 @@ EOF_PROCESS_STATE
       });
 
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain('status=1');
-      expect(result.stdout).toContain('web_process=present');
-      expect(existsSync(fixture.webProcessFile)).toBe(true);
-      const sidecar = JSON.parse(readFileSync(fixture.webProcessFile, 'utf8')) as {
-        kind: string;
-        pid: number;
-        port: number;
-      };
-      expect(sidecar.kind).toBe('web');
-      expect(sidecar.pid).toBe(webPid);
-      expect(sidecar.port).toBe(webPort);
+      expect(result.stdout).toContain('status=0');
+      expect(result.stdout).toContain('web_process=missing');
+      expect(existsSync(fixture.webProcessFile)).toBe(false);
+      expect(readFileSync(fixture.webPidFile, 'utf8')).toBe(`${webPid}\n`);
+      expect(existsSync(fixture.webReadyFile)).toBe(false);
+      expect(readFileSync(fixture.webEvidenceFile, 'utf8')).toContain('"reason": "tracked_state_missing"');
     } finally {
       killProcessTreeGroup(webPid);
     }
@@ -2118,7 +2125,7 @@ EOF_PROCESS_STATE
     expect(existsSync(fixture.webProcessFile)).toBe(false);
   });
 
-  it('treats api workspace child cwd as a verified current_active local-manual process and stops it without killing an unrelated sibling', async () => {
+  it('treats api workspace child with tracked process-state evidence as a verified current_active local-manual process and stops it without killing an unrelated sibling', async () => {
     const apiPort = await reserveTcpPort();
     const fixture = setupRealCommonFixture({ apiPort });
     tempRoots.push(fixture.tempRoot);
@@ -2137,6 +2144,15 @@ EOF_PROCESS_STATE
       mkdirSync(fixture.localManualRoot, { recursive: true });
       writeFileSync(fixture.apiPidFile, `${apiPid}\n`, 'utf8');
       writeFileSync(fixture.apiReadyFile, 'ready\n', 'utf8');
+      writeProcessStateFile({
+        file: fixture.apiProcessFile,
+        kind: 'api',
+        pid: apiPid,
+        port: apiPort,
+        token: readLinuxBootProcessIdentityToken(apiPid),
+        tokenSource: 'linux_boot_id_proc_stat',
+        cwd: path.join(repoRoot, 'packages/api-entry-node'),
+      });
 
       const output = execFileSync(
         'bash',
@@ -2182,7 +2198,7 @@ EOF_PROCESS_STATE
     }
   }, 20_000);
 
-  it('only stops verified local-manual web/api processes and leaves unrelated siblings alive', async () => {
+  it('only stops local-manual web/api processes that carry verified tracked process-state evidence and leaves unrelated siblings alive', async () => {
     const apiPort = await reserveTcpPort();
     const webPort = await reserveTcpPort();
     const fixture = setupRealCommonFixture({ apiPort, webPort });
@@ -2210,6 +2226,23 @@ EOF_PROCESS_STATE
       writeFileSync(fixture.apiPidFile, `${apiPid}\n`, 'utf8');
       writeFileSync(fixture.webReadyFile, 'ready\n', 'utf8');
       writeFileSync(fixture.apiReadyFile, 'ready\n', 'utf8');
+      writeProcessStateFile({
+        file: fixture.webProcessFile,
+        kind: 'web',
+        pid: webPid,
+        port: webPort,
+        token: readLinuxBootProcessIdentityToken(webPid),
+        tokenSource: 'linux_boot_id_proc_stat',
+      });
+      writeProcessStateFile({
+        file: fixture.apiProcessFile,
+        kind: 'api',
+        pid: apiPid,
+        port: apiPort,
+        token: readLinuxBootProcessIdentityToken(apiPid),
+        tokenSource: 'linux_boot_id_proc_stat',
+        cwd: path.join(repoRoot, 'packages/api-entry-node'),
+      });
 
       execFileSync(
         'bash',

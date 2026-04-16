@@ -80,6 +80,40 @@ function runWrappedGateResult(input: {
   ) as GateResultPayload;
 }
 
+function runWrappedGateResultExpectFailure(input: {
+  gateId: string;
+  lineKind: string;
+  npmScript: string;
+  env?: Record<string, string>;
+  command?: string;
+}): GateResultPayload {
+  const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-"));
+  const evidenceDir = join(tempRoot, input.gateId, "native");
+
+  expect(() => execFileSync(
+    "bash",
+    [
+      "scripts/run-current-gate-result-wrapped.sh",
+      input.gateId,
+      input.lineKind,
+      input.npmScript,
+      "--",
+      "bash",
+      "-lc",
+      input.command ?? "true",
+    ],
+    {
+      cwd: process.cwd(),
+      env: gateResultEnv(evidenceDir, input.env),
+      stdio: "pipe",
+    },
+  )).toThrow();
+
+  return JSON.parse(
+    readFileSync(join(evidenceDir, CURRENT_GATE_RESULT_ARTIFACT_NAME), "utf8"),
+  ) as GateResultPayload;
+}
+
 function seedVisualProducerManifestSource(tempRoot: string, runId: string): string {
   const reviewRoot = join(tempRoot, "visual-baseline-reviews");
   const runRoot = join(reviewRoot, runId);
@@ -99,6 +133,11 @@ function seedVisualProducerManifestSource(tempRoot: string, runId: string): stri
         git_sha: "test-git-sha",
         fingerprint: `${runId}:mock-lane:visual`,
         started_at: "2026-04-16T08:00:00.000Z",
+      },
+      coverage: {
+        scope: "full_catalog",
+        expected_scenario_ids: ["desktop-auth-complete"],
+        captured_scenario_ids: ["desktop-auth-complete"],
       },
       scenarios: [
         {
@@ -197,6 +236,11 @@ describe("current gate result schema", () => {
         git_sha: "test-git-sha",
         fingerprint: `${runId}:mock-lane:visual`,
         started_at: "2026-04-16T08:00:00.000Z",
+      },
+      coverage: {
+        scope: "full_catalog",
+        expected_scenario_ids: ["desktop-auth-complete"],
+        captured_scenario_ids: ["desktop-auth-complete"],
       },
       scenarios: [
         {
@@ -324,6 +368,11 @@ describe("current gate result schema", () => {
         fingerprint: expect.any(String),
         started_at: expect.any(String),
       },
+      coverage: {
+        scope: expect.any(String),
+        expected_scenario_ids: expect.any(Array),
+        captured_scenario_ids: expect.any(Array),
+      },
     });
     expect(Array.isArray(manifest.scenarios)).toBe(true);
     expect(manifest.scenarios?.length).toBeGreaterThan(0);
@@ -332,7 +381,7 @@ describe("current gate result schema", () => {
   it("fails closed when lane-visual wrapped execution has no producer-owned run-manifest source", () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-missing-source-"));
 
-    expect(() => runWrappedGateResult({
+    const payload = runWrappedGateResultExpectFailure({
       gateId: "lane-visual",
       lineKind: "visual",
       npmScript: "lane:visual",
@@ -340,7 +389,78 @@ describe("current gate result schema", () => {
         CURRENT_GATE_RESULT_RUN_ID: "run-wrapper-missing",
         VISUAL_BASELINE_REVIEW_ROOT: join(tempRoot, "missing-review-root"),
       },
-    })).toThrow(/missing lane-visual run manifest/i);
+    });
+
+    expect(payload).toMatchObject({
+      gate_id: "lane-visual",
+      status: "failed",
+      failure_class: "evidence_missing",
+    });
+  });
+
+  it("fails closed when release-grade lane-visual evidence declares partial coverage", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-partial-coverage-"));
+    const runId = "run-wrapper-partial-coverage";
+    const reviewRoot = seedVisualProducerManifestSource(tempRoot, runId);
+    const manifestPath = join(reviewRoot, runId, "run-manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      coverage: Record<string, unknown>;
+    };
+    manifest.coverage = {
+      scope: "partial_catalog",
+      expected_scenario_ids: ["desktop-auth-complete", "access-guide"],
+      captured_scenario_ids: ["desktop-auth-complete"],
+    };
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+    const payload = runWrappedGateResultExpectFailure({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+      env: {
+        CURRENT_GATE_RESULT_RUN_ID: runId,
+        RELEASE_CAMPAIGN_ROOT: join(tempRoot, "campaign-root"),
+        VISUAL_BASELINE_REVIEW_ROOT: reviewRoot,
+      },
+    });
+
+    expect(payload).toMatchObject({
+      gate_id: "lane-visual",
+      status: "failed",
+      failure_class: "evidence_missing",
+    });
+  });
+
+  it("fails closed when standalone lane-visual evidence declares partial coverage", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-standalone-partial-coverage-"));
+    const runId = "run-wrapper-standalone-partial-coverage";
+    const reviewRoot = seedVisualProducerManifestSource(tempRoot, runId);
+    const manifestPath = join(reviewRoot, runId, "run-manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      coverage: Record<string, unknown>;
+    };
+    manifest.coverage = {
+      scope: "partial_catalog",
+      expected_scenario_ids: ["desktop-auth-complete", "access-guide"],
+      captured_scenario_ids: ["desktop-auth-complete"],
+    };
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+    const payload = runWrappedGateResultExpectFailure({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+      env: {
+        CURRENT_GATE_RESULT_RUN_ID: runId,
+        VISUAL_BASELINE_REVIEW_ROOT: reviewRoot,
+      },
+    });
+
+    expect(payload).toMatchObject({
+      gate_id: "lane-visual",
+      status: "failed",
+      failure_class: "evidence_missing",
+    });
   });
 
   it("prefers explicit CURRENT_GATE_RESULT_CI_JOB over manifest and GitHub job names", () => {

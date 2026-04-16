@@ -12,6 +12,112 @@ type RunnerHealthFixtureArgs = {
   maxAgeSeconds?: number;
 };
 
+function writeRunnerOwnerState(file: string, pid: number, ownerToken: string): void {
+  writeFileSync(file, `${JSON.stringify({
+    schema_version: 1,
+    pid,
+    owner_token: ownerToken,
+    recorded_at: new Date().toISOString(),
+    captured_by: 'runner-health.test',
+  }, null, 2)}\n`, 'utf8');
+}
+
+function withOwnedRunnerAuthority<T>(
+  args: {
+    logContent: string;
+    healthState: 'connected' | 'shutting_down' | 'disconnected';
+    readyFileContent?: string;
+    snippet: (fixture: {
+      repoRoot: string;
+      tempRoot: string;
+      backendRealRoot: string;
+      logFile: string;
+      pidFile: string;
+      readyFile: string;
+      healthFile: string;
+      ownerStateFile: string;
+      ownerToken: string;
+      processStateDir: string;
+      pid: number;
+    }) => string;
+  },
+): T {
+  const repoRoot = process.cwd();
+  return withRunnerHealthFixture({
+    logContent: args.logContent,
+    pidValue: process.pid,
+  }, ({ tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile }) => {
+    const child = spawn('bash', ['-lc', 'sleep 120'], {
+      cwd: repoRoot,
+      stdio: 'ignore',
+    });
+    if (!child.pid) {
+      throw new Error('failed to create a live runner pid for authority-backed runner test');
+    }
+
+    const ownerToken = 'runner-health-test-owner';
+    const processStateDir = path.join(tempRoot, 'local-runtime-processes');
+
+    try {
+      writeFileSync(pidFile, `${child.pid}\n`, 'utf8');
+      writeFileSync(readyFile, `${args.readyFileContent ?? 'ready'}\n`, 'utf8');
+      writeFileSync(healthFile, runnerHealthArtifact(args.healthState, child.pid), 'utf8');
+      writeRunnerOwnerState(ownerStateFile, child.pid, ownerToken);
+
+      execFileSync(
+        'bash',
+        [
+          '-lc',
+          `
+            set -euo pipefail
+            export ROOT_DIR="${repoRoot}"
+            export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+            export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+            export LOCAL_RUNTIME_OWNER_TOKEN="${ownerToken}"
+            source "${repoRoot}/scripts/local-manual/common.sh"
+            source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+            local_runtime_write_process_sidecar runner "${child.pid}" "0" "sleep 120"
+          `,
+        ],
+        {
+          cwd: repoRoot,
+          env: { ...process.env },
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
+
+      return execFileSync(
+        'bash',
+        [
+          '-lc',
+          args.snippet({
+            repoRoot,
+            tempRoot,
+            backendRealRoot,
+            logFile,
+            pidFile,
+            readyFile,
+            healthFile,
+            ownerStateFile,
+            ownerToken,
+            processStateDir,
+            pid: child.pid,
+          }),
+        ],
+        {
+          cwd: repoRoot,
+          env: { ...process.env },
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      ).trim() as T;
+    } finally {
+      child.kill('SIGKILL');
+    }
+  });
+}
+
 function withRunnerHealthFixture<T>(
   args: RunnerHealthFixtureArgs,
   callback: (fixture: {
@@ -21,6 +127,7 @@ function withRunnerHealthFixture<T>(
     pidFile: string;
     readyFile: string;
     healthFile: string;
+    ownerStateFile: string;
   }) => T,
 ): T {
   const repoRoot = process.cwd();
@@ -30,6 +137,7 @@ function withRunnerHealthFixture<T>(
   const pidFile = path.join(tempRoot, 'runner.pid');
   const readyFile = path.join(tempRoot, 'runner.ready');
   const healthFile = path.join(tempRoot, 'runner.health.json');
+  const ownerStateFile = path.join(tempRoot, 'runner.owner.json');
 
   try {
     mkdirSync(backendRealRoot, { recursive: true });
@@ -40,7 +148,7 @@ function withRunnerHealthFixture<T>(
       writeFileSync(healthFile, args.healthContent, 'utf8');
     }
 
-    return callback({ tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile });
+    return callback({ tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile });
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -48,7 +156,7 @@ function withRunnerHealthFixture<T>(
 
 function runCommonSnippet(args: RunnerHealthFixtureArgs, snippet: string): string {
   const repoRoot = process.cwd();
-  return withRunnerHealthFixture(args, ({ backendRealRoot, logFile, pidFile, readyFile, healthFile }) => (
+  return withRunnerHealthFixture(args, ({ backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile }) => (
     execFileSync(
       'bash',
       [
@@ -62,6 +170,7 @@ function runCommonSnippet(args: RunnerHealthFixtureArgs, snippet: string): strin
           RUNNER_PID_FILE="${pidFile}"
           RUNNER_READY_FILE="${readyFile}"
           RUNNER_HEALTH_FILE="${healthFile}"
+          RUNNER_OWNER_STATE_FILE="${ownerStateFile}"
           LOCAL_MANUAL_RUNNER_HEALTH_MAX_AGE_SEC="${args.maxAgeSeconds ?? 60}"
           ${snippet}
         `,
@@ -311,21 +420,214 @@ NODE
     });
   });
 
-  it('reports connected from a fresh runner health artifact even when logs are empty', () => {
-    const state = runRunnerHealthState({
+  it('fails closed when a live runner has a fresh health artifact but no owner token can be resolved', () => {
+    const repoRoot = process.cwd();
+
+    withRunnerHealthFixture({
       logContent: '',
       pidValue: process.pid,
       healthContent: runnerHealthArtifact('connected'),
+    }, ({ tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile }) => {
+      const child = spawn('bash', ['-lc', 'sleep 120'], {
+        cwd: repoRoot,
+        stdio: 'ignore',
+      });
+
+      if (!child.pid) {
+        throw new Error('failed to create a live runner pid for missing owner token test');
+      }
+
+      const processStateDir = path.join(tempRoot, 'local-runtime-processes');
+
+      try {
+        writeFileSync(pidFile, `${child.pid}\n`, 'utf8');
+        writeFileSync(healthFile, runnerHealthArtifact('connected', child.pid), 'utf8');
+
+        execFileSync(
+          'bash',
+          [
+            '-lc',
+            `
+              set -euo pipefail
+              export ROOT_DIR="${repoRoot}"
+              export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+              export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+              export LOCAL_RUNTIME_OWNER_TOKEN="runner-health-test-owner"
+              source "${repoRoot}/scripts/local-manual/common.sh"
+              source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+              local_runtime_write_process_sidecar runner "${child.pid}" "0" "sleep 120"
+            `,
+          ],
+          {
+            cwd: repoRoot,
+            env: { ...process.env },
+            encoding: 'utf8',
+            stdio: 'pipe',
+          },
+        );
+
+        const state = execFileSync(
+          'bash',
+          [
+            '-lc',
+            `
+              set -euo pipefail
+              export ROOT_DIR="${repoRoot}"
+              export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+              export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+              source "${repoRoot}/scripts/local-manual/common.sh"
+              source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+              RUNNER_LOG="${logFile}"
+              RUNNER_PID_FILE="${pidFile}"
+              RUNNER_READY_FILE="${readyFile}"
+              RUNNER_HEALTH_FILE="${healthFile}"
+              RUNNER_OWNER_STATE_FILE="${ownerStateFile}"
+              runner_socket_health_state
+            `,
+          ],
+          {
+            cwd: repoRoot,
+            env: { ...process.env },
+            encoding: 'utf8',
+            stdio: 'pipe',
+          },
+        ).trim();
+
+        expect(state).toBe('stale');
+      } finally {
+        child.kill('SIGKILL');
+      }
+    });
+  });
+
+  it('accepts a live runner from persisted owner state even when no owner token is exported in the current shell', () => {
+    const repoRoot = process.cwd();
+
+    withRunnerHealthFixture({
+      logContent: '',
+      pidValue: process.pid,
+      healthContent: runnerHealthArtifact('connected'),
+    }, ({ tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile }) => {
+      const child = spawn('bash', ['-lc', 'sleep 120'], {
+        cwd: repoRoot,
+        stdio: 'ignore',
+      });
+
+      if (!child.pid) {
+        throw new Error('failed to create a live runner pid for persisted owner state test');
+      }
+
+      const processStateDir = path.join(tempRoot, 'local-runtime-processes');
+
+      try {
+        writeFileSync(pidFile, `${child.pid}\n`, 'utf8');
+        writeFileSync(healthFile, runnerHealthArtifact('connected', child.pid), 'utf8');
+        writeFileSync(ownerStateFile, `${JSON.stringify({
+          schema_version: 1,
+          pid: child.pid,
+          owner_token: 'runner-health-test-owner',
+          recorded_at: new Date().toISOString(),
+          captured_by: 'runner-health.test',
+        }, null, 2)}\n`, 'utf8');
+
+        execFileSync(
+          'bash',
+          [
+            '-lc',
+            `
+              set -euo pipefail
+              export ROOT_DIR="${repoRoot}"
+              export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+              export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+              export LOCAL_RUNTIME_OWNER_TOKEN="runner-health-test-owner"
+              source "${repoRoot}/scripts/local-manual/common.sh"
+              source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+              local_runtime_write_process_sidecar runner "${child.pid}" "0" "sleep 120"
+            `,
+          ],
+          {
+            cwd: repoRoot,
+            env: { ...process.env },
+            encoding: 'utf8',
+            stdio: 'pipe',
+          },
+        );
+
+        const state = execFileSync(
+          'bash',
+          [
+            '-lc',
+            `
+              set -euo pipefail
+              export ROOT_DIR="${repoRoot}"
+              export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+              export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+              source "${repoRoot}/scripts/local-manual/common.sh"
+              source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+              RUNNER_LOG="${logFile}"
+              RUNNER_PID_FILE="${pidFile}"
+              RUNNER_READY_FILE="${readyFile}"
+              RUNNER_HEALTH_FILE="${healthFile}"
+              RUNNER_OWNER_STATE_FILE="${ownerStateFile}"
+              runner_socket_health_state
+            `,
+          ],
+          {
+            cwd: repoRoot,
+            env: { ...process.env },
+            encoding: 'utf8',
+            stdio: 'pipe',
+          },
+        ).trim();
+
+        expect(state).toBe('connected');
+      } finally {
+        child.kill('SIGKILL');
+      }
+    });
+  });
+
+  it('reports connected from a fresh runner health artifact even when logs are empty', () => {
+    const state = withOwnedRunnerAuthority<string>({
+      logContent: '',
+      healthState: 'connected',
+      snippet: ({ repoRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile, processStateDir }) => `
+        set -euo pipefail
+        export ROOT_DIR="${repoRoot}"
+        export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+        export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+        source "${repoRoot}/scripts/local-manual/common.sh"
+        source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+        RUNNER_LOG="${logFile}"
+        RUNNER_PID_FILE="${pidFile}"
+        RUNNER_READY_FILE="${readyFile}"
+        RUNNER_HEALTH_FILE="${healthFile}"
+        RUNNER_OWNER_STATE_FILE="${ownerStateFile}"
+        runner_socket_health_state
+      `,
     });
 
     expect(state).toBe('connected');
   });
 
   it('reports shutting_down from a fresh runner health artifact instead of collapsing it to connected or disconnected', () => {
-    const state = runRunnerHealthState({
+    const state = withOwnedRunnerAuthority<string>({
       logContent: '[notebook-codex-runner] runner_state=connected reason=websocket_open\n',
-      pidValue: process.pid,
-      healthContent: runnerHealthArtifact('shutting_down'),
+      healthState: 'shutting_down',
+      snippet: ({ repoRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile, processStateDir }) => `
+        set -euo pipefail
+        export ROOT_DIR="${repoRoot}"
+        export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+        export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+        source "${repoRoot}/scripts/local-manual/common.sh"
+        source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+        RUNNER_LOG="${logFile}"
+        RUNNER_PID_FILE="${pidFile}"
+        RUNNER_READY_FILE="${readyFile}"
+        RUNNER_HEALTH_FILE="${healthFile}"
+        RUNNER_OWNER_STATE_FILE="${ownerStateFile}"
+        runner_socket_health_state
+      `,
     });
 
     expect(state).toBe('shutting_down');
@@ -342,11 +644,23 @@ NODE
   });
 
   it('reports disconnected when the fresh health artifact says the socket is disconnected', () => {
-    const state = runRunnerHealthState({
+    const state = withOwnedRunnerAuthority<string>({
       logContent: '[notebook-codex-runner] connected\n[notebook-codex-runner] disconnected\n',
-      pidValue: process.pid,
-      readyFileContent: 'ready',
-      healthContent: runnerHealthArtifact('disconnected'),
+      healthState: 'disconnected',
+      snippet: ({ repoRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile, processStateDir }) => `
+        set -euo pipefail
+        export ROOT_DIR="${repoRoot}"
+        export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+        export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+        source "${repoRoot}/scripts/local-manual/common.sh"
+        source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+        RUNNER_LOG="${logFile}"
+        RUNNER_PID_FILE="${pidFile}"
+        RUNNER_READY_FILE="${readyFile}"
+        RUNNER_HEALTH_FILE="${healthFile}"
+        RUNNER_OWNER_STATE_FILE="${ownerStateFile}"
+        runner_socket_health_state
+      `,
     });
 
     expect(state).toBe('disconnected');
@@ -395,63 +709,64 @@ NODE
   });
 
   it('writes a v2 shutting_down health artifact from a single monitor observation', () => {
-    const output = runCommonSnippet({
+    const output = withOwnedRunnerAuthority<string>({
       logContent: [
         '[notebook-codex-runner] runner_state=connected reason=websocket_open',
         '[notebook-codex-runner] runner_state=shutting_down reason=websocket_close',
       ].join('\n'),
-      pidValue: process.pid,
-    }, `
-      local_manual_runner_health_monitor_once || true
-      node - <<'NODE' "\${RUNNER_HEALTH_FILE}"
+      healthState: 'connected',
+      snippet: ({ repoRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile, processStateDir }) => `
+        set -euo pipefail
+        export ROOT_DIR="${repoRoot}"
+        export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+        export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+        source "${repoRoot}/scripts/local-manual/common.sh"
+        source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+        RUNNER_LOG="${logFile}"
+        RUNNER_PID_FILE="${pidFile}"
+        RUNNER_READY_FILE="${readyFile}"
+        RUNNER_HEALTH_FILE="${healthFile}"
+        RUNNER_OWNER_STATE_FILE="${ownerStateFile}"
+        local_manual_runner_health_monitor_once || true
+        node - <<'NODE' "\${RUNNER_HEALTH_FILE}"
 const fs = require('node:fs');
 const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 process.stdout.write([payload.schema_version, payload.state, payload.reason].join(':'));
 NODE
-    `);
+      `,
+    });
 
     expect(output).toBe('2:shutting_down:websocket_close');
   });
 
   it('restarts the local runner for a shutting_down socket and reports the actual four-state reason', () => {
-    const output = withRunnerHealthFixture({
+    const output = withOwnedRunnerAuthority<string>({
       logContent: '',
-      pidValue: process.pid,
-      healthContent: runnerHealthArtifact('shutting_down'),
-    }, ({ tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile }) => {
-      const repoRoot = process.cwd();
-      const fakeStartRunner = path.join(tempRoot, 'scripts/local-manual/start-runner.sh');
-      mkdirSync(path.dirname(fakeStartRunner), { recursive: true });
-      writeFileSync(
-        fakeStartRunner,
-        `#!/usr/bin/env bash\nprintf 'start-runner-called\\n'\n`,
-        'utf8',
-      );
-      chmodSync(fakeStartRunner, 0o755);
-
-      return execFileSync(
-        'bash',
-        [
-          '-lc',
-          `
-            set -euo pipefail
-            export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
-            source "${repoRoot}/scripts/local-manual/common.sh"
-            ROOT_DIR="${tempRoot}"
-            RUNNER_LOG="${logFile}"
-            RUNNER_PID_FILE="${pidFile}"
-            RUNNER_READY_FILE="${readyFile}"
-            RUNNER_HEALTH_FILE="${healthFile}"
-            ensure_local_manual_runner_connected
-          `,
-        ],
-        {
-          cwd: repoRoot,
-          env: { ...process.env },
-          encoding: 'utf8',
-          stdio: 'pipe',
-        },
-      ).trim();
+      healthState: 'shutting_down',
+      snippet: ({ repoRoot, tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile, ownerStateFile, processStateDir }) => {
+        const fakeStartRunner = path.join(tempRoot, 'scripts/local-manual/start-runner.sh');
+        mkdirSync(path.dirname(fakeStartRunner), { recursive: true });
+        writeFileSync(
+          fakeStartRunner,
+          `#!/usr/bin/env bash\nprintf 'start-runner-called\\n'\n`,
+          'utf8',
+        );
+        chmodSync(fakeStartRunner, 0o755);
+        return `
+          set -euo pipefail
+          export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+          export LOCAL_RUNTIME_PROCESS_STATE_DIR="${processStateDir}"
+          source "${repoRoot}/scripts/local-manual/common.sh"
+          source "${repoRoot}/scripts/lib/local-runtime-processes.sh"
+          ROOT_DIR="${tempRoot}"
+          RUNNER_LOG="${logFile}"
+          RUNNER_PID_FILE="${pidFile}"
+          RUNNER_READY_FILE="${readyFile}"
+          RUNNER_HEALTH_FILE="${healthFile}"
+          RUNNER_OWNER_STATE_FILE="${ownerStateFile}"
+          ensure_local_manual_runner_connected
+        `;
+      },
     });
 
     expect(output).toContain('socket is shutting_down');

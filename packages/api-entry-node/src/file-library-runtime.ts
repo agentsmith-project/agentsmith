@@ -64,6 +64,21 @@ interface PersistedGatewayState {
   status: 'starting' | 'ready' | 'degraded';
 }
 
+function restoreGatewaySessionFromPersistedState(state: PersistedGatewayState): GatewaySession {
+  return {
+    loopbackUrl: state.loopbackUrl,
+    port: state.port,
+    status: state.status,
+    lastStartedAt: state.lastStartedAt,
+    pid: state.pid,
+    metadataUrl: state.metadataUrl,
+    storageBucketUrl: state.storageBucketUrl,
+    logPath: state.logPath,
+    ownerScope: state.ownerScope,
+    sessionToken: state.sessionToken,
+  };
+}
+
 interface FileLibraryRuntimeConfig {
   juicefsBin: string;
   mcBin: string;
@@ -1614,6 +1629,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       managedProcesses: readonly ManagedGatewayProcessInfo[];
       ownerEvidence: GatewayOwnerEvidence;
       ownerRuntime: GatewayOwnerRuntimeLease;
+      allowWeakStateAdoption?: boolean;
       signal?: AbortSignal;
     },
   ): Promise<void> {
@@ -1884,6 +1900,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       managedProcesses: readonly ManagedGatewayProcessInfo[];
       ownerEvidence: GatewayOwnerEvidence;
       ownerRuntime: GatewayOwnerRuntimeLease;
+      allowWeakStateAdoption?: boolean;
       signal?: AbortSignal;
     },
   ): Promise<void> {
@@ -1913,7 +1930,12 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         ).map((processInfo) => processInfo.pid)
         : [],
     );
-    if (state && stateNeedsOwnerIdentityMigration(state) && canAdoptWeakGatewayState(this.platform, state)) {
+    if (
+      state
+      && (inventory?.allowWeakStateAdoption ?? true)
+      && stateNeedsOwnerIdentityMigration(state)
+      && canAdoptWeakGatewayState(this.platform, state)
+    ) {
       state = await adoptLegacyGatewayState(
         this.config,
         this.platform,
@@ -2073,6 +2095,8 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     }
     if (this.isOwnedGatewaySession(currentSession)) {
       await this.cleanupOwnedSession(input.libraryId, currentSession);
+    } else if (currentSession) {
+      this.clearSessionIfCurrent(input.libraryId, currentSession);
     }
 
     await waitWithAbort(0, signal);
@@ -2081,7 +2105,9 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     });
     throwIfAborted(signal, 'file_library_gateway_start_aborted');
     const existing = this.sessions.get(input.libraryId);
-    if (this.canReuseSessionForGatewayInput(existing, input)) {
+    if (existing && !this.isOwnedGatewaySession(existing)) {
+      this.clearSessionIfCurrent(input.libraryId, existing);
+    } else if (this.canReuseSessionForGatewayInput(existing, input)) {
       return existing;
     }
     if (existing) {
@@ -2124,16 +2150,8 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       if (await isGatewayLoopbackHealthy(this.platform, persisted.loopbackUrl, { signal })) {
         throwIfAborted(signal, 'file_library_gateway_start_aborted');
         const restored: GatewaySession = {
-          loopbackUrl: persisted.loopbackUrl,
-          port: persisted.port,
+          ...restoreGatewaySessionFromPersistedState(persisted),
           status: 'ready',
-          lastStartedAt: persisted.lastStartedAt,
-          pid: persisted.pid,
-          metadataUrl: persisted.metadataUrl,
-          storageBucketUrl: persisted.storageBucketUrl,
-          logPath: persisted.logPath,
-          ownerScope: persisted.ownerScope,
-          sessionToken: persisted.sessionToken,
         };
         this.sessions.set(input.libraryId, restored);
         return restored;
@@ -2275,9 +2293,17 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
 
   async getHealth(libraryId: string): Promise<FileLibraryGatewayHealth> {
     let current = this.sessions.get(libraryId);
+    let canReportReady = this.isOwnedGatewaySession(current);
+    if (current && !this.isOwnedGatewaySession(current)) {
+      this.clearSessionIfCurrent(libraryId, current);
+      current = undefined;
+      canReportReady = false;
+    }
     if (!current) {
       const ownerRuntime = await this.ownerRuntimePromise;
-      await this.startLibraryReconcile(libraryId);
+      await this.startLibraryReconcile(libraryId, {
+        allowWeakStateAdoption: false,
+      });
       const persisted = await readGatewayState(this.config, libraryId);
       const processInventory = persisted?.pid ? await this.platform.listProcesses() : [];
       const persistedPidAuthority = persisted
@@ -2302,18 +2328,8 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
             checkedAt: this.platform.now(),
           };
         }
-        current = {
-          loopbackUrl: persisted.loopbackUrl,
-          port: persisted.port,
-          status: persisted.status,
-          lastStartedAt: persisted.lastStartedAt,
-          pid: persisted.pid,
-          metadataUrl: persisted.metadataUrl,
-          storageBucketUrl: persisted.storageBucketUrl,
-          logPath: persisted.logPath,
-          ownerScope: persisted.ownerScope,
-          sessionToken: persisted.sessionToken,
-        };
+        current = restoreGatewaySessionFromPersistedState(persisted);
+        canReportReady = persistedAuthority === 'current_boot';
       }
     }
     if (!current) {
@@ -2332,7 +2348,8 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       };
     }
     try {
-      const status = await isGatewayLoopbackHealthy(this.platform, current.loopbackUrl) ? 'ready' : 'degraded';
+      const healthy = await isGatewayLoopbackHealthy(this.platform, current.loopbackUrl);
+      const status = healthy && canReportReady ? 'ready' : 'degraded';
       current.status = status;
       if (status === 'ready') {
         this.sessions.set(libraryId, current);

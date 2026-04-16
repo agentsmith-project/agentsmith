@@ -169,7 +169,7 @@ bash scripts/run-file-library-real-gate.sh
 ```
 
 Expected resource recovery proof:
-- a `boot-baseline.json` snapshot is captured before the API starts, so startup-side leakage has a separate evidence point
+- a `boot-baseline.json` snapshot is captured before the API starts, and `file-library-api-startup.json` turns that boot snapshot into an explicit startup verdict instead of summary-only evidence
 - temporary file-library gateway state returns exactly to the pre-run baseline
 - managed `juicefs gateway` processes return exactly to the pre-run baseline, including the same per-library pid set
 - the API process and every managed gateway process return to the ready baseline for `open_fd_count` and `socket_fd_count`
@@ -184,11 +184,13 @@ Failure-path expectation:
 The real gate writes a structured recovery report under:
 - `artifacts/backend-real/current/file-library-real-gate/resource-recovery/boot-baseline.json`
 - `artifacts/backend-real/current/file-library-real-gate/resource-recovery/baseline.json`
+- `artifacts/backend-real/current/file-library-real-gate/resource-recovery/file-library-api-startup.json`
 - `artifacts/backend-real/current/file-library-real-gate/resource-recovery/report.json`
 - `artifacts/backend-real/current/file-library-real-gate/resource-recovery/report.md`
 
 `report.json` and `report.md` now preserve both ends of the baseline chain:
 - `boot-baseline.json` proves what existed before the API booted
+- `file-library-api-startup.json` proves startup only introduced the steady-state API resources that are expected before the smoke steps begin
 - `baseline.json` proves the steady-state ready baseline that every smoke step must return to
 
 This report is a file-library real-gate substep artifact.

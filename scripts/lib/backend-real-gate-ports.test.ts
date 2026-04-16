@@ -271,6 +271,31 @@ describe('backend-real gate port ownership cleanup', () => {
     expect(await waitForPidExit(rootPid)).toBe(true);
   });
 
+  it('reports owned stop failures separately instead of mislabeling them as unowned listeners', () => {
+    const result = runBash(
+      `
+        set -euo pipefail
+        source scripts/lib/backend-real-gate-ports.sh
+        backend_real_gate_stop_matching_supervisors() { return 0; }
+        port_listener_pids() { printf '4321\\n'; }
+        local_runtime_verified_owner_pid_for_tree_member() { printf '4100\\n'; }
+        local_runtime_stop_owned_process_tree() {
+          echo "[test] simulated owned stop failure" >&2
+          return 1
+        }
+        cleanup_gate_ports "20000" "3001" "e2e/example.spec.ts"
+      `,
+      {
+        BACKEND_REAL_GATE_PORTS_ALLOW_UNOWNED_RESCUE: '1',
+      },
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('owned listener cleanup failed');
+    expect(result.stderr).not.toContain('unowned listener');
+    expect(result.stderr).not.toContain('rescue cleanup for unowned listener');
+  });
+
   it('requires an explicit rescue flag before killing unowned listeners', async () => {
     const tempRoot = makeTempRoot();
     const apiPort = await reserveTcpPort();

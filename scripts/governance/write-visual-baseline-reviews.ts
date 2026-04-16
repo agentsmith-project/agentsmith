@@ -143,6 +143,11 @@ function buildVisualBaselineRunManifest(args: {
       fingerprint: string;
       started_at: string;
     };
+    coverage: {
+      scope: 'full_catalog' | 'partial_catalog';
+      expected_scenario_ids: string[];
+      captured_scenario_ids: string[];
+    };
     scenarios: Array<{
       scenario_id: string;
       actual_url: string;
@@ -163,6 +168,16 @@ function buildVisualBaselineRunManifest(args: {
     actualCaptureRoot: args.actualCaptureRoot,
     scenarios: args.scenarios,
   });
+  const expectedScenarioIds = args.scenarios
+    .map((scenario) => scenario.scenarioId)
+    .sort((left, right) => left.localeCompare(right));
+  const capturedScenarioIds = capturedScenarios
+    .map((scenario) => scenario.scenarioId)
+    .sort((left, right) => left.localeCompare(right));
+  const coverageScope = expectedScenarioIds.length === capturedScenarioIds.length
+    && expectedScenarioIds.every((scenarioId, index) => scenarioId === capturedScenarioIds[index])
+    ? 'full_catalog'
+    : 'partial_catalog';
 
   const manifest = {
     schema: 'visual_baseline_run_manifest/v2' as const,
@@ -173,6 +188,11 @@ function buildVisualBaselineRunManifest(args: {
       git_sha: args.build.gitSha,
       fingerprint: args.build.fingerprint,
       started_at: args.build.startedAt,
+    },
+    coverage: {
+      scope: coverageScope,
+      expected_scenario_ids: expectedScenarioIds,
+      captured_scenario_ids: capturedScenarioIds,
     },
     scenarios: capturedScenarios.map((scenario) => {
       const evidence = buildVisualBaselineScenarioEvidence(scenario);

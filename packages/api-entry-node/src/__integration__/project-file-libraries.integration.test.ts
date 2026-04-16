@@ -1,9 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { Readable } from 'node:stream';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultNodeApiDeps } from '../index.js';
 import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './test-support.js';
 
+const { createFileLibraryGatewayClientMock } = vi.hoisted(() => ({
+  createFileLibraryGatewayClientMock: vi.fn(),
+}));
+
+vi.mock('../file-library-gateway-client.js', async () => {
+  const actual = await vi.importActual<typeof import('../file-library-gateway-client.js')>('../file-library-gateway-client.js');
+  return {
+    ...actual,
+    createFileLibraryGatewayClient: createFileLibraryGatewayClientMock,
+  };
+});
+
+afterEach(() => {
+  createFileLibraryGatewayClientMock.mockReset();
+});
+
 describe.sequential('api-entry-node project file libraries integration', () => {
-  it('supports file libraries CRUD flow', async () => {
+  it('supports file libraries CRUD flow when the integration harness provides the delete gateway seam', async () => {
     const { baseUrl } = startServer();
 
     const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries');
@@ -54,12 +71,17 @@ describe.sequential('api-entry-node project file libraries integration', () => {
     expect(listed.items).toHaveLength(initialCount + 1);
     expect(listed.items.some((item) => item.id === created.id && item.name === 'Project Uploads')).toBe(true);
 
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      listObjectsV2: vi.fn().mockReturnValue(Readable.from([])),
+    });
+
     const deleteRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/${created.id}`,
       { method: 'DELETE' },
     );
     expect(deleteRes.status).toBe(204);
+    expect(createFileLibraryGatewayClientMock).toHaveBeenCalledTimes(1);
   });
 
   it('preserves file libraries across api restarts when the same deps/doc store are reused', async () => {

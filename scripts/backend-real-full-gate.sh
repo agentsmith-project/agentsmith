@@ -195,13 +195,13 @@ run_real_cmd 20050 3051 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' np
 run_real_cmd 20080 3081 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' npm run test:visual:backend-real:review"
 UX_TRACE_VALIDATION_REPORT="${ARTIFACT_DIR}/ux-trace-validation.json"
 UX_TRACE_VALID_BUNDLES="${ARTIFACT_DIR}/ux-trace-valid-bundles.txt"
-if ! run_cmd "npx tsx scripts/validate-ux-trace-bundles.ts --root '${ARTIFACT_DIR}/ux-traces' --expected-lane backend-real --min-count 1 --report '${UX_TRACE_VALIDATION_REPORT}' --valid-paths '${UX_TRACE_VALID_BUNDLES}'"; then
-  gate_record_failure "${LOCAL_READY_LOG_DIR}" "evidence_missing" "backend_real_ux_trace_bundle" "invalid backend-real UX trace bundle semantics under ${ARTIFACT_DIR}/ux-traces"
+if ! run_cmd "npx tsx scripts/governance/run-release-full-aggregate.ts validate-ux-trace-root --campaign-id release-full --step-id gate-release --path '${ARTIFACT_DIR}/ux-traces' --report '${UX_TRACE_VALIDATION_REPORT}' --valid-paths '${UX_TRACE_VALID_BUNDLES}'"; then
+  gate_record_failure "${LOCAL_READY_LOG_DIR}" "evidence_missing" "backend_real_ux_trace_bundle" "invalid backend-real UX trace evidence under ${ARTIFACT_DIR}/ux-traces"
   exit 1
 fi
 mapfile -t ux_trace_bundle_dirs < "${UX_TRACE_VALID_BUNDLES}"
 if [[ "${#ux_trace_bundle_dirs[@]}" -eq 0 ]]; then
-  gate_record_failure "${LOCAL_READY_LOG_DIR}" "evidence_missing" "backend_real_ux_trace_bundle" "missing semantically valid backend-real UX trace bundle under ${ARTIFACT_DIR}/ux-traces"
+  gate_record_failure "${LOCAL_READY_LOG_DIR}" "evidence_missing" "backend_real_ux_trace_bundle" "missing release-authoritative backend-real UX trace bundle under ${ARTIFACT_DIR}/ux-traces"
   exit 1
 fi
 {

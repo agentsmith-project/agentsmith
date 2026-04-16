@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+source "${ROOT_DIR}/scripts/lib/local-runtime-processes.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 load_backend_real_env
 
@@ -102,8 +103,16 @@ MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@${MONGO_HOST}:${MONGO_P
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
 MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
+MBOS_DEV_USERNAME="${MBOS_DEV_USERNAME:-dev-admin}"
+MBOS_DEV_PASSWORD="${MBOS_DEV_PASSWORD:-dev-admin-123}"
 API_BASE="http://localhost:${API_PORT}"
 FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR="${FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real/current/file-library-real-gate}"
+FILE_LIBRARY_REAL_GATE_RUN_ID="${FILE_LIBRARY_REAL_GATE_RUN_ID:-file-library-real-gate-$$}"
+FILE_LIBRARY_REAL_GATE_RUNTIME_DIR="${FILE_LIBRARY_REAL_GATE_RUNTIME_DIR:-${FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR}/runtime}"
+export LOCAL_RUNTIME_RUN_ID="${FILE_LIBRARY_REAL_GATE_RUN_ID}"
+export LOCAL_RUNTIME_LINE_KIND="file_library_real_gate"
+export LOCAL_RUNTIME_OWNER_TOKEN="${FILE_LIBRARY_REAL_GATE_RUN_ID}:file_library_real_gate:$$"
+export LOCAL_RUNTIME_PROCESS_STATE_DIR="${FILE_LIBRARY_REAL_GATE_RUNTIME_DIR}/processes"
 RESOURCE_RECOVERY_DIR="${FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR}/resource-recovery"
 RESOURCE_RECOVERY_BOOT_BASELINE_JSON="${RESOURCE_RECOVERY_DIR}/boot-baseline.json"
 RESOURCE_RECOVERY_BASELINE_JSON="${RESOURCE_RECOVERY_DIR}/baseline.json"
@@ -113,12 +122,35 @@ RESOURCE_RECOVERY_MOUNT_SYNC_JSON="${RESOURCE_RECOVERY_DIR}/file-library-mount-s
 RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON="${RESOURCE_RECOVERY_DIR}/file-library-mount-sync-probe.json"
 RESOURCE_RECOVERY_REPORT_JSON="${RESOURCE_RECOVERY_DIR}/report.json"
 RESOURCE_RECOVERY_REPORT_MD="${RESOURCE_RECOVERY_DIR}/report.md"
+STARTUP_QUIESCE_SNAPSHOT_JSON="${RESOURCE_RECOVERY_DIR}/startup-quiesce.snapshot.json"
+STARTUP_QUIESCE_REPORT_JSON="${RESOURCE_RECOVERY_DIR}/startup-quiesce.report.json"
+STARTUP_WARMUP_DIR="${FILE_LIBRARY_REAL_GATE_RUNTIME_DIR}/startup-warmup"
+STARTUP_WARMUP_TOKEN_FILE="${STARTUP_WARMUP_DIR}/token.txt"
+STARTUP_WARMUP_BODY_FILE="${STARTUP_WARMUP_DIR}/body.json"
+STARTUP_WARMUP_HEADERS_FILE="${STARTUP_WARMUP_DIR}/headers.txt"
 RESOURCE_RECOVERY_SUMMARY_WRITTEN=0
 RESOURCE_RECOVERY_PRE_READY_FAILURE=0
+STARTUP_QUIESCE_TIMEOUT_SECONDS="${STARTUP_QUIESCE_TIMEOUT_SECONDS:-8}"
+STARTUP_QUIESCE_STABLE_SAMPLES="${STARTUP_QUIESCE_STABLE_SAMPLES:-2}"
+STARTUP_QUIESCE_INTERVAL_SECONDS="${STARTUP_QUIESCE_INTERVAL_SECONDS:-1}"
+STARTUP_STEADY_STATE_API_TCP_ALLOWANCES=(
+  "api-entry|${POSTGRES_PORT}|ESTABLISHED|1"
+  "api-entry|${MONGO_PORT}|ESTABLISHED|4"
+)
+STARTUP_STEADY_STATE_HELPER_LABEL_ALLOWANCES=(
+  "helper:mc|0"
+)
+STARTUP_WARMED_FLOOR_API_TCP_REQUIREMENTS=(
+  "api-entry|${MONGO_PORT}|ESTABLISHED|4"
+)
+API_ROOT_PID=""
+API_PID=""
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 mkdir -p "${RESOURCE_RECOVERY_DIR}"
+mkdir -p "${LOCAL_RUNTIME_PROCESS_STATE_DIR}"
+mkdir -p "${STARTUP_WARMUP_DIR}"
 rm -f \
   "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}" \
   "${RESOURCE_RECOVERY_BASELINE_JSON}" \
@@ -127,11 +159,184 @@ rm -f \
   "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}" \
   "${RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON}" \
   "${RESOURCE_RECOVERY_REPORT_JSON}" \
-  "${RESOURCE_RECOVERY_REPORT_MD}"
+  "${RESOURCE_RECOVERY_REPORT_MD}" \
+  "${STARTUP_QUIESCE_SNAPSHOT_JSON}" \
+  "${STARTUP_QUIESCE_REPORT_JSON}" \
+  "${STARTUP_WARMUP_TOKEN_FILE}" \
+  "${STARTUP_WARMUP_BODY_FILE}" \
+  "${STARTUP_WARMUP_HEADERS_FILE}"
 
-npx tsx "${ROOT_DIR}/scripts/file-library-resource-recovery.ts" \
-  snapshot \
-  --output "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
+resolve_owned_api_listener_pid() {
+  [[ -n "${API_ROOT_PID}" ]] || {
+    echo "File library gate has no tracked API root pid to resolve listener authority." >&2
+    return 1
+  }
+  if ! kill -0 "${API_ROOT_PID}" >/dev/null 2>&1; then
+    echo "File library gate API root pid ${API_ROOT_PID} is not alive while resolving listener authority." >&2
+    return 1
+  fi
+
+  local listener_pid owner_pid
+  local -a owned_listener_pids=()
+  for listener_pid in $(local_runtime_port_listener_pids "${API_PORT}"); do
+    [[ -n "${listener_pid}" ]] || continue
+    owner_pid="$(local_runtime_verified_owner_pid_for_tree_member "${listener_pid}" api "${API_PORT}" 2>/dev/null || true)"
+    [[ -n "${owner_pid}" ]] || continue
+    if [[ "${owner_pid}" == "${API_ROOT_PID}" ]]; then
+      owned_listener_pids+=("${listener_pid}")
+    fi
+  done
+
+  if [[ "${#owned_listener_pids[@]}" -ne 1 ]]; then
+    echo "File library gate expected exactly one owned API listener on port ${API_PORT}, found ${#owned_listener_pids[@]}." >&2
+    return 1
+  fi
+
+  printf '%s\n' "${owned_listener_pids[0]}"
+}
+
+append_startup_steady_state_args() {
+  local -n startup_args_ref="$1"
+  local allowance
+  for allowance in "${STARTUP_STEADY_STATE_API_TCP_ALLOWANCES[@]}"; do
+    startup_args_ref+=(--steady-state-api-tcp "${allowance}")
+  done
+  for allowance in "${STARTUP_STEADY_STATE_HELPER_LABEL_ALLOWANCES[@]}"; do
+    startup_args_ref+=(--steady-state-helper-label "${allowance}")
+  done
+}
+
+perform_startup_authenticated_docstore_warmup() {
+  REFRESH_TOKEN_FORCE_PASSWORD_GRANT=1 PRINT_TOKEN=1 \
+  MBOS_DEV_USERNAME="${MBOS_DEV_USERNAME}" \
+  MBOS_DEV_PASSWORD="${MBOS_DEV_PASSWORD}" \
+  KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+  KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+  node "${ROOT_DIR}/scripts/notebook-agent-refresh-token.js" > "${STARTUP_WARMUP_TOKEN_FILE}"
+
+  local status
+  status="$(
+    curl -sS -D "${STARTUP_WARMUP_HEADERS_FILE}" -o "${STARTUP_WARMUP_BODY_FILE}" -w '%{http_code}' \
+      -H "Authorization: Bearer $(cat "${STARTUP_WARMUP_TOKEN_FILE}")" \
+      "${API_BASE%/}/api/v1/me/desktop/file-libraries"
+  )"
+  if [[ "${status}" != "200" ]]; then
+    echo "File library gate startup warmup failed with status ${status} for GET /api/v1/me/desktop/file-libraries." >&2
+    cat "${STARTUP_WARMUP_BODY_FILE}" >&2 || true
+    return 1
+  fi
+  return 0
+}
+
+startup_quiesce_snapshot_meets_warmed_floor() {
+  local requirement process_label remote_port state minimum_count observed_count
+  for requirement in "${STARTUP_WARMED_FLOOR_API_TCP_REQUIREMENTS[@]}"; do
+    IFS='|' read -r process_label remote_port state minimum_count <<< "${requirement}"
+    [[ -n "${process_label}" && -n "${remote_port}" && -n "${state}" && -n "${minimum_count}" ]] || return 1
+    observed_count="$(
+      node -e '
+        const fs = require("node:fs");
+        const [snapshotPath, processLabel, remotePortRaw, state] = process.argv.slice(1);
+        const remotePort = Number.parseInt(remotePortRaw, 10);
+        const snapshot = JSON.parse(fs.readFileSync(snapshotPath, "utf8"));
+        const count = Array.isArray(snapshot.tcp_connections)
+          ? snapshot.tcp_connections
+            .filter((connection) =>
+              connection?.process_label === processLabel
+              && connection?.remote_port === remotePort
+              && connection?.state === state)
+            .reduce((sum, connection) => sum + (Number.isInteger(connection?.count) ? connection.count : 0), 0)
+          : 0;
+        process.stdout.write(String(count));
+      ' "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${process_label}" "${remote_port}" "${state}"
+    )" || return 1
+    if (( observed_count < minimum_count )); then
+      echo "File library gate startup quiesce warmed floor not yet reached for ${process_label} remote_port ${remote_port} [${state}]: expected >= ${minimum_count}, found ${observed_count}." >&2
+      return 1
+    fi
+  done
+  return 0
+}
+
+startup_quiesce_snapshot_satisfies_steady_state() {
+  local listener_pid="$1"
+  local -a snapshot_args=(
+    tsx
+    "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
+    snapshot
+    --output "${STARTUP_QUIESCE_SNAPSHOT_JSON}"
+    --api-pid "${listener_pid}"
+  )
+  local -a startup_args=(
+    tsx
+    "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
+    startup-report
+    --boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
+    --baseline "${STARTUP_QUIESCE_SNAPSHOT_JSON}"
+    --output "${STARTUP_QUIESCE_REPORT_JSON}"
+  )
+  append_startup_steady_state_args startup_args
+
+  rm -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${STARTUP_QUIESCE_REPORT_JSON}"
+  npx "${snapshot_args[@]}" >/dev/null 2>&1 || return 1
+  npx "${startup_args[@]}" >/dev/null 2>&1 || return 1
+  startup_quiesce_snapshot_meets_warmed_floor || return 1
+  return 0
+}
+
+wait_for_startup_quiesce() {
+  local deadline=$((SECONDS + STARTUP_QUIESCE_TIMEOUT_SECONDS))
+  local stable_samples=0
+  local last_listener_pid=""
+  local listener_pid=""
+
+  while (( SECONDS <= deadline )); do
+    listener_pid="$(resolve_owned_api_listener_pid 2>/dev/null || true)"
+    if [[ -n "${listener_pid}" ]]; then
+      API_PID="${listener_pid}"
+      if startup_quiesce_snapshot_satisfies_steady_state "${listener_pid}"; then
+        if [[ "${listener_pid}" == "${last_listener_pid}" ]]; then
+          stable_samples=$((stable_samples + 1))
+        else
+          stable_samples=1
+          last_listener_pid="${listener_pid}"
+        fi
+        if (( stable_samples >= STARTUP_QUIESCE_STABLE_SAMPLES )); then
+          return 0
+        fi
+      else
+        stable_samples=0
+        last_listener_pid=""
+      fi
+    else
+      stable_samples=0
+      last_listener_pid=""
+    fi
+    sleep "${STARTUP_QUIESCE_INTERVAL_SECONDS}"
+  done
+
+  return 1
+}
+
+build_file_library_api_launch_command() {
+  local command
+  printf -v command '%s' "export PORT=$(printf '%q' "${API_PORT}")"
+  printf -v command '%s%s' "${command}" " KEYCLOAK_BASE_URL=$(printf '%q' "${KEYCLOAK_BASE_URL}")"
+  printf -v command '%s%s' "${command}" " KEYCLOAK_REALM=$(printf '%q' "${KEYCLOAK_REALM}")"
+  printf -v command '%s%s' "${command}" " PUBLIC_KEYCLOAK_BASE_URL=$(printf '%q' "${PUBLIC_KEYCLOAK_BASE_URL}")"
+  printf -v command '%s%s' "${command}" " INTERNAL_KEYCLOAK_BASE_URL=$(printf '%q' "${INTERNAL_KEYCLOAK_BASE_URL}")"
+  printf -v command '%s%s' "${command}" " KEYCLOAK_ISSUER_URL=$(printf '%q' "${KEYCLOAK_ISSUER_URL}")"
+  printf -v command '%s%s' "${command}" " DATABASE_URL=$(printf '%q' "${DATABASE_URL}")"
+  printf -v command '%s%s' "${command}" " MONGO_URL=$(printf '%q' "${MONGO_URL}")"
+  printf -v command '%s%s' "${command}" " MINIO_ENDPOINT=$(printf '%q' "${MINIO_ENDPOINT}")"
+  printf -v command '%s%s' "${command}" " MINIO_PORT=$(printf '%q' "${MINIO_PORT}")"
+  printf -v command '%s%s' "${command}" " MINIO_ACCESS_KEY=$(printf '%q' "${MINIO_ACCESS_KEY}")"
+  printf -v command '%s%s' "${command}" " MINIO_SECRET_KEY=$(printf '%q' "${MINIO_SECRET_KEY}")"
+  printf -v command '%s%s' "${command}" " MINIO_BUCKET=$(printf '%q' "${MINIO_BUCKET}")"
+  printf -v command '%s%s' "${command}" '; env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY npm run api:node:dev & wait "$!"'
+  printf '%s\n' "${command}"
+}
 
 capture_resource_recovery_baseline() {
   local output_path="$1"
@@ -142,11 +347,14 @@ capture_resource_recovery_baseline() {
     --output "${output_path}"
   )
 
-  if kill -0 "${API_PID}" >/dev/null 2>&1; then
+  if [[ -n "${API_PID}" ]]; then
+    API_PID="$(resolve_owned_api_listener_pid)"
     local -a api_snapshot_args=("${snapshot_args[@]}" --api-pid "${API_PID}")
-    if npx "${api_snapshot_args[@]}"; then
-      return 0
-    fi
+    # Once we claim the tracked API pid as the authority boundary, losing it
+    # mid-capture is a hard failure rather than a reason to silently downgrade
+    # into an untracked snapshot.
+    npx "${api_snapshot_args[@]}"
+    return 0
   fi
 
   npx "${snapshot_args[@]}"
@@ -160,19 +368,29 @@ write_startup_resource_recovery_report() {
     startup-report
     --boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
     --baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
-    --allow-api-remote-port "${POSTGRES_PORT}"
-    --allow-api-remote-port "${MONGO_PORT}"
     --output "${RESOURCE_RECOVERY_STARTUP_JSON}"
   )
+  append_startup_steady_state_args startup_args
   if [[ -n "${failure_message}" ]]; then
     startup_args+=(--failure-message "${failure_message}")
   fi
   npx "${startup_args[@]}"
 }
 
+ensure_boot_resource_recovery_baseline() {
+  if [[ -f "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}" ]]; then
+    return 0
+  fi
+
+  npx tsx "${ROOT_DIR}/scripts/file-library-resource-recovery.ts" \
+    snapshot \
+    --output "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
+}
+
 materialize_pre_ready_failure_evidence() {
   local failure_message="$1"
   RESOURCE_RECOVERY_PRE_READY_FAILURE=1
+  ensure_boot_resource_recovery_baseline
   capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
   write_startup_resource_recovery_report "${failure_message}"
 }
@@ -217,6 +435,37 @@ write_resource_recovery_summary() {
   npx "${summary_args[@]}"
   RESOURCE_RECOVERY_SUMMARY_WRITTEN=1
 }
+
+cleanup() {
+  local exit_code="$1"
+  local summary_status=0
+  trap - EXIT
+  if [[ "${RESOURCE_RECOVERY_SUMMARY_WRITTEN}" != "1" ]]; then
+    set +e
+    write_resource_recovery_summary
+    summary_status=$?
+    set -e
+  fi
+  if [[ -n "${API_ROOT_PID}" ]]; then
+    local_runtime_stop_owned_process_tree "${API_ROOT_PID}" api "${API_PORT}" || true
+    local_runtime_wait_port_free "${API_PORT}" api 10 || true
+  fi
+  if [[ "${summary_status}" -ne 0 ]]; then
+    exit_code=1
+  fi
+  exit "${exit_code}"
+}
+trap 'cleanup $?' EXIT
+
+if ! npx tsx "${ROOT_DIR}/scripts/juicefs-orphan-preflight.ts" --apply --context "file-library-real-gate"; then
+  pre_ready_failure_reason="juicefs orphan preflight failed before boot baseline"
+  if ! materialize_pre_ready_failure_evidence "${pre_ready_failure_reason}"; then
+    echo "File library gate could not materialize startup resource recovery evidence before exiting." >&2
+  fi
+  exit 1
+fi
+
+ensure_boot_resource_recovery_baseline
 
 run_resource_recovery_step() {
   local step_name="$1"
@@ -312,28 +561,9 @@ MINIO_PORT="${MINIO_PORT}" \
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY}" \
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY}" \
 MINIO_BUCKET="${MINIO_BUCKET}" \
-env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-npm run api:node:dev >"${API_LOG}" 2>&1 &
-API_PID=$!
-
-cleanup() {
-  local exit_code="$1"
-  local summary_status=0
-  trap - EXIT
-  if [[ "${RESOURCE_RECOVERY_SUMMARY_WRITTEN}" != "1" ]]; then
-    set +e
-    write_resource_recovery_summary
-    summary_status=$?
-    set -e
-  fi
-  kill "${API_PID}" >/dev/null 2>&1 || true
-  wait "${API_PID}" >/dev/null 2>&1 || true
-  if [[ "${summary_status}" -ne 0 ]]; then
-    exit_code=1
-  fi
-  exit "${exit_code}"
-}
-trap 'cleanup $?' EXIT
+API_ROOT_PID="$(
+  local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" bash -lc "$(build_file_library_api_launch_command)"
+)"
 
 ready=0
 for _ in $(seq 1 90); do
@@ -354,6 +584,29 @@ if [[ "${ready}" -ne 1 ]]; then
   echo "API log: ${API_LOG}" >&2
   exit 1
 fi
+
+if ! API_PID="$(resolve_owned_api_listener_pid)"; then
+  pre_ready_failure_reason="file-library gate api listener on :${API_PORT} did not resolve to the current owned service"
+  if ! materialize_pre_ready_failure_evidence "${pre_ready_failure_reason}"; then
+    echo "File library gate could not materialize startup resource recovery evidence before exiting." >&2
+  fi
+  echo "File library gate API listener on :${API_PORT} did not resolve to the current owned service." >&2
+  echo "API log: ${API_LOG}" >&2
+  exit 1
+fi
+
+if ! perform_startup_authenticated_docstore_warmup; then
+  pre_ready_failure_reason="file-library gate authenticated docStore warmup failed before freezing the ready baseline"
+  if ! materialize_pre_ready_failure_evidence "${pre_ready_failure_reason}"; then
+    echo "File library gate could not materialize startup resource recovery evidence before exiting." >&2
+  fi
+  exit 1
+fi
+
+if ! wait_for_startup_quiesce; then
+  echo "File library gate startup quiesce timed out before the declared startup steady-state settled; proceeding with the current owned API listener pid ${API_PID}." >&2
+fi
+rm -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${STARTUP_QUIESCE_REPORT_JSON}"
 
 capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
 

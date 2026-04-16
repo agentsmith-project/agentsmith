@@ -20,6 +20,7 @@ export type { NodeApiDeps } from './node-api-deps';
 export { createDefaultNodeApiDeps } from './node-api-deps-factory';
 
 const DEFAULT_FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = 60_000;
+type ClosableDocStore = { close?: () => Promise<void> };
 
 function logGatewayReconcileFailure(error: unknown): void {
   if (error instanceof Error && error.name === 'AbortError') {
@@ -134,6 +135,7 @@ export function createNodeApiServer(
     await deps.notebookTerminalService.shutdown?.();
     await deps.agentExecutionService.shutdown?.();
     await lifecycle?.shutdown?.();
+    await (deps.docStore as ClosableDocStore).close?.();
   };
 
   const ensureServerResourcesShutdown = (): Promise<void> => {

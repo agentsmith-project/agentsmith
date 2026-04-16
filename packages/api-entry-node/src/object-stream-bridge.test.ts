@@ -3,7 +3,10 @@ import type http from 'node:http';
 import { PassThrough, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { parseMultipartUploadAndExecute } from './object-stream-bridge.js';
+import {
+  createHttpOperationEnvelope,
+  parseMultipartUploadAndExecute,
+} from './object-stream-bridge.js';
 
 class FakeBusboy extends Writable {
   private readonly emitter = new EventEmitter();
@@ -263,5 +266,42 @@ describe('object-stream-bridge multipart lifecycle envelope', () => {
       name: 'AbortError',
     });
     expect(executeSignal?.aborted).toBe(true);
+  });
+});
+
+describe('object-stream-bridge http operation envelope', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('does not treat a completed request body as client_request_aborted once the operation enters response phase', () => {
+    const req = new EventEmitter() as EventEmitter & http.IncomingMessage & {
+      aborted: boolean;
+      destroyed: boolean;
+      complete: boolean;
+    };
+    req.aborted = false;
+    req.destroyed = false;
+    req.complete = false;
+
+    const res = new EventEmitter() as EventEmitter & http.ServerResponse & {
+      writableEnded: boolean;
+      destroyed: boolean;
+      writableDestroyed?: boolean;
+    };
+    res.writableEnded = false;
+    res.destroyed = false;
+    res.writableDestroyed = false;
+
+    const operation = createHttpOperationEnvelope({ req, res });
+    operation.markRequestBodyConsumed();
+
+    req.complete = true;
+    req.destroyed = true;
+    req.emit('aborted');
+
+    expect(operation.signal.aborted).toBe(false);
+
+    operation.cleanup();
   });
 });

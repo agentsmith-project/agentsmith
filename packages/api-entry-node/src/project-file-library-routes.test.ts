@@ -789,7 +789,7 @@ describe('project-file-library-routes', () => {
     expect(destroyError?.name).toBe('AbortError');
   });
 
-  it('stops waiting for file moves when the client aborts before copyObject resolves', async () => {
+  it('stops waiting for file moves when the response closes after the JSON body has already been read', async () => {
     const createJson = vi.fn();
     const createRes = {} as never;
     const deps = createDeps();
@@ -859,8 +859,8 @@ describe('project-file-library-routes', () => {
     await nextTick();
     expect(copyObject).toHaveBeenCalledTimes(1);
 
-    req.aborted = true;
-    req.emit('aborted');
+    res.destroyed = true;
+    res.emit('close');
 
     await expect(Promise.race([
       routePromise.then(() => 'resolved'),
@@ -872,6 +872,95 @@ describe('project-file-library-routes', () => {
 
     expect(removeObject).not.toHaveBeenCalled();
     expect(moveJson).not.toHaveBeenCalled();
+  });
+
+  it('completes a JSON file move after the request body has been fully read even if the request stream is already destroyed', async () => {
+    const createJson = vi.fn();
+    const createRes = {} as never;
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: createRes,
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Move Request Body Lifecycle',
+      }),
+    });
+
+    const createdBody = createJson.mock.calls.at(-1)?.[2] as { id: string };
+    const copyObject = vi.fn().mockResolvedValue(undefined);
+    const removeObject = vi.fn().mockResolvedValue(undefined);
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      copyObject,
+      removeObject,
+    });
+
+    const req = new EventEmitter() as EventEmitter & http.IncomingMessage & {
+      aborted: boolean;
+      destroyed: boolean;
+      complete: boolean;
+    };
+    req.headers = {};
+    req.aborted = false;
+    req.destroyed = false;
+    req.complete = false;
+
+    const res = new EventEmitter() as EventEmitter & http.ServerResponse & {
+      setHeader: ReturnType<typeof vi.fn>;
+      end: ReturnType<typeof vi.fn>;
+      writableEnded: boolean;
+      destroyed: boolean;
+      writableDestroyed?: boolean;
+      statusCode: number;
+    };
+    res.setHeader = vi.fn();
+    res.end = vi.fn(() => {
+      res.writableEnded = true;
+      res.emit('finish');
+    });
+    res.writableEnded = false;
+    res.destroyed = false;
+    res.writableDestroyed = false;
+    res.statusCode = 200;
+
+    const routePromise = handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryMove',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req,
+      res,
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn().mockImplementation(async () => {
+        req.complete = true;
+        req.destroyed = true;
+        return {
+          from_path: 'docs/hello.txt',
+          to_path: 'docs/renamed.txt',
+          overwrite: true,
+        };
+      }),
+    });
+
+    await expect(routePromise).resolves.toBe(true);
+    expect(copyObject).toHaveBeenCalledWith(
+      expect.any(String),
+      'docs/renamed.txt',
+      expect.stringContaining('/docs/hello.txt'),
+    );
+    expect(removeObject).toHaveBeenCalledWith(expect.any(String), 'docs/hello.txt');
+    expect(res.statusCode).toBe(204);
+    expect(res.end).toHaveBeenCalledTimes(1);
   });
 
   it('stops waiting for file metadata when the client aborts before statObject resolves', async () => {

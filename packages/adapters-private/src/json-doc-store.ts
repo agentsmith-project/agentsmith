@@ -1,17 +1,36 @@
 import type { JsonDocStorePort } from '@mbos/ports';
-import { MongoClient } from 'mongodb';
+import { MongoClient, type MongoClientOptions } from 'mongodb';
+
+export type MongoJsonDocStorePoolContract = Pick<
+  MongoClientOptions,
+  'maxPoolSize' | 'minPoolSize' | 'maxIdleTimeMS' | 'maxConnecting' | 'waitQueueTimeoutMS'
+>;
+
+export const DEFAULT_MONGO_JSON_DOC_STORE_POOL_OPTIONS = Object.freeze({
+  maxPoolSize: 20,
+  minPoolSize: 0,
+  maxIdleTimeMS: 10_000,
+  maxConnecting: 2,
+  waitQueueTimeoutMS: 5_000,
+} satisfies MongoJsonDocStorePoolContract);
 
 export interface MongoJsonDocStoreOptions {
   url: string;
   dbName: string;
+  mongoClientOptions?: Partial<MongoJsonDocStorePoolContract>;
 }
 
 export class MongoJsonDocStore implements JsonDocStorePort {
   private readonly client: MongoClient;
   private readonly dbName: string;
+  readonly mongoClientOptions: MongoJsonDocStorePoolContract;
 
   constructor(options: MongoJsonDocStoreOptions) {
-    this.client = new MongoClient(options.url);
+    this.mongoClientOptions = {
+      ...DEFAULT_MONGO_JSON_DOC_STORE_POOL_OPTIONS,
+      ...options.mongoClientOptions,
+    };
+    this.client = new MongoClient(options.url, this.mongoClientOptions);
     this.dbName = options.dbName;
   }
 

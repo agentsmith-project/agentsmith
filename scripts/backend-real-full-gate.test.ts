@@ -232,9 +232,12 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('rm -f');
     expect(script).toContain('"${RESOURCE_RECOVERY_STARTUP_JSON}"');
     expect(script).toContain('--boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"');
-    expect(script).toContain('--allow-api-remote-port "${POSTGRES_PORT}"');
-    expect(script).toContain('--allow-api-remote-port "${MONGO_PORT}"');
-    expect(script).not.toContain('--allow-api-remote-port "${MINIO_PORT}"');
+    expect(script).toContain('STARTUP_STEADY_STATE_API_TCP_ALLOWANCES=(');
+    expect(script).toContain('"api-entry|${POSTGRES_PORT}|ESTABLISHED|1"');
+    expect(script).toContain('"api-entry|${MONGO_PORT}|ESTABLISHED|4"');
+    expect(script).toContain('append_startup_steady_state_args startup_args');
+    expect(script).toContain('--steady-state-api-tcp');
+    expect(script).not.toContain('--allow-api-remote-port');
     expect(script).toContain('"${RESOURCE_RECOVERY_STARTUP_JSON}"');
     expect(script).toContain('--api-pid "${API_PID}"');
     expect(script).not.toContain('npx "${args[@]}" >/dev/null 2>&1 || true');
@@ -277,6 +280,62 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('File library gate could not materialize startup resource recovery evidence before exiting.');
   });
 
+  it('runs stale JuiceFS orphan preflight before capturing the file-library boot baseline', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const preflightIndex = script.indexOf('scripts/juicefs-orphan-preflight.ts');
+    const trapIndex = script.indexOf("trap 'cleanup $?' EXIT");
+    const bootBaselineCaptureIndex = script.indexOf('ensure_boot_resource_recovery_baseline', preflightIndex + 1);
+
+    expect(script).toContain('scripts/juicefs-orphan-preflight.ts');
+    expect(script).toContain('--apply --context "file-library-real-gate"');
+    expect(script).toContain('ensure_boot_resource_recovery_baseline()');
+    expect(preflightIndex).toBeGreaterThanOrEqual(0);
+    expect(trapIndex).toBeGreaterThanOrEqual(0);
+    expect(bootBaselineCaptureIndex).toBeGreaterThanOrEqual(0);
+    expect(trapIndex).toBeLessThan(preflightIndex);
+    expect(preflightIndex).toBeLessThan(bootBaselineCaptureIndex);
+  });
+
+  it('materializes startup evidence instead of exiting bare when orphan preflight fails before boot baseline', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const preflightBlockStart = script.indexOf(
+      'if ! npx tsx "${ROOT_DIR}/scripts/juicefs-orphan-preflight.ts" --apply --context "file-library-real-gate"; then',
+    );
+    const bootBaselineCaptureIndex = script.indexOf('ensure_boot_resource_recovery_baseline', preflightBlockStart + 1);
+    const preflightFailureBlock = script.slice(preflightBlockStart, bootBaselineCaptureIndex);
+    const materializeIndex = preflightFailureBlock.indexOf(
+      'materialize_pre_ready_failure_evidence "${pre_ready_failure_reason}"',
+    );
+    const exitIndex = preflightFailureBlock.indexOf('exit 1');
+
+    expect(preflightBlockStart).toBeGreaterThanOrEqual(0);
+    expect(bootBaselineCaptureIndex).toBeGreaterThan(preflightBlockStart);
+    expect(preflightFailureBlock).toContain(
+      'pre_ready_failure_reason="juicefs orphan preflight failed before boot baseline"',
+    );
+    expect(preflightFailureBlock).toContain(
+      'materialize_pre_ready_failure_evidence "${pre_ready_failure_reason}"',
+    );
+    expect(preflightFailureBlock).toContain(
+      'File library gate could not materialize startup resource recovery evidence before exiting.',
+    );
+    expect(materializeIndex).toBeGreaterThanOrEqual(0);
+    expect(exitIndex).toBeGreaterThan(materializeIndex);
+    expect(exitIndex).toBeLessThan(bootBaselineCaptureIndex - preflightBlockStart);
+  });
+
+  it('fails closed when an authority-tagged api baseline snapshot starts but loses the tracked pid mid-capture', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+
+    expect(script).toContain('capture_resource_recovery_baseline()');
+    expect(script).toContain('if [[ -n "${API_PID}" ]]; then');
+    expect(script).toContain('API_PID="$(resolve_owned_api_listener_pid)"');
+    expect(script).toContain('local -a api_snapshot_args=("${snapshot_args[@]}" --api-pid "${API_PID}")');
+    expect(script).toContain('npx "${api_snapshot_args[@]}"');
+    expect(script).toContain('return 0');
+    expect(script).not.toContain('if npx "${api_snapshot_args[@]}"; then');
+  });
+
   it('fails closed for mount truth probes instead of treating missing commands as not mounted', () => {
     const smokeScript = readFileSync('scripts/file-library-mount-sync-smoke.sh', 'utf8');
 
@@ -300,6 +359,87 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('15432');
     expect(script).toContain('17017');
     expect(script).toContain('19000');
+  });
+
+  it('starts file-library gate api under the owner-aware local runtime contract instead of tracking the wrapper pid directly', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+
+    expect(script).toContain('scripts/lib/local-runtime-processes.sh');
+    expect(script).toContain('LOCAL_RUNTIME_RUN_ID=');
+    expect(script).toContain('LOCAL_RUNTIME_LINE_KIND=');
+    expect(script).toContain('LOCAL_RUNTIME_OWNER_TOKEN=');
+    expect(script).toContain('LOCAL_RUNTIME_PROCESS_STATE_DIR=');
+    expect(script).toContain('API_ROOT_PID="$(');
+    expect(script).toContain('local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" bash -lc');
+    expect(script).not.toContain('npm run api:node:dev >"${API_LOG}" 2>&1 &');
+    expect(script).not.toContain('API_PID=$!');
+  });
+
+  it('resolves the current owned api listener pid from the listening port before handing pid truth to resource recovery', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+
+    expect(script).toContain('resolve_owned_api_listener_pid()');
+    expect(script).toContain('local_runtime_port_listener_pids "${API_PORT}"');
+    expect(script).toContain('local_runtime_verified_owner_pid_for_tree_member "${listener_pid}" api "${API_PORT}"');
+    expect(script).toContain('[[ "${owner_pid}" == "${API_ROOT_PID}" ]]');
+    expect(script).toContain('API_PID="$(resolve_owned_api_listener_pid');
+  });
+
+  it('uses the owned root pid for cleanup and waits for the api port to go free', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+
+    expect(script).toContain('local_runtime_stop_owned_process_tree "${API_ROOT_PID}" api "${API_PORT}" || true');
+    expect(script).toContain('local_runtime_wait_port_free "${API_PORT}" api 10 || true');
+    expect(script).not.toContain('kill "${API_PID}" >/dev/null 2>&1 || true');
+    expect(script).not.toContain('wait "${API_PID}" >/dev/null 2>&1 || true');
+  });
+
+  it('waits for a minimally stable startup window before freezing the ready baseline so startup helper transients do not immediately poison it', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+
+    expect(script).toContain('wait_for_startup_quiesce()');
+    expect(script).toContain('STARTUP_STEADY_STATE_HELPER_LABEL_ALLOWANCES=(');
+    expect(script).toContain('"helper:mc|0"');
+    expect(script).toContain('startup_quiesce_snapshot_satisfies_steady_state()');
+    expect(script).toContain('"${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"');
+    expect(script).toContain('append_startup_steady_state_args startup_args');
+    expect(script).toContain('--steady-state-helper-label');
+    expect(script).toContain('--steady-state-api-tcp');
+    expect(script).toContain('STARTUP_QUIESCE_TIMEOUT_SECONDS');
+    expect(script).toContain('STARTUP_QUIESCE_STABLE_SAMPLES');
+    expect(script).toContain('capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"');
+    expect(script).not.toContain('startup_helper_labels_within_steady_state()');
+  });
+
+  it('fails closed unless startup quiesce proves the warmed mongo floor after the steady-state ceiling passes', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const quiesceFnIndex = script.indexOf('startup_quiesce_snapshot_satisfies_steady_state()');
+    const warmedFloorIndex = script.indexOf('startup_quiesce_snapshot_meets_warmed_floor', quiesceFnIndex);
+    const startupReportIndex = script.indexOf('npx "${startup_args[@]}" >/dev/null 2>&1 || return 1', quiesceFnIndex);
+    const warmedFloorCallIndex = script.indexOf('startup_quiesce_snapshot_meets_warmed_floor || return 1', quiesceFnIndex);
+
+    expect(script).toContain('STARTUP_WARMED_FLOOR_API_TCP_REQUIREMENTS=(');
+    expect(script).toContain('"api-entry|${MONGO_PORT}|ESTABLISHED|4"');
+    expect(script).toContain('startup_quiesce_snapshot_meets_warmed_floor()');
+    expect(quiesceFnIndex).toBeGreaterThanOrEqual(0);
+    expect(warmedFloorIndex).toBeGreaterThan(quiesceFnIndex);
+    expect(startupReportIndex).toBeGreaterThan(quiesceFnIndex);
+    expect(warmedFloorCallIndex).toBeGreaterThan(startupReportIndex);
+  });
+
+  it('warms authenticated docstore steady-state before startup quiesce freezes the ready baseline', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const warmupIndex = script.indexOf('perform_startup_authenticated_docstore_warmup');
+    const quiesceIndex = script.indexOf('wait_for_startup_quiesce', warmupIndex + 1);
+
+    expect(script).toContain('STARTUP_WARMUP_TOKEN_FILE=');
+    expect(script).toContain('perform_startup_authenticated_docstore_warmup()');
+    expect(script).toContain('node "${ROOT_DIR}/scripts/notebook-agent-refresh-token.js" > "${STARTUP_WARMUP_TOKEN_FILE}"');
+    expect(script).toContain('Authorization: Bearer $(cat "${STARTUP_WARMUP_TOKEN_FILE}")');
+    expect(script).toContain('"${API_BASE%/}/api/v1/me/desktop/file-libraries"');
+    expect(script).toContain('authenticated docStore warmup failed before freezing the ready baseline');
+    expect(warmupIndex).toBeGreaterThanOrEqual(0);
+    expect(quiesceIndex).toBeGreaterThan(warmupIndex);
   });
 
   it('uses the shared owner-aware runtime helpers instead of undefined port helpers', () => {

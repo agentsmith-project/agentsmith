@@ -111,10 +111,21 @@ interface FinalizeResourceRecoveryStepReportInput {
   extra_findings?: readonly string[];
 }
 
-interface StartupApiRemotePortAllowance {
+interface FileLibraryStartupSteadyStateApiTcpAllowance {
+  process_label: 'api-entry';
   remote_port: number;
   state: string;
   max_count: number;
+}
+
+interface FileLibraryStartupSteadyStateHelperLabelAllowance {
+  label: string;
+  max_count: number;
+}
+
+interface FileLibraryStartupSteadyStateContract {
+  api_tcp_connections: readonly FileLibraryStartupSteadyStateApiTcpAllowance[];
+  helper_labels?: readonly FileLibraryStartupSteadyStateHelperLabelAllowance[];
 }
 
 interface BuildResourceRecoveryFailureReportInput {
@@ -233,16 +244,37 @@ function parseSocketEndpoint(endpoint: string): { host: string; port: number | n
   };
 }
 
-async function captureProcessFdTruth(pid: number): Promise<{
+type ResourceRecoveryProcessTruthRequirement = 'authority_required' | 'best_effort';
+
+function isProcTruthGone(error: unknown): boolean {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : null;
+  return code === 'ENOENT';
+}
+
+async function captureProcessFdTruth(args: {
+  pid: number;
+  processLabel: string;
+  requirement: ResourceRecoveryProcessTruthRequirement;
+}): Promise<{
   open_fd_count: number;
   socket_fd_count: number;
-}> {
-  const fdDir = `/proc/${pid}/fd`;
+} | null> {
+  const fdDir = `/proc/${args.pid}/fd`;
   let entries: string[];
   try {
     entries = await readdir(fdDir);
   } catch (error) {
-    throw new Error(formatCommandRequirementError(fdDir, `inspect fd truth for pid ${pid}`, error));
+    if (isProcTruthGone(error)) {
+      if (args.requirement === 'best_effort') {
+        return null;
+      }
+      throw new Error(
+        `tracked ${args.processLabel} pid ${args.pid} disappeared before fd truth could be captured`,
+      );
+    }
+    throw new Error(
+      formatCommandRequirementError(fdDir, `inspect fd truth for ${args.processLabel} pid ${args.pid}`, error),
+    );
   }
 
   const socketTargets = await Promise.all(entries.map(async (entry) => {
@@ -362,7 +394,14 @@ export async function captureResourceRecoverySnapshot(
       if (!entry) {
         return null;
       }
-      const fdTruth = await captureProcessFdTruth(processInfo.pid);
+      const fdTruth = await captureProcessFdTruth({
+        pid: processInfo.pid,
+        processLabel: entry.label,
+        requirement: entry.state_file ? 'authority_required' : 'best_effort',
+      });
+      if (!fdTruth) {
+        return null;
+      }
       return {
         ...entry,
         open_fd_count: fdTruth.open_fd_count,
@@ -381,7 +420,14 @@ export async function captureResourceRecoverySnapshot(
       if (!entry) {
         return null;
       }
-      const fdTruth = await captureProcessFdTruth(processInfo.pid);
+      const fdTruth = await captureProcessFdTruth({
+        pid: processInfo.pid,
+        processLabel: entry.label,
+        requirement: 'best_effort',
+      });
+      if (!fdTruth) {
+        return null;
+      }
       return {
         ...entry,
         open_fd_count: fdTruth.open_fd_count,
@@ -394,15 +440,25 @@ export async function captureResourceRecoverySnapshot(
       return byLabel !== 0 ? byLabel : left.pid - right.pid;
     });
 
-  const apiProcesses = options.apiPid
-    ? [{
-      pid: options.apiPid,
-      label: 'api-entry',
-      ...(await captureProcessFdTruth(options.apiPid)),
-    }]
+  const resolvedApiProcesses = options.apiPid
+    ? await (async () => {
+      const fdTruth = await captureProcessFdTruth({
+        pid: options.apiPid,
+        processLabel: 'api-entry',
+        requirement: 'authority_required',
+      });
+      if (!fdTruth) {
+        throw new Error(`tracked api-entry pid ${options.apiPid} disappeared before fd truth could be captured`);
+      }
+      return [{
+        pid: options.apiPid,
+        label: 'api-entry' as const,
+        ...fdTruth,
+      }];
+    })()
     : [];
   const trackedProcessLabels = new Map<number, string>();
-  for (const apiProcess of apiProcesses) {
+  for (const apiProcess of resolvedApiProcesses) {
     trackedProcessLabels.set(apiProcess.pid, apiProcess.label);
   }
   for (const processInfo of managedGatewayProcesses) {
@@ -416,7 +472,7 @@ export async function captureResourceRecoverySnapshot(
     captured_at: new Date().toISOString(),
     gateway_state_dir: preflightOptions.gatewayStateDir,
     task_mount_root: preflightOptions.taskMountRoot,
-    api_processes: apiProcesses,
+    api_processes: resolvedApiProcesses,
     helper_labels: sortUnique(
       helperProcesses.map((processInfo) => processInfo.label),
     ),
@@ -516,18 +572,6 @@ function buildTcpConnectionMap(
   ]));
 }
 
-function buildStartupApiRemotePortAllowances(
-  remotePorts: readonly number[],
-): StartupApiRemotePortAllowance[] {
-  return [...new Set(remotePorts)]
-    .sort((left, right) => left - right)
-    .map((remotePort) => ({
-      remote_port: remotePort,
-      state: 'ESTABLISHED',
-      max_count: 1,
-    }));
-}
-
 function stripStartupApiTcpTruth(
   snapshot: FileLibraryResourceRecoverySnapshot,
 ): FileLibraryResourceRecoverySnapshot {
@@ -537,14 +581,37 @@ function stripStartupApiTcpTruth(
   };
 }
 
+function stripStartupBootOrphanGatewayStateTruth(
+  snapshot: FileLibraryResourceRecoverySnapshot,
+): FileLibraryResourceRecoverySnapshot {
+  const authoritativeManagedGatewayProcesses = snapshot.managed_gateway_processes
+    .filter((processInfo) => typeof processInfo.state_file === 'string' && processInfo.state_file.length > 0);
+  const authoritativeStateFiles = new Set(
+    authoritativeManagedGatewayProcesses.map((processInfo) => processInfo.state_file as string),
+  );
+  const authoritativeLabels = new Set(
+    authoritativeManagedGatewayProcesses.map((processInfo) => processInfo.label),
+  );
+
+  return {
+    ...snapshot,
+    gateway_state_files: snapshot.gateway_state_files.filter((stateFile) => authoritativeStateFiles.has(stateFile)),
+    managed_gateway_labels: snapshot.managed_gateway_labels.filter((label) => authoritativeLabels.has(label)),
+    managed_gateway_processes: authoritativeManagedGatewayProcesses,
+  };
+}
+
 function buildStartupApiConnectionFindings(args: {
   readyBaseline: FileLibraryResourceRecoverySnapshot;
-  allowedApiRemotePorts: readonly number[];
+  steadyState?: FileLibraryStartupSteadyStateContract;
 }): string[] {
   const findings: string[] = [];
-  const allowances = buildStartupApiRemotePortAllowances(args.allowedApiRemotePorts);
+  const allowances = args.steadyState?.api_tcp_connections ?? [];
   const allowanceMap = new Map(
-    allowances.map((allowance) => [`${allowance.remote_port}|${allowance.state}`, allowance]),
+    allowances.map((allowance) => [
+      `${allowance.process_label}|${allowance.remote_port}|${allowance.state}`,
+      allowance,
+    ]),
   );
   const observedCounts = new Map<string, number>();
 
@@ -552,7 +619,7 @@ function buildStartupApiConnectionFindings(args: {
     if (connection.process_label !== 'api-entry') {
       continue;
     }
-    const key = `${connection.remote_port}|${connection.state}`;
+    const key = `${connection.process_label}|${connection.remote_port}|${connection.state}`;
     const allowance = allowanceMap.get(key);
     if (!allowance) {
       findings.push(
@@ -564,7 +631,7 @@ function buildStartupApiConnectionFindings(args: {
   }
 
   for (const allowance of allowances) {
-    const key = `${allowance.remote_port}|${allowance.state}`;
+    const key = `${allowance.process_label}|${allowance.remote_port}|${allowance.state}`;
     const observedCount = observedCounts.get(key) ?? 0;
     if (observedCount > allowance.max_count) {
       findings.push(
@@ -892,13 +959,13 @@ export function compareResourceRecoveryBaseline(args: {
 export function buildStartupResourceRecoveryReport(args: {
   bootBaseline: FileLibraryResourceRecoverySnapshot;
   readyBaseline: FileLibraryResourceRecoverySnapshot;
-  allowedApiRemotePorts?: readonly number[];
+  steadyState?: FileLibraryStartupSteadyStateContract;
   extraFindings?: readonly string[];
 }): FileLibraryResourceRecoveryStepReport {
   const step = 'file-library-api-startup';
   const compared = compareResourceRecoveryBaseline({
     step,
-    baseline: stripStartupApiTcpTruth(args.bootBaseline),
+    baseline: stripStartupApiTcpTruth(stripStartupBootOrphanGatewayStateTruth(args.bootBaseline)),
     current: stripStartupApiTcpTruth(args.readyBaseline),
   });
   const findings = appendUniqueFindings(
@@ -906,7 +973,7 @@ export function buildStartupResourceRecoveryReport(args: {
     [
       ...buildStartupApiConnectionFindings({
         readyBaseline: args.readyBaseline,
-        allowedApiRemotePorts: args.allowedApiRemotePorts ?? [],
+        steadyState: args.steadyState,
       }),
       ...(args.extraFindings ?? []),
     ],
@@ -1141,15 +1208,41 @@ async function runStartupReport(argv: string[]): Promise<void> {
   const bootBaselinePath = parseOption(argv, '--boot-baseline');
   const baselinePath = parseOption(argv, '--baseline');
   const outputPath = parseOption(argv, '--output');
-  const allowedApiRemotePorts = parseMultiOption(argv, '--allow-api-remote-port')
-    .map((rawPort) => Number.parseInt(rawPort, 10));
+  const steadyStateApiTcpAllowances = parseMultiOption(argv, '--steady-state-api-tcp')
+    .map((rawAllowance) => {
+      const [processLabel, rawPort, state, rawMaxCount] = rawAllowance.split('|');
+      const remotePort = Number.parseInt(rawPort ?? '', 10);
+      const maxCount = Number.parseInt(rawMaxCount ?? '', 10);
+      if (processLabel !== 'api-entry' || !state || !Number.isInteger(remotePort) || remotePort <= 0 || !Number.isInteger(maxCount) || maxCount < 0) {
+        throw new Error(
+          'startup-report --steady-state-api-tcp values must use api-entry|<positive-port>|<state>|<non-negative-max-count>',
+        );
+      }
+      return {
+        process_label: 'api-entry' as const,
+        remote_port: remotePort,
+        state,
+        max_count: maxCount,
+      };
+    });
+  const steadyStateHelperLabels = parseMultiOption(argv, '--steady-state-helper-label')
+    .map((rawAllowance) => {
+      const [label, rawMaxCount] = rawAllowance.split('|');
+      const maxCount = Number.parseInt(rawMaxCount ?? '', 10);
+      if (!label || !Number.isInteger(maxCount) || maxCount < 0) {
+        throw new Error(
+          'startup-report --steady-state-helper-label values must use <label>|<non-negative-max-count>',
+        );
+      }
+      return {
+        label,
+        max_count: maxCount,
+      };
+    });
   const failureMessage = parseOption(argv, '--failure-message');
 
   if (!bootBaselinePath || !baselinePath || !outputPath) {
     throw new Error('startup-report requires --boot-baseline <path> --baseline <path> --output <path>');
-  }
-  if (allowedApiRemotePorts.some((port) => !Number.isInteger(port) || port <= 0)) {
-    throw new Error('startup-report --allow-api-remote-port values must be positive integers');
   }
 
   const bootBaseline = await readJsonFile<FileLibraryResourceRecoverySnapshot>(bootBaselinePath);
@@ -1157,7 +1250,10 @@ async function runStartupReport(argv: string[]): Promise<void> {
   const report = buildStartupResourceRecoveryReport({
     bootBaseline,
     readyBaseline,
-    allowedApiRemotePorts,
+    steadyState: {
+      api_tcp_connections: steadyStateApiTcpAllowances,
+      helper_labels: steadyStateHelperLabels,
+    },
     extraFindings: failureMessage ? [failureMessage] : [],
   });
   await writeJsonFile(outputPath, report);

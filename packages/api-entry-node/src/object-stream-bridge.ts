@@ -15,6 +15,7 @@ export interface GatewayObjectDownloadHandle {
 export interface HttpOperationEnvelope {
   signal: AbortSignal;
   abort: (reason?: unknown) => void;
+  markRequestBodyConsumed: () => void;
   cleanup: () => void;
 }
 
@@ -102,21 +103,34 @@ export function createHttpOperationEnvelope(args: {
   const controller = new AbortController();
   let cleaned = false;
   let finished = false;
+  let requestLifecycleDetached = false;
+
+  const cleanupRequestLifecycle = () => {
+    if (requestLifecycleDetached) {
+      return;
+    }
+    requestLifecycleDetached = true;
+    if (supportsEventEmitterLifecycle(req)) {
+      req.removeListener('aborted', handleRequestAborted);
+      req.removeListener('error', handleRequestError);
+    }
+  };
+
+  const cleanupResponseLifecycle = () => {
+    if (supportsEventEmitterLifecycle(res)) {
+      res.removeListener('close', handleResponseClose);
+      res.removeListener('error', handleResponseError);
+      res.removeListener('finish', handleResponseFinish);
+    }
+  };
 
   const cleanup = () => {
     if (cleaned) {
       return;
     }
     cleaned = true;
-    if (supportsEventEmitterLifecycle(req)) {
-      req.removeListener('aborted', handleRequestAborted);
-      req.removeListener('error', handleRequestError);
-    }
-    if (supportsEventEmitterLifecycle(res)) {
-      res.removeListener('close', handleResponseClose);
-      res.removeListener('error', handleResponseError);
-      res.removeListener('finish', handleResponseFinish);
-    }
+    cleanupRequestLifecycle();
+    cleanupResponseLifecycle();
   };
 
   const abort = (reason?: unknown) => {
@@ -162,6 +176,9 @@ export function createHttpOperationEnvelope(args: {
   return {
     signal: controller.signal,
     abort,
+    markRequestBodyConsumed: () => {
+      cleanupRequestLifecycle();
+    },
     cleanup,
   };
 }

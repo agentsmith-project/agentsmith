@@ -44,6 +44,62 @@ function buildProbe(
 }
 
 describe('file library resource recovery', () => {
+  it('honors the declared startup steady-state tcp contract instead of hardcoding ESTABLISHED <= 1', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+    });
+    const readyBaseline = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 2,
+        },
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 17017,
+          state: 'CLOSE_WAIT',
+          count: 1,
+        },
+      ],
+    });
+
+    const report = buildStartupResourceRecoveryReport({
+      bootBaseline,
+      readyBaseline,
+      steadyState: {
+        api_tcp_connections: [
+          {
+            process_label: 'api-entry',
+            remote_port: 15432,
+            state: 'ESTABLISHED',
+            max_count: 2,
+          },
+          {
+            process_label: 'api-entry',
+            remote_port: 17017,
+            state: 'CLOSE_WAIT',
+            max_count: 1,
+          },
+        ],
+      },
+    });
+
+    expect(report.status).toBe('pass');
+    expect(report.findings).toEqual([]);
+  });
+
   it('passes startup verification when only declared api-entry steady-state resources appear between boot and ready baselines', () => {
     const bootBaseline = buildSnapshot({
       captured_at: '2026-04-15T09:55:00.000Z',
@@ -78,7 +134,22 @@ describe('file library resource recovery', () => {
     const report = buildStartupResourceRecoveryReport({
       bootBaseline,
       readyBaseline,
-      allowedApiRemotePorts: [15432, 17017],
+      steadyState: {
+        api_tcp_connections: [
+          {
+            process_label: 'api-entry',
+            remote_port: 15432,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+          {
+            process_label: 'api-entry',
+            remote_port: 17017,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+        ],
+      },
     });
 
     expect(report.step).toBe('file-library-api-startup');
@@ -120,7 +191,22 @@ describe('file library resource recovery', () => {
     const report = buildStartupResourceRecoveryReport({
       bootBaseline,
       readyBaseline,
-      allowedApiRemotePorts: [15432, 17017],
+      steadyState: {
+        api_tcp_connections: [
+          {
+            process_label: 'api-entry',
+            remote_port: 15432,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+          {
+            process_label: 'api-entry',
+            remote_port: 17017,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+        ],
+      },
     });
 
     expect(report.status).toBe('fail');
@@ -189,7 +275,22 @@ describe('file library resource recovery', () => {
     const report = buildStartupResourceRecoveryReport({
       bootBaseline,
       readyBaseline,
-      allowedApiRemotePorts: [15432, 17017],
+      steadyState: {
+        api_tcp_connections: [
+          {
+            process_label: 'api-entry',
+            remote_port: 15432,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+          {
+            process_label: 'api-entry',
+            remote_port: 17017,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+        ],
+      },
     });
 
     expect(report.status).toBe('fail');
@@ -199,6 +300,178 @@ describe('file library resource recovery', () => {
         'unexpected managed gateway labels remained after file-library-api-startup: state:library-smoke',
         'unexpected helper labels remained after file-library-api-startup: helper:mc',
         'unexpected tcp connections remained after file-library-api-startup: helper:mc -> 127.0.0.1:19000 [ESTABLISHED] x1',
+      ]),
+    );
+  });
+
+  it('passes startup verification when startup reconcile removes non-authoritative boot gateway state files before ready', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+      gateway_state_files: ['orphan-library.json'],
+    });
+    const readyBaseline = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+      ],
+    });
+
+    const report = buildStartupResourceRecoveryReport({
+      bootBaseline,
+      readyBaseline,
+      steadyState: {
+        api_tcp_connections: [
+          {
+            process_label: 'api-entry',
+            remote_port: 15432,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+        ],
+      },
+    });
+
+    expect(report.status).toBe('pass');
+    expect(report.findings).not.toContain(
+      'baseline gateway state files disappeared after file-library-api-startup: orphan-library.json',
+    );
+  });
+
+  it('passes startup verification when startup reconcile removes non-state-backed orphan managed gateway labels and processes before ready', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+      managed_gateway_labels: ['state:orphan-library'],
+      managed_gateway_processes: [
+        {
+          pid: 3011,
+          label: 'state:orphan-library',
+          library_id: 'orphan-library',
+          owner_scope: 'api-v1:stale-instance:boot-old',
+          state_file: null,
+          open_fd_count: 11,
+          socket_fd_count: 7,
+        },
+      ],
+    });
+    const readyBaseline = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+      ],
+    });
+
+    const report = buildStartupResourceRecoveryReport({
+      bootBaseline,
+      readyBaseline,
+      steadyState: {
+        api_tcp_connections: [
+          {
+            process_label: 'api-entry',
+            remote_port: 15432,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+        ],
+      },
+    });
+
+    expect(report.status).toBe('pass');
+    expect(report.findings).not.toEqual(
+      expect.arrayContaining([
+        'baseline managed gateway labels disappeared after file-library-api-startup: state:orphan-library',
+        expect.stringContaining(
+          'managed gateway processes did not return to the baseline after file-library-api-startup for state:orphan-library',
+        ),
+      ]),
+    );
+  });
+
+  it('fails startup verification when startup reconcile removes boot gateway state that was authority-confirmed at boot', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+      gateway_state_files: ['existing-library.json'],
+      managed_gateway_labels: ['state:existing-library'],
+      managed_gateway_processes: [
+        {
+          pid: 3001,
+          label: 'state:existing-library',
+          library_id: 'existing-library',
+          owner_scope: 'api-v1:instance-a:boot-current',
+          state_file: 'existing-library.json',
+          open_fd_count: 18,
+          socket_fd_count: 4,
+        },
+      ],
+    });
+    const readyBaseline = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+      ],
+    });
+
+    const report = buildStartupResourceRecoveryReport({
+      bootBaseline,
+      readyBaseline,
+      steadyState: {
+        api_tcp_connections: [
+          {
+            process_label: 'api-entry',
+            remote_port: 15432,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+        ],
+      },
+    });
+
+    expect(report.status).toBe('fail');
+    expect(report.findings).toEqual(
+      expect.arrayContaining([
+        'baseline gateway state files disappeared after file-library-api-startup: existing-library.json',
+        'baseline managed gateway labels disappeared after file-library-api-startup: state:existing-library',
+        expect.stringContaining(
+          'managed gateway processes did not return to the baseline after file-library-api-startup for state:existing-library',
+        ),
       ]),
     );
   });
@@ -230,7 +503,16 @@ describe('file library resource recovery', () => {
     const report = buildStartupResourceRecoveryReport({
       bootBaseline,
       readyBaseline,
-      allowedApiRemotePorts: [15432],
+      steadyState: {
+        api_tcp_connections: [
+          {
+            process_label: 'api-entry',
+            remote_port: 15432,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+        ],
+      },
       extraFindings: ['file-library gate api did not become ready before smoke steps'],
     });
 

@@ -23,6 +23,7 @@ import {
   InMemoryJsonDocStore,
   InMemoryObjectStore,
   JsonDocFileLibraryCatalogRepo,
+  DEFAULT_MONGO_JSON_DOC_STORE_POOL_OPTIONS,
   MinioObjectStore,
   MongoJsonDocStore,
   RedisCache,
@@ -168,6 +169,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
     ? new MongoJsonDocStore({
         url: env.MONGO_URL,
         dbName: env.MONGO_DB_NAME ?? 'mbos',
+        mongoClientOptions: DEFAULT_MONGO_JSON_DOC_STORE_POOL_OPTIONS,
       })
     : new InMemoryJsonDocStore();
   const objectStore = env.MINIO_ENDPOINT

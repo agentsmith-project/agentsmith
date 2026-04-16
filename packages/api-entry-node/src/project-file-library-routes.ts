@@ -682,14 +682,14 @@ export async function handleProjectFileLibraryRoutes(args: {
   }
 
   if (routeKind === 'fileLibraryMove' && method === 'POST') {
-    const parsed = MoveFileLibraryEntryRequestSchema.safeParse(await readBody(req));
-    if (!parsed.success) {
-      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_move_request' });
-      return true;
-    }
-    let operation: ReturnType<typeof createHttpOperationEnvelope> | null = null;
+    const operation = createHttpOperationEnvelope({ req, res });
     try {
-      operation = createHttpOperationEnvelope({ req, res });
+      const parsed = MoveFileLibraryEntryRequestSchema.safeParse(await readBody(req));
+      operation.markRequestBodyConsumed();
+      if (!parsed.success) {
+        json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_move_request' });
+        return true;
+      }
       const client = await awaitAbortableOperation(
         createFileLibraryGatewayClient({
           deps,
@@ -751,7 +751,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       }
       throw error;
     } finally {
-      operation?.cleanup();
+      operation.cleanup();
     }
   }
 

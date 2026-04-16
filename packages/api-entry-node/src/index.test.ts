@@ -545,6 +545,58 @@ describe("api-entry-node me routes", () => {
     expect(terminalShutdown.mock.invocationCallOrder[0]).toBeLessThan(executionShutdown.mock.invocationCallOrder[0]);
   });
 
+  it("waits for docStore.close before resolving server.close", async () => {
+    const deps = createDefaultNodeApiDeps();
+    let resolveDocStoreClose: (() => void) | null = null;
+    const closeDocStore = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveDocStoreClose = resolve;
+        }),
+    );
+    Object.defineProperty(deps.docStore, "close", {
+      configurable: true,
+      value: closeDocStore,
+    });
+    const { server } = startServerWithDeps({
+      ...deps,
+      fileLibraryGatewayManager: {
+        ...deps.fileLibraryGatewayManager,
+        reconcile: vi.fn(async () => undefined),
+        shutdown: vi.fn(async () => undefined),
+      },
+    });
+
+    await new Promise<void>((resolve) => {
+      if (server.listening) {
+        resolve();
+        return;
+      }
+      server.once("listening", () => resolve());
+    });
+
+    let closeResolved = false;
+    const closePromise = new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        closeResolved = true;
+        resolve();
+      });
+    });
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(closeDocStore).toHaveBeenCalledTimes(1);
+    expect(closeResolved).toBe(false);
+
+    resolveDocStoreClose?.();
+    await closePromise;
+
+    expect(closeResolved).toBe(true);
+  });
+
   it("runs gateway reconcile on a single-flight interval and clears it during shutdown", async () => {
     process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = "60000";
     process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = "false";

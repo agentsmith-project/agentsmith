@@ -1,3 +1,4 @@
+import { MongoJsonDocStore } from '@mbos/adapters-private';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createNodeApiDepsFromEnv } from './node-api-deps-factory.js';
 
@@ -39,6 +40,28 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
     } finally {
       await shutdownSafe(lifecycle);
       await (deps.cache as { close?: () => Promise<void> }).close?.();
+    }
+  });
+
+  it('uses the constrained default Mongo pool contract for the process docStore', async () => {
+    const { deps, lifecycle } = createNodeApiDepsFromEnv({
+      ...baseEnv,
+      MONGO_URL: 'mongodb://127.0.0.1:17017',
+      MONGO_DB_NAME: 'mbos_test',
+    });
+    try {
+      expect(deps.docStore).toBeInstanceOf(MongoJsonDocStore);
+      expect((deps.docStore as MongoJsonDocStore & {
+        mongoClientOptions?: unknown;
+      }).mongoClientOptions).toEqual({
+        maxPoolSize: 20,
+        minPoolSize: 0,
+        maxIdleTimeMS: 10_000,
+        maxConnecting: 2,
+        waitQueueTimeoutMS: 5_000,
+      });
+    } finally {
+      await shutdownSafe(lifecycle);
     }
   });
 

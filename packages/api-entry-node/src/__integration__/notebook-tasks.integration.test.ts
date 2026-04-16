@@ -1174,12 +1174,49 @@ describe('api-entry-node notebook task routes', () => {
     );
     expect(connInfoRes.status).toBe(200);
     const connInfo = (await connInfoRes.json()) as { ws_url: string };
-    const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'));
+    const agentScopedWs = new WebSocket(
+      connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
+      {
+        headers: { Authorization: `Bearer ${keyPayload.key}` },
+      },
+    );
+    sockets.push(agentScopedWs);
+    await new Promise<void>((resolve, reject) => {
+      agentScopedWs.once('error', reject);
+      agentScopedWs.on('message', (raw) => {
+        const msg = JSON.parse(raw.toString('utf-8')) as { type?: string };
+        if (msg.type !== 'server.hello') return;
+        agentScopedWs.send(JSON.stringify({
+          type: 'agent.ready',
+          payload: {
+            runner_spec: NOTEBOOK_RUNNER_SPEC,
+            capabilities: { wire_api: 'chat' },
+          },
+        }));
+        resolve();
+      });
+    });
 
     let releaseExecution: (() => void) | null = null;
     const holdExecution = new Promise<void>((resolve) => {
       releaseExecution = resolve;
     });
+    let resolveExecutionReceived: ((value: {
+      requestId: string;
+      helloProxyBase: string;
+      endpointProxyBase: string | null;
+      apiBase: string;
+      executionTicket: string;
+      interactionKind: string | null;
+      workspaceBindingMode: string | null;
+      workspacePath: string | null;
+      workspaceFileLibraryId: string | null;
+      workspaceFileLibraryName: string | null;
+      workspaceDirName: string | null;
+      taskInputsCount: number | null;
+      legacyUserBearerToken: string;
+      close: () => void;
+    }) => void) | null = null;
     const executionReceived = new Promise<{
       requestId: string;
       helloProxyBase: string;
@@ -1196,6 +1233,12 @@ describe('api-entry-node notebook task routes', () => {
       legacyUserBearerToken: string;
       close: () => void;
     }>((resolve) => {
+      resolveExecutionReceived = resolve;
+    });
+
+    const attachRunnerWebSocket = async (taskId: string): Promise<void> => {
+      const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'))
+        + `&session_id=${encodeURIComponent(taskId)}`;
       let helloProxyBase = '';
       const ws = new WebSocket(wsUrl, {
         headers: { Authorization: `Bearer ${keyPayload.key}` },
@@ -1229,7 +1272,7 @@ describe('api-entry-node notebook task routes', () => {
           return;
         }
         if (msg.type !== 'server.request.start' || !msg.request_id) return;
-        resolve({
+        resolveExecutionReceived?.({
           requestId: msg.request_id,
           helloProxyBase,
           endpointProxyBase: null,
@@ -1299,28 +1342,22 @@ describe('api-entry-node notebook task routes', () => {
           }));
         });
       });
-    });
-    const runnerReady = new Promise<void>((resolve, reject) => {
-      const ws = sockets[sockets.length - 1];
-      if (!ws) {
-        reject(new Error('execution socket not initialized'));
-        return;
-      }
-      ws.once('error', reject);
-      ws.on('message', (raw) => {
-        const msg = JSON.parse(raw.toString('utf-8')) as { type?: string };
-        if (msg.type !== 'server.hello') return;
-        ws.send(JSON.stringify({
-          type: 'agent.ready',
-          payload: {
-            runner_spec: NOTEBOOK_RUNNER_SPEC,
-            capabilities: { wire_api: 'chat' },
-          },
-        }));
-        resolve();
+      await new Promise<void>((resolve, reject) => {
+        ws.once('error', reject);
+        ws.on('message', (raw) => {
+          const msg = JSON.parse(raw.toString('utf-8')) as { type?: string };
+          if (msg.type !== 'server.hello') return;
+          ws.send(JSON.stringify({
+            type: 'agent.ready',
+            payload: {
+              runner_spec: NOTEBOOK_RUNNER_SPEC,
+              capabilities: { wire_api: 'chat' },
+            },
+          }));
+          resolve();
+        });
       });
-    });
-    await runnerReady;
+    };
 
     const createTaskRes = await apiFetch(
       baseUrl,
@@ -1337,6 +1374,7 @@ describe('api-entry-node notebook task routes', () => {
     );
     expect(createTaskRes.status).toBe(201);
     const task = (await createTaskRes.json()) as { id: string };
+    await attachRunnerWebSocket(task.id);
 
     const createExternalConnectionRes = await apiFetch(
       baseUrl,
@@ -2514,7 +2552,7 @@ describe('api-entry-node notebook task routes', () => {
       const connInfo = await connInfoRes.json() as { ws_url: string };
 
       const executionSocket = new WebSocket(
-        connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
+        `${connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'))}&session_id=${encodeURIComponent(taskId)}`,
         { headers: { Authorization: `Bearer ${keyPayload.key}` } },
       );
       sockets.push(executionSocket);
@@ -2899,7 +2937,7 @@ describe('api-entry-node notebook task routes', () => {
       const connInfo = await connInfoRes.json() as { ws_url: string };
 
       const executionSocket = new WebSocket(
-        connInfo.ws_url.replace('ws://localhost:20000', firstServer.baseUrl.replace('http://', 'ws://')),
+        `${connInfo.ws_url.replace('ws://localhost:20000', firstServer.baseUrl.replace('http://', 'ws://'))}&session_id=${encodeURIComponent(taskId)}`,
         { headers: { Authorization: `Bearer ${keyPayload.key}` } },
       );
       sockets.push(executionSocket);

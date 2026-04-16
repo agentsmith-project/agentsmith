@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -108,13 +108,17 @@ describe('ux trace bundle support', () => {
       });
 
       const manifestPath = path.join(bundleDir, 'manifest.json');
+      const contractSnapshotPath = path.join(bundleDir, 'contract-snapshot.json');
       const eventsPath = path.join(bundleDir, 'events.jsonl');
       const reviewPath = path.join(bundleDir, 'review.md');
+      const indexPath = path.join(rootDir, 'ux-trace-index.json');
       const firstScreenshot = path.join(bundleDir, 'screenshots', '001-system-login.png');
       const secondScreenshot = path.join(bundleDir, 'screenshots', '002-workspace-login.png');
 
       await expect(readFile(manifestPath, 'utf-8')).resolves.toContain('"story_id": "workspace-provisioning"');
       await expect(readFile(manifestPath, 'utf-8')).resolves.toContain('"screenshot_count": 2');
+      await expect(readFile(contractSnapshotPath, 'utf-8')).resolves.toContain('"story_id": "workspace-provisioning"');
+      await expect(readFile(indexPath, 'utf-8')).resolves.toContain('"bundle_relpath": "backend-real/integration-release-user-story/workspace-provisioning/run-001"');
       const eventLines = (await readFile(eventsPath, 'utf-8')).trim().split('\n');
       expect(eventLines).toHaveLength(2);
       expect(JSON.parse(eventLines[0] ?? '{}')).toMatchObject({
@@ -141,6 +145,161 @@ describe('ux trace bundle support', () => {
       expect(reviewContent).toContain('screenshots/001-system-login.png');
       await expect(readFile(firstScreenshot, 'utf-8')).resolves.toBe('fake screenshot');
       await expect(readFile(secondScreenshot, 'utf-8')).resolves.toBe('fake screenshot');
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('validates producer-owned bundles from contract-snapshot.json without reloading the current repo story id', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-ux-traces-snapshot-owned-'));
+    try {
+      const story = await loadStoryDefinition('release-user-story-end-to-end');
+      const binding = buildTraceStoryBinding(story);
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: story.storyId,
+        title: story.title,
+        actor: story.actor,
+        route: story.entryRoute,
+        specFile: 'e2e/integration-release-user-story.spec.ts',
+        browser: 'chromium',
+        runId: 'run-snapshot-owned',
+        startedAt: '2026-04-12T08:03:04.000Z',
+        goal: story.goal,
+        preconditions: story.preconditions ?? [],
+        seedData: story.seedData ?? [],
+        storyBinding: binding,
+      });
+
+      for (const step of binding.steps.filter((candidate) => candidate.evidence.includes('trace') && !candidate.optional)) {
+        await trace.capture(makeFakePage(stepRoute(story, step)), { stepId: step.stepId });
+      }
+
+      await trace.finish({
+        outcome: 'pass',
+        finishedAt: '2026-04-12T08:04:04.000Z',
+      });
+
+      const originalBundleDir = resolveUxTraceBundleDir({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: story.storyId,
+        runId: 'run-snapshot-owned',
+      });
+      const movedStoryId = 'release-user-story-end-to-end-moved';
+      const movedBundleDir = resolveUxTraceBundleDir({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: movedStoryId,
+        runId: 'run-snapshot-owned',
+      });
+
+      await rm(movedBundleDir, { recursive: true, force: true }).catch(() => {});
+      await mkdir(path.dirname(movedBundleDir), { recursive: true });
+      await rename(originalBundleDir, movedBundleDir);
+
+      const manifestPath = path.join(movedBundleDir, 'manifest.json');
+      const reviewPath = path.join(movedBundleDir, 'review.md');
+      const contractSnapshotPath = path.join(movedBundleDir, 'contract-snapshot.json');
+      const indexPath = path.join(rootDir, 'ux-trace-index.json');
+
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as Record<string, unknown>;
+      manifest.story_id = movedStoryId;
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf-8');
+
+      const snapshot = JSON.parse(await readFile(contractSnapshotPath, 'utf-8')) as Record<string, unknown>;
+      snapshot.story_id = movedStoryId;
+      await writeFile(contractSnapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf-8');
+
+      const review = (await readFile(reviewPath, 'utf-8')).replace(
+        `- story_id: ${story.storyId}`,
+        `- story_id: ${movedStoryId}`,
+      );
+      await writeFile(reviewPath, review, 'utf-8');
+
+      const index = JSON.parse(await readFile(indexPath, 'utf-8')) as {
+        bundles: Array<Record<string, unknown>>;
+      };
+      index.bundles = index.bundles.map((entry) => ({
+        ...entry,
+        story_id: movedStoryId,
+        bundle_relpath: 'backend-real/integration-release-user-story/release-user-story-end-to-end-moved/run-snapshot-owned',
+      }));
+      await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`, 'utf-8');
+
+      const validation = validateUxTraceBundleArtifact({
+        bundleDir: movedBundleDir,
+        expectedLane: 'backend-real',
+        expectedSuite: 'integration-release-user-story',
+      });
+
+      expect(validation.ok).toBe(true);
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails validation under an evidence root when ux-trace-index.json does not declare the bundle', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-ux-traces-index-required-'));
+    try {
+      const story = await loadStoryDefinition('release-user-story-end-to-end');
+      const binding = buildTraceStoryBinding(story);
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: story.storyId,
+        title: story.title,
+        actor: story.actor,
+        route: story.entryRoute,
+        specFile: 'e2e/integration-release-user-story.spec.ts',
+        browser: 'chromium',
+        runId: 'run-missing-index-entry',
+        startedAt: '2026-04-12T09:03:04.000Z',
+        goal: story.goal,
+        preconditions: story.preconditions ?? [],
+        seedData: story.seedData ?? [],
+        storyBinding: binding,
+      });
+
+      for (const step of binding.steps.filter((candidate) => candidate.evidence.includes('trace') && !candidate.optional)) {
+        await trace.capture(makeFakePage(stepRoute(story, step)), { stepId: step.stepId });
+      }
+      await trace.finish({
+        outcome: 'pass',
+        finishedAt: '2026-04-12T09:04:04.000Z',
+      });
+
+      const bundleDir = resolveUxTraceBundleDir({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: story.storyId,
+        runId: 'run-missing-index-entry',
+      });
+      await writeFile(path.join(rootDir, 'ux-trace-index.json'), `${JSON.stringify({
+        version: 1,
+        generated_at: '2026-04-12T09:04:05.000Z',
+        bundles: [],
+      }, null, 2)}\n`, 'utf-8');
+
+      const validation = validateUxTraceBundleArtifact({
+        bundleDir,
+        expectedLane: 'backend-real',
+        expectedSuite: 'integration-release-user-story',
+        expectedEvidenceRoot: rootDir,
+      });
+
+      expect(validation.ok).toBe(false);
+      if (validation.ok) {
+        throw new Error('expected validation to fail when ux-trace-index.json omits the bundle');
+      }
+      expect(validation.failureClass).toBe('evidence_missing');
+      expect(validation.message).toMatch(/ux-trace-index\.json/i);
     } finally {
       await rm(rootDir, { recursive: true, force: true });
     }

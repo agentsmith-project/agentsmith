@@ -2,8 +2,8 @@
  * Tests for TaskList component
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TaskList } from '../TaskList';
@@ -57,6 +57,7 @@ import { useTasks } from '@/lib/hooks/use-task';
 
 describe('TaskList', () => {
   let queryClient: QueryClient;
+  const originalResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
 
   const mockWorkspaceId = 'workspace-1';
   const mockProjectId = 'project-1';
@@ -144,9 +145,30 @@ describe('TaskList', () => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
+
+  const pinViewerLocalTimeZone = (timeZone = 'America/Los_Angeles') => {
+    document.documentElement.lang = 'en-US';
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function resolvedOptions(this: Intl.DateTimeFormat) {
+      return {
+        ...originalResolvedOptions.call(this),
+        timeZone,
+      };
+    });
+  };
+
+  const getTaskCard = (title: string) => {
+    const taskCard = screen.getByText(title).closest('[data-testid="notebook__task-card"]');
+    expect(taskCard).toBeTruthy();
+    return taskCard as HTMLElement;
+  };
 
   describe('Loading State', () => {
     it('renders loading state', () => {
@@ -275,21 +297,10 @@ describe('TaskList', () => {
       expect(screen.getByText('Inputs 2')).toBeInTheDocument();
     });
 
-    it('displays last activity time', () => {
-      vi.mocked(useTasks).mockReturnValue({
-        data: { items: mockTasks, total: 3, page: 1, page_size: 10 },
-        isLoading: false,
-      } as any);
-
-      render(<TaskList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateTask={true} />, {
-        wrapper,
-      });
-
-      const activityTimestamps = screen.getAllByText(/Jan \d, 2024/);
-      expect(activityTimestamps.length).toBeGreaterThan(0);
-    });
-
-    it('renders created timestamps with a stable concise format and no seconds', () => {
+    it('renders last activity labels with relative viewer-local text and absolute metadata', () => {
+      pinViewerLocalTimeZone();
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-01-02T12:05:00Z'));
       vi.mocked(useTasks).mockReturnValue({
         data: { items: [mockTasks[0]], total: 1, page: 1, page_size: 10 },
         isLoading: false,
@@ -299,9 +310,41 @@ describe('TaskList', () => {
         wrapper,
       });
 
-      expect(screen.getByText('Created: Jan 1, 2024, 00:00')).toBeInTheDocument();
-      expect(screen.queryByText(/Created: .*:\d{2}:\d{2}/)).not.toBeInTheDocument();
-      expect(screen.queryByText(/Created: \d{1,2}\/\d{1,2}\/\d{4}/)).not.toBeInTheDocument();
+      const firstTaskCard = getTaskCard('Test Task 1');
+      const lastActivity = within(firstTaskCard).getByTestId('notebook__task-last-activity');
+      const lastActivityRow = lastActivity.closest('span');
+
+      expect(lastActivity).toHaveAttribute('dateTime', mockTasks[0].last_activity_at);
+      expect(lastActivity).toHaveAttribute('data-visual-datetime', mockTasks[0].last_activity_at);
+      expect(lastActivity).toHaveAttribute('data-visual-datetime-policy', 'viewer_local');
+      expect(lastActivity).toHaveAttribute('title', 'Jan 2, 2024, 04:00 AM PST');
+      expect(lastActivity).toHaveTextContent('5m ago');
+      expect(lastActivity).not.toHaveTextContent('Jan 2, 2024, 04:00 AM PST');
+      expect(lastActivityRow).toHaveTextContent('Last activity: 5m ago');
+    });
+
+    it('renders created labels in viewer-local absolute time with timezone metadata and no seconds', () => {
+      pinViewerLocalTimeZone();
+      vi.mocked(useTasks).mockReturnValue({
+        data: { items: [mockTasks[0]], total: 1, page: 1, page_size: 10 },
+        isLoading: false,
+      } as any);
+
+      render(<TaskList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateTask={true} />, {
+        wrapper,
+      });
+
+      const createdAt = within(getTaskCard('Test Task 1')).getByTestId('notebook__task-created-at');
+      const createdAtRow = createdAt.closest('span');
+
+      expect(createdAt).toHaveAttribute('dateTime', mockTasks[0].created_at);
+      expect(createdAt).toHaveAttribute('data-visual-datetime', mockTasks[0].created_at);
+      expect(createdAt).toHaveAttribute('data-visual-datetime-policy', 'viewer_local');
+      expect(createdAt).toHaveAttribute('title', 'Dec 31, 2023, 04:00 PM PST');
+      expect(createdAt).toHaveTextContent('Dec 31, 2023, 04:00 PM PST');
+      expect(createdAtRow).toHaveTextContent('Created: Dec 31, 2023, 04:00 PM PST');
+      expect(createdAt).not.toHaveTextContent(/:\d{2}:\d{2}/);
+      expect(createdAt).not.toHaveTextContent(/\d{1,2}\/\d{1,2}\/\d{4}/);
     });
   });
 

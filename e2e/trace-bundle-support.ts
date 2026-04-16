@@ -1,18 +1,12 @@
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { bindTraceEventToStory, type TraceStoryBinding } from './story-trace-binding';
 import {
-  buildStoryFingerprint,
-  resolveStoryTraceOrderContract,
   buildStorySourceFingerprint,
-  buildStoryStepMapFingerprint,
-  type StoryDefinition,
   type StoryTraceOrderContract,
-  type StoryStepDefinition,
   type StoryTargetMatch,
 } from './story-contract';
-import { loadStoryDefinitionSync } from './story-loader';
 
 export type UxTraceRequestSummary = {
   method: string;
@@ -111,6 +105,49 @@ export type UxTraceBundleManifest = {
   screenshots: UxTraceScreenshotRecord[];
 };
 
+export type UxTraceContractSnapshotStep = {
+  step_id: string;
+  action: string;
+  target?: string;
+  target_match?: StoryTargetMatch;
+  scene_id?: string | null;
+};
+
+export type UxTraceBundleContractSnapshot = {
+  version: 1;
+  lane: string;
+  suite: string;
+  story_id: string;
+  scenario_id: string;
+  run_id: string;
+  story_source?: string;
+  story_source_fingerprint?: string;
+  story_fingerprint?: string;
+  step_map_fingerprint?: string;
+  required_trace_steps: string[];
+  required_screenshot_steps: string[];
+  trace_order_contract?: StoryTraceOrderContract;
+  steps: UxTraceContractSnapshotStep[];
+};
+
+export type UxTraceBundleIndexEntry = {
+  lane: string;
+  suite: string;
+  story_id: string;
+  scenario_id: string;
+  run_id: string;
+  bundle_relpath: string;
+  manifest_relpath: string;
+  review_relpath: string;
+  contract_snapshot_relpath: string;
+};
+
+export type UxTraceBundleIndex = {
+  version: 1;
+  generated_at: string;
+  bundles: UxTraceBundleIndexEntry[];
+};
+
 export type UxTracePageLike = {
   url(): string;
   screenshot(options: { path: string; fullPage: boolean }): Promise<void>;
@@ -197,6 +234,8 @@ export function buildUxTraceCaptureEvent(event: UxTraceCaptureEventInput): UxTra
 }
 
 const DEFAULT_TRACE_OUTPUT_ROOT = path.resolve('artifacts/ux-traces');
+export const UX_TRACE_CONTRACT_SNAPSHOT_FILE = 'contract-snapshot.json';
+export const UX_TRACE_INDEX_FILE = 'ux-trace-index.json';
 
 function sanitizeTraceSegment(value: string): string {
   const normalized = value
@@ -207,6 +246,10 @@ function sanitizeTraceSegment(value: string): string {
     .replace(/-{2,}/g, '-')
     .replace(/^-+|-+$/g, '');
   return normalized || 'trace';
+}
+
+function normalizeRelativePath(value: string): string {
+  return value.split(path.sep).join('/');
 }
 
 function resolveStorySourceFingerprint(storySource?: string): string | undefined {
@@ -242,6 +285,76 @@ function resolveBindingTraceOrderContract(storyBinding?: TraceStoryBinding): Sto
       .filter((step) => step.evidence.includes('trace') && !step.optional)
       .map((step) => step.stepId),
   };
+}
+
+function traceContractSnapshotSteps(storyBinding?: TraceStoryBinding): UxTraceContractSnapshotStep[] {
+  return storyBinding?.steps
+    .filter((step) => step.evidence.includes('trace') && !step.optional)
+    .map((step) => ({
+      step_id: step.stepId,
+      action: step.action,
+      ...(step.target ? { target: step.target } : {}),
+      ...(step.targetMatch ? { target_match: step.targetMatch } : {}),
+      scene_id: step.sceneId ?? null,
+    })) ?? [];
+}
+
+function buildUxTraceContractSnapshot(args: {
+  options: UxTraceBundleOptions;
+  manifest: UxTraceBundleManifest;
+}): UxTraceBundleContractSnapshot {
+  return {
+    version: 1,
+    lane: args.manifest.lane,
+    suite: args.manifest.suite,
+    story_id: args.manifest.story_id,
+    scenario_id: args.manifest.scenario_id,
+    run_id: args.manifest.run_id,
+    story_source: args.options.storyBinding?.storySource,
+    story_source_fingerprint: args.manifest.story_source_fingerprint,
+    story_fingerprint: args.manifest.story_fingerprint,
+    step_map_fingerprint: args.manifest.step_map_fingerprint,
+    required_trace_steps: [...args.manifest.required_trace_steps],
+    required_screenshot_steps: [...args.manifest.required_screenshot_steps],
+    trace_order_contract: args.manifest.trace_order_contract,
+    steps: traceContractSnapshotSteps(args.options.storyBinding),
+  };
+}
+
+function readTraceIndexPayload(indexPath: string): UxTraceBundleIndex | null {
+  try {
+    return JSON.parse(readFileSync(indexPath, 'utf8')) as UxTraceBundleIndex;
+  } catch {
+    return null;
+  }
+}
+
+function writeUxTraceBundleIndex(args: {
+  outputRoot: string;
+  bundleDir: string;
+  manifest: UxTraceBundleManifest;
+}): void {
+  const indexPath = path.join(args.outputRoot, UX_TRACE_INDEX_FILE);
+  const bundleRelpath = normalizeRelativePath(path.relative(args.outputRoot, args.bundleDir));
+  const entry: UxTraceBundleIndexEntry = {
+    lane: args.manifest.lane,
+    suite: args.manifest.suite,
+    story_id: args.manifest.story_id,
+    scenario_id: args.manifest.scenario_id,
+    run_id: args.manifest.run_id,
+    bundle_relpath: bundleRelpath,
+    manifest_relpath: `${bundleRelpath}/manifest.json`,
+    review_relpath: `${bundleRelpath}/review.md`,
+    contract_snapshot_relpath: `${bundleRelpath}/${UX_TRACE_CONTRACT_SNAPSHOT_FILE}`,
+  };
+  const existing = readTraceIndexPayload(indexPath);
+  const preserved = existing?.bundles.filter((candidate) => candidate.bundle_relpath !== bundleRelpath) ?? [];
+  const payload: UxTraceBundleIndex = {
+    version: 1,
+    generated_at: nowIso(),
+    bundles: [...preserved, entry].sort((left, right) => left.bundle_relpath.localeCompare(right.bundle_relpath)),
+  };
+  writeFileSync(indexPath, `${JSON.stringify(payload, null, 2)}\n`);
 }
 
 function reviewVerdictForOutcome(outcome: UxTraceBundleManifest['outcome']): 'accepted' | 'blocked' {
@@ -517,14 +630,6 @@ function listsEqual(left: readonly string[], right: readonly string[]): boolean 
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-function storyTraceSteps(story: StoryDefinition): readonly StoryStepDefinition[] {
-  return story.steps.filter((step) => step.evidence.includes('trace') && !step.optional);
-}
-
-function storyTraceScreenshotSteps(story: StoryDefinition): readonly StoryStepDefinition[] {
-  return storyTraceSteps(story).filter((step) => Boolean(step.sceneId));
-}
-
 function targetMatches(expected: string, actual: string, mode: StoryTargetMatch = 'exact'): boolean {
   return mode === 'prefix' ? actual.startsWith(expected) : actual === expected;
 }
@@ -534,12 +639,30 @@ function validateTraceBundlePath(
   manifest: UxTraceBundleManifest,
   issues: UxTraceBundleValidationIssue[],
 ): void {
+  const canonicalRelativePath = normalizeRelativePath(path.join(
+    sanitizeTraceSegment(manifest.lane),
+    sanitizeTraceSegment(manifest.suite),
+    sanitizeTraceSegment(manifest.story_id),
+    sanitizeTraceSegment(manifest.run_id),
+  ));
+
   if (options.expectedEvidenceRoot && !pathIsWithin(options.bundleDir, options.expectedEvidenceRoot)) {
     traceValidationIssue(
       issues,
       'contract_drift',
       `UX trace bundle is outside the expected evidence root for ${options.expectedCampaignStepId ?? 'campaign step'}: ${options.bundleDir}`,
     );
+  } else if (options.expectedEvidenceRoot) {
+    const actualRelativePath = normalizeRelativePath(
+      path.relative(path.resolve(options.expectedEvidenceRoot), path.resolve(options.bundleDir)),
+    );
+    if (actualRelativePath !== canonicalRelativePath) {
+      traceValidationIssue(
+        issues,
+        'contract_drift',
+        `UX trace bundle path drift: expected ${canonicalRelativePath}, received ${actualRelativePath}.`,
+      );
+    }
   }
 
   const runSegment = path.basename(options.bundleDir);
@@ -559,6 +682,64 @@ function validateTraceBundlePath(
         'contract_drift',
         `UX trace bundle path ${label} segment drift: expected ${sanitizeTraceSegment(expected)}, received ${actual}.`,
       );
+    }
+  }
+}
+
+function validateTraceBundleIndexMembership(args: {
+  options: UxTraceBundleValidationOptions;
+  manifest: UxTraceBundleManifest;
+  bundleDir: string;
+  issues: UxTraceBundleValidationIssue[];
+}): void {
+  const evidenceRoot = args.options.expectedEvidenceRoot;
+  if (!evidenceRoot) {
+    return;
+  }
+  const resolvedRoot = path.resolve(evidenceRoot);
+  const indexPath = path.join(resolvedRoot, UX_TRACE_INDEX_FILE);
+  if (!statIsFile(indexPath)) {
+    traceValidationIssue(args.issues, 'evidence_missing', `Missing UX trace ${UX_TRACE_INDEX_FILE}: ${indexPath}`);
+    return;
+  }
+
+  const index = parseTraceJsonFile<UxTraceBundleIndex>(indexPath, UX_TRACE_INDEX_FILE, args.issues);
+  if (!index || !isRecord(index) || index.version !== 1 || !Array.isArray(index.bundles)) {
+    traceValidationIssue(args.issues, 'contract_drift', `Malformed UX trace ${UX_TRACE_INDEX_FILE}: ${indexPath}`);
+    return;
+  }
+
+  const bundleRelpath = normalizeRelativePath(path.relative(resolvedRoot, args.bundleDir));
+  const entry = index.bundles.find((candidate) => isRecord(candidate) && candidate.bundle_relpath === bundleRelpath);
+  if (!entry || !isRecord(entry)) {
+    traceValidationIssue(
+      args.issues,
+      'evidence_missing',
+      `UX trace ${UX_TRACE_INDEX_FILE} does not declare bundle ${bundleRelpath}.`,
+    );
+    return;
+  }
+
+  for (const [field, expected] of [
+    ['lane', args.manifest.lane],
+    ['suite', args.manifest.suite],
+    ['story_id', args.manifest.story_id],
+    ['scenario_id', args.manifest.scenario_id],
+    ['run_id', args.manifest.run_id],
+  ] as const) {
+    if (entry[field] !== expected) {
+      traceValidationIssue(args.issues, 'contract_drift', `UX trace index ${field} drift for bundle ${bundleRelpath}.`);
+    }
+  }
+
+  const expectedFiles = {
+    manifest_relpath: `${bundleRelpath}/manifest.json`,
+    review_relpath: `${bundleRelpath}/review.md`,
+    contract_snapshot_relpath: `${bundleRelpath}/${UX_TRACE_CONTRACT_SNAPSHOT_FILE}`,
+  } as const;
+  for (const [field, expected] of Object.entries(expectedFiles) as Array<[keyof typeof expectedFiles, string]>) {
+    if (entry[field] !== expected) {
+      traceValidationIssue(args.issues, 'contract_drift', `UX trace index ${field} drift for bundle ${bundleRelpath}.`);
     }
   }
 }
@@ -615,43 +796,70 @@ function validateManifestShape(
   return traceOrderContract;
 }
 
-function validateStoryBindingSemantics(
-  manifest: UxTraceBundleManifest,
-  story: StoryDefinition,
+function validateContractSnapshotShape(
+  snapshot: UxTraceBundleContractSnapshot,
   traceOrderContract: StoryTraceOrderContract | null,
   issues: UxTraceBundleValidationIssue[],
 ): void {
-  if (manifest.lane !== story.lane) {
-    traceValidationIssue(issues, 'contract_drift', `UX trace story lane drift for ${manifest.story_id}.`);
+  if (snapshot.version !== 1) {
+    traceValidationIssue(issues, 'contract_drift', 'UX trace contract snapshot version must be 1.');
   }
-  if (!story.gatePolicy.requiredEvidence.includes('trace')) {
-    traceValidationIssue(issues, 'contract_drift', `UX trace story ${manifest.story_id} does not require trace evidence.`);
+  for (const field of ['lane', 'suite', 'story_id', 'scenario_id', 'run_id'] as const) {
+    if (!requiredString(snapshot[field])) {
+      traceValidationIssue(issues, 'contract_drift', `UX trace contract snapshot missing ${field}.`);
+    }
   }
-  const expectedStoryFingerprint = buildStoryFingerprint(story);
-  const expectedStepMapFingerprint = buildStoryStepMapFingerprint(story);
-  if (manifest.story_fingerprint !== expectedStoryFingerprint) {
-    traceValidationIssue(issues, 'contract_drift', `UX trace story_fingerprint drift for ${manifest.story_id}.`);
+  if (!requiredStringArray(snapshot.required_trace_steps)) {
+    traceValidationIssue(issues, 'contract_drift', 'UX trace contract snapshot must include required_trace_steps.');
   }
-  if (manifest.step_map_fingerprint !== expectedStepMapFingerprint) {
-    traceValidationIssue(issues, 'contract_drift', `UX trace step_map_fingerprint drift for ${manifest.story_id}.`);
+  if (!requiredStringArray(snapshot.required_screenshot_steps)) {
+    traceValidationIssue(issues, 'contract_drift', 'UX trace contract snapshot must include required_screenshot_steps.');
+  }
+  if (!Array.isArray(snapshot.steps)) {
+    traceValidationIssue(issues, 'contract_drift', 'UX trace contract snapshot must include steps[].');
+  }
+  for (const step of snapshot.steps ?? []) {
+    if (!isRecord(step) || !requiredString(step.step_id) || !requiredString(step.action)) {
+      traceValidationIssue(issues, 'contract_drift', 'UX trace contract snapshot includes a malformed step entry.');
+    }
+  }
+  if (snapshot.trace_order_contract !== undefined) {
+    resolveManifestTraceOrderContract(snapshot.trace_order_contract, issues);
+  } else if (traceOrderContract) {
+    traceValidationIssue(issues, 'contract_drift', 'UX trace contract snapshot must include trace_order_contract.');
+  }
+}
+
+function validateManifestAgainstContractSnapshot(
+  manifest: UxTraceBundleManifest,
+  snapshot: UxTraceBundleContractSnapshot,
+  traceOrderContract: StoryTraceOrderContract | null,
+  issues: UxTraceBundleValidationIssue[],
+): void {
+  for (const [field, expected] of [
+    ['lane', snapshot.lane],
+    ['suite', snapshot.suite],
+    ['story_id', snapshot.story_id],
+    ['scenario_id', snapshot.scenario_id],
+    ['run_id', snapshot.run_id],
+    ['story_fingerprint', snapshot.story_fingerprint],
+    ['step_map_fingerprint', snapshot.step_map_fingerprint],
+    ['story_source_fingerprint', snapshot.story_source_fingerprint],
+  ] as const) {
+    if ((manifest as Record<string, unknown>)[field] !== expected) {
+      traceValidationIssue(issues, 'contract_drift', `UX trace ${field} drift for ${manifest.story_id}.`);
+    }
   }
 
-  const storySourcePath = story.sourceFile ?? story.filePath;
-  const expectedSourceFingerprint = buildStorySourceFingerprint(readFileSync(path.resolve(storySourcePath), 'utf8'));
-  if (manifest.story_source_fingerprint !== expectedSourceFingerprint) {
-    traceValidationIssue(issues, 'contract_drift', `UX trace story_source_fingerprint drift for ${manifest.story_id}.`);
-  }
-
-  const expectedTraceSteps = storyTraceSteps(story).map((step) => step.stepId);
-  const expectedScreenshotSteps = storyTraceScreenshotSteps(story).map((step) => step.stepId);
-  const expectedTraceOrderContract = resolveStoryTraceOrderContract(story);
-  if (!listsEqual(manifest.required_trace_steps ?? [], expectedTraceSteps)) {
+  if (!listsEqual(manifest.required_trace_steps ?? [], snapshot.required_trace_steps ?? [])) {
     traceValidationIssue(issues, 'contract_drift', `UX trace required_trace_steps drift for ${manifest.story_id}.`);
   }
-  if (!listsEqual(manifest.required_screenshot_steps ?? [], expectedScreenshotSteps)) {
+  if (!listsEqual(manifest.required_screenshot_steps ?? [], snapshot.required_screenshot_steps ?? [])) {
     traceValidationIssue(issues, 'contract_drift', `UX trace required_screenshot_steps drift for ${manifest.story_id}.`);
   }
-  if (traceOrderContract
+
+  const expectedTraceOrderContract = snapshot.trace_order_contract;
+  if (traceOrderContract && expectedTraceOrderContract
     && (traceOrderContract.mode !== expectedTraceOrderContract.mode
       || !listsEqual(traceOrderContract.orderedStepIds, expectedTraceOrderContract.orderedStepIds))) {
     traceValidationIssue(issues, 'contract_drift', `UX trace trace_order_contract drift for ${manifest.story_id}.`);
@@ -661,12 +869,12 @@ function validateStoryBindingSemantics(
 function validateTraceEvents(args: {
   bundleDir: string;
   manifest: UxTraceBundleManifest;
-  story: StoryDefinition;
+  snapshot: UxTraceBundleContractSnapshot;
   traceOrderContract: StoryTraceOrderContract | null;
   events: readonly TraceEventJson[];
   issues: UxTraceBundleValidationIssue[];
 }): void {
-  const storyStepsById = new Map(args.story.steps.map((step) => [step.stepId, step]));
+  const snapshotStepsById = new Map(args.snapshot.steps.map((step) => [step.step_id, step]));
   const eventsByStep = new Map<string, TraceEventJson[]>();
   const firstEventIndexByStep = new Map<string, number>();
   for (const event of args.events) {
@@ -683,16 +891,16 @@ function validateTraceEvents(args: {
     if (!requiredString(event.action)) {
       traceValidationIssue(args.issues, 'contract_drift', `UX trace event ${event.step_id} missing action.`);
     }
-    const storyStep = storyStepsById.get(event.step_id);
-    if (!storyStep) {
+    const snapshotStep = snapshotStepsById.get(event.step_id);
+    if (!snapshotStep) {
       traceValidationIssue(args.issues, 'contract_drift', `UX trace event references unknown story step: ${event.step_id}.`);
       continue;
     }
-    if (event.action !== storyStep.action) {
+    if (event.action !== snapshotStep.action) {
       traceValidationIssue(args.issues, 'contract_drift', `UX trace action drift for step ${event.step_id}.`);
     }
-    if (storyStep.target) {
-      if (!event.target || !targetMatches(storyStep.target, event.target, storyStep.targetMatch ?? 'exact')) {
+    if (snapshotStep.target) {
+      if (!event.target || !targetMatches(snapshotStep.target, event.target, snapshotStep.target_match ?? 'exact')) {
         traceValidationIssue(args.issues, 'contract_drift', `UX trace target drift for step ${event.step_id}.`);
       }
     }
@@ -826,12 +1034,14 @@ export function validateUxTraceBundleArtifact(options: UxTraceBundleValidationOp
   const manifestPath = path.join(bundleDir, 'manifest.json');
   const eventsPath = path.join(bundleDir, 'events.jsonl');
   const reviewPath = path.join(bundleDir, 'review.md');
+  const contractSnapshotPath = path.join(bundleDir, UX_TRACE_CONTRACT_SNAPSHOT_FILE);
   const issues: UxTraceBundleValidationIssue[] = [];
 
   for (const [label, filePath] of [
     ['manifest.json', manifestPath],
     ['events.jsonl', eventsPath],
     ['review.md', reviewPath],
+    [UX_TRACE_CONTRACT_SNAPSHOT_FILE, contractSnapshotPath],
   ] as const) {
     if (!statIsFile(filePath)) {
       traceValidationIssue(issues, 'evidence_missing', `Missing UX trace ${label}: ${filePath}`);
@@ -858,33 +1068,37 @@ export function validateUxTraceBundleArtifact(options: UxTraceBundleValidationOp
     traceValidationIssue(issues, 'contract_drift', `UX trace suite mismatch: expected ${options.expectedSuite}, received ${manifest.suite}.`);
   }
 
-  let story: StoryDefinition | null = null;
-  try {
-    story = loadStoryDefinitionSync(manifest.story_id);
-  } catch (error) {
-    traceValidationIssue(
-      issues,
-      'contract_drift',
-      `UX trace story_id cannot be resolved: ${manifest.story_id} (${error instanceof Error ? error.message : String(error)})`,
-    );
+  const snapshot = parseTraceJsonFile<UxTraceBundleContractSnapshot>(
+    contractSnapshotPath,
+    UX_TRACE_CONTRACT_SNAPSHOT_FILE,
+    issues,
+  );
+  if (!snapshot) {
+    return traceValidationResult(issues);
   }
-
-  if (story) {
-    validateStoryBindingSemantics(manifest, story, traceOrderContract, issues);
+  if (!isRecord(snapshot)) {
+    traceValidationIssue(issues, 'contract_drift', `UX trace ${UX_TRACE_CONTRACT_SNAPSHOT_FILE} must be an object.`);
+    return traceValidationResult(issues);
   }
+  validateContractSnapshotShape(snapshot, traceOrderContract, issues);
+  validateManifestAgainstContractSnapshot(manifest, snapshot, traceOrderContract, issues);
   validateTraceBundlePath({ ...options, bundleDir }, manifest, issues);
+  validateTraceBundleIndexMembership({
+    options,
+    manifest,
+    bundleDir,
+    issues,
+  });
 
   const events = parseTraceEvents(eventsPath, issues);
-  if (story) {
-    validateTraceEvents({
-      bundleDir,
-      manifest,
-      story,
-      traceOrderContract,
-      events,
-      issues,
-    });
-  }
+  validateTraceEvents({
+    bundleDir,
+    manifest,
+    snapshot,
+    traceOrderContract,
+    events,
+    issues,
+  });
   validateTraceReviewMarkdown({
     reviewPath,
     manifest,
@@ -896,8 +1110,9 @@ export function validateUxTraceBundleArtifact(options: UxTraceBundleValidationOp
 
 export async function createUxTraceBundleWriter(options: UxTraceBundleOptions): Promise<UxTraceBundleWriter> {
   const runId = options.runId ?? process.env.UX_TRACE_RUN_ID ?? defaultRunId();
+  const outputRoot = path.resolve(options.outputRoot ?? process.env.UX_TRACE_OUTPUT_ROOT ?? DEFAULT_TRACE_OUTPUT_ROOT);
   const bundleDir = resolveUxTraceBundleDir({
-    outputRoot: options.outputRoot,
+    outputRoot,
     lane: options.lane,
     suite: options.suite,
     storyId: options.storyId,
@@ -925,6 +1140,16 @@ export async function createUxTraceBundleWriter(options: UxTraceBundleOptions): 
     await writeFile(path.join(bundleDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf-8');
     await writeFile(path.join(bundleDir, 'events.jsonl'), renderUxTraceEventsJsonl(events), 'utf-8');
     await writeFile(path.join(bundleDir, 'review.md'), renderUxTraceReviewMarkdown({ manifest, events }), 'utf-8');
+    await writeFile(
+      path.join(bundleDir, UX_TRACE_CONTRACT_SNAPSHOT_FILE),
+      `${JSON.stringify(buildUxTraceContractSnapshot({ options, manifest }), null, 2)}\n`,
+      'utf-8',
+    );
+    writeUxTraceBundleIndex({
+      outputRoot,
+      bundleDir,
+      manifest,
+    });
   };
 
   return {

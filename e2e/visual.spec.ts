@@ -10,6 +10,8 @@
  * Update baselines: npx playwright test e2e/visual.spec.ts --project=visual --update-snapshots
  */
 
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
 import { test as base, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { ensureAuthenticatedSession, readMockAuthTokenFromContext, withAuth } from './fixtures/authenticated';
 import { gotoAndWait, waitForPageReady } from './utils/navigation';
@@ -740,9 +742,23 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await expect(page.getByTestId('system-login__heading')).toBeVisible();
     },
   },
-  'system-workspaces': {
+  'system-workspaces-empty': {
     beforeAuth: async ({ request }) => {
       await seedSystemWorkspaces(request, 'empty');
+    },
+  },
+  'system-workspaces-default': {
+    beforeAuth: async ({ request }) => {
+      await seedSystemWorkspaces(request, 'with_workspace');
+    },
+    afterNavigate: async ({ page }) => {
+      await expect(page.getByTestId('system-workspaces__list')).toBeVisible();
+      await expect(page.getByTestId('system-workspaces__editor')).toBeVisible();
+      await expect(page.getByTestId('system-workspaces__read-only-notice')).toBeVisible();
+      await expect(page.getByTestId('system-workspaces__new-workspace')).toHaveAttribute(
+        'data-visual-prominence',
+        'primary',
+      );
     },
   },
   'system-workspaces-create-wizard': {
@@ -935,9 +951,43 @@ async function applyCatalogViewport(page: Page, scenario: VisualBaselineExecutor
   }
 }
 
+function resolveRunBoundActualCaptureRoot(): string | null {
+  const explicitRoot = process.env.VISUAL_BASELINE_ACTUAL_CAPTURE_ROOT?.trim();
+  if (explicitRoot) {
+    return path.resolve(explicitRoot);
+  }
+
+  const buildInfoPath = process.env.VISUAL_BASELINE_BUILD_INFO_FILE?.trim();
+  if (!buildInfoPath) {
+    return null;
+  }
+
+  return path.resolve(path.dirname(buildInfoPath), 'visual-actual-captures');
+}
+
+async function writeRunBoundActualCapture(args: {
+  page: Page;
+  scenario: VisualBaselineExecutorScenario;
+  entry: VisualBaselineCatalogEntry;
+  screenshotOptions: VisualScreenshotOptions;
+}) {
+  const captureRoot = resolveRunBoundActualCaptureRoot();
+  if (!captureRoot) {
+    return;
+  }
+
+  const targetPath = path.join(captureRoot, args.scenario.scenarioId, args.entry.screenshot);
+  mkdirSync(path.dirname(targetPath), { recursive: true });
+  await args.page.screenshot({
+    path: targetPath,
+    ...(args.screenshotOptions.fullPage ? { fullPage: true } : {}),
+  });
+}
+
 async function runVisualScenario(context: VisualScenarioContext) {
   const { page, scenario, entry } = context;
   const setup = VISUAL_SCENE_SETUP_REGISTRY[scenario.scenarioId];
+  const screenshotOptions = screenshotOptionsFor(entry, scenario, setup);
 
   await setup?.beforeAuth?.(context);
   await prepareVisualAuthLane(page, scenario.authLane, setup?.authOptions);
@@ -964,7 +1014,13 @@ async function runVisualScenario(context: VisualScenarioContext) {
 
   await waitForStableRecipeMarkers(page, scenario);
   await expectVisualSemanticAssertions(page, scenario.semanticAssertions, scenario.scenarioId);
-  await expect(page).toHaveScreenshot(entry.screenshot, screenshotOptionsFor(entry, scenario, setup));
+  await expect(page).toHaveScreenshot(entry.screenshot, screenshotOptions);
+  await writeRunBoundActualCapture({
+    page,
+    scenario,
+    entry,
+    screenshotOptions,
+  });
 }
 
 test.describe('Visual Auth Contract', () => {

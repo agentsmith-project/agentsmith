@@ -96,6 +96,11 @@ describe('current verification campaign manifest', () => {
       expect.arrayContaining([
         expect.objectContaining({ path: '<campaign-root>/gate-release/backend-real-visual/review.md', kind: 'file' }),
         expect.objectContaining({
+          id: 'backend_real_ux_trace_index',
+          path: '<campaign-root>/gate-release/backend-real-visual/ux-traces/ux-trace-index.json',
+          kind: 'file',
+        }),
+        expect.objectContaining({
           id: 'backend_real_ux_trace_reviews',
           path: '<campaign-root>/gate-release/backend-real-visual/ux-traces',
           kind: 'recursive_file',

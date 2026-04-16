@@ -1,5 +1,7 @@
 'use client';
 
+import { formatDisplayDateTime, resolveDisplayTimeZone } from '@/lib/utils/date-time-format';
+
 type TaskPresence = 'online' | 'offline' | 'managed' | 'unknown';
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
 
@@ -18,11 +20,8 @@ function getDisplayLocale(): string {
   return 'en-US';
 }
 
-function formatTaskDate(date: Date): string {
-  return new Intl.DateTimeFormat(getDisplayLocale(), {
-    dateStyle: 'medium',
-    timeZone: 'UTC',
-  }).format(date);
+function getDisplayTimeZone(locale = getDisplayLocale()): string {
+  return resolveDisplayTimeZone(locale);
 }
 
 export function formatTaskRelativeTime(dateString: string): string {
@@ -38,18 +37,17 @@ export function formatTaskRelativeTime(dateString: string): string {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
-  return formatTaskDate(date);
+  return formatTaskDateTime(dateString);
 }
 
 export function formatTaskDateTime(dateString: string): string {
   const date = parseTaskDate(dateString);
   if (!date) return '—';
-  return new Intl.DateTimeFormat(getDisplayLocale(), {
-    dateStyle: 'medium',
-    hour12: false,
-    timeStyle: 'short',
-    timeZone: 'UTC',
-  }).format(date);
+  const locale = getDisplayLocale();
+  return formatDisplayDateTime(date.toISOString(), {
+    locale,
+    timeZone: getDisplayTimeZone(locale),
+  });
 }
 
 export function getTaskPresenceLabel(

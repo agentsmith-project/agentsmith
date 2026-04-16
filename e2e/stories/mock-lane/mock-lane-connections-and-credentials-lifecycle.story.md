@@ -279,6 +279,9 @@
           "semanticAssertions": {
             "primaryActionTestIds": [],
             "maxProminentActions": 0,
+            "requiredViewerLocalDateTimeTestIds": [
+              "workspace-connections__last-refresh-value"
+            ],
             "forbiddenVisibleTextPatterns": [
               "\\b\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z\\b"
             ]

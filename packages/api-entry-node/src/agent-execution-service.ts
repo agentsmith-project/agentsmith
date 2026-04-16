@@ -17,6 +17,9 @@ export type RunnerSessionDispatchAuthority =
   | 'remote_owned_not_local_dispatchable'
   | 'offline';
 
+type DispatchScope = 'agent_fallback' | 'session_strict';
+type AgentSocketLifecyclePhase = 'registering' | 'active' | 'superseded' | 'closing' | 'closed';
+
 export interface AgentStreamEvent {
   type: 'delta' | 'done' | 'error' | 'event' | 'artifact';
   delta?: string;
@@ -87,6 +90,7 @@ interface PendingTerminal {
 
 interface AgentSocketState {
   ws: WebSocket;
+  socketKey: string;
   agentId: string;
   connectionId: string;
   apiInstanceId: string;
@@ -101,6 +105,10 @@ interface AgentSocketState {
   lastPingAt?: string;
   lastPongAt: string;
   missedPongs: number;
+  lifecyclePhase: AgentSocketLifecyclePhase;
+  presenceRegistered: boolean;
+  releasePromise?: Promise<void>;
+  refreshChain?: Promise<void>;
 }
 
 interface AsyncQueue<T> {
@@ -314,6 +322,9 @@ const DEFAULT_AGENT_STREAM_MAX_RUNTIME_MS = 45 * 60_000;
 const DEFAULT_AGENT_TERMINAL_FIRST_EVENT_TIMEOUT_MS = 45_000;
 const DEFAULT_AGENT_TERMINAL_IDLE_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_AGENT_TERMINAL_MAX_RUNTIME_MS = 24 * 60 * 60_000;
+const SOCKET_PRESENCE_RELEASE_MAX_ATTEMPTS = 6;
+const SOCKET_PRESENCE_RELEASE_BACKOFF_BASE_MS = 20;
+const SOCKET_PRESENCE_RELEASE_BACKOFF_MAX_MS = 250;
 
 function resolvePositiveMs(value: number | undefined, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return fallback;
@@ -323,6 +334,12 @@ function resolvePositiveMs(value: number | undefined, fallback: number): number 
 function resolvePositiveInteger(value: number | undefined, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return fallback;
   return Math.max(1, Math.floor(value));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function resolveAgentExecutionServiceOptions(
@@ -349,6 +366,8 @@ function resolveAgentExecutionServiceOptions(
 export class AgentExecutionService {
   private readonly wsServer: WebSocketServer;
   private readonly socketsByKey = new Map<string, AgentSocketState>();
+  private readonly socketsByWebSocket = new Map<WebSocket, AgentSocketState>();
+  private readonly backgroundTasks = new Set<Promise<unknown>>();
   private readonly apiInstanceId = randomUUID();
   private readonly options: ResolvedAgentExecutionServiceOptions;
   private shuttingDown = false;
@@ -359,13 +378,9 @@ export class AgentExecutionService {
   ) {
     this.options = resolveAgentExecutionServiceOptions(options);
     this.wsServer = new WebSocketServer({ noServer: true });
-    this.wsServer.on('connection', (ws, req) => {
-      const url = new URL(req.url ?? '', 'http://localhost');
-      const agentId = url.searchParams.get('agent_id') || '';
-      const sessionId = url.searchParams.get('session_id') || undefined;
-      const socketKey = buildSocketKey(agentId, sessionId);
-      const socketState = this.socketsByKey.get(socketKey);
-      if (!socketState || socketState.ws !== ws) {
+    this.wsServer.on('connection', (ws, _req) => {
+      const socketState = this.socketsByWebSocket.get(ws);
+      if (!socketState) {
         ws.close(1011, 'agent_state_missing');
         return;
       }
@@ -388,9 +403,9 @@ export class AgentExecutionService {
         }),
       );
 
-      ws.on('message', (data) => this.handleAgentMessage(socketKey, ws, data));
-      ws.on('close', () => this.handleSocketClose(socketKey, ws));
-      ws.on('error', () => this.handleSocketClose(socketKey, ws));
+      ws.on('message', (data) => this.handleAgentMessage(ws, data));
+      ws.on('close', () => this.handleSocketClose(ws));
+      ws.on('error', () => this.handleSocketClose(ws));
     });
   }
 
@@ -474,21 +489,13 @@ export class AgentExecutionService {
 
       const socketKey = buildSocketKey(agentId, sessionId);
       const existing = this.socketsByKey.get(socketKey);
-      if (existing) {
-        this.releaseSocketState(socketKey, existing, {
-          errorCode: 'AGENT_DISCONNECTED',
-          errorMessage: 'agent_reconnected',
-          closeCode: 1012,
-          closeReason: 'agent_replaced',
-          skipPresenceUpdate: true,
-        });
-      }
 
       this.wsServer.handleUpgrade(req, socket, head, (ws) => {
         const now = new Date().toISOString();
         const connectionId = randomUUID();
         const socketState: AgentSocketState = {
           ws,
+          socketKey,
           agentId,
           connectionId,
           apiInstanceId: this.apiInstanceId,
@@ -501,13 +508,16 @@ export class AgentExecutionService {
           terminalBySessionId: new Map(),
           lastPongAt: now,
           missedPongs: 0,
+          lifecyclePhase: 'registering',
+          presenceRegistered: false,
         };
-        this.socketsByKey.set(socketKey, socketState);
-        void this.registerSocketLifecycle({
+        this.socketsByWebSocket.set(ws, socketState);
+        this.trackBackgroundTask(this.registerSocketLifecycle({
           socketKey,
           socket: socketState,
+          previousSocket: existing,
           remoteIp: inferRemoteIp(req),
-        });
+        }));
         this.wsServer.emit('connection', ws, req);
       });
     }).catch(() => {
@@ -654,22 +664,220 @@ export class AgentExecutionService {
     socket.heartbeatTimer = undefined;
   }
 
-  private releaseSocketPresence(socket: AgentSocketState): void {
-    void this.agentResourceService.releaseAgentConnection({
-      workspaceId: socket.workspaceId,
-      projectId: socket.projectId,
-      agentId: socket.agentId,
-      connectionId: socket.connectionId,
+  private trackBackgroundTask<T>(task: Promise<T>): Promise<T> {
+    this.backgroundTasks.add(task);
+    task.finally(() => {
+      this.backgroundTasks.delete(task);
+    }).catch(() => undefined);
+    return task;
+  }
+
+  private isSocketOpen(socket: AgentSocketState | undefined): socket is AgentSocketState {
+    return !!socket && socket.ws.readyState === socket.ws.OPEN;
+  }
+
+  private isSocketDispatchable(socket: AgentSocketState | undefined): socket is AgentSocketState {
+    return this.isSocketOpen(socket) && socket.lifecyclePhase === 'active';
+  }
+
+  private scheduleSocketPresenceRelease(socket: AgentSocketState): Promise<void> {
+    if (socket.releasePromise) {
+      return socket.releasePromise;
+    }
+    if (!socket.presenceRegistered) {
+      return Promise.resolve();
+    }
+    const release = this.trackBackgroundTask(this.releaseSocketPresenceWithRetry(socket));
+    socket.releasePromise = release.finally(() => {
+      if (socket.releasePromise === release) {
+        socket.releasePromise = undefined;
+      }
+    });
+    return socket.releasePromise;
+  }
+
+  private async releaseSocketPresenceWithRetry(socket: AgentSocketState): Promise<void> {
+    for (let attempt = 1; attempt <= SOCKET_PRESENCE_RELEASE_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        await this.agentResourceService.releaseAgentConnection({
+          workspaceId: socket.workspaceId,
+          projectId: socket.projectId,
+          agentId: socket.agentId,
+          connectionId: socket.connectionId,
+        });
+        socket.presenceRegistered = false;
+        return;
+      } catch (error) {
+        if (attempt >= SOCKET_PRESENCE_RELEASE_MAX_ATTEMPTS) {
+          debugExecution(
+            `release presence failed agent_id=${socket.agentId} connection_id=${socket.connectionId} attempts=${attempt} error=${error instanceof Error ? error.message : String(error)}`,
+          );
+          throw error;
+        }
+        debugExecution(
+          `release presence retrying agent_id=${socket.agentId} connection_id=${socket.connectionId} attempt=${attempt} error=${error instanceof Error ? error.message : String(error)}`,
+        );
+        const backoffMs = Math.min(
+          SOCKET_PRESENCE_RELEASE_BACKOFF_BASE_MS * (2 ** (attempt - 1)),
+          SOCKET_PRESENCE_RELEASE_BACKOFF_MAX_MS,
+        );
+        await delay(backoffMs);
+      }
+    }
+  }
+
+  private queueSocketRefresh(socket: AgentSocketState, lastPongAt: string): void {
+    const previous = socket.refreshChain ?? Promise.resolve();
+    const refreshTask = previous
+      .catch(() => undefined)
+      .then(async () => {
+        if (socket.lifecyclePhase !== 'active') return;
+        try {
+          const result = await this.agentResourceService.refreshAgentConnection({
+            agentId: socket.agentId,
+            connectionId: socket.connectionId,
+            lastPongAt,
+            protocolVersion: '1.0',
+          });
+          if (result.stale) {
+            this.releaseSocketState(socket, {
+              errorCode: 'AGENT_STALE_CONNECTION',
+              errorMessage: 'agent_stale_connection',
+              closeCode: 4001,
+              closeReason: 'agent_stale_connection',
+            });
+          }
+        } catch (error) {
+          debugExecution(
+            `refresh authority failed agent_id=${socket.agentId} connection_id=${socket.connectionId} error=${error instanceof Error ? error.message : String(error)}`,
+          );
+          this.releaseSocketState(socket, {
+            errorCode: 'AGENT_CONNECTION_AUTHORITY_FAILED',
+            errorMessage: 'agent_connection_authority_failed',
+            closeCode: 1011,
+            closeReason: 'agent_connection_authority_failed',
+          });
+        }
+      });
+    const trackedRefreshTask = this.trackBackgroundTask(refreshTask.finally(() => {
+      if (socket.refreshChain === trackedRefreshTask) {
+        socket.refreshChain = undefined;
+      }
+    }));
+    socket.refreshChain = trackedRefreshTask;
+  }
+
+  private async getAuthoritativeConnection(
+    agentId: string,
+    sessionId: string,
+    scope: DispatchScope,
+  ) {
+    return this.agentResourceService.getSessionConnectionInfo(agentId, sessionId, {
+      allowAgentFallback: scope === 'agent_fallback',
+    });
+  }
+
+  private resolvePrimarySocket(agentId: string, sessionId: string, scope: DispatchScope): AgentSocketState | undefined {
+    if (scope === 'session_strict') {
+      return this.socketsByKey.get(buildSocketKey(agentId, sessionId));
+    }
+    const exact = this.socketsByKey.get(buildSocketKey(agentId, sessionId));
+    if (exact) return exact;
+    return this.socketsByKey.get(buildSocketKey(agentId));
+  }
+
+  private async resolveDispatchSocket(input: {
+    agentId: string;
+    sessionId: string;
+    scope: DispatchScope;
+  }): Promise<AgentSocketState | null> {
+    const local = this.resolvePrimarySocket(input.agentId, input.sessionId, input.scope);
+    const authoritative = await this.getAuthoritativeConnection(input.agentId, input.sessionId, input.scope);
+    if (!authoritative) {
+      if (local) {
+        this.releaseSocketState(local, {
+          errorCode: 'AGENT_STALE_CONNECTION',
+          errorMessage: 'agent_stale_connection',
+          closeCode: 4001,
+          closeReason: 'agent_stale_connection',
+        });
+      }
+      return null;
+    }
+    if (authoritative.api_instance_id && authoritative.api_instance_id !== this.apiInstanceId) {
+      if (local) {
+        this.releaseSocketState(local, {
+          errorCode: 'AGENT_STALE_CONNECTION',
+          errorMessage: 'agent_stale_connection',
+          closeCode: 4001,
+          closeReason: 'agent_stale_connection',
+        });
+      }
+      return null;
+    }
+    if (!this.isSocketDispatchable(local)) {
+      return null;
+    }
+    if (local.connectionId !== authoritative.connection_id) {
+      this.releaseSocketState(local, {
+        errorCode: 'AGENT_STALE_CONNECTION',
+        errorMessage: 'agent_stale_connection',
+        closeCode: 4001,
+        closeReason: 'agent_stale_connection',
+      });
+      return null;
+    }
+    return local;
+  }
+
+  private queueTerminalControlFrame(input: {
+    socket: AgentSocketState;
+    sessionId: string;
+    terminalSessionId: string;
+    type: 'server.terminal.stdin' | 'server.terminal.resize' | 'server.terminal.close';
+    payload: Record<string, unknown>;
+  }): void {
+    const task = this.resolveDispatchSocket({
+      agentId: input.socket.agentId,
+      sessionId: input.sessionId,
+      scope: 'session_strict',
+    }).then((authoritativeSocket) => {
+      if (!authoritativeSocket || authoritativeSocket !== input.socket) {
+        return;
+      }
+      if (!input.socket.terminalBySessionId.has(input.terminalSessionId)) {
+        return;
+      }
+      if (input.socket.ws.readyState !== input.socket.ws.OPEN) {
+        return;
+      }
+      input.socket.ws.send(
+        JSON.stringify({
+          type: input.type,
+          session_id: input.sessionId,
+          terminal_session_id: input.terminalSessionId,
+          timestamp: new Date().toISOString(),
+          payload: input.payload,
+        }),
+      );
     }).catch((error) => {
       debugExecution(
-        `release presence failed agent_id=${socket.agentId} connection_id=${socket.connectionId} error=${error instanceof Error ? error.message : String(error)}`,
+        `terminal control authority failed agent_id=${input.socket.agentId} connection_id=${input.socket.connectionId} terminal_session=${input.terminalSessionId} error=${error instanceof Error ? error.message : String(error)}`,
       );
+      this.releaseSocketState(input.socket, {
+        errorCode: 'AGENT_CONNECTION_AUTHORITY_FAILED',
+        errorMessage: 'agent_connection_authority_failed',
+        closeCode: 1011,
+        closeReason: 'agent_connection_authority_failed',
+      });
     });
+    void this.trackBackgroundTask(task);
   }
 
   private async registerSocketLifecycle(args: {
     socketKey: string;
     socket: AgentSocketState;
+    previousSocket?: AgentSocketState;
     remoteIp?: string;
   }): Promise<void> {
     try {
@@ -686,29 +894,74 @@ export class AgentExecutionService {
         connectedAt: args.socket.connectedAt,
         lastPongAt: args.socket.lastPongAt,
       });
+      args.socket.presenceRegistered = true;
     } catch (error) {
       debugExecution(
         `register failed agent_id=${args.socket.agentId} connection_id=${args.socket.connectionId} error=${error instanceof Error ? error.message : String(error)}`,
       );
-      this.releaseSocketState(args.socketKey, args.socket, {
+      if (args.previousSocket && args.previousSocket.lifecyclePhase !== 'closed' && this.isSocketOpen(args.previousSocket)) {
+        args.previousSocket.lifecyclePhase = 'active';
+        this.socketsByKey.set(args.socketKey, args.previousSocket);
+      }
+      this.releaseSocketState(args.socket, {
         errorCode: 'AGENT_CONNECTION_REGISTRATION_FAILED',
         errorMessage: 'agent_connection_registration_failed',
         closeCode: 1011,
         closeReason: 'agent_connection_registration_failed',
+        skipPresenceUpdate: true,
       });
       return;
     }
 
-    if (this.socketsByKey.get(args.socketKey) !== args.socket) {
-      this.releaseSocketPresence(args.socket);
+    if (this.shuttingDown) {
+      this.releaseSocketState(args.socket, {
+        errorCode: 'AGENT_SERVICE_SHUTDOWN',
+        errorMessage: 'agent_service_shutdown',
+        closeCode: 1001,
+        closeReason: 'server_shutdown',
+      });
       return;
     }
+    if (!this.isSocketOpen(args.socket)) {
+      if (args.previousSocket && args.previousSocket.lifecyclePhase !== 'closed' && this.isSocketOpen(args.previousSocket)) {
+        await this.agentResourceService.registerAgentConnection({
+          agentId: args.previousSocket.agentId,
+          workspaceId: args.previousSocket.workspaceId,
+          projectId: args.previousSocket.projectId,
+          connectionId: args.previousSocket.connectionId,
+          socketKey: args.previousSocket.socketKey,
+          apiInstanceId: args.previousSocket.apiInstanceId,
+          ...(args.previousSocket.sessionId ? { sessionId: args.previousSocket.sessionId } : {}),
+          protocolVersion: '1.0',
+          connectedAt: args.previousSocket.connectedAt,
+          lastPongAt: args.previousSocket.lastPongAt,
+        }).catch(() => undefined);
+        args.previousSocket.presenceRegistered = true;
+        args.previousSocket.lifecyclePhase = 'active';
+        this.socketsByKey.set(args.socketKey, args.previousSocket);
+      } else {
+        await this.scheduleSocketPresenceRelease(args.socket);
+      }
+      return;
+    }
+    args.socket.lifecyclePhase = 'active';
+    this.socketsByKey.set(args.socketKey, args.socket);
     this.startHeartbeat(args.socketKey, args.socket);
+    if (args.previousSocket && args.previousSocket !== args.socket && args.previousSocket.lifecyclePhase !== 'closed') {
+      args.previousSocket.lifecyclePhase = 'superseded';
+      this.releaseSocketState(args.previousSocket, {
+        errorCode: 'AGENT_DISCONNECTED',
+        errorMessage: 'agent_reconnected',
+        closeCode: 1012,
+        closeReason: 'agent_replaced',
+        skipPresenceUpdate: true,
+      });
+    }
   }
 
   private async runHeartbeatTick(socketKey: string, socket: AgentSocketState): Promise<void> {
     const current = this.socketsByKey.get(socketKey);
-    if (current !== socket) return;
+    if (current !== socket || socket.lifecyclePhase !== 'active') return;
 
     let isCurrent = false;
     try {
@@ -717,7 +970,7 @@ export class AgentExecutionService {
       debugExecution(
         `heartbeat authority failed agent_id=${socket.agentId} connection_id=${socket.connectionId} error=${error instanceof Error ? error.message : String(error)}`,
       );
-      this.releaseSocketState(socketKey, socket, {
+      this.releaseSocketState(socket, {
         errorCode: 'AGENT_CONNECTION_AUTHORITY_FAILED',
         errorMessage: 'agent_connection_authority_failed',
         closeCode: 1011,
@@ -729,7 +982,7 @@ export class AgentExecutionService {
     if (this.socketsByKey.get(socketKey) !== socket) return;
 
     if (!isCurrent) {
-      this.releaseSocketState(socketKey, socket, {
+      this.releaseSocketState(socket, {
         errorCode: 'AGENT_STALE_CONNECTION',
         errorMessage: 'agent_stale_connection',
         closeCode: 4001,
@@ -738,7 +991,7 @@ export class AgentExecutionService {
       return;
     }
     if (socket.ws.readyState !== socket.ws.OPEN) {
-      this.releaseSocketState(socketKey, socket, {
+      this.releaseSocketState(socket, {
         errorCode: 'AGENT_DISCONNECTED',
         errorMessage: 'agent_disconnected',
         closeCode: 1006,
@@ -748,7 +1001,7 @@ export class AgentExecutionService {
       return;
     }
     if (socket.missedPongs >= this.options.heartbeatMaxMisses) {
-      this.releaseSocketState(socketKey, socket, {
+      this.releaseSocketState(socket, {
         errorCode: 'AGENT_HEARTBEAT_TIMEOUT',
         errorMessage: 'agent_heartbeat_timeout',
         closeCode: 4000,
@@ -767,7 +1020,6 @@ export class AgentExecutionService {
   }
 
   private releaseSocketState(
-    socketKey: string,
     socket: AgentSocketState,
     options: {
       errorCode: string;
@@ -778,8 +1030,8 @@ export class AgentExecutionService {
       skipPresenceUpdate?: boolean;
     },
   ): void {
-    const current = this.socketsByKey.get(socketKey);
-    if (current !== socket) return;
+    if (socket.lifecyclePhase === 'closed' || socket.lifecyclePhase === 'closing') return;
+    socket.lifecyclePhase = 'closing';
 
     this.clearSocketHeartbeat(socket);
     for (const [requestId, pending] of socket.pendingByRequestId.entries()) {
@@ -803,15 +1055,21 @@ export class AgentExecutionService {
       });
       pending.close();
     }
-    this.socketsByKey.delete(socketKey);
+    if (this.socketsByKey.get(socket.socketKey) === socket) {
+      this.socketsByKey.delete(socket.socketKey);
+    }
+    this.socketsByWebSocket.delete(socket.ws);
 
     if (!options.skipCloseFrame && socket.ws.readyState === socket.ws.OPEN) {
       socket.ws.close(options.closeCode, options.closeReason);
     }
 
     if (!options.skipPresenceUpdate) {
-      this.releaseSocketPresence(socket);
+      void this.scheduleSocketPresenceRelease(socket).catch(() => undefined);
+    } else {
+      socket.presenceRegistered = false;
     }
+    socket.lifecyclePhase = 'closed';
   }
 
   async dispatchStreamingRequest(input: {
@@ -826,8 +1084,15 @@ export class AgentExecutionService {
     if (this.shuttingDown) {
       throw new Error('agent_execution_service_shutdown');
     }
-    const socket = this.resolveSocket(input.agentId, input.sessionId);
-    if (!socket || socket.ws.readyState !== socket.ws.OPEN) {
+    const dispatchScope: DispatchScope = input.executionContext?.interaction_kind === 'notebook'
+      ? 'session_strict'
+      : 'agent_fallback';
+    const socket = await this.resolveDispatchSocket({
+      agentId: input.agentId,
+      sessionId: input.sessionId,
+      scope: dispatchScope,
+    });
+    if (!socket) {
       throw new Error('agent_offline');
     }
     if (socket.workspaceId !== input.workspaceId || socket.projectId !== input.projectId) {
@@ -921,8 +1186,12 @@ export class AgentExecutionService {
     debugExecution(
       `dispatch_terminal_start agent_id=${input.agentId} runner_session=${input.sessionId} terminal_session=${input.terminalSessionId}`,
     );
-    const socket = this.resolveSocket(input.agentId, input.sessionId);
-    if (!socket || socket.ws.readyState !== socket.ws.OPEN) {
+    const socket = await this.resolveDispatchSocket({
+      agentId: input.agentId,
+      sessionId: input.sessionId,
+      scope: 'session_strict',
+    });
+    if (!socket) {
       debugExecution(
         `dispatch_terminal_offline agent_id=${input.agentId} runner_session=${input.sessionId} terminal_session=${input.terminalSessionId}`,
       );
@@ -976,43 +1245,31 @@ export class AgentExecutionService {
     return {
       stream: queue.iterable,
       writeInput: (data: string) => {
-        if (!socket.terminalBySessionId.has(input.terminalSessionId)) return;
-        if (socket.ws.readyState !== socket.ws.OPEN) return;
-        socket.ws.send(
-          JSON.stringify({
-            type: 'server.terminal.stdin',
-            session_id: input.sessionId,
-            terminal_session_id: input.terminalSessionId,
-            timestamp: new Date().toISOString(),
-            payload: { data },
-          }),
-        );
+        this.queueTerminalControlFrame({
+          socket,
+          sessionId: input.sessionId,
+          terminalSessionId: input.terminalSessionId,
+          type: 'server.terminal.stdin',
+          payload: { data },
+        });
       },
       resize: (cols: number, rows: number) => {
-        if (!socket.terminalBySessionId.has(input.terminalSessionId)) return;
-        if (socket.ws.readyState !== socket.ws.OPEN) return;
-        socket.ws.send(
-          JSON.stringify({
-            type: 'server.terminal.resize',
-            session_id: input.sessionId,
-            terminal_session_id: input.terminalSessionId,
-            timestamp: new Date().toISOString(),
-            payload: { cols, rows },
-          }),
-        );
+        this.queueTerminalControlFrame({
+          socket,
+          sessionId: input.sessionId,
+          terminalSessionId: input.terminalSessionId,
+          type: 'server.terminal.resize',
+          payload: { cols, rows },
+        });
       },
       close: () => {
-        if (!socket.terminalBySessionId.has(input.terminalSessionId)) return;
-        if (socket.ws.readyState !== socket.ws.OPEN) return;
-        socket.ws.send(
-          JSON.stringify({
-            type: 'server.terminal.close',
-            session_id: input.sessionId,
-            terminal_session_id: input.terminalSessionId,
-            timestamp: new Date().toISOString(),
-            payload: {},
-          }),
-        );
+        this.queueTerminalControlFrame({
+          socket,
+          sessionId: input.sessionId,
+          terminalSessionId: input.terminalSessionId,
+          type: 'server.terminal.close',
+          payload: {},
+        });
       },
     };
   }
@@ -1024,8 +1281,12 @@ export class AgentExecutionService {
     agentId: string;
     terminalSessionId: string;
   }): Promise<'signaled' | 'agent_offline' | 'agent_workspace_mismatch'> {
-    const socket = this.resolveSocket(input.agentId, input.sessionId);
-    if (!socket || socket.ws.readyState !== socket.ws.OPEN) {
+    const socket = await this.resolveDispatchSocket({
+      agentId: input.agentId,
+      sessionId: input.sessionId,
+      scope: 'session_strict',
+    });
+    if (!socket) {
       return 'agent_offline';
     }
     if (socket.workspaceId !== input.workspaceId || socket.projectId !== input.projectId) {
@@ -1044,11 +1305,10 @@ export class AgentExecutionService {
     return 'signaled';
   }
 
-  private handleSocketClose(socketKey: string, ws: WebSocket): void {
-    const socket = this.socketsByKey.get(socketKey);
+  private handleSocketClose(ws: WebSocket): void {
+    const socket = this.socketsByWebSocket.get(ws);
     if (!socket) return;
-    if (socket.ws !== ws) return;
-    this.releaseSocketState(socketKey, socket, {
+    this.releaseSocketState(socket, {
       errorCode: 'AGENT_DISCONNECTED',
       errorMessage: 'agent_disconnected',
       closeCode: 1006,
@@ -1057,10 +1317,9 @@ export class AgentExecutionService {
     });
   }
 
-  private handleAgentMessage(socketKey: string, ws: WebSocket, raw: RawData): void {
-    const socket = this.socketsByKey.get(socketKey);
+  private handleAgentMessage(ws: WebSocket, raw: RawData): void {
+    const socket = this.socketsByWebSocket.get(ws);
     if (!socket) return;
-    if (socket.ws !== ws) return;
 
     let payload: {
       type?: string;
@@ -1074,7 +1333,7 @@ export class AgentExecutionService {
         payload?: Record<string, unknown>;
       };
     } catch {
-      const state = this.socketsByKey.get(socketKey);
+      const state = this.socketsByWebSocket.get(ws);
       if (state) {
         state.ws.close(1003, 'invalid_json');
       }
@@ -1085,20 +1344,7 @@ export class AgentExecutionService {
       const now = new Date().toISOString();
       socket.lastPongAt = now;
       socket.missedPongs = 0;
-      void this.agentResourceService.refreshAgentConnection({
-        agentId: socket.agentId,
-        connectionId: socket.connectionId,
-        lastPongAt: now,
-        protocolVersion: '1.0',
-      }).then((result) => {
-        if (!result.stale) return;
-        this.releaseSocketState(socketKey, socket, {
-          errorCode: 'AGENT_STALE_CONNECTION',
-          errorMessage: 'agent_stale_connection',
-          closeCode: 4001,
-          closeReason: 'agent_stale_connection',
-        });
-      });
+      this.queueSocketRefresh(socket, now);
       return;
     }
 
@@ -1344,8 +1590,8 @@ export class AgentExecutionService {
   async shutdown(): Promise<void> {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
-    for (const [socketKey, socket] of [...this.socketsByKey.entries()]) {
-      this.releaseSocketState(socketKey, socket, {
+    for (const socket of [...this.socketsByWebSocket.values()]) {
+      this.releaseSocketState(socket, {
         errorCode: 'AGENT_SERVICE_SHUTDOWN',
         errorMessage: 'agent_service_shutdown',
         closeCode: 1001,
@@ -1355,29 +1601,36 @@ export class AgentExecutionService {
     await new Promise<void>((resolve) => {
       this.wsServer.close(() => resolve());
     });
+    await Promise.allSettled([...this.backgroundTasks]);
   }
 
   getAgentOnlineState(agentId: string): boolean {
     return [...this.socketsByKey.values()].some((socket) => (
-      socket.agentId === agentId && socket.ws.readyState === socket.ws.OPEN
+      socket.agentId === agentId && this.isSocketDispatchable(socket)
     ));
   }
 
   getAgentSessionOnlineState(agentId: string, sessionId?: string): boolean {
-    const socket = this.resolveSocket(agentId, sessionId);
-    return !!socket && socket.ws.readyState === socket.ws.OPEN;
+    const key = sessionId ? buildSocketKey(agentId, sessionId) : buildSocketKey(agentId);
+    return this.isSocketDispatchable(this.socketsByKey.get(key));
   }
 
   async getAgentSessionDispatchAuthority(
     agentId: string,
     sessionId: string,
   ): Promise<RunnerSessionDispatchAuthority> {
-    const socket = this.resolveSocket(agentId, sessionId);
-    if (socket && socket.ws.readyState === socket.ws.OPEN) {
+    const socket = this.socketsByKey.get(buildSocketKey(agentId, sessionId));
+    const connection = await this.agentResourceService.getSessionConnectionInfo(agentId, sessionId, {
+      allowAgentFallback: false,
+    });
+    if (
+      connection
+      && connection.api_instance_id === this.apiInstanceId
+      && this.isSocketDispatchable(socket)
+      && socket.connectionId === connection.connection_id
+    ) {
       return 'local_dispatchable';
     }
-
-    const connection = await this.agentResourceService.getSessionConnectionInfo(agentId, sessionId);
     if (connection?.api_instance_id && connection.api_instance_id !== this.apiInstanceId) {
       return 'remote_owned_not_local_dispatchable';
     }
@@ -1388,26 +1641,9 @@ export class AgentExecutionService {
   listOnlineAgentIds(): string[] {
     return [...new Set(
       [...this.socketsByKey.values()]
-        .filter((socket) => socket.ws.readyState === socket.ws.OPEN)
+        .filter((socket) => this.isSocketDispatchable(socket))
         .map((socket) => socket.agentId),
     )];
-  }
-
-  private resolveSocket(agentId: string, sessionId?: string): AgentSocketState | undefined {
-    if (sessionId) {
-      const exact = this.socketsByKey.get(buildSocketKey(agentId, sessionId));
-      if (exact) {
-        debugExecution(`resolve_socket_exact agent_id=${agentId} runner_session=${sessionId}`);
-        return exact;
-      }
-    }
-    const fallback = this.socketsByKey.get(buildSocketKey(agentId));
-    if (fallback) {
-      debugExecution(`resolve_socket_fallback agent_id=${agentId} runner_session=${sessionId ?? ''}`);
-    } else {
-      debugExecution(`resolve_socket_missing agent_id=${agentId} runner_session=${sessionId ?? ''}`);
-    }
-    return fallback;
   }
 }
 

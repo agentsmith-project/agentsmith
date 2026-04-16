@@ -9,13 +9,24 @@
   "narrative": "Governance scenes cover system workspace management, membership and access governance, agents, endpoints, resource policy, and project settings surfaces without mixing in monitoring or connection lifecycle flows.",
   "scenes": [
     {
-      "sceneId": "system-workspaces",
+      "sceneId": "system-workspaces-empty",
       "route": "/en-US/system/workspaces",
       "recipeFamily": "system_admin_detail",
       "authLane": "system_admin",
       "stableMarkers": [
         "system-workspaces__list",
         "system-workspaces__editor-empty"
+      ]
+    },
+    {
+      "sceneId": "system-workspaces-default",
+      "route": "/en-US/system/workspaces",
+      "recipeFamily": "system_admin_detail",
+      "authLane": "system_admin",
+      "stableMarkers": [
+        "system-workspaces__list",
+        "system-workspaces__editor",
+        "system-workspaces__read-only-notice"
       ]
     },
     {
@@ -247,9 +258,9 @@
     "visualReview": {
       "scenes": [
         {
-          "sceneId": "system-workspaces",
-          "scenarioId": "system-workspaces",
-          "scenario": "System workspaces page in default list/detail state.",
+          "sceneId": "system-workspaces-empty",
+          "scenarioId": "system-workspaces-empty",
+          "scenario": "System workspaces page in empty state before any workspace exists.",
           "group": "system_pages",
           "codeRefs": [
             "e2e/visual.spec.ts",
@@ -264,6 +275,27 @@
           "semanticAssertions": {
             "primaryActionTestIds": [
               "system-workspaces__empty-create"
+            ],
+            "maxProminentActions": 1
+          }
+        },
+        {
+          "sceneId": "system-workspaces-default",
+          "scenarioId": "system-workspaces-default",
+          "scenario": "System workspaces page in default read-only list/detail state with a selected workspace.",
+          "group": "system_pages",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/components/system/SystemWorkspacesPage.tsx"
+          ],
+          "capture": "full_page",
+          "authLane": "system_admin",
+          "themes": [
+            "default"
+          ],
+          "semanticAssertions": {
+            "primaryActionTestIds": [
+              "system-workspaces__new-workspace"
             ],
             "maxProminentActions": 1
           }

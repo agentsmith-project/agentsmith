@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CachePort } from '@mbos/ports';
 import { InMemoryCache } from '@mbos/adapters-private';
 import { createAgentPresenceStore } from './agent-presence-store.js';
@@ -97,6 +97,38 @@ class RaceyCache implements CachePort {
     this.nextWritePause = null;
     pause.resolveEntered();
     await pause.resumePromise;
+  }
+}
+
+class CountingRaceyCache extends RaceyCache {
+  compareAndSetCalls = 0;
+
+  override async compareAndSet(
+    key: string,
+    expectedValue: string | null,
+    nextValue: string | null,
+    ttlSeconds?: number,
+  ): Promise<boolean> {
+    this.compareAndSetCalls += 1;
+    return super.compareAndSet(key, expectedValue, nextValue, ttlSeconds);
+  }
+}
+
+class FlakyCasCache extends CountingRaceyCache {
+  failCompareAndSetCount = 0;
+
+  override async compareAndSet(
+    key: string,
+    expectedValue: string | null,
+    nextValue: string | null,
+    ttlSeconds?: number,
+  ): Promise<boolean> {
+    if (this.failCompareAndSetCount > 0) {
+      this.compareAndSetCalls += 1;
+      this.failCompareAndSetCount -= 1;
+      return false;
+    }
+    return super.compareAndSet(key, expectedValue, nextValue, ttlSeconds);
   }
 }
 
@@ -365,9 +397,10 @@ describe('AgentPresenceStore', () => {
       }),
     });
 
-    const pause = cacheA.pauseNextWrite();
-    const cleanup = reader.getPresence('ag_reader_cleanup_race');
-    await pause.entered;
+    await expect(reader.getPresence('ag_reader_cleanup_race')).resolves.toEqual(expect.objectContaining({
+      activeConnectionCount: 0,
+      latestConnection: null,
+    }));
     await writer.upsertConnection({
       agentId: 'ag_reader_cleanup_race',
       workspaceId: 'ws_default',
@@ -377,12 +410,67 @@ describe('AgentPresenceStore', () => {
       apiInstanceId: 'api_b',
       lastPongAt: '2026-03-18T00:00:05.000Z',
     });
-    pause.resume();
-    await cleanup;
 
     await expect(writer.getPresence('ag_reader_cleanup_race')).resolves.toEqual(expect.objectContaining({
       activeConnectionCount: 1,
       latestConnection: expect.objectContaining({ connection_id: 'conn_new' }),
     }));
+  });
+
+  it('treats getPresence as a pure read without compareAndSet cleanup writes', async () => {
+    const sharedStore = new Map<string, SharedCacheRecord>();
+    const cache = new CountingRaceyCache(sharedStore);
+    const store = createAgentPresenceStore(cache);
+
+    await store.upsertConnection({
+      agentId: 'ag_read_only',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_read_only',
+      socketKey: 'ag_read_only',
+      apiInstanceId: 'api_a',
+      lastPongAt: '2026-03-18T00:00:00.000Z',
+    });
+    const compareAndSetCallsAfterWrite = cache.compareAndSetCalls;
+
+    await expect(store.getPresence('ag_read_only')).resolves.toEqual(expect.objectContaining({
+      activeConnectionCount: 1,
+      latestConnection: expect.objectContaining({
+        connection_id: 'conn_read_only',
+      }),
+    }));
+    await expect(store.getPresence('ag_read_only')).resolves.toEqual(expect.objectContaining({
+      activeConnectionCount: 1,
+    }));
+    expect(cache.compareAndSetCalls).toBe(compareAndSetCallsAfterWrite);
+  });
+
+  it('backs off between CAS retries instead of hot-spinning the shared presence key', async () => {
+    const sharedStore = new Map<string, SharedCacheRecord>();
+    const cache = new FlakyCasCache(sharedStore);
+    cache.failCompareAndSetCount = 3;
+    const store = createAgentPresenceStore(cache);
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+
+    try {
+      await expect(store.upsertConnection({
+        agentId: 'ag_cas_backoff',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        connectionId: 'conn_backoff',
+        socketKey: 'ag_cas_backoff',
+        apiInstanceId: 'api_a',
+        lastPongAt: '2026-03-18T00:00:00.000Z',
+      })).resolves.toEqual(expect.objectContaining({
+        activeConnectionCount: 1,
+        latestConnection: expect.objectContaining({
+          connection_id: 'conn_backoff',
+        }),
+      }));
+      expect(cache.compareAndSetCalls).toBeGreaterThanOrEqual(4);
+      expect(timeoutSpy).toHaveBeenCalled();
+    } finally {
+      timeoutSpy.mockRestore();
+    }
   });
 });

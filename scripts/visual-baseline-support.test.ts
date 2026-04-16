@@ -1,5 +1,8 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
+  existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   writeFileSync,
@@ -26,6 +29,33 @@ import {
   resolveVisualBaselineReviewDir,
   type VisualBaselineCatalogEntry,
 } from '../e2e/visual-baseline-support';
+
+function seedRunBoundVisualActualCaptures(
+  buildInfoPath: string,
+  overrides: Record<string, string | Buffer> = {},
+  includedScenarioIds?: readonly string[],
+): string {
+  const actualRoot = path.join(path.dirname(buildInfoPath), 'visual-actual-captures');
+  const screenshotRoot = path.resolve('e2e/__screenshots__/visual.spec.ts');
+  const includedScenarios = includedScenarioIds ? new Set(includedScenarioIds) : null;
+
+  for (const scenario of groupVisualBaselineCatalogByScenario().values()) {
+    if (includedScenarios && !includedScenarios.has(scenario.scenarioId)) {
+      continue;
+    }
+    for (const entry of scenario.entries) {
+      const relativeCapturePath = path.join(scenario.scenarioId, entry.screenshot);
+      const targetPath = path.join(actualRoot, relativeCapturePath);
+      mkdirSync(path.dirname(targetPath), { recursive: true });
+      writeFileSync(
+        targetPath,
+        overrides[relativeCapturePath] ?? readFileSync(path.join(screenshotRoot, entry.screenshot)),
+      );
+    }
+  }
+
+  return actualRoot;
+}
 
 describe('visual baseline support', () => {
   it('catalogs every committed visual baseline screenshot exactly once', async () => {
@@ -186,13 +216,16 @@ describe('visual baseline support', () => {
   });
 
   it('declares scene-owned prominent action limits for CTA hierarchy review scenes', () => {
-    const systemWorkspaces = groupVisualBaselineCatalogByScenario().get('system-workspaces');
+    const systemWorkspacesEmpty = groupVisualBaselineCatalogByScenario().get('system-workspaces-empty');
+    const systemWorkspacesDefault = groupVisualBaselineCatalogByScenario().get('system-workspaces-default');
     const failedSystemWorkspaces = groupVisualBaselineCatalogByScenario().get('system-workspaces-failed-state');
     const disabledConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-disabled');
     const connectedConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-connected');
 
-    expect(systemWorkspaces?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__empty-create']);
-    expect(systemWorkspaces?.semanticAssertions.maxProminentActions).toBe(1);
+    expect(systemWorkspacesEmpty?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__empty-create']);
+    expect(systemWorkspacesEmpty?.semanticAssertions.maxProminentActions).toBe(1);
+    expect(systemWorkspacesDefault?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__new-workspace']);
+    expect(systemWorkspacesDefault?.semanticAssertions.maxProminentActions).toBe(1);
     expect(failedSystemWorkspaces?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__enable-edit']);
     expect(failedSystemWorkspaces?.semanticAssertions.maxProminentActions).toBe(1);
     expect(disabledConnections?.semanticAssertions.primaryActionTestIds).toEqual([]);
@@ -210,6 +243,21 @@ describe('visual baseline support', () => {
     ]));
     expect(resolveVisualBaselineSemanticAssertions('workspace-connections-feishu-connected').forbiddenVisibleTextPatterns)
       .toContain(String.raw`\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z\b`);
+  });
+
+  it('declares required viewer-local datetime metadata for scenes that expose user-facing timestamps', () => {
+    const connectedConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-connected');
+    const notebookLifecycleList = groupVisualBaselineCatalogByScenario().get('notebook-task-lifecycle-list');
+
+    expect(connectedConnections?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
+      'workspace-connections__last-refresh-value',
+    ]);
+    expect(notebookLifecycleList?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
+      'notebook__task-last-activity',
+      'notebook__task-created-at',
+    ]);
+    expect(resolveVisualBaselineSemanticAssertions('workspace-connections-feishu-connected').requiredViewerLocalDateTimeTestIds)
+      .toContain('workspace-connections__last-refresh-value');
   });
 
   it('rejects invalid story-owned forbidden visible text regex patterns before visual runtime', () => {
@@ -271,6 +319,67 @@ describe('visual baseline support', () => {
 ---
 `),
     ).toThrow(/forbidden visible text pattern/i);
+  });
+
+  it('rejects non-list viewer-local datetime semantic assertions before visual runtime', () => {
+    expect(() =>
+      parseStoryDefinition(`
+---
+{
+  "storyId": "invalid-viewer-local-datetime-assertion",
+  "title": "Invalid viewer local datetime assertion",
+  "actor": "reviewer",
+  "lane": "mock-lane",
+  "family": "visual-review",
+  "personas": ["reviewer"],
+  "kind": "review",
+  "gatePolicy": {
+    "tier": "default",
+    "requiredEvidence": ["visual"]
+  },
+  "externalDependencies": [],
+  "entryRoute": "/en-US/workspaces/ws_default/connections",
+  "goal": "Verify viewer-local datetime semantic contracts fail before runtime.",
+  "narrative": "Viewer-local datetime rules must be structurally valid before the screenshot lane runs.",
+  "scenes": [
+    {
+      "sceneId": "workspace-connections",
+      "route": "/en-US/workspaces/ws_default/connections",
+      "stableMarkers": ["workspace-connections__capability-note"]
+    }
+  ],
+  "steps": [
+    {
+      "stepId": "open-workspace-connections",
+      "sceneId": "workspace-connections",
+      "intent": "Open workspace connections",
+      "action": "Open workspace connections",
+      "target": "workspace-connections__capability-note",
+      "expectedFeedback": "Workspace connections are ready for review",
+      "evidence": ["visual"]
+    }
+  ],
+  "runtimeData": {
+    "visualReview": {
+      "scenes": [
+        {
+          "sceneId": "workspace-connections",
+          "scenarioId": "workspace-connections",
+          "scenario": "Workspace connections visual review.",
+          "group": "workspace_pages",
+          "codeRefs": ["e2e/visual.spec.ts"],
+          "capture": "full_page",
+          "semanticAssertions": {
+            "requiredViewerLocalDateTimeTestIds": "workspace-connections__last-refresh-value"
+          }
+        }
+      ]
+    }
+  }
+}
+---
+`),
+    ).toThrow(/viewer-local datetime test ids must be a list/i);
   });
 
   it('renders a UX acceptance record with reviewer proof, actual URL, story fingerprint, and screenshot hashes', () => {
@@ -394,7 +503,7 @@ describe('visual baseline support', () => {
 
   it('includes stable marker metadata in review markdown for non-public recipe families', () => {
     const grouped = groupVisualBaselineCatalogByScenario();
-    const scenario = grouped.get('system-workspaces');
+    const scenario = grouped.get('system-workspaces-empty');
     expect(scenario).toBeDefined();
 
     const markdown = renderVisualBaselineScenarioReviewMarkdown({
@@ -648,9 +757,15 @@ describe('visual baseline support', () => {
       'desktop-auth-complete__workspace-entry-link',
     ]);
 
-    expect(resolveVisualBaselineStableMarkers('system-workspaces')).toEqual([
+    expect(resolveVisualBaselineStableMarkers('system-workspaces-empty')).toEqual([
       'system-workspaces__list',
       'system-workspaces__editor-empty',
+    ]);
+
+    expect(resolveVisualBaselineStableMarkers('system-workspaces-default')).toEqual([
+      'system-workspaces__list',
+      'system-workspaces__editor',
+      'system-workspaces__read-only-notice',
     ]);
 
     expect(resolveVisualBaselineStableMarkers('workspace-feishu-setup-credentials')).toEqual([
@@ -862,6 +977,7 @@ describe('visual baseline support', () => {
       fingerprint: 'fingerprint-001',
       started_at: '2026-04-12T11:59:00.000Z',
     }, null, 2)}\n`);
+    seedRunBoundVisualActualCaptures(buildInfoPath);
 
     execFileSync('npx', ['tsx', 'scripts/governance/write-visual-baseline-reviews.ts'], {
       cwd: process.cwd(),
@@ -898,6 +1014,12 @@ describe('visual baseline support', () => {
       fingerprint: 'fingerprint-001',
       started_at: '2026-04-12T11:59:00.000Z',
     }, null, 2)}\n`);
+    const scenarioId = 'desktop-auth-complete';
+    const screenshotFile = 'desktop-auth-complete-dark.png';
+    const mutatedActual = Buffer.from('run-bound actual screenshot bytes for desktop-auth-complete-dark');
+    seedRunBoundVisualActualCaptures(buildInfoPath, {
+      [path.join(scenarioId, screenshotFile)]: mutatedActual,
+    });
 
     execFileSync('npx', ['tsx', 'scripts/governance/write-visual-baseline-reviews.ts'], {
       cwd: process.cwd(),
@@ -922,9 +1044,13 @@ describe('visual baseline support', () => {
         screenshots: Array<Record<string, unknown>>;
       }>;
     };
+    const scenarioRoute = groupVisualBaselineCatalogByScenario().get(scenarioId)?.route;
+    if (!scenarioRoute) {
+      throw new Error(`Missing ${scenarioId} visual scenario route.`);
+    }
 
     expect(manifest).toMatchObject({
-      schema: 'visual_baseline_run_manifest/v1',
+      schema: 'visual_baseline_run_manifest/v2',
       run_id: runId,
       build: {
         lane: 'mock-lane',
@@ -935,13 +1061,100 @@ describe('visual baseline support', () => {
       },
     });
 
-    const scenario = manifest.scenarios?.find((entry) => entry.scenario_id === 'desktop-auth-complete');
-    expect(scenario?.actual_url).toBe('/en-US/desktop/auth/complete');
-    expect(scenario?.screenshots[0]).toMatchObject({
+    const scenario = manifest.scenarios?.find((entry) => entry.scenario_id === scenarioId);
+    expect(scenario?.actual_url).toBe(scenarioRoute);
+    const screenshot = scenario?.screenshots.find((entry) => entry.file_name === screenshotFile);
+    expect(screenshot).toMatchObject({
       file_name: expect.any(String),
+      actual_relpath: expect.stringMatching(/^captured\/desktop-auth-complete\/.+\.png$/),
       actual_sha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
       baseline_sha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
     });
+    const actualRelPath = typeof screenshot?.actual_relpath === 'string'
+      ? screenshot.actual_relpath
+      : null;
+    const actualSha256 = typeof screenshot?.actual_sha256 === 'string'
+      ? screenshot.actual_sha256
+      : null;
+    expect(actualRelPath).toBeTruthy();
+    expect(actualSha256).toBeTruthy();
+    const actualCapturePath = path.join(outputRoot, runId, actualRelPath ?? '');
+    const actualCapture = readFileSync(actualCapturePath);
+    expect(actualSha256).toBe(
+      `sha256:${createHash('sha256').update(actualCapture).digest('hex')}`,
+    );
+    expect(actualCapture.equals(mutatedActual)).toBe(true);
+    expect(actualSha256).toBe(`sha256:${createHash('sha256').update(mutatedActual).digest('hex')}`);
+    expect(actualSha256).not.toBe(scenario?.screenshots[0]?.baseline_sha256);
+  });
+
+  it('writes review artifacts only for scenarios whose run-bound actual captures exist in the current run', () => {
+    const tempRoot = mkdtempSync(path.join(tmpdir(), 'visual-review-partial-run-'));
+    const buildInfoPath = path.join(tempRoot, 'visual-build-info.json');
+    const outputRoot = path.join(tempRoot, 'reviews');
+    const runId = 'run-20260412-partial';
+    writeFileSync(buildInfoPath, `${JSON.stringify({
+      lane: 'mock-lane',
+      run_id: runId,
+      git_sha: 'abc123',
+      fingerprint: 'fingerprint-partial',
+      started_at: '2026-04-12T11:59:00.000Z',
+    }, null, 2)}\n`);
+    const actualRoot = path.join(path.dirname(buildInfoPath), 'visual-actual-captures', 'desktop-auth-complete');
+    mkdirSync(actualRoot, { recursive: true });
+    writeFileSync(
+      path.join(actualRoot, 'desktop-auth-complete-light.png'),
+      Buffer.from('partial run-bound actual screenshot bytes for desktop-auth-complete-light'),
+    );
+
+    execFileSync('npx', ['tsx', 'scripts/governance/write-visual-baseline-reviews.ts'], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MOCK_RUN_ID: runId,
+        VISUAL_BASELINE_BUILD_INFO_FILE: buildInfoPath,
+        VISUAL_BASELINE_REVIEW_ROOT: outputRoot,
+      },
+      stdio: 'pipe',
+    });
+
+    const manifest = JSON.parse(
+      readFileSync(path.join(outputRoot, runId, 'run-manifest.json'), 'utf8'),
+    ) as {
+      scenarios?: Array<{ scenario_id: string; screenshots?: Array<{ file_name: string }> }>;
+    };
+
+    expect(manifest.scenarios?.map((entry) => entry.scenario_id)).toEqual(['desktop-auth-complete']);
+    expect(manifest.scenarios?.[0]?.screenshots).toEqual([
+      expect.objectContaining({ file_name: 'desktop-auth-complete-light.png' }),
+    ]);
+    expect(existsSync(path.join(outputRoot, runId, 'desktop-auth-complete', 'automated-pass.md'))).toBe(true);
+    expect(existsSync(path.join(outputRoot, runId, 'access-guide', 'automated-pass.md'))).toBe(false);
+  });
+
+  it('fails the review writer when the current run has no run-bound actual captures', () => {
+    const tempRoot = mkdtempSync(path.join(tmpdir(), 'visual-review-writer-missing-actual-'));
+    const buildInfoPath = path.join(tempRoot, 'visual-build-info.json');
+    const outputRoot = path.join(tempRoot, 'reviews');
+    const runId = 'run-20260412-001';
+    writeFileSync(buildInfoPath, `${JSON.stringify({
+      lane: 'mock-lane',
+      run_id: runId,
+      git_sha: 'abc123',
+      fingerprint: 'fingerprint-001',
+      started_at: '2026-04-12T11:59:00.000Z',
+    }, null, 2)}\n`);
+
+    expect(() => execFileSync('npx', ['tsx', 'scripts/governance/write-visual-baseline-reviews.ts'], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MOCK_RUN_ID: runId,
+        VISUAL_BASELINE_BUILD_INFO_FILE: buildInfoPath,
+        VISUAL_BASELINE_REVIEW_ROOT: outputRoot,
+      },
+      stdio: 'pipe',
+    })).toThrow();
   });
 
   it('fails the review writer when an explicit build info file is incomplete', () => {
@@ -993,6 +1206,15 @@ describe('visual baseline support', () => {
     expect(script).toContain('"started_at":');
   });
 
+  it('persists run-bound actual captures from the visual executor before review artifacts are written', async () => {
+    const visualSpec = await readFile(path.resolve('e2e/visual.spec.ts'), 'utf-8');
+
+    expect(visualSpec).toContain('resolveRunBoundActualCaptureRoot');
+    expect(visualSpec).toContain('visual-actual-captures');
+    expect(visualSpec).toContain('writeRunBoundActualCapture');
+    expect(visualSpec).toContain('await writeRunBoundActualCapture');
+  });
+
   it('publishes canonical lane-visual result and review evidence artifacts from CI', async () => {
     const workflow = await readFile('.github/workflows/quality-gates.yml', 'utf-8');
 
@@ -1034,9 +1256,13 @@ describe('visual baseline support', () => {
       storySourceFile: 'e2e/stories/mock-lane/mock-lane-workspace-project-core.story.md',
       storySceneId: 'workspace-home-project-creator',
     });
-    expect(grouped.get('system-workspaces')).toMatchObject({
+    expect(grouped.get('system-workspaces-empty')).toMatchObject({
       storySourceFile: 'e2e/stories/mock-lane/mock-lane-governance-surfaces.story.md',
-      storySceneId: 'system-workspaces',
+      storySceneId: 'system-workspaces-empty',
+    });
+    expect(grouped.get('system-workspaces-default')).toMatchObject({
+      storySourceFile: 'e2e/stories/mock-lane/mock-lane-governance-surfaces.story.md',
+      storySceneId: 'system-workspaces-default',
     });
     expect(grouped.get('alerts')).toMatchObject({
       storySourceFile: 'e2e/stories/mock-lane/mock-lane-alerts-and-usage-review.story.md',

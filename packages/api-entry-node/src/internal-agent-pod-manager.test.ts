@@ -330,4 +330,72 @@ describe('internal-agent-pod-manager', () => {
       internalAgentPodManagerModule.mapRunnerSessionAuthorityToSandboxError?.('remote_owned_not_local_dispatchable'),
     ).toBe('sandbox_remote_owned');
   });
+
+  it('does not trust a local session-online signal when dispatch authority is already remote-owned', async () => {
+    const createOrEnsurePod = vi.fn();
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn().mockResolvedValue({ phase: 'offline' }),
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: vi.fn(),
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(true),
+        getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('remote_owned_not_local_dispatchable'),
+      },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_xxx',
+        }),
+      }),
+    ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_REMOTE_OWNED' });
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
+
+  it('treats local dispatch authority as ready even if the weaker local session-online boolean has not caught up yet', async () => {
+    const createOrEnsurePod = vi.fn();
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn().mockResolvedValue({ phase: 'offline' }),
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: vi.fn(),
+      },
+      {
+        getAgentOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+        getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('local_dispatchable'),
+      },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_xxx',
+        }),
+      }),
+    ).resolves.toBeUndefined();
+    expect(createOrEnsurePod).not.toHaveBeenCalled();
+  });
 });

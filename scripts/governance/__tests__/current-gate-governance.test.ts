@@ -178,6 +178,7 @@ describe('current gate governance', () => {
     expect(releaseGate?.campaignEvidenceArtifacts).toEqual([
       '<campaign-root>/gate-release/native/result.json',
       '<campaign-root>/gate-release/backend-real-visual/review.md',
+      '<campaign-root>/gate-release/backend-real-visual/ux-traces/ux-trace-index.json',
       '<campaign-root>/gate-release/backend-real-visual/ux-traces',
     ]);
 

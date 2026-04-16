@@ -16,10 +16,14 @@ function buildSnapshot(
     captured_at: '2026-04-15T10:00:00.000Z',
     gateway_state_dir: '/repo/packages/api-entry-node/artifacts/file-library-gateway-state',
     task_mount_root: '/home/percy/ags-workspace',
+    api_processes: [],
+    helper_labels: [],
+    helper_processes: [],
     gateway_state_files: [],
     managed_gateway_labels: [],
     managed_gateway_processes: [],
     mounted_task_mounts: [],
+    tcp_connections: [],
     ...overrides,
   };
 }
@@ -238,6 +242,151 @@ describe('file library resource recovery', () => {
     );
   });
 
+  it('fails when api or gateway resource truth grows beyond the ready baseline', () => {
+    const baseline = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      managed_gateway_processes: [
+        {
+          pid: 3001,
+          label: 'state:existing-library',
+          library_id: 'existing-library',
+          owner_scope: 'api-v1:instance-a:boot-current',
+          state_file: 'existing-library.json',
+          open_fd_count: 18,
+          socket_fd_count: 4,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 19000,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+        {
+          process_label: 'state:existing-library',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+      ],
+    });
+    const current = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 27,
+          socket_fd_count: 8,
+        },
+      ],
+      managed_gateway_processes: [
+        {
+          pid: 3001,
+          label: 'state:existing-library',
+          library_id: 'existing-library',
+          owner_scope: 'api-v1:instance-a:boot-current',
+          state_file: 'existing-library.json',
+          open_fd_count: 21,
+          socket_fd_count: 5,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 19000,
+          state: 'ESTABLISHED',
+          count: 2,
+        },
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 19000,
+          state: 'CLOSE_WAIT',
+          count: 1,
+        },
+        {
+          process_label: 'state:existing-library',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 2,
+        },
+      ],
+    });
+
+    const report = compareResourceRecoveryBaseline({
+      step: 'file-library-real-smoke',
+      baseline,
+      current,
+    });
+
+    expect(report.status).toBe('fail');
+    expect(report.findings).toEqual(
+      expect.arrayContaining([
+        'api process fd count grew beyond the baseline after file-library-real-smoke for api-entry (pid 42001): expected <= 24, found 27',
+        'api process socket fd count grew beyond the baseline after file-library-real-smoke for api-entry (pid 42001): expected <= 6, found 8',
+        'managed gateway fd count grew beyond the baseline after file-library-real-smoke for state:existing-library (pid 3001): expected <= 18, found 21',
+        'managed gateway socket fd count grew beyond the baseline after file-library-real-smoke for state:existing-library (pid 3001): expected <= 4, found 5',
+        'tcp connection count grew beyond the baseline after file-library-real-smoke for api-entry -> 127.0.0.1:19000 [ESTABLISHED]: expected <= 1, found 2',
+        'unexpected tcp connections remained after file-library-real-smoke: api-entry -> 127.0.0.1:19000 [CLOSE_WAIT] x1',
+        'tcp connection count grew beyond the baseline after file-library-real-smoke for state:existing-library -> 127.0.0.1:15432 [ESTABLISHED]: expected <= 1, found 2',
+      ]),
+    );
+  });
+
+  it('fails when helper processes and their tcp connections remain beyond the ready baseline', () => {
+    const baseline = buildSnapshot();
+    const current = buildSnapshot({
+      helper_labels: ['helper:mc'],
+      helper_processes: [
+        {
+          pid: 5102,
+          label: 'helper:mc',
+          command: 'mc rb --force fladmin/jfs-lib-helper',
+          open_fd_count: 9,
+          socket_fd_count: 3,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'helper:mc',
+          remote_host: '127.0.0.1',
+          remote_port: 19000,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+      ],
+    });
+
+    const report = compareResourceRecoveryBaseline({
+      step: 'file-library-real-smoke',
+      baseline,
+      current,
+    });
+
+    expect(report.status).toBe('fail');
+    expect(report.findings).toEqual(
+      expect.arrayContaining([
+        'unexpected helper labels remained after file-library-real-smoke: helper:mc',
+        expect.stringContaining(
+          'helper processes did not return to the baseline after file-library-real-smoke for helper:mc',
+        ),
+        'unexpected tcp connections remained after file-library-real-smoke: helper:mc -> 127.0.0.1:19000 [ESTABLISHED] x1',
+      ]),
+    );
+  });
+
   it('fails closed when the mount cleanup probe cannot prove mount or process truth', () => {
     const report = compareResourceRecoveryBaseline({
       step: 'file-library-mount-sync-smoke',
@@ -296,7 +445,11 @@ describe('file library resource recovery', () => {
   });
 
   it('renders a structured summary that preserves per-step verdicts and carries failures upward', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+    });
     const summary = buildResourceRecoverySummary({
+      bootBaseline,
       baseline: buildSnapshot(),
       reports: [
         compareResourceRecoveryBaseline({
@@ -315,6 +468,7 @@ describe('file library resource recovery', () => {
     });
 
     expect(summary.status).toBe('fail');
+    expect(summary.boot_baseline).toEqual(bootBaseline);
     expect(summary.steps).toEqual([
       { step: 'file-library-real-smoke', status: 'pass' },
       { step: 'file-library-mount-sync-smoke', status: 'fail' },
@@ -324,5 +478,7 @@ describe('file library resource recovery', () => {
     );
     expect(summary.markdown).toContain('# File Library Resource Recovery Report');
     expect(summary.markdown).toContain('- overall_status: fail');
+    expect(summary.markdown).toContain('- boot_baseline_captured_at: 2026-04-15T09:55:00.000Z');
+    expect(summary.markdown).toContain('- ready_baseline_captured_at: 2026-04-15T10:00:00.000Z');
   });
 });

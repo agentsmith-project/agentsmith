@@ -1,6 +1,5 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { buttonVariants } from '@/components/ui/button';
 import { ProjectAdminGroupSection } from '../ProjectAdminGroupSection';
 
 describe('ProjectAdminGroupSection', () => {
@@ -38,9 +37,6 @@ describe('ProjectAdminGroupSection', () => {
 
     const saveButton = screen.getByTestId('settings__project-admins-save');
     expect(screen.getByTestId('settings__project-admins-header')).toContainElement(saveButton);
-    expect(saveButton.className).toBe(buttonVariants({
-      variant: 'primary',
-      className: 'shrink-0',
-    }));
+    expect(saveButton).toHaveAttribute('data-visual-prominence', 'primary');
   });
 });

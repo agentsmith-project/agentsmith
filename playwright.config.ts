@@ -16,6 +16,7 @@ const localWorkers = Number(process.env.PW_WORKERS ?? 6);
 const isCI = !!process.env.CI;
 const desktopViewport = { width: 1920, height: 1080 };
 const desktopWindowArgs = ['--window-size=1920,1080'];
+const visualTimezoneId = 'America/Los_Angeles';
 const managedMockRunId = `playwright-managed-${Date.now()}-${process.pid}`;
 const managedMockNextDistDir = `artifacts/mock-lane/runs/${managedMockRunId}/next-dist`;
 const managedMockWorkspaceRegistryFile = `artifacts/mock-lane/runs/${managedMockRunId}/system-workspaces.json`;
@@ -127,6 +128,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         viewport: desktopViewport,
+        timezoneId: visualTimezoneId,
         launchOptions: {
           args: desktopWindowArgs,
         },

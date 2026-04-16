@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
@@ -49,6 +50,7 @@ import {
   renderVisualBaselineAutomatedPassMarkdown,
   renderVisualBaselineScenarioReviewMarkdown,
   type VisualBaselineReviewRecord,
+  type VisualBaselineReviewEvidenceSnapshot,
   type VisualBaselineScenarioRecord,
 } from '../../../e2e/visual-baseline-support';
 
@@ -133,7 +135,7 @@ function writeNativeResult(
   });
 }
 
-function createFile(path: string, content = 'aggregate evidence fixture\n'): void {
+function createFile(path: string, content: string | Buffer = 'aggregate evidence fixture\n'): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content);
 }
@@ -246,11 +248,56 @@ function createManifestEvidence(campaignRoot: string, step: CurrentVerificationC
   }
 }
 
+function defaultVisualActualCaptureContent(
+  scenarioId: string,
+  fileName: string,
+): Buffer {
+  return Buffer.from(`aggregate-run actual capture ${scenarioId}/${fileName}`);
+}
+
+function buildVisualReviewEvidenceSnapshot(
+  scenario: VisualBaselineScenarioRecord,
+  scenarioOverride?: Partial<{
+    story_fingerprint: string;
+    screenshots: Array<{
+      file_name: string;
+      actual_relpath?: string;
+      actual_sha256: string;
+      baseline_sha256: string;
+      content?: string | Buffer;
+    }>;
+  }>,
+): VisualBaselineReviewEvidenceSnapshot {
+  const evidence = buildVisualBaselineScenarioEvidence(scenario);
+  const screenshotOverrides = new Map(
+    (scenarioOverride?.screenshots ?? [])
+      .filter((entry) => typeof entry.file_name === 'string')
+      .map((entry) => [entry.file_name, entry] as const),
+  );
+
+  return {
+    storyFingerprint: scenarioOverride?.story_fingerprint ?? evidence.storyFingerprint,
+    screenshots: evidence.screenshots.map((entry) => {
+      const override = screenshotOverrides.get(entry.fileName);
+      const actualCaptureContent = override?.content ?? defaultVisualActualCaptureContent(scenario.scenarioId, entry.fileName);
+      return {
+        fileName: entry.fileName,
+        actualSha256: override?.actual_sha256
+          ?? `sha256:${createHash('sha256').update(actualCaptureContent).digest('hex')}`,
+        baselineSha256: override?.baseline_sha256 ?? `sha256:${entry.baselineSha256}`,
+      };
+    }),
+  };
+}
+
 function renderVisualReviewFixture(
   campaignRoot: string,
   scenario: VisualBaselineScenarioRecord,
   reviewOverrides: Partial<VisualBaselineReviewRecord> = {},
-  options: { includeBuild?: boolean } = {},
+  options: {
+    includeBuild?: boolean;
+    evidenceSnapshot?: VisualBaselineReviewEvidenceSnapshot;
+  } = {},
 ): string {
   const includeBuild = options.includeBuild ?? true;
   return renderVisualBaselineScenarioReviewMarkdown({
@@ -274,6 +321,7 @@ function renderVisualReviewFixture(
       findings: ['Aggregate test visual review fixture.'],
       ...reviewOverrides,
     },
+    evidenceSnapshot: options.evidenceSnapshot ?? buildVisualReviewEvidenceSnapshot(scenario),
   });
 }
 
@@ -292,10 +340,13 @@ function writeVisualRunManifestFixture(
       string,
       Partial<{
         actual_url: string;
+        story_fingerprint: string;
         screenshots: Array<{
           file_name: string;
+          actual_relpath?: string;
           actual_sha256: string;
           baseline_sha256: string;
+          content?: string | Buffer;
         }>;
       }>
     >;
@@ -310,20 +361,36 @@ function writeVisualRunManifestFixture(
       return {
         scenario_id: scenario.scenarioId,
         actual_url: scenarioOverride?.actual_url ?? scenario.route,
-        story_fingerprint: evidence.storyFingerprint,
+        story_fingerprint: scenarioOverride?.story_fingerprint ?? evidence.storyFingerprint,
         screenshots: scenarioOverride?.screenshots
           ?? evidence.screenshots.map((entry) => ({
             file_name: entry.fileName,
+            actual_relpath: `captured/${scenario.scenarioId}/${entry.fileName}`,
             actual_sha256: `sha256:${entry.screenshotSha256}`,
             baseline_sha256: `sha256:${entry.baselineSha256}`,
           })),
       };
     });
 
+  for (const scenario of scenarios) {
+    for (const screenshot of scenario.screenshots) {
+      const fileName = typeof screenshot.file_name === 'string' ? screenshot.file_name : null;
+      const actualRelPath = typeof screenshot.actual_relpath === 'string' ? screenshot.actual_relpath : null;
+      if (!fileName || !actualRelPath) {
+        continue;
+      }
+      const actualCaptureContent = 'content' in screenshot && screenshot.content !== undefined
+        ? screenshot.content
+        : defaultVisualActualCaptureContent(scenario.scenario_id, fileName);
+      createFile(join(dirname(getVisualRunManifestPath(campaignRoot)), actualRelPath), actualCaptureContent);
+      screenshot.actual_sha256 = `sha256:${createHash('sha256').update(actualCaptureContent).digest('hex')}`;
+    }
+  }
+
   writeJson(
     getVisualRunManifestPath(campaignRoot),
     {
-      schema: 'visual_baseline_run_manifest/v1',
+      schema: 'visual_baseline_run_manifest/v2',
       run_id: runId,
       build: {
         lane: overrides.build?.lane ?? 'mock-lane',
@@ -503,11 +570,47 @@ function writeSemanticUxTraceBundle(
   };
 
   writeJson(join(bundleDir, 'manifest.json'), manifest);
+  writeJson(join(bundleDir, 'contract-snapshot.json'), {
+    version: 1,
+    lane: manifest.lane,
+    suite: manifest.suite,
+    story_id: manifest.story_id,
+    scenario_id: manifest.scenario_id,
+    run_id: manifest.run_id,
+    story_source_fingerprint: manifest.story_source_fingerprint,
+    story_fingerprint: manifest.story_fingerprint,
+    step_map_fingerprint: manifest.step_map_fingerprint,
+    required_trace_steps: manifest.required_trace_steps,
+    required_screenshot_steps: manifest.required_screenshot_steps,
+    trace_order_contract: manifest.trace_order_contract,
+    steps: requiredSteps.map((step) => ({
+      step_id: step.stepId,
+      action: step.action,
+      target: step.target,
+      target_match: step.targetMatch ?? 'exact',
+      scene_id: step.sceneId ?? null,
+    })),
+  });
   createFile(join(bundleDir, 'events.jsonl'), `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
   createFile(join(bundleDir, 'review.md'), renderUxTraceReviewFixture({
     manifest,
     verdict: options.reviewVerdict ?? 'accepted',
   }));
+  writeJson(join(traceRoot, 'ux-trace-index.json'), {
+    version: 1,
+    generated_at: '2026-04-12T12:00:01.000Z',
+    bundles: [{
+      lane: manifest.lane,
+      suite: manifest.suite,
+      story_id: manifest.story_id,
+      scenario_id: manifest.scenario_id,
+      run_id: manifest.run_id,
+      bundle_relpath: 'backend-real/integration-release-user-story/release-user-story-end-to-end/release-trace-run',
+      review_relpath: 'backend-real/integration-release-user-story/release-user-story-end-to-end/release-trace-run/review.md',
+      manifest_relpath: 'backend-real/integration-release-user-story/release-user-story-end-to-end/release-trace-run/manifest.json',
+      contract_snapshot_relpath: 'backend-real/integration-release-user-story/release-user-story-end-to-end/release-trace-run/contract-snapshot.json',
+    }],
+  });
 
   for (const step of requiredSteps) {
     const event = events.find((candidate) => candidate.step_id === step.stepId);
@@ -707,6 +810,20 @@ describe('release-full aggregate gate', () => {
       status: 'passed',
       failure_class: 'none',
     });
+    const terminalEvidence = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'evidence.json'), 'utf8'),
+    ) as {
+      required_paths: Array<Record<string, unknown>>;
+    };
+    expect(terminalEvidence.required_paths.length).toBeGreaterThan(0);
+    for (const record of terminalEvidence.required_paths) {
+      expect(record).toMatchObject({
+        id: expect.any(String),
+        path: expect.any(String),
+        kind: expect.any(String),
+        exists: expect.any(Boolean),
+      });
+    }
   });
 
   it('passes when backend-real UX trace bundles include semantic manifest, events, screenshots, and review evidence', () => {
@@ -741,16 +858,25 @@ describe('release-full aggregate gate', () => {
       status: 'failed',
       failure_class: 'evidence_missing',
     });
-    expect(terminalResult.summary).toContain('manifest.json');
+    expect(terminalResult.summary).toContain('ux-trace-index.json');
   });
 
-  it('fails with contract drift when backend-real UX trace story or step-map fingerprints drift', () => {
+  it('fails with contract drift when backend-real UX trace manifest drifts away from its producer-owned snapshot', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-trace-fingerprint-drift-'));
     seedPassedCampaign(campaignRoot);
-    replaceGateReleaseUxTraceWithSemanticBundle(campaignRoot, {
-      storyFingerprint: `sha256:${'1'.repeat(64)}`,
-      stepMapFingerprint: `sha256:${'2'.repeat(64)}`,
+    replaceGateReleaseUxTraceWithSemanticBundle(campaignRoot);
+    const bundleDir = resolveUxTraceBundleDir({
+      outputRoot: getGateReleaseUxTraceRoot(campaignRoot),
+      lane: 'backend-real',
+      suite: 'integration-release-user-story',
+      storyId: getReleaseStoryDefinition().storyId,
+      runId: 'release-trace-run',
     });
+    const manifestPath = join(bundleDir, 'manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+    manifest.story_fingerprint = `sha256:${'1'.repeat(64)}`;
+    manifest.step_map_fingerprint = `sha256:${'2'.repeat(64)}`;
+    writeJson(manifestPath, manifest);
     writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
 
     expect(() => runAggregate(campaignRoot)).toThrow();
@@ -928,6 +1054,48 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('run-manifest.json');
   });
 
+  it('hard fails when lane-visual run-manifest.json drops the query-bearing actual_url', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-manifest-query-drift-'));
+    seedPassedCampaign(campaignRoot);
+    writeVisualRunManifestFixture(campaignRoot, {
+      scenarioOverrides: {
+        'desktop-auth-complete': {
+          actual_url: '/en-US/desktop/auth/complete',
+        },
+      },
+    });
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('actual_url drift');
+  });
+
+  it('fails when backend-real UX trace evidence loses ux-trace-index.json even if review markdown still exists', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-trace-missing-index-'));
+    seedPassedCampaign(campaignRoot);
+    replaceGateReleaseUxTraceWithSemanticBundle(campaignRoot);
+    rmSync(join(getGateReleaseUxTraceRoot(campaignRoot), 'ux-trace-index.json'), { force: true });
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'evidence_missing',
+    });
+    expect(terminalResult.summary).toContain('ux-trace-index.json');
+  });
+
   it('fails when an automated visual pass artifact is copied into the UX acceptance slot', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-automated-pass-'));
     seedPassedCampaign(campaignRoot);
@@ -1011,6 +1179,72 @@ describe('release-full aggregate gate', () => {
     });
     expect(terminalResult.summary).toContain('actual_url');
     expect(terminalResult.summary).toContain('story_fingerprint');
+  });
+
+  it('passes when visual UX acceptance stays self-consistent with the producer snapshot even if checkout story fingerprints drift', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-snapshot-owned-pass-'));
+    seedPassedCampaign(campaignRoot);
+    const scenario = getVisualScenario('desktop-auth-complete');
+    const evidence = buildVisualBaselineScenarioEvidence(scenario);
+    const customStoryFingerprint = `sha256:${'4'.repeat(64)}`;
+    const screenshotFixtures = evidence.screenshots.map((entry, index) => ({
+      file_name: entry.fileName,
+      actual_relpath: `captured/${scenario.scenarioId}/${entry.fileName}`,
+      actual_sha256: '',
+      baseline_sha256: `sha256:${entry.baselineSha256}`,
+      content: Buffer.from(`snapshot-owned actual ${scenario.scenarioId}/${entry.fileName}/${index}`),
+    }));
+    writeVisualRunManifestFixture(campaignRoot, {
+      scenarioOverrides: {
+        [scenario.scenarioId]: {
+          story_fingerprint: customStoryFingerprint,
+          screenshots: screenshotFixtures,
+        },
+      },
+    });
+    overwriteVisualReviewFixture(
+      campaignRoot,
+      scenario.scenarioId,
+      renderVisualReviewFixture(campaignRoot, scenario, {}, {
+        evidenceSnapshot: buildVisualReviewEvidenceSnapshot(scenario, {
+          story_fingerprint: customStoryFingerprint,
+          screenshots: screenshotFixtures,
+        }),
+      }),
+    );
+
+    runAggregate(campaignRoot);
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string };
+    expect(terminalResult).toMatchObject({
+      status: 'passed',
+      failure_class: 'none',
+    });
+  });
+
+  it('fails with contract drift when visual UX acceptance build metadata drifts from the run-manifest snapshot', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-build-drift-'));
+    seedPassedCampaign(campaignRoot);
+    const scenario = getVisualScenario('desktop-auth-complete');
+    overwriteVisualReviewFixture(
+      campaignRoot,
+      scenario.scenarioId,
+      renderVisualReviewFixture(campaignRoot, scenario)
+        .replace('- build_git_sha: aggregate-test-git-sha\n', '- build_git_sha: foreign-git-sha\n'),
+    );
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('build_git_sha');
   });
 
   it('fails with contract drift when visual UX acceptance hashes drift from committed baselines', () => {

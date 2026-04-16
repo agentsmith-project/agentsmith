@@ -26,6 +26,9 @@ export function TaskCard(args: {
   const { t, task, onClick } = args;
   const agentPresenceLabel = getTaskPresenceLabel(t, task.agent_presence);
   const agentPresenceVariant = getTaskPresenceVariant(task.agent_presence);
+  const lastActivityLabel = formatTaskRelativeTime(task.last_activity_at);
+  const lastActivityAbsoluteLabel = formatTaskDateTime(task.last_activity_at);
+  const createdAtLabel = formatTaskDateTime(task.created_at);
 
   return (
     <button
@@ -67,11 +70,29 @@ export function TaskCard(args: {
             </span>
             <span className="inline-flex items-center gap-1">
               <Clock3 className="h-3.5 w-3.5" />
-              {t('last_activity')}: {formatTaskRelativeTime(task.last_activity_at)}
+              {t('last_activity')}:{' '}
+              <time
+                dateTime={task.last_activity_at}
+                title={lastActivityAbsoluteLabel}
+                data-testid="notebook__task-last-activity"
+                data-visual-datetime={task.last_activity_at}
+                data-visual-datetime-policy="viewer_local"
+              >
+                {lastActivityLabel}
+              </time>
             </span>
             <span className="inline-flex items-center gap-1">
               <CalendarClock className="h-3.5 w-3.5" />
-              {t('created_at')}: {formatTaskDateTime(task.created_at)}
+              {t('created_at')}:{' '}
+              <time
+                dateTime={task.created_at}
+                title={createdAtLabel}
+                data-testid="notebook__task-created-at"
+                data-visual-datetime={task.created_at}
+                data-visual-datetime-policy="viewer_local"
+              >
+                {createdAtLabel}
+              </time>
             </span>
           </div>
         </div>

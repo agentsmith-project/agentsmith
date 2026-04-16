@@ -1,3 +1,5 @@
+import http from 'node:http';
+import https from 'node:https';
 import { Client as MinioClient } from 'minio';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
@@ -9,6 +11,106 @@ import {
   getFileLibraryGatewayInternalCredentials,
   resolveFileLibraryStorageBucketUrlForGatewayRuntime,
 } from './file-library-runtime.js';
+
+function createAbortError(
+  reason?: unknown,
+  fallbackMessage = 'file_library_gateway_client_aborted',
+): Error {
+  if (reason instanceof Error && reason.name === 'AbortError') {
+    return reason;
+  }
+  const error = new Error(
+    reason instanceof Error
+      ? reason.message
+      : typeof reason === 'string' && reason.trim().length > 0
+        ? reason
+        : fallbackMessage,
+  );
+  error.name = 'AbortError';
+  if (reason instanceof Error) {
+    (error as Error & { cause?: unknown }).cause = reason;
+  }
+  return error;
+}
+
+function throwIfAborted(signal: AbortSignal | undefined, fallbackMessage: string): void {
+  if (signal?.aborted) {
+    throw createAbortError(signal.reason, fallbackMessage);
+  }
+}
+
+function bindAbortSignal(
+  signal: AbortSignal | undefined,
+  onAbort: (reason?: unknown) => void,
+): () => void {
+  if (!signal) {
+    return () => {};
+  }
+  if (signal.aborted) {
+    onAbort(signal.reason);
+    return () => {};
+  }
+  const handleAbort = () => onAbort(signal.reason);
+  signal.addEventListener('abort', handleAbort, { once: true });
+  return () => signal.removeEventListener('abort', handleAbort);
+}
+
+function createAbortAwareTransport(
+  baseTransport: typeof http | typeof https,
+  signal?: AbortSignal,
+): NonNullable<ConstructorParameters<typeof MinioClient>[0]['transport']> | undefined {
+  if (!signal) {
+    return undefined;
+  }
+
+  return {
+    request(options, callback) {
+      let response: http.IncomingMessage | null = null;
+      let cleaned = false;
+      let removeAbortListener: () => void = () => {};
+
+      const request = baseTransport.request(options, (incoming) => {
+        response = incoming;
+        incoming.once('close', cleanup);
+        incoming.once('end', cleanup);
+        if (signal.aborted) {
+          abortRequest(signal.reason);
+          return;
+        }
+        callback(incoming);
+      });
+
+      const cleanup = () => {
+        if (cleaned) {
+          return;
+        }
+        cleaned = true;
+        removeAbortListener();
+        request.removeListener('close', cleanup);
+        request.removeListener('error', cleanup);
+        response?.removeListener('close', cleanup);
+        response?.removeListener('end', cleanup);
+      };
+
+      const abortRequest = (reason?: unknown) => {
+        const error = createAbortError(reason, 'file_library_gateway_client_aborted');
+        response?.destroy(error);
+        request.destroy(error);
+        cleanup();
+      };
+
+      removeAbortListener = bindAbortSignal(signal, abortRequest);
+      request.once('close', cleanup);
+      request.once('error', cleanup);
+
+      if (signal.aborted) {
+        abortRequest(signal.reason);
+      }
+
+      return request;
+    },
+  };
+}
 
 export function normalizeFileLibraryPath(input?: string | null): string {
   const value = (input ?? '').trim().replace(/^\/+/, '').replace(/\/{2,}/g, '/');
@@ -55,6 +157,7 @@ export async function createFileLibraryGatewayClient(args: {
   projectId: string;
   libraryId: string;
   filesystemName: string;
+  signal?: AbortSignal;
 }): Promise<MinioClient> {
   const backend = await new JsonDocProjectFileLibraryBackendRepo(args.deps.docStore).getInternal(
     args.workspaceId,
@@ -72,19 +175,25 @@ export async function createFileLibraryGatewayClient(args: {
   if (!args.deps.fileLibraryGatewayManager) {
     throw new Error('file_library_gateway_unavailable');
   }
-  const gateway = await args.deps.fileLibraryGatewayManager.ensureGateway({
+  throwIfAborted(args.signal, 'file_library_gateway_client_aborted');
+  const ensureGatewayInput = {
     libraryId: args.libraryId,
     filesystemName: args.filesystemName,
     metadataUrl: backend.internal_metadata_url,
     storageBucketUrl: resolveFileLibraryStorageBucketUrlForGatewayRuntime(mountAccess?.storage_bucket_url),
-  });
+    signal: args.signal,
+  };
+  const gateway = await args.deps.fileLibraryGatewayManager.ensureGateway(ensureGatewayInput);
   const url = new URL(gateway.loopbackUrl);
   const credentials = getFileLibraryGatewayInternalCredentials(args.libraryId);
+  const baseTransport = url.protocol === 'https:' ? https : http;
+  const transport = createAbortAwareTransport(baseTransport, args.signal);
   return new MinioClient({
     endPoint: url.hostname,
     port: Number(url.port),
     useSSL: url.protocol === 'https:',
     accessKey: credentials.accessKey,
     secretKey: credentials.secretKey,
+    ...(transport ? { transport } : {}),
   });
 }

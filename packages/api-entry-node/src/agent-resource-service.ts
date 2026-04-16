@@ -109,6 +109,8 @@ export interface AgentConnectionInfo {
 export class AgentResourceService {
   private static readonly agentsCollection = 'agents';
   private static readonly agentKeysCollection = 'agent_service_keys';
+  private static readonly storedPresenceSyncMaxAttempts = 3;
+  private static readonly storedPresenceSyncBackoffMs = 15;
   private readonly agentPresenceStore: AgentPresenceStore;
   private readonly agentRuntimeState = new Map<string, AgentRuntimeState>();
 
@@ -358,7 +360,13 @@ export class AgentResourceService {
     const registeredConnection = snapshot.connections.find((connection) => connection.connection_id === input.connectionId);
     const latestConnection = snapshot.latestConnection;
     const lastSeenAt = latestConnection?.last_pong_at ?? latestConnection?.connected_at ?? new Date().toISOString();
-    await this.writeStoredPresence(input.workspaceId, input.projectId, input.agentId, 'online', lastSeenAt);
+    await this.syncStoredPresenceProjection({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      agentId: input.agentId,
+      presence: 'online',
+      lastSeenAt,
+    });
     return registeredConnection ?? {
       connection_id: input.connectionId,
       socket_key: input.socketKey,
@@ -409,13 +417,13 @@ export class AgentResourceService {
     const result = await this.agentPresenceStore.releaseConnection(input);
     const latest = result.snapshot.latestConnection;
     if (latest) {
-      await this.writeStoredPresence(
-        latest.workspace_id,
-        latest.project_id,
-        input.agentId,
-        'online',
-        latest.last_pong_at ?? latest.connected_at,
-      );
+      await this.syncStoredPresenceProjection({
+        workspaceId: latest.workspace_id,
+        projectId: latest.project_id,
+        agentId: input.agentId,
+        presence: 'online',
+        lastSeenAt: latest.last_pong_at ?? latest.connected_at,
+      });
       return {
         released: result.released,
         stale: result.stale,
@@ -425,7 +433,13 @@ export class AgentResourceService {
     }
     const existing = await this.findAgentById(input.agentId);
     const nextPresence = existing?.mode === 'internal' ? 'managed' : 'offline';
-    await this.writeStoredPresence(input.workspaceId, input.projectId, input.agentId, nextPresence, new Date().toISOString());
+    await this.syncStoredPresenceProjection({
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      agentId: input.agentId,
+      presence: nextPresence,
+      lastSeenAt: new Date().toISOString(),
+    });
     return {
       released: result.released,
       stale: result.stale,
@@ -533,14 +547,23 @@ export class AgentResourceService {
     return snapshot.latestConnection;
   }
 
-  async getSessionConnectionInfo(agentId: string, sessionId?: string): Promise<AgentConnectionState | null> {
+  async getSessionConnectionInfo(
+    agentId: string,
+    sessionId?: string,
+    options?: {
+      allowAgentFallback?: boolean;
+    },
+  ): Promise<AgentConnectionState | null> {
     const snapshot = await this.agentPresenceStore.getPresence(agentId);
     if (!sessionId) {
       return snapshot.latestConnection;
     }
-    return snapshot.connections.find((connection) => connection.session_id === sessionId)
-      ?? snapshot.connections.find((connection) => connection.session_id === undefined)
-      ?? null;
+    const exact = snapshot.connections.find((connection) => connection.session_id === sessionId) ?? null;
+    if (exact) return exact;
+    if (options?.allowAgentFallback === false) {
+      return null;
+    }
+    return snapshot.connections.find((connection) => connection.session_id === undefined) ?? null;
   }
 
   buildConnectionInfo(agent: Pick<AgentRecord, 'id' | 'mode' | 'config'>): AgentConnectionInfo {
@@ -619,4 +642,36 @@ export class AgentResourceService {
       updated_at: new Date().toISOString(),
     });
   }
+
+  private async syncStoredPresenceProjection(input: {
+    workspaceId: string;
+    projectId: string;
+    agentId: string;
+    presence: AgentRecord['presence'];
+    lastSeenAt: string;
+  }): Promise<void> {
+    for (let attempt = 1; attempt <= AgentResourceService.storedPresenceSyncMaxAttempts; attempt += 1) {
+      try {
+        await this.writeStoredPresence(
+          input.workspaceId,
+          input.projectId,
+          input.agentId,
+          input.presence,
+          input.lastSeenAt,
+        );
+        return;
+      } catch {
+        if (attempt >= AgentResourceService.storedPresenceSyncMaxAttempts) {
+          return;
+        }
+        await delay(AgentResourceService.storedPresenceSyncBackoffMs * attempt);
+      }
+    }
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
   resetSystemWorkspaceRegistryPersistenceForTest,
@@ -470,6 +470,143 @@ describe('AgentResourceService', () => {
     await expect(service.getConnectionInfo(agent.id)).resolves.toEqual(expect.objectContaining({
       connection_id: 'conn_new',
       last_pong_at: '2026-03-18T00:00:40.000Z',
+    }));
+  });
+
+  it('supports strict session authority lookups without agent-level fallback', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const service = new AgentResourceService(docStore, cache);
+    const agent = await service.createAgent('ws_default', 'proj_1', {
+      name: 'strict-session-authority-agent',
+      mode: 'external',
+    });
+
+    await service.registerAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_agent_level',
+      socketKey: agent.id,
+      apiInstanceId: 'api_a',
+      lastPongAt: '2026-03-18T00:00:00.000Z',
+    });
+
+    await expect(
+      service.getSessionConnectionInfo(agent.id, 'task_strict', { allowAgentFallback: false }),
+    ).resolves.toBeNull();
+    await expect(
+      service.getSessionConnectionInfo(agent.id, 'task_strict', { allowAgentFallback: true }),
+    ).resolves.toEqual(expect.objectContaining({
+      connection_id: 'conn_agent_level',
+      socket_key: agent.id,
+    }));
+  });
+
+  it('keeps the registered shared authority when docstore presence projection sync fails during registration', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const service = new AgentResourceService(docStore, cache);
+    const agent = await service.createAgent('ws_default', 'proj_1', {
+      name: 'projection-register-agent',
+      mode: 'external',
+    });
+
+    const originalUpsert = docStore.upsert.bind(docStore);
+    let injectedFailure = false;
+    vi.spyOn(docStore, 'upsert').mockImplementation(async (collection, id, value) => {
+      if (
+        !injectedFailure
+        && collection === resolveWorkspaceScopedCollection('agents', 'ws_default')
+        && id === agent.id
+        && typeof value === 'object'
+        && value !== null
+        && 'presence' in value
+        && value.presence === 'online'
+      ) {
+        injectedFailure = true;
+        throw new Error('docstore_presence_projection_failed');
+      }
+      return originalUpsert(collection, id, value);
+    });
+
+    await expect(service.registerAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_projection',
+      socketKey: agent.id,
+      apiInstanceId: 'api_a',
+      lastPongAt: '2026-04-16T00:00:00.000Z',
+    })).resolves.toEqual(expect.objectContaining({
+      connection_id: 'conn_projection',
+      active_connection_count: 1,
+    }));
+
+    expect(injectedFailure).toBe(true);
+    await expect(service.getConnectionInfo(agent.id)).resolves.toEqual(expect.objectContaining({
+      connection_id: 'conn_projection',
+      active_connection_count: 1,
+    }));
+    await expect(service.getAgent('ws_default', 'proj_1', agent.id)).resolves.toEqual(expect.objectContaining({
+      presence: 'online',
+      last_seen_at: '2026-04-16T00:00:00.000Z',
+    }));
+  });
+
+  it('clears the shared authority even when docstore projection sync fails during release', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const service = new AgentResourceService(docStore, cache);
+    const agent = await service.createAgent('ws_default', 'proj_1', {
+      name: 'projection-release-agent',
+      mode: 'external',
+    });
+
+    await service.registerAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_projection_release',
+      socketKey: agent.id,
+      apiInstanceId: 'api_a',
+      lastPongAt: '2026-04-16T00:00:00.000Z',
+    });
+
+    const originalUpsert = docStore.upsert.bind(docStore);
+    let injectedFailure = false;
+    vi.spyOn(docStore, 'upsert').mockImplementation(async (collection, id, value) => {
+      if (
+        !injectedFailure
+        && collection === resolveWorkspaceScopedCollection('agents', 'ws_default')
+        && id === agent.id
+        && typeof value === 'object'
+        && value !== null
+        && 'presence' in value
+        && value.presence === 'offline'
+      ) {
+        injectedFailure = true;
+        throw new Error('docstore_presence_projection_failed');
+      }
+      return originalUpsert(collection, id, value);
+    });
+
+    await expect(service.releaseAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_projection_release',
+    })).resolves.toEqual(expect.objectContaining({
+      released: true,
+      stale: false,
+      active_connection_count: 0,
+      presence: 'offline',
+    }));
+
+    expect(injectedFailure).toBe(true);
+    await expect(service.getConnectionInfo(agent.id)).resolves.toBeNull();
+    await expect(service.getAgent('ws_default', 'proj_1', agent.id)).resolves.toEqual(expect.objectContaining({
+      presence: 'offline',
     }));
   });
 

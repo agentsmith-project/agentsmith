@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -18,13 +19,12 @@ import type {
   CurrentVerificationCampaignStep,
 } from './current-verification-campaign-manifest';
 import {
-  assertVisualBaselineActualUrlMatchesRoute,
-  buildVisualBaselineScenarioEvidence,
-  groupVisualBaselineCatalogByScenario,
   parseVisualBaselineBuildRecord,
-  type VisualBaselineScenarioRecord,
 } from '../../e2e/visual-baseline-support';
-import { validateUxTraceBundleArtifact } from '../../e2e/trace-bundle-support';
+import {
+  UX_TRACE_INDEX_FILE,
+  validateUxTraceBundleArtifact,
+} from '../../e2e/trace-bundle-support';
 
 export interface ReleaseCampaignResultInput {
   step: CurrentVerificationCampaignStep;
@@ -63,6 +63,21 @@ export interface ReleaseCampaignEvidencePointer {
   } | null;
   required_paths: readonly ReleaseCampaignEvidencePathRecord[];
   generated_at: string;
+}
+
+export function buildReleaseCampaignEvidencePathRecord(
+  input: ReleaseCampaignEvidencePathRecord,
+): ReleaseCampaignEvidencePathRecord {
+  return {
+    id: input.id,
+    path: input.path,
+    kind: input.kind,
+    exists: input.exists,
+    ...(input.matches ? { matches: input.matches } : {}),
+    ...(input.min_count !== undefined ? { min_count: input.min_count } : {}),
+    ...(input.error ? { error: input.error } : {}),
+    ...(input.failure_class ? { failure_class: input.failure_class } : {}),
+  };
 }
 
 export interface ParsedGateResult {
@@ -298,105 +313,148 @@ function parseSha256HashMap(value: string | null): { ok: true; hashes: Map<strin
 }
 
 function normalizeVisualBaselineManifestUrlPath(value: string): string {
-  return new URL(value, 'http://agentsmith.visual.local').pathname;
+  const parsed = new URL(value, 'http://agentsmith.visual.local');
+  return `${parsed.pathname}${parsed.search}`;
 }
 
-function validateVisualBaselineRunManifestScreenshotEntries(args: {
-  scenario: VisualBaselineScenarioRecord;
+function sha256Hex(value: string | Buffer): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function isSafeRelativeFilePath(value: string): boolean {
+  return Boolean(value.trim())
+    && !value.startsWith('..')
+    && !value.startsWith('/')
+    && !value.includes('\\')
+    && !value.split('/').includes('..');
+}
+
+type VisualRunManifestScreenshotRecord = {
+  fileName: string;
+  actualRelPath: string;
+  actualSha256: string;
+  baselineSha256: string;
+};
+
+type VisualRunManifestScenarioRecord = {
+  scenarioId: string;
+  actualUrl: string;
+  storyFingerprint: string;
+  screenshots: readonly VisualRunManifestScreenshotRecord[];
+};
+
+type VisualRunManifestSnapshot = {
+  path: string;
+  runId: string;
+  build: ReturnType<typeof parseVisualBaselineBuildRecord>;
+  scenarios: readonly VisualRunManifestScenarioRecord[];
+};
+
+function resolveVisualRunManifestPath(campaignRoot: string): string {
+  return join(
+    campaignRoot,
+    'lane-visual',
+    'visual-baseline-reviews',
+    resolveCampaignRunId(campaignRoot),
+    'run-manifest.json',
+  );
+}
+
+function parseVisualRunManifestScreenshotEntries(args: {
+  scenarioId: string;
   screenshots: unknown;
   path: string;
-}): { ok: true } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
-  if (!Array.isArray(args.screenshots)) {
+}): { ok: true; screenshots: readonly VisualRunManifestScreenshotRecord[] } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
+  if (!Array.isArray(args.screenshots) || args.screenshots.length === 0) {
     return visualReviewValidationFailure(
       'contract_drift',
-      `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} must include screenshots[].`,
+      `visual run-manifest.json for ${args.scenarioId} at ${args.path} must include screenshots[].`,
     );
   }
 
-  const expectedEvidence = buildVisualBaselineScenarioEvidence(args.scenario);
-  const expectedByFileName = new Map(
-    expectedEvidence.screenshots.map((entry) => [
-      entry.fileName,
-      {
-        actualSha256: `sha256:${entry.screenshotSha256}`,
-        baselineSha256: `sha256:${entry.baselineSha256}`,
-      },
-    ]),
-  );
+  const runRoot = dirname(args.path);
   const seenFiles = new Set<string>();
+  const parsedScreenshots: VisualRunManifestScreenshotRecord[] = [];
 
   for (const screenshot of args.screenshots) {
     if (!isRecord(screenshot)) {
       return visualReviewValidationFailure(
         'contract_drift',
-        `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} includes a malformed screenshot entry.`,
+        `visual run-manifest.json for ${args.scenarioId} at ${args.path} includes a malformed screenshot entry.`,
       );
     }
 
     const fileName = typeof screenshot.file_name === 'string' ? screenshot.file_name : null;
+    const actualRelPath = typeof screenshot.actual_relpath === 'string' ? screenshot.actual_relpath : null;
     const actualSha256 = typeof screenshot.actual_sha256 === 'string' ? screenshot.actual_sha256 : null;
     const baselineSha256 = typeof screenshot.baseline_sha256 === 'string' ? screenshot.baseline_sha256 : null;
 
-    if (!fileName || !actualSha256 || !baselineSha256) {
+    if (!fileName || !actualRelPath || !actualSha256 || !baselineSha256) {
       return visualReviewValidationFailure(
         'contract_drift',
-        `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} must include file_name, actual_sha256, and baseline_sha256 for every screenshot.`,
+        `visual run-manifest.json for ${args.scenarioId} at ${args.path} must include file_name, actual_relpath, actual_sha256, and baseline_sha256 for every screenshot.`,
       );
     }
     if (seenFiles.has(fileName)) {
       return visualReviewValidationFailure(
         'contract_drift',
-        `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} includes duplicate screenshot ${fileName}.`,
+        `visual run-manifest.json for ${args.scenarioId} at ${args.path} includes duplicate screenshot ${fileName}.`,
       );
     }
-
-    const expected = expectedByFileName.get(fileName);
-    if (!expected) {
+    if (!isSafeRelativeFilePath(actualRelPath)) {
       return visualReviewValidationFailure(
         'contract_drift',
-        `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} includes unexpected screenshot ${fileName}.`,
+        `visual run-manifest.json for ${args.scenarioId} at ${args.path} includes unsafe actual_relpath for ${fileName}.`,
       );
     }
-
     if (!/^sha256:[a-f0-9]{64}$/.test(actualSha256) || !/^sha256:[a-f0-9]{64}$/.test(baselineSha256)) {
       return visualReviewValidationFailure(
         'contract_drift',
-        `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} must use sha256:<hex> screenshot hashes.`,
+        `visual run-manifest.json for ${args.scenarioId} at ${args.path} must use sha256:<hex> screenshot hashes.`,
       );
     }
-    if (actualSha256 !== expected.actualSha256) {
+
+    const actualPath = join(runRoot, actualRelPath);
+    try {
+      if (!statSync(actualPath).isFile()) {
+        return visualReviewValidationFailure(
+          'evidence_missing',
+          `visual run-manifest.json actual capture for ${args.scenarioId} is missing: ${actualRelPath}.`,
+        );
+      }
+    } catch {
       return visualReviewValidationFailure(
-        'contract_drift',
-        `visual run-manifest.json actual screenshot hash drift for ${args.scenario.scenarioId}: ${fileName}.`,
+        'evidence_missing',
+        `visual run-manifest.json actual capture for ${args.scenarioId} is missing: ${actualRelPath}.`,
       );
     }
-    if (baselineSha256 !== expected.baselineSha256) {
+
+    if (actualSha256 !== `sha256:${sha256Hex(readFileSync(actualPath))}`) {
       return visualReviewValidationFailure(
         'contract_drift',
-        `visual run-manifest.json baseline screenshot hash drift for ${args.scenario.scenarioId}: ${fileName}.`,
+        `visual run-manifest.json actual screenshot hash drift for ${args.scenarioId}: ${fileName}.`,
       );
     }
 
     seenFiles.add(fileName);
+    parsedScreenshots.push({
+      fileName,
+      actualRelPath,
+      actualSha256,
+      baselineSha256,
+    });
   }
 
-  for (const fileName of expectedByFileName.keys()) {
-    if (!seenFiles.has(fileName)) {
-      return visualReviewValidationFailure(
-        'contract_drift',
-        `visual run-manifest.json for ${args.scenario.scenarioId} at ${args.path} is missing screenshot ${fileName}.`,
-      );
-    }
-  }
-
-  return { ok: true };
+  return {
+    ok: true,
+    screenshots: parsedScreenshots,
+  };
 }
 
-function validateVisualBaselineRunManifestArtifact(args: {
+function readVisualBaselineRunManifestArtifact(args: {
   path: string;
   campaignRoot: string;
-  scenarios: readonly VisualBaselineScenarioRecord[];
-}): { ok: true; path: string } | { ok: false; path: string; failureClass: CurrentGateResultFailureClass; message: string } {
+}): { ok: true; snapshot: VisualRunManifestSnapshot } | { ok: false; path: string; failureClass: CurrentGateResultFailureClass; message: string } {
   const path = args.path;
   let payload: unknown;
 
@@ -439,11 +497,11 @@ function validateVisualBaselineRunManifestArtifact(args: {
       path,
     };
   }
-  if (payload.schema !== 'visual_baseline_run_manifest/v1') {
+  if (payload.schema !== 'visual_baseline_run_manifest/v2') {
     return {
       ...visualReviewValidationFailure(
         'contract_drift',
-        `visual run-manifest.json at ${path} must include schema: visual_baseline_run_manifest/v1.`,
+        `visual run-manifest.json at ${path} must include schema: visual_baseline_run_manifest/v2.`,
       ),
       path,
     };
@@ -482,6 +540,15 @@ function validateVisualBaselineRunManifestArtifact(args: {
       path,
     };
   }
+  if (buildRecord.lane !== 'mock-lane') {
+    return {
+      ...visualReviewValidationFailure(
+        'contract_drift',
+        `visual run-manifest.json at ${path} must bind build.lane to mock-lane.`,
+      ),
+      path,
+    };
+  }
   if (Number.isNaN(Date.parse(buildRecord.startedAt))) {
     return {
       ...visualReviewValidationFailure(
@@ -492,7 +559,7 @@ function validateVisualBaselineRunManifestArtifact(args: {
     };
   }
 
-  if (!Array.isArray(payload.scenarios)) {
+  if (!Array.isArray(payload.scenarios) || payload.scenarios.length === 0) {
     return {
       ...visualReviewValidationFailure(
         'contract_drift',
@@ -502,7 +569,7 @@ function validateVisualBaselineRunManifestArtifact(args: {
     };
   }
 
-  const scenarioEntries = new Map<string, Record<string, unknown>>();
+  const scenarioEntries = new Map<string, VisualRunManifestScenarioRecord>();
   for (const scenarioEntry of payload.scenarios) {
     if (!isRecord(scenarioEntry)) {
       return {
@@ -515,6 +582,9 @@ function validateVisualBaselineRunManifestArtifact(args: {
     }
 
     const scenarioId = typeof scenarioEntry.scenario_id === 'string' ? scenarioEntry.scenario_id : null;
+    const actualUrl = typeof scenarioEntry.actual_url === 'string' ? scenarioEntry.actual_url : null;
+    const storyFingerprint = typeof scenarioEntry.story_fingerprint === 'string' ? scenarioEntry.story_fingerprint : null;
+
     if (!scenarioId) {
       return {
         ...visualReviewValidationFailure(
@@ -533,68 +603,39 @@ function validateVisualBaselineRunManifestArtifact(args: {
         path,
       };
     }
-
-    scenarioEntries.set(scenarioId, scenarioEntry);
-  }
-
-  for (const actualScenarioId of scenarioEntries.keys()) {
-    if (!args.scenarios.some((scenario) => scenario.scenarioId === actualScenarioId)) {
-      return {
-        ...visualReviewValidationFailure(
-          'contract_drift',
-          `visual run-manifest.json at ${path} includes unexpected scenario ${actualScenarioId}.`,
-        ),
-        path,
-      };
-    }
-  }
-
-  for (const scenario of args.scenarios) {
-    const entry = scenarioEntries.get(scenario.scenarioId);
-    if (!entry) {
-      return {
-        ...visualReviewValidationFailure(
-          'contract_drift',
-          `visual run-manifest.json at ${path} is missing scenario ${scenario.scenarioId}.`,
-        ),
-        path,
-      };
-    }
-
-    const actualUrl = typeof entry.actual_url === 'string' ? entry.actual_url : null;
     if (!actualUrl) {
       return {
         ...visualReviewValidationFailure(
           'contract_drift',
-          `visual run-manifest.json for ${scenario.scenarioId} at ${path} must include actual_url.`,
+          `visual run-manifest.json for ${scenarioId} at ${path} must include actual_url.`,
         ),
         path,
       };
     }
-    if (normalizeVisualBaselineManifestUrlPath(actualUrl) !== normalizeVisualBaselineManifestUrlPath(scenario.route)) {
+    try {
+      normalizeVisualBaselineManifestUrlPath(actualUrl);
+    } catch (error) {
       return {
         ...visualReviewValidationFailure(
           'contract_drift',
-          `visual run-manifest.json route drift for ${scenario.scenarioId}.`,
+          `visual run-manifest.json for ${scenarioId} at ${path} has invalid actual_url: ${error instanceof Error ? error.message : String(error)}.`,
+        ),
+        path,
+      };
+    }
+    if (!storyFingerprint || !/^sha256:[a-f0-9]{64}$/.test(storyFingerprint)) {
+      return {
+        ...visualReviewValidationFailure(
+          'contract_drift',
+          `visual run-manifest.json for ${scenarioId} at ${path} must include story_fingerprint as sha256:<hex>.`,
         ),
         path,
       };
     }
 
-    const expectedEvidence = buildVisualBaselineScenarioEvidence(scenario);
-    if (entry.story_fingerprint !== expectedEvidence.storyFingerprint) {
-      return {
-        ...visualReviewValidationFailure(
-          'contract_drift',
-          `visual run-manifest.json story_fingerprint drift for ${scenario.scenarioId}.`,
-        ),
-        path,
-      };
-    }
-
-    const screenshotValidation = validateVisualBaselineRunManifestScreenshotEntries({
-      scenario,
-      screenshots: entry.screenshots,
+    const screenshotValidation = parseVisualRunManifestScreenshotEntries({
+      scenarioId,
+      screenshots: scenarioEntry.screenshots,
       path,
     });
     if (!screenshotValidation.ok) {
@@ -603,16 +644,30 @@ function validateVisualBaselineRunManifestArtifact(args: {
         path,
       };
     }
+
+    scenarioEntries.set(scenarioId, {
+      scenarioId,
+      actualUrl,
+      storyFingerprint,
+      screenshots: screenshotValidation.screenshots,
+    });
   }
 
-  return { ok: true, path };
+  return {
+    ok: true,
+    snapshot: {
+      path,
+      runId: expectedRunId,
+      build: buildRecord,
+      scenarios: [...scenarioEntries.values()].sort((left, right) => left.scenarioId.localeCompare(right.scenarioId)),
+    },
+  };
 }
 
 function validateVisualHashMetadata(args: {
-  scenario: VisualBaselineScenarioRecord;
+  scenario: VisualRunManifestScenarioRecord;
   metadata: Map<string, string>;
 }): { ok: true } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
-  const evidence = buildVisualBaselineScenarioEvidence(args.scenario);
   const screenshotHashes = parseSha256HashMap(requiredMetadata(args.metadata, 'accepted_screenshot_hashes'));
   const baselineHashes = parseSha256HashMap(requiredMetadata(args.metadata, 'accepted_baseline_hashes'));
 
@@ -625,7 +680,7 @@ function validateVisualHashMetadata(args: {
     );
   }
 
-  const expectedFiles = new Set(evidence.screenshots.map((entry) => entry.fileName));
+  const expectedFiles = new Set(args.scenario.screenshots.map((entry) => entry.fileName));
   for (const [field, hashes] of [
     ['accepted_screenshot_hashes', screenshotHashes.hashes],
     ['accepted_baseline_hashes', baselineHashes.hashes],
@@ -649,14 +704,14 @@ function validateVisualHashMetadata(args: {
     }
   }
 
-  for (const expected of evidence.screenshots) {
-    if (screenshotHashes.hashes.get(expected.fileName) !== expected.screenshotSha256) {
+  for (const expected of args.scenario.screenshots) {
+    if (screenshotHashes.hashes.get(expected.fileName) !== expected.actualSha256.replace(/^sha256:/, '')) {
       return visualReviewValidationFailure(
         'contract_drift',
         `visual UX acceptance screenshot hash drift for ${args.scenario.scenarioId}: ${expected.fileName}.`,
       );
     }
-    if (baselineHashes.hashes.get(expected.fileName) !== expected.baselineSha256) {
+    if (baselineHashes.hashes.get(expected.fileName) !== expected.baselineSha256.replace(/^sha256:/, '')) {
       return visualReviewValidationFailure(
         'contract_drift',
         `visual UX acceptance baseline hash drift for ${args.scenario.scenarioId}: ${expected.fileName}.`,
@@ -668,8 +723,8 @@ function validateVisualHashMetadata(args: {
 }
 
 function validateVisualBaselineReviewArtifact(args: {
-  campaignRoot: string;
-  scenario: VisualBaselineScenarioRecord;
+  manifest: VisualRunManifestSnapshot;
+  scenario: VisualRunManifestScenarioRecord;
   path: string;
 }): { ok: true } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
   const scenarioId = args.scenario.scenarioId;
@@ -729,7 +784,6 @@ function validateVisualBaselineReviewArtifact(args: {
       `visual UX acceptance scenario_id mismatch for ${scenarioId}.`,
     );
   }
-
   if (metadata.get('story_evidence_owner') !== 'lane:visual') {
     return visualReviewValidationFailure(
       'contract_drift',
@@ -737,29 +791,29 @@ function validateVisualBaselineReviewArtifact(args: {
     );
   }
 
-  const expectedRunId = resolveCampaignRunId(args.campaignRoot);
   const buildRunId = requiredMetadata(metadata, 'build_run_id');
-  if (buildRunId !== expectedRunId) {
+  if (buildRunId !== args.manifest.runId) {
     return visualReviewValidationFailure(
       'contract_drift',
       `visual UX acceptance metadata for ${scenarioId} must include build_run_id for the current campaign run.`,
     );
   }
-
-  for (const field of ['build_git_sha', 'build_fingerprint', 'build_started_at'] as const) {
-    if (!requiredMetadata(metadata, field)) {
-      return visualReviewValidationFailure(
-        'contract_drift',
-        `visual UX acceptance metadata for ${scenarioId} must include ${field}.`,
-      );
-    }
-  }
-
-  const buildStartedAt = requiredMetadata(metadata, 'build_started_at');
-  if (buildStartedAt && Number.isNaN(Date.parse(buildStartedAt))) {
+  if (requiredMetadata(metadata, 'build_git_sha') !== args.manifest.build.gitSha) {
     return visualReviewValidationFailure(
       'contract_drift',
-      `visual UX acceptance metadata for ${scenarioId} has an invalid build_started_at value.`,
+      `visual UX acceptance metadata for ${scenarioId} build_git_sha must match the producer snapshot.`,
+    );
+  }
+  if (requiredMetadata(metadata, 'build_fingerprint') !== args.manifest.build.fingerprint) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${scenarioId} build_fingerprint must match the producer snapshot.`,
+    );
+  }
+  if (requiredMetadata(metadata, 'build_started_at') !== args.manifest.build.startedAt) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${scenarioId} build_started_at must match the producer snapshot.`,
     );
   }
 
@@ -810,23 +864,13 @@ function validateVisualBaselineReviewArtifact(args: {
   }
 
   const actualUrl = requiredMetadata(metadata, 'actual_url');
-  if (actualUrl) {
-    try {
-      assertVisualBaselineActualUrlMatchesRoute({
-        scenarioId,
-        expectedRoute: args.scenario.route,
-        actualUrl,
-      });
-    } catch (error) {
-      return visualReviewValidationFailure(
-        'contract_drift',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+  if (actualUrl && normalizeVisualBaselineManifestUrlPath(actualUrl) !== normalizeVisualBaselineManifestUrlPath(args.scenario.actualUrl)) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance actual_url drift for ${scenarioId}.`,
+    );
   }
-
-  const expectedEvidence = buildVisualBaselineScenarioEvidence(args.scenario);
-  if (metadata.get('story_fingerprint') !== expectedEvidence.storyFingerprint) {
+  if (metadata.get('story_fingerprint') !== args.scenario.storyFingerprint) {
     return visualReviewValidationFailure(
       'contract_drift',
       `visual UX acceptance story_fingerprint drift for ${scenarioId}.`,
@@ -852,21 +896,35 @@ function evaluateVisualBaselineReviews(
   campaignRoot: string,
   check: CurrentVerificationCampaignEvidenceCheck,
 ): ReleaseCampaignEvidencePointer['required_paths'] {
-  const grouped = groupVisualBaselineCatalogByScenario();
+  const manifestPath = resolveVisualRunManifestPath(campaignRoot);
+  const manifest = readVisualBaselineRunManifestArtifact({
+    path: manifestPath,
+    campaignRoot,
+  });
+  if (!manifest.ok) {
+    return [{
+      id: `${check.id}:run-manifest`,
+      path: manifest.path,
+      kind: check.kind,
+      exists: false,
+      error: manifest.message,
+      failure_class: manifest.failureClass,
+    }];
+  }
+
   const records: ReleaseCampaignEvidencePointer['required_paths'] = [];
-  const scenarios = [...grouped.values()].sort((left, right) => left.scenarioId.localeCompare(right.scenarioId));
-  for (const [scenarioId, scenario] of scenarios.map((scenario) => [scenario.scenarioId, scenario] as const)) {
+  for (const scenario of manifest.snapshot.scenarios) {
     const path = materializeCampaignPath(
       campaignRoot,
-      check.path.replaceAll('<visual-scenario-id>', scenarioId),
+      check.path.replaceAll('<visual-scenario-id>', scenario.scenarioId),
     );
     const validation = validateVisualBaselineReviewArtifact({
-      campaignRoot,
+      manifest: manifest.snapshot,
       scenario,
       path,
     });
     records.push({
-      id: `${check.id}:${scenarioId}`,
+      id: `${check.id}:${scenario.scenarioId}`,
       path,
       kind: check.kind,
       exists: validation.ok,
@@ -885,18 +943,15 @@ function evaluateVisualRunManifest(
   campaignRoot: string,
   check: CurrentVerificationCampaignEvidenceCheck,
 ): ReleaseCampaignEvidencePointer['required_paths'] {
-  const scenarios = [...groupVisualBaselineCatalogByScenario().values()]
-    .sort((left, right) => left.scenarioId.localeCompare(right.scenarioId));
   const path = materializeCampaignPath(campaignRoot, check.path);
-  const validation = validateVisualBaselineRunManifestArtifact({
+  const validation = readVisualBaselineRunManifestArtifact({
     path,
     campaignRoot,
-    scenarios,
   });
 
   return [{
     id: check.id,
-    path: validation.path,
+    path: validation.ok ? validation.snapshot.path : validation.path,
     kind: check.kind,
     exists: validation.ok,
     ...(validation.ok
@@ -915,8 +970,11 @@ function evaluateUxTraceBundles(
 ): ReleaseCampaignEvidencePointer['required_paths'] {
   const path = materializeCampaignPath(campaignRoot, check.path);
   const minCount = check.minCount ?? 1;
-  const reviewFiles = listRecursiveFiles(path).filter((candidate) => matchesFileName(candidate, check.fileName ?? 'review.md'));
-  if (reviewFiles.length === 0) {
+  const indexPath = join(path, UX_TRACE_INDEX_FILE);
+  let indexPayload: unknown;
+  try {
+    indexPayload = JSON.parse(readFileSync(indexPath, 'utf8')) as unknown;
+  } catch (error) {
     return [{
       id: check.id,
       path,
@@ -924,18 +982,51 @@ function evaluateUxTraceBundles(
       exists: false,
       matches: [],
       min_count: minCount,
-      error: `Missing UX trace review.md, manifest.json, and events.jsonl under ${path}.`,
-      failure_class: 'evidence_missing',
+      error: existsSync(indexPath)
+        ? `Malformed UX trace ${UX_TRACE_INDEX_FILE}: ${error instanceof Error ? error.message : String(error)}`
+        : `Missing UX trace ${UX_TRACE_INDEX_FILE}: ${indexPath}`,
+      failure_class: existsSync(indexPath) ? 'contract_drift' : 'evidence_missing',
+    }];
+  }
+  if (!isRecord(indexPayload) || indexPayload.version !== 1 || !Array.isArray(indexPayload.bundles)) {
+    return [{
+      id: check.id,
+      path,
+      kind: 'ux_trace_bundle',
+      exists: false,
+      matches: [indexPath],
+      min_count: minCount,
+      error: `Malformed UX trace ${UX_TRACE_INDEX_FILE}: ${indexPath}`,
+      failure_class: 'contract_drift',
     }];
   }
 
   const records: ReleaseCampaignEvidencePointer['required_paths'] = [];
   let validCount = 0;
-  for (const reviewPath of reviewFiles.sort()) {
-    const bundleDir = dirname(reviewPath);
+  const bundleEntries = indexPayload.bundles
+    .filter((entry): entry is Record<string, unknown> => isRecord(entry) && typeof entry.bundle_relpath === 'string')
+    .sort((left, right) => String(left.bundle_relpath).localeCompare(String(right.bundle_relpath)));
+  if (bundleEntries.length === 0) {
+    return [{
+      id: check.id,
+      path,
+      kind: 'ux_trace_bundle',
+      exists: false,
+      matches: [indexPath],
+      min_count: minCount,
+      error: `UX trace ${UX_TRACE_INDEX_FILE} does not declare any bundles under ${path}.`,
+      failure_class: 'evidence_missing',
+    }];
+  }
+
+  for (const entry of bundleEntries) {
+    const bundleRelPath = String(entry.bundle_relpath);
+    const bundleDir = join(path, bundleRelPath);
+    const reviewPath = join(path, typeof entry.review_relpath === 'string' ? entry.review_relpath : `${bundleRelPath}/review.md`);
     const validation = validateUxTraceBundleArtifact({
       bundleDir,
       expectedLane: 'backend-real',
+      expectedSuite: typeof entry.suite === 'string' ? entry.suite : undefined,
       expectedEvidenceRoot: path,
       expectedCampaignStepId: step.id,
     });
@@ -943,7 +1034,7 @@ function evaluateUxTraceBundles(
       validCount += 1;
     }
     records.push({
-      id: `${check.id}:${basename(bundleDir)}`,
+      id: `${check.id}:${bundleRelPath}`,
       path: bundleDir,
       kind: 'ux_trace_bundle',
       exists: validation.ok,
@@ -964,7 +1055,7 @@ function evaluateUxTraceBundles(
       path,
       kind: 'ux_trace_bundle',
       exists: false,
-      matches: reviewFiles,
+      matches: bundleEntries.map((entry) => join(path, String(entry.bundle_relpath))),
       min_count: minCount,
       error: `Expected at least ${minCount} semantically valid UX trace bundle(s), found ${validCount}.`,
       failure_class: 'evidence_missing',
@@ -1116,7 +1207,8 @@ export function writeCampaignEvidencePointer(
 ): ReleaseCampaignEvidencePointer {
   const dir = stepDir(campaignRoot, step);
   mkdirSync(dir, { recursive: true });
-  const requiredPaths = evaluateCampaignEvidenceChecks(campaignRoot, step);
+  const requiredPaths = evaluateCampaignEvidenceChecks(campaignRoot, step)
+    .map((record) => buildReleaseCampaignEvidencePathRecord(record));
   const payload: ReleaseCampaignEvidencePointer = {
     schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
     step_id: step.id,

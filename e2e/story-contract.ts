@@ -58,6 +58,7 @@ export type StoryRuntimeVisualSemanticAssertionsDefinition = {
   forbiddenVisibleTextPatterns?: readonly string[];
   allowedDefaultForbiddenVisibleText?: readonly string[];
   requiredViewportTestIds?: readonly string[];
+  requiredViewerLocalDateTimeTestIds?: readonly string[];
   primaryActionTestIds?: readonly string[];
   maxProminentActions?: number;
 };
@@ -305,6 +306,16 @@ function validateVisualSemanticAssertions(
     validateUniqueList(
       'visual semantic assertion required viewport test id',
       assertions.requiredViewportTestIds,
+      storyId,
+    );
+  }
+  if (assertions.requiredViewerLocalDateTimeTestIds !== undefined) {
+    if (!Array.isArray(assertions.requiredViewerLocalDateTimeTestIds)) {
+      throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertion viewer-local datetime test ids must be a list`);
+    }
+    validateUniqueList(
+      'visual semantic assertion viewer-local datetime test id',
+      assertions.requiredViewerLocalDateTimeTestIds,
       storyId,
     );
   }

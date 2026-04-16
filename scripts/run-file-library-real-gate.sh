@@ -105,6 +105,7 @@ MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
 API_BASE="http://localhost:${API_PORT}"
 FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR="${FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real/current/file-library-real-gate}"
 RESOURCE_RECOVERY_DIR="${FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR}/resource-recovery"
+RESOURCE_RECOVERY_BOOT_BASELINE_JSON="${RESOURCE_RECOVERY_DIR}/boot-baseline.json"
 RESOURCE_RECOVERY_BASELINE_JSON="${RESOURCE_RECOVERY_DIR}/baseline.json"
 RESOURCE_RECOVERY_SMOKE_JSON="${RESOURCE_RECOVERY_DIR}/file-library-real-smoke.json"
 RESOURCE_RECOVERY_MOUNT_SYNC_JSON="${RESOURCE_RECOVERY_DIR}/file-library-mount-sync-smoke.json"
@@ -117,8 +118,12 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 
 mkdir -p "${RESOURCE_RECOVERY_DIR}"
 
+npx tsx "${ROOT_DIR}/scripts/file-library-resource-recovery.ts" \
+  snapshot \
+  --output "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
+
 write_resource_recovery_summary() {
-  if [[ ! -f "${RESOURCE_RECOVERY_BASELINE_JSON}" ]]; then
+  if [[ ! -f "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}" || ! -f "${RESOURCE_RECOVERY_BASELINE_JSON}" ]]; then
     return 0
   fi
 
@@ -132,6 +137,7 @@ write_resource_recovery_summary() {
 
   npx tsx "${ROOT_DIR}/scripts/file-library-resource-recovery.ts" \
     summary \
+    --boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}" \
     --baseline "${RESOURCE_RECOVERY_BASELINE_JSON}" \
     --output-json "${RESOURCE_RECOVERY_REPORT_JSON}" \
     --output-markdown "${RESOURCE_RECOVERY_REPORT_MD}" \
@@ -163,6 +169,7 @@ run_resource_recovery_step() {
     "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
     verify
     --baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
+    --api-pid "${API_PID}"
     --step "${step_name}"
     --output "${report_path}"
     --smoke-status "${smoke_status}"
@@ -189,6 +196,7 @@ run_resource_recovery_step() {
       "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
       fallback-report
       --baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
+      --api-pid "${API_PID}"
       --step "${step_name}"
       --output "${report_path}"
       --reason "${fallback_reason}"
@@ -273,6 +281,7 @@ fi
 
 npx tsx "${ROOT_DIR}/scripts/file-library-resource-recovery.ts" \
   snapshot \
+  --api-pid "${API_PID}" \
   --output "${RESOURCE_RECOVERY_BASELINE_JSON}"
 
 overall_status=0

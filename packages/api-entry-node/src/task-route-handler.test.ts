@@ -488,6 +488,365 @@ describe('task-route-handler workspace access', () => {
     expect(destroySpy).toHaveBeenCalledTimes(1);
   });
 
+  it('cancels artifact fallback downloads before statObject resolves and does not continue to getObject', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const now = new Date().toISOString();
+    await docStore.upsert('project_file_libraries', 'lib_1', {
+      id: 'lib_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Workspace Library',
+      status: 'ready',
+      filesystem_name: 'flib-workspace-library',
+      created_by_user_id: 'user_1',
+      created_at: now,
+      updated_at: now,
+    });
+    await docStore.upsert(notebookTasksCollection('ws_default'), 'task_1', {
+      id: 'task_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Artifact Task',
+      agent_id: 'agent_1',
+      agent_name: 'Agent One',
+      workspace_file_library_id: 'lib_1',
+      workspace_file_library_name: 'Workspace Library',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await docStore.upsert(notebookTaskArtifactsCollection('ws_default'), 'artifact_1', {
+      id: 'artifact_1',
+      task_id: 'task_1',
+      type: 'file',
+      title: 'result.txt',
+      task_relative_path: '.artifacts/result.txt',
+      mime_type: 'text/plain',
+      file_size: 12,
+      created_at: now,
+    });
+
+    let resolveStatObject: ((value: { size: number; metaData?: Record<string, string> }) => void) | null = null;
+    const getObject = vi.fn();
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject: vi.fn().mockImplementation(() => new Promise((resolve) => {
+        resolveStatObject = resolve;
+      })),
+      getObject,
+    });
+
+    const req = new EventEmitter() as http.IncomingMessage & { aborted: boolean };
+    req.headers = {};
+    req.url = '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/artifacts/artifact_1/download';
+    req.aborted = false;
+    const res = new PassThrough() as PassThrough & http.ServerResponse;
+    res.statusCode = 200;
+    res.setHeader = vi.fn();
+    res.end = vi.fn();
+
+    const routePromise = handleTaskRoute({
+      route: {
+        kind: 'taskArtifactDownload',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        artifactId: 'artifact_1',
+      } as never,
+      method: 'GET',
+      req,
+      res: res as unknown as http.ServerResponse,
+      deps: {
+        docStore,
+      } as never,
+      user: { id: 'user_1' } as never,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    req.aborted = true;
+    req.emit('aborted');
+    resolveStatObject?.({
+      size: 12,
+      metaData: { 'content-type': 'text/plain' },
+    });
+
+    await expect(routePromise).resolves.toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(getObject).not.toHaveBeenCalled();
+    expect(res.end).not.toHaveBeenCalled();
+  });
+
+  it('passes the http operation signal into gateway client creation for artifact fallback downloads', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const now = new Date().toISOString();
+    await docStore.upsert('project_file_libraries', 'lib_1', {
+      id: 'lib_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Workspace Library',
+      status: 'ready',
+      filesystem_name: 'flib-workspace-library',
+      created_by_user_id: 'user_1',
+      created_at: now,
+      updated_at: now,
+    });
+    await docStore.upsert(notebookTasksCollection('ws_default'), 'task_1', {
+      id: 'task_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Artifact Task',
+      agent_id: 'agent_1',
+      agent_name: 'Agent One',
+      workspace_file_library_id: 'lib_1',
+      workspace_file_library_name: 'Workspace Library',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await docStore.upsert(notebookTaskArtifactsCollection('ws_default'), 'artifact_1', {
+      id: 'artifact_1',
+      task_id: 'task_1',
+      type: 'file',
+      title: 'result.txt',
+      task_relative_path: '.artifacts/result.txt',
+      mime_type: 'text/plain',
+      file_size: 12,
+      created_at: now,
+    });
+
+    let receivedSignal: AbortSignal | undefined;
+    createFileLibraryGatewayClientMock.mockImplementation(async (args: { signal?: AbortSignal }) => {
+      receivedSignal = args.signal;
+      return await new Promise<never>(() => {});
+    });
+
+    const req = new EventEmitter() as http.IncomingMessage & { aborted: boolean };
+    req.headers = {};
+    req.url = '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/artifacts/artifact_1/download';
+    req.aborted = false;
+    const res = new EventEmitter() as EventEmitter & http.ServerResponse & {
+      setHeader: ReturnType<typeof vi.fn>;
+      writableEnded: boolean;
+      destroyed: boolean;
+      writableDestroyed?: boolean;
+    };
+    res.statusCode = 200;
+    res.setHeader = vi.fn();
+    res.writableEnded = false;
+    res.destroyed = false;
+
+    const routePromise = handleTaskRoute({
+      route: {
+        kind: 'taskArtifactDownload',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        artifactId: 'artifact_1',
+      } as never,
+      method: 'GET',
+      req,
+      res: res as unknown as http.ServerResponse,
+      deps: {
+        docStore,
+      } as never,
+      user: { id: 'user_1' } as never,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
+
+    req.aborted = true;
+    req.emit('aborted');
+
+    await expect(routePromise).resolves.toBe(true);
+    expect(receivedSignal?.aborted).toBe(true);
+  });
+
+  it('uses session dispatch authority for terminal creation even when local online booleans are still true', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const now = new Date().toISOString();
+    await docStore.upsert(notebookTasksCollection('ws_default'), 'task_1', {
+      id: 'task_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Terminal Task',
+      agent_id: 'agent_1',
+      agent_name: 'Agent One',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const json = vi.fn();
+    const createSession = vi.fn().mockResolvedValue({
+      sessionId: 'term_1',
+      wsPath: '/terminal/ws/term_1',
+    });
+    const getAgentSessionDispatchAuthority = vi
+      .fn()
+      .mockResolvedValue('remote_owned_not_local_dispatchable');
+
+    try {
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSessions',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_1',
+        } as never,
+        method: 'POST',
+        req: {
+          headers: {},
+          url: '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/terminal-sessions',
+        } as never,
+        res: {
+          setHeader: vi.fn(),
+        } as never,
+        deps: {
+          docStore,
+          cache,
+          notebookTerminalService: {
+            createSession,
+          },
+          agentResourceService: {
+            getAgent: vi.fn().mockResolvedValue({
+              id: 'agent_1',
+              name: 'Agent One',
+              status: 'enabled',
+              mode: 'external',
+              interaction_kind: 'notebook',
+            }),
+          },
+          agentExecutionService: {
+            getAgentSessionOnlineState: vi.fn().mockReturnValue(true),
+            getAgentOnlineState: vi.fn().mockReturnValue(true),
+            getAgentSessionDispatchAuthority,
+          },
+        } as never,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json,
+        readBody: vi.fn().mockResolvedValue({}),
+      })).resolves.toBe(true);
+    } finally {
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
+    }
+
+    expect(getAgentSessionDispatchAuthority).toHaveBeenCalledWith('agent_1', 'task_1');
+    expect(createSession).not.toHaveBeenCalled();
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      { error_code: 'RESOURCE_CONFLICT', message: 'task_runner_remote_owned' },
+    );
+  });
+
+  it('allows terminal creation to proceed when local runner truth is still online and shared session authority has not materialized yet', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const now = new Date().toISOString();
+    await docStore.upsert(notebookTasksCollection('ws_default'), 'task_1', {
+      id: 'task_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Terminal Task',
+      agent_id: 'agent_1',
+      agent_name: 'Agent One',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const json = vi.fn();
+    const createSession = vi.fn().mockResolvedValue({
+      sessionId: 'term_1',
+      wsPath: '/terminal/ws/term_1',
+    });
+
+    try {
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskTerminalSessions',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_1',
+        } as never,
+        method: 'POST',
+        req: {
+          headers: {},
+          url: '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/terminal-sessions',
+        } as never,
+        res: {
+          setHeader: vi.fn(),
+        } as never,
+        deps: {
+          docStore,
+          cache,
+          notebookTerminalService: {
+            createSession,
+          },
+          agentResourceService: {
+            getAgent: vi.fn().mockResolvedValue({
+              id: 'agent_1',
+              name: 'Agent One',
+              status: 'enabled',
+              mode: 'external',
+              interaction_kind: 'notebook',
+            }),
+          },
+          agentExecutionService: {
+            getAgentSessionOnlineState: vi.fn().mockReturnValue(true),
+            getAgentOnlineState: vi.fn().mockReturnValue(true),
+            getAgentSessionDispatchAuthority: vi.fn().mockResolvedValue('offline'),
+          },
+        } as never,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json,
+        readBody: vi.fn().mockResolvedValue({}),
+      })).resolves.toBe(true);
+    } finally {
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
+    }
+
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      201,
+      expect.objectContaining({
+        session_id: 'term_1',
+        status: 'pending',
+      }),
+    );
+  });
+
   it('maps remote-owned runner authority to a distinct route error instead of task_runner_offline', async () => {
     const taskRouteHandlerModule = await import('./task-route-handler.js') as typeof import('./task-route-handler.js') & {
       mapRunnerSessionAuthorityToTaskRouteError?: (authority: string) => string | null;

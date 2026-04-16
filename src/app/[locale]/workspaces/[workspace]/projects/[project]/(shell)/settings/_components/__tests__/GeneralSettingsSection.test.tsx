@@ -1,6 +1,5 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { buttonVariants } from '@/components/ui/button';
 import { GeneralSettingsSection } from '../GeneralSettingsSection';
 
 describe('GeneralSettingsSection', () => {
@@ -50,10 +49,7 @@ describe('GeneralSettingsSection', () => {
 
     const saveButton = screen.getByTestId('settings__save-btn');
     expect(screen.getByTestId('settings__general-header')).toContainElement(saveButton);
-    expect(saveButton.className).toBe(buttonVariants({
-      variant: 'primary',
-      className: 'shrink-0',
-    }));
+    expect(saveButton).toHaveAttribute('data-visual-prominence', 'primary');
   });
 
   it('uses translated saving copy and translated description placeholder', () => {

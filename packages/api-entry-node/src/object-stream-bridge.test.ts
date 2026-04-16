@@ -224,4 +224,44 @@ describe('object-stream-bridge multipart lifecycle envelope', () => {
       message: 'file_library_multiple_files_not_supported',
     });
   });
+
+  it('aborts the multipart envelope when the outer http operation closes after busboy finish but before execute settles', async () => {
+    const req = new PassThrough() as PassThrough & http.IncomingMessage;
+    req.headers = {
+      'content-type': 'multipart/form-data; boundary=----agentsmith',
+    };
+
+    const routeAbortController = new AbortController();
+    const busboy = new FakeBusboy();
+    const file = new PassThrough() as PassThrough & {
+      on(event: 'limit', listener: () => void): PassThrough;
+      resume(): PassThrough;
+    };
+
+    let executeSignal: AbortSignal | null = null;
+    const routePromise = parseMultipartUploadAndExecute(
+      req,
+      async ({ signal }) => {
+        executeSignal = signal;
+        return await new Promise<never>(() => {});
+      },
+      () => busboy,
+      {
+        signal: routeAbortController.signal,
+      } as never,
+    );
+
+    busboy.emit('file', 'file', file, {
+      filename: 'hello.txt',
+      mimeType: 'text/plain',
+    });
+    busboy.emit('finish');
+
+    routeAbortController.abort(new Error('client_response_closed'));
+
+    await expect(routePromise).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    expect(executeSignal?.aborted).toBe(true);
+  });
 });

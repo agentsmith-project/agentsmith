@@ -12,10 +12,12 @@ import {
   type CurrentVerificationCampaignStep,
 } from './current-verification-campaign-manifest';
 import {
+  buildReleaseCampaignEvidencePathRecord,
   evidencePointerPath,
   evaluateCampaignEvidenceChecks,
   nativeResultPath,
   type ParsedGateResult,
+  type ReleaseCampaignEvidencePathRecord,
   resolveExistingCampaignRoot,
   resultPath,
   stepDir,
@@ -304,7 +306,7 @@ function validateCurrentEvidenceChecks(
   campaignRoot: string,
   step: CurrentVerificationCampaignStep,
   evidence: ReleaseCampaignEvidencePointer,
-  requiredPaths: { path: string; exists: boolean }[],
+  requiredPaths: ReleaseCampaignEvidencePathRecord[],
 ): void {
   const pointerRecords = Array.isArray(evidence.required_paths)
     ? evidence.required_paths
@@ -329,7 +331,7 @@ function validateCurrentEvidenceChecks(
   }
 
   for (const expected of evaluateCampaignEvidenceChecks(campaignRoot, step)) {
-    requiredPaths.push({ path: expected.path, exists: expected.exists });
+    requiredPaths.push(buildReleaseCampaignEvidencePathRecord(expected));
 
     const pointerRecord = pointerById.get(expected.id);
     if (!pointerRecord) {
@@ -387,10 +389,15 @@ function main(): void {
     return step;
   }).filter((step): step is NonNullable<typeof step> => Boolean(step));
 
-  const requiredPaths: { path: string; exists: boolean }[] = [];
+  const requiredPaths: ReleaseCampaignEvidencePathRecord[] = [];
   for (const step of upstreamSteps) {
     const stepResultPath = resultPath(campaignRoot, step);
-    requiredPaths.push({ path: stepResultPath, exists: existsSync(stepResultPath) });
+    requiredPaths.push(buildReleaseCampaignEvidencePathRecord({
+      id: `campaign_step_result:${step.id}`,
+      path: stepResultPath,
+      kind: 'campaign_step_result',
+      exists: existsSync(stepResultPath),
+    }));
     if (!existsSync(stepResultPath)) {
       failures.push({
         failureClass: 'evidence_missing',
@@ -434,7 +441,12 @@ function main(): void {
 
     if (step.evidenceRequired) {
       const pointerPath = evidencePointerPath(campaignRoot, step);
-      requiredPaths.push({ path: pointerPath, exists: existsSync(pointerPath) });
+      requiredPaths.push(buildReleaseCampaignEvidencePathRecord({
+        id: `campaign_step_evidence_pointer:${step.id}`,
+        path: pointerPath,
+        kind: 'campaign_step_evidence_pointer',
+        exists: existsSync(pointerPath),
+      }));
       if (!existsSync(pointerPath)) {
         failures.push({
           failureClass: 'evidence_missing',
@@ -466,7 +478,12 @@ function main(): void {
             message: `Missing native result contract for campaign step: ${step.id}`,
           });
         } else {
-          requiredPaths.push({ path: expectedNativePath, exists: existsSync(expectedNativePath) });
+          requiredPaths.push(buildReleaseCampaignEvidencePathRecord({
+            id: `campaign_step_native_result:${step.id}`,
+            path: expectedNativePath,
+            kind: 'campaign_step_native_result',
+            exists: existsSync(expectedNativePath),
+          }));
           if (!evidence.native_result) {
             failures.push({
               failureClass: 'evidence_missing',

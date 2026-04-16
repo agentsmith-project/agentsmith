@@ -1,18 +1,34 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { formatDisplayDateTime } from '../date-time-format';
 
 describe('formatDisplayDateTime', () => {
-  it('formats backend ISO timestamps as user-readable UTC display text', () => {
-    expect(formatDisplayDateTime('2026-03-19T08:00:00.000Z', { locale: 'en-US' }))
-      .toBe('Mar 19, 2026, 08:00 AM UTC');
+  const originalResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it('localizes display text without leaking the raw ISO protocol format', () => {
-    const formatted = formatDisplayDateTime('2026-03-19T08:00:00.000Z', { locale: 'zh-CN' });
+  it('formats backend ISO timestamps in the viewer local timezone by default', () => {
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function resolvedOptions(this: Intl.DateTimeFormat) {
+      return {
+        ...originalResolvedOptions.call(this),
+        timeZone: 'America/Los_Angeles',
+      };
+    });
+
+    expect(formatDisplayDateTime('2026-03-19T08:00:00.000Z', { locale: 'en-US' }))
+      .toBe('Mar 19, 2026, 01:00 AM PDT');
+  });
+
+  it('supports explicit locale and timezone overrides without leaking raw ISO protocol text', () => {
+    const formatted = formatDisplayDateTime('2026-03-19T08:00:00.000Z', {
+      locale: 'zh-CN',
+      timeZone: 'Asia/Shanghai',
+    });
 
     expect(formatted).toContain('2026年3月19日');
-    expect(formatted).toContain('UTC 08:00');
+    expect(formatted).toContain('GMT+8 16:00');
     expect(formatted).not.toContain('2026-03-19T08:00:00.000Z');
   });
 

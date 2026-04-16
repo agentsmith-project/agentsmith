@@ -61,6 +61,9 @@ Verification governance rules:
 - `lane:visual` and `lane:backend-real:release` remain authoritative evidence-owning lanes for full visual review and release-grade backend-real evidence, but they do not replace the final release verdict.
 - For any gate or lane that owns required machine-readable evidence, `command passed` and evidence completeness are same-level acceptance conditions. Missing required review artifacts, missing `visual_scene_catalog`, or missing required `ux_trace_bundle` output is a failure, not a soft warning.
 - Where a current result writer is registered in `scripts/governance/current-gate-result-schema.ts`, evidence completeness also requires canonical `<evidence_dir>/result.json`.
+- Evidence must be producer-owned. Wrappers and aggregate verifiers may relay or validate authority artifacts, but they must not synthesize replacement authority truth from the current checkout.
+- `lane:visual` authority artifact is producer-owned `run-manifest.json` plus run-scoped actual captures under the same review root; committed baselines remain comparison input, not release authority.
+- backend-real UX trace authority is producer-owned `ux-trace-index.json` plus per-bundle `contract-snapshot.json`; aggregate verification must consume those snapshots instead of reloading current repo story definitions.
 - `failure_class` in canonical `result.json` is a gate-verdict taxonomy only. It must not be treated as the same thing as troubleshooting categories produced by local diagnosis tools or incident notes.
 - Automated release-grade verification and operator-only checks must stay separated. Current manual Feishu steps belong in release operator guidance, not in machine-readable gate identity or gate-result truth.
 - Human-oriented campaign guidance lives in [Verification Campaigns v1](./testing/verification-campaigns-v1.md); if it conflicts with manifests or contracts, machine-readable governance truth wins.
@@ -244,8 +247,10 @@ Important:
 - `gate:default` may contain targeted visual checks inside domain gates.
 - `lane:visual` is the only current full visual lane.
 - `lane:visual` owns `visual_scene_catalog` evidence through `e2e/visual-baseline-support.ts` and the committed baseline set under `e2e/__screenshots__/visual.spec.ts`.
+- `lane:visual` release authority is producer-owned `artifacts/visual-baseline-reviews/<run-id>/run-manifest.json` with run-scoped `captured/<scenario-id>/<file>` actual screenshots.
 - `test:backend-real:core` and `lane:backend-real:core` own default-tier `ux_trace_bundle` evidence through `artifacts/backend-real/runs/<run-id>/ux-traces`.
 - `gate:release` and `lane:backend-real:release` own release-grade `ux_trace_bundle` evidence through `artifacts/backend-real-visual/<run-id>/ux-traces`.
+- backend-real trace bundles must publish `ux-trace-index.json` at the trace root and `contract-snapshot.json` inside each bundle directory.
 - Checklists and contracts must use these machine-readable evidence kinds instead of inventing parallel release-only names.
 
 ## 6. Current configuration language

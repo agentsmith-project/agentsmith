@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { createServer, type AddressInfo } from 'node:http';
 import type http from 'node:http';
 import { PassThrough, Readable } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,6 +18,7 @@ vi.mock('./file-library-gateway-client.js', async () => {
 });
 
 import { handleProjectFileLibraryRoutes } from './project-file-library-routes.js';
+import { putGatewayObjectStream } from './object-stream-bridge.js';
 import {
   InMemoryFileLibraryGatewayManager,
   InMemoryFileLibraryOrchestrator,
@@ -30,6 +32,22 @@ describe('project-file-library-routes', () => {
     vi.clearAllMocks();
     createFileLibraryGatewayClientMock.mockReset();
   });
+
+  async function nextTick(): Promise<void> {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  async function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  }
 
   function createDeps() {
     return {
@@ -769,5 +787,514 @@ describe('project-file-library-routes', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(destroyError?.name).toBe('AbortError');
+  });
+
+  it('stops waiting for upload completion and does not write json when the response closes after the body is fully parsed', async () => {
+    const createJson = vi.fn();
+    const createRes = {} as never;
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: createRes,
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Upload Late Cancel',
+      }),
+    });
+
+    const createdBody = createJson.mock.calls.at(-1)?.[2] as { id: string };
+    let resolveUploadStat: ((value: {
+      size: number;
+      metaData?: Record<string, string>;
+      lastModified: Date;
+      etag: string;
+    }) => void) | null = null;
+    const statObject = vi.fn()
+      .mockRejectedValueOnce(new Error('object_not_found'))
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveUploadStat = resolve;
+      }));
+    const putObject = vi.fn().mockImplementation(async (
+      _bucket: string,
+      _key: string,
+      stream: Readable,
+    ) => {
+      await new Promise<void>((resolve, reject) => {
+        stream.on('end', () => resolve());
+        stream.on('error', (error) => reject(error));
+        stream.resume();
+      });
+    });
+
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject,
+      putObject,
+    });
+
+    const boundary = '----agentsmith-upload-late-close';
+    const req = new PassThrough() as PassThrough & http.IncomingMessage;
+    req.headers = {
+      'content-type': `multipart/form-data; boundary=${boundary}`,
+    };
+    const res = new EventEmitter() as EventEmitter & http.ServerResponse & {
+      setHeader: ReturnType<typeof vi.fn>;
+      end: ReturnType<typeof vi.fn>;
+      writableEnded: boolean;
+      destroyed: boolean;
+      writableDestroyed?: boolean;
+    };
+    res.setHeader = vi.fn();
+    res.end = vi.fn();
+    res.writableEnded = false;
+    res.destroyed = false;
+    const uploadJson = vi.fn();
+
+    const routePromise = handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryUpload',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req,
+      res,
+      deps,
+      user: OWNER_USER,
+      json: uploadJson,
+      readBody: vi.fn(),
+    });
+
+    req.write(`--${boundary}\r\n`);
+    req.write('Content-Disposition: form-data; name="file"; filename="hello.txt"\r\n');
+    req.write('Content-Type: text/plain\r\n\r\n');
+    req.write('hello world');
+    req.end(`\r\n--${boundary}--\r\n`);
+
+    await nextTick();
+    expect(putObject).toHaveBeenCalledTimes(1);
+    expect(statObject).toHaveBeenCalledTimes(2);
+
+    res.emit('close');
+
+    await expect(Promise.race([
+      routePromise.then(() => 'resolved'),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 25)),
+    ])).resolves.toBe('resolved');
+
+    resolveUploadStat?.({
+      size: 11,
+      metaData: { 'content-type': 'text/plain' },
+      lastModified: new Date('2026-04-15T10:00:00.000Z'),
+      etag: 'etag-upload',
+    });
+    await nextTick();
+
+    expect(uploadJson).not.toHaveBeenCalled();
+  });
+
+  it('stops waiting for statObject and never opens the object stream when the client aborts before download metadata resolves', async () => {
+    const createJson = vi.fn();
+    const createRes = {} as never;
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: createRes,
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Download Pending Stat',
+      }),
+    });
+
+    const createdBody = createJson.mock.calls.at(-1)?.[2] as { id: string };
+    let resolveStatObject: ((value: {
+      size: number;
+      metaData?: Record<string, string>;
+      lastModified: Date;
+      etag: string;
+    }) => void) | null = null;
+    const statObject = vi.fn().mockImplementation(() => new Promise((resolve) => {
+      resolveStatObject = resolve;
+    }));
+    const getObject = vi.fn();
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject,
+      getObject,
+    });
+
+    const req = new EventEmitter() as EventEmitter & http.IncomingMessage & { aborted: boolean };
+    req.url = '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/download?path=docs%2Fhello.txt';
+    req.headers = {};
+    req.aborted = false;
+    const res = new EventEmitter() as EventEmitter & http.ServerResponse & {
+      setHeader: ReturnType<typeof vi.fn>;
+      end: ReturnType<typeof vi.fn>;
+      writableEnded: boolean;
+      destroyed: boolean;
+      writableDestroyed?: boolean;
+    };
+    res.setHeader = vi.fn();
+    res.end = vi.fn();
+    res.writableEnded = false;
+    res.destroyed = false;
+    const downloadJson = vi.fn();
+
+    const routePromise = handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryDownload',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req,
+      res,
+      deps,
+      user: OWNER_USER,
+      json: downloadJson,
+      readBody: vi.fn(),
+    });
+
+    await nextTick();
+    req.aborted = true;
+    req.emit('aborted');
+
+    await expect(Promise.race([
+      routePromise.then(() => 'resolved'),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 25)),
+    ])).resolves.toBe('resolved');
+
+    resolveStatObject?.({
+      size: 11,
+      metaData: { 'content-type': 'text/plain' },
+      lastModified: new Date('2026-04-15T10:00:00.000Z'),
+      etag: 'etag-download',
+    });
+    await nextTick();
+
+    expect(getObject).not.toHaveBeenCalled();
+    expect(downloadJson).not.toHaveBeenCalled();
+  });
+
+  it('cancels a late getObject resolution when the response closes before the download stream exists', async () => {
+    const createJson = vi.fn();
+    const createRes = {} as never;
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: createRes,
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Download Pending Object',
+      }),
+    });
+
+    const createdBody = createJson.mock.calls.at(-1)?.[2] as { id: string };
+    let resolveGetObject: ((stream: PassThrough) => void) | null = null;
+    const objectStream = new PassThrough();
+    const destroySpy = vi.spyOn(objectStream, 'destroy');
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject: vi.fn().mockResolvedValue({
+        size: 11,
+        metaData: { 'content-type': 'text/plain' },
+        lastModified: new Date('2026-04-15T10:00:00.000Z'),
+        etag: 'etag-download',
+      }),
+      getObject: vi.fn().mockImplementation(() => new Promise<PassThrough>((resolve) => {
+        resolveGetObject = resolve;
+      })),
+    });
+
+    const req = new EventEmitter() as EventEmitter & http.IncomingMessage & { aborted: boolean };
+    req.url = '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/download?path=docs%2Fhello.txt';
+    req.headers = {};
+    req.aborted = false;
+    const res = new EventEmitter() as EventEmitter & http.ServerResponse & {
+      setHeader: ReturnType<typeof vi.fn>;
+      end: ReturnType<typeof vi.fn>;
+      writableEnded: boolean;
+      destroyed: boolean;
+      writableDestroyed?: boolean;
+      statusCode: number;
+    };
+    res.setHeader = vi.fn();
+    res.end = vi.fn();
+    res.writableEnded = false;
+    res.destroyed = false;
+    res.statusCode = 200;
+    const downloadJson = vi.fn();
+
+    const routePromise = handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryDownload',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req,
+      res,
+      deps,
+      user: OWNER_USER,
+      json: downloadJson,
+      readBody: vi.fn(),
+    });
+
+    await nextTick();
+    res.emit('close');
+
+    await expect(Promise.race([
+      routePromise.then(() => 'resolved'),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 25)),
+    ])).resolves.toBe('resolved');
+
+    resolveGetObject?.(objectStream);
+    await nextTick();
+
+    expect(destroySpy).toHaveBeenCalledTimes(1);
+    expect(downloadJson).not.toHaveBeenCalled();
+  });
+
+  it('aborts the real gateway stat request when download metadata is cancelled before statObject resolves', async () => {
+    const actualGatewayClient = await vi.importActual<typeof import('./file-library-gateway-client.js')>('./file-library-gateway-client.js');
+    const createJson = vi.fn();
+    const deps = createDeps() as typeof createDeps extends (...args: never[]) => infer TResult ? TResult : never;
+    const gatewayServer = createServer();
+    const headStarted = new Promise<void>((resolve) => {
+      gatewayServer.once('request', (_request, _response) => {
+        resolve();
+      });
+    });
+    const headClosed = new Promise<void>((resolve) => {
+      gatewayServer.once('request', (request) => {
+        request.once('close', () => {
+          resolve();
+        });
+      });
+    });
+
+    gatewayServer.on('request', (request, response) => {
+      if (request.method === 'HEAD') {
+        return;
+      }
+      response.statusCode = 500;
+      response.end('unexpected_gateway_request');
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      gatewayServer.listen(0, '127.0.0.1', (error?: Error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    try {
+      const address = gatewayServer.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('gateway_test_server_address_unavailable');
+      }
+      deps.fileLibraryGatewayManager = {
+        ensureGateway: vi.fn().mockResolvedValue({
+          loopbackUrl: `http://127.0.0.1:${(address as AddressInfo).port}`,
+          port: (address as AddressInfo).port,
+          status: 'ready',
+          lastStartedAt: '2026-04-16T10:00:00.000Z',
+        }),
+        getHealth: vi.fn().mockResolvedValue({
+          status: 'ready',
+          checkedAt: '2026-04-16T10:00:00.000Z',
+        }),
+        stopGateway: vi.fn().mockResolvedValue(undefined),
+      } as never;
+      createFileLibraryGatewayClientMock.mockImplementation((args) => actualGatewayClient.createFileLibraryGatewayClient(args as never));
+
+      await handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraries',
+        method: 'POST',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        req: {} as never,
+        res: {} as never,
+        deps,
+        user: OWNER_USER,
+        json: createJson,
+        readBody: vi.fn().mockResolvedValue({
+          name: 'Real Gateway Download Abort',
+        }),
+      });
+
+      const createdBody = createJson.mock.calls.at(-1)?.[2] as { id: string };
+      const req = new EventEmitter() as EventEmitter & http.IncomingMessage & { aborted: boolean };
+      req.url = '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/download?path=docs%2Fhello.txt';
+      req.headers = {};
+      req.aborted = false;
+      const res = new EventEmitter() as EventEmitter & http.ServerResponse & {
+        setHeader: ReturnType<typeof vi.fn>;
+        end: ReturnType<typeof vi.fn>;
+        writableEnded: boolean;
+        destroyed: boolean;
+        writableDestroyed?: boolean;
+      };
+      res.setHeader = vi.fn();
+      res.end = vi.fn();
+      res.writableEnded = false;
+      res.destroyed = false;
+
+      const routePromise = handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraryDownload',
+        method: 'GET',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: createdBody.id,
+        req,
+        res,
+        deps,
+        user: OWNER_USER,
+        json: vi.fn(),
+        readBody: vi.fn(),
+      });
+
+      await headStarted;
+      req.aborted = true;
+      req.emit('aborted');
+
+      await expect(routePromise).resolves.toBe(true);
+      await headClosed;
+    } finally {
+      await closeServer(gatewayServer);
+    }
+  });
+
+  it('aborts the real gateway put request when the upload is cancelled after the request body has been fully sent', async () => {
+    const actualGatewayClient = await vi.importActual<typeof import('./file-library-gateway-client.js')>('./file-library-gateway-client.js');
+    const createJson = vi.fn();
+    const deps = createDeps() as typeof createDeps extends (...args: never[]) => infer TResult ? TResult : never;
+    let resolvePutBodyReceived: (() => void) | null = null;
+    let resolvePutClosed: (() => void) | null = null;
+    const putBodyReceived = new Promise<void>((resolve) => {
+      resolvePutBodyReceived = resolve;
+    });
+    const putClosed = new Promise<void>((resolve) => {
+      resolvePutClosed = resolve;
+    });
+    const gatewayServer = createServer((request, response) => {
+      if (request.method === 'PUT') {
+        request.on('end', () => {
+          resolvePutBodyReceived?.();
+        });
+        request.on('close', () => {
+          if (!response.writableEnded) {
+            resolvePutClosed?.();
+          }
+        });
+        request.resume();
+        return;
+      }
+      response.statusCode = 200;
+      response.end('ok');
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      gatewayServer.listen(0, '127.0.0.1', (error?: Error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    try {
+      const address = gatewayServer.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('gateway_test_server_address_unavailable');
+      }
+      deps.fileLibraryGatewayManager = {
+        ensureGateway: vi.fn().mockResolvedValue({
+          loopbackUrl: `http://127.0.0.1:${(address as AddressInfo).port}`,
+          port: (address as AddressInfo).port,
+          status: 'ready',
+          lastStartedAt: '2026-04-16T10:00:00.000Z',
+        }),
+        getHealth: vi.fn().mockResolvedValue({
+          status: 'ready',
+          checkedAt: '2026-04-16T10:00:00.000Z',
+        }),
+        stopGateway: vi.fn().mockResolvedValue(undefined),
+      } as never;
+      createFileLibraryGatewayClientMock.mockImplementation((args) => actualGatewayClient.createFileLibraryGatewayClient(args as never));
+
+      await handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraries',
+        method: 'POST',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        req: {} as never,
+        res: {} as never,
+        deps,
+        user: OWNER_USER,
+        json: createJson,
+        readBody: vi.fn().mockResolvedValue({
+          name: 'Real Gateway Upload Abort',
+        }),
+      });
+
+      const createdBody = createJson.mock.calls.at(-1)?.[2] as { id: string };
+      const uploadAbortController = new AbortController();
+      const client = await actualGatewayClient.createFileLibraryGatewayClient({
+        deps,
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: createdBody.id,
+        filesystemName: 'flib-real-gateway-upload-abort',
+        signal: uploadAbortController.signal,
+      });
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('hello world'));
+          controller.close();
+        },
+      });
+
+      const uploadPromise = putGatewayObjectStream(
+        client,
+        actualGatewayClient.fileLibraryBucketName('flib-real-gateway-upload-abort'),
+        'hello.txt',
+        body,
+        {
+          sizeBytes: 11,
+          contentType: 'text/plain',
+          signal: uploadAbortController.signal,
+        },
+      );
+
+      await putBodyReceived;
+      uploadAbortController.abort(new Error('client_response_closed'));
+
+      await expect(uploadPromise).rejects.toMatchObject({
+        name: 'AbortError',
+      });
+      await putClosed;
+    } finally {
+      await closeServer(gatewayServer);
+    }
   });
 });

@@ -279,12 +279,15 @@ export default function WorkspaceConnectionsPage() {
                   </div>
                   <div className="rounded-md border border-subtle bg-background/70 p-4">
                     <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_feishu_last_refresh_label')}</div>
-                    <div
-                      className="mt-2 text-sm font-medium text-foreground"
+                    <time
+                      className="mt-2 block text-sm font-medium text-foreground"
+                      dateTime={feishuConnection?.last_refreshed_at ?? undefined}
                       data-testid="workspace-connections__last-refresh-value"
+                      data-visual-datetime={feishuConnection?.last_refreshed_at ?? undefined}
+                      data-visual-datetime-policy="viewer_local"
                     >
                       {lastRefreshLabel}
-                    </div>
+                    </time>
                   </div>
                 </div>
 

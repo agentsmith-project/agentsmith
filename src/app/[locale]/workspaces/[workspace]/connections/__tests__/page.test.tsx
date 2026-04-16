@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en-US' }));
@@ -58,8 +58,16 @@ function renderPage() {
 }
 
 describe('WorkspaceConnectionsPage', () => {
+  const originalResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function resolvedOptions(this: Intl.DateTimeFormat) {
+      return {
+        ...originalResolvedOptions.call(this),
+        timeZone: 'America/Los_Angeles',
+      };
+    });
     mockUseParams.mockReturnValue({ workspace: 'ws_1', locale: 'en-US' });
     mockUseHasWorkspacePermission.mockImplementation((permission: string) => (
       permission === 'workspace:read' || permission === 'workspace:governance:update'
@@ -93,6 +101,10 @@ describe('WorkspaceConnectionsPage', () => {
     });
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('renders Feishu card as disabled when workspace is not configured', async () => {
     renderPage();
 
@@ -101,8 +113,8 @@ describe('WorkspaceConnectionsPage', () => {
     });
 
     expect(screen.getByTestId('workspace-connections__feishu-connect')).toBeDisabled();
-    expect(screen.getByTestId('workspace-connections__feishu-connect')).not.toHaveClass('bg-foreground');
-    expect(screen.getByTestId('workspace-connections__open-projects')).not.toHaveClass('bg-foreground');
+    expect(screen.getByTestId('workspace-connections__feishu-connect')).not.toHaveAttribute('data-visual-prominence');
+    expect(screen.getByTestId('workspace-connections__open-projects')).not.toHaveAttribute('data-visual-prominence');
     expect(screen.getByTestId('workspace-connections__open-projects')).toHaveAttribute(
       'href',
       '/en-US/workspaces/ws_1/projects',
@@ -253,9 +265,12 @@ describe('WorkspaceConnectionsPage', () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByTestId('workspace-connections__feishu-connect')).toHaveClass('bg-foreground');
+      expect(screen.getByTestId('workspace-connections__feishu-connect')).toHaveAttribute(
+        'data-visual-prominence',
+        'primary',
+      );
     });
-    expect(screen.getByTestId('workspace-connections__open-projects')).not.toHaveClass('bg-foreground');
+    expect(screen.getByTestId('workspace-connections__open-projects')).not.toHaveAttribute('data-visual-prominence');
   });
 
   it('keeps reconnect secondary when Feishu is already connected', async () => {
@@ -297,12 +312,20 @@ describe('WorkspaceConnectionsPage', () => {
       expect(screen.getByTestId('workspace-connections__feishu-connect')).toHaveTextContent('workspace_feishu_reconnect');
     });
     expect(screen.getByTestId('workspace-connections__last-refresh-value')).toHaveTextContent(
-      'Mar 19, 2026, 12:00 AM UTC',
+      'Mar 18, 2026, 05:00 PM PDT',
+    );
+    expect(screen.getByTestId('workspace-connections__last-refresh-value')).toHaveAttribute(
+      'data-visual-datetime-policy',
+      'viewer_local',
+    );
+    expect(screen.getByTestId('workspace-connections__last-refresh-value')).toHaveAttribute(
+      'dateTime',
+      '2026-03-19T00:00:00.000Z',
     );
     expect(screen.getByTestId('workspace-connections__last-refresh-value')).not.toHaveTextContent(
       '2026-03-19T00:00:00.000Z',
     );
-    expect(screen.getByTestId('workspace-connections__feishu-connect')).not.toHaveClass('bg-foreground');
-    expect(screen.getByTestId('workspace-connections__open-projects')).not.toHaveClass('bg-foreground');
+    expect(screen.getByTestId('workspace-connections__feishu-connect')).not.toHaveAttribute('data-visual-prominence');
+    expect(screen.getByTestId('workspace-connections__open-projects')).not.toHaveAttribute('data-visual-prominence');
   });
 });

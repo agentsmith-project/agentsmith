@@ -25,6 +25,8 @@ import {
   normalizeFileLibraryPath,
 } from './file-library-gateway-client.js';
 import {
+  awaitAbortableOperation,
+  createHttpOperationEnvelope,
   openGatewayObjectDownload,
   parseMultipartUploadAndExecute,
   pipeGatewayDownloadToHttpResponse,
@@ -671,23 +673,37 @@ export async function handleProjectFileLibraryRoutes(args: {
       return true;
     }
 
+    const operation = createHttpOperationEnvelope({ req, res });
     try {
       const uploaded = await parseMultipartUploadAndExecute(
         req,
         async ({ fileName, fileStream, contentType: uploadedContentType, prefix, overwrite, signal }) => {
           const normalizedPrefix = prefix ? ensureDirectoryPath(prefix) : '';
           const objectPath = normalizeFileLibraryPath(`${normalizedPrefix}${fileName}`);
-          const client = await createFileLibraryGatewayClient({
-            deps,
-            workspaceId,
-            projectId,
-            libraryId,
-            filesystemName: library.filesystem_name,
-          });
+          const client = await awaitAbortableOperation(
+            createFileLibraryGatewayClient({
+              deps,
+              workspaceId,
+              projectId,
+              libraryId,
+              filesystemName: library.filesystem_name,
+              signal,
+            }),
+            {
+              signal,
+              abortMessage: 'file_library_upload_aborted',
+            },
+          );
           const bucket = fileLibraryBucketName(library.filesystem_name);
           if (!(overwrite ?? false)) {
             try {
-              await client.statObject(bucket, objectPath);
+              await awaitAbortableOperation(
+                client.statObject(bucket, objectPath),
+                {
+                  signal,
+                  abortMessage: 'file_library_upload_aborted',
+                },
+              );
               throw new Error('file_library_destination_exists');
             } catch (error) {
               if (error instanceof Error && error.message === 'file_library_destination_exists') {
@@ -699,7 +715,13 @@ export async function handleProjectFileLibraryRoutes(args: {
             contentType: uploadedContentType || guessFileLibraryContentType(objectPath) || 'application/octet-stream',
             signal,
           });
-          const stat = await client.statObject(bucket, objectPath);
+          const stat = await awaitAbortableOperation(
+            client.statObject(bucket, objectPath),
+            {
+              signal,
+              abortMessage: 'file_library_upload_aborted',
+            },
+          );
           return {
             kind: 'file' as const,
             path: objectPath,
@@ -715,15 +737,26 @@ export async function handleProjectFileLibraryRoutes(args: {
             headers,
             limits: { fileSize: 1024 * 1024 * 1024 },
           }),
+        {
+          signal: operation.signal,
+        },
       );
+      if (operation.signal.aborted) {
+        return true;
+      }
       json(res, 201, uploaded);
     } catch (error) {
+      if (operation.signal.aborted) {
+        return true;
+      }
       const message = error instanceof Error ? error.message : 'file_library_upload_failed';
       const isDestinationConflict = message === 'file_library_destination_exists';
       json(res, isDestinationConflict ? 409 : 400, {
         error_code: isDestinationConflict ? 'destination_exists' : 'FILE_LIBRARY_UPLOAD_FAILED',
         message: isDestinationConflict ? 'destination_exists' : message,
       });
+    } finally {
+      operation.cleanup();
     }
     return true;
   }
@@ -735,18 +768,38 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_download_query' });
       return true;
     }
+    const operation = createHttpOperationEnvelope({ req, res });
     try {
       const objectPath = normalizeFileLibraryPath(parsed.data.path);
-      const client = await createFileLibraryGatewayClient({
-        deps,
-        workspaceId,
-        projectId,
-        libraryId,
-        filesystemName: library.filesystem_name,
-      });
+      const client = await awaitAbortableOperation(
+        createFileLibraryGatewayClient({
+          deps,
+          workspaceId,
+          projectId,
+          libraryId,
+          filesystemName: library.filesystem_name,
+          signal: operation.signal,
+        }),
+        {
+          signal: operation.signal,
+          abortMessage: 'file_library_download_aborted',
+        },
+      );
       const bucket = fileLibraryBucketName(library.filesystem_name);
-      const stat = await client.statObject(bucket, objectPath);
-      const download = await openGatewayObjectDownload(client, bucket, objectPath);
+      const stat = await awaitAbortableOperation(
+        client.statObject(bucket, objectPath),
+        {
+          signal: operation.signal,
+          abortMessage: 'file_library_download_aborted',
+        },
+      );
+      const download = await openGatewayObjectDownload(client, bucket, objectPath, {
+        signal: operation.signal,
+      });
+      if (operation.signal.aborted) {
+        await download.cancel(operation.signal.reason);
+        return true;
+      }
       const fileName = objectPath.split('/').at(-1) || 'download.bin';
       res.statusCode = 200;
       res.setHeader('Content-Type', stat.metaData?.['content-type'] ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream');
@@ -759,10 +812,15 @@ export async function handleProjectFileLibraryRoutes(args: {
         streamErrorMessage: 'file_library_download_stream_failed',
       });
     } catch (error) {
+      if (operation.signal.aborted) {
+        return true;
+      }
       json(res, 404, {
         error_code: 'RESOURCE_NOT_FOUND',
         message: error instanceof Error ? error.message : 'file_library_download_not_found',
       });
+    } finally {
+      operation.cleanup();
     }
     return true;
   }

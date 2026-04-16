@@ -61,6 +61,309 @@ function buildNotebookExecutionPreferences(endpointId = "ep_notebook_default") {
   };
 }
 
+const NOTEBOOK_RUNNER_DISPATCH_TIMEOUT_MS = 1_500;
+const NOTEBOOK_RUNNER_SETTLE_MS = 200;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function buildNotebookRunnerWsUrl(
+  wsUrl: string,
+  baseUrl: string,
+  sessionId?: string,
+): string {
+  const resolved = new URL(
+    wsUrl.replace("ws://localhost:20000", baseUrl.replace("http://", "ws://")),
+  );
+  if (sessionId) {
+    resolved.searchParams.set("session_id", sessionId);
+  }
+  return resolved.toString();
+}
+
+async function disposeWebSocket(
+  ws: WebSocket | null | undefined,
+): Promise<void> {
+  if (!ws || ws.readyState === ws.CLOSED) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const finish = () => {
+      clearTimeout(forceTimer);
+      resolve();
+    };
+    const forceTimer = setTimeout(() => {
+      try {
+        ws.terminate();
+      } catch {
+        // ignore test cleanup failures
+      }
+      resolve();
+    }, 100);
+    ws.once("close", finish);
+    try {
+      ws.close();
+    } catch {
+      try {
+        ws.terminate();
+      } catch {
+        // ignore test cleanup failures
+      }
+      finish();
+    }
+  });
+}
+
+async function expectNotebookRunnerDispatch(
+  dispatchPromise: Promise<{ requestId: string }>,
+  label: string,
+): Promise<{ requestId: string }> {
+  return Promise.race([
+    dispatchPromise,
+    delay(NOTEBOOK_RUNNER_DISPATCH_TIMEOUT_MS).then(() => {
+      throw new Error(
+        `timed out waiting for ${label} to receive notebook server.request.start`,
+      );
+    }),
+  ]);
+}
+
+async function createNotebookExternalAgentFixture(
+  baseUrl: string,
+  workspaceLibraryName: string,
+): Promise<{
+  agent: { id: string };
+  agentKey: string;
+  runnerWsUrl: string;
+  workspaceLibrary: { id: string; name: string };
+}> {
+  const createCredential = await apiFetch(
+    baseUrl,
+    "/api/v1/workspaces/ws_default/projects/proj_1/credentials",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "glm-key",
+        type: "api_key",
+        value: "sk-placeholder-test",
+      }),
+    },
+  );
+  expect(createCredential.status).toBe(201);
+  const credential = (await createCredential.json()) as { id: string };
+
+  const createEndpoint = await apiFetch(
+    baseUrl,
+    "/api/v1/workspaces/ws_default/projects/proj_1/endpoints",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "glm-coding",
+        type: "custom",
+        provider_family: "custom",
+        upstream_protocol: "openai_chat_completions",
+        status: "active",
+        wire_api: "responses",
+        base_url: "https://example.com",
+        model: "placeholder-model",
+        capabilities: [
+          {
+            type: "chat_completion",
+            enabled: true,
+            default_model_id: "placeholder-model",
+          },
+        ],
+        models: [
+          {
+            capability: "chat_completion",
+            model_id: "placeholder-model",
+            display_name: "placeholder-model",
+          },
+        ],
+        defaults: { chat_model_id: "placeholder-model" },
+        model_profile: {
+          max_context_tokens: 204800,
+          max_output_tokens: 128000,
+          supports_file: false,
+          supports_tool_call: true,
+          supports_reasoning: false,
+          price_input_per_1m: 0,
+          price_output_per_1m: 0,
+          cache_read_discount_ratio: 0,
+          cache_write_discount_ratio: 0,
+        },
+        credential_ref: credential.id,
+      }),
+    },
+  );
+  expect(createEndpoint.status).toBe(201);
+  const endpoint = (await createEndpoint.json()) as { id: string };
+
+  const createAgent = await apiFetch(
+    baseUrl,
+    "/api/v1/workspaces/ws_default/projects/proj_1/agents",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "External notebook agent",
+        mode: "external",
+        interaction_kind: "notebook",
+        execution_preferences: {
+          notebook: {
+            endpoint_id: endpoint.id,
+            wire_api: "responses",
+            model: "placeholder-model",
+          },
+        },
+        capabilities: {
+          streaming_completion: true,
+          multimodal_completion: false,
+        },
+      }),
+    },
+  );
+  expect(createAgent.status).toBe(201);
+  const agent = (await createAgent.json()) as { id: string };
+
+  const workspaceLibrary = await createFileLibrary(baseUrl, workspaceLibraryName);
+
+  const createAgentKeyRes = await apiFetch(
+    baseUrl,
+    `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    },
+  );
+  expect(createAgentKeyRes.status).toBe(201);
+  const agentKey = (await createAgentKeyRes.json()) as { key: string };
+
+  const connectionInfoRes = await apiFetch(
+    baseUrl,
+    `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
+  );
+  expect(connectionInfoRes.status).toBe(200);
+  const connectionInfo = (await connectionInfoRes.json()) as {
+    ws_url: string;
+  };
+
+  return {
+    agent,
+    agentKey: agentKey.key,
+    runnerWsUrl: connectionInfo.ws_url,
+    workspaceLibrary,
+  };
+}
+
+async function createNotebookTask(
+  baseUrl: string,
+  agentId: string,
+  workspaceFileLibraryId: string,
+  title: string,
+): Promise<{ id: string }> {
+  const createTaskRes = await apiFetch(
+    baseUrl,
+    "/api/v1/workspaces/ws_default/projects/proj_1/tasks",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        agent_id: agentId,
+        workspace_file_library_id: workspaceFileLibraryId,
+      }),
+    },
+  );
+  expect(createTaskRes.status).toBe(201);
+  return (await createTaskRes.json()) as { id: string };
+}
+
+async function postNotebookTaskMessage(
+  baseUrl: string,
+  taskId: string,
+  content: string,
+): Promise<Response> {
+  return apiFetch(
+    baseUrl,
+    `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/messages`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: "user", content }),
+    },
+  );
+}
+
+async function openNotebookRunnerSocket(input: {
+  baseUrl: string;
+  runnerWsUrl: string;
+  agentKey: string;
+  sessionId?: string;
+  onRequestStart?: (ws: WebSocket, requestId: string) => void;
+}): Promise<{
+  ws: WebSocket;
+  firstDispatch: Promise<{ requestId: string }>;
+  getDispatchCount: () => number;
+}> {
+  let dispatchCount = 0;
+  let resolveFirstDispatch: ((value: { requestId: string }) => void) | null =
+    null;
+  const firstDispatch = new Promise<{ requestId: string }>((resolve) => {
+    resolveFirstDispatch = resolve;
+  });
+
+  const ws = new WebSocket(
+    buildNotebookRunnerWsUrl(input.runnerWsUrl, input.baseUrl, input.sessionId),
+    { headers: { Authorization: `Bearer ${input.agentKey}` } },
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    let ready = false;
+    ws.once("error", reject);
+    ws.on("message", (raw) => {
+      const msg = JSON.parse(raw.toString("utf-8")) as {
+        type?: string;
+        request_id?: string;
+      };
+      if (msg.type === "server.hello" && !ready) {
+        ready = true;
+        ws.send(
+          JSON.stringify({
+            type: "agent.ready",
+            payload: {
+              runner_spec: NOTEBOOK_RUNNER_SPEC,
+              capabilities: { wire_api: "responses" },
+            },
+          }),
+        );
+        resolve();
+        return;
+      }
+      if (msg.type !== "server.request.start" || !msg.request_id) return;
+      dispatchCount += 1;
+      if (resolveFirstDispatch) {
+        resolveFirstDispatch({ requestId: msg.request_id });
+        resolveFirstDispatch = null;
+      }
+      input.onRequestStart?.(ws, msg.request_id);
+    });
+  });
+
+  return {
+    ws,
+    firstDispatch,
+    getDispatchCount: () => dispatchCount,
+  };
+}
+
 describe("api-entry-node me routes", () => {
   it("shuts down file library gateways when the server closes", async () => {
     const deps = createDefaultNodeApiDeps();
@@ -2108,205 +2411,67 @@ describe("api-entry-node projects routes", () => {
 
   it("truncates oversized notebook trace details payloads", async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const socketsToClose: WebSocket[] = [];
     try {
       const { baseUrl } = startServer();
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
-
-      const createCredential = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/credentials",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "glm-key",
-            type: "api_key",
-            value: "sk-placeholder-test",
-          }),
-        },
-      );
-      expect(createCredential.status).toBe(201);
-      const credential = (await createCredential.json()) as { id: string };
-
-      const createEndpoint = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/endpoints",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "glm-coding",
-            type: "custom",
-            provider_family: "custom",
-            upstream_protocol: "openai_chat_completions",
-            status: "active",
-            wire_api: "responses",
-            base_url: "https://example.com",
-            model: "placeholder-model",
-            capabilities: [
-              {
-                type: "chat_completion",
-                enabled: true,
-                default_model_id: "placeholder-model",
-              },
-            ],
-            models: [
-              {
-                capability: "chat_completion",
-                model_id: "placeholder-model",
-                display_name: "placeholder-model",
-              },
-            ],
-            defaults: { chat_model_id: "placeholder-model" },
-            model_profile: {
-              max_context_tokens: 204800,
-              max_output_tokens: 128000,
-              supports_file: false,
-              supports_tool_call: true,
-              supports_reasoning: false,
-              price_input_per_1m: 0,
-              price_output_per_1m: 0,
-              cache_read_discount_ratio: 0,
-              cache_write_discount_ratio: 0,
-            },
-            credential_ref: credential.id,
-          }),
-        },
-      );
-      expect(createEndpoint.status).toBe(201);
-      const endpoint = (await createEndpoint.json()) as { id: string };
-
-      const createAgent = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/agents",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "External notebook agent",
-            mode: "external",
-            interaction_kind: "notebook",
-            execution_preferences: {
-              notebook: {
-                endpoint_id: endpoint.id,
-                wire_api: "responses",
-                model: "placeholder-model",
-              },
-            },
-            capabilities: {
-              streaming_completion: true,
-              multimodal_completion: false,
-            },
-          }),
-        },
-      );
-      expect(createAgent.status).toBe(201);
-      const agent = (await createAgent.json()) as { id: string };
-      const workspaceLibrary = await createFileLibrary(
+      const fixture = await createNotebookExternalAgentFixture(
         baseUrl,
         "Truncate Trace Workspace",
       );
-
-      const createAgentKeyRes = await apiFetch(
+      const agentScopedRunner = await openNotebookRunnerSocket({
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        },
-      );
-      expect(createAgentKeyRes.status).toBe(201);
-      const agentKey = (await createAgentKeyRes.json()) as { key: string };
-
-      const connectionInfoRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
-      );
-      expect(connectionInfoRes.status).toBe(200);
-      const connectionInfo = (await connectionInfoRes.json()) as {
-        ws_url: string;
-      };
-
-      const executionSocket = new WebSocket(
-        connectionInfo.ws_url.replace(
-          "ws://localhost:20000",
-          baseUrl.replace("http://", "ws://"),
-        ),
-        { headers: { Authorization: `Bearer ${agentKey.key}` } },
-      );
-
-      const huge = "x".repeat(40_000);
-      executionSocket.on("message", (raw) => {
-        const msg = JSON.parse(raw.toString("utf-8")) as {
-          type: string;
-          request_id?: string;
-        };
-        if (msg.type !== "server.request.start" || !msg.request_id) return;
-        executionSocket.send(
-          JSON.stringify({
-            type: "agent.response.event",
-            request_id: msg.request_id,
-            payload: {
-              sequence: 1,
-              at: new Date().toISOString(),
-              category: "debug",
-              phase: "update",
-              name: "runner.debug",
-              summary: "huge details payload",
-              details: { stderr: huge },
-            },
-          }),
-        );
-        executionSocket.send(
-          JSON.stringify({
-            type: "agent.response.done",
-            request_id: msg.request_id,
-            payload: { finish_reason: "stop", usage_tokens: 1 },
-          }),
-        );
+        runnerWsUrl: fixture.runnerWsUrl,
+        agentKey: fixture.agentKey,
       });
-      await new Promise<void>((resolve) =>
-        executionSocket.on("open", () => {
-          executionSocket.send(
+      socketsToClose.push(agentScopedRunner.ws);
+      const task = await createNotebookTask(
+        baseUrl,
+        fixture.agent.id,
+        fixture.workspaceLibrary.id,
+        "Truncate trace details",
+      );
+      const huge = "x".repeat(40_000);
+      const taskScopedRunner = await openNotebookRunnerSocket({
+        baseUrl,
+        runnerWsUrl: fixture.runnerWsUrl,
+        agentKey: fixture.agentKey,
+        sessionId: task.id,
+        onRequestStart: (ws, requestId) => {
+          ws.send(
             JSON.stringify({
-              type: "agent.ready",
+              type: "agent.response.event",
+              request_id: requestId,
               payload: {
-                runner_spec: NOTEBOOK_RUNNER_SPEC,
-                capabilities: { wire_api: "responses" },
+                sequence: 1,
+                at: new Date().toISOString(),
+                category: "debug",
+                phase: "update",
+                name: "runner.debug",
+                summary: "huge details payload",
+                details: { stderr: huge },
               },
             }),
           );
-          resolve();
-        }),
-      );
-
-      const createTaskRes = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/tasks",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: "Truncate trace details",
-            agent_id: agent.id,
-            workspace_file_library_id: workspaceLibrary.id,
-          }),
+          ws.send(
+            JSON.stringify({
+              type: "agent.response.done",
+              request_id: requestId,
+              payload: { finish_reason: "stop", usage_tokens: 1 },
+            }),
+          );
         },
-      );
-      expect(createTaskRes.status).toBe(201);
-      const task = (await createTaskRes.json()) as { id: string };
+      });
+      socketsToClose.push(taskScopedRunner.ws);
 
-      const postMessageRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: "user", content: "run" }),
-        },
-      );
+      const postMessageRes = await postNotebookTaskMessage(baseUrl, task.id, "run");
       expect(postMessageRes.status).toBe(200);
+      await expectNotebookRunnerDispatch(
+        taskScopedRunner.firstDispatch,
+        "truncates oversized notebook trace details payloads",
+      );
+      await delay(NOTEBOOK_RUNNER_SETTLE_MS);
+      expect(agentScopedRunner.getDispatchCount()).toBe(0);
 
       let tracesBody: {
         items: Array<{ details?: Record<string, unknown> }>;
@@ -2332,9 +2497,8 @@ describe("api-entry-node projects routes", () => {
       expect(detailEvent!.details?._truncated).toBe(true);
       expect(detailEvent!.details?._reason).toBe("trace_details_too_large");
       expect(typeof detailEvent!.details?._preview).toBe("string");
-
-      executionSocket.close();
     } finally {
+      await Promise.allSettled(socketsToClose.map((socket) => disposeWebSocket(socket)));
       if (previousPublicApiBase === undefined) {
         delete process.env.PUBLIC_API_BASE_URL;
       } else {
@@ -2346,210 +2510,73 @@ describe("api-entry-node projects routes", () => {
   it("writes notebook task data to docStore (tasks/messages/traces)", async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
+    const socketsToClose: WebSocket[] = [];
     try {
       const { baseUrl } = startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
-
-      const createCredential = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/credentials",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "glm-key",
-            type: "api_key",
-            value: "sk-placeholder-test",
-          }),
-        },
-      );
-      expect(createCredential.status).toBe(201);
-      const credential = (await createCredential.json()) as { id: string };
-
-      const createEndpoint = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/endpoints",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "glm-coding",
-            type: "custom",
-            provider_family: "custom",
-            upstream_protocol: "openai_chat_completions",
-            status: "active",
-            wire_api: "responses",
-            base_url: "https://example.com",
-            model: "placeholder-model",
-            capabilities: [
-              {
-                type: "chat_completion",
-                enabled: true,
-                default_model_id: "placeholder-model",
-              },
-            ],
-            models: [
-              {
-                capability: "chat_completion",
-                model_id: "placeholder-model",
-                display_name: "placeholder-model",
-              },
-            ],
-            defaults: { chat_model_id: "placeholder-model" },
-            model_profile: {
-              max_context_tokens: 204800,
-              max_output_tokens: 128000,
-              supports_file: false,
-              supports_tool_call: true,
-              supports_reasoning: false,
-              price_input_per_1m: 0,
-              price_output_per_1m: 0,
-              cache_read_discount_ratio: 0,
-              cache_write_discount_ratio: 0,
-            },
-            credential_ref: credential.id,
-          }),
-        },
-      );
-      expect(createEndpoint.status).toBe(201);
-      const endpoint = (await createEndpoint.json()) as { id: string };
-
-      const createAgent = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/agents",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "External notebook agent",
-            mode: "external",
-            interaction_kind: "notebook",
-            execution_preferences: {
-              notebook: {
-                endpoint_id: endpoint.id,
-                wire_api: "responses",
-                model: "placeholder-model",
-              },
-            },
-            capabilities: {
-              streaming_completion: true,
-              multimodal_completion: false,
-            },
-          }),
-        },
-      );
-      expect(createAgent.status).toBe(201);
-      const agent = (await createAgent.json()) as { id: string };
-      const workspaceLibrary = await createFileLibrary(
+      const fixture = await createNotebookExternalAgentFixture(
         baseUrl,
         "Persist Notebook Workspace",
       );
-
-      const createAgentKeyRes = await apiFetch(
+      const agentScopedRunner = await openNotebookRunnerSocket({
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        },
-      );
-      expect(createAgentKeyRes.status).toBe(201);
-      const agentKey = (await createAgentKeyRes.json()) as { key: string };
-
-      const connectionInfoRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
-      );
-      expect(connectionInfoRes.status).toBe(200);
-      const connectionInfo = (await connectionInfoRes.json()) as {
-        ws_url: string;
-      };
-
-      const executionSocket = new WebSocket(
-        connectionInfo.ws_url.replace(
-          "ws://localhost:20000",
-          baseUrl.replace("http://", "ws://"),
-        ),
-        { headers: { Authorization: `Bearer ${agentKey.key}` } },
-      );
-      executionSocket.on("message", (raw) => {
-        const msg = JSON.parse(raw.toString("utf-8")) as {
-          type: string;
-          request_id?: string;
-        };
-        if (msg.type !== "server.request.start" || !msg.request_id) return;
-        executionSocket.send(
-          JSON.stringify({
-            type: "agent.response.event",
-            request_id: msg.request_id,
-            payload: {
-              sequence: 1,
-              at: new Date().toISOString(),
-              category: "progress",
-              phase: "start",
-              status: "running",
-              name: "codex.exec",
-              summary: "Starting Codex execution",
-            },
-          }),
-        );
-        executionSocket.send(
-          JSON.stringify({
-            type: "agent.response.delta",
-            request_id: msg.request_id,
-            payload: { delta: "persisted-output" },
-          }),
-        );
-        executionSocket.send(
-          JSON.stringify({
-            type: "agent.response.done",
-            request_id: msg.request_id,
-            payload: { finish_reason: "stop", usage_tokens: 3 },
-          }),
-        );
+        runnerWsUrl: fixture.runnerWsUrl,
+        agentKey: fixture.agentKey,
       });
-      await new Promise<void>((resolve) =>
-        executionSocket.on("open", () => {
-          executionSocket.send(
+      socketsToClose.push(agentScopedRunner.ws);
+      const task = await createNotebookTask(
+        baseUrl,
+        fixture.agent.id,
+        fixture.workspaceLibrary.id,
+        "Persist notebook docs",
+      );
+      const taskScopedRunner = await openNotebookRunnerSocket({
+        baseUrl,
+        runnerWsUrl: fixture.runnerWsUrl,
+        agentKey: fixture.agentKey,
+        sessionId: task.id,
+        onRequestStart: (ws, requestId) => {
+          ws.send(
             JSON.stringify({
-              type: "agent.ready",
+              type: "agent.response.event",
+              request_id: requestId,
               payload: {
-                runner_spec: NOTEBOOK_RUNNER_SPEC,
-                capabilities: { wire_api: "responses" },
+                sequence: 1,
+                at: new Date().toISOString(),
+                category: "progress",
+                phase: "start",
+                status: "running",
+                name: "codex.exec",
+                summary: "Starting Codex execution",
               },
             }),
           );
-          resolve();
-        }),
-      );
-
-      const createTaskRes = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/tasks",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: "Persist notebook docs",
-            agent_id: agent.id,
-            workspace_file_library_id: workspaceLibrary.id,
-          }),
+          ws.send(
+            JSON.stringify({
+              type: "agent.response.delta",
+              request_id: requestId,
+              payload: { delta: "persisted-output" },
+            }),
+          );
+          ws.send(
+            JSON.stringify({
+              type: "agent.response.done",
+              request_id: requestId,
+              payload: { finish_reason: "stop", usage_tokens: 3 },
+            }),
+          );
         },
-      );
-      expect(createTaskRes.status).toBe(201);
-      const task = (await createTaskRes.json()) as { id: string };
+      });
+      socketsToClose.push(taskScopedRunner.ws);
 
-      const postMessageRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: "user", content: "run" }),
-        },
-      );
+      const postMessageRes = await postNotebookTaskMessage(baseUrl, task.id, "run");
       expect(postMessageRes.status).toBe(200);
+      await expectNotebookRunnerDispatch(
+        taskScopedRunner.firstDispatch,
+        "writes notebook task data to docStore",
+      );
+      await delay(NOTEBOOK_RUNNER_SETTLE_MS);
+      expect(agentScopedRunner.getDispatchCount()).toBe(0);
 
       for (let attempt = 0; attempt < 200; attempt += 1) {
         const traces = await deps.docStore.list<{ task_id: string }>(
@@ -2610,9 +2637,8 @@ describe("api-entry-node projects routes", () => {
         ),
       ).toBe(true);
       expect(storedTraces.some((t) => t.category === "progress")).toBe(true);
-
-      executionSocket.close();
     } finally {
+      await Promise.allSettled(socketsToClose.map((socket) => disposeWebSocket(socket)));
       if (previousPublicApiBase === undefined) {
         delete process.env.PUBLIC_API_BASE_URL;
       } else {
@@ -2624,204 +2650,67 @@ describe("api-entry-node projects routes", () => {
   it("keeps docStore traces bounded when retention truncation is triggered", async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
+    const socketsToClose: WebSocket[] = [];
     try {
       const { baseUrl } = startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
-
-      const createCredential = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/credentials",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "glm-key",
-            type: "api_key",
-            value: "sk-placeholder-test",
-          }),
-        },
-      );
-      expect(createCredential.status).toBe(201);
-      const credential = (await createCredential.json()) as { id: string };
-
-      const createEndpoint = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/endpoints",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "glm-coding",
-            type: "custom",
-            provider_family: "custom",
-            upstream_protocol: "openai_chat_completions",
-            status: "active",
-            wire_api: "responses",
-            base_url: "https://example.com",
-            model: "placeholder-model",
-            capabilities: [
-              {
-                type: "chat_completion",
-                enabled: true,
-                default_model_id: "placeholder-model",
-              },
-            ],
-            models: [
-              {
-                capability: "chat_completion",
-                model_id: "placeholder-model",
-                display_name: "placeholder-model",
-              },
-            ],
-            defaults: { chat_model_id: "placeholder-model" },
-            model_profile: {
-              max_context_tokens: 204800,
-              max_output_tokens: 128000,
-              supports_file: false,
-              supports_tool_call: true,
-              supports_reasoning: false,
-              price_input_per_1m: 0,
-              price_output_per_1m: 0,
-              cache_read_discount_ratio: 0,
-              cache_write_discount_ratio: 0,
-            },
-            credential_ref: credential.id,
-          }),
-        },
-      );
-      expect(createEndpoint.status).toBe(201);
-      const endpoint = (await createEndpoint.json()) as { id: string };
-
-      const createAgent = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/agents",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "External notebook agent",
-            mode: "external",
-            interaction_kind: "notebook",
-            execution_preferences: {
-              notebook: {
-                endpoint_id: endpoint.id,
-                wire_api: "responses",
-                model: "placeholder-model",
-              },
-            },
-            capabilities: {
-              streaming_completion: true,
-              multimodal_completion: false,
-            },
-          }),
-        },
-      );
-      expect(createAgent.status).toBe(201);
-      const agent = (await createAgent.json()) as { id: string };
-      const workspaceLibrary = await createFileLibrary(
+      const fixture = await createNotebookExternalAgentFixture(
         baseUrl,
         "Trace Retention Workspace",
       );
-
-      const createAgentKeyRes = await apiFetch(
+      const agentScopedRunner = await openNotebookRunnerSocket({
         baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        },
-      );
-      expect(createAgentKeyRes.status).toBe(201);
-      const agentKey = (await createAgentKeyRes.json()) as { key: string };
-
-      const connectionInfoRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
-      );
-      expect(connectionInfoRes.status).toBe(200);
-      const connectionInfo = (await connectionInfoRes.json()) as {
-        ws_url: string;
-      };
-
-      const executionSocket = new WebSocket(
-        connectionInfo.ws_url.replace(
-          "ws://localhost:20000",
-          baseUrl.replace("http://", "ws://"),
-        ),
-        { headers: { Authorization: `Bearer ${agentKey.key}` } },
-      );
-      executionSocket.on("message", (raw) => {
-        const msg = JSON.parse(raw.toString("utf-8")) as {
-          type: string;
-          request_id?: string;
-        };
-        if (msg.type !== "server.request.start" || !msg.request_id) return;
-        for (let i = 0; i < 1010; i += 1) {
-          executionSocket.send(
-            JSON.stringify({
-              type: "agent.response.event",
-              request_id: msg.request_id,
-              payload: {
-                sequence: i + 1,
-                at: new Date(Date.now() + i).toISOString(),
-                category: "debug",
-                phase: "update",
-                name: "runner.debug",
-                summary: `evt-${i}`,
-              },
-            }),
-          );
-        }
-        executionSocket.send(
-          JSON.stringify({
-            type: "agent.response.done",
-            request_id: msg.request_id,
-            payload: { finish_reason: "stop", usage_tokens: 1 },
-          }),
-        );
+        runnerWsUrl: fixture.runnerWsUrl,
+        agentKey: fixture.agentKey,
       });
-      await new Promise<void>((resolve) =>
-        executionSocket.on("open", () => {
-          executionSocket.send(
+      socketsToClose.push(agentScopedRunner.ws);
+      const task = await createNotebookTask(
+        baseUrl,
+        fixture.agent.id,
+        fixture.workspaceLibrary.id,
+        "Trace retention bound",
+      );
+      const taskScopedRunner = await openNotebookRunnerSocket({
+        baseUrl,
+        runnerWsUrl: fixture.runnerWsUrl,
+        agentKey: fixture.agentKey,
+        sessionId: task.id,
+        onRequestStart: (ws, requestId) => {
+          for (let i = 0; i < 1010; i += 1) {
+            ws.send(
+              JSON.stringify({
+                type: "agent.response.event",
+                request_id: requestId,
+                payload: {
+                  sequence: i + 1,
+                  at: new Date(Date.now() + i).toISOString(),
+                  category: "debug",
+                  phase: "update",
+                  name: "runner.debug",
+                  summary: `evt-${i}`,
+                },
+              }),
+            );
+          }
+          ws.send(
             JSON.stringify({
-              type: "agent.ready",
-              payload: {
-                runner_spec: NOTEBOOK_RUNNER_SPEC,
-                capabilities: { wire_api: "responses" },
-              },
+              type: "agent.response.done",
+              request_id: requestId,
+              payload: { finish_reason: "stop", usage_tokens: 1 },
             }),
           );
-          resolve();
-        }),
-      );
-
-      const createTaskRes = await apiFetch(
-        baseUrl,
-        "/api/v1/workspaces/ws_default/projects/proj_1/tasks",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: "Trace retention bound",
-            agent_id: agent.id,
-            workspace_file_library_id: workspaceLibrary.id,
-          }),
         },
-      );
-      expect(createTaskRes.status).toBe(201);
-      const task = (await createTaskRes.json()) as { id: string };
+      });
+      socketsToClose.push(taskScopedRunner.ws);
 
-      const postMessageRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: "user", content: "run" }),
-        },
-      );
+      const postMessageRes = await postNotebookTaskMessage(baseUrl, task.id, "run");
       expect(postMessageRes.status).toBe(200);
+      await expectNotebookRunnerDispatch(
+        taskScopedRunner.firstDispatch,
+        "keeps docStore traces bounded when retention truncation is triggered",
+      );
+      await delay(NOTEBOOK_RUNNER_SETTLE_MS);
+      expect(agentScopedRunner.getDispatchCount()).toBe(0);
 
       let storedTraces: Array<{
         task_id: string;
@@ -2850,9 +2739,8 @@ describe("api-entry-node projects routes", () => {
       ).toBe(true);
       expect(storedTraces.some((t) => t.summary === "evt-0")).toBe(false);
       expect(storedTraces.some((t) => t.summary === "evt-1009")).toBe(true);
-
-      executionSocket.close();
     } finally {
+      await Promise.allSettled(socketsToClose.map((socket) => disposeWebSocket(socket)));
       if (previousPublicApiBase === undefined) {
         delete process.env.PUBLIC_API_BASE_URL;
       } else {

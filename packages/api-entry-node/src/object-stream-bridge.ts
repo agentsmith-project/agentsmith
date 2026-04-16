@@ -12,6 +12,12 @@ export interface GatewayObjectDownloadHandle {
   cancel: (reason?: unknown) => Promise<void>;
 }
 
+export interface HttpOperationEnvelope {
+  signal: AbortSignal;
+  abort: (reason?: unknown) => void;
+  cleanup: () => void;
+}
+
 type MultipartUploadFilePart = Readable & {
   on(event: 'limit', listener: () => void): void;
   resume(): void;
@@ -54,6 +60,149 @@ function bindAbortSignal(
   const handleAbort = () => onAbort(signal.reason);
   signal.addEventListener('abort', handleAbort, { once: true });
   return () => signal.removeEventListener('abort', handleAbort);
+}
+
+function isResponseUnavailable(res: http.ServerResponse): boolean {
+  return Boolean(
+    (res as http.ServerResponse & { destroyed?: boolean }).destroyed
+      || (res as http.ServerResponse & { writableDestroyed?: boolean }).writableDestroyed
+      || res.writableEnded,
+  );
+}
+
+function isRequestUnavailable(req: http.IncomingMessage): boolean {
+  return Boolean(
+    req.aborted
+      || (req as http.IncomingMessage & { destroyed?: boolean }).destroyed,
+  );
+}
+
+function supportsEventEmitterLifecycle(
+  value: unknown,
+): value is Pick<NodeJS.EventEmitter, 'on' | 'removeListener'> {
+  return Boolean(
+    value
+      && typeof (value as NodeJS.EventEmitter).on === 'function'
+      && typeof (value as NodeJS.EventEmitter).removeListener === 'function',
+  );
+}
+
+function destroyReadableSafely(stream: Readable, error: Error): void {
+  if (stream.listenerCount('error') === 0) {
+    stream.once('error', () => {});
+  }
+  stream.destroy(error);
+}
+
+export function createHttpOperationEnvelope(args: {
+  req: http.IncomingMessage;
+  res: http.ServerResponse;
+}): HttpOperationEnvelope {
+  const { req, res } = args;
+  const controller = new AbortController();
+  let cleaned = false;
+  let finished = false;
+
+  const cleanup = () => {
+    if (cleaned) {
+      return;
+    }
+    cleaned = true;
+    if (supportsEventEmitterLifecycle(req)) {
+      req.removeListener('aborted', handleRequestAborted);
+      req.removeListener('error', handleRequestError);
+    }
+    if (supportsEventEmitterLifecycle(res)) {
+      res.removeListener('close', handleResponseClose);
+      res.removeListener('error', handleResponseError);
+      res.removeListener('finish', handleResponseFinish);
+    }
+  };
+
+  const abort = (reason?: unknown) => {
+    if (finished || controller.signal.aborted) {
+      cleanup();
+      return;
+    }
+    controller.abort(createAbortError(reason, 'http_operation_aborted'));
+    cleanup();
+  };
+
+  const handleRequestAborted = () => abort('client_request_aborted');
+  const handleRequestError = (error: Error) => abort(error);
+  const handleResponseClose = () => {
+    if (finished || res.writableEnded) {
+      cleanup();
+      return;
+    }
+    abort('client_response_closed');
+  };
+  const handleResponseError = (error: Error) => abort(error);
+  const handleResponseFinish = () => {
+    finished = true;
+    cleanup();
+  };
+
+  if (supportsEventEmitterLifecycle(req)) {
+    req.on('aborted', handleRequestAborted);
+    req.on('error', handleRequestError);
+  }
+  if (supportsEventEmitterLifecycle(res)) {
+    res.on('close', handleResponseClose);
+    res.on('error', handleResponseError);
+    res.on('finish', handleResponseFinish);
+  }
+
+  if (isRequestUnavailable(req)) {
+    abort('client_request_aborted');
+  } else if (isResponseUnavailable(res)) {
+    abort('client_response_closed');
+  }
+
+  return {
+    signal: controller.signal,
+    abort,
+    cleanup,
+  };
+}
+
+export async function awaitAbortableOperation<T>(
+  operation: Promise<T>,
+  options: {
+    signal?: AbortSignal;
+    abortMessage?: string;
+    onLateResolve?: (value: T, reason?: unknown) => void | Promise<void>;
+  } = {},
+): Promise<T> {
+  const { signal, abortMessage = 'http_operation_aborted', onLateResolve } = options;
+  if (!signal) {
+    return operation;
+  }
+  if (signal.aborted) {
+    throw createAbortError(signal.reason, abortMessage);
+  }
+
+  let removeAbortListener: () => void = () => {};
+  let aborted = false;
+  const trackedOperation = operation.then((value) => {
+    if (aborted) {
+      void onLateResolve?.(value, signal.reason);
+    }
+    return value;
+  });
+
+  const abortPromise = new Promise<never>((_resolve, reject) => {
+    removeAbortListener = bindAbortSignal(signal, (reason) => {
+      aborted = true;
+      reject(createAbortError(reason, abortMessage));
+    });
+  });
+
+  try {
+    return await Promise.race([trackedOperation, abortPromise]);
+  } finally {
+    removeAbortListener();
+  }
 }
 
 async function cancelReader(
@@ -142,8 +291,22 @@ export async function openGatewayObjectDownload(
   client: MinioClient,
   bucket: string,
   key: string,
+  options: {
+    signal?: AbortSignal;
+  } = {},
 ): Promise<GatewayObjectDownloadHandle> {
-  const stream = await client.getObject(bucket, key);
+  const stream = await awaitAbortableOperation(
+    client.getObject(bucket, key),
+    {
+      signal: options.signal,
+      abortMessage: 'gateway_download_aborted',
+      onLateResolve: async (lateStream, reason) => {
+        if (!lateStream.destroyed) {
+          destroyReadableSafely(lateStream, createAbortError(reason, 'gateway_download_aborted'));
+        }
+      },
+    },
+  );
   let cancelled = false;
   return {
     stream,
@@ -152,7 +315,7 @@ export async function openGatewayObjectDownload(
         return;
       }
       cancelled = true;
-      stream.destroy(createAbortError(reason, 'gateway_download_aborted'));
+      destroyReadableSafely(stream, createAbortError(reason, 'gateway_download_aborted'));
     },
   };
 }
@@ -262,6 +425,9 @@ export async function parseMultipartUploadAndExecute(
     on(event: 'error', listener: (error: Error) => void): void;
     on(event: 'finish', listener: () => void): void;
   } & NodeJS.WritableStream,
+  options: {
+    signal?: AbortSignal;
+  } = {},
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const abortController = new AbortController();
@@ -274,6 +440,7 @@ export async function parseMultipartUploadAndExecute(
     let requestDetached = false;
     let activeFile: MultipartUploadFilePart | null = null;
     let suppressSignalSettle = false;
+    let cleanupExternalAbort: () => void = () => {};
 
     const fileAbortError = (reason?: unknown) =>
       createAbortError(reason, 'file_library_upload_aborted');
@@ -282,6 +449,7 @@ export async function parseMultipartUploadAndExecute(
       req.removeListener('aborted', handleAbort);
       req.removeListener('error', handleRequestError);
       abortController.signal.removeEventListener('abort', handleSignalAbort);
+      cleanupExternalAbort();
       if (activeFile) {
         activeFile.removeListener('limit', handleLimit);
       }
@@ -365,6 +533,9 @@ export async function parseMultipartUploadAndExecute(
     req.on('aborted', handleAbort);
     req.on('error', handleRequestError);
     abortController.signal.addEventListener('abort', handleSignalAbort, { once: true });
+    cleanupExternalAbort = bindAbortSignal(options.signal, (reason) => {
+      abortUpload(reason);
+    });
 
     busboy.on('field', (name, value) => {
       if (name === 'prefix') {

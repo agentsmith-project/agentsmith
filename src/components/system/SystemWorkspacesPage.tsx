@@ -82,7 +82,21 @@ export function SystemWorkspacesPage() {
     () => workspaces.filter((workspace) => workspace.provisioning_status === 'ready').length,
     [workspaces],
   );
-  const headerCreateVariant = workspaces.length > 0 && attentionCount === 0 ? 'primary' : 'outline';
+  const selectedWorkspaceNeedsAttention = useMemo(() => {
+    const selectedWorkspace = editorState.selectedWorkspace;
+    if (!selectedWorkspace) {
+      return false;
+    }
+
+    return (
+      selectedWorkspace.provisioning_status !== 'ready'
+      || selectedWorkspace.workspace_admin_binding_required
+      || !selectedWorkspace.workspace_admin_user_id
+    );
+  }, [editorState.selectedWorkspace]);
+  const headerCreateVariant = workspaces.length > 0 && !editorState.isEditMode && !selectedWorkspaceNeedsAttention
+    ? 'primary'
+    : 'outline';
   const hasSearchQuery = searchQuery.trim().length > 0;
   const hasActiveListFilter = listFilter !== 'all';
 

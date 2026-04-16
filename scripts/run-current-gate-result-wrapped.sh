@@ -22,6 +22,9 @@ export CURRENT_GATE_RESULT_GATE_ID="${CURRENT_GATE_RESULT_GATE_ID:-${GATE_ID}}"
 export CURRENT_GATE_RESULT_NPM_SCRIPT="${CURRENT_GATE_RESULT_NPM_SCRIPT:-${NPM_SCRIPT}}"
 export CURRENT_GATE_RESULT_LINE_KIND="${CURRENT_GATE_RESULT_LINE_KIND:-${LINE_KIND}}"
 export CURRENT_GATE_RESULT_CI_JOB="${CURRENT_GATE_RESULT_CI_JOB:-$(gate_resolve_result_ci_job "${CURRENT_GATE_RESULT_GATE_ID}")}"
+if [[ "${GATE_ID}" == "lane-visual" && -z "${MOCK_RUN_ID:-}" ]]; then
+  export MOCK_RUN_ID="${RUN_ID}"
+fi
 
 gate_evidence_init "${EVIDENCE_DIR}" "${LINE_KIND}"
 gate_record_task_summary "${EVIDENCE_DIR}" "{\"line_kind\":\"${LINE_KIND}\",\"gate_id\":\"${GATE_ID}\",\"npm_script\":\"${NPM_SCRIPT}\"}"
@@ -35,9 +38,8 @@ gate_write_visual_run_manifest() {
   CURRENT_GATE_RESULT_RUN_ID="${RUN_ID}" \
   CURRENT_GATE_RESULT_VISUAL_BUILD_INFO_FILE="${build_info_file}" \
   node --input-type=module --import tsx <<'NODE'
-import { copyFileSync, existsSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const rootDir = process.env.CURRENT_GATE_RESULT_ROOT_DIR?.trim();
@@ -51,21 +53,7 @@ if (!rootDir || !evidenceDir || !fallbackRunId) {
 
 const support = await import(pathToFileURL(join(rootDir, "e2e/visual-baseline-support.ts")).href);
 const supportModule = support.default ?? support;
-const {
-  buildVisualBaselineScenarioEvidence,
-  groupVisualBaselineCatalogByScenario,
-  readVisualBaselineBuildRecord,
-} = supportModule;
-
-function resolveGitSha() {
-  try {
-    return execFileSync("git", ["-C", rootDir, "rev-parse", "HEAD"], {
-      encoding: "utf8",
-    }).trim();
-  } catch {
-    return "";
-  }
-}
+const { readVisualBaselineBuildRecord } = supportModule;
 
 function resolveBuild() {
   if (buildInfoFile) {
@@ -78,23 +66,9 @@ function resolveBuild() {
   const runId = process.env.MOCK_RUN_ID?.trim()
     || process.env.RELEASE_CAMPAIGN_RUN_ID?.trim()
     || fallbackRunId;
-  const lane = "mock-lane";
   return {
-    lane,
     runId,
-    gitSha: resolveGitSha() || "unknown",
-    fingerprint: process.env.VISUAL_BASELINE_BUILD_FINGERPRINT?.trim()
-      || `${runId}:${lane}:visual`,
-    startedAt: new Date().toISOString(),
   };
-}
-
-function normalizeManifestActualUrl(route) {
-  return new URL(route, "http://agentsmith.visual.local").pathname;
-}
-
-function writeManifest(manifest) {
-  writeFileSync(join(evidenceDir, "run-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 const build = resolveBuild();
@@ -103,39 +77,35 @@ const reviewRoot = process.env.VISUAL_BASELINE_REVIEW_ROOT?.trim()
 const sourceManifestPath = join(reviewRoot, build.runId, "run-manifest.json");
 const targetManifestPath = join(evidenceDir, "run-manifest.json");
 
+function isSafeRelativeFilePath(value) {
+  return typeof value === "string"
+    && value.trim().length > 0
+    && !value.startsWith("/")
+    && !value.includes("\\")
+    && !value.split("/").includes("..");
+}
+
 if (existsSync(sourceManifestPath)) {
   copyFileSync(sourceManifestPath, targetManifestPath);
-} else if (buildInfoFile) {
-  throw new Error(`missing lane-visual run manifest: ${sourceManifestPath}`);
+  const manifest = JSON.parse(readFileSync(sourceManifestPath, "utf8"));
+  const screenshots = Array.isArray(manifest?.scenarios)
+    ? manifest.scenarios.flatMap((scenario) => Array.isArray(scenario?.screenshots) ? scenario.screenshots : [])
+    : [];
+  for (const screenshot of screenshots) {
+    const actualRelPath = typeof screenshot?.actual_relpath === "string" ? screenshot.actual_relpath : null;
+    if (!actualRelPath || !isSafeRelativeFilePath(actualRelPath)) {
+      throw new Error(`invalid lane-visual actual capture path: ${String(actualRelPath)}`);
+    }
+    const sourceCapturePath = join(reviewRoot, build.runId, actualRelPath);
+    const targetCapturePath = join(evidenceDir, actualRelPath);
+    if (!existsSync(sourceCapturePath)) {
+      throw new Error(`missing lane-visual actual capture: ${sourceCapturePath}`);
+    }
+    mkdirSync(dirname(targetCapturePath), { recursive: true });
+    copyFileSync(sourceCapturePath, targetCapturePath);
+  }
 } else {
-  const scenarios = [...groupVisualBaselineCatalogByScenario().values()]
-    .sort((left, right) => left.scenarioId.localeCompare(right.scenarioId))
-    .map((scenario) => {
-      const evidence = buildVisualBaselineScenarioEvidence(scenario);
-      return {
-        scenario_id: scenario.scenarioId,
-        actual_url: normalizeManifestActualUrl(scenario.route),
-        story_fingerprint: evidence.storyFingerprint,
-        screenshots: evidence.screenshots.map((entry) => ({
-          file_name: entry.fileName,
-          actual_sha256: `sha256:${entry.screenshotSha256}`,
-          baseline_sha256: `sha256:${entry.baselineSha256}`,
-        })),
-      };
-    });
-
-  writeManifest({
-    schema: "visual_baseline_run_manifest/v1",
-    run_id: build.runId,
-    build: {
-      lane: build.lane,
-      run_id: build.runId,
-      git_sha: build.gitSha,
-      fingerprint: build.fingerprint,
-      started_at: build.startedAt,
-    },
-    scenarios,
-  });
+  throw new Error(`missing lane-visual run manifest: ${sourceManifestPath}`);
 }
 NODE
 }

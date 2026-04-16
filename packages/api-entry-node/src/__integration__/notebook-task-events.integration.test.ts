@@ -4,6 +4,8 @@ import { NOTEBOOK_RUNNER_SPEC } from "@mbos/agent-runner";
 import { apiFetch, startServer } from "./test-support.js";
 
 const sockets: WebSocket[] = [];
+const RUNNER_DISPATCH_TIMEOUT_MS = 1_500;
+const NO_DISPATCH_SETTLE_MS = 300;
 
 type ParsedDefaultSseBlock = {
   id: string | null;
@@ -36,6 +38,102 @@ function parseDefaultSseBlocks(text: string): ParsedDefaultSseBlock[] {
     });
   }
   return parsed;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function buildRunnerWsUrl(
+  wsUrl: string,
+  baseUrl: string,
+  sessionId?: string,
+): string {
+  const resolved = new URL(
+    wsUrl.replace("ws://localhost:20000", baseUrl.replace("http://", "ws://")),
+  );
+  if (sessionId) {
+    resolved.searchParams.set("session_id", sessionId);
+  }
+  return resolved.toString();
+}
+
+async function expectRunnerDispatch(
+  dispatchPromise: Promise<{ requestId: string }>,
+  label: string,
+): Promise<{ requestId: string }> {
+  return Promise.race([
+    dispatchPromise,
+    delay(RUNNER_DISPATCH_TIMEOUT_MS).then(() => {
+      throw new Error(
+        `timed out waiting for ${label} to receive server.request.start`,
+      );
+    }),
+  ]);
+}
+
+async function openReadyNotebookRunnerSocket(input: {
+  baseUrl: string;
+  runnerWsUrl: string;
+  runnerKey: string;
+  sessionId?: string;
+  onRequestStart?: (ws: WebSocket, requestId: string) => void;
+}): Promise<{
+  ws: WebSocket;
+  firstDispatch: Promise<{ requestId: string }>;
+  getDispatchCount: () => number;
+}> {
+  let dispatchCount = 0;
+  let resolveFirstDispatch: ((value: { requestId: string }) => void) | null =
+    null;
+  const firstDispatch = new Promise<{ requestId: string }>((resolve) => {
+    resolveFirstDispatch = resolve;
+  });
+  const ws = new WebSocket(
+    buildRunnerWsUrl(input.runnerWsUrl, input.baseUrl, input.sessionId),
+    {
+      headers: { Authorization: `Bearer ${input.runnerKey}` },
+    },
+  );
+  sockets.push(ws);
+
+  await new Promise<void>((resolve, reject) => {
+    ws.once("error", reject);
+    ws.on("message", (raw) => {
+      const msg = JSON.parse(raw.toString("utf-8")) as {
+        type?: string;
+        request_id?: string;
+      };
+      if (msg.type === "server.hello") {
+        ws.send(
+          JSON.stringify({
+            type: "agent.ready",
+            payload: {
+              runner_spec: NOTEBOOK_RUNNER_SPEC,
+              capabilities: { mode: "external", wire_api: "responses" },
+            },
+          }),
+        );
+        resolve();
+        return;
+      }
+      if (msg.type !== "server.request.start" || !msg.request_id) return;
+      dispatchCount += 1;
+      if (resolveFirstDispatch) {
+        resolveFirstDispatch({ requestId: msg.request_id });
+        resolveFirstDispatch = null;
+      }
+      input.onRequestStart?.(ws, msg.request_id);
+    });
+  });
+
+  return {
+    ws,
+    firstDispatch,
+    getDispatchCount: () => dispatchCount,
+  };
 }
 
 async function readSseBlocks(
@@ -194,76 +292,11 @@ describe("api-entry-node notebook task event routes", () => {
         ws_url: string;
       };
 
-      const executionSocket = new WebSocket(
-        connectionInfo.ws_url.replace(
-          "ws://localhost:20000",
-          baseUrl.replace("http://", "ws://"),
-        ),
-        { headers: { Authorization: `Bearer ${agentKey.key}` } },
-      );
-      sockets.push(executionSocket);
-
-      const executionChannelReady = new Promise<void>((resolve) => {
-        executionSocket.on("open", () => {
-          executionSocket.send(
-            JSON.stringify({
-              type: "agent.ready",
-              payload: {
-                runner_spec: NOTEBOOK_RUNNER_SPEC,
-                capabilities: { mode: "external", wire_api: "responses" },
-              },
-            }),
-          );
-          resolve();
-        });
+      const agentScopedRunner = await openReadyNotebookRunnerSocket({
+        baseUrl,
+        runnerWsUrl: connectionInfo.ws_url,
+        runnerKey: agentKey.key,
       });
-
-      executionSocket.on("message", (raw) => {
-        const msg = JSON.parse(raw.toString("utf-8")) as {
-          type?: string;
-          request_id?: string;
-        };
-        if (msg.type !== "server.request.start" || !msg.request_id) return;
-        executionSocket.send(
-          JSON.stringify({
-            type: "agent.response.event",
-            request_id: msg.request_id,
-            payload: {
-              sequence: 1,
-              at: new Date().toISOString(),
-              category: "progress",
-              phase: "start",
-              status: "running",
-              name: "codex.exec",
-              summary: "Starting",
-            },
-          }),
-        );
-        executionSocket.send(
-          JSON.stringify({
-            type: "agent.response.event",
-            request_id: msg.request_id,
-            payload: {
-              sequence: 2,
-              at: new Date().toISOString(),
-              category: "progress",
-              phase: "update",
-              status: "running",
-              name: "codex.exec",
-              summary: "Halfway",
-            },
-          }),
-        );
-        executionSocket.send(
-          JSON.stringify({
-            type: "agent.response.done",
-            request_id: msg.request_id,
-            payload: { finish_reason: "stop", usage_tokens: 1 },
-          }),
-        );
-      });
-
-      await executionChannelReady;
 
       const createLibraryRes = await apiFetch(
         baseUrl,
@@ -295,6 +328,52 @@ describe("api-entry-node notebook task event routes", () => {
       expect(createTaskRes.status).toBe(201);
       const task = (await createTaskRes.json()) as { id: string };
 
+      const taskScopedRunner = await openReadyNotebookRunnerSocket({
+        baseUrl,
+        runnerWsUrl: connectionInfo.ws_url,
+        runnerKey: agentKey.key,
+        sessionId: task.id,
+        onRequestStart: (ws, requestId) => {
+          ws.send(
+            JSON.stringify({
+              type: "agent.response.event",
+              request_id: requestId,
+              payload: {
+                sequence: 1,
+                at: new Date().toISOString(),
+                category: "progress",
+                phase: "start",
+                status: "running",
+                name: "codex.exec",
+                summary: "Starting",
+              },
+            }),
+          );
+          ws.send(
+            JSON.stringify({
+              type: "agent.response.event",
+              request_id: requestId,
+              payload: {
+                sequence: 2,
+                at: new Date().toISOString(),
+                category: "progress",
+                phase: "update",
+                status: "running",
+                name: "codex.exec",
+                summary: "Halfway",
+              },
+            }),
+          );
+          ws.send(
+            JSON.stringify({
+              type: "agent.response.done",
+              request_id: requestId,
+              payload: { finish_reason: "stop", usage_tokens: 1 },
+            }),
+          );
+        },
+      });
+
       const postMessageRes = await apiFetch(
         baseUrl,
         `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
@@ -305,6 +384,12 @@ describe("api-entry-node notebook task event routes", () => {
         },
       );
       expect(postMessageRes.status).toBe(200);
+      await expectRunnerDispatch(
+        taskScopedRunner.firstDispatch,
+        "notebook task-scoped runner",
+      );
+      await delay(NO_DISPATCH_SETTLE_MS);
+      expect(agentScopedRunner.getDispatchCount()).toBe(0);
 
       const replayRes = await apiFetch(
         baseUrl,

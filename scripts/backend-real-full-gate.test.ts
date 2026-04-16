@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -71,6 +71,8 @@ function writeSemanticTraceBundle(root: string, options: Partial<{
     runId,
   });
   const traceSteps = requiredTraceSteps(story);
+  const canonicalStoryFingerprint = buildStoryFingerprint(story);
+  const stepMapFingerprint = buildStoryStepMapFingerprint(story);
   const events = traceSteps.map((step, index) => {
     const seq = index + 1;
     const screenshot = step.sceneId ? `screenshots/${String(seq).padStart(3, '0')}-${step.stepId}.png` : undefined;
@@ -95,8 +97,8 @@ function writeSemanticTraceBundle(root: string, options: Partial<{
     story_id: story.storyId,
     story_source: binding.storySource,
     story_source_fingerprint: buildStorySourceFingerprint(readFileSync(resolve(sourceFile), 'utf8')),
-    story_fingerprint: options.storyFingerprint ?? buildStoryFingerprint(story),
-    step_map_fingerprint: buildStoryStepMapFingerprint(story),
+    story_fingerprint: options.storyFingerprint ?? canonicalStoryFingerprint,
+    step_map_fingerprint: stepMapFingerprint,
     scenario_id: 'integration-release-user-story',
     title: story.title,
     actor: story.actor,
@@ -130,6 +132,44 @@ function writeSemanticTraceBundle(root: string, options: Partial<{
   };
 
   writeJson(join(bundleDir, 'manifest.json'), manifest);
+  writeJson(join(bundleDir, 'contract-snapshot.json'), {
+    version: 1,
+    lane: manifest.lane,
+    suite: manifest.suite,
+    story_id: manifest.story_id,
+    scenario_id: manifest.scenario_id,
+    run_id: manifest.run_id,
+    story_source: binding.storySource,
+    story_source_fingerprint: manifest.story_source_fingerprint,
+    story_fingerprint: canonicalStoryFingerprint,
+    step_map_fingerprint: stepMapFingerprint,
+    required_trace_steps: manifest.required_trace_steps,
+    required_screenshot_steps: manifest.required_screenshot_steps,
+    trace_order_contract: manifest.trace_order_contract,
+    steps: traceSteps.map((step) => ({
+      step_id: step.stepId,
+      action: step.action,
+      ...(step.target ? { target: step.target } : {}),
+      ...(step.targetMatch ? { target_match: step.targetMatch } : {}),
+      scene_id: step.sceneId ?? null,
+    })),
+  });
+  const bundleRelpath = relative(root, bundleDir).split('\\').join('/');
+  writeJson(join(root, 'ux-trace-index.json'), {
+    version: 1,
+    generated_at: '2026-04-12T12:00:01.000Z',
+    bundles: [{
+      lane: manifest.lane,
+      suite: manifest.suite,
+      story_id: manifest.story_id,
+      scenario_id: manifest.scenario_id,
+      run_id: manifest.run_id,
+      bundle_relpath: bundleRelpath,
+      manifest_relpath: `${bundleRelpath}/manifest.json`,
+      review_relpath: `${bundleRelpath}/review.md`,
+      contract_snapshot_relpath: `${bundleRelpath}/contract-snapshot.json`,
+    }],
+  });
   if (!options.omitEvents) {
     createFile(join(bundleDir, 'events.jsonl'), `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
   }
@@ -174,9 +214,12 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('--report "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}"');
     expect(script).toContain('FILE_LIBRARY_RESOURCE_RECOVERY_PROBE_PATH');
     expect(script).toContain('resource-recovery');
+    expect(script).toContain('boot-baseline.json');
     expect(script).toContain('baseline.json');
     expect(script).toContain('report.json');
     expect(script).toContain('report.md');
+    expect(script).toContain('--boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"');
+    expect(script).toContain('--api-pid "${API_PID}"');
     expect(script).not.toContain('npx "${args[@]}" >/dev/null 2>&1 || true');
   });
 

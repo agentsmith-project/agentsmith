@@ -13,16 +13,7 @@ import type {
   StoryVisualReviewScenarioGroup,
   StoryVisualReviewTheme,
 } from './story-contract';
-import { themedScreenshotName, type VisualTheme } from './utils/visual-theme';
-
-const LOCALE = 'en-US';
-const WS_ID = 'ws_default';
-const ALT_WS_ID = 'ws_test';
-const PROJECT_ID = 'proj_001';
-
-function projectPath(section: string) {
-  return `/${LOCALE}/workspaces/${WS_ID}/projects/${PROJECT_ID}/${section}`;
-}
+import { themedScreenshotName } from './utils/visual-theme';
 
 export type VisualRecipeFamily =
   | 'public_auth_single'
@@ -65,6 +56,7 @@ export type VisualBaselineSemanticAssertions = {
   forbiddenVisibleText: readonly string[];
   forbiddenVisibleTextPatterns: readonly string[];
   requiredViewportTestIds: readonly string[];
+  requiredViewerLocalDateTimeTestIds: readonly string[];
   primaryActionTestIds: readonly string[];
   maxProminentActions: number | null;
 };
@@ -90,6 +82,11 @@ function uniqueNonEmptyTexts(values: readonly string[]): string[] {
 function resolveSemanticAssertionsFromStoryScene(
   assertions: StoryRuntimeVisualSemanticAssertionsDefinition | undefined,
 ): VisualBaselineSemanticAssertions {
+  const viewerLocalDateTimeAssertions = assertions as (
+    StoryRuntimeVisualSemanticAssertionsDefinition & {
+      requiredViewerLocalDateTimeTestIds?: readonly string[];
+    }
+  ) | undefined;
   const allowedDefaultTokens = new Set(assertions?.allowedDefaultForbiddenVisibleText ?? []);
   const defaultForbiddenVisibleText = VISUAL_BASELINE_DEFAULT_FORBIDDEN_VISIBLE_TEXT
     .filter((text) => !allowedDefaultTokens.has(text));
@@ -101,6 +98,9 @@ function resolveSemanticAssertionsFromStoryScene(
     ]),
     forbiddenVisibleTextPatterns: uniqueNonEmptyTexts(assertions?.forbiddenVisibleTextPatterns ?? []),
     requiredViewportTestIds: uniqueNonEmptyTexts(assertions?.requiredViewportTestIds ?? []),
+    requiredViewerLocalDateTimeTestIds: uniqueNonEmptyTexts(
+      viewerLocalDateTimeAssertions?.requiredViewerLocalDateTimeTestIds ?? [],
+    ),
     primaryActionTestIds: uniqueNonEmptyTexts(assertions?.primaryActionTestIds ?? []),
     maxProminentActions: assertions?.maxProminentActions ?? null,
   };
@@ -242,6 +242,17 @@ export type VisualBaselineScenarioScreenshotEvidence = {
 export type VisualBaselineScenarioEvidence = {
   storyFingerprint: string;
   screenshots: readonly VisualBaselineScenarioScreenshotEvidence[];
+};
+
+export type VisualBaselineReviewEvidenceScreenshot = {
+  fileName: string;
+  actualSha256: string;
+  baselineSha256: string;
+};
+
+export type VisualBaselineReviewEvidenceSnapshot = {
+  storyFingerprint: string;
+  screenshots: readonly VisualBaselineReviewEvidenceScreenshot[];
 };
 
 const STORY_ROOT = path.resolve('e2e/stories');
@@ -444,10 +455,33 @@ function formatScreenshotHashMap(
     .join('; ');
 }
 
+function formatReviewScreenshotHashMap(
+  screenshots: readonly VisualBaselineReviewEvidenceScreenshot[],
+  field: 'actualSha256' | 'baselineSha256',
+): string {
+  return screenshots
+    .map((entry) => `${entry.fileName}=${entry[field]}`)
+    .join('; ');
+}
+
 export function formatVisualBaselineActualScreenshotHashes(
   screenshots: readonly VisualBaselineScenarioScreenshotEvidence[],
 ): string {
   return formatScreenshotHashMap(screenshots, 'screenshotSha256');
+}
+
+export function buildVisualBaselineReviewEvidenceSnapshot(
+  scenario: VisualBaselineScenarioRecord,
+): VisualBaselineReviewEvidenceSnapshot {
+  const evidence = buildVisualBaselineScenarioEvidence(scenario);
+  return {
+    storyFingerprint: evidence.storyFingerprint,
+    screenshots: evidence.screenshots.map((entry) => ({
+      fileName: entry.fileName,
+      actualSha256: `sha256:${entry.screenshotSha256}`,
+      baselineSha256: `sha256:${entry.baselineSha256}`,
+    })),
+  };
 }
 
 export function buildVisualBaselineScenarioEvidence(
@@ -493,12 +527,12 @@ export function buildVisualBaselineScenarioEvidence(
 function pushScenarioEvidenceMetadata(
   lines: string[],
   scenario: VisualBaselineScenarioRecord,
-  evidence: VisualBaselineScenarioEvidence = buildVisualBaselineScenarioEvidence(scenario),
-): VisualBaselineScenarioEvidence {
+  evidence: VisualBaselineReviewEvidenceSnapshot = buildVisualBaselineReviewEvidenceSnapshot(scenario),
+): VisualBaselineReviewEvidenceSnapshot {
   lines.push(
     `- story_fingerprint: ${evidence.storyFingerprint}`,
-    `- accepted_screenshot_hashes: ${formatScreenshotHashMap(evidence.screenshots, 'screenshotSha256')}`,
-    `- accepted_baseline_hashes: ${formatScreenshotHashMap(evidence.screenshots, 'baselineSha256')}`,
+    `- accepted_screenshot_hashes: ${formatReviewScreenshotHashMap(evidence.screenshots, 'actualSha256')}`,
+    `- accepted_baseline_hashes: ${formatReviewScreenshotHashMap(evidence.screenshots, 'baselineSha256')}`,
   );
   return evidence;
 }
@@ -555,6 +589,7 @@ export function renderVisualBaselineScenarioReviewMarkdown(args: {
   scenario: VisualBaselineScenarioRecord;
   build?: VisualBaselineBuildRecord;
   review: VisualBaselineReviewRecord;
+  evidenceSnapshot?: VisualBaselineReviewEvidenceSnapshot;
 }): string {
   const { scenario, build, review } = args;
   const lines = [
@@ -564,7 +599,7 @@ export function renderVisualBaselineScenarioReviewMarkdown(args: {
     ...visualBaselineScenarioMetadataLines(scenario),
     `- actual_url: ${review.actualUrl}`,
   ];
-  pushScenarioEvidenceMetadata(lines, scenario);
+  pushScenarioEvidenceMetadata(lines, scenario, args.evidenceSnapshot);
   pushVisualBaselineBuildMetadata(lines, build);
   lines.push(
     `- reviewer_id: ${review.reviewerId}`,
@@ -600,9 +635,10 @@ export function renderVisualBaselineAutomatedPassMarkdown(args: {
   scenario: VisualBaselineScenarioRecord;
   build: VisualBaselineBuildRecord;
   automated: VisualBaselineAutomatedPassRecord;
+  evidenceSnapshot?: VisualBaselineReviewEvidenceSnapshot;
 }): string {
   const { scenario, build, automated } = args;
-  const evidence = buildVisualBaselineScenarioEvidence(scenario);
+  const evidence = args.evidenceSnapshot ?? buildVisualBaselineReviewEvidenceSnapshot(scenario);
   const lines = [
     `# ${scenario.scenarioId}`,
     '',
@@ -614,7 +650,7 @@ export function renderVisualBaselineAutomatedPassMarkdown(args: {
   pushVisualBaselineBuildMetadata(lines, build);
   lines.push(
     `- actual_build_run_id: ${build.runId}`,
-    `- actual_screenshot_hashes: ${formatVisualBaselineActualScreenshotHashes(evidence.screenshots)}`,
+    `- actual_screenshot_hashes: ${formatReviewScreenshotHashMap(evidence.screenshots, 'actualSha256')}`,
     `- generated_at: ${automated.generatedAt}`,
     `- automated_verdict: ${automated.automatedVerdict}`,
     `- semantic_verdict: ${automated.semanticVerdict}`,

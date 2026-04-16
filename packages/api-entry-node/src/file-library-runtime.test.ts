@@ -691,6 +691,77 @@ describe('file-library-runtime readiness', () => {
     }
   });
 
+  it('treats /minio/health/live as the gateway readiness authority instead of the bucket root', async () => {
+    vi.useFakeTimers();
+    const root = await mkdtemp(join(tmpdir(), 'gateway-health-live-ready-'));
+    const spawnGateway = vi.fn(() => createChild(901));
+    const freePortProbe = mockFreePortProbe();
+    const globalFetch = vi.fn(async () => new Response('ok', { status: 200 }));
+    vi.stubGlobal('fetch', globalFetch);
+
+    try {
+      const platformFetch = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === 'http://127.0.0.1:39000/minio/health/live') {
+          return new Response('ok', { status: 200 });
+        }
+        if (url === 'http://127.0.0.1:39000/') {
+          return new Response('AccessDenied', { status: 403 });
+        }
+        return new Response('unexpected', { status: 500 });
+      });
+      const manager = new RealFileLibraryGatewayManager(
+        createGatewayConfig({
+          gatewayArtifactsRoot: root,
+          gatewayLogDir: join(root, 'logs'),
+          gatewayStateDir: join(root, 'state'),
+        }),
+        {
+          spawnGateway,
+          async listProcesses() {
+            return [];
+          },
+          processExists(pid) {
+            return pid === 901;
+          },
+          killProcess: vi.fn(),
+          wait: async () => undefined,
+          fetch: platformFetch,
+          now: () => '2026-04-02T18:40:00.000Z',
+          ownerPid: () => 1000,
+        },
+      );
+
+      const ensurePromise = manager.ensureGateway({
+        libraryId: 'flib_health_live',
+        filesystemName: 'flib-health-live',
+        metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_health_live?sslmode=disable',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-health-live',
+      });
+      const resolution = ensurePromise.then(
+        (gateway) => ({ type: 'resolved' as const, gateway }),
+        (error: unknown) => ({ type: 'rejected' as const, error }),
+      );
+
+      await vi.advanceTimersByTimeAsync(15_100);
+
+      const outcome = await resolution;
+      expect(outcome.type).toBe('resolved');
+      if (outcome.type !== 'resolved') {
+        throw outcome.error;
+      }
+      expect(outcome.gateway).toMatchObject({
+        pid: 901,
+        status: 'ready',
+      });
+      expect(platformFetch.mock.calls.some(([input]) => String(input) === 'http://127.0.0.1:39000/minio/health/live')).toBe(true);
+    } finally {
+      freePortProbe.mockRestore();
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
+  });
+
   it('reaps a state-backed gateway from an older boot even when the api pid was reused by a newer boot', async () => {
     const root = await mkdtemp(join(tmpdir(), 'gateway-owner-pid-reuse-'));
     const staleOwnerScope = buildBootScopedOwnerScope('instance-a', 'boot-old');
@@ -917,7 +988,13 @@ describe('file-library-runtime readiness', () => {
     const spawnGateway = vi.fn(() => createChild(901));
     const freePortProbe = mockFreePortProbe();
     const globalFetch = vi.fn(async () => new Response('ok', { status: 200 }));
-    const platformFetch = vi.fn(async () => new Response('unexpected', { status: 500 }));
+    const platformFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('http://127.0.0.1:39000/')) {
+        return new Response('ok', { status: 200 });
+      }
+      return new Response('unexpected', { status: 500 });
+    });
     vi.stubGlobal('fetch', globalFetch);
 
     try {
@@ -997,7 +1074,13 @@ describe('file-library-runtime readiness', () => {
     const spawnGateway = vi.fn(() => createChild(901));
     const freePortProbe = mockFreePortProbe();
     const globalFetch = vi.fn(async () => new Response('ok', { status: 200 }));
-    const platformFetch = vi.fn(async () => new Response('unexpected', { status: 500 }));
+    const platformFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('http://127.0.0.1:39000/')) {
+        return new Response('ok', { status: 200 });
+      }
+      return new Response('unexpected', { status: 500 });
+    });
     let listProcessesCall = 0;
     vi.stubGlobal('fetch', globalFetch);
 
@@ -1981,6 +2064,101 @@ describe('file-library-runtime readiness', () => {
     }
   });
 
+  it('fails closed when a persisted gateway probe returns 503 and replaces it instead of restoring the old session', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-http-503-fail-closed-'));
+    await mkdir(join(root, 'state'), { recursive: true });
+
+    const alive = new Set<number>([602, 1000]);
+    const kills: Array<{ pid: number; signal: string }> = [];
+    const spawnGateway = vi.fn(() => {
+      alive.add(603);
+      return createChild(603);
+    });
+    const freePortProbe = mockFreePortProbe();
+
+    try {
+      const manager = new RealFileLibraryGatewayManager(
+        createGatewayConfig({
+          gatewayArtifactsRoot: root,
+          gatewayLogDir: join(root, 'logs'),
+          gatewayStateDir: join(root, 'state'),
+        }),
+        {
+          spawnGateway,
+          async listProcesses() {
+            const ownerRuntime = await (
+              Reflect.get(manager as object, 'ownerRuntimePromise') as Promise<{ ownerScope: string }>
+            );
+            return alive.has(602)
+              ? [
+                {
+                  pid: 602,
+                  args: buildOwnedGatewayArgs({
+                    ownerScope: ownerRuntime.ownerScope,
+                    libraryId: 'flib_http_503',
+                    metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_http_503?sslmode=disable',
+                    listenAddress: '127.0.0.1:39062',
+                    storageBucketUrl: 'http://localhost:19000/jfs-lib-http-503',
+                    logPath: join(root, 'logs', 'flib_http_503.log'),
+                  }),
+                  libraryId: null,
+                },
+              ]
+              : [];
+          },
+          processExists(pid) {
+            return alive.has(pid);
+          },
+          killProcess(pid, signal) {
+            kills.push({ pid, signal });
+            alive.delete(pid);
+          },
+          wait: async () => undefined,
+          fetch: vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.startsWith('http://127.0.0.1:39062/')) {
+              return new Response('gateway unavailable', { status: 503 });
+            }
+            return new Response('ok', { status: 200 });
+          }),
+          now: () => '2026-04-02T18:34:00.000Z',
+          ownerPid: () => 1000,
+        },
+      );
+
+      const ownerRuntime = await (
+        Reflect.get(manager as object, 'ownerRuntimePromise') as Promise<{ ownerScope: string }>
+      );
+
+      await writeFile(join(root, 'state', 'flib_http_503.json'), JSON.stringify({
+        libraryId: 'flib_http_503',
+        pid: 602,
+        port: 39062,
+        loopbackUrl: 'http://127.0.0.1:39062',
+        metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_http_503?sslmode=disable',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-http-503',
+        logPath: join(root, 'logs', 'flib_http_503.log'),
+        lastStartedAt: '2026-04-02T18:34:00.000Z',
+        ownerProcessPid: 1000,
+        ownerScope: ownerRuntime.ownerScope,
+        status: 'ready',
+      }), 'utf8');
+
+      const gateway = await manager.ensureGateway({
+        libraryId: 'flib_http_503',
+        filesystemName: 'flib-http-503',
+        metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_http_503?sslmode=disable',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-http-503',
+      });
+
+      expect(gateway.pid).toBe(603);
+      expect(spawnGateway).toHaveBeenCalledTimes(1);
+      expect(kills).toEqual([{ pid: 602, signal: 'SIGTERM' }]);
+    } finally {
+      freePortProbe.mockRestore();
+    }
+  });
+
   it('stops a gateway from persisted state even when memory session is gone', async () => {
     const root = await mkdtemp(join(tmpdir(), 'gateway-stop-'));
     await mkdir(join(root, 'state'), { recursive: true });
@@ -2239,6 +2417,77 @@ describe('file-library-runtime readiness', () => {
       freePortProbe.mockRestore();
       vi.unstubAllGlobals();
       vi.useRealTimers();
+    }
+  });
+
+  it('aborts gateway startup on caller cancellation and tears down the spawned child plus state file', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gateway-start-abort-'));
+    const alive = new Set<number>([901, 1000]);
+    const kills: Array<{ pid: number; signal: string }> = [];
+    const child = createChild(901, {
+      onKill(signal) {
+        kills.push({ pid: 901, signal });
+        alive.delete(901);
+        emitChildExit(child, 0);
+      },
+    });
+    const freePortProbe = mockFreePortProbe();
+    const controller = new AbortController();
+    let resolveFetchStarted: (() => void) | null = null;
+    const fetchStarted = new Promise<void>((resolve) => {
+      resolveFetchStarted = resolve;
+    });
+
+    try {
+      const manager = new RealFileLibraryGatewayManager(
+        createGatewayConfig({
+          gatewayArtifactsRoot: root,
+          gatewayLogDir: join(root, 'logs'),
+          gatewayStateDir: join(root, 'state'),
+        }),
+        {
+          spawnGateway: vi.fn(() => child),
+          async listProcesses() {
+            return [];
+          },
+          processExists(pid) {
+            return alive.has(pid);
+          },
+          killProcess(pid, signal) {
+            kills.push({ pid, signal });
+            alive.delete(pid);
+          },
+          wait: async () => undefined,
+          fetch: vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => await new Promise<Response>((_resolve, reject) => {
+            resolveFetchStarted?.();
+            init?.signal?.addEventListener('abort', () => {
+              reject(init.signal?.reason ?? new Error('gateway_start_aborted'));
+            }, { once: true });
+          })),
+          now: () => '2026-04-16T10:00:00.000Z',
+          ownerPid: () => 1000,
+        },
+      );
+
+      const ensurePromise = manager.ensureGateway({
+        libraryId: 'flib_abort_startup',
+        filesystemName: 'flib-abort-startup',
+        metadataUrl: 'postgres://user:pass@localhost:15432/jfs_lib_abort_startup?sslmode=disable',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-abort-startup',
+        signal: controller.signal,
+      } as never);
+
+      await fetchStarted;
+      controller.abort(new Error('client_request_aborted'));
+
+      await expect(ensurePromise).rejects.toMatchObject({
+        name: 'AbortError',
+      });
+      expect(kills).toEqual([{ pid: 901, signal: 'SIGTERM' }]);
+      await expect(readFile(join(root, 'state', 'flib_abort_startup.json'), 'utf8')).rejects.toThrow();
+      expect((Reflect.get(manager as object, 'sessions') as Map<string, unknown>).has('flib_abort_startup')).toBe(false);
+    } finally {
+      freePortProbe.mockRestore();
     }
   });
 });

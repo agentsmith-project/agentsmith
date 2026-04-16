@@ -193,10 +193,10 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       const existing = this.locks.get(lockKey);
       if (!existing) break;
       await existing;
-      if (this.getOnlineState(agent.id, input.sessionId)) return;
+      if (await this.isReadyForSession(input.agent.id, input.sessionId)) return;
     }
 
-    if (this.getOnlineState(agent.id, input.sessionId)) return;
+    if (await this.isReadyForSession(agent.id, input.sessionId)) return;
 
     let releaseLock!: () => void;
     const lock = new Promise<void>((resolve) => {
@@ -254,14 +254,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
 
   private async waitForAgentSessionOnline(agentId: string, sessionId: string, deadline: number): Promise<void> {
     while (Date.now() < deadline) {
-      if (this.getOnlineState(agentId, sessionId)) return;
-      if (typeof this.agentExecution.getAgentSessionDispatchAuthority === 'function') {
-        const authority = await this.agentExecution.getAgentSessionDispatchAuthority(agentId, sessionId);
-        const authorityError = mapRunnerSessionAuthorityToSandboxError(authority);
-        if (authorityError) {
-          throw Object.assign(new Error(authorityError), { code: 'AGENT_SANDBOX_REMOTE_OWNED' });
-        }
-      }
+      if (await this.isReadyForSession(agentId, sessionId)) return;
       await this.sleep(this.onlinePollIntervalMs);
     }
     throw Object.assign(new Error('sandbox_startup_timeout'), { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' });
@@ -282,7 +275,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     agent: AgentRecord,
     workspaceMount?: InternalAgentWorkspaceMount,
   ): Promise<void> {
-    if (this.getOnlineState(agent.id, sessionId)) return;
+    if (await this.isReadyForSession(agent.id, sessionId)) return;
 
     const config = readInternalConfig(agent);
     const idleTimeoutSec = Math.max(
@@ -359,5 +352,22 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     } else {
       await this.waitForAgentOnline(agent.id, deadline);
     }
+  }
+
+  private async isReadyForSession(agentId: string, sessionId?: string): Promise<boolean> {
+    if (!sessionId) {
+      return this.getOnlineState(agentId);
+    }
+    if (typeof this.agentExecution.getAgentSessionDispatchAuthority === 'function') {
+      const authority = await this.agentExecution.getAgentSessionDispatchAuthority(agentId, sessionId);
+      const authorityError = mapRunnerSessionAuthorityToSandboxError(authority);
+      if (authorityError) {
+        throw Object.assign(new Error(authorityError), { code: 'AGENT_SANDBOX_REMOTE_OWNED' });
+      }
+      if (authority === 'local_dispatchable') {
+        return true;
+      }
+    }
+    return this.getOnlineState(agentId, sessionId);
   }
 }

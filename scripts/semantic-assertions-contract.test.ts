@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertProminentActionCountFits,
   assertProminentActionsUseDesignSystemMetadata,
+  assertViewerLocalDateTimeMetadata,
   summarizeProminentActionCandidates,
   assertViewportBoxFits,
   type ProminentActionCandidate,
@@ -126,5 +127,29 @@ describe('visual semantic viewport assertions', () => {
       prominentActionCount: 0,
       unmarkedProminentActions: [],
     });
+  });
+
+  it('requires viewer-local datetime metadata to carry a machine-readable dateTime value', () => {
+    expect(() => assertViewerLocalDateTimeMetadata({
+      testId: 'workspace-connections__last-refresh-value',
+      dateTime: null,
+      policy: 'viewer_local',
+    })).toThrow(/machine-readable dateTime metadata/);
+  });
+
+  it('requires viewer-local datetime metadata to declare the viewer_local policy', () => {
+    expect(() => assertViewerLocalDateTimeMetadata({
+      testId: 'workspace-connections__last-refresh-value',
+      dateTime: '2026-03-19T00:00:00.000Z',
+      policy: 'utc',
+    })).toThrow(/viewer_local policy/);
+  });
+
+  it('accepts viewer-local datetime metadata when both dateTime and viewer_local policy are present', () => {
+    expect(() => assertViewerLocalDateTimeMetadata({
+      testId: 'workspace-connections__last-refresh-value',
+      dateTime: '2026-03-19T00:00:00.000Z',
+      policy: 'viewer_local',
+    })).not.toThrow();
   });
 });

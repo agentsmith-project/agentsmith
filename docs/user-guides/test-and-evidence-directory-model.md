@@ -57,6 +57,19 @@
 - current docs 统一使用 run-scoped 证据路径
 - 若脚本仍保留 `current` 便捷别名，应视为兼容入口，不作为文档真相
 - `e2e/stories/` 定义“应当发生什么”，`artifacts/` 记录“实际发生了什么”
+- release-grade authority artifacts 必须是 producer-owned snapshot，不能由 wrapper 或 aggregate 事后重建
+
+### visual review root
+- `artifacts/visual-baseline-reviews/<run-id>/run-manifest.json`
+- `artifacts/visual-baseline-reviews/<run-id>/captured/<scenario-id>/<file>`
+- `artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md`
+
+### backend-real UX trace root
+- `.../ux-traces/ux-trace-index.json`
+- `.../ux-traces/<lane>/<suite>/<story-id>/<run-id>/manifest.json`
+- `.../ux-traces/<lane>/<suite>/<story-id>/<run-id>/contract-snapshot.json`
+- `.../ux-traces/<lane>/<suite>/<story-id>/<run-id>/events.jsonl`
+- `.../ux-traces/<lane>/<suite>/<story-id>/<run-id>/review.md`
 
 ## 5. 应该看哪一份
 
@@ -72,8 +85,10 @@
 看：
 - `artifacts/backend-real-visual/<run-id>/review.md`
 - `artifacts/backend-real-visual/<run-id>/manifest.json`
+- `artifacts/backend-real-visual/<run-id>/ux-traces/ux-trace-index.json`
 - `artifacts/backend-real-visual/<run-id>/ux-traces/<lane>/<suite>/<story-id>/<run-id>/review.md`
 - `artifacts/backend-real-visual/<run-id>/ux-traces/<lane>/<suite>/<story-id>/<run-id>/events.jsonl`
+- `artifacts/backend-real-visual/<run-id>/ux-traces/<lane>/<suite>/<story-id>/<run-id>/contract-snapshot.json`
 
 ### 发布前结论
 看：

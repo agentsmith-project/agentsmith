@@ -1,17 +1,13 @@
 import fs from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { buildGeneratedStorySpecs } from '../e2e/story-generated-spec';
+import {
+  buildGeneratedStorySpecs,
+  type GeneratedStorySpec as CanonicalGeneratedStorySpec,
+} from '../e2e/story-generated-spec';
 import { loadAllStoryDefinitions, loadAllStoryDefinitionsSync } from '../e2e/story-loader';
 
-export type GeneratedStorySpec = {
-  storyId: string;
-  sourceRef: string;
-  lane: string;
-  family: string;
-  stepIds: string[];
-  traceStepIds: string[];
-};
+export type GeneratedStorySpec = CanonicalGeneratedStorySpec;
 
 export async function loadCanonicalStoryCatalog() {
   const stories = await loadCanonicalStoryDefinitions();

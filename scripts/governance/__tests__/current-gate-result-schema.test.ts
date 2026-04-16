@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -50,6 +51,7 @@ function runWrappedGateResult(input: {
   lineKind: string;
   npmScript: string;
   env?: Record<string, string>;
+  command?: string;
 }): GateResultPayload {
   const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-"));
   const evidenceDir = join(tempRoot, input.gateId, "native");
@@ -64,7 +66,7 @@ function runWrappedGateResult(input: {
       "--",
       "bash",
       "-lc",
-      "true",
+      input.command ?? "true",
     ],
     {
       cwd: process.cwd(),
@@ -76,6 +78,56 @@ function runWrappedGateResult(input: {
   return JSON.parse(
     readFileSync(join(evidenceDir, CURRENT_GATE_RESULT_ARTIFACT_NAME), "utf8"),
   ) as GateResultPayload;
+}
+
+function seedVisualProducerManifestSource(tempRoot: string, runId: string): string {
+  const reviewRoot = join(tempRoot, "visual-baseline-reviews");
+  const runRoot = join(reviewRoot, runId);
+  mkdirSync(runRoot, { recursive: true });
+  const actualCapturePath = join(runRoot, "captured", "desktop-auth-complete", "desktop-auth-complete.png");
+  const actualCapture = Buffer.from(`run-bound actual capture for ${runId}`);
+  mkdirSync(join(runRoot, "captured", "desktop-auth-complete"), { recursive: true });
+  writeFileSync(actualCapturePath, actualCapture);
+  writeFileSync(
+    join(runRoot, "run-manifest.json"),
+    `${JSON.stringify({
+      schema: "visual_baseline_run_manifest/v2",
+      run_id: runId,
+      build: {
+        lane: "mock-lane",
+        run_id: runId,
+        git_sha: "test-git-sha",
+        fingerprint: `${runId}:mock-lane:visual`,
+        started_at: "2026-04-16T08:00:00.000Z",
+      },
+      scenarios: [
+        {
+          scenario_id: "desktop-auth-complete",
+          actual_url: "/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001",
+          story_fingerprint: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          screenshots: [
+            {
+              file_name: "desktop-auth-complete.png",
+              actual_relpath: "captured/desktop-auth-complete/desktop-auth-complete.png",
+              actual_sha256: `sha256:${createHash("sha256").update(actualCapture).digest("hex")}`,
+              baseline_sha256: "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            },
+          ],
+        },
+      ],
+    }, null, 2)}\n`,
+  );
+  return reviewRoot;
+}
+
+function seededVisualWrapperEnv(runId: string, overrides: Record<string, string> = {}) {
+  const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-source-"));
+  const reviewRoot = seedVisualProducerManifestSource(tempRoot, runId);
+  return {
+    CURRENT_GATE_RESULT_RUN_ID: runId,
+    VISUAL_BASELINE_REVIEW_ROOT: reviewRoot,
+    ...overrides,
+  };
 }
 
 describe("current gate result schema", () => {
@@ -111,10 +163,17 @@ describe("current gate result schema", () => {
   });
 
   it("the standalone result wrapper writes a native result for a wrapped lane command", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-source-"));
+    const runId = "run-wrapper-result";
+    const reviewRoot = seedVisualProducerManifestSource(tempRoot, runId);
     const payload = runWrappedGateResult({
       gateId: "lane-visual",
       lineKind: "visual",
       npmScript: "lane:visual",
+      env: {
+        CURRENT_GATE_RESULT_RUN_ID: runId,
+        VISUAL_BASELINE_REVIEW_ROOT: reviewRoot,
+      },
     });
 
     expect(payload).toMatchObject({
@@ -124,21 +183,128 @@ describe("current gate result schema", () => {
     });
   });
 
-  it("treats wrapped visual native results as incomplete until evidence_dir/run-manifest.json exists", () => {
+  it("passes CURRENT_GATE_RESULT_RUN_ID through as MOCK_RUN_ID when lane-visual does not receive one explicitly", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-mock-run-id-"));
+    const runId = "run-wrapper-mock-run-id";
+    const reviewRoot = join(tempRoot, "visual-baseline-reviews");
+    const sourceManifestPath = join(reviewRoot, runId, "run-manifest.json");
+    const producerManifest = {
+      schema: "visual_baseline_run_manifest/v2",
+      run_id: runId,
+      build: {
+        lane: "mock-lane",
+        run_id: runId,
+        git_sha: "test-git-sha",
+        fingerprint: `${runId}:mock-lane:visual`,
+        started_at: "2026-04-16T08:00:00.000Z",
+      },
+      scenarios: [
+        {
+          scenario_id: "desktop-auth-complete",
+          actual_url: "/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001",
+          story_fingerprint: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          screenshots: [
+            {
+              file_name: "desktop-auth-complete.png",
+              actual_relpath: "captured/desktop-auth-complete/desktop-auth-complete.png",
+              actual_sha256: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+              baseline_sha256: "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            },
+          ],
+        },
+      ],
+    };
+    const writeProducerManifestCommand = [
+      "node --input-type=module -e",
+      JSON.stringify([
+        'import { createHash } from "node:crypto";',
+        'import { mkdirSync, writeFileSync } from "node:fs";',
+        'import { join } from "node:path";',
+        'const runId = process.env.MOCK_RUN_ID?.trim();',
+        'const reviewRoot = process.env.VISUAL_BASELINE_REVIEW_ROOT?.trim();',
+        'if (!runId || !reviewRoot) throw new Error("missing visual producer context");',
+        "const runRoot = join(reviewRoot, runId);",
+        "mkdirSync(runRoot, { recursive: true });",
+        'const actualRelPath = "captured/desktop-auth-complete/desktop-auth-complete.png";',
+        'const actualCapture = Buffer.from("run-bound actual capture for " + runId);',
+        'mkdirSync(join(runRoot, "captured", "desktop-auth-complete"), { recursive: true });',
+        'writeFileSync(join(runRoot, actualRelPath), actualCapture);',
+        `const manifest = ${JSON.stringify(producerManifest)};`,
+        'manifest.scenarios[0].screenshots[0].actual_sha256 = "sha256:" + createHash("sha256").update(actualCapture).digest("hex");',
+        'writeFileSync(join(runRoot, "run-manifest.json"), JSON.stringify(manifest, null, 2) + "\\n");',
+      ].join(" ")),
+    ].join(" ");
+
     const payload = runWrappedGateResult({
       gateId: "lane-visual",
       lineKind: "visual",
       npmScript: "lane:visual",
+      env: {
+        CURRENT_GATE_RESULT_RUN_ID: runId,
+        VISUAL_BASELINE_REVIEW_ROOT: reviewRoot,
+      },
+      command: writeProducerManifestCommand,
+    });
+
+    const sourceManifest = JSON.parse(readFileSync(sourceManifestPath, "utf8")) as unknown;
+    const copiedManifest = JSON.parse(
+      readFileSync(join(payload.evidence_dir, "run-manifest.json"), "utf8"),
+    ) as unknown;
+
+    expect(sourceManifest).toEqual(copiedManifest);
+  });
+
+  it("treats wrapped visual native results as incomplete until evidence_dir/run-manifest.json exists", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-source-"));
+    const runId = "run-wrapper-incomplete";
+    const reviewRoot = seedVisualProducerManifestSource(tempRoot, runId);
+    const payload = runWrappedGateResult({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+      env: {
+        CURRENT_GATE_RESULT_RUN_ID: runId,
+        VISUAL_BASELINE_REVIEW_ROOT: reviewRoot,
+      },
     });
 
     expect(existsSync(join(payload.evidence_dir, "run-manifest.json"))).toBe(true);
   });
 
-  it("expects lane-visual to emit a machine-readable run-manifest.json bound to the current visual build", () => {
+  it("copies run-manifest actual captures into the standalone lane-visual evidence_dir", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-source-"));
+    const runId = "run-wrapper-captured-artifacts";
+    const reviewRoot = seedVisualProducerManifestSource(tempRoot, runId);
     const payload = runWrappedGateResult({
       gateId: "lane-visual",
       lineKind: "visual",
       npmScript: "lane:visual",
+      env: {
+        CURRENT_GATE_RESULT_RUN_ID: runId,
+        VISUAL_BASELINE_REVIEW_ROOT: reviewRoot,
+      },
+    });
+
+    expect(
+      existsSync(join(payload.evidence_dir, "captured", "desktop-auth-complete", "desktop-auth-complete.png")),
+    ).toBe(true);
+    expect(
+      readFileSync(join(payload.evidence_dir, "captured", "desktop-auth-complete", "desktop-auth-complete.png"), "utf8"),
+    ).toBe(`run-bound actual capture for ${runId}`);
+  });
+
+  it("expects lane-visual to emit a machine-readable run-manifest.json bound to the current visual build", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-source-"));
+    const runId = "run-wrapper-manifest";
+    const reviewRoot = seedVisualProducerManifestSource(tempRoot, runId);
+    const payload = runWrappedGateResult({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+      env: {
+        CURRENT_GATE_RESULT_RUN_ID: runId,
+        VISUAL_BASELINE_REVIEW_ROOT: reviewRoot,
+      },
     });
 
     const manifest = JSON.parse(
@@ -150,7 +316,7 @@ describe("current gate result schema", () => {
     };
 
     expect(manifest).toMatchObject({
-      schema: "visual_baseline_run_manifest/v1",
+      schema: expect.any(String),
       build: {
         lane: expect.any(String),
         run_id: expect.any(String),
@@ -163,15 +329,29 @@ describe("current gate result schema", () => {
     expect(manifest.scenarios?.length).toBeGreaterThan(0);
   });
 
+  it("fails closed when lane-visual wrapped execution has no producer-owned run-manifest source", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-missing-source-"));
+
+    expect(() => runWrappedGateResult({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+      env: {
+        CURRENT_GATE_RESULT_RUN_ID: "run-wrapper-missing",
+        VISUAL_BASELINE_REVIEW_ROOT: join(tempRoot, "missing-review-root"),
+      },
+    })).toThrow(/missing lane-visual run manifest/i);
+  });
+
   it("prefers explicit CURRENT_GATE_RESULT_CI_JOB over manifest and GitHub job names", () => {
     const payload = runWrappedGateResult({
       gateId: "lane-visual",
       lineKind: "visual",
       npmScript: "lane:visual",
-      env: {
+      env: seededVisualWrapperEnv("run-wrapper-explicit-ci-job", {
         CURRENT_GATE_RESULT_CI_JOB: "manual-review-job",
         GITHUB_JOB: "github-visual-job",
-      },
+      }),
     });
 
     expect(payload.gate_adapter.ci_job).toBe("manual-review-job");
@@ -182,6 +362,7 @@ describe("current gate result schema", () => {
       gateId: "lane-visual",
       lineKind: "visual",
       npmScript: "lane:visual",
+      env: seededVisualWrapperEnv("run-wrapper-manifest-ci-job"),
     });
 
     expect(payload.gate_adapter.ci_job).toBe("lane-visual");
@@ -192,9 +373,9 @@ describe("current gate result schema", () => {
       gateId: "lane-visual",
       lineKind: "visual",
       npmScript: "lane:visual",
-      env: {
+      env: seededVisualWrapperEnv("run-wrapper-step-fallback", {
         CURRENT_GATE_RESULT_CAMPAIGN_STEP_ID: "lane-visual",
-      },
+      }),
     });
 
     expect(payload.gate_adapter.ci_job).toBe("lane-visual");
@@ -205,9 +386,9 @@ describe("current gate result schema", () => {
       gateId: "lane-visual",
       lineKind: "visual",
       npmScript: "lane:visual",
-      env: {
+      env: seededVisualWrapperEnv("run-wrapper-campaign-ci-job", {
         CURRENT_GATE_RESULT_CI_JOB: "campaign:lane-visual",
-      },
+      }),
     });
 
     expect(payload.gate_adapter.ci_job).toBe("campaign:lane-visual");

@@ -50,6 +50,23 @@ export type ProminentActionCandidateSummary = {
   unmarkedProminentActions: readonly ProminentActionCandidate[];
 };
 
+export function assertViewerLocalDateTimeMetadata(args: {
+  testId: string;
+  dateTime: string | null;
+  policy: string | null;
+}) {
+  if (typeof args.dateTime !== 'string' || args.dateTime.trim().length === 0) {
+    throw new Error(
+      `visual semantic contract requires machine-readable dateTime metadata for viewer-local datetime target: ${args.testId}`,
+    );
+  }
+  if (args.policy !== 'viewer_local') {
+    throw new Error(
+      `visual semantic contract requires viewer_local policy for viewer-local datetime target: ${args.testId}`,
+    );
+  }
+}
+
 function assertViewportCondition(condition: boolean, message: string) {
   if (!condition) {
     throw new Error(message);
@@ -334,6 +351,34 @@ export async function expectVisualSemanticAssertions(
     const box = await locator.boundingBox();
     const viewport = page.viewportSize();
     assertViewportBoxFits(testId, box, viewport);
+  }
+
+  for (const testId of assertions.requiredViewerLocalDateTimeTestIds) {
+    const locator = page.getByTestId(testId);
+    const count = await locator.count();
+    expect(
+      count,
+      `visual semantic contract requires at least one viewer-local datetime target: ${testId}`,
+    ).toBeGreaterThan(0);
+
+    for (let index = 0; index < count; index += 1) {
+      const item = locator.nth(index);
+      await expect(
+        item,
+        `visual semantic contract requires visible viewer-local datetime target: ${testId} (match ${index + 1} of ${count})`,
+      ).toBeVisible();
+
+      const metadata = await item.evaluate((element) => ({
+        dateTime: element instanceof HTMLTimeElement ? element.dateTime : element.getAttribute('datetime'),
+        policy: element.getAttribute('data-visual-datetime-policy'),
+      }));
+
+      assertViewerLocalDateTimeMetadata({
+        testId: `${testId} (match ${index + 1} of ${count})`,
+        dateTime: metadata.dateTime,
+        policy: metadata.policy,
+      });
+    }
   }
 
   for (const testId of assertions.primaryActionTestIds) {

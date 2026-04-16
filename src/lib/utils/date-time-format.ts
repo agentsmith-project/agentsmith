@@ -5,16 +5,33 @@ export type DisplayDateTimeOptions = {
   invalidText?: string;
 };
 
+export function resolveDisplayTimeZone(locale = 'en-US', timeZone?: string): string {
+  if (timeZone) {
+    return timeZone;
+  }
+
+  try {
+    const resolvedTimeZone = new Intl.DateTimeFormat(locale).resolvedOptions().timeZone;
+    if (resolvedTimeZone) {
+      return resolvedTimeZone;
+    }
+  } catch {
+    // Fall through to UTC if the runtime cannot resolve a viewer timezone.
+  }
+
+  return 'UTC';
+}
+
 export function formatDisplayDateTime(
   value?: string | null,
   options: DisplayDateTimeOptions = {},
 ): string {
   const {
     locale = 'en-US',
-    timeZone = 'UTC',
     emptyText = '-',
     invalidText = '-',
   } = options;
+  const timeZone = resolveDisplayTimeZone(locale, options.timeZone);
 
   if (!value) {
     return emptyText;
@@ -42,7 +59,7 @@ export function formatDisplayDateTime(
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-      timeZone: 'UTC',
+      timeZone,
       timeZoneName: 'short',
     }).format(date);
   }

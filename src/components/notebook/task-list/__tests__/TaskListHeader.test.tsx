@@ -1,7 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { buttonVariants } from '@/components/ui/button';
 import { TaskListHeader } from '@/components/notebook/task-list/TaskListHeader';
 
 describe('TaskListHeader', () => {
@@ -35,12 +34,8 @@ describe('TaskListHeader', () => {
 
     const createTaskButton = screen.getByTestId('notebook__create-task-btn');
 
+    expect(createTaskButton).toHaveAttribute('data-visual-prominence', 'primary');
     expect(createTaskButton).toHaveAttribute('data-visual-primary-action', 'true');
     expect(createTaskButton).toHaveAttribute('data-visual-viewport-required', 'true');
-    expect(createTaskButton.className).toBe(buttonVariants({
-      variant: 'primary',
-      size: 'sm',
-      className: 'shrink-0 font-semibold',
-    }));
   });
 });

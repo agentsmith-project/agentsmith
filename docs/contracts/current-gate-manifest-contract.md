@@ -59,6 +59,11 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - missing catalog evidence is blocking for `visual` and `release`
 - scene linkage source: `e2e/visual-baseline-support.ts`
 - committed evidence root: `e2e/__screenshots__/visual.spec.ts`
+- release authority artifact: producer-owned `run-manifest.json`
+- current schema: `visual_baseline_run_manifest/v2`
+- each screenshot entry must bind `actual_url`, `actual_relpath`, `actual_sha256`, and `baseline_sha256`
+- `actual_url` uses canonical `pathname + search`
+- wrappers and aggregate verifiers may copy or validate this manifest, but must not synthesize a replacement manifest from committed baselines or current checkout metadata
 
 4. `test:backend-real:core` and `lane:backend-real:core`
 - default-tier backend-real daily/self-service verification owners
@@ -71,6 +76,10 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - does not replace `lane:visual`
 - owns required `ux_trace_bundle` story evidence through release verification
 - missing release trace evidence is blocking for `release`
+- required producer-owned release trace root contents:
+  - `ux-trace-index.json` at the trace root
+  - `contract-snapshot.json` inside every bundle directory
+- aggregate verification must consume those producer snapshots and must not rebuild trace truth from current repo story files
 
 6. `lane:demo-rehearsal` and `lane:cluster-rehearsal`
 - release-only deployment rehearsal lanes
@@ -113,9 +122,11 @@ It does not redefine product permissions, route gates, or OpenAPI behavior.
 - standalone release backend-real evidence roots:
   - `artifacts/backend-real-visual/<run-id>/review.md`
   - `artifacts/backend-real-visual/<run-id>/ux-traces`
+- standalone release trace root must include `ux-trace-index.json`
 - official release campaign evidence roots:
   - `<campaign-root>/gate-release/backend-real-visual/review.md`
   - `<campaign-root>/gate-release/backend-real-visual/ux-traces`
+- official release trace root must include `ux-trace-index.json`, and each bundle under it must include `contract-snapshot.json`
 
 ## 4. Missing-evidence semantics
 

@@ -119,6 +119,10 @@
           "authLane": "authed",
           "uxState": "happy",
           "semanticAssertions": {
+            "requiredViewerLocalDateTimeTestIds": [
+              "notebook__task-last-activity",
+              "notebook__task-created-at"
+            ],
             "requiredViewportTestIds": [
               "notebook__create-task-btn"
             ]

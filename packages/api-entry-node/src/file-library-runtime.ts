@@ -128,6 +128,10 @@ interface GatewayProbeOptions {
   timeoutMs?: number;
 }
 
+type AbortableEnsureFileLibraryGatewayInput = EnsureFileLibraryGatewayInput & {
+  signal?: AbortSignal;
+};
+
 function createAbortError(message: string): Error {
   const error = new Error(message);
   error.name = 'AbortError';
@@ -135,8 +139,13 @@ function createAbortError(message: string): Error {
 }
 
 function normalizeAbortReason(reason: unknown, fallback: string): Error {
-  if (reason instanceof Error) {
+  if (reason instanceof Error && reason.name === 'AbortError') {
     return reason;
+  }
+  if (reason instanceof Error) {
+    const error = createAbortError(reason.message || fallback);
+    (error as Error & { cause?: unknown }).cause = reason;
+    return error;
   }
   if (typeof reason === 'string' && reason.trim()) {
     return createAbortError(reason);
@@ -423,17 +432,18 @@ async function isGatewayLoopbackHealthy(
   if (!loopbackUrl?.trim()) {
     return false;
   }
+  const readinessUrl = new URL('/minio/health/live', `${loopbackUrl.replace(/\/+$/, '')}/`).toString();
   const controller = createTimedAbortController({
     parentSignal: options?.signal,
     timeoutMs: options?.timeoutMs ?? DEFAULT_GATEWAY_PROBE_TIMEOUT_MS,
     timeoutMessage: 'file_library_gateway_probe_timeout',
   });
   try {
-    const response = await platform.fetch(`${loopbackUrl}/`, {
+    const response = await platform.fetch(readinessUrl, {
       method: 'GET',
       signal: controller.signal,
     });
-    return response.status > 0;
+    return response.status >= 200 && response.status < 300;
   } catch (error) {
     if (controller.wasParentAborted()) {
       throw normalizeAbortReason(options?.signal?.reason ?? error, 'file_library_gateway_probe_aborted');
@@ -1496,6 +1506,7 @@ export class InMemoryFileLibraryGatewayManager implements FileLibraryGatewayMana
   private readonly sessions = new Map<string, GatewaySession>();
 
   async ensureGateway(input: EnsureFileLibraryGatewayInput): Promise<EnsureFileLibraryGatewayResult> {
+    throwIfAborted((input as AbortableEnsureFileLibraryGatewayInput).signal, 'file_library_gateway_start_aborted');
     const existing = this.sessions.get(input.libraryId);
     if (existing) {
       return existing;
@@ -2047,8 +2058,11 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   }
 
   async ensureGateway(input: EnsureFileLibraryGatewayInput): Promise<EnsureFileLibraryGatewayResult> {
+    const signal = (input as AbortableEnsureFileLibraryGatewayInput).signal;
+    throwIfAborted(signal, 'file_library_gateway_start_aborted');
     const ownerRuntime = await this.ownerRuntimePromise;
     await ownerRuntime.heartbeat().catch(() => undefined);
+    throwIfAborted(signal, 'file_library_gateway_start_aborted');
     await ensureExecutable(this.config.juicefsBin);
     const currentSession = this.sessions.get(input.libraryId);
     if (
@@ -2061,7 +2075,11 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       await this.cleanupOwnedSession(input.libraryId, currentSession);
     }
 
-    await this.startLibraryReconcile(input.libraryId);
+    await waitWithAbort(0, signal);
+    await this.startLibraryReconcile(input.libraryId, {
+      signal,
+    });
+    throwIfAborted(signal, 'file_library_gateway_start_aborted');
     const existing = this.sessions.get(input.libraryId);
     if (this.canReuseSessionForGatewayInput(existing, input)) {
       return existing;
@@ -2103,7 +2121,8 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       && persisted.metadataUrl === input.metadataUrl
       && persisted.storageBucketUrl === input.storageBucketUrl
     ) {
-      if (await isGatewayLoopbackHealthy(this.platform, persisted.loopbackUrl)) {
+      if (await isGatewayLoopbackHealthy(this.platform, persisted.loopbackUrl, { signal })) {
+        throwIfAborted(signal, 'file_library_gateway_start_aborted');
         const restored: GatewaySession = {
           loopbackUrl: persisted.loopbackUrl,
           port: persisted.port,
@@ -2217,7 +2236,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     });
 
     try {
-      await waitForGateway(this.platform, `${loopbackUrl}/`);
+      await waitForGateway(this.platform, loopbackUrl, { signal });
       created.status = 'ready';
       if (child.pid) {
         await writeGatewayState(this.config, {
@@ -2239,31 +2258,14 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     } catch (error) {
       created.status = 'failed';
       created.lastError = error instanceof Error ? error.message : 'file_library_gateway_start_failed';
-      if (this.isOwnedGatewaySession(created)) {
-        await this.cleanupOwnedSession(input.libraryId, created).catch(async () => {
-          await removeGatewayState(this.config, input.libraryId).catch(() => undefined);
-        });
-      } else if (child.pid) {
-        const terminationStatus = await terminatePersistedGatewayProcessIfConfirmed({
-          platform: this.platform,
-          state: {
-            libraryId: input.libraryId,
-            pid: child.pid,
-            port,
-            loopbackUrl,
-            metadataUrl: input.metadataUrl,
-            storageBucketUrl: input.storageBucketUrl,
-            logPath,
-            lastStartedAt: created.lastStartedAt,
-            ownerProcessPid: this.platform.ownerPid(),
-            ownerScope: ownerRuntime.ownerScope,
-            sessionToken: created.sessionToken,
-            status: created.status,
-          },
-        });
-        if (terminationStatus !== 'unverified') {
-          await removeGatewayState(this.config, input.libraryId);
-        }
+      if (child.pid) {
+        await this.terminateOwnedSessionChild({
+          ...created,
+          child,
+          pid: child.pid,
+        }).catch(() => 'unverified' as const);
+        this.clearSessionIfCurrent(input.libraryId, created);
+        await removeGatewayState(this.config, input.libraryId).catch(() => undefined);
       } else {
         await removeGatewayState(this.config, input.libraryId);
       }

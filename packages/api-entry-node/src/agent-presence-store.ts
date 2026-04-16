@@ -3,6 +3,8 @@ import type { AgentPresenceStorePort, CachePort } from '@mbos/ports';
 const AGENT_PRESENCE_RECORD_VERSION = 2;
 const AGENT_PRESENCE_TTL_SECONDS = 45;
 const AGENT_CONNECTION_TTL_MS = AGENT_PRESENCE_TTL_SECONDS * 1000;
+const AGENT_PRESENCE_CAS_MAX_ATTEMPTS = 12;
+const AGENT_PRESENCE_CAS_BACKOFF_MAX_MS = 25;
 
 function agentPresenceKey(agentId: string): string {
   return `agent:presence:${agentId}`;
@@ -232,6 +234,14 @@ function cleanupExpired(record: AgentPresenceRecord, nowMs: number): AgentPresen
   };
 }
 
+function computeCasBackoffMs(attempt: number): number {
+  return Math.min(AGENT_PRESENCE_CAS_BACKOFF_MAX_MS, 2 ** attempt);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function compareConnectionRecency(a: AgentConnectionState, b: AgentConnectionState): number {
   const aPong = Date.parse(a.last_pong_at ?? a.connected_at);
   const bPong = Date.parse(b.last_pong_at ?? b.connected_at);
@@ -393,12 +403,8 @@ class CacheBackedAgentPresenceStore implements AgentPresenceStore {
   }
 
   async getPresence(agentId: string): Promise<AgentPresenceSnapshot> {
-    return this.mutateRecord(agentId, (existing) => {
-      return {
-        next: existing,
-        result: snapshotFromRecord(agentId, existing),
-      };
-    });
+    const record = await this.readRecord(agentId);
+    return snapshotFromRecord(agentId, record);
   }
 
   async isConnectionCurrent(agentId: string, connectionId: string): Promise<boolean> {
@@ -462,7 +468,7 @@ class CacheBackedAgentPresenceStore implements AgentPresenceStore {
       });
     }
 
-    for (let attempt = 0; attempt < 12; attempt += 1) {
+    for (let attempt = 0; attempt < AGENT_PRESENCE_CAS_MAX_ATTEMPTS; attempt += 1) {
       const expected = await this.atomicCache.get(key);
       const existing = cleanupExpired(this.normalizeRecordForMutation(agentId, expected), Date.now());
       const { next, result } = mutate(existing);
@@ -470,8 +476,19 @@ class CacheBackedAgentPresenceStore implements AgentPresenceStore {
       if (await this.atomicCache.compareAndSet(key, expected, nextSerialized, AGENT_PRESENCE_TTL_SECONDS)) {
         return result;
       }
+      if (attempt < AGENT_PRESENCE_CAS_MAX_ATTEMPTS - 1) {
+        await sleep(computeCasBackoffMs(attempt));
+      }
     }
     throw new Error('agent_presence_store_cas_retry_exhausted');
+  }
+
+  private async readRecord(agentId: string): Promise<AgentPresenceRecord> {
+    const key = agentPresenceKey(agentId);
+    const raw = this.atomicCache
+      ? await this.atomicCache.get(key)
+      : (this.localRecords.get(key) ?? null);
+    return cleanupExpired(this.normalizeRecordForMutation(agentId, raw), Date.now());
   }
 
   private async withLocalAgentLock<T>(agentId: string, fn: () => Promise<T>): Promise<T> {

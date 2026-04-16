@@ -94,6 +94,26 @@ Audience: 后端、前端、测试、发布负责人
 - 如果数据丢失会影响产品真相、治理判断、用户历史或后续操作，就不能只留在内存
 - 如果数据只是当前进程的瞬态加速层，且可从持久化真相重建，则允许留在内存
 
+### 3.1 Agent presence 与 dispatch authority 的边界
+
+`agent presence` 和 `dispatch authority` 不再视为同一个对象：
+
+- `agent presence`
+  - 语义：共享在线投影 / heartbeat 投影
+  - 用途：UI 在线状态、诊断、共享运行态可见性
+  - 存放：共享 cache / Redis
+- `dispatch authority`
+  - 语义：当前哪条连接真正有资格接收 notebook / terminal 控制面 dispatch
+  - 用途：route gate、runner dispatch、internal sandbox readiness
+  - 判定：必须同时满足共享 lease 真相和本机可 dispatch socket，不能只看本机 websocket map
+
+工程约束：
+
+- route / orchestrator / terminal close 不能再把本机 `socket open` 当成 dispatch authority
+- session-scoped notebook / terminal 必须走 strict session authority，不允许退化到 agent-level fallback
+- chat 可以按显式 contract 保留 agent-level fallback，但 fallback 仍要经过共享 authority fence
+- `presence` 只能作为信号与投影，不能替代 dispatch authority
+
 ## 4. 当前实现边界
 
 ### 已收敛到持久化真相

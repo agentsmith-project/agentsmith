@@ -88,6 +88,17 @@ export function WorkspaceEditorPanel({
   const workspaceLoginPath = `/${locale}/workspaces/${workspaceSlug}/login`;
   const workspaceCallbackPath = `/${locale}/workspaces/${workspaceSlug}/login/callback`;
   const showFailedRepairAction = !state.isEditMode && workspace?.provisioning_status === 'failed' && Boolean(workspace.last_init_error);
+  const showProminentConfigureAction = Boolean(
+    workspace
+    && !state.isEditMode
+    && (
+      workspace.provisioning_status === 'failed'
+      || workspace.provisioning_status === 'provisioning'
+      || workspace.provisioning_status === 'disabled'
+      || workspace.workspace_admin_binding_required
+      || !workspace.workspace_admin_user_id
+    ),
+  );
 
   return (
     <aside
@@ -144,7 +155,7 @@ export function WorkspaceEditorPanel({
               ) : showFailedRepairAction ? null : (
                 <Button
                   type="button"
-                  variant="primary"
+                  variant={showProminentConfigureAction ? 'primary' : 'outline'}
                   onClick={onEnableEditMode}
                   data-testid="system-workspaces__enable-edit"
                 >

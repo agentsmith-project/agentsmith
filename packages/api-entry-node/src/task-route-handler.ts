@@ -42,6 +42,8 @@ import {
   normalizeFileLibraryPath,
 } from './file-library-gateway-client.js';
 import {
+  awaitAbortableOperation,
+  createHttpOperationEnvelope,
   openGatewayObjectDownload,
   pipeGatewayDownloadToHttpResponse,
 } from './object-stream-bridge.js';
@@ -219,6 +221,17 @@ export function resolveTaskWorkspaceMountAccess(input: {
 function defaultWorkspaceNameFromTaskTitle(title: string): string {
   const trimmed = title.trim();
   return trimmed ? `${trimmed} Workspace` : 'Notebook Workspace';
+}
+
+function sanitizeFileLibraryWorkspaceDirName(fileLibraryName: string | undefined, fileLibraryId: string | undefined): string {
+  const slug = (fileLibraryName ?? '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  if (slug) return slug;
+  return (fileLibraryId ?? '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 48) || 'file-library-workspace';
 }
 
 function buildTerminalUsername(user: AuthenticatedUser): string {
@@ -443,30 +456,90 @@ async function streamTaskArtifactFromWorkspaceLibrary(args: {
   if (!objectPath) {
     return false;
   }
-  const client = await createFileLibraryGatewayClient({
-    deps: args.deps,
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    libraryId,
-    filesystemName: library.filesystem_name,
-  });
-  const bucket = fileLibraryBucketName(library.filesystem_name);
-  const stat = await client.statObject(bucket, objectPath);
-  const download = await openGatewayObjectDownload(client, bucket, objectPath);
-  const filename = (args.artifact.title?.trim() || objectPath.split('/').at(-1) || 'artifact');
-  args.res.statusCode = 200;
-  args.res.setHeader(
-    'Content-Type',
-    stat.metaData?.['content-type'] ?? args.artifact.mime_type?.trim() ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream',
-  );
-  args.res.setHeader('Content-Length', String(stat.size));
-  args.res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
-  pipeGatewayDownloadToHttpResponse({
+  const operation = createHttpOperationEnvelope({
     req: args.req,
     res: args.res,
-    download,
-    streamErrorMessage: 'task_artifact_download_stream_failed',
   });
+  let handedOffToStream = false;
+  try {
+    const client = await awaitAbortableOperation(
+      createFileLibraryGatewayClient({
+        deps: args.deps,
+        workspaceId: args.workspaceId,
+        projectId: args.projectId,
+        libraryId,
+        filesystemName: library.filesystem_name,
+        signal: operation.signal,
+      }),
+      {
+        signal: operation.signal,
+        abortMessage: 'task_artifact_download_aborted',
+      },
+    );
+    const bucket = fileLibraryBucketName(library.filesystem_name);
+    const stat = await awaitAbortableOperation(
+      client.statObject(bucket, objectPath),
+      {
+        signal: operation.signal,
+        abortMessage: 'task_artifact_download_aborted',
+      },
+    );
+    const download = await openGatewayObjectDownload(client, bucket, objectPath, {
+      signal: operation.signal,
+    });
+    if (operation.signal.aborted) {
+      await download.cancel(operation.signal.reason);
+      return true;
+    }
+    const filename = (args.artifact.title?.trim() || objectPath.split('/').at(-1) || 'artifact');
+    args.res.statusCode = 200;
+    args.res.setHeader(
+      'Content-Type',
+      stat.metaData?.['content-type'] ?? args.artifact.mime_type?.trim() ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream',
+    );
+    args.res.setHeader('Content-Length', String(stat.size));
+    args.res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+    pipeGatewayDownloadToHttpResponse({
+      req: args.req,
+      res: args.res,
+      download,
+      streamErrorMessage: 'task_artifact_download_stream_failed',
+    });
+    handedOffToStream = true;
+    return true;
+  } catch (error) {
+    if (operation.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+      return true;
+    }
+    throw error;
+  } finally {
+    if (!handedOffToStream) {
+      operation.cleanup();
+    }
+  }
+}
+
+async function ensureExternalTaskRunnerSessionDispatchable(args: {
+  deps: NodeApiDeps;
+  agentId: string;
+  sessionId: string;
+  json: TaskRouteHandlerArgs['json'];
+  res: http.ServerResponse;
+}): Promise<boolean> {
+  const authority = await args.deps.agentExecutionService.getAgentSessionDispatchAuthority(args.agentId, args.sessionId);
+  const authorityError = mapRunnerSessionAuthorityToTaskRouteError(authority);
+  if (authorityError) {
+    args.json(args.res, 409, { error_code: 'RESOURCE_CONFLICT', message: authorityError });
+    return false;
+  }
+  if (
+    authority === 'offline'
+    && !args.deps.agentExecutionService.getAgentSessionOnlineState(args.agentId, args.sessionId)
+    && !args.deps.agentExecutionService.getAgentOnlineState(args.agentId)
+  ) {
+    args.json(args.res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_runner_offline' });
+    return false;
+  }
   return true;
 }
 
@@ -691,18 +764,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         agent,
         workspaceMount: workspaceBinding.workspaceMount,
       });
-    } else if (!deps.agentExecutionService.getAgentSessionOnlineState(agent.id, task.id)
-      && !deps.agentExecutionService.getAgentOnlineState(agent.id)) {
-      const authority = await deps.agentExecutionService.getAgentSessionDispatchAuthority(agent.id, task.id);
-      const authorityError = mapRunnerSessionAuthorityToTaskRouteError(authority);
-      if (authorityError) {
-        json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: authorityError });
-        return true;
-      }
-      if (authority === 'offline') {
-        json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_runner_offline' });
-        return true;
-      }
+    } else if (!(await ensureExternalTaskRunnerSessionDispatchable({
+      deps,
+      agentId: agent.id,
+      sessionId: task.id,
+      json,
+      res,
+    }))) {
+      return true;
     }
 
     const executionContext = await buildTaskTerminalExecutionContext({

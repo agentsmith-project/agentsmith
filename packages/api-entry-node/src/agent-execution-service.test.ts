@@ -94,6 +94,7 @@ async function setupExecutionService(options?: {
     agentResourceService,
     executionService,
     agent,
+    keyPair,
     ws,
     wsBase,
     helloFramePromise,
@@ -263,7 +264,10 @@ class ExecutionRaceCache implements CachePort {
 
 describe('AgentExecutionService', () => {
   it('does not call legacy unscoped presence mutators from the websocket execution path', () => {
-    const source = readFileSync('packages/api-entry-node/src/agent-execution-service.ts', 'utf-8');
+    const sourcePath = process.cwd().endsWith('/packages/api-entry-node')
+      ? 'src/agent-execution-service.ts'
+      : 'packages/api-entry-node/src/agent-execution-service.ts';
+    const source = readFileSync(sourcePath, 'utf-8');
     expect(source).not.toContain('markAgentDisconnected(');
     expect(source).not.toContain('markAgentConnected(');
   });
@@ -729,6 +733,213 @@ describe('AgentExecutionService', () => {
     ).resolves.toBe('remote_owned_not_local_dispatchable');
   });
 
+  it('refuses to dispatch through a stale local session before heartbeat catches up after remote takeover', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const resourceA = new AgentResourceService(docStore, cache);
+    const resourceB = new AgentResourceService(docStore, cache);
+    const reader = new AgentResourceService(docStore, cache);
+    const serviceA = new AgentExecutionService(resourceA, { heartbeatIntervalMs: 10_000, heartbeatMaxMisses: 100 });
+    const serviceB = new AgentExecutionService(resourceB, { heartbeatIntervalMs: 10_000, heartbeatMaxMisses: 100 });
+    const wsBaseA = await startExecutionServer(serviceA);
+    const wsBaseB = await startExecutionServer(serviceB);
+    const agent = await resourceA.createAgent('ws_default', 'proj_1', {
+      name: 'dispatch-fence-agent',
+      mode: 'external',
+      interaction_kind: 'notebook',
+    });
+    const keyPair = await resourceA.createAgentKey('ws_default', 'proj_1', agent.id);
+    const first = await openAgentWebSocket({
+      wsBase: wsBaseA,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_dispatch_fence',
+    });
+    const staleFrames: Array<Record<string, unknown>> = [];
+    first.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.request.start') {
+        staleFrames.push(message);
+      }
+    });
+    await waitForConnectionInfo(reader, agent.id, (connection) => connection?.active_connection_count === 1);
+
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      first.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    await openAgentWebSocket({
+      wsBase: wsBaseB,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_dispatch_fence',
+    });
+    await waitForConnectionInfo(reader, agent.id, (connection) => (
+      connection?.active_connection_count === 1
+      && connection.session_id === 'task_dispatch_fence'
+      && connection.api_instance_id !== undefined
+    ));
+
+    await expect(serviceA.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_dispatch_fence',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'hello' }],
+      executionContext: {
+        interaction_kind: 'notebook',
+      },
+    })).rejects.toThrow('agent_offline');
+
+    expect(staleFrames).toEqual([]);
+    await expect(closed).resolves.toEqual({
+      code: 4001,
+      reason: 'agent_stale_connection',
+    });
+    await expect(serviceA.getAgentSessionDispatchAuthority(agent.id, 'task_dispatch_fence')).resolves.toBe(
+      'remote_owned_not_local_dispatchable',
+    );
+  });
+
+  it('dispatches immediately through the new owner after session takeover without waiting for stale heartbeat expiry', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const resourceA = new AgentResourceService(docStore, cache);
+    const resourceB = new AgentResourceService(docStore, cache);
+    const reader = new AgentResourceService(docStore, cache);
+    const serviceA = new AgentExecutionService(resourceA, { heartbeatIntervalMs: 10_000, heartbeatMaxMisses: 100 });
+    const serviceB = new AgentExecutionService(resourceB, { heartbeatIntervalMs: 10_000, heartbeatMaxMisses: 100 });
+    const wsBaseA = await startExecutionServer(serviceA);
+    const wsBaseB = await startExecutionServer(serviceB);
+    const agent = await resourceA.createAgent('ws_default', 'proj_1', {
+      name: 'takeover-dispatch-agent',
+      mode: 'external',
+      interaction_kind: 'notebook',
+    });
+    const keyPair = await resourceA.createAgentKey('ws_default', 'proj_1', agent.id);
+    const first = await openAgentWebSocket({
+      wsBase: wsBaseA,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_takeover_dispatch',
+    });
+    const staleFrames: Array<Record<string, unknown>> = [];
+    first.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.request.start') {
+        staleFrames.push(message);
+      }
+    });
+    await waitForConnectionInfo(reader, agent.id, (connection) => connection?.active_connection_count === 1);
+
+    const second = await openAgentWebSocket({
+      wsBase: wsBaseB,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_takeover_dispatch',
+    });
+    const secondFrame = new Promise<Record<string, unknown>>((resolve) => {
+      second.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.request.start') {
+          resolve(message);
+        }
+      });
+    });
+
+    await waitForConnectionInfo(reader, agent.id, (connection) => (
+      connection?.active_connection_count === 1
+      && connection.session_id === 'task_takeover_dispatch'
+      && connection.api_instance_id !== undefined
+    ));
+
+    const dispatched = await serviceB.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_takeover_dispatch',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'owner wins immediately' }],
+      executionContext: {
+        interaction_kind: 'notebook',
+      },
+    });
+
+    expect(dispatched.requestId).toEqual(expect.any(String));
+    await expect(secondFrame).resolves.toMatchObject({
+      type: 'server.request.start',
+      session_id: 'task_takeover_dispatch',
+      request_id: dispatched.requestId,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(staleFrames).toEqual([]);
+    await expect(serviceB.getAgentSessionDispatchAuthority(agent.id, 'task_takeover_dispatch')).resolves.toBe(
+      'local_dispatchable',
+    );
+    await expect(serviceA.getAgentSessionDispatchAuthority(agent.id, 'task_takeover_dispatch')).resolves.toBe(
+      'remote_owned_not_local_dispatchable',
+    );
+  });
+
+  it('does not fall back from notebook session dispatch to an unscoped agent socket', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const requestFrames: Array<Record<string, unknown>> = [];
+    ws.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.request.start') {
+        requestFrames.push(message);
+      }
+    });
+
+    await expect(executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_requires_scoped_socket',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'notebook strict authority' }],
+      executionContext: {
+        interaction_kind: 'notebook',
+      },
+    })).rejects.toThrow('agent_offline');
+
+    expect(requestFrames).toEqual([]);
+  });
+
+  it('keeps chat dispatch available through the agent-level socket when no session-scoped socket exists', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'chat' });
+    const startFrame = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.request.start') {
+          resolve(message);
+        }
+      });
+    });
+
+    const dispatched = await executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'chat_agent_level_fallback',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'chat may fallback' }],
+      executionContext: {
+        interaction_kind: 'chat',
+      },
+    });
+
+    expect(dispatched.requestId).toEqual(expect.any(String));
+    await expect(startFrame).resolves.toMatchObject({
+      type: 'server.request.start',
+      session_id: 'chat_agent_level_fallback',
+      request_id: dispatched.requestId,
+    });
+  });
+
   it('keeps multiple session-scoped sockets for the same agent without replacement', async () => {
     const { agentResourceService, executionService, agent, wsBase } = await setupExecutionService();
     const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
@@ -889,8 +1100,101 @@ describe('AgentExecutionService', () => {
     expect(second.readyState).toBe(second.OPEN);
   });
 
+  it('keeps the previous socket active when replacement registration fails before handoff completes', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const agentResourceService = new AgentResourceService(docStore, cache);
+    const executionService = new AgentExecutionService(agentResourceService, {
+      heartbeatIntervalMs: 10_000,
+      heartbeatMaxMisses: 100,
+    });
+    const wsBase = await startExecutionServer(executionService);
+    const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'handoff-register-failure-agent',
+      mode: 'external',
+      interaction_kind: 'chat',
+    });
+    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
+    const first = await openAgentWebSocket({ wsBase, agentId: agent.id, key: keyPair.key });
+    const firstRequestFrames: Array<Record<string, unknown>> = [];
+    const firstRequestFrame = new Promise<Record<string, unknown>>((resolve) => {
+      first.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.request.start') {
+          firstRequestFrames.push(message);
+          resolve(message);
+        }
+      });
+    });
+    first.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.request.start') return;
+    });
+    const initialConnection = await waitForConnectionInfo(
+      agentResourceService,
+      agent.id,
+      (connection) => connection?.active_connection_count === 1,
+    );
+
+    const originalRegister = agentResourceService.registerAgentConnection.bind(agentResourceService);
+    let registerAttempts = 0;
+    vi.spyOn(agentResourceService, 'registerAgentConnection').mockImplementation(async (input) => {
+      registerAttempts += 1;
+      if (registerAttempts === 1) {
+        throw new Error('presence_register_failed');
+      }
+      return originalRegister(input);
+    });
+
+    const second = await openAgentWebSocket({ wsBase, agentId: agent.id, key: keyPair.key });
+    const secondClosed = new Promise<{ code: number; reason: string }>((resolve) => {
+      second.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    await expect(secondClosed).resolves.toEqual({
+      code: 1011,
+      reason: 'agent_connection_registration_failed',
+    });
+    await expect(agentResourceService.getConnectionInfo(agent.id)).resolves.toEqual(expect.objectContaining({
+      connection_id: initialConnection?.connection_id,
+      active_connection_count: 1,
+    }));
+    expect(first.readyState).toBe(first.OPEN);
+
+    const dispatched = await executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'chat_session_handoff',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'still there?' }],
+      executionContext: {
+        interaction_kind: 'chat',
+      },
+    });
+    expect(dispatched.requestId).toEqual(expect.any(String));
+    await expect(firstRequestFrame).resolves.toMatchObject({
+      type: 'server.request.start',
+      session_id: 'chat_session_handoff',
+    });
+    expect(firstRequestFrames).toEqual([
+      expect.objectContaining({
+        type: 'server.request.start',
+        session_id: 'chat_session_handoff',
+      }),
+    ]);
+  });
+
   it('sends a precise terminal close control message without requiring an active terminal dispatch queue', async () => {
-    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const { executionService, agent, keyPair, wsBase } = await setupExecutionService({ interactionKind: 'notebook' });
+    const ws = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_1',
+    });
     const closeFrame = new Promise<Record<string, unknown>>((resolve) => {
       ws.on('message', (raw) => {
         const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
@@ -913,6 +1217,101 @@ describe('AgentExecutionService', () => {
       session_id: 'task_1',
       terminal_session_id: 'term_persisted',
     });
+  });
+
+  it('stops stale terminal handles from sending stdin, resize, or close frames after remote takeover', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const resourceA = new AgentResourceService(docStore, cache);
+    const resourceB = new AgentResourceService(docStore, cache);
+    const reader = new AgentResourceService(docStore, cache);
+    const serviceA = new AgentExecutionService(resourceA, { heartbeatIntervalMs: 10_000, heartbeatMaxMisses: 100 });
+    const serviceB = new AgentExecutionService(resourceB, { heartbeatIntervalMs: 10_000, heartbeatMaxMisses: 100 });
+    const wsBaseA = await startExecutionServer(serviceA);
+    const wsBaseB = await startExecutionServer(serviceB);
+    const agent = await resourceA.createAgent('ws_default', 'proj_1', {
+      name: 'terminal-takeover-fence-agent',
+      mode: 'external',
+      interaction_kind: 'notebook',
+    });
+    const keyPair = await resourceA.createAgentKey('ws_default', 'proj_1', agent.id);
+    const first = await openAgentWebSocket({
+      wsBase: wsBaseA,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_terminal_takeover',
+    });
+    const initialConnection = await waitForConnectionInfo(reader, agent.id, (connection) => (
+      connection?.session_id === 'task_terminal_takeover'
+      && connection.active_connection_count === 1
+    ));
+    const staleControlFrames: string[] = [];
+    first.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as { type?: string };
+      if (
+        typeof message.type === 'string'
+        && message.type.startsWith('server.terminal.')
+        && message.type !== 'server.terminal.start'
+      ) {
+        staleControlFrames.push(message.type);
+      }
+    });
+    const terminalStart = new Promise<Record<string, unknown>>((resolve) => {
+      first.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.terminal.start') {
+          resolve(message);
+        }
+      });
+    });
+
+    const terminal = await serviceA.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_terminal_takeover',
+      agentId: agent.id,
+      terminalSessionId: 'term_takeover',
+      payload: {
+        cols: 80,
+        rows: 24,
+      },
+    });
+    await expect(terminalStart).resolves.toMatchObject({
+      type: 'server.terminal.start',
+      session_id: 'task_terminal_takeover',
+      terminal_session_id: 'term_takeover',
+    });
+
+    const firstClosed = new Promise<{ code: number; reason: string }>((resolve) => {
+      first.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    await openAgentWebSocket({
+      wsBase: wsBaseB,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_terminal_takeover',
+    });
+    await waitForConnectionInfo(reader, agent.id, (connection) => (
+      connection?.session_id === 'task_terminal_takeover'
+      && connection.active_connection_count === 1
+      && connection.connection_id !== initialConnection?.connection_id
+    ));
+
+    terminal.writeInput('echo stale');
+    terminal.resize(120, 40);
+    terminal.close();
+
+    await expect(firstClosed).resolves.toEqual({
+      code: 4001,
+      reason: 'agent_stale_connection',
+    });
+    expect(staleControlFrames).toEqual([]);
+    await expect(serviceA.getAgentSessionDispatchAuthority(agent.id, 'task_terminal_takeover')).resolves.toBe(
+      'remote_owned_not_local_dispatchable',
+    );
   });
 
   it('closes a stale runner socket when server heartbeat pings are missed and clears pending streams', async () => {
@@ -982,6 +1381,90 @@ describe('AgentExecutionService', () => {
       await new Promise((resolve) => setTimeout(resolve, 80));
 
       expect(authoritySpy).toHaveBeenCalled();
+      expect(unhandled.errors).toEqual([]);
+      expect(executionService.getAgentOnlineState(agent.id)).toBe(false);
+      await expect(agentResourceService.getAgent('ws_default', 'proj_1', agent.id)).resolves.toMatchObject({
+        presence: 'offline',
+      });
+    } finally {
+      unhandled.dispose();
+      await executionService.shutdown();
+    }
+  });
+
+  it('serializes agent.pong refreshes so only one shared presence refresh runs at a time', async () => {
+    const { agentResourceService, executionService, ws } = await setupExecutionService({
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    let resolveFirstRefresh!: () => void;
+    const firstRefreshEntered = new Promise<void>((resolve) => {
+      resolveFirstRefresh = resolve;
+    });
+    let releaseFirstRefresh!: () => void;
+    const firstRefreshResume = new Promise<void>((resolve) => {
+      releaseFirstRefresh = resolve;
+    });
+    let refreshCalls = 0;
+    const refreshSpy = vi.spyOn(agentResourceService, 'refreshAgentConnection').mockImplementation(async () => {
+      refreshCalls += 1;
+      if (refreshCalls === 1) {
+        resolveFirstRefresh();
+        await firstRefreshResume;
+      }
+      return {
+        refreshed: true,
+        stale: false,
+        active_connection_count: 1,
+        presence: 'online',
+      };
+    });
+
+    try {
+      ws.send(JSON.stringify({ type: 'agent.pong' }));
+      await firstRefreshEntered;
+      ws.send(JSON.stringify({ type: 'agent.pong' }));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+
+      releaseFirstRefresh();
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        if (refreshSpy.mock.calls.length >= 2) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(refreshSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      await executionService.shutdown();
+    }
+  });
+
+  it('degrades the socket without unhandled rejections when agent.pong refresh fails', async () => {
+    const { agentResourceService, executionService, agent, ws } = await setupExecutionService({
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    const refreshSpy = vi
+      .spyOn(agentResourceService, 'refreshAgentConnection')
+      .mockRejectedValue(new Error('presence_refresh_failed'));
+    const unhandled = captureUnhandledRejections();
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    try {
+      ws.send(JSON.stringify({ type: 'agent.pong' }));
+
+      await expect(closed).resolves.toEqual({
+        code: 1011,
+        reason: 'agent_connection_authority_failed',
+      });
+      expect(refreshSpy).toHaveBeenCalled();
       expect(unhandled.errors).toEqual([]);
       expect(executionService.getAgentOnlineState(agent.id)).toBe(false);
       await expect(agentResourceService.getAgent('ws_default', 'proj_1', agent.id)).resolves.toMatchObject({
@@ -1076,7 +1559,7 @@ describe('AgentExecutionService', () => {
   });
 
   it('expires a terminal start that never receives runner terminal events and removes its pending map entry', async () => {
-    const { executionService, agent, ws } = await setupExecutionService({
+    const { executionService, agent, keyPair, wsBase } = await setupExecutionService({
       interactionKind: 'notebook',
       executionServiceOptions: {
         terminalFirstEventTimeoutMs: 25,
@@ -1084,6 +1567,12 @@ describe('AgentExecutionService', () => {
         terminalMaxRuntimeMs: 10_000,
         heartbeatIntervalMs: 10_000,
       },
+    });
+    const ws = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_1',
     });
     const startFrame = new Promise<Record<string, unknown>>((resolve) => {
       ws.on('message', (raw) => {
@@ -1166,6 +1655,87 @@ describe('AgentExecutionService', () => {
       reason: 'server_shutdown',
     });
     expect((executionService as unknown as { socketsByKey: Map<string, unknown> }).socketsByKey.size).toBe(0);
+  });
+
+  it('waits for in-flight presence release to settle before shutdown resolves', async () => {
+    const { agentResourceService, executionService } = await setupExecutionService({
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    const originalRelease = agentResourceService.releaseAgentConnection.bind(agentResourceService);
+    let allowRelease!: () => void;
+    const releaseGate = new Promise<void>((resolve) => {
+      allowRelease = resolve;
+    });
+    let releaseSettled = false;
+    vi.spyOn(agentResourceService, 'releaseAgentConnection').mockImplementation(async (input) => {
+      await releaseGate;
+      const result = await originalRelease(input);
+      releaseSettled = true;
+      return result;
+    });
+
+    const shutdownPromise = executionService.shutdown();
+    let resolved = false;
+    shutdownPromise.then(() => {
+      resolved = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(resolved).toBe(false);
+
+    allowRelease();
+    await shutdownPromise;
+    expect(releaseSettled).toBe(true);
+  });
+
+  it('retries transient presence release failures instead of leaving the shared lease online', async () => {
+    const { agentResourceService, executionService, agent, ws } = await setupExecutionService({
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        heartbeatMaxMisses: 100,
+      },
+    });
+    const originalRelease = agentResourceService.releaseAgentConnection.bind(agentResourceService);
+    let attempts = 0;
+    vi.spyOn(agentResourceService, 'releaseAgentConnection').mockImplementation(async (input) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error('transient_release_failure');
+      }
+      return originalRelease(input);
+    });
+    const unhandled = captureUnhandledRejections();
+
+    try {
+      await new Promise<void>((resolve) => {
+        ws.once('close', () => resolve());
+        ws.close();
+      });
+
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        if (attempts >= 2) {
+          const current = await agentResourceService.getConnectionInfo(agent.id);
+          if (!current) break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      expect(attempts).toBeGreaterThanOrEqual(2);
+      expect(unhandled.errors).toEqual([]);
+      expect(executionService.getAgentOnlineState(agent.id)).toBe(false);
+      await expect(agentResourceService.getConnectionInfo(agent.id)).resolves.toBeNull();
+      await expect(agentResourceService.getAgent('ws_default', 'proj_1', agent.id)).resolves.toEqual(
+        expect.objectContaining({
+          presence: 'offline',
+        }),
+      );
+    } finally {
+      unhandled.dispose();
+      await executionService.shutdown();
+    }
   });
 
   it('emits protocol error when agent delta payload is invalid', async () => {

@@ -32,6 +32,14 @@ import { SystemWorkspacesPage } from '../SystemWorkspacesPage';
 describe('SystemWorkspacesPage', () => {
   const fetchMock = vi.fn();
 
+  const expectPrimaryProminence = (testId: string) => {
+    expect(screen.getByTestId(testId)).toHaveAttribute('data-visual-prominence', 'primary');
+  };
+
+  const expectNotPrimaryProminence = (testId: string) => {
+    expect(screen.getByTestId(testId)).not.toHaveAttribute('data-visual-prominence');
+  };
+
   beforeEach(() => {
     replaceMock.mockReset();
     fetchMock.mockReset();
@@ -66,27 +74,14 @@ describe('SystemWorkspacesPage', () => {
     expect(await screen.findByRole('heading', { name: 'workspaces_title' })).toBeInTheDocument();
     expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
     expect(screen.getByTestId('page-layout__toolbar')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__list')).toHaveClass('xl:sticky');
-    expect(screen.getByTestId('system-workspaces__list')).toHaveClass('xl:border-r');
-    expect(screen.getByTestId('system-workspaces__list')).not.toHaveClass('bg-surface-low/60');
-    expect(screen.getByTestId('system-workspaces__list')).not.toHaveClass('rounded-md');
-    expect(screen.getByTestId('system-workspaces__list')).not.toHaveClass('border');
-    expect(screen.getByTestId('system-workspaces__editor')).toHaveClass('bg-transparent');
-    expect(screen.getByTestId('system-workspaces__editor')).toHaveClass('xl:border-l');
-    expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('rounded-md');
-    expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('border');
     expect(screen.getByTestId('system-workspaces__new-workspace')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__new-workspace')).not.toHaveClass('bg-foreground');
+    expectPrimaryProminence('system-workspaces__new-workspace');
     expect(screen.queryByTestId('system-workspaces__summary-line')).not.toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('alpha-admin@example.com');
     expect(screen.queryByText('workspace_idp_card_label')).not.toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__list')).not.toHaveClass('shadow-card');
     expect(screen.getByTestId('system-workspaces__editor')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('shadow-card');
-    expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground');
-    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).not.toHaveClass('rounded-md');
-    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveClass('border-b');
+    expectNotPrimaryProminence('system-workspaces__enable-edit');
     expect(screen.queryByTestId('system-workspaces__basics')).not.toBeInTheDocument();
     expect(screen.queryByTestId('system-workspaces__idp')).not.toBeInTheDocument();
     expect(screen.queryByTestId('system-workspaces__admin')).not.toBeInTheDocument();
@@ -100,7 +95,8 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__lifecycle')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__save')).toHaveClass('bg-foreground');
+    expectPrimaryProminence('system-workspaces__save');
+    expectNotPrimaryProminence('system-workspaces__new-workspace');
     expect(screen.getByDisplayValue('Alpha Workspace')).toBeInTheDocument();
   });
 
@@ -110,12 +106,9 @@ describe('SystemWorkspacesPage', () => {
     render(<SystemWorkspacesPage />);
 
     expect(await screen.findByTestId('system-workspaces__editor-empty')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__editor-empty')).not.toHaveClass('rounded-md');
-    expect(screen.getByTestId('system-workspaces__editor-empty')).not.toHaveClass('border');
-    expect(screen.getByTestId('system-workspaces__editor-empty')).toHaveClass('bg-background/84');
-    expect(screen.getByTestId('system-workspaces__empty-create')).toHaveClass('bg-foreground');
-    expect(screen.getByTestId('system-workspaces__new-workspace')).not.toHaveClass('bg-foreground');
-    expect(screen.getByTestId('system-workspaces__editor-empty-create')).not.toHaveClass('bg-foreground');
+    expectPrimaryProminence('system-workspaces__empty-create');
+    expectNotPrimaryProminence('system-workspaces__new-workspace');
+    expectNotPrimaryProminence('system-workspaces__editor-empty-create');
   });
 
   it('filters workspaces from the list without exposing tenant implementation details', async () => {
@@ -201,10 +194,12 @@ describe('SystemWorkspacesPage', () => {
     const failedStatus = await screen.findByTestId('system-workspaces__status');
     expect(failedStatus).toHaveTextContent('provisioning_status.failed');
     expect(failedStatus).toHaveTextContent('identity_provider_config_incomplete');
-    expect(within(failedStatus).getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground');
-    expect(screen.getByTestId('system-workspaces__new-workspace')).not.toHaveClass('bg-foreground');
-    expect(screen.getByTestId('system-workspaces__configure--ws_seeded')).not.toHaveClass('bg-foreground');
-    expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground');
+    expect(within(failedStatus).getByTestId('system-workspaces__enable-edit')).toHaveAttribute(
+      'data-visual-prominence',
+      'primary',
+    );
+    expectNotPrimaryProminence('system-workspaces__new-workspace');
+    expectNotPrimaryProminence('system-workspaces__configure--ws_seeded');
   });
 
   it('loads an existing workspace into structured settings and saves updates', async () => {

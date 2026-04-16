@@ -419,7 +419,7 @@ export async function loadTaskMountRegistryOwners(registryPath: string): Promise
   }
 }
 
-async function loadGatewayStates(gatewayStateDir: string): Promise<GatewayStateRecord[]> {
+export async function loadGatewayStates(gatewayStateDir: string): Promise<GatewayStateRecord[]> {
   if (!await pathExists(gatewayStateDir)) {
     return [];
   }
@@ -456,7 +456,7 @@ async function loadGatewayStates(gatewayStateDir: string): Promise<GatewayStateR
   return states;
 }
 
-async function loadProcessTable(): Promise<ManagedProcessInfo[]> {
+export async function loadProcessTable(): Promise<ManagedProcessInfo[]> {
   const { stdout } = await execFileAsync('ps', ['-ww', '-eo', 'pid=,ppid=,etimes=,command='], {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -692,7 +692,7 @@ async function reclaimTaskMount(args: {
   return reclaimed;
 }
 
-async function findMountedTaskDirectories(taskMountRoot: string): Promise<string[]> {
+export async function findMountedTaskDirectories(taskMountRoot: string): Promise<string[]> {
   if (!await pathExists(taskMountRoot)) {
     return [];
   }

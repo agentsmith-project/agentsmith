@@ -143,6 +143,67 @@ describe("api-entry-node me routes", () => {
     expect(closeResolved).toBe(true);
   });
 
+  it("still triggers gateway manager shutdown when reconcile is hung", async () => {
+    process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = "60000";
+    process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = "false";
+
+    const deps = createDefaultNodeApiDeps();
+    let resolveReconcile: (() => void) | null = null;
+    let resolveShutdown: (() => void) | null = null;
+    const reconcile = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReconcile = resolve;
+        }),
+    );
+    const shutdown = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReconcile?.();
+          resolveShutdown = resolve;
+        }),
+    );
+    const { server } = startServerWithDeps({
+      ...deps,
+      fileLibraryGatewayManager: {
+        ...deps.fileLibraryGatewayManager,
+        reconcile,
+        shutdown,
+      },
+    });
+
+    await new Promise<void>((resolve) => {
+      if (server.listening) {
+        resolve();
+        return;
+      }
+      server.once("listening", () => resolve());
+    });
+
+    let closeResolved = false;
+    const closePromise = new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        closeResolved = true;
+        resolve();
+      });
+    });
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(reconcile).toHaveBeenCalledTimes(1);
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    expect(closeResolved).toBe(false);
+
+    resolveShutdown?.();
+    await closePromise;
+
+    expect(closeResolved).toBe(true);
+  });
+
   it("shuts down terminal and agent execution lifecycle services before resolving server.close", async () => {
     const deps = createDefaultNodeApiDeps();
     const terminalShutdown = vi.fn(async () => undefined);

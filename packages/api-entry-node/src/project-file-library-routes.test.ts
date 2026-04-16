@@ -1,5 +1,20 @@
+import { EventEmitter } from 'node:events';
+import type http from 'node:http';
+import { PassThrough, Readable } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+
+const { createFileLibraryGatewayClientMock } = vi.hoisted(() => ({
+  createFileLibraryGatewayClientMock: vi.fn(),
+}));
+
+vi.mock('./file-library-gateway-client.js', async () => {
+  const actual = await vi.importActual<typeof import('./file-library-gateway-client.js')>('./file-library-gateway-client.js');
+  return {
+    ...actual,
+    createFileLibraryGatewayClient: createFileLibraryGatewayClientMock,
+  };
+});
 
 import { handleProjectFileLibraryRoutes } from './project-file-library-routes.js';
 import {
@@ -13,6 +28,7 @@ const OWNER_USER = { id: 'user_1', email: 'user@example.com', name: 'User One' }
 describe('project-file-library-routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    createFileLibraryGatewayClientMock.mockReset();
   });
 
   function createDeps() {
@@ -444,6 +460,9 @@ describe('project-file-library-routes', () => {
     });
 
     const createdBody = json.mock.calls.at(-1)?.[2] as { id: string };
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      listObjectsV2: vi.fn().mockReturnValue(Readable.from([])),
+    });
     await expect(handleProjectFileLibraryRoutes({
       routeKind: 'fileLibraryItem',
       method: 'DELETE',
@@ -530,5 +549,225 @@ describe('project-file-library-routes', () => {
         message: 'file_library_task_in_use',
       }),
     );
+  });
+
+  it('cancels file library downloads when the client disconnects mid-stream', async () => {
+    const json = vi.fn();
+    const createRes = {} as never;
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: createRes,
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Download Contract',
+      }),
+    });
+
+    const createdBody = json.mock.calls.at(-1)?.[2] as { id: string };
+    const objectStream = new PassThrough();
+    const destroySpy = vi.spyOn(objectStream, 'destroy');
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject: vi.fn().mockResolvedValue({
+        size: 11,
+        metaData: { 'content-type': 'text/plain' },
+      }),
+      getObject: vi.fn().mockResolvedValue(objectStream),
+    });
+
+    const req = new EventEmitter() as http.IncomingMessage;
+    req.url = '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/download?path=docs%2Fhello.txt';
+    req.headers = {};
+    const res = new PassThrough() as PassThrough & http.ServerResponse & {
+      headers: Record<string, string>;
+    };
+    res.statusCode = 200;
+    res.headers = {};
+    res.setHeader = vi.fn((name: string, value: string | number | readonly string[]) => {
+      res.headers[name.toLowerCase()] = Array.isArray(value) ? value.join(',') : String(value);
+      return res;
+    }) as never;
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryDownload',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req,
+      res: res as unknown as http.ServerResponse,
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    res.emit('close');
+
+    expect(destroySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels file library downloads when the client already aborted before the bridge attaches listeners', async () => {
+    const json = vi.fn();
+    const createRes = {} as never;
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: createRes,
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Download Early Abort',
+      }),
+    });
+
+    const createdBody = json.mock.calls.at(-1)?.[2] as { id: string };
+    const objectStream = new PassThrough();
+    const destroySpy = vi.spyOn(objectStream, 'destroy');
+    let resolveGetObject: ((stream: PassThrough) => void) | null = null;
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject: vi.fn().mockResolvedValue({
+        size: 11,
+        metaData: { 'content-type': 'text/plain' },
+      }),
+      getObject: vi.fn().mockImplementation(() => new Promise<PassThrough>((resolve) => {
+        resolveGetObject = resolve;
+      })),
+    });
+
+    const req = new EventEmitter() as http.IncomingMessage & { aborted: boolean };
+    req.url = '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/download?path=docs%2Fhello.txt';
+    req.headers = {};
+    req.aborted = false;
+    const res = new PassThrough() as PassThrough & http.ServerResponse & {
+      headers: Record<string, string>;
+    };
+    res.statusCode = 200;
+    res.headers = {};
+    res.setHeader = vi.fn((name: string, value: string | number | readonly string[]) => {
+      res.headers[name.toLowerCase()] = Array.isArray(value) ? value.join(',') : String(value);
+      return res;
+    }) as never;
+
+    const routePromise = handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryDownload',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req,
+      res: res as unknown as http.ServerResponse,
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    req.aborted = true;
+    req.emit('aborted');
+    resolveGetObject?.(objectStream);
+
+    await expect(routePromise).resolves.toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(destroySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates upload aborts into the backing gateway stream lifecycle', async () => {
+    const json = vi.fn();
+    const createRes = {} as never;
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: createRes,
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Upload Contract',
+      }),
+    });
+
+    const createdBody = json.mock.calls.at(-1)?.[2] as { id: string };
+    let destroyError: Error | null = null;
+    const putObject = vi.fn().mockImplementation(
+      async (_bucket: string, _key: string, stream: Readable) =>
+        new Promise<void>((_resolve, reject) => {
+          const originalDestroy = stream.destroy.bind(stream);
+          stream.destroy = ((error?: Error) => {
+            destroyError = error ?? null;
+            return originalDestroy(error);
+          }) as typeof stream.destroy;
+          stream.on('error', (error) => {
+            reject(error);
+          });
+          stream.resume();
+        }),
+    );
+
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject: vi.fn().mockRejectedValue(new Error('object_not_found')),
+      putObject,
+    });
+
+    const boundary = '----agentsmith-upload-boundary';
+    const req = new PassThrough() as PassThrough & http.IncomingMessage;
+    req.headers = {
+      'content-type': `multipart/form-data; boundary=${boundary}`,
+    };
+
+    const res = {
+      statusCode: 200,
+      setHeader: vi.fn(),
+      end: vi.fn(),
+    } as unknown as http.ServerResponse;
+
+    const routePromise = handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryUpload',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req,
+      res,
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn(),
+    });
+
+    req.write(`--${boundary}\r\n`);
+    req.write('Content-Disposition: form-data; name="file"; filename="hello.txt"\r\n');
+    req.write('Content-Type: text/plain\r\n\r\n');
+    req.write('hello');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(putObject).toHaveBeenCalledTimes(1);
+
+    req.emit('aborted');
+    req.destroy();
+
+    await expect(routePromise).resolves.toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(destroyError?.name).toBe('AbortError');
   });
 });

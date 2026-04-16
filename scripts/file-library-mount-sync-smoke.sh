@@ -30,6 +30,112 @@ MOUNTED="0"
 info() { echo "[file-library-mount-sync] $*"; }
 err() { echo "[file-library-mount-sync] ERROR: $*" >&2; }
 
+detect_mountpoint_status() {
+  python3 - "$1" <<'PY'
+import os
+import subprocess
+import sys
+
+mount_path = sys.argv[1]
+normalized_mount = os.path.abspath(mount_path)
+
+try:
+    result = subprocess.run(
+        ['findmnt', '-T', mount_path, '-n', '-o', 'TARGET'],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+except Exception:
+    print('not_mounted')
+    raise SystemExit(0)
+
+detected_target = ''
+for line in result.stdout.splitlines():
+    candidate = line.strip()
+    if candidate:
+        detected_target = candidate
+        break
+
+if not detected_target:
+    print('not_mounted')
+    raise SystemExit(0)
+
+normalized_target = os.path.abspath(detected_target)
+print('exact_mount' if normalized_mount == normalized_target else 'covered_by_parent_mount')
+PY
+}
+
+find_mount_process_pids() {
+  python3 - "$1" <<'PY'
+import subprocess
+import sys
+
+mount_path = sys.argv[1]
+
+try:
+    result = subprocess.run(
+        ['ps', '-ww', '-eo', 'pid=,command='],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+except Exception:
+    raise SystemExit(0)
+
+for line in result.stdout.splitlines():
+    line = line.strip()
+    if not line:
+        continue
+    pid, _, command = line.partition(' ')
+    if 'juicefs mount' not in command:
+        continue
+    if mount_path not in command:
+        continue
+    print(pid.strip())
+PY
+}
+
+wait_for_mount_cleanup() {
+  local status
+  local residual_pids
+  for _ in $(seq 1 20); do
+    status="$(detect_mountpoint_status "${MOUNT_POINT}")"
+    residual_pids="$(find_mount_process_pids "${MOUNT_POINT}" | tr '\n' ' ' | xargs 2>/dev/null || true)"
+    if [[ "${status}" != "exact_mount" && -z "${residual_pids}" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+write_resource_recovery_probe() {
+  if [[ -z "${FILE_LIBRARY_RESOURCE_RECOVERY_PROBE_PATH:-}" ]]; then
+    return
+  fi
+
+  python3 - "${FILE_LIBRARY_RESOURCE_RECOVERY_PROBE_PATH}" "${MOUNT_POINT}" <<'PY'
+import json
+import os
+import sys
+
+output_path = sys.argv[1]
+mount_point = sys.argv[2]
+os.makedirs(os.path.dirname(output_path), exist_ok=True)
+with open(output_path, 'w', encoding='utf-8') as handle:
+    json.dump(
+        {
+            'step': 'file-library-mount-sync-smoke',
+            'mount_point': mount_point,
+        },
+        handle,
+        indent=2,
+    )
+    handle.write('\n')
+PY
+}
+
 cleanup() {
   if [[ "${MOUNTED}" == "1" ]]; then
     juicefs umount "${MOUNT_POINT}" >/dev/null 2>&1 || juicefs umount -f "${MOUNT_POINT}" >/dev/null 2>&1 || true
@@ -49,6 +155,7 @@ cleanup() {
       -H "Authorization: Bearer $(cat "${TOKEN_FILE}" 2>/dev/null || true)" \
       "${API_BASE%/}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}" || true
   fi
+  write_resource_recovery_probe
   rm -rf "${TMP_DIR}"
 }
 trap cleanup EXIT
@@ -170,7 +277,9 @@ wait_entries_contains() {
 }
 
 require_cmd curl
+require_cmd findmnt
 require_cmd node
+require_cmd ps
 require_cmd juicefs
 
 REFRESH_TOKEN_FORCE_PASSWORD_GRANT=1 PRINT_TOKEN=1 \
@@ -279,6 +388,11 @@ fi
 info "unmounting ${MOUNT_POINT}"
 juicefs umount "${MOUNT_POINT}" >/dev/null
 MOUNTED="0"
+if ! wait_for_mount_cleanup; then
+  err "mountpoint or juicefs mount process did not return to baseline after unmount"
+  [[ -f "${MOUNT_LOG}" ]] && cat "${MOUNT_LOG}" >&2
+  exit 1
+fi
 
 status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/delete" '{"paths":["local-sync/","web-sync/"]}')"
 if [[ "${status}" != "200" ]]; then

@@ -41,6 +41,10 @@ import {
   normalizeFileLibraryPath,
 } from './file-library-gateway-client.js';
 import {
+  openGatewayObjectDownload,
+  pipeGatewayDownloadToHttpResponse,
+} from './object-stream-bridge.js';
+import {
   resolveFileLibraryMetadataUrlForDockerManualExternalExecution,
   resolveFileLibraryMetadataUrlForComposeManagedExternalExecution,
   resolveFileLibraryMetadataUrlForExternalExecution,
@@ -403,6 +407,7 @@ async function maybeReleaseInternalAgentWorkload(
 
 async function streamTaskArtifactFromWorkspaceLibrary(args: {
   deps: NodeApiDeps;
+  req: http.IncomingMessage;
   res: http.ServerResponse;
   workspaceId: string;
   projectId: string;
@@ -440,7 +445,7 @@ async function streamTaskArtifactFromWorkspaceLibrary(args: {
   });
   const bucket = fileLibraryBucketName(library.filesystem_name);
   const stat = await client.statObject(bucket, objectPath);
-  const objectStream = await client.getObject(bucket, objectPath);
+  const download = await openGatewayObjectDownload(client, bucket, objectPath);
   const filename = (args.artifact.title?.trim() || objectPath.split('/').at(-1) || 'artifact');
   args.res.statusCode = 200;
   args.res.setHeader(
@@ -449,12 +454,12 @@ async function streamTaskArtifactFromWorkspaceLibrary(args: {
   );
   args.res.setHeader('Content-Length', String(stat.size));
   args.res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
-  objectStream.on('error', () => {
-    if (!args.res.writableEnded) {
-      args.res.destroy(new Error('task_artifact_download_stream_failed'));
-    }
+  pipeGatewayDownloadToHttpResponse({
+    req: args.req,
+    res: args.res,
+    download,
+    streamErrorMessage: 'task_artifact_download_stream_failed',
   });
-  objectStream.pipe(args.res);
   return true;
 }
 
@@ -1460,6 +1465,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     try {
       if (await streamTaskArtifactFromWorkspaceLibrary({
         deps,
+        req,
         res,
         workspaceId: route.workspaceId,
         projectId: route.projectId,

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { PassThrough } from 'node:stream';
+import { describe, expect, it, vi } from 'vitest';
 import {
   MinioObjectStore,
   MongoJsonDocStore,
@@ -18,6 +19,95 @@ const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? 'mbos_dev_password';
 const MINIO_BUCKET = process.env.MINIO_BUCKET ?? 'mbos-dev';
 
 const describeRealIntegration = process.env.RUN_ADAPTERS_PRIVATE_INTEGRATION === 'true' ? describe : describe.skip;
+
+describe('MinioObjectStore stream lifecycle', () => {
+  it('aborts uploads by cancelling the source stream and rejecting with AbortError', async () => {
+    const store = new MinioObjectStore({
+      endPoint: 'localhost',
+      port: 19000,
+      useSSL: false,
+      accessKey: 'mbos',
+      secretKey: 'mbos_dev_password',
+    });
+    const controller = new AbortController();
+    const cancelSpy = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        await new Promise(() => {});
+      },
+      cancel: cancelSpy,
+    });
+
+    (store as unknown as {
+      client: {
+        putObject: (
+          bucket: string,
+          key: string,
+          stream: PassThrough,
+          size?: number,
+          metadata?: Record<string, string>,
+        ) => Promise<void>;
+      };
+    }).client = {
+      putObject: vi.fn().mockImplementation(
+        async (_bucket: string, _key: string, stream: PassThrough, _size?: number, _metadata?: Record<string, string>) =>
+          new Promise<void>((_resolve, reject) => {
+            stream.on('error', reject);
+            stream.resume();
+          }),
+      ),
+    };
+
+    const uploadPromise = store.putObjectStream(MINIO_BUCKET, 'abort.txt', body, {
+      signal: controller.signal,
+    });
+
+    controller.abort(new Error('client_aborted'));
+
+    await expect(uploadPromise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(cancelSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a cancellable download handle that destroys the backing node stream', async () => {
+    const store = new MinioObjectStore({
+      endPoint: 'localhost',
+      port: 19000,
+      useSSL: false,
+      accessKey: 'mbos',
+      secretKey: 'mbos_dev_password',
+    });
+    const stream = new PassThrough();
+    const destroySpy = vi.spyOn(stream, 'destroy');
+
+    (store as unknown as {
+      client: {
+        statObject: (bucket: string, key: string) => Promise<{
+          size: number;
+          metaData?: Record<string, string>;
+          etag?: string;
+          lastModified?: Date;
+        }>;
+        getObject: (bucket: string, key: string) => Promise<PassThrough>;
+      };
+    }).client = {
+      statObject: vi.fn().mockResolvedValue({
+        size: 3,
+        metaData: { 'content-type': 'text/plain' },
+        etag: 'etag-1',
+        lastModified: new Date('2026-04-15T00:00:00.000Z'),
+      }),
+      getObject: vi.fn().mockResolvedValue(stream),
+    };
+
+    const object = await store.getObjectStream(MINIO_BUCKET, 'download.txt');
+
+    await object.cancel(new Error('client_disconnected'));
+
+    expect(destroySpy).toHaveBeenCalledTimes(1);
+    expect(destroySpy.mock.calls[0]?.[0]).toMatchObject({ name: 'AbortError' });
+  });
+});
 
 describeRealIntegration('adapters-private integration', () => {
   it('postgres project repo CRUD works against real db', async () => {

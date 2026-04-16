@@ -1,7 +1,5 @@
 import type http from 'node:http';
 import Busboy from 'busboy';
-import { Readable } from 'node:stream';
-import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import {
   CreateFileLibraryShareLinkRequestSchema,
   CreateFileLibraryRequestSchema,
@@ -26,6 +24,12 @@ import {
   guessFileLibraryContentType,
   normalizeFileLibraryPath,
 } from './file-library-gateway-client.js';
+import {
+  openGatewayObjectDownload,
+  parseMultipartUploadAndExecute,
+  pipeGatewayDownloadToHttpResponse,
+  putGatewayObjectStream,
+} from './object-stream-bridge.js';
 import { resolveFileLibraryStorageBucketUrlForClientMount } from './file-library-runtime.js';
 import {
   createAndProvisionProjectFileLibrary,
@@ -42,91 +46,6 @@ type GatewayObjectItem = {
   etag?: string;
   lastModified: string;
 };
-
-async function parseUploadAndExecute(
-  req: http.IncomingMessage,
-  execute: (input: {
-    fileName: string;
-    fileStream: WebReadableStream<Uint8Array>;
-    contentType?: string;
-    contentLength?: number;
-    prefix?: string;
-    overwrite?: boolean;
-  }) => Promise<unknown>,
-  options?: {
-    maxFileSizeBytes?: number;
-  },
-): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const busboy = Busboy({
-      headers: req.headers,
-      limits: options?.maxFileSizeBytes ? { fileSize: options.maxFileSizeBytes } : undefined,
-    });
-    let prefix: string | undefined;
-    let overwrite = false;
-    let uploadPromise: Promise<unknown> | null = null;
-    let fileSeen = false;
-    let settled = false;
-
-    const settle = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      fn();
-    };
-
-    busboy.on('field', (name, value) => {
-      if (name === 'prefix') {
-        prefix = value;
-      } else if (name === 'overwrite') {
-        overwrite = value === 'true' || value === '1';
-      }
-    });
-
-    busboy.on('file', (name, file, info) => {
-      if (name !== 'file') {
-        file.resume();
-        return;
-      }
-      file.on('limit', () => {
-        settle(() =>
-          reject(
-            Object.assign(new Error('file_library_max_file_size_exceeded'), {
-              code: 'FILE_LIBRARY_MAX_FILE_SIZE_EXCEEDED',
-              maxFileSizeBytes: options?.maxFileSizeBytes,
-            }),
-          ),
-        );
-      });
-      fileSeen = true;
-      const fileStream = Readable.toWeb(file) as unknown as WebReadableStream<Uint8Array>;
-      uploadPromise = execute({
-        fileName: info.filename || 'upload.bin',
-        fileStream,
-        contentType: info.mimeType || 'application/octet-stream',
-        contentLength: undefined,
-        prefix,
-        overwrite,
-      });
-      uploadPromise.catch((error) => settle(() => reject(error)));
-    });
-
-    busboy.on('error', (error) => settle(() => reject(error)));
-    busboy.on('finish', async () => {
-      if (!fileSeen || !uploadPromise) {
-        settle(() => reject(new Error('file_required')));
-        return;
-      }
-      try {
-        const result = await uploadPromise;
-        settle(() => resolve(result));
-      } catch (error) {
-        settle(() => reject(error));
-      }
-    });
-
-    req.pipe(busboy);
-  });
-}
 
 function ensureDirectoryPath(input: string): string {
   const normalized = normalizeFileLibraryPath(input);
@@ -753,9 +672,9 @@ export async function handleProjectFileLibraryRoutes(args: {
     }
 
     try {
-      const uploaded = await parseUploadAndExecute(
+      const uploaded = await parseMultipartUploadAndExecute(
         req,
-        async ({ fileName, fileStream, contentType: uploadedContentType, prefix, overwrite }) => {
+        async ({ fileName, fileStream, contentType: uploadedContentType, prefix, overwrite, signal }) => {
           const normalizedPrefix = prefix ? ensureDirectoryPath(prefix) : '';
           const objectPath = normalizeFileLibraryPath(`${normalizedPrefix}${fileName}`);
           const client = await createFileLibraryGatewayClient({
@@ -766,7 +685,6 @@ export async function handleProjectFileLibraryRoutes(args: {
             filesystemName: library.filesystem_name,
           });
           const bucket = fileLibraryBucketName(library.filesystem_name);
-          const nodeStream = Readable.fromWeb(fileStream as globalThis.ReadableStream<Uint8Array>);
           if (!(overwrite ?? false)) {
             try {
               await client.statObject(bucket, objectPath);
@@ -777,8 +695,9 @@ export async function handleProjectFileLibraryRoutes(args: {
               }
             }
           }
-          await client.putObject(bucket, objectPath, nodeStream, undefined, {
-            'Content-Type': uploadedContentType || guessFileLibraryContentType(objectPath) || 'application/octet-stream',
+          await putGatewayObjectStream(client, bucket, objectPath, fileStream, {
+            contentType: uploadedContentType || guessFileLibraryContentType(objectPath) || 'application/octet-stream',
+            signal,
           });
           const stat = await client.statObject(bucket, objectPath);
           return {
@@ -791,7 +710,11 @@ export async function handleProjectFileLibraryRoutes(args: {
             etag: stat.etag,
           };
         },
-        { maxFileSizeBytes: 1024 * 1024 * 1024 },
+        (headers) =>
+          Busboy({
+            headers,
+            limits: { fileSize: 1024 * 1024 * 1024 },
+          }),
       );
       json(res, 201, uploaded);
     } catch (error) {
@@ -823,18 +746,18 @@ export async function handleProjectFileLibraryRoutes(args: {
       });
       const bucket = fileLibraryBucketName(library.filesystem_name);
       const stat = await client.statObject(bucket, objectPath);
-      const objectStream = await client.getObject(bucket, objectPath);
+      const download = await openGatewayObjectDownload(client, bucket, objectPath);
       const fileName = objectPath.split('/').at(-1) || 'download.bin';
       res.statusCode = 200;
       res.setHeader('Content-Type', stat.metaData?.['content-type'] ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream');
       res.setHeader('Content-Length', String(stat.size));
       res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
-      objectStream.on('error', () => {
-        if (!res.writableEnded) {
-          res.destroy(new Error('file_library_download_stream_failed'));
-        }
+      pipeGatewayDownloadToHttpResponse({
+        req,
+        res,
+        download,
+        streamErrorMessage: 'file_library_download_stream_failed',
       });
-      objectStream.pipe(res);
     } catch (error) {
       json(res, 404, {
         error_code: 'RESOURCE_NOT_FOUND',

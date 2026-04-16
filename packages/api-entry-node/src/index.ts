@@ -22,7 +22,13 @@ export { createDefaultNodeApiDeps } from './node-api-deps-factory';
 const DEFAULT_FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = 60_000;
 
 function logGatewayReconcileFailure(error: unknown): void {
+  if (error instanceof Error && error.name === 'AbortError') {
+    return;
+  }
   const message = error instanceof Error ? error.message : 'unknown_error';
+  if (message === 'file_library_gateway_reconcile_cancelled') {
+    return;
+  }
   process.stderr.write(`[api-entry-node] file library gateway reconcile failed: ${message}\n`);
 }
 
@@ -36,15 +42,20 @@ function resolveGatewayReconcileIntervalMs(env: NodeJS.ProcessEnv = process.env)
 
 function startGatewayReconcileLoop(manager?: {
   reconcile?: () => Promise<void>;
-}): { stop: () => Promise<void> } {
+}): { stop: () => void; drain: () => Promise<void> } {
   if (!manager?.reconcile) {
     return {
-      stop: async () => undefined,
+      stop: () => undefined,
+      drain: async () => undefined,
     };
   }
 
   let inFlight: Promise<void> | null = null;
+  let stopped = false;
   const runReconcile = (): Promise<void> => {
+    if (stopped) {
+      return Promise.resolve();
+    }
     if (inFlight) {
       return inFlight;
     }
@@ -67,8 +78,11 @@ function startGatewayReconcileLoop(manager?: {
   intervalHandle.unref?.();
 
   return {
-    stop: async () => {
+    stop: () => {
+      stopped = true;
       clearInterval(intervalHandle);
+    },
+    drain: async () => {
       await inFlight?.catch(() => undefined);
     },
   };
@@ -113,9 +127,10 @@ export function createNodeApiServer(
     if (shutdownPerformed) return;
     shutdownPerformed = true;
     if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
-    await gatewayReconcileLoop.stop();
+    gatewayReconcileLoop.stop();
     ACTIVE_CHAT_STREAMS.clear();
     await deps.fileLibraryGatewayManager?.shutdown?.();
+    await gatewayReconcileLoop.drain();
     await deps.notebookTerminalService.shutdown?.();
     await deps.agentExecutionService.shutdown?.();
     await lifecycle?.shutdown?.();

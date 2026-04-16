@@ -1,5 +1,10 @@
 import type { ProjectDTO } from '@mbos/contracts';
-import type { ObjectStorePort, ProjectRepoPort } from '@mbos/ports';
+import type {
+  ObjectStorePort,
+  ObjectStorePutObjectStreamOptions,
+  ObjectStoreStreamHandle,
+  ProjectRepoPort,
+} from '@mbos/ports';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 
 // Placeholder Cloudflare adapter for future D1/R2/KV integration.
@@ -43,6 +48,7 @@ export class CfObjectStoreStub implements ObjectStorePort {
     _bucket: string,
     _key: string,
     _body: WebReadableStream<Uint8Array>,
+    _options?: ObjectStorePutObjectStreamOptions,
   ): Promise<void> {
     return;
   }
@@ -59,15 +65,11 @@ export class CfObjectStoreStub implements ObjectStorePort {
     return new Uint8Array();
   }
 
-  async getObjectStream(): Promise<{
-    body: WebReadableStream<Uint8Array>;
-    sizeBytes?: number;
-    contentType?: string;
-    etag?: string;
-    lastModified?: string;
-    metadata?: Record<string, string>;
-  }> {
-    return { body: new ReadableStream<Uint8Array>() as unknown as WebReadableStream<Uint8Array> };
+  async getObjectStream(_bucket: string, _key: string): Promise<ObjectStoreStreamHandle> {
+    return {
+      body: new ReadableStream<Uint8Array>() as unknown as WebReadableStream<Uint8Array>,
+      cancel: async () => undefined,
+    };
   }
 
   async statObject(): Promise<{

@@ -76,6 +76,7 @@ export interface UploadFileLibraryObjectCommand extends ListFileLibraryCatalogsC
   contentLength?: number;
   prefix?: string;
   overwrite?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface DeleteFileLibraryObjectsCommand extends ListFileLibraryCatalogsCommand {
@@ -456,6 +457,7 @@ export class UploadFileLibraryObjectUseCase {
     await this.objectStore.putObjectStream(this.bucket, key, command.fileStream, {
       contentType: command.contentType ?? 'application/octet-stream',
       sizeBytes: command.contentLength,
+      signal: command.signal,
     });
     const stat = await this.objectStore.statObject(this.bucket, key);
     return UploadFileLibraryObjectResponseSchema.parse({
@@ -478,6 +480,7 @@ export class DownloadFileLibraryObjectUseCase {
   async execute(command: DownloadFileLibraryObjectCommand): Promise<{
     key: string;
     body: WebReadableStream<Uint8Array>;
+    cancel: (reason?: unknown) => Promise<void>;
     contentType: string;
     sizeBytes?: number;
     etag?: string;
@@ -496,6 +499,7 @@ export class DownloadFileLibraryObjectUseCase {
     return {
       key,
       body: object.body,
+      cancel: object.cancel,
       contentType: object.contentType ?? 'application/octet-stream',
       sizeBytes: object.sizeBytes,
       etag: object.etag,

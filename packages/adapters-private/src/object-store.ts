@@ -1,7 +1,14 @@
-import type { ObjectStorePort } from '@mbos/ports';
+import type {
+  ObjectStorePort,
+  ObjectStorePutObjectStreamOptions,
+  ObjectStoreStreamHandle,
+} from '@mbos/ports';
 import { Client as MinioClient } from 'minio';
 import { Readable } from 'node:stream';
-import type { ReadableStream as WebReadableStream } from 'node:stream/web';
+import type {
+  ReadableStream as WebReadableStream,
+  ReadableStreamDefaultReader as WebReadableStreamDefaultReader,
+} from 'node:stream/web';
 
 export interface MinioObjectStoreOptions {
   endPoint: string;
@@ -9,6 +16,99 @@ export interface MinioObjectStoreOptions {
   useSSL: boolean;
   accessKey: string;
   secretKey: string;
+}
+
+function createAbortError(
+  reason?: unknown,
+  fallbackMessage = 'object_store_stream_aborted',
+): Error {
+  if (reason instanceof Error && reason.name === 'AbortError') {
+    return reason;
+  }
+  const error = new Error(
+    reason instanceof Error
+      ? reason.message
+      : typeof reason === 'string' && reason.trim().length > 0
+        ? reason
+        : fallbackMessage,
+  );
+  error.name = 'AbortError';
+  if (reason instanceof Error) {
+    (error as Error & { cause?: unknown }).cause = reason;
+  }
+  return error;
+}
+
+function bindAbortSignal(
+  signal: AbortSignal | undefined,
+  onAbort: (reason?: unknown) => void,
+): () => void {
+  if (!signal) {
+    return () => {};
+  }
+  if (signal.aborted) {
+    onAbort(signal.reason);
+    return () => {};
+  }
+  const handleAbort = () => onAbort(signal.reason);
+  signal.addEventListener('abort', handleAbort, { once: true });
+  return () => signal.removeEventListener('abort', handleAbort);
+}
+
+async function cancelReader(
+  reader: WebReadableStreamDefaultReader<Uint8Array>,
+  reason?: unknown,
+): Promise<void> {
+  try {
+    await reader.cancel(reason);
+  } catch {
+    // ignore best-effort cancellation failures
+  }
+}
+
+function createAbortableNodeReadable(
+  body: WebReadableStream<Uint8Array>,
+  signal?: AbortSignal,
+): {
+  nodeStream: Readable;
+  cleanup: () => void;
+} {
+  const reader = body.getReader();
+  let finished = false;
+  let cleanupAbort: () => void = () => {};
+  const nodeStream = Readable.from((async function* () {
+    try {
+      while (true) {
+        if (signal?.aborted) {
+          throw createAbortError(signal.reason);
+        }
+        const { done, value } = await reader.read();
+        if (done) {
+          finished = true;
+          return;
+        }
+        if (value) {
+          yield Buffer.from(value);
+        }
+      }
+    } finally {
+      cleanupAbort();
+      if (!finished) {
+        await cancelReader(reader, signal?.reason);
+      }
+      reader.releaseLock();
+    }
+  })());
+
+  cleanupAbort = bindAbortSignal(signal, (reason) => {
+    void cancelReader(reader, reason);
+    nodeStream.destroy(createAbortError(reason));
+  });
+
+  return {
+    nodeStream,
+    cleanup: () => cleanupAbort(),
+  };
 }
 
 export class MinioObjectStore implements ObjectStorePort {
@@ -40,17 +140,25 @@ export class MinioObjectStore implements ObjectStorePort {
     bucket: string,
     key: string,
     body: WebReadableStream<Uint8Array>,
-    options: {
-      contentType?: string;
-      sizeBytes?: number;
-      metadata?: Record<string, string>;
-    } = {},
+    options: ObjectStorePutObjectStreamOptions = {},
   ): Promise<void> {
-    const nodeStream = Readable.fromWeb(body as unknown as Parameters<typeof Readable.fromWeb>[0]);
-    await this.client.putObject(bucket, key, nodeStream, options.sizeBytes, {
-      'Content-Type': options.contentType ?? 'application/octet-stream',
-      ...(options.metadata ?? {}),
-    });
+    const { nodeStream, cleanup } = createAbortableNodeReadable(body, options.signal);
+    try {
+      await this.client.putObject(bucket, key, nodeStream, options.sizeBytes, {
+        'Content-Type': options.contentType ?? 'application/octet-stream',
+        ...(options.metadata ?? {}),
+      });
+      if (options.signal?.aborted) {
+        throw createAbortError(options.signal.reason);
+      }
+    } catch (error) {
+      if (options.signal?.aborted) {
+        throw createAbortError(options.signal.reason);
+      }
+      throw error;
+    } finally {
+      cleanup();
+    }
   }
 
   async presignedGetObject(bucket: string, key: string, expirySeconds = 900): Promise<string> {
@@ -66,22 +174,20 @@ export class MinioObjectStore implements ObjectStorePort {
     return new Uint8Array(Buffer.concat(chunks));
   }
 
-  async getObjectStream(
-    bucket: string,
-    key: string,
-  ): Promise<{
-    body: WebReadableStream<Uint8Array>;
-    sizeBytes?: number;
-    contentType?: string;
-    etag?: string;
-    lastModified?: string;
-    metadata?: Record<string, string>;
-  }> {
+  async getObjectStream(bucket: string, key: string): Promise<ObjectStoreStreamHandle> {
     const stat = await this.statObject(bucket, key);
     const nodeStream = await this.client.getObject(bucket, key);
     const webStream = Readable.toWeb(nodeStream) as WebReadableStream<Uint8Array>;
+    let cancelled = false;
     return {
       body: webStream,
+      cancel: async (reason?: unknown) => {
+        if (cancelled || nodeStream.destroyed) {
+          return;
+        }
+        cancelled = true;
+        nodeStream.destroy(createAbortError(reason));
+      },
       sizeBytes: stat.sizeBytes,
       contentType: stat.contentType,
       etag: stat.etag,
@@ -249,14 +355,32 @@ export class InMemoryObjectStore implements ObjectStorePort {
     bucket: string,
     key: string,
     body: WebReadableStream<Uint8Array>,
-    options: { contentType?: string; sizeBytes?: number; metadata?: Record<string, string> } = {},
+    options: ObjectStorePutObjectStreamOptions = {},
   ): Promise<void> {
     const reader = body.getReader();
     const chunks: Uint8Array[] = [];
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) chunks.push(value);
+    let abortTriggered = false;
+    const cleanupAbort = bindAbortSignal(options.signal, (reason) => {
+      abortTriggered = true;
+      void cancelReader(reader, reason);
+    });
+    try {
+      while (true) {
+        if (options.signal?.aborted || abortTriggered) {
+          throw createAbortError(options.signal?.reason);
+        }
+        const { done, value } = await reader.read();
+        if (done) {
+          if (options.signal?.aborted || abortTriggered) {
+            throw createAbortError(options.signal?.reason);
+          }
+          break;
+        }
+        if (value) chunks.push(value);
+      }
+    } finally {
+      cleanupAbort();
+      reader.releaseLock();
     }
     const joined =
       chunks.length === 1
@@ -286,17 +410,7 @@ export class InMemoryObjectStore implements ObjectStorePort {
     return new Uint8Array(value.body);
   }
 
-  async getObjectStream(
-    bucket: string,
-    key: string,
-  ): Promise<{
-    body: WebReadableStream<Uint8Array>;
-    sizeBytes?: number;
-    contentType?: string;
-    etag?: string;
-    lastModified?: string;
-    metadata?: Record<string, string>;
-  }> {
+  async getObjectStream(bucket: string, key: string): Promise<ObjectStoreStreamHandle> {
     const stat = await this.statObject(bucket, key);
     const obj = this.store.get(this.key(bucket, key));
     if (!obj) throw new Error('object_not_found');
@@ -307,6 +421,7 @@ export class InMemoryObjectStore implements ObjectStorePort {
           controller.close();
         },
       }) as unknown as WebReadableStream<Uint8Array>,
+      cancel: async () => undefined,
       sizeBytes: stat.sizeBytes,
       contentType: stat.contentType,
       etag: stat.etag,

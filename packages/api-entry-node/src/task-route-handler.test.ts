@@ -1,15 +1,39 @@
-import { describe, expect, it } from 'vitest';
-import { InMemoryCache } from '@mbos/adapters-private';
+import { EventEmitter } from 'node:events';
+import type http from 'node:http';
+import { PassThrough } from 'node:stream';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 
 import {
+  handleTaskRoute,
   hasBlockingTaskRunForTerminal,
   resolveTerminalWebSocketBaseUrl,
   resolveTaskWorkspaceMountAccess,
 } from './task-route-handler.js';
 import { buildNotebookTaskRunState, refreshNotebookTaskRunLease } from './notebook-task/task-run-coordination.js';
-import { ACTIVE_RUNS_BY_TASK } from './notebook-task/task-runtime-state.js';
+import { ACTIVE_RUNS_BY_TASK, ARTIFACTS_BY_TASK, TASKS_BY_PROJECT } from './notebook-task/task-runtime-state.js';
+import { notebookTaskArtifactsCollection, notebookTasksCollection } from './notebook-task/task-store.js';
+
+const { createFileLibraryGatewayClientMock } = vi.hoisted(() => ({
+  createFileLibraryGatewayClientMock: vi.fn(),
+}));
+
+vi.mock('./file-library-gateway-client.js', async () => {
+  const actual = await vi.importActual<typeof import('./file-library-gateway-client.js')>('./file-library-gateway-client.js');
+  return {
+    ...actual,
+    createFileLibraryGatewayClient: createFileLibraryGatewayClientMock,
+  };
+});
 
 describe('task-route-handler workspace access', () => {
+  beforeEach(() => {
+    ACTIVE_RUNS_BY_TASK.clear();
+    ARTIFACTS_BY_TASK.clear();
+    TASKS_BY_PROJECT.clear();
+    createFileLibraryGatewayClientMock.mockReset();
+  });
+
   it('keeps local mount access untouched for non-external agents', () => {
     const resolved = resolveTaskWorkspaceMountAccess({
       agentMode: 'internal',
@@ -287,5 +311,180 @@ describe('task-route-handler workspace access', () => {
         process.env.JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT = previousStorageEndpoint;
       }
     }
+  });
+
+  it('cancels workspace-library artifact fallback downloads when the client disconnects', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const now = new Date().toISOString();
+
+    await docStore.upsert('project_file_libraries', 'lib_1', {
+      id: 'lib_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Workspace Library',
+      status: 'ready',
+      filesystem_name: 'flib-workspace-library',
+      created_by_user_id: 'user_1',
+      created_at: now,
+      updated_at: now,
+    });
+    await docStore.upsert(notebookTasksCollection('ws_default'), 'task_1', {
+      id: 'task_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Artifact Task',
+      agent_id: 'agent_1',
+      agent_name: 'Agent One',
+      workspace_file_library_id: 'lib_1',
+      workspace_file_library_name: 'Workspace Library',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await docStore.upsert(notebookTaskArtifactsCollection('ws_default'), 'artifact_1', {
+      id: 'artifact_1',
+      task_id: 'task_1',
+      type: 'file',
+      title: 'result.txt',
+      task_relative_path: '.artifacts/result.txt',
+      mime_type: 'text/plain',
+      file_size: 12,
+      created_at: now,
+    });
+
+    const objectStream = new PassThrough();
+    const destroySpy = vi.spyOn(objectStream, 'destroy');
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject: vi.fn().mockResolvedValue({
+        size: 12,
+        metaData: { 'content-type': 'text/plain' },
+      }),
+      getObject: vi.fn().mockResolvedValue(objectStream),
+    });
+
+    const req = new EventEmitter() as http.IncomingMessage;
+    req.headers = {};
+    req.url = '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/artifacts/artifact_1/download';
+    const res = new PassThrough() as PassThrough & http.ServerResponse;
+    res.statusCode = 200;
+    res.setHeader = vi.fn();
+
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskArtifactDownload',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        artifactId: 'artifact_1',
+      } as never,
+      method: 'GET',
+      req,
+      res: res as unknown as http.ServerResponse,
+      deps: {
+        docStore,
+      } as never,
+      user: { id: 'user_1' } as never,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    res.emit('close');
+
+    expect(destroySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels artifact fallback downloads when the client already aborted before the bridge attaches listeners', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const now = new Date().toISOString();
+    await docStore.upsert('project_file_libraries', 'lib_1', {
+      id: 'lib_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Workspace Library',
+      status: 'ready',
+      filesystem_name: 'flib-workspace-library',
+      created_by_user_id: 'user_1',
+      created_at: now,
+      updated_at: now,
+    });
+    await docStore.upsert(notebookTasksCollection('ws_default'), 'task_1', {
+      id: 'task_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Artifact Task',
+      agent_id: 'agent_1',
+      agent_name: 'Agent One',
+      workspace_file_library_id: 'lib_1',
+      workspace_file_library_name: 'Workspace Library',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await docStore.upsert(notebookTaskArtifactsCollection('ws_default'), 'artifact_1', {
+      id: 'artifact_1',
+      task_id: 'task_1',
+      type: 'file',
+      title: 'result.txt',
+      task_relative_path: '.artifacts/result.txt',
+      mime_type: 'text/plain',
+      file_size: 12,
+      created_at: now,
+    });
+
+    const objectStream = new PassThrough();
+    const destroySpy = vi.spyOn(objectStream, 'destroy');
+    let resolveGetObject: ((stream: PassThrough) => void) | null = null;
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject: vi.fn().mockResolvedValue({
+        size: 12,
+        metaData: { 'content-type': 'text/plain' },
+      }),
+      getObject: vi.fn().mockImplementation(() => new Promise<PassThrough>((resolve) => {
+        resolveGetObject = resolve;
+      })),
+    });
+
+    const req = new EventEmitter() as http.IncomingMessage & { aborted: boolean };
+    req.headers = {};
+    req.url = '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/artifacts/artifact_1/download';
+    req.aborted = false;
+    const res = new PassThrough() as PassThrough & http.ServerResponse;
+    res.statusCode = 200;
+    res.setHeader = vi.fn();
+
+    const routePromise = handleTaskRoute({
+      route: {
+        kind: 'taskArtifactDownload',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        artifactId: 'artifact_1',
+      } as never,
+      method: 'GET',
+      req,
+      res: res as unknown as http.ServerResponse,
+      deps: {
+        docStore,
+      } as never,
+      user: { id: 'user_1' } as never,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    req.aborted = true;
+    req.emit('aborted');
+    resolveGetObject?.(objectStream);
+
+    await expect(routePromise).resolves.toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(destroySpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -160,6 +160,60 @@ function runTraceValidator(root: string, reportPath = join(root, 'validation.jso
 }
 
 describe('backend-real full gate runtime ownership contract', () => {
+  it('treats file-library resource recovery as a required substep with dedicated reports instead of smoke-only success', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+
+    expect(script).toContain('scripts/file-library-resource-recovery.ts');
+    expect(script).toContain('snapshot');
+    expect(script).toContain('verify');
+    expect(script).toContain('summary');
+    expect(script).toContain('run_resource_recovery_step');
+    expect(script).toContain('--report "${RESOURCE_RECOVERY_SMOKE_JSON}"');
+    expect(script).toContain('--report "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}"');
+    expect(script).toContain('FILE_LIBRARY_RESOURCE_RECOVERY_PROBE_PATH');
+    expect(script).toContain('resource-recovery');
+    expect(script).toContain('baseline.json');
+    expect(script).toContain('report.json');
+    expect(script).toContain('report.md');
+    expect(script).not.toContain('npx "${args[@]}" >/dev/null 2>&1 || true');
+  });
+
+  it('still writes verify evidence when a smoke step fails and refuses to ignore missing recovery reports', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+
+    expect(script).toContain('set +e');
+    expect(script).toContain('smoke_status=$?');
+    expect(script).toContain('verify_status=0');
+    expect(script).toContain('if [[ ! -f "${report_path}" ]]; then');
+    expect(script).toContain('missing required recovery report');
+    expect(script).not.toContain('if [[ -f "${report_path}" ]]');
+  });
+
+  it('fails closed for mount truth probes instead of treating missing commands as not mounted', () => {
+    const smokeScript = readFileSync('scripts/file-library-mount-sync-smoke.sh', 'utf8');
+
+    expect(smokeScript).toContain('require_cmd findmnt');
+    expect(smokeScript).toContain('require_cmd ps');
+  });
+
+  it('uses the backend-real loopback Keycloak default so the file-library gate can refresh tokens against the real stack', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+
+    expect(script).toContain('INTEGRATION_KEYCLOAK_PORT:-18080');
+    expect(script).not.toContain('INTEGRATION_KEYCLOAK_PORT:-28081');
+    expect(script).toContain('resolve_reachable_keycloak_base');
+    expect(script).toContain('.well-known/openid-configuration');
+  });
+
+  it('resolves loopback dependency ports from reachable backend-real services instead of assuming the env-file integration ports are authoritative', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+
+    expect(script).toContain('resolve_reachable_tcp_port');
+    expect(script).toContain('15432');
+    expect(script).toContain('17017');
+    expect(script).toContain('19000');
+  });
+
   it('uses the shared owner-aware runtime helpers instead of undefined port helpers', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
 

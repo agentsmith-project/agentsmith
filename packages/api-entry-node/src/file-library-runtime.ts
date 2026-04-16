@@ -119,6 +119,102 @@ type GatewayPidAuthorityStatus = 'confirmed' | 'missing' | 'unverified';
 
 type GatewayTerminationStatus = 'terminated' | 'missing' | 'unverified';
 
+const DEFAULT_GATEWAY_PROBE_TIMEOUT_MS = 3_000;
+const DEFAULT_GATEWAY_START_TIMEOUT_MS = 15_000;
+const DEFAULT_GATEWAY_PROBE_INTERVAL_MS = 500;
+
+interface GatewayProbeOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+function createAbortError(message: string): Error {
+  const error = new Error(message);
+  error.name = 'AbortError';
+  return error;
+}
+
+function normalizeAbortReason(reason: unknown, fallback: string): Error {
+  if (reason instanceof Error) {
+    return reason;
+  }
+  if (typeof reason === 'string' && reason.trim()) {
+    return createAbortError(reason);
+  }
+  return createAbortError(fallback);
+}
+
+function throwIfAborted(signal: AbortSignal | undefined, fallback: string): void {
+  if (signal?.aborted) {
+    throw normalizeAbortReason(signal.reason, fallback);
+  }
+}
+
+function createTimedAbortController(args: {
+  parentSignal?: AbortSignal;
+  timeoutMs: number;
+  timeoutMessage: string;
+}): {
+  signal: AbortSignal;
+  cleanup: () => void;
+  wasParentAborted: () => boolean;
+} {
+  const controller = new AbortController();
+  let parentAborted = false;
+  const abortWithReason = (reason: unknown) => {
+    if (!controller.signal.aborted) {
+      controller.abort(reason);
+    }
+  };
+  const onParentAbort = () => {
+    parentAborted = true;
+    abortWithReason(normalizeAbortReason(args.parentSignal?.reason, 'file_library_gateway_probe_aborted'));
+  };
+
+  if (args.parentSignal?.aborted) {
+    onParentAbort();
+  } else if (args.parentSignal) {
+    args.parentSignal.addEventListener('abort', onParentAbort, { once: true });
+  }
+
+  const timeoutHandle = setTimeout(() => {
+    abortWithReason(createAbortError(args.timeoutMessage));
+  }, Math.max(0, args.timeoutMs));
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timeoutHandle);
+      args.parentSignal?.removeEventListener('abort', onParentAbort);
+    },
+    wasParentAborted: () => parentAborted,
+  };
+}
+
+async function waitWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) {
+    throwIfAborted(signal, 'file_library_gateway_probe_aborted');
+    return;
+  }
+
+  throwIfAborted(signal, 'file_library_gateway_probe_aborted');
+
+  await new Promise<void>((resolve, reject) => {
+    const timeoutHandle = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      clearTimeout(timeoutHandle);
+      signal?.removeEventListener('abort', onAbort);
+      reject(normalizeAbortReason(signal?.reason, 'file_library_gateway_probe_aborted'));
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 function hasRecordedOwnerProcess(state: PersistedGatewayState): boolean {
   return Number.isInteger(state.ownerProcessPid) && state.ownerProcessPid > 0;
 }
@@ -322,15 +418,29 @@ async function resolveManagedGatewayPidAuthority(args: {
 async function isGatewayLoopbackHealthy(
   platform: GatewayManagerPlatform,
   loopbackUrl: string | undefined,
+  options?: GatewayProbeOptions,
 ): Promise<boolean> {
   if (!loopbackUrl?.trim()) {
     return false;
   }
+  const controller = createTimedAbortController({
+    parentSignal: options?.signal,
+    timeoutMs: options?.timeoutMs ?? DEFAULT_GATEWAY_PROBE_TIMEOUT_MS,
+    timeoutMessage: 'file_library_gateway_probe_timeout',
+  });
   try {
-    const response = await platform.fetch(`${loopbackUrl}/`, { method: 'GET' });
+    const response = await platform.fetch(`${loopbackUrl}/`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
     return response.status > 0;
-  } catch {
+  } catch (error) {
+    if (controller.wasParentAborted()) {
+      throw normalizeAbortReason(options?.signal?.reason ?? error, 'file_library_gateway_probe_aborted');
+    }
     return false;
+  } finally {
+    controller.cleanup();
   }
 }
 
@@ -340,6 +450,7 @@ async function adoptLegacyGatewayState(
   state: PersistedGatewayState,
   ownerScope: string,
   legacyCandidates: readonly ManagedGatewayProcessInfo[] = [],
+  options?: GatewayProbeOptions,
 ): Promise<PersistedGatewayState | null> {
   if (!stateNeedsOwnerIdentityMigration(state)) {
     return state;
@@ -357,7 +468,7 @@ async function adoptLegacyGatewayState(
     await removeGatewayState(config, state.libraryId);
     return null;
   }
-  if (!await isGatewayLoopbackHealthy(platform, state.loopbackUrl)) {
+  if (!await isGatewayLoopbackHealthy(platform, state.loopbackUrl, options)) {
     const legacyCandidate = legacyCandidates.find((processInfo) => processInfo.pid === adoptedPid) ?? null;
     const terminationStatus = adoptedPid === state.pid
       ? await terminatePersistedGatewayProcessIfConfirmed({
@@ -627,20 +738,31 @@ async function findFreePort(base: number): Promise<number> {
   throw new Error('file_library_gateway_port_unavailable');
 }
 
-async function waitForGateway(url: string, timeoutMs = 15000): Promise<void> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const response = await fetch(url, { method: 'GET' });
-      if (response.status > 0) {
+async function waitForGateway(
+  platform: GatewayManagerPlatform,
+  url: string,
+  options?: GatewayProbeOptions,
+): Promise<void> {
+  const controller = createTimedAbortController({
+    parentSignal: options?.signal,
+    timeoutMs: options?.timeoutMs ?? DEFAULT_GATEWAY_START_TIMEOUT_MS,
+    timeoutMessage: 'file_library_gateway_start_timeout',
+  });
+
+  try {
+    while (true) {
+      throwIfAborted(controller.signal, 'file_library_gateway_start_timeout');
+      const healthy = await isGatewayLoopbackHealthy(platform, url, {
+        signal: controller.signal,
+      });
+      if (healthy) {
         return;
       }
-    } catch {
-      // retry
+      await waitWithAbort(DEFAULT_GATEWAY_PROBE_INTERVAL_MS, controller.signal);
     }
-    await new Promise((resolve) => setTimeout(resolve, 500));
+  } finally {
+    controller.cleanup();
   }
-  throw new Error('file_library_gateway_start_timeout');
 }
 
 export function resolveFileLibraryRuntimeConfig(env: NodeJS.ProcessEnv = process.env): FileLibraryRuntimeConfig {
@@ -1422,9 +1544,12 @@ export class InMemoryFileLibraryGatewayManager implements FileLibraryGatewayMana
 export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager {
   private readonly sessions = new Map<string, GatewaySession>();
   private readonly ownerRuntimePromise: Promise<GatewayOwnerRuntimeLease>;
-  private readonly reconcilePromise: Promise<void>;
+  private readonly libraryReconcileInFlight = new Map<string, Promise<void>>();
+  private reconcilePromise: Promise<void> | null = null;
   private reconcileInFlight: Promise<void> | null = null;
+  private reconcileAbortController: AbortController | null = null;
   private ownerHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private shuttingDown = false;
 
   constructor(
     private readonly config: FileLibraryRuntimeConfig = buildRuntimeConfig(),
@@ -1432,6 +1557,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   ) {
     this.ownerRuntimePromise = this.initializeOwnerRuntime();
     this.reconcilePromise = this.startReconcile();
+    void this.reconcilePromise.catch(() => undefined);
   }
 
   private async initializeOwnerRuntime(): Promise<GatewayOwnerRuntimeLease> {
@@ -1447,18 +1573,52 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     return lease;
   }
 
-  private async ensureReconciled(): Promise<void> {
-    await this.reconcilePromise.catch(() => undefined);
+  private cancelReconcile(): void {
+    if (this.reconcileAbortController && !this.reconcileAbortController.signal.aborted) {
+      this.reconcileAbortController.abort(createAbortError('file_library_gateway_reconcile_cancelled'));
+    }
   }
 
   private startReconcile(): Promise<void> {
     if (!this.reconcileInFlight) {
-      this.reconcileInFlight = this.performReconcile()
+      const controller = new AbortController();
+      this.reconcileAbortController = controller;
+      this.reconcileInFlight = this.performReconcile(controller.signal)
         .finally(() => {
+          if (this.reconcileAbortController === controller) {
+            this.reconcileAbortController = null;
+          }
           this.reconcileInFlight = null;
         });
     }
+    this.reconcilePromise = this.reconcileInFlight;
     return this.reconcileInFlight;
+  }
+
+  private startLibraryReconcile(
+    libraryId: string,
+    inventory?: {
+      stateByLibraryId: ReadonlyMap<string, PersistedGatewayState>;
+      processInventory: readonly GatewayProcessInfo[];
+      managedProcesses: readonly ManagedGatewayProcessInfo[];
+      ownerEvidence: GatewayOwnerEvidence;
+      ownerRuntime: GatewayOwnerRuntimeLease;
+      signal?: AbortSignal;
+    },
+  ): Promise<void> {
+    const existing = this.libraryReconcileInFlight.get(libraryId);
+    if (existing) {
+      return existing;
+    }
+
+    const promise = this.reconcileLibrary(libraryId, inventory)
+      .finally(() => {
+        if (this.libraryReconcileInFlight.get(libraryId) === promise) {
+          this.libraryReconcileInFlight.delete(libraryId);
+        }
+      });
+    this.libraryReconcileInFlight.set(libraryId, promise);
+    return promise;
   }
 
   private isCurrentSession(libraryId: string, session: GatewaySession): boolean {
@@ -1500,6 +1660,26 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   ): boolean {
     return session.metadataUrl === input.metadataUrl
       && session.storageBucketUrl === input.storageBucketUrl;
+  }
+
+  private canReuseSessionForGatewayInput(
+    session: GatewaySession | undefined,
+    input: EnsureFileLibraryGatewayInput,
+  ): session is GatewaySession & { pid: number } {
+    return Boolean(
+      session?.pid
+      && this.platform.processExists(session.pid)
+      && session.status !== 'degraded'
+      && session.status !== 'failed'
+      && session.status !== 'stopped'
+      && this.doesSessionMatchGatewayInput(session, input),
+    );
+  }
+
+  private clearSessionIfCurrent(libraryId: string, session: GatewaySession): void {
+    if (this.sessions.get(libraryId) === session) {
+      this.sessions.delete(libraryId);
+    }
   }
 
   private async waitForOwnedSessionExit(
@@ -1693,8 +1873,10 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       managedProcesses: readonly ManagedGatewayProcessInfo[];
       ownerEvidence: GatewayOwnerEvidence;
       ownerRuntime: GatewayOwnerRuntimeLease;
+      signal?: AbortSignal;
     },
   ): Promise<void> {
+    throwIfAborted(inventory?.signal, 'file_library_gateway_reconcile_cancelled');
     const ownerRuntime = inventory?.ownerRuntime ?? await this.ownerRuntimePromise;
     const ownerEvidence = inventory?.ownerEvidence ?? await loadGatewayOwnerEvidence(this.config, this.platform.now());
     const resolvedStates = inventory?.stateByLibraryId
@@ -1727,6 +1909,9 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         state,
         ownerRuntime.ownerScope,
         allManagedProcesses.filter((processInfo) => legacyMigrationCandidatePids.has(processInfo.pid)),
+        {
+          signal: inventory?.signal,
+        },
       );
     }
     const stateAuthority = state
@@ -1787,6 +1972,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     }
 
     for (const processInfo of processes) {
+      throwIfAborted(inventory?.signal, 'file_library_gateway_reconcile_cancelled');
       if (keepPid && processInfo.pid === keepPid) continue;
       await terminateManagedGatewayProcessIfConfirmed({
         platform: this.platform,
@@ -1800,10 +1986,12 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     }
   }
 
-  private async performReconcile(): Promise<void> {
+  private async performReconcile(signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal, 'file_library_gateway_reconcile_cancelled');
     const ownerRuntime = await this.ownerRuntimePromise;
     await ownerRuntime.heartbeat().catch(() => undefined);
     await mkdir(this.config.gatewayStateDir, { recursive: true });
+    throwIfAborted(signal, 'file_library_gateway_reconcile_cancelled');
     const ownerEvidence = await loadGatewayOwnerEvidence(this.config, this.platform.now());
     const states = await listPersistedGatewayStates(this.config);
     const stateByLibraryId = new Map(states.map((state) => [state.libraryId, state]));
@@ -1814,17 +2002,25 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         .map((processInfo) => processInfo.libraryId ?? processInfo.matchedState?.libraryId ?? null)
         .filter((libraryId): libraryId is string => Boolean(libraryId)),
     );
-    for (const libraryId of new Set([...stateByLibraryId.keys(), ...processLibraryIds])) {
-      await this.reconcileLibrary(libraryId, {
+    const libraryIds = [...new Set([...stateByLibraryId.keys(), ...processLibraryIds])];
+    const libraryResults = await Promise.allSettled(libraryIds.map(async (libraryId) => this.startLibraryReconcile(libraryId, {
         stateByLibraryId,
         processInventory,
         managedProcesses,
         ownerEvidence,
         ownerRuntime,
-      });
+        signal,
+      })));
+
+    throwIfAborted(signal, 'file_library_gateway_reconcile_cancelled');
+    for (const result of libraryResults) {
+      if (result.status === 'rejected') {
+        throw result.reason;
+      }
     }
 
     for (const processInfo of managedProcesses) {
+      throwIfAborted(signal, 'file_library_gateway_reconcile_cancelled');
       if (processInfo.matchedState) {
         continue;
       }
@@ -1844,6 +2040,9 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   }
 
   async reconcile(): Promise<void> {
+    if (this.shuttingDown) {
+      return;
+    }
     await this.startReconcile();
   }
 
@@ -1851,22 +2050,20 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     const ownerRuntime = await this.ownerRuntimePromise;
     await ownerRuntime.heartbeat().catch(() => undefined);
     await ensureExecutable(this.config.juicefsBin);
-    await this.ensureReconciled();
     const currentSession = this.sessions.get(input.libraryId);
-    if (this.isOwnedGatewaySessionLive(currentSession) && this.doesSessionMatchGatewayInput(currentSession, input)) {
+    if (
+      this.isOwnedGatewaySessionLive(currentSession)
+      && this.canReuseSessionForGatewayInput(currentSession, input)
+    ) {
       return currentSession;
     }
     if (this.isOwnedGatewaySession(currentSession)) {
       await this.cleanupOwnedSession(input.libraryId, currentSession);
     }
 
-    await this.reconcileLibrary(input.libraryId);
+    await this.startLibraryReconcile(input.libraryId);
     const existing = this.sessions.get(input.libraryId);
-    if (
-      existing?.pid
-      && this.platform.processExists(existing.pid)
-      && this.doesSessionMatchGatewayInput(existing, input)
-    ) {
+    if (this.canReuseSessionForGatewayInput(existing, input)) {
       return existing;
     }
     if (existing) {
@@ -1906,13 +2103,11 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       && persisted.metadataUrl === input.metadataUrl
       && persisted.storageBucketUrl === input.storageBucketUrl
     ) {
-      try {
-        const response = await this.platform.fetch(`${persisted.loopbackUrl}/`, { method: 'GET' });
-        if (response.status > 0) {
-          const restored: GatewaySession = {
-            loopbackUrl: persisted.loopbackUrl,
-            port: persisted.port,
-            status: 'ready',
+      if (await isGatewayLoopbackHealthy(this.platform, persisted.loopbackUrl)) {
+        const restored: GatewaySession = {
+          loopbackUrl: persisted.loopbackUrl,
+          port: persisted.port,
+          status: 'ready',
           lastStartedAt: persisted.lastStartedAt,
           pid: persisted.pid,
           metadataUrl: persisted.metadataUrl,
@@ -1923,15 +2118,13 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
         };
         this.sessions.set(input.libraryId, restored);
         return restored;
-        }
-      } catch {
-        const terminationStatus = await terminatePersistedGatewayProcessIfConfirmed({
-          platform: this.platform,
-          state: persisted,
-        });
-        if (terminationStatus !== 'unverified') {
-          await removeGatewayState(this.config, input.libraryId);
-        }
+      }
+      const terminationStatus = await terminatePersistedGatewayProcessIfConfirmed({
+        platform: this.platform,
+        state: persisted,
+      });
+      if (terminationStatus !== 'unverified') {
+        await removeGatewayState(this.config, input.libraryId);
       }
     } else if (persisted && persistedPidAuthority.status === 'confirmed') {
       const terminationStatus = await terminatePersistedGatewayProcessIfConfirmed({
@@ -2024,7 +2217,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     });
 
     try {
-      await waitForGateway(`${loopbackUrl}/`);
+      await waitForGateway(this.platform, `${loopbackUrl}/`);
       created.status = 'ready';
       if (child.pid) {
         await writeGatewayState(this.config, {
@@ -2046,7 +2239,11 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
     } catch (error) {
       created.status = 'failed';
       created.lastError = error instanceof Error ? error.message : 'file_library_gateway_start_failed';
-      if (child.pid) {
+      if (this.isOwnedGatewaySession(created)) {
+        await this.cleanupOwnedSession(input.libraryId, created).catch(async () => {
+          await removeGatewayState(this.config, input.libraryId).catch(() => undefined);
+        });
+      } else if (child.pid) {
         const terminationStatus = await terminatePersistedGatewayProcessIfConfirmed({
           platform: this.platform,
           state: {
@@ -2075,11 +2272,10 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
   }
 
   async getHealth(libraryId: string): Promise<FileLibraryGatewayHealth> {
-    const existing = this.sessions.get(libraryId);
-    if (!existing) {
+    let current = this.sessions.get(libraryId);
+    if (!current) {
       const ownerRuntime = await this.ownerRuntimePromise;
-      await this.ensureReconciled();
-      await this.reconcileLibrary(libraryId);
+      await this.startLibraryReconcile(libraryId);
       const persisted = await readGatewayState(this.config, libraryId);
       const processInventory = persisted?.pid ? await this.platform.listProcesses() : [];
       const persistedPidAuthority = persisted
@@ -2104,7 +2300,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
             checkedAt: this.platform.now(),
           };
         }
-        this.sessions.set(libraryId, {
+        current = {
           loopbackUrl: persisted.loopbackUrl,
           port: persisted.port,
           status: persisted.status,
@@ -2115,10 +2311,9 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
           logPath: persisted.logPath,
           ownerScope: persisted.ownerScope,
           sessionToken: persisted.sessionToken,
-        });
+        };
       }
     }
-    const current = this.sessions.get(libraryId);
     if (!current) {
       return {
         status: 'stopped',
@@ -2126,7 +2321,7 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       };
     }
     if (current.pid && !this.platform.processExists(current.pid)) {
-      this.sessions.delete(libraryId);
+      this.clearSessionIfCurrent(libraryId, current);
       await removeGatewayState(this.config, libraryId);
       return {
         status: current.status === 'failed' ? 'failed' : 'stopped',
@@ -2135,14 +2330,24 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
       };
     }
     try {
-      const response = await this.platform.fetch(`${current.loopbackUrl}/`, { method: 'GET' });
+      const status = await isGatewayLoopbackHealthy(this.platform, current.loopbackUrl) ? 'ready' : 'degraded';
+      current.status = status;
+      if (status === 'ready') {
+        this.sessions.set(libraryId, current);
+      } else if (!this.isOwnedGatewaySession(current)) {
+        this.clearSessionIfCurrent(libraryId, current);
+      }
       return {
-        status: response.status > 0 ? 'ready' : 'degraded',
+        status,
         checkedAt: this.platform.now(),
         lastError: current.lastError,
       };
     } catch (error) {
       current.lastError = error instanceof Error ? error.message : 'file_library_gateway_health_failed';
+      current.status = 'degraded';
+      if (!this.isOwnedGatewaySession(current)) {
+        this.clearSessionIfCurrent(libraryId, current);
+      }
       return {
         status: 'degraded',
         checkedAt: this.platform.now(),
@@ -2200,6 +2405,9 @@ export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager 
 
   async shutdown(): Promise<void> {
     try {
+      this.shuttingDown = true;
+      this.cancelReconcile();
+      await this.reconcileInFlight?.catch(() => undefined);
       const libraryIds = new Set<string>([
         ...this.sessions.keys(),
         ...(await listStateLibraryIds(this.config)),

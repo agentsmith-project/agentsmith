@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ProjectDTO } from '@mbos/contracts';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import {
@@ -6,10 +6,12 @@ import {
   CreateProjectUseCase,
   DeleteFileLibraryCatalogUseCase,
   DeleteProjectUseCase,
+  DownloadFileLibraryObjectUseCase,
   GetProjectUseCase,
   ListFileLibraryObjectsUseCase,
   ListFileLibraryCatalogsUseCase,
   ListProjectsUseCase,
+  UploadFileLibraryObjectUseCase,
   UpdateFileLibraryCatalogUseCase,
   UpdateProjectUseCase,
 } from './index';
@@ -108,6 +110,15 @@ class InMemoryCache implements CachePort {
 
 class FakeObjectStore implements ObjectStorePort {
   readonly stored = new Map<string, Uint8Array>();
+  lastPutOptions:
+    | {
+        contentType?: string;
+        sizeBytes?: number;
+        metadata?: Record<string, string>;
+        signal?: AbortSignal;
+      }
+    | undefined;
+  downloadCancel = vi.fn();
 
   async putObject(bucket: string, key: string, body: Uint8Array): Promise<void> {
     this.stored.set(`${bucket}/${key}`, new Uint8Array(body));
@@ -117,12 +128,23 @@ class FakeObjectStore implements ObjectStorePort {
     bucket: string,
     key: string,
     body: WebReadableStream<Uint8Array>,
-    options?: { contentType?: string; sizeBytes?: number; metadata?: Record<string, string> },
+    options?: {
+      contentType?: string;
+      sizeBytes?: number;
+      metadata?: Record<string, string>;
+      signal?: AbortSignal;
+    },
   ): Promise<void> {
-    void options;
+    this.lastPutOptions = options;
     const reader = body.getReader();
     const chunks: Uint8Array[] = [];
     while (true) {
+      if (options?.signal?.aborted) {
+        await reader.cancel(options.signal.reason);
+        const error = new Error('object_store_upload_aborted');
+        error.name = 'AbortError';
+        throw error;
+      }
       const { done, value } = await reader.read();
       if (done) break;
       if (value) chunks.push(value);
@@ -148,6 +170,7 @@ class FakeObjectStore implements ObjectStorePort {
     key: string,
   ): Promise<{
     body: WebReadableStream<Uint8Array>;
+    cancel: (reason?: unknown) => Promise<void>;
     sizeBytes?: number;
     contentType?: string;
     etag?: string;
@@ -162,6 +185,10 @@ class FakeObjectStore implements ObjectStorePort {
           controller.close();
         },
       }) as unknown as WebReadableStream<Uint8Array>,
+      cancel: async (reason?: unknown) => {
+        void reason;
+        this.downloadCancel();
+      },
       sizeBytes: bytes.byteLength,
       lastModified: new Date().toISOString(),
     };
@@ -500,6 +527,84 @@ describe('Project use cases', () => {
       projectId: 'proj_1',
     });
     expect(afterDelete.items).toHaveLength(0);
+  });
+
+  it('propagates upload abort signals into the object store contract', async () => {
+    const libraryRepo = new FakeFileLibraryCatalogRepo();
+    const objectStore = new FakeObjectStore();
+    const controller = new AbortController();
+    libraryRepo.items.push({
+      id: 'lib_abort_upload',
+      workspace_id: 'ws_a',
+      project_id: 'proj_1',
+      name: 'Abort Upload',
+      visibility: 'shared',
+      object_prefix: 'workspaces/ws_a/projects/proj_1/libraries/lib_abort_upload/',
+      doc_namespace: 'doc_ws_a_proj_1_lib_abort_upload',
+      vector_namespace: 'vec_ws_a_proj_1_lib_abort_upload',
+      created_by_user_id: 'user_1',
+      created_at: '2026-02-08T00:00:00.000Z',
+      updated_at: '2026-02-08T00:00:00.000Z',
+    });
+
+    await new UploadFileLibraryObjectUseCase(
+      libraryRepo,
+      objectStore,
+      new FixedClock(),
+      'mbos-dev',
+    ).execute({
+      workspaceId: 'ws_a',
+      projectId: 'proj_1',
+      libraryId: 'lib_abort_upload',
+      fileName: 'hello.txt',
+      fileStream: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('hello'));
+          controller.close();
+        },
+      }) as unknown as WebReadableStream<Uint8Array>,
+      signal: controller.signal,
+    });
+
+    expect(objectStore.lastPutOptions?.signal).toBe(controller.signal);
+  });
+
+  it('returns a cancellable download handle from the object store contract', async () => {
+    const libraryRepo = new FakeFileLibraryCatalogRepo();
+    const objectStore = new FakeObjectStore();
+    libraryRepo.items.push({
+      id: 'lib_abort_download',
+      workspace_id: 'ws_a',
+      project_id: 'proj_1',
+      name: 'Abort Download',
+      visibility: 'shared',
+      object_prefix: 'workspaces/ws_a/projects/proj_1/libraries/lib_abort_download/',
+      doc_namespace: 'doc_ws_a_proj_1_lib_abort_download',
+      vector_namespace: 'vec_ws_a_proj_1_lib_abort_download',
+      created_by_user_id: 'user_1',
+      created_at: '2026-02-08T00:00:00.000Z',
+      updated_at: '2026-02-08T00:00:00.000Z',
+    });
+    await objectStore.putObject(
+      'mbos-dev',
+      'workspaces/ws_a/projects/proj_1/libraries/lib_abort_download/result.txt',
+      new TextEncoder().encode('hello world'),
+    );
+
+    const downloaded = await new DownloadFileLibraryObjectUseCase(
+      libraryRepo,
+      objectStore,
+      'mbos-dev',
+    ).execute({
+      workspaceId: 'ws_a',
+      projectId: 'proj_1',
+      libraryId: 'lib_abort_download',
+      key: 'result.txt',
+    });
+
+    await downloaded.cancel();
+
+    expect(objectStore.downloadCancel).toHaveBeenCalledTimes(1);
   });
 
   it('lists objects with existing library prefix (without trailing slash) correctly', async () => {

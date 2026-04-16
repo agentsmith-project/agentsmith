@@ -162,6 +162,29 @@ npm run test:files:backend-real:sync
 npm run test:e2e:integration:files:management-ux
 ```
 
+For the combined real gate:
+
+```bash
+bash scripts/run-file-library-real-gate.sh
+```
+
+Expected resource recovery proof:
+- temporary file-library gateway state returns exactly to the pre-run baseline
+- managed `juicefs gateway` processes return exactly to the pre-run baseline, including the same per-library pid set
+- the mount-sync smoke mountpoint is no longer an exact mount and no matching `juicefs mount` process remains
+- missing cleanup truth is a hard failure: if `findmnt`, `ps`, a step verify report, or the final summary report cannot be produced, the gate fails closed
+
+Failure-path expectation:
+- each smoke step must still emit its recovery verify report even when that smoke step itself fails
+- the final summary is allowed to pass only when every required step report exists and all recovery checks return to baseline
+
+The real gate writes a structured recovery report under:
+- `artifacts/backend-real/current/file-library-real-gate/resource-recovery/report.json`
+- `artifacts/backend-real/current/file-library-real-gate/resource-recovery/report.md`
+
+This report is a file-library real-gate substep artifact.
+It is not a new global governance evidence kind.
+
 The Files management walkthrough command above is the release-grade UX check for:
 - `ready` libraries remaining mountable
 - `degraded` libraries showing recovery guidance instead of a misleading loading state

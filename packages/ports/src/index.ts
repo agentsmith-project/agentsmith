@@ -109,6 +109,23 @@ export interface JsonDocStorePort {
   delete(collection: string, id: string): Promise<void>;
 }
 
+export interface ObjectStorePutObjectStreamOptions {
+  contentType?: string;
+  sizeBytes?: number;
+  metadata?: Record<string, string>;
+  signal?: AbortSignal;
+}
+
+export interface ObjectStoreStreamHandle {
+  body: ReadableStream<Uint8Array>;
+  cancel: (reason?: unknown) => Promise<void>;
+  sizeBytes?: number;
+  contentType?: string;
+  etag?: string;
+  lastModified?: string;
+  metadata?: Record<string, string>;
+}
+
 export interface ObjectStorePort {
   putObject(
     bucket: string,
@@ -120,25 +137,11 @@ export interface ObjectStorePort {
     bucket: string,
     key: string,
     body: ReadableStream<Uint8Array>,
-    options?: {
-      contentType?: string;
-      sizeBytes?: number;
-      metadata?: Record<string, string>;
-    },
+    options?: ObjectStorePutObjectStreamOptions,
   ): Promise<void>;
   presignedGetObject(bucket: string, key: string, expirySeconds?: number): Promise<string>;
   getObject(bucket: string, key: string): Promise<Uint8Array>;
-  getObjectStream(
-    bucket: string,
-    key: string,
-  ): Promise<{
-    body: ReadableStream<Uint8Array>;
-    sizeBytes?: number;
-    contentType?: string;
-    etag?: string;
-    lastModified?: string;
-    metadata?: Record<string, string>;
-  }>;
+  getObjectStream(bucket: string, key: string): Promise<ObjectStoreStreamHandle>;
   statObject(
     bucket: string,
     key: string,

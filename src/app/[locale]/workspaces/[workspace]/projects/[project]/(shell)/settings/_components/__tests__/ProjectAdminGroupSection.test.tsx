@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { buttonVariants } from '@/components/ui/button';
 import { ProjectAdminGroupSection } from '../ProjectAdminGroupSection';
 
 describe('ProjectAdminGroupSection', () => {
@@ -19,5 +20,27 @@ describe('ProjectAdminGroupSection', () => {
 
     expect(screen.getByTestId('settings__project-admins-section').className).not.toMatch(/rounded-|shadow-|border-t/);
     expect(screen.getByText('admin_group_title')).toBeInTheDocument();
+  });
+
+  it('keeps the project-admin save action in the section header for editable admin review', () => {
+    render(
+      <ProjectAdminGroupSection
+        canAssignProjectAdmins
+        savingProjectAdmins={false}
+        selectedProjectAdmins={[]}
+        settingsT={(key) => key}
+        workspaceMembers={[]}
+        membersHref="/en/workspaces/ws_1/projects/proj_1/members"
+        onCheckedChange={() => undefined}
+        onSave={() => undefined}
+      />,
+    );
+
+    const saveButton = screen.getByTestId('settings__project-admins-save');
+    expect(screen.getByTestId('settings__project-admins-header')).toContainElement(saveButton);
+    expect(saveButton.className).toBe(buttonVariants({
+      variant: 'primary',
+      className: 'shrink-0',
+    }));
   });
 });

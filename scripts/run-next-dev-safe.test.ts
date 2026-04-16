@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+type SpawnedChild = ReturnType<typeof spawn>;
+
 const canonicalInclude = [
   '.next/types/**/*.ts',
   'next-env.d.ts',
@@ -112,6 +114,121 @@ EOF_TSCONFIG
   );
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForFile(file: string, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(file)) {
+      return;
+    }
+    await delay(50);
+  }
+  throw new Error(`Timed out waiting for file: ${file}`);
+}
+
+async function waitForChildExit(child: SpawnedChild, timeoutMs = 5000): Promise<number> {
+  if (child.exitCode !== null) {
+    return child.exitCode;
+  }
+  if (child.signalCode !== null) {
+    return 0;
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`Timed out waiting for child process ${child.pid ?? 'unknown'} to exit`));
+    }, timeoutMs);
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      resolve(code ?? 0);
+    });
+    child.once('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+async function terminateChild(child: SpawnedChild): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  child.kill('SIGTERM');
+  try {
+    await waitForChildExit(child, 5000);
+  } catch (error) {
+    child.kill('SIGKILL');
+    throw error;
+  }
+}
+
+function readRootContract(rootDir: string): {
+  tsconfig: {
+    compilerOptions?: { strict?: boolean; baseUrl?: string; paths?: Record<string, string[]> };
+    include: string[];
+    references?: Array<{ path: string }>;
+  };
+  nextEnv: string;
+} {
+  return {
+    tsconfig: JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8')) as {
+      compilerOptions?: { strict?: boolean; baseUrl?: string; paths?: Record<string, string[]> };
+      include: string[];
+      references?: Array<{ path: string }>;
+    },
+    nextEnv: readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8'),
+  };
+}
+
+function hasExpectedConcurrentFields(tsconfig: ReturnType<typeof readRootContract>['tsconfig']): boolean {
+  return (
+    tsconfig.compilerOptions?.strict === false
+    && tsconfig.compilerOptions?.baseUrl === '.'
+    && JSON.stringify(tsconfig.compilerOptions?.paths) === JSON.stringify({ '@custom/*': ['custom/*'] })
+    && JSON.stringify(tsconfig.references) === JSON.stringify([{ path: './tsconfig.node.json' }])
+  );
+}
+
+async function waitForConcurrentContractRepair(rootDir: string, timeoutMs = 5000): Promise<ReturnType<typeof readRootContract>> {
+  const deadline = Date.now() + timeoutMs;
+  let lastState = readRootContract(rootDir);
+  while (Date.now() < deadline) {
+    lastState = readRootContract(rootDir);
+    const includeIsCanonical = JSON.stringify(lastState.tsconfig.include) === JSON.stringify(canonicalInclude);
+    if (
+      includeIsCanonical
+      && hasExpectedConcurrentFields(lastState.tsconfig)
+      && lastState.nextEnv === canonicalNextEnv
+    ) {
+      return lastState;
+    }
+    if (includeIsCanonical && !hasExpectedConcurrentFields(lastState.tsconfig)) {
+      throw new Error(`Root repair dropped concurrent tsconfig fields: ${JSON.stringify(lastState.tsconfig, null, 2)}`);
+    }
+    await delay(100);
+  }
+  throw new Error(`Timed out waiting for concurrent root repair. Last tsconfig: ${JSON.stringify(lastState.tsconfig, null, 2)}`);
+}
+
+async function waitForCanonicalRootContract(rootDir: string, timeoutMs = 5000): Promise<ReturnType<typeof readRootContract>> {
+  const deadline = Date.now() + timeoutMs;
+  let lastState = readRootContract(rootDir);
+  while (Date.now() < deadline) {
+    lastState = readRootContract(rootDir);
+    if (
+      JSON.stringify(lastState.tsconfig.include) === JSON.stringify(canonicalInclude)
+      && lastState.nextEnv === canonicalNextEnv
+    ) {
+      return lastState;
+    }
+    await delay(100);
+  }
+  throw new Error(`Timed out waiting for canonical root contract. Last tsconfig: ${JSON.stringify(lastState.tsconfig, null, 2)}`);
+}
+
 function installDedicatedFinalReconcileProbe(rootDir: string): string {
   const helperPath = path.join(rootDir, 'scripts/lib/next-generated-root-state.sh');
   const markerFile = path.join(rootDir, 'artifacts/runtime/final-reconcile.log');
@@ -185,67 +302,38 @@ while true; do sleep 1; done
       stdio: 'pipe',
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    expect(existsSync(readyFile)).toBe(true);
+    try {
+      await waitForFile(readyFile);
 
-    writeFileSync(
-      path.join(rootDir, 'tsconfig.json'),
-      `${JSON.stringify({
-        compilerOptions: {
-          strict: false,
-          baseUrl: '.',
-          paths: {
-            '@custom/*': ['custom/*'],
+      writeFileSync(
+        path.join(rootDir, 'tsconfig.json'),
+        `${JSON.stringify({
+          compilerOptions: {
+            strict: false,
+            baseUrl: '.',
+            paths: {
+              '@custom/*': ['custom/*'],
+            },
           },
+          include: ['artifacts/runtime/lines/local-manual/current/next-dist/types/**/*.ts', 'next-env.d.ts'],
+          references: [{ path: './tsconfig.node.json' }],
+        }, null, 2)}\n`,
+      );
+
+      const { tsconfig, nextEnv } = await waitForConcurrentContractRepair(rootDir);
+      expect(tsconfig.include).toEqual(canonicalInclude);
+      expect(tsconfig.compilerOptions).toEqual({
+        strict: false,
+        baseUrl: '.',
+        paths: {
+          '@custom/*': ['custom/*'],
         },
-        include: ['artifacts/runtime/lines/local-manual/current/next-dist/types/**/*.ts', 'next-env.d.ts'],
-        references: [{ path: './tsconfig.node.json' }],
-      }, null, 2)}\n`,
-    );
-
-    const deadline = Date.now() + 5000;
-    while (Date.now() < deadline) {
-      const tsconfig = JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8')) as {
-        compilerOptions?: { strict?: boolean; baseUrl?: string; paths?: Record<string, string[]> };
-        include: string[];
-        references?: Array<{ path: string }>;
-      };
-      const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
-      if (
-        JSON.stringify(tsconfig.include) === JSON.stringify(canonicalInclude)
-        && tsconfig.compilerOptions?.strict === false
-        && tsconfig.compilerOptions?.baseUrl === '.'
-        && JSON.stringify(tsconfig.compilerOptions?.paths) === JSON.stringify({ '@custom/*': ['custom/*'] })
-        && JSON.stringify(tsconfig.references) === JSON.stringify([{ path: './tsconfig.node.json' }])
-        && nextEnv === canonicalNextEnv
-      ) {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      });
+      expect(tsconfig.references).toEqual([{ path: './tsconfig.node.json' }]);
+      expect(nextEnv).toBe(canonicalNextEnv);
+    } finally {
+      await terminateChild(child);
     }
-
-    const tsconfig = JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8')) as {
-      compilerOptions?: { strict?: boolean; baseUrl?: string; paths?: Record<string, string[]> };
-      include: string[];
-      references?: Array<{ path: string }>;
-    };
-    const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
-    expect(tsconfig.include).toEqual(canonicalInclude);
-    expect(tsconfig.compilerOptions).toEqual({
-      strict: false,
-      baseUrl: '.',
-      paths: {
-        '@custom/*': ['custom/*'],
-      },
-    });
-    expect(tsconfig.references).toEqual([{ path: './tsconfig.node.json' }]);
-    expect(nextEnv).toBe(canonicalNextEnv);
-
-    child.kill('SIGTERM');
-    await new Promise<number>((resolve, reject) => {
-      child.on('exit', (code) => resolve(code ?? 0));
-      child.on('error', reject);
-    });
   });
 
   it('keeps root files canonical while managed next dev is still running', async () => {
@@ -281,36 +369,15 @@ while true; do sleep 1; done
       stdio: 'pipe',
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    expect(existsSync(readyFile)).toBe(true);
+    try {
+      await waitForFile(readyFile);
 
-    const deadline = Date.now() + 5000;
-    while (Date.now() < deadline) {
-      const tsconfig = JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8')) as {
-        include: string[];
-      };
-      const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
-      if (
-        JSON.stringify(tsconfig.include) === JSON.stringify(canonicalInclude)
-        && nextEnv === canonicalNextEnv
-      ) {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      const { tsconfig, nextEnv } = await waitForCanonicalRootContract(rootDir);
+      expect(tsconfig.include).toEqual(canonicalInclude);
+      expect(nextEnv).toBe(canonicalNextEnv);
+    } finally {
+      await terminateChild(child);
     }
-
-    const tsconfig = JSON.parse(readFileSync(path.join(rootDir, 'tsconfig.json'), 'utf8')) as {
-      include: string[];
-    };
-    const nextEnv = readFileSync(path.join(rootDir, 'next-env.d.ts'), 'utf8');
-    expect(tsconfig.include).toEqual(canonicalInclude);
-    expect(nextEnv).toBe(canonicalNextEnv);
-
-    child.kill('SIGTERM');
-    await new Promise<number>((resolve, reject) => {
-      child.on('exit', (code) => resolve(code ?? 0));
-      child.on('error', reject);
-    });
   });
 
   it('repairs the contract-owned root surface after a managed child exits immediately with drift', () => {
@@ -767,6 +834,88 @@ while true; do sleep 1; done
       child.on('exit', (code) => resolve(code ?? 0));
       child.on('error', reject);
     });
+  });
+
+  it('refuses to launch a second managed dev server when a verified process-state owner is active', async () => {
+    const { rootDir, fakeBin } = setupTempRoot();
+    const readyFile = path.join(rootDir, 'first-ready');
+    const launchedMarker = path.join(rootDir, 'second-launched');
+    const pidFile = path.join(rootDir, 'artifacts/runtime/web.pid');
+    const processStateFile = path.join(rootDir, 'artifacts/runtime/web.process.json');
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf 'ready\\n' > "${readyFile}"
+trap 'exit 0' TERM INT
+while true; do sleep 1; done
+`,
+      { mode: 0o755 },
+    );
+
+    const first = spawn('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh'), '--port', '3101'], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        ROOT_DIR: rootDir,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        NEXT_GENERATED_ROOT_MANAGED: '1',
+        NEXT_DEV_PID_FILE: pidFile,
+        NEXT_DEV_PORT_FILE: path.join(rootDir, 'artifacts/runtime/web.port'),
+        NEXT_DEV_PORT: '3101',
+        NEXT_DEV_PROCESS_STATE_FILE: processStateFile,
+      },
+      stdio: 'pipe',
+    });
+
+    const deadline = Date.now() + 5_000;
+    while ((!existsSync(readyFile) || !existsSync(processStateFile)) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(existsSync(readyFile)).toBe(true);
+    expect(existsSync(processStateFile)).toBe(true);
+
+    writeFileSync(
+      path.join(fakeBin, 'next'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf 'launched\\n' > "${launchedMarker}"
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    let error: unknown;
+    try {
+      execFileSync('bash', [path.join(process.cwd(), 'scripts/run-next-dev-safe.sh'), '--port', '3101'], {
+        cwd: rootDir,
+        env: {
+          ...process.env,
+          ROOT_DIR: rootDir,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          NEXT_GENERATED_ROOT_MANAGED: '1',
+          NEXT_DEV_PID_FILE: pidFile,
+          NEXT_DEV_PORT_FILE: path.join(rootDir, 'artifacts/runtime/web.port'),
+          NEXT_DEV_PORT: '3101',
+          NEXT_DEV_PROCESS_STATE_FILE: processStateFile,
+        },
+        stdio: 'pipe',
+      });
+    } catch (caught) {
+      error = caught;
+    } finally {
+      first.kill('SIGTERM');
+      await new Promise<number>((resolve, reject) => {
+        first.on('exit', (code) => resolve(code ?? 0));
+        first.on('error', reject);
+      });
+    }
+
+    expect(error).toBeDefined();
+    expect(existsSync(launchedMarker)).toBe(false);
+    const stderr = String((error as { stderr?: Buffer | string }).stderr ?? '');
+    expect(stderr).toContain('active Next.js dev process already owns this workspace');
   });
 
   it('fails fast in managed mode when the source root is already polluted before launch', () => {

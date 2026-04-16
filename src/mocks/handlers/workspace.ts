@@ -7,6 +7,7 @@ import { PLATFORM_PERMISSIONS } from '@/lib/constants/permissions';
 import { CURRENT_USER_ID } from '../fixtures/projects';
 import { AUTH_USER_FIXTURE } from './auth';
 import { WORKSPACE_BUILT_IN_GROUP_IDS, WORKSPACE_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
+import type { PublicWorkspaceSummary } from '@/lib/api/types';
 
 const workspaceItems = (() => {
   if (DOC_FIXTURES_ENABLED) {
@@ -187,12 +188,19 @@ type SystemWorkspaceRecord = {
   updated_at?: string;
 };
 
-type PublicWorkspaceSummary = {
+type WorkspaceSummaryRecord = {
   id: string;
   name: string;
   created_at?: string;
   updated_at?: string;
 };
+
+export function mapWorkspaceToPublicSummary(workspace: WorkspaceSummaryRecord): PublicWorkspaceSummary {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+  };
+}
 
 function readCookieValue(request: Request, key: string): string | null {
   const cookieHeader = request.headers.get('cookie');
@@ -273,9 +281,9 @@ export function mapSystemWorkspaceToPublicConfig(workspace: SystemWorkspaceRecor
 }
 
 export function mergeAvailableWorkspaceSummaries(args: {
-  fixtureWorkspaces: PublicWorkspaceSummary[];
+  fixtureWorkspaces: WorkspaceSummaryRecord[];
   systemWorkspaces: SystemWorkspaceRecord[];
-}): PublicWorkspaceSummary[] {
+}): WorkspaceSummaryRecord[] {
   const readySystemWorkspaces = args.systemWorkspaces
     .filter((workspace) => workspace.provisioning_status === 'ready')
     .map((workspace) => ({
@@ -346,10 +354,7 @@ export const workspaceHandlers = [
   http.get('/api/public/workspaces', async ({ request }) => {
     const { merged } = await readAvailableWorkspaces(request);
     return HttpResponse.json({
-      items: merged.map((workspace) => ({
-        id: workspace.id,
-        name: workspace.name,
-      })),
+      items: merged.map(mapWorkspaceToPublicSummary),
       total: merged.length,
     });
   }),

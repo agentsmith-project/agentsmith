@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadStoryDefinitionSync } from '../e2e/story-loader';
+import { groupVisualBaselineCatalogByScenario } from '../e2e/visual-baseline-support';
 
 describe('desktop auth request complete work story', () => {
   it('defines a backend-real story about completing the desktop handoff and continuing into real work', () => {
@@ -44,12 +45,26 @@ describe('desktop auth request complete work story', () => {
       'utf-8',
     );
     const visualSpec = await readFile(path.resolve(process.cwd(), 'e2e/visual.spec.ts'), 'utf-8');
+    const visualCatalog = groupVisualBaselineCatalogByScenario();
 
     expect(requestPage).toContain('desktop-auth-request__title');
     expect(requestPage).toContain('workspaceLoginHref');
     expect(completePage).toContain('desktop-auth-complete__workspace-entry-link');
-    expect(visualSpec).toContain("name: 'desktop-auth-request'");
-    expect(visualSpec).toContain("name: 'desktop-auth-complete'");
-    expect(visualSpec).not.toContain('desktop-auth-request-metadata-smoke');
+    expect(visualSpec).toContain('listVisualBaselineExecutorScenarios');
+    expect(visualCatalog.get('desktop-auth-request')).toMatchObject({
+      route: '/en-US/desktop/auth/request',
+      authLane: 'public',
+      storySourceFile: 'e2e/stories/mock-lane/mock-lane-entry-access.story.md',
+    });
+    expect(visualCatalog.get('desktop-auth-complete')).toMatchObject({
+      route: '/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001',
+      authLane: 'public',
+      storySourceFile: 'e2e/stories/mock-lane/mock-lane-entry-access.story.md',
+    });
+    expect(visualCatalog.get('desktop-auth-request')?.entries.map((entry) => entry.screenshot)).toEqual([
+      'desktop-auth-request-dark.png',
+      'desktop-auth-request-light.png',
+    ]);
+    expect([...visualCatalog.keys()]).not.toContain('desktop-auth-request-metadata-smoke');
   });
 });

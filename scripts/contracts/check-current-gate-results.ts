@@ -99,6 +99,13 @@ function main(): void {
     contractMarkdown.includes("<evidence_dir>/result.json"),
     "Current gate result schema contract must define <evidence_dir>/result.json as the canonical result path.",
   );
+  assert(
+    contractMarkdown.includes("CURRENT_GATE_RESULT_CI_JOB")
+      && contractMarkdown.includes("GITHUB_JOB")
+      && contractMarkdown.includes("campaign:<step-id>")
+      && contractMarkdown.includes("local"),
+    "Current gate result schema contract must define ci_job resolution precedence and local/campaign fallbacks.",
+  );
 
   const docPayload = extractFirstJsonCodeBlock(contractMarkdown);
   const docAdapter = docPayload.gate_adapter as JsonRecord;

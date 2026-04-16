@@ -25,17 +25,23 @@ service_status() {
 }
 
 runner_status() {
-  local pid
+  local pid socket_state
   pid="$(cat "${RUNNER_PID_FILE}" 2>/dev/null || true)"
-  if [[ -f "${RUNNER_READY_FILE}" ]]; then
+  socket_state="$(runner_socket_health_state)"
+  if [[ "${socket_state}" == "connected" ]]; then
     if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
-      printf 'up (pid=%s)\n' "${pid}"
-    else
-      printf 'up\n'
+      printf 'up (pid=%s) socket=%s\n' "${pid}" "${socket_state}"
+      return 0
     fi
-  else
-    printf 'down\n'
+    printf 'up socket=%s\n' "${socket_state}"
+    return 0
   fi
+
+  if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
+    printf 'down (pid=%s) socket=%s\n' "${pid}" "${socket_state}"
+    return 0
+  fi
+  printf 'down socket=%s\n' "${socket_state}"
 }
 
 case "${APP_MODE}" in

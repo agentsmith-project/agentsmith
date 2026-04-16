@@ -54,7 +54,7 @@
     },
     {
       "sceneId": "system-workspaces-delete-confirmation",
-      "route": "/en-US/system/workspaces",
+      "route": "/en-US/system/workspaces?workspace=ws_seeded",
       "recipeFamily": "overlay_dialog",
       "authLane": "system_admin",
       "stableMarkers": [
@@ -79,14 +79,18 @@
       "route": "/en-US/workspaces/ws_default/projects/proj_001/agents",
       "recipeFamily": "work_surface_standard",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "agents__create-btn"
+      ]
     },
     {
       "sceneId": "dialog-create-agent",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/agents",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "agents__create-dialog"
+      ]
     },
     {
       "sceneId": "endpoints",
@@ -103,14 +107,18 @@
       "route": "/en-US/workspaces/ws_default/projects/proj_001/endpoints",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "endpoints__edit-dialog"
+      ]
     },
     {
       "sceneId": "dialog-create-endpoint",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/endpoints",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "endpoints__create-dialog"
+      ]
     },
     {
       "sceneId": "project-personal-context",
@@ -137,49 +145,64 @@
       "route": "/en-US/workspaces/ws_default/projects/proj_001/members?member_tab=people",
       "recipeFamily": "overlay_sheet",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "member-detail__authorization-check",
+        "member-detail__authorize-result"
+      ]
     },
     {
       "sceneId": "members-join-requests-tab",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/members",
       "recipeFamily": "governance_table_detail",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "members__join-requests-list"
+      ]
     },
     {
       "sceneId": "members-project-groups",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/members",
       "recipeFamily": "governance_table_detail",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "members__group-save-btn"
+      ]
     },
     {
       "sceneId": "members-change-history-dialog",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/members",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "members__work-surface"
+      ]
     },
     {
       "sceneId": "dialog-invite-member",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/members",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "members__invite-dialog"
+      ]
     },
     {
       "sceneId": "resource-policy",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/resource-policy",
       "recipeFamily": "governance_table_detail",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "resource-policy__table"
+      ]
     },
     {
       "sceneId": "access-guide",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/use-guide",
       "recipeFamily": "work_surface_standard",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "use-guide__page"
+      ]
     },
     {
       "sceneId": "settings",
@@ -237,7 +260,13 @@
           "themes": [
             "light",
             "dark"
-          ]
+          ],
+          "semanticAssertions": {
+            "primaryActionTestIds": [
+              "system-workspaces__empty-create"
+            ],
+            "maxProminentActions": 1
+          }
         },
         {
           "sceneId": "system-workspaces-edit-mode",
@@ -282,7 +311,13 @@
           "authLane": "system_admin",
           "themes": [
             "default"
-          ]
+          ],
+          "semanticAssertions": {
+            "primaryActionTestIds": [
+              "system-workspaces__enable-edit"
+            ],
+            "maxProminentActions": 1
+          }
         },
         {
           "sceneId": "system-workspaces-delete-confirmation",

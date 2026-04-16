@@ -99,14 +99,18 @@
       "route": "/en-US/workspaces/ws_default/projects/proj_001/audit?resource_id=__visual_empty__",
       "recipeFamily": "governance_table_detail",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "audit-usage__empty-state"
+      ]
     },
     {
       "sceneId": "drawer-audit-detail",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/audit",
       "recipeFamily": "overlay_sheet",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "audit__detail-summary"
+      ]
     }
   ],
   "steps": [

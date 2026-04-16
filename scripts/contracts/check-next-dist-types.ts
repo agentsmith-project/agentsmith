@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 type TsConfigShape = {
@@ -20,6 +21,14 @@ const canonicalInclude = [
 
 const canonicalNextEnv = `/// <reference types="next" />
 /// <reference types="next/image-types/global" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+`;
+
+const rootGeneratedNextEnv = `/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+/// <reference path="./.next/types/routes.d.ts" />
 
 // NOTE: This file should not be edited
 // see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
@@ -59,8 +68,9 @@ const forbiddenNextEnvPatterns = [
   /artifacts\/recovery-manual-next/,
   /playwright-managed-/,
   /artifacts\/[^/\n]+\/runs\/[^/\n]+\/next-dist\//,
-  /\/\/\/ <reference path=/,
 ] as const;
+
+const referencePathPattern = /\/\/\/ <reference path=/;
 
 function parseRetryCount(raw: string | undefined, fallback: number): number {
   if (raw && /^\d+$/.test(raw)) {
@@ -149,6 +159,21 @@ function checkSourceContractOnce(): ContractStatus {
   }
 
   if (forbiddenNextEnvPatterns.some((pattern) => pattern.test(nextEnv))) {
+    return {
+      kind: 'semantic_drift',
+      error: 'next_env_must_not_reference_lane_specific_types',
+    };
+  }
+  if (nextEnv === rootGeneratedNextEnv) {
+    if (existsSync(path.join(process.cwd(), '.next/types/routes.d.ts'))) {
+      return { kind: 'canonical' };
+    }
+    return {
+      kind: 'semantic_drift',
+      error: 'next_env_root_route_types_missing',
+    };
+  }
+  if (referencePathPattern.test(nextEnv)) {
     return {
       kind: 'semantic_drift',
       error: 'next_env_must_not_reference_lane_specific_types',

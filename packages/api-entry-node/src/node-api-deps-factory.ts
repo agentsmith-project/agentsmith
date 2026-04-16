@@ -35,6 +35,7 @@ import { EndpointResourceService } from './endpoint-resource-service.js';
 import { ChatResourceService } from './chat-resource-service.js';
 import { AgentResourceService } from './agent-resource-service.js';
 import { AgentExecutionService } from './agent-execution-service.js';
+import { createAgentPresenceStore } from './agent-presence-store.js';
 import { InternalAgentPodManagerImpl } from './internal-agent-pod-manager.js';
 import {
   InternalAgentWorkspaceProvisionerImpl,
@@ -61,7 +62,8 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   const fileLibraryCatalogRepo = new JsonDocFileLibraryCatalogRepo(docStore);
   const objectStore = new InMemoryObjectStore();
   const fileLibraryBucket = 'mbos-dev';
-  const agentResourceService = new AgentResourceService(docStore, cache);
+  const agentPresenceStore = createAgentPresenceStore(cache);
+  const agentResourceService = new AgentResourceService(docStore, cache, agentPresenceStore);
 
   const agentExecutionService = new AgentExecutionService(agentResourceService);
   const notebookTerminalService = new NotebookTerminalService(cache, agentExecutionService);
@@ -180,7 +182,8 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   const fileLibraryCatalogRepo = new JsonDocFileLibraryCatalogRepo(docStore);
   const chatResourceService = new ChatResourceService(docStore);
   const endpointResourceService = new EndpointResourceService(docStore);
-  const agentResourceService = new AgentResourceService(docStore, cache);
+  const agentPresenceStore = createAgentPresenceStore(cache);
+  const agentResourceService = new AgentResourceService(docStore, cache, agentPresenceStore);
   const agentExecutionService = new AgentExecutionService(agentResourceService);
   const notebookTerminalService = new NotebookTerminalService(cache, agentExecutionService);
   const sandboxClient = sandboxUrl && sandboxServiceKey

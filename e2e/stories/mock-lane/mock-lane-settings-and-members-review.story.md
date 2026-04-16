@@ -20,8 +20,10 @@
       "stableMarkers": [
         "settings__summary-line",
         "settings__general-section",
+        "settings__save-btn",
         "settings__ownership-section",
-        "settings__project-admins-section"
+        "settings__project-admins-section",
+        "settings__project-admins-save"
       ]
     },
     {
@@ -75,6 +77,12 @@
           ],
           "capture": "full_page",
           "authLane": "authed",
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "settings__save-btn",
+              "settings__project-admins-save"
+            ]
+          },
           "themes": [
             "light",
             "dark"

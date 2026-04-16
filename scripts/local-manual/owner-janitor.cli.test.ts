@@ -222,22 +222,31 @@ exit 1
   });
 
   it('keeps CLI fallback semantics aligned with in-process normalization for representative derived invalid runner tuples', () => {
-    for (const invalidCase of deriveRepresentativeCliParityCases()) {
-      const output = execFileSync(
-        tsxBin,
-        [ownerJanitorCli, '--kind', 'runner', '--intent', invalidCase.intent, '--normalize-plan-stdin'],
-        {
-          cwd: repoRoot,
-          env: process.env,
-          encoding: 'utf8',
-          input: `${JSON.stringify(invalidCase.payload, null, 2)}\n`,
-          stdio: 'pipe',
-        },
-      ).trim();
+    const representativeCases = deriveRepresentativeCliParityCases();
+    const batchPayload = representativeCases.map((invalidCase) => ({
+      intent: invalidCase.intent,
+      payload: invalidCase.payload,
+    }));
 
-      expect(JSON.parse(output), invalidCase.label).toEqual(
+    const output = execFileSync(
+      tsxBin,
+      [ownerJanitorCli, '--kind', 'runner', '--normalize-plan-batch-stdin'],
+      {
+        cwd: repoRoot,
+        env: process.env,
+        encoding: 'utf8',
+        input: `${JSON.stringify(batchPayload, null, 2)}\n`,
+        stdio: 'pipe',
+      },
+    ).trim();
+
+    const normalizedResults = JSON.parse(output) as unknown[];
+
+    expect(normalizedResults).toHaveLength(26);
+    representativeCases.forEach((invalidCase, index) => {
+      expect(normalizedResults[index], invalidCase.label).toEqual(
         normalizeLocalManualOwnerJanitorRunnerPlan(invalidCase.intent, JSON.stringify(invalidCase.payload)),
       );
-    }
+    });
   });
 });

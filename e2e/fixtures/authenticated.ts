@@ -1,13 +1,11 @@
 import { Page } from '@playwright/test';
 import { gotoAndWait, waitForPageReady } from '../utils/navigation';
 import { createMockAuthToken } from '@/mocks/utils/mock-auth-token';
+import { isE2EAuthRecoveryPath, isE2ELoginPath, isE2EProtectedRoute } from './route-auth-policy';
 
 const DEFAULT_WS_ID = 'ws_default';
 const DEFAULT_USER_EMAIL = 'test@example.com';
 const DEFAULT_USER_ID = 'user_001';
-const LOGIN_PATH_REGEX = /^\/(en-US|zh-CN)\/login(?:\/workspace)?\/?$/;
-const AUTH_RECOVERY_PATH_REGEX = /^\/(en-US|zh-CN)\/(?:login(?:\/workspace)?|workspaces\/overview)\/?$/;
-const PROTECTED_ROUTE_REGEX = /^\/(en-US|zh-CN)\/(?:user|workspaces)\//;
 
 type MockAuthSeed = {
   wsId: string;
@@ -93,10 +91,6 @@ function createAuthSeed(wsId: string, userEmail: string, userId: string): MockAu
 
 function isAppDocumentUrl(url: string): boolean {
   return /^https?:\/\//.test(url);
-}
-
-function isAuthRecoveryPath(pathname: string): boolean {
-  return AUTH_RECOVERY_PATH_REGEX.test(pathname);
 }
 
 function applyAuthSeed(seed: MockAuthSeed) {
@@ -321,7 +315,7 @@ export async function ensureProtectedRouteAuthenticated(
 
   for (let attempt = 0; attempt <= maxRecoveries; attempt += 1) {
     const currentPath = new URL(page.url()).pathname;
-    if (isAuthRecoveryPath(currentPath)) {
+    if (isE2EAuthRecoveryPath(currentPath)) {
       if (attempt >= maxRecoveries) {
         throw new Error(
           `protected_route_redirected_to_workspace_selection:${label}:target=${targetPath};actual=${page.url()}`,
@@ -352,7 +346,7 @@ export async function ensureProtectedRouteAuthenticated(
       return;
     } catch (error) {
       const latestPath = new URL(page.url()).pathname;
-      if (isAuthRecoveryPath(latestPath)) {
+      if (isE2EAuthRecoveryPath(latestPath)) {
         if (attempt >= maxRecoveries) {
           throw new Error(
             `protected_route_redirected_to_workspace_selection:${label}:target=${targetPath};actual=${page.url()}`,
@@ -438,11 +432,11 @@ export async function ensureAuthenticatedSession(
     throw bootstrapError;
   }
 
-  if (!PROTECTED_ROUTE_REGEX.test(new URL(bootstrapPath, 'http://example.test').pathname)) {
+  if (!isE2EProtectedRoute(bootstrapPath)) {
     return;
   }
 
-  if (LOGIN_PATH_REGEX.test(new URL(page.url()).pathname)) {
+  if (isE2ELoginPath(page.url())) {
     await reseedAuth(page, fallback);
     await gotoAndWait(page, bootstrapPath);
     await waitForPageReady(page);

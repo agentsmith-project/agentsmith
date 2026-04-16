@@ -1,11 +1,36 @@
-import { Page } from '@playwright/test';
+import { expect, Page } from '@playwright/test';
 
 const DEFAULT_NAVIGATION_TIMEOUT = 60000;
+const SIDEBAR_NAVIGATION_TIMEOUT = 20000;
 const TRANSIENT_NAVIGATION_ERRORS = [
   'net::ERR_ABORTED',
   'net::ERR_CONNECTION_REFUSED',
   'net::ERR_EMPTY_RESPONSE',
 ];
+
+type ProjectSidebarNavOptions = {
+  workspace?: string;
+  project?: string;
+  locale?: string;
+  item: string;
+  expectedPath?: string;
+  readyTestId?: string;
+  timeout?: number;
+};
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function projectSidebarPath(options: ProjectSidebarNavOptions) {
+  if (options.expectedPath) {
+    return options.expectedPath;
+  }
+  const locale = options.locale ?? 'en-US';
+  const workspace = options.workspace ?? 'ws_default';
+  const project = options.project ?? 'proj_001';
+  return `/${locale}/workspaces/${workspace}/projects/${project}/${options.item}`;
+}
 
 /** Navigate to a URL with retry on transient dev-server connection failures */
 export async function gotoAndWait(
@@ -75,6 +100,30 @@ export async function waitForPageReady(page: Page, timeout = 30000) {
         requestAnimationFrame(() => resolve());
       }),
   );
+}
+
+/** Click a project sidebar item as a user would, with lane-grade route settling. */
+export async function clickProjectSidebarNav(
+  page: Page,
+  options: ProjectSidebarNavOptions,
+) {
+  const timeout = options.timeout ?? SIDEBAR_NAVIGATION_TIMEOUT;
+  const expectedPath = projectSidebarPath(options);
+  const navLink = page.getByTestId(`sidebar__nav-item--${options.item}`);
+
+  await expect(navLink).toHaveCount(1, { timeout });
+  await expect(navLink).toBeVisible({ timeout });
+  await expect(navLink).toHaveAttribute('href', expectedPath, { timeout });
+
+  await Promise.all([
+    page.waitForURL(new RegExp(`${escapeRegExp(expectedPath)}(?:$|[?#])`), { timeout }),
+    navLink.click(),
+  ]);
+  await waitForPageReady(page, timeout);
+
+  if (options.readyTestId) {
+    await expect(page.getByTestId(options.readyTestId).first()).toBeVisible({ timeout });
+  }
 }
 
 /** Navigate to a project page section with standard wait */

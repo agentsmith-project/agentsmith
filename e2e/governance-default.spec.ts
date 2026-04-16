@@ -1,4 +1,5 @@
 import { test, expect, goTo, projectUrl } from './fixtures/test-base';
+import { clickProjectSidebarNav } from './utils/navigation';
 
 test.describe('Governance Mainline', () => {
   test('lets project owners approve and grant project administration, then verify the result in settings', async ({ authedPage }) => {
@@ -11,8 +12,11 @@ test.describe('Governance Mainline', () => {
       authedPage.getByText(/approved with project administration access/i).first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    await authedPage.getByTestId('sidebar__nav-item--settings').click();
-    await expect(authedPage).toHaveURL(new RegExp(`${projectUrl('settings').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+    await clickProjectSidebarNav(authedPage, {
+      item: 'settings',
+      expectedPath: projectUrl('settings'),
+      readyTestId: 'settings__general-section',
+    });
     const projectAdminOption = authedPage.getByTestId('settings__project-admin-option--user_006');
     await expect(projectAdminOption).toBeVisible({ timeout: 10_000 });
     await expect(projectAdminOption.getByRole('checkbox')).toBeChecked();

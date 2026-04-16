@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadStoryDefinitionSync } from '../e2e/story-loader';
+import { groupVisualBaselineCatalogByScenario } from '../e2e/visual-baseline-support';
 
 describe('workspace connections first consumption story', () => {
   it('defines a backend-real story for workspace connections, project discovery, and first use guide consumption', () => {
@@ -43,15 +44,27 @@ describe('workspace connections first consumption story', () => {
       'utf-8',
     );
     const visualSpec = await readFile(path.resolve(process.cwd(), 'e2e/visual.spec.ts'), 'utf-8');
+    const visualCatalog = groupVisualBaselineCatalogByScenario();
 
     expect(connectionsPage).toContain('workspace-connections__feishu-connect');
     expect(connectionsPage).toContain('workspace-connections__open-projects');
     expect(useGuidePage).toContain('use-guide__page');
     expect(useGuidePage).toContain('use-guide__endpoint-select');
-    expect(visualSpec).toContain("workspace connections - Feishu disabled state");
-    expect(visualSpec).toContain("workspace connections - Feishu connected state");
-    expect(visualSpec).toContain('workspace-connections-feishu-disabled.png');
-    expect(visualSpec).toContain('workspace-connections-feishu-connected.png');
-    expect(visualSpec).not.toContain('workspace-connections-feishu-debug-smoke');
+    expect(visualSpec).toContain('listVisualBaselineExecutorScenarios');
+    expect(visualCatalog.get('workspace-connections-feishu-disabled')).toMatchObject({
+      route: '/en-US/workspaces/ws_default/connections',
+      storySourceFile: 'e2e/stories/mock-lane/mock-lane-connections-and-credentials-lifecycle.story.md',
+    });
+    expect(visualCatalog.get('workspace-connections-feishu-connected')).toMatchObject({
+      route: '/en-US/workspaces/ws_default/connections',
+      storySourceFile: 'e2e/stories/mock-lane/mock-lane-connections-and-credentials-lifecycle.story.md',
+    });
+    expect(visualCatalog.get('workspace-connections-feishu-disabled')?.entries[0]?.screenshot).toBe(
+      'workspace-connections-feishu-disabled.png',
+    );
+    expect(visualCatalog.get('workspace-connections-feishu-connected')?.entries[0]?.screenshot).toBe(
+      'workspace-connections-feishu-connected.png',
+    );
+    expect([...visualCatalog.keys()]).not.toContain('workspace-connections-feishu-debug-smoke');
   });
 });

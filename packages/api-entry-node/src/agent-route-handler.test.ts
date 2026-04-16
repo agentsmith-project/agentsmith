@@ -12,14 +12,24 @@ describe('resolveAgentPresenceForApi', () => {
     ).toBe('online');
   });
 
-  it('forces external agents offline when the current API process has no socket', () => {
+  it('keeps shared external presence online even when the current API process has no local socket', () => {
     expect(
       resolveAgentPresenceForApi({
         mode: 'external',
         storedPresence: 'online',
         socketOnline: false,
       }),
-    ).toBe('offline');
+    ).toBe('online');
+  });
+
+  it('uses a local socket as online evidence while shared presence is catching up', () => {
+    expect(
+      resolveAgentPresenceForApi({
+        mode: 'external',
+        storedPresence: 'offline',
+        socketOnline: true,
+      }),
+    ).toBe('online');
   });
 
   it('keeps internal agents managed regardless of socket state', () => {

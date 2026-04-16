@@ -1,4 +1,8 @@
-import { findCurrentGateDefinitionById } from './current-gate-manifest';
+import {
+  CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY,
+  CURRENT_RELEASE_FULL_CAMPAIGN_EVIDENCE_ARTIFACTS,
+  findCurrentGateDefinitionById,
+} from './current-gate-manifest';
 
 export type CurrentVerificationCampaignId = 'release-full';
 export type CurrentVerificationCampaignStepRole =
@@ -19,6 +23,7 @@ export type CurrentVerificationCampaignEvidenceCheckKind =
   | 'directory_non_empty'
   | 'recursive_file'
   | 'visual_baseline_reviews';
+export type CurrentVerificationCampaignEvidenceSemantic = 'ux_trace_bundle';
 
 export interface CurrentVerificationCampaignEvidenceCheck {
   id: string;
@@ -26,6 +31,7 @@ export interface CurrentVerificationCampaignEvidenceCheck {
   kind: CurrentVerificationCampaignEvidenceCheckKind;
   fileName?: string;
   minCount?: number;
+  semantic?: CurrentVerificationCampaignEvidenceSemantic;
 }
 
 export interface CurrentVerificationCampaignNativeResult {
@@ -56,6 +62,19 @@ export interface CurrentVerificationCampaignDefinition {
   description: string;
   runRootPattern: string;
   steps: readonly CurrentVerificationCampaignStep[];
+}
+
+type CurrentReleaseCampaignEvidenceTopologyKey = keyof typeof CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY;
+
+function campaignEvidenceChecks(
+  key: CurrentReleaseCampaignEvidenceTopologyKey,
+): readonly CurrentVerificationCampaignEvidenceCheck[] {
+  return CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY[key].map((check) => ({
+    ...check,
+    ...(check.id === 'backend_real_ux_trace_reviews'
+      ? { semantic: 'ux_trace_bundle' as const }
+      : {}),
+  }));
 }
 
 function campaignStep(
@@ -115,28 +134,8 @@ export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificatio
         lineKind: 'visual',
         defaultFailureClass: 'product_regression',
         dependsOn: ['gate-fast'],
-        evidenceHints: [
-          'e2e/visual-baseline-support.ts',
-          'e2e/__screenshots__/visual.spec.ts',
-          '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
-        ],
-        evidenceChecks: [
-          {
-            id: 'visual_scene_catalog_source',
-            path: 'e2e/visual-baseline-support.ts',
-            kind: 'file',
-          },
-          {
-            id: 'visual_committed_screenshots',
-            path: 'e2e/__screenshots__/visual.spec.ts',
-            kind: 'directory_non_empty',
-          },
-          {
-            id: 'visual_review_artifacts',
-            path: '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
-            kind: 'visual_baseline_reviews',
-          },
-        ],
+        evidenceHints: findCurrentGateDefinitionById('lane-visual')?.campaignEvidenceArtifacts ?? [],
+        evidenceChecks: campaignEvidenceChecks('laneVisual'),
         nativeResult: {
           gateId: 'lane-visual',
           npmScript: 'lane:visual',
@@ -153,30 +152,8 @@ export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificatio
         lineKind: 'release_backend_real',
         defaultFailureClass: 'infra_setup_failure',
         dependsOn: ['gate-default', 'lane-visual'],
-        evidenceHints: [
-          '<campaign-root>/gate-release/native/result.json',
-          '<campaign-root>/gate-release/backend-real-visual/review.md',
-          '<campaign-root>/gate-release/backend-real-visual/ux-traces',
-        ],
-        evidenceChecks: [
-          {
-            id: 'backend_real_native_result',
-            path: '<campaign-root>/gate-release/native/result.json',
-            kind: 'file',
-          },
-          {
-            id: 'backend_real_visual_review',
-            path: '<campaign-root>/gate-release/backend-real-visual/review.md',
-            kind: 'file',
-          },
-          {
-            id: 'backend_real_ux_trace_reviews',
-            path: '<campaign-root>/gate-release/backend-real-visual/ux-traces',
-            kind: 'recursive_file',
-            fileName: 'review.md',
-            minCount: 1,
-          },
-        ],
+        evidenceHints: findCurrentGateDefinitionById('gate-release')?.campaignEvidenceArtifacts ?? [],
+        evidenceChecks: campaignEvidenceChecks('gateRelease'),
         nativeResult: {
           gateId: 'lane-backend-real-release',
           npmScript: 'lane:backend-real:release',
@@ -193,24 +170,8 @@ export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificatio
         lineKind: 'demo_rehearsal',
         defaultFailureClass: 'infra_setup_failure',
         dependsOn: ['gate-release'],
-        evidenceHints: [
-          '<campaign-root>/lane-demo-rehearsal/native/result.json',
-          '<campaign-root>/lane-demo-rehearsal/scenario/reports',
-        ],
-        evidenceChecks: [
-          {
-            id: 'demo_rehearsal_native_result',
-            path: '<campaign-root>/lane-demo-rehearsal/native/result.json',
-            kind: 'file',
-          },
-          {
-            id: 'demo_rehearsal_report',
-            path: '<campaign-root>/lane-demo-rehearsal/scenario/reports',
-            kind: 'recursive_file',
-            fileName: '.md',
-            minCount: 1,
-          },
-        ],
+        evidenceHints: findCurrentGateDefinitionById('lane-demo-rehearsal')?.campaignEvidenceArtifacts ?? [],
+        evidenceChecks: campaignEvidenceChecks('laneDemoRehearsal'),
         nativeResult: {
           gateId: 'lane-demo-rehearsal',
           npmScript: 'lane:demo-rehearsal',
@@ -227,24 +188,8 @@ export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificatio
         lineKind: 'cluster_rehearsal',
         defaultFailureClass: 'infra_setup_failure',
         dependsOn: ['gate-release'],
-        evidenceHints: [
-          '<campaign-root>/lane-cluster-rehearsal/native/result.json',
-          '<campaign-root>/lane-cluster-rehearsal/scenario/reports',
-        ],
-        evidenceChecks: [
-          {
-            id: 'cluster_rehearsal_native_result',
-            path: '<campaign-root>/lane-cluster-rehearsal/native/result.json',
-            kind: 'file',
-          },
-          {
-            id: 'cluster_rehearsal_report',
-            path: '<campaign-root>/lane-cluster-rehearsal/scenario/reports',
-            kind: 'recursive_file',
-            fileName: '.md',
-            minCount: 1,
-          },
-        ],
+        evidenceHints: findCurrentGateDefinitionById('lane-cluster-rehearsal')?.campaignEvidenceArtifacts ?? [],
+        evidenceChecks: campaignEvidenceChecks('laneClusterRehearsal'),
         nativeResult: {
           gateId: 'lane-cluster-rehearsal',
           npmScript: 'lane:cluster-rehearsal',
@@ -268,7 +213,7 @@ export const CURRENT_VERIFICATION_CAMPAIGN_MANIFEST: readonly CurrentVerificatio
           'lane-demo-rehearsal',
           'lane-cluster-rehearsal',
         ],
-        evidenceHints: ['<campaign-root>'],
+        evidenceHints: CURRENT_RELEASE_FULL_CAMPAIGN_EVIDENCE_ARTIFACTS,
         evidenceChecks: [
           {
             id: 'campaign_root',

@@ -26,7 +26,8 @@
       "sceneId": "system-workspaces",
       "route": "/en-US/system/workspaces",
       "stableMarkers": [
-        "system-workspaces__heading"
+        "system-workspaces__list",
+        "system-workspaces__new-workspace"
       ]
     },
     {
@@ -182,7 +183,7 @@
       "sceneId": "system-workspaces",
       "intent": "Review system workspaces",
       "action": "Review system workspaces",
-      "target": "system-workspaces__heading",
+      "target": "system-workspaces__list",
       "expectedFeedback": "工作区清单与创建入口",
       "note": "工作区清单与创建入口",
       "evidence": [
@@ -195,7 +196,7 @@
       "sceneId": "system-workspaces",
       "intent": "Review workspace editor",
       "action": "Review workspace editor",
-      "target": "system-workspaces__heading",
+      "target": "system-workspaces__list",
       "expectedFeedback": "新工作区创建并发布后的 system 管理侧工作区清单",
       "note": "新工作区创建并发布后的 system 管理侧工作区清单",
       "evidence": [

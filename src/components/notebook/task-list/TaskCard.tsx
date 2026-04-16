@@ -24,6 +24,8 @@ export function TaskCard(args: {
   onClick: () => void;
 }) {
   const { t, task, onClick } = args;
+  const agentPresenceLabel = getTaskPresenceLabel(t, task.agent_presence);
+  const agentPresenceVariant = getTaskPresenceVariant(task.agent_presence);
 
   return (
     <button
@@ -37,9 +39,11 @@ export function TaskCard(args: {
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-2 min-w-0">
             <h3 className="text-sm md:text-[15px] font-semibold text-foreground truncate">{task.title}</h3>
-            <Badge variant={getTaskPresenceVariant(task.agent_presence)} className="text-[11px]">
-              {getTaskPresenceLabel(t, task.agent_presence)}
-            </Badge>
+            {agentPresenceLabel && agentPresenceVariant ? (
+              <Badge variant={agentPresenceVariant} className="text-[11px]">
+                {agentPresenceLabel}
+              </Badge>
+            ) : null}
             {task.run_state === 'running' ? (
               <Badge variant="secondary" className="text-[11px]">{t('run_running')}</Badge>
             ) : null}

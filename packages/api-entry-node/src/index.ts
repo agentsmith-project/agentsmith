@@ -116,6 +116,8 @@ export function createNodeApiServer(
     await gatewayReconcileLoop.stop();
     ACTIVE_CHAT_STREAMS.clear();
     await deps.fileLibraryGatewayManager?.shutdown?.();
+    await deps.notebookTerminalService.shutdown?.();
+    await deps.agentExecutionService.shutdown?.();
     await lifecycle?.shutdown?.();
   };
 

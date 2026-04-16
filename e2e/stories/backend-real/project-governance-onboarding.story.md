@@ -29,7 +29,8 @@
       "sceneId": "system-workspaces",
       "route": "/en-US/system/workspaces",
       "stableMarkers": [
-        "system-workspaces__heading"
+        "system-workspaces__list",
+        "system-workspaces__new-workspace"
       ]
     },
     {
@@ -87,7 +88,7 @@
       "sceneId": "system-workspaces",
       "intent": "Create and publish a workspace.",
       "action": "Create and publish workspace",
-      "target": "system-workspaces__heading",
+      "target": "system-workspaces__new-workspace",
       "expectedFeedback": "新工作区创建并发布完成",
       "note": "新工作区创建并发布完成",
       "evidence": [

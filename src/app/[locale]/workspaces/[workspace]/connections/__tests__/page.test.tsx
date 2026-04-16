@@ -101,6 +101,8 @@ describe('WorkspaceConnectionsPage', () => {
     });
 
     expect(screen.getByTestId('workspace-connections__feishu-connect')).toBeDisabled();
+    expect(screen.getByTestId('workspace-connections__feishu-connect')).not.toHaveClass('bg-foreground');
+    expect(screen.getByTestId('workspace-connections__open-projects')).not.toHaveClass('bg-foreground');
     expect(screen.getByTestId('workspace-connections__open-projects')).toHaveAttribute(
       'href',
       '/en-US/workspaces/ws_1/projects',
@@ -228,5 +230,79 @@ describe('WorkspaceConnectionsPage', () => {
 
     expect(screen.queryByText('workspace_feishu_reauth_required_title')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'refresh_connection' })).not.toBeDisabled();
+  });
+
+  it('uses primary Feishu action only when an enabled workspace still needs a personal connection', async () => {
+    mockGetFeishuIntegration.mockResolvedValue({
+      id: 'workspace_feishu:ws_1',
+      workspace_id: 'ws_1',
+      provider: 'feishu',
+      status: 'enabled',
+      app_id: 'app_123',
+      redirect_uri: 'http://localhost/callback',
+      verified_at: null,
+      verified_by_user_id: null,
+      verified_by_email: null,
+      last_error: null,
+      created_at: '2026-03-19T00:00:00.000Z',
+      updated_at: '2026-03-19T00:00:00.000Z',
+      has_app_secret: true,
+    });
+    mockListConnections.mockResolvedValue([]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('workspace-connections__feishu-connect')).toHaveClass('bg-foreground');
+    });
+    expect(screen.getByTestId('workspace-connections__open-projects')).not.toHaveClass('bg-foreground');
+  });
+
+  it('keeps reconnect secondary when Feishu is already connected', async () => {
+    mockGetFeishuIntegration.mockResolvedValue({
+      id: 'workspace_feishu:ws_1',
+      workspace_id: 'ws_1',
+      provider: 'feishu',
+      status: 'enabled',
+      app_id: 'app_123',
+      redirect_uri: 'http://localhost/callback',
+      verified_at: null,
+      verified_by_user_id: null,
+      verified_by_email: null,
+      last_error: null,
+      created_at: '2026-03-19T00:00:00.000Z',
+      updated_at: '2026-03-19T00:00:00.000Z',
+      has_app_secret: true,
+    });
+    mockListConnections.mockResolvedValue([
+      {
+        id: 'uec_connected',
+        provider: 'feishu',
+        workspace_id: 'ws_1',
+        status: 'connected',
+        reauth_reason: null,
+        missing_scopes: null,
+        last_error: null,
+        account_identity: {
+          external_email: 'visual.tester@example.com',
+          external_name: 'Visual Tester',
+        },
+        last_refreshed_at: '2026-03-19T00:00:00.000Z',
+      },
+    ]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('workspace-connections__feishu-connect')).toHaveTextContent('workspace_feishu_reconnect');
+    });
+    expect(screen.getByTestId('workspace-connections__last-refresh-value')).toHaveTextContent(
+      'Mar 19, 2026, 12:00 AM UTC',
+    );
+    expect(screen.getByTestId('workspace-connections__last-refresh-value')).not.toHaveTextContent(
+      '2026-03-19T00:00:00.000Z',
+    );
+    expect(screen.getByTestId('workspace-connections__feishu-connect')).not.toHaveClass('bg-foreground');
+    expect(screen.getByTestId('workspace-connections__open-projects')).not.toHaveClass('bg-foreground');
   });
 });

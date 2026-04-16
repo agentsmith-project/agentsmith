@@ -16,6 +16,179 @@ else
   export NODE_OPTIONS="--max-old-space-size=${DEFAULT_MAX_OLD_SPACE_SIZE}"
 fi
 
+next_dev_live_process_identity() {
+  local pid="$1"
+  node - <<'NODE' "${pid}"
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+
+const pid = Number.parseInt(process.argv[2] ?? '', 10);
+if (!Number.isFinite(pid) || pid <= 0) {
+  process.exit(1);
+}
+
+function linuxIdentity(targetPid) {
+  try {
+    const bootId = fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+    const statRaw = fs.readFileSync(`/proc/${targetPid}/stat`, 'utf8');
+    const closeParen = statRaw.lastIndexOf(')');
+    if (!bootId || closeParen === -1) {
+      return null;
+    }
+    const trailing = statRaw.slice(closeParen + 2).trim().split(/\s+/);
+    const startTime = trailing[19];
+    if (!startTime) {
+      return null;
+    }
+    return {
+      token: `linux:boot=${bootId}:start=${startTime}`,
+      source: 'linux_boot_id_proc_stat',
+    };
+  } catch {
+    return null;
+  }
+}
+
+const linux = process.platform === 'linux' ? linuxIdentity(pid) : null;
+if (linux) {
+  process.stdout.write(`${linux.token}|${linux.source}\n`);
+  process.exit(0);
+}
+
+const ps = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+  encoding: 'utf8',
+  stdio: ['ignore', 'pipe', 'ignore'],
+});
+const startedAt = String(ps.stdout ?? '').trim();
+if (!startedAt) {
+  process.exit(1);
+}
+process.stdout.write(`${startedAt}|ps_lstart_raw\n`);
+NODE
+}
+
+next_dev_classify_existing_process_owner() {
+  local pid_from_file state_file parsed status pid token token_source kind port identity current_token
+  if [[ -z "${NEXT_DEV_PID_FILE:-}" ]]; then
+    printf 'missing|pid_file_unconfigured\n'
+    return 0
+  fi
+
+  pid_from_file="$(cat "${NEXT_DEV_PID_FILE}" 2>/dev/null || true)"
+  if [[ -z "${pid_from_file}" ]]; then
+    printf 'missing|tracked_pid_missing\n'
+    return 0
+  fi
+
+  state_file="${NEXT_DEV_PROCESS_STATE_FILE:-}"
+  if [[ -n "${state_file}" && -f "${state_file}" ]]; then
+    parsed="$(
+      node - <<'NODE' "${state_file}" "${NEXT_DEV_PROCESS_KIND:-web}" "${NEXT_DEV_PORT:-}"
+const fs = require('node:fs');
+const [file, expectedKind, expectedPortRaw] = process.argv.slice(2);
+const expectedPort = expectedPortRaw ? Number.parseInt(expectedPortRaw, 10) : null;
+let payload;
+try {
+  payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+} catch {
+  process.exit(1);
+}
+const pid = Number.parseInt(String(payload?.pid ?? ''), 10);
+const port = Number.parseInt(String(payload?.port ?? ''), 10);
+if (
+  payload?.schema_version !== 1
+  || payload?.kind !== expectedKind
+  || !Number.isFinite(pid)
+  || pid <= 0
+  || !Number.isFinite(port)
+  || (Number.isFinite(expectedPort) && port !== expectedPort)
+  || typeof payload?.process_identity?.token !== 'string'
+  || typeof payload?.process_identity?.source !== 'string'
+  || typeof payload?.cwd !== 'string'
+  || typeof payload?.command !== 'string'
+) {
+  process.exit(1);
+}
+process.stdout.write([
+  'valid',
+  String(pid),
+  payload.process_identity.token,
+  payload.process_identity.source,
+  payload.kind,
+  String(port),
+].join('\t'));
+NODE
+    )" || {
+      if kill -0 "${pid_from_file}" >/dev/null 2>&1; then
+        printf 'unverified|tracked_state_invalid|%s\n' "${pid_from_file}"
+      else
+        printf 'stale|tracked_state_invalid_pid_missing|%s\n' "${pid_from_file}"
+      fi
+      return 0
+    }
+    IFS=$'\t' read -r status pid token token_source kind port <<< "${parsed}"
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      printf 'stale|tracked_pid_missing|%s\n' "${pid}"
+      return 0
+    fi
+    identity="$(next_dev_live_process_identity "${pid}" 2>/dev/null || true)"
+    IFS='|' read -r current_token _ <<< "${identity}"
+    if [[ -z "${current_token}" || "${current_token}" != "${token}" ]]; then
+      printf 'unverified|tracked_pid_reused|%s\n' "${pid}"
+      return 0
+    fi
+    printf 'current_active|tracked_next_dev_%s|%s|%s\n' "${kind}" "${pid}" "${port}"
+    return 0
+  fi
+
+  if kill -0 "${pid_from_file}" >/dev/null 2>&1; then
+    printf 'unverified|tracked_pid_without_process_state|%s\n' "${pid_from_file}"
+    return 0
+  fi
+  printf 'stale|tracked_pid_missing|%s\n' "${pid_from_file}"
+}
+
+next_dev_clear_stale_process_owner_state() {
+  [[ -z "${NEXT_DEV_PID_FILE:-}" ]] || rm -f "${NEXT_DEV_PID_FILE}"
+  [[ -z "${NEXT_DEV_PORT_FILE:-}" ]] || rm -f "${NEXT_DEV_PORT_FILE}"
+  [[ -z "${NEXT_DEV_PROCESS_STATE_FILE:-}" ]] || rm -f "${NEXT_DEV_PROCESS_STATE_FILE}"
+}
+
+next_dev_assert_no_existing_process_owner() {
+  local classification authority reason pid detail
+  classification="$(next_dev_classify_existing_process_owner)"
+  IFS='|' read -r authority reason pid detail <<< "${classification}"
+  case "${authority}" in
+    missing)
+      return 0
+      ;;
+    stale)
+      next_dev_clear_stale_process_owner_state
+      return 0
+      ;;
+    current_active)
+      cat >&2 <<EOF
+[next-dev-safe] active Next.js dev process already owns this workspace (${reason}, pid=${pid}, port=${detail:-unknown}).
+[next-dev-safe] Stop the existing dev server first, or run the owning lane cleanup command before starting another one.
+EOF
+      return 2
+      ;;
+    unverified)
+      cat >&2 <<EOF
+[next-dev-safe] unverified Next.js dev tracking state blocks startup (${reason}, pid=${pid:-unknown}).
+[next-dev-safe] Refusing to overwrite pid/state files because doing so can leave .next/types, tsconfig.json, and next-env.d.ts owned by different dev servers.
+EOF
+      return 2
+      ;;
+    *)
+      printf '[next-dev-safe] unrecognized process owner state: %s\n' "${classification}" >&2
+      return 2
+      ;;
+  esac
+}
+
+next_dev_assert_no_existing_process_owner
+
 running_processes="$(pgrep -af "next-server|next dev" || true)"
 if [[ -n "${running_processes}" ]]; then
   running_count="$(

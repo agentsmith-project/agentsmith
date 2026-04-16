@@ -5,6 +5,7 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/next-generated-root-state.sh"
 
 info() { echo "[chat-runtime-fast-gate] $*"; }
 
@@ -13,7 +14,12 @@ run_cmd() {
   (cd "${ROOT_DIR}" && eval "$*")
 }
 
-run_cmd "npx tsc --noEmit"
+run_typecheck_with_root_preflight() {
+  next_generated_root_prepare_source_safe_for_tsc
+  run_cmd "npx tsc --noEmit"
+}
+
+next_generated_root_with_source_contract_lock chat_runtime_typecheck run_typecheck_with_root_preflight
 
 run_cmd "npm run test:run -- \
   scripts/lib/next-generated-root-state.test.ts \

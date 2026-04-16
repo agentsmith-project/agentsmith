@@ -1,11 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import {
+  mapWorkspaceToPublicSummary,
   mapSystemWorkspaceToPublicConfig,
   mergeAvailableWorkspaceSummaries,
   resolvePublicWorkspaceConfig,
 } from '@/mocks/handlers/workspace';
 
 describe('workspace mock handler helpers', () => {
+  it('keeps public workspace directory summaries compact even when source records include timestamps', () => {
+    expect(mapWorkspaceToPublicSummary({
+      id: 'ws_public',
+      name: 'Public Workspace',
+      created_at: '2026-03-01T00:00:00.000Z',
+      updated_at: 'not-a-date',
+    })).toEqual({
+      id: 'ws_public',
+      name: 'Public Workspace',
+    });
+  });
+
   it('prefers ready system workspace summaries over fixture duplicates', () => {
     const merged = mergeAvailableWorkspaceSummaries({
       fixtureWorkspaces: [

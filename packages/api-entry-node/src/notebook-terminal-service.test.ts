@@ -1324,6 +1324,63 @@ describe('NotebookTerminalService', () => {
     ).rejects.toThrow('task_terminal_session_limit_reached');
   });
 
+  it('does not count failed terminal history toward the per-task live session cap', async () => {
+    const cache = new InMemoryCache();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+
+    for (let index = 0; index < 3; index += 1) {
+      const created = await service.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        agentId: 'agent_1',
+        runnerSessionId: 'task_1',
+        userId: 'user_1',
+        cols: 80,
+        rows: 24,
+      });
+      (service as unknown as {
+        finishSession: (
+          sessionId: string,
+          status: 'closed' | 'failed',
+          closeReason?: string,
+          exitCode?: number | null,
+        ) => void;
+      }).finishSession(created.sessionId, 'failed', 'runner_crashed');
+    }
+
+    await expect(
+      service.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        agentId: 'agent_1',
+        runnerSessionId: 'task_1',
+        userId: 'user_1',
+        cols: 100,
+        rows: 30,
+      }),
+    ).resolves.toMatchObject({
+      sessionId: expect.stringMatching(/^term_/),
+    });
+
+    await expect(
+      service.listSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+      }),
+    ).resolves.toMatchObject([
+      { status: 'failed', closeReason: 'runner_crashed' },
+      { status: 'failed', closeReason: 'runner_crashed' },
+      { status: 'failed', closeReason: 'runner_crashed' },
+      { status: 'pending' },
+    ]);
+  });
+
   it('reconciles persisted pending terminal sessions to failed truth after service reload', async () => {
     const cache = new InMemoryCache();
     const firstService = new NotebookTerminalService(cache, {
@@ -1368,7 +1425,7 @@ describe('NotebookTerminalService', () => {
     ]);
   });
 
-  it('keeps the persisted task session cap enforced across service reload without phantom sessions', async () => {
+  it('releases the live session cap after service reload reconciles persisted sessions to failed history', async () => {
     const cache = new InMemoryCache();
     const firstService = new NotebookTerminalService(cache, {
       dispatchTerminalSession: vi.fn(),
@@ -1404,20 +1461,93 @@ describe('NotebookTerminalService', () => {
         cols: 120,
         rows: 40,
       }),
-    ).rejects.toThrow('task_terminal_session_limit_reached');
+    ).resolves.toMatchObject({
+      sessionId: expect.stringMatching(/^term_/),
+    });
+
+    const sessions = await reloadedService.listSessionsForTask({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      userId: 'user_1',
+    });
+    expect(sessions).toMatchObject([
+      ...createdIds.map((id) => ({
+        id,
+        status: 'failed',
+        closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON,
+      })),
+      { status: 'pending' },
+    ]);
+    for (const id of createdIds) {
+      await expect(reloadedService.getSession(id)).resolves.toMatchObject({
+        id,
+        status: 'failed',
+        closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON,
+      });
+    }
+  });
+
+  it('prunes closed terminal ids from the task live-session index before enforcing quota', async () => {
+    const cache = new InMemoryCache();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+
+    const createdIds: string[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const created = await service.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        agentId: 'agent_1',
+        runnerSessionId: 'task_1',
+        userId: 'user_1',
+        cols: 80,
+        rows: 24,
+      });
+      createdIds.push(created.sessionId);
+      (service as unknown as {
+        finishSession: (
+          sessionId: string,
+          status: 'closed' | 'failed',
+          closeReason?: string,
+          exitCode?: number | null,
+        ) => void;
+      }).finishSession(created.sessionId, 'closed', 'process_exited', 0);
+    }
 
     await expect(
-      reloadedService.listSessionsForTask({
+      service.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        agentId: 'agent_1',
+        runnerSessionId: 'task_1',
+        userId: 'user_1',
+        cols: 100,
+        rows: 30,
+      }),
+    ).resolves.toMatchObject({
+      sessionId: expect.stringMatching(/^term_/),
+    });
+
+    for (const id of createdIds) {
+      await expect(service.getSession(id)).resolves.toMatchObject({
+        id,
+        status: 'closed',
+      });
+    }
+    await expect(
+      service.listSessionsForTask({
         workspaceId: 'ws_default',
         projectId: 'proj_1',
         taskId: 'task_1',
         userId: 'user_1',
       }),
-    ).resolves.toMatchObject(createdIds.map((id) => ({
-      id,
-      status: 'failed',
-      closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON,
-    })));
+    ).resolves.toMatchObject([
+      { status: 'pending' },
+    ]);
   });
 
   it('lets a reloaded service clean up a persisted failed session to clear backend truth without runner close replay', async () => {

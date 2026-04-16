@@ -1,7 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { CURRENT_WORKFLOW_DOCUMENT_FILES } from '../governance/current-workflow-manifest';
+import YAML from 'yaml';
+import {
+  CURRENT_CI_WORKFLOW_MANIFEST,
+  CURRENT_WORKFLOW_DOCUMENT_FILES,
+} from '../governance/current-workflow-manifest';
 
 const rootDir = process.cwd();
 
@@ -55,6 +59,102 @@ function listTrackedFiles(): string[] {
     .filter((file) => currentPathFiles.has(file));
 }
 
+function listTrackedWorkflowFiles(): string[] {
+  const stdout = execFileSync('git', ['ls-files', '.github/workflows/*.yml'], {
+    cwd: rootDir,
+    encoding: 'utf8',
+  });
+
+  return stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .sort();
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function parseWorkflow(relativePath: string): Record<string, unknown> {
+  return asRecord(YAML.parse(readFileSync(path.join(rootDir, relativePath), 'utf8')) as unknown);
+}
+
+function collectWorkflowTriggers(parsedWorkflow: Record<string, unknown>): string[] {
+  const rawOn = parsedWorkflow.on ?? parsedWorkflow.true;
+  if (typeof rawOn === 'string') {
+    return [rawOn];
+  }
+  if (Array.isArray(rawOn)) {
+    return asStringArray(rawOn).sort();
+  }
+  return Object.keys(asRecord(rawOn)).sort();
+}
+
+function collectWorkflowJobIds(parsedWorkflow: Record<string, unknown>): string[] {
+  return Object.keys(asRecord(parsedWorkflow.jobs)).sort();
+}
+
+function collectJobRunCommands(parsedWorkflow: Record<string, unknown>, jobId: string): string {
+  const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
+  const steps = Array.isArray(job.steps) ? job.steps : [];
+
+  return steps
+    .map((step) => asRecord(step).run)
+    .filter((run): run is string => typeof run === 'string')
+    .join('\n');
+}
+
+function collectJobArtifactPaths(parsedWorkflow: Record<string, unknown>, jobId: string): string[] {
+  const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
+  const steps = Array.isArray(job.steps) ? job.steps : [];
+  const paths: string[] = [];
+
+  for (const step of steps) {
+    const stepRecord = asRecord(step);
+    if (stepRecord.uses !== 'actions/upload-artifact@v4') {
+      continue;
+    }
+
+    const withRecord = asRecord(stepRecord.with);
+    if (typeof withRecord.path !== 'string') {
+      continue;
+    }
+
+    paths.push(
+      ...withRecord.path
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean),
+    );
+  }
+
+  return paths.sort();
+}
+
+function sorted(values: readonly string[]): string[] {
+  return [...values].sort();
+}
+
+function assertArrayEqual(
+  actual: readonly string[],
+  expected: readonly string[],
+  message: string,
+  failures: string[],
+): void {
+  const actualText = sorted(actual).join('\n');
+  const expectedText = sorted(expected).join('\n');
+  if (actualText !== expectedText) {
+    failures.push(`${message}; expected [${sorted(expected).join(', ')}], got [${sorted(actual).join(', ')}]`);
+  }
+}
+
 const failures: string[] = [];
 
 for (const relativePath of listTrackedFiles()) {
@@ -75,6 +175,82 @@ for (const relativePath of listTrackedFiles()) {
     }
     failures.push(`${relativePath}: ${rule.message}`);
   }
+}
+
+assertArrayEqual(
+  CURRENT_CI_WORKFLOW_MANIFEST.map((workflow) => workflow.path),
+  listTrackedWorkflowFiles(),
+  'active GitHub workflow files must be declared in CURRENT_CI_WORKFLOW_MANIFEST',
+  failures,
+);
+
+for (const workflow of CURRENT_CI_WORKFLOW_MANIFEST) {
+  const parsedWorkflow = parseWorkflow(workflow.path);
+  const workflowName = parsedWorkflow.name;
+  if (workflowName !== workflow.workflowName) {
+    failures.push(`${workflow.path} workflow name must match CI workflow manifest: ${workflow.workflowName}`);
+  }
+
+  assertArrayEqual(
+    workflow.triggers,
+    collectWorkflowTriggers(parsedWorkflow),
+    `${workflow.path} triggers must match CI workflow manifest`,
+    failures,
+  );
+
+  assertArrayEqual(
+    workflow.jobs.map((job) => job.id),
+    collectWorkflowJobIds(parsedWorkflow),
+    `${workflow.path} jobs must match CI workflow manifest`,
+    failures,
+  );
+
+  for (const job of workflow.jobs) {
+    assertArrayEqual(
+      job.artifactPaths,
+      collectJobArtifactPaths(parsedWorkflow, job.id),
+      `${workflow.path}:${job.id} artifact paths must match CI workflow manifest`,
+      failures,
+    );
+
+    if (job.requiresSecrets && job.requiredSecrets.length === 0) {
+      failures.push(`${workflow.path}:${job.id} requires secrets but declares no requiredSecrets`);
+    }
+    if (job.evidenceRequired && job.artifactPaths.length === 0) {
+      failures.push(`${workflow.path}:${job.id} requires evidence but publishes no artifacts`);
+    }
+    if (!job.gateId && !job.laneId && job.role !== 'integration_lane' && job.role !== 'contract_gate') {
+      failures.push(`${workflow.path}:${job.id} must declare a gateId or laneId for traceable CI truth`);
+    }
+  }
+}
+
+const engineeringWorkflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
+  (workflow) => workflow.path === '.github/workflows/engineering-gate.yml',
+);
+const engineeringJob = engineeringWorkflow?.jobs.find((job) => job.id === 'engineering-gate');
+if (engineeringWorkflow?.role !== 'backend_real_regression' || engineeringWorkflow.scheduled !== true) {
+  failures.push('engineering-gate.yml must be modeled as a scheduled backend-real regression workflow');
+}
+if (engineeringJob?.laneId !== 'lane-backend-real-core') {
+  failures.push('engineering-gate.yml must bind its scheduled job to lane-backend-real-core');
+}
+if (!engineeringJob?.artifactPaths.includes('artifacts/backend-real/runs/**')) {
+  failures.push('engineering-gate.yml must publish run-scoped backend-real evidence');
+}
+if (!engineeringJob?.artifactPaths.includes('artifacts/mock-lane/runs/**')) {
+  failures.push('engineering-gate.yml must publish run-scoped mock-lane evidence produced by backend-real core');
+}
+
+const engineeringRunCommands = collectJobRunCommands(
+  parseWorkflow('.github/workflows/engineering-gate.yml'),
+  'engineering-gate',
+);
+if (!engineeringRunCommands.includes('npm run lane:backend-real:core')) {
+  failures.push('engineering-gate.yml must run npm run lane:backend-real:core');
+}
+if (engineeringRunCommands.includes('make verify-governance')) {
+  failures.push('engineering-gate.yml must not claim backend-real coverage while running make verify-governance');
 }
 
 if (failures.length > 0) {

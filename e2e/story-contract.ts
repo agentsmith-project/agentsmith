@@ -48,6 +48,17 @@ export const STORY_VISUAL_REVIEW_THEME_VALUES = ['light', 'dark', 'default'] as 
 export type StoryVisualReviewTheme = (typeof STORY_VISUAL_REVIEW_THEME_VALUES)[number];
 export const STORY_VISUAL_REVIEW_VIEWPORT_VALUES = ['default', 'ultrawide'] as const;
 export type StoryVisualReviewViewport = (typeof STORY_VISUAL_REVIEW_VIEWPORT_VALUES)[number];
+export const STORY_VISUAL_REVIEW_UX_STATE_VALUES = ['happy', 'degraded', 'diagnostic'] as const;
+export type StoryVisualReviewUxState = (typeof STORY_VISUAL_REVIEW_UX_STATE_VALUES)[number];
+
+export type StoryRuntimeVisualSemanticAssertionsDefinition = {
+  forbiddenVisibleText?: readonly string[];
+  forbiddenVisibleTextPatterns?: readonly string[];
+  allowedDefaultForbiddenVisibleText?: readonly string[];
+  requiredViewportTestIds?: readonly string[];
+  primaryActionTestIds?: readonly string[];
+  maxProminentActions?: number;
+};
 
 export type StoryRuntimeVisualReviewSceneDefinition = {
   sceneId: string;
@@ -60,7 +71,9 @@ export type StoryRuntimeVisualReviewSceneDefinition = {
   screenshotBaseName?: string;
   themes?: readonly StoryVisualReviewTheme[];
   viewport?: StoryVisualReviewViewport;
+  uxState?: StoryVisualReviewUxState;
   setupNotes?: readonly string[];
+  semanticAssertions?: StoryRuntimeVisualSemanticAssertionsDefinition;
 };
 
 export type StorySceneDefinition = {
@@ -153,6 +166,10 @@ function hashStableObject(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function validateNonEmptyText(field: string, value: string, storyId: string) {
   if (!value.trim()) {
     throw new Error(`story ${storyId} has empty ${field}`);
@@ -170,6 +187,17 @@ function validateUniqueList(field: string, values: readonly string[], storyId: s
   }
 }
 
+function validateRepoRelativeCodeRef(codeRef: string, storyId: string, sceneId: string) {
+  if (
+    codeRef.startsWith('/')
+    || codeRef.includes('\\')
+    || codeRef.split('/').includes('..')
+    || /^[a-z][a-z0-9+.-]*:/i.test(codeRef)
+  ) {
+    throw new Error(`story ${storyId} visual review scene ${sceneId} has unsafe code ref: ${codeRef}`);
+  }
+}
+
 function validateVisualReviewScene(scene: StoryRuntimeVisualReviewSceneDefinition, storyId: string) {
   validateNonEmptyText('visual review scene id', scene.sceneId, storyId);
   validateNonEmptyText('visual review scenario id', scene.scenarioId, storyId);
@@ -181,6 +209,9 @@ function validateVisualReviewScene(scene: StoryRuntimeVisualReviewSceneDefinitio
     throw new Error(`story ${storyId} visual review scene ${scene.sceneId} must define code refs`);
   }
   validateUniqueList('visual review code ref', scene.codeRefs, storyId);
+  for (const codeRef of scene.codeRefs) {
+    validateRepoRelativeCodeRef(codeRef, storyId, scene.sceneId);
+  }
   if (!STORY_VISUAL_REVIEW_CAPTURE_VALUES.includes(scene.capture)) {
     throw new Error(`story ${storyId} has invalid visual review capture mode: ${scene.capture}`);
   }
@@ -204,8 +235,89 @@ function validateVisualReviewScene(scene: StoryRuntimeVisualReviewSceneDefinitio
   if (scene.viewport !== undefined && !STORY_VISUAL_REVIEW_VIEWPORT_VALUES.includes(scene.viewport)) {
     throw new Error(`story ${storyId} has invalid visual review viewport: ${scene.viewport}`);
   }
+  if (scene.uxState !== undefined && !STORY_VISUAL_REVIEW_UX_STATE_VALUES.includes(scene.uxState)) {
+    throw new Error(`story ${storyId} has invalid visual review UX state: ${scene.uxState}`);
+  }
   if (scene.setupNotes !== undefined) {
     validateUniqueList('visual review setup note', scene.setupNotes, storyId);
+  }
+  validateVisualSemanticAssertions(scene.semanticAssertions, storyId, scene.sceneId);
+}
+
+function validateVisualSemanticAssertions(
+  assertions: StoryRuntimeVisualSemanticAssertionsDefinition | undefined,
+  storyId: string,
+  sceneId: string,
+) {
+  if (assertions === undefined) {
+    return;
+  }
+  if (!isRecord(assertions)) {
+    throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertions must be an object`);
+  }
+  if (assertions.forbiddenVisibleText !== undefined) {
+    if (!Array.isArray(assertions.forbiddenVisibleText)) {
+      throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertion forbidden visible text must be a list`);
+    }
+    validateUniqueList('visual semantic assertion forbidden visible text', assertions.forbiddenVisibleText, storyId);
+  }
+  if (assertions.forbiddenVisibleTextPatterns !== undefined) {
+    if (!Array.isArray(assertions.forbiddenVisibleTextPatterns)) {
+      throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertion forbidden visible text pattern must be a list`);
+    }
+    validateUniqueList(
+      'visual semantic assertion forbidden visible text pattern',
+      assertions.forbiddenVisibleTextPatterns,
+      storyId,
+    );
+    for (const pattern of assertions.forbiddenVisibleTextPatterns) {
+      try {
+        new RegExp(pattern);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `story ${storyId} visual review scene ${sceneId} has invalid forbidden visible text pattern: ${pattern} (${reason})`,
+        );
+      }
+    }
+  }
+  if (assertions.allowedDefaultForbiddenVisibleText !== undefined) {
+    if (!Array.isArray(assertions.allowedDefaultForbiddenVisibleText)) {
+      throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertion default override must be a list`);
+    }
+    validateUniqueList(
+      'visual semantic assertion allowed default forbidden visible text',
+      assertions.allowedDefaultForbiddenVisibleText,
+      storyId,
+    );
+  }
+  if (assertions.requiredViewportTestIds !== undefined) {
+    if (!Array.isArray(assertions.requiredViewportTestIds)) {
+      throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertion required viewport test ids must be a list`);
+    }
+    validateUniqueList(
+      'visual semantic assertion required viewport test id',
+      assertions.requiredViewportTestIds,
+      storyId,
+    );
+  }
+  if (assertions.primaryActionTestIds !== undefined) {
+    if (!Array.isArray(assertions.primaryActionTestIds)) {
+      throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertion primary action test ids must be a list`);
+    }
+    validateUniqueList(
+      'visual semantic assertion primary action test id',
+      assertions.primaryActionTestIds,
+      storyId,
+    );
+  }
+  if (assertions.maxProminentActions !== undefined) {
+    if (!Number.isInteger(assertions.maxProminentActions) || assertions.maxProminentActions < 0) {
+      throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertion max prominent actions must be a non-negative integer`);
+    }
+    if ((assertions.primaryActionTestIds?.length ?? 0) > assertions.maxProminentActions) {
+      throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertion primary action ids exceed max prominent actions`);
+    }
   }
 }
 
@@ -224,6 +336,10 @@ function validateRuntimeData(runtimeData: StoryRuntimeData | undefined, story: S
     validateVisualReviewScene(scene, story.storyId);
     if (!sceneIds.has(scene.sceneId)) {
       throw new Error(`story ${story.storyId} visual review scene ${scene.sceneId} references unknown story scene`);
+    }
+    const storyScene = story.scenes.find((entry) => entry.sceneId === scene.sceneId);
+    if (!storyScene || storyScene.stableMarkers.length === 0) {
+      throw new Error(`story ${story.storyId} visual review scene ${scene.sceneId} must define story-owned stable markers`);
     }
     if (visualSceneIds.has(scene.sceneId)) {
       throw new Error(`story ${story.storyId} has duplicate visual review scene id: ${scene.sceneId}`);

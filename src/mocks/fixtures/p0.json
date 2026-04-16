@@ -126,7 +126,7 @@
       "name": "Research Agent",
       "description": "Data analysis and research assistant",
       "mode": "internal",
-      "presence": "offline",
+      "presence": "managed",
       "status": "enabled",
       "interaction_kind": "notebook",
       "created_at": "2026-01-20T00:00:00Z",

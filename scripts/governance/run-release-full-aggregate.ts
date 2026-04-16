@@ -216,6 +216,20 @@ function validateEvidencePointer(
     );
     valid = false;
   }
+  if (evidence.evidence_topology !== 'campaign_root') {
+    pushContractDrift(
+      failures,
+      `Evidence pointer for campaign step ${step.id} evidence_topology must be campaign_root.`,
+    );
+    valid = false;
+  }
+  if (!samePath(evidence.campaign_root, campaignRoot)) {
+    pushContractDrift(
+      failures,
+      `Evidence pointer for campaign step ${step.id} campaign_root mismatch.`,
+    );
+    valid = false;
+  }
   if (!samePath(evidence.evidence_dir, stepDir(campaignRoot, step))) {
     pushContractDrift(
       failures,
@@ -514,6 +528,8 @@ function main(): void {
     schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
     step_id: terminalStep.id,
     gate_id: terminalStep.gateId,
+    evidence_topology: 'campaign_root',
+    campaign_root: resolve(campaignRoot),
     evidence_dir: terminalDir,
     required_paths: requiredPaths,
     generated_at: new Date().toISOString(),

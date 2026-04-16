@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures/test-base';
 import { waitForPageReady } from './utils/navigation';
-import { waitForWorkspaceLoginReady } from './utils/system-workspaces';
+import { waitForSystemWorkspacesReady, waitForWorkspaceLoginReady } from './utils/system-workspaces';
 
 async function loginAsSystemAdmin(page: import('@playwright/test').Page) {
   await page.goto('/en-US/system/login');
@@ -9,8 +9,7 @@ async function loginAsSystemAdmin(page: import('@playwright/test').Page) {
   await page.getByTestId('system-login__username').fill('mbos-admin');
   await page.getByTestId('system-login__password').fill('mbos-admin');
   await page.getByTestId('system-login__submit').click();
-  await page.waitForURL(/\/en-US\/system\/workspaces$/, { timeout: 15_000 });
-  await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
+  await waitForSystemWorkspacesReady(page);
 }
 
 async function openCreateWorkspace(page: import('@playwright/test').Page) {
@@ -148,7 +147,6 @@ test.describe('System Workspace Mainline', () => {
     await page.getByTestId('system-workspaces__draft-idp-client-id').fill('mainline-client');
     await page.getByTestId('system-workspaces__draft-idp-client-secret').fill('mainline-secret');
     await verifyIdentityProvider(page);
-    await page.getByTestId('system-workspace-create__next').click();
     await selectWorkspaceAdmin(page, 'dev-admin@example.com');
     await page.getByTestId('system-workspace-create__next').click();
     await page.getByTestId('system-workspace-create__create').click();
@@ -171,7 +169,7 @@ test.describe('System Workspace Mainline', () => {
     await page.getByTestId('workspace-login__email-input').fill(userEmail);
     await page.getByTestId('workspace-login__submit').click();
 
-    await page.waitForURL(new RegExp(`/en-US/workspaces/${workspaceId}$`), { timeout: 15_000 });
+    await page.waitForURL(new RegExp(`/en-US/workspaces/${workspaceId}/projects$`), { timeout: 15_000 });
     await expect(page.getByTestId('projects__page')).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: /projects/i })).toBeVisible();
 

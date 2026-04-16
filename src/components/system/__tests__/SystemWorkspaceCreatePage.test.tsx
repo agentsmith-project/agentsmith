@@ -59,7 +59,7 @@ describe('SystemWorkspaceCreatePage', () => {
     expect(screen.getByTestId('system-workspace-create__shell')).toHaveClass('bg-transparent');
     expect(screen.getByTestId('system-workspace-create__step-tracker')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspace-create__step--basics')).not.toHaveClass('bg-accent/10');
-    expect(screen.getByTestId('system-workspace-create__next')).toHaveClass('bg-foreground/94');
+    expect(screen.getByTestId('system-workspace-create__next')).toHaveClass('bg-foreground');
     expect(screen.getByTestId('system-workspace-create__next')).not.toHaveClass('bg-transparent');
     expect(screen.queryByTestId('system-workspaces__verify-idp')).not.toBeInTheDocument();
     fireEvent.change(screen.getByTestId('system-workspaces__draft-name'), {
@@ -99,7 +99,7 @@ describe('SystemWorkspaceCreatePage', () => {
     expect(screen.getByTestId('system-workspace-create__login-preview')).toHaveTextContent('/en-US/workspaces/ops_workspace/login');
     expect(screen.getByTestId('system-workspace-create__callback-preview')).toHaveTextContent('/en-US/workspaces/ops_workspace/login/callback');
     expect(screen.getByTestId('system-workspace-create__handoff-state')).toHaveTextContent('workspace_admin_bound_badge');
-    expect(screen.getByTestId('system-workspace-create__create')).toHaveClass('bg-foreground/94');
+    expect(screen.getByTestId('system-workspace-create__create')).toHaveClass('bg-foreground');
     fireEvent.click(screen.getByTestId('system-workspace-create__create'));
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/en-US/system/workspaces?workspace=ws_new'));

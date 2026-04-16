@@ -90,8 +90,35 @@ describe('current verification campaign manifest', () => {
     expect(releaseFull.steps.find((step) => step.id === 'gate-release')?.evidenceChecks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ path: '<campaign-root>/gate-release/backend-real-visual/review.md', kind: 'file' }),
-        expect.objectContaining({ path: '<campaign-root>/gate-release/backend-real-visual/ux-traces', kind: 'recursive_file' }),
+        expect.objectContaining({
+          id: 'backend_real_ux_trace_reviews',
+          path: '<campaign-root>/gate-release/backend-real-visual/ux-traces',
+          kind: 'recursive_file',
+          semantic: 'ux_trace_bundle',
+        }),
       ]),
     );
+  });
+
+  it('derives campaign evidence owner paths from the current gate campaign topology', () => {
+    const releaseFull = findCurrentVerificationCampaignById('release-full');
+    if (!releaseFull) {
+      throw new Error('Missing release-full campaign.');
+    }
+
+    for (const step of releaseFull.steps.filter((candidate) => candidate.workflowRole === 'evidence_owner')) {
+      const gate = findCurrentGateDefinitionById(step.gateId);
+
+      expect(gate?.campaignEvidenceArtifacts).toEqual(step.evidenceChecks.map((check) => check.path));
+      expect(gate?.campaignEvidenceArtifacts.length).toBeGreaterThan(0);
+      expect(gate?.campaignEvidenceArtifacts.every((path) => path.includes('<campaign-root>') || path.startsWith('e2e/'))).toBe(true);
+    }
+
+    const terminalStep = releaseFull.steps.find((step) => step.id === 'gate-release-full');
+    const terminalGate = findCurrentGateDefinitionById('gate-release-full');
+
+    expect(terminalStep?.evidenceHints).toEqual(terminalGate?.campaignEvidenceArtifacts);
+    expect(terminalGate?.standaloneEvidenceArtifacts).toEqual([]);
+    expect(terminalGate?.campaignEvidenceArtifacts.every((path) => path.startsWith('<campaign-root>'))).toBe(true);
   });
 });

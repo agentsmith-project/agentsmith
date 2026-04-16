@@ -1,27 +1,55 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-function runRunnerHealthState(args: {
+type RunnerHealthFixtureArgs = {
   logContent: string;
   pidValue: number;
   readyFileContent?: string;
-}): string {
+  healthContent?: string;
+  maxAgeSeconds?: number;
+};
+
+function withRunnerHealthFixture<T>(
+  args: RunnerHealthFixtureArgs,
+  callback: (fixture: {
+    tempRoot: string;
+    backendRealRoot: string;
+    logFile: string;
+    pidFile: string;
+    readyFile: string;
+    healthFile: string;
+  }) => T,
+): T {
   const repoRoot = process.cwd();
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'local-manual-runner-health-'));
   const backendRealRoot = path.join(tempRoot, 'backend-real', 'current');
   const logFile = path.join(tempRoot, 'runner.log');
   const pidFile = path.join(tempRoot, 'runner.pid');
   const readyFile = path.join(tempRoot, 'runner.ready');
+  const healthFile = path.join(tempRoot, 'runner.health.json');
 
   try {
+    mkdirSync(backendRealRoot, { recursive: true });
     writeFileSync(logFile, args.logContent, 'utf8');
     writeFileSync(pidFile, `${args.pidValue}\n`, 'utf8');
     writeFileSync(readyFile, `${args.readyFileContent ?? 'ready'}\n`, 'utf8');
+    if (args.healthContent !== undefined) {
+      writeFileSync(healthFile, args.healthContent, 'utf8');
+    }
 
-    return execFileSync(
+    return callback({ tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile });
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function runCommonSnippet(args: RunnerHealthFixtureArgs, snippet: string): string {
+  const repoRoot = process.cwd();
+  return withRunnerHealthFixture(args, ({ backendRealRoot, logFile, pidFile, readyFile, healthFile }) => (
+    execFileSync(
       'bash',
       [
         '-lc',
@@ -30,7 +58,12 @@ function runRunnerHealthState(args: {
           export ROOT_DIR="${repoRoot}"
           export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
           source "${repoRoot}/scripts/local-manual/common.sh"
-          RUNNER_LOG="${logFile}" RUNNER_PID_FILE="${pidFile}" RUNNER_READY_FILE="${readyFile}" runner_socket_health_state
+          RUNNER_LOG="${logFile}"
+          RUNNER_PID_FILE="${pidFile}"
+          RUNNER_READY_FILE="${readyFile}"
+          RUNNER_HEALTH_FILE="${healthFile}"
+          LOCAL_MANUAL_RUNNER_HEALTH_MAX_AGE_SEC="${args.maxAgeSeconds ?? 60}"
+          ${snippet}
         `,
       ],
       {
@@ -39,30 +72,85 @@ function runRunnerHealthState(args: {
         encoding: 'utf8',
         stdio: 'pipe',
       },
-    ).trim();
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-  }
+    ).trim()
+  ));
+}
+
+function runRunnerHealthState(args: RunnerHealthFixtureArgs): string {
+  return runCommonSnippet(args, 'runner_socket_health_state');
+}
+
+function runnerHealthArtifact(state: 'connected' | 'shutting_down' | 'disconnected' | 'stale', pid = process.pid) {
+  return JSON.stringify({
+    schema_version: 2,
+    contract: 'notebook-codex-runner.lifecycle.v1',
+    state,
+    pid,
+    observed_at: new Date().toISOString(),
+    source: 'local_manual_runner_health_monitor',
+    reason: `${state}_test`,
+  });
 }
 
 describe('local-manual runner health', () => {
-  it('reports connected when the runner process is alive and the latest socket log is connected', () => {
+  it('reports connected from a fresh runner health artifact even when logs are empty', () => {
     const state = runRunnerHealthState({
-      logContent: '[notebook-codex-runner] connected\n',
+      logContent: '',
       pidValue: process.pid,
+      healthContent: runnerHealthArtifact('connected'),
     });
 
     expect(state).toBe('connected');
   });
 
-  it('reports disconnected when the latest socket log is disconnected even if the ready file is present', () => {
+  it('reports shutting_down from a fresh runner health artifact instead of collapsing it to connected or disconnected', () => {
     const state = runRunnerHealthState({
-      logContent: '[notebook-codex-runner] connected\n[notebook-codex-runner] disconnected\n',
+      logContent: '[notebook-codex-runner] runner_state=connected reason=websocket_open\n',
+      pidValue: process.pid,
+      healthContent: runnerHealthArtifact('shutting_down'),
+    });
+
+    expect(state).toBe('shutting_down');
+  });
+
+  it('rejects an old connected log when no fresh health artifact exists', () => {
+    const state = runRunnerHealthState({
+      logContent: '[notebook-codex-runner] connected\n',
       pidValue: process.pid,
       readyFileContent: 'ready',
     });
 
+    expect(state).toBe('stale');
+  });
+
+  it('reports disconnected when the fresh health artifact says the socket is disconnected', () => {
+    const state = runRunnerHealthState({
+      logContent: '[notebook-codex-runner] connected\n[notebook-codex-runner] disconnected\n',
+      pidValue: process.pid,
+      readyFileContent: 'ready',
+      healthContent: runnerHealthArtifact('disconnected'),
+    });
+
     expect(state).toBe('disconnected');
+  });
+
+  it('reports disconnected when a connected health artifact is stale', () => {
+    const state = runRunnerHealthState({
+      logContent: '',
+      pidValue: process.pid,
+      readyFileContent: 'ready',
+      maxAgeSeconds: 1,
+      healthContent: JSON.stringify({
+        schema_version: 2,
+        contract: 'notebook-codex-runner.lifecycle.v1',
+        state: 'connected',
+        pid: process.pid,
+        observed_at: new Date(Date.now() - 60_000).toISOString(),
+        source: 'local_manual_runner_health_monitor',
+      }),
+    });
+
+    expect(state).toBe('stale');
   });
 
   it('reports disconnected when the runner pid is gone even if an old connected log remains', () => {
@@ -70,8 +158,85 @@ describe('local-manual runner health', () => {
       logContent: '[notebook-codex-runner] connected\n',
       pidValue: 99999999,
       readyFileContent: 'ready',
+      healthContent: runnerHealthArtifact('connected', 99999999),
     });
 
     expect(state).toBe('disconnected');
+  });
+
+  it('treats connected followed by shutting_down as shutting_down in the latest lifecycle log transition', () => {
+    const state = runCommonSnippet({
+      logContent: [
+        '[notebook-codex-runner] runner_state=connected reason=websocket_open',
+        '[notebook-codex-runner] shutting down (websocket_close)',
+      ].join('\n'),
+      pidValue: process.pid,
+    }, 'local_manual_runner_latest_socket_log_state');
+
+    expect(state).toBe('shutting_down');
+  });
+
+  it('writes a v2 shutting_down health artifact from a single monitor observation', () => {
+    const output = runCommonSnippet({
+      logContent: [
+        '[notebook-codex-runner] runner_state=connected reason=websocket_open',
+        '[notebook-codex-runner] runner_state=shutting_down reason=websocket_close',
+      ].join('\n'),
+      pidValue: process.pid,
+    }, `
+      local_manual_runner_health_monitor_once || true
+      node - <<'NODE' "\${RUNNER_HEALTH_FILE}"
+const fs = require('node:fs');
+const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+process.stdout.write([payload.schema_version, payload.state, payload.reason].join(':'));
+NODE
+    `);
+
+    expect(output).toBe('2:shutting_down:websocket_close');
+  });
+
+  it('restarts the local runner for a shutting_down socket and reports the actual four-state reason', () => {
+    const output = withRunnerHealthFixture({
+      logContent: '',
+      pidValue: process.pid,
+      healthContent: runnerHealthArtifact('shutting_down'),
+    }, ({ tempRoot, backendRealRoot, logFile, pidFile, readyFile, healthFile }) => {
+      const repoRoot = process.cwd();
+      const fakeStartRunner = path.join(tempRoot, 'scripts/local-manual/start-runner.sh');
+      mkdirSync(path.dirname(fakeStartRunner), { recursive: true });
+      writeFileSync(
+        fakeStartRunner,
+        `#!/usr/bin/env bash\nprintf 'start-runner-called\\n'\n`,
+        'utf8',
+      );
+      chmodSync(fakeStartRunner, 0o755);
+
+      return execFileSync(
+        'bash',
+        [
+          '-lc',
+          `
+            set -euo pipefail
+            export BACKEND_REAL_STATE_DIR="${backendRealRoot}"
+            source "${repoRoot}/scripts/local-manual/common.sh"
+            ROOT_DIR="${tempRoot}"
+            RUNNER_LOG="${logFile}"
+            RUNNER_PID_FILE="${pidFile}"
+            RUNNER_READY_FILE="${readyFile}"
+            RUNNER_HEALTH_FILE="${healthFile}"
+            ensure_local_manual_runner_connected
+          `,
+        ],
+        {
+          cwd: repoRoot,
+          env: { ...process.env },
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      ).trim();
+    });
+
+    expect(output).toContain('socket is shutting_down');
+    expect(output).toContain('start-runner-called');
   });
 });

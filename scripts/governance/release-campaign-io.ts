@@ -6,7 +6,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import {
   CURRENT_GATE_RESULT_SCHEMA_VERSION,
@@ -17,7 +17,13 @@ import type {
   CurrentVerificationCampaignEvidenceCheck,
   CurrentVerificationCampaignStep,
 } from './current-verification-campaign-manifest';
-import { groupVisualBaselineCatalogByScenario } from '../../e2e/visual-baseline-support';
+import {
+  assertVisualBaselineActualUrlMatchesRoute,
+  buildVisualBaselineScenarioEvidence,
+  groupVisualBaselineCatalogByScenario,
+  type VisualBaselineScenarioRecord,
+} from '../../e2e/visual-baseline-support';
+import { validateUxTraceBundleArtifact } from '../../e2e/trace-bundle-support';
 
 export interface ReleaseCampaignResultInput {
   step: CurrentVerificationCampaignStep;
@@ -43,6 +49,8 @@ export interface ReleaseCampaignEvidencePointer {
   schema_version: string;
   step_id: string;
   gate_id: string;
+  evidence_topology: 'campaign_root';
+  campaign_root: string;
   evidence_dir: string;
   native_result: {
     path: string;
@@ -225,97 +233,300 @@ function requiredMetadata(
   return value;
 }
 
+function visualReviewValidationFailure(
+  failureClass: CurrentGateResultFailureClass,
+  message: string,
+): { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
+  return {
+    ok: false,
+    failureClass,
+    message,
+  };
+}
+
+function collectMissingMetadata(
+  metadata: Map<string, string>,
+  fields: readonly string[],
+): string[] {
+  return fields.filter((field) => !requiredMetadata(metadata, field));
+}
+
+function requireMetadataFields(args: {
+  metadata: Map<string, string>;
+  scenarioId: string;
+  fields: readonly string[];
+  label: string;
+}): { ok: true } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
+  const missing = collectMissingMetadata(args.metadata, args.fields);
+  if (missing.length > 0) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${args.scenarioId} must include ${args.label}: ${missing.join(', ')}.`,
+    );
+  }
+  return { ok: true };
+}
+
+function parseSha256HashMap(value: string | null): { ok: true; hashes: Map<string, string> } | { ok: false; message: string } {
+  if (!value) {
+    return {
+      ok: false,
+      message: 'missing hash metadata',
+    };
+  }
+  const hashes = new Map<string, string>();
+  for (const segment of value.split(';')) {
+    const normalized = segment.trim();
+    if (!normalized) {
+      continue;
+    }
+    const match = /^([^=]+)=sha256:([a-f0-9]{64})$/.exec(normalized);
+    if (!match) {
+      return {
+        ok: false,
+        message: `malformed hash entry: ${normalized}`,
+      };
+    }
+    hashes.set(match[1], match[2]);
+  }
+  return { ok: true, hashes };
+}
+
+function validateVisualHashMetadata(args: {
+  scenario: VisualBaselineScenarioRecord;
+  metadata: Map<string, string>;
+}): { ok: true } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
+  const evidence = buildVisualBaselineScenarioEvidence(args.scenario);
+  const screenshotHashes = parseSha256HashMap(requiredMetadata(args.metadata, 'accepted_screenshot_hashes'));
+  const baselineHashes = parseSha256HashMap(requiredMetadata(args.metadata, 'accepted_baseline_hashes'));
+
+  if (!screenshotHashes.ok || !baselineHashes.ok) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${args.scenario.scenarioId} has malformed accepted screenshot/baseline hashes: ${
+        !screenshotHashes.ok ? screenshotHashes.message : baselineHashes.message
+      }.`,
+    );
+  }
+
+  const expectedFiles = new Set(evidence.screenshots.map((entry) => entry.fileName));
+  for (const [field, hashes] of [
+    ['accepted_screenshot_hashes', screenshotHashes.hashes],
+    ['accepted_baseline_hashes', baselineHashes.hashes],
+  ] as const) {
+    const actualFiles = new Set(hashes.keys());
+    for (const fileName of expectedFiles) {
+      if (!actualFiles.has(fileName)) {
+        return visualReviewValidationFailure(
+          'contract_drift',
+          `visual UX acceptance metadata for ${args.scenario.scenarioId} ${field} missing ${fileName}.`,
+        );
+      }
+    }
+    for (const fileName of actualFiles) {
+      if (!expectedFiles.has(fileName)) {
+        return visualReviewValidationFailure(
+          'contract_drift',
+          `visual UX acceptance metadata for ${args.scenario.scenarioId} ${field} includes unexpected ${fileName}.`,
+        );
+      }
+    }
+  }
+
+  for (const expected of evidence.screenshots) {
+    if (screenshotHashes.hashes.get(expected.fileName) !== expected.screenshotSha256) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `visual UX acceptance screenshot hash drift for ${args.scenario.scenarioId}: ${expected.fileName}.`,
+      );
+    }
+    if (baselineHashes.hashes.get(expected.fileName) !== expected.baselineSha256) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `visual UX acceptance baseline hash drift for ${args.scenario.scenarioId}: ${expected.fileName}.`,
+      );
+    }
+  }
+
+  return { ok: true };
+}
+
 function validateVisualBaselineReviewArtifact(args: {
   campaignRoot: string;
-  scenarioId: string;
+  scenario: VisualBaselineScenarioRecord;
   path: string;
 }): { ok: true } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
+  const scenarioId = args.scenario.scenarioId;
   let markdown = '';
   try {
     if (!statSync(args.path).isFile()) {
-      return {
-        ok: false,
-        failureClass: 'evidence_missing',
-        message: `Missing visual review artifact: ${args.path}`,
-      };
+      return visualReviewValidationFailure('evidence_missing', `Missing visual UX acceptance artifact: ${args.path}`);
     }
     markdown = readFileSync(args.path, 'utf8');
   } catch {
-    return {
-      ok: false,
-      failureClass: 'evidence_missing',
-      message: `Missing visual review artifact: ${args.path}`,
-    };
+    return visualReviewValidationFailure('evidence_missing', `Missing visual UX acceptance artifact: ${args.path}`);
   }
 
-  if (!markdown.startsWith(`# ${args.scenarioId}\n`)) {
-    return {
-      ok: false,
-      failureClass: 'contract_drift',
-      message: `Visual review scenario mismatch for ${args.scenarioId}.`,
-    };
+  if (!markdown.startsWith(`# ${scenarioId}\n`)) {
+    return visualReviewValidationFailure('contract_drift', `Visual UX acceptance scenario mismatch for ${scenarioId}.`);
   }
 
   const metadata = readMarkdownMetadata(markdown);
+  if (metadata.get('schema') === 'visual_baseline_automated_pass/v1' || metadata.has('automated_verdict')) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `Automated visual pass cannot be used as UX acceptance for ${scenarioId}.`,
+    );
+  }
+
+  if (metadata.get('schema') !== 'visual_baseline_ux_acceptance/v1') {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${scenarioId} must include schema: visual_baseline_ux_acceptance/v1.`,
+    );
+  }
+
+  const requiredIdentity = requireMetadataFields({
+    metadata,
+    scenarioId,
+    fields: [
+      'scenario_id',
+      'actual_url',
+      'story_fingerprint',
+      'accepted_screenshot_hashes',
+      'accepted_baseline_hashes',
+      'reviewer_id',
+      'reviewer_kind',
+      'review_mode',
+      'reviewed_at',
+      'findings',
+    ],
+    label: 'reviewer proof, URL, story, hash, and findings fields',
+  });
+  if (!requiredIdentity.ok) {
+    return requiredIdentity;
+  }
+
+  if (metadata.get('scenario_id') !== scenarioId) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance scenario_id mismatch for ${scenarioId}.`,
+    );
+  }
+
   if (metadata.get('story_evidence_owner') !== 'lane:visual') {
-    return {
-      ok: false,
-      failureClass: 'contract_drift',
-      message: `visual review metadata for ${args.scenarioId} must include story_evidence_owner: lane:visual.`,
-    };
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${scenarioId} must include story_evidence_owner: lane:visual.`,
+    );
   }
 
   const expectedRunId = resolveCampaignRunId(args.campaignRoot);
   const buildRunId = requiredMetadata(metadata, 'build_run_id');
   if (buildRunId !== expectedRunId) {
-    return {
-      ok: false,
-      failureClass: 'contract_drift',
-      message: `visual review metadata for ${args.scenarioId} must include build_run_id for the current campaign run.`,
-    };
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${scenarioId} must include build_run_id for the current campaign run.`,
+    );
   }
 
   for (const field of ['build_git_sha', 'build_fingerprint', 'build_started_at'] as const) {
     if (!requiredMetadata(metadata, field)) {
-      return {
-        ok: false,
-        failureClass: 'contract_drift',
-        message: `visual review metadata for ${args.scenarioId} must include ${field}.`,
-      };
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `visual UX acceptance metadata for ${scenarioId} must include ${field}.`,
+      );
     }
   }
 
   const buildStartedAt = requiredMetadata(metadata, 'build_started_at');
   if (buildStartedAt && Number.isNaN(Date.parse(buildStartedAt))) {
-    return {
-      ok: false,
-      failureClass: 'contract_drift',
-      message: `visual review metadata for ${args.scenarioId} has an invalid build_started_at value.`,
-    };
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${scenarioId} has an invalid build_started_at value.`,
+    );
   }
 
   const verdict = metadata.get('verdict');
   if (!verdict) {
-    return {
-      ok: false,
-      failureClass: 'contract_drift',
-      message: `visual review metadata for ${args.scenarioId} must include verdict.`,
-    };
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${scenarioId} must include verdict.`,
+    );
   }
-  if (verdict !== 'aligned') {
-    return {
-      ok: false,
-      failureClass: 'product_regression',
-      message: `Visual review ${args.scenarioId} verdict must be aligned before release.`,
-    };
+  if (verdict !== 'accepted' && verdict !== 'needs_work' && verdict !== 'blocked') {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${scenarioId} verdict must be accepted, needs_work, or blocked.`,
+    );
+  }
+  if (verdict !== 'accepted') {
+    return visualReviewValidationFailure(
+      'product_regression',
+      `Visual UX acceptance ${scenarioId} verdict must be accepted before release.`,
+    );
+  }
+
+  const reviewerKind = metadata.get('reviewer_kind');
+  if (reviewerKind !== 'human' && reviewerKind !== 'ai_reviewer') {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${scenarioId} reviewer_kind is invalid.`,
+    );
+  }
+  const reviewMode = metadata.get('review_mode');
+  if (
+    reviewMode !== 'manual_screenshot_review'
+    && reviewMode !== 'ai_native_screenshot_review'
+    && reviewMode !== 'pair_review'
+  ) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${scenarioId} review_mode is invalid.`,
+    );
+  }
+  const reviewedAt = requiredMetadata(metadata, 'reviewed_at');
+  if (reviewedAt && Number.isNaN(Date.parse(reviewedAt))) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance metadata for ${scenarioId} has an invalid reviewed_at value.`,
+    );
+  }
+
+  const actualUrl = requiredMetadata(metadata, 'actual_url');
+  if (actualUrl) {
+    try {
+      assertVisualBaselineActualUrlMatchesRoute({
+        scenarioId,
+        expectedRoute: args.scenario.route,
+        actualUrl,
+      });
+    } catch (error) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  const expectedEvidence = buildVisualBaselineScenarioEvidence(args.scenario);
+  if (metadata.get('story_fingerprint') !== expectedEvidence.storyFingerprint) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `visual UX acceptance story_fingerprint drift for ${scenarioId}.`,
+    );
+  }
+
+  const hashValidation = validateVisualHashMetadata({ scenario: args.scenario, metadata });
+  if (!hashValidation.ok) {
+    return hashValidation;
   }
 
   if (/^##\s+Blocking Findings\b/m.test(markdown)) {
-    return {
-      ok: false,
-      failureClass: 'product_regression',
-      message: `Visual review ${args.scenarioId} contains blocking findings.`,
-    };
+    return visualReviewValidationFailure(
+      'product_regression',
+      `Visual UX acceptance ${scenarioId} contains blocking findings.`,
+    );
   }
 
   return { ok: true };
@@ -327,14 +538,14 @@ function evaluateVisualBaselineReviews(
 ): ReleaseCampaignEvidencePointer['required_paths'] {
   const grouped = groupVisualBaselineCatalogByScenario();
   const records: ReleaseCampaignEvidencePointer['required_paths'] = [];
-  for (const scenarioId of [...grouped.keys()].sort()) {
+  for (const [scenarioId, scenario] of [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right))) {
     const path = materializeCampaignPath(
       campaignRoot,
       check.path.replaceAll('<visual-scenario-id>', scenarioId),
     );
     const validation = validateVisualBaselineReviewArtifact({
       campaignRoot,
-      scenarioId,
+      scenario,
       path,
     });
     records.push({
@@ -353,12 +564,82 @@ function evaluateVisualBaselineReviews(
   return records;
 }
 
+function evaluateUxTraceBundles(
+  campaignRoot: string,
+  step: CurrentVerificationCampaignStep,
+  check: CurrentVerificationCampaignEvidenceCheck,
+): ReleaseCampaignEvidencePointer['required_paths'] {
+  const path = materializeCampaignPath(campaignRoot, check.path);
+  const minCount = check.minCount ?? 1;
+  const reviewFiles = listRecursiveFiles(path).filter((candidate) => matchesFileName(candidate, check.fileName ?? 'review.md'));
+  if (reviewFiles.length === 0) {
+    return [{
+      id: check.id,
+      path,
+      kind: 'ux_trace_bundle',
+      exists: false,
+      matches: [],
+      min_count: minCount,
+      error: `Missing UX trace review.md, manifest.json, and events.jsonl under ${path}.`,
+      failure_class: 'evidence_missing',
+    }];
+  }
+
+  const records: ReleaseCampaignEvidencePointer['required_paths'] = [];
+  let validCount = 0;
+  for (const reviewPath of reviewFiles.sort()) {
+    const bundleDir = dirname(reviewPath);
+    const validation = validateUxTraceBundleArtifact({
+      bundleDir,
+      expectedLane: 'backend-real',
+      expectedEvidenceRoot: path,
+      expectedCampaignStepId: step.id,
+    });
+    if (validation.ok) {
+      validCount += 1;
+    }
+    records.push({
+      id: `${check.id}:${basename(bundleDir)}`,
+      path: bundleDir,
+      kind: 'ux_trace_bundle',
+      exists: validation.ok,
+      matches: [reviewPath],
+      min_count: minCount,
+      ...(validation.ok
+        ? {}
+        : {
+            error: validation.message,
+            failure_class: validation.failureClass,
+          }),
+    });
+  }
+
+  if (validCount < minCount) {
+    records.push({
+      id: `${check.id}:min_count`,
+      path,
+      kind: 'ux_trace_bundle',
+      exists: false,
+      matches: reviewFiles,
+      min_count: minCount,
+      error: `Expected at least ${minCount} semantically valid UX trace bundle(s), found ${validCount}.`,
+      failure_class: 'evidence_missing',
+    });
+  }
+
+  return records;
+}
+
 function evaluateEvidenceCheck(
   campaignRoot: string,
+  step: CurrentVerificationCampaignStep,
   check: CurrentVerificationCampaignEvidenceCheck,
 ): ReleaseCampaignEvidencePointer['required_paths'] {
   if (check.kind === 'visual_baseline_reviews') {
     return evaluateVisualBaselineReviews(campaignRoot, check);
+  }
+  if (check.semantic === 'ux_trace_bundle') {
+    return evaluateUxTraceBundles(campaignRoot, step, check);
   }
 
   const path = materializeCampaignPath(campaignRoot, check.path);
@@ -410,7 +691,7 @@ export function evaluateCampaignEvidenceChecks(
   step: CurrentVerificationCampaignStep,
 ): readonly ReleaseCampaignEvidencePathRecord[] {
   if (step.evidenceChecks.length > 0) {
-    return step.evidenceChecks.flatMap((check) => evaluateEvidenceCheck(campaignRoot, check));
+    return step.evidenceChecks.flatMap((check) => evaluateEvidenceCheck(campaignRoot, step, check));
   }
 
   return materializeEvidenceHints(campaignRoot, step).map((path) => ({
@@ -490,6 +771,8 @@ export function writeCampaignEvidencePointer(
     schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
     step_id: step.id,
     gate_id: step.gateId,
+    evidence_topology: 'campaign_root',
+    campaign_root: resolve(campaignRoot),
     evidence_dir: dir,
     native_result: readNativeResultPointer(campaignRoot, step),
     required_paths: requiredPaths,

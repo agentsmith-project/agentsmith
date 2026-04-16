@@ -55,7 +55,7 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
   });
 
   await stableNavigate(authedPage, `/${DOC_LOCALE}/login/workspace`);
-  await expect(authedPage.getByTestId('workspace-select__card--ws_default')).toBeVisible();
+  await expect(authedPage.getByTestId('workspace-select__item--ws_default')).toBeVisible();
   await writeDocArtifact(authedPage, manifest, {
     id: 'workspace-select',
     title: '工作区选择',
@@ -64,8 +64,8 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     route: `/${DOC_LOCALE}/login/workspace`,
     summary: '用户在进入系统后选择自己可访问的工作区，后续所有项目与治理操作都在所选工作区内完成。',
     contentPoints: [
-      '列表展示可访问的工作区卡片。',
-      '每个卡片提供进入工作区的入口。',
+      '列表展示可访问的工作区条目。',
+      '每个条目提供进入工作区的入口。',
     ],
     userSteps: [
       '浏览工作区列表。',
@@ -310,7 +310,7 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
   });
   await dismissOpenDialogs(authedPage);
   await expect(authedPage.getByTestId('files__dialog__desktop-mount-access')).toHaveCount(0);
-  await authedPage.getByTestId('files__library-delete-btn--lib_shared_default').click();
+  await authedPage.getByTestId('files__library-delete-inline--lib_shared_default').click();
   await expect(authedPage.getByTestId('files__dialog__library-delete')).toBeVisible();
   await writeDocArtifact(authedPage, manifest, {
     id: 'dialog-file-library-delete-denied',

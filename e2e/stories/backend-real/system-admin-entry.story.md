@@ -32,7 +32,8 @@
       "sceneId": "system-workspaces",
       "route": "/en-US/system/workspaces",
       "stableMarkers": [
-        "system-workspaces__heading"
+        "system-workspaces__list",
+        "system-workspaces__new-workspace"
       ]
     }
   ],
@@ -54,7 +55,7 @@
       "sceneId": "system-workspaces",
       "intent": "Review the system workspace index.",
       "action": "Review system workspaces",
-      "target": "system-workspaces__heading",
+      "target": "system-workspaces__list",
       "expectedFeedback": "工作区清单与创建入口",
       "note": "工作区清单与创建入口",
       "evidence": [

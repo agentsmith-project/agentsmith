@@ -42,11 +42,23 @@ export function GeneralSettingsSection({
 }: GeneralSettingsSectionProps) {
   return (
     <section className="space-y-4 py-5" data-testid="settings__general-section">
-      <div className="space-y-1">
-        <h3 className="text-sm font-semibold text-foreground">{settingsT('general_access_title')}</h3>
-        <p className="text-sm text-tertiary">
-        {canManageProjectLifecycle ? settingsT('general_help') : settingsT('general_read_only_help')}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3" data-testid="settings__general-header">
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-foreground">{settingsT('general_access_title')}</h3>
+          <p className="text-sm text-tertiary">
+          {canManageProjectLifecycle ? settingsT('general_help') : settingsT('general_read_only_help')}
+          </p>
+        </div>
+        <Button
+          onClick={onSave}
+          disabled={!canManageProjectLifecycle || savingGeneral}
+          variant="primary"
+          className="shrink-0"
+          data-testid="settings__save-btn"
+        >
+          <Save className="w-4 h-4" />
+          {savingGeneral ? commonT('saving') : commonT('save')}
+        </Button>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="md:col-span-1">
@@ -72,7 +84,7 @@ export function GeneralSettingsSection({
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-primary mb-2">{settingsT('description')}</label>
           <Textarea
-            placeholder="Add a description..."
+            placeholder={settingsT('description_placeholder')}
             rows={3}
             value={description}
             onChange={(event) => onDescriptionChange(event.target.value)}
@@ -95,12 +107,6 @@ export function GeneralSettingsSection({
             </SelectContent>
           </Select>
         </div>
-      </div>
-      <div className="flex justify-end">
-        <Button onClick={onSave} disabled={!canManageProjectLifecycle || savingGeneral} variant="primary" data-testid="settings__save-btn">
-          <Save className="w-4 h-4" />
-          {savingGeneral ? 'Saving...' : commonT('save')}
-        </Button>
       </div>
     </section>
   );

@@ -30,6 +30,8 @@ describe('current gate governance', () => {
       expect(['none', 'required']).toContain(definition.storyEvidencePolicy);
       expect(Array.isArray(definition.storyEvidenceKinds)).toBe(true);
       expect(Array.isArray(definition.storyEvidenceArtifacts)).toBe(true);
+      expect(Array.isArray(definition.standaloneEvidenceArtifacts)).toBe(true);
+      expect(Array.isArray(definition.campaignEvidenceArtifacts)).toBe(true);
       expect(Array.isArray(definition.storyEvidenceRequiredFor)).toBe(true);
       expect(ids.has(definition.id)).toBe(false);
       expect(npmScripts.has(definition.npmScript)).toBe(false);
@@ -143,6 +145,46 @@ describe('current gate governance', () => {
     expect(releaseFull?.storyEvidencePolicy).toBe('required');
     expect(releaseFull?.storyEvidenceKinds).toEqual(['visual_scene_catalog', 'ux_trace_bundle']);
     expect(releaseFull?.storyEvidenceRequiredFor).toEqual(['release']);
+  });
+
+  it('keeps release evidence topology explicit between standalone and campaign roots', () => {
+    const visualLane = findCurrentGateDefinitionById('lane-visual');
+    const releaseGate = findCurrentGateDefinitionById('gate-release');
+    const releaseLane = findCurrentGateDefinitionById('lane-backend-real-release');
+    const releaseFull = findCurrentGateDefinitionById('gate-release-full');
+
+    expect(visualLane?.standaloneEvidenceArtifacts).toContain(
+      'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
+    );
+    expect(visualLane?.campaignEvidenceArtifacts).toContain(
+      '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
+    );
+
+    expect(releaseGate?.standaloneEvidenceArtifacts).toContain(
+      'artifacts/backend-real-visual/<run-id>/ux-traces',
+    );
+    expect(releaseGate?.campaignEvidenceArtifacts).toEqual([
+      '<campaign-root>/gate-release/native/result.json',
+      '<campaign-root>/gate-release/backend-real-visual/review.md',
+      '<campaign-root>/gate-release/backend-real-visual/ux-traces',
+    ]);
+
+    expect(releaseLane?.standaloneEvidenceArtifacts).toContain(
+      'artifacts/backend-real-visual/<run-id>/ux-traces',
+    );
+    expect(releaseLane?.campaignEvidenceArtifacts).toEqual(releaseGate?.campaignEvidenceArtifacts);
+
+    expect(releaseFull?.standaloneEvidenceArtifacts).toEqual([]);
+    expect(releaseFull?.campaignEvidenceArtifacts.length).toBeGreaterThan(0);
+    expect(releaseFull?.storyEvidenceArtifacts).toEqual(releaseFull?.campaignEvidenceArtifacts);
+    expect(releaseFull?.campaignEvidenceArtifacts.every((path) => path.startsWith('<campaign-root>'))).toBe(true);
+    expect(releaseFull?.campaignEvidenceArtifacts).not.toEqual(
+      expect.arrayContaining([
+        'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
+        'artifacts/backend-real-visual/<run-id>/review.md',
+        'artifacts/backend-real-visual/<run-id>/ux-traces',
+      ]),
+    );
   });
 
   it('keeps generated gate contracts in sync with the repository state', () => {

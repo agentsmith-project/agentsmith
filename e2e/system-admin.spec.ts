@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures/test-base';
 import { waitForPageReady } from './utils/navigation';
-import { waitForWorkspaceLoginReady } from './utils/system-workspaces';
+import { waitForSystemWorkspacesReady, waitForWorkspaceLoginReady } from './utils/system-workspaces';
 
 async function loginAsSystemAdmin(page: import('@playwright/test').Page) {
   await page.goto('/en-US/system/login');
@@ -9,8 +9,7 @@ async function loginAsSystemAdmin(page: import('@playwright/test').Page) {
   await page.getByTestId('system-login__username').fill('mbos-admin');
   await page.getByTestId('system-login__password').fill('mbos-admin');
   await page.getByTestId('system-login__submit').click();
-  await page.waitForURL(/\/en-US\/system\/workspaces/, { timeout: 15_000 });
-  await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
+  await waitForSystemWorkspacesReady(page);
 }
 
 async function openCreateWorkspace(page: import('@playwright/test').Page) {
@@ -97,6 +96,19 @@ async function verifyIdentityProvider(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('system-workspaces__draft-admin')).toBeVisible();
 }
 
+async function verifyEditedIdentityProvider(page: import('@playwright/test').Page) {
+  const responsePromise = page.waitForResponse(
+    (candidate) =>
+      candidate.url().includes('/api/system/workspaces/idp/verify') &&
+      candidate.request().method() === 'POST',
+    { timeout: 15_000 },
+  );
+  await page.getByTestId('system-workspaces__verify-idp').click();
+  const response = await responsePromise;
+  expect(response.ok()).toBeTruthy();
+  await expect(page.getByTestId('system-workspaces__draft-admin')).toBeEnabled();
+}
+
 async function selectWorkspaceAdmin(page: import('@playwright/test').Page, email: string) {
   const adminInput = page.getByTestId('system-workspaces__draft-admin');
   await expect(adminInput).toBeVisible({ timeout: 15_000 });
@@ -152,7 +164,7 @@ test.describe('System Admin', () => {
     await expect(page.getByTestId('system-workspaces__open-info')).toBeVisible();
     await page.goto('/en-US/system/info');
     await page.waitForURL(/\/en-US\/system\/info/, { timeout: 15_000 });
-    await expect(page.getByTestId('system-info__heading')).toBeVisible();
+    await expect(page.getByTestId('system-info__shell')).toBeVisible();
     await expect(page.getByTestId('system-info__notice')).toBeVisible();
   });
 
@@ -173,7 +185,6 @@ test.describe('System Admin', () => {
     await page.getByTestId('system-workspaces__draft-idp-client-id').fill('platform-ops-client');
     await page.getByTestId('system-workspaces__draft-idp-client-secret').fill('platform-ops-secret');
     await verifyIdentityProvider(page);
-    await page.getByTestId('system-workspace-create__next').click();
     await selectWorkspaceAdmin(page, 'dev-admin@example.com');
     await page.getByTestId('system-workspace-create__next').click();
     await page.getByTestId('system-workspace-create__create').click();
@@ -194,7 +205,7 @@ test.describe('System Admin', () => {
 
     await page.getByTestId(`system-workspaces__configure--${createdWorkspaceId}`).click();
     await page.getByTestId('system-workspaces__draft-idp-client-secret').fill('platform-ops-secret');
-    await verifyIdentityProvider(page);
+    await verifyEditedIdentityProvider(page);
     await selectWorkspaceAdmin(page, updatedAdmin);
     await page.getByTestId('system-workspaces__save').click();
 

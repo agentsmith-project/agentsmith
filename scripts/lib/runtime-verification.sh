@@ -4,6 +4,9 @@ set -euo pipefail
 RUNTIME_VERIFICATION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME_VERIFICATION_ROOT="$(cd "${RUNTIME_VERIFICATION_DIR}/../.." && pwd)"
 
+# shellcheck disable=SC1091
+source "${RUNTIME_VERIFICATION_ROOT}/scripts/lib/runner-lifecycle-log.sh"
+
 resolve_loopback_runtime_addresses() {
   local api_port="${1}"
   local web_port="${2}"
@@ -348,6 +351,71 @@ try {
 NODE
 }
 
+gate_resolve_manifest_ci_job() {
+  local gate_id="$1"
+  if [[ -z "${gate_id}" || ! -d "${RUNTIME_VERIFICATION_ROOT}/node_modules/tsx" ]]; then
+    return 0
+  fi
+
+  local output
+  output="$(
+    node --import tsx - "${RUNTIME_VERIFICATION_ROOT}" "${gate_id}" 2>/dev/null <<'NODE'
+(async () => {
+  const { pathToFileURL } = require('node:url');
+  const [root, gateId] = process.argv.slice(2);
+  const moduleUrl = pathToFileURL(`${root}/scripts/governance/current-gate-manifest.ts`).href;
+  const imported = await import(moduleUrl);
+  const manifest = imported.default ?? imported;
+  const definition = manifest.findCurrentGateDefinitionById?.(gateId);
+  const ciJob = typeof definition?.ciJob === 'string' ? definition.ciJob.trim() : '';
+  if (ciJob) {
+    process.stdout.write(ciJob);
+  }
+})().catch(() => {});
+NODE
+  )" || output=""
+  printf '%s\n' "${output}"
+}
+
+gate_format_campaign_ci_job() {
+  local step_id="$1"
+  if [[ -z "${step_id}" ]]; then
+    return 0
+  fi
+  if [[ "${step_id}" == campaign:* ]]; then
+    printf '%s\n' "${step_id}"
+    return 0
+  fi
+  printf 'campaign:%s\n' "${step_id}"
+}
+
+gate_resolve_result_ci_job() {
+  local gate_id="$1"
+  if [[ -n "${CURRENT_GATE_RESULT_CI_JOB:-}" ]]; then
+    printf '%s\n' "${CURRENT_GATE_RESULT_CI_JOB}"
+    return 0
+  fi
+
+  local manifest_ci_job
+  manifest_ci_job="$(gate_resolve_manifest_ci_job "${gate_id}")"
+  if [[ -n "${manifest_ci_job}" ]]; then
+    printf '%s\n' "${manifest_ci_job}"
+    return 0
+  fi
+
+  if [[ -n "${GITHUB_JOB:-}" ]]; then
+    printf '%s\n' "${GITHUB_JOB}"
+    return 0
+  fi
+
+  if [[ -n "${CURRENT_GATE_RESULT_CAMPAIGN_STEP_ID:-}" ]]; then
+    gate_format_campaign_ci_job "${CURRENT_GATE_RESULT_CAMPAIGN_STEP_ID}"
+    return 0
+  fi
+
+  printf 'local\n'
+}
+
 gate_write_result_json() {
   local evidence_dir="$1"
   local classification="$2"
@@ -369,7 +437,7 @@ gate_write_result_json() {
   status="$(gate_result_status "${classification}")"
   failure_class="$(gate_result_failure_class "${classification}")"
   npm_script="${CURRENT_GATE_RESULT_NPM_SCRIPT:-}"
-  ci_job="${CURRENT_GATE_RESULT_CI_JOB:-}"
+  ci_job="$(gate_resolve_result_ci_job "${gate_id}")"
 
   if [[ "${status}" == "passed" ]]; then
     summary="Gate ${gate_id} passed during ${stage}."
@@ -543,7 +611,7 @@ gate_wait_for_external_runner_connection() {
   while true; do
     if docker inspect -f '{{.State.Running}}' "${container_name}" 2>/dev/null | grep -q true; then
       runner_logs="$(docker logs "${container_name}" 2>&1 || true)"
-      if grep -q '\[notebook-codex-runner\] connected' <<<"${runner_logs}"; then
+      if runner_lifecycle_logs_connected "${runner_logs}"; then
         return 0
       fi
     fi

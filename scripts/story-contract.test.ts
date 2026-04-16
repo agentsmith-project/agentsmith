@@ -89,6 +89,185 @@ describe('story contract', () => {
     expect(story.steps.map((step) => step.stepId)).toEqual(['open-workspace-home']);
   });
 
+  it('rejects unsafe visual code refs before they can become unverifiable review evidence', () => {
+    const buildStoryWithCodeRef = (codeRef: string) => `
+---
+{
+  "storyId": "unsafe-code-ref",
+  "title": "Unsafe code ref",
+  "actor": "reviewer",
+  "lane": "mock-lane",
+  "family": "visual-review",
+  "personas": ["reviewer"],
+  "kind": "review",
+  "gatePolicy": {
+    "tier": "default",
+    "requiredEvidence": ["visual"]
+  },
+  "externalDependencies": [],
+  "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/chat",
+  "goal": "Verify visual code refs remain repository-relative files.",
+  "narrative": "Visual review evidence must point at committed code and not arbitrary local or remote paths.",
+  "scenes": [
+    {
+      "sceneId": "chat",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/chat",
+      "stableMarkers": ["chat__surface"]
+    }
+  ],
+  "steps": [
+    {
+      "stepId": "open-chat",
+      "sceneId": "chat",
+      "intent": "Open chat",
+      "action": "Open chat",
+      "target": "chat__surface",
+      "expectedFeedback": "Chat surface is visible",
+      "evidence": ["visual"]
+    }
+  ],
+  "runtimeData": {
+    "visualReview": {
+      "scenes": [
+        {
+          "sceneId": "chat",
+          "scenarioId": "chat",
+          "scenario": "Chat surface visual review.",
+          "group": "project_pages",
+          "codeRefs": ["${codeRef}"],
+          "capture": "full_page"
+        }
+      ]
+    }
+  }
+}
+---
+`;
+
+    expect(() => parseStoryDefinition(buildStoryWithCodeRef('/tmp/outside.ts'))).toThrow(/code ref/i);
+    expect(() => parseStoryDefinition(buildStoryWithCodeRef('../outside.ts'))).toThrow(/code ref/i);
+    expect(() => parseStoryDefinition(buildStoryWithCodeRef('https://example.com/source.ts'))).toThrow(/code ref/i);
+  });
+
+  it('rejects visual scenes that do not expose story-owned stable markers for executor waits', () => {
+    expect(() =>
+      parseStoryDefinition(`
+---
+{
+  "storyId": "missing-visual-markers",
+  "title": "Missing visual markers",
+  "actor": "reviewer",
+  "lane": "mock-lane",
+  "family": "visual-review",
+  "personas": ["reviewer"],
+  "kind": "review",
+  "gatePolicy": {
+    "tier": "default",
+    "requiredEvidence": ["visual"]
+  },
+  "externalDependencies": [],
+  "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/chat",
+  "goal": "Verify visual scenes wait on explicit stable markers.",
+  "narrative": "A visual scene without stable markers can pass before the user-visible state is ready.",
+  "scenes": [
+    {
+      "sceneId": "chat",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/chat",
+      "stableMarkers": []
+    }
+  ],
+  "steps": [
+    {
+      "stepId": "open-chat",
+      "sceneId": "chat",
+      "intent": "Open chat",
+      "action": "Open chat",
+      "target": "chat__surface",
+      "expectedFeedback": "Chat surface is visible",
+      "evidence": ["visual"]
+    }
+  ],
+  "runtimeData": {
+    "visualReview": {
+      "scenes": [
+        {
+          "sceneId": "chat",
+          "scenarioId": "chat",
+          "scenario": "Chat surface visual review.",
+          "group": "project_pages",
+          "codeRefs": ["e2e/visual.spec.ts"],
+          "capture": "full_page"
+        }
+      ]
+    }
+  }
+}
+---
+`),
+    ).toThrow(/stable markers/i);
+  });
+
+  it('rejects empty story-owned visual semantic assertions before they enter the screenshot catalog', () => {
+    expect(() =>
+      parseStoryDefinition(`
+---
+{
+  "storyId": "empty-visual-semantic-assertion",
+  "title": "Empty visual semantic assertion",
+  "actor": "reviewer",
+  "lane": "mock-lane",
+  "family": "visual-review",
+  "personas": ["reviewer"],
+  "kind": "review",
+  "gatePolicy": {
+    "tier": "default",
+    "requiredEvidence": ["visual"]
+  },
+  "externalDependencies": [],
+  "entryRoute": "/en-US/workspaces/overview",
+  "goal": "Verify visual semantic assertions stay explicit and reviewable.",
+  "narrative": "Visual review evidence should fail fast when a story declares meaningless semantic acceptance rules.",
+  "scenes": [
+    {
+      "sceneId": "workspace-overview",
+      "route": "/en-US/workspaces/overview",
+      "stableMarkers": ["workspace-overview__list"]
+    }
+  ],
+  "steps": [
+    {
+      "stepId": "open-workspace-overview",
+      "sceneId": "workspace-overview",
+      "intent": "Open workspace overview",
+      "action": "Open workspace overview",
+      "target": "workspace-overview__list",
+      "expectedFeedback": "Workspace overview is ready for review",
+      "evidence": ["visual"]
+    }
+  ],
+  "runtimeData": {
+    "visualReview": {
+      "scenes": [
+        {
+          "sceneId": "workspace-overview",
+          "scenarioId": "workspace-overview",
+          "scenario": "Workspace overview visual review.",
+          "group": "workspace_pages",
+          "codeRefs": ["e2e/visual.spec.ts"],
+          "capture": "full_page",
+          "semanticAssertions": {
+            "forbiddenVisibleText": ["Invalid Date", ""]
+          }
+        }
+      ]
+    }
+  }
+}
+---
+`),
+    ).toThrow(/semantic assertion/i);
+  });
+
   it('keeps story-contract focused on schema/fingerprint helpers instead of parser and loader logic', async () => {
     const contractSource = await readFile(path.resolve('e2e/story-contract.ts'), 'utf-8');
     const loaderSource = await readFile(path.resolve('e2e/story-loader.ts'), 'utf-8');

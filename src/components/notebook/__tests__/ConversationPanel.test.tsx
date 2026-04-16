@@ -19,8 +19,8 @@ vi.mock('next-intl', () => ({
       'notebook.conversation.realtime_status_disconnected_description': 'The task stream is offline. Retry or refresh to resume updates.',
       'notebook.conversation.realtime_status_error_title': 'Live task stream recovery failed',
       'notebook.conversation.realtime_status_error_description': 'Recent reconnect attempts did not recover the stream. Retry or refresh to continue.',
-      'notebook.conversation.realtime_status_ticket_unavailable_title': 'Realtime ticket service unavailable',
-      'notebook.conversation.realtime_status_ticket_unavailable_description': 'This environment is not exposing the SSE ticket endpoint for notebook runs.',
+      'notebook.conversation.realtime_status_ticket_unavailable_title': 'Live updates paused',
+      'notebook.conversation.realtime_status_ticket_unavailable_description': 'The task is still available, but live updates could not start in this environment. Refresh or open diagnostics if the timeline does not update.',
       'notebook.conversation.realtime_status_ticket_unauthorized_title': 'Realtime ticket request denied',
       'notebook.conversation.realtime_status_ticket_unauthorized_description': 'The current session is not allowed to open a realtime notebook stream.',
       'notebook.conversation.realtime_status_ticket_rate_limited_title': 'Realtime ticket request rate limited',
@@ -350,8 +350,11 @@ describe('ConversationPanel', () => {
       );
 
       const status = screen.getByTestId('notebook__sse-status');
-      expect(status).toHaveTextContent('Realtime ticket service unavailable');
-      expect(status).toHaveTextContent('This environment is not exposing the SSE ticket endpoint for notebook runs.');
+      expect(status).toHaveTextContent('Live updates paused');
+      expect(status).toHaveTextContent(
+        'The task is still available, but live updates could not start in this environment. Refresh or open diagnostics if the timeline does not update.',
+      );
+      expect(status).not.toHaveTextContent(/SSE ticket|ticket service|ticket endpoint/i);
     });
 
     it('shows reconcile-failed explanation with execution message', () => {

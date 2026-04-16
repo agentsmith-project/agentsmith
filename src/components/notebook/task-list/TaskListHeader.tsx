@@ -24,9 +24,12 @@ export function TaskListHeader({
         <Button
           variant="primary"
           size="sm"
+          className="shrink-0 font-semibold"
           onClick={onCreate}
           disabled={!canCreateTask}
           data-testid="notebook__create-task-btn"
+          data-visual-primary-action="true"
+          data-visual-viewport-required="true"
         >
           <Plus className="mr-2 h-4 w-4" />
           {t('new_task')}

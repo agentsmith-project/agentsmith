@@ -54,3 +54,14 @@ jobs:
           npm run contracts:check-current-workflows
           npm run contracts:check-current-gates
           npm run contracts:check-engineering-governance
+
+      - name: Upload contract gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contracts-check-artifacts
+          if-no-files-found: ignore
+          path: |
+            artifacts/mock-lane/runs/**
+            test-results/**
+            playwright-report/**

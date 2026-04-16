@@ -30,6 +30,8 @@ LOCAL_MANUAL_ROOT="${runtimeRoot}"
 RUNNER_PID_FILE="${runtimeRoot}/runner.pid"
 RUNNER_READY_FILE="${runtimeRoot}/runner.ready"
 RUNNER_LOG="${runtimeRoot}/runner.log"
+RUNNER_HEALTH_FILE="${runtimeRoot}/runner.health.json"
+RUNNER_HEALTH_MONITOR_PID_FILE="${runtimeRoot}/runner.health-monitor.pid"
 
 info() { :; }
 err() { echo "$*" >&2; }
@@ -57,6 +59,19 @@ launch_detached() {
 }
 write_ready_file() {
   printf 'ready\\n' > "$1"
+}
+start_runner_health_monitor() {
+  printf 'health-monitor\\n' >> "${tempRoot}/events.log"
+}
+runner_socket_health_state() {
+  if [[ "\${START_RUNNER_HEALTH_CONNECTED:-0}" == "1" ]]; then
+    printf 'connected\\n'
+  else
+    printf '%s\\n' "\${START_RUNNER_HEALTH_STATE:-disconnected}"
+  fi
+}
+runner_socket_is_connected() {
+  [[ "$(runner_socket_health_state)" == "connected" ]]
 }
 `,
     'utf8',
@@ -127,6 +142,14 @@ function killProcessTreeGroup(pid: number): void {
   } catch {
     // Ignore cleanup failures.
   }
+}
+
+function errorStderr(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'stderr' in error) {
+    const stderr = (error as { stderr?: Buffer | string }).stderr;
+    return Buffer.isBuffer(stderr) ? stderr.toString('utf8') : String(stderr ?? '');
+  }
+  return '';
 }
 
 function writeOwnedRunnerTreeScripts(tempRoot: string) {
@@ -397,6 +420,55 @@ describe('local-manual start-runner', () => {
     expect(readFileSync(fixture.runnerPidFile, 'utf8')).toBe('999999\n');
     expect(readFileSync(fixture.eventsFile, 'utf8')).toContain('owner-aware:rollback_launch');
     expect(readFileSync(fixture.eventsFile, 'utf8')).not.toContain('stop-pid:runner');
+  });
+
+  it('waits for the runner health freshness contract instead of accepting stale log text', () => {
+    const fixture = setupStartRunnerFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    execFileSync('bash', [fixture.script], {
+      cwd: fixture.tempRoot,
+      env: {
+        ...process.env,
+        PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
+        START_RUNNER_FAST_TIMEOUT: '1',
+        START_RUNNER_HEALTH_CONNECTED: '1',
+      },
+      stdio: 'pipe',
+    });
+
+    const events = readFileSync(fixture.eventsFile, 'utf8');
+    expect(events).toContain('launch');
+    expect(events).toContain('health-monitor');
+    expect(readFileSync(fixture.runnerReadyFile, 'utf8')).toBe('ready\n');
+  });
+
+  it('fails fast and rolls back when the launched runner enters shutting_down before becoming connected', () => {
+    const fixture = setupStartRunnerFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    let error: unknown;
+    try {
+      execFileSync('bash', [fixture.script], {
+        cwd: fixture.tempRoot,
+        env: {
+          ...process.env,
+          PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`,
+          START_RUNNER_FAST_TIMEOUT: '1',
+          START_RUNNER_HEALTH_STATE: 'shutting_down',
+        },
+        stdio: 'pipe',
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeDefined();
+    expect(errorStderr(error)).toContain('runner entered shutting_down before it became connected');
+    const events = readFileSync(fixture.eventsFile, 'utf8');
+    expect(events).toContain('launch');
+    expect(events).toContain('owner-aware:rollback_launch');
+    expect(existsSync(fixture.runnerReadyFile)).toBe(false);
   });
 
   it('uses the real common + owner-janitor path to replace and roll back only the owned runner tree without killing an unrelated sibling', async () => {

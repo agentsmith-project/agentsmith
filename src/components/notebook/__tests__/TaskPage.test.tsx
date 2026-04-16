@@ -455,28 +455,69 @@ describe('TaskPage', () => {
     mockPush.mockReset();
   });
 
-  const renderComponent = () => {
+  const renderComponent = ({
+    canCreateTask = true,
+    canUpdateTask = true,
+    canDeleteTask = true,
+    canUseTerminal = true,
+  }: {
+    canCreateTask?: boolean;
+    canUpdateTask?: boolean;
+    canDeleteTask?: boolean;
+    canUseTerminal?: boolean;
+  } = {}) => {
     return renderWithNotebookQueryClient(
       <TaskPage
         workspaceId={mockWorkspaceId}
         projectId={mockProjectId}
         taskId={mockTaskId}
-        canCreateTask={true}
-        canUpdateTask={true}
-        canDeleteTask={true}
-        canUseTerminal={true}
+        canCreateTask={canCreateTask}
+        canUpdateTask={canUpdateTask}
+        canDeleteTask={canDeleteTask}
+        canUseTerminal={canUseTerminal}
       />,
     );
   };
 
-  const renderComponentAndWaitForTerminalHydration = async () => {
-    renderComponent();
+  const waitForTerminalHydrationReady = async ({
+    expectedSessionCount = 0,
+    expectedViewMode = 'conversation',
+    expectedCallCount = 1,
+  }: {
+    expectedSessionCount?: number;
+    expectedViewMode?: 'conversation' | 'terminal';
+    expectedCallCount?: number;
+  } = {}) => {
     await waitFor(() => {
-      expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(1);
-      expect(latestTaskHeaderPropsRef.current.viewMode).toBe('conversation');
-      expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(0);
+      expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(expectedCallCount);
+      expect(mockTaskApiListTerminalSessions).toHaveBeenCalledWith(
+        mockWorkspaceId,
+        mockProjectId,
+        mockTaskId,
+      );
+      expect(latestTaskHeaderPropsRef.current).toBeTruthy();
+      expect(latestTaskHeaderPropsRef.current.terminalTruthState).toBe('ready');
+      expect(latestTaskHeaderPropsRef.current.viewMode).toBe(expectedViewMode);
+      expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(expectedSessionCount);
     });
   };
+
+  const renderComponentReady = async (
+    options?: Parameters<typeof renderComponent>[0],
+  ) => {
+    const view = renderComponent(options);
+    await waitForTerminalHydrationReady();
+    return view;
+  };
+
+  const renderComponentAndWaitForTerminalHydration = renderComponentReady;
+
+  const getReactActWarningCalls = (
+    consoleErrorSpy: { mock: { calls: unknown[][] } },
+  ) =>
+    consoleErrorSpy.mock.calls.filter((call: unknown[]) =>
+      call.some((message: unknown) => String(message).includes('not wrapped in act')),
+    );
 
   describe('Loading State', () => {
     it('renders loading state', () => {
@@ -533,6 +574,7 @@ describe('TaskPage', () => {
         expect(screen.getByTestId('task-header')).toBeInTheDocument();
         expect(screen.queryByText(/Rendered more hooks than during the previous render/i)).not.toBeInTheDocument();
       });
+      await waitForTerminalHydrationReady();
     });
   });
 
@@ -808,21 +850,29 @@ describe('TaskPage', () => {
       expect(workspaceLifecycle.unmounts).toBe(0);
     });
 
-    it('renders task header', () => {
-      renderComponent();
+    it('renders task header', async () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error');
 
-      expect(screen.getByTestId('task-header')).toBeInTheDocument();
-      expect(screen.getByTestId('task-title')).toHaveTextContent('Test Task');
+      try {
+        await renderComponentReady();
+
+        expect(screen.getByTestId('task-header')).toBeInTheDocument();
+        expect(screen.getByTestId('task-title')).toHaveTextContent('Test Task');
+
+        expect(getReactActWarningCalls(consoleErrorSpy)).toEqual([]);
+      } finally {
+        consoleErrorSpy.mockRestore();
+      }
     });
 
-    it('does not render the removed attached inputs panel', () => {
-      renderComponent();
+    it('does not render the removed attached inputs panel', async () => {
+      await renderComponentReady();
 
       expect(screen.queryByTestId('attached-inputs-panel')).not.toBeInTheDocument();
     });
 
-    it('renders conversation panel', () => {
-      renderComponent();
+    it('renders conversation panel', async () => {
+      await renderComponentReady();
 
       expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
     });
@@ -1519,14 +1569,14 @@ describe('TaskPage', () => {
       });
     });
 
-    it('renders artifacts panel', () => {
-      renderComponent();
+    it('renders artifacts panel', async () => {
+      await renderComponentReady();
 
       expect(screen.getByTestId('artifacts-panel')).toBeInTheDocument();
     });
 
-    it('uses slower artifact auto refresh interval while task is idle', () => {
-      renderComponent();
+    it('uses slower artifact auto refresh interval while task is idle', async () => {
+      await renderComponentReady();
 
       expect(latestUseTaskArtifactsArgsRef.current[3]).toMatchObject({
         refetchInterval: false,
@@ -1535,10 +1585,10 @@ describe('TaskPage', () => {
       });
     });
 
-    it('uses faster artifact auto refresh interval while a run is active', () => {
+    it('uses faster artifact auto refresh interval while a run is active', async () => {
       mockTaskHookState.task = { ...mockTask, run_state: 'running' };
 
-      renderComponent();
+      await renderComponentReady();
 
       expect(latestUseTaskArtifactsArgsRef.current[3]).toMatchObject({
         refetchInterval: 5000,
@@ -2393,25 +2443,15 @@ describe('TaskPage', () => {
       });
     });
 
-    it('disables creating terminal sessions while a send is already pending', () => {
+    it('disables creating terminal sessions while a send is already pending', async () => {
       mockSendMessageIsPending.value = true;
-      renderComponent();
+      await renderComponentReady();
 
       expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(false);
     });
 
-    it('disables creating terminal sessions when the user lacks terminal permission', () => {
-      renderWithNotebookQueryClient(
-        <TaskPage
-          workspaceId={mockWorkspaceId}
-          projectId={mockProjectId}
-          taskId={mockTaskId}
-          canCreateTask={true}
-          canUpdateTask={true}
-          canDeleteTask={true}
-          canUseTerminal={false}
-        />,
-      );
+    it('disables creating terminal sessions when the user lacks terminal permission', async () => {
+      await renderComponentReady({ canUseTerminal: false });
 
       expect(latestTaskHeaderPropsRef.current.canCreateTerminalSession).toBe(false);
     });
@@ -2470,8 +2510,8 @@ describe('TaskPage', () => {
       });
     });
 
-    it('does not pass a global execution details mode into ConversationPanel', () => {
-      renderComponent();
+    it('does not pass a global execution details mode into ConversationPanel', async () => {
+      await renderComponentReady();
 
       expect(latestConversationPanelPropsRef.current).toBeTruthy();
       expect(latestConversationPanelPropsRef.current.showExecutionDetails).toBeUndefined();
@@ -2480,8 +2520,8 @@ describe('TaskPage', () => {
   });
 
   describe('SSE Connection', () => {
-    it('establishes SSE connection when task loads', () => {
-      renderComponent();
+    it('establishes SSE connection when task loads', async () => {
+      await renderComponentReady();
 
       // SSE connection is established via the useTaskSSE hook
       // This is tested indirectly by checking that the component renders without errors
@@ -2492,7 +2532,7 @@ describe('TaskPage', () => {
   describe('Message Sending', () => {
     it('sends message through conversation panel', async () => {
       const user = userEvent.setup();
-      renderComponent();
+      await renderComponentReady();
 
       const sendButton = screen.getByText('Send Message');
       await user.click(sendButton);
@@ -2500,8 +2540,8 @@ describe('TaskPage', () => {
       // Message sending is handled by the ConversationPanel component
     });
 
-    it('sets up streaming state for agent responses', () => {
-      renderComponent();
+    it('sets up streaming state for agent responses', async () => {
+      await renderComponentReady();
 
       // Streaming state is managed internally
       expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
@@ -2509,7 +2549,7 @@ describe('TaskPage', () => {
 
     it('adds an optimistic user message and keeps streaming state after send', async () => {
       const user = userEvent.setup();
-      renderComponent();
+      await renderComponentReady();
 
       await user.click(screen.getByText('Send Message'));
 
@@ -2536,7 +2576,7 @@ describe('TaskPage', () => {
       });
 
       try {
-        renderComponent();
+        await renderComponentReady();
         await user.click(screen.getByText('Send Message'));
 
         expect(mockSendMessageMutateAsync).toHaveBeenCalledWith({
@@ -2566,7 +2606,7 @@ describe('TaskPage', () => {
 
     it('keeps busy state during non-terminal step success and clears on run terminal', async () => {
       const user = userEvent.setup();
-      renderComponent();
+      await renderComponentReady();
 
       await user.click(screen.getByText('Send Message'));
       expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('true');
@@ -2611,7 +2651,7 @@ describe('TaskPage', () => {
 
     it('queues new input while busy and allows cancel current run', async () => {
       const user = userEvent.setup();
-      renderComponent();
+      await renderComponentReady();
 
       await user.click(screen.getByText('Send Message'));
       expect(mockSendMessageMutateAsync).toHaveBeenCalledTimes(1);
@@ -2629,7 +2669,7 @@ describe('TaskPage', () => {
 
     it('does not clear streaming state immediately during an idle gap after send', async () => {
       const user = userEvent.setup();
-      renderComponent();
+      await renderComponentReady();
 
       await user.click(screen.getByText('Send Message'));
 
@@ -2667,7 +2707,7 @@ describe('TaskPage', () => {
           next_after_id: null,
         });
 
-      renderComponent();
+      await renderComponentReady();
 
       await user.click(screen.getByText('Expand Trace'));
       expect(mockTaskApiListTraces).toHaveBeenCalledWith(
@@ -2690,7 +2730,7 @@ describe('TaskPage', () => {
   describe('Navigation Actions', () => {
     it('navigates away when leave button is clicked', async () => {
       const user = userEvent.setup();
-      renderComponent();
+      await renderComponentReady();
 
       const leaveButton = screen.getByText('Leave');
       await user.click(leaveButton);
@@ -2702,7 +2742,7 @@ describe('TaskPage', () => {
 
     it('navigates to new task after creation', async () => {
       const user = userEvent.setup();
-      renderComponent();
+      await renderComponentReady();
 
       const newButton = screen.getByText('New');
       await user.click(newButton);
@@ -2717,7 +2757,7 @@ describe('TaskPage', () => {
 
     it('navigates to notebook after task deletion', async () => {
       const user = userEvent.setup();
-      renderComponent();
+      await renderComponentReady();
 
       const deleteButton = screen.getByText('Delete');
       await user.click(deleteButton);
@@ -2731,7 +2771,7 @@ describe('TaskPage', () => {
   describe('Artifact Actions', () => {
     it('opens artifact viewer for images', async () => {
       const user = userEvent.setup();
-      renderComponent();
+      await renderComponentReady();
 
       const viewButton = screen.getByText('View Artifact');
       await user.click(viewButton);
@@ -2741,7 +2781,7 @@ describe('TaskPage', () => {
 
     it('downloads artifact', async () => {
       const user = userEvent.setup();
-      renderComponent();
+      await renderComponentReady();
 
       const downloadButton = screen.getByText('Download Artifact');
       await user.click(downloadButton);
@@ -2754,16 +2794,16 @@ describe('TaskPage', () => {
 
     it('refreshes artifacts when the panel refresh action is triggered', async () => {
       const user = userEvent.setup();
-      renderComponent();
+      await renderComponentReady();
 
       await user.click(screen.getByText('Refresh Artifacts'));
 
       expect(mockTaskArtifactsRefetch).toHaveBeenCalledTimes(1);
     });
 
-    it('passes artifact refresh loading state into the panel', () => {
+    it('passes artifact refresh loading state into the panel', async () => {
       mockTaskArtifactsIsRefetching.value = true;
-      renderComponent();
+      await renderComponentReady();
 
       expect(screen.getByTestId('artifacts-refreshing')).toHaveTextContent('true');
     });
@@ -2790,15 +2830,15 @@ describe('TaskPage', () => {
   });
 
   describe('Layout', () => {
-    it('has correct layout structure', () => {
-      const { container } = renderComponent();
+    it('has correct layout structure', async () => {
+      const { container } = await renderComponentReady();
 
       const page = container.querySelector('.h-full.flex.flex-col');
       expect(page).toBeInTheDocument();
     });
 
-    it('has three-column layout for panels', () => {
-      const { container } = renderComponent();
+    it('has three-column layout for panels', async () => {
+      const { container } = await renderComponentReady();
 
       const flexContainer = container.querySelector('.flex-1.flex.min-h-0');
       expect(flexContainer).toBeInTheDocument();
@@ -2809,7 +2849,7 @@ describe('TaskPage', () => {
     it('shows rate limit toast when message send is throttled', async () => {
       const user = userEvent.setup();
       mockSendMessageMutateAsync.mockRejectedValueOnce(new ApiError('RATE_LIMIT_EXCEEDED', 'Too many requests', 'req-1', 429));
-      renderComponent();
+      await renderComponentReady();
 
       await user.click(screen.getByText('Send Message'));
 
@@ -2819,8 +2859,8 @@ describe('TaskPage', () => {
       expect(mockHandleError).not.toHaveBeenCalled();
     });
 
-    it('handles download errors gracefully', () => {
-      renderComponent();
+    it('handles download errors gracefully', async () => {
+      await renderComponentReady();
 
       // Download errors are handled internally
       expect(screen.getByTestId('artifacts-panel')).toBeInTheDocument();
@@ -2828,27 +2868,27 @@ describe('TaskPage', () => {
   });
 
   describe('Edge Cases', () => {
-    it('handles task with no messages', () => {
+    it('handles task with no messages', async () => {
       mockTaskHookState.messages = [];
       mockTaskHookState.artifacts = [];
 
-      renderComponent();
+      await renderComponentReady();
 
       expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
     });
 
-    it('handles task with no artifacts', () => {
+    it('handles task with no artifacts', async () => {
       mockTaskHookState.artifacts = [];
 
-      renderComponent();
+      await renderComponentReady();
 
       expect(screen.getByTestId('artifacts-panel')).toBeInTheDocument();
     });
 
-    it('handles task with no attached files', () => {
+    it('handles task with no attached files', async () => {
       mockTaskHookState.task = { ...mockTask, attached_inputs: [] };
 
-      renderComponent();
+      await renderComponentReady();
 
       expect(screen.queryByTestId('attached-inputs-panel')).not.toBeInTheDocument();
       expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();

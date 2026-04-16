@@ -7,14 +7,14 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-border/24 bg-transparent text-secondary hover:border-border/30 hover:bg-surface-low/305 hover:text-foreground',
-        primary: 'border-transparent bg-foreground/94 text-background hover:bg-foreground hover:text-background',
-        action: 'border-border/24 bg-surface-low/35 text-foreground hover:border-border/30 hover:bg-surface-low/505 hover:text-foreground',
-        outline: 'border-border/24 bg-transparent text-secondary hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground',
+        default: 'border-border/25 bg-transparent text-secondary hover:border-border/30 hover:bg-surface-low/30 hover:text-foreground',
+        primary: 'border-transparent bg-foreground text-background hover:bg-foreground/95 hover:text-background',
+        action: 'border-border/25 bg-surface-low/35 text-foreground hover:border-border/30 hover:bg-surface-low/50 hover:text-foreground',
+        outline: 'border-border/25 bg-transparent text-secondary hover:border-border/30 hover:bg-surface-low/30 hover:text-foreground',
         secondary: 'border-transparent bg-surface-low/35 text-secondary hover:bg-surface-low/50 hover:text-foreground',
         ghost: 'border-transparent bg-transparent text-secondary hover:bg-surface-low/25 hover:text-foreground',
         link: 'border-transparent bg-transparent px-0 text-secondary hover:text-foreground',
-        destructive: 'border-error/18 bg-error/6 text-error hover:bg-error/10',
+        destructive: 'border-error/20 bg-error/5 text-error hover:bg-error/10',
       },
       size: {
         default: 'h-9 px-3.5',
@@ -39,9 +39,11 @@ export interface ButtonProps
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
+    const visualProminence = variant === 'primary' ? 'primary' : undefined;
     return (
       <Comp
         className={buttonVariants({ variant, size, className })}
+        data-visual-prominence={visualProminence}
         ref={ref}
         {...props}
       />

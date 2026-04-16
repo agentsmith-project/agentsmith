@@ -27,6 +27,17 @@ export interface TaskCreateDialogProps {
   onSuccess?: (taskId: string) => void;
 }
 
+export function deriveDefaultTaskWorkspaceName(title: string) {
+  const normalizedTitle = title.trim().replace(/\s+/g, ' ');
+  if (!normalizedTitle) {
+    return '';
+  }
+  if (/\bworkspace$/i.test(normalizedTitle)) {
+    return normalizedTitle;
+  }
+  return `${normalizedTitle} workspace`;
+}
+
 export function TaskCreateDialog({
   open,
   onOpenChange,
@@ -75,6 +86,7 @@ export function TaskCreateDialog({
   const isAgentSelectable = React.useCallback((agent: { mode: string; presence?: string }) => (
     agent.mode === 'internal' || agent.presence === 'online' || agent.presence === 'managed'
   ), []);
+  const defaultWorkspaceName = deriveDefaultTaskWorkspaceName(title);
 
   // Reset form when dialog opens
   React.useEffect(() => {
@@ -117,7 +129,7 @@ export function TaskCreateDialog({
       ...(workspaceMode === 'create_new'
         ? {
             workspace_mode: 'create_new' as const,
-            workspace_name: workspaceName.trim() || `${title.trim()} Workspace`,
+            workspace_name: workspaceName.trim() || defaultWorkspaceName,
           }
         : {
             workspace_file_library_id: workspaceFileLibraryId,
@@ -150,7 +162,7 @@ export function TaskCreateDialog({
         <DialogHeader>
           <DialogTitle>{t('create')}</DialogTitle>
           <DialogDescription>
-            {t('create')} {t('new')}. {t('agent_fixed_notice')}
+            {t('create_description')}
           </DialogDescription>
         </DialogHeader>
 
@@ -206,7 +218,7 @@ export function TaskCreateDialog({
                     id="task-workspace-name"
                     value={workspaceName}
                     onChange={(e) => setWorkspaceName(e.target.value)}
-                    placeholder={workspaceName.length === 0 && title.trim().length > 0 ? `${title.trim()} Workspace` : t('workspace_name_placeholder')}
+                    placeholder={workspaceName.length === 0 && defaultWorkspaceName.length > 0 ? defaultWorkspaceName : t('workspace_name_placeholder')}
                     disabled={createTask.isPending}
                   />
                   <p className="text-xs text-tertiary">{t('workspace_name_hint')}</p>

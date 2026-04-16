@@ -49,15 +49,21 @@ jobs:
             exit 1
           fi
 
-      - name: Prepare integration dependencies
+      - name: Materialize backend-real endpoint env
         run: |
           set -euo pipefail
-          make bootstrap
+          umask 077
+          printf 'PRESET_ENDPOINT_API_KEY=%s\n' "${BACKEND_REAL_API_KEY}" > .env.backend-real
 
-      - name: Run engineering gate
+      - name: Prepare backend-real dependencies
         run: |
           set -euo pipefail
-          make verify-governance
+          npm run backend-real:bootstrap
+
+      - name: Run backend-real core lane
+        run: |
+          set -euo pipefail
+          npm run lane:backend-real:core
 
       - name: Generate governance report (archived)
         if: always()
@@ -78,5 +84,7 @@ jobs:
           path: |
             artifacts/governance-reports/**
             artifacts/backend-real/current/**
+            artifacts/backend-real/runs/**
+            artifacts/mock-lane/runs/**
             test-results/**
             playwright-report/**

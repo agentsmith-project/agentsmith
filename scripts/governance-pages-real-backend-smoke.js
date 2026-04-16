@@ -263,21 +263,21 @@ async function loginViaKeycloak(browser, {
     }
 
     await waitForAppReady(page);
-    const workspaceCard = page.getByTestId(`workspace-select__card--${workspaceId}`);
-    const anyWorkspaceCard = page.locator('[data-testid^="workspace-select__card--"]').first();
+    const workspaceItem = page.getByTestId(`workspace-select__item--${workspaceId}`);
+    const anyWorkspaceItem = page.locator('[data-testid^="workspace-select__item--"]').first();
     await page.waitForLoadState('domcontentloaded');
     await Promise.race([
-      workspaceCard.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
-      anyWorkspaceCard.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+      workspaceItem.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+      anyWorkspaceItem.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
       page.getByTestId('workspace-select__session-expired').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
       page.getByTestId('workspace-select__error').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
       page.getByTestId('workspace-select__empty').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
     ]);
-    if (await workspaceCard.isVisible().catch(() => false)) {
-      await workspaceCard.click();
+    if (await workspaceItem.isVisible().catch(() => false)) {
+      await workspaceItem.click();
       await page.waitForURL((url) => projectsPattern.test(url.href) || anyProjectsPattern.test(url.href), { timeout: 30_000 });
-    } else if (await anyWorkspaceCard.isVisible().catch(() => false)) {
-      await anyWorkspaceCard.click();
+    } else if (await anyWorkspaceItem.isVisible().catch(() => false)) {
+      await anyWorkspaceItem.click();
       await page.waitForURL(anyProjectsPattern, { timeout: 30_000 });
     } else if (!projectsPattern.test(page.url()) && !anyProjectsPattern.test(page.url())) {
       const directProjectsUrl = `${base}/${locale}/workspaces/${workspaceId}/projects`;
@@ -315,13 +315,13 @@ async function gotoProjectRouteWithWorkspaceRecovery(page, { url, locale, worksp
     const currentPath = new URL(page.url()).pathname;
     if (currentPath === targetPath) return;
     const onWorkspaceSelect = page.url().includes(`/${locale}/login/workspace`);
-    const workspaceCard = page.getByTestId(`workspace-select__card--${workspaceId}`);
-    if (!onWorkspaceSelect && !await workspaceCard.isVisible().catch(() => false)) {
+    const workspaceItem = page.getByTestId(`workspace-select__item--${workspaceId}`);
+    if (!onWorkspaceSelect && !await workspaceItem.isVisible().catch(() => false)) {
       // Route occasionally falls back to project list; retry full target navigation.
       continue;
     }
-    if (await workspaceCard.isVisible().catch(() => false)) {
-      await workspaceCard.click();
+    if (await workspaceItem.isVisible().catch(() => false)) {
+      await workspaceItem.click();
       await page.waitForURL(new RegExp(`/${locale}/workspaces/${workspaceId}/projects`), { timeout: 30_000 });
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
       await waitForAppReady(page);
@@ -467,15 +467,15 @@ async function main() {
             if (!foundAny) {
               const deadline = Date.now() + 45_000;
               while (Date.now() < deadline && !foundAny) {
-                const workspaceCard = page.getByTestId(`workspace-select__card--${workspaceId}`);
+                const workspaceItem = page.getByTestId(`workspace-select__item--${workspaceId}`);
                 const currentPath = new URL(page.url()).pathname;
                 if (
                   page.url().includes(`/${locale}/login/workspace`)
-                  || await workspaceCard.isVisible().catch(() => false)
+                  || await workspaceItem.isVisible().catch(() => false)
                   || currentPath !== path
                 ) {
-                  if (await workspaceCard.isVisible().catch(() => false)) {
-                    await workspaceCard.click();
+                  if (await workspaceItem.isVisible().catch(() => false)) {
+                    await workspaceItem.click();
                     await page.waitForURL(new RegExp(`/${locale}/workspaces/${workspaceId}/projects`), { timeout: 30_000 });
                   }
                   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });

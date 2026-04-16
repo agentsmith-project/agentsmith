@@ -14,9 +14,12 @@ run_cmd() {
   (cd "${ROOT_DIR}" && eval "$*")
 }
 
-next_generated_root_prepare_for_validation
+run_typecheck_with_root_preflight() {
+  next_generated_root_prepare_source_safe_for_tsc
+  run_cmd "npx tsc --noEmit"
+}
 
-run_cmd "npx tsc --noEmit"
+next_generated_root_with_source_contract_lock skills_runtime_typecheck run_typecheck_with_root_preflight
 
 run_cmd "npx tsx scripts/contracts/check-runner-naming.ts"
 

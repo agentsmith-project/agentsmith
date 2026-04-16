@@ -78,6 +78,9 @@
           ],
           "capture": "full_page",
           "authLane": "authed",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
           "themes": [
             "light",
             "dark"
@@ -96,6 +99,9 @@
           ],
           "capture": "full_page",
           "authLane": "authed",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
           "themes": [
             "light",
             "dark"

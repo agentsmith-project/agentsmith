@@ -12,6 +12,14 @@ source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-line-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-config.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
+if [[ -f "${ROOT_DIR}/scripts/lib/runner-lifecycle-log.sh" ]]; then
+  source "${ROOT_DIR}/scripts/lib/runner-lifecycle-log.sh"
+else
+  runner_lifecycle_latest_log_transition_file() { printf 'stale\trunner_lifecycle_parser_missing\n'; }
+  runner_lifecycle_latest_log_state_file() { printf 'stale\n'; }
+  runner_lifecycle_log_file_is_connected() { return 1; }
+  runner_lifecycle_logs_connected() { return 1; }
+fi
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
 source "${ROOT_DIR}/scripts/substrate/common.sh"
 ensure_backend_real_state
@@ -30,6 +38,8 @@ RUNNER_PID_FILE="${LOCAL_MANUAL_ROOT}/runner.pid"
 API_READY_FILE="${LOCAL_MANUAL_ROOT}/api.ready"
 WEB_READY_FILE="${LOCAL_MANUAL_ROOT}/web.ready"
 RUNNER_READY_FILE="${LOCAL_MANUAL_ROOT}/runner.ready"
+RUNNER_HEALTH_FILE="${LOCAL_MANUAL_ROOT}/runner.health.json"
+RUNNER_HEALTH_MONITOR_PID_FILE="${LOCAL_MANUAL_ROOT}/runner.health-monitor.pid"
 PROXY_READY_FILE="${SUBSTRATE_PROXY_READY_FILE}"
 
 API_PORT_FILE="${LOCAL_MANUAL_ROOT}/api.port"
@@ -909,29 +919,137 @@ stop_local_manual_tracked_service_owner_aware() {
   local_manual_restore_errexit_state "${errexit_was_enabled}"
 }
 
+local_manual_write_runner_health_artifact() {
+  local state="$1"
+  local pid="${2:-}"
+  local reason="${3:-observed}"
+  local source="${4:-local_manual_runner_health_monitor}"
+  node - <<'NODE' "${RUNNER_HEALTH_FILE}" "${state}" "${pid}" "${reason}" "${source}"
+const fs = require('node:fs');
+const path = require('node:path');
+const [file, state, pidRaw, reason, source] = process.argv.slice(2);
+const pid = Number.parseInt(pidRaw, 10);
+const allowedStates = new Set(['connected', 'shutting_down', 'disconnected', 'stale']);
+if (!allowedStates.has(state)) {
+  process.exit(1);
+}
+const payload = {
+  schema_version: 2,
+  contract: 'notebook-codex-runner.lifecycle.v1',
+  state,
+  pid: Number.isFinite(pid) && pid > 0 ? pid : null,
+  observed_at: new Date().toISOString(),
+  source,
+  reason,
+};
+fs.mkdirSync(path.dirname(file), { recursive: true });
+const tempFile = `${file}.${process.pid}.tmp`;
+fs.writeFileSync(tempFile, `${JSON.stringify(payload, null, 2)}\n`);
+fs.renameSync(tempFile, file);
+NODE
+}
+
+local_manual_runner_health_artifact_status() {
+  local expected_pid="${1:-}"
+  node - <<'NODE' "${RUNNER_HEALTH_FILE}" "${expected_pid}" "${LOCAL_MANUAL_RUNNER_HEALTH_MAX_AGE_SEC:-15}"
+const fs = require('node:fs');
+const [file, expectedPidRaw, maxAgeRaw] = process.argv.slice(2);
+const expectedPid = Number.parseInt(expectedPidRaw, 10);
+const maxAgeSeconds = Number.parseFloat(maxAgeRaw);
+function emit(state, reason) {
+  process.stdout.write(`${state}\t${reason}\n`);
+}
+const allowedStates = new Set(['connected', 'shutting_down', 'disconnected', 'stale']);
+let payload;
+try {
+  payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+} catch {
+  emit('stale', 'health_artifact_missing');
+  process.exit(0);
+}
+const observedMs = Date.parse(String(payload?.observed_at ?? ''));
+const ageMs = Date.now() - observedMs;
+if (
+  payload?.schema_version !== 2
+  || payload?.contract !== 'notebook-codex-runner.lifecycle.v1'
+  || !allowedStates.has(payload?.state)
+  || !Number.isFinite(observedMs)
+  || !Number.isFinite(maxAgeSeconds)
+  || maxAgeSeconds <= 0
+  || ageMs < -5000
+  || ageMs > maxAgeSeconds * 1000
+  || (Number.isFinite(expectedPid) && expectedPid > 0 && payload?.pid !== expectedPid)
+) {
+  emit('stale', 'health_artifact_invalid_or_stale');
+  process.exit(0);
+}
+emit(payload.state, payload.reason ?? 'health_artifact_fresh');
+NODE
+}
+
+local_manual_runner_latest_socket_log_transition() {
+  runner_lifecycle_latest_log_transition_file "${RUNNER_LOG}"
+}
+
+local_manual_runner_latest_socket_log_state() {
+  runner_lifecycle_latest_log_state_file "${RUNNER_LOG}"
+}
+
+local_manual_runner_health_monitor_once() {
+  local pid transition state reason
+  pid="$(cat "${RUNNER_PID_FILE}" 2>/dev/null || true)"
+  if [[ -z "${pid}" ]] || ! kill -0 "${pid}" >/dev/null 2>&1; then
+    local_manual_write_runner_health_artifact disconnected "${pid}" pid_missing
+    return 1
+  fi
+
+  transition="$(local_manual_runner_latest_socket_log_transition)"
+  IFS=$'\t' read -r state reason <<< "${transition}"
+  state="${state:-stale}"
+  reason="${reason:-no_socket_transition_observed}"
+  local_manual_write_runner_health_artifact "${state}" "${pid}" "${reason}"
+}
+
+local_manual_runner_health_monitor_loop() {
+  local interval_seconds="${LOCAL_MANUAL_RUNNER_HEALTH_MONITOR_INTERVAL_SEC:-1}"
+  while true; do
+    if ! local_manual_runner_health_monitor_once; then
+      return 0
+    fi
+    sleep "${interval_seconds}"
+  done
+}
+
+stop_runner_health_monitor() {
+  local monitor_pid
+  monitor_pid="$(cat "${RUNNER_HEALTH_MONITOR_PID_FILE}" 2>/dev/null || true)"
+  if [[ -n "${monitor_pid}" ]]; then
+    kill "${monitor_pid}" >/dev/null 2>&1 || true
+  fi
+  rm -f "${RUNNER_HEALTH_MONITOR_PID_FILE}"
+}
+
+start_runner_health_monitor() {
+  stop_runner_health_monitor
+  local_manual_runner_health_monitor_loop >/dev/null 2>&1 < /dev/null &
+  mkdir -p "$(dirname "${RUNNER_HEALTH_MONITOR_PID_FILE}")"
+  printf '%s\n' "$!" > "${RUNNER_HEALTH_MONITOR_PID_FILE}"
+}
+
 runner_socket_health_state() {
-  local pid current_state line
+  local pid artifact_status state reason
   pid="$(cat "${RUNNER_PID_FILE}" 2>/dev/null || true)"
   if [[ -z "${pid}" ]] || ! kill -0 "${pid}" >/dev/null 2>&1; then
     printf 'disconnected\n'
     return 0
   fi
 
-  current_state="unknown"
-  if [[ -f "${RUNNER_LOG}" ]]; then
-    while IFS= read -r line; do
-      case "${line}" in
-        *"[notebook-codex-runner] connected"*) current_state="connected" ;;
-        *"[notebook-codex-runner] disconnected"*) current_state="disconnected" ;;
-      esac
-    done < "${RUNNER_LOG}"
-  fi
-
-  if [[ "${current_state}" == "connected" ]]; then
-    printf 'connected\n'
-  else
-    printf 'disconnected\n'
-  fi
+  artifact_status="$(local_manual_runner_health_artifact_status "${pid}")"
+  IFS=$'\t' read -r state reason <<< "${artifact_status}"
+  case "${state}" in
+    connected | shutting_down | disconnected | stale) printf '%s\n' "${state}" ;;
+    *) printf 'stale\n' ;;
+  esac
 }
 
 runner_socket_is_connected() {
@@ -939,16 +1057,20 @@ runner_socket_is_connected() {
 }
 
 ensure_local_manual_runner_connected() {
-  if runner_socket_is_connected; then
+  local state
+  state="$(runner_socket_health_state)"
+  if [[ "${state}" == "connected" ]]; then
     return 0
   fi
-  info "restarting local-manual runner because socket is $(runner_socket_health_state)"
+  info "restarting local-manual runner because socket is ${state}"
   bash "${ROOT_DIR}/scripts/local-manual/start-runner.sh"
 }
 
 remove_local_manual_runtime_files() {
+  stop_runner_health_monitor
   rm -f \
     "${API_READY_FILE}" "${WEB_READY_FILE}" "${RUNNER_READY_FILE}" \
+    "${RUNNER_HEALTH_FILE}" "${RUNNER_HEALTH_MONITOR_PID_FILE}" \
     "${API_PORT_FILE}" "${WEB_PORT_FILE}" \
     "${API_PROCESS_STATE_FILE}" "${WEB_PROCESS_STATE_FILE}" \
     "${API_PID_FILE}" "${WEB_PID_FILE}" "${RUNNER_PID_FILE}" \
@@ -1076,7 +1198,7 @@ process.stdout.write(String(plan.reason ?? 'runner_unverified'));
 NODE
 )"
   local_manual_write_runner_stop_evidence "${plan_json}" "stop_line"
-  rm -f "${RUNNER_READY_FILE}"
+  rm -f "${RUNNER_READY_FILE}" "${RUNNER_HEALTH_FILE}"
   gate_record_preflight_check "${LOCAL_MANUAL_EVIDENCE_DIR}" "runner_stop_authority" "warning" "runner ownership is unverified during stop_line cleanup: ${reason}"
 }
 
@@ -1198,17 +1320,20 @@ stop_local_manual_runner_owner_aware() {
       warn "runner full-stop verification failed; keeping tracking state until the owned runner tree exits"
       return 1
     fi
+    stop_runner_health_monitor
     rm -f "${RUNNER_PID_FILE}"
-    rm -f "${RUNNER_READY_FILE}"
+    rm -f "${RUNNER_READY_FILE}" "${RUNNER_HEALTH_FILE}"
     return 0
   fi
 
   if [[ "${owner_janitor_action}" == "remove_state_only" ]]; then
-    rm -f "${RUNNER_PID_FILE}" "${RUNNER_READY_FILE}"
+    stop_runner_health_monitor
+    rm -f "${RUNNER_PID_FILE}" "${RUNNER_READY_FILE}" "${RUNNER_HEALTH_FILE}"
     return 0
   fi
 
   if [[ "${owner_janitor_action}" == "mark_degraded" ]]; then
+    stop_runner_health_monitor
     local_manual_mark_runner_degraded "${owner_janitor_output}"
     return 0
   fi

@@ -97,6 +97,10 @@ let connectedResourceProxyBase = '';
 type FilterStats = RunnerFilterStats;
 const filterStatsByRequestId = new Map<string, FilterStats>();
 let runnerShutdownPromise: Promise<void> | null = null;
+let runnerIsShuttingDown = false;
+
+type ShutdownReason = 'websocket_close' | 'sigint' | 'sigterm';
+type RunnerLifecycleState = 'connected' | 'shutting_down' | 'disconnected';
 
 function getFilterStats(requestId: string): FilterStats {
   const existing = filterStatsByRequestId.get(requestId);
@@ -118,7 +122,14 @@ function sanitizePathPart(input: string | undefined, fallback: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || fallback;
 }
 
+function canSendRunnerFrame(): boolean {
+  if (runnerIsShuttingDown) return false;
+  const readyState = (ws as { readyState?: number }).readyState;
+  return readyState === undefined || readyState === WebSocket.OPEN;
+}
+
 function sendFrame(type: string, requestId: string, payload: Record<string, unknown>) {
+  if (!canSendRunnerFrame()) return;
   ws.send(
     JSON.stringify({
       type,
@@ -130,6 +141,7 @@ function sendFrame(type: string, requestId: string, payload: Record<string, unkn
 }
 
 function sendTerminalFrame(type: string, terminalSessionId: string, payload: Record<string, unknown>) {
+  if (!canSendRunnerFrame()) return;
   ws.send(
     JSON.stringify({
       type,
@@ -220,41 +232,147 @@ function debugLog(message: string, extra?: Record<string, unknown>): void {
   process.stdout.write(`[notebook-codex-runner][debug] ${message}${payload}\n`);
 }
 
-function killActiveRunnerProcesses(): void {
-  for (const child of runningByRequestId.values()) {
-    if (child.exitCode === null) {
-      child.kill('SIGTERM');
-    }
-  }
-  for (const terminalChild of runningTerminalBySessionId.values()) {
-    if (terminalChild.exitCode === null) {
-      terminalChild.kill('SIGTERM');
+function writeRunnerLifecycleState(state: RunnerLifecycleState, reason: string): void {
+  process.stdout.write(`[notebook-codex-runner] runner_state=${state} reason=${reason}\n`);
+}
+
+function shutdownExitCode(reason: ShutdownReason): number {
+  return reason === 'websocket_close' ? 1 : 0;
+}
+
+function clearRunnerState(): void {
+  runningByRequestId.clear();
+  runningTerminalBySessionId.clear();
+  cancelRequestedByRequestId.clear();
+  connectedResourceProxyBase = '';
+  traceSeqByRequestId.clear();
+  runStartedAtByRequestId.clear();
+  reportedArtifactsByRequestId.clear();
+  visibleAgentCharsByRequestId.clear();
+  commandCountByRequestId.clear();
+  filterStatsByRequestId.clear();
+}
+
+function waitForCodexProcessClose(child: RunningProcess): Promise<void> {
+  if (child.exitCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    let resolved = false;
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
+      child.off('close', finish);
+      child.off('exit', finish);
+      resolve();
+    };
+    child.once('close', finish);
+    child.once('exit', finish);
+  });
+}
+
+function waitForTerminalProcessExit(child: TerminalProcess): Promise<void> {
+  if (child.exitCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    let resolved = false;
+    child.onExit(() => {
+      if (resolved) return;
+      resolved = true;
+      resolve();
+    });
+  });
+}
+
+async function waitWithTimeout(promise: Promise<void>, timeoutMs: number): Promise<boolean> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timeout = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
     }
   }
 }
 
-async function shutdownRunnerOnWebSocketClose(): Promise<void> {
+async function terminateCodexProcess(requestId: string, child: RunningProcess): Promise<void> {
+  if (child.exitCode !== null) return;
+  const closed = waitForCodexProcessClose(child);
+  child.kill('SIGTERM');
+  if (await waitWithTimeout(closed, cancelKillDelayMs)) return;
+  if (child.exitCode === null) {
+    debugLog('codex process did not exit before shutdown grace; sending SIGKILL', { request_id: requestId });
+    child.kill('SIGKILL');
+  }
+  if (!(await waitWithTimeout(closed, cancelKillDelayMs))) {
+    debugLog('codex process did not report close after SIGKILL', { request_id: requestId });
+  }
+}
+
+async function terminateTerminalProcess(terminalSessionId: string, child: TerminalProcess): Promise<void> {
+  if (child.exitCode !== null) return;
+  const closed = waitForTerminalProcessExit(child);
+  child.kill('SIGTERM');
+  if (await waitWithTimeout(closed, cancelKillDelayMs)) return;
+  if (child.exitCode === null) {
+    debugLog('terminal process did not exit before shutdown grace; sending SIGKILL', {
+      terminal_session_id: terminalSessionId,
+    });
+    child.kill('SIGKILL');
+  }
+  if (!(await waitWithTimeout(closed, cancelKillDelayMs))) {
+    debugLog('terminal process did not report exit after SIGKILL', { terminal_session_id: terminalSessionId });
+  }
+}
+
+async function terminateActiveRunnerProcesses(): Promise<void> {
+  const codexProcesses = Array.from(runningByRequestId.entries()).map(([requestId, child]) => (
+    terminateCodexProcess(requestId, child)
+  ));
+  const terminalProcesses = Array.from(runningTerminalBySessionId.entries()).map(([terminalSessionId, child]) => (
+    terminateTerminalProcess(terminalSessionId, child)
+  ));
+  await Promise.all([...codexProcesses, ...terminalProcesses]);
+}
+
+function closeWebSocketForShutdown(reason: ShutdownReason): void {
+  if (reason === 'websocket_close') return;
+  try {
+    if (typeof ws.close === 'function') {
+      ws.close();
+    }
+  } catch (error) {
+    debugLog('websocket close during shutdown failed', {
+      reason,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function shutdownRunner(reason: ShutdownReason): Promise<void> {
   if (runnerShutdownPromise) {
     return runnerShutdownPromise;
   }
+  runnerIsShuttingDown = true;
   runnerShutdownPromise = (async () => {
-    process.stdout.write('[notebook-codex-runner] disconnected; shutting down\n');
-    killActiveRunnerProcesses();
-    runningByRequestId.clear();
-    runningTerminalBySessionId.clear();
-    cancelRequestedByRequestId.clear();
-    connectedResourceProxyBase = '';
-    traceSeqByRequestId.clear();
-    runStartedAtByRequestId.clear();
+    writeRunnerLifecycleState('shutting_down', reason);
+    process.stdout.write(`[notebook-codex-runner] shutting down (${reason})\n`);
+    closeWebSocketForShutdown(reason);
+    await terminateActiveRunnerProcesses();
     try {
       await releaseAllPreparedTaskWorkspaces();
     } catch (error) {
       process.stderr.write(
         `[notebook-codex-runner] shutdown cleanup failed: ${error instanceof Error ? error.message : 'unknown'}\n`,
       );
+    } finally {
+      clearRunnerState();
     }
   })().finally(() => {
-    process.exit(1);
+    writeRunnerLifecycleState('disconnected', reason);
+    process.exit(shutdownExitCode(reason));
   });
   return runnerShutdownPromise;
 }
@@ -1223,6 +1341,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
 }
 
 ws.on('open', () => {
+  writeRunnerLifecycleState('connected', 'websocket_open');
   process.stdout.write('[notebook-codex-runner] connected\n');
   debugLog('websocket open', { ws_url: wsUrl });
   ws.send(
@@ -1249,6 +1368,15 @@ ws.on('message', (raw) => {
   try {
     message = JSON.parse(raw.toString('utf-8')) as AgentMessage;
   } catch {
+    return;
+  }
+
+  if (runnerIsShuttingDown) {
+    debugLog('ignoring server message while runner is shutting down', {
+      message_type: message.type ?? null,
+      request_id: message.request_id ?? null,
+      terminal_session_id: message.terminal_session_id ?? null,
+    });
     return;
   }
 
@@ -1403,9 +1531,17 @@ ws.on('message', (raw) => {
 });
 
 ws.on('close', () => {
-  void shutdownRunnerOnWebSocketClose();
+  void shutdownRunner('websocket_close');
 });
 
 ws.on('error', (error) => {
   process.stderr.write(`[notebook-codex-runner] error: ${error instanceof Error ? error.message : 'unknown'}\n`);
+});
+
+process.once('SIGINT', () => {
+  void shutdownRunner('sigint');
+});
+
+process.once('SIGTERM', () => {
+  void shutdownRunner('sigterm');
 });

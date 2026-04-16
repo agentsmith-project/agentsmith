@@ -1,5 +1,6 @@
 import { test as base, type Page } from '@playwright/test';
 import { ensureAuthenticatedSession, ensureProtectedRouteAuthenticated, withAuth } from './authenticated';
+import { isE2EProtectedRoute } from './route-auth-policy';
 import { gotoAndWait, waitForPageReady } from '../utils/navigation';
 
 /** Default test constants */
@@ -10,7 +11,6 @@ export const LIMITED_TEST_EMAIL = 'viewer@example.com';
 export const ADMIN_TEST_EMAIL = 'bob.smith@example.com';
 export const GUEST_TEST_EMAIL = 'guest@example.com';
 export const LOCALE = 'en-US';
-const PROTECTED_ROUTE_REGEX = /^\/(en-US|zh-CN)\/(?:user|workspaces)\//;
 
 /** Build a project-scoped URL */
 export function projectUrl(
@@ -62,7 +62,7 @@ export async function goToProject(page: Page, section: string) {
 /** Navigate to any page and wait for ready */
 export async function goTo(page: Page, path: string) {
   const targetPath = path.startsWith('http') ? new URL(path).pathname : path;
-  const isProtectedRoute = PROTECTED_ROUTE_REGEX.test(targetPath);
+  const isProtectedRoute = isE2EProtectedRoute(targetPath);
 
   const navigateOnce = async () => {
     await gotoAndWait(page, path);

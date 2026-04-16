@@ -55,11 +55,11 @@ test.describe('Notebook Page', () => {
       await expect(titleInput).toBeVisible();
       await titleInput.fill('Test Task');
       await expect(
-        dialog.getByRole('radio', { name: /initialize a new workspace automatically/i }),
+        dialog.getByRole('radio', { name: /initialize a new task workspace automatically/i }),
       ).toBeChecked();
       await expect(dialog.locator('#task-workspace-name')).toBeVisible();
       await expect(
-        dialog.getByRole('radio', { name: /continue an existing workspace/i }),
+        dialog.getByRole('radio', { name: /continue an existing task workspace/i }),
       ).toBeVisible();
 
       // Close dialog
@@ -192,7 +192,9 @@ test.describe('Notebook Page', () => {
     test('should navigate to files page from sidebar on task detail', async ({ authedPage }) => {
       await authedPage.getByTestId('sidebar__nav-item--files').click();
       await authedPage.waitForURL(/\/files$/, { timeout: 10000 });
-      await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
+      await expect(authedPage.getByTestId('files__workspace-surface')).toBeVisible();
+      await expect(authedPage.getByTestId('files__library-list')).toBeVisible();
+      await expect(authedPage.getByTestId('files__objects-table')).toBeVisible();
     });
 
     test('should expand execution details panel for agent messages', async ({ authedPage }) => {

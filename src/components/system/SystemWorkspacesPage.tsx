@@ -82,6 +82,7 @@ export function SystemWorkspacesPage() {
     () => workspaces.filter((workspace) => workspace.provisioning_status === 'ready').length,
     [workspaces],
   );
+  const headerCreateVariant = workspaces.length > 0 && attentionCount === 0 ? 'primary' : 'outline';
   const hasSearchQuery = searchQuery.trim().length > 0;
   const hasActiveListFilter = listFilter !== 'all';
 
@@ -177,7 +178,7 @@ export function SystemWorkspacesPage() {
             actions={(
               <>
                 <Link href={`/${locale}/system/workspaces/new`}>
-                  <Button type="button" variant="primary" data-testid="system-workspaces__new-workspace">
+                  <Button type="button" variant={headerCreateVariant} data-testid="system-workspaces__new-workspace">
                     <Plus className="mr-2 h-4 w-4" />
                     {t('new_workspace')}
                   </Button>
@@ -361,7 +362,9 @@ export function SystemWorkspacesPage() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Link href={`/${locale}/system/workspaces/new`}>
-                        <Button type="button" variant="primary">{t('new_workspace')}</Button>
+                        <Button type="button" variant="outline" data-testid="system-workspaces__editor-empty-create">
+                          {t('new_workspace')}
+                        </Button>
                       </Link>
                     </div>
                   </aside>

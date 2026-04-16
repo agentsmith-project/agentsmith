@@ -4,13 +4,12 @@ import type { AgentRecord, AgentServiceKeyRecord } from './resource-models.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 import { listRegisteredWorkspaceIds } from './workspace-registry.js';
 import { resolveAgentRunnerRuntime } from './agent-runner-profile.js';
-
-interface AgentConnectionState {
-  connected_at: string;
-  remote_ip?: string;
-  last_pong_at?: string;
-  protocol_version?: string;
-}
+import {
+  createAgentPresenceStore,
+  type AgentConnectionState,
+  type AgentPresenceStore,
+  type RegisterAgentConnectionInput,
+} from './agent-presence-store.js';
 
 function sanitizeAgentRecord(agent: AgentRecord & Record<string, unknown>): AgentRecord {
   const sanitized: AgentRecord = {
@@ -51,12 +50,6 @@ export interface AgentRuntimeState {
     expected_interaction_kind: 'chat' | 'notebook';
     actual_runner_spec?: Record<string, unknown>;
   };
-}
-
-const AGENT_PRESENCE_TTL_SECONDS = 45;
-
-function agentPresenceKey(agentId: string): string {
-  return `agent:presence:${agentId}`;
 }
 
 function sanitizeBaseUrl(value: string | undefined | null): string | null {
@@ -116,13 +109,16 @@ export interface AgentConnectionInfo {
 export class AgentResourceService {
   private static readonly agentsCollection = 'agents';
   private static readonly agentKeysCollection = 'agent_service_keys';
-  private readonly agentConnectionState = new Map<string, AgentConnectionState>();
+  private readonly agentPresenceStore: AgentPresenceStore;
   private readonly agentRuntimeState = new Map<string, AgentRuntimeState>();
 
   constructor(
     private readonly docStore: JsonDocStorePort,
     private readonly cache?: CachePort,
-  ) {}
+    agentPresenceStore?: AgentPresenceStore,
+  ) {
+    this.agentPresenceStore = agentPresenceStore ?? createAgentPresenceStore(cache);
+  }
 
   private async hydrateAgentRecord(
     raw: (AgentRecord & Record<string, unknown>) | null,
@@ -260,11 +256,8 @@ export class AgentResourceService {
     for (const key of keys) {
       await this.docStore.delete(this.agentKeysCollection(workspaceId), key.id);
     }
-    this.agentConnectionState.delete(agentId);
     this.agentRuntimeState.delete(agentId);
-    if (this.cache) {
-      await this.cache.del(agentPresenceKey(agentId));
-    }
+    await this.agentPresenceStore.clearAgent(agentId);
     return true;
   }
 
@@ -360,27 +353,125 @@ export class AgentResourceService {
     return [...collections];
   }
 
-  async markAgentConnected(agentId: string, meta: Omit<AgentConnectionState, 'connected_at'>): Promise<void> {
-    this.agentConnectionState.set(agentId, {
-      connected_at: new Date().toISOString(),
-      ...meta,
-    });
-    if (this.cache) {
-      await this.cache.set(
-        agentPresenceKey(agentId),
-        JSON.stringify({
-          connected_at: new Date().toISOString(),
-          ...meta,
-        } satisfies AgentConnectionState),
-        AGENT_PRESENCE_TTL_SECONDS,
+  async registerAgentConnection(input: RegisterAgentConnectionInput): Promise<AgentConnectionState> {
+    const snapshot = await this.agentPresenceStore.upsertConnection(input);
+    const registeredConnection = snapshot.connections.find((connection) => connection.connection_id === input.connectionId);
+    const latestConnection = snapshot.latestConnection;
+    const lastSeenAt = latestConnection?.last_pong_at ?? latestConnection?.connected_at ?? new Date().toISOString();
+    await this.writeStoredPresence(input.workspaceId, input.projectId, input.agentId, 'online', lastSeenAt);
+    return registeredConnection ?? {
+      connection_id: input.connectionId,
+      socket_key: input.socketKey,
+      agent_id: input.agentId,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      connected_at: input.connectedAt ?? lastSeenAt,
+      last_pong_at: input.lastPongAt ?? lastSeenAt,
+      expires_at: lastSeenAt,
+      api_instance_id: input.apiInstanceId,
+      ...(input.sessionId ? { session_id: input.sessionId } : {}),
+      active_connection_count: snapshot.activeConnectionCount,
+    };
+  }
+
+  async refreshAgentConnection(input: {
+    agentId: string;
+    connectionId: string;
+    lastPongAt: string;
+    remoteIp?: string;
+    protocolVersion?: string;
+  }): Promise<{
+    refreshed: boolean;
+    stale: boolean;
+    active_connection_count: number;
+    presence: 'online' | 'offline';
+  }> {
+    const result = await this.agentPresenceStore.refreshConnection(input);
+    return {
+      refreshed: !result.stale,
+      stale: result.stale,
+      active_connection_count: result.snapshot.activeConnectionCount,
+      presence: result.snapshot.activeConnectionCount > 0 ? 'online' : 'offline',
+    };
+  }
+
+  async releaseAgentConnection(input: {
+    workspaceId: string;
+    projectId: string;
+    agentId: string;
+    connectionId: string;
+  }): Promise<{
+    released: boolean;
+    stale: boolean;
+    active_connection_count: number;
+    presence: 'online' | 'offline' | 'managed';
+  }> {
+    const result = await this.agentPresenceStore.releaseConnection(input);
+    const latest = result.snapshot.latestConnection;
+    if (latest) {
+      await this.writeStoredPresence(
+        latest.workspace_id,
+        latest.project_id,
+        input.agentId,
+        'online',
+        latest.last_pong_at ?? latest.connected_at,
       );
+      return {
+        released: result.released,
+        stale: result.stale,
+        active_connection_count: result.snapshot.activeConnectionCount,
+        presence: 'online',
+      };
     }
+    const existing = await this.findAgentById(input.agentId);
+    const nextPresence = existing?.mode === 'internal' ? 'managed' : 'offline';
+    await this.writeStoredPresence(input.workspaceId, input.projectId, input.agentId, nextPresence, new Date().toISOString());
+    return {
+      released: result.released,
+      stale: result.stale,
+      active_connection_count: 0,
+      presence: nextPresence,
+    };
+  }
+
+  async isAgentConnectionCurrent(agentId: string, connectionId: string): Promise<boolean> {
+    return this.agentPresenceStore.isConnectionCurrent(agentId, connectionId);
+  }
+
+  async markAgentConnected(
+    agentId: string,
+    meta: {
+      remote_ip?: string;
+      last_pong_at?: string;
+      protocol_version?: string;
+    },
+  ): Promise<void> {
+    const agent = await this.findAgentById(agentId);
+    if (!agent) return;
+    await this.registerAgentConnection({
+      agentId,
+      workspaceId: agent.workspace_id,
+      projectId: agent.project_id,
+      connectionId: `legacy:${agentId}`,
+      socketKey: agentId,
+      apiInstanceId: 'legacy',
+      ...(meta.remote_ip ? { remoteIp: meta.remote_ip } : {}),
+      ...(meta.protocol_version ? { protocolVersion: meta.protocol_version } : {}),
+      ...(meta.last_pong_at ? { lastPongAt: meta.last_pong_at } : {}),
+    });
   }
 
   async markAgentDisconnected(agentId: string): Promise<void> {
-    this.agentConnectionState.delete(agentId);
-    if (this.cache) {
-      await this.cache.del(agentPresenceKey(agentId));
+    const agent = await this.findAgentById(agentId);
+    await this.agentPresenceStore.clearAgent(agentId);
+    if (agent) {
+      await this.writeStoredPresence(
+        agent.workspace_id,
+        agent.project_id,
+        agentId,
+        agent.mode === 'internal' ? 'managed' : 'offline',
+        new Date().toISOString(),
+      );
     }
   }
 
@@ -438,25 +529,8 @@ export class AgentResourceService {
   }
 
   async getConnectionInfo(agentId: string): Promise<AgentConnectionState | null> {
-    const local = this.agentConnectionState.get(agentId);
-    if (local) return local;
-    if (!this.cache) return null;
-    const raw = await this.cache.get(agentPresenceKey(agentId));
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw) as AgentConnectionState;
-      if (
-        typeof parsed?.connected_at !== 'string'
-        || (parsed.remote_ip !== undefined && typeof parsed.remote_ip !== 'string')
-        || (parsed.last_pong_at !== undefined && typeof parsed.last_pong_at !== 'string')
-        || (parsed.protocol_version !== undefined && typeof parsed.protocol_version !== 'string')
-      ) {
-        return null;
-      }
-      return parsed;
-    } catch {
-      return null;
-    }
+    const snapshot = await this.agentPresenceStore.getPresence(agentId);
+    return snapshot.latestConnection;
   }
 
   buildConnectionInfo(agent: Pick<AgentRecord, 'id' | 'mode' | 'config'>): AgentConnectionInfo {
@@ -507,5 +581,32 @@ export class AgentResourceService {
       };
     }
     return agent;
+  }
+
+  private async findAgentById(agentId: string): Promise<AgentRecord | null> {
+    const collections = await this.listRegisteredWorkspaceCollections(AgentResourceService.agentsCollection);
+    for (const collection of collections) {
+      const item = await this.docStore.get<AgentRecord & Record<string, unknown>>(collection, agentId);
+      if (!item) continue;
+      return sanitizeAgentRecord(item);
+    }
+    return null;
+  }
+
+  private async writeStoredPresence(
+    workspaceId: string,
+    projectId: string,
+    agentId: string,
+    presence: AgentRecord['presence'],
+    lastSeenAt: string,
+  ): Promise<void> {
+    const item = await this.docStore.get<AgentRecord & Record<string, unknown>>(this.agentsCollection(workspaceId), agentId);
+    if (!item || item.workspace_id !== workspaceId || item.project_id !== projectId) return;
+    await this.docStore.upsert(this.agentsCollection(workspaceId), agentId, {
+      ...sanitizeAgentRecord(item),
+      presence,
+      last_seen_at: lastSeenAt,
+      updated_at: new Date().toISOString(),
+    });
   }
 }

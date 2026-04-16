@@ -106,24 +106,20 @@ export function TaskHeader({
     }
   };
 
-  const agentPresenceLabel = (
-    agentPresence === 'online'
-      ? t('agent_presence_online')
-      : agentPresence === 'managed'
-        ? t('agent_presence_managed')
-        : agentPresence === 'offline'
-          ? t('agent_presence_offline')
-          : t('agent_presence_unknown')
-  );
-  const agentPresenceVariant: 'default' | 'secondary' | 'destructive' | 'outline' = (
-    agentPresence === 'online'
-      ? 'default'
-      : agentPresence === 'managed'
-        ? 'secondary'
-        : agentPresence === 'offline'
-          ? 'destructive'
-          : 'outline'
-  );
+  const agentPresenceLabel = agentPresence === 'online'
+    ? t('agent_presence_online')
+    : agentPresence === 'managed'
+      ? t('agent_presence_managed')
+      : agentPresence === 'offline'
+        ? t('agent_presence_offline')
+        : null;
+  const agentPresenceVariant: 'default' | 'secondary' | 'destructive' | 'outline' | null = agentPresence === 'online'
+    ? 'default'
+    : agentPresence === 'managed'
+      ? 'secondary'
+      : agentPresence === 'offline'
+        ? 'destructive'
+        : null;
   const formatElapsed = (seconds: number): string => {
     if (!Number.isFinite(seconds) || seconds < 0) return '0s';
     if (seconds < 60) return `${seconds}s`;
@@ -131,13 +127,12 @@ export function TaskHeader({
     const remain = seconds % 60;
     return remain === 0 ? `${minutes}m` : `${minutes}m ${remain}s`;
   };
-  const agentModeLabel = (
-    agentMode === 'internal'
-      ? t('agent_mode_internal')
-      : agentMode === 'external'
-        ? t('agent_mode_external')
-        : t('agent_mode_unknown')
-  );
+  const agentModeLabel = agentMode === 'internal'
+    ? t('agent_mode_internal')
+    : agentMode === 'external'
+      ? t('agent_mode_external')
+      : null;
+  const shouldShowAgentRecordUnavailable = agentPresenceLabel === null && agentModeLabel === null;
   const workspaceFileLibraryName = task.workspace_file_library_name?.trim() || t('workspace_file_library_unknown');
   const hasTerminalTabs = terminalSessionCount > 0;
   const terminalModeLabel = t('terminal_mode_terminal');
@@ -188,12 +183,25 @@ export function TaskHeader({
           <h1 className="truncate text-sm font-semibold text-foreground md:text-base">{task.title}</h1>
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             <span className="text-[11px] text-tertiary">Agent: {task.agent_name}</span>
-            <Badge variant={agentPresenceVariant} className="text-[11px]">
-              {agentPresenceLabel}
-            </Badge>
-            <Badge variant="outline" className="text-[11px]" data-testid="notebook__task-header-agent-mode">
-              {agentModeLabel}
-            </Badge>
+            {agentPresenceLabel && agentPresenceVariant ? (
+              <Badge variant={agentPresenceVariant} className="text-[11px]">
+                {agentPresenceLabel}
+              </Badge>
+            ) : null}
+            {agentModeLabel ? (
+              <Badge variant="outline" className="text-[11px]" data-testid="notebook__task-header-agent-mode">
+                {agentModeLabel}
+              </Badge>
+            ) : null}
+            {shouldShowAgentRecordUnavailable ? (
+              <Badge
+                variant="outline"
+                className="border-warning/30 bg-warning/10 text-[11px] text-warning"
+                data-testid="notebook__task-header-agent-record-unavailable"
+              >
+                {t('agent_record_unavailable')}
+              </Badge>
+            ) : null}
             <Badge variant="outline" className="text-[11px]" data-testid="notebook__task-header-workspace-library">
               {t('workspace_file_library_label')}: {workspaceFileLibraryName}
             </Badge>

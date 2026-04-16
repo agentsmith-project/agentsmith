@@ -149,17 +149,18 @@ vi.mock('next-intl', () => ({
       'create': 'Create',
       'new': 'New',
       'important': 'Important:',
+      'create_description': 'Start a notebook task by choosing an agent and task workspace.',
       'create_title': 'Task Title',
       'select_agent': 'Select an Agent',
-      'workspace_source_label': 'Workspace',
-      'workspace_source_create_new': 'Initialize a new workspace automatically',
-      'workspace_source_create_new_hint': 'Recommended. We\'ll create a fresh persistent workspace for this task.',
-      'workspace_source_use_existing': 'Continue an existing workspace',
-      'workspace_source_use_existing_hint': 'Use an existing workspace library to keep working with previous files and agent context.',
-      'workspace_name_label': 'New workspace name',
-      'workspace_name_placeholder': 'Enter workspace name',
-      'workspace_name_hint': 'Leave blank to generate a workspace name from the task title.',
-      'select_workspace_file_library': 'Select Existing Workspace',
+      'workspace_source_label': 'Task workspace',
+      'workspace_source_create_new': 'Initialize a new task workspace automatically',
+      'workspace_source_create_new_hint': 'Recommended. We\'ll create a fresh persistent task workspace for this task.',
+      'workspace_source_use_existing': 'Continue an existing task workspace',
+      'workspace_source_use_existing_hint': 'Use an existing task workspace file library to keep working with previous files and agent context.',
+      'workspace_name_label': 'New task workspace name',
+      'workspace_name_placeholder': 'Enter task workspace name',
+      'workspace_name_hint': 'Leave blank to generate a task workspace name from the task title.',
+      'select_workspace_file_library': 'Select Existing Task Workspace',
       'workspace_file_library_hint': 'Only idle workspaces can be selected.',
       'workspace_file_library_empty': 'No idle workspaces are available in this project right now.',
       'agent_fixed_notice': 'The agent cannot be changed after creation',
@@ -346,13 +347,36 @@ describe('TaskCreateDialog', () => {
       expect(createTexts.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('renders dialog description', () => {
+    it('renders a product-written dialog description instead of a stitched title and constraint sentence', () => {
       renderComponent();
 
-      // Dialog description contains "Create New. The agent cannot be changed..."
-      // Use getAllByText since both the description and the notice section match
-      const matches = screen.getAllByText(/The agent cannot be changed/);
-      expect(matches.length).toBeGreaterThanOrEqual(1);
+      const dialog = screen.getByRole('dialog');
+
+      expect(dialog).toHaveTextContent('Start a notebook task by choosing an agent and task workspace.');
+      expect(dialog).not.toHaveTextContent(/Create Task New Task|Create New/);
+    });
+
+    it('keeps the immutable agent constraint in the Important section only', () => {
+      renderComponent();
+
+      const dialog = screen.getByRole('dialog');
+      const matches = dialog.textContent?.match(/The agent cannot be changed after creation/g) ?? [];
+
+      expect(matches).toHaveLength(1);
+      expect(screen.getByText('Important:').closest('div')).toHaveTextContent('The agent cannot be changed after creation');
+    });
+
+    it('uses task-workspace wording so users do not confuse task storage with the top-level workspace', () => {
+      renderComponent();
+
+      const dialog = screen.getByRole('dialog');
+
+      expect(screen.getByText('Task workspace')).toBeInTheDocument();
+      expect(screen.getByText('Initialize a new task workspace automatically')).toBeInTheDocument();
+      expect(screen.getByText('New task workspace name')).toBeInTheDocument();
+      expect(dialog).not.toHaveTextContent('Initialize a new workspace automatically');
+      expect(dialog).not.toHaveTextContent('New workspace name');
+      expect(dialog).not.toHaveTextContent('Select Existing Workspace');
     });
   });
 
@@ -545,6 +569,28 @@ describe('TaskCreateDialog', () => {
     });
   });
 
+  describe('Task workspace default naming', () => {
+    it('derives a natural task workspace placeholder from the task title without repeating task concepts', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Test Task');
+
+      expect(screen.getByPlaceholderText('Test Task workspace')).toBeInTheDocument();
+      expect(screen.queryByPlaceholderText('Test Task task workspace')).not.toBeInTheDocument();
+    });
+
+    it('does not append a workspace suffix when the task title already reads like a workspace name', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Research Workspace');
+
+      expect(screen.getByPlaceholderText('Research Workspace')).toBeInTheDocument();
+      expect(screen.queryByPlaceholderText('Research Workspace task workspace')).not.toBeInTheDocument();
+    });
+  });
+
   describe('Form Submission', () => {
     it('submits form with create-new workspace mode by default', async () => {
       const user = userEvent.setup();
@@ -564,7 +610,31 @@ describe('TaskCreateDialog', () => {
             title: 'Test Task',
             agent_id: 'agent-1',
             workspace_mode: 'create_new',
-            workspace_name: 'Test Task Workspace',
+            workspace_name: 'Test Task workspace',
+          },
+        });
+      });
+    });
+
+    it('uses the same natural default workspace name for placeholder and submitted payload', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Research Workspace');
+      expect(screen.getByPlaceholderText('Research Workspace')).toBeInTheDocument();
+
+      await selectRadixOption(user, screen.getAllByRole('combobox')[0]!, 'Test Agent 1');
+      submitTaskCreateForm();
+
+      await waitFor(() => {
+        expect(mockMutateAsync).toHaveBeenCalledWith({
+          workspaceId: mockWorkspaceId,
+          projectId: mockProjectId,
+          data: {
+            title: 'Research Workspace',
+            agent_id: 'agent-1',
+            workspace_mode: 'create_new',
+            workspace_name: 'Research Workspace',
           },
         });
       });

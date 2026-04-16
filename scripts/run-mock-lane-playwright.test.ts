@@ -46,4 +46,13 @@ describe('run-mock-lane-playwright', () => {
     expect(script).toContain('next_generated_root_write_lane_owner "${MOCK_RUN_ROOT}" "mock-lane" "$$" "run-mock-lane-playwright.sh"');
     expect(script).toContain('next_generated_root_clear_lane_owner "${MOCK_RUN_ROOT}"');
   });
+
+  it('passes the owning run root to the managed Next.js child so validation does not block its parent lane', () => {
+    const script = readFileSync('scripts/run-mock-lane-playwright.sh', 'utf8');
+
+    expect(script).toContain('NEXT_GENERATED_ROOT_ALLOWED_ACTIVE_RUN_ROOT="${MOCK_RUN_ROOT}"');
+    expect(script.indexOf('NEXT_GENERATED_ROOT_ALLOWED_ACTIVE_RUN_ROOT="${MOCK_RUN_ROOT}"')).toBeLessThan(
+      script.indexOf('bash scripts/run-next-dev-safe.sh --port "${PORT_WEB}"'),
+    );
+  });
 });

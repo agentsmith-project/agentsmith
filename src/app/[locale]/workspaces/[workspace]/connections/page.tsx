@@ -16,6 +16,7 @@ import { persistFeishuOAuthFlow } from '@/lib/feishu-oauth-flow';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { useWorkspace } from '@/lib/hooks/use-workspaces';
 import { cn } from '@/lib/utils';
+import { formatDisplayDateTime } from '@/lib/utils/date-time-format';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
 export default function WorkspaceConnectionsPage() {
@@ -106,6 +107,11 @@ export default function WorkspaceConnectionsPage() {
       : feishuConnection.status === 'reauth_required'
         ? t('workspace_connections_next_step_refresh_personal')
         : t('workspace_connections_next_step_ready');
+  const lastRefreshLabel = formatDisplayDateTime(feishuConnection?.last_refreshed_at, {
+    locale,
+    emptyText: t('workspace_feishu_never_refreshed'),
+    invalidText: t('workspace_feishu_never_refreshed'),
+  });
 
   if (!workspaceId) {
     return (
@@ -188,7 +194,7 @@ export default function WorkspaceConnectionsPage() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <Button asChild type="button" variant="primary">
+                  <Button asChild type="button" variant="outline">
                     <Link
                       href={`/${locale}/workspaces/${workspaceId}/projects`}
                       data-testid="workspace-connections__open-projects"
@@ -273,8 +279,11 @@ export default function WorkspaceConnectionsPage() {
                   </div>
                   <div className="rounded-md border border-subtle bg-background/70 p-4">
                     <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_feishu_last_refresh_label')}</div>
-                    <div className="mt-2 text-sm font-medium text-foreground">
-                      {feishuConnection?.last_refreshed_at ?? t('workspace_feishu_never_refreshed')}
+                    <div
+                      className="mt-2 text-sm font-medium text-foreground"
+                      data-testid="workspace-connections__last-refresh-value"
+                    >
+                      {lastRefreshLabel}
                     </div>
                   </div>
                 </div>
@@ -282,7 +291,7 @@ export default function WorkspaceConnectionsPage() {
                 <div className="mt-5 flex flex-wrap gap-3">
                   <Button
                     type="button"
-                    variant="primary"
+                    variant={isEnabled && !feishuConnection ? 'primary' : 'outline'}
                     onClick={() => startMutation.mutate()}
                     disabled={!isEnabled || startMutation.isPending}
                     data-testid="workspace-connections__feishu-connect"

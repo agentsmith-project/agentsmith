@@ -303,6 +303,176 @@ describe('AgentResourceService', () => {
     );
   });
 
+  it('keeps a newer connection online when an older connection releases late', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const writer = new AgentResourceService(docStore, cache);
+    const reader = new AgentResourceService(docStore, cache);
+    const agent = await writer.createAgent('ws_default', 'proj_1', {
+      name: 'lease-reconnect-agent',
+      mode: 'external',
+    });
+
+    await writer.registerAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_old',
+      socketKey: agent.id,
+      apiInstanceId: 'api_a',
+      protocolVersion: '1.0',
+      lastPongAt: '2026-03-18T00:00:00.000Z',
+    });
+    await writer.registerAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_new',
+      socketKey: agent.id,
+      apiInstanceId: 'api_b',
+      protocolVersion: '1.0',
+      lastPongAt: '2026-03-18T00:00:10.000Z',
+    });
+
+    await expect(writer.releaseAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_old',
+    })).resolves.toEqual(expect.objectContaining({
+      released: false,
+      stale: true,
+      active_connection_count: 1,
+      presence: 'online',
+    }));
+
+    await expect(reader.getConnectionInfo(agent.id)).resolves.toEqual(expect.objectContaining({
+      connection_id: 'conn_new',
+      socket_key: agent.id,
+      active_connection_count: 1,
+      last_pong_at: '2026-03-18T00:00:10.000Z',
+    }));
+    await expect(reader.getAgent('ws_default', 'proj_1', agent.id)).resolves.toEqual(expect.objectContaining({
+      presence: 'online',
+      last_seen_at: '2026-03-18T00:00:10.000Z',
+    }));
+  });
+
+  it('keeps another session online until the last connection releases', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const service = new AgentResourceService(docStore, cache);
+    const reader = new AgentResourceService(docStore, cache);
+    const agent = await service.createAgent('ws_default', 'proj_1', {
+      name: 'lease-session-agent',
+      mode: 'external',
+    });
+
+    await service.registerAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_task_a',
+      socketKey: `${agent.id}::task_a`,
+      sessionId: 'task_a',
+      apiInstanceId: 'api_a',
+      lastPongAt: '2026-03-18T00:00:00.000Z',
+    });
+    await service.registerAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_task_b',
+      socketKey: `${agent.id}::task_b`,
+      sessionId: 'task_b',
+      apiInstanceId: 'api_a',
+      lastPongAt: '2026-03-18T00:00:05.000Z',
+    });
+
+    await expect(service.releaseAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_task_a',
+    })).resolves.toEqual(expect.objectContaining({
+      released: true,
+      stale: false,
+      active_connection_count: 1,
+      presence: 'online',
+    }));
+    await expect(reader.getAgent('ws_default', 'proj_1', agent.id)).resolves.toEqual(expect.objectContaining({
+      presence: 'online',
+      last_seen_at: '2026-03-18T00:00:05.000Z',
+    }));
+
+    await expect(service.releaseAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_task_b',
+    })).resolves.toEqual(expect.objectContaining({
+      released: true,
+      stale: false,
+      active_connection_count: 0,
+      presence: 'offline',
+    }));
+    await expect(reader.getAgent('ws_default', 'proj_1', agent.id)).resolves.toEqual(expect.objectContaining({
+      presence: 'offline',
+    }));
+  });
+
+  it('treats old pong refreshes as stale after socket claim replacement', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const service = new AgentResourceService(docStore, cache);
+    const agent = await service.createAgent('ws_default', 'proj_1', {
+      name: 'lease-stale-refresh-agent',
+      mode: 'external',
+    });
+
+    await service.registerAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_old',
+      socketKey: agent.id,
+      apiInstanceId: 'api_a',
+      lastPongAt: '2026-03-18T00:00:00.000Z',
+    });
+    await service.registerAgentConnection({
+      agentId: agent.id,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      connectionId: 'conn_new',
+      socketKey: agent.id,
+      apiInstanceId: 'api_b',
+      lastPongAt: '2026-03-18T00:00:05.000Z',
+    });
+
+    await expect(service.refreshAgentConnection({
+      agentId: agent.id,
+      connectionId: 'conn_old',
+      lastPongAt: '2026-03-18T00:00:30.000Z',
+    })).resolves.toEqual(expect.objectContaining({
+      refreshed: false,
+      stale: true,
+      active_connection_count: 1,
+    }));
+    await expect(service.refreshAgentConnection({
+      agentId: agent.id,
+      connectionId: 'conn_new',
+      lastPongAt: '2026-03-18T00:00:40.000Z',
+    })).resolves.toEqual(expect.objectContaining({
+      refreshed: true,
+      stale: false,
+      active_connection_count: 1,
+    }));
+    await expect(service.getConnectionInfo(agent.id)).resolves.toEqual(expect.objectContaining({
+      connection_id: 'conn_new',
+      last_pong_at: '2026-03-18T00:00:40.000Z',
+    }));
+  });
+
   it('builds external agent connection info from external execution base', () => {
     process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
     process.env.AGENT_EXECUTION_WS_BASE_URL = 'ws://10.88.0.1:20000';

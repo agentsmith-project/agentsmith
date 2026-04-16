@@ -44,6 +44,17 @@ jobs:
       - name: Run gate-fast
         run: npm run gate:fast
 
+      - name: Upload fast gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-fast-artifacts
+          if-no-files-found: ignore
+          path: |
+            artifacts/mock-lane/runs/**
+            test-results/**
+            playwright-report/**
+
   gate-default:
     name: gate-default
     needs: gate-fast
@@ -75,6 +86,7 @@ jobs:
           name: gate-default-artifacts
           if-no-files-found: ignore
           path: |
+            artifacts/mock-lane/runs/**
             test-results/**
             playwright-report/**
 
@@ -112,6 +124,7 @@ jobs:
           path: |
             artifacts/gate-results/lane-visual/**
             artifacts/visual-baseline-reviews/**
+            artifacts/mock-lane/runs/**
             test-results/**
             playwright-report/**
 
@@ -144,10 +157,16 @@ jobs:
             exit 1
           fi
 
-      - name: Prepare integration dependencies
+      - name: Materialize backend-real endpoint env
         run: |
           set -euo pipefail
-          make bootstrap
+          umask 077
+          printf 'PRESET_ENDPOINT_API_KEY=%s\n' "${BACKEND_REAL_API_KEY}" > .env.backend-real
+
+      - name: Prepare backend-real dependencies
+        run: |
+          set -euo pipefail
+          npm run backend-real:bootstrap
 
       - name: Run lane-backend-real-core
         run: npm run lane:backend-real:core
@@ -160,5 +179,6 @@ jobs:
           if-no-files-found: ignore
           path: |
             artifacts/backend-real/runs/**
+            artifacts/mock-lane/runs/**
             test-results/**
             playwright-report/**

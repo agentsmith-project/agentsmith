@@ -150,6 +150,10 @@ describe('notebook terminal runtime gates', () => {
     expect(localManualCommon).toContain('scripts/juicefs-orphan-preflight.ts');
     expect(localManualCommon).toContain('runner_socket_health_state()');
     expect(localManualCommon).toContain('ensure_local_manual_runner_connected()');
+    expect(localManualCommon).toContain('local_manual_runner_health_monitor_once()');
+    expect(localManualCommon).toContain("schema_version: 2");
+    expect(localManualCommon).toContain('shutting_down');
+    expect(localManualCommon).toContain('stale');
     expect(localManualUp).toContain('run_juicefs_orphan_preflight "local-manual-up"');
     expect(localManualUp.indexOf('run_juicefs_orphan_preflight "local-manual-up"')).toBeLessThan(
       localManualUp.indexOf('scripts/substrate/up.sh'),
@@ -206,6 +210,10 @@ describe('notebook terminal runtime gates', () => {
       path.resolve(process.cwd(), 'scripts/local-manual/status.sh'),
       'utf-8',
     );
+    const appStatus = await readFile(
+      path.resolve(process.cwd(), 'scripts/app/status.sh'),
+      'utf-8',
+    );
     const internalStatus = await readFile(
       path.resolve(process.cwd(), 'scripts/local-manual/internal-status.sh'),
       'utf-8',
@@ -232,6 +240,8 @@ describe('notebook terminal runtime gates', () => {
     );
 
     expect(status).toContain('runner_socket_health_state');
+    expect(appStatus).toContain('runner_socket_health_state');
+    expect(appStatus).not.toContain('RUNNER_READY_FILE');
     expect(internalStatus).toContain('Runner socket:');
     expect(internalStatus).toContain('runner_socket_health_state');
     expect(verifyNotebookDemo).toContain('runner_socket_is_connected');

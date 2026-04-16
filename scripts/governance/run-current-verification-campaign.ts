@@ -11,6 +11,7 @@ import {
 } from './release-campaign-runner';
 import {
   nativeResultPath,
+  resultPath,
   resolveCampaignRoot,
   stepDir,
   tryReadGateResult,
@@ -18,6 +19,16 @@ import {
   writeCampaignGateResult,
 } from './release-campaign-io';
 import type { CurrentGateResultFailureClass } from './current-gate-result-schema';
+
+interface CampaignStepWriteOutcome {
+  passed: boolean;
+  failureClass: CurrentGateResultFailureClass;
+}
+
+interface FailedCampaignStep {
+  step: CurrentVerificationCampaignStep;
+  failureClass: CurrentGateResultFailureClass;
+}
 
 function timestampRunId(): string {
   return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
@@ -36,6 +47,10 @@ function commandEnv(campaignRoot: string, runId: string, step: CurrentVerificati
     env.CURRENT_GATE_RESULT_NPM_SCRIPT = step.nativeResult.npmScript ?? step.npmScript;
     env.CURRENT_GATE_RESULT_LINE_KIND = step.lineKind;
     env.CURRENT_GATE_RESULT_EVIDENCE_DIR = join(nativePath, '..');
+  }
+
+  if (step.id === 'gate-default') {
+    env.DEFAULT_GATE_PROFILE = 'campaign_after_gate_fast';
   }
 
   if (step.id === 'lane-visual') {
@@ -105,7 +120,29 @@ function validateNativeResult(campaignRoot: string, step: CurrentVerificationCam
   return null;
 }
 
-function writeCompletedStep(campaignRoot: string, step: CurrentVerificationCampaignStep, exitStatus: number): boolean {
+function writtenFailureClass(
+  campaignRoot: string,
+  step: CurrentVerificationCampaignStep,
+): CurrentGateResultFailureClass {
+  const result = tryReadGateResult(resultPath(campaignRoot, step));
+  const failureClass = result.value?.failure_class;
+  if (
+    failureClass === 'product_regression'
+    || failureClass === 'infra_setup_failure'
+    || failureClass === 'environment_conflict'
+    || failureClass === 'contract_drift'
+    || failureClass === 'evidence_missing'
+  ) {
+    return failureClass;
+  }
+  return step.defaultFailureClass;
+}
+
+function writeCompletedStep(
+  campaignRoot: string,
+  step: CurrentVerificationCampaignStep,
+  exitStatus: number,
+): CampaignStepWriteOutcome {
   let evidenceComplete = true;
   const nativeError = validateNativeResult(campaignRoot, step);
   if (step.evidenceRequired) {
@@ -125,7 +162,10 @@ function writeCompletedStep(campaignRoot: string, step: CurrentVerificationCampa
         ? `Release campaign step ${step.id} completed but ${nativeError}.`
         : `Release campaign step ${step.id} completed but required evidence was missing.`,
     });
-    return false;
+    return {
+      passed: false,
+      failureClass: nativeError ? 'contract_drift' : 'evidence_missing',
+    };
   }
 
   writeCampaignGateResult({
@@ -138,7 +178,28 @@ function writeCompletedStep(campaignRoot: string, step: CurrentVerificationCampa
       ? `Release campaign step ${step.id} passed.`
       : `Release campaign step ${step.id} failed with exit code ${String(exitStatus)}.`,
   });
-  return exitStatus === 0;
+  return {
+    passed: exitStatus === 0,
+    failureClass: exitStatus === 0 ? 'none' : nativeFailureClass(campaignRoot, step),
+  };
+}
+
+function writeSkippedStep(
+  campaignRoot: string,
+  step: CurrentVerificationCampaignStep,
+  upstreamFailure: FailedCampaignStep,
+): void {
+  if (step.evidenceRequired) {
+    writeCampaignEvidencePointer(campaignRoot, step);
+  }
+  writeCampaignGateResult({
+    step,
+    campaignRoot,
+    status: 'failed',
+    failureClass: upstreamFailure.failureClass,
+    stage: 'skipped',
+    summary: `Release campaign step ${step.id} was skipped because upstream campaign step ${upstreamFailure.step.id} failed.`,
+  });
 }
 
 function main(): void {
@@ -169,13 +230,14 @@ function main(): void {
     return;
   }
 
-  let failed = false;
+  let failedStep: FailedCampaignStep | null = null;
   for (const step of campaign.steps) {
     if (step.executionMode === 'aggregate_only') {
       continue;
     }
-    if (failed) {
-      break;
+    if (failedStep) {
+      writeSkippedStep(campaignRoot, step, failedStep);
+      continue;
     }
 
     const result = spawnSync('npm', ['run', step.npmScript], {
@@ -185,7 +247,13 @@ function main(): void {
     });
 
     if (result.status === 0) {
-      failed = !writeCompletedStep(campaignRoot, step, 0);
+      const outcome = writeCompletedStep(campaignRoot, step, 0);
+      if (!outcome.passed) {
+        failedStep = {
+          step,
+          failureClass: outcome.failureClass,
+        };
+      }
       continue;
     }
 
@@ -200,7 +268,10 @@ function main(): void {
       stage: 'execute',
       summary: `Release campaign step ${step.id} failed with exit code ${String(result.status ?? 'unknown')}.`,
     });
-    failed = true;
+    failedStep = {
+      step,
+      failureClass: writtenFailureClass(campaignRoot, step),
+    };
   }
 
   const terminalStep = campaign.steps.find((step) => step.executionMode === 'aggregate_only');
@@ -220,7 +291,7 @@ function main(): void {
 
   const aggregateOutcome = evaluateTerminalAggregateOutcome({
     terminalStepId: terminalStep.id,
-    hadExecutableStepFailure: failed,
+    hadExecutableStepFailure: Boolean(failedStep),
     aggregateResult: aggregate,
   });
   writeTerminalAggregateFallbackResult({

@@ -5,13 +5,115 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+info() { echo "[backend-real-reset] $*"; }
+die() { echo "[backend-real-reset] ERROR: $*" >&2; exit 1; }
+
+usage() {
+  cat <<'EOF'
+Usage: bash scripts/backend-real-reset.sh [--help]
+
+Resets backend-real local state and, when kubectl is available, performs a
+guarded Kubernetes sandbox cleanup.
+
+Kubernetes reset is fail-closed by default:
+  BACKEND_REAL_RESET_KUBE_CONTEXT
+    Required when BACKEND_REAL_RESET_KUBE_MODE=guarded and kubectl is present.
+    Must exactly match `kubectl config current-context`.
+
+  BACKEND_REAL_RESET_KUBE_NAMESPACE
+    Namespace to reset. Defaults to INTERNAL_AGENT_K8S_NAMESPACE or
+    agentsmith-sandbox. The namespace name must be explicit and valid.
+
+  BACKEND_REAL_RESET_KUBE_OWNER_LABEL_KEY / BACKEND_REAL_RESET_KUBE_OWNER_LABEL_VALUE
+    Owner label required on the namespace and used as the selector for
+    namespace-scoped and cluster-scoped deletions. Defaults to
+    app.kubernetes.io/managed-by=agentsmith.
+
+  BACKEND_REAL_RESET_KUBE_MODE=skip
+    Explicit safe override that skips all Kubernetes destructive actions while
+    still clearing local backend-real state and Docker integration volumes.
+
+No unsafe context/owner bypass is supported. If a namespace is missing the owner
+label, label or recreate that backend-real sandbox intentionally before reset.
+EOF
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
+if [[ "$#" -gt 0 ]]; then
+  usage >&2
+  die "unknown argument: $1"
+fi
+
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 ensure_backend_real_state
 
 STATE_DIR="$(backend_real_state_root)"
-SANDBOX_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
+KUBE_MODE="${BACKEND_REAL_RESET_KUBE_MODE:-guarded}"
+EXPECTED_KUBE_CONTEXT="${BACKEND_REAL_RESET_KUBE_CONTEXT:-}"
+SANDBOX_NAMESPACE="${BACKEND_REAL_RESET_KUBE_NAMESPACE:-${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}}"
+KUBE_OWNER_LABEL_KEY="${BACKEND_REAL_RESET_KUBE_OWNER_LABEL_KEY:-app.kubernetes.io/managed-by}"
+KUBE_OWNER_LABEL_VALUE="${BACKEND_REAL_RESET_KUBE_OWNER_LABEL_VALUE:-agentsmith}"
+KUBE_OWNER_SELECTOR="${KUBE_OWNER_LABEL_KEY}=${KUBE_OWNER_LABEL_VALUE}"
+KUBE_RESET_ENABLED=0
 
-info() { echo "[backend-real-reset] $*"; }
+validate_namespace_name() {
+  local namespace="$1"
+  [[ "${namespace}" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]]
+}
+
+kube_jsonpath_label_key() {
+  printf '%s' "$1" | sed 's/\./\\./g'
+}
+
+prepare_kubernetes_reset() {
+  if ! command -v kubectl >/dev/null 2>&1; then
+    info "kubectl not found; skipping Kubernetes sandbox cleanup"
+    return 0
+  fi
+
+  case "${KUBE_MODE}" in
+    guarded) ;;
+    skip)
+      info "BACKEND_REAL_RESET_KUBE_MODE=skip; skipping Kubernetes sandbox cleanup"
+      return 0
+      ;;
+    *)
+      die "BACKEND_REAL_RESET_KUBE_MODE must be guarded or skip"
+      ;;
+  esac
+
+  [[ -n "${EXPECTED_KUBE_CONTEXT}" ]] \
+    || die "BACKEND_REAL_RESET_KUBE_CONTEXT is required before Kubernetes cleanup"
+  validate_namespace_name "${SANDBOX_NAMESPACE}" \
+    || die "BACKEND_REAL_RESET_KUBE_NAMESPACE is invalid: ${SANDBOX_NAMESPACE}"
+  [[ -n "${KUBE_OWNER_LABEL_KEY}" && -n "${KUBE_OWNER_LABEL_VALUE}" ]] \
+    || die "Kubernetes owner label key/value are required before cleanup"
+
+  local actual_context
+  actual_context="$(kubectl config current-context 2>/dev/null || true)"
+  [[ -n "${actual_context}" ]] \
+    || die "kubectl current-context is empty; refusing Kubernetes cleanup"
+  [[ "${actual_context}" == "${EXPECTED_KUBE_CONTEXT}" ]] \
+    || die "kubectl context mismatch: expected ${EXPECTED_KUBE_CONTEXT}, got ${actual_context}"
+
+  if kubectl get namespace "${SANDBOX_NAMESPACE}" >/dev/null 2>&1; then
+    local escaped_label_key actual_owner_label
+    escaped_label_key="$(kube_jsonpath_label_key "${KUBE_OWNER_LABEL_KEY}")"
+    actual_owner_label="$(
+      kubectl get namespace "${SANDBOX_NAMESPACE}" -o "jsonpath={.metadata.labels.${escaped_label_key}}" 2>/dev/null \
+        || true
+    )"
+    [[ "${actual_owner_label}" == "${KUBE_OWNER_LABEL_VALUE}" ]] \
+      || die "namespace ${SANDBOX_NAMESPACE} must be labelled ${KUBE_OWNER_SELECTOR} before reset"
+  else
+    info "sandbox namespace ${SANDBOX_NAMESPACE} is absent; only labelled cluster-scoped residue will be considered"
+  fi
+
+  KUBE_RESET_ENABLED=1
+}
 
 wait_for_absent() {
   local kind="$1"
@@ -34,6 +136,8 @@ wait_for_absent() {
   return 1
 }
 
+prepare_kubernetes_reset
+
 info "clearing backend-real state under ${STATE_DIR}"
 rm -rf "${STATE_DIR}"
 ensure_backend_real_state
@@ -43,41 +147,41 @@ if command -v docker >/dev/null 2>&1; then
   (cd "${ROOT_DIR}" && npm run integration:deps:down:volumes >/dev/null)
 fi
 
-if command -v kubectl >/dev/null 2>&1; then
+if [[ "${KUBE_RESET_ENABLED}" -eq 1 ]]; then
   if kubectl get namespace "${SANDBOX_NAMESPACE}" >/dev/null 2>&1; then
-    info "deleting sandbox PVCs in ${SANDBOX_NAMESPACE}"
-    kubectl delete pvc --all -n "${SANDBOX_NAMESPACE}" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+    info "deleting sandbox PVCs in ${SANDBOX_NAMESPACE} with ${KUBE_OWNER_SELECTOR}"
+    kubectl delete pvc -l "${KUBE_OWNER_SELECTOR}" -n "${SANDBOX_NAMESPACE}" --ignore-not-found --wait=false >/dev/null
   fi
 
-  info "deleting JuiceFS mount pods"
+  info "deleting AgentSmith-owned JuiceFS mount pods"
   mount_pods="$(
-    kubectl get pods -n kube-system -o name 2>/dev/null \
+    kubectl get pods -n kube-system -l "${KUBE_OWNER_SELECTOR}" -o name 2>/dev/null \
       | grep '^pod/juicefs-.*-juicefs-' \
       || true
   )"
   if [[ -n "${mount_pods}" ]]; then
-    printf '%s\n' "${mount_pods}" | xargs -r kubectl delete -n kube-system --wait=false >/dev/null 2>&1 || true
+    printf '%s\n' "${mount_pods}" | xargs -r kubectl delete -n kube-system --wait=false >/dev/null
   fi
 
-  info "deleting JuiceFS PVs"
-  juicefs_pvs="$(kubectl get pv -o name 2>/dev/null | grep 'juicefs' || true)"
+  info "deleting AgentSmith-owned JuiceFS PVs"
+  juicefs_pvs="$(kubectl get pv -l "${KUBE_OWNER_SELECTOR}" -o name 2>/dev/null | grep 'juicefs' || true)"
   if [[ -n "${juicefs_pvs}" ]]; then
-    printf '%s\n' "${juicefs_pvs}" | xargs -r kubectl delete --wait=false >/dev/null 2>&1 || true
+    printf '%s\n' "${juicefs_pvs}" | xargs -r kubectl delete --wait=false >/dev/null
     while read -r pv; do
       [[ -n "${pv}" ]] || continue
       pv_name="${pv#persistentvolume/}"
       if ! wait_for_absent persistentvolume "${pv_name}" "" 20; then
         info "clearing PV finalizers for ${pv_name}"
-        kubectl patch persistentvolume "${pv_name}" --type=merge -p '{"metadata":{"finalizers":[]}}' >/dev/null 2>&1 || true
+        kubectl patch persistentvolume "${pv_name}" --type=merge -p '{"metadata":{"finalizers":[]}}' >/dev/null
       fi
     done <<< "${juicefs_pvs}"
   fi
 
   info "deleting sandbox namespace ${SANDBOX_NAMESPACE}"
-  kubectl delete namespace "${SANDBOX_NAMESPACE}" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  kubectl delete namespace "${SANDBOX_NAMESPACE}" --ignore-not-found --wait=false >/dev/null
   if ! wait_for_absent namespace "${SANDBOX_NAMESPACE}" "" 30; then
     info "clearing namespace finalizers for ${SANDBOX_NAMESPACE}"
-    kubectl patch namespace "${SANDBOX_NAMESPACE}" --type=merge -p '{"spec":{"finalizers":[]}}' >/dev/null 2>&1 || true
+    kubectl patch namespace "${SANDBOX_NAMESPACE}" --type=merge -p '{"spec":{"finalizers":[]}}' >/dev/null
   fi
 fi
 

@@ -13,7 +13,9 @@
       "route": "/en-US/join",
       "recipeFamily": "public_auth_single",
       "authLane": "public",
-      "stableMarkers": []
+      "stableMarkers": [
+        "public-auth__shell"
+      ]
     },
     {
       "sceneId": "system-login",

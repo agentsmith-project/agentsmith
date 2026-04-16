@@ -26,6 +26,11 @@ describe('project surface handoff continuity story', () => {
       'handoff-to-files',
       'return-to-overview',
     ]);
+
+    const filesScene = story.scenes.find((scene) => scene.sceneId === 'project-files');
+    expect(filesScene?.stableMarkers).toContain('files__workspace-surface');
+    expect(filesScene?.stableMarkers).toContain('files__library-list');
+    expect(filesScene?.stableMarkers).not.toContain('project-workbench__heading');
   });
 
   it('wires the existing real backend visual review spec to the new handoff story and sidebar continuity helper', async () => {

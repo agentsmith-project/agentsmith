@@ -56,6 +56,7 @@ vi.mock('next-intl', () => ({
       'edit_title': 'Edit Task',
       'new': 'New',
       'agent_presence_unknown': 'Agent Unknown',
+      'agent_record_unavailable': 'Agent record unavailable',
       'agent_mode_unknown': 'Unknown Runner',
       'agent_mode_external': 'External Runner',
       'agent_mode_internal': 'Internal Runner',
@@ -136,9 +137,26 @@ describe('TaskHeader', () => {
       expect(screen.getByTestId('notebook__task-header-workspace-library')).toHaveTextContent('Workspace: Project Workspace');
     });
 
-    it('renders agent presence badge instead of task status badge', () => {
+    it('does not call a known agent unknown when the agent record is unavailable', () => {
       renderComponent();
-      expect(screen.getByText('Agent Unknown')).toBeInTheDocument();
+
+      expect(screen.getByText('Agent: Test Agent')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__task-header-agent-record-unavailable')).toHaveTextContent(
+        'Agent record unavailable',
+      );
+      expect(screen.queryByText('Agent Unknown')).not.toBeInTheDocument();
+      expect(screen.queryByText('Unknown Runner')).not.toBeInTheDocument();
+    });
+
+    it('renders agent presence and runner mode only when the agent record is resolved', () => {
+      renderComponent(mockTask, {
+        agentPresence: 'online' as const,
+        agentMode: 'external' as const,
+      });
+
+      expect(screen.getByText('agent_presence_online')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__task-header-agent-mode')).toHaveTextContent('External Runner');
+      expect(screen.queryByTestId('notebook__task-header-agent-record-unavailable')).not.toBeInTheDocument();
     });
 
     it('renders agent mode badge', () => {

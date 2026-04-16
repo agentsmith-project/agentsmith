@@ -11,6 +11,7 @@ export class RedisCache implements CachePort {
   constructor(options: RedisCacheOptions) {
     this.client = new RedisClient(options.url, {
       maxRetriesPerRequest: 1,
+      lazyConnect: true,
     });
   }
 
@@ -37,6 +38,30 @@ export class RedisCache implements CachePort {
 
   async del(key: string): Promise<void> {
     await this.client.del(key);
+  }
+
+  async compareAndSet(
+    key: string,
+    expectedValue: string | null,
+    nextValue: string | null,
+    ttlSeconds?: number,
+  ): Promise<boolean> {
+    await this.client.watch(key);
+    const current = await this.client.get(key);
+    if (current !== expectedValue) {
+      await this.client.unwatch();
+      return false;
+    }
+    const tx = this.client.multi();
+    if (nextValue === null) {
+      tx.del(key);
+    } else if (ttlSeconds && ttlSeconds > 0) {
+      tx.set(key, nextValue, 'EX', ttlSeconds);
+    } else {
+      tx.set(key, nextValue);
+    }
+    const result = await tx.exec();
+    return result !== null;
   }
 
   async close(): Promise<void> {
@@ -80,5 +105,23 @@ export class InMemoryCache implements CachePort {
 
   async del(key: string): Promise<void> {
     this.store.delete(key);
+  }
+
+  async compareAndSet(
+    key: string,
+    expectedValue: string | null,
+    nextValue: string | null,
+    ttlSeconds?: number,
+  ): Promise<boolean> {
+    if (this.read(key) !== expectedValue) return false;
+    if (nextValue === null) {
+      this.store.delete(key);
+      return true;
+    }
+    this.store.set(key, {
+      value: nextValue,
+      expiresAt: ttlSeconds && ttlSeconds > 0 ? Date.now() + ttlSeconds * 1000 : undefined,
+    });
+    return true;
   }
 }

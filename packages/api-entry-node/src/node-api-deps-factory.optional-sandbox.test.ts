@@ -25,6 +25,23 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
     }
   });
 
+  it('wires REDIS_URL dependencies with a CAS-capable agent presence store', async () => {
+    const { deps, lifecycle } = createNodeApiDepsFromEnv({
+      ...baseEnv,
+      REDIS_URL: 'redis://127.0.0.1:1',
+    });
+    try {
+      expect((deps.cache as { compareAndSet?: unknown }).compareAndSet).toBeTypeOf('function');
+      const presenceStore = (deps.agentResourceService as unknown as {
+        agentPresenceStore?: { kind?: string };
+      }).agentPresenceStore;
+      expect(presenceStore?.kind).toBe('cache_cas');
+    } finally {
+      await shutdownSafe(lifecycle);
+      await (deps.cache as { close?: () => Promise<void> }).close?.();
+    }
+  });
+
   it('fails fast when sandbox env is partially configured', () => {
     expect(() => createNodeApiDepsFromEnv({
       ...baseEnv,

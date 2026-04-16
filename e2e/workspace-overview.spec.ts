@@ -1,6 +1,9 @@
 import { test, expect, goTo } from './fixtures/test-base';
+import { expectVisualSemanticAssertions } from './utils/semantic-assertions';
+import { resolveVisualBaselineSemanticAssertions } from './visual-baseline-support';
 
 const WORKSPACE_OVERVIEW_PATH = '/en-US/workspaces/overview';
+const WORKSPACE_OVERVIEW_SEMANTIC_ASSERTIONS = resolveVisualBaselineSemanticAssertions('workspace-overview');
 
 test.describe('Workspace Overview', () => {
   test.beforeEach(async ({ authedPage }) => {
@@ -12,6 +15,7 @@ test.describe('Workspace Overview', () => {
     await expect(authedPage.getByTestId('workspace-overview__summary')).toBeVisible();
     await expect(authedPage.getByTestId('workspace-overview__list')).toBeVisible();
     await expect(authedPage.getByTestId('workspace-overview__search')).toBeVisible();
+    await expectVisualSemanticAssertions(authedPage, WORKSPACE_OVERVIEW_SEMANTIC_ASSERTIONS);
   });
 
   test('shows workspace cards and business entry links', async ({ authedPage }) => {

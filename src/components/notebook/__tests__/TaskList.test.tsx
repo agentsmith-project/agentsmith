@@ -20,6 +20,7 @@ vi.mock('next-intl', () => ({
       'agent_offline': 'Agent Offline',
       'agent_managed': 'Agent Managed',
       'agent_unknown': 'Agent Unknown',
+      'agent_presence_not_reported': 'Presence not reported',
       'run_running': 'Running',
       'last_activity': 'Last activity',
       'created_at': 'Created',
@@ -224,6 +225,27 @@ describe('TaskList', () => {
       expect(screen.getByText('Test Agent 2')).toBeInTheDocument();
     });
 
+    it('does not call a named agent unknown when presence is missing from the list payload', () => {
+      const taskWithoutPresence: Task = {
+        ...mockTasks[0],
+        agent_presence: undefined,
+        run_state: 'idle',
+      };
+
+      vi.mocked(useTasks).mockReturnValue({
+        data: { items: [taskWithoutPresence], total: 1, page: 1, page_size: 10 },
+        isLoading: false,
+      } as any);
+
+      render(<TaskList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateTask={true} />, {
+        wrapper,
+      });
+
+      expect(screen.getByText('Test Agent 1')).toBeInTheDocument();
+      expect(screen.queryByText('Agent Unknown')).not.toBeInTheDocument();
+      expect(screen.queryByText('Presence not reported')).not.toBeInTheDocument();
+    });
+
     it('does not display task status badges', () => {
       vi.mocked(useTasks).mockReturnValue({
         data: { items: mockTasks, total: 3, page: 1, page_size: 10 },
@@ -263,9 +285,23 @@ describe('TaskList', () => {
         wrapper,
       });
 
-      // Activity time is rendered in compact mode without a "Last activity:" label.
-      const activityTimestamps = screen.getAllByText(/\d{1,2}\/\d{1,2}\/\d{4}/);
+      const activityTimestamps = screen.getAllByText(/Jan \d, 2024/);
       expect(activityTimestamps.length).toBeGreaterThan(0);
+    });
+
+    it('renders created timestamps with a stable concise format and no seconds', () => {
+      vi.mocked(useTasks).mockReturnValue({
+        data: { items: [mockTasks[0]], total: 1, page: 1, page_size: 10 },
+        isLoading: false,
+      } as any);
+
+      render(<TaskList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateTask={true} />, {
+        wrapper,
+      });
+
+      expect(screen.getByText('Created: Jan 1, 2024, 00:00')).toBeInTheDocument();
+      expect(screen.queryByText(/Created: .*:\d{2}:\d{2}/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Created: \d{1,2}\/\d{1,2}\/\d{4}/)).not.toBeInTheDocument();
     });
   });
 

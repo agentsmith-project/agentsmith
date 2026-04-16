@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildStorySourceFingerprint } from '../e2e/story-contract';
 import { loadStoryDefinition } from '../e2e/story-loader';
+import { buildTraceStoryBinding } from '../e2e/story-trace-binding';
 import {
   createUxTraceBundleWriter,
   buildUxTraceCaptureEvent,
@@ -235,6 +236,71 @@ describe('ux trace bundle support', () => {
         buildStorySourceFingerprint(await readFile(path.resolve(story.sourceFile ?? story.filePath), 'utf-8')),
       );
       await expect(readFile(path.join(bundleDir, 'review.md'), 'utf-8')).resolves.toContain('- story_source_fingerprint:');
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('records semantic trace requirements and review verdict metadata from the story binding', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-ux-traces-'));
+    try {
+      const story = await loadStoryDefinition('release-user-story-end-to-end');
+      const binding = buildTraceStoryBinding(story);
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: story.storyId,
+        title: story.title,
+        actor: story.actor,
+        route: story.entryRoute,
+        specFile: 'e2e/integration-release-user-story.spec.ts',
+        browser: 'chromium',
+        runId: 'run-semantic',
+        startedAt: '2026-04-12T04:03:04.000Z',
+        goal: story.goal,
+        preconditions: story.preconditions ?? [],
+        seedData: story.seedData ?? [],
+        storyBinding: binding,
+      });
+
+      await trace.capture(makeFakePage('/en-US/system/login'), {
+        stepId: 'system-login',
+      });
+      await trace.finish({
+        outcome: 'pass',
+        finishedAt: '2026-04-12T04:04:04.000Z',
+      });
+
+      const bundleDir = resolveUxTraceBundleDir({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: story.storyId,
+        runId: 'run-semantic',
+      });
+      const manifest = JSON.parse(await readFile(path.join(bundleDir, 'manifest.json'), 'utf-8')) as {
+        scenario_id?: string;
+        required_trace_steps?: string[];
+        required_screenshot_steps?: string[];
+      };
+      const requiredTraceSteps = binding.steps
+        .filter((step) => step.evidence.includes('trace') && !step.optional)
+        .map((step) => step.stepId);
+      const requiredScreenshotSteps = binding.steps
+        .filter((step) => step.evidence.includes('trace') && !step.optional && step.sceneId)
+        .map((step) => step.stepId);
+
+      expect(manifest.scenario_id).toBe('integration-release-user-story');
+      expect(manifest.required_trace_steps).toEqual(requiredTraceSteps);
+      expect(manifest.required_screenshot_steps).toEqual(requiredScreenshotSteps);
+      const review = await readFile(path.join(bundleDir, 'review.md'), 'utf-8');
+      expect(review).toContain('- schema: ux_trace_bundle_review/v1');
+      expect(review).toContain('- story_id: release-user-story-end-to-end');
+      expect(review).toContain('- scenario_id: integration-release-user-story');
+      expect(review).toContain('- outcome: pass');
+      expect(review).toContain('- verdict: accepted');
+      expect(review).toContain('- findings: No blocking findings.');
     } finally {
       await rm(rootDir, { recursive: true, force: true });
     }

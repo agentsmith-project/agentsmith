@@ -85,7 +85,7 @@ describe('WorkspaceEditorPanel', () => {
     expect(screen.getByTestId('system-workspaces__editor')).toHaveClass('xl:border-l');
     expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('rounded-md');
     expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('border');
-    expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground/94');
+    expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground');
     expect(screen.getByTestId('system-workspaces__enable-edit')).not.toHaveClass('bg-transparent');
     expect(screen.getByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
     expect(screen.queryByTestId('system-workspaces__basics')).not.toBeInTheDocument();
@@ -124,7 +124,7 @@ describe('WorkspaceEditorPanel', () => {
     expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__lifecycle')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__save')).toHaveClass('bg-foreground/94');
+    expect(screen.getByTestId('system-workspaces__save')).toHaveClass('bg-foreground');
     expect(screen.getByTestId('system-workspaces__login-preview')).toHaveTextContent('/en-US/workspaces/alpha_workspace/login');
     expect(screen.getByTestId('system-workspaces__callback-preview')).toHaveTextContent('/en-US/workspaces/alpha_workspace/login/callback');
   });

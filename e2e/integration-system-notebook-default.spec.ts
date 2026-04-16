@@ -798,7 +798,7 @@ async function runNotebookTask(
   await dialog.locator('#task-agent').click();
   await page.getByRole('option', { name: new RegExp(agentName) }).click();
   await expect(
-    dialog.getByRole('radio', { name: /initialize a new workspace automatically/i }),
+    dialog.getByRole('radio', { name: /initialize a new task workspace automatically/i }),
   ).toBeChecked();
   await dialog.locator('#task-workspace-name').fill(`${runtime.taskWorkspaceNamePrefix} ${Date.now()}`);
   await dialog.getByRole('button', { name: /create/i }).click();

@@ -234,21 +234,21 @@ async function loginViaKeycloak(page, {
   }
 
   await waitForAppReady(page);
-  const workspaceCard = page.getByTestId(`workspace-select__card--${workspaceId}`);
-  const anyWorkspaceCard = page.locator('[data-testid^="workspace-select__card--"]').first();
+  const workspaceItem = page.getByTestId(`workspace-select__item--${workspaceId}`);
+  const anyWorkspaceItem = page.locator('[data-testid^="workspace-select__item--"]').first();
   await page.waitForLoadState('domcontentloaded');
   await Promise.race([
-    workspaceCard.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
-    anyWorkspaceCard.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+    workspaceItem.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+    anyWorkspaceItem.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
     page.getByTestId('workspace-select__session-expired').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
     page.getByTestId('workspace-select__error').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
     page.getByTestId('workspace-select__empty').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
   ]);
-  if (await workspaceCard.isVisible().catch(() => false)) {
-    await workspaceCard.click();
+  if (await workspaceItem.isVisible().catch(() => false)) {
+    await workspaceItem.click();
     await page.waitForURL((url) => projectsPattern.test(url.href) || anyProjectsPattern.test(url.href), { timeout: 30_000 });
-  } else if (await anyWorkspaceCard.isVisible().catch(() => false)) {
-    await anyWorkspaceCard.click();
+  } else if (await anyWorkspaceItem.isVisible().catch(() => false)) {
+    await anyWorkspaceItem.click();
     await page.waitForURL(anyProjectsPattern, { timeout: 30_000 });
   } else if (!projectsPattern.test(page.url()) && !anyProjectsPattern.test(page.url())) {
     const directProjectsUrl = `${base}/${locale}/workspaces/${workspaceId}/projects`;
@@ -274,12 +274,12 @@ async function gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path, loca
     const currentPath = new URL(page.url()).pathname;
     if (currentPath === targetPath) return;
     const onWorkspaceSelect = page.url().includes(`/${locale}/login/workspace`);
-    const workspaceCard = page.getByTestId(`workspace-select__card--${workspaceId}`);
-    if (!onWorkspaceSelect && !await workspaceCard.isVisible().catch(() => false)) {
+    const workspaceItem = page.getByTestId(`workspace-select__item--${workspaceId}`);
+    if (!onWorkspaceSelect && !await workspaceItem.isVisible().catch(() => false)) {
       continue;
     }
-    if (await workspaceCard.isVisible().catch(() => false)) {
-      await workspaceCard.click();
+    if (await workspaceItem.isVisible().catch(() => false)) {
+      await workspaceItem.click();
       await page.waitForURL(new RegExp(`/${locale}/workspaces/${workspaceId}/projects`), { timeout: 30_000 });
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
       await waitForAppReady(page);

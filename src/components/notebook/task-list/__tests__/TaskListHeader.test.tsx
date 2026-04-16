@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { buttonVariants } from '@/components/ui/button';
 import { TaskListHeader } from '@/components/notebook/task-list/TaskListHeader';
 
 describe('TaskListHeader', () => {
@@ -27,5 +28,19 @@ describe('TaskListHeader', () => {
     render(<TaskListHeader canCreateTask t={t} onCreate={vi.fn()} />);
 
     expect(screen.queryByText('A calm list of agent work')).not.toBeInTheDocument();
+  });
+
+  it('marks the create-task button as the page primary action so visual gates can require first-viewport discoverability', () => {
+    render(<TaskListHeader canCreateTask t={t} onCreate={vi.fn()} />);
+
+    const createTaskButton = screen.getByTestId('notebook__create-task-btn');
+
+    expect(createTaskButton).toHaveAttribute('data-visual-primary-action', 'true');
+    expect(createTaskButton).toHaveAttribute('data-visual-viewport-required', 'true');
+    expect(createTaskButton.className).toBe(buttonVariants({
+      variant: 'primary',
+      size: 'sm',
+      className: 'shrink-0 font-semibold',
+    }));
   });
 });

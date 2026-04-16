@@ -1,5 +1,12 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
+export async function waitForSystemWorkspacesReady(page: Page): Promise<void> {
+  await page.waitForURL(/\/system\/workspaces(?:\?.*)?$/, { timeout: 30_000 });
+  await expect(page.getByTestId('system-workspaces__list')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('system-workspaces__new-workspace')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('system-workspaces__open-info')).toBeVisible({ timeout: 30_000 });
+}
+
 async function readWorkspaceProvisioningStatus(page: Page, workspaceId: string): Promise<string> {
   return page.evaluate(async (id) => {
     const response = await fetch('/api/system/workspaces', { cache: 'no-store' });
@@ -25,6 +32,19 @@ async function waitForWorkspacePublishResult(page: Page, workspaceId: string): P
   return status;
 }
 
+async function ensureWorkspacePublishActionVisible(page: Page, workspaceId: string): Promise<Locator> {
+  const publishButton = page.getByTestId('system-workspaces__publish');
+  if (await publishButton.isVisible().catch(() => false)) {
+    await expect(publishButton).toBeEnabled({ timeout: 15_000 });
+    return publishButton;
+  }
+
+  await page.getByTestId(`system-workspaces__configure--${workspaceId}`).click();
+  await expect(publishButton).toBeVisible({ timeout: 15_000 });
+  await expect(publishButton).toBeEnabled({ timeout: 15_000 });
+  return publishButton;
+}
+
 export async function waitForWorkspaceLoginReady(page: Page, args: {
   workspaceId: string;
   locale: string;
@@ -36,7 +56,12 @@ export async function waitForWorkspaceLoginReady(page: Page, args: {
     .getByTestId(`system-workspaces__open-workspace-login--${workspaceId}`);
 
   for (let attempt = 0; attempt < maxPublishAttempts; attempt += 1) {
-    await page.getByTestId('system-workspaces__publish').click();
+    const currentStatus = await readWorkspaceProvisioningStatus(page, workspaceId);
+    if (currentStatus.startsWith('ready:')) {
+      break;
+    }
+    const publishButton = await ensureWorkspacePublishActionVisible(page, workspaceId);
+    await publishButton.click();
     const status = await waitForWorkspacePublishResult(page, workspaceId);
     if (status.startsWith('ready:')) {
       break;

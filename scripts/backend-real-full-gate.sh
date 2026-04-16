@@ -6,7 +6,8 @@ unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
-source "${ROOT_DIR}/scripts/lib/port-utils.sh"
+source "${ROOT_DIR}/scripts/lib/local-runtime-processes.sh"
+source "${ROOT_DIR}/scripts/lib/backend-real-gate-ports.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
@@ -21,6 +22,10 @@ RUN_ID="${RELEASE_REAL_VISUAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/${RUN_ID}}"
 RELEASE_RUN_ROOT="${RELEASE_REAL_RUN_ROOT:-$(BACKEND_REAL_RUN_ID="${RUN_ID}" backend_real_new_run_dir release-real)}"
 LOCAL_READY_LOG_DIR="${RELEASE_REAL_READY_LOG_DIR:-${RELEASE_RUN_ROOT}/release-ready}"
+export LOCAL_RUNTIME_RUN_ID="${RUN_ID}"
+export LOCAL_RUNTIME_LINE_KIND="release_backend_real"
+export LOCAL_RUNTIME_OWNER_TOKEN="${RUN_ID}:release_backend_real:$$"
+export LOCAL_RUNTIME_PROCESS_STATE_DIR="${RELEASE_RUN_ROOT}/processes"
 export CURRENT_GATE_RESULT_GATE_ID="${CURRENT_GATE_RESULT_GATE_ID:-lane-backend-real-release}"
 export CURRENT_GATE_RESULT_NPM_SCRIPT="${CURRENT_GATE_RESULT_NPM_SCRIPT:-lane:backend-real:release}"
 export CURRENT_GATE_RESULT_LINE_KIND="${CURRENT_GATE_RESULT_LINE_KIND:-release_backend_real}"
@@ -61,87 +66,53 @@ run_clean() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
 }
 
-start_background_job() {
-  local log_file="$1"
-  shift
-  mkdir -p "$(dirname "${log_file}")"
-  "$@" >"${log_file}" 2>&1 &
-  echo $!
-}
-
-kill_process_tree() {
-  local pid="$1"
-  [[ -n "${pid}" ]] || return 0
-  local child
-  while read -r child; do
-    [[ -n "${child}" ]] && kill_process_tree "${child}"
-  done < <(pgrep -P "${pid}" 2>/dev/null || true)
-  kill -TERM "${pid}" >/dev/null 2>&1 || true
-}
-
-stop_background_job() {
-  local pid="$1"
-  [[ -n "${pid}" ]] || return 0
-  if ! kill -0 "${pid}" >/dev/null 2>&1; then
-    return 0
-  fi
-  kill_process_tree "${pid}"
-  for _ in $(seq 1 10); do
-    if ! kill -0 "${pid}" >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 0.2
-  done
-  while read -r child; do
-    [[ -n "${child}" ]] && kill -KILL "${child}" >/dev/null 2>&1 || true
-  done < <(pgrep -P "${pid}" 2>/dev/null || true)
-  kill -KILL "${pid}" >/dev/null 2>&1 || true
-}
-
-
 ensure_local_release_stack() {
   mkdir -p "${LOCAL_READY_LOG_DIR}"
 
-  if ! is_port_listening "${API_PORT}"; then
+  if ! local_runtime_port_is_listening "${API_PORT}"; then
     info "starting local API on :${API_PORT} for release readiness"
     LOCAL_API_PID="$(
-      PORT="${API_PORT}" \
-      KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-      PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
-      INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
-      KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
-      KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-      DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
-      MONGO_URL="${MONGO_URL}" \
-      MONGO_DB_NAME="${MONGO_DB_NAME}" \
-      REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
-      MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
-      MINIO_PORT="${MINIO_PORT:-19000}" \
-      MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
-      MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
-      MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
-      MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
-      start_background_job "${API_LOG}" run_clean npm run api:node:dev
+      local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" env \
+        -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+        PORT="${API_PORT}" \
+        KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+        PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
+        INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
+        KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
+        KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+        DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
+        MONGO_URL="${MONGO_URL}" \
+        MONGO_DB_NAME="${MONGO_DB_NAME}" \
+        REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
+        MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
+        MINIO_PORT="${MINIO_PORT:-19000}" \
+        MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
+        MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
+        MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
+        MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
+        npm run api:node:dev
     )"
   fi
 
-  if ! is_port_listening "${WEB_PORT}"; then
+  if ! local_runtime_port_is_listening "${WEB_PORT}"; then
     info "starting local Web on :${WEB_PORT} for release readiness"
     LOCAL_WEB_PID="$(
-      MONGO_URL="${MONGO_URL}" \
-      MONGO_DB_NAME="${MONGO_DB_NAME}" \
-      NEXT_GENERATED_ROOT_MANAGED=1 \
-      NEXT_DEV_PID_FILE="${NEXT_WEB_PID_FILE}" \
-      NEXT_PUBLIC_USE_MSW=false \
-      AGENTSMITH_ENABLE_TEST_ROUTES=true \
-      NEXT_PUBLIC_API_BASE="http://localhost:${API_PORT}/api/v1" \
-      NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_BASE_URL}/realms" \
-      NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-      KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-      PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
-      INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
-      start_background_job "${WEB_LOG}" run_clean bash scripts/run-next-dev-safe.sh --port "${WEB_PORT}"
+      local_runtime_start_owned_service web "${WEB_PORT}" "${WEB_LOG}" env \
+        -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+        MONGO_URL="${MONGO_URL}" \
+        MONGO_DB_NAME="${MONGO_DB_NAME}" \
+        NEXT_GENERATED_ROOT_MANAGED=1 \
+        NEXT_DEV_PID_FILE="${NEXT_WEB_PID_FILE}" \
+        NEXT_PUBLIC_USE_MSW=false \
+        AGENTSMITH_ENABLE_TEST_ROUTES=true \
+        NEXT_PUBLIC_API_BASE="http://localhost:${API_PORT}/api/v1" \
+        NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_BASE_URL}/realms" \
+        NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+        KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+        PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
+        INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
+        bash scripts/run-next-dev-safe.sh --port "${WEB_PORT}"
     )"
   fi
 
@@ -181,9 +152,10 @@ prewarm_internal_kind_cluster() {
 }
 
 cleanup() {
-  stop_background_job "$(cat "${NEXT_WEB_PID_FILE}" 2>/dev/null || true)"
-  stop_background_job "${LOCAL_WEB_PID}"
-  stop_background_job "${LOCAL_API_PID}"
+  local_runtime_stop_owned_process_tree "${LOCAL_WEB_PID}" web "${WEB_PORT}" || true
+  local_runtime_stop_owned_process_tree "${LOCAL_API_PID}" api "${API_PORT}" || true
+  local_runtime_wait_port_free "${WEB_PORT}" web 10 || true
+  local_runtime_wait_port_free "${API_PORT}" api 10 || true
   rm -f "${NEXT_WEB_PID_FILE}"
   backend_real_mark_run_status "${RELEASE_RUN_ROOT}" "${FINAL_STATUS}"
 }
@@ -199,12 +171,7 @@ run_real_cmd() {
   local web_port="$2"
   shift 2
   local command="$*"
-  if is_port_listening "${api_port}"; then
-    kill_port_listeners "${api_port}"
-  fi
-  if is_port_listening "${web_port}"; then
-    kill_port_listeners "${web_port}"
-  fi
+  cleanup_gate_ports "${api_port}" "${web_port}" "${command}"
   info "INTEGRATION_API_PORT=${api_port} INTEGRATION_WEB_PORT=${web_port} ${command}"
   (
     cd "${ROOT_DIR}" && \
@@ -226,19 +193,26 @@ gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_ready" "passed" "b
 record_service backend_ready ready "backend-real ready"
 run_real_cmd 20050 3051 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' npm run backend-real:run"
 run_real_cmd 20080 3081 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' npm run test:visual:backend-real:review"
-mapfile -t visual_review_files < <(find "${ARTIFACT_DIR}/ux-traces" -type f -name review.md 2>/dev/null | sort)
-if [[ "${#visual_review_files[@]}" -eq 0 ]]; then
-  gate_record_failure "${LOCAL_READY_LOG_DIR}" "evidence_missing" "backend_real_visual_review" "missing backend-real visual review.md under ${ARTIFACT_DIR}/ux-traces"
+UX_TRACE_VALIDATION_REPORT="${ARTIFACT_DIR}/ux-trace-validation.json"
+UX_TRACE_VALID_BUNDLES="${ARTIFACT_DIR}/ux-trace-valid-bundles.txt"
+if ! run_cmd "npx tsx scripts/validate-ux-trace-bundles.ts --root '${ARTIFACT_DIR}/ux-traces' --expected-lane backend-real --min-count 1 --report '${UX_TRACE_VALIDATION_REPORT}' --valid-paths '${UX_TRACE_VALID_BUNDLES}'"; then
+  gate_record_failure "${LOCAL_READY_LOG_DIR}" "evidence_missing" "backend_real_ux_trace_bundle" "invalid backend-real UX trace bundle semantics under ${ARTIFACT_DIR}/ux-traces"
+  exit 1
+fi
+mapfile -t ux_trace_bundle_dirs < "${UX_TRACE_VALID_BUNDLES}"
+if [[ "${#ux_trace_bundle_dirs[@]}" -eq 0 ]]; then
+  gate_record_failure "${LOCAL_READY_LOG_DIR}" "evidence_missing" "backend_real_ux_trace_bundle" "missing semantically valid backend-real UX trace bundle under ${ARTIFACT_DIR}/ux-traces"
   exit 1
 fi
 {
   printf '# Backend-real visual review\n\n'
   printf -- '- run_id: %s\n' "${RUN_ID}"
   printf -- '- artifact_dir: %s\n' "${ARTIFACT_DIR}"
-  printf -- '- ux_trace_review_count: %s\n\n' "${#visual_review_files[@]}"
+  printf -- '- ux_trace_bundle_count: %s\n' "${#ux_trace_bundle_dirs[@]}"
+  printf -- '- ux_trace_validation_report: %s\n\n' "${UX_TRACE_VALIDATION_REPORT}"
   printf '## Review Bundles\n\n'
-  for review_file in "${visual_review_files[@]}"; do
-    printf -- '- %s\n' "${review_file}"
+  for bundle_dir in "${ux_trace_bundle_dirs[@]}"; do
+    printf -- '- %s\n' "${bundle_dir}/review.md"
   done
 } > "${ARTIFACT_DIR}/review.md"
 run_cmd "npm run backend-real:report"

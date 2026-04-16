@@ -23,8 +23,12 @@ const tasks = DOC_FIXTURES_ENABLED ? [...docTaskFixtures] : [...taskFixtures];
 const taskMessages = DOC_FIXTURES_ENABLED ? [...docTaskMessageFixtures] : [...taskMessageFixtures];
 const artifacts = DOC_FIXTURES_ENABLED ? [...docArtifactFixtures] : [...artifactFixtures];
 const taskTraces = DOC_FIXTURES_ENABLED ? [...docTaskTraceFixtures] : [...taskTraceFixtures];
+const API_V1_PATTERN = '*/api/v1';
+const MOCK_SSE_TICKET_PREFIX = 'mock_sse_';
 const terminalSessionsByScope = new Map<string, TaskTerminalSessionStatus[]>();
+const issuedMockSseTickets = new Map<string, { bearerToken: string; expiresAt: string; maxConnections: number }>();
 let nextTerminalSessionOrdinal = 1;
+let nextMockSseTicketOrdinal = 1;
 
 function taskTerminalScopeKey(args: { workspaceId: string; projectId: string; taskId: string }) {
   return `${args.workspaceId}:${args.projectId}:${args.taskId}`;
@@ -43,6 +47,11 @@ function terminalTruthUnavailable(request: Request) {
 export function resetMockTaskTerminalSessions() {
   terminalSessionsByScope.clear();
   nextTerminalSessionOrdinal = 1;
+}
+
+export function resetMockTaskRealtimeRuntime() {
+  issuedMockSseTickets.clear();
+  nextMockSseTicketOrdinal = 1;
 }
 
 export function listMockTaskTerminalSessions(args: {
@@ -88,8 +97,82 @@ export function createMockTaskTerminalSession(args: {
   };
 }
 
+function issueMockTaskSseTicket(bearerToken: string) {
+  const ticket = `${MOCK_SSE_TICKET_PREFIX}${String(nextMockSseTicketOrdinal).padStart(3, '0')}`;
+  nextMockSseTicketOrdinal += 1;
+  const expiresAt = new Date(Date.parse(VISUAL_TEST_REFERENCE_NOW_ISO) + 5 * 60 * 1000).toISOString();
+  const issued = { bearerToken, expiresAt, maxConnections: 1 };
+  issuedMockSseTickets.set(ticket, issued);
+  return { ticket, ...issued };
+}
+
+function validateMockTaskSseTicket(request: Request) {
+  const url = new URL(request.url);
+  const ticket = url.searchParams.get('ticket');
+  if (!ticket) return false;
+  return issuedMockSseTickets.has(ticket);
+}
+
+function createMockTaskEventsStream(taskId: string): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
+  let closed = false;
+  const clearKeepalive = () => {
+    closed = true;
+    if (keepaliveTimer) clearInterval(keepaliveTimer);
+  };
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(`: agentsmith mock task events connected task=${taskId}\n\n`));
+      keepaliveTimer = setInterval(() => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`: agentsmith mock task events keepalive task=${taskId}\n\n`));
+        } catch {
+          clearKeepalive();
+        }
+      }, 15000);
+    },
+    cancel() {
+      clearKeepalive();
+    },
+  });
+}
+
 export const taskHandlers = [
-  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks', ({ request }) => {
+  http.post(`${API_V1_PATTERN}/sse-ticket`, ({ request }) => {
+    const bearerToken = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim();
+    if (!bearerToken) {
+      return HttpResponse.json({
+        error_code: 'MOCK_SSE_TICKET_UNAUTHORIZED',
+        message: 'mock_sse_ticket_requires_authorization',
+      }, { status: 401 });
+    }
+    const issued = issueMockTaskSseTicket(bearerToken);
+    const url = new URL(request.url);
+    return HttpResponse.json({
+      ticket: issued.ticket,
+      expires_at: issued.expiresAt,
+      max_connections: issued.maxConnections,
+      sso_url: `${url.origin}/api/v1/events?ticket=${encodeURIComponent(issued.ticket)}`,
+    });
+  }),
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/events`, ({ request, params }) => {
+    if (!validateMockTaskSseTicket(request)) {
+      return HttpResponse.json({
+        error_code: 'MOCK_SSE_TICKET_REQUIRED',
+        message: 'mock_sse_ticket_required',
+      }, { status: 401 });
+    }
+    return new HttpResponse(createMockTaskEventsStream(String(params.id ?? '')), {
+      headers: {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache, no-transform',
+        connection: 'keep-alive',
+      },
+    });
+  }),
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks`, ({ request }) => {
     const url = new URL(request.url);
     const page = Number(url.searchParams.get('page') ?? 1);
     const pageSize = Number(url.searchParams.get('page_size') ?? 20);
@@ -103,7 +186,7 @@ export const taskHandlers = [
       has_more: start + pageSize < tasks.length,
     });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id', ({ params }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id`, ({ params }) => {
     const taskId = params.id as string;
     const task = tasks.find((r) => r.id === taskId);
     if (!task) {
@@ -111,7 +194,7 @@ export const taskHandlers = [
     }
     return HttpResponse.json(task);
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/tasks', async ({ request, params }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks`, async ({ request, params }) => {
     const body: any = await request.json().catch(() => ({}));
     const workspaceMode = typeof body?.workspace_mode === 'string' ? body.workspace_mode.trim() : '';
     const workspaceFileLibraryId = typeof body?.workspace_file_library_id === 'string'
@@ -136,8 +219,8 @@ export const taskHandlers = [
       project_id: params.prj as string,
       owner_user_id: 'user_001',
       title: body?.title ?? 'New Task',
-      agent_id: body?.agent_id ?? 'agent_001',
-      agent_name: body?.agent_name ?? 'AgentA',
+      agent_id: body?.agent_id ?? 'ag_2',
+      agent_name: body?.agent_name ?? 'Research Agent',
       workspace_file_library_id: workspaceMode === 'create_new'
         ? `flib_${Math.random().toString(36).slice(2, 10)}`
         : workspaceFileLibraryId,
@@ -152,11 +235,13 @@ export const taskHandlers = [
       created_at: now,
       updated_at: now,
       last_activity_at: now,
+      agent_presence: body?.agent_presence ?? 'managed',
+      run_state: body?.run_state ?? 'idle',
     };
     tasks.unshift(newTask);
     return HttpResponse.json(newTask);
   }),
-  http.patch('/api/v1/workspaces/:ws/projects/:prj/tasks/:id', async ({ request, params }) => {
+  http.patch(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id`, async ({ request, params }) => {
     const taskId = params.id as string;
     const task = tasks.find((r) => r.id === taskId);
     if (!task) {
@@ -166,7 +251,7 @@ export const taskHandlers = [
     Object.assign(task, body, { updated_at: new Date().toISOString() });
     return HttpResponse.json(task);
   }),
-  http.delete('/api/v1/workspaces/:ws/projects/:prj/tasks/:id', ({ params }) => {
+  http.delete(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id`, ({ params }) => {
     const taskId = params.id as string;
     const index = tasks.findIndex((r) => r.id === taskId);
     if (index >= 0) {
@@ -174,7 +259,7 @@ export const taskHandlers = [
     }
     return HttpResponse.json({ ok: true });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/inputs', async ({ request, params }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/inputs`, async ({ request, params }) => {
     const taskId = params.id as string;
     const task = tasks.find((r) => r.id === taskId);
     if (!task) {
@@ -205,7 +290,7 @@ export const taskHandlers = [
     task.updated_at = new Date().toISOString();
     return HttpResponse.json(task);
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/inputs', ({ params }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/inputs`, ({ params }) => {
     const taskId = params.id as string;
     const task = tasks.find((r) => r.id === taskId);
     if (!task) {
@@ -251,7 +336,7 @@ export const taskHandlers = [
     }).filter(Boolean);
     return HttpResponse.json(items);
   }),
-  http.delete('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/inputs/:inputId', ({ params }) => {
+  http.delete(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/inputs/:inputId`, ({ params }) => {
     const taskId = params.id as string;
     const inputId = params.inputId as string;
     const task = tasks.find((r) => r.id === taskId);
@@ -262,7 +347,7 @@ export const taskHandlers = [
     task.updated_at = new Date().toISOString();
     return HttpResponse.json(task);
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/terminal/sessions', ({ request, params }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/terminal/sessions`, ({ request, params }) => {
     if (terminalTruthUnavailable(request)) {
       return HttpResponse.json({ error_code: 'terminal_truth_unavailable', message: 'terminal_truth_unavailable' }, { status: 503 });
     }
@@ -272,7 +357,7 @@ export const taskHandlers = [
       taskId: String(params.id ?? ''),
     }));
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/terminal/sessions', async ({ request, params }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/terminal/sessions`, async ({ request, params }) => {
     const body = (await request.json().catch(() => ({}))) as CreateTaskTerminalSessionRequest;
     return HttpResponse.json(createMockTaskTerminalSession({
       workspaceId: String(params.ws ?? ''),
@@ -282,7 +367,7 @@ export const taskHandlers = [
       rows: body.rows,
     }), { status: 201 });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/terminal/sessions/:terminalSessionId', ({ request, params }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/terminal/sessions/:terminalSessionId`, ({ request, params }) => {
     if (terminalTruthUnavailable(request)) {
       return HttpResponse.json({ error_code: 'terminal_truth_unavailable', message: 'terminal_truth_unavailable' }, { status: 503 });
     }
@@ -298,7 +383,7 @@ export const taskHandlers = [
     }
     return HttpResponse.json(session);
   }),
-  http.delete('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/terminal/sessions/:terminalSessionId', ({ params }) => {
+  http.delete(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/terminal/sessions/:terminalSessionId`, ({ params }) => {
     const scopeKey = taskTerminalScopeKey({
       workspaceId: String(params.ws ?? ''),
       projectId: String(params.prj ?? ''),
@@ -317,12 +402,12 @@ export const taskHandlers = [
     ));
     return HttpResponse.json(null, { status: 204 });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/messages', ({ params }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/messages`, ({ params }) => {
     const taskId = params.id as string;
     const items = taskMessages.filter((m) => m.task_id === taskId);
     return HttpResponse.json(items);
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/traces', ({ request, params }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/traces`, ({ request, params }) => {
     const taskId = params.id as string;
     const url = new URL(request.url);
     const messageId = url.searchParams.get('message_id');
@@ -372,7 +457,7 @@ export const taskHandlers = [
       next_after_id: start > 0 ? sliced[0]?.id ?? null : null,
     });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/messages', async ({ request, params }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/messages`, async ({ request, params }) => {
     const taskId = params.id as string;
     const body: any = await request.json().catch(() => ({}));
     const now = new Date().toISOString();
@@ -386,12 +471,12 @@ export const taskHandlers = [
     taskMessages.push(message);
     return HttpResponse.json(message);
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/artifacts', ({ params }) => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/artifacts`, ({ params }) => {
     const taskId = params.id as string;
     const items = artifacts.filter((a) => a.task_id === taskId);
     return HttpResponse.json(items);
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/artifacts/:artifactId/download', () => {
+  http.get(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/artifacts/:artifactId/download`, () => {
     return new HttpResponse('Mock artifact content', {
       headers: { 'Content-Type': 'text/plain' },
     });

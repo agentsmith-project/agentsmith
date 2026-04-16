@@ -12,6 +12,18 @@ describe('system/workspace lifecycle stories', () => {
     expect(story.steps.map((step) => step.stepId)).toEqual(['system-login', 'system-workspaces']);
   });
 
+  it('anchors system workspace entry on the current work surface markers', () => {
+    const story = readStoryDefinitionFromMarkdownFileSync('e2e/stories/backend-real/system-admin-entry.story.md');
+    const systemWorkspacesScene = story.scenes.find((scene) => scene.sceneId === 'system-workspaces');
+    const systemWorkspacesStep = story.steps.find((step) => step.stepId === 'system-workspaces');
+
+    expect(systemWorkspacesScene?.stableMarkers).toEqual([
+      'system-workspaces__list',
+      'system-workspaces__new-workspace',
+    ]);
+    expect(systemWorkspacesStep?.target).toBe('system-workspaces__list');
+  });
+
   it('defines a canonical backend-real story for workspace IdP and admin handoff truth', () => {
     const story = readStoryDefinitionFromMarkdownFileSync('e2e/stories/backend-real/workspace-idp-and-admin-handoff.story.md');
 

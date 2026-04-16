@@ -30,6 +30,49 @@ next_generated_root_snapshot_file() {
   printf '%s/%s\n' "$(next_generated_root_state_dir)" "${name}"
 }
 
+next_generated_root_source_contract_lock_file() {
+  next_generated_root_snapshot_file "source-contract.lock"
+}
+
+next_generated_root_with_source_contract_lock() {
+  local _phase="${1:-source_contract}"
+  shift || true
+  local state_dir lock_file status previous_lock_held previous_lock_was_set
+  if [[ "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD:-0}" == "1" ]]; then
+    "$@"
+    return $?
+  fi
+
+  state_dir="$(next_generated_root_state_dir)"
+  lock_file="$(next_generated_root_source_contract_lock_file)"
+  mkdir -p "${state_dir}"
+  previous_lock_held="${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD:-}"
+  previous_lock_was_set=0
+  if [[ -n "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD+x}" ]]; then
+    previous_lock_was_set=1
+  fi
+
+  if command -v flock >/dev/null 2>&1; then
+    {
+      flock -x 9
+      export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD=1
+      "$@"
+      status=$?
+    } 9>"${lock_file}"
+  else
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD=1
+    "$@"
+    status=$?
+  fi
+
+  if [[ "${previous_lock_was_set}" -eq 1 ]]; then
+    export NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD="${previous_lock_held}"
+  else
+    unset NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD
+  fi
+  return "${status}"
+}
+
 next_generated_root_contract_event_file() {
   next_generated_root_snapshot_file "source-contract-events.jsonl"
 }
@@ -137,6 +180,13 @@ const canonicalNextEnv = `/// <reference types="next" />
 // NOTE: This file should not be edited
 // see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
 `;
+const rootGeneratedNextEnv = `/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+/// <reference path="./.next/types/routes.d.ts" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+`;
 const forbiddenIncludePatterns = [
   /\.next\*\/types\/\*\*\/\*\.ts$/,
   /(?:^|\/)artifacts\/(?:backend-real\/current-run|mock-lane\/current)\/next-dist(?:\/|$)/,
@@ -152,8 +202,9 @@ const forbiddenNextEnvPatterns = [
   /artifacts\/recovery-manual-next/,
   /playwright-managed-/,
   /artifacts\/[^/\n]+\/runs\/[^/\n]+\/next-dist\//,
-  /\/\/\/ <reference path=/,
 ];
+const rootRouteTypesPath = path.join(repoDir, '.next/types/routes.d.ts');
+const referencePathPattern = /\/\/\/ <reference path=/;
 const transientReadErrorCodes = new Set(['ENOENT', 'EBUSY']);
 const unexpectedIoErrorCodes = new Set(['EACCES', 'EPERM', 'EISDIR', 'ENOTDIR', 'EMFILE']);
 
@@ -226,6 +277,18 @@ try {
 }
 
 if (forbiddenNextEnvPatterns.some((pattern) => pattern.test(nextEnv))) {
+  emit('semantic_drift', 'next_env_generated_lane_state');
+  process.exit(0);
+}
+if (nextEnv === rootGeneratedNextEnv) {
+  if (fs.existsSync(rootRouteTypesPath)) {
+    emit('canonical', 'next_env_generated_root_valid');
+    process.exit(0);
+  }
+  emit('semantic_drift', 'next_env_generated_root_missing_types');
+  process.exit(0);
+}
+if (referencePathPattern.test(nextEnv)) {
   emit('semantic_drift', 'next_env_generated_lane_state');
   process.exit(0);
 }
@@ -319,13 +382,17 @@ next_generated_root_write_lane_owner() {
   local lane_name="$2"
   local owner_pid="$3"
   local owner_label="${4:-}"
-  local owner_file
+  local owner_file owner_identity owner_token owner_token_source
   owner_file="$(next_generated_root_lane_owner_file "${run_root}")"
+  owner_identity="$(next_generated_root_live_process_identity "${owner_pid}" 2>/dev/null || true)"
+  IFS='|' read -r owner_token owner_token_source <<< "${owner_identity}"
   mkdir -p "$(dirname "${owner_file}")"
   cat > "${owner_file}" <<EOF
 lane_name=${lane_name}
 owner_pid=${owner_pid}
 owner_label=${owner_label}
+owner_token=${owner_token}
+owner_token_source=${owner_token_source}
 started_at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
 EOF
 }
@@ -346,9 +413,60 @@ next_generated_root_read_lane_owner_field() {
   printf '%s\n' "${field_value}"
 }
 
+next_generated_root_live_process_identity() {
+  local pid="$1"
+  node - <<'NODE' "${pid}"
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+
+const pid = Number.parseInt(process.argv[2] ?? '', 10);
+if (!Number.isFinite(pid) || pid <= 0) {
+  process.exit(1);
+}
+
+function linuxIdentity(targetPid) {
+  try {
+    const bootId = fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+    const statRaw = fs.readFileSync(`/proc/${targetPid}/stat`, 'utf8');
+    const closeParen = statRaw.lastIndexOf(')');
+    if (!bootId || closeParen === -1) {
+      return null;
+    }
+    const trailing = statRaw.slice(closeParen + 2).trim().split(/\s+/);
+    const startTime = trailing[19];
+    if (!startTime) {
+      return null;
+    }
+    return {
+      token: `linux:boot=${bootId}:start=${startTime}`,
+      source: 'linux_boot_id_proc_stat',
+    };
+  } catch {
+    return null;
+  }
+}
+
+const linux = process.platform === 'linux' ? linuxIdentity(pid) : null;
+if (linux) {
+  process.stdout.write(`${linux.token}|${linux.source}\n`);
+  process.exit(0);
+}
+
+const ps = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+  encoding: 'utf8',
+  stdio: ['ignore', 'pipe', 'ignore'],
+});
+const startedAt = String(ps.stdout ?? '').trim();
+if (!startedAt) {
+  process.exit(1);
+}
+process.stdout.write(`${startedAt}|ps_lstart_raw\n`);
+NODE
+}
+
 next_generated_root_is_lane_owner_active() {
   local run_root="$1"
-  local owner_pid owner_label owner_cmd
+  local owner_pid owner_label owner_cmd owner_token current_identity current_token
   owner_pid="$(next_generated_root_read_lane_owner_field "${run_root}" owner_pid 2>/dev/null || true)"
   [[ -n "${owner_pid}" ]] || return 1
   if ! kill -0 "${owner_pid}" >/dev/null 2>&1; then
@@ -357,14 +475,44 @@ next_generated_root_is_lane_owner_active() {
 
   owner_label="$(next_generated_root_read_lane_owner_field "${run_root}" owner_label 2>/dev/null || true)"
   if [[ -z "${owner_label}" ]]; then
-    return 0
+    owner_label="next_generated_root_lane_owner"
   fi
 
   owner_cmd="$(ps -p "${owner_pid}" -o command= 2>/dev/null || true)"
-  [[ "${owner_cmd}" == *"${owner_label}"* ]]
+  [[ "${owner_cmd}" == *"${owner_label}"* ]] || return 1
+
+  owner_token="$(next_generated_root_read_lane_owner_field "${run_root}" owner_token 2>/dev/null || true)"
+  if [[ -z "${owner_token}" ]]; then
+    return 0
+  fi
+  current_identity="$(next_generated_root_live_process_identity "${owner_pid}" 2>/dev/null || true)"
+  IFS='|' read -r current_token _ <<< "${current_identity}"
+  [[ -n "${current_token}" && "${current_token}" == "${owner_token}" ]]
+}
+
+next_generated_root_is_allowed_active_run_root() {
+  local run_root="$1"
+  local allowed_run_root="${NEXT_GENERATED_ROOT_ALLOWED_ACTIVE_RUN_ROOT:-}"
+  [[ -n "${allowed_run_root}" ]] || return 1
+  [[ "$(realpath -m "${run_root}")" == "$(realpath -m "${allowed_run_root}")" ]]
+}
+
+next_generated_root_is_allowed_active_lane_run_root() {
+  local run_root="$1"
+  next_generated_root_is_allowed_active_run_root "${run_root}" || return 1
+  next_generated_root_is_lane_owner_active "${run_root}"
+}
+
+next_generated_root_current_alias_points_to_allowed_active_run_root() {
+  local alias_path="$1"
+  local alias_target
+  [[ -L "${alias_path}" ]] || return 1
+  alias_target="$(realpath -m "${alias_path}")"
+  next_generated_root_is_allowed_active_lane_run_root "${alias_target}"
 }
 
 next_generated_root_normalize() {
+  next_generated_root_cleanup_lane_runtime_state_for_validation || return $?
   next_generated_root_repair_source_contract
 }
 
@@ -488,22 +636,102 @@ next_generated_root_apply_canonical_tsconfig_include() {
 
   node - <<'NODE' "${tsconfig_path}" "${raw_payload}"
 const fs = require('node:fs');
+const path = require('node:path');
 
 const tsconfigPath = process.argv[2];
-const raw = Buffer.from(process.argv[3], 'base64').toString('utf8');
+const acquiredRaw = Buffer.from(process.argv[3], 'base64').toString('utf8');
 const canonicalInclude = [
   '.next/types/**/*.ts',
   'next-env.d.ts',
   'src/**/*.ts',
   'src/**/*.tsx',
 ];
+const retryCount = Number.parseInt(process.env.NEXT_GENERATED_ROOT_APPLY_REREAD_RETRY_COUNT ?? '20', 10);
+const retryDelayMs = Number.parseInt(process.env.NEXT_GENERATED_ROOT_APPLY_REREAD_RETRY_DELAY_MS ?? '25', 10);
+const maxAttempts = Number.isFinite(retryCount) && retryCount > 0 ? retryCount : 20;
+const delayMs = Number.isFinite(retryDelayMs) && retryDelayMs >= 0 ? retryDelayMs : 25;
 
-const config = JSON.parse(raw);
-const nextConfig = { ...config, include: canonicalInclude };
-const nextContent = `${JSON.stringify(nextConfig, null, 2)}\n`;
-if (raw !== nextContent) {
-  fs.writeFileSync(tsconfigPath, nextContent);
+function sleep(ms) {
+  if (ms <= 0) {
+    return;
+  }
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
+
+function canonicalize(raw) {
+  const config = JSON.parse(raw);
+  const nextConfig = { ...config, include: canonicalInclude };
+  return `${JSON.stringify(nextConfig, null, 2)}\n`;
+}
+
+function tempPathFor(file, attempt) {
+  const dir = path.dirname(file);
+  const base = path.basename(file);
+  return path.join(dir, `.${base}.${process.pid}.${Date.now()}.${attempt}.tmp`);
+}
+
+function writeAtomicIfUnchanged(file, expectedRaw, nextContent, attempt) {
+  const latestRaw = fs.readFileSync(file, 'utf8');
+  if (latestRaw !== expectedRaw) {
+    return false;
+  }
+  const tempPath = tempPathFor(file, attempt);
+  let mode;
+  try {
+    mode = fs.statSync(file).mode;
+  } catch {
+    mode = 0o644;
+  }
+  try {
+    fs.writeFileSync(tempPath, nextContent, { mode });
+    fs.renameSync(tempPath, file);
+  } catch (error) {
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {
+      // best effort cleanup
+    }
+    throw error;
+  }
+  return true;
+}
+
+JSON.parse(acquiredRaw);
+
+for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+  let latestRaw;
+  try {
+    latestRaw = fs.readFileSync(tsconfigPath, 'utf8');
+  } catch (error) {
+    if (attempt === maxAttempts) {
+      throw error;
+    }
+    sleep(delayMs);
+    continue;
+  }
+
+  let nextContent;
+  try {
+    nextContent = canonicalize(latestRaw);
+  } catch (error) {
+    if (attempt === maxAttempts) {
+      process.exit(75);
+    }
+    sleep(delayMs);
+    continue;
+  }
+
+  if (latestRaw === nextContent) {
+    process.exit(0);
+  }
+
+  if (writeAtomicIfUnchanged(tsconfigPath, latestRaw, nextContent, attempt)) {
+    process.exit(0);
+  }
+
+  sleep(delayMs);
+}
+process.exit(75);
 NODE
 }
 
@@ -513,23 +741,108 @@ next_generated_root_apply_canonical_next_env() {
 
   node - <<'NODE' "${next_env_path}" "${raw_payload}"
 const fs = require('node:fs');
+const path = require('node:path');
 
 const nextEnvPath = process.argv[2];
-const raw = Buffer.from(process.argv[3], 'base64').toString('utf8');
+Buffer.from(process.argv[3], 'base64').toString('utf8');
 const canonicalNextEnv = `/// <reference types="next" />
 /// <reference types="next/image-types/global" />
 
 // NOTE: This file should not be edited
 // see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
 `;
+const retryCount = Number.parseInt(process.env.NEXT_GENERATED_ROOT_APPLY_REREAD_RETRY_COUNT ?? '20', 10);
+const retryDelayMs = Number.parseInt(process.env.NEXT_GENERATED_ROOT_APPLY_REREAD_RETRY_DELAY_MS ?? '25', 10);
+const maxAttempts = Number.isFinite(retryCount) && retryCount > 0 ? retryCount : 20;
+const delayMs = Number.isFinite(retryDelayMs) && retryDelayMs >= 0 ? retryDelayMs : 25;
 
-if (raw !== canonicalNextEnv) {
-  fs.writeFileSync(nextEnvPath, canonicalNextEnv);
+function sleep(ms) {
+  if (ms <= 0) {
+    return;
+  }
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
+
+function tempPathFor(file, attempt) {
+  const dir = path.dirname(file);
+  const base = path.basename(file);
+  return path.join(dir, `.${base}.${process.pid}.${Date.now()}.${attempt}.tmp`);
+}
+
+function writeAtomicIfUnchanged(file, expectedRaw, nextContent, attempt) {
+  let latestRaw;
+  try {
+    latestRaw = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return 'absent';
+    }
+    throw error;
+  }
+  if (latestRaw !== expectedRaw) {
+    return 'changed';
+  }
+  const tempPath = tempPathFor(file, attempt);
+  let mode;
+  try {
+    mode = fs.statSync(file).mode;
+  } catch {
+    mode = 0o644;
+  }
+  try {
+    fs.writeFileSync(tempPath, nextContent, { mode });
+    fs.renameSync(tempPath, file);
+  } catch (error) {
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {
+      // best effort cleanup
+    }
+    throw error;
+  }
+  return 'written';
+}
+
+for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+  let latestRaw;
+  try {
+    latestRaw = fs.readFileSync(nextEnvPath, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      process.exit(0);
+    }
+    if (attempt === maxAttempts) {
+      throw error;
+    }
+    sleep(delayMs);
+    continue;
+  }
+
+  if (latestRaw === canonicalNextEnv) {
+    process.exit(0);
+  }
+
+  const result = writeAtomicIfUnchanged(nextEnvPath, latestRaw, canonicalNextEnv, attempt);
+  if (result === 'written' || result === 'absent') {
+    process.exit(0);
+  }
+  sleep(delayMs);
+}
+process.exit(75);
 NODE
 }
 
 next_generated_root_repair_source_contract() {
+  local phase="${1:-final_reconcile}"
+  if [[ "${NEXT_GENERATED_ROOT_SOURCE_CONTRACT_LOCK_HELD:-0}" == "1" ]]; then
+    next_generated_root_repair_source_contract_locked "${phase}"
+    return $?
+  fi
+  next_generated_root_with_source_contract_lock "repair_${phase}" \
+    next_generated_root_repair_source_contract_locked "${phase}"
+}
+
+next_generated_root_repair_source_contract_locked() {
   local phase="${1:-final_reconcile}"
   local repo_dir
   local tsconfig_path
@@ -706,9 +1019,36 @@ next_generated_root_stop_pid_tree_gracefully() {
 next_generated_root_remove_lane_current_links() {
   local repo_dir
   repo_dir="$(next_generated_root_repo_dir)"
-  rm -f \
-    "${repo_dir}/artifacts/mock-lane/current" \
-    "${repo_dir}/artifacts/backend-real/current-run"
+  next_generated_root_remove_lane_current_alias "${repo_dir}/artifacts/mock-lane/current" || return $?
+  next_generated_root_remove_lane_current_alias "${repo_dir}/artifacts/backend-real/current-run" || return $?
+}
+
+next_generated_root_remove_lane_current_alias() {
+  local alias_path="$1"
+  local parent base legacy_path suffix
+  [[ -e "${alias_path}" || -L "${alias_path}" ]] || return 0
+  if next_generated_root_current_alias_points_to_allowed_active_run_root "${alias_path}"; then
+    return 0
+  fi
+  if [[ -L "${alias_path}" || -f "${alias_path}" ]]; then
+    rm -f "${alias_path}"
+    return 0
+  fi
+  if [[ -d "${alias_path}" ]]; then
+    parent="$(dirname "${alias_path}")"
+    base="$(basename "${alias_path}")"
+    suffix="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    legacy_path="${parent}/${base}-legacy-${suffix}"
+    local attempt=0
+    while [[ -e "${legacy_path}" ]]; do
+      attempt=$((attempt + 1))
+      legacy_path="${parent}/${base}-legacy-${suffix}-${attempt}"
+    done
+    mv "${alias_path}" "${legacy_path}"
+    return $?
+  fi
+
+  rm -f "${alias_path}"
 }
 
 next_generated_root_stop_lane_web_processes() {
@@ -724,25 +1064,35 @@ next_generated_root_stop_lane_web_processes() {
     while IFS= read -r pid_file; do
       [[ -n "${pid_file}" ]] || continue
       run_root="$(dirname "${pid_file}")"
-      if next_generated_root_is_lane_owner_active "${run_root}"; then
-        active_conflicts+=("${run_root}")
+      if next_generated_root_is_allowed_active_lane_run_root "${run_root}"; then
         continue
       fi
-      next_generated_root_clear_lane_owner "${run_root}"
+      if next_generated_root_is_lane_owner_active "${run_root}"; then
+        if [[ " ${active_conflicts[*]} " != *" ${run_root} "* ]]; then
+          active_conflicts+=("${run_root}")
+        fi
+        continue
+      fi
       pid="$(cat "${pid_file}" 2>/dev/null || true)"
       if [[ -z "${pid}" ]]; then
         rm -f "${pid_file}"
+        next_generated_root_clear_lane_owner "${run_root}"
         continue
       fi
       if ! kill -0 "${pid}" >/dev/null 2>&1; then
         rm -f "${pid_file}"
+        next_generated_root_clear_lane_owner "${run_root}"
         continue
       fi
       cmd="$(ps -p "${pid}" -o command= 2>/dev/null || true)"
       if [[ "${cmd}" == *"next dev"* || "${cmd}" == *"run-next-dev-safe.sh"* || "${cmd}" == *"npm run dev:test"* ]]; then
-        next_generated_root_stop_pid_tree_gracefully "${pid}"
+        if [[ " ${active_conflicts[*]} " != *" ${run_root} "* ]]; then
+          active_conflicts+=("${run_root}")
+        fi
+        continue
       fi
       rm -f "${pid_file}"
+      next_generated_root_clear_lane_owner "${run_root}"
     done < <(find "${lane_root}" -mindepth 2 -maxdepth 2 \( -type f -name 'web.pid' -o -type f -name 'next-dev.pid' \) 2>/dev/null | sort -u)
   done
 
@@ -752,12 +1102,28 @@ next_generated_root_stop_lane_web_processes() {
     for conflict in "${active_conflicts[@]}"; do
       printf ' - %s\n' "${conflict}" >&2
     done
+    printf '[next-generated-root] stop the active lane before validation, then rerun the command. This prevents concurrent Next dev servers from rewriting .next/types, tsconfig.json, or next-env.d.ts.\n' >&2
     return 2
   fi
 }
 
+next_generated_root_cleanup_lane_runtime_state_for_validation() {
+  next_generated_root_stop_lane_web_processes || return $?
+  next_generated_root_remove_lane_current_links
+}
+
 next_generated_root_prepare_for_validation() {
+  next_generated_root_cleanup_lane_runtime_state_for_validation || return $?
   next_generated_root_assert_source_contract prepare_for_validation
+}
+
+next_generated_root_prepare_source_safe_for_tsc() {
+  next_generated_root_cleanup_lane_runtime_state_for_validation || return $?
+  if ! next_generated_root_repair_source_contract prepare_source_safe_for_tsc; then
+    next_generated_root_report_source_contract_failure prepare_source_safe_for_tsc
+    return $?
+  fi
+  next_generated_root_assert_source_contract prepare_source_safe_for_tsc
 }
 
 next_generated_root_guard_source_contract() {

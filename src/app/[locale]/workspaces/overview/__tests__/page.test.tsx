@@ -9,7 +9,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-workspaces', () => ({
-  useWorkspaces: () => mockUseWorkspaces(),
+  usePublicWorkspaces: () => mockUseWorkspaces(),
 }));
 
 import WorkspacesOverviewPage from '../page';
@@ -32,6 +32,7 @@ describe('WorkspacesOverviewPage', () => {
     render(<WorkspacesOverviewPage />);
 
     expect(screen.getByTestId('workspace-overview__heading')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-overview__summary')).toHaveTextContent('2 · overview_summary_label');
     expect(screen.getByText('2 · overview_summary_label')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__search')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__list')).toBeInTheDocument();
@@ -40,6 +41,43 @@ describe('WorkspacesOverviewPage', () => {
       'href',
       '/en-US/workspaces/ws_1/login',
     );
+  });
+
+  it('keeps compact public workspace records from rendering invalid updated dates', () => {
+    mockUseWorkspaces.mockReturnValue({
+      data: [
+        { id: 'ws_public', name: 'Public Workspace' },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetchWorkspaces,
+    });
+
+    render(<WorkspacesOverviewPage />);
+
+    expect(screen.getByTestId('workspace-overview__summary')).toHaveTextContent('1 · overview_summary_label');
+    expect(screen.getByTestId('workspace-overview__card--ws_public')).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/overview_updated_at/i)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['invalid timestamp', { id: 'ws_invalid', name: 'Invalid Timestamp Workspace', updated_at: 'not-a-date' }],
+    ['empty timestamp', { id: 'ws_empty', name: 'Empty Timestamp Workspace', updated_at: '' }],
+    ['missing timestamp', { id: 'ws_missing', name: 'Missing Timestamp Workspace' }],
+  ])('does not render corrupt updated-at metadata for public records with %s', (_caseName, workspace) => {
+    mockUseWorkspaces.mockReturnValue({
+      data: [workspace],
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetchWorkspaces,
+    });
+
+    render(<WorkspacesOverviewPage />);
+
+    expect(screen.getByTestId(`workspace-overview__card--${workspace.id}`)).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/overview_updated_at/i)).not.toBeInTheDocument();
   });
 
   it('filters workspace cards by search query', () => {

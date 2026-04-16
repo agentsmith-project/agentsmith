@@ -10,7 +10,7 @@ import { PageState } from '@/components/layout/PageState';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useWorkspaces } from '@/lib/hooks/use-workspaces';
+import { usePublicWorkspaces } from '@/lib/hooks/use-workspaces';
 
 export default function WorkspacesOverviewPage() {
   const params = useParams();
@@ -21,7 +21,7 @@ export default function WorkspacesOverviewPage() {
     isLoading,
     isError,
     refetch,
-  } = useWorkspaces({ public: true });
+  } = usePublicWorkspaces();
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredWorkspaces = useMemo(() => {
@@ -82,7 +82,12 @@ export default function WorkspacesOverviewPage() {
             >
               <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                 <div className="space-y-1.5">
-                  <p className="type-system-caption text-tertiary">{(workspaces ?? []).length} · {t('overview_summary_label')}</p>
+                  <p
+                    className="type-system-caption text-tertiary"
+                    data-testid="workspace-overview__summary"
+                  >
+                    {(workspaces ?? []).length} · {t('overview_summary_label')}
+                  </p>
                   <h2 className="type-subheading text-foreground">{t('overview_list_title')}</h2>
                   <p className="type-body-ui text-secondary">{t('overview_list_subtitle')}</p>
                 </div>
@@ -123,44 +128,41 @@ export default function WorkspacesOverviewPage() {
                 </div>
               ) : (
                 <div className="mt-5 divide-y divide-subtle border-y border-subtle">
-                  {filteredWorkspaces.map((workspace) => (
-                    <article
-                      key={workspace.id}
-                      className="flex flex-col gap-4 py-5 md:flex-row md:items-center md:justify-between"
-                      data-testid={`workspace-overview__card--${workspace.id}`}
-                    >
-                      <div className="min-w-0 space-y-2">
-                        <div className="flex items-center gap-3">
-                          <Building2 className="h-4.5 w-4.5 text-icon-default" />
-                          <h3 className="type-title truncate text-foreground">{workspace.name}</h3>
-                          <p className="type-system-caption truncate text-tertiary">{workspace.id}</p>
+                  {filteredWorkspaces.map((workspace) => {
+                    return (
+                      <article
+                        key={workspace.id}
+                        className="flex flex-col gap-4 py-5 md:flex-row md:items-center md:justify-between"
+                        data-testid={`workspace-overview__card--${workspace.id}`}
+                      >
+                        <div className="min-w-0 space-y-2">
+                          <div className="flex items-center gap-3">
+                            <Building2 className="h-4.5 w-4.5 text-icon-default" />
+                            <h3 className="type-title truncate text-foreground">{workspace.name}</h3>
+                            <p className="type-system-caption truncate text-tertiary">{workspace.id}</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-secondary">
+                            <span className="inline-flex items-center gap-1.5">
+                              <FolderKanban className="h-3.5 w-3.5 text-icon-default" />
+                              {t('overview_projects_entry')}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-secondary">
-                          <span className="inline-flex items-center gap-1.5">
-                            <FolderKanban className="h-3.5 w-3.5 text-icon-default" />
-                            {t('overview_projects_entry')}
-                          </span>
-                          <span className="text-tertiary">
-                            {t('overview_updated_at', {
-                              value: new Date(workspace.updated_at).toLocaleString(locale),
-                            })}
-                          </span>
-                        </div>
-                      </div>
 
-                      <div className="flex items-center gap-2 md:pl-6">
-                        <Button asChild variant="action">
-                          <Link
-                            href={`/${locale}/workspaces/${workspace.id}/login`}
-                            data-testid={`workspace-overview__open-workspace--${workspace.id}`}
-                          >
-                            {t('overview_open_workspace')}
-                            <ArrowRight className="h-4 w-4" />
-                          </Link>
-                        </Button>
-                      </div>
-                    </article>
-                  ))}
+                        <div className="flex items-center gap-2 md:pl-6">
+                          <Button asChild variant="action">
+                            <Link
+                              href={`/${locale}/workspaces/${workspace.id}/login`}
+                              data-testid={`workspace-overview__open-workspace--${workspace.id}`}
+                            >
+                              {t('overview_open_workspace')}
+                              <ArrowRight className="h-4 w-4" />
+                            </Link>
+                          </Button>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </section>

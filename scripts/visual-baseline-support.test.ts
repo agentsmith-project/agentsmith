@@ -8,15 +8,23 @@ import { readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadStoryDefinition } from '../e2e/story-loader';
+import { loadStoryDefinition, parseStoryDefinition } from '../e2e/story-loader';
 import {
+  assertVisualBaselineActualUrlMatchesRoute,
+  buildVisualBaselineScenarioEvidence,
+  fingerprintVisualBaselineSemanticAssertions,
+  buildVisualBaselineExecutorScenarios,
   groupVisualBaselineCatalogByScenario,
   listVisualBaselineCatalogEntries,
+  listVisualBaselineExecutorScenarios,
   parseVisualBaselineBuildRecord,
+  renderVisualBaselineAutomatedPassMarkdown,
   renderVisualBaselineScenarioReviewMarkdown,
+  resolveVisualBaselineSemanticAssertions,
   resolveVisualBaselineStoryEvidence,
   resolveVisualBaselineStableMarkers,
   resolveVisualBaselineReviewDir,
+  type VisualBaselineCatalogEntry,
 } from '../e2e/visual-baseline-support';
 
 describe('visual baseline support', () => {
@@ -47,6 +55,11 @@ describe('visual baseline support', () => {
       expect(entry.storyEvidencePolicy).toBe('required');
       expect(entry.storyEvidenceKind).toBe('visual_scene_catalog');
       expect(entry.storyEvidenceOwner).toBe('lane:visual');
+      expect(entry.semanticAssertions.forbiddenVisibleText).toEqual(expect.arrayContaining([
+        'Invalid Date',
+        '[object Object]',
+        'undefined',
+      ]));
       expect(entry.sourceSpec).toBe('e2e/visual.spec.ts');
       expect(entry.storySourceFile).toMatch(/^e2e\/stories\/mock-lane\//);
       expect(entry.storySceneId.length).toBeGreaterThan(0);
@@ -85,6 +98,19 @@ describe('visual baseline support', () => {
     expect(visualSpec).not.toContain('requiresMockAuthLane');
   });
 
+  it('runs semantic assertions before visual screenshots and keeps workspace overview exact', async () => {
+    const visualSpec = await readFile(path.resolve('e2e/visual.spec.ts'), 'utf-8');
+    const semanticIndex = visualSpec.indexOf('expectVisualSemanticAssertions(page, scenario.semanticAssertions, scenario.scenarioId)');
+    const screenshotIndex = visualSpec.indexOf('toHaveScreenshot(entry.screenshot');
+
+    expect(semanticIndex).toBeGreaterThan(-1);
+    expect(screenshotIndex).toBeGreaterThan(-1);
+    expect(semanticIndex).toBeLessThan(screenshotIndex);
+    expect(visualSpec).toMatch(/'workspace-overview':[\s\S]*screenshotOptions:[\s\S]*maxDiffPixelRatio: 0/);
+    expect(visualSpec).toContain('scenario.semanticAssertions.requiredViewportTestIds.length > 0');
+    expect(visualSpec).toContain('maxDiffPixelRatio: 0');
+  });
+
   it('groups paired light/dark screenshots under the same scenario record', () => {
     const grouped = groupVisualBaselineCatalogByScenario();
 
@@ -102,10 +128,156 @@ describe('visual baseline support', () => {
     expect(usageEndpointSwitch?.entries[0]?.theme).toBe('default');
   });
 
-  it('renders a review record that ties screenshots back to route and recipe family', () => {
+  it('resolves story-owned visual semantic assertions with default corrupt-token guards', () => {
+    const scenario = groupVisualBaselineCatalogByScenario().get('workspace-overview');
+    expect(scenario).toBeDefined();
+
+    expect(scenario?.stableMarkers).toEqual([
+      'workspace-overview__list',
+      'workspace-overview__summary',
+    ]);
+    expect(scenario?.semanticAssertions.forbiddenVisibleText).toEqual(expect.arrayContaining([
+      'Invalid Date',
+      '[object Object]',
+      'undefined',
+      'overview_updated_at',
+    ]));
+    expect(fingerprintVisualBaselineSemanticAssertions(scenario!.semanticAssertions)).toMatch(/^sha256:/);
+    expect(resolveVisualBaselineSemanticAssertions('workspace-overview').forbiddenVisibleText).toContain('overview_updated_at');
+  });
+
+  it('requires notebook create-task CTA semantic visibility in the first viewport instead of DOM visibility only', () => {
+    const notebook = groupVisualBaselineCatalogByScenario().get('notebook');
+    const lifecycleList = groupVisualBaselineCatalogByScenario().get('notebook-task-lifecycle-list');
+    expect(notebook).toBeDefined();
+    expect(lifecycleList).toBeDefined();
+
+    expect(notebook?.semanticAssertions.requiredViewportTestIds).toContain('notebook__create-task-btn');
+    expect(lifecycleList?.semanticAssertions.requiredViewportTestIds).toContain('notebook__create-task-btn');
+    expect(resolveVisualBaselineSemanticAssertions('notebook-task-lifecycle-list').requiredViewportTestIds)
+      .toContain('notebook__create-task-btn');
+  });
+
+  it('forbids stitched create-task dialog copy and top-level workspace wording in visual semantics', () => {
+    const dialog = groupVisualBaselineCatalogByScenario().get('notebook-create-task-dialog');
+    const lifecycleDialog = groupVisualBaselineCatalogByScenario().get('notebook-task-lifecycle-create-dialog');
+    expect(dialog).toBeDefined();
+    expect(lifecycleDialog).toBeDefined();
+
+    for (const scenario of [dialog!, lifecycleDialog!]) {
+      expect(scenario.semanticAssertions.forbiddenVisibleText).toEqual(expect.arrayContaining([
+        'Create Task New Task',
+        'Create New',
+        'Initialize a new workspace automatically',
+        'New workspace name',
+        'Select Existing Workspace',
+      ]));
+    }
+  });
+
+  it('requires editable project settings review save actions to stay in the first viewport', () => {
+    const settingsReview = groupVisualBaselineCatalogByScenario().get('project-settings-review');
+    expect(settingsReview).toBeDefined();
+
+    expect(settingsReview?.semanticAssertions.requiredViewportTestIds).toEqual(expect.arrayContaining([
+      'settings__save-btn',
+      'settings__project-admins-save',
+    ]));
+  });
+
+  it('declares scene-owned prominent action limits for CTA hierarchy review scenes', () => {
+    const systemWorkspaces = groupVisualBaselineCatalogByScenario().get('system-workspaces');
+    const failedSystemWorkspaces = groupVisualBaselineCatalogByScenario().get('system-workspaces-failed-state');
+    const disabledConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-disabled');
+    const connectedConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-connected');
+
+    expect(systemWorkspaces?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__empty-create']);
+    expect(systemWorkspaces?.semanticAssertions.maxProminentActions).toBe(1);
+    expect(failedSystemWorkspaces?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__enable-edit']);
+    expect(failedSystemWorkspaces?.semanticAssertions.maxProminentActions).toBe(1);
+    expect(disabledConnections?.semanticAssertions.primaryActionTestIds).toEqual([]);
+    expect(disabledConnections?.semanticAssertions.maxProminentActions).toBe(0);
+    expect(connectedConnections?.semanticAssertions.primaryActionTestIds).toEqual([]);
+    expect(connectedConnections?.semanticAssertions.maxProminentActions).toBe(0);
+  });
+
+  it('forbids raw backend ISO timestamps in workspace connections visual semantics', () => {
+    const connectedConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-connected');
+    expect(connectedConnections).toBeDefined();
+
+    expect(connectedConnections?.semanticAssertions.forbiddenVisibleTextPatterns).toEqual(expect.arrayContaining([
+      String.raw`\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z\b`,
+    ]));
+    expect(resolveVisualBaselineSemanticAssertions('workspace-connections-feishu-connected').forbiddenVisibleTextPatterns)
+      .toContain(String.raw`\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z\b`);
+  });
+
+  it('rejects invalid story-owned forbidden visible text regex patterns before visual runtime', () => {
+    expect(() =>
+      parseStoryDefinition(`
+---
+{
+  "storyId": "invalid-visible-text-pattern",
+  "title": "Invalid visible text pattern",
+  "actor": "reviewer",
+  "lane": "mock-lane",
+  "family": "visual-review",
+  "personas": ["reviewer"],
+  "kind": "review",
+  "gatePolicy": {
+    "tier": "default",
+    "requiredEvidence": ["visual"]
+  },
+  "externalDependencies": [],
+  "entryRoute": "/en-US/workspaces/ws_default/connections",
+  "goal": "Verify visual semantic patterns fail before runtime.",
+  "narrative": "Regex semantic rules must be valid and reviewable before the screenshot lane runs.",
+  "scenes": [
+    {
+      "sceneId": "workspace-connections",
+      "route": "/en-US/workspaces/ws_default/connections",
+      "stableMarkers": ["workspace-connections__capability-note"]
+    }
+  ],
+  "steps": [
+    {
+      "stepId": "open-workspace-connections",
+      "sceneId": "workspace-connections",
+      "intent": "Open workspace connections",
+      "action": "Open workspace connections",
+      "target": "workspace-connections__capability-note",
+      "expectedFeedback": "Workspace connections are ready for review",
+      "evidence": ["visual"]
+    }
+  ],
+  "runtimeData": {
+    "visualReview": {
+      "scenes": [
+        {
+          "sceneId": "workspace-connections",
+          "scenarioId": "workspace-connections",
+          "scenario": "Workspace connections visual review.",
+          "group": "workspace_pages",
+          "codeRefs": ["e2e/visual.spec.ts"],
+          "capture": "full_page",
+          "semanticAssertions": {
+            "forbiddenVisibleTextPatterns": ["["]
+          }
+        }
+      ]
+    }
+  }
+}
+---
+`),
+    ).toThrow(/forbidden visible text pattern/i);
+  });
+
+  it('renders a UX acceptance record with reviewer proof, actual URL, story fingerprint, and screenshot hashes', () => {
     const grouped = groupVisualBaselineCatalogByScenario();
     const scenario = grouped.get('desktop-auth-complete');
     expect(scenario).toBeDefined();
+    const evidence = buildVisualBaselineScenarioEvidence(scenario!);
 
     const markdown = renderVisualBaselineScenarioReviewMarkdown({
       scenario: scenario!,
@@ -117,18 +289,29 @@ describe('visual baseline support', () => {
         lane: 'mock-lane',
       },
       review: {
-        reviewer: 'codex',
+        reviewerId: 'codex-d1-reviewer',
+        reviewerKind: 'ai_reviewer',
+        reviewMode: 'ai_native_screenshot_review',
         reviewedAt: '2026-04-12T12:00:00.000Z',
         verdict: 'needs_work',
-        cursorFit: 'partial',
-        uxFit: 'mixed',
-        notes: ['Single-column completion flow should align with the public auth shell recipe.'],
+        actualUrl: '/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001',
+        findings: ['Single-column completion flow should align with the public auth shell recipe.'],
         blockingFindings: ['Light and dark screenshots must be reviewed together before acceptance.'],
       },
     });
 
     expect(markdown).toContain('# desktop-auth-complete');
+    expect(markdown).toContain('- schema: visual_baseline_ux_acceptance/v1');
+    expect(markdown).toContain('- scenario_id: desktop-auth-complete');
     expect(markdown).toContain('- recipe_family: public_auth_single');
+    expect(markdown).toContain('- actual_url: /en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001');
+    expect(markdown).toContain(`- story_fingerprint: ${evidence.storyFingerprint}`);
+    expect(markdown).toContain('- reviewer_id: codex-d1-reviewer');
+    expect(markdown).toContain('- reviewer_kind: ai_reviewer');
+    expect(markdown).toContain('- review_mode: ai_native_screenshot_review');
+    expect(markdown).toContain('- verdict: needs_work');
+    expect(markdown).toContain('- accepted_screenshot_hashes: desktop-auth-complete-dark.png=sha256:');
+    expect(markdown).toContain('- accepted_baseline_hashes: desktop-auth-complete-dark.png=sha256:');
     expect(markdown).toContain('- build_run_id: run-20260412-001');
     expect(markdown).toContain('- build_git_sha: abc123');
     expect(markdown).toContain('- build_fingerprint: abc123:mock-lane:visual');
@@ -136,9 +319,48 @@ describe('visual baseline support', () => {
     expect(markdown).toContain('- story_evidence_policy: required');
     expect(markdown).toContain('- story_evidence_kind: visual_scene_catalog');
     expect(markdown).toContain('- story_evidence_owner: lane:visual');
+    expect(markdown).toContain('- semantic_contract_fingerprint: sha256:');
+    expect(markdown).toContain('- semantic_forbidden_visible_text: Invalid Date, [object Object], undefined');
+    expect(markdown).toContain('- semantic_forbidden_visible_text_patterns: <none>');
     expect(markdown).toContain('- desktop-auth-complete-dark.png [dark]');
     expect(markdown).toContain('- desktop-auth-complete-light.png [light]');
     expect(markdown).toContain('Light and dark screenshots must be reviewed together before acceptance.');
+  });
+
+  it('renders automated visual pass artifacts without UX acceptance verdict or reviewer proof', () => {
+    const scenario = groupVisualBaselineCatalogByScenario().get('desktop-auth-complete');
+    expect(scenario).toBeDefined();
+    const evidence = buildVisualBaselineScenarioEvidence(scenario!);
+
+    const markdown = renderVisualBaselineAutomatedPassMarkdown({
+      scenario: scenario!,
+      build: {
+        runId: 'run-20260412-001',
+        gitSha: 'abc123',
+        fingerprint: 'abc123:mock-lane:visual',
+        startedAt: '2026-04-12T11:59:00.000Z',
+        lane: 'mock-lane',
+      },
+      automated: {
+        generatedAt: '2026-04-12T12:00:00.000Z',
+        automatedVerdict: 'passed',
+        semanticVerdict: 'passed',
+        actualUrl: '/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001',
+        notes: ['Playwright visual lane completed for this scenario.'],
+      },
+    });
+
+    expect(markdown).toContain('- schema: visual_baseline_automated_pass/v1');
+    expect(markdown).toContain('- automated_verdict: passed');
+    expect(markdown).toContain('- semantic_verdict: passed');
+    expect(markdown).toContain('- semantic_contract_fingerprint: sha256:');
+    expect(markdown).toContain('- semantic_forbidden_visible_text: Invalid Date, [object Object], undefined');
+    expect(markdown).toContain('- semantic_forbidden_visible_text_patterns: <none>');
+    expect(markdown).toContain(`- story_fingerprint: ${evidence.storyFingerprint}`);
+    expect(markdown).toContain('- accepted_screenshot_hashes: desktop-auth-complete-dark.png=sha256:');
+    expect(markdown).toContain('- accepted_baseline_hashes: desktop-auth-complete-dark.png=sha256:');
+    expect(markdown).not.toContain('- verdict:');
+    expect(markdown).not.toContain('- reviewer_id:');
   });
 
   it('includes stable marker metadata in review markdown for non-public recipe families', () => {
@@ -149,12 +371,13 @@ describe('visual baseline support', () => {
     const markdown = renderVisualBaselineScenarioReviewMarkdown({
       scenario: scenario!,
       review: {
-        reviewer: 'codex',
+        reviewerId: 'codex-d1-reviewer',
+        reviewerKind: 'ai_reviewer',
+        reviewMode: 'ai_native_screenshot_review',
         reviewedAt: '2026-04-12T12:05:00.000Z',
-        verdict: 'aligned',
-        cursorFit: 'aligned',
-        uxFit: 'low_mindload',
-        notes: ['System workspaces now wait on the list/detail recipe instead of the old heading.'],
+        verdict: 'accepted',
+        actualUrl: '/en-US/system/workspaces',
+        findings: ['System workspaces now wait on the list/detail recipe instead of the old heading.'],
       },
     });
 
@@ -358,6 +581,7 @@ describe('visual baseline support', () => {
         ]),
         capture: 'full_page',
         authLane: 'authed',
+        setupNotes: ['viewport:1440x900'],
         themes: ['light', 'dark'],
       },
       {
@@ -373,6 +597,7 @@ describe('visual baseline support', () => {
         ]),
         capture: 'full_page',
         authLane: 'authed',
+        setupNotes: ['viewport:1440x900'],
         themes: ['light', 'dark'],
       },
     ]);
@@ -530,8 +755,10 @@ describe('visual baseline support', () => {
     expect(resolveVisualBaselineStableMarkers('project-settings-review')).toEqual([
       'settings__summary-line',
       'settings__general-section',
+      'settings__save-btn',
       'settings__ownership-section',
       'settings__project-admins-section',
+      'settings__project-admins-save',
     ]);
 
     expect(resolveVisualBaselineStableMarkers('project-members-review')).toEqual([
@@ -594,7 +821,7 @@ describe('visual baseline support', () => {
     }, 'fixture-build-info.json')).toThrow(/run_id/);
   });
 
-  it('writes review artifacts with required visual build metadata from the snake_case build info file', () => {
+  it('writes automated visual pass artifacts with required visual build metadata from the snake_case build info file', () => {
     const tempRoot = mkdtempSync(path.join(tmpdir(), 'visual-review-writer-'));
     const buildInfoPath = path.join(tempRoot, 'visual-build-info.json');
     const outputRoot = path.join(tempRoot, 'reviews');
@@ -619,13 +846,15 @@ describe('visual baseline support', () => {
     });
 
     const review = readFileSync(
-      path.join(outputRoot, runId, 'desktop-auth-complete', 'review.md'),
+      path.join(outputRoot, runId, 'desktop-auth-complete', 'automated-pass.md'),
       'utf8',
     );
     expect(review).toContain('- build_run_id: run-20260412-001');
     expect(review).toContain('- build_git_sha: abc123');
     expect(review).toContain('- build_fingerprint: fingerprint-001');
     expect(review).toContain('- build_started_at: 2026-04-12T11:59:00.000Z');
+    expect(review).toContain('- automated_verdict: passed');
+    expect(review).not.toContain('- verdict: accepted');
   });
 
   it('fails the review writer when an explicit build info file is incomplete', () => {
@@ -726,6 +955,91 @@ describe('visual baseline support', () => {
       storySourceFile: 'e2e/stories/mock-lane/mock-lane-alerts-and-usage-review.story.md',
       storySceneId: 'alerts',
     });
+  });
+
+  it('drives visual executor scenarios from the story catalog instead of hardcoded visual spec case arrays', async () => {
+    const visualSpec = await readFile(path.resolve('e2e/visual.spec.ts'), 'utf-8');
+    const executorScenarios = listVisualBaselineExecutorScenarios();
+    const catalogScenarios = [...groupVisualBaselineCatalogByScenario().values()]
+      .sort((left, right) => left.scenarioId.localeCompare(right.scenarioId));
+
+    expect(executorScenarios.map((scenario) => scenario.scenarioId)).toEqual(
+      catalogScenarios.map((scenario) => scenario.scenarioId),
+    );
+    expect(visualSpec).toContain('listVisualBaselineExecutorScenarios');
+    expect(visualSpec).not.toContain('THEMED_PUBLIC_PAGES');
+    expect(visualSpec).not.toContain('THEMED_WORKSPACE_PAGES_AUTHED');
+    expect(visualSpec).not.toContain('THEMED_GOVERNANCE_PAGES');
+    expect(visualSpec).not.toContain('THEMED_OVERLAY_CASES');
+  });
+
+  it('lets catalog route changes drive executor navigation without retaining the old hardcoded route', () => {
+    const [workspaceSelect] = listVisualBaselineCatalogEntries()
+      .filter((entry) => entry.scenarioId === 'workspace-select');
+
+    expect(workspaceSelect).toBeDefined();
+    const movedCatalogEntry: VisualBaselineCatalogEntry = {
+      ...workspaceSelect!,
+      route: '/en-US/login/workspace-v2',
+    };
+
+    const [executorScenario] = buildVisualBaselineExecutorScenarios([movedCatalogEntry]);
+
+    expect(executorScenario?.scenarioId).toBe('workspace-select');
+    expect(executorScenario?.route).toBe('/en-US/login/workspace-v2');
+  });
+
+  it('fails fast when the browser lands on a route that differs from the story catalog route', () => {
+    expect(() => assertVisualBaselineActualUrlMatchesRoute({
+      scenarioId: 'desktop-auth-complete',
+      expectedRoute: '/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001',
+      actualUrl: 'http://localhost:3001/en-US/desktop/auth/request',
+    })).toThrow(/visual route drift.*desktop-auth-complete/);
+
+    expect(() => assertVisualBaselineActualUrlMatchesRoute({
+      scenarioId: 'desktop-auth-complete',
+      expectedRoute: '/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001',
+      actualUrl: 'http://localhost:3001/en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001#ignored',
+    })).not.toThrow();
+  });
+
+  it('exposes required stable markers from the story catalog to the visual executor', () => {
+    const scenarios = listVisualBaselineExecutorScenarios();
+    const workspaceSelect = scenarios.find((scenario) => scenario.scenarioId === 'workspace-select');
+    const chatRecoverEmpty = scenarios.find((scenario) => scenario.scenarioId === 'chat-recover-empty');
+
+    expect(workspaceSelect?.stableMarkers).toEqual([
+      'workspace-select__heading',
+      'workspace-select__list',
+      'workspace-select__system-link',
+    ]);
+    expect(chatRecoverEmpty?.stableMarkers).toEqual([
+      'chat__threads-empty-state',
+      'chat__threads-empty-new-thread',
+      'chat__new-thread-btn',
+    ]);
+  });
+
+  it('keeps compact chat screenshot viewport metadata in the story catalog instead of hidden spec setup', () => {
+    const scenarios = listVisualBaselineExecutorScenarios();
+
+    expect(scenarios.find((scenario) => scenario.scenarioId === 'chat-standard')?.setupNotes).toContain('viewport:1440x900');
+    expect(scenarios.find((scenario) => scenario.scenarioId === 'chat-operate')?.setupNotes).toContain('viewport:1440x900');
+    expect(scenarios.find((scenario) => scenario.scenarioId === 'chat-recover-empty')?.setupNotes).toContain('viewport:1440x900');
+  });
+
+  it('stores canonical URL-owned selection state in story routes for stateful visual scenes', () => {
+    const scenarios = groupVisualBaselineCatalogByScenario();
+
+    expect(scenarios.get('dialog-files-create-folder')?.route).toBe(
+      '/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default',
+    );
+    expect(scenarios.get('dialog-files-rename')?.route).toBe(
+      '/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default',
+    );
+    expect(scenarios.get('system-workspaces-delete-confirmation')?.route).toBe(
+      '/en-US/system/workspaces?workspace=ws_seeded',
+    );
   });
 
   it('documents the mock-lane story family linkage contract', async () => {

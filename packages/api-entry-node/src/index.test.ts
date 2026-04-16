@@ -143,6 +143,44 @@ describe("api-entry-node me routes", () => {
     expect(closeResolved).toBe(true);
   });
 
+  it("shuts down terminal and agent execution lifecycle services before resolving server.close", async () => {
+    const deps = createDefaultNodeApiDeps();
+    const terminalShutdown = vi.fn(async () => undefined);
+    const executionShutdown = vi.fn(async () => undefined);
+    vi.spyOn(deps.notebookTerminalService, "shutdown").mockImplementation(terminalShutdown);
+    vi.spyOn(deps.agentExecutionService, "shutdown").mockImplementation(executionShutdown);
+    const { server } = startServerWithDeps({
+      ...deps,
+      fileLibraryGatewayManager: {
+        ...deps.fileLibraryGatewayManager,
+        reconcile: vi.fn(async () => undefined),
+        shutdown: vi.fn(async () => undefined),
+      },
+    });
+
+    await new Promise<void>((resolve) => {
+      if (server.listening) {
+        resolve();
+        return;
+      }
+      server.once("listening", () => resolve());
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    expect(terminalShutdown).toHaveBeenCalledTimes(1);
+    expect(executionShutdown).toHaveBeenCalledTimes(1);
+    expect(terminalShutdown.mock.invocationCallOrder[0]).toBeLessThan(executionShutdown.mock.invocationCallOrder[0]);
+  });
+
   it("runs gateway reconcile on a single-flight interval and clears it during shutdown", async () => {
     process.env.FILE_LIBRARY_GATEWAY_RECONCILE_INTERVAL_MS = "60000";
     process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED = "false";

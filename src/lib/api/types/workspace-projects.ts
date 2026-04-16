@@ -7,6 +7,11 @@ export interface Workspace {
   updated_at: string;
 }
 
+export interface PublicWorkspaceSummary {
+  id: string;
+  name: string;
+}
+
 export interface WorkspaceMember {
   id: string;
   user_id: string;

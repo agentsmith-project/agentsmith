@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "bash scripts/run-next-dev-safe.sh --turbopack",
     "dev:test": "bash scripts/run-next-dev-safe.sh",
-    "build": "next build",
+    "build": "bash scripts/build-next-with-root-finalize.sh",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "test": "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs",

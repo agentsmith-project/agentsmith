@@ -3,6 +3,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/scripts/lib/runner-lifecycle-log.sh"
 
 ensure_dirs
 ensure_operator_site_env
@@ -20,7 +22,7 @@ docker_compose ps --status running universal-proxy | grep -q universal-proxy \
 docker_compose ps --status running external-runner | grep -q external-runner \
   || die "upgrade-status failed: external-runner is not running"
 started="$(date +%s)"
-until docker logs "${COMPOSE_PROJECT_NAME:-agentsmith-cluster}-external-runner-1" 2>&1 | grep -q '\[notebook-codex-runner\] connected'; do
+until runner_lifecycle_logs_connected "$(docker logs "${COMPOSE_PROJECT_NAME:-agentsmith-cluster}-external-runner-1" 2>&1 || true)"; do
   if (( "$(date +%s)" - started > 120 )); then
     die "upgrade-status failed: external-runner did not reconnect in time"
   fi

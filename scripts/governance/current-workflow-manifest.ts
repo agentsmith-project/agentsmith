@@ -90,6 +90,88 @@ export interface CurrentWorkflowDiagnosticCommand {
   nextStep: string;
 }
 
+export const CURRENT_CI_WORKFLOW_ROLES = [
+  'quality_gate',
+  'contract_gate',
+  'backend_real_regression',
+  'integration_e2e',
+] as const;
+
+export type CurrentCIWorkflowRole = (typeof CURRENT_CI_WORKFLOW_ROLES)[number];
+
+export const CURRENT_CI_WORKFLOW_JOB_ROLES = [
+  'gate_verdict',
+  'contract_gate',
+  'backend_real_lane',
+  'visual_lane',
+  'integration_lane',
+] as const;
+
+export type CurrentCIWorkflowJobRole = (typeof CURRENT_CI_WORKFLOW_JOB_ROLES)[number];
+
+export const CURRENT_CI_WORKFLOW_TRIGGERS = [
+  'pull_request',
+  'push',
+  'schedule',
+  'workflow_dispatch',
+] as const;
+
+export type CurrentCIWorkflowTrigger = (typeof CURRENT_CI_WORKFLOW_TRIGGERS)[number];
+
+export const CURRENT_CI_WORKFLOW_BLOCKING_SCOPES = [
+  'pull_request',
+  'push',
+  'manual',
+  'scheduled',
+  'release',
+] as const;
+
+export type CurrentCIWorkflowBlockingScope = (typeof CURRENT_CI_WORKFLOW_BLOCKING_SCOPES)[number];
+
+export const CURRENT_CI_WORKFLOW_EVIDENCE_FAMILIES = [
+  'backend_real_current_state',
+  'backend_real_run',
+  'governance_report',
+  'integration_log',
+  'mock_lane_run',
+  'playwright_report',
+  'test_results',
+  'visual_baseline_review',
+] as const;
+
+export type CurrentCIWorkflowEvidenceFamily = (typeof CURRENT_CI_WORKFLOW_EVIDENCE_FAMILIES)[number];
+
+export interface CurrentCIWorkflowJob {
+  workflowPath: string;
+  workflowName: string;
+  id: string;
+  role: CurrentCIWorkflowJobRole;
+  gateId?: string;
+  laneId?: string;
+  commands: readonly string[];
+  triggers: readonly CurrentCIWorkflowTrigger[];
+  requiredSecrets: readonly string[];
+  requiresSecrets: boolean;
+  evidenceRequired: boolean;
+  evidenceFamilies: readonly CurrentCIWorkflowEvidenceFamily[];
+  artifactPaths: readonly string[];
+  blockingFor: readonly CurrentCIWorkflowBlockingScope[];
+  scheduled: boolean;
+  releaseBlocking: boolean;
+  notes?: string;
+}
+
+export interface CurrentCIWorkflowDefinition {
+  path: string;
+  workflowName: string;
+  role: CurrentCIWorkflowRole;
+  triggers: readonly CurrentCIWorkflowTrigger[];
+  jobs: readonly CurrentCIWorkflowJob[];
+  blockingFor: readonly CurrentCIWorkflowBlockingScope[];
+  scheduled: boolean;
+  releaseBlocking: boolean;
+}
+
 export const CURRENT_WORKFLOW_DOCUMENT_FILES = [
   'README.md',
   'DEVELOPMENT.md',
@@ -108,6 +190,8 @@ export const CURRENT_WORKFLOW_DOCUMENT_FILES = [
   'docs/testing/visual-baseline-policy-v1.md',
   '.github/workflows/quality-gates.yml',
   '.github/workflows/contracts-check.yml',
+  '.github/workflows/engineering-gate.yml',
+  '.github/workflows/integration-e2e.yml',
   'scripts/contracts/check-current-workflows.ts',
   'scripts/contracts/check-current-gates.ts',
   'scripts/contracts/check-engineering-governance.ts',
@@ -138,6 +222,16 @@ type RawCurrentWorkflowSection = {
   id: string;
   title: CurrentWorkflowTopLevelTerm;
   commands: RawCurrentWorkflowCommand[];
+};
+
+type RawCurrentCIWorkflowJob = Omit<
+  CurrentCIWorkflowJob,
+  'workflowPath' | 'workflowName' | 'triggers'
+> &
+  Partial<Pick<CurrentCIWorkflowJob, 'triggers'>>;
+
+type RawCurrentCIWorkflowDefinition = Omit<CurrentCIWorkflowDefinition, 'jobs'> & {
+  jobs: readonly RawCurrentCIWorkflowJob[];
 };
 
 function defaultWorkflowRole(sectionId: string, command: RawCurrentWorkflowCommand): CurrentWorkflowRole {
@@ -182,6 +276,18 @@ function hydrateCurrentWorkflowCommand(
           storyEvidenceRequiredFor: storyEvidence.storyEvidenceRequiredFor,
         }
       : {}),
+  };
+}
+
+function defineCurrentCIWorkflow(definition: RawCurrentCIWorkflowDefinition): CurrentCIWorkflowDefinition {
+  return {
+    ...definition,
+    jobs: definition.jobs.map((job) => ({
+      workflowPath: definition.path,
+      workflowName: definition.workflowName,
+      triggers: definition.triggers,
+      ...job,
+    })),
   };
 }
 
@@ -386,6 +492,236 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     whenToUse: '只在已有显式 campaign root/run id 时复核 terminal aggregate verdict；该命令不会执行任何 suite。',
     nextStep: '如果缺少显式 campaign context，改跑 `npm run release:campaign:full` 生成当前 campaign evidence。',
   },
+] as const;
+
+export const CURRENT_CI_WORKFLOW_MANIFEST: readonly CurrentCIWorkflowDefinition[] = [
+  defineCurrentCIWorkflow({
+    path: '.github/workflows/contracts-check.yml',
+    workflowName: 'Contracts Check',
+    role: 'contract_gate',
+    triggers: ['pull_request', 'push'],
+    blockingFor: ['pull_request', 'push', 'release'],
+    scheduled: false,
+    releaseBlocking: true,
+    jobs: [
+      {
+        id: 'contracts',
+        role: 'contract_gate',
+        gateId: 'gate-fast',
+        commands: [
+          'make gate-fast',
+          'npm run contracts:check',
+          'npm run contracts:check-current-workflows',
+          'npm run contracts:check-current-gates',
+          'npm run contracts:check-engineering-governance',
+        ],
+        requiredSecrets: [],
+        requiresSecrets: false,
+        evidenceRequired: true,
+        evidenceFamilies: ['mock_lane_run', 'test_results', 'playwright_report'],
+        artifactPaths: [
+          'artifacts/mock-lane/runs/**',
+          'test-results/**',
+          'playwright-report/**',
+        ],
+        blockingFor: ['pull_request', 'push', 'release'],
+        scheduled: false,
+        releaseBlocking: true,
+        notes: 'Contracts workflow runs gate-fast first, so mock-lane run-scoped artifacts are part of its evidence surface.',
+      },
+    ],
+  }),
+  defineCurrentCIWorkflow({
+    path: '.github/workflows/engineering-gate.yml',
+    workflowName: 'Engineering Gate',
+    role: 'backend_real_regression',
+    triggers: ['schedule', 'workflow_dispatch'],
+    blockingFor: ['manual', 'scheduled', 'release'],
+    scheduled: true,
+    releaseBlocking: true,
+    jobs: [
+      {
+        id: 'engineering-gate',
+        role: 'backend_real_lane',
+        laneId: 'lane-backend-real-core',
+        commands: [
+          'npm run backend-real:bootstrap',
+          'npm run lane:backend-real:core',
+        ],
+        requiredSecrets: ['BACKEND_REAL_API_KEY'],
+        requiresSecrets: true,
+        evidenceRequired: true,
+        evidenceFamilies: [
+          'backend_real_current_state',
+          'backend_real_run',
+          'governance_report',
+          'mock_lane_run',
+          'test_results',
+          'playwright_report',
+        ],
+        artifactPaths: [
+          'artifacts/governance-reports/**',
+          'artifacts/backend-real/current/**',
+          'artifacts/backend-real/runs/**',
+          'artifacts/mock-lane/runs/**',
+          'test-results/**',
+          'playwright-report/**',
+        ],
+        blockingFor: ['manual', 'scheduled', 'release'],
+        scheduled: true,
+        releaseBlocking: true,
+        notes: 'Scheduled engineering regression must run the backend-real core lane and publish backend-real evidence; governance reports are archived side evidence only.',
+      },
+    ],
+  }),
+  defineCurrentCIWorkflow({
+    path: '.github/workflows/integration-e2e.yml',
+    workflowName: 'Integration E2E',
+    role: 'integration_e2e',
+    triggers: ['pull_request', 'workflow_dispatch'],
+    blockingFor: ['pull_request', 'manual'],
+    scheduled: false,
+    releaseBlocking: false,
+    jobs: [
+      {
+        id: 'integration-agent',
+        role: 'integration_lane',
+        commands: ['make e2e-int-agent-auto'],
+        requiredSecrets: [],
+        requiresSecrets: false,
+        evidenceRequired: true,
+        evidenceFamilies: ['integration_log', 'test_results', 'playwright_report'],
+        artifactPaths: [
+          'artifacts/backend-real/current/ci/integration-agent.log',
+          'artifacts/backend-real/current/integration/api.log',
+          'artifacts/backend-real/current/integration/web.log',
+          'test-results/**',
+          'playwright-report/**',
+        ],
+        blockingFor: ['pull_request', 'manual'],
+        scheduled: false,
+        releaseBlocking: false,
+      },
+      {
+        id: 'integration-notebook-agent',
+        role: 'integration_lane',
+        commands: ['make e2e-int-notebook-agent-auto'],
+        requiredSecrets: [],
+        requiresSecrets: false,
+        evidenceRequired: true,
+        evidenceFamilies: ['integration_log', 'test_results', 'playwright_report'],
+        artifactPaths: [
+          'artifacts/backend-real/current/ci/integration-notebook-agent.log',
+          'artifacts/backend-real/current/integration/api.log',
+          'artifacts/backend-real/current/integration/web.log',
+          'test-results/**',
+          'playwright-report/**',
+        ],
+        blockingFor: ['pull_request', 'manual'],
+        scheduled: false,
+        releaseBlocking: false,
+      },
+    ],
+  }),
+  defineCurrentCIWorkflow({
+    path: '.github/workflows/quality-gates.yml',
+    workflowName: 'Quality Gates',
+    role: 'quality_gate',
+    triggers: ['pull_request', 'push', 'workflow_dispatch'],
+    blockingFor: ['pull_request', 'push', 'manual', 'release'],
+    scheduled: false,
+    releaseBlocking: true,
+    jobs: [
+      {
+        id: 'gate-fast',
+        role: 'gate_verdict',
+        gateId: 'gate-fast',
+        commands: ['npm run gate:fast'],
+        requiredSecrets: [],
+        requiresSecrets: false,
+        evidenceRequired: true,
+        evidenceFamilies: ['mock_lane_run', 'test_results', 'playwright_report'],
+        artifactPaths: [
+          'artifacts/mock-lane/runs/**',
+          'test-results/**',
+          'playwright-report/**',
+        ],
+        blockingFor: ['pull_request', 'push', 'manual', 'release'],
+        scheduled: false,
+        releaseBlocking: true,
+      },
+      {
+        id: 'gate-default',
+        role: 'gate_verdict',
+        gateId: 'gate-default',
+        commands: ['npm run gate:default'],
+        requiredSecrets: [],
+        requiresSecrets: false,
+        evidenceRequired: true,
+        evidenceFamilies: ['mock_lane_run', 'test_results', 'playwright_report'],
+        artifactPaths: [
+          'artifacts/mock-lane/runs/**',
+          'test-results/**',
+          'playwright-report/**',
+        ],
+        blockingFor: ['pull_request', 'push', 'manual', 'release'],
+        scheduled: false,
+        releaseBlocking: true,
+      },
+      {
+        id: 'lane-visual',
+        role: 'visual_lane',
+        laneId: 'lane-visual',
+        commands: ['npm run lane:visual'],
+        requiredSecrets: [],
+        requiresSecrets: false,
+        evidenceRequired: true,
+        evidenceFamilies: [
+          'visual_baseline_review',
+          'mock_lane_run',
+          'test_results',
+          'playwright_report',
+        ],
+        artifactPaths: [
+          'artifacts/gate-results/lane-visual/**',
+          'artifacts/visual-baseline-reviews/**',
+          'artifacts/mock-lane/runs/**',
+          'test-results/**',
+          'playwright-report/**',
+        ],
+        blockingFor: ['push', 'manual', 'release'],
+        scheduled: false,
+        releaseBlocking: true,
+      },
+      {
+        id: 'lane-backend-real-core',
+        role: 'backend_real_lane',
+        laneId: 'lane-backend-real-core',
+        commands: [
+          'npm run backend-real:bootstrap',
+          'npm run lane:backend-real:core',
+        ],
+        requiredSecrets: ['BACKEND_REAL_API_KEY'],
+        requiresSecrets: true,
+        evidenceRequired: true,
+        evidenceFamilies: [
+          'backend_real_run',
+          'mock_lane_run',
+          'test_results',
+          'playwright_report',
+        ],
+        artifactPaths: [
+          'artifacts/backend-real/runs/**',
+          'artifacts/mock-lane/runs/**',
+          'test-results/**',
+          'playwright-report/**',
+        ],
+        blockingFor: ['manual', 'release'],
+        scheduled: false,
+        releaseBlocking: true,
+      },
+    ],
+  }),
 ] as const;
 
 const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
@@ -790,4 +1126,8 @@ export function listRecommendedCurrentWorkflowSections(): readonly CurrentWorkfl
 
 export function listRecommendedCurrentWorkflowCommands(): readonly CurrentWorkflowCommand[] {
   return listRecommendedCurrentWorkflowSections().flatMap((section) => section.commands);
+}
+
+export function listCurrentCIWorkflowJobs(): readonly CurrentCIWorkflowJob[] {
+  return CURRENT_CI_WORKFLOW_MANIFEST.flatMap((workflow) => workflow.jobs);
 }

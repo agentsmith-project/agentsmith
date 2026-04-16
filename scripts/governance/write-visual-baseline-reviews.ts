@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import {
   groupVisualBaselineCatalogByScenario,
   readVisualBaselineBuildRecord,
-  renderVisualBaselineScenarioReviewMarkdown,
+  renderVisualBaselineAutomatedPassMarkdown,
   resolveVisualBaselineReviewDir,
   type VisualBaselineBuildRecord,
 } from '../../e2e/visual-baseline-support';
@@ -40,19 +40,18 @@ for (const scenario of [...scenarios.values()].sort((left, right) => left.scenar
   });
   mkdirSync(reviewDir, { recursive: true });
   writeFileSync(
-    join(reviewDir, 'review.md'),
-    renderVisualBaselineScenarioReviewMarkdown({
+    join(reviewDir, 'automated-pass.md'),
+    renderVisualBaselineAutomatedPassMarkdown({
       scenario,
       build,
-      review: {
-        reviewer: 'automated-lane:visual',
-        reviewedAt: new Date().toISOString(),
-        verdict: 'aligned',
-        cursorFit: 'aligned',
-        uxFit: 'low_mindload',
+      automated: {
+        generatedAt: new Date().toISOString(),
+        automatedVerdict: 'passed',
+        semanticVerdict: 'passed',
+        actualUrl: scenario.route,
         notes: [
           'Playwright visual lane completed for this scenario.',
-          'This artifact records the required release evidence path; human UX review can append findings before approval if needed.',
+          'This automated artifact is not a UX/UI release acceptance. A reviewer must write review.md with the UX acceptance contract before release.',
         ],
       },
     }),
@@ -60,4 +59,4 @@ for (const scenario of [...scenarios.values()].sort((left, right) => left.scenar
   written += 1;
 }
 
-process.stdout.write(`[visual-baseline-review] wrote ${written} review artifacts for run ${runId}\n`);
+process.stdout.write(`[visual-baseline-review] wrote ${written} automated visual pass artifacts for run ${runId}\n`);

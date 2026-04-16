@@ -235,7 +235,7 @@ async function createNotebookTaskViaDialog(args: {
   await dialog.locator('#task-agent').click();
   await page.getByRole('option', { name: new RegExp(agentName) }).click();
   if (workspaceLibraryName) {
-    await dialog.getByRole('radio', { name: /continue an existing workspace/i }).click();
+    await dialog.getByRole('radio', { name: /continue an existing task workspace/i }).click();
     await dialog.getByTestId('task-create__file-library').click();
     await page.getByRole('option', { name: new RegExp(workspaceLibraryName) }).click();
   }

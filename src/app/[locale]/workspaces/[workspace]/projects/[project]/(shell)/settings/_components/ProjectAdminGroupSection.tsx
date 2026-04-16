@@ -31,11 +31,24 @@ export function ProjectAdminGroupSection({
 }: ProjectAdminGroupSectionProps) {
   return (
     <section className="space-y-4 py-5" data-testid="settings__project-admins-section">
-      <div className="space-y-1">
-        <h3 className="text-sm font-semibold text-foreground">{settingsT('admin_group_title')}</h3>
-        <p className="text-sm text-tertiary">
-        {canAssignProjectAdmins ? settingsT('admin_group_owner_help') : settingsT('admin_group_read_only_help')}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3" data-testid="settings__project-admins-header">
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-foreground">{settingsT('admin_group_title')}</h3>
+          <p className="text-sm text-tertiary">
+          {canAssignProjectAdmins ? settingsT('admin_group_owner_help') : settingsT('admin_group_read_only_help')}
+          </p>
+        </div>
+        {canAssignProjectAdmins ? (
+          <Button
+            onClick={onSave}
+            disabled={savingProjectAdmins}
+            variant="primary"
+            className="shrink-0"
+            data-testid="settings__project-admins-save"
+          >
+            {savingProjectAdmins ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsT('admin_group_save')}
+          </Button>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
         <div className="space-y-1">
@@ -81,13 +94,6 @@ export function ProjectAdminGroupSection({
           );
         })}
       </div>
-      {canAssignProjectAdmins ? (
-        <div className="flex justify-end pt-4">
-          <Button onClick={onSave} disabled={savingProjectAdmins} variant="primary" data-testid="settings__project-admins-save">
-            {savingProjectAdmins ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsT('admin_group_save')}
-          </Button>
-        </div>
-      ) : null}
     </section>
   );
 }

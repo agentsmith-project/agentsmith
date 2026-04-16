@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import http, { type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocket } from 'ws';
-import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import type { CachePort } from '@mbos/ports';
+import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { AgentResourceService } from './agent-resource-service.js';
 import { AgentExecutionService } from './agent-execution-service.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
@@ -34,9 +36,10 @@ afterEach(async () => {
 async function setupExecutionService(options?: {
   endpointId?: string;
   interactionKind?: 'chat' | 'notebook' | null;
+  executionServiceOptions?: ConstructorParameters<typeof AgentExecutionService>[1];
 }) {
   const agentResourceService = new AgentResourceService(new InMemoryJsonDocStore());
-  const executionService = new AgentExecutionService(agentResourceService);
+  const executionService = new AgentExecutionService(agentResourceService, options?.executionServiceOptions);
   const server = http.createServer((_req, res) => {
     res.statusCode = 404;
     res.end();
@@ -97,7 +100,157 @@ async function setupExecutionService(options?: {
   };
 }
 
+async function startExecutionServer(executionService: AgentExecutionService): Promise<string> {
+  const server = http.createServer((_req, res) => {
+    res.statusCode = 404;
+    res.end();
+  });
+  server.on('upgrade', (req, socket, head) => executionService.handleUpgrade(req, socket, head));
+  await new Promise<void>((resolve) => {
+    server.listen(0, () => resolve());
+  });
+  servers.push(server);
+  const address = server.address() as AddressInfo;
+  return `ws://127.0.0.1:${address.port}`;
+}
+
+async function openAgentWebSocket(input: {
+  wsBase: string;
+  agentId: string;
+  key: string;
+  sessionId?: string;
+}): Promise<WebSocket> {
+  const url = new URL(`${input.wsBase}/api/v1/agent-execution/ws`);
+  url.searchParams.set('agent_id', input.agentId);
+  if (input.sessionId) url.searchParams.set('session_id', input.sessionId);
+  const ws = new WebSocket(url.toString(), {
+    headers: { Authorization: `Bearer ${input.key}` },
+  });
+  sockets.push(ws);
+  await new Promise<void>((resolve, reject) => {
+    ws.once('open', () => resolve());
+    ws.once('error', reject);
+  });
+  return ws;
+}
+
+async function waitForConnectionInfo(
+  agentResourceService: AgentResourceService,
+  agentId: string,
+  predicate: (connection: Awaited<ReturnType<AgentResourceService['getConnectionInfo']>>) => boolean,
+): Promise<Awaited<ReturnType<AgentResourceService['getConnectionInfo']>>> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const connection = await agentResourceService.getConnectionInfo(agentId);
+    if (predicate(connection)) return connection;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const connection = await agentResourceService.getConnectionInfo(agentId);
+  throw new Error(`connection info did not reach expected state: ${JSON.stringify(connection)}`);
+}
+
+interface ExecutionRacePause {
+  entered: Promise<void>;
+  resume: () => void;
+}
+
+class ExecutionRaceCache implements CachePort {
+  private nextWritePause: {
+    entered: Promise<void>;
+    resumePromise: Promise<void>;
+    resolveEntered: () => void;
+    resolveResume: () => void;
+  } | null = null;
+
+  constructor(private readonly sharedStore: Map<string, { value: string; expiresAt?: number }>) {}
+
+  pauseNextWrite(): ExecutionRacePause {
+    let resolveEntered!: () => void;
+    let resolveResume!: () => void;
+    const pause = {
+      entered: new Promise<void>((resolve) => {
+        resolveEntered = resolve;
+      }),
+      resumePromise: new Promise<void>((resolve) => {
+        resolveResume = resolve;
+      }),
+      resolveEntered,
+      resolveResume,
+    };
+    this.nextWritePause = pause;
+    return {
+      entered: pause.entered,
+      resume: pause.resolveResume,
+    };
+  }
+
+  async get(key: string): Promise<string | null> {
+    return this.read(key);
+  }
+
+  async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
+    await this.pauseIfRequested();
+    this.sharedStore.set(key, {
+      value,
+      ...(ttlSeconds && ttlSeconds > 0 ? { expiresAt: Date.now() + ttlSeconds * 1000 } : {}),
+    });
+  }
+
+  async incr(key: string, ttlSeconds?: number): Promise<number> {
+    const next = Number.parseInt(this.read(key) ?? '0', 10) + 1;
+    await this.set(key, String(next), ttlSeconds);
+    return next;
+  }
+
+  async del(key: string): Promise<void> {
+    await this.pauseIfRequested();
+    this.sharedStore.delete(key);
+  }
+
+  async compareAndSet(
+    key: string,
+    expectedValue: string | null,
+    nextValue: string | null,
+    ttlSeconds?: number,
+  ): Promise<boolean> {
+    await this.pauseIfRequested();
+    if (this.read(key) !== expectedValue) return false;
+    if (nextValue === null) {
+      this.sharedStore.delete(key);
+      return true;
+    }
+    this.sharedStore.set(key, {
+      value: nextValue,
+      ...(ttlSeconds && ttlSeconds > 0 ? { expiresAt: Date.now() + ttlSeconds * 1000 } : {}),
+    });
+    return true;
+  }
+
+  private read(key: string): string | null {
+    const record = this.sharedStore.get(key);
+    if (!record) return null;
+    if (typeof record.expiresAt === 'number' && record.expiresAt <= Date.now()) {
+      this.sharedStore.delete(key);
+      return null;
+    }
+    return record.value;
+  }
+
+  private async pauseIfRequested(): Promise<void> {
+    const pause = this.nextWritePause;
+    if (!pause) return;
+    this.nextWritePause = null;
+    pause.resolveEntered();
+    await pause.resumePromise;
+  }
+}
+
 describe('AgentExecutionService', () => {
+  it('does not call legacy unscoped presence mutators from the websocket execution path', () => {
+    const source = readFileSync('packages/api-entry-node/src/agent-execution-service.ts', 'utf-8');
+    expect(source).not.toContain('markAgentDisconnected(');
+    expect(source).not.toContain('markAgentConnected(');
+  });
+
   it('includes static resource proxy base in server.hello when agent endpoint is configured', async () => {
     process.env.PUBLIC_API_BASE_URL = 'http://trusted.example/api/v1';
     const { helloFramePromise } = await setupExecutionService({
@@ -482,6 +635,46 @@ describe('AgentExecutionService', () => {
     expect(updated?.presence).toBe('online');
   });
 
+  it('keeps shared presence online when an old API instance releases after cross-instance reconnect', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const resourceA = new AgentResourceService(docStore, cache);
+    const resourceB = new AgentResourceService(docStore, cache);
+    const reader = new AgentResourceService(docStore, cache);
+    const serviceA = new AgentExecutionService(resourceA, { heartbeatIntervalMs: 10_000 });
+    const serviceB = new AgentExecutionService(resourceB, { heartbeatIntervalMs: 10_000 });
+    const wsBaseA = await startExecutionServer(serviceA);
+    const wsBaseB = await startExecutionServer(serviceB);
+    const agent = await resourceA.createAgent('ws_default', 'proj_1', {
+      name: 'cross-instance-agent',
+      mode: 'external',
+      interaction_kind: 'chat',
+    });
+    const keyPair = await resourceA.createAgentKey('ws_default', 'proj_1', agent.id);
+
+    const first = await openAgentWebSocket({ wsBase: wsBaseA, agentId: agent.id, key: keyPair.key });
+    await waitForConnectionInfo(reader, agent.id, (connection) =>
+      connection?.active_connection_count === 1 && connection.api_instance_id !== undefined,
+    );
+    const second = await openAgentWebSocket({ wsBase: wsBaseB, agentId: agent.id, key: keyPair.key });
+    await waitForConnectionInfo(reader, agent.id, (connection) =>
+      connection?.active_connection_count === 1 && connection.api_instance_id !== undefined,
+    );
+
+    await new Promise<void>((resolve) => {
+      first.once('close', () => resolve());
+      first.close();
+    });
+    await waitForConnectionInfo(reader, agent.id, (connection) =>
+      connection?.active_connection_count === 1 && connection.api_instance_id !== undefined,
+    );
+
+    await expect(reader.getAgent('ws_default', 'proj_1', agent.id)).resolves.toEqual(expect.objectContaining({
+      presence: 'online',
+    }));
+    expect(second.readyState).toBe(second.OPEN);
+  });
+
   it('keeps multiple session-scoped sockets for the same agent without replacement', async () => {
     const { agentResourceService, executionService, agent, wsBase } = await setupExecutionService();
     const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
@@ -514,6 +707,134 @@ describe('AgentExecutionService', () => {
     expect(executionService.getAgentOnlineState(agent.id)).toBe(true);
   });
 
+  it('keeps shared presence online when one of multiple session-scoped sockets closes', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const agentResourceService = new AgentResourceService(docStore, cache);
+    const reader = new AgentResourceService(docStore, cache);
+    const executionService = new AgentExecutionService(agentResourceService, { heartbeatIntervalMs: 10_000 });
+    const wsBase = await startExecutionServer(executionService);
+    const agent = await agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'session-presence-agent',
+      mode: 'external',
+      interaction_kind: 'notebook',
+    });
+    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
+    const sessionA = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_a',
+    });
+    await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_b',
+    });
+    await waitForConnectionInfo(reader, agent.id, (connection) => connection?.active_connection_count === 2);
+
+    await new Promise<void>((resolve) => {
+      sessionA.once('close', () => resolve());
+      sessionA.close();
+    });
+    await waitForConnectionInfo(reader, agent.id, (connection) => connection?.active_connection_count === 1);
+
+    await expect(reader.getAgent('ws_default', 'proj_1', agent.id)).resolves.toEqual(expect.objectContaining({
+      presence: 'online',
+    }));
+  });
+
+  it('self-heals a stale socket claim after another API instance owns the same socket key', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const resourceA = new AgentResourceService(docStore, cache);
+    const resourceB = new AgentResourceService(docStore, cache);
+    const reader = new AgentResourceService(docStore, cache);
+    const serviceA = new AgentExecutionService(resourceA, {
+      heartbeatIntervalMs: 25,
+      heartbeatMaxMisses: 100,
+    });
+    const serviceB = new AgentExecutionService(resourceB, {
+      heartbeatIntervalMs: 10_000,
+      heartbeatMaxMisses: 100,
+    });
+    const wsBaseA = await startExecutionServer(serviceA);
+    const wsBaseB = await startExecutionServer(serviceB);
+    const agent = await resourceA.createAgent('ws_default', 'proj_1', {
+      name: 'stale-claim-agent',
+      mode: 'external',
+      interaction_kind: 'chat',
+    });
+    const keyPair = await resourceA.createAgentKey('ws_default', 'proj_1', agent.id);
+    const first = await openAgentWebSocket({ wsBase: wsBaseA, agentId: agent.id, key: keyPair.key });
+    await waitForConnectionInfo(reader, agent.id, (connection) => connection?.active_connection_count === 1);
+    await openAgentWebSocket({ wsBase: wsBaseB, agentId: agent.id, key: keyPair.key });
+
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      first.once('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    await expect(closed).resolves.toEqual({
+      code: 4001,
+      reason: 'agent_stale_connection',
+    });
+    await waitForConnectionInfo(reader, agent.id, (connection) => connection?.active_connection_count === 1);
+    await expect(reader.getAgent('ws_default', 'proj_1', agent.id)).resolves.toEqual(expect.objectContaining({
+      presence: 'online',
+    }));
+  });
+
+  it('does not let a delayed old websocket release erase a newer websocket from another API instance', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const sharedStore = new Map<string, { value: string; expiresAt?: number }>();
+    const cacheA = new ExecutionRaceCache(sharedStore);
+    const cacheB = new ExecutionRaceCache(sharedStore);
+    const resourceA = new AgentResourceService(docStore, cacheA);
+    const resourceB = new AgentResourceService(docStore, cacheB);
+    const reader = new AgentResourceService(docStore, cacheB);
+    const serviceA = new AgentExecutionService(resourceA, {
+      heartbeatIntervalMs: 10_000,
+      heartbeatMaxMisses: 100,
+    });
+    const serviceB = new AgentExecutionService(resourceB, {
+      heartbeatIntervalMs: 10_000,
+      heartbeatMaxMisses: 100,
+    });
+    const wsBaseA = await startExecutionServer(serviceA);
+    const wsBaseB = await startExecutionServer(serviceB);
+    const agent = await resourceA.createAgent('ws_default', 'proj_1', {
+      name: 'delayed-release-agent',
+      mode: 'external',
+      interaction_kind: 'chat',
+    });
+    const keyPair = await resourceA.createAgentKey('ws_default', 'proj_1', agent.id);
+    const first = await openAgentWebSocket({ wsBase: wsBaseA, agentId: agent.id, key: keyPair.key });
+    await waitForConnectionInfo(reader, agent.id, (connection) => connection?.active_connection_count === 1);
+
+    const pause = cacheA.pauseNextWrite();
+    first.close();
+    await pause.entered;
+    const second = await openAgentWebSocket({ wsBase: wsBaseB, agentId: agent.id, key: keyPair.key });
+    await waitForConnectionInfo(reader, agent.id, (connection) => (
+      connection?.active_connection_count === 1
+      && connection.connection_id !== undefined
+      && connection.api_instance_id !== undefined
+    ));
+    pause.resume();
+    await waitForConnectionInfo(reader, agent.id, (connection) => (
+      connection?.active_connection_count === 1
+      && connection.api_instance_id !== undefined
+    ));
+
+    await expect(reader.getAgent('ws_default', 'proj_1', agent.id)).resolves.toEqual(expect.objectContaining({
+      presence: 'online',
+    }));
+    expect(second.readyState).toBe(second.OPEN);
+  });
+
   it('sends a precise terminal close control message without requiring an active terminal dispatch queue', async () => {
     const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
     const closeFrame = new Promise<Record<string, unknown>>((resolve) => {
@@ -538,6 +859,191 @@ describe('AgentExecutionService', () => {
       session_id: 'task_1',
       terminal_session_id: 'term_persisted',
     });
+  });
+
+  it('closes a stale runner socket when server heartbeat pings are missed and clears pending streams', async () => {
+    const { agentResourceService, executionService, agent, ws } = await setupExecutionService({
+      executionServiceOptions: {
+        heartbeatIntervalMs: 25,
+        heartbeatMaxMisses: 1,
+      },
+    });
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.on('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+
+    const dispatched = await executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'sess_heartbeat',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    const iterator = dispatched.stream[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: {
+        type: 'error',
+        error_code: 'AGENT_HEARTBEAT_TIMEOUT',
+        error_message: 'agent_heartbeat_timeout',
+      },
+    });
+    await expect(closed).resolves.toEqual({
+      code: 4000,
+      reason: 'agent_heartbeat_timeout',
+    });
+    await expect(agentResourceService.getAgent('ws_default', 'proj_1', agent.id)).resolves.toMatchObject({
+      presence: 'offline',
+    });
+    expect((executionService as unknown as {
+      socketsByKey: Map<string, { pendingByRequestId: Map<string, unknown> }>;
+    }).socketsByKey.size).toBe(0);
+  });
+
+  it('expires a stream request that never receives the first runner event and removes its pending map entry', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({
+      executionServiceOptions: {
+        streamFirstEventTimeoutMs: 25,
+        streamIdleTimeoutMs: 10_000,
+        streamMaxRuntimeMs: 10_000,
+        heartbeatIntervalMs: 10_000,
+      },
+    });
+    const startFrame = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.request.start') {
+          resolve(message);
+        }
+      });
+    });
+
+    const dispatched = await executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'sess_first_event_timeout',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    await expect(startFrame).resolves.toMatchObject({
+      type: 'server.request.start',
+      session_id: 'sess_first_event_timeout',
+    });
+    const iterator = dispatched.stream[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: {
+        type: 'error',
+        error_code: 'AGENT_REQUEST_TIMEOUT',
+        error_message: 'agent_request_first_event_timeout',
+      },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+    expect((executionService as unknown as {
+      socketsByKey: Map<string, { pendingByRequestId: Map<string, unknown> }>;
+    }).socketsByKey.get(agent.id)?.pendingByRequestId.size).toBe(0);
+  });
+
+  it('expires a terminal start that never receives runner terminal events and removes its pending map entry', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({
+      interactionKind: 'notebook',
+      executionServiceOptions: {
+        terminalFirstEventTimeoutMs: 25,
+        terminalIdleTimeoutMs: 10_000,
+        terminalMaxRuntimeMs: 10_000,
+        heartbeatIntervalMs: 10_000,
+      },
+    });
+    const startFrame = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.terminal.start') {
+          resolve(message);
+        }
+      });
+    });
+
+    const terminal = await executionService.dispatchTerminalSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_1',
+      agentId: agent.id,
+      terminalSessionId: 'term_first_event_timeout',
+      payload: {
+        cols: 80,
+        rows: 24,
+      },
+    });
+
+    await expect(startFrame).resolves.toMatchObject({
+      type: 'server.terminal.start',
+      session_id: 'task_1',
+      terminal_session_id: 'term_first_event_timeout',
+    });
+    const iterator = terminal.stream[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: {
+        type: 'error',
+        session_id: 'term_first_event_timeout',
+        error_code: 'AGENT_TERMINAL_TIMEOUT',
+        error_message: 'agent_terminal_first_event_timeout',
+      },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+    expect((executionService as unknown as {
+      socketsByKey: Map<string, { terminalBySessionId: Map<string, unknown> }>;
+    }).socketsByKey.get(agent.id)?.terminalBySessionId.size).toBe(0);
+  });
+
+  it('shutdown closes sockets, clears timers, and fails pending execution resources', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({
+      executionServiceOptions: {
+        heartbeatIntervalMs: 10_000,
+        streamFirstEventTimeoutMs: 10_000,
+      },
+    });
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.on('close', (code, reason) => {
+        resolve({ code, reason: reason.toString('utf-8') });
+      });
+    });
+    const dispatched = await executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'sess_shutdown',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    await executionService.shutdown();
+
+    await expect(dispatched.stream[Symbol.asyncIterator]().next()).resolves.toEqual({
+      done: false,
+      value: {
+        type: 'error',
+        error_code: 'AGENT_SERVICE_SHUTDOWN',
+        error_message: 'agent_service_shutdown',
+      },
+    });
+    await expect(closed).resolves.toEqual({
+      code: 1001,
+      reason: 'server_shutdown',
+    });
+    expect((executionService as unknown as { socketsByKey: Map<string, unknown> }).socketsByKey.size).toBe(0);
   });
 
   it('emits protocol error when agent delta payload is invalid', async () => {

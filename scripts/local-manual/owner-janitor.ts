@@ -672,6 +672,7 @@ interface LocalManualOwnerJanitorCliArgs {
   kind: string | null;
   intent: LocalManualLifecycleIntent;
   normalizePlanStdin: boolean;
+  normalizePlanBatchStdin: boolean;
   runnerPidFile: string | null;
 }
 
@@ -681,6 +682,7 @@ function parseCliArgs(argv: string[]): LocalManualOwnerJanitorCliArgs {
   let kind: string | null = null;
   let intent: LocalManualLifecycleIntent = 'replace_runner';
   let normalizePlanStdin = false;
+  let normalizePlanBatchStdin = false;
   let runnerPidFile: string | null = null;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -703,6 +705,11 @@ function parseCliArgs(argv: string[]): LocalManualOwnerJanitorCliArgs {
       continue;
     }
 
+    if (arg === '--normalize-plan-batch-stdin') {
+      normalizePlanBatchStdin = true;
+      continue;
+    }
+
     if (arg === '--intent') {
       const nextIntent = argv[index + 1] ?? null;
       if (nextIntent === 'replace_runner' || nextIntent === 'rollback_launch' || nextIntent === 'stop_line') {
@@ -716,8 +723,57 @@ function parseCliArgs(argv: string[]): LocalManualOwnerJanitorCliArgs {
     kind,
     intent,
     normalizePlanStdin,
+    normalizePlanBatchStdin,
     runnerPidFile,
   };
+}
+
+function isLocalManualLifecycleIntent(value: unknown): value is LocalManualLifecycleIntent {
+  return value === 'replace_runner' || value === 'rollback_launch' || value === 'stop_line';
+}
+
+function parseJsonLines(value: string): unknown[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as unknown);
+}
+
+function normalizeBatchPlanItem(value: unknown): RunnerOwnerJanitorPlanItem {
+  if (!isRecord(value)) {
+    return fallbackRunnerPlan('replace_runner', 'planner_malformed');
+  }
+
+  const intent = isLocalManualLifecycleIntent(value.intent) ? value.intent : 'replace_runner';
+  if (typeof value.rawPlan === 'string') {
+    return normalizeLocalManualOwnerJanitorRunnerPlan(intent, value.rawPlan);
+  }
+
+  if ('payload' in value) {
+    return normalizeLocalManualOwnerJanitorRunnerPlan(intent, JSON.stringify(value.payload));
+  }
+
+  return normalizeLocalManualOwnerJanitorRunnerPlan(intent, JSON.stringify(value));
+}
+
+function normalizeLocalManualOwnerJanitorRunnerPlanBatch(rawInput: string): RunnerOwnerJanitorPlanItem[] {
+  const trimmed = rawInput.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    return items.map((item) => normalizeBatchPlanItem(item));
+  } catch {
+    try {
+      return parseJsonLines(trimmed).map((item) => normalizeBatchPlanItem(item));
+    } catch {
+      return [fallbackRunnerPlan('replace_runner', 'planner_malformed')];
+    }
+  }
 }
 
 function readTrackedRunnerPid(runnerPidFile: string): number | null {
@@ -831,6 +887,12 @@ function runLocalManualOwnerJanitorCli(argv: string[] = process.argv.slice(2)): 
     if (parsedArgs.normalizePlanStdin) {
       const rawPlan = readFileSync(0, 'utf8');
       process.stdout.write(JSON.stringify(normalizeLocalManualOwnerJanitorRunnerPlan(parsedArgs.intent, rawPlan)));
+      return;
+    }
+
+    if (parsedArgs.normalizePlanBatchStdin) {
+      const rawPlanBatch = readFileSync(0, 'utf8');
+      process.stdout.write(JSON.stringify(normalizeLocalManualOwnerJanitorRunnerPlanBatch(rawPlanBatch)));
       return;
     }
 

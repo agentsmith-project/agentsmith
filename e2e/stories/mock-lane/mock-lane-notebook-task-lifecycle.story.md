@@ -117,6 +117,12 @@
           ],
           "capture": "full_page",
           "authLane": "authed",
+          "uxState": "happy",
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__create-task-btn"
+            ]
+          },
           "themes": [
             "light",
             "dark"
@@ -134,6 +140,16 @@
           ],
           "capture": "viewport",
           "authLane": "authed",
+          "uxState": "happy",
+          "semanticAssertions": {
+            "forbiddenVisibleText": [
+              "Create Task New Task",
+              "Create New",
+              "Initialize a new workspace automatically",
+              "New workspace name",
+              "Select Existing Workspace"
+            ]
+          },
           "themes": [
             "light",
             "dark"
@@ -152,6 +168,7 @@
           ],
           "capture": "full_page",
           "authLane": "authed",
+          "uxState": "happy",
           "themes": [
             "light",
             "dark"
@@ -168,6 +185,7 @@
           ],
           "capture": "full_page",
           "authLane": "authed",
+          "uxState": "happy",
           "themes": [
             "light",
             "dark"

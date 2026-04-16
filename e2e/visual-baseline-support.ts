@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
@@ -6,6 +7,7 @@ import {
 } from './story-loader';
 import type {
   StoryAuthLane,
+  StoryRuntimeVisualSemanticAssertionsDefinition,
   StoryRuntimeVisualReviewSceneDefinition,
   StoryVisualReviewCaptureMode,
   StoryVisualReviewScenarioGroup,
@@ -53,8 +55,61 @@ export type VisualBaselineBuildRecord = {
   startedAt: string;
 };
 
+export const VISUAL_BASELINE_DEFAULT_FORBIDDEN_VISIBLE_TEXT = [
+  'Invalid Date',
+  '[object Object]',
+  'undefined',
+] as const;
+
+export type VisualBaselineSemanticAssertions = {
+  forbiddenVisibleText: readonly string[];
+  forbiddenVisibleTextPatterns: readonly string[];
+  requiredViewportTestIds: readonly string[];
+  primaryActionTestIds: readonly string[];
+  maxProminentActions: number | null;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function uniqueNonEmptyTexts(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const value of values) {
+    const text = value.trim();
+    if (!text || seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    normalized.push(text);
+  }
+  return normalized;
+}
+
+function resolveSemanticAssertionsFromStoryScene(
+  assertions: StoryRuntimeVisualSemanticAssertionsDefinition | undefined,
+): VisualBaselineSemanticAssertions {
+  const allowedDefaultTokens = new Set(assertions?.allowedDefaultForbiddenVisibleText ?? []);
+  const defaultForbiddenVisibleText = VISUAL_BASELINE_DEFAULT_FORBIDDEN_VISIBLE_TEXT
+    .filter((text) => !allowedDefaultTokens.has(text));
+
+  return {
+    forbiddenVisibleText: uniqueNonEmptyTexts([
+      ...defaultForbiddenVisibleText,
+      ...(assertions?.forbiddenVisibleText ?? []),
+    ]),
+    forbiddenVisibleTextPatterns: uniqueNonEmptyTexts(assertions?.forbiddenVisibleTextPatterns ?? []),
+    requiredViewportTestIds: uniqueNonEmptyTexts(assertions?.requiredViewportTestIds ?? []),
+    primaryActionTestIds: uniqueNonEmptyTexts(assertions?.primaryActionTestIds ?? []),
+    maxProminentActions: assertions?.maxProminentActions ?? null,
+  };
+}
+
+export function fingerprintVisualBaselineSemanticAssertions(
+  assertions: VisualBaselineSemanticAssertions,
+): string {
+  return `sha256:${sha256Hex(stableJsonStringify(assertions))}`;
 }
 
 function isVisualBaselineBuildLane(value: unknown): value is VisualBaselineBuildLane {
@@ -116,6 +171,7 @@ export type VisualBaselineCatalogEntry = {
   viewport: 'default' | 'ultrawide';
   setupNotes: readonly string[];
   stableMarkers: readonly string[];
+  semanticAssertions: VisualBaselineSemanticAssertions;
   storyEvidencePolicy: VisualBaselineStoryEvidencePolicy;
   storyEvidenceKind: VisualBaselineStoryEvidenceKind;
   storyEvidenceOwner: VisualBaselineStoryEvidenceOwner;
@@ -137,25 +193,59 @@ export type VisualBaselineScenarioRecord = {
   viewport: 'default' | 'ultrawide';
   setupNotes: readonly string[];
   stableMarkers: readonly string[];
+  semanticAssertions: VisualBaselineSemanticAssertions;
   storyEvidencePolicy: VisualBaselineStoryEvidencePolicy;
   storyEvidenceKind: VisualBaselineStoryEvidenceKind;
   storyEvidenceOwner: VisualBaselineStoryEvidenceOwner;
   entries: VisualBaselineCatalogEntry[];
 };
 
-export type VisualBaselineReviewVerdict = 'pending' | 'aligned' | 'needs_work' | 'blocked';
+export type VisualBaselineExecutorScenario = Omit<VisualBaselineScenarioRecord, 'entries'> & {
+  entries: readonly VisualBaselineCatalogEntry[];
+};
+
+export type VisualBaselineReviewVerdict = 'accepted' | 'needs_work' | 'blocked';
+export type VisualBaselineAutomatedVerdict = 'passed' | 'failed';
+export type VisualBaselineSemanticVerdict = 'passed' | 'failed';
+export type VisualBaselineReviewerKind = 'human' | 'ai_reviewer';
+export type VisualBaselineReviewMode =
+  | 'manual_screenshot_review'
+  | 'ai_native_screenshot_review'
+  | 'pair_review';
 
 export type VisualBaselineReviewRecord = {
-  reviewer: string;
+  reviewerId: string;
+  reviewerKind: VisualBaselineReviewerKind;
+  reviewMode: VisualBaselineReviewMode;
   reviewedAt: string;
   verdict: VisualBaselineReviewVerdict;
-  cursorFit: 'aligned' | 'partial' | 'drifting';
-  uxFit: 'low_mindload' | 'mixed' | 'friction';
-  notes: string[];
+  actualUrl: string;
+  findings: readonly string[];
   blockingFindings?: string[];
 };
 
+export type VisualBaselineAutomatedPassRecord = {
+  generatedAt: string;
+  automatedVerdict: VisualBaselineAutomatedVerdict;
+  semanticVerdict: VisualBaselineSemanticVerdict;
+  actualUrl: string;
+  notes: readonly string[];
+};
+
+export type VisualBaselineScenarioScreenshotEvidence = {
+  fileName: string;
+  theme: VisualBaselineTheme;
+  screenshotSha256: string;
+  baselineSha256: string;
+};
+
+export type VisualBaselineScenarioEvidence = {
+  storyFingerprint: string;
+  screenshots: readonly VisualBaselineScenarioScreenshotEvidence[];
+};
+
 const STORY_ROOT = path.resolve('e2e/stories');
+const VISUAL_SCREENSHOT_ROOT = path.resolve('e2e/__screenshots__/visual.spec.ts');
 
 const VISUAL_BASELINE_STORY_EVIDENCE = {
   policy: 'required',
@@ -200,6 +290,7 @@ function buildMockLaneCatalogEntries(): VisualBaselineCatalogEntry[] {
           viewport: scene.viewport ?? 'default',
           setupNotes: scene.setupNotes ?? [],
           stableMarkers: storyScene.stableMarkers,
+          semanticAssertions: resolveSemanticAssertionsFromStoryScene(scene.semanticAssertions),
           storyEvidencePolicy: scene.storyEvidencePolicy ?? VISUAL_BASELINE_STORY_EVIDENCE.policy,
           storyEvidenceKind: scene.storyEvidenceKind ?? VISUAL_BASELINE_STORY_EVIDENCE.kind,
           storyEvidenceOwner: scene.storyEvidenceOwner ?? VISUAL_BASELINE_STORY_EVIDENCE.owner,
@@ -267,6 +358,7 @@ export function groupVisualBaselineCatalogByScenario(
       viewport: entry.viewport,
       setupNotes: entry.setupNotes,
       stableMarkers: entry.stableMarkers,
+      semanticAssertions: entry.semanticAssertions,
       storyEvidencePolicy: entry.storyEvidencePolicy,
       storyEvidenceKind: entry.storyEvidenceKind,
       storyEvidenceOwner: entry.storyEvidenceOwner,
@@ -279,6 +371,40 @@ export function groupVisualBaselineCatalogByScenario(
   return grouped;
 }
 
+export function buildVisualBaselineExecutorScenarios(
+  entries: readonly VisualBaselineCatalogEntry[] = listVisualBaselineCatalogEntries(),
+): VisualBaselineExecutorScenario[] {
+  return [...groupVisualBaselineCatalogByScenario(entries).values()]
+    .map((scenario) => ({
+      ...scenario,
+      entries: [...scenario.entries],
+    }))
+    .sort((left, right) => left.scenarioId.localeCompare(right.scenarioId));
+}
+
+export function listVisualBaselineExecutorScenarios(): VisualBaselineExecutorScenario[] {
+  return buildVisualBaselineExecutorScenarios();
+}
+
+function normalizeRouteFromUrl(value: string): string {
+  const parsed = new URL(value, 'http://agentsmith.visual.local');
+  return `${parsed.pathname}${parsed.search}`;
+}
+
+export function assertVisualBaselineActualUrlMatchesRoute(args: {
+  scenarioId: string;
+  expectedRoute: string;
+  actualUrl: string;
+}) {
+  const expectedRoute = normalizeRouteFromUrl(args.expectedRoute);
+  const actualRoute = normalizeRouteFromUrl(args.actualUrl);
+  if (actualRoute !== expectedRoute) {
+    throw new Error(
+      `visual route drift for ${args.scenarioId}: expected catalog route ${expectedRoute}, received actual route ${actualRoute}`,
+    );
+  }
+}
+
 export function resolveVisualBaselineReviewDir(options: {
   outputRoot?: string;
   runId: string;
@@ -288,15 +414,114 @@ export function resolveVisualBaselineReviewDir(options: {
   return path.join(root, options.runId, options.scenarioId);
 }
 
-export function renderVisualBaselineScenarioReviewMarkdown(args: {
-  scenario: VisualBaselineScenarioRecord;
-  build?: VisualBaselineBuildRecord;
-  review: VisualBaselineReviewRecord;
-}): string {
-  const { scenario, build, review } = args;
-  const lines = [
-    `# ${scenario.scenarioId}`,
-    '',
+function sha256Hex(value: string | Buffer): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function stableJsonStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableJsonStringify(entry)).join(',')}]`;
+  }
+  if (isRecord(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJsonStringify(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function sha256File(pathname: string): string {
+  return sha256Hex(readFileSync(pathname));
+}
+
+function formatScreenshotHashMap(
+  screenshots: readonly VisualBaselineScenarioScreenshotEvidence[],
+  field: 'screenshotSha256' | 'baselineSha256',
+): string {
+  return screenshots
+    .map((entry) => `${entry.fileName}=sha256:${entry[field]}`)
+    .join('; ');
+}
+
+export function buildVisualBaselineScenarioEvidence(
+  scenario: VisualBaselineScenarioRecord,
+): VisualBaselineScenarioEvidence {
+  const storyFingerprintPayload = {
+    scenarioId: scenario.scenarioId,
+    storyId: scenario.storyId,
+    storySceneId: scenario.storySceneId,
+    storySourceFile: scenario.storySourceFile,
+    route: scenario.route,
+    group: scenario.group,
+    recipeFamily: scenario.recipeFamily,
+    codeRefs: scenario.codeRefs,
+    capture: scenario.capture,
+    authLane: scenario.authLane,
+    viewport: scenario.viewport,
+    setupNotes: scenario.setupNotes,
+    stableMarkers: scenario.stableMarkers,
+    semanticAssertions: scenario.semanticAssertions,
+    screenshots: scenario.entries.map((entry) => ({
+      fileName: entry.screenshot,
+      theme: entry.theme,
+    })),
+  };
+
+  return {
+    storyFingerprint: `sha256:${sha256Hex(stableJsonStringify(storyFingerprintPayload))}`,
+    screenshots: scenario.entries.map((entry) => {
+      const baselineSha256 = sha256File(path.join(VISUAL_SCREENSHOT_ROOT, entry.screenshot));
+      return {
+        fileName: entry.screenshot,
+        theme: entry.theme,
+        // The mock visual lane only persists committed baselines today; the accepted screenshot
+        // hash is therefore bound to the exact baseline the reviewer accepted.
+        screenshotSha256: baselineSha256,
+        baselineSha256,
+      };
+    }),
+  };
+}
+
+function pushScenarioEvidenceMetadata(
+  lines: string[],
+  scenario: VisualBaselineScenarioRecord,
+): void {
+  const evidence = buildVisualBaselineScenarioEvidence(scenario);
+  lines.push(
+    `- story_fingerprint: ${evidence.storyFingerprint}`,
+    `- accepted_screenshot_hashes: ${formatScreenshotHashMap(evidence.screenshots, 'screenshotSha256')}`,
+    `- accepted_baseline_hashes: ${formatScreenshotHashMap(evidence.screenshots, 'baselineSha256')}`,
+  );
+}
+
+function pushVisualBaselineBuildMetadata(
+  lines: string[],
+  build: VisualBaselineBuildRecord | undefined,
+): void {
+  if (!build) {
+    return;
+  }
+  lines.push(
+    `- build_lane: ${build.lane}`,
+    `- build_run_id: ${build.runId}`,
+    `- build_git_sha: ${build.gitSha}`,
+    `- build_fingerprint: ${build.fingerprint}`,
+    `- build_started_at: ${build.startedAt}`,
+  );
+}
+
+function visualBaselineScenarioMetadataLines(
+  scenario: VisualBaselineScenarioRecord,
+): string[] {
+  const forbiddenVisibleText = scenario.semanticAssertions.forbiddenVisibleText;
+  const forbiddenVisibleTextPatterns = scenario.semanticAssertions.forbiddenVisibleTextPatterns;
+  const requiredViewportTestIds = scenario.semanticAssertions.requiredViewportTestIds;
+  const primaryActionTestIds = scenario.semanticAssertions.primaryActionTestIds;
+  const maxProminentActions = scenario.semanticAssertions.maxProminentActions;
+  return [
+    `- scenario_id: ${scenario.scenarioId}`,
     `- route: ${scenario.route}`,
     `- recipe_family: ${scenario.recipeFamily}`,
     `- scenario_group: ${scenario.group}`,
@@ -310,22 +535,37 @@ export function renderVisualBaselineScenarioReviewMarkdown(args: {
     `- capture: ${scenario.capture}`,
     `- viewport: ${scenario.viewport}`,
     `- stable_markers: ${scenario.stableMarkers.length > 0 ? scenario.stableMarkers.join(', ') : '<none>'}`,
+    `- semantic_contract_fingerprint: ${fingerprintVisualBaselineSemanticAssertions(scenario.semanticAssertions)}`,
+    `- semantic_forbidden_visible_text: ${forbiddenVisibleText.length > 0 ? forbiddenVisibleText.join(', ') : '<none>'}`,
+    `- semantic_forbidden_visible_text_patterns: ${forbiddenVisibleTextPatterns.length > 0 ? forbiddenVisibleTextPatterns.join(', ') : '<none>'}`,
+    `- semantic_required_viewport_test_ids: ${requiredViewportTestIds.length > 0 ? requiredViewportTestIds.join(', ') : '<none>'}`,
+    `- semantic_primary_action_test_ids: ${primaryActionTestIds.length > 0 ? primaryActionTestIds.join(', ') : '<none>'}`,
+    `- semantic_max_prominent_actions: ${maxProminentActions ?? '<none>'}`,
   ];
-  if (build) {
-    lines.push(
-      `- build_lane: ${build.lane}`,
-      `- build_run_id: ${build.runId}`,
-      `- build_git_sha: ${build.gitSha}`,
-      `- build_fingerprint: ${build.fingerprint}`,
-      `- build_started_at: ${build.startedAt}`,
-    );
-  }
+}
+
+export function renderVisualBaselineScenarioReviewMarkdown(args: {
+  scenario: VisualBaselineScenarioRecord;
+  build?: VisualBaselineBuildRecord;
+  review: VisualBaselineReviewRecord;
+}): string {
+  const { scenario, build, review } = args;
+  const lines = [
+    `# ${scenario.scenarioId}`,
+    '',
+    '- schema: visual_baseline_ux_acceptance/v1',
+    ...visualBaselineScenarioMetadataLines(scenario),
+    `- actual_url: ${review.actualUrl}`,
+  ];
+  pushScenarioEvidenceMetadata(lines, scenario);
+  pushVisualBaselineBuildMetadata(lines, build);
   lines.push(
-    `- reviewer: ${review.reviewer}`,
+    `- reviewer_id: ${review.reviewerId}`,
+    `- reviewer_kind: ${review.reviewerKind}`,
+    `- review_mode: ${review.reviewMode}`,
     `- reviewed_at: ${review.reviewedAt}`,
     `- verdict: ${review.verdict}`,
-    `- cursor_fit: ${review.cursorFit}`,
-    `- ux_fit: ${review.uxFit}`,
+    `- findings: ${review.findings.length > 0 ? `${review.findings.length}` : '<none>'}`,
     '',
     '## Scenario',
     '',
@@ -339,9 +579,9 @@ export function renderVisualBaselineScenarioReviewMarkdown(args: {
     '',
     ...scenario.codeRefs.map((ref) => `- ${ref}`),
     '',
-    '## Notes',
+    '## Findings',
     '',
-    ...(review.notes.length ? review.notes.map((note) => `- ${note}`) : ['- <none>']),
+    ...(review.findings.length ? review.findings.map((finding) => `- ${finding}`) : ['- <none>']),
   );
   if (review.blockingFindings?.length) {
     lines.push('', '## Blocking Findings', '', ...review.blockingFindings.map((item) => `- ${item}`));
@@ -349,8 +589,48 @@ export function renderVisualBaselineScenarioReviewMarkdown(args: {
   return `${lines.join('\n')}\n`;
 }
 
+export function renderVisualBaselineAutomatedPassMarkdown(args: {
+  scenario: VisualBaselineScenarioRecord;
+  build: VisualBaselineBuildRecord;
+  automated: VisualBaselineAutomatedPassRecord;
+}): string {
+  const { scenario, build, automated } = args;
+  const lines = [
+    `# ${scenario.scenarioId}`,
+    '',
+    '- schema: visual_baseline_automated_pass/v1',
+    ...visualBaselineScenarioMetadataLines(scenario),
+    `- actual_url: ${automated.actualUrl}`,
+  ];
+  pushScenarioEvidenceMetadata(lines, scenario);
+  pushVisualBaselineBuildMetadata(lines, build);
+  lines.push(
+    `- generated_at: ${automated.generatedAt}`,
+    `- automated_verdict: ${automated.automatedVerdict}`,
+    `- semantic_verdict: ${automated.semanticVerdict}`,
+    '',
+    '## Scenario',
+    '',
+    scenario.scenario,
+    '',
+    '## Screenshots',
+    '',
+    ...scenario.entries.map((entry) => `- ${entry.screenshot} [${entry.theme}]`),
+    '',
+    '## Notes',
+    '',
+    ...(automated.notes.length ? automated.notes.map((note) => `- ${note}`) : ['- <none>']),
+  );
+  return `${lines.join('\n')}\n`;
+}
+
 export function resolveVisualBaselineStableMarkers(scenarioId: string): readonly string[] {
   return getMockLaneCatalogEntries().find((scenario) => scenario.scenarioId === scenarioId)?.stableMarkers ?? [];
+}
+
+export function resolveVisualBaselineSemanticAssertions(scenarioId: string): VisualBaselineSemanticAssertions {
+  return getMockLaneCatalogEntries().find((scenario) => scenario.scenarioId === scenarioId)?.semanticAssertions
+    ?? resolveSemanticAssertionsFromStoryScene(undefined);
 }
 
 export function resolveVisualBaselineStoryEvidence(scenarioId: string): {

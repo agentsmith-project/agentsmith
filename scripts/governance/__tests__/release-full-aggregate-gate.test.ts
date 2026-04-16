@@ -28,7 +28,23 @@ import {
   writeCampaignGateResult,
 } from '../release-campaign-io';
 import {
+  buildStorySourceFingerprint,
+  buildStoryStepMapFingerprint,
+  buildStoryFingerprint,
+  type StoryDefinition,
+  type StoryStepDefinition,
+  type StoryTargetMatch,
+} from '../../../e2e/story-contract';
+import { getReleaseStoryDefinition } from '../../../e2e/release-user-story.contract';
+import { buildTraceStoryBinding } from '../../../e2e/story-trace-binding';
+import {
+  resolveUxTraceBundleDir,
+  type UxTraceBundleManifest,
+} from '../../../e2e/trace-bundle-support';
+import {
+  buildVisualBaselineScenarioEvidence,
   groupVisualBaselineCatalogByScenario,
+  renderVisualBaselineAutomatedPassMarkdown,
   renderVisualBaselineScenarioReviewMarkdown,
   type VisualBaselineReviewRecord,
   type VisualBaselineScenarioRecord,
@@ -120,6 +136,11 @@ function createManifestEvidenceForCheck(
   campaignRoot: string,
   check: CurrentVerificationCampaignEvidenceCheck,
 ): void {
+  if (check.semantic === 'ux_trace_bundle') {
+    writeSemanticUxTraceBundle(campaignRoot);
+    return;
+  }
+
   if (check.kind === 'visual_baseline_reviews') {
     for (const scenario of groupVisualBaselineCatalogByScenario().values()) {
       createFile(
@@ -184,12 +205,13 @@ function renderVisualReviewFixture(
         }
       : undefined,
     review: {
-      reviewer: 'aggregate-test',
+      reviewerId: 'aggregate-test',
+      reviewerKind: 'ai_reviewer',
+      reviewMode: 'ai_native_screenshot_review',
       reviewedAt: '2026-04-12T12:00:00.000Z',
-      verdict: 'aligned',
-      cursorFit: 'aligned',
-      uxFit: 'low_mindload',
-      notes: ['Aggregate test visual review fixture.'],
+      verdict: 'accepted',
+      actualUrl: scenario.route,
+      findings: ['Aggregate test visual review fixture.'],
       ...reviewOverrides,
     },
   });
@@ -222,6 +244,180 @@ function getVisualScenario(scenarioId: string): VisualBaselineScenarioRecord {
   return scenario;
 }
 
+type UxTraceReviewVerdict = 'accepted' | 'needs_work' | 'blocked';
+
+type SemanticUxTraceFixtureOptions = Partial<{
+  storyFingerprint: string;
+  stepMapFingerprint: string;
+  omitRequiredStep: string;
+  omitRequiredScreenshotStep: string;
+  reviewVerdict: UxTraceReviewVerdict;
+}>;
+
+function stepTargetMatches(expected: string, actual: string, mode: StoryTargetMatch = 'exact'): boolean {
+  return mode === 'prefix' ? actual.startsWith(expected) : actual === expected;
+}
+
+function requiredTraceSteps(story: StoryDefinition): readonly StoryStepDefinition[] {
+  return story.steps.filter((step) => step.evidence.includes('trace') && !step.optional);
+}
+
+function stepRoute(story: StoryDefinition, step: StoryStepDefinition): string {
+  const scene = story.scenes.find((candidate) => candidate.sceneId === step.sceneId);
+  return scene?.route ?? story.entryRoute;
+}
+
+function getGateReleaseUxTraceRoot(campaignRoot: string): string {
+  const gateRelease = getCampaignStep('gate-release');
+  const traceCheck = gateRelease.evidenceChecks.find((check) => check.id === 'backend_real_ux_trace_reviews');
+  if (!traceCheck) {
+    throw new Error('Missing backend-real UX trace evidence check.');
+  }
+  return materializeCampaignPath(campaignRoot, traceCheck.path);
+}
+
+function renderUxTraceReviewFixture(args: {
+  manifest: UxTraceBundleManifest;
+  verdict: UxTraceReviewVerdict;
+}): string {
+  return [
+    `# ${args.manifest.title}`,
+    '',
+    '- schema: ux_trace_bundle_review/v1',
+    `- story_id: ${args.manifest.story_id}`,
+    `- scenario_id: ${args.manifest.scenario_id}`,
+    `- story_fingerprint: ${args.manifest.story_fingerprint}`,
+    `- step_map_fingerprint: ${args.manifest.step_map_fingerprint}`,
+    `- run_id: ${args.manifest.run_id}`,
+    `- outcome: ${args.manifest.outcome}`,
+    `- verdict: ${args.verdict}`,
+    `- findings: ${args.verdict === 'accepted' ? 'No blocking findings.' : 'Trace review found release-blocking UX evidence.'}`,
+    '',
+    '## Trace Events',
+    '',
+    '- manifest.json',
+    '- events.jsonl',
+    '- screenshots/',
+    '',
+  ].join('\n');
+}
+
+function writeSemanticUxTraceBundle(
+  campaignRoot: string,
+  options: SemanticUxTraceFixtureOptions = {},
+): void {
+  const story = getReleaseStoryDefinition();
+  const binding = buildTraceStoryBinding(story);
+  const traceRoot = getGateReleaseUxTraceRoot(campaignRoot);
+  const runId = 'release-trace-run';
+  const bundleDir = resolveUxTraceBundleDir({
+    outputRoot: traceRoot,
+    lane: 'backend-real',
+    suite: 'integration-release-user-story',
+    storyId: story.storyId,
+    runId,
+  });
+  const requiredSteps = requiredTraceSteps(story);
+  const requiredStepIds = requiredSteps.map((step) => step.stepId);
+  const requiredScreenshotStepIds = requiredSteps
+    .filter((step) => step.sceneId)
+    .map((step) => step.stepId);
+  const sourceFile = story.sourceFile ?? story.filePath;
+  const storyFingerprint = options.storyFingerprint ?? buildStoryFingerprint(story);
+  const stepMapFingerprint = options.stepMapFingerprint ?? buildStoryStepMapFingerprint(story);
+  const events = requiredSteps
+    .filter((step) => step.stepId !== options.omitRequiredStep)
+    .map((step, index) => {
+      const seq = index + 1;
+      const screenshot = step.stepId === options.omitRequiredScreenshotStep
+        ? undefined
+        : `screenshots/${String(seq).padStart(3, '0')}-${step.stepId}.png`;
+      if (screenshot) {
+        createFile(join(bundleDir, screenshot), `screenshot for ${step.stepId}\n`);
+      }
+      return {
+        seq,
+        ts: '2026-04-12T12:00:00.000Z',
+        step_id: step.stepId,
+        action: step.action,
+        target: step.target,
+        route: stepRoute(story, step),
+        assertion: step.expectedFeedback,
+        note: step.note ?? step.expectedFeedback,
+        screenshot,
+      };
+    });
+  const manifest: UxTraceBundleManifest = {
+    version: 1,
+    story_id: story.storyId,
+    story_source: binding.storySource,
+    story_source_fingerprint: buildStorySourceFingerprint(readFileSync(resolve(sourceFile), 'utf8')),
+    story_fingerprint: storyFingerprint,
+    step_map_fingerprint: stepMapFingerprint,
+    scenario_id: 'integration-release-user-story',
+    title: story.title,
+    actor: story.actor,
+    lane: 'backend-real',
+    suite: 'integration-release-user-story',
+    route: story.entryRoute,
+    spec_file: 'e2e/integration-release-user-story.spec.ts',
+    browser: 'chromium',
+    run_id: runId,
+    git_sha: 'aggregate-test-git-sha',
+    goal: story.goal,
+    preconditions: story.preconditions ?? [],
+    seed_data: story.seedData ?? [],
+    required_trace_steps: requiredStepIds,
+    required_screenshot_steps: requiredScreenshotStepIds,
+    started_at: '2026-04-12T11:59:00.000Z',
+    finished_at: '2026-04-12T12:00:00.000Z',
+    outcome: 'pass',
+    event_count: events.length,
+    screenshot_count: events.filter((event) => Boolean(event.screenshot)).length,
+    screenshots: events
+      .filter((event): event is typeof event & { screenshot: string } => Boolean(event.screenshot))
+      .map((event) => ({
+        seq: event.seq,
+        step_id: event.step_id,
+        file: event.screenshot,
+        route: event.route,
+        note: event.note,
+      })),
+  };
+
+  writeJson(join(bundleDir, 'manifest.json'), manifest);
+  createFile(join(bundleDir, 'events.jsonl'), `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
+  createFile(join(bundleDir, 'review.md'), renderUxTraceReviewFixture({
+    manifest,
+    verdict: options.reviewVerdict ?? 'accepted',
+  }));
+
+  for (const step of requiredSteps) {
+    const event = events.find((candidate) => candidate.step_id === step.stepId);
+    if (!event || !step.target || !event.target) {
+      continue;
+    }
+    if (!stepTargetMatches(step.target, event.target, step.targetMatch ?? 'exact')) {
+      throw new Error(`invalid trace fixture target for ${step.stepId}`);
+    }
+  }
+}
+
+function replaceGateReleaseUxTraceWithLegacyReviewOnly(campaignRoot: string): void {
+  const traceRoot = getGateReleaseUxTraceRoot(campaignRoot);
+  rmSync(traceRoot, { recursive: true, force: true });
+  createFile(join(traceRoot, 'legacy', 'review.md'), '# Legacy backend-real UX trace review\n');
+}
+
+function replaceGateReleaseUxTraceWithSemanticBundle(
+  campaignRoot: string,
+  options: SemanticUxTraceFixtureOptions = {},
+): void {
+  const traceRoot = getGateReleaseUxTraceRoot(campaignRoot);
+  rmSync(traceRoot, { recursive: true, force: true });
+  writeSemanticUxTraceBundle(campaignRoot, options);
+}
+
 function writeLegacyDummyEvidencePointer(campaignRoot: string, step: CurrentVerificationCampaignStep): void {
   const evidenceDir = join(campaignRoot, '__legacy_dummy__', step.id);
   mkdirSync(evidenceDir, { recursive: true });
@@ -232,6 +428,8 @@ function writeLegacyDummyEvidencePointer(campaignRoot: string, step: CurrentVeri
       schema_version: CURRENT_GATE_RESULT_SCHEMA_VERSION,
       step_id: step.id,
       gate_id: step.gateId,
+      evidence_topology: 'campaign_root',
+      campaign_root: resolve(campaignRoot),
       evidence_dir: stepDir(campaignRoot, step),
       native_result: step.nativeResult && path
         ? {
@@ -320,6 +518,27 @@ function runAggregateWithoutExplicitCampaign(options: RunAggregateOptions = {}):
 }
 
 describe('release-full aggregate gate', () => {
+  it('records campaign-root evidence topology on generated evidence pointers', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-evidence-topology-'));
+    const visualStep = getCampaignStep('lane-visual');
+    writeNativeResult(campaignRoot, visualStep);
+    createManifestEvidence(campaignRoot, visualStep);
+
+    writeCampaignEvidencePointer(campaignRoot, visualStep);
+
+    const evidence = JSON.parse(
+      readFileSync(evidencePointerPath(campaignRoot, visualStep), 'utf8'),
+    ) as {
+      evidence_topology?: string;
+      campaign_root?: string;
+      required_paths: readonly { path: string }[];
+    };
+
+    expect(evidence.evidence_topology).toBe('campaign_root');
+    expect(evidence.campaign_root).toBe(resolve(campaignRoot));
+    expect(evidence.required_paths.some((record) => record.path.includes(campaignRoot))).toBe(true);
+  });
+
   it('passes when every required campaign step result and current manifest evidence check is present', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-pass-'));
     seedPassedCampaign(campaignRoot);
@@ -335,6 +554,106 @@ describe('release-full aggregate gate', () => {
       failure_class: 'none',
     });
   });
+
+  it('passes when backend-real UX trace bundles include semantic manifest, events, screenshots, and review evidence', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-trace-semantic-pass-'));
+    seedPassedCampaign(campaignRoot);
+    replaceGateReleaseUxTraceWithSemanticBundle(campaignRoot);
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
+
+    runAggregate(campaignRoot);
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string };
+    expect(terminalResult).toMatchObject({
+      status: 'passed',
+      failure_class: 'none',
+    });
+  });
+
+  it('fails when backend-real UX trace evidence is only a legacy review.md without manifest and events', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-trace-legacy-'));
+    seedPassedCampaign(campaignRoot);
+    replaceGateReleaseUxTraceWithLegacyReviewOnly(campaignRoot);
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'evidence_missing',
+    });
+    expect(terminalResult.summary).toContain('manifest.json');
+  });
+
+  it('fails with contract drift when backend-real UX trace story or step-map fingerprints drift', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-trace-fingerprint-drift-'));
+    seedPassedCampaign(campaignRoot);
+    replaceGateReleaseUxTraceWithSemanticBundle(campaignRoot, {
+      storyFingerprint: `sha256:${'1'.repeat(64)}`,
+      stepMapFingerprint: `sha256:${'2'.repeat(64)}`,
+    });
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('story_fingerprint drift');
+    expect(terminalResult.summary).toContain('step_map_fingerprint drift');
+  });
+
+  it('fails when backend-real UX trace evidence misses a required story step or screenshot', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-trace-missing-step-'));
+    seedPassedCampaign(campaignRoot);
+    replaceGateReleaseUxTraceWithSemanticBundle(campaignRoot, {
+      omitRequiredStep: 'workspace-login',
+      omitRequiredScreenshotStep: 'project-overview',
+    });
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'evidence_missing',
+    });
+    expect(terminalResult.summary).toContain('workspace-login');
+    expect(terminalResult.summary).toContain('project-overview');
+  });
+
+  it.each(['needs_work', 'blocked'] as const)(
+    'fails with product regression when backend-real UX trace review verdict is %s',
+    (reviewVerdict) => {
+      const campaignRoot = mkdtempSync(join(tmpdir(), `release-full-aggregate-trace-${reviewVerdict}-`));
+      seedPassedCampaign(campaignRoot);
+      replaceGateReleaseUxTraceWithSemanticBundle(campaignRoot, { reviewVerdict });
+      writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
+
+      expect(() => runAggregate(campaignRoot)).toThrow();
+
+      const terminalResult = JSON.parse(
+        readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+      ) as { status: string; failure_class: string; summary: string };
+      expect(terminalResult).toMatchObject({
+        status: 'failed',
+        failure_class: 'product_regression',
+      });
+      expect(terminalResult.summary).toContain('UX trace review verdict must be accepted');
+    },
+  );
 
   it('refuses to consume the latest release run unless the operator opts into diagnostic latest mode', () => {
     expect(() => runAggregateWithoutExplicitCampaign()).toThrow();
@@ -377,10 +696,151 @@ describe('release-full aggregate gate', () => {
       status: 'failed',
       failure_class: 'contract_drift',
     });
-    expect(terminalResult.summary).toContain('visual review metadata');
+    expect(terminalResult.summary).toContain('visual UX acceptance metadata');
   });
 
-  it('fails with product regression when a visual review verdict is not aligned', () => {
+  it('fails when an automated visual pass artifact is copied into the UX acceptance slot', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-automated-pass-'));
+    seedPassedCampaign(campaignRoot);
+    const scenario = getVisualScenario('desktop-auth-complete');
+    overwriteVisualReviewFixture(
+      campaignRoot,
+      scenario.scenarioId,
+      renderVisualBaselineAutomatedPassMarkdown({
+        scenario,
+        build: {
+          lane: 'mock-lane',
+          runId: resolveCampaignRunId(campaignRoot),
+          gitSha: 'aggregate-test-git-sha',
+          fingerprint: `${resolveCampaignRunId(campaignRoot)}:mock-lane:visual`,
+          startedAt: '2026-04-12T11:59:00.000Z',
+        },
+        automated: {
+          generatedAt: '2026-04-12T12:00:00.000Z',
+          automatedVerdict: 'passed',
+          semanticVerdict: 'passed',
+          actualUrl: scenario.route,
+          notes: ['Playwright visual lane completed for this scenario.'],
+        },
+      }),
+    );
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('Automated visual pass cannot be used as UX acceptance');
+  });
+
+  it('fails with contract drift when a visual UX acceptance omits reviewer proof', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-reviewer-proof-'));
+    seedPassedCampaign(campaignRoot);
+    const scenario = getVisualScenario('desktop-auth-complete');
+    overwriteVisualReviewFixture(
+      campaignRoot,
+      scenario.scenarioId,
+      renderVisualReviewFixture(campaignRoot, scenario).replace('- reviewer_id: aggregate-test\n', ''),
+    );
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('reviewer_id');
+  });
+
+  it('fails with contract drift when visual UX acceptance omits actual URL or story fingerprint', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-story-proof-'));
+    seedPassedCampaign(campaignRoot);
+    const scenario = getVisualScenario('desktop-auth-complete');
+    overwriteVisualReviewFixture(
+      campaignRoot,
+      scenario.scenarioId,
+      renderVisualReviewFixture(campaignRoot, scenario)
+        .replace('- actual_url: /en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001\n', '')
+        .replace(/- story_fingerprint: .+\n/, ''),
+    );
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('actual_url');
+    expect(terminalResult.summary).toContain('story_fingerprint');
+  });
+
+  it('fails with contract drift when visual UX acceptance hashes drift from committed baselines', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-hash-drift-'));
+    seedPassedCampaign(campaignRoot);
+    const scenario = getVisualScenario('desktop-auth-complete');
+    const evidence = buildVisualBaselineScenarioEvidence(scenario);
+    const firstScreenshot = evidence.screenshots[0];
+    if (!firstScreenshot) {
+      throw new Error('Missing visual screenshot fixture.');
+    }
+    const baselineHashLine = `- accepted_baseline_hashes: ${evidence.screenshots
+      .map((entry) => `${entry.fileName}=sha256:${entry.baselineSha256}`)
+      .join('; ')}`;
+    const driftedBaselineHashLine = baselineHashLine.replace(
+      `${firstScreenshot.fileName}=sha256:${firstScreenshot.baselineSha256}`,
+      `${firstScreenshot.fileName}=sha256:${'0'.repeat(64)}`,
+    );
+    overwriteVisualReviewFixture(
+      campaignRoot,
+      scenario.scenarioId,
+      renderVisualReviewFixture(campaignRoot, scenario).replace(baselineHashLine, driftedBaselineHashLine),
+    );
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('baseline hash drift');
+  });
+
+  it('fails with contract drift when visual UX acceptance story fingerprint drifts', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-story-drift-'));
+    seedPassedCampaign(campaignRoot);
+    const scenario = getVisualScenario('desktop-auth-complete');
+    overwriteVisualReviewFixture(
+      campaignRoot,
+      scenario.scenarioId,
+      renderVisualReviewFixture(campaignRoot, scenario).replace(/- story_fingerprint: .+\n/, `- story_fingerprint: sha256:${'1'.repeat(64)}\n`),
+    );
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('story_fingerprint drift');
+  });
+
+  it('fails with product regression when a visual UX acceptance verdict is not accepted', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-verdict-'));
     seedPassedCampaign(campaignRoot);
     const scenario = getVisualScenario('desktop-auth-complete');
@@ -401,7 +861,31 @@ describe('release-full aggregate gate', () => {
       status: 'failed',
       failure_class: 'product_regression',
     });
-    expect(terminalResult.summary).toContain('verdict must be aligned');
+    expect(terminalResult.summary).toContain('verdict must be accepted');
+  });
+
+  it('fails with product regression when a visual UX acceptance verdict is blocked', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-blocked-verdict-'));
+    seedPassedCampaign(campaignRoot);
+    const scenario = getVisualScenario('desktop-auth-complete');
+    overwriteVisualReviewFixture(
+      campaignRoot,
+      scenario.scenarioId,
+      renderVisualReviewFixture(campaignRoot, scenario, {
+        verdict: 'blocked',
+      }),
+    );
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'product_regression',
+    });
+    expect(terminalResult.summary).toContain('verdict must be accepted');
   });
 
   it('fails with product regression when a visual review contains blocking findings', () => {
@@ -612,6 +1096,29 @@ describe('release-full aggregate gate', () => {
       failure_class: 'contract_drift',
     });
     expect(terminalResult.summary).toContain('step_id mismatch');
+  });
+
+  it('fails with contract drift when an evidence pointer is not bound to campaign-root topology', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-pointer-topology-'));
+    seedPassedCampaign(campaignRoot);
+    const visualEvidencePath = resolve(campaignRoot, 'lane-visual', 'evidence.json');
+    const evidence = JSON.parse(readFileSync(visualEvidencePath, 'utf8')) as Record<string, unknown>;
+    writeJson(visualEvidencePath, {
+      ...evidence,
+      evidence_topology: 'standalone',
+      campaign_root: resolve('artifacts', 'visual-baseline-reviews'),
+    });
+
+    expect(() => runAggregate(campaignRoot)).toThrow();
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'failed',
+      failure_class: 'contract_drift',
+    });
+    expect(terminalResult.summary).toContain('evidence_topology');
   });
 
   it('writes a terminal contract_drift result when a campaign step result is truncated JSON', () => {

@@ -55,8 +55,8 @@
       "sceneId": "project-files",
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/files",
       "stableMarkers": [
-        "files__library-create",
-        "project-workbench__heading"
+        "files__workspace-surface",
+        "files__library-list"
       ]
     }
   ],

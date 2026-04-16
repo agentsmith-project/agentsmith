@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/lane-run-state.sh"
+source "${ROOT_DIR}/scripts/lib/local-runtime-processes.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 
 SPEC_FILE="${1:-}"
@@ -26,6 +27,10 @@ ensure_backend_real_state
 INTEGRATION_RUN_ID="${INTEGRATION_RUN_ID:-$(lane_generate_run_id integration-with-api)}"
 INTEGRATION_RUN_ROOT="${INTEGRATION_RUN_ROOT:-$(lane_prepare_run_root backend-real "${INTEGRATION_RUN_ID}" current-with-api)}"
 INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-${INTEGRATION_RUN_ROOT}/integration}"
+export LOCAL_RUNTIME_RUN_ID="${INTEGRATION_RUN_ID}"
+export LOCAL_RUNTIME_LINE_KIND="backend_real"
+export LOCAL_RUNTIME_OWNER_TOKEN="${INTEGRATION_RUN_ID}:backend_real:$$"
+export LOCAL_RUNTIME_PROCESS_STATE_DIR="${INTEGRATION_RUN_ROOT}/processes"
 mkdir -p "${INTEGRATION_LOG_DIR}"
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 PLAYWRIGHT_STATUS=1
@@ -33,16 +38,18 @@ PLAYWRIGHT_STATUS=1
 # Always clear proxy-related env vars for deterministic local integration testing.
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
-PORT="${API_PORT}" \
-KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-npm run api:node:dev >"${API_LOG}" 2>&1 &
-API_PID=$!
+API_PID="$(
+  local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" env \
+    -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+    PORT="${API_PORT}" \
+    KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+    KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+    npm run api:node:dev
+)"
 
 cleanup() {
-  kill "${API_PID}" >/dev/null 2>&1 || true
-  wait "${API_PID}" >/dev/null 2>&1 || true
+  local_runtime_stop_owned_process_tree "${API_PID}" api "${API_PORT}" || true
+  local_runtime_wait_port_free "${API_PORT}" api 10 || true
   if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" success
     rm -rf "${INTEGRATION_RUN_ROOT}"

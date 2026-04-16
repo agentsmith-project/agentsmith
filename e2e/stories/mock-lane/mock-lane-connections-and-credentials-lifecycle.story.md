@@ -41,7 +41,9 @@
       "route": "/en-US/workspaces/ws_default/settings",
       "recipeFamily": "settings_sheet",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "ws-settings__integration-feishu"
+      ]
     },
     {
       "sceneId": "workspace-feishu-setup-credentials",
@@ -57,35 +59,51 @@
       "route": "/en-US/workspaces/ws_default/settings/feishu",
       "recipeFamily": "settings_sheet",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "ws-feishu__locked"
+      ]
     },
     {
       "sceneId": "workspace-connections-feishu-disabled",
       "route": "/en-US/workspaces/ws_default/connections",
       "recipeFamily": "settings_sheet",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "workspace-connections__feishu-connect",
+        "workspace-connections__capability-note",
+        "workspace-connections__personal-state"
+      ]
     },
     {
       "sceneId": "workspace-connections-feishu-connected",
       "route": "/en-US/workspaces/ws_default/connections",
       "recipeFamily": "settings_sheet",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "workspace-connections__feishu-connect",
+        "workspace-connections__capability-note",
+        "workspace-connections__personal-state"
+      ]
     },
     {
       "sceneId": "credentials",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/credentials",
       "recipeFamily": "governance_table_detail",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "credentials__create-btn",
+        "credentials__capability-note",
+        "credentials__summary-count"
+      ]
     },
     {
       "sceneId": "dialog-create-credential",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/credentials",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "credentials__create-dialog"
+      ]
     }
   ],
   "steps": [
@@ -235,7 +253,14 @@
           "authLane": "authed",
           "themes": [
             "default"
-          ]
+          ],
+          "semanticAssertions": {
+            "primaryActionTestIds": [],
+            "maxProminentActions": 0,
+            "forbiddenVisibleTextPatterns": [
+              "\\b\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z\\b"
+            ]
+          }
         },
         {
           "sceneId": "workspace-connections-feishu-connected",
@@ -250,7 +275,14 @@
           "authLane": "authed",
           "themes": [
             "default"
-          ]
+          ],
+          "semanticAssertions": {
+            "primaryActionTestIds": [],
+            "maxProminentActions": 0,
+            "forbiddenVisibleTextPatterns": [
+              "\\b\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z\\b"
+            ]
+          }
         },
         {
           "sceneId": "credentials",

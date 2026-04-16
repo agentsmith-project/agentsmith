@@ -15,15 +15,27 @@ trap 'cleanup_on_exit $?' EXIT
 
 wait_runner_connected() {
   local timeout="${1:-60}"
-  local start
+  local start state
   start="$(date +%s)"
   while true; do
-    if rg -q "\\[notebook-codex-runner\\] connected|websocket open" "${RUNNER_LOG}" 2>/dev/null; then
+    state="$(runner_socket_health_state)"
+    if [[ "${state}" == "connected" ]]; then
       info "runner connected"
       return 0
     fi
+    if [[ "${state}" == "shutting_down" ]]; then
+      err "runner entered shutting_down before it became connected"
+      if [[ -f "${RUNNER_HEALTH_FILE}" ]]; then
+        cat "${RUNNER_HEALTH_FILE}" >&2 || true
+      fi
+      tail -n 120 "${RUNNER_LOG}" || true
+      return 1
+    fi
     if (( "$(date +%s)" - start > timeout )); then
-      err "runner did not connect in time"
+      err "runner did not connect in time (socket=${state})"
+      if [[ -f "${RUNNER_HEALTH_FILE}" ]]; then
+        cat "${RUNNER_HEALTH_FILE}" >&2 || true
+      fi
       tail -n 120 "${RUNNER_LOG}" || true
       return 1
     fi
@@ -38,6 +50,7 @@ if ! stop_local_manual_runner_owner_aware replace_runner; then
   exit 1
 fi
 rm -f "${RUNNER_READY_FILE}"
+rm -f "${RUNNER_HEALTH_FILE}" "${RUNNER_HEALTH_MONITOR_PID_FILE}"
 rm -f "${RUNNER_LOG}"
 
 launch_detached "${RUNNER_PID_FILE}" "${RUNNER_LOG}" "
@@ -49,6 +62,7 @@ launch_detached "${RUNNER_PID_FILE}" "${RUNNER_LOG}" "
   exec make notebook-agent-runner
 "
 RUNNER_LAUNCH_STARTED=1
+start_runner_health_monitor
 wait_runner_connected 60
 write_ready_file "${RUNNER_READY_FILE}"
 trap - EXIT

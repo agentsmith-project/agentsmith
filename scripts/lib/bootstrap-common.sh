@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/preset-common.sh"
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/scripts/lib/runner-lifecycle-log.sh"
 
 run_deploy_bootstrap() {
   load_agentsmith_presets "${ROOT_DIR}"
@@ -87,7 +89,7 @@ run_deploy_bootstrap() {
   external_runner_connected() {
     local runner_logs
     runner_logs="$(docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 || true)"
-    grep -q '\[notebook-codex-runner\] connected' <<<"${runner_logs}"
+    runner_lifecycle_logs_connected "${runner_logs}"
   }
 
   external_runner_has_expected_no_proxy() {

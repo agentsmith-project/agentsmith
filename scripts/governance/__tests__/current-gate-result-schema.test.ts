@@ -13,6 +13,71 @@ import {
   findCurrentGateResultWriter,
 } from "../current-gate-result-schema";
 
+type GateResultPayload = {
+  gate_id: string;
+  status: string;
+  failure_class: string;
+  evidence_dir: string;
+  gate_adapter: {
+    npm_script: string | null;
+    ci_job: string | null;
+  };
+};
+
+function gateResultEnv(
+  evidenceDir: string,
+  overrides: Record<string, string> = {},
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    CURRENT_GATE_RESULT_EVIDENCE_DIR: evidenceDir,
+    ...overrides,
+  };
+  for (const key of [
+    "CURRENT_GATE_RESULT_CI_JOB",
+    "CURRENT_GATE_RESULT_CAMPAIGN_STEP_ID",
+    "GITHUB_JOB",
+  ]) {
+    if (!(key in overrides)) {
+      delete env[key];
+    }
+  }
+  return env;
+}
+
+function runWrappedGateResult(input: {
+  gateId: string;
+  lineKind: string;
+  npmScript: string;
+  env?: Record<string, string>;
+}): GateResultPayload {
+  const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-"));
+  const evidenceDir = join(tempRoot, input.gateId, "native");
+
+  execFileSync(
+    "bash",
+    [
+      "scripts/run-current-gate-result-wrapped.sh",
+      input.gateId,
+      input.lineKind,
+      input.npmScript,
+      "--",
+      "bash",
+      "-lc",
+      "true",
+    ],
+    {
+      cwd: process.cwd(),
+      env: gateResultEnv(evidenceDir, input.env),
+      stdio: "pipe",
+    },
+  );
+
+  return JSON.parse(
+    readFileSync(join(evidenceDir, CURRENT_GATE_RESULT_ARTIFACT_NAME), "utf8"),
+  ) as GateResultPayload;
+}
+
 describe("current gate result schema", () => {
   it("registers the real backend-real gate writers by gate_id and line_kind", () => {
     expect(CURRENT_GATE_RESULT_WRITERS).toEqual([
@@ -46,41 +111,103 @@ describe("current gate result schema", () => {
   });
 
   it("the standalone result wrapper writes a native result for a wrapped lane command", () => {
-    const tempRoot = mkdtempSync(join(tmpdir(), "current-gate-result-wrapper-"));
-    const evidenceDir = join(tempRoot, "lane-visual", "native");
-
-    execFileSync(
-      "bash",
-      [
-        "scripts/run-current-gate-result-wrapped.sh",
-        "lane-visual",
-        "visual",
-        "lane:visual",
-        "--",
-        "bash",
-        "-lc",
-        "true",
-      ],
-      {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          CURRENT_GATE_RESULT_EVIDENCE_DIR: evidenceDir,
-        },
-        stdio: "pipe",
-      },
-    );
-
-    const payload = JSON.parse(
-      readFileSync(join(evidenceDir, CURRENT_GATE_RESULT_ARTIFACT_NAME), "utf8"),
-    ) as { gate_id: string; status: string; failure_class: string; evidence_dir: string };
+    const payload = runWrappedGateResult({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+    });
 
     expect(payload).toMatchObject({
       gate_id: "lane-visual",
       status: "passed",
       failure_class: "none",
-      evidence_dir: evidenceDir,
     });
+  });
+
+  it("prefers explicit CURRENT_GATE_RESULT_CI_JOB over manifest and GitHub job names", () => {
+    const payload = runWrappedGateResult({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+      env: {
+        CURRENT_GATE_RESULT_CI_JOB: "manual-review-job",
+        GITHUB_JOB: "github-visual-job",
+      },
+    });
+
+    expect(payload.gate_adapter.ci_job).toBe("manual-review-job");
+  });
+
+  it("uses the current gate manifest ciJob when no explicit job is provided", () => {
+    const payload = runWrappedGateResult({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+    });
+
+    expect(payload.gate_adapter.ci_job).toBe("lane-visual");
+  });
+
+  it("keeps manifest ciJob ahead of the campaign step fallback", () => {
+    const payload = runWrappedGateResult({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+      env: {
+        CURRENT_GATE_RESULT_CAMPAIGN_STEP_ID: "lane-visual",
+      },
+    });
+
+    expect(payload.gate_adapter.ci_job).toBe("lane-visual");
+  });
+
+  it("allows campaign launchers to explicitly bind a native result to the campaign step", () => {
+    const payload = runWrappedGateResult({
+      gateId: "lane-visual",
+      lineKind: "visual",
+      npmScript: "lane:visual",
+      env: {
+        CURRENT_GATE_RESULT_CI_JOB: "campaign:lane-visual",
+      },
+    });
+
+    expect(payload.gate_adapter.ci_job).toBe("campaign:lane-visual");
+  });
+
+  it("uses the GitHub job name for wrapped writers that do not define a manifest ciJob", () => {
+    const payload = runWrappedGateResult({
+      gateId: "lane-demo-rehearsal",
+      lineKind: "demo_rehearsal",
+      npmScript: "lane:demo-rehearsal",
+      env: {
+        GITHUB_JOB: "demo-rehearsal-ci",
+      },
+    });
+
+    expect(payload.gate_adapter.ci_job).toBe("demo-rehearsal-ci");
+  });
+
+  it("uses a deterministic local job fallback outside CI", () => {
+    const payload = runWrappedGateResult({
+      gateId: "lane-demo-rehearsal",
+      lineKind: "demo_rehearsal",
+      npmScript: "lane:demo-rehearsal",
+    });
+
+    expect(payload.gate_adapter.ci_job).toBe("local");
+  });
+
+  it("uses campaign:<step-id> when a campaign step invokes a native gate writer", () => {
+    const payload = runWrappedGateResult({
+      gateId: "lane-demo-rehearsal",
+      lineKind: "demo_rehearsal",
+      npmScript: "lane:demo-rehearsal",
+      env: {
+        CURRENT_GATE_RESULT_CAMPAIGN_STEP_ID: "lane-demo-rehearsal",
+      },
+    });
+
+    expect(payload.gate_adapter.ci_job).toBe("campaign:lane-demo-rehearsal");
   });
 
   it.each(CURRENT_GATE_RESULT_WRITERS)(

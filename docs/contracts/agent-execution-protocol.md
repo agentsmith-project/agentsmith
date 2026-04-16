@@ -1,6 +1,6 @@
 # External Agent Execution Channel Protocol (WS, v1)
 
-Last updated: 2026-02-22
+Last updated: 2026-04-15
 Owner: Backend + Frontend
 
 ## 1. Scope
@@ -72,7 +72,8 @@ All frames are JSON objects:
   - payload: `{ "reason": "client_cancelled" }`
 - `server.ping`
   - payload: `{}`
-  - note: optional/reserved heartbeat frame; current server implementation may not emit it in all deployments.
+  - server emits this frame every `server.hello.payload.heartbeat_interval_sec` while the socket is online.
+  - if the agent misses the configured pong budget, server closes the socket with code `4000` and reason `agent_heartbeat_timeout`.
 
 ## 4. Agent -> Server Events
 
@@ -80,6 +81,7 @@ All frames are JSON objects:
   - payload: execution metadata/capabilities
 - `agent.pong`
   - payload: `{}`
+  - agents must send one pong for each `server.ping`; each pong refreshes `last_pong_at` and keeps presence online.
 - `agent.response.delta`
   - required: `request_id`
   - payload: `{ "delta": "text token chunk" }`
@@ -136,6 +138,7 @@ The frontend keeps the same chat SSE consumption model used by endpoint streamin
 
 - One active connection per `agent_id` (new connection replaces old one).
 - No offline queue (fail-fast if agent is offline).
+- Pending streams and terminal sessions are bounded by first-event, idle, and max-runtime timers. Timeout cleanup fails the pending resource, removes its server map entry, and prevents leaked capacity.
 - Attachments are passed as data URLs in multimodal messages.
 - Strict protocol validation:
   - `agent.response.delta.payload.delta` must be `string`; otherwise request fails with `AGENT_PROTOCOL_ERROR`.

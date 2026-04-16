@@ -197,6 +197,10 @@ export class NotebookTerminalService {
     return status === 'pending' || status === 'active' || status === 'disconnected' || status === 'failed';
   }
 
+  private isLiveQuotaSessionStatus(status: RegisteredTerminalSession['status']): boolean {
+    return status === 'pending' || status === 'active' || status === 'disconnected';
+  }
+
   private isLiveBindableSessionStatus(status: RegisteredTerminalSession['status']): boolean {
     return status === 'pending' || status === 'active' || status === 'disconnected';
   }
@@ -245,7 +249,7 @@ export class NotebookTerminalService {
     userId: string;
   }): Promise<number> {
     const sessions = await this.listSessionsForTask(input);
-    return sessions.length;
+    return sessions.filter((session) => this.isLiveQuotaSessionStatus(session.status)).length;
   }
 
   private async persistSession(session: RegisteredTerminalSession): Promise<void> {
@@ -694,7 +698,7 @@ export class NotebookTerminalService {
 
     sessions.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     const sortedRetainedIds = retainedIds
-      .map((sessionId) => sessions.find((session) => session.id === sessionId) ?? this.sessions.get(sessionId))
+      .map((sessionId) => sessions.find((session) => session.id === sessionId))
       .filter((session): session is RegisteredTerminalSession => Boolean(session))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
       .map((session) => session.id);
@@ -966,5 +970,22 @@ export class NotebookTerminalService {
       void this.forgetTaskSession(session);
     }
     void this.hooks.onSessionClosed?.(session);
+  }
+
+  async shutdown(): Promise<void> {
+    for (const session of this.sessions.values()) {
+      this.clearDisconnectTimer(session);
+      this.clearStartupTimer(session);
+      this.closeBrowserSocket(session.browserSocket, 1001, 'server_shutdown');
+      session.runtime?.close();
+      session.browserSocket = undefined;
+      session.runtime = undefined;
+      session.runtimeDispatchPromise = undefined;
+      session.streamBound = false;
+    }
+    this.sessions.clear();
+    await new Promise<void>((resolve) => {
+      this.wsServer.close(() => resolve());
+    });
   }
 }

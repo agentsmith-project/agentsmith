@@ -199,6 +199,7 @@ describe('story loader', () => {
         ]),
         capture: 'full_page',
         authLane: 'authed',
+        setupNotes: ['viewport:1440x900'],
         themes: ['light', 'dark'],
       },
       {
@@ -214,6 +215,7 @@ describe('story loader', () => {
         ]),
         capture: 'full_page',
         authLane: 'authed',
+        setupNotes: ['viewport:1440x900'],
         themes: ['light', 'dark'],
       },
     ]);

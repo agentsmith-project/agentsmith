@@ -13,6 +13,7 @@ import { readStoredAuthToken } from './integration-workspace-access';
 import { RELEASE_USER_STORY } from './release-user-story.contract';
 import { buildTraceStoryBinding } from './story-trace-binding';
 import { createUxTraceBundleWriter } from './trace-bundle-support';
+import { waitForSystemWorkspacesReady } from './utils/system-workspaces';
 
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
@@ -147,7 +148,7 @@ async function loginAsSystemAdmin(page: Page): Promise<void> {
   }
   expect(loginResponseOk).toBe(true);
   await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(new RegExp(`/${LOCALE}/system/workspaces`));
-  await expect(page.getByTestId('system-workspaces__heading')).toBeVisible({ timeout: 30_000 });
+  await waitForSystemWorkspacesReady(page);
 }
 
 async function loginToWorkspace(page: Page, workspaceId: string, username: string, password: string): Promise<void> {
@@ -499,7 +500,7 @@ async function createTaskViaUi(args: {
   await dialog.locator('#task-agent').click();
   await page.getByRole('option', { name: new RegExp(agentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click();
   if (workspaceMode === 'use_existing') {
-    await dialog.getByRole('radio', { name: /continue an existing workspace/i }).click();
+    await dialog.getByRole('radio', { name: /continue an existing task workspace/i }).click();
     await dialog.getByTestId('task-create__file-library').click();
     await page.getByRole('option', { name: new RegExp((existingWorkspaceName ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click();
   } else if (workspaceName) {
@@ -727,9 +728,15 @@ async function expectUsageTabToShowRequests(args: {
   const { page, endpointId, endpointName } = args;
   await page.getByTestId(`usage__resource-tab-${endpointId}`).click();
   await expect(page.getByTestId('usage__selected-endpoint')).toHaveText(endpointName, { timeout: 30_000 });
-  const firstCard = page.getByTestId('usage__progress-card').first();
-  await expect(firstCard).toContainText(/requests/i, { timeout: 30_000 });
-  const valueText = ((await firstCard.locator('p').nth(1).textContent()) ?? '').replace(/,/g, '').trim();
+  await expect(page.getByTestId('usage__work-surface')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('usage__summary-line')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('usage__limits')).toBeVisible({ timeout: 30_000 });
+  const limitRows = page.getByTestId('usage__limit-row');
+  await expect(limitRows).toHaveCount(4, { timeout: 30_000 });
+  const requestLimitRow = limitRows.first();
+  await expect(requestLimitRow).toContainText(/requests|请求/i, { timeout: 30_000 });
+  await expect(requestLimitRow).toContainText(/usage|用量/i, { timeout: 30_000 });
+  const valueText = ((await requestLimitRow.locator('p').nth(3).textContent()) ?? '').replace(/,/g, '').trim();
   const used = Number.parseInt(valueText, 10);
   expect(Number.isFinite(used)).toBe(true);
   expect(used).toBeGreaterThan(0);
@@ -774,10 +781,10 @@ test.describe('@lane-real release user story end-to-end', () => {
       await captureTrace('system-login', 'Open system login', 'system-login__heading', 'system 管理侧登录入口');
 
       await loginAsSystemAdmin(page);
-      await captureTrace('system-workspaces', 'Review system workspaces', 'system-workspaces__heading', '工作区清单与创建入口');
+      await captureTrace('system-workspaces', 'Review system workspaces', 'system-workspaces__list', '工作区清单与创建入口');
 
       const workspaceId = await createAndPublishWorkspace(page);
-      await captureTrace('system-workspace-published', 'Create and publish workspace', 'system-workspaces__heading', '新工作区创建并发布完成');
+      await captureTrace('system-workspace-published', 'Create and publish workspace', 'system-workspaces__new-workspace', '新工作区创建并发布完成');
 
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/login`);
       await captureTrace('workspace-login', 'Open workspace login', 'workspace-login__keycloak-btn', '工作区登录入口');

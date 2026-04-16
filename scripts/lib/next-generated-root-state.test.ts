@@ -18,6 +18,14 @@ const canonicalNextEnv = `/// <reference types="next" />
 // see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
 `;
 
+const rootGeneratedNextEnv = `/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+/// <reference path="./.next/types/routes.d.ts" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+`;
+
 function runBash(script: string, rootDir: string): string {
   return execFileSync('bash', ['-lc', script], {
     cwd: process.cwd(),
@@ -66,6 +74,110 @@ ${restoreSnippet}
 }
 
 describe('next-generated-root-state', () => {
+  it('classifies Next 15 root-generated route types as valid when the root routes file exists', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-root-generated-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+    const routesPath = path.join(tempRoot, '.next/types/routes.d.ts');
+
+    const output = runBash(
+      `
+        mkdir -p "$(dirname "${routesPath}")"
+        cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
+{"include":[".next/types/**/*.ts","next-env.d.ts","src/**/*.ts","src/**/*.tsx"]}
+EOF_TSCONFIG
+        cat > "${nextEnvPath}" <<'EOF_NEXT_ENV'
+${rootGeneratedNextEnv}EOF_NEXT_ENV
+        printf 'declare module "next";\\n' > "${routesPath}"
+        source "${helper}"
+        next_generated_root_resolve_source_contract_status prepare_for_validation
+        printf 'status=%s\\nreason=%s\\n' "\${NEXT_GENERATED_ROOT_LAST_STATUS}" "\${NEXT_GENERATED_ROOT_LAST_REASON}"
+      `,
+      tempRoot,
+    );
+
+    expect(output).toContain('status=canonical');
+    expect(output).toContain('reason=next_env_generated_root_valid');
+    expect(output).not.toContain('next_env_generated_lane_state');
+  });
+
+  it('classifies a missing Next 15 root route file distinctly from lane pollution', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-missing-root-routes-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+
+    const output = runBash(
+      `
+        cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
+{"include":[".next/types/**/*.ts","next-env.d.ts","src/**/*.ts","src/**/*.tsx"]}
+EOF_TSCONFIG
+        cat > "${nextEnvPath}" <<'EOF_NEXT_ENV'
+${rootGeneratedNextEnv}EOF_NEXT_ENV
+        source "${helper}"
+        next_generated_root_resolve_source_contract_status prepare_for_validation
+        printf 'status=%s\\nreason=%s\\n' "\${NEXT_GENERATED_ROOT_LAST_STATUS}" "\${NEXT_GENERATED_ROOT_LAST_REASON}"
+      `,
+      tempRoot,
+    );
+
+    expect(output).toContain('status=semantic_drift');
+    expect(output).toContain('reason=next_env_generated_root_missing_types');
+    expect(output).not.toContain('next_env_generated_lane_state');
+  });
+
+  it('prepares a source-safe root for tsc when Next 15 left a root route reference without generated route types', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-source-safe-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+
+    const output = runBash(
+      `
+        cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
+{"include":[".next/types/**/*.ts","next-env.d.ts","src/**/*.ts","src/**/*.tsx"]}
+EOF_TSCONFIG
+        cat > "${nextEnvPath}" <<'EOF_NEXT_ENV'
+${rootGeneratedNextEnv}EOF_NEXT_ENV
+        source "${helper}"
+        next_generated_root_prepare_source_safe_for_tsc
+        next_generated_root_resolve_source_contract_status prepare_for_validation
+        printf 'status=%s\\nreason=%s\\n' "\${NEXT_GENERATED_ROOT_LAST_STATUS}" "\${NEXT_GENERATED_ROOT_LAST_REASON}"
+      `,
+      tempRoot,
+    );
+
+    expect(output).toContain('status=canonical');
+    expect(output).toContain('reason=source_contract_canonical');
+    expect(readFileSync(nextEnvPath, 'utf8')).toBe(canonicalNextEnv);
+  });
+
+  it('serializes root source contract work under a repository lock', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-lock-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+
+    const output = runBash(
+      `
+        source "${helper}"
+        export NEXT_GENERATED_ROOT_STATE_DIR="${tempRoot}/artifacts/runtime/next-root-contract"
+        start_ms="$(node -e 'process.stdout.write(String(Date.now()))')"
+        next_generated_root_with_source_contract_lock holder bash -lc 'sleep 0.25' &
+        holder_pid=$!
+        sleep 0.05
+        next_generated_root_with_source_contract_lock waiter bash -lc 'printf "waiter=entered\\n"'
+        wait "\${holder_pid}"
+        end_ms="$(node -e 'process.stdout.write(String(Date.now()))')"
+        printf 'elapsed_ms=%s\\n' "$((end_ms - start_ms))"
+      `,
+      tempRoot,
+    );
+
+    const elapsed = Number(output.match(/elapsed_ms=(\d+)/)?.[1] ?? '0');
+    expect(output).toContain('waiter=entered');
+    expect(elapsed).toBeGreaterThanOrEqual(220);
+  });
+
   it('normalizes polluted root files back to the canonical tsconfig include set', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-'));
     const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
@@ -196,6 +308,89 @@ NODE
     expect(output).toContain('guard_process=stopped');
   });
 
+  it('preserves latest parseable tsconfig edits made after repair acquisition', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-acquire-race-'));
+    const helper = path.join(tempRoot, 'next-generated-root-state.sh');
+    cpSync(path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh'), helper);
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+    const pauseFile = path.join(tempRoot, 'repair-acquired');
+    const continueFile = path.join(tempRoot, 'repair-continue');
+
+    writeFileSync(
+      helper,
+      `${readFileSync(helper, 'utf8')}
+eval "$(declare -f next_generated_root_repair_acquire_tsconfig_once | sed '1s/next_generated_root_repair_acquire_tsconfig_once/next_generated_root_test_original_repair_acquire_tsconfig_once/')"
+next_generated_root_repair_acquire_tsconfig_once() {
+  local output
+  output="$(next_generated_root_test_original_repair_acquire_tsconfig_once "$@")"
+  if [[ ! -f "${pauseFile}" && "\${output}" == $'readable\\t'* ]]; then
+    printf 'acquired\\n' > "${pauseFile}"
+    while [[ ! -f "${continueFile}" ]]; do
+      sleep 0.02
+    done
+  fi
+  printf '%s\\n' "\${output}"
+}
+`,
+      'utf8',
+    );
+
+    const output = runBash(
+      `
+        cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
+{"compilerOptions":{"strict":true},"include":["artifacts/runtime/lines/local-manual/current/next-dist/types/**/*.ts","next-env.d.ts"]}
+EOF_TSCONFIG
+        cat > "${nextEnvPath}" <<'EOF_NEXT_ENV'
+/// <reference path="./artifacts/runtime/lines/local-manual/current/next-dist/types/routes.d.ts" />
+EOF_NEXT_ENV
+        source "${helper}"
+        export NEXT_GENERATED_ROOT_STATE_DIR="${tempRoot}/artifacts/runtime/next-root-contract"
+        next_generated_root_final_reconcile_source_contract >"${tempRoot}/repair.log" 2>&1 &
+        repair_pid=$!
+        for _i in $(seq 1 100); do
+          [[ -f "${pauseFile}" ]] && break
+          sleep 0.02
+        done
+        if [[ ! -f "${pauseFile}" ]]; then
+          echo "pause=missing"
+          kill "\${repair_pid}" >/dev/null 2>&1 || true
+          wait "\${repair_pid}" >/dev/null 2>&1 || true
+          exit 1
+        fi
+        cat > "${tsconfigPath}" <<'EOF_CONCURRENT_TSCONFIG'
+{"compilerOptions":{"strict":false,"baseUrl":".","paths":{"@custom/*":["custom/*"]}},"include":["artifacts/runtime/lines/local-manual/current/next-dist/types/**/*.ts","next-env.d.ts"],"references":[{"path":"./tsconfig.node.json"}]}
+EOF_CONCURRENT_TSCONFIG
+        printf 'continue\\n' > "${continueFile}"
+        set +e
+        wait "\${repair_pid}"
+        status=$?
+        set -e
+        printf 'status=%s\\n' "\${status}"
+        cat "${tempRoot}/repair.log"
+      `,
+      tempRoot,
+    );
+
+    const tsconfig = JSON.parse(readFileSync(tsconfigPath, 'utf8')) as {
+      compilerOptions?: { strict?: boolean; baseUrl?: string; paths?: Record<string, string[]> };
+      include: string[];
+      references?: Array<{ path: string }>;
+    };
+
+    expect(output).toContain('status=0');
+    expect(tsconfig.include).toEqual(canonicalInclude);
+    expect(tsconfig.compilerOptions).toEqual({
+      strict: false,
+      baseUrl: '.',
+      paths: {
+        '@custom/*': ['custom/*'],
+      },
+    });
+    expect(tsconfig.references).toEqual([{ path: './tsconfig.node.json' }]);
+    expect(readFileSync(nextEnvPath, 'utf8')).toBe(canonicalNextEnv);
+  });
+
   it('finalizes the source contract with a dedicated contract-scoped reconcile helper', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-finalize-'));
     const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
@@ -227,7 +422,7 @@ EOF_NEXT_ENV
     expect(readFileSync(nextEnvPath, 'utf8')).toBe(canonicalNextEnv);
   });
 
-  it('keeps validation prep non-destructive when live lane state exists but the root contract is canonical', () => {
+  it('blocks validation prep when a live lane owner is still active even if the root contract is canonical', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-preflight-'));
     const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
     const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
@@ -272,8 +467,12 @@ EOF_NEXT_ENV
         ln -sfn "${runRoot}" "${currentLink}"
         source "${helper}"
         next_generated_root_write_lane_owner "${runRoot}" "mock-lane" "\${owner_pid}" "run-mock-lane-playwright.sh"
-        next_generated_root_prepare_for_validation
-        printf 'status=0\\n'
+        set +e
+        next_generated_root_prepare_for_validation >"${tempRoot}/prepare.log" 2>&1
+        status=$?
+        set -e
+        printf 'status=%s\\n' "\${status}"
+        cat "${tempRoot}/prepare.log"
         tsconfig_after="$(sha256sum "${tsconfigPath}" | awk '{print $1}')"
         next_env_after="$(sha256sum "${nextEnvPath}" | awk '{print $1}')"
         if [[ "\${tsconfig_before}" == "\${tsconfig_after}" ]]; then
@@ -322,7 +521,9 @@ EOF_NEXT_ENV
       tempRoot,
     );
 
-    expect(output).toContain('status=0');
+    expect(output).toContain('status=2');
+    expect(output).toContain('active lane owner blocks validation cleanup');
+    expect(output).toContain('stop the active lane');
     expect(output).toContain('tsconfig=unchanged');
     expect(output).toContain('next_env=unchanged');
     expect(output).toContain('owner_process=alive');
@@ -336,7 +537,286 @@ EOF_NEXT_ENV
     expect(JSON.parse(tsconfig).include).toEqual(canonicalInclude);
   });
 
-  it('fails validation prep on polluted root files without rewriting root contract or cleaning live lane state', () => {
+  it('removes inactive stale lane web state before validation without rewriting canonical root files', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-stale-lane-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+    const runRoot = path.join(
+      tempRoot,
+      'artifacts/backend-real/runs/backend-real-20260412T190154Z-1498987-24516',
+    );
+    const lanePidFile = path.join(runRoot, 'web.pid');
+    const nextPidFile = path.join(runRoot, 'next-dev.pid');
+    const currentLink = path.join(tempRoot, 'artifacts/backend-real/current-run');
+
+    const output = runBash(
+      `
+        mkdir -p "${runRoot}"
+        cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
+{"include":[".next/types/**/*.ts","next-env.d.ts","src/**/*.ts","src/**/*.tsx"]}
+EOF_TSCONFIG
+        cat > "${nextEnvPath}" <<'EOF_NEXT_ENV'
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+EOF_NEXT_ENV
+        tsconfig_before="$(sha256sum "${tsconfigPath}" | awk '{print $1}')"
+        next_env_before="$(sha256sum "${nextEnvPath}" | awk '{print $1}')"
+        printf '99999999\\n' > "${lanePidFile}"
+        printf '99999998\\n' > "${nextPidFile}"
+        ln -sfn "${runRoot}" "${currentLink}"
+        source "${helper}"
+        export NEXT_GENERATED_ROOT_ALLOWED_ACTIVE_RUN_ROOT="${runRoot}"
+        next_generated_root_write_lane_owner "${runRoot}" "backend-real" "99999997" "run-integration-e2e-full.sh"
+        next_generated_root_prepare_for_validation
+        printf 'status=0\\n'
+        tsconfig_after="$(sha256sum "${tsconfigPath}" | awk '{print $1}')"
+        next_env_after="$(sha256sum "${nextEnvPath}" | awk '{print $1}')"
+        if [[ "\${tsconfig_before}" == "\${tsconfig_after}" ]]; then
+          echo "tsconfig=unchanged"
+        else
+          echo "tsconfig=rewritten"
+        fi
+        if [[ "\${next_env_before}" == "\${next_env_after}" ]]; then
+          echo "next_env=unchanged"
+        else
+          echo "next_env=rewritten"
+        fi
+        if [[ -f "${lanePidFile}" ]]; then
+          echo "pid_file=present"
+        else
+          echo "pid_file=removed"
+        fi
+        if [[ -f "${nextPidFile}" ]]; then
+          echo "next_pid_file=present"
+        else
+          echo "next_pid_file=removed"
+        fi
+        if [[ -f "$(next_generated_root_lane_owner_file "${runRoot}")" ]]; then
+          echo "owner_file=present"
+        else
+          echo "owner_file=removed"
+        fi
+        if [[ -L "${currentLink}" ]]; then
+          echo "current_link=present"
+        else
+          echo "current_link=removed"
+        fi
+      `,
+      tempRoot,
+    );
+
+    expect(output).toContain('status=0');
+    expect(output).toContain('tsconfig=unchanged');
+    expect(output).toContain('next_env=unchanged');
+    expect(output).toContain('pid_file=removed');
+    expect(output).toContain('next_pid_file=removed');
+    expect(output).toContain('owner_file=removed');
+    expect(output).toContain('current_link=removed');
+    expect(JSON.parse(readFileSync(tsconfigPath, 'utf8')).include).toEqual(canonicalInclude);
+    expect(readFileSync(nextEnvPath, 'utf8')).toBe(canonicalNextEnv);
+  });
+
+  it('allows validation prep inside the declared owning lane while keeping that lane state alive', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-owning-lane-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+    const runRoot = path.join(
+      tempRoot,
+      'artifacts/mock-lane/runs/mock-20260415T130154Z-1498987-24516',
+    );
+    const lanePidFile = path.join(runRoot, 'web.pid');
+    const nextPidFile = path.join(runRoot, 'next-dev.pid');
+    const currentLink = path.join(tempRoot, 'artifacts/mock-lane/current');
+
+    const output = runBash(
+      `
+        mkdir -p "${runRoot}"
+        cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
+{"include":[".next/types/**/*.ts","next-env.d.ts","src/**/*.ts","src/**/*.tsx"]}
+EOF_TSCONFIG
+        cat > "${nextEnvPath}" <<'EOF_NEXT_ENV'
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+EOF_NEXT_ENV
+        bash -lc 'exec -a "bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual" sleep 300' &
+        owner_pid=$!
+        bash -lc 'exec -a "bash scripts/run-next-dev-safe.sh --port 3001" sleep 300' &
+        wrapper_pid=$!
+        bash -lc 'exec -a "next dev --port 3001" sleep 300' &
+        next_pid=$!
+        printf '%s\\n' "\${wrapper_pid}" > "${lanePidFile}"
+        printf '%s\\n' "\${next_pid}" > "${nextPidFile}"
+        ln -sfn "${runRoot}" "${currentLink}"
+        source "${helper}"
+        export NEXT_GENERATED_ROOT_ALLOWED_ACTIVE_RUN_ROOT="${runRoot}"
+        next_generated_root_write_lane_owner "${runRoot}" "mock-lane" "\${owner_pid}" "run-mock-lane-playwright.sh"
+        set +e
+        next_generated_root_prepare_for_validation >"${tempRoot}/prepare.log" 2>&1
+        status=$?
+        set -e
+        printf 'status=%s\\n' "\${status}"
+        cat "${tempRoot}/prepare.log"
+        if kill -0 "\${owner_pid}" >/dev/null 2>&1; then
+          echo "owner_process=alive"
+        else
+          echo "owner_process=stopped"
+        fi
+        if kill -0 "\${wrapper_pid}" >/dev/null 2>&1; then
+          echo "wrapper_process=alive"
+        else
+          echo "wrapper_process=stopped"
+        fi
+        if kill -0 "\${next_pid}" >/dev/null 2>&1; then
+          echo "next_process=alive"
+        else
+          echo "next_process=stopped"
+        fi
+        if [[ -f "${lanePidFile}" ]]; then
+          echo "pid_file=present"
+        else
+          echo "pid_file=removed"
+        fi
+        if [[ -f "${nextPidFile}" ]]; then
+          echo "next_pid_file=present"
+        else
+          echo "next_pid_file=removed"
+        fi
+        if [[ -f "$(next_generated_root_lane_owner_file "${runRoot}")" ]]; then
+          echo "owner_file=present"
+        else
+          echo "owner_file=removed"
+        fi
+        if [[ -L "${currentLink}" ]]; then
+          echo "current_link=present"
+        else
+          echo "current_link=removed"
+        fi
+        kill "\${owner_pid}" "\${wrapper_pid}" "\${next_pid}" >/dev/null 2>&1 || true
+        wait "\${owner_pid}" "\${wrapper_pid}" "\${next_pid}" >/dev/null 2>&1 || true
+      `,
+      tempRoot,
+    );
+
+    expect(output).toContain('status=0');
+    expect(output).toContain('owner_process=alive');
+    expect(output).toContain('wrapper_process=alive');
+    expect(output).toContain('next_process=alive');
+    expect(output).toContain('pid_file=present');
+    expect(output).toContain('next_pid_file=present');
+    expect(output).toContain('owner_file=present');
+    expect(output).toContain('current_link=present');
+    expect(JSON.parse(readFileSync(tsconfigPath, 'utf8')).include).toEqual(canonicalInclude);
+    expect(readFileSync(nextEnvPath, 'utf8')).toBe(canonicalNextEnv);
+  });
+
+  it('normalizes stale backend-real current-run file and symlink aliases without touching run evidence', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-current-run-link-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+    const runRoot = path.join(
+      tempRoot,
+      'artifacts/backend-real/runs/backend-real-20260413T190154Z-1498987-24516',
+    );
+    const currentRun = path.join(tempRoot, 'artifacts/backend-real/current-run');
+
+    const output = runBash(
+      `
+        set -e
+        mkdir -p "${runRoot}" "$(dirname "${currentRun}")"
+        printf 'real-run-evidence\\n' > "${runRoot}/evidence.txt"
+        cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
+{"include":[".next/types/**/*.ts","next-env.d.ts","src/**/*.ts","src/**/*.tsx"]}
+EOF_TSCONFIG
+        cat > "${nextEnvPath}" <<'EOF_NEXT_ENV'
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+EOF_NEXT_ENV
+        source "${helper}"
+        printf 'legacy-file-alias\\n' > "${currentRun}"
+        next_generated_root_normalize
+        if [[ ! -e "${currentRun}" && ! -L "${currentRun}" ]]; then
+          echo "file_alias=removed"
+        fi
+        ln -sfn "${runRoot}" "${currentRun}"
+        next_generated_root_normalize
+        if [[ ! -e "${currentRun}" && ! -L "${currentRun}" ]]; then
+          echo "symlink_alias=removed"
+        fi
+        printf 'run_evidence=%s\\n' "$(cat "${runRoot}/evidence.txt")"
+      `,
+      tempRoot,
+    );
+
+    expect(output).toContain('file_alias=removed');
+    expect(output).toContain('symlink_alias=removed');
+    expect(output).toContain('run_evidence=real-run-evidence');
+    expect(JSON.parse(readFileSync(tsconfigPath, 'utf8')).include).toEqual(canonicalInclude);
+    expect(readFileSync(nextEnvPath, 'utf8')).toBe(canonicalNextEnv);
+  });
+
+  it('quarantines a stale backend-real current-run directory during mock-lane startup normalization', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-current-run-dir-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
+    const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
+    const nextEnvPath = path.join(tempRoot, 'next-env.d.ts');
+    const runRoot = path.join(
+      tempRoot,
+      'artifacts/backend-real/runs/backend-real-20260413T200154Z-1498987-24516',
+    );
+    const currentRun = path.join(tempRoot, 'artifacts/backend-real/current-run');
+
+    const output = runBash(
+      `
+        set -e
+        mkdir -p "${runRoot}" "${currentRun}/nested"
+        printf 'real-run-evidence\\n' > "${runRoot}/evidence.txt"
+        printf 'stale-directory-evidence\\n' > "${currentRun}/nested/marker.txt"
+        cat > "${tsconfigPath}" <<'EOF_TSCONFIG'
+{"include":[".next/types/**/*.ts","next-env.d.ts","src/**/*.ts","src/**/*.tsx"]}
+EOF_TSCONFIG
+        cat > "${nextEnvPath}" <<'EOF_NEXT_ENV'
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+EOF_NEXT_ENV
+        source "${helper}"
+        next_generated_root_normalize
+        if [[ ! -e "${currentRun}" && ! -L "${currentRun}" ]]; then
+          echo "current_run=normalized"
+        fi
+        legacy_dir="$(find "${tempRoot}/artifacts/backend-real" -mindepth 1 -maxdepth 1 -type d -name 'current-run-legacy-*' | head -n 1)"
+        if [[ -n "\${legacy_dir}" ]]; then
+          echo "legacy_dir=present"
+          printf 'legacy_marker=%s\\n' "$(cat "\${legacy_dir}/nested/marker.txt")"
+        fi
+        printf 'run_evidence=%s\\n' "$(cat "${runRoot}/evidence.txt")"
+      `,
+      tempRoot,
+    );
+
+    expect(output).toContain('current_run=normalized');
+    expect(output).toContain('legacy_dir=present');
+    expect(output).toContain('legacy_marker=stale-directory-evidence');
+    expect(output).toContain('run_evidence=real-run-evidence');
+    expect(JSON.parse(readFileSync(tsconfigPath, 'utf8')).include).toEqual(canonicalInclude);
+    expect(readFileSync(nextEnvPath, 'utf8')).toBe(canonicalNextEnv);
+  });
+
+  it('blocks validation prep on polluted root files without rewriting root contract or cleaning live lane state', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'next-root-state-owner-'));
     const helper = path.join(process.cwd(), 'scripts/lib/next-generated-root-state.sh');
     const tsconfigPath = path.join(tempRoot, 'tsconfig.json');
@@ -409,13 +889,13 @@ EOF_NEXT_ENV
       tempRoot,
     );
 
-    expect(output).toContain('status=1');
+    expect(output).toContain('status=2');
     expect(output).toContain('tsconfig=unchanged');
     expect(output).toContain('next_env=unchanged');
     expect(output).toContain('lane_process=alive');
     expect(output).toContain('next_process=alive');
     expect(output).toContain('current_link=present');
-    expect(output).toContain('root source contract drift');
+    expect(output).toContain('active lane owner blocks validation cleanup');
   });
 
   it('keeps lane cleanup from rewriting source root files', () => {

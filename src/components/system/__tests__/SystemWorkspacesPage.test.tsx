@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeWorkspace, mockWorkspaceListResponse } from './systemWorkspacesTestUtils';
 
@@ -76,8 +76,7 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('rounded-md');
     expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('border');
     expect(screen.getByTestId('system-workspaces__new-workspace')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__new-workspace')).toHaveClass('bg-foreground/94');
-    expect(screen.getByTestId('system-workspaces__new-workspace')).not.toHaveClass('bg-transparent');
+    expect(screen.getByTestId('system-workspaces__new-workspace')).not.toHaveClass('bg-foreground');
     expect(screen.queryByTestId('system-workspaces__summary-line')).not.toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('alpha-admin@example.com');
@@ -85,7 +84,7 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__list')).not.toHaveClass('shadow-card');
     expect(screen.getByTestId('system-workspaces__editor')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__editor')).not.toHaveClass('shadow-card');
-    expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground/94');
+    expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground');
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).not.toHaveClass('rounded-md');
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveClass('border-b');
     expect(screen.queryByTestId('system-workspaces__basics')).not.toBeInTheDocument();
@@ -101,7 +100,7 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__lifecycle')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__save')).toHaveClass('bg-foreground/94');
+    expect(screen.getByTestId('system-workspaces__save')).toHaveClass('bg-foreground');
     expect(screen.getByDisplayValue('Alpha Workspace')).toBeInTheDocument();
   });
 
@@ -114,6 +113,9 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__editor-empty')).not.toHaveClass('rounded-md');
     expect(screen.getByTestId('system-workspaces__editor-empty')).not.toHaveClass('border');
     expect(screen.getByTestId('system-workspaces__editor-empty')).toHaveClass('bg-background/84');
+    expect(screen.getByTestId('system-workspaces__empty-create')).toHaveClass('bg-foreground');
+    expect(screen.getByTestId('system-workspaces__new-workspace')).not.toHaveClass('bg-foreground');
+    expect(screen.getByTestId('system-workspaces__editor-empty-create')).not.toHaveClass('bg-foreground');
   });
 
   it('filters workspaces from the list without exposing tenant implementation details', async () => {
@@ -196,8 +198,13 @@ describe('SystemWorkspacesPage', () => {
 
     render(<SystemWorkspacesPage />);
 
-    expect(await screen.findByTestId('system-workspaces__status')).toHaveTextContent('provisioning_status.failed');
-    expect(screen.getByTestId('system-workspaces__status')).toHaveTextContent('identity_provider_config_incomplete');
+    const failedStatus = await screen.findByTestId('system-workspaces__status');
+    expect(failedStatus).toHaveTextContent('provisioning_status.failed');
+    expect(failedStatus).toHaveTextContent('identity_provider_config_incomplete');
+    expect(within(failedStatus).getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground');
+    expect(screen.getByTestId('system-workspaces__new-workspace')).not.toHaveClass('bg-foreground');
+    expect(screen.getByTestId('system-workspaces__configure--ws_seeded')).not.toHaveClass('bg-foreground');
+    expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveClass('bg-foreground');
   });
 
   it('loads an existing workspace into structured settings and saves updates', async () => {

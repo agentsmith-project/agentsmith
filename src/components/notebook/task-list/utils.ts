@@ -1,7 +1,33 @@
 'use client';
 
-export function formatTaskRelativeTime(dateString: string): string {
+type TaskPresence = 'online' | 'offline' | 'managed' | 'unknown';
+type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
+
+function parseTaskDate(dateString: string): Date | null {
   const date = new Date(dateString);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getDisplayLocale(): string {
+  if (typeof document !== 'undefined' && document.documentElement.lang) {
+    return document.documentElement.lang;
+  }
+  if (typeof navigator !== 'undefined' && navigator.language) {
+    return navigator.language;
+  }
+  return 'en-US';
+}
+
+function formatTaskDate(date: Date): string {
+  return new Intl.DateTimeFormat(getDisplayLocale(), {
+    dateStyle: 'medium',
+    timeZone: 'UTC',
+  }).format(date);
+}
+
+export function formatTaskRelativeTime(dateString: string): string {
+  const date = parseTaskDate(dateString);
+  if (!date) return '—';
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
@@ -12,17 +38,24 @@ export function formatTaskRelativeTime(dateString: string): string {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+  return formatTaskDate(date);
 }
 
 export function formatTaskDateTime(dateString: string): string {
-  return new Date(dateString).toLocaleString();
+  const date = parseTaskDate(dateString);
+  if (!date) return '—';
+  return new Intl.DateTimeFormat(getDisplayLocale(), {
+    dateStyle: 'medium',
+    hour12: false,
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(date);
 }
 
 export function getTaskPresenceLabel(
   t: (key: string) => string,
-  presence?: 'online' | 'offline' | 'managed' | 'unknown',
-): string {
+  presence?: TaskPresence,
+): string | null {
   switch (presence) {
     case 'online':
       return t('agent_online');
@@ -30,14 +63,16 @@ export function getTaskPresenceLabel(
       return t('agent_offline');
     case 'managed':
       return t('agent_managed');
+    case 'unknown':
+      return t('agent_presence_not_reported');
     default:
-      return t('agent_unknown');
+      return null;
   }
 }
 
 export function getTaskPresenceVariant(
-  presence?: 'online' | 'offline' | 'managed' | 'unknown',
-): 'default' | 'secondary' | 'destructive' | 'outline' {
+  presence?: TaskPresence,
+): BadgeVariant | null {
   switch (presence) {
     case 'online':
       return 'default';
@@ -45,7 +80,9 @@ export function getTaskPresenceVariant(
       return 'secondary';
     case 'offline':
       return 'destructive';
-    default:
+    case 'unknown':
       return 'outline';
+    default:
+      return null;
   }
 }

@@ -64,17 +64,27 @@ interface PendingStream {
   fail: (error: Error) => void;
   cancellationRequested?: boolean;
   cancelTimeout?: NodeJS.Timeout;
+  firstEventTimer?: NodeJS.Timeout;
+  idleTimer?: NodeJS.Timeout;
+  maxRuntimeTimer?: NodeJS.Timeout;
+  hasReceivedEvent?: boolean;
 }
 
 interface PendingTerminal {
   push: (event: AgentTerminalEvent) => void;
   close: () => void;
   fail: (error: Error) => void;
+  firstEventTimer?: NodeJS.Timeout;
+  idleTimer?: NodeJS.Timeout;
+  maxRuntimeTimer?: NodeJS.Timeout;
+  hasReceivedEvent?: boolean;
 }
 
 interface AgentSocketState {
   ws: WebSocket;
   agentId: string;
+  connectionId: string;
+  apiInstanceId: string;
   sessionId?: string;
   workspaceId: string;
   projectId: string;
@@ -82,6 +92,10 @@ interface AgentSocketState {
   resourceProxyBaseUrl?: string;
   pendingByRequestId: Map<string, PendingStream>;
   terminalBySessionId: Map<string, PendingTerminal>;
+  heartbeatTimer?: NodeJS.Timeout;
+  lastPingAt?: string;
+  lastPongAt: string;
+  missedPongs: number;
 }
 
 interface AsyncQueue<T> {
@@ -265,11 +279,80 @@ function readRunnerSpec(input: unknown): Partial<AgentRunnerSpec> | null {
   return runnerSpec as Partial<AgentRunnerSpec>;
 }
 
+export type AgentExecutionServiceOptions = {
+  heartbeatIntervalMs?: number;
+  heartbeatMaxMisses?: number;
+  streamFirstEventTimeoutMs?: number;
+  streamIdleTimeoutMs?: number;
+  streamMaxRuntimeMs?: number;
+  terminalFirstEventTimeoutMs?: number;
+  terminalIdleTimeoutMs?: number;
+  terminalMaxRuntimeMs?: number;
+};
+
+type ResolvedAgentExecutionServiceOptions = {
+  heartbeatIntervalMs: number;
+  heartbeatMaxMisses: number;
+  streamFirstEventTimeoutMs: number;
+  streamIdleTimeoutMs: number;
+  streamMaxRuntimeMs: number;
+  terminalFirstEventTimeoutMs: number;
+  terminalIdleTimeoutMs: number;
+  terminalMaxRuntimeMs: number;
+};
+
+const DEFAULT_AGENT_HEARTBEAT_INTERVAL_MS = 15_000;
+const DEFAULT_AGENT_HEARTBEAT_MAX_MISSES = 2;
+const DEFAULT_AGENT_STREAM_FIRST_EVENT_TIMEOUT_MS = 45_000;
+const DEFAULT_AGENT_STREAM_IDLE_TIMEOUT_MS = 5 * 60_000;
+const DEFAULT_AGENT_STREAM_MAX_RUNTIME_MS = 45 * 60_000;
+const DEFAULT_AGENT_TERMINAL_FIRST_EVENT_TIMEOUT_MS = 45_000;
+const DEFAULT_AGENT_TERMINAL_IDLE_TIMEOUT_MS = 30 * 60_000;
+const DEFAULT_AGENT_TERMINAL_MAX_RUNTIME_MS = 24 * 60 * 60_000;
+
+function resolvePositiveMs(value: number | undefined, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return fallback;
+  return Math.max(1, Math.floor(value));
+}
+
+function resolvePositiveInteger(value: number | undefined, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return fallback;
+  return Math.max(1, Math.floor(value));
+}
+
+function resolveAgentExecutionServiceOptions(
+  options?: AgentExecutionServiceOptions,
+): ResolvedAgentExecutionServiceOptions {
+  return {
+    heartbeatIntervalMs: resolvePositiveMs(options?.heartbeatIntervalMs, DEFAULT_AGENT_HEARTBEAT_INTERVAL_MS),
+    heartbeatMaxMisses: resolvePositiveInteger(options?.heartbeatMaxMisses, DEFAULT_AGENT_HEARTBEAT_MAX_MISSES),
+    streamFirstEventTimeoutMs: resolvePositiveMs(
+      options?.streamFirstEventTimeoutMs,
+      DEFAULT_AGENT_STREAM_FIRST_EVENT_TIMEOUT_MS,
+    ),
+    streamIdleTimeoutMs: resolvePositiveMs(options?.streamIdleTimeoutMs, DEFAULT_AGENT_STREAM_IDLE_TIMEOUT_MS),
+    streamMaxRuntimeMs: resolvePositiveMs(options?.streamMaxRuntimeMs, DEFAULT_AGENT_STREAM_MAX_RUNTIME_MS),
+    terminalFirstEventTimeoutMs: resolvePositiveMs(
+      options?.terminalFirstEventTimeoutMs,
+      DEFAULT_AGENT_TERMINAL_FIRST_EVENT_TIMEOUT_MS,
+    ),
+    terminalIdleTimeoutMs: resolvePositiveMs(options?.terminalIdleTimeoutMs, DEFAULT_AGENT_TERMINAL_IDLE_TIMEOUT_MS),
+    terminalMaxRuntimeMs: resolvePositiveMs(options?.terminalMaxRuntimeMs, DEFAULT_AGENT_TERMINAL_MAX_RUNTIME_MS),
+  };
+}
+
 export class AgentExecutionService {
   private readonly wsServer: WebSocketServer;
   private readonly socketsByKey = new Map<string, AgentSocketState>();
+  private readonly apiInstanceId = randomUUID();
+  private readonly options: ResolvedAgentExecutionServiceOptions;
+  private shuttingDown = false;
 
-  constructor(private readonly agentResourceService: AgentResourceService) {
+  constructor(
+    private readonly agentResourceService: AgentResourceService,
+    options?: AgentExecutionServiceOptions,
+  ) {
+    this.options = resolveAgentExecutionServiceOptions(options);
     this.wsServer = new WebSocketServer({ noServer: true });
     this.wsServer.on('connection', (ws, req) => {
       const url = new URL(req.url ?? '', 'http://localhost');
@@ -288,7 +371,7 @@ export class AgentExecutionService {
           timestamp: new Date().toISOString(),
           payload: {
             protocol_version: '1.0',
-            heartbeat_interval_sec: 15,
+            heartbeat_interval_sec: this.options.heartbeatIntervalMs / 1000,
             ...(socketState.resourceProxyBaseUrl
               ? {
                 resource_proxy: {
@@ -307,6 +390,11 @@ export class AgentExecutionService {
   }
 
   handleUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): void {
+    if (this.shuttingDown) {
+      socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+      socket.destroy();
+      return;
+    }
     const url = new URL(req.url ?? '', 'http://localhost');
     if (url.pathname !== '/api/v1/agent-execution/ws') {
       debugExecution(`reject path=${url.pathname}`);
@@ -382,40 +470,48 @@ export class AgentExecutionService {
       const socketKey = buildSocketKey(agentId, sessionId);
       const existing = this.socketsByKey.get(socketKey);
       if (existing) {
-        for (const pending of existing.pendingByRequestId.values()) {
-          pending.push({
-            type: 'error',
-            error_code: 'AGENT_DISCONNECTED',
-            error_message: 'agent_reconnected',
-          });
-          pending.close();
-        }
-        existing.ws.close(1012, 'agent_replaced');
+        this.releaseSocketState(socketKey, existing, {
+          errorCode: 'AGENT_DISCONNECTED',
+          errorMessage: 'agent_reconnected',
+          closeCode: 1012,
+          closeReason: 'agent_replaced',
+          skipPresenceUpdate: true,
+        });
       }
 
       this.wsServer.handleUpgrade(req, socket, head, (ws) => {
-        this.socketsByKey.set(socketKey, {
+        const now = new Date().toISOString();
+        const connectionId = randomUUID();
+        const socketState: AgentSocketState = {
           ws,
           agentId,
+          connectionId,
+          apiInstanceId: this.apiInstanceId,
           ...(sessionId ? { sessionId } : {}),
           workspaceId: keyRecord.workspace_id,
           projectId: keyRecord.project_id,
-          connectedAt: new Date().toISOString(),
+          connectedAt: now,
           ...(resourceProxyBaseUrl ? { resourceProxyBaseUrl } : {}),
           pendingByRequestId: new Map(),
           terminalBySessionId: new Map(),
-        });
-        void this.agentResourceService.markAgentConnected(agentId, {
-          remote_ip: inferRemoteIp(req),
-          protocol_version: '1.0',
-          last_pong_at: new Date().toISOString(),
-        });
-        void this.agentResourceService.touchAgentPresence(
-          keyRecord.workspace_id,
-          keyRecord.project_id,
+          lastPongAt: now,
+          missedPongs: 0,
+        };
+        this.socketsByKey.set(socketKey, socketState);
+        void this.agentResourceService.registerAgentConnection({
           agentId,
-          'online',
-        );
+          workspaceId: keyRecord.workspace_id,
+          projectId: keyRecord.project_id,
+          connectionId,
+          socketKey,
+          apiInstanceId: this.apiInstanceId,
+          ...(sessionId ? { sessionId } : {}),
+          remoteIp: inferRemoteIp(req),
+          protocolVersion: '1.0',
+          connectedAt: now,
+          lastPongAt: now,
+        });
+        this.startHeartbeat(socketKey, socketState);
         this.wsServer.emit('connection', ws, req);
       });
     }).catch(() => {
@@ -423,6 +519,237 @@ export class AgentExecutionService {
       socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
       socket.destroy();
     });
+  }
+
+  private clearStreamTimers(pending: PendingStream): void {
+    if (pending.cancelTimeout) clearTimeout(pending.cancelTimeout);
+    if (pending.firstEventTimer) clearTimeout(pending.firstEventTimer);
+    if (pending.idleTimer) clearTimeout(pending.idleTimer);
+    if (pending.maxRuntimeTimer) clearTimeout(pending.maxRuntimeTimer);
+    pending.cancelTimeout = undefined;
+    pending.firstEventTimer = undefined;
+    pending.idleTimer = undefined;
+    pending.maxRuntimeTimer = undefined;
+  }
+
+  private clearTerminalTimers(pending: PendingTerminal): void {
+    if (pending.firstEventTimer) clearTimeout(pending.firstEventTimer);
+    if (pending.idleTimer) clearTimeout(pending.idleTimer);
+    if (pending.maxRuntimeTimer) clearTimeout(pending.maxRuntimeTimer);
+    pending.firstEventTimer = undefined;
+    pending.idleTimer = undefined;
+    pending.maxRuntimeTimer = undefined;
+  }
+
+  private failPendingStream(
+    socket: AgentSocketState,
+    requestId: string,
+    errorCode: string,
+    errorMessage: string,
+  ): void {
+    const pending = socket.pendingByRequestId.get(requestId);
+    if (!pending) return;
+    socket.pendingByRequestId.delete(requestId);
+    this.clearStreamTimers(pending);
+    pending.push({
+      type: 'error',
+      error_code: errorCode,
+      error_message: errorMessage,
+    });
+    pending.close();
+  }
+
+  private failPendingTerminal(
+    socket: AgentSocketState,
+    terminalSessionId: string,
+    errorCode: string,
+    errorMessage: string,
+  ): void {
+    const pending = socket.terminalBySessionId.get(terminalSessionId);
+    if (!pending) return;
+    socket.terminalBySessionId.delete(terminalSessionId);
+    this.clearTerminalTimers(pending);
+    pending.push({
+      type: 'error',
+      session_id: terminalSessionId,
+      error_code: errorCode,
+      error_message: errorMessage,
+    });
+    pending.close();
+  }
+
+  private markStreamEvent(socket: AgentSocketState, requestId: string, pending: PendingStream): void {
+    if (!pending.hasReceivedEvent) {
+      pending.hasReceivedEvent = true;
+      if (pending.firstEventTimer) {
+        clearTimeout(pending.firstEventTimer);
+        pending.firstEventTimer = undefined;
+      }
+    }
+    if (pending.idleTimer) clearTimeout(pending.idleTimer);
+    pending.idleTimer = setTimeout(() => {
+      this.failPendingStream(socket, requestId, 'AGENT_REQUEST_TIMEOUT', 'agent_request_idle_timeout');
+    }, this.options.streamIdleTimeoutMs);
+    pending.idleTimer.unref?.();
+  }
+
+  private markTerminalEvent(socket: AgentSocketState, terminalSessionId: string, pending: PendingTerminal): void {
+    if (!pending.hasReceivedEvent) {
+      pending.hasReceivedEvent = true;
+      if (pending.firstEventTimer) {
+        clearTimeout(pending.firstEventTimer);
+        pending.firstEventTimer = undefined;
+      }
+    }
+    if (pending.idleTimer) clearTimeout(pending.idleTimer);
+    pending.idleTimer = setTimeout(() => {
+      this.failPendingTerminal(
+        socket,
+        terminalSessionId,
+        'AGENT_TERMINAL_TIMEOUT',
+        'agent_terminal_idle_timeout',
+      );
+    }, this.options.terminalIdleTimeoutMs);
+    pending.idleTimer.unref?.();
+  }
+
+  private armStreamTimeouts(socket: AgentSocketState, requestId: string, pending: PendingStream): void {
+    pending.firstEventTimer = setTimeout(() => {
+      this.failPendingStream(socket, requestId, 'AGENT_REQUEST_TIMEOUT', 'agent_request_first_event_timeout');
+    }, this.options.streamFirstEventTimeoutMs);
+    pending.firstEventTimer.unref?.();
+    pending.maxRuntimeTimer = setTimeout(() => {
+      this.failPendingStream(socket, requestId, 'AGENT_REQUEST_TIMEOUT', 'agent_request_max_runtime_timeout');
+    }, this.options.streamMaxRuntimeMs);
+    pending.maxRuntimeTimer.unref?.();
+  }
+
+  private armTerminalTimeouts(socket: AgentSocketState, terminalSessionId: string, pending: PendingTerminal): void {
+    pending.firstEventTimer = setTimeout(() => {
+      this.failPendingTerminal(
+        socket,
+        terminalSessionId,
+        'AGENT_TERMINAL_TIMEOUT',
+        'agent_terminal_first_event_timeout',
+      );
+    }, this.options.terminalFirstEventTimeoutMs);
+    pending.firstEventTimer.unref?.();
+    pending.maxRuntimeTimer = setTimeout(() => {
+      this.failPendingTerminal(
+        socket,
+        terminalSessionId,
+        'AGENT_TERMINAL_TIMEOUT',
+        'agent_terminal_max_runtime_timeout',
+      );
+    }, this.options.terminalMaxRuntimeMs);
+    pending.maxRuntimeTimer.unref?.();
+  }
+
+  private startHeartbeat(socketKey: string, socket: AgentSocketState): void {
+    const sendPingOrClose = async (): Promise<void> => {
+      const current = this.socketsByKey.get(socketKey);
+      if (current !== socket) return;
+      if (!(await this.agentResourceService.isAgentConnectionCurrent(socket.agentId, socket.connectionId))) {
+        this.releaseSocketState(socketKey, socket, {
+          errorCode: 'AGENT_STALE_CONNECTION',
+          errorMessage: 'agent_stale_connection',
+          closeCode: 4001,
+          closeReason: 'agent_stale_connection',
+        });
+        return;
+      }
+      if (socket.ws.readyState !== socket.ws.OPEN) {
+        this.releaseSocketState(socketKey, socket, {
+          errorCode: 'AGENT_DISCONNECTED',
+          errorMessage: 'agent_disconnected',
+          closeCode: 1006,
+          closeReason: 'agent_disconnected',
+          skipCloseFrame: true,
+        });
+        return;
+      }
+      if (socket.missedPongs >= this.options.heartbeatMaxMisses) {
+        this.releaseSocketState(socketKey, socket, {
+          errorCode: 'AGENT_HEARTBEAT_TIMEOUT',
+          errorMessage: 'agent_heartbeat_timeout',
+          closeCode: 4000,
+          closeReason: 'agent_heartbeat_timeout',
+        });
+        return;
+      }
+      const now = new Date().toISOString();
+      socket.lastPingAt = now;
+      socket.missedPongs += 1;
+      socket.ws.send(JSON.stringify({
+        type: 'server.ping',
+        timestamp: now,
+        payload: {},
+      }));
+    };
+
+    socket.heartbeatTimer = setInterval(() => {
+      void sendPingOrClose();
+    }, this.options.heartbeatIntervalMs);
+    socket.heartbeatTimer.unref?.();
+  }
+
+  private clearSocketHeartbeat(socket: AgentSocketState): void {
+    if (!socket.heartbeatTimer) return;
+    clearInterval(socket.heartbeatTimer);
+    socket.heartbeatTimer = undefined;
+  }
+
+  private releaseSocketState(
+    socketKey: string,
+    socket: AgentSocketState,
+    options: {
+      errorCode: string;
+      errorMessage: string;
+      closeCode: number;
+      closeReason: string;
+      skipCloseFrame?: boolean;
+      skipPresenceUpdate?: boolean;
+    },
+  ): void {
+    const current = this.socketsByKey.get(socketKey);
+    if (current !== socket) return;
+
+    this.clearSocketHeartbeat(socket);
+    for (const [requestId, pending] of socket.pendingByRequestId.entries()) {
+      socket.pendingByRequestId.delete(requestId);
+      this.clearStreamTimers(pending);
+      pending.push({
+        type: 'error',
+        error_code: options.errorCode,
+        error_message: options.errorMessage,
+      });
+      pending.close();
+    }
+    for (const [terminalSessionId, pending] of socket.terminalBySessionId.entries()) {
+      socket.terminalBySessionId.delete(terminalSessionId);
+      this.clearTerminalTimers(pending);
+      pending.push({
+        type: 'error',
+        session_id: terminalSessionId,
+        error_code: options.errorCode,
+        error_message: options.errorMessage,
+      });
+      pending.close();
+    }
+    this.socketsByKey.delete(socketKey);
+
+    if (!options.skipCloseFrame && socket.ws.readyState === socket.ws.OPEN) {
+      socket.ws.close(options.closeCode, options.closeReason);
+    }
+
+    if (!options.skipPresenceUpdate) {
+      void this.agentResourceService.releaseAgentConnection({
+        workspaceId: socket.workspaceId,
+        projectId: socket.projectId,
+        agentId: socket.agentId,
+        connectionId: socket.connectionId,
+      });
+    }
   }
 
   async dispatchStreamingRequest(input: {
@@ -434,6 +761,9 @@ export class AgentExecutionService {
     messages: Array<Record<string, unknown>>;
     executionContext?: Record<string, unknown>;
   }): Promise<{ requestId: string; stream: AsyncIterable<AgentStreamEvent>; cancel: () => void }> {
+    if (this.shuttingDown) {
+      throw new Error('agent_execution_service_shutdown');
+    }
     const socket = this.resolveSocket(input.agentId, input.sessionId);
     if (!socket || socket.ws.readyState !== socket.ws.OPEN) {
       throw new Error('agent_offline');
@@ -450,6 +780,7 @@ export class AgentExecutionService {
       fail: queue.fail,
     };
     socket.pendingByRequestId.set(requestId, pending);
+    this.armStreamTimeouts(socket, requestId, pending);
 
     socket.ws.send(
       JSON.stringify({
@@ -491,6 +822,7 @@ export class AgentExecutionService {
           const current = socket.pendingByRequestId.get(requestId);
           if (!current) return;
           socket.pendingByRequestId.delete(requestId);
+          this.clearStreamTimers(current);
           current.push({
             type: 'error',
             error_code: 'AGENT_CANCEL_TIMEOUT',
@@ -521,6 +853,9 @@ export class AgentExecutionService {
     resize: (cols: number, rows: number) => void;
     close: () => void;
   }> {
+    if (this.shuttingDown) {
+      throw new Error('agent_execution_service_shutdown');
+    }
     debugExecution(
       `dispatch_terminal_start agent_id=${input.agentId} runner_session=${input.sessionId} terminal_session=${input.terminalSessionId}`,
     );
@@ -551,6 +886,7 @@ export class AgentExecutionService {
       fail: queue.fail,
     };
     socket.terminalBySessionId.set(input.terminalSessionId, pending);
+    this.armTerminalTimeouts(socket, input.terminalSessionId, pending);
 
     socket.ws.send(
       JSON.stringify({
@@ -650,35 +986,13 @@ export class AgentExecutionService {
     const socket = this.socketsByKey.get(socketKey);
     if (!socket) return;
     if (socket.ws !== ws) return;
-    for (const pending of socket.pendingByRequestId.values()) {
-      if (pending.cancelTimeout) {
-        clearTimeout(pending.cancelTimeout);
-      }
-      pending.push({
-        type: 'error',
-        error_code: 'AGENT_DISCONNECTED',
-        error_message: 'agent_disconnected',
-      });
-      pending.close();
-    }
-    for (const pending of socket.terminalBySessionId.values()) {
-      pending.push({
-        type: 'error',
-        error_code: 'AGENT_DISCONNECTED',
-        error_message: 'agent_disconnected',
-      });
-      pending.close();
-    }
-    this.socketsByKey.delete(socketKey);
-    void this.agentResourceService.markAgentDisconnected(socket.agentId);
-    void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, socket.agentId).then((agent) => (
-      this.agentResourceService.touchAgentPresence(
-        socket.workspaceId,
-        socket.projectId,
-        socket.agentId,
-        agent?.mode === 'internal' ? 'managed' : 'offline',
-      )
-    ));
+    this.releaseSocketState(socketKey, socket, {
+      errorCode: 'AGENT_DISCONNECTED',
+      errorMessage: 'agent_disconnected',
+      closeCode: 1006,
+      closeReason: 'agent_disconnected',
+      skipCloseFrame: true,
+    });
   }
 
   private handleAgentMessage(socketKey: string, ws: WebSocket, raw: RawData): void {
@@ -706,9 +1020,22 @@ export class AgentExecutionService {
     }
 
     if (payload.type === 'agent.pong') {
-      void this.agentResourceService.markAgentConnected(socket.agentId, {
-        protocol_version: '1.0',
-        last_pong_at: new Date().toISOString(),
+      const now = new Date().toISOString();
+      socket.lastPongAt = now;
+      socket.missedPongs = 0;
+      void this.agentResourceService.refreshAgentConnection({
+        agentId: socket.agentId,
+        connectionId: socket.connectionId,
+        lastPongAt: now,
+        protocolVersion: '1.0',
+      }).then((result) => {
+        if (!result.stale) return;
+        this.releaseSocketState(socketKey, socket, {
+          errorCode: 'AGENT_STALE_CONNECTION',
+          errorMessage: 'agent_stale_connection',
+          closeCode: 4001,
+          closeReason: 'agent_stale_connection',
+        });
       });
       return;
     }
@@ -784,6 +1111,7 @@ export class AgentExecutionService {
 
       if (payload.type === 'agent.terminal.started') {
         debugExecution(`terminal_started agent_id=${socket.agentId} runner_session=${socket.sessionId ?? ''} terminal_session=${terminalSessionId}`);
+        this.markTerminalEvent(socket, terminalSessionId, pendingTerminal);
         pendingTerminal.push({
           type: 'started',
           session_id: terminalSessionId,
@@ -795,8 +1123,10 @@ export class AgentExecutionService {
 
       if (payload.type === 'agent.terminal.output') {
         debugExecution(`terminal_output agent_id=${socket.agentId} runner_session=${socket.sessionId ?? ''} terminal_session=${terminalSessionId}`);
+        this.markTerminalEvent(socket, terminalSessionId, pendingTerminal);
         if (typeof payload.payload?.chunk !== 'string') {
           socket.terminalBySessionId.delete(terminalSessionId);
+          this.clearTerminalTimers(pendingTerminal);
           pendingTerminal.push({
             type: 'error',
             error_code: 'AGENT_PROTOCOL_ERROR',
@@ -816,6 +1146,7 @@ export class AgentExecutionService {
       if (payload.type === 'agent.terminal.exited') {
         debugExecution(`terminal_exited agent_id=${socket.agentId} runner_session=${socket.sessionId ?? ''} terminal_session=${terminalSessionId}`);
         socket.terminalBySessionId.delete(terminalSessionId);
+        this.clearTerminalTimers(pendingTerminal);
         pendingTerminal.push({
           type: 'exited',
           session_id: terminalSessionId,
@@ -829,6 +1160,7 @@ export class AgentExecutionService {
       if (payload.type === 'agent.terminal.error') {
         debugExecution(`terminal_error agent_id=${socket.agentId} runner_session=${socket.sessionId ?? ''} terminal_session=${terminalSessionId}`);
         socket.terminalBySessionId.delete(terminalSessionId);
+        this.clearTerminalTimers(pendingTerminal);
         pendingTerminal.push({
           type: 'error',
           session_id: terminalSessionId,
@@ -848,11 +1180,10 @@ export class AgentExecutionService {
     if (!pending) return;
 
     if (payload.type === 'agent.response.delta') {
+      this.markStreamEvent(socket, requestId, pending);
       if (typeof payload.payload?.delta !== 'string') {
         socket.pendingByRequestId.delete(requestId);
-        if (pending.cancelTimeout) {
-          clearTimeout(pending.cancelTimeout);
-        }
+        this.clearStreamTimers(pending);
         pending.push({
           type: 'error',
           error_code: 'AGENT_PROTOCOL_ERROR',
@@ -869,12 +1200,11 @@ export class AgentExecutionService {
     }
 
     if (payload.type === 'agent.response.event') {
+      this.markStreamEvent(socket, requestId, pending);
       const eventPayload = parseTraceEventPayload(payload.payload);
       if (!eventPayload) {
         socket.pendingByRequestId.delete(requestId);
-        if (pending.cancelTimeout) {
-          clearTimeout(pending.cancelTimeout);
-        }
+        this.clearStreamTimers(pending);
         pending.push({
           type: 'error',
           error_code: 'AGENT_PROTOCOL_ERROR',
@@ -892,9 +1222,7 @@ export class AgentExecutionService {
 
     if (payload.type === 'agent.response.done') {
       socket.pendingByRequestId.delete(requestId);
-      if (pending.cancelTimeout) {
-        clearTimeout(pending.cancelTimeout);
-      }
+      this.clearStreamTimers(pending);
       pending.push({
         type: 'done',
         finish_reason:
@@ -907,12 +1235,11 @@ export class AgentExecutionService {
     }
 
     if (payload.type === 'agent.response.artifact') {
+      this.markStreamEvent(socket, requestId, pending);
       const artifactPayload = parseArtifactPayload(payload.payload);
       if (!artifactPayload) {
         socket.pendingByRequestId.delete(requestId);
-        if (pending.cancelTimeout) {
-          clearTimeout(pending.cancelTimeout);
-        }
+        this.clearStreamTimers(pending);
         pending.push({
           type: 'error',
           error_code: 'AGENT_PROTOCOL_ERROR',
@@ -930,9 +1257,7 @@ export class AgentExecutionService {
 
     if (payload.type === 'agent.response.error') {
       socket.pendingByRequestId.delete(requestId);
-      if (pending.cancelTimeout) {
-        clearTimeout(pending.cancelTimeout);
-      }
+      this.clearStreamTimers(pending);
       pending.push({
         type: 'error',
         error_code:
@@ -945,15 +1270,29 @@ export class AgentExecutionService {
     }
 
     socket.pendingByRequestId.delete(requestId);
-    if (pending.cancelTimeout) {
-      clearTimeout(pending.cancelTimeout);
-    }
+    this.clearStreamTimers(pending);
     pending.push({
       type: 'error',
       error_code: 'AGENT_PROTOCOL_ERROR',
       error_message: 'agent_response_type_unsupported',
     });
     pending.close();
+  }
+
+  async shutdown(): Promise<void> {
+    if (this.shuttingDown) return;
+    this.shuttingDown = true;
+    for (const [socketKey, socket] of [...this.socketsByKey.entries()]) {
+      this.releaseSocketState(socketKey, socket, {
+        errorCode: 'AGENT_SERVICE_SHUTDOWN',
+        errorMessage: 'agent_service_shutdown',
+        closeCode: 1001,
+        closeReason: 'server_shutdown',
+      });
+    }
+    await new Promise<void>((resolve) => {
+      this.wsServer.close(() => resolve());
+    });
   }
 
   getAgentOnlineState(agentId: string): boolean {

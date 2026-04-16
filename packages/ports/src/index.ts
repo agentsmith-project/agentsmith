@@ -26,6 +26,80 @@ export interface CachePort {
   set(key: string, value: string, ttlSeconds?: number): Promise<void>;
   incr(key: string, ttlSeconds?: number): Promise<number>;
   del(key: string): Promise<void>;
+  compareAndSet?(
+    key: string,
+    expectedValue: string | null,
+    nextValue: string | null,
+    ttlSeconds?: number,
+  ): Promise<boolean>;
+}
+
+export interface AgentConnectionState {
+  connection_id: string;
+  socket_key: string;
+  agent_id: string;
+  workspace_id: string;
+  project_id: string;
+  connected_at: string;
+  last_pong_at?: string;
+  expires_at: string;
+  expires_at_epoch_ms?: number;
+  api_instance_id?: string;
+  session_id?: string;
+  remote_ip?: string;
+  protocol_version?: string;
+  active_connection_count?: number;
+}
+
+export interface AgentPresenceSnapshot {
+  agentId: string;
+  workspaceId?: string;
+  projectId?: string;
+  activeConnectionCount: number;
+  latestConnection: AgentConnectionState | null;
+  connections: AgentConnectionState[];
+}
+
+export interface RegisterAgentConnectionInput {
+  agentId: string;
+  workspaceId: string;
+  projectId: string;
+  connectionId: string;
+  socketKey: string;
+  apiInstanceId: string;
+  sessionId?: string;
+  remoteIp?: string;
+  protocolVersion?: string;
+  connectedAt?: string;
+  lastPongAt?: string;
+}
+
+export interface RefreshAgentConnectionInput {
+  agentId: string;
+  connectionId: string;
+  lastPongAt: string;
+  remoteIp?: string;
+  protocolVersion?: string;
+}
+
+export interface ReleaseAgentConnectionInput {
+  agentId: string;
+  connectionId: string;
+}
+
+export interface AgentPresenceMutationResult {
+  stale: boolean;
+  snapshot: AgentPresenceSnapshot;
+}
+
+export interface AgentPresenceStorePort {
+  readonly kind: 'in_memory' | 'cache_cas';
+  upsertConnection(input: RegisterAgentConnectionInput): Promise<AgentPresenceSnapshot>;
+  refreshConnection(input: RefreshAgentConnectionInput): Promise<AgentPresenceMutationResult>;
+  releaseConnection(input: ReleaseAgentConnectionInput): Promise<AgentPresenceMutationResult & { released: boolean }>;
+  getPresence(agentId: string): Promise<AgentPresenceSnapshot>;
+  isConnectionCurrent(agentId: string, connectionId: string): Promise<boolean>;
+  clearAgent(agentId: string): Promise<void>;
 }
 
 export interface JsonDocStorePort {

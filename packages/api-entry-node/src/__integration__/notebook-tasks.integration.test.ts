@@ -2666,7 +2666,7 @@ describe('api-entry-node notebook task routes', () => {
     }
   });
 
-  it('reconciles terminal session truth to failed after api terminal-service reload without minting phantom sessions', async () => {
+  it('reconciles terminal session truth to failed after api terminal-service reload and releases live quota', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
@@ -2720,7 +2720,7 @@ describe('api-entry-node notebook task routes', () => {
         })),
       });
 
-      const overflow = await apiFetchWithToken(
+      const replacement = await apiFetchWithToken(
         secondServer.baseUrl,
         `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
         'test-token',
@@ -2730,26 +2730,30 @@ describe('api-entry-node notebook task routes', () => {
           body: JSON.stringify({ cols: 120, rows: 40 }),
         },
       );
-      expect(overflow.status).toBe(409);
-      await expect(overflow.json()).resolves.toMatchObject({
-        error_code: 'RESOURCE_CONFLICT',
-        message: 'task_terminal_session_limit_reached',
-      });
+      expect(replacement.status).toBe(201);
+      const replacementBody = await replacement.json() as { session_id: string };
+      expect(replacementBody.session_id).toMatch(/^term_/);
 
-      const listAfterOverflow = await apiFetchWithToken(
+      const listAfterReplacement = await apiFetchWithToken(
         secondServer.baseUrl,
         `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
         'test-token',
       );
-      expect(listAfterOverflow.status).toBe(200);
-      await expect(listAfterOverflow.json()).resolves.toMatchObject({
-        total: 3,
-        items: createdIds.map((id) => expect.objectContaining({
-          id,
-          status: 'failed',
-          close_reason: 'terminal_connection_failed_service_reload',
-          ws_url: null,
-        })),
+      expect(listAfterReplacement.status).toBe(200);
+      await expect(listAfterReplacement.json()).resolves.toMatchObject({
+        total: 4,
+        items: [
+          ...createdIds.map((id) => expect.objectContaining({
+            id,
+            status: 'failed',
+            close_reason: 'terminal_connection_failed_service_reload',
+            ws_url: null,
+          })),
+          expect.objectContaining({
+            id: replacementBody.session_id,
+            status: 'pending',
+          }),
+        ],
       });
 
       secondServer.server.closeAllConnections?.();

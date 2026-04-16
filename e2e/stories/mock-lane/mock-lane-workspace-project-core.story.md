@@ -13,70 +13,93 @@
       "route": "/en-US/workspaces/ws_default",
       "recipeFamily": "work_surface_standard",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "projects__page",
+        "projects__create-btn"
+      ]
     },
     {
       "sceneId": "projects-list",
       "route": "/en-US/workspaces/ws_default/projects",
       "recipeFamily": "work_surface_standard",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "projects__page"
+      ]
     },
     {
       "sceneId": "projects-list-public-discovery",
       "route": "/en-US/workspaces/ws_default/projects",
       "recipeFamily": "work_surface_standard",
       "authLane": "guest",
-      "stableMarkers": []
+      "stableMarkers": [
+        "projects__join-request-btn--proj_001",
+        "projects__join-project-btn--proj_003"
+      ]
     },
     {
       "sceneId": "dialog-project-join-request",
       "route": "/en-US/workspaces/ws_default/projects",
       "recipeFamily": "overlay_dialog",
       "authLane": "guest",
-      "stableMarkers": []
+      "stableMarkers": [
+        "projects__join-request-dialog"
+      ]
     },
     {
       "sceneId": "dialog-project-join-now",
       "route": "/en-US/workspaces/ws_default/projects",
       "recipeFamily": "overlay_dialog",
       "authLane": "guest",
-      "stableMarkers": []
+      "stableMarkers": [
+        "projects__join-now-dialog"
+      ]
     },
     {
       "sceneId": "notification-center-join-request",
       "route": "/en-US/workspaces/ws_default/projects",
       "recipeFamily": "overlay_sheet",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "topbar__notifications-dropdown"
+      ]
     },
     {
       "sceneId": "projects-empty",
       "route": "/en-US/workspaces/ws_test/projects",
       "recipeFamily": "work_surface_standard",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "projects__page"
+      ]
     },
     {
       "sceneId": "workspace-settings-create-project",
       "route": "/en-US/workspaces/ws_default/settings",
       "recipeFamily": "overlay_sheet",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "ws-settings__create-project"
+      ]
     },
     {
       "sceneId": "workspace-overview",
       "route": "/en-US/workspaces/overview",
       "recipeFamily": "work_surface_standard",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "workspace-overview__list",
+        "workspace-overview__summary"
+      ]
     },
     {
       "sceneId": "workspace-home",
       "route": "/en-US/workspaces/ws_default",
       "recipeFamily": "work_surface_standard",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "projects__page"
+      ]
     },
     {
       "sceneId": "workspace-settings",
@@ -129,39 +152,58 @@
       "route": "/en-US/workspaces/ws_default/projects/proj_001/chat",
       "recipeFamily": "work_surface_immersive",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "chat__surface",
+        "chat__threads-pane",
+        "chat__main-pane",
+        "chat__header",
+        "chat__composer"
+      ]
     },
     {
       "sceneId": "notebook",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook",
       "recipeFamily": "work_surface_immersive",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "notebook__task-list",
+        "notebook__create-task-btn"
+      ]
     },
     {
       "sceneId": "notebook-create-task-dialog",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "notebook__create-task-btn"
+      ]
     },
     {
       "sceneId": "notebook-task-detail",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
       "recipeFamily": "work_surface_immersive",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__conversation-input",
+        "notebook__send-btn"
+      ]
     },
     {
       "sceneId": "notebook-task-detail-artifact-hover",
       "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
       "recipeFamily": "work_surface_immersive",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__artifact-card",
+        "notebook__artifact-hover-panel"
+      ]
     },
     {
       "sceneId": "files",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/files",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
       "recipeFamily": "work_surface_immersive",
       "authLane": "authed",
       "stableMarkers": [
@@ -175,7 +217,7 @@
     },
     {
       "sceneId": "files-selection-details",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/files",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
       "recipeFamily": "work_surface_immersive",
       "authLane": "authed",
       "stableMarkers": [
@@ -186,38 +228,48 @@
     },
     {
       "sceneId": "dialog-files-create-folder",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/files",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "files__dialog__new-folder"
+      ]
     },
     {
       "sceneId": "dialog-files-rename",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/files",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "files__dialog__move"
+      ]
     },
     {
       "sceneId": "dialog-files-mount-access",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/files",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "files__dialog__desktop-mount-access"
+      ]
     },
     {
       "sceneId": "dialog-files-library-create",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/files",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "files__dialog__library-create"
+      ]
     },
     {
       "sceneId": "dialog-files-library-delete",
-      "route": "/en-US/workspaces/ws_default/projects/proj_001/files",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/files?library_id=lib_shared_default",
       "recipeFamily": "overlay_dialog",
       "authLane": "authed",
-      "stableMarkers": []
+      "stableMarkers": [
+        "files__dialog__library-delete"
+      ]
     }
   ],
   "steps": [
@@ -383,7 +435,12 @@
           "themes": [
             "light",
             "dark"
-          ]
+          ],
+          "semanticAssertions": {
+            "forbiddenVisibleText": [
+              "overview_updated_at"
+            ]
+          }
         },
         {
           "sceneId": "workspace-home",
@@ -461,6 +518,9 @@
           ],
           "capture": "full_page",
           "authLane": "authed",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
           "themes": [
             "light",
             "dark"
@@ -493,6 +553,12 @@
           ],
           "capture": "full_page",
           "authLane": "authed",
+          "uxState": "happy",
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__create-task-btn"
+            ]
+          },
           "themes": [
             "light",
             "dark"
@@ -509,6 +575,16 @@
           ],
           "capture": "full_page",
           "authLane": "authed",
+          "uxState": "happy",
+          "semanticAssertions": {
+            "forbiddenVisibleText": [
+              "Create Task New Task",
+              "Create New",
+              "Initialize a new workspace automatically",
+              "New workspace name",
+              "Select Existing Workspace"
+            ]
+          },
           "themes": [
             "default"
           ]
@@ -524,6 +600,7 @@
           ],
           "capture": "full_page",
           "authLane": "authed",
+          "uxState": "happy",
           "themes": [
             "default"
           ]
@@ -539,6 +616,7 @@
           ],
           "capture": "full_page",
           "authLane": "authed",
+          "uxState": "happy",
           "themes": [
             "default"
           ]

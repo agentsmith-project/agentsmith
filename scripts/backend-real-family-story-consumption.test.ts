@@ -10,6 +10,17 @@ type GeneratedStorySpec = {
   traceStepIds: string[];
 };
 
+const REMOVED_SYSTEM_WORKSPACES_HEADING_MARKER = 'system-workspaces__heading';
+
+const SYSTEM_WORKSPACES_ENTRY_CONTRACT_FILES = [
+  'e2e/integration-release-user-story.spec.ts',
+  'e2e/stories/backend-real/project-governance-onboarding.story.md',
+  'e2e/stories/backend-real/system-admin-entry.story.md',
+  'e2e/stories/backend-real/real-backend-visual-review.story.md',
+  'e2e/stories/backend-real/release-user-story-end-to-end.story.md',
+  'e2e/generated/story-specs.generated.json',
+] as const;
+
 async function readGeneratedStorySpecs(): Promise<GeneratedStorySpec[]> {
   const raw = await readFile(
     path.resolve(process.cwd(), 'e2e/generated/story-specs.generated.json'),
@@ -24,6 +35,14 @@ function expectedSourceRefForStory(story: { sourceFile?: string; filePath: strin
 }
 
 describe('backend-real family story consumption', () => {
+  it('keeps backend-real system workspace entry markers aligned with the current work surface contract', async () => {
+    for (const relativeFile of SYSTEM_WORKSPACES_ENTRY_CONTRACT_FILES) {
+      const source = await readFile(path.resolve(process.cwd(), relativeFile), 'utf-8');
+
+      expect(source).not.toContain(REMOVED_SYSTEM_WORKSPACES_HEADING_MARKER);
+    }
+  });
+
   it('keeps the daily-use and self-service family stories in the generated story catalog', async () => {
     const { stories } = await loadCanonicalStoryCatalog();
     const specs = await readGeneratedStorySpecs();

@@ -87,6 +87,7 @@ export function WorkspaceEditorPanel({
   const workspaceSlug = slugifyWorkspaceId((workspace?.name ?? state.draft.name) || 'workspace');
   const workspaceLoginPath = `/${locale}/workspaces/${workspaceSlug}/login`;
   const workspaceCallbackPath = `/${locale}/workspaces/${workspaceSlug}/login/callback`;
+  const showFailedRepairAction = !state.isEditMode && workspace?.provisioning_status === 'failed' && Boolean(workspace.last_init_error);
 
   return (
     <aside
@@ -108,10 +109,21 @@ export function WorkspaceEditorPanel({
                   <span>{lastInitializedValue}</span>
                 </div>
               </div>
-              {!state.isEditMode && workspace?.provisioning_status === 'failed' && workspace.last_init_error ? (
-                <p className="text-sm text-secondary" data-testid="system-workspaces__status">
-                  {statusValue} · {workspace.last_init_error}
-                </p>
+              {showFailedRepairAction ? (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-error/20 bg-error/5 px-3 py-3"
+                  data-testid="system-workspaces__status"
+                >
+                  <p className="text-sm text-secondary">{statusValue} · {workspace?.last_init_error}</p>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={onEnableEditMode}
+                    data-testid="system-workspaces__enable-edit"
+                  >
+                    {t('configure_workspace')}
+                  </Button>
+                </div>
               ) : null}
               <p className="text-sm text-secondary">{t('workspace_edit_shell_description')}</p>
             </div>
@@ -129,7 +141,7 @@ export function WorkspaceEditorPanel({
                 >
                   {t('cancel')}
                 </Button>
-              ) : (
+              ) : showFailedRepairAction ? null : (
                 <Button
                   type="button"
                   variant="primary"

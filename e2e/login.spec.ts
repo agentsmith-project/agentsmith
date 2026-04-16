@@ -1,11 +1,20 @@
+import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/test-base';
 import { withAuth } from './fixtures/authenticated';
 import { gotoAndWait, waitForPageReady } from './utils/navigation';
 
-async function clearAuth(page: import('@playwright/test').Page) {
+async function clearAuth(page: Page) {
   await page.addInitScript(() => {
     localStorage.removeItem('agentsmith-auth');
   });
+}
+
+async function selectWorkspaceFromSelection(page: Page, workspaceId: string) {
+  const workspaceItem = page.getByTestId(`workspace-select__item--${workspaceId}`);
+
+  await expect(workspaceItem).toBeVisible();
+  await expect(page.getByTestId(`workspace-select__card--${workspaceId}`)).toHaveCount(0);
+  await workspaceItem.click();
 }
 
 test.describe('Login Entry', () => {
@@ -60,7 +69,7 @@ test.describe('Workspace Login Journey', () => {
     await gotoAndWait(page, '/en-US/login/workspace');
     await waitForPageReady(page);
 
-    await page.getByTestId('workspace-select__card--ws_default').click();
+    await selectWorkspaceFromSelection(page, 'ws_default');
     await page.waitForURL(/\/en-US\/workspaces\/ws_default\/login/, { timeout: 10_000 });
     await expect(page.getByTestId('workspace-login__heading')).toBeVisible();
   });
@@ -69,13 +78,13 @@ test.describe('Workspace Login Journey', () => {
     await gotoAndWait(page, '/en-US/login/workspace');
     await waitForPageReady(page);
 
-    await page.getByTestId('workspace-select__card--ws_default').click();
+    await selectWorkspaceFromSelection(page, 'ws_default');
     await page.waitForURL(/\/en-US\/workspaces\/ws_default\/login/, { timeout: 10_000 });
 
     await page.getByTestId('workspace-login__email-input').fill('user@test.com');
     await page.getByTestId('workspace-login__submit').click();
 
-    await page.waitForURL(/\/en-US\/workspaces\/ws_default$/, { timeout: 15_000 });
+    await page.waitForURL(/\/en-US\/workspaces\/ws_default\/projects$/, { timeout: 15_000 });
     await expect(page.getByTestId('projects__page')).toBeVisible();
     await expect(page.getByTestId('projects__create-btn')).toBeVisible();
   });
@@ -84,7 +93,7 @@ test.describe('Workspace Login Journey', () => {
     await gotoAndWait(page, '/en-US/login/workspace');
     await waitForPageReady(page);
 
-    await page.getByTestId('workspace-select__card--ws_default').click();
+    await selectWorkspaceFromSelection(page, 'ws_default');
     await page.waitForURL(/\/en-US\/workspaces\/ws_default\/login/, { timeout: 10_000 });
     await expect(page.getByText('System administration')).toHaveCount(0);
   });

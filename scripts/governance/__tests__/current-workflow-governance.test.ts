@@ -3,8 +3,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import YAML from 'yaml';
 
 import {
+  CURRENT_CI_WORKFLOW_MANIFEST,
   CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS,
   CURRENT_WORKFLOW_DOCUMENT_FILES,
   CURRENT_WORKFLOW_ENTRY_PATHS,
@@ -12,6 +14,7 @@ import {
   CURRENT_WORKFLOW_MANIFEST,
   CURRENT_WORKFLOW_ROLES,
   CURRENT_WORKFLOW_TOP_LEVEL_TERMS,
+  listCurrentCIWorkflowJobs,
   listCurrentWorkflowCommands,
   listRecommendedCurrentWorkflowSections,
 } from '../current-workflow-manifest';
@@ -31,6 +34,85 @@ function readPackageScripts(): Set<string> {
 
 function extractNpmRunScripts(content: string): string[] {
   return [...content.matchAll(/\bnpm run ([a-z0-9:_-]+)/g)].map((match) => match[1]);
+}
+
+function readTrackedWorkflowFiles(): string[] {
+  const stdout = execSync('git ls-files .github/workflows/*.yml', {
+    cwd: rootDir,
+    encoding: 'utf8',
+  });
+
+  return stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .sort();
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function parseWorkflow(relativePath: string): Record<string, unknown> {
+  return asRecord(YAML.parse(readRepoFile(relativePath)) as unknown);
+}
+
+function collectWorkflowTriggers(parsedWorkflow: Record<string, unknown>): string[] {
+  const rawOn = parsedWorkflow.on ?? parsedWorkflow.true;
+  if (typeof rawOn === 'string') {
+    return [rawOn];
+  }
+  if (Array.isArray(rawOn)) {
+    return asStringArray(rawOn).sort();
+  }
+  return Object.keys(asRecord(rawOn)).sort();
+}
+
+function collectWorkflowJobIds(parsedWorkflow: Record<string, unknown>): string[] {
+  return Object.keys(asRecord(parsedWorkflow.jobs)).sort();
+}
+
+function collectJobRunCommands(parsedWorkflow: Record<string, unknown>, jobId: string): string {
+  const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
+  const steps = Array.isArray(job.steps) ? job.steps : [];
+
+  return steps
+    .map((step) => asRecord(step).run)
+    .filter((run): run is string => typeof run === 'string')
+    .join('\n');
+}
+
+function collectJobArtifactPaths(parsedWorkflow: Record<string, unknown>, jobId: string): string[] {
+  const job = asRecord(asRecord(parsedWorkflow.jobs)[jobId]);
+  const steps = Array.isArray(job.steps) ? job.steps : [];
+  const paths: string[] = [];
+
+  for (const step of steps) {
+    const stepRecord = asRecord(step);
+    if (stepRecord.uses !== 'actions/upload-artifact@v4') {
+      continue;
+    }
+
+    const withRecord = asRecord(stepRecord.with);
+    if (typeof withRecord.path !== 'string') {
+      continue;
+    }
+
+    paths.push(
+      ...withRecord.path
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean),
+    );
+  }
+
+  return paths.sort();
 }
 
 describe('current workflow governance', () => {
@@ -298,10 +380,12 @@ describe('current workflow governance', () => {
     expect(CURRENT_WORKFLOW_DOCUMENT_FILES).toEqual(
       expect.arrayContaining([
         'docs/testing/README.md',
-        'docs/testing/diagnostic-catalog-v1.md',
-        'docs/testing/story-source-of-truth-and-generated-specs.md',
-        'docs/contracts/current-gate-result-schema-contract.md',
-      ]),
+      'docs/testing/diagnostic-catalog-v1.md',
+      'docs/testing/story-source-of-truth-and-generated-specs.md',
+      'docs/contracts/current-gate-result-schema-contract.md',
+      '.github/workflows/engineering-gate.yml',
+      '.github/workflows/integration-e2e.yml',
+    ]),
     );
   });
 
@@ -327,5 +411,92 @@ describe('current workflow governance', () => {
       stdio: 'pipe',
       encoding: 'utf8',
     })).not.toThrow();
+  });
+
+  it('routes active CI workflow truth through the current workflow contract checker', () => {
+    const checker = readRepoFile('scripts/contracts/check-current-workflows.ts');
+
+    expect(checker).toContain('CURRENT_CI_WORKFLOW_MANIFEST');
+    expect(checker).toContain(".github/workflows/*.yml");
+    expect(checker).toContain('collectJobArtifactPaths');
+    expect(checker).toContain('lane:backend-real:core');
+  });
+
+  it('keeps every active GitHub workflow declared in the CI workflow manifest', () => {
+    expect(CURRENT_CI_WORKFLOW_MANIFEST.map((workflow) => workflow.path).sort()).toEqual(
+      readTrackedWorkflowFiles(),
+    );
+    expect(CURRENT_CI_WORKFLOW_MANIFEST.map((workflow) => workflow.path).sort()).toEqual([
+      '.github/workflows/contracts-check.yml',
+      '.github/workflows/engineering-gate.yml',
+      '.github/workflows/integration-e2e.yml',
+      '.github/workflows/quality-gates.yml',
+    ]);
+  });
+
+  it('keeps CI workflow manifest jobs aligned with GitHub workflow YAML jobs and triggers', () => {
+    for (const workflow of CURRENT_CI_WORKFLOW_MANIFEST) {
+      const parsedWorkflow = parseWorkflow(workflow.path);
+
+      expect(workflow.workflowName).toBe(parsedWorkflow.name);
+      expect([...workflow.triggers].sort()).toEqual(collectWorkflowTriggers(parsedWorkflow));
+      expect(workflow.jobs.map((job) => job.id).sort()).toEqual(collectWorkflowJobIds(parsedWorkflow));
+      expect(workflow.role.length).toBeGreaterThan(0);
+
+      for (const job of workflow.jobs) {
+        expect(job.workflowPath).toBe(workflow.path);
+        expect(job.workflowName).toBe(workflow.workflowName);
+        expect([...job.triggers].sort()).toEqual([...workflow.triggers].sort());
+        expect(job.role.length).toBeGreaterThan(0);
+        expect(job.blockingFor).toEqual(expect.arrayContaining(job.blockingFor));
+        expect([...job.artifactPaths].sort()).toEqual(collectJobArtifactPaths(parsedWorkflow, job.id));
+      }
+    }
+  });
+
+  it('makes backend-real scheduled regression a real evidence-producing lane instead of a governance-only alias', () => {
+    const engineeringWorkflow = CURRENT_CI_WORKFLOW_MANIFEST.find(
+      (workflow) => workflow.path === '.github/workflows/engineering-gate.yml',
+    );
+    const engineeringJob = engineeringWorkflow?.jobs.find((job) => job.id === 'engineering-gate');
+    const workflowSource = readRepoFile('.github/workflows/engineering-gate.yml');
+    const parsedWorkflow = parseWorkflow('.github/workflows/engineering-gate.yml');
+    const runCommands = collectJobRunCommands(parsedWorkflow, 'engineering-gate');
+
+    expect(engineeringWorkflow?.role).toBe('backend_real_regression');
+    expect(engineeringWorkflow?.scheduled).toBe(true);
+    expect(engineeringJob?.laneId).toBe('lane-backend-real-core');
+    expect(engineeringJob?.requiresSecrets).toBe(true);
+    expect(engineeringJob?.requiredSecrets).toContain('BACKEND_REAL_API_KEY');
+    expect(engineeringJob?.evidenceRequired).toBe(true);
+    expect(engineeringJob?.artifactPaths).toEqual(
+      expect.arrayContaining([
+        'artifacts/backend-real/runs/**',
+        'artifacts/mock-lane/runs/**',
+        'test-results/**',
+        'playwright-report/**',
+      ]),
+    );
+    expect(workflowSource).toContain('Daily UTC off-peak run for backend-real engineering regression.');
+    expect(runCommands).toContain('npm run lane:backend-real:core');
+    expect(runCommands).not.toContain('make verify-governance');
+  });
+
+  it('publishes run-scoped mock-lane evidence from CI jobs that execute mock or visual lanes', () => {
+    const jobs = listCurrentCIWorkflowJobs();
+    const mockEvidenceOwners = jobs.filter((job) => job.evidenceFamilies.includes('mock_lane_run'));
+
+    expect(mockEvidenceOwners.map((job) => `${job.workflowPath}:${job.id}`).sort()).toEqual([
+      '.github/workflows/contracts-check.yml:contracts',
+      '.github/workflows/engineering-gate.yml:engineering-gate',
+      '.github/workflows/quality-gates.yml:gate-default',
+      '.github/workflows/quality-gates.yml:gate-fast',
+      '.github/workflows/quality-gates.yml:lane-backend-real-core',
+      '.github/workflows/quality-gates.yml:lane-visual',
+    ]);
+
+    for (const job of mockEvidenceOwners) {
+      expect(job.artifactPaths).toContain('artifacts/mock-lane/runs/**');
+    }
   });
 });

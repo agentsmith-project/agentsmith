@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -13,6 +13,14 @@ const canonicalInclude = [
 
 const canonicalNextEnv = `/// <reference types="next" />
 /// <reference types="next/image-types/global" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+`;
+
+const rootGeneratedNextEnv = `/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+/// <reference path="./.next/types/routes.d.ts" />
 
 // NOTE: This file should not be edited
 // see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
@@ -67,8 +75,39 @@ describe('check-next-dist-types contract', () => {
     expect(tsconfig.include).toEqual(canonicalInclude);
     const nextEnvPath = path.join(process.cwd(), 'next-env.d.ts');
     if (existsSync(nextEnvPath)) {
-      expect(readFileSync(nextEnvPath, 'utf8')).toBe(canonicalNextEnv);
+      expect([canonicalNextEnv, rootGeneratedNextEnv]).toContain(readFileSync(nextEnvPath, 'utf8'));
     }
+  });
+
+  it('accepts the Next 15 root-generated next-env route reference when root routes types exist', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'check-next-dist-types-root-generated-'));
+    writeFixtureRoot(tempRoot, {
+      nextEnv: rootGeneratedNextEnv,
+    });
+    const routesDir = path.join(tempRoot, '.next/types');
+    mkdirSync(routesDir, { recursive: true });
+    writeFileSync(path.join(routesDir, 'routes.d.ts'), 'declare module "next";\n');
+
+    expect(() => runCheck(tempRoot)).not.toThrow();
+  });
+
+  it('fails with a clear root-generated missing-types error when the Next 15 route reference has no routes file', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'check-next-dist-types-root-missing-'));
+    writeFixtureRoot(tempRoot, {
+      nextEnv: rootGeneratedNextEnv,
+    });
+
+    let error: unknown;
+    try {
+      runCheck(tempRoot);
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeDefined();
+    const stderr = String((error as { stderr?: Buffer | string }).stderr ?? '');
+    expect(stderr).toContain('next_env_root_route_types_missing');
+    expect(stderr).not.toContain('next_env_must_not_reference_lane_specific_types');
   });
 
   it.each([
@@ -88,12 +127,19 @@ describe('check-next-dist-types contract', () => {
     expect(() => runCheck(tempRoot)).toThrow();
   });
 
-  it('rejects lane-specific next-env references', () => {
+  it.each([
+    './artifacts/mock-lane/current/next-dist/types/routes.d.ts',
+    './artifacts/backend-real/current-run/next-dist/types/routes.d.ts',
+    './.next-local-manual-3101/types/routes.d.ts',
+    './artifacts/recovery-manual-next/types/routes.d.ts',
+    './artifacts/mock-lane/runs/playwright-managed-1776167402066-1748658/next-dist/types/routes.d.ts',
+    './artifacts/backend-real/runs/integration-20260410T062839Z-3559213-15947/next-dist/types/routes.d.ts',
+  ])('rejects lane-specific next-env reference %s', (forbiddenReference) => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'check-next-dist-types-next-env-'));
     writeFixtureRoot(tempRoot, {
       nextEnv: `/// <reference types="next" />
 /// <reference types="next/image-types/global" />
-/// <reference path="./artifacts/mock-lane/current/next-dist/types/routes.d.ts" />
+/// <reference path="${forbiddenReference}" />
 `,
     });
 

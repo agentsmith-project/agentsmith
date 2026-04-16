@@ -74,6 +74,6 @@ run_cmd "bash scripts/run-mock-lane-playwright.sh \
   e2e/visual.spec.ts \
   --project=visual \
   --workers=1 \
-  --grep 'members$|members - effective access drawer|resource policy|audit detail drawer|alerts - notifications tab'"
+  --grep 'governance_pages / members|members-effective-access-drawer|governance_pages / resource-policy|drawer-audit-detail|alerts-notifications-tab'"
 
 info "governance default gate passed"

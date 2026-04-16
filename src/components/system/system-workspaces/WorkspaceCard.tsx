@@ -72,7 +72,7 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
-              variant={selected ? 'primary' : 'outline'}
+              variant="outline"
               onClick={(event) => {
                 event.stopPropagation();
                 onConfigure(workspace);

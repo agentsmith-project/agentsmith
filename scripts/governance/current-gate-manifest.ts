@@ -24,6 +24,12 @@ export type CurrentGateBackendRealPolicy = 'none' | 'optional' | 'required';
 export type CurrentGateRequirement = 'default' | 'release' | 'visual';
 export type CurrentGateStoryEvidencePolicy = 'none' | 'required';
 export type CurrentGateStoryEvidenceKind = 'visual_scene_catalog' | 'ux_trace_bundle';
+export type CurrentGateEvidenceArtifactKind =
+  | 'file'
+  | 'directory'
+  | 'directory_non_empty'
+  | 'recursive_file'
+  | 'visual_baseline_reviews';
 export type CurrentGateExecutionTarget =
   | {
       kind: 'npm_script';
@@ -40,6 +46,14 @@ export type CurrentGateExecutionTarget =
       args?: readonly string[];
     };
 
+export interface CurrentGateEvidenceArtifact {
+  id: string;
+  path: string;
+  kind: CurrentGateEvidenceArtifactKind;
+  fileName?: string;
+  minCount?: number;
+}
+
 export interface CurrentGateDefinition {
   id: string;
   npmScript: string;
@@ -53,6 +67,8 @@ export interface CurrentGateDefinition {
   storyEvidencePolicy: CurrentGateStoryEvidencePolicy;
   storyEvidenceKinds: readonly CurrentGateStoryEvidenceKind[];
   storyEvidenceArtifacts: readonly string[];
+  standaloneEvidenceArtifacts: readonly string[];
+  campaignEvidenceArtifacts: readonly string[];
   storyEvidenceRequiredFor: readonly CurrentGateRequirement[];
   storyEvidenceSceneSource?: string;
   ciJob?: string;
@@ -67,6 +83,8 @@ function defineCurrentGate(
     | 'storyEvidencePolicy'
     | 'storyEvidenceKinds'
     | 'storyEvidenceArtifacts'
+    | 'standaloneEvidenceArtifacts'
+    | 'campaignEvidenceArtifacts'
     | 'storyEvidenceRequiredFor'
   > &
     Partial<
@@ -76,17 +94,28 @@ function defineCurrentGate(
         | 'storyEvidencePolicy'
         | 'storyEvidenceKinds'
         | 'storyEvidenceArtifacts'
+        | 'standaloneEvidenceArtifacts'
+        | 'campaignEvidenceArtifacts'
         | 'storyEvidenceRequiredFor'
       >
     >,
 ): CurrentGateDefinition {
+  const storyEvidenceArtifacts = definition.storyEvidenceArtifacts
+    ?? definition.standaloneEvidenceArtifacts
+    ?? [];
+  const standaloneEvidenceArtifacts = definition.standaloneEvidenceArtifacts
+    ?? storyEvidenceArtifacts;
+  const campaignEvidenceArtifacts = definition.campaignEvidenceArtifacts ?? [];
+
   return {
     adapterAliases: [],
     storyEvidencePolicy: 'none',
     storyEvidenceKinds: [],
-    storyEvidenceArtifacts: [],
     storyEvidenceRequiredFor: [],
     ...definition,
+    storyEvidenceArtifacts,
+    standaloneEvidenceArtifacts,
+    campaignEvidenceArtifacts,
   };
 }
 
@@ -112,6 +141,101 @@ function npxCommandTarget(command: string, args: readonly string[] = []): Curren
     args,
   };
 }
+
+export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
+  laneVisual: [
+    {
+      id: 'visual_scene_catalog_source',
+      path: 'e2e/visual-baseline-support.ts',
+      kind: 'file',
+    },
+    {
+      id: 'visual_committed_screenshots',
+      path: 'e2e/__screenshots__/visual.spec.ts',
+      kind: 'directory_non_empty',
+    },
+    {
+      id: 'visual_review_artifacts',
+      path: '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
+      kind: 'visual_baseline_reviews',
+    },
+  ],
+  gateRelease: [
+    {
+      id: 'backend_real_native_result',
+      path: '<campaign-root>/gate-release/native/result.json',
+      kind: 'file',
+    },
+    {
+      id: 'backend_real_visual_review',
+      path: '<campaign-root>/gate-release/backend-real-visual/review.md',
+      kind: 'file',
+    },
+    {
+      id: 'backend_real_ux_trace_reviews',
+      path: '<campaign-root>/gate-release/backend-real-visual/ux-traces',
+      kind: 'recursive_file',
+      fileName: 'review.md',
+      minCount: 1,
+    },
+  ],
+  laneDemoRehearsal: [
+    {
+      id: 'demo_rehearsal_native_result',
+      path: '<campaign-root>/lane-demo-rehearsal/native/result.json',
+      kind: 'file',
+    },
+    {
+      id: 'demo_rehearsal_report',
+      path: '<campaign-root>/lane-demo-rehearsal/scenario/reports',
+      kind: 'recursive_file',
+      fileName: '.md',
+      minCount: 1,
+    },
+  ],
+  laneClusterRehearsal: [
+    {
+      id: 'cluster_rehearsal_native_result',
+      path: '<campaign-root>/lane-cluster-rehearsal/native/result.json',
+      kind: 'file',
+    },
+    {
+      id: 'cluster_rehearsal_report',
+      path: '<campaign-root>/lane-cluster-rehearsal/scenario/reports',
+      kind: 'recursive_file',
+      fileName: '.md',
+      minCount: 1,
+    },
+  ],
+} as const satisfies Record<string, readonly CurrentGateEvidenceArtifact[]>;
+
+type CurrentReleaseCampaignEvidenceTopologyKey = keyof typeof CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY;
+
+function campaignEvidenceArtifactPaths(
+  key: CurrentReleaseCampaignEvidenceTopologyKey,
+): readonly string[] {
+  return CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY[key].map((artifact) => artifact.path);
+}
+
+export const CURRENT_RELEASE_FULL_CAMPAIGN_EVIDENCE_ARTIFACTS = [
+  '<campaign-root>/lane-visual/native/result.json',
+  '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
+  ...campaignEvidenceArtifactPaths('gateRelease'),
+  ...campaignEvidenceArtifactPaths('laneDemoRehearsal'),
+  ...campaignEvidenceArtifactPaths('laneClusterRehearsal'),
+  '<campaign-root>/gate-release-full/evidence.json',
+  '<campaign-root>/gate-release-full/result.json',
+] as const;
+
+const VISUAL_STANDALONE_EVIDENCE_ARTIFACTS = [
+  'e2e/__screenshots__/visual.spec.ts',
+  'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
+] as const;
+
+const BACKEND_REAL_RELEASE_STANDALONE_EVIDENCE_ARTIFACTS = [
+  'artifacts/backend-real-visual/<run-id>/review.md',
+  'artifacts/backend-real-visual/<run-id>/ux-traces',
+] as const;
 
 export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
   defineCurrentGate({
@@ -168,10 +292,9 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     backendRealPolicy: 'none',
     storyEvidencePolicy: 'required',
     storyEvidenceKinds: ['visual_scene_catalog'],
-    storyEvidenceArtifacts: [
-      'e2e/__screenshots__/visual.spec.ts',
-      'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
-    ],
+    storyEvidenceArtifacts: VISUAL_STANDALONE_EVIDENCE_ARTIFACTS,
+    standaloneEvidenceArtifacts: VISUAL_STANDALONE_EVIDENCE_ARTIFACTS,
+    campaignEvidenceArtifacts: campaignEvidenceArtifactPaths('laneVisual'),
     storyEvidenceRequiredFor: ['visual', 'release'],
     storyEvidenceSceneSource: 'e2e/visual-baseline-support.ts',
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
@@ -243,10 +366,9 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     backendRealPolicy: 'none',
     storyEvidencePolicy: 'required',
     storyEvidenceKinds: ['visual_scene_catalog'],
-    storyEvidenceArtifacts: [
-      'e2e/__screenshots__/visual.spec.ts',
-      'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
-    ],
+    storyEvidenceArtifacts: VISUAL_STANDALONE_EVIDENCE_ARTIFACTS,
+    standaloneEvidenceArtifacts: VISUAL_STANDALONE_EVIDENCE_ARTIFACTS,
+    campaignEvidenceArtifacts: campaignEvidenceArtifactPaths('laneVisual'),
     storyEvidenceRequiredFor: ['visual', 'release'],
     storyEvidenceSceneSource: 'e2e/visual-baseline-support.ts',
     ciJob: 'lane-visual',
@@ -284,10 +406,9 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     backendRealPolicy: 'required',
     storyEvidencePolicy: 'required',
     storyEvidenceKinds: ['ux_trace_bundle'],
-    storyEvidenceArtifacts: [
-      'artifacts/backend-real-visual/<run-id>/review.md',
-      'artifacts/backend-real-visual/<run-id>/ux-traces',
-    ],
+    storyEvidenceArtifacts: BACKEND_REAL_RELEASE_STANDALONE_EVIDENCE_ARTIFACTS,
+    standaloneEvidenceArtifacts: BACKEND_REAL_RELEASE_STANDALONE_EVIDENCE_ARTIFACTS,
+    campaignEvidenceArtifacts: campaignEvidenceArtifactPaths('gateRelease'),
     storyEvidenceRequiredFor: ['release'],
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['release'],
@@ -307,6 +428,7 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     kind: 'lane',
     visualPolicy: 'none',
     backendRealPolicy: 'none',
+    campaignEvidenceArtifacts: campaignEvidenceArtifactPaths('laneDemoRehearsal'),
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['release'],
   }),
@@ -325,6 +447,7 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     kind: 'lane',
     visualPolicy: 'none',
     backendRealPolicy: 'none',
+    campaignEvidenceArtifacts: campaignEvidenceArtifactPaths('laneClusterRehearsal'),
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['release'],
   }),
@@ -339,10 +462,9 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     backendRealPolicy: 'required',
     storyEvidencePolicy: 'required',
     storyEvidenceKinds: ['ux_trace_bundle'],
-    storyEvidenceArtifacts: [
-      'artifacts/backend-real-visual/<run-id>/review.md',
-      'artifacts/backend-real-visual/<run-id>/ux-traces',
-    ],
+    storyEvidenceArtifacts: BACKEND_REAL_RELEASE_STANDALONE_EVIDENCE_ARTIFACTS,
+    standaloneEvidenceArtifacts: BACKEND_REAL_RELEASE_STANDALONE_EVIDENCE_ARTIFACTS,
+    campaignEvidenceArtifacts: campaignEvidenceArtifactPaths('gateRelease'),
     storyEvidenceRequiredFor: ['release'],
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],
     requiredFor: ['release'],
@@ -358,12 +480,9 @@ export const CURRENT_GATE_MANIFEST: readonly CurrentGateDefinition[] = [
     backendRealPolicy: 'required',
     storyEvidencePolicy: 'required',
     storyEvidenceKinds: ['visual_scene_catalog', 'ux_trace_bundle'],
-    storyEvidenceArtifacts: [
-      'e2e/__screenshots__/visual.spec.ts',
-      'artifacts/visual-baseline-reviews/<run-id>/<scenario-id>/review.md',
-      'artifacts/backend-real-visual/<run-id>/review.md',
-      'artifacts/backend-real-visual/<run-id>/ux-traces',
-    ],
+    storyEvidenceArtifacts: CURRENT_RELEASE_FULL_CAMPAIGN_EVIDENCE_ARTIFACTS,
+    standaloneEvidenceArtifacts: [],
+    campaignEvidenceArtifacts: CURRENT_RELEASE_FULL_CAMPAIGN_EVIDENCE_ARTIFACTS,
     storyEvidenceRequiredFor: ['release'],
     storyEvidenceSceneSource: 'e2e/visual-baseline-support.ts',
     checklistDocs: ['docs/user-guides/release-readiness-checklist.md'],

@@ -232,9 +232,9 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('rm -f');
     expect(script).toContain('"${RESOURCE_RECOVERY_STARTUP_JSON}"');
     expect(script).toContain('--boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"');
-    expect(script).toContain('STARTUP_STEADY_STATE_API_TCP_ALLOWANCES=(');
-    expect(script).toContain('"api-entry|${POSTGRES_PORT}|ESTABLISHED|1"');
-    expect(script).toContain('"api-entry|${MONGO_PORT}|ESTABLISHED|4"');
+    expect(script).toContain('STARTUP_STEADY_STATE_API_TCP_CONTRACTS=(');
+    expect(script).toContain('"api-entry|${POSTGRES_PORT}|ESTABLISHED|0|1"');
+    expect(script).toContain('"api-entry|${MONGO_PORT}|ESTABLISHED|4|4"');
     expect(script).toContain('append_startup_steady_state_args startup_args');
     expect(script).toContain('--steady-state-api-tcp');
     expect(script).not.toContain('--allow-api-remote-port');
@@ -278,6 +278,22 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('report_paths=("${RESOURCE_RECOVERY_STARTUP_JSON}")');
     expect(script).toContain('capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"');
     expect(script).toContain('File library gate could not materialize startup resource recovery evidence before exiting.');
+  });
+
+  it('treats a fail-verdict startup report as materialized evidence during pre-ready failure handling when the report file exists', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const helperStart = script.indexOf('materialize_pre_ready_failure_evidence()');
+    const helperEnd = script.indexOf('write_resource_recovery_summary()', helperStart);
+    const helperBody = script.slice(helperStart, helperEnd);
+
+    expect(helperStart).toBeGreaterThanOrEqual(0);
+    expect(helperEnd).toBeGreaterThan(helperStart);
+    expect(helperBody).toContain('if [[ -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" ]]; then');
+    expect(helperBody).toContain('cp "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${RESOURCE_RECOVERY_BASELINE_JSON}"');
+    expect(helperBody).toContain('write_startup_resource_recovery_report "${failure_message}" "${STARTUP_QUIESCE_SNAPSHOT_JSON}"');
+    expect(helperBody).toContain('if write_startup_resource_recovery_report "${failure_message}"; then');
+    expect(helperBody).toContain('[[ -f "${RESOURCE_RECOVERY_STARTUP_JSON}" ]]');
+    expect(helperBody).toContain('return 0');
   });
 
   it('runs stale JuiceFS orphan preflight before capturing the file-library boot baseline', () => {
@@ -398,6 +414,7 @@ describe('backend-real full gate runtime ownership contract', () => {
     const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
 
     expect(script).toContain('wait_for_startup_quiesce()');
+    expect(script).toContain('freeze_startup_ready_baseline_from_quiesce_proof()');
     expect(script).toContain('STARTUP_STEADY_STATE_HELPER_LABEL_ALLOWANCES=(');
     expect(script).toContain('"helper:mc|0"');
     expect(script).toContain('startup_quiesce_snapshot_satisfies_steady_state()');
@@ -407,24 +424,72 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('--steady-state-api-tcp');
     expect(script).toContain('STARTUP_QUIESCE_TIMEOUT_SECONDS');
     expect(script).toContain('STARTUP_QUIESCE_STABLE_SAMPLES');
-    expect(script).toContain('capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"');
+    expect(script).toContain('if ! freeze_startup_ready_baseline_from_quiesce_proof; then');
     expect(script).not.toContain('startup_helper_labels_within_steady_state()');
+    expect(script).not.toContain('startup_quiesce_snapshot_meets_warmed_floor()');
+    expect(script).not.toContain('STARTUP_WARMED_FLOOR_API_TCP_REQUIREMENTS=(');
   });
 
-  it('fails closed unless startup quiesce proves the warmed mongo floor after the steady-state ceiling passes', () => {
+  it('binds startup steady-state proof and ready-baseline freeze to the same listener identity and fails closed on handoff', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const freezeFnStart = script.indexOf('freeze_startup_ready_baseline_from_quiesce_proof()');
+    const freezeFnEnd = script.indexOf('write_startup_resource_recovery_report()', freezeFnStart);
+    const freezeBody = script.slice(freezeFnStart, freezeFnEnd);
+
+    expect(freezeFnStart).toBeGreaterThanOrEqual(0);
+    expect(freezeFnEnd).toBeGreaterThan(freezeFnStart);
+    expect(script).toContain('STARTUP_QUIESCE_PROVEN_LISTENER_PID=""');
+    expect(script).toContain('STARTUP_QUIESCE_PROVEN_LISTENER_PID="${listener_pid}"');
+    expect(freezeBody).toContain('current_listener_pid="$(resolve_owned_api_listener_pid 2>/dev/null || true)"');
+    expect(freezeBody).toContain('[[ "${current_listener_pid}" == "${STARTUP_QUIESCE_PROVEN_LISTENER_PID}" ]]');
+    expect(freezeBody).toContain('cp "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${RESOURCE_RECOVERY_BASELINE_JSON}"');
+    expect(freezeBody).not.toContain('capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"');
+  });
+
+  it('uses a single startup steady-state contract inside startup-report instead of a shell-only warmed floor authority', () => {
     const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
     const quiesceFnIndex = script.indexOf('startup_quiesce_snapshot_satisfies_steady_state()');
-    const warmedFloorIndex = script.indexOf('startup_quiesce_snapshot_meets_warmed_floor', quiesceFnIndex);
-    const startupReportIndex = script.indexOf('npx "${startup_args[@]}" >/dev/null 2>&1 || return 1', quiesceFnIndex);
-    const warmedFloorCallIndex = script.indexOf('startup_quiesce_snapshot_meets_warmed_floor || return 1', quiesceFnIndex);
+    const startupReportIndex = script.indexOf('local startup_status=0', quiesceFnIndex);
 
-    expect(script).toContain('STARTUP_WARMED_FLOOR_API_TCP_REQUIREMENTS=(');
-    expect(script).toContain('"api-entry|${MONGO_PORT}|ESTABLISHED|4"');
-    expect(script).toContain('startup_quiesce_snapshot_meets_warmed_floor()');
+    expect(script).toContain('STARTUP_STEADY_STATE_API_TCP_CONTRACTS=(');
+    expect(script).toContain('"api-entry|${MONGO_PORT}|ESTABLISHED|4|4"');
+    expect(script).not.toContain('STARTUP_WARMED_FLOOR_API_TCP_REQUIREMENTS=(');
+    expect(script).not.toContain('startup_quiesce_snapshot_meets_warmed_floor');
     expect(quiesceFnIndex).toBeGreaterThanOrEqual(0);
-    expect(warmedFloorIndex).toBeGreaterThan(quiesceFnIndex);
     expect(startupReportIndex).toBeGreaterThan(quiesceFnIndex);
-    expect(warmedFloorCallIndex).toBeGreaterThan(startupReportIndex);
+  });
+
+  it('preserves the last startup candidate snapshot and report across quiesce retries instead of deleting them before timeout materialization', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const quiesceFnIndex = script.indexOf('startup_quiesce_snapshot_satisfies_steady_state()');
+    const quiesceFnEnd = script.indexOf('wait_for_startup_quiesce()', quiesceFnIndex);
+    const quiesceBody = script.slice(quiesceFnIndex, quiesceFnEnd);
+
+    expect(quiesceFnIndex).toBeGreaterThanOrEqual(0);
+    expect(quiesceFnEnd).toBeGreaterThan(quiesceFnIndex);
+    expect(quiesceBody).toContain('local snapshot_tmp="${STARTUP_QUIESCE_SNAPSHOT_JSON}.tmp"');
+    expect(quiesceBody).toContain('local report_tmp="${STARTUP_QUIESCE_REPORT_JSON}.tmp"');
+    expect(quiesceBody).toContain('if [[ -f "${snapshot_tmp}" && -f "${report_tmp}" ]]; then');
+    expect(quiesceBody).toContain('mv "${snapshot_tmp}" "${STARTUP_QUIESCE_SNAPSHOT_JSON}"');
+    expect(quiesceBody).toContain('mv "${report_tmp}" "${STARTUP_QUIESCE_REPORT_JSON}"');
+    expect(quiesceBody).not.toContain('rm -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${STARTUP_QUIESCE_REPORT_JSON}"');
+  });
+
+  it('fails closed when startup quiesce never settles instead of freezing a fake ready baseline', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const quiesceBlockStart = script.indexOf('if ! wait_for_startup_quiesce; then');
+    const quiesceBlockEnd = script.indexOf('if ! freeze_startup_ready_baseline_from_quiesce_proof; then', quiesceBlockStart);
+    const quiesceBlock = script.slice(quiesceBlockStart, quiesceBlockEnd);
+
+    expect(quiesceBlockStart).toBeGreaterThanOrEqual(0);
+    expect(quiesceBlockEnd).toBeGreaterThan(quiesceBlockStart);
+    expect(quiesceBlock).toContain(
+      'pre_ready_failure_reason="file-library gate startup quiesce did not settle before the declared steady-state contract"',
+    );
+    expect(quiesceBlock).toContain('materialize_pre_ready_failure_evidence "${pre_ready_failure_reason}"');
+    expect(quiesceBlock).toContain('File library gate could not materialize startup resource recovery evidence before exiting.');
+    expect(quiesceBlock).toContain('exit 1');
+    expect(quiesceBlock).not.toContain('proceeding with the current owned API listener pid');
   });
 
   it('warms authenticated docstore steady-state before startup quiesce freezes the ready baseline', () => {

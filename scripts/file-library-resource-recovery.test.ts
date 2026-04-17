@@ -157,6 +157,52 @@ describe('file library resource recovery', () => {
     expect(report.findings).toEqual([]);
   });
 
+  it('fails startup verification when the declared api-entry steady-state floor is not reached before smoke steps', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+    });
+    const readyBaseline = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 17017,
+          state: 'ESTABLISHED',
+          count: 2,
+        },
+      ],
+    });
+
+    const report = buildStartupResourceRecoveryReport({
+      bootBaseline,
+      readyBaseline,
+      steadyState: {
+        api_tcp_connections: [
+          {
+            process_label: 'api-entry',
+            remote_port: 17017,
+            state: 'ESTABLISHED',
+            min_count: 4,
+            max_count: 4,
+          },
+        ],
+      },
+    });
+
+    expect(report.status).toBe('fail');
+    expect(report.findings).toContain(
+      'startup api tcp connection count did not reach the declared steady-state floor before smoke steps for api-entry remote_port 17017 [ESTABLISHED]: expected >= 4, found 2',
+    );
+  });
+
   it('fails startup verification when startup-side api-entry tcp leaks are already present before any smoke step runs', () => {
     const bootBaseline = buildSnapshot({
       captured_at: '2026-04-15T09:55:00.000Z',
@@ -301,6 +347,129 @@ describe('file library resource recovery', () => {
         'unexpected helper labels remained after file-library-api-startup: helper:mc',
         'unexpected tcp connections remained after file-library-api-startup: helper:mc -> 127.0.0.1:19000 [ESTABLISHED] x1',
       ]),
+    );
+  });
+
+  it('fails closed when startup helper steady-state declares a non-zero allowance that cannot honestly constrain helper resource truth', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+    });
+    const readyBaseline = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      helper_labels: ['helper:mc'],
+      helper_processes: [
+        {
+          pid: 5102,
+          label: 'helper:mc',
+          command: 'mc rb --force fladmin/jfs-lib-helper',
+          open_fd_count: 9,
+          socket_fd_count: 3,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+        {
+          process_label: 'helper:mc',
+          remote_host: '127.0.0.1',
+          remote_port: 19000,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+      ],
+    });
+
+    const report = buildStartupResourceRecoveryReport({
+      bootBaseline,
+      readyBaseline,
+      steadyState: {
+        api_tcp_connections: [
+          {
+            process_label: 'api-entry',
+            remote_port: 15432,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+        ],
+        helper_labels: [
+          {
+            label: 'helper:mc',
+            max_count: 1,
+          },
+        ],
+      },
+    });
+
+    expect(report.status).toBe('fail');
+    expect(report.findings).toEqual(
+      expect.arrayContaining([
+        'startup helper steady-state allowance currently supports only max_count=0 because helper fd/socket/tcp truth is not yet contract-defined for helper:mc: received 1',
+        'unexpected helper labels remained after file-library-api-startup: helper:mc',
+        'unexpected tcp connections remained after file-library-api-startup: helper:mc -> 127.0.0.1:19000 [ESTABLISHED] x1',
+      ]),
+    );
+  });
+
+  it('fails closed for non-zero startup helper steady-state allowance even when no helper processes are currently present', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+    });
+    const readyBaseline = buildSnapshot({
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+      ],
+    });
+
+    const report = buildStartupResourceRecoveryReport({
+      bootBaseline,
+      readyBaseline,
+      steadyState: {
+        api_tcp_connections: [
+          {
+            process_label: 'api-entry',
+            remote_port: 15432,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+        ],
+        helper_labels: [
+          {
+            label: 'helper:mc',
+            max_count: 1,
+          },
+        ],
+      },
+    });
+
+    expect(report.status).toBe('fail');
+    expect(report.findings).toContain(
+      'startup helper steady-state allowance currently supports only max_count=0 because helper fd/socket/tcp truth is not yet contract-defined for helper:mc: received 1',
     );
   });
 

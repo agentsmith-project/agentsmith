@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { formatDisplayDateTime } from '../date-time-format';
+import { formatDisplayDateTime, getViewerLocalDateTimePresentation } from '../date-time-format';
 
 describe('formatDisplayDateTime', () => {
   const originalResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
@@ -18,7 +18,15 @@ describe('formatDisplayDateTime', () => {
     });
 
     expect(formatDisplayDateTime('2026-03-19T08:00:00.000Z', { locale: 'en-US' }))
-      .toBe('Mar 19, 2026, 01:00 AM PDT');
+      .toBe(new Intl.DateTimeFormat('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'America/Los_Angeles',
+        timeZoneName: 'short',
+      }).format(new Date('2026-03-19T08:00:00.000Z')));
   });
 
   it('supports explicit locale and timezone overrides without leaking raw ISO protocol text', () => {
@@ -35,5 +43,53 @@ describe('formatDisplayDateTime', () => {
   it('uses safe fallback text for empty or invalid values instead of echoing backend payloads', () => {
     expect(formatDisplayDateTime(null, { emptyText: 'Never refreshed' })).toBe('Never refreshed');
     expect(formatDisplayDateTime('not-a-date', { invalidText: 'Unknown refresh time' })).toBe('Unknown refresh time');
+  });
+
+  it('builds viewer-local datetime metadata for valid timestamps without leaking raw protocol strings into the UI contract', () => {
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function resolvedOptions(this: Intl.DateTimeFormat) {
+      return {
+        ...originalResolvedOptions.call(this),
+        timeZone: 'America/Los_Angeles',
+      };
+    });
+
+    const presentation = getViewerLocalDateTimePresentation('2026-03-19T08:00:00.000Z', {
+      locale: 'en-US',
+    });
+
+    const expectedLabel = new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Los_Angeles',
+      timeZoneName: 'short',
+    }).format(new Date('2026-03-19T08:00:00.000Z'));
+
+    expect(presentation).toEqual({
+      text: expectedLabel,
+      title: expectedLabel,
+      dateTime: '2026-03-19T08:00:00.000Z',
+      visualDateTime: '2026-03-19T08:00:00.000Z',
+      visualDateTimePolicy: 'viewer_local',
+    });
+  });
+
+  it('keeps fallback text out of the machine-readable datetime contract when the value is empty or invalid', () => {
+    expect(getViewerLocalDateTimePresentation(null, { emptyText: 'Never initialized' })).toEqual({
+      text: 'Never initialized',
+      title: undefined,
+      dateTime: undefined,
+      visualDateTime: undefined,
+      visualDateTimePolicy: undefined,
+    });
+    expect(getViewerLocalDateTimePresentation('not-a-date', { invalidText: 'Unknown initialized time' })).toEqual({
+      text: 'Unknown initialized time',
+      title: undefined,
+      dateTime: undefined,
+      visualDateTime: undefined,
+      visualDateTimePolicy: undefined,
+    });
   });
 });

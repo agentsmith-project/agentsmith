@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeWorkspace } from './systemWorkspacesTestUtils';
 
 vi.mock('next/link', () => ({
@@ -55,6 +55,21 @@ function createState(overrides: Partial<SystemWorkspaceEditorState> = {}): Syste
 
 describe('WorkspaceEditorPanel', () => {
   const noop = () => undefined;
+  const originalResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+
+  beforeEach(() => {
+    document.documentElement.lang = 'en-US';
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function resolvedOptions(this: Intl.DateTimeFormat) {
+      return {
+        ...originalResolvedOptions.call(this),
+        timeZone: 'America/Los_Angeles',
+      };
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it('keeps the selected workspace quiet in read-only mode and hides the detailed edit sheet', () => {
     render(
@@ -158,5 +173,42 @@ describe('WorkspaceEditorPanel', () => {
     );
 
     expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveAttribute('data-visual-prominence', 'primary');
+  });
+
+  it('renders initialized timestamps as viewer-local time elements with machine-readable metadata', () => {
+    render(
+      <WorkspaceEditorPanel
+        locale="en-US"
+        t={(key) => key}
+        state={createState()}
+        isSubmitting={false}
+        activeAction={null}
+        saveError={null}
+        saveNotice={null}
+        adminSearchResults={[]}
+        adminSearchLoading={false}
+        adminSearchError={null}
+        idpVerificationNotice={null}
+        onDraftChange={noop}
+        onEnableEditMode={noop}
+        onCancelEditMode={noop}
+        onVerifyIdp={noop}
+        onSubmit={noop}
+        onPublish={noop}
+        onDisable={noop}
+        onDelete={noop}
+      />,
+    );
+
+    const timestamps = screen.getAllByTestId('system-workspaces__initialized-at');
+    expect(timestamps.length).toBeGreaterThan(0);
+
+    for (const timestamp of timestamps) {
+      expect(timestamp.tagName).toBe('TIME');
+      expect(timestamp).toHaveAttribute('dateTime', '2026-03-10T01:00:00.000Z');
+      expect(timestamp).toHaveAttribute('data-visual-datetime', '2026-03-10T01:00:00.000Z');
+      expect(timestamp).toHaveAttribute('data-visual-datetime-policy', 'viewer_local');
+      expect(timestamp).not.toHaveTextContent('2026-03-10T01:00:00.000Z');
+    }
   });
 });

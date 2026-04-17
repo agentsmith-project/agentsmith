@@ -227,6 +227,8 @@ describe('visual baseline support', () => {
   it('declares scene-owned prominent action limits for CTA hierarchy review scenes', () => {
     const systemWorkspacesEmpty = groupVisualBaselineCatalogByScenario().get('system-workspaces-empty');
     const systemWorkspacesDefault = groupVisualBaselineCatalogByScenario().get('system-workspaces-default');
+    const systemWorkspacesEditMode = groupVisualBaselineCatalogByScenario().get('system-workspaces-edit-mode');
+    const systemWorkspacesDeleteConfirmation = groupVisualBaselineCatalogByScenario().get('system-workspaces-delete-confirmation');
     const failedSystemWorkspaces = groupVisualBaselineCatalogByScenario().get('system-workspaces-failed-state');
     const disabledConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-disabled');
     const connectedConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-connected');
@@ -235,8 +237,14 @@ describe('visual baseline support', () => {
     expect(systemWorkspacesEmpty?.semanticAssertions.maxProminentActions).toBe(1);
     expect(systemWorkspacesDefault?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__new-workspace']);
     expect(systemWorkspacesDefault?.semanticAssertions.maxProminentActions).toBe(1);
+    expect(systemWorkspacesEditMode?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__save']);
+    expect(systemWorkspacesEditMode?.semanticAssertions.maxProminentActions).toBe(1);
     expect(failedSystemWorkspaces?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__enable-edit']);
     expect(failedSystemWorkspaces?.semanticAssertions.maxProminentActions).toBe(1);
+    expect(systemWorkspacesDeleteConfirmation?.semanticAssertions.primaryActionTestIds).toEqual([
+      'system-workspaces__delete-confirm',
+    ]);
+    expect(systemWorkspacesDeleteConfirmation?.semanticAssertions.maxProminentActions).toBe(1);
     expect(disabledConnections?.semanticAssertions.primaryActionTestIds).toEqual([]);
     expect(disabledConnections?.semanticAssertions.maxProminentActions).toBe(0);
     expect(connectedConnections?.semanticAssertions.primaryActionTestIds).toEqual([]);
@@ -257,6 +265,9 @@ describe('visual baseline support', () => {
   it('declares required viewer-local datetime metadata for scenes that expose user-facing timestamps', () => {
     const connectedConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-connected');
     const notebookLifecycleList = groupVisualBaselineCatalogByScenario().get('notebook-task-lifecycle-list');
+    const systemWorkspacesDefault = groupVisualBaselineCatalogByScenario().get('system-workspaces-default');
+    const systemWorkspacesEditMode = groupVisualBaselineCatalogByScenario().get('system-workspaces-edit-mode');
+    const systemWorkspacesDeleteConfirmation = groupVisualBaselineCatalogByScenario().get('system-workspaces-delete-confirmation');
 
     expect(connectedConnections?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
       'workspace-connections__last-refresh-value',
@@ -264,6 +275,15 @@ describe('visual baseline support', () => {
     expect(notebookLifecycleList?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
       'notebook__task-last-activity',
       'notebook__task-created-at',
+    ]);
+    expect(systemWorkspacesDefault?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
+      'system-workspaces__initialized-at',
+    ]);
+    expect(systemWorkspacesEditMode?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
+      'system-workspaces__initialized-at',
+    ]);
+    expect(systemWorkspacesDeleteConfirmation?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
+      'system-workspaces__initialized-at',
     ]);
     expect(resolveVisualBaselineSemanticAssertions('workspace-connections-feishu-connected').requiredViewerLocalDateTimeTestIds)
       .toContain('workspace-connections__last-refresh-value');

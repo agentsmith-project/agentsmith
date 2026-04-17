@@ -5,6 +5,14 @@ export type DisplayDateTimeOptions = {
   invalidText?: string;
 };
 
+export type ViewerLocalDateTimePresentation = {
+  text: string;
+  title?: string;
+  dateTime?: string;
+  visualDateTime?: string;
+  visualDateTimePolicy?: 'viewer_local';
+};
+
 export function resolveDisplayTimeZone(locale = 'en-US', timeZone?: string): string {
   if (timeZone) {
     return timeZone;
@@ -63,4 +71,37 @@ export function formatDisplayDateTime(
       timeZoneName: 'short',
     }).format(date);
   }
+}
+
+export function getViewerLocalDateTimePresentation(
+  value?: string | null,
+  options: DisplayDateTimeOptions = {},
+): ViewerLocalDateTimePresentation {
+  const {
+    emptyText = '-',
+    invalidText = '-',
+  } = options;
+
+  if (!value) {
+    return {
+      text: emptyText,
+    };
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return {
+      text: invalidText,
+    };
+  }
+
+  const machineReadableValue = date.toISOString();
+  const label = formatDisplayDateTime(machineReadableValue, options);
+  return {
+    text: label,
+    title: label,
+    dateTime: machineReadableValue,
+    visualDateTime: machineReadableValue,
+    visualDateTimePolicy: 'viewer_local',
+  };
 }

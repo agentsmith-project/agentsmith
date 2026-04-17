@@ -80,9 +80,18 @@ const AlertDialogAction = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Action>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action> & {
     variant?: 'default' | 'destructive';
+    prominence?: 'primary';
   }
->(({ className, variant = 'default', ...props }, ref) => {
-  const buttonVariant = variant === 'destructive' ? 'destructive' : 'default';
+>(({ className, variant = 'default', prominence, ...props }, ref) => {
+  const buttonVariant = (() => {
+    if (prominence === 'primary' && variant === 'destructive') {
+      return 'destructive-primary';
+    }
+    if (prominence === 'primary' && variant === 'default') {
+      return 'primary';
+    }
+    return variant === 'destructive' ? 'destructive' : 'default';
+  })();
   return (
     <AlertDialogPrimitive.Action
       ref={ref}

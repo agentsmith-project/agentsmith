@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeWorkspace, mockWorkspaceListResponse } from './systemWorkspacesTestUtils';
 
 const replaceMock = vi.fn();
@@ -31,6 +31,7 @@ import { SystemWorkspacesPage } from '../SystemWorkspacesPage';
 
 describe('SystemWorkspacesPage', () => {
   const fetchMock = vi.fn();
+  const originalResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
 
   const expectPrimaryProminence = (testId: string) => {
     expect(screen.getByTestId(testId)).toHaveAttribute('data-visual-prominence', 'primary');
@@ -41,8 +42,15 @@ describe('SystemWorkspacesPage', () => {
   };
 
   beforeEach(() => {
+    document.documentElement.lang = 'en-US';
     replaceMock.mockReset();
     fetchMock.mockReset();
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function resolvedOptions(this: Intl.DateTimeFormat) {
+      return {
+        ...originalResolvedOptions.call(this),
+        timeZone: 'America/Los_Angeles',
+      };
+    });
     fetchMock.mockResolvedValue(
       mockWorkspaceListResponse([
         makeWorkspace({
@@ -66,6 +74,10 @@ describe('SystemWorkspacesPage', () => {
       ]),
     );
     vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('renders a quieter workspace directory and keeps the editor collapsed until edit mode', async () => {
@@ -159,6 +171,46 @@ describe('SystemWorkspacesPage', () => {
 
     expect(replaceMock).toHaveBeenCalledWith('/en-US/system/workspaces?workspace=ws_beta', { scroll: false });
     expect(screen.getByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
+  });
+
+  it('renders workspace timestamps as viewer-local time elements with machine-readable metadata across the list and detail panel', async () => {
+    render(<SystemWorkspacesPage />);
+
+    const timestamps = await screen.findAllByTestId('system-workspaces__initialized-at');
+    expect(timestamps.length).toBeGreaterThan(0);
+
+    for (const timestamp of timestamps) {
+      expect(timestamp.tagName).toBe('TIME');
+      expect(timestamp).toHaveAttribute('data-visual-datetime-policy', 'viewer_local');
+      expect(timestamp).toHaveAttribute('data-visual-datetime');
+      expect(timestamp).toHaveAttribute('dateTime');
+      expect(timestamp).not.toHaveTextContent(/^\d{4}-\d{2}-\d{2}T/);
+    }
+  });
+
+  it('promotes the delete confirmation dialog as the only primary CTA in the overlay scene', async () => {
+    fetchMock.mockResolvedValueOnce(mockWorkspaceListResponse([
+      makeWorkspace({
+        id: 'ws_alpha',
+        provisioning_status: 'disabled',
+        last_initialized_at: '2026-03-10T02:00:00.000Z',
+      }),
+    ]));
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));
+    expect(await screen.findByTestId('system-workspaces__save')).toHaveAttribute('data-visual-prominence', 'primary');
+
+    fireEvent.click(screen.getByTestId('system-workspaces__delete'));
+
+    const deleteConfirm = await screen.findByTestId('system-workspaces__delete-confirm');
+    expect(deleteConfirm).toHaveAttribute('data-visual-prominence', 'primary');
+    expect(deleteConfirm.className).toContain('bg-error');
+    expect(deleteConfirm.className).toContain('text-background');
+    expect(deleteConfirm.className).not.toContain('bg-error/5');
+    expect(screen.getByTestId('system-workspaces__save')).not.toHaveAttribute('data-visual-prominence');
   });
 
   it('shows retry state when loading fails', async () => {

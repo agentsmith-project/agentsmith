@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
+import { formatDisplayDateTime } from '@/lib/utils/date-time-format';
 
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en-US' }));
 const mockGetFeishuIntegration = vi.fn();
@@ -311,8 +312,12 @@ describe('WorkspaceConnectionsPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('workspace-connections__feishu-connect')).toHaveTextContent('workspace_feishu_reconnect');
     });
+    const expectedLastRefreshLabel = formatDisplayDateTime('2026-03-19T00:00:00.000Z', {
+      locale: 'en-US',
+      timeZone: 'America/Los_Angeles',
+    });
     expect(screen.getByTestId('workspace-connections__last-refresh-value')).toHaveTextContent(
-      'Mar 18, 2026, 05:00 PM PDT',
+      expectedLastRefreshLabel,
     );
     expect(screen.getByTestId('workspace-connections__last-refresh-value')).toHaveAttribute(
       'data-visual-datetime-policy',

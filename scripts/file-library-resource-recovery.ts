@@ -111,10 +111,11 @@ interface FinalizeResourceRecoveryStepReportInput {
   extra_findings?: readonly string[];
 }
 
-interface FileLibraryStartupSteadyStateApiTcpAllowance {
+interface FileLibraryStartupSteadyStateApiTcpContract {
   process_label: 'api-entry';
   remote_port: number;
   state: string;
+  min_count?: number;
   max_count: number;
 }
 
@@ -124,7 +125,7 @@ interface FileLibraryStartupSteadyStateHelperLabelAllowance {
 }
 
 interface FileLibraryStartupSteadyStateContract {
-  api_tcp_connections: readonly FileLibraryStartupSteadyStateApiTcpAllowance[];
+  api_tcp_connections: readonly FileLibraryStartupSteadyStateApiTcpContract[];
   helper_labels?: readonly FileLibraryStartupSteadyStateHelperLabelAllowance[];
 }
 
@@ -606,11 +607,14 @@ function buildStartupApiConnectionFindings(args: {
   steadyState?: FileLibraryStartupSteadyStateContract;
 }): string[] {
   const findings: string[] = [];
-  const allowances = args.steadyState?.api_tcp_connections ?? [];
+  const contracts = (args.steadyState?.api_tcp_connections ?? []).map((contract) => ({
+    ...contract,
+    min_count: contract.min_count ?? 0,
+  }));
   const allowanceMap = new Map(
-    allowances.map((allowance) => [
-      `${allowance.process_label}|${allowance.remote_port}|${allowance.state}`,
-      allowance,
+    contracts.map((contract) => [
+      `${contract.process_label}|${contract.remote_port}|${contract.state}`,
+      contract,
     ]),
   );
   const observedCounts = new Map<string, number>();
@@ -620,8 +624,8 @@ function buildStartupApiConnectionFindings(args: {
       continue;
     }
     const key = `${connection.process_label}|${connection.remote_port}|${connection.state}`;
-    const allowance = allowanceMap.get(key);
-    if (!allowance) {
+    const contract = allowanceMap.get(key);
+    if (!contract) {
       findings.push(
         `unexpected api startup tcp connections remained before smoke steps: ${connection.process_label} -> ${connection.remote_host}:${connection.remote_port} [${connection.state}] x${connection.count}`,
       );
@@ -630,12 +634,50 @@ function buildStartupApiConnectionFindings(args: {
     observedCounts.set(key, (observedCounts.get(key) ?? 0) + connection.count);
   }
 
-  for (const allowance of allowances) {
-    const key = `${allowance.process_label}|${allowance.remote_port}|${allowance.state}`;
+  for (const contract of contracts) {
+    const key = `${contract.process_label}|${contract.remote_port}|${contract.state}`;
     const observedCount = observedCounts.get(key) ?? 0;
-    if (observedCount > allowance.max_count) {
+    if (observedCount < contract.min_count) {
       findings.push(
-        `startup api tcp connection count exceeded the declared steady-state allowance before smoke steps for api-entry remote_port ${allowance.remote_port} [${allowance.state}]: expected <= ${allowance.max_count}, found ${observedCount}`,
+        `startup api tcp connection count did not reach the declared steady-state floor before smoke steps for api-entry remote_port ${contract.remote_port} [${contract.state}]: expected >= ${contract.min_count}, found ${observedCount}`,
+      );
+    }
+    if (observedCount > contract.max_count) {
+      findings.push(
+        `startup api tcp connection count exceeded the declared steady-state allowance before smoke steps for api-entry remote_port ${contract.remote_port} [${contract.state}]: expected <= ${contract.max_count}, found ${observedCount}`,
+      );
+    }
+  }
+
+  return findings;
+}
+
+function buildStartupHelperFindings(args: {
+  readyBaseline: FileLibraryResourceRecoverySnapshot;
+  steadyState?: FileLibraryStartupSteadyStateContract;
+}): string[] {
+  const findings: string[] = [];
+  const helperContracts = args.steadyState?.helper_labels ?? [];
+  if (helperContracts.length === 0) {
+    return findings;
+  }
+
+  const observedCounts = new Map<string, number>();
+  for (const helperProcess of args.readyBaseline.helper_processes) {
+    observedCounts.set(helperProcess.label, (observedCounts.get(helperProcess.label) ?? 0) + 1);
+  }
+
+  for (const helperContract of helperContracts) {
+    if (helperContract.max_count > 0) {
+      findings.push(
+        `startup helper steady-state allowance currently supports only max_count=0 because helper fd/socket/tcp truth is not yet contract-defined for ${helperContract.label}: received ${helperContract.max_count}`,
+      );
+      continue;
+    }
+    const observedCount = observedCounts.get(helperContract.label) ?? 0;
+    if (observedCount > helperContract.max_count) {
+      findings.push(
+        `startup helper process count exceeded the declared steady-state allowance before smoke steps for ${helperContract.label}: expected <= ${helperContract.max_count}, found ${observedCount}`,
       );
     }
   }
@@ -975,6 +1017,10 @@ export function buildStartupResourceRecoveryReport(args: {
         readyBaseline: args.readyBaseline,
         steadyState: args.steadyState,
       }),
+      ...buildStartupHelperFindings({
+        readyBaseline: args.readyBaseline,
+        steadyState: args.steadyState,
+      }),
       ...(args.extraFindings ?? []),
     ],
   );
@@ -1210,18 +1256,30 @@ async function runStartupReport(argv: string[]): Promise<void> {
   const outputPath = parseOption(argv, '--output');
   const steadyStateApiTcpAllowances = parseMultiOption(argv, '--steady-state-api-tcp')
     .map((rawAllowance) => {
-      const [processLabel, rawPort, state, rawMaxCount] = rawAllowance.split('|');
+      const [processLabel, rawPort, state, rawMinCount, rawMaxCount] = rawAllowance.split('|');
       const remotePort = Number.parseInt(rawPort ?? '', 10);
+      const minCount = Number.parseInt(rawMinCount ?? '', 10);
       const maxCount = Number.parseInt(rawMaxCount ?? '', 10);
-      if (processLabel !== 'api-entry' || !state || !Number.isInteger(remotePort) || remotePort <= 0 || !Number.isInteger(maxCount) || maxCount < 0) {
+      if (
+        processLabel !== 'api-entry'
+        || !state
+        || !Number.isInteger(remotePort)
+        || remotePort <= 0
+        || !Number.isInteger(minCount)
+        || minCount < 0
+        || !Number.isInteger(maxCount)
+        || maxCount < 0
+        || minCount > maxCount
+      ) {
         throw new Error(
-          'startup-report --steady-state-api-tcp values must use api-entry|<positive-port>|<state>|<non-negative-max-count>',
+          'startup-report --steady-state-api-tcp values must use api-entry|<positive-port>|<state>|<non-negative-min-count>|<non-negative-max-count> with min <= max',
         );
       }
       return {
         process_label: 'api-entry' as const,
         remote_port: remotePort,
         state,
+        min_count: minCount,
         max_count: maxCount,
       };
     });

@@ -8,6 +8,10 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { PublicSystemWorkspaceRecord } from '@/lib/system-admin/workspace-registry';
+import {
+  getViewerLocalDateTimePresentation,
+  type ViewerLocalDateTimePresentation,
+} from '@/lib/utils/date-time-format';
 
 type WorkspaceCardProps = {
   locale: string;
@@ -58,7 +62,7 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
             <span className="truncate text-foreground">{workspace.workspace_admin}</span>
             <span className="text-tertiary">·</span>
             <span className="text-tertiary">{t('initialized_at_label')}</span>
-            <span className="truncate text-foreground">{summary.timestamp}</span>
+            <span className="truncate text-foreground">{renderInitializedAt(summary.timestamp)}</span>
           </div>
 
           <div className="flex items-start gap-2 border-t border-subtle pt-3">
@@ -108,6 +112,24 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
   );
 }
 
+function renderInitializedAt(presentation: ViewerLocalDateTimePresentation) {
+  if (!presentation.dateTime) {
+    return <span>{presentation.text}</span>;
+  }
+
+  return (
+    <time
+      dateTime={presentation.dateTime}
+      title={presentation.title}
+      data-testid="system-workspaces__initialized-at"
+      data-visual-datetime={presentation.visualDateTime}
+      data-visual-datetime-policy={presentation.visualDateTimePolicy}
+    >
+      {presentation.text}
+    </time>
+  );
+}
+
 function StatusBadge({
   label,
   tone,
@@ -137,15 +159,19 @@ function buildStatusSummary(
   locale: string,
   t: WorkspaceCardProps['t'],
 ) {
+  const timestamp = getViewerLocalDateTimePresentation(workspace.last_initialized_at, {
+    locale,
+    emptyText: t('not_initialized'),
+    invalidText: t('not_initialized'),
+  });
+
   if (workspace.provisioning_status === 'failed') {
     return {
       icon: AlertTriangle,
       iconClassName: 'text-error',
       title: t('workspace_attention_failed_title'),
       body: workspace.last_init_error || t('workspace_attention_failed_body'),
-      timestamp: workspace.last_initialized_at
-        ? new Date(workspace.last_initialized_at).toLocaleString(locale)
-        : t('not_initialized'),
+      timestamp,
     };
   }
 
@@ -155,9 +181,7 @@ function buildStatusSummary(
       iconClassName: 'text-warning',
       title: t('workspace_attention_provisioning_title'),
       body: t('workspace_attention_provisioning_body'),
-      timestamp: workspace.last_initialized_at
-        ? new Date(workspace.last_initialized_at).toLocaleString(locale)
-        : t('not_initialized'),
+      timestamp,
     };
   }
 
@@ -167,9 +191,7 @@ function buildStatusSummary(
       iconClassName: 'text-warning',
       title: t('workspace_attention_disabled_title'),
       body: t('workspace_attention_disabled_body'),
-      timestamp: workspace.last_initialized_at
-        ? new Date(workspace.last_initialized_at).toLocaleString(locale)
-        : t('not_initialized'),
+      timestamp,
     };
   }
 
@@ -179,9 +201,7 @@ function buildStatusSummary(
       iconClassName: 'text-warning',
       title: t('workspace_attention_binding_title'),
       body: t('workspace_attention_binding_body'),
-      timestamp: workspace.last_initialized_at
-        ? new Date(workspace.last_initialized_at).toLocaleString(locale)
-        : t('not_initialized'),
+      timestamp,
     };
   }
 
@@ -190,8 +210,6 @@ function buildStatusSummary(
     iconClassName: 'text-success',
     title: t('workspace_attention_ready_title'),
     body: t('workspace_attention_ready_body'),
-    timestamp: workspace.last_initialized_at
-      ? new Date(workspace.last_initialized_at).toLocaleString(locale)
-      : t('not_initialized'),
+    timestamp,
   };
 }

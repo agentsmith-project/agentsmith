@@ -130,19 +130,17 @@ STARTUP_WARMUP_BODY_FILE="${STARTUP_WARMUP_DIR}/body.json"
 STARTUP_WARMUP_HEADERS_FILE="${STARTUP_WARMUP_DIR}/headers.txt"
 RESOURCE_RECOVERY_SUMMARY_WRITTEN=0
 RESOURCE_RECOVERY_PRE_READY_FAILURE=0
-STARTUP_QUIESCE_TIMEOUT_SECONDS="${STARTUP_QUIESCE_TIMEOUT_SECONDS:-8}"
+STARTUP_QUIESCE_TIMEOUT_SECONDS="${STARTUP_QUIESCE_TIMEOUT_SECONDS:-20}"
 STARTUP_QUIESCE_STABLE_SAMPLES="${STARTUP_QUIESCE_STABLE_SAMPLES:-2}"
 STARTUP_QUIESCE_INTERVAL_SECONDS="${STARTUP_QUIESCE_INTERVAL_SECONDS:-1}"
-STARTUP_STEADY_STATE_API_TCP_ALLOWANCES=(
-  "api-entry|${POSTGRES_PORT}|ESTABLISHED|1"
-  "api-entry|${MONGO_PORT}|ESTABLISHED|4"
+STARTUP_STEADY_STATE_API_TCP_CONTRACTS=(
+  "api-entry|${POSTGRES_PORT}|ESTABLISHED|0|1"
+  "api-entry|${MONGO_PORT}|ESTABLISHED|4|4"
 )
 STARTUP_STEADY_STATE_HELPER_LABEL_ALLOWANCES=(
   "helper:mc|0"
 )
-STARTUP_WARMED_FLOOR_API_TCP_REQUIREMENTS=(
-  "api-entry|${MONGO_PORT}|ESTABLISHED|4"
-)
+STARTUP_QUIESCE_PROVEN_LISTENER_PID=""
 API_ROOT_PID=""
 API_PID=""
 
@@ -197,10 +195,11 @@ resolve_owned_api_listener_pid() {
 
 append_startup_steady_state_args() {
   local -n startup_args_ref="$1"
-  local allowance
-  for allowance in "${STARTUP_STEADY_STATE_API_TCP_ALLOWANCES[@]}"; do
-    startup_args_ref+=(--steady-state-api-tcp "${allowance}")
+  local contract
+  for contract in "${STARTUP_STEADY_STATE_API_TCP_CONTRACTS[@]}"; do
+    startup_args_ref+=(--steady-state-api-tcp "${contract}")
   done
+  local allowance
   for allowance in "${STARTUP_STEADY_STATE_HELPER_LABEL_ALLOWANCES[@]}"; do
     startup_args_ref+=(--steady-state-helper-label "${allowance}")
   done
@@ -229,43 +228,15 @@ perform_startup_authenticated_docstore_warmup() {
   return 0
 }
 
-startup_quiesce_snapshot_meets_warmed_floor() {
-  local requirement process_label remote_port state minimum_count observed_count
-  for requirement in "${STARTUP_WARMED_FLOOR_API_TCP_REQUIREMENTS[@]}"; do
-    IFS='|' read -r process_label remote_port state minimum_count <<< "${requirement}"
-    [[ -n "${process_label}" && -n "${remote_port}" && -n "${state}" && -n "${minimum_count}" ]] || return 1
-    observed_count="$(
-      node -e '
-        const fs = require("node:fs");
-        const [snapshotPath, processLabel, remotePortRaw, state] = process.argv.slice(1);
-        const remotePort = Number.parseInt(remotePortRaw, 10);
-        const snapshot = JSON.parse(fs.readFileSync(snapshotPath, "utf8"));
-        const count = Array.isArray(snapshot.tcp_connections)
-          ? snapshot.tcp_connections
-            .filter((connection) =>
-              connection?.process_label === processLabel
-              && connection?.remote_port === remotePort
-              && connection?.state === state)
-            .reduce((sum, connection) => sum + (Number.isInteger(connection?.count) ? connection.count : 0), 0)
-          : 0;
-        process.stdout.write(String(count));
-      ' "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${process_label}" "${remote_port}" "${state}"
-    )" || return 1
-    if (( observed_count < minimum_count )); then
-      echo "File library gate startup quiesce warmed floor not yet reached for ${process_label} remote_port ${remote_port} [${state}]: expected >= ${minimum_count}, found ${observed_count}." >&2
-      return 1
-    fi
-  done
-  return 0
-}
-
 startup_quiesce_snapshot_satisfies_steady_state() {
   local listener_pid="$1"
+  local snapshot_tmp="${STARTUP_QUIESCE_SNAPSHOT_JSON}.tmp"
+  local report_tmp="${STARTUP_QUIESCE_REPORT_JSON}.tmp"
   local -a snapshot_args=(
     tsx
     "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
     snapshot
-    --output "${STARTUP_QUIESCE_SNAPSHOT_JSON}"
+    --output "${snapshot_tmp}"
     --api-pid "${listener_pid}"
   )
   local -a startup_args=(
@@ -273,16 +244,29 @@ startup_quiesce_snapshot_satisfies_steady_state() {
     "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
     startup-report
     --boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
-    --baseline "${STARTUP_QUIESCE_SNAPSHOT_JSON}"
-    --output "${STARTUP_QUIESCE_REPORT_JSON}"
+    --baseline "${snapshot_tmp}"
+    --output "${report_tmp}"
   )
   append_startup_steady_state_args startup_args
 
-  rm -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${STARTUP_QUIESCE_REPORT_JSON}"
+  rm -f "${snapshot_tmp}" "${report_tmp}"
   npx "${snapshot_args[@]}" >/dev/null 2>&1 || return 1
-  npx "${startup_args[@]}" >/dev/null 2>&1 || return 1
-  startup_quiesce_snapshot_meets_warmed_floor || return 1
-  return 0
+
+  local startup_status=0
+  set +e
+  npx "${startup_args[@]}" >/dev/null 2>&1
+  startup_status=$?
+  set -e
+
+  if [[ -f "${snapshot_tmp}" && -f "${report_tmp}" ]]; then
+    mv "${snapshot_tmp}" "${STARTUP_QUIESCE_SNAPSHOT_JSON}"
+    mv "${report_tmp}" "${STARTUP_QUIESCE_REPORT_JSON}"
+  else
+    rm -f "${snapshot_tmp}" "${report_tmp}"
+    return 1
+  fi
+
+  [[ "${startup_status}" -eq 0 ]]
 }
 
 wait_for_startup_quiesce() {
@@ -290,6 +274,7 @@ wait_for_startup_quiesce() {
   local stable_samples=0
   local last_listener_pid=""
   local listener_pid=""
+  STARTUP_QUIESCE_PROVEN_LISTENER_PID=""
 
   while (( SECONDS <= deadline )); do
     listener_pid="$(resolve_owned_api_listener_pid 2>/dev/null || true)"
@@ -303,20 +288,48 @@ wait_for_startup_quiesce() {
           last_listener_pid="${listener_pid}"
         fi
         if (( stable_samples >= STARTUP_QUIESCE_STABLE_SAMPLES )); then
+          STARTUP_QUIESCE_PROVEN_LISTENER_PID="${listener_pid}"
           return 0
         fi
       else
         stable_samples=0
         last_listener_pid=""
+        STARTUP_QUIESCE_PROVEN_LISTENER_PID=""
       fi
     else
       stable_samples=0
       last_listener_pid=""
+      STARTUP_QUIESCE_PROVEN_LISTENER_PID=""
     fi
     sleep "${STARTUP_QUIESCE_INTERVAL_SECONDS}"
   done
 
   return 1
+}
+
+freeze_startup_ready_baseline_from_quiesce_proof() {
+  [[ -n "${STARTUP_QUIESCE_PROVEN_LISTENER_PID}" ]] || {
+    echo "File library gate has no proven startup listener authority to freeze the ready baseline." >&2
+    return 1
+  }
+  [[ -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" && -f "${STARTUP_QUIESCE_REPORT_JSON}" ]] || {
+    echo "File library gate is missing the proven startup candidate snapshot/report needed to freeze the ready baseline." >&2
+    return 1
+  }
+
+  local current_listener_pid=""
+  current_listener_pid="$(resolve_owned_api_listener_pid 2>/dev/null || true)"
+  [[ -n "${current_listener_pid}" ]] || {
+    echo "File library gate could not resolve the current owned API listener while freezing the ready baseline." >&2
+    return 1
+  }
+  [[ "${current_listener_pid}" == "${STARTUP_QUIESCE_PROVEN_LISTENER_PID}" ]] || {
+    echo "File library gate startup listener handoff changed authority from ${STARTUP_QUIESCE_PROVEN_LISTENER_PID} to ${current_listener_pid} after steady-state proof and before ready baseline freeze." >&2
+    return 1
+  }
+
+  API_PID="${current_listener_pid}"
+  cp "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${RESOURCE_RECOVERY_BASELINE_JSON}"
 }
 
 build_file_library_api_launch_command() {
@@ -362,12 +375,13 @@ capture_resource_recovery_baseline() {
 
 write_startup_resource_recovery_report() {
   local failure_message="${1:-}"
+  local baseline_path="${2:-${RESOURCE_RECOVERY_BASELINE_JSON}}"
   local -a startup_args=(
     tsx
     "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
     startup-report
     --boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
-    --baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
+    --baseline "${baseline_path}"
     --output "${RESOURCE_RECOVERY_STARTUP_JSON}"
   )
   append_startup_steady_state_args startup_args
@@ -391,8 +405,22 @@ materialize_pre_ready_failure_evidence() {
   local failure_message="$1"
   RESOURCE_RECOVERY_PRE_READY_FAILURE=1
   ensure_boot_resource_recovery_baseline
+
+  if [[ -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" ]]; then
+    cp "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${RESOURCE_RECOVERY_BASELINE_JSON}"
+    if write_startup_resource_recovery_report "${failure_message}" "${STARTUP_QUIESCE_SNAPSHOT_JSON}"; then
+      return 0
+    fi
+    if [[ -f "${RESOURCE_RECOVERY_STARTUP_JSON}" ]]; then
+      return 0
+    fi
+  fi
+
   capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
-  write_startup_resource_recovery_report "${failure_message}"
+  if write_startup_resource_recovery_report "${failure_message}"; then
+    return 0
+  fi
+  [[ -f "${RESOURCE_RECOVERY_STARTUP_JSON}" ]]
 }
 
 write_resource_recovery_summary() {
@@ -604,11 +632,19 @@ if ! perform_startup_authenticated_docstore_warmup; then
 fi
 
 if ! wait_for_startup_quiesce; then
-  echo "File library gate startup quiesce timed out before the declared startup steady-state settled; proceeding with the current owned API listener pid ${API_PID}." >&2
+  pre_ready_failure_reason="file-library gate startup quiesce did not settle before the declared steady-state contract"
+  if ! materialize_pre_ready_failure_evidence "${pre_ready_failure_reason}"; then
+    echo "File library gate could not materialize startup resource recovery evidence before exiting." >&2
+  fi
+  exit 1
 fi
-rm -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${STARTUP_QUIESCE_REPORT_JSON}"
-
-capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
+if ! freeze_startup_ready_baseline_from_quiesce_proof; then
+  pre_ready_failure_reason="file-library gate startup listener handoff changed authority after steady-state proof and before ready baseline freeze"
+  if ! materialize_pre_ready_failure_evidence "${pre_ready_failure_reason}"; then
+    echo "File library gate could not materialize startup resource recovery evidence before exiting." >&2
+  fi
+  exit 1
+fi
 
 overall_status=0
 if ! write_startup_resource_recovery_report; then

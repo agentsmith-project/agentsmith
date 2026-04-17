@@ -40,7 +40,7 @@ function collectUnsupportedOpacityClasses(className: string) {
 
 describe('buttonVariants', () => {
   it('keeps shared button color opacity tokens inside the Tailwind-supported scale', () => {
-    const variants = ['default', 'primary', 'action', 'outline', 'secondary', 'ghost', 'link', 'destructive'] as const;
+    const variants = ['default', 'primary', 'action', 'outline', 'secondary', 'ghost', 'link', 'destructive', 'destructive-primary'] as const;
     const invalidClasses = variants.flatMap((variant) => collectUnsupportedOpacityClasses(buttonVariants({ variant })));
 
     expect(invalidClasses).toEqual([]);
@@ -53,15 +53,25 @@ describe('buttonVariants', () => {
     ]));
   });
 
+  it('defines destructive-primary as a filled high-contrast danger CTA instead of a weak tint', () => {
+    expect(buttonVariants({ variant: 'destructive-primary' }).split(/\s+/)).toEqual(expect.arrayContaining([
+      'bg-error',
+      'text-background',
+    ]));
+    expect(buttonVariants({ variant: 'destructive-primary' })).not.toContain('bg-error/5');
+  });
+
   it('exposes design-system prominence metadata for visual semantic CTA hierarchy checks', () => {
     render(
       createElement('div', null,
         createElement(Button, { type: 'button', variant: 'primary' }, 'Create'),
+        createElement(Button, { type: 'button', variant: 'destructive-primary' }, 'Delete now'),
         createElement(Button, { type: 'button', variant: 'outline' }, 'Cancel'),
       ),
     );
 
     expect(screen.getByRole('button', { name: 'Create' })).toHaveAttribute('data-visual-prominence', 'primary');
+    expect(screen.getByRole('button', { name: 'Delete now' })).toHaveAttribute('data-visual-prominence', 'primary');
     expect(screen.getByRole('button', { name: 'Cancel' })).not.toHaveAttribute('data-visual-prominence');
   });
 });

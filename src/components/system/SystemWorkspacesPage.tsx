@@ -358,6 +358,7 @@ export function SystemWorkspacesPage() {
                   onPublish={() => void publish()}
                   onDisable={() => void disable()}
                   onDelete={() => setDeleteDialogOpen(true)}
+                  suspendLifecyclePrimaryProminence={deleteDialogOpen}
                 />
                 ) : (
                   <aside
@@ -395,6 +396,8 @@ export function SystemWorkspacesPage() {
             <AlertDialogFooter>
               <AlertDialogCancel data-testid="system-workspaces__delete-cancel">{t('cancel')}</AlertDialogCancel>
               <AlertDialogAction
+                variant="destructive"
+                prominence="primary"
                 onClick={() => void remove()}
                 data-testid="system-workspaces__delete-confirm"
               >

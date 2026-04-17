@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { formatDisplayDateTime } from '@/lib/utils/date-time-format';
 import { TaskCard } from '../TaskCard';
 
 describe('TaskCard', () => {
@@ -52,14 +53,22 @@ describe('TaskCard', () => {
 
     const lastActivity = screen.getByTestId('notebook__task-last-activity');
     const createdAt = screen.getByTestId('notebook__task-created-at');
+    const expectedLastActivityTitle = formatDisplayDateTime(task.last_activity_at, {
+      locale: 'en-US',
+      timeZone: 'America/Los_Angeles',
+    });
+    const expectedCreatedAtLabel = formatDisplayDateTime(task.created_at, {
+      locale: 'en-US',
+      timeZone: 'America/Los_Angeles',
+    });
 
     expect(lastActivity).toHaveAttribute('dateTime', task.last_activity_at);
     expect(lastActivity).toHaveAttribute('data-visual-datetime-policy', 'viewer_local');
-    expect(lastActivity).toHaveAttribute('title', 'Mar 18, 2026, 06:00 PM PDT');
+    expect(lastActivity).toHaveAttribute('title', expectedLastActivityTitle);
     expect(lastActivity).toHaveTextContent('5m ago');
 
     expect(createdAt).toHaveAttribute('dateTime', task.created_at);
     expect(createdAt).toHaveAttribute('data-visual-datetime-policy', 'viewer_local');
-    expect(createdAt).toHaveTextContent('Mar 18, 2026, 05:00 PM PDT');
+    expect(createdAt).toHaveTextContent(expectedCreatedAtLabel);
   });
 });

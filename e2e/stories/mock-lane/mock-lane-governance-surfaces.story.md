@@ -297,7 +297,10 @@
             "primaryActionTestIds": [
               "system-workspaces__new-workspace"
             ],
-            "maxProminentActions": 1
+            "maxProminentActions": 1,
+            "requiredViewerLocalDateTimeTestIds": [
+              "system-workspaces__initialized-at"
+            ]
           }
         },
         {
@@ -311,6 +314,15 @@
           ],
           "capture": "full_page",
           "authLane": "system_admin",
+          "semanticAssertions": {
+            "primaryActionTestIds": [
+              "system-workspaces__save"
+            ],
+            "maxProminentActions": 1,
+            "requiredViewerLocalDateTimeTestIds": [
+              "system-workspaces__initialized-at"
+            ]
+          },
           "themes": [
             "default"
           ]
@@ -362,6 +374,15 @@
           ],
           "capture": "full_page",
           "authLane": "system_admin",
+          "semanticAssertions": {
+            "primaryActionTestIds": [
+              "system-workspaces__delete-confirm"
+            ],
+            "maxProminentActions": 1,
+            "requiredViewerLocalDateTimeTestIds": [
+              "system-workspaces__initialized-at"
+            ]
+          },
           "themes": [
             "default"
           ]

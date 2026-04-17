@@ -15,6 +15,7 @@ const buttonVariants = cva(
         ghost: 'border-transparent bg-transparent text-secondary hover:bg-surface-low/25 hover:text-foreground',
         link: 'border-transparent bg-transparent px-0 text-secondary hover:text-foreground',
         destructive: 'border-error/20 bg-error/5 text-error hover:bg-error/10',
+        'destructive-primary': 'border-transparent bg-error text-background shadow-[0_10px_30px_rgba(220,38,38,0.22)] hover:bg-error/90 hover:text-background',
       },
       size: {
         default: 'h-9 px-3.5',
@@ -39,7 +40,7 @@ export interface ButtonProps
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
-    const visualProminence = variant === 'primary' ? 'primary' : undefined;
+    const visualProminence = variant === 'primary' || variant === 'destructive-primary' ? 'primary' : undefined;
     return (
       <Comp
         className={buttonVariants({ variant, size, className })}

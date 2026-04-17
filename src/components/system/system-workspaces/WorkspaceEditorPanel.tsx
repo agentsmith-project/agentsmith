@@ -7,6 +7,10 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { slugifyWorkspaceId } from '@/lib/system-admin/slugify-workspace-id';
+import {
+  getViewerLocalDateTimePresentation,
+  type ViewerLocalDateTimePresentation,
+} from '@/lib/utils/date-time-format';
 import type { SystemWorkspaceAction, SystemWorkspaceEditorState } from './types';
 import { PreviewRow } from './PreviewRow';
 
@@ -30,6 +34,7 @@ type WorkspaceEditorPanelProps = {
   onPublish: () => void;
   onDisable: () => void;
   onDelete: () => void;
+  suspendLifecyclePrimaryProminence?: boolean;
 };
 
 export function WorkspaceEditorPanel({
@@ -52,12 +57,15 @@ export function WorkspaceEditorPanel({
   onPublish,
   onDisable,
   onDelete,
+  suspendLifecyclePrimaryProminence = false,
 }: WorkspaceEditorPanelProps) {
   const workspace = state.selectedWorkspace;
   const statusValue = t(`provisioning_status.${state.selectedStatus}`);
-  const lastInitializedValue = workspace?.last_initialized_at
-    ? new Date(workspace.last_initialized_at).toLocaleString(locale)
-    : t('not_initialized');
+  const lastInitializedValue = getViewerLocalDateTimePresentation(workspace?.last_initialized_at, {
+    locale,
+    emptyText: t('not_initialized'),
+    invalidText: t('not_initialized'),
+  });
   const idpStateText = (
     state.idpVerificationState === 'verified_with_directory'
       ? t('idp_status_verified_with_directory')
@@ -99,6 +107,25 @@ export function WorkspaceEditorPanel({
       || !workspace.workspace_admin_user_id
     ),
   );
+  const saveButtonVariant = suspendLifecyclePrimaryProminence ? 'action' : 'primary';
+
+  const renderInitializedAt = (presentation: ViewerLocalDateTimePresentation) => {
+    if (!presentation.dateTime) {
+      return <span>{presentation.text}</span>;
+    }
+
+    return (
+      <time
+        dateTime={presentation.dateTime}
+        title={presentation.title}
+        data-testid="system-workspaces__initialized-at"
+        data-visual-datetime={presentation.visualDateTime}
+        data-visual-datetime-policy={presentation.visualDateTimePolicy}
+      >
+        {presentation.text}
+      </time>
+    );
+  };
 
   return (
     <aside
@@ -117,7 +144,7 @@ export function WorkspaceEditorPanel({
                   <span>·</span>
                   <span>{workspace?.workspace_admin || t('none')}</span>
                   <span>·</span>
-                  <span>{lastInitializedValue}</span>
+                  <span>{renderInitializedAt(lastInitializedValue)}</span>
                 </div>
               </div>
               {showFailedRepairAction ? (
@@ -143,15 +170,26 @@ export function WorkspaceEditorPanel({
                 {workspaceStateLabel}
               </span>
               {state.isEditMode ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onCancelEditMode}
-                  disabled={isSubmitting}
-                  data-testid="system-workspaces__cancel-edit"
-                >
-                  {t('cancel')}
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    variant={saveButtonVariant}
+                    onClick={onSubmit}
+                    disabled={!state.canSubmit || disabledByProvisioning}
+                    data-testid="system-workspaces__save"
+                  >
+                    {primaryActionLabel}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onCancelEditMode}
+                    disabled={isSubmitting}
+                    data-testid="system-workspaces__cancel-edit"
+                  >
+                    {t('cancel')}
+                  </Button>
+                </>
               ) : showFailedRepairAction ? null : (
                 <Button
                   type="button"
@@ -192,7 +230,7 @@ export function WorkspaceEditorPanel({
           </div>
           <div className="space-y-1 border-t border-subtle/60 pt-3">
             <dt className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('initialized_at_label')}</dt>
-            <dd className="truncate text-sm font-medium text-foreground">{lastInitializedValue}</dd>
+            <dd className="truncate text-sm font-medium text-foreground">{renderInitializedAt(lastInitializedValue)}</dd>
           </div>
         </dl>
           {!state.isEditMode ? (
@@ -471,7 +509,7 @@ export function WorkspaceEditorPanel({
               <p className="text-sm text-tertiary">{t('workspace_lifecycle_settings_description')}</p>
             </div>
             <PreviewRow label={t('current_status_label')} value={statusValue} />
-            <PreviewRow label={t('initialized_at_label')} value={lastInitializedValue} />
+            <PreviewRow label={t('initialized_at_label')} value={renderInitializedAt(lastInitializedValue)} />
             <PreviewRow label={t('last_init_error_label')} value={workspace?.last_init_error || t('none')} />
           </section>
 
@@ -497,15 +535,6 @@ export function WorkspaceEditorPanel({
               <p className="text-sm text-tertiary">{t('workspace_actions_description')}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="primary"
-                onClick={onSubmit}
-                disabled={!state.canSubmit || disabledByProvisioning}
-                data-testid="system-workspaces__save"
-              >
-                {primaryActionLabel}
-              </Button>
               <Button
                 type="button"
                 variant="outline"

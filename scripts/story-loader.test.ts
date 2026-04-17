@@ -217,6 +217,11 @@ describe('story loader', () => {
         authLane: 'authed',
         setupNotes: ['viewport:1440x900'],
         themes: ['light', 'dark'],
+        semanticAssertions: {
+          requiredViewportTestIds: ['chat__new-thread-btn'],
+          prominentActionScopeTestIds: ['chat__threads-empty-state'],
+          maxProminentActions: 0,
+        },
       },
     ]);
   });

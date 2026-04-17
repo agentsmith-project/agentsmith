@@ -197,6 +197,19 @@ describe('visual baseline support', () => {
       .toContain('notebook__create-task-btn');
   });
 
+  it('keeps chat search-empty recovery informational while the header CTA stays visible', () => {
+    const chatRecoverEmpty = groupVisualBaselineCatalogByScenario().get('chat-recover-empty');
+    expect(chatRecoverEmpty).toBeDefined();
+
+    expect(chatRecoverEmpty?.semanticAssertions.requiredViewportTestIds).toEqual([
+      'chat__new-thread-btn',
+    ]);
+    expect(chatRecoverEmpty?.semanticAssertions.prominentActionScopeTestIds).toEqual([
+      'chat__threads-empty-state',
+    ]);
+    expect(chatRecoverEmpty?.semanticAssertions.maxProminentActions).toBe(0);
+  });
+
   it('forbids stitched create-task dialog copy and top-level workspace wording in visual semantics', () => {
     const dialog = groupVisualBaselineCatalogByScenario().get('notebook-create-task-dialog');
     const lifecycleDialog = groupVisualBaselineCatalogByScenario().get('notebook-task-lifecycle-create-dialog');
@@ -812,6 +825,11 @@ describe('visual baseline support', () => {
         authLane: 'authed',
         setupNotes: ['viewport:1440x900'],
         themes: ['light', 'dark'],
+        semanticAssertions: {
+          requiredViewportTestIds: ['chat__new-thread-btn'],
+          prominentActionScopeTestIds: ['chat__threads-empty-state'],
+          maxProminentActions: 0,
+        },
       },
     ]);
   });
@@ -911,7 +929,7 @@ describe('visual baseline support', () => {
 
     expect(resolveVisualBaselineStableMarkers('chat-recover-empty')).toEqual([
       'chat__threads-empty-state',
-      'chat__threads-empty-new-thread',
+      'chat__threads-empty-clear-search',
       'chat__new-thread-btn',
     ]);
 
@@ -1424,7 +1442,7 @@ describe('visual baseline support', () => {
     ]);
     expect(chatRecoverEmpty?.stableMarkers).toEqual([
       'chat__threads-empty-state',
-      'chat__threads-empty-new-thread',
+      'chat__threads-empty-clear-search',
       'chat__new-thread-btn',
     ]);
   });

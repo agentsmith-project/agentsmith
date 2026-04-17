@@ -145,6 +145,18 @@ describe('AgentKeysDialog', () => {
   });
 
   describe('Rendering and Display', () => {
+    it('uses the sheet recipe and anchors the primary create action in the footer', async () => {
+      render(<AgentKeysDialog {...defaultProps} />, { wrapper });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('agents__keys__sheet')).toBeInTheDocument();
+      });
+
+      expect(screen.getByTestId('agents__keys__footer')).toContainElement(
+        screen.getByRole('button', { name: /create new key/i }),
+      );
+    });
+
     it('renders when open', () => {
       render(<AgentKeysDialog {...defaultProps} />, { wrapper });
 

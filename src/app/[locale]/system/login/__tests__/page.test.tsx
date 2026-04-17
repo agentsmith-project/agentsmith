@@ -66,15 +66,17 @@ describe('SystemLoginPage', () => {
     expect(mockAssign).not.toHaveBeenCalled();
   });
 
-  it('keeps a workspace-login recovery action visible without linking to protected system info', () => {
+  it('uses the single-column auth recipe with a quiet workspace recovery action', () => {
     render(<SystemLoginPage />);
 
     expect(screen.getByTestId('logo')).toBeInTheDocument();
     expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
-    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'wide');
-    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'split');
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-recipe', 'public_auth_single');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-recipe', 'public_auth_single');
     expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-family', 'public-auth');
-    expect(screen.getByTestId('public-auth__aside')).toBeInTheDocument();
+    expect(screen.queryByTestId('public-auth__aside')).not.toBeInTheDocument();
+    expect(screen.getByTestId('system-login__support')).toHaveTextContent('login_scope_value');
+    expect(screen.getByTestId('system-login__support')).toHaveTextContent('login_scope_hint');
     expect(screen.getAllByRole('button', { name: 'open_workspace_login' })).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'open_system_info' })).not.toBeInTheDocument();
   });

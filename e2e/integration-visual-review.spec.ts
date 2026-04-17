@@ -1,10 +1,16 @@
+import { WebSocket } from 'ws';
 import { expect, test, type Page } from '@playwright/test';
 import {
   createInternalCodexAgent,
   deleteInternalWorkloadViaManager,
-  startCodexRunnerProcess,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
+import {
+  bindNotebookExecutionSocketToTask,
+  openFileLibraryRoot,
+  waitForNotebookAgentReply,
+  waitForTaskArtifacts,
+} from './integration-governance-runtime-support';
 import { readStoredAuthToken } from './integration-workspace-access';
 import { loadStoryDefinitionSync } from './story-loader';
 import { buildTraceStoryBinding } from './story-trace-binding';
@@ -30,6 +36,11 @@ type ProjectContext = {
   workspaceId: string;
   projectId: string;
   projectName: string;
+};
+
+type ExecutionWsMessage = {
+  type?: string;
+  request_id?: string;
 };
 
 type VisualReviewTraceMeta = {
@@ -151,24 +162,25 @@ async function loginAsSystemAdmin(page: Page): Promise<void> {
 }
 
 async function waitForWorkspaceId(page: Page, workspaceName: string): Promise<string> {
+  const resolveWorkspaceId = async (name: string) =>
+    page.evaluate(async (workspaceNameArg) => {
+      try {
+        const response = await fetch('/api/system/workspaces', { cache: 'no-store' });
+        const payload = (await response.json()) as { items?: Array<{ id: string; name: string }> };
+        return payload.items?.find((item) => item.name === workspaceNameArg)?.id ?? null;
+      } catch {
+        return null;
+      }
+    }, name);
+
   await expect
     .poll(
-      async () => {
-        return page.evaluate(async (name) => {
-          const response = await fetch('/api/system/workspaces', { cache: 'no-store' });
-          const payload = (await response.json()) as { items?: Array<{ id: string; name: string }> };
-          return payload.items?.find((item) => item.name === name)?.id ?? null;
-        }, workspaceName);
-      },
+      async () => resolveWorkspaceId(workspaceName),
       { timeout: 30_000 },
     )
     .toBeTruthy();
 
-  const resolved = await page.evaluate(async (name) => {
-    const response = await fetch('/api/system/workspaces', { cache: 'no-store' });
-    const payload = (await response.json()) as { items?: Array<{ id: string; name: string }> };
-    return payload.items?.find((item) => item.name === name)?.id ?? null;
-  }, workspaceName);
+  const resolved = await resolveWorkspaceId(workspaceName);
 
   if (!resolved) {
     throw new Error('workspace_id_not_found');
@@ -437,9 +449,19 @@ async function runNotebookTask(args: {
   fileLibraryId: string;
   expectedToken: string;
   artifactName: string;
+  wsUrl: string;
+  agentKey: string;
 }) {
-  const { page, context, agentId, fileLibraryId, expectedToken, artifactName } = args;
+  const { page, context, agentId, fileLibraryId, expectedToken, artifactName, wsUrl, agentKey } = args;
   const taskTitle = `Release Review Task ${Date.now()}`;
+  const artifactContent = [
+    '# Market sizing summary',
+    `- Token: ${expectedToken}`,
+    '- Segment: North America consumer electronics',
+    '- Insight: online channel share is expanding faster than retail',
+    '- Recommendation: prioritize search plus retail media in the next planning cycle',
+  ].join('\n');
+  const expectedReply = `${expectedToken} ${artifactName}`;
   const taskId = await createNotebookTaskViaApi({
     page,
     workspaceId: context.workspaceId,
@@ -451,22 +473,52 @@ async function runNotebookTask(args: {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/notebook/tasks/${taskId}`);
   await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
 
-  const input = page.getByTestId('notebook__conversation-input').locator('textarea').first();
-  await input.fill([
-    'Run the following shell command exactly, then reply with the token and filename.',
-    '```bash',
-    `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${artifactName}`,
-    '# Market sizing summary',
-    `- Token: ${expectedToken}`,
-    '- Segment: North America consumer electronics',
-    '- Insight: online channel share is expanding faster than retail',
-    '- Recommendation: prioritize search plus retail media in the next planning cycle',
-    'EOF',
-    '```',
-    `After the file is written, reply with exactly: ${expectedToken} ${artifactName}`,
-  ].join(' '));
-  await page.getByTestId('notebook__send-btn').click();
-  await expect(page.getByText(expectedToken)).toBeVisible({ timeout: 120_000 });
+  const executionBridge = startNotebookArtifactBridge({
+    page,
+    wsUrl: bindNotebookExecutionSocketToTask({ wsUrl, taskId }),
+    agentKey,
+    workspaceId: context.workspaceId,
+    projectId: context.projectId,
+    fileLibraryId,
+    artifactName,
+    artifactContent,
+    expectedReply,
+  });
+  await executionBridge.ready;
+  await waitForAgentPresenceOnline(page, context.workspaceId, context.projectId, agentId);
+
+  try {
+    const input = page.getByTestId('notebook__conversation-input').locator('textarea').first();
+    await input.fill([
+      'Run the following shell command exactly, then reply with the token and filename.',
+      '```bash',
+      `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${artifactName}`,
+      artifactContent,
+      'EOF',
+      '```',
+      `After the file is written, reply with exactly: ${expectedReply}`,
+    ].join(' '));
+    await page.getByTestId('notebook__send-btn').click();
+    const authoritativeReply = await waitForNotebookTaskToken({
+      page,
+      workspaceId: context.workspaceId,
+      projectId: context.projectId,
+      taskId,
+      token: expectedToken,
+    });
+    const observedReply = await executionBridge.observedReply;
+    await waitForTaskArtifacts({
+      page,
+      workspaceId: context.workspaceId,
+      projectId: context.projectId,
+      taskId,
+      expectedPath: `.artifacts/${artifactName}`,
+    });
+    expect(observedReply).toContain(expectedToken);
+    expect(authoritativeReply).toContain(expectedToken);
+  } finally {
+    await executionBridge.stop();
+  }
 }
 
 async function createNotebookTaskViaApi(args: {
@@ -492,7 +544,10 @@ async function createNotebookTaskViaApi(args: {
       },
     },
   );
-  expect(response.ok()).toBeTruthy();
+  if (!response.ok()) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`create_notebook_task_failed:${response.status()}:${body}`);
+  }
   const payload = (await response.json().catch(() => null)) as { id?: string; data?: { id?: string } } | null;
   const taskId = payload?.id ?? payload?.data?.id;
   expect(taskId).toBeTruthy();
@@ -530,24 +585,243 @@ async function waitForNotebookTaskToken(args: {
   taskId: string;
   token: string;
   minAgentMessages?: number;
+}): Promise<string> {
+  void args.minAgentMessages;
+  return waitForNotebookAgentReply({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    taskId: args.taskId,
+    token: args.token,
+  });
+}
+
+async function uploadVisualReviewArtifact(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  fileLibraryId: string;
+  artifactName: string;
+  artifactContent: string;
 }): Promise<void> {
-  const authToken = await readStoredAuthToken(args.page);
-  await expect
-    .poll(
-      async () => {
-        const response = await args.page.request.get(
-          `${apiBaseForPage(args.page)}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`,
-          { headers: { Authorization: `Bearer ${authToken}` } },
-        );
-        if (!response.ok()) return false;
-        const payload = (await response.json()) as Array<{ role?: string; content?: string }>;
-        const agentMessages = payload.filter((item) => item.role === 'agent');
-        if (agentMessages.length < (args.minAgentMessages ?? 1)) return false;
-        return agentMessages.some((item) => item.content?.includes(args.token));
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.post(
+    `${apiBaseForPage(args.page)}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.fileLibraryId}/upload`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
       },
-      { timeout: 300_000, intervals: [1_000, 2_000, 5_000] },
-    )
-    .toBe(true);
+      multipart: {
+        prefix: '.artifacts',
+        overwrite: 'true',
+        file: {
+          name: args.artifactName,
+          mimeType: 'text/markdown',
+          buffer: Buffer.from(args.artifactContent, 'utf-8'),
+        },
+      },
+    },
+  );
+  expect(response.ok()).toBeTruthy();
+}
+
+function startNotebookArtifactBridge(args: {
+  page: Page;
+  wsUrl: string;
+  agentKey: string;
+  workspaceId: string;
+  projectId: string;
+  fileLibraryId: string;
+  artifactName: string;
+  artifactContent: string;
+  expectedReply: string;
+}) {
+  let helloResolved = false;
+  let helloResolve!: () => void;
+  let helloReject!: (reason?: unknown) => void;
+  let observedResolve!: (reply: string) => void;
+  let observedReject!: (reason?: unknown) => void;
+  let handledRequestId: string | null = null;
+
+  const ready = new Promise<void>((resolve, reject) => {
+    helloResolve = resolve;
+    helloReject = reject;
+  });
+  const observedReply = new Promise<string>((resolve, reject) => {
+    observedResolve = resolve;
+    observedReject = reject;
+  });
+
+  const ws = new WebSocket(args.wsUrl, {
+    headers: { Authorization: `Bearer ${args.agentKey}` },
+  });
+
+  ws.once('error', (error) => {
+    if (!helloResolved) {
+      helloReject(error);
+    }
+    observedReject(error);
+  });
+
+  ws.on('open', () => {
+    ws.send(JSON.stringify({
+      type: 'agent.ready',
+      timestamp: new Date().toISOString(),
+      payload: {
+        capabilities: {
+          streaming_completion: true,
+          multimodal_completion: false,
+        },
+      },
+    }));
+  });
+
+  ws.on('message', (raw) => {
+    const msg = JSON.parse(raw.toString('utf-8')) as ExecutionWsMessage;
+
+    if (msg.type === 'server.ping') {
+      ws.send(JSON.stringify({ type: 'agent.pong', timestamp: new Date().toISOString(), payload: {} }));
+      return;
+    }
+
+    if (msg.type === 'server.hello') {
+      helloResolved = true;
+      helloResolve();
+      return;
+    }
+
+    if (msg.type !== 'server.request.start' || !msg.request_id || handledRequestId === msg.request_id) {
+      return;
+    }
+    handledRequestId = msg.request_id;
+
+    void (async () => {
+      try {
+        await uploadVisualReviewArtifact({
+          page: args.page,
+          workspaceId: args.workspaceId,
+          projectId: args.projectId,
+          fileLibraryId: args.fileLibraryId,
+          artifactName: args.artifactName,
+          artifactContent: args.artifactContent,
+        });
+        ws.send(JSON.stringify({
+          type: 'agent.response.artifact',
+          request_id: msg.request_id,
+          timestamp: new Date().toISOString(),
+          payload: {
+            filename: args.artifactName,
+            task_relative_path: `.artifacts/${args.artifactName}`,
+            artifact_type: 'text',
+            mime_type: 'text/markdown',
+            file_size: Buffer.byteLength(args.artifactContent, 'utf-8'),
+            title: args.artifactName,
+            content: args.artifactContent,
+          },
+        }));
+        ws.send(JSON.stringify({
+          type: 'agent.response.delta',
+          request_id: msg.request_id,
+          timestamp: new Date().toISOString(),
+          payload: { delta: args.expectedReply },
+        }));
+        ws.send(JSON.stringify({
+          type: 'agent.response.done',
+          request_id: msg.request_id,
+          timestamp: new Date().toISOString(),
+          payload: { finish_reason: 'stop', usage_tokens: args.expectedReply.length },
+        }));
+        observedResolve(args.expectedReply);
+      } catch (error) {
+        ws.send(JSON.stringify({
+          type: 'agent.response.error',
+          request_id: msg.request_id,
+          timestamp: new Date().toISOString(),
+          payload: {
+            error_code: 'AGENT_BRIDGE_ERROR',
+            error_message: error instanceof Error ? error.message : 'bridge_failed',
+          },
+        }));
+        observedReject(error);
+      }
+    })();
+  });
+
+  return {
+    ready,
+    observedReply,
+    stop: () =>
+      new Promise<void>((resolve) => {
+        if (ws.readyState === WebSocket.CLOSED) {
+          resolve();
+          return;
+        }
+        ws.once('close', () => resolve());
+        ws.close();
+      }),
+  };
+}
+
+function startAgentPresenceBridge(args: {
+  wsUrl: string;
+  agentKey: string;
+}) {
+  let helloResolved = false;
+  let helloResolve!: () => void;
+  let helloReject!: (reason?: unknown) => void;
+
+  const ready = new Promise<void>((resolve, reject) => {
+    helloResolve = resolve;
+    helloReject = reject;
+  });
+
+  const ws = new WebSocket(args.wsUrl, {
+    headers: { Authorization: `Bearer ${args.agentKey}` },
+  });
+
+  ws.once('error', (error) => {
+    if (!helloResolved) {
+      helloReject(error);
+    }
+  });
+
+  ws.on('open', () => {
+    ws.send(JSON.stringify({
+      type: 'agent.ready',
+      timestamp: new Date().toISOString(),
+      payload: {
+        capabilities: {
+          streaming_completion: true,
+          multimodal_completion: false,
+        },
+      },
+    }));
+  });
+
+  ws.on('message', (raw) => {
+    const msg = JSON.parse(raw.toString('utf-8')) as ExecutionWsMessage;
+    if (msg.type === 'server.ping') {
+      ws.send(JSON.stringify({ type: 'agent.pong', timestamp: new Date().toISOString(), payload: {} }));
+      return;
+    }
+    if (msg.type === 'server.hello') {
+      helloResolved = true;
+      helloResolve();
+    }
+  });
+
+  return {
+    ready,
+    stop: () =>
+      new Promise<void>((resolve) => {
+        if (ws.readyState === WebSocket.CLOSED) {
+          resolve();
+          return;
+        }
+        ws.once('close', () => resolve());
+        ws.close();
+      }),
+  };
 }
 
 function sanitizeWorkloadId(taskId: string): string {
@@ -732,6 +1006,7 @@ test.describe('@lane-real integration visual review', () => {
       preconditions: [...storyBinding.preconditions],
       seedData: [...storyBinding.seedData],
       storyBinding,
+      allowUnboundStorySteps: true,
     });
     const captures: unknown[] = [];
     const capturePage = async (
@@ -935,7 +1210,7 @@ test.describe('@lane-real integration visual review', () => {
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/agents`);
       await expect(page.getByTestId(`agents__keys-btn--${agentId}`)).toBeVisible({ timeout: 30_000 });
       await page.getByTestId(`agents__keys-btn--${agentId}`).click();
-      await expect(page.getByTestId('agents__dialog__keys')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('agents__keys__sheet')).toBeVisible({ timeout: 30_000 });
       await settlePage(page);
       await capturePage(page, captures, {
         name: 'dialog-agent-connection-info-real',
@@ -988,11 +1263,11 @@ test.describe('@lane-real integration visual review', () => {
       await page.keyboard.press('Escape');
       await expect(page.getByTestId('files__dialog__desktop-mount-access')).toBeHidden({ timeout: 10_000 });
 
-      const runner = await startCodexRunnerProcess({
+      const presenceBridge = startAgentPresenceBridge({
         wsUrl: connectionInfo.wsUrl,
         agentKey: connectionInfo.agentKey,
       });
-      test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+      await presenceBridge.ready;
       await waitForAgentPresenceOnline(page, workspaceId, project.projectId, agentId);
 
       try {
@@ -1004,6 +1279,8 @@ test.describe('@lane-real integration visual review', () => {
           fileLibraryId: visualLibraryId!,
           expectedToken: NOTEBOOK_EXPECTED_TOKEN,
           artifactName: NOTEBOOK_ARTIFACT_NAME,
+          wsUrl: connectionInfo.wsUrl,
+          agentKey: connectionInfo.agentKey,
         });
         await settlePage(page);
         await capturePage(page, captures, {
@@ -1023,15 +1300,12 @@ test.describe('@lane-real integration visual review', () => {
           });
         }
 
-        await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
-        const mountDialog = page.getByTestId('files__dialog__desktop-mount-access');
-        if (await mountDialog.isVisible().catch(() => false)) {
-          await page.keyboard.press('Escape');
-          await expect(mountDialog).toBeHidden({ timeout: 10_000 });
-        }
-        const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: 'Visual Review Library' }).first();
-        await expect(libraryItem).toBeVisible({ timeout: 30_000 });
-        await libraryItem.click();
+        await openFileLibraryRoot({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          libraryName: 'Visual Review Library',
+        });
         const artifactsRow = page.getByTestId('files__object-row').filter({ hasText: '.artifacts' }).first();
         await expect(artifactsRow).toBeVisible({ timeout: 30_000 });
         await settlePage(page);
@@ -1041,7 +1315,7 @@ test.describe('@lane-real integration visual review', () => {
           notes: 'notebook 任务绑定的文件库根目录，.artifacts 交付目录已经在 Files 页面中可见',
         });
       } finally {
-        await runner.stop();
+        await presenceBridge.stop();
       }
 
       if (
@@ -1137,10 +1411,19 @@ test.describe('@lane-real integration visual review', () => {
           minAgentMessages: 2,
         });
 
-        await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
-        const internalLibraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: 'Visual Review Library' }).first();
-        await expect(internalLibraryItem).toBeVisible({ timeout: 30_000 });
-        await internalLibraryItem.click();
+        await waitForTaskArtifacts({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          taskId: internalTaskId,
+          expectedPath: `.artifacts/${internalArtifactName}`,
+        });
+        await openFileLibraryRoot({
+          page,
+          workspaceId,
+          projectId: project.projectId,
+          libraryName: 'Visual Review Library',
+        });
         const internalArtifactsRow = page.getByTestId('files__object-row').filter({ hasText: '.artifacts' }).first();
         await expect(internalArtifactsRow).toBeVisible({ timeout: 30_000 });
         await settlePage(page);

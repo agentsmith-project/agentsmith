@@ -55,6 +55,8 @@ export function ThreadsPane({
     () => countGeneratingSessions(streamingSessionIds),
     [streamingSessionIds],
   );
+  const hasSearchQuery = searchQuery.trim().length > 0;
+  const showCreateButton = sessions.length > 0 && activeSessionId !== null;
 
   return (
     <aside
@@ -69,6 +71,7 @@ export function ThreadsPane({
           canCreate={canCreate}
           createPending={createPending}
           searchQuery={searchQuery}
+          showCreateButton={showCreateButton}
           t={t}
           onCreate={onCreate}
           onSearchQueryChange={onSearchQueryChange}
@@ -90,14 +93,14 @@ export function ThreadsPane({
           <div className="flex h-full flex-col items-center justify-center gap-3 px-4 py-8 text-center" data-testid="chat__threads-empty-state">
             <div>
               <div className="text-sm font-medium text-foreground">
-                {searchQuery.trim().length > 0 ? t('threads_empty_search_title') : t('no_threads')}
+                {hasSearchQuery ? t('threads_empty_search_title') : t('no_threads')}
               </div>
               <div className="mt-1 max-w-[180px] text-xs text-tertiary">
-                {searchQuery.trim().length > 0 ? t('threads_empty_search_description') : t('threads_empty_description')}
+                {hasSearchQuery ? t('threads_empty_search_description') : t('threads_empty_description')}
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2">
-              {searchQuery.trim().length > 0 ? (
+              {hasSearchQuery ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -107,18 +110,6 @@ export function ThreadsPane({
                   data-testid="chat__threads-empty-clear-search"
                 >
                   {t('threads_empty_clear_search')}
-                </Button>
-              ) : null}
-              {canCreate ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-8"
-                  onClick={onCreate}
-                  disabled={createPending}
-                  data-testid="chat__threads-empty-new-thread"
-                >
-                  {t('new_thread')}
                 </Button>
               ) : null}
             </div>

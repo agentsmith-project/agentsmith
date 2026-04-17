@@ -1,6 +1,6 @@
 'use client';
 
-import { Key, Plus, Trash2 } from 'lucide-react';
+import { Key, Trash2 } from 'lucide-react';
 
 import type { AgentServiceKey } from '@/lib/api/types';
 import { Button } from '@/components/ui/button';
@@ -9,23 +9,17 @@ import { formatRelativeTime } from './utils';
 
 interface KeysListSectionProps {
   activeKeys: AgentServiceKey[];
-  createPending: boolean;
-  createLabel: string;
   emptyLabel: string;
   isLoading: boolean;
   sectionTitle: string;
-  onCreate: () => void;
   onRevoke: (keyId: string) => void;
 }
 
 export function KeysListSection({
   activeKeys,
-  createPending,
-  createLabel,
   emptyLabel,
   isLoading,
   sectionTitle,
-  onCreate,
   onRevoke,
 }: KeysListSectionProps) {
   return (
@@ -37,17 +31,6 @@ export function KeysListSection({
             {activeKeys.length}
           </span>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={onCreate}
-          disabled={createPending}
-          className="w-full sm:w-auto"
-          data-testid="agents__keys__create"
-        >
-          <Plus className="w-4 h-4" />
-          {createLabel}
-        </Button>
       </div>
 
       {isLoading ? (

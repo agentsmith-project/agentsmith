@@ -16,6 +16,7 @@ import {
   PublicAuthMutedCard,
   PublicAuthSection,
   PublicAuthShell,
+  PublicAuthSupportBlock,
 } from '@/components/public/PublicAuthPage';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import { createPkceChallenge, randomBase64Url } from '@/lib/auth/pkce';
@@ -243,8 +244,8 @@ export default function WorkspaceLoginPage() {
   return (
     <PageState state="success">
       <PageLayout>
-        <PublicAuthFrame width="narrow">
-          <PublicAuthShell>
+        <PublicAuthFrame recipe="public_auth_single">
+          <PublicAuthShell recipe="public_auth_single">
             <div className="space-y-6">
               <PublicAuthHeader
                 logo={<Logo className="origin-left scale-125" />}
@@ -275,31 +276,26 @@ export default function WorkspaceLoginPage() {
                   </div>
                 ) : (
                   <div className="space-y-5">
-                    <div
-                      className="space-y-4 rounded-[18px] border border-foreground/12 bg-background p-5 shadow-[0_16px_40px_rgba(15,23,42,0.08)] md:p-6"
-                      data-testid="workspace-login__primary-action-panel"
-                    >
-                      <div className="space-y-2">
-                        <p className="text-xs uppercase tracking-[0.18em] text-tertiary">
-                          {t('workspace_login_badge')}
-                        </p>
-                      </div>
+                    <div className="space-y-4">
+                      <PublicAuthSupportBlock
+                        testId="workspace-login__support"
+                        eyebrow={t('workspace_login_badge')}
+                        title={t('workspace_login_support_value')}
+                        description={t('keycloak_sign_in_hint')}
+                      >
+                        <p className="text-xs text-tertiary">{t('workspace_login_support_hint')}</p>
+                      </PublicAuthSupportBlock>
                       <Button
                         data-testid="workspace-login__keycloak-btn"
                         onClick={handleKeycloakLogin}
                         disabled={isLoggingIn}
                         variant="primary"
                         size="lg"
-                        className="h-12 w-full justify-between rounded-[14px] border border-foreground/10 bg-foreground px-4 text-[15px] font-semibold tracking-[0.01em] text-background shadow-[0_20px_48px_rgba(15,23,42,0.24)] ring-1 ring-foreground/5 hover:bg-foreground hover:shadow-[0_24px_56px_rgba(15,23,42,0.28)]"
+                        className="h-12 w-full justify-between rounded-[14px] px-4 text-[15px] font-semibold tracking-[0.01em]"
                       >
                         <span>{isLoggingIn ? t('keycloak_redirecting') : t('workspace_login_primary_action')}</span>
                         <ArrowRight className="h-4 w-4" />
                       </Button>
-                      <div className="space-y-1">
-                        <p className="type-title text-foreground">{t('workspace_login_support_value')}</p>
-                        <p className="text-sm text-secondary">{t('keycloak_sign_in_hint')}</p>
-                        <p className="text-xs text-tertiary">{t('workspace_login_support_hint')}</p>
-                      </div>
                       {keycloakError ? (
                         <p className="rounded-md border border-error/20 bg-error/8 px-4 py-3 text-xs text-error" data-testid="workspace-login__keycloak-error">
                           {keycloakError}

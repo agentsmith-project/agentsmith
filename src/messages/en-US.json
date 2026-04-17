@@ -1043,6 +1043,7 @@
     "create": "Create Endpoint",
     "create_dialog": {
       "title": "Create Endpoint",
+      "sheet_description": "Choose guided or manual setup for a new endpoint connection.",
       "description": "Description",
       "name": "Name",
       "name_placeholder": "e.g. GPT-4o",

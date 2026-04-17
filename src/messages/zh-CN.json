@@ -1045,6 +1045,7 @@
     "create": "创建端点",
     "create_dialog": {
       "title": "创建端点",
+      "sheet_description": "为新的 endpoint 连接选择引导式或手动配置。",
       "description": "描述",
       "name": "名称",
       "name_placeholder": "例如 GPT-4o",

@@ -32,7 +32,7 @@
       "authLane": "authed",
       "stableMarkers": [
         "chat__threads-empty-state",
-        "chat__threads-empty-new-thread",
+        "chat__threads-empty-clear-search",
         "chat__new-thread-btn"
       ]
     }
@@ -52,10 +52,10 @@
     {
       "stepId": "chat-recover-empty-open",
       "sceneId": "chat-recover-empty",
-      "intent": "Open the recovery state and start a new thread from the empty list.",
+      "intent": "Open the search-empty recovery state and start a new thread from the header CTA.",
       "action": "Recover chat",
-      "target": "chat__threads-empty-new-thread",
-      "expectedFeedback": "The search-empty recovery path is visible and offers a new thread action from the thread pane.",
+      "target": "chat__new-thread-btn",
+      "expectedFeedback": "The search-empty state stays informational, the body offers clear-search guidance, and the header keeps the new-thread recovery CTA.",
       "evidence": [
         "trace"
       ]
@@ -89,13 +89,14 @@
         {
           "sceneId": "chat-recover-empty",
           "scenarioId": "chat-recover-empty",
-          "scenario": "Chat recovery state with search results filtered to zero and the new-thread recovery CTA.",
+          "scenario": "Chat recovery state with search results filtered to zero, an informational empty thread body, and the surviving header new-thread CTA.",
           "group": "project_pages",
           "codeRefs": [
             "e2e/visual.spec.ts",
             "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat/page.tsx",
             "src/components/chat/ChatMainPane.tsx",
-            "src/components/chat/ThreadsPane.tsx"
+            "src/components/chat/ThreadsPane.tsx",
+            "src/components/chat/threads-pane/ThreadsPaneHeader.tsx"
           ],
           "capture": "full_page",
           "authLane": "authed",
@@ -105,7 +106,16 @@
           "themes": [
             "light",
             "dark"
-          ]
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "chat__new-thread-btn"
+            ],
+            "prominentActionScopeTestIds": [
+              "chat__threads-empty-state"
+            ],
+            "maxProminentActions": 0
+          }
         }
       ]
     }

@@ -9,6 +9,7 @@ interface ThreadsPaneHeaderProps {
   canCreate: boolean;
   createPending: boolean;
   searchQuery: string;
+  showCreateButton: boolean;
   t: (key: string, values?: Record<string, number>) => string;
   onCreate: () => void;
   onSearchQueryChange: (value: string) => void;
@@ -18,6 +19,7 @@ export function ThreadsPaneHeader({
   canCreate,
   createPending,
   searchQuery,
+  showCreateButton,
   t,
   onCreate,
   onSearchQueryChange,
@@ -26,17 +28,19 @@ export function ThreadsPaneHeader({
     <div className="p-2.5 border-b border-subtle space-y-2">
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs font-medium uppercase tracking-wide text-tertiary">{t('threads_title')}</div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 px-2.5"
-          onClick={onCreate}
-          disabled={!canCreate || createPending}
-          data-testid="chat__new-thread-btn"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          {t('new_thread')}
-        </Button>
+        {showCreateButton ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-2.5"
+            onClick={onCreate}
+            disabled={!canCreate || createPending}
+            data-testid="chat__new-thread-btn"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            {t('new_thread')}
+          </Button>
+        ) : null}
       </div>
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-icon-default" />

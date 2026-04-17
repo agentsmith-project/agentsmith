@@ -97,4 +97,51 @@ describe('story trace binding', () => {
       await rm(rootDir, { recursive: true, force: true });
     }
   });
+
+  it('allows explicit extra evidence steps when the trace writer opts into unbound story steps', async () => {
+    const story = await loadStoryDefinition('release-user-story-end-to-end');
+    const binding = buildTraceStoryBinding(story);
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'agentsmith-story-trace-unbound-'));
+
+    try {
+      const trace = await createUxTraceBundleWriter({
+        outputRoot: rootDir,
+        lane: 'backend-real',
+        suite: 'integration-release-user-story',
+        storyId: story.storyId,
+        title: story.title,
+        actor: story.actor,
+        route: story.entryRoute,
+        specFile: 'e2e/integration-release-user-story.spec.ts',
+        browser: 'chromium',
+        storyBinding: binding,
+        allowUnboundStorySteps: true,
+      });
+
+      await trace.capture(makeFakePage(story.entryRoute), {
+        stepId: 'release-user-story-extra-evidence',
+        action: 'Capture additional evidence',
+        target: 'release-user-story-extra-evidence',
+        note: 'Additional screenshot evidence outside the story catalog.',
+      });
+
+      await trace.finish({
+        outcome: 'pass',
+        finishedAt: '2026-04-12T10:00:00.000Z',
+      });
+
+      const manifestPath = path.join(trace.bundleDir, 'manifest.json');
+      const eventsPath = path.join(trace.bundleDir, 'events.jsonl');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as {
+        story_fingerprint?: string;
+        screenshot_count?: number;
+      };
+      const events = (await readFile(eventsPath, 'utf-8')).trim().split('\n').map((line) => JSON.parse(line) as { step_id: string });
+      expect(manifest.story_fingerprint).toBe(binding.storyFingerprint);
+      expect(manifest.screenshot_count).toBe(1);
+      expect(events.map((event) => event.step_id)).toContain('release-user-story-extra-evidence');
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
 });

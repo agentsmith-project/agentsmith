@@ -210,7 +210,7 @@ if [[ "${running_count}" -ge 2 ]]; then
 EOF
 fi
 
-if [[ -n "${NEXT_DEV_PID_FILE:-}" ]]; then
+if [[ -n "${NEXT_DEV_PID_FILE:-}" && "${NEXT_GENERATED_ROOT_MANAGED}" != "1" ]]; then
   mkdir -p "$(dirname "${NEXT_DEV_PID_FILE}")"
   printf '%s\n' "$$" > "${NEXT_DEV_PID_FILE}"
 fi

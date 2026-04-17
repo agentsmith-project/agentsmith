@@ -30,6 +30,7 @@ export interface TaskHeaderProps {
   task: Task;
   workspaceId: string;
   projectId: string;
+  headerAccessory?: React.ReactNode;
   viewMode?: 'conversation' | 'terminal';
   agentMode?: 'external' | 'internal' | null;
   agentPresence?: 'online' | 'offline' | 'managed' | null;
@@ -54,6 +55,7 @@ export function TaskHeader({
   task,
   workspaceId,
   projectId,
+  headerAccessory = null,
   viewMode = 'conversation',
   agentMode = null,
   agentPresence = null,
@@ -153,7 +155,7 @@ export function TaskHeader({
 
   return (
     <div
-      className="flex items-center justify-between gap-3 border-b border-subtle bg-surface/55 px-3.5 py-1.5"
+      className="flex items-center justify-between gap-3 border-b border-subtle bg-transparent px-4 py-2.5"
       data-testid="notebook__task-header"
       data-terminal-truth-state={terminalTruthState}
     >
@@ -247,6 +249,11 @@ export function TaskHeader({
           >
             {terminalSessionSummary}
           </Badge>
+        ) : null}
+        {headerAccessory ? (
+          <div className="flex items-center" data-testid="notebook__task-header-accessory">
+            {headerAccessory}
+          </div>
         ) : null}
         {shouldShowOpenTerminalAction ? (
           <Button

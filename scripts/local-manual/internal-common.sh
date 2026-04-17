@@ -7,7 +7,39 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 
-init_local_manual_env
+LOCAL_MANUAL_INTERNAL_COMMON_SOURCE_ENV_INITIALIZED="${LOCAL_MANUAL_INTERNAL_COMMON_SOURCE_ENV_INITIALIZED:-0}"
+LOCAL_MANUAL_INTERNAL_COMMON_RUNTIME_ENV_INITIALIZED="${LOCAL_MANUAL_INTERNAL_COMMON_RUNTIME_ENV_INITIALIZED:-0}"
+
+# Keep this file safe to source as a library by loading only env needed for
+# source-time defaults here. The substrate-backed runtime init stays lazy.
+init_internal_common_source_env() {
+  if [[ "${LOCAL_MANUAL_INTERNAL_COMMON_SOURCE_ENV_INITIALIZED}" == "1" ]]; then
+    return 0
+  fi
+
+  load_runtime_env_stack "local-manual" "${ENV_FILE}"
+  load_local_manual_internal_env
+
+  PORT_API="${PORT_API:-20000}"
+  PORT_WEB="${PORT_WEB:-3001}"
+  LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP="${LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP:-0}"
+  LOCAL_MANUAL_ALLOW_UNTRACKED_PROCESS_RESCUE="${LOCAL_MANUAL_ALLOW_UNTRACKED_PROCESS_RESCUE:-0}"
+  LOCALE="${LOCALE:-zh-CN}"
+  WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
+
+  LOCAL_MANUAL_INTERNAL_COMMON_SOURCE_ENV_INITIALIZED=1
+}
+
+ensure_internal_common_runtime_env() {
+  if [[ "${LOCAL_MANUAL_INTERNAL_COMMON_RUNTIME_ENV_INITIALIZED}" == "1" ]]; then
+    return 0
+  fi
+
+  init_local_manual_env
+  LOCAL_MANUAL_INTERNAL_COMMON_RUNTIME_ENV_INITIALIZED=1
+}
+
+init_internal_common_source_env
 
 SANDBOX_ROOT="${SANDBOX_ROOT:-$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)}"
 INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR:-$(backend_real_tmp_file internal)}"
@@ -172,6 +204,7 @@ resolve_kind_gateway_ip() {
 }
 
 ensure_internal_external_dependency_services() {
+  ensure_internal_common_runtime_env
   local kind_gateway
   kind_gateway="$(resolve_kind_gateway_ip)"
   kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply --validate=false -f - >/dev/null
@@ -186,6 +219,7 @@ ensure_internal_external_dependency_services() {
 }
 
 write_internal_sandbox_config() {
+  ensure_internal_common_runtime_env
   cat > "${INTERNAL_SANDBOX_MANAGER_CONFIG}" <<EOF
 version: 1
 
@@ -299,6 +333,7 @@ EOF
 }
 
 write_internal_state_env() {
+  ensure_internal_common_runtime_env
   cat > "${INTERNAL_SANDBOX_STATE_FILE}" <<EOF
 ROOT_DIR="${ROOT_DIR}"
 SANDBOX_ROOT="${SANDBOX_ROOT}"
@@ -332,6 +367,7 @@ restore_local_manual_external_mode() {
 }
 
 start_internal_runtime() {
+  ensure_internal_common_runtime_env
   write_internal_sandbox_config
   write_internal_state_env
   stop_internal_runtime
@@ -342,6 +378,7 @@ start_internal_runtime() {
 }
 
 restart_api_with_mode() {
+  ensure_internal_common_runtime_env
   local internal_flag="$1"
   stop_pid_file_if_running "${API_PID_FILE}" "api"
   rm -f "${API_READY_FILE}" "${API_PORT_FILE}" "${API_PID_FILE}"
@@ -357,6 +394,7 @@ restart_api_with_mode() {
 }
 
 ensure_internal_agent_state() {
+  ensure_internal_common_runtime_env
   local token project_id endpoint_id existing_agent
   token="$(cat "$(backend_real_token_file)" 2>/dev/null || true)"
   project_id="$(state_get project.id)"

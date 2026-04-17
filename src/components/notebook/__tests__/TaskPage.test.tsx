@@ -247,6 +247,7 @@ vi.mock('../TaskHeader', () => ({
       agentRunActivity,
       canCreateTerminalSession,
       deleteBlockedReason,
+      headerAccessory,
     } = props;
     return (
       <div data-testid="task-header">
@@ -258,6 +259,7 @@ vi.mock('../TaskHeader', () => ({
       <div data-testid="task-header-delete-blocked-reason">
         {deleteBlockedReason ?? ''}
       </div>
+      <div data-testid="task-header-accessory">{headerAccessory ?? null}</div>
       <button onClick={onLeave}>Leave</button>
       <button onClick={onDeleted}>Delete</button>
       <button onClick={onCreateNew}>New</button>
@@ -863,6 +865,20 @@ describe('TaskPage', () => {
       } finally {
         consoleErrorSpy.mockRestore();
       }
+    });
+
+    it('renders one dominant task-detail shell and keeps the artifacts toggle in the header chrome', async () => {
+      await renderComponentReady();
+
+      const taskDetailShell = screen.getByTestId('notebook__task-detail-shell');
+      expect(taskDetailShell).toContainElement(screen.getByTestId('task-header'));
+      expect(taskDetailShell).toContainElement(screen.getByTestId('notebook__task-conversation-shell'));
+      expect(
+        within(screen.getByTestId('task-header-accessory')).getByTestId(
+          'notebook__task-artifacts-toggle',
+        ),
+      ).toHaveTextContent('Hide Artifacts');
+      expect(screen.getAllByTestId('notebook__task-artifacts-toggle')).toHaveLength(1);
     });
 
     it('does not render the removed attached inputs panel', async () => {
@@ -1575,6 +1591,45 @@ describe('TaskPage', () => {
       expect(screen.getByTestId('artifacts-panel')).toBeInTheDocument();
     });
 
+    it('hides empty artifacts chrome until artifact truth exists even when the stored preference is open', async () => {
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'conversation',
+          preferredActiveSessionId: null,
+          artifactsDrawerOpen: true,
+        }),
+      );
+      mockTaskHookState.artifacts = [];
+
+      const view = await renderComponentReady();
+
+      expect(screen.queryByTestId('notebook__task-artifacts-toggle')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('notebook__task-artifacts-drawer')).not.toBeInTheDocument();
+
+      mockTaskHookState.artifacts = mockArtifacts;
+      view.rerender(
+        <QueryClientProvider client={view.queryClient}>
+          <TaskPage
+            workspaceId={mockWorkspaceId}
+            projectId={mockProjectId}
+            taskId={mockTaskId}
+            canCreateTask={true}
+            canUpdateTask={true}
+            canDeleteTask={true}
+            canUseTerminal={true}
+          />
+        </QueryClientProvider>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notebook__task-artifacts-toggle')).toHaveTextContent(
+          'Hide Artifacts',
+        );
+        expect(screen.getByTestId('notebook__task-artifacts-drawer')).toBeInTheDocument();
+      });
+    });
+
     it('uses slower artifact auto refresh interval while task is idle', async () => {
       await renderComponentReady();
 
@@ -1623,7 +1678,7 @@ describe('TaskPage', () => {
         expect(latestTaskHeaderPropsRef.current.onCreateTerminalSession).toBeUndefined();
         expect(screen.queryByTestId('conversation-panel')).not.toBeInTheDocument();
         expect(screen.queryByTestId('notebook__task-terminal-status-strip')).not.toBeInTheDocument();
-        expect(screen.getByTestId('notebook__task-artifacts-toggle')).toHaveTextContent('Show Artifacts');
+        expect(screen.queryByTestId('notebook__task-artifacts-toggle')).not.toBeInTheDocument();
       });
 
       await act(async () => {
@@ -2882,7 +2937,8 @@ describe('TaskPage', () => {
 
       await renderComponentReady();
 
-      expect(screen.getByTestId('artifacts-panel')).toBeInTheDocument();
+      expect(screen.queryByTestId('artifacts-panel')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('notebook__task-artifacts-toggle')).not.toBeInTheDocument();
     });
 
     it('handles task with no attached files', async () => {

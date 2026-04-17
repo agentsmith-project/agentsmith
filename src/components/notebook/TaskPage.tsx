@@ -1004,12 +1004,18 @@ export function TaskPage({
     hasTask &&
     taskStatus === "active" &&
     terminalWorkspaceHydrationState === "unavailable";
+  const artifactsList = artifacts ?? [];
+  const hasArtifacts = artifactsList.length > 0;
   const effectiveViewMode =
     (terminalTruthResolved || terminalTruthUnavailable) && terminalSessionCount === 0
       ? "conversation"
       : viewMode;
   const artifactsDrawerOpen =
-    effectiveViewMode === "conversation" ? preferredArtifactsDrawerOpen : false;
+    hasArtifacts && effectiveViewMode === "conversation"
+      ? preferredArtifactsDrawerOpen
+      : false;
+  const showArtifactsToggle =
+    hasArtifacts && effectiveViewMode === "conversation";
   const terminalRecoveryCount = terminalTruthResolved
     ? (terminalTruthSessions ?? []).filter(
         (session) =>
@@ -1879,11 +1885,28 @@ export function TaskPage({
     ) : null;
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+    <div
+      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-subtle bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.03),_transparent_48%)]"
+      data-testid="notebook__task-detail-shell"
+    >
       <TaskHeader
         task={task}
         workspaceId={workspaceId}
         projectId={projectId}
+        headerAccessory={
+          showArtifactsToggle ? (
+            <button
+              type="button"
+              className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground"
+              onClick={() =>
+                setPreferredArtifactsDrawerOpen((current) => !current)
+              }
+              data-testid="notebook__task-artifacts-toggle"
+            >
+              {artifactsDrawerOpen ? tTask("artifacts_hide") : tTask("artifacts_show")}
+            </button>
+          ) : null
+        }
         agentMode={taskAgent?.mode ?? null}
         agentPresence={taskAgent?.presence ?? null}
         agentRunActivity={{
@@ -1915,7 +1938,7 @@ export function TaskPage({
       <TaskPageContent
         agentIsBusy={agentIsBusy}
         activeAgentMessageId={streamingMessageId ?? (agentIsBusy ? latestAgentMessageId : null)}
-        artifacts={artifacts || []}
+        artifacts={artifactsList}
         artifactsRefreshing={artifactsRefreshing}
         canUpdateTask={canUpdateTask}
         connectionErrorCode={realtimeFailureCode}
@@ -1965,11 +1988,6 @@ export function TaskPage({
         terminalWorkspace={terminalWorkspace}
         terminalStatusStrip={terminalStatusStrip}
         artifactsDrawerOpen={artifactsDrawerOpen}
-        onToggleArtifactsDrawer={() =>
-          setPreferredArtifactsDrawerOpen((current) => !current)
-        }
-        artifactsShowLabel={tTask("artifacts_show")}
-        artifactsHideLabel={tTask("artifacts_hide")}
         inputPlaceholder={hasTerminalSessions ? tTask("terminal_input_blocked_placeholder") : undefined}
         conversationBlockedState={conversationBlockedState}
         taskId={taskId}

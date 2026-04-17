@@ -185,27 +185,23 @@ describe('WorkspaceLoginPage', () => {
     render(<WorkspaceLoginPage />);
 
     expect(await screen.findByTestId('workspace-login__heading')).toHaveTextContent('Alpha Workspace');
-    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'narrow');
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-recipe', 'public_auth_single');
     expect(screen.getByTestId('logo')).toBeInTheDocument();
     expect(screen.getByTestId('public-theme-toggle')).toBeInTheDocument();
-    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'single');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-recipe', 'public_auth_single');
     expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-family', 'public-auth');
     expect(fetchMock).toHaveBeenCalledWith('/api/public/workspaces/ws_alpha', { cache: 'no-store' });
     expect(screen.queryByText('system_login_link')).not.toBeInTheDocument();
-    const primaryActionPanel = screen.getByTestId('workspace-login__primary-action-panel');
-    expect(primaryActionPanel).toBeVisible();
-    expect(primaryActionPanel).toHaveTextContent('workspace_login_primary_action');
-    expect(primaryActionPanel).toHaveTextContent('workspace_login_support_value');
-    expect(primaryActionPanel.textContent?.indexOf('workspace_login_primary_action') ?? -1).toBeGreaterThanOrEqual(0);
-    expect(primaryActionPanel.textContent?.indexOf('workspace_login_primary_action') ?? -1).toBeLessThan(primaryActionPanel.textContent?.indexOf('workspace_login_support_value') ?? 0);
+    expect(screen.queryByTestId('workspace-login__primary-action-panel')).not.toBeInTheDocument();
+    const support = screen.getByTestId('workspace-login__support');
+    expect(support).toBeVisible();
+    expect(support).toHaveTextContent('workspace_login_support_value');
+    expect(support).toHaveTextContent('keycloak_sign_in_hint');
+    expect(support).toHaveTextContent('workspace_login_support_hint');
     expect(screen.getByTestId('workspace-login__keycloak-btn')).toBeVisible();
     expect(screen.getByTestId('workspace-login__keycloak-btn')).toBeEnabled();
     expect(screen.getByTestId('workspace-login__keycloak-btn')).toHaveClass('h-12');
     expect(screen.getByTestId('workspace-login__keycloak-btn')).toHaveClass('rounded-[14px]');
-    expect(screen.getByTestId('workspace-login__keycloak-btn')).toHaveClass('bg-foreground');
-    expect(screen.getByTestId('workspace-login__keycloak-btn')).toHaveClass('text-background');
-    expect(screen.getByTestId('workspace-login__keycloak-btn')).toHaveClass('shadow-[0_20px_48px_rgba(15,23,42,0.24)]');
-    expect(screen.getByTestId('workspace-login__primary-action-panel')).toHaveClass('rounded-[18px]');
   });
 
   it('ignores stale invite handoff from another workspace when computing the login target', async () => {

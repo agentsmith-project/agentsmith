@@ -1,5 +1,9 @@
 import { WebSocket } from 'ws';
 import { test, expect, type Page } from '@playwright/test';
+import {
+  bindNotebookExecutionSocketToTask,
+  waitForNotebookAgentReply,
+} from './integration-governance-runtime-support';
 import { readStoredAuthToken } from './integration-workspace-access';
 import { loadStoryDefinitionSync } from './story-loader';
 import { buildTraceStoryBinding } from './story-trace-binding';
@@ -784,10 +788,64 @@ async function runNotebookTask(
   apiBase: string,
   workspaceId: string,
   projectId: string,
-  agentName: string,
-  expectedToken: string,
-  runtime: NotebookFirstSuccessRuntime,
+  taskId: string,
 ): Promise<void> {
+  const token = await readStoredAuthToken(page);
+  let workspaceAccess: {
+    metadata_url: string;
+    storage_bucket_url?: string;
+    container_workspace_path?: string | null;
+    library_root_path?: string | null;
+  } | null = null;
+  let lastWorkspaceAccessError = '';
+  const workspaceAccessStartedAt = Date.now();
+  while (Date.now() - workspaceAccessStartedAt < 30_000) {
+    const workspaceAccessResponse = await page.request.post(
+      `${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/workspace-access`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    if (workspaceAccessResponse.ok()) {
+      workspaceAccess = (await workspaceAccessResponse.json()) as NonNullable<typeof workspaceAccess>;
+      lastWorkspaceAccessError = '';
+      break;
+    }
+    const body = await workspaceAccessResponse.text().catch(() => '');
+    lastWorkspaceAccessError = `${workspaceAccessResponse.status()}:${body}`;
+    await page.waitForTimeout(1_000);
+  }
+  if (lastWorkspaceAccessError || !workspaceAccess) {
+    throw new Error(`workspace_access_not_ready:${lastWorkspaceAccessError}`);
+  }
+
+  const expectedHost = executionHostForExternalWorkspaceAccess(apiBase);
+  expectRelativeLibraryRootPath(workspaceAccess.library_root_path);
+  expect(workspaceAccess.container_workspace_path ?? null).toBeNull();
+  const metadataHost = new URL(workspaceAccess.metadata_url).hostname;
+  if (isLoopbackHost(expectedHost)) {
+    expect(isLoopbackHost(metadataHost)).toBeTruthy();
+  } else {
+    expect(metadataHost).toBe(expectedHost);
+  }
+  if (workspaceAccess.storage_bucket_url) {
+    const bucketHost = new URL(workspaceAccess.storage_bucket_url).hostname;
+    if (isLoopbackHost(expectedHost)) {
+      expect(isLoopbackHost(bucketHost)).toBeTruthy();
+    } else {
+      expect(bucketHost).toBe(expectedHost);
+    }
+  }
+  await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
+}
+
+async function createNotebookTask(
+  page: Page,
+  workspaceId: string,
+  projectId: string,
+  agentName: string,
+  runtime: NotebookFirstSuccessRuntime,
+): Promise<string> {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook`);
   await expect(page.getByTestId('notebook__create-task-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('notebook__create-task-btn').click();
@@ -810,61 +868,26 @@ async function runNotebookTask(
   if (!taskId) {
     throw new Error('task_id_not_found_after_create');
   }
-  const token = await readStoredAuthToken(page);
-  let workspaceAccess: {
-    metadata_url: string;
-    storage_bucket_url?: string;
-  };
-  let lastWorkspaceAccessError = '';
-  const workspaceAccessStartedAt = Date.now();
-  while (Date.now() - workspaceAccessStartedAt < 30_000) {
-    const workspaceAccessResponse = await page.request.post(
-      `${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/workspace-access`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    if (workspaceAccessResponse.ok()) {
-      workspaceAccess = (await workspaceAccessResponse.json()) as {
-        metadata_url: string;
-        storage_bucket_url?: string;
-        container_workspace_path?: string | null;
-        library_root_path?: string | null;
-      };
-      lastWorkspaceAccessError = '';
-      break;
-    }
-    const body = await workspaceAccessResponse.text().catch(() => '');
-    lastWorkspaceAccessError = `${workspaceAccessResponse.status()}:${body}`;
-    await page.waitForTimeout(1_000);
-  }
-  if (lastWorkspaceAccessError) {
-    throw new Error(`workspace_access_not_ready:${lastWorkspaceAccessError}`);
-  }
+  return taskId;
+}
 
-  const expectedHost = executionHostForExternalWorkspaceAccess(apiBase);
-  expectRelativeLibraryRootPath(workspaceAccess.library_root_path);
-  expect(workspaceAccess.container_workspace_path ?? null).toBeNull();
-  const metadataHost = new URL(workspaceAccess.metadata_url).hostname;
-  if (isLoopbackHost(expectedHost)) {
-    expect(isLoopbackHost(metadataHost)).toBeTruthy();
-  } else {
-    expect(metadataHost).toBe(expectedHost);
-  }
-  if (workspaceAccess.storage_bucket_url) {
-    const bucketHost = new URL(workspaceAccess.storage_bucket_url).hostname;
-    if (isLoopbackHost(expectedHost)) {
-      expect(isLoopbackHost(bucketHost)).toBeTruthy();
-    } else {
-      expect(bucketHost).toBe(expectedHost);
-    }
-  }
-  await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
-
-  const input = page.getByTestId('notebook__conversation-input').locator('textarea').first();
-  await input.fill(`Reply with the exact token ${expectedToken} and nothing else.`);
-  await page.getByTestId('notebook__send-btn').click();
-  await expect(page.getByText(expectedToken)).toBeVisible({ timeout: 120_000 });
+async function sendNotebookPromptAndWaitForReply(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  expectedToken: string;
+}): Promise<string> {
+  const input = args.page.getByTestId('notebook__conversation-input').locator('textarea').first();
+  await input.fill(`Reply with the exact token ${args.expectedToken} and nothing else.`);
+  await args.page.getByTestId('notebook__send-btn').click();
+  return waitForNotebookAgentReply({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    taskId: args.taskId,
+    token: args.expectedToken,
+  });
 }
 
 test.describe('@lane-real integration system-to-notebook mainline', () => {
@@ -928,34 +951,59 @@ test.describe('@lane-real integration system-to-notebook mainline', () => {
       const token = await readStoredAuthToken(page);
       const agentId = await resolveAgentId(page, apiBase, workspaceId, projectId, token, agentName);
       const { agentKey, wsUrl } = await createAgentKeyAndConnectionInfo(page, apiBase, workspaceId, projectId, agentId, token);
-
-      const bridge = startExternalNotebookBridge({
+      const presenceBridge = startExternalNotebookBridge({
         wsUrl,
         agentKey,
         expectedToken,
         model: BACKEND_REAL_MODEL,
       });
-
       try {
-        await bridge.ready;
+        await presenceBridge.ready;
         await waitForAgentPresenceOnline(page, apiBase, workspaceId, projectId, agentId, token);
+
         await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
-        await runNotebookTask(
+        const taskId = await createNotebookTask(
           page,
-          apiBase,
           workspaceId,
           projectId,
           agentName,
-          expectedToken,
           runtime,
         );
-        const observedReply = await bridge.observedReply;
-        expect(observedReply).toContain(expectedToken);
-        await captureTrace('run-first-notebook-task');
-        outcome = 'pass';
+
+        const executionBridge = startExternalNotebookBridge({
+          wsUrl: bindNotebookExecutionSocketToTask({ wsUrl, taskId }),
+          agentKey,
+          expectedToken,
+          model: BACKEND_REAL_MODEL,
+        });
+        try {
+          await executionBridge.ready;
+          await waitForAgentPresenceOnline(page, apiBase, workspaceId, projectId, agentId, token);
+          await runNotebookTask(
+            page,
+            apiBase,
+            workspaceId,
+            projectId,
+            taskId,
+          );
+          const authoritativeReply = await sendNotebookPromptAndWaitForReply({
+            page,
+            workspaceId,
+            projectId,
+            taskId,
+            expectedToken,
+          });
+          const observedReply = await executionBridge.observedReply;
+          expect(observedReply).toContain(expectedToken);
+          expect(authoritativeReply).toContain(expectedToken);
+        } finally {
+          await executionBridge.stop();
+        }
       } finally {
-        await bridge.stop();
+        await presenceBridge.stop();
       }
+      await captureTrace('run-first-notebook-task');
+      outcome = 'pass';
 
       expect(pageErrors).toEqual([]);
     } finally {

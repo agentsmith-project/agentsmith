@@ -155,6 +155,52 @@ export async function waitForAssistantToken(args: {
     .toBe(true);
 }
 
+export async function waitForNotebookAgentReply(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  token: string;
+}): Promise<string> {
+  const authToken = await readStoredAuthToken(args.page);
+  let matchedReply: string | null = null;
+  await expect
+    .poll(
+      async () => {
+        let response;
+        try {
+          response = await args.page.request.get(
+            `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`,
+            { headers: { Authorization: `Bearer ${authToken}` } },
+          );
+        } catch {
+          // Backend-real polling should survive transient transport resets and keep waiting on task truth.
+          return null;
+        }
+        if (!response.ok()) return null;
+        const messages = (await response.json()) as Array<{ role?: string; content?: string }>;
+        matchedReply =
+          messages.find(
+            (item) => item.role === 'agent' && item.content?.includes(args.token),
+          )?.content ?? null;
+        return matchedReply;
+      },
+      { timeout: 300_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toBeTruthy();
+  return matchedReply ?? '';
+}
+
+export function bindNotebookExecutionSocketToTask(args: {
+  wsUrl: string;
+  taskId: string;
+}): string {
+  const httpUrl = args.wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+  const boundUrl = new URL(httpUrl);
+  boundUrl.searchParams.set('session_id', args.taskId);
+  return boundUrl.toString().replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+}
+
 export async function waitForNotebookAgentToken(args: {
   page: Page;
   workspaceId: string;
@@ -162,21 +208,7 @@ export async function waitForNotebookAgentToken(args: {
   taskId: string;
   token: string;
 }): Promise<void> {
-  const authToken = await readStoredAuthToken(args.page);
-  await expect
-    .poll(
-      async () => {
-        const response = await args.page.request.get(
-          `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`,
-          { headers: { Authorization: `Bearer ${authToken}` } },
-        );
-        if (!response.ok()) return false;
-        const messages = (await response.json()) as Array<{ role?: string; content?: string }>;
-        return messages.some((item) => item.role === 'agent' && item.content?.includes(args.token));
-      },
-      { timeout: 300_000, intervals: [1_000, 2_000, 5_000] },
-    )
-    .toBe(true);
+  await waitForNotebookAgentReply(args);
 }
 
 export async function createNotebookTaskWithNewWorkspaceViaApi(args: {
@@ -231,10 +263,15 @@ export async function waitForTaskArtifacts(args: {
 }): Promise<void> {
   const authToken = await readStoredAuthToken(args.page);
   await expect.poll(async () => {
-    const response = await args.page.request.get(
-      `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/artifacts`,
-      { headers: { Authorization: `Bearer ${authToken}` } },
-    );
+    let response;
+    try {
+      response = await args.page.request.get(
+        `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/artifacts`,
+        { headers: { Authorization: `Bearer ${authToken}` } },
+      );
+    } catch {
+      return false;
+    }
     if (!response.ok()) return false;
     const payload = (await response.json()) as Array<{ task_relative_path?: string }>;
     return payload.some((item) => item.task_relative_path === args.expectedPath);
@@ -260,6 +297,11 @@ export async function openFileLibraryRoot(args: {
 }) {
   await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects/${args.projectId}/files`);
   await expect(args.page.getByTestId('files__workspace-surface')).toBeVisible({ timeout: 30_000 });
+  const mountDialog = args.page.getByTestId('files__dialog__desktop-mount-access');
+  if (await mountDialog.isVisible().catch(() => false)) {
+    await args.page.keyboard.press('Escape');
+    await expect(mountDialog).toBeHidden({ timeout: 10_000 });
+  }
   const libraryItem = args.page.locator('[data-testid^="files__library-item--"]').filter({ hasText: args.libraryName }).first();
   await expect(libraryItem).toBeVisible({ timeout: 30_000 });
   await libraryItem.click();

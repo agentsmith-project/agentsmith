@@ -4,20 +4,19 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Building2, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Logo } from '@/components/app-shell/Logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  PublicAuthAsideBlock,
   PublicAuthEyebrow,
   PublicAuthFrame,
   PublicAuthHeader,
-  PublicAuthMutedCard,
   PublicAuthSection,
   PublicAuthShell,
+  PublicAuthSupportBlock,
 } from '@/components/public/PublicAuthPage';
 
 export default function SystemLoginPage() {
@@ -52,29 +51,8 @@ export default function SystemLoginPage() {
   return (
     <PageState state="success">
       <PageLayout>
-        <PublicAuthFrame>
-          <PublicAuthShell
-            aside={(
-              <PublicAuthAsideBlock
-                icon={<Building2 className="h-5 w-5" />}
-                title={t('login_access_value')}
-                description={t('login_access_hint')}
-              >
-                <div className="space-y-3">
-                  <PublicAuthMutedCard>
-                    <p className="type-caption text-tertiary">{t('login_scope_label')}</p>
-                    <p className="mt-2 text-base font-medium text-foreground">{t('login_scope_value')}</p>
-                    <p className="mt-1 type-body-ui text-secondary">{t('login_scope_hint')}</p>
-                  </PublicAuthMutedCard>
-                  <Link href={`/${locale}/login/workspace`}>
-                    <Button variant="secondary" className="w-full">
-                      {t('open_workspace_login')}
-                    </Button>
-                  </Link>
-                </div>
-              </PublicAuthAsideBlock>
-            )}
-          >
+        <PublicAuthFrame recipe="public_auth_single">
+          <PublicAuthShell recipe="public_auth_single">
             <div className="space-y-6">
               <PublicAuthHeader
                 logo={<Logo className="origin-left scale-125" />}
@@ -128,6 +106,21 @@ export default function SystemLoginPage() {
                     </Button>
                   </div>
                 </div>
+              </PublicAuthSection>
+
+              <PublicAuthSection className="space-y-4">
+                <PublicAuthSupportBlock
+                  testId="system-login__support"
+                  eyebrow={t('login_scope_label')}
+                  title={t('login_scope_value')}
+                  description={t('login_scope_hint')}
+                >
+                  <Link href={`/${locale}/login/workspace`}>
+                    <Button variant="secondary" className="w-full">
+                      {t('open_workspace_login')}
+                    </Button>
+                  </Link>
+                </PublicAuthSupportBlock>
               </PublicAuthSection>
             </div>
           </PublicAuthShell>

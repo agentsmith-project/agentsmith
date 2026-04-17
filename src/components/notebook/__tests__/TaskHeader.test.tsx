@@ -474,7 +474,7 @@ describe('TaskHeader', () => {
       const { container } = renderComponent();
 
       const header = container.querySelector('[data-testid="notebook__task-header"]');
-      expect(header).toHaveClass('border-b', 'border-subtle', 'bg-surface/55');
+      expect(header).toHaveClass('border-b', 'border-subtle', 'bg-transparent', 'px-4', 'py-2.5');
     });
 
     it('renders action buttons in correct order', () => {

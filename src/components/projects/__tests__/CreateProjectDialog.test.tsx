@@ -11,6 +11,10 @@ const messages = {
   project: {
     create: 'Create Project',
     create_description: 'Create a new project',
+    dialog_guidance_title: 'Create a clean project entry',
+    dialog_guidance_description: 'Set the basic scope now. Visibility and join policy can be adjusted later from project settings.',
+    dialog_basics_title: 'Project basics',
+    dialog_access_title: 'Access defaults',
     name: 'Name',
     description: 'Description',
     visibility: 'Visibility',
@@ -74,6 +78,26 @@ describe('CreateProjectDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCreate.mockResolvedValue({ id: 'proj_1' });
+  });
+
+  it('organizes the create flow as a continuous sheet scaffold', () => {
+    renderDialog();
+
+    expect(screen.getByTestId('create-project__scaffold')).toHaveAttribute(
+      'data-structure',
+      'continuous-sections',
+    );
+    expect(screen.getByTestId('create-project__intro')).toHaveTextContent(
+      'Create a clean project entry',
+    );
+    expect(screen.getByTestId('create-project__section--basics')).toHaveTextContent(
+      'Project basics',
+    );
+    expect(screen.getByTestId('create-project__section--access')).toHaveTextContent(
+      'Access defaults',
+    );
+    expect(screen.getByLabelText('Name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Description')).toBeInTheDocument();
   });
 
   it('keeps create disabled until a project name is entered', () => {

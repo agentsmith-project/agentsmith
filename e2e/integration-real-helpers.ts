@@ -3,7 +3,8 @@ import http from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import type { Readable } from 'node:stream';
 import { WebSocket } from 'ws';
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import {
@@ -65,6 +66,7 @@ export const EXTERNAL_KEYCLOAK_BASE_URL = process.env.EXTERNAL_KEYCLOAK_BASE_URL
 export const SYSTEM_ADMIN_USERNAME = process.env.SYSTEM_ADMIN_USERNAME ?? 'mbos-admin';
 export const SYSTEM_ADMIN_PASSWORD = process.env.SYSTEM_ADMIN_PASSWORD ?? 'mbos-admin';
 const TASK_WORKSPACE_MOUNT_SESSIONS_FILE = 'task-workspace-mount-sessions.json';
+type ChildProcessWithIgnoredStdin = ChildProcessByStdio<null, Readable, Readable>;
 
 async function collectChildPids(pid: number): Promise<number[]> {
   return new Promise((resolve) => {
@@ -329,7 +331,7 @@ export async function keycloakLoginToWorkspace(
     if (reachedWorkspace) {
       const token = await readStoredAuthToken(page);
       if (options?.ensureProjectCreatorAccess !== false) {
-        await ensureWorkspaceProjectCreatorAccess({ page, apiBase: API_BASE, token, username });
+        await ensureWorkspaceProjectCreatorAccess({ page, apiBase: API_BASE, token: String(token), username });
       }
       await gotoWithRetry(page, landingHref);
       await page.waitForURL((url) => {
@@ -498,9 +500,11 @@ export async function selectWorkspaceAdminFromDirectory(page: Page, email: strin
       continue;
     }
 
-    const matchedUser = Array.isArray(payload?.items)
-      ? payload.items.find((item) => item.email === email)
-      : null;
+    const items =
+      payload && 'items' in payload && Array.isArray(payload.items)
+        ? payload.items
+        : [];
+    const matchedUser = items.find((item) => item.email === email) ?? null;
     const userId = typeof matchedUser?.user_id === 'string' ? matchedUser.user_id : '';
     if (!userId) {
       lastFailure = 'directory_user_missing';
@@ -1437,7 +1441,7 @@ export async function getTerminalSessionWsUrlViaApi(args: {
   projectId: string;
   taskId: string;
   sessionId: string;
-  authToken?: string;
+  authToken?: string | null;
 }): Promise<string> {
   const token = args.authToken ?? (await readStoredAuthToken(args.page));
   const sessionUrl =
@@ -1723,7 +1727,7 @@ type WorkloadPodSnapshot = {
 
 async function fetchTaskMessagesSnapshot(args: {
   page: Page;
-  authToken: string;
+  authToken: string | null;
   workspaceId: string;
   projectId: string;
   taskId: string;
@@ -1738,7 +1742,7 @@ async function fetchTaskMessagesSnapshot(args: {
 
 async function fetchTaskTracesSnapshot(args: {
   page: Page;
-  authToken: string;
+  authToken: string | null;
   workspaceId: string;
   projectId: string;
   taskId: string;
@@ -1755,7 +1759,7 @@ async function fetchTaskTracesSnapshot(args: {
 
 async function fetchTaskRealtimeSnapshot(args: {
   page: Page;
-  authToken: string;
+  authToken: string | null;
   workspaceId: string;
   projectId: string;
   taskId: string;
@@ -1887,7 +1891,7 @@ export async function collectInternalTaskFailureContext(args: {
   taskId: string;
   namespace?: string;
   workloadId?: string;
-  authToken?: string;
+  authToken?: string | null;
 }): Promise<string> {
   const authToken = args.authToken ?? (await readStoredAuthToken(args.page));
   const [messages, traces, task, pod] = await Promise.all([
@@ -2403,7 +2407,7 @@ export async function startCodexRunnerProcess(args: {
   agentKey: string;
   codeBin?: string;
 }): Promise<{
-  proc: ChildProcessWithoutNullStreams;
+  proc: ChildProcessWithIgnoredStdin;
   logPath: string;
   workspaceRoot: string;
   stop: () => Promise<void>;
@@ -2452,11 +2456,20 @@ export async function startCodexRunnerProcess(args: {
           workspaceRoot,
           stop: async () => {
             if (!proc.killed && proc.exitCode === null) {
-              await killProcessTree(proc.pid, 'SIGTERM');
+              const pid = proc.pid;
+              if (typeof pid === 'number') {
+                await killProcessTree(pid, 'SIGTERM');
+              } else {
+                proc.kill('SIGTERM');
+              }
               await new Promise<void>((done) => {
                 const killTimeout = setTimeout(() => {
                   if (!proc.killed && proc.exitCode === null) {
-                    void killProcessTree(proc.pid, 'SIGKILL');
+                    if (typeof pid === 'number') {
+                      void killProcessTree(pid, 'SIGKILL');
+                    } else {
+                      proc.kill('SIGKILL');
+                    }
                   }
                   done();
                 }, 5_000);
@@ -2501,7 +2514,7 @@ export async function startChatRunnerProcess(args: {
   agentKey: string;
   sessionRoot?: string;
 }): Promise<{
-  proc: ChildProcessWithoutNullStreams;
+  proc: ChildProcessWithIgnoredStdin;
   logPath: string;
   stop: () => Promise<void>;
 }> {
@@ -2540,11 +2553,20 @@ export async function startChatRunnerProcess(args: {
           logPath,
           stop: async () => {
             if (!proc.killed && proc.exitCode === null) {
-              await killProcessTree(proc.pid, 'SIGTERM');
+              const pid = proc.pid;
+              if (typeof pid === 'number') {
+                await killProcessTree(pid, 'SIGTERM');
+              } else {
+                proc.kill('SIGTERM');
+              }
               await new Promise<void>((done) => {
                 const killTimeout = setTimeout(() => {
                   if (!proc.killed && proc.exitCode === null) {
-                    void killProcessTree(proc.pid, 'SIGKILL');
+                    if (typeof pid === 'number') {
+                      void killProcessTree(pid, 'SIGKILL');
+                    } else {
+                      proc.kill('SIGKILL');
+                    }
                   }
                   done();
                 }, 5_000);
@@ -2662,17 +2684,20 @@ export async function startCodexRunnerDockerProcess(args: {
     runnerLogDir = path.join(tmpdir(), 'agentsmith-runner-logs');
     await mkdir(runnerLogDir, { recursive: true });
   }
+  const requestedRunnerLogPath = path.join(runnerLogDir, `${containerName}.log`);
+  let runnerLogPath = requestedRunnerLogPath;
   const writeRunnerLog = async (body: string): Promise<void> => {
-    const requestedPath = path.join(runnerLogDir, `${containerName}.log`);
     try {
-      await writeFile(requestedPath, body, 'utf-8');
+      await writeFile(requestedRunnerLogPath, body, 'utf-8');
+      runnerLogPath = requestedRunnerLogPath;
       return;
     } catch {
       const fallbackDir = path.join(tmpdir(), 'agentsmith-runner-logs');
       await mkdir(fallbackDir, { recursive: true });
       const fallbackPath = path.join(fallbackDir, `${containerName}.log`);
       await writeFile(fallbackPath, body, 'utf-8');
-      console.warn(`[integration-real-helpers] runner log fallback: ${requestedPath} -> ${fallbackPath}`);
+      runnerLogPath = fallbackPath;
+      console.warn(`[integration-real-helpers] runner log fallback: ${requestedRunnerLogPath} -> ${fallbackPath}`);
     }
   };
   const preserveRunnerLogs = async (): Promise<void> => {

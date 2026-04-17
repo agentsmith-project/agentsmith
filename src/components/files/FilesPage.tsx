@@ -71,6 +71,8 @@ export interface FilesPageProps {
   locale?: string;
 }
 
+type FilesWorkspaceSurface = 'browser' | 'no_library';
+
 export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }: FilesPageProps) {
   const t = useTranslations('files');
   const tErrors = useTranslations('errors');
@@ -117,6 +119,11 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
     () => libraries.find((library) => library.id === selectedLibraryId) ?? null,
     [libraries, selectedLibraryId],
   );
+  const workspaceSurface = React.useMemo<FilesWorkspaceSurface>(
+    () => (libraries.length === 0 ? 'no_library' : 'browser'),
+    [libraries.length],
+  );
+  const canBrowseSelectedLibrary = workspaceSurface === 'browser' && selectedLibraryId !== null;
 
   const listParams = React.useMemo(
     () => ({
@@ -130,14 +137,14 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
     [prefix, search, sortBy, sortOrder],
   );
   const objectsQuery = useFileObjectsInfinite(workspaceId, projectId, selectedLibraryId, listParams, {
-    enabled: authReady,
+    enabled: authReady && canBrowseSelectedLibrary,
     refetchInterval: 5_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
   const items = React.useMemo(
-    () => objectsQuery.data?.pages.flatMap((page) => page.items) ?? [],
-    [objectsQuery.data?.pages],
+    () => (canBrowseSelectedLibrary ? (objectsQuery.data?.pages.flatMap((page) => page.items) ?? []) : []),
+    [canBrowseSelectedLibrary, objectsQuery.data?.pages],
   );
   const filteredItems = items;
 
@@ -494,6 +501,7 @@ export function FilesPage({ workspaceId, projectId, locale: _locale = 'en-US' }:
         uploadQueueCompleted={uploadQueueCompleted}
         uploadQueueTotal={uploadQueueTotal}
         workspaceId={workspaceId}
+        workspaceSurface={workspaceSurface}
       />
 
       <DesktopAccessDialog

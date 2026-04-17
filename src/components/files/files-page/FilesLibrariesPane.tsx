@@ -10,6 +10,7 @@ type FilesLibrariesPaneProps = {
   canExchangeCredentials: boolean;
   libsLoading: boolean;
   libraries: FileLibrary[];
+  showEmptyMessage?: boolean;
   selectedLibraryId: string | null;
   onSelectLibrary: (libraryId: string) => void;
   onCreateLibrary: () => void;
@@ -24,6 +25,7 @@ export function FilesLibrariesPane({
   canExchangeCredentials,
   libsLoading,
   libraries,
+  showEmptyMessage = true,
   selectedLibraryId,
   onSelectLibrary,
   onCreateLibrary,
@@ -57,7 +59,11 @@ export function FilesLibrariesPane({
         {libsLoading ? (
           <div className="p-3 text-sm text-tertiary">{t('file_manager.loading')}</div>
         ) : libraries.length === 0 ? (
-          <div className="p-3 text-sm text-tertiary">{t('file_manager.no_libraries')}</div>
+          showEmptyMessage ? (
+            <div className="p-3 text-sm text-tertiary">{t('file_manager.no_libraries')}</div>
+          ) : (
+            <div className="p-3" data-testid="files__library-pane-empty-shell" />
+          )
         ) : (
           <div className="p-1.5" data-testid="files__library-list">
             {libraries.map((library) => {

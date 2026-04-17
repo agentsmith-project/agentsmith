@@ -69,6 +69,7 @@ describe('NotebookTaskDetailPage route', () => {
       expect(screen.getByTestId('notebook__task-detail-route')).toBeInTheDocument();
     });
     expect(screen.getByText('ws_1:proj_1:task_1:true:true:true:true')).toBeInTheDocument();
+    expect(screen.queryByTestId('project-workbench')).not.toBeInTheDocument();
     expect(screen.queryByTestId('notebook-task__open-list')).not.toBeInTheDocument();
     expect(screen.queryByTestId('notebook-task__open-chat')).not.toBeInTheDocument();
     expect(screen.queryByTestId('notebook-task__open-files')).not.toBeInTheDocument();

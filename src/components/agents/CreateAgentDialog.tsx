@@ -10,7 +10,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { Bot, Loader2, Sparkles } from 'lucide-react';
+import { Bot, Loader2 } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { AgentAPI, EndpointAPI, getApiClient } from '@/lib/api';
 import type { CreateAgentRequest } from '@/lib/api/endpoints/agents';
@@ -206,44 +206,34 @@ export function CreateAgentDialog({
             Agent
           </div>
           <SheetTitle>{t('create_dialog.title')}</SheetTitle>
-          <SheetDescription>{t('edit_dialog.description')}</SheetDescription>
+          <SheetDescription>
+            {step === 'product'
+              ? t('product_step_description')
+              : t('deployment_step_description')}
+          </SheetDescription>
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
-            <div className="rounded-lg border border-subtle bg-[linear-gradient(180deg,rgba(124,160,255,0.08),rgba(124,160,255,0.02))] p-4">
-              <div className="flex items-start gap-3">
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/12 text-accent">
-                  <Sparkles className="h-5 w-5" />
-                </span>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-foreground">{t('create_dialog.title')}</p>
-                  <p className="text-sm leading-6 text-secondary">
-                    {step === 'product'
-                      ? t('product_step_description')
-                      : t('deployment_step_description')}
-                  </p>
-                </div>
-              </div>
-            </div>
-
+          <div className="flex-1 overflow-y-auto px-6 py-4">
             {step === 'product' ? (
-              <AgentBasicsSection
-                commonT={commonT}
-                createPending={createMutation.isPending}
-                description={description}
-                endpointOptions={endpointOptions}
-                interactionKind={interactionKind}
-                mode={mode}
-                name={name}
-                executionEndpointId={executionEndpointId}
-                t={t}
-                onDescriptionChange={setDescription}
-                onInteractionKindChange={setInteractionKind}
-                onModeChange={setMode}
-                onNameChange={setName}
-                onExecutionEndpointIdChange={setExecutionEndpointId}
-              />
+              <div className="space-y-4">
+                <AgentBasicsSection
+                  commonT={commonT}
+                  createPending={createMutation.isPending}
+                  description={description}
+                  endpointOptions={endpointOptions}
+                  interactionKind={interactionKind}
+                  mode={mode}
+                  name={name}
+                  executionEndpointId={executionEndpointId}
+                  t={t}
+                  onDescriptionChange={setDescription}
+                  onInteractionKindChange={setInteractionKind}
+                  onModeChange={setMode}
+                  onNameChange={setName}
+                  onExecutionEndpointIdChange={setExecutionEndpointId}
+                />
+              </div>
             ) : (
               <div className="space-y-4">
                 <div className="rounded-lg border border-subtle bg-surface-low p-4" data-testid="agents__create-dialog__product-summary">
@@ -301,7 +291,6 @@ export function CreateAgentDialog({
                 ) : null}
               </div>
             )}
-
           </div>
 
           <div className="flex flex-shrink-0 justify-end gap-2 border-t border-subtle px-6 py-4">

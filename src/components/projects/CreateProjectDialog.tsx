@@ -24,6 +24,54 @@ import { ProjectAPI, getApiClient } from '@/lib/api';
 import type { CreateProjectRequest } from '@/lib/api/endpoints/projects';
 import { handleErrorForToast } from '@/lib/api';
 
+function CreateProjectSheetLead({
+  icon,
+  title,
+  description,
+  testId,
+}: {
+  icon: React.ReactNode;
+  title: React.ReactNode;
+  description: React.ReactNode;
+  testId: string;
+}) {
+  return (
+    <div className="border-b border-subtle px-6 py-5" data-testid={testId}>
+      <div className="flex items-start gap-3">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/12 text-accent">
+          {icon}
+        </span>
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium text-foreground">{title}</p>
+          <p className="text-sm leading-6 text-secondary">{description}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreateProjectSheetSection({
+  icon,
+  title,
+  children,
+  testId,
+}: {
+  icon?: React.ReactNode;
+  title: React.ReactNode;
+  children: React.ReactNode;
+  testId: string;
+}) {
+  return (
+    <section className="border-b border-subtle px-6 py-5" data-sheet-section="continuous" data-testid={testId}>
+      <div className="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
+        {icon}
+        <span>{title}</span>
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export interface CreateProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -102,7 +150,7 @@ export function CreateProjectDialog({
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent side="right-wide" className="flex h-full flex-col gap-0 overflow-hidden p-0">
-        <SheetHeader className="border-b border-subtle px-6 py-4">
+        <SheetHeader className="border-b border-subtle px-6 py-5">
           <SheetTitle>{t('create')}</SheetTitle>
           <SheetDescription>
             {t('create_description')}
@@ -110,23 +158,18 @@ export function CreateProjectDialog({
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
-            <div className="rounded-md border border-accent/20 bg-accent/10 p-4">
-              <div className="flex items-start gap-3">
-                <div className="rounded-full bg-accent/15 p-2 text-accent">
-                  <FolderPlus className="h-4 w-4" />
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm font-medium text-foreground">{t('dialog_guidance_title')}</div>
-                  <p className="text-sm leading-6 text-secondary">{t('dialog_guidance_description')}</p>
-                </div>
-              </div>
-            </div>
+          <div className="flex-1 overflow-y-auto" data-testid="create-project__scaffold" data-structure="continuous-sections">
+            <CreateProjectSheetLead
+              icon={<FolderPlus className="h-5 w-5" />}
+              title={t('dialog_guidance_title')}
+              description={t('dialog_guidance_description')}
+              testId="create-project__intro"
+            />
 
-            <div className="rounded-md border border-border/70 bg-surface-high p-4">
-              <div className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-                {t('dialog_basics_title')}
-              </div>
+            <CreateProjectSheetSection
+              title={t('dialog_basics_title')}
+              testId="create-project__section--basics"
+            >
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label htmlFor="project-name" className="text-sm font-medium text-foreground">
@@ -158,13 +201,13 @@ export function CreateProjectDialog({
                   />
                 </div>
               </div>
-            </div>
+            </CreateProjectSheetSection>
 
-            <div className="rounded-md border border-border/70 bg-surface-high p-4">
-              <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-                <ShieldCheck className="h-3.5 w-3.5 text-accent" />
-                {t('dialog_access_title')}
-              </div>
+            <CreateProjectSheetSection
+              icon={<ShieldCheck className="h-3.5 w-3.5 text-accent" />}
+              title={t('dialog_access_title')}
+              testId="create-project__section--access"
+            >
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">{t('visibility')}</label>
@@ -200,7 +243,7 @@ export function CreateProjectDialog({
                   </Select>
                 </div>
               </div>
-            </div>
+            </CreateProjectSheetSection>
           </div>
 
           <div className="flex flex-shrink-0 justify-end gap-2 border-t border-subtle px-6 py-4">

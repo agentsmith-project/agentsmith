@@ -263,14 +263,14 @@ export default function AlertsPage({ params }: AlertsPageProps) {
                 className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
                 data-testid="alerts__open-audit"
               >
-                {tCommon('open_audit')}
+                {t('open_audit')}
               </Link>
               <Link
                 href={usageHref}
                 className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
                 data-testid="alerts__open-usage"
               >
-                {tCommon('open_usage')}
+                {t('open_usage')}
               </Link>
             </div>
           </div>

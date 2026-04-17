@@ -19,6 +19,10 @@
 
 ### User guides and operations
 - [User Guides Index](./user-guides/README.md)
+- [UX/UI Review Runbook](./user-guides/uxui-review-runbook.md)
+- 统一的人工 UX/UI 审查入口；把 `DESIGN.md`、`docs/UXUI/`、visual evidence 和 backend-real 审查收成一套可重复执行的方法
+- [UX/UI Review Record Template](./user-guides/uxui-review-record-template.md)
+- 可复制填写的标准审查记录模板；用于把 scene-level review 结论收成统一格式
 - [Troubleshooting Guide](./troubleshooting-guide-v1.md)
 - [Notebook Codex Runner Runbook](./notebook-codex-runbook.md)
 - [CI Integration Troubleshooting](./ci-integration-troubleshooting.md)

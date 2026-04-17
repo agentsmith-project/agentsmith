@@ -3,7 +3,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { PageLayout } from "@/components/layout/PageLayout";
-import { ProjectWorkbenchBar } from "@/components/layout/ProjectWorkbenchBar";
 import { PageState } from "@/components/layout/PageState";
 import { PageLoading } from "@/components/ui/loading";
 import { Button } from "@/components/ui/button";
@@ -216,17 +215,6 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
     <PageState state="success">
       <PageLayout density="immersive" contentWidth="full">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="mb-4 shrink-0">
-            <ProjectWorkbenchBar
-              title={tNotebook("title")}
-              variant="utility"
-              meta={
-                <div className="text-sm text-secondary">
-                  {tNotebook("subtitle")}
-                </div>
-              }
-            />
-          </div>
           <TaskPage
             workspaceId={resolvedParams.workspace}
             projectId={resolvedParams.project}

@@ -199,10 +199,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
       <div className="min-h-0 flex-1">
         {!currentSessionId ? (
           <ChatEmptyState
-            canUseChat={canUseChat}
-            createPending={createPending}
             labels={labels}
-            onCreateThread={onCreateThread}
           />
         ) : messagesLoading ? (
           <ChatLoadingState loading={labels.loading} />

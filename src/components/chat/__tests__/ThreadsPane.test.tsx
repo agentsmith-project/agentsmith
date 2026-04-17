@@ -136,10 +136,12 @@ describe('ThreadsPane', () => {
   });
 
   describe('Empty State', () => {
-    it('should show "No threads" when sessions array is empty', () => {
+    it('keeps the no-thread state informational so the chat header owns the create CTA', () => {
       render(<ThreadsPane {...defaultProps} sessions={[]} />);
 
       expect(screen.getByText('no_threads')).toBeInTheDocument();
+      expect(screen.queryByTestId('chat__new-thread-btn')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('chat__threads-empty-new-thread')).not.toBeInTheDocument();
     });
 
     it('should show search-empty guidance and let users clear search when search returns no results', () => {
@@ -148,6 +150,7 @@ describe('ThreadsPane', () => {
       expect(screen.queryByText('no_threads')).not.toBeInTheDocument();
       expect(screen.getByText('threads_empty_search_title')).toBeInTheDocument();
       expect(screen.getByText('threads_empty_search_description')).toBeInTheDocument();
+      expect(screen.queryByTestId('chat__threads-empty-new-thread')).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByTestId('chat__threads-empty-clear-search'));
       expect(defaultProps.onSearchQueryChange).toHaveBeenCalledWith('');

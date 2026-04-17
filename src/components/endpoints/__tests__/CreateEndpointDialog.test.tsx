@@ -79,10 +79,12 @@ function resolveTranslation(obj: unknown, path: string): string {
   const keys = path.split('.');
   let current: unknown = obj;
   for (const key of keys) {
-    if (!current || typeof current !== 'object' || !(key in current)) return path;
+    if (!current || typeof current !== 'object' || !(key in current)) {
+      return `__MISSING_TRANSLATION__:${path}`;
+    }
     current = (current as Record<string, unknown>)[key];
   }
-  return typeof current === 'string' ? current : path;
+  return typeof current === 'string' ? current : `__MISSING_TRANSLATION__:${path}`;
 }
 
 vi.mock('next-intl', () => ({
@@ -213,6 +215,23 @@ function renderDialog() {
 }
 
 describe('CreateEndpointDialog', () => {
+  it('keeps the sheet title unique and reserves primary emphasis for the final create step', async () => {
+    renderDialog();
+    await waitFor(() => {
+      expect(screen.getByText('Create Endpoint')).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText('Create Endpoint')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Use guided setup' })).not.toHaveAttribute(
+      'data-visual-prominence',
+      'primary',
+    );
+    expect(screen.getByRole('button', { name: 'Use manual form instead' })).not.toHaveAttribute(
+      'data-visual-prominence',
+      'primary',
+    );
+  });
+
   it('shows custom endpoint entry as an external button', async () => {
     renderDialog();
     await waitFor(() => {

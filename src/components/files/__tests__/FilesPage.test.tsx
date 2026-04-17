@@ -36,7 +36,9 @@ vi.mock('next-intl', () => ({
         'file_manager.root': 'Root',
         'file_manager.items': 'items',
         'file_manager.libraries': 'Libraries',
+        'file_manager.no_libraries': 'No libraries yet',
         'file_manager.library_create': 'Create library',
+        'file_manager.library_create_description': 'Create a shared file library for this project.',
         'file_manager.library_status_failed': 'Failed',
         'file_manager.library_status_reason_failed': 'Library provisioning failed.',
       },
@@ -243,6 +245,38 @@ describe('FilesPage (object browser)', () => {
     expect(screen.getByTestId('files__new-folder')).toBeDisabled();
     expect(screen.getByTestId('files__upload')).toBeDisabled();
     expect(screen.getByTestId('files__refresh')).toBeDisabled();
+  });
+
+  it('shows a canonical no-library surface instead of folder-empty actions when no library exists', async () => {
+    mockLibraries = [];
+    mockUseFileObjectsInfinite.mockReturnValue({
+      data: {
+        pages: [
+          {
+            prefix: '',
+            items: [],
+            next_continuation_token: null,
+          },
+        ],
+      },
+      isLoading: false,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+    });
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+
+    expect(await screen.findByTestId('files__no-library-empty-state')).toBeInTheDocument();
+    expect(screen.getByText('No libraries yet')).toBeInTheDocument();
+    expect(screen.getByText('Create a shared file library for this project.')).toBeInTheDocument();
+    expect(screen.getByTestId('files__empty-create-library')).toBeInTheDocument();
+    expect(screen.queryByTestId('files__search')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__new-folder')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__upload')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__empty-new-folder')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('files__empty-upload')).not.toBeInTheDocument();
   });
 
   it('shows a governance empty state instead of normal loading for degraded libraries', async () => {

@@ -6,12 +6,13 @@ import { Key } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AgentAPI, getApiClient } from '@/lib/api';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
 import { KeyCreatedDialog } from './KeyCreatedDialog';
 import { useApiError } from '@/lib/hooks/use-api-error';
 import {
@@ -93,47 +94,75 @@ export function AgentKeysDialog({
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   };
+  const handleOpenChange = (next: boolean) => {
+    if (!next && (createMutation.isPending || revokeMutation.isPending)) {
+      return;
+    }
+
+    onOpenChange(next);
+  };
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          className="w-[min(680px,calc(100vw-2rem))] max-w-[min(680px,calc(100vw-2rem))] overflow-x-hidden border-subtle bg-surface p-0"
-          data-testid="agents__dialog__keys"
+      <Sheet open={open} onOpenChange={handleOpenChange}>
+        <SheetContent
+          side="right-wide"
+          className="flex h-full flex-col gap-0 overflow-hidden p-0"
+          data-testid="agents__keys__sheet"
         >
-          <DialogHeader className="border-b border-subtle px-6 pb-4 pt-6">
-            <DialogTitle className="flex items-center gap-2">
+          <SheetHeader className="border-b border-subtle px-6 py-5">
+            <SheetTitle className="flex items-center gap-2">
               <Key className="w-5 h-5 text-icon-default" />
               {t('keys_title')} — {agentName}
-            </DialogTitle>
-            <DialogDescription className="mt-1.5">
-              {t('keys_description')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="w-full max-w-full space-y-5 px-6 py-5">
-            <ConnectionInfoCard
-              copied={copied}
-              copyLabel={copied ? commonT('copied') : commonT('copy')}
-              title={t('connection_address')}
-              wsUrl={connectionInfo?.ws_url}
-              onCopy={() => {
-                void onCopyWsUrl();
-              }}
-            />
+            </SheetTitle>
+            <SheetDescription>{t('keys_description')}</SheetDescription>
+          </SheetHeader>
 
-            <KeysListSection
-              activeKeys={activeKeys}
-              createPending={createMutation.isPending}
-              createLabel={keysT('create')}
-              emptyLabel={t('keys_empty')}
-              isLoading={isLoading}
-              sectionTitle={t('keys_title')}
-              onCreate={() => createMutation.mutate()}
-              onRevoke={setRevokeKeyId}
-            />
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="space-y-5">
+              <ConnectionInfoCard
+                copied={copied}
+                copyLabel={copied ? commonT('copied') : commonT('copy')}
+                title={t('connection_address')}
+                wsUrl={connectionInfo?.ws_url}
+                onCopy={() => {
+                  void onCopyWsUrl();
+                }}
+              />
+
+              <KeysListSection
+                activeKeys={activeKeys}
+                emptyLabel={t('keys_empty')}
+                isLoading={isLoading}
+                sectionTitle={t('keys_title')}
+                onRevoke={setRevokeKeyId}
+              />
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+
+          <div
+            className="flex flex-shrink-0 justify-end gap-2 border-t border-subtle px-6 py-4"
+            data-testid="agents__keys__footer"
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => handleOpenChange(false)}
+              disabled={createMutation.isPending || revokeMutation.isPending}
+            >
+              {commonT('cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => createMutation.mutate()}
+              disabled={createMutation.isPending}
+            >
+              {keysT('create')}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <KeyCreatedDialog
         open={!!keyCreated}

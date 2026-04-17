@@ -650,9 +650,9 @@
     "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/chat",
     "goal": "用一组 mock-lane story scenes 覆盖用户在 chat 中正常对话、切换执行目标，以及在搜索为空时恢复新线程的高频心智。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-chat-operate-and-recover.story.md#mock-lane-chat-operate-and-recover",
-    "sourceFingerprint": "e5e488af80f207a2321d83d8845d9f581ae877ee156099da281938ac8e6bb0f4",
-    "storyFingerprint": "c3dcbdc209c417cd3cffb35c74139f6126a3544c0e21b1133302a11bd366adb0",
-    "stepMapFingerprint": "6d53299eda3838b3754ef2df0dcb285c7f1a20c4f97e1025590ae321312f14a8",
+    "sourceFingerprint": "a8b824b41dba489871945b94ca6f01901a3cb1ed4c54498a9d51c27a99e1ac1f",
+    "storyFingerprint": "d6513b9287cacfe043182f56d24584888092af3d71217fc74d39760204fe2597",
+    "stepMapFingerprint": "73516ca1aa246ff369d5e8fd98a0ce5aa4cec7abf22f0005e685db2b70c0ed5b",
     "sceneIds": [
       "chat-operate",
       "chat-recover-empty"

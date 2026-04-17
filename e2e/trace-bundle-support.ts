@@ -167,6 +167,7 @@ export type UxTraceBundleOptions = {
   preconditions?: string[];
   seedData?: string[];
   storyBinding?: TraceStoryBinding;
+  allowUnboundStorySteps?: boolean;
   scenarioId?: string;
   runId?: string;
   startedAt?: string;
@@ -1125,7 +1126,20 @@ export async function createUxTraceBundleWriter(options: UxTraceBundleOptions): 
   const events: UxTraceEventRecord[] = [];
 
   const normalizeEvent = (event: UxTraceEventInput): UxTraceEventInput & { action: string } => {
-    const normalized = options.storyBinding ? bindTraceEventToStory(options.storyBinding, event) : event;
+    let normalized: UxTraceEventInput & { action?: string; note?: string };
+    if (options.storyBinding) {
+      try {
+        normalized = bindTraceEventToStory(options.storyBinding, event);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!options.allowUnboundStorySteps || !/unknown story step:/i.test(message)) {
+          throw error;
+        }
+        normalized = event;
+      }
+    } else {
+      normalized = event;
+    }
     if (!normalized.action?.trim()) {
       throw new Error(`missing trace action for step: ${normalized.stepId}`);
     }

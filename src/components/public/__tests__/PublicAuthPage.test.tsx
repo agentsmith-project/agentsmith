@@ -5,6 +5,7 @@ import {
   PublicAuthFrame,
   PublicAuthHeader,
   PublicAuthShell,
+  PublicAuthSupportBlock,
 } from '../PublicAuthPage';
 
 vi.mock('@/components/theme/PublicThemeToggle', () => ({
@@ -12,25 +13,27 @@ vi.mock('@/components/theme/PublicThemeToggle', () => ({
 }));
 
 describe('PublicAuthPage', () => {
-  it('marks the shell as single layout when no aside is present', () => {
+  it('uses the semantic single-column auth recipe when requested', () => {
     render(
-      <PublicAuthFrame>
-        <PublicAuthShell>
+      <PublicAuthFrame recipe="public_auth_single">
+        <PublicAuthShell recipe="public_auth_single">
           <div>Primary</div>
         </PublicAuthShell>
       </PublicAuthFrame>,
     );
 
-    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'wide');
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-recipe', 'public_auth_single');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-recipe', 'public_auth_single');
     expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-family', 'public-auth');
     expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'single');
     expect(screen.queryByTestId('public-auth__aside')).not.toBeInTheDocument();
   });
 
-  it('marks the shell as split layout when an aside is present', () => {
+  it('uses the semantic split auth recipe when helper aside is required', () => {
     render(
-      <PublicAuthFrame>
+      <PublicAuthFrame recipe="public_auth_split">
         <PublicAuthShell
+          recipe="public_auth_split"
           aside={(
             <PublicAuthAsideBlock title="Aside title">
               <div>Aside body</div>
@@ -42,7 +45,8 @@ describe('PublicAuthPage', () => {
       </PublicAuthFrame>,
     );
 
-    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-width', 'wide');
+    expect(screen.getByTestId('public-auth__frame')).toHaveAttribute('data-recipe', 'public_auth_split');
+    expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-recipe', 'public_auth_split');
     expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-family', 'public-auth');
     expect(screen.getByTestId('public-auth__shell')).toHaveAttribute('data-layout', 'split');
     expect(screen.getByTestId('public-auth__aside')).toBeInTheDocument();
@@ -61,8 +65,8 @@ describe('PublicAuthPage', () => {
 
   it('keeps the public auth stage left-aligned instead of centered like a microsite hero', () => {
     render(
-      <PublicAuthFrame>
-        <PublicAuthShell>
+      <PublicAuthFrame recipe="public_auth_single">
+        <PublicAuthShell recipe="public_auth_single">
           <div>Primary</div>
         </PublicAuthShell>
       </PublicAuthFrame>,
@@ -76,5 +80,22 @@ describe('PublicAuthPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Title' })).toBeInTheDocument();
     expect(screen.getByText('Description')).toBeInTheDocument();
+  });
+
+  it('renders a quiet support block for single-column auth pages', () => {
+    render(
+      <PublicAuthSupportBlock
+        eyebrow="Scope"
+        title="Workspace-specific access"
+        description="Use your organization account to continue."
+      >
+        <button type="button">Continue</button>
+      </PublicAuthSupportBlock>,
+    );
+
+    expect(screen.getByText('Scope')).toBeInTheDocument();
+    expect(screen.getByText('Workspace-specific access')).toBeInTheDocument();
+    expect(screen.getByText('Use your organization account to continue.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
   });
 });

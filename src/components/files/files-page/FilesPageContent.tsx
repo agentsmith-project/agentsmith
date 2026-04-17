@@ -1,13 +1,17 @@
 'use client';
 
 import * as React from 'react';
+import { Plus } from 'lucide-react';
 
 import { FileObjectDetailsPanel } from '@/components/files/FileObjectDetailsPanel';
 import { FilesBrowserPane } from '@/components/files/files-page/FilesBrowserPane';
 import { FilesLibrariesPane } from '@/components/files/files-page/FilesLibrariesPane';
+import { Button } from '@/components/ui/button';
 import type { FileObjectsListItem } from '@/lib/api/types';
 import type { ProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 import { cn } from '@/lib/utils';
+
+type FilesWorkspaceSurface = 'browser' | 'no_library';
 
 interface FilesPageContentProps {
   allSelected: React.ComponentProps<typeof FilesBrowserPane>['allSelected'];
@@ -69,6 +73,7 @@ interface FilesPageContentProps {
   uploadQueueCompleted: React.ComponentProps<typeof FilesBrowserPane>['uploadQueueCompleted'];
   uploadQueueTotal: React.ComponentProps<typeof FilesBrowserPane>['uploadQueueTotal'];
   workspaceId: string;
+  workspaceSurface: FilesWorkspaceSurface;
 }
 
 export function FilesPageContent({
@@ -131,8 +136,10 @@ export function FilesPageContent({
   uploadQueueCompleted,
   uploadQueueTotal,
   workspaceId,
+  workspaceSurface,
 }: FilesPageContentProps) {
-  const showDetailsPanel = Boolean(selected && selectedLibraryId);
+  const showNoLibrarySurface = workspaceSurface === 'no_library';
+  const showDetailsPanel = workspaceSurface === 'browser' && Boolean(selected && selectedLibraryId);
 
   return (
     <div
@@ -162,6 +169,7 @@ export function FilesPageContent({
             canExchangeCredentials={canExchangeCredentials}
             libsLoading={libsLoading}
             libraries={libraries}
+            showEmptyMessage={!showNoLibrarySurface}
             selectedLibraryId={selectedLibraryId}
             onSelectLibrary={onSelectLibrary}
             onCreateLibrary={onCreateLibrary}
@@ -175,54 +183,74 @@ export function FilesPageContent({
           className="min-h-0 px-3 [&>div]:h-full [&>div]:!rounded-none [&>div]:!border-0 [&>div]:!bg-transparent [&>div]:!shadow-none [&_[data-testid='files__objects-table']_.sticky]:!bg-transparent [&_[data-testid='files__objects-table']_.sticky]:!border-0"
           data-testid="files__browser-shell"
         >
-          <FilesBrowserPane
-            t={t}
-            prefix={prefix}
-            crumbs={crumbs}
-            searchInput={searchInput}
-            setSearchInput={setSearchInput}
-            selectedLibraryId={selectedLibraryId}
-            selectedLibraryStatus={selectedLibraryStatus}
-            filteredItems={filteredItems}
-            selectedIds={selectedIds}
-            selectionMode={selectionMode}
-            selectedCount={selectedCount}
-            selectedObjectsCount={selectedObjectsCount}
-            allSelected={allSelected}
-            hasSelection={hasSelection}
-            uploadInProgress={uploadInProgress}
-            uploadCurrentFileName={uploadCurrentFileName}
-            uploadQueueCompleted={uploadQueueCompleted}
-            uploadQueueTotal={uploadQueueTotal}
-            uploadCurrentProgress={uploadCurrentProgress}
-            isDropActive={isDropActive}
-            sortBy={sortBy}
-            sortOrder={sortOrder}
-            objectsQuery={objectsQuery}
-            fileInputRef={fileInputRef}
-            selectedForMove={selectedForMove}
-            moveNamePlaceholder={moveNamePlaceholder}
-            onNavigateToPrefix={onNavigateToPrefix}
-            onGoUp={onGoUp}
-            onRefresh={handleRefresh}
-            onCreateFolder={onCreateFolder}
-            onUploadClick={handleUploadClick}
-            onCancelUpload={handleCancelUpload}
-            onRename={handleRename}
-            onDelete={handleDelete}
-            onDownload={handleDownload}
-            onClearSelection={onClearSelection}
-            onToggleAll={onToggleAll}
-            onSortHeaderClick={handleSortHeaderClick}
-            onLoadNextPage={handleLoadNextPage}
-            onDrop={handleDrop}
-            onDropEnter={handleDropEnter}
-            onDropOver={handleDropOver}
-            onDropLeave={handleDropLeave}
-            onRowActivate={handleRowActivate}
-            onRowOpen={handleRowOpen}
-            onToggleRowCheckbox={handleToggleRowCheckbox}
-          />
+          {showNoLibrarySurface ? (
+            <div
+              className="flex h-full items-center justify-center px-4 py-8"
+              data-testid="files__no-library-empty-state"
+            >
+              <div className="mx-auto flex w-full max-w-[520px] flex-col items-center gap-4 rounded-md border border-dashed border-subtle bg-surface-low px-6 py-8 text-center">
+                <div>
+                  <div className="text-sm font-medium text-primary">{t('file_manager.no_libraries')}</div>
+                  <div className="mt-2 text-sm text-tertiary">{t('file_manager.library_create_description')}</div>
+                </div>
+                {canManage ? (
+                  <Button type="button" onClick={onCreateLibrary} data-testid="files__empty-create-library">
+                    <Plus className="mr-2 h-4 w-4" />
+                    {t('file_manager.library_create')}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <FilesBrowserPane
+              t={t}
+              prefix={prefix}
+              crumbs={crumbs}
+              searchInput={searchInput}
+              setSearchInput={setSearchInput}
+              selectedLibraryId={selectedLibraryId}
+              selectedLibraryStatus={selectedLibraryStatus}
+              filteredItems={filteredItems}
+              selectedIds={selectedIds}
+              selectionMode={selectionMode}
+              selectedCount={selectedCount}
+              selectedObjectsCount={selectedObjectsCount}
+              allSelected={allSelected}
+              hasSelection={hasSelection}
+              uploadInProgress={uploadInProgress}
+              uploadCurrentFileName={uploadCurrentFileName}
+              uploadQueueCompleted={uploadQueueCompleted}
+              uploadQueueTotal={uploadQueueTotal}
+              uploadCurrentProgress={uploadCurrentProgress}
+              isDropActive={isDropActive}
+              sortBy={sortBy}
+              sortOrder={sortOrder}
+              objectsQuery={objectsQuery}
+              fileInputRef={fileInputRef}
+              selectedForMove={selectedForMove}
+              moveNamePlaceholder={moveNamePlaceholder}
+              onNavigateToPrefix={onNavigateToPrefix}
+              onGoUp={onGoUp}
+              onRefresh={handleRefresh}
+              onCreateFolder={onCreateFolder}
+              onUploadClick={handleUploadClick}
+              onCancelUpload={handleCancelUpload}
+              onRename={handleRename}
+              onDelete={handleDelete}
+              onDownload={handleDownload}
+              onClearSelection={onClearSelection}
+              onToggleAll={onToggleAll}
+              onSortHeaderClick={handleSortHeaderClick}
+              onLoadNextPage={handleLoadNextPage}
+              onDrop={handleDrop}
+              onDropEnter={handleDropEnter}
+              onDropOver={handleDropOver}
+              onDropLeave={handleDropLeave}
+              onRowActivate={handleRowActivate}
+              onRowOpen={handleRowOpen}
+              onToggleRowCheckbox={handleToggleRowCheckbox}
+            />
+          )}
         </div>
 
         {showDetailsPanel ? (

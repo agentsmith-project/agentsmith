@@ -85,10 +85,12 @@ function resolveTranslation(path: string): string {
   let current: unknown = mockMessages;
   for (const key of keys) {
     if (!current || typeof current !== "object" || !(key in current))
-      return path;
+      return `__MISSING_TRANSLATION__:${path}`;
     current = (current as Record<string, unknown>)[key];
   }
-  return typeof current === "string" ? current : path;
+  return typeof current === "string"
+    ? current
+    : `__MISSING_TRANSLATION__:${path}`;
 }
 
 vi.mock("next-intl", () => ({
@@ -223,6 +225,20 @@ describe("Agent dialogs", () => {
         },
       ],
     });
+  });
+
+  it("CreateAgentDialog keeps the sheet title unique on the first step", async () => {
+    renderCreateDialog();
+
+    await waitFor(() => {
+      expect(screen.getByText("Create Agent")).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText("Create Agent")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Next" })).toHaveAttribute(
+      "data-visual-prominence",
+      "primary",
+    );
   });
 
   it("CreateAgentDialog defaults to chat and submits chat execution preferences", async () => {

@@ -50,6 +50,12 @@ export function CreateEndpointDialog({
   const tErrors = useTranslations('errors');
   const commonT = useTranslations('common');
   const locale = useLocale();
+  const sheetDescription = React.useMemo(() => {
+    const value = t('create_dialog.sheet_description');
+    return value.startsWith('__MISSING_TRANSLATION__')
+      ? t('create_dialog.guided_setup_description')
+      : value;
+  }, [t]);
 
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
@@ -260,7 +266,7 @@ export function CreateEndpointDialog({
             Endpoint
           </div>
           <SheetTitle>{t('create_dialog.title')}</SheetTitle>
-          <SheetDescription>{t('create_dialog.description')}</SheetDescription>
+          <SheetDescription>{sheetDescription}</SheetDescription>
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
@@ -271,14 +277,16 @@ export function CreateEndpointDialog({
                   <Sparkles className="h-5 w-5" />
                 </span>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium text-foreground">{t('create_dialog.title')}</p>
+                  <p className="text-sm font-medium text-foreground">
+                    {t('create_dialog.guided_setup_title')}
+                  </p>
                   <p className="text-sm leading-6 text-secondary">
-                    {t('create_dialog.description')}
+                    {t('create_dialog.guided_setup_description')}
                   </p>
                   <div className="flex flex-wrap gap-2 pt-3">
                     <Button
                       type="button"
-                      variant="primary"
+                      variant="secondary"
                       size="sm"
                       onClick={() => setShowCustomWizard(true)}
                       disabled={createMutation.isPending}
@@ -337,8 +345,8 @@ export function CreateEndpointDialog({
           ) : (
             <div className="flex-1 px-6 py-6">
               <div className="rounded-lg border border-dashed border-subtle bg-surface-low p-5 text-sm text-secondary">
-                <p className="font-medium text-foreground">{t('create_dialog.guided_setup_title')}</p>
-                <p className="mt-2 leading-6">{t('create_dialog.guided_setup_description')}</p>
+                <p className="font-medium text-foreground">{t('custom_wizard.title')}</p>
+                <p className="mt-2 leading-6">{t('create_dialog.wizard_description')}</p>
               </div>
             </div>
           )}

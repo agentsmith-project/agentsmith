@@ -76,9 +76,6 @@ interface TaskPageContentProps {
   terminalWorkspace?: React.ReactNode;
   terminalStatusStrip?: React.ReactNode;
   artifactsDrawerOpen?: boolean;
-  onToggleArtifactsDrawer?: () => void;
-  artifactsShowLabel?: string;
-  artifactsHideLabel?: string;
   inputPlaceholder?: string;
   conversationBlockedState?: React.ComponentProps<
     typeof ConversationPanel
@@ -125,9 +122,6 @@ export function TaskPageContent({
   terminalWorkspace,
   terminalStatusStrip,
   artifactsDrawerOpen = true,
-  onToggleArtifactsDrawer,
-  artifactsShowLabel = "Show Artifacts",
-  artifactsHideLabel = "Hide Artifacts",
   inputPlaceholder,
   conversationBlockedState,
   traceErrorByMessageId,
@@ -140,23 +134,16 @@ export function TaskPageContent({
   const showConversationMode = viewMode === "conversation";
   const showTerminalMode = viewMode === "terminal";
   const hasTerminalWorkspace = terminalWorkspace != null;
+  const hasArtifacts = artifacts.length > 0;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.03),_transparent_40%)]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {terminalStatusStrip}
-      <div className="mt-3 flex items-center justify-end">
-        {onToggleArtifactsDrawer ? (
-          <button
-            type="button"
-            className="inline-flex h-7 items-center justify-center rounded-md border border-border/24 bg-transparent px-2.5 text-[11px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground"
-            onClick={onToggleArtifactsDrawer}
-            data-testid="notebook__task-artifacts-toggle"
-          >
-            {artifactsDrawerOpen ? artifactsHideLabel : artifactsShowLabel}
-          </button>
-        ) : null}
-      </div>
-      <div className="relative mt-2 flex min-h-0 flex-1 gap-3 overflow-hidden">
+      <div
+        className={`relative flex min-h-0 flex-1 gap-3 overflow-hidden ${
+          terminalStatusStrip ? "mt-3" : ""
+        }`}
+      >
         {hasTerminalWorkspace ? (
           <div
             className={
@@ -217,7 +204,7 @@ export function TaskPageContent({
             </>
           </div>
         ) : null}
-        {artifactsDrawerOpen ? (
+        {hasArtifacts && artifactsDrawerOpen ? (
           <div
             className={`flex h-full min-h-0 flex-shrink-0 overflow-hidden rounded-md border border-subtle bg-surface/68 p-1.5 shadow-ambient ${
               showConversationMode ? "w-[216px]" : "w-[256px]"

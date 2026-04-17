@@ -28,6 +28,20 @@ function normalizeBrowsePrefix(value: string | null): string {
   return withoutLeading.endsWith('/') ? withoutLeading : `${withoutLeading}/`;
 }
 
+function resolveLibrarySelection(
+  libraries: FileLibrary[],
+  queryLibraryId: string | null,
+  selectedLibraryId: string | null,
+): string | null {
+  if (selectedLibraryId && libraries.some((library) => library.id === selectedLibraryId)) {
+    return selectedLibraryId;
+  }
+  if (queryLibraryId && libraries.some((library) => library.id === queryLibraryId)) {
+    return queryLibraryId;
+  }
+  return libraries[0]?.id ?? null;
+}
+
 export function useFilesUrlState(
   libraries: FileLibrary[],
   { resetBrowseStateOnMount = false }: UseSourcesUrlStateOptions = {},
@@ -36,6 +50,8 @@ export function useFilesUrlState(
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
+  const previousLibrariesLengthRef = useRef(libraries.length);
+  const previousLibrariesLength = previousLibrariesLengthRef.current;
 
   const librarySelectionInitializedRef = useRef(false);
   const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null);
@@ -62,32 +78,19 @@ export function useFilesUrlState(
 
     const params = new URLSearchParams(searchParamsKey);
     const queryLibraryId = params.get('library_id');
-    const hasQueryLibrary = queryLibraryId
-      ? libraries.some((library) => library.id === queryLibraryId)
-      : false;
-
-    const hasSelectedLibrary = selectedLibraryId
-      ? libraries.some((library) => library.id === selectedLibraryId)
-      : false;
+    const nextSelectedLibraryId = resolveLibrarySelection(libraries, queryLibraryId, selectedLibraryId);
     if (!librarySelectionInitializedRef.current) {
       librarySelectionInitializedRef.current = true;
-      if (hasQueryLibrary && selectedLibraryId !== queryLibraryId) {
-        setSelectedLibraryId(queryLibraryId);
-        return;
-      }
-      if (!hasSelectedLibrary) {
-        setSelectedLibraryId(libraries[0].id);
+      if (nextSelectedLibraryId !== selectedLibraryId) {
+        setSelectedLibraryId(nextSelectedLibraryId);
       }
       return;
     }
 
-    if (hasSelectedLibrary) return;
-
-    if (hasQueryLibrary && selectedLibraryId !== queryLibraryId) {
-      setSelectedLibraryId(queryLibraryId);
+    if (nextSelectedLibraryId === selectedLibraryId) {
       return;
     }
-    setSelectedLibraryId(libraries[0].id);
+    setSelectedLibraryId(nextSelectedLibraryId);
   }, [libraries, searchParamsKey, selectedLibraryId]);
 
   useEffect(() => {
@@ -164,17 +167,23 @@ export function useFilesUrlState(
   useEffect(() => {
     replaceQueryParams((params) => {
       const currentLibraryId = params.get('library_id');
-      if (!selectedLibraryId) {
+      const resolvedLibraryId = resolveLibrarySelection(libraries, currentLibraryId, selectedLibraryId);
+      if (!resolvedLibraryId) {
         if (!currentLibraryId) return false;
+        if (libraries.length === 0 && previousLibrariesLength === 0) return false;
         params.delete('library_id');
-      } else if (currentLibraryId !== selectedLibraryId) {
-        params.set('library_id', selectedLibraryId);
+      } else if (currentLibraryId !== resolvedLibraryId) {
+        params.set('library_id', resolvedLibraryId);
       } else {
         return false;
       }
       return true;
     });
-  }, [replaceQueryParams, selectedLibraryId]);
+  }, [libraries, previousLibrariesLength, replaceQueryParams, selectedLibraryId]);
+
+  useEffect(() => {
+    previousLibrariesLengthRef.current = libraries.length;
+  }, [libraries.length]);
 
   useEffect(() => {
     if (resetBrowseStateOnMount) return;

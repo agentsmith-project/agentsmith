@@ -96,6 +96,28 @@ describe('useFilesUrlState', () => {
     });
   });
 
+  it('preserves an existing library_id while the initial library list is still unresolved', async () => {
+    mockSearchState.value = 'library_id=lib_a';
+    type RenderProps = { nextLibraries: FileLibrary[] };
+    const initialProps: RenderProps = { nextLibraries: [] };
+
+    const { result, rerender } = renderHook(
+      ({ nextLibraries }: RenderProps) =>
+        useFilesUrlState(nextLibraries, { resetBrowseStateOnMount: true }),
+      { initialProps },
+    );
+
+    expect(result.current.selectedLibraryId).toBeNull();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+
+    rerender({ nextLibraries: libraries });
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_a');
+    });
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
   it('clears selection when the library list is empty', async () => {
     const { result, rerender } = renderHook(
       ({ nextLibraries }: { nextLibraries: FileLibrary[] }) => useFilesUrlState(nextLibraries),

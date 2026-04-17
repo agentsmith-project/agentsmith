@@ -202,6 +202,8 @@ describe('visual semantic viewport assertions', () => {
     expect(notebookLifecycleListScene?.semanticAssertions?.requiredViewerLocalDateTimeTestIds ?? []).toEqual([
       'notebook__task-card--task_001::notebook__task-last-activity',
       'notebook__task-card--task_001::notebook__task-created-at',
+      'notebook__task-card--task_002::notebook__task-last-activity',
+      'notebook__task-card--task_002::notebook__task-created-at',
     ]);
   });
 
@@ -272,6 +274,28 @@ describe('visual semantic singular target auto-wait assertions', () => {
     vi.resetModules();
   });
 
+  function mockPlaywrightExpect() {
+    vi.doMock('@playwright/test', () => ({
+      expect(actual: { count?: () => Promise<number> }, message?: string) {
+        return {
+          async toHaveCount(expected: number) {
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+              if (typeof actual.count === 'function' && await actual.count() === expected) {
+                return;
+              }
+            }
+
+            const finalCount = typeof actual.count === 'function' ? await actual.count() : Number.NaN;
+            throw new Error(message ?? `expected locator count ${expected}, received ${finalCount}`);
+          },
+          async toBeVisible() {
+            return;
+          },
+        };
+      },
+    }));
+  }
+
   it('waits for a viewport target to converge to a singular match before enforcing viewport semantics', async () => {
     class SequencedLocator {
       private readonly counts: number[];
@@ -298,25 +322,7 @@ describe('visual semantic singular target auto-wait assertions', () => {
     }
 
     vi.resetModules();
-    vi.doMock('@playwright/test', () => ({
-      expect(actual: { count?: () => Promise<number> }, message?: string) {
-        return {
-          async toHaveCount(expected: number) {
-            for (let attempt = 0; attempt < 3; attempt += 1) {
-              if (typeof actual.count === 'function' && await actual.count() === expected) {
-                return;
-              }
-            }
-
-            const finalCount = typeof actual.count === 'function' ? await actual.count() : Number.NaN;
-            throw new Error(message ?? `expected locator count ${expected}, received ${finalCount}`);
-          },
-          async toBeVisible() {
-            return;
-          },
-        };
-      },
-    }));
+    mockPlaywrightExpect();
 
     const { expectVisualSemanticAssertions } = await import('../e2e/utils/semantic-assertions');
     const viewportTarget = new SequencedLocator([0, 1]);
@@ -347,5 +353,112 @@ describe('visual semantic singular target auto-wait assertions', () => {
       prominentActionScopeTestIds: [],
       maxProminentActions: null,
     })).resolves.toBeUndefined();
+  });
+
+  it('enforces viewer-local datetime metadata through the runtime path once a scoped target converges to a singular match', async () => {
+    class SequencedViewerLocalDateTimeLocator {
+      private readonly counts: number[];
+
+      constructor(counts: number[]) {
+        this.counts = [...counts];
+      }
+
+      async count() {
+        if (this.counts.length > 1) {
+          return this.counts.shift()!;
+        }
+        return this.counts[0] ?? 0;
+      }
+
+      async evaluate() {
+        return {
+          dateTime: '2026-01-28T14:30:00Z',
+          policy: 'viewer_local',
+        };
+      }
+    }
+
+    vi.resetModules();
+    mockPlaywrightExpect();
+
+    const { expectVisualSemanticAssertions } = await import('../e2e/utils/semantic-assertions');
+    const viewerLocalDateTimeTarget = new SequencedViewerLocalDateTimeLocator([0, 1]);
+    const page = {
+      locator(selector: string) {
+        if (selector === 'body') {
+          return new SequencedViewerLocalDateTimeLocator([1]);
+        }
+        throw new Error(`unexpected selector: ${selector}`);
+      },
+      getByTestId(testId: string) {
+        if (testId === 'notebook__task-card--task_001') {
+          return {
+            async count() {
+              return 1;
+            },
+            getByTestId(targetTestId: string) {
+              if (targetTestId === 'notebook__task-last-activity') {
+                return viewerLocalDateTimeTarget;
+              }
+              throw new Error(`unexpected scoped target test id: ${targetTestId}`);
+            },
+          };
+        }
+        throw new Error(`unexpected surface test id: ${testId}`);
+      },
+      viewportSize() {
+        return { width: 320, height: 240 };
+      },
+    };
+
+    await expect(expectVisualSemanticAssertions(page as never, {
+      forbiddenVisibleText: [],
+      forbiddenVisibleTextPatterns: [],
+      requiredViewportTestIds: [],
+      requiredViewerLocalDateTimeTestIds: ['notebook__task-card--task_001::notebook__task-last-activity'],
+      primaryActionTestIds: [],
+      prominentActionScopeTestIds: [],
+      maxProminentActions: null,
+    })).resolves.toBeUndefined();
+  });
+
+  it('rejects duplicate raw viewer-local datetime targets through the runtime path instead of relying on helper-only coverage', async () => {
+    class DuplicateViewerLocalDateTimeLocator {
+      async count() {
+        return 2;
+      }
+    }
+
+    vi.resetModules();
+    mockPlaywrightExpect();
+
+    const { expectVisualSemanticAssertions } = await import('../e2e/utils/semantic-assertions');
+    const page = {
+      locator(selector: string) {
+        if (selector === 'body') {
+          return new DuplicateViewerLocalDateTimeLocator();
+        }
+        throw new Error(`unexpected selector: ${selector}`);
+      },
+      getByTestId(testId: string) {
+        if (testId === 'notebook__task-last-activity') {
+          return new DuplicateViewerLocalDateTimeLocator();
+        }
+        throw new Error(`unexpected test id: ${testId}`);
+      },
+      viewportSize() {
+        return { width: 320, height: 240 };
+      },
+    };
+
+    await expect(expectVisualSemanticAssertions(page as never, {
+      forbiddenVisibleText: [],
+      forbiddenVisibleTextPatterns: [],
+      requiredViewportTestIds: [],
+      requiredViewerLocalDateTimeTestIds: ['notebook__task-last-activity'],
+      primaryActionTestIds: [],
+      prominentActionScopeTestIds: [],
+      maxProminentActions: null,
+    })).rejects.toThrow(/requires unique viewer-local datetime target: notebook__task-last-activity/);
   });
 });

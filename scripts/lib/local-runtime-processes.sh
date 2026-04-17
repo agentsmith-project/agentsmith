@@ -593,16 +593,6 @@ local_runtime_all_pids_exited() {
   return 0
 }
 
-local_runtime_has_tracked_descendants() {
-  local root_pid="$1"
-  shift || true
-  local tree_pid
-  for tree_pid in "$@"; do
-    [[ -n "${tree_pid}" && "${tree_pid}" != "${root_pid}" ]] && return 0
-  done
-  return 1
-}
-
 local_runtime_track_owned_tree_candidate_pid() {
   local tree_pid="$1"
   local expected_owner_token="$2"
@@ -881,8 +871,7 @@ local_runtime_stop_owned_process_tree() {
   fi
 
   local post_term_quiesce_status late_discovery_rounds=0 all_exited_after_kill=0
-  if [[ "${term_tracked_pids_exited}" -eq 1 ]] \
-    && local_runtime_has_tracked_descendants "${pid}" "${pids[@]}"; then
+  if [[ "${term_tracked_pids_exited}" -eq 1 ]]; then
     if local_runtime_discover_owned_tree_candidates_with_quiesce "${expected_owner_token}" "${service_kind}" "${pid}" "${term_grace_sleep_seconds}" 3; then
       post_term_quiesce_status=0
     else
@@ -939,32 +928,27 @@ local_runtime_stop_owned_process_tree() {
 
     [[ "${all_exited_after_kill}" -eq 1 ]] || break
 
-    if local_runtime_has_tracked_descendants "${pid}" "${pids[@]}"; then
-      if local_runtime_discover_owned_tree_candidates_with_quiesce "${expected_owner_token}" "${service_kind}" "${pid}" "${kill_grace_sleep_seconds}" 2; then
-        post_term_quiesce_status=0
-      else
-        post_term_quiesce_status=$?
-      fi
-      case "${post_term_quiesce_status}" in
-        0)
-          late_discovery_rounds=$((late_discovery_rounds + 1))
-          if [[ "${late_discovery_rounds}" -gt 3 ]]; then
-            break
-          fi
-          continue
-          ;;
-        1)
-          local_runtime_remove_sidecars_for_pid "${pid}"
-          return 0
-          ;;
-        *)
-          return 1
-          ;;
-      esac
+    if local_runtime_discover_owned_tree_candidates_with_quiesce "${expected_owner_token}" "${service_kind}" "${pid}" "${kill_grace_sleep_seconds}" 2; then
+      post_term_quiesce_status=0
+    else
+      post_term_quiesce_status=$?
     fi
-
-    local_runtime_remove_sidecars_for_pid "${pid}"
-    return 0
+    case "${post_term_quiesce_status}" in
+      0)
+        late_discovery_rounds=$((late_discovery_rounds + 1))
+        if [[ "${late_discovery_rounds}" -gt 3 ]]; then
+          break
+        fi
+        continue
+        ;;
+      1)
+        local_runtime_remove_sidecars_for_pid "${pid}"
+        return 0
+        ;;
+      *)
+        return 1
+        ;;
+    esac
   done
 
   echo "[local-runtime-processes] failed to stop owned ${service_kind:-process} tree rooted at pid ${pid}" >&2

@@ -312,6 +312,8 @@ describe('visual baseline support', () => {
     expect(notebookLifecycleList?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
       'notebook__task-card--task_001::notebook__task-last-activity',
       'notebook__task-card--task_001::notebook__task-created-at',
+      'notebook__task-card--task_002::notebook__task-last-activity',
+      'notebook__task-card--task_002::notebook__task-created-at',
     ]);
     expect(systemWorkspacesDefault?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
       'system-workspaces__list::system-workspaces__card-initialized-at--ws_seeded',

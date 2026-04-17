@@ -331,6 +331,219 @@ while true; do sleep 1; done
     }
   });
 
+  it('keeps cleaning a root-only owned descendant that detaches during TERM handling', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const detachedChildPidFile = path.join(tempRoot, 'detached-child.pid');
+    const detachedChildScript = path.join(tempRoot, 'detached-child.sh');
+    const spawnDetachedChildScript = path.join(tempRoot, 'spawn-detached-child.sh');
+    const rootScript = path.join(tempRoot, 'root-spawns-detached-child-on-term.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      detachedChildScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+echo "$$" > "${detachedChildPidFile}"
+while true; do sleep 1; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      spawnDetachedChildScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+nohup setsid bash "${detachedChildScript}" >/dev/null 2>&1 < /dev/null &
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'bash "${spawnDetachedChildScript}"; exit 0' TERM
+while true; do :; done
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let detachedChildPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'root-only-term-detached-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'root-only-term-detached-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          started_ms="$(date +%s%3N)"
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+          finished_ms="$(date +%s%3N)"
+          echo "elapsed_ms=$((finished_ms - started_ms))"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'root-only-term-detached-owner',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '20',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+        },
+      );
+
+      for (let attempt = 0; attempt < 20 && !existsSync(detachedChildPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(detachedChildPidFile)).toBe(true);
+      detachedChildPid = Number.parseInt(readFileSync(detachedChildPidFile, 'utf8').trim(), 10);
+      expect(detachedChildPid).toBeGreaterThan(0);
+
+      expect(stopResult.status).toBe(0);
+      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(2_000);
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      expect(await waitForPidExit(detachedChildPid)).toBe(true);
+    } finally {
+      for (const pid of [detachedChildPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+    }
+  });
+
+  it('keeps cleaning a root-only owned descendant that detaches during the KILL window', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const detachedChildPidFile = path.join(tempRoot, 'detached-child.pid');
+    const detachedChildScript = path.join(tempRoot, 'detached-child.sh');
+    const delayedDetachedChildScript = path.join(tempRoot, 'delayed-detached-child.sh');
+    const spawnDetachedChildScript = path.join(tempRoot, 'spawn-detached-child.sh');
+    const detachedChildSpawnedMarkerFile = path.join(tempRoot, 'detached-child-spawned.marker');
+    const rootScript = path.join(tempRoot, 'root-spawns-detached-child-before-kill.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      detachedChildScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+echo "$$" > "${detachedChildPidFile}"
+while true; do sleep 1; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      delayedDetachedChildScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+sleep 0.2
+exec bash "${detachedChildScript}"
+`,
+      'utf8',
+    );
+    writeFileSync(
+      spawnDetachedChildScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+nohup setsid bash "${delayedDetachedChildScript}" >/dev/null 2>&1 < /dev/null &
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'if [[ ! -f "${detachedChildSpawnedMarkerFile}" ]]; then : > "${detachedChildSpawnedMarkerFile}"; bash "${spawnDetachedChildScript}"; fi' TERM
+while true; do :; done
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let detachedChildPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'root-only-kill-detached-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'root-only-kill-detached-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          started_ms="$(date +%s%3N)"
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+          finished_ms="$(date +%s%3N)"
+          echo "elapsed_ms=$((finished_ms - started_ms))"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'root-only-kill-detached-owner',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '5',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+        },
+      );
+
+      for (let attempt = 0; attempt < 20 && !existsSync(detachedChildPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(detachedChildPidFile)).toBe(true);
+      detachedChildPid = Number.parseInt(readFileSync(detachedChildPidFile, 'utf8').trim(), 10);
+      expect(detachedChildPid).toBeGreaterThan(0);
+
+      expect(stopResult.status).toBe(0);
+      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(2_000);
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      expect(await waitForPidExit(detachedChildPid)).toBe(true);
+    } finally {
+      for (const pid of [detachedChildPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+    }
+  });
+
   it('keeps cleaning newly discovered owned descendants after root and child exit during TERM grace', async () => {
     const tempRoot = makeTempRoot();
     const processStateDir = path.join(tempRoot, 'processes');

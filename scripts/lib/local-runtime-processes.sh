@@ -78,6 +78,13 @@ local_runtime_process_identity_token() {
   printf 'pid:%s:start:%s:cmd:%s\n' "${pid}" "${start_time:-unknown}" "${command_hash}"
 }
 
+local_runtime_identity_token_start_time() {
+  local identity_token="$1"
+  [[ "${identity_token}" =~ ^pid:[0-9]+:start:([^:]+):cmd: ]] || return 1
+  [[ -n "${BASH_REMATCH[1]}" && "${BASH_REMATCH[1]}" != "unknown" ]] || return 1
+  printf '%s\n' "${BASH_REMATCH[1]}"
+}
+
 local_runtime_process_owner_token() {
   local pid="$1"
   local owner_token
@@ -455,6 +462,23 @@ local_runtime_verify_owned_process() {
 local_runtime_parent_pid() {
   local pid="$1"
   ps -p "${pid}" -o ppid= 2>/dev/null | awk '{print $1}'
+}
+
+local_runtime_pid_has_ancestor() {
+  local pid="$1"
+  local expected_ancestor_pid="$2"
+  local current_pid="${pid}"
+  local parent_pid
+  [[ -n "${current_pid}" && -n "${expected_ancestor_pid}" ]] || return 1
+
+  for _ in $(seq 1 32); do
+    parent_pid="$(local_runtime_parent_pid "${current_pid}")"
+    [[ -n "${parent_pid}" && "${parent_pid}" != "${current_pid}" && "${parent_pid}" != "0" ]] || return 1
+    [[ "${parent_pid}" == "${expected_ancestor_pid}" ]] && return 0
+    current_pid="${parent_pid}"
+  done
+
+  return 1
 }
 
 local_runtime_verified_owner_pid_for_tree_member() {
@@ -861,6 +885,56 @@ local_runtime_find_untracked_owned_tree_hint_pid_with_quiesce() {
   return 1
 }
 
+local_runtime_find_untracked_same_session_or_group_ambiguity_pid() {
+  local expected_group_id="${1:-}"
+  local expected_session_id="${2:-}"
+  local root_pid="$3"
+  local minimum_start_time="${4:-}"
+  local candidate_pid candidate_start_time
+  [[ -n "${expected_group_id}" || -n "${expected_session_id}" ]] || return 1
+  [[ "${minimum_start_time}" =~ ^[0-9]+$ ]] || return 1
+
+  while read -r candidate_pid; do
+    [[ -n "${candidate_pid}" ]] || continue
+    [[ "${candidate_pid}" != "${root_pid}" ]] || continue
+    [[ -z "${tracked_pids[${candidate_pid}]+x}" ]] || continue
+    local_runtime_pid_is_alive "${candidate_pid}" || continue
+    [[ "${candidate_pid}" != "$$" ]] || continue
+    local_runtime_pid_has_ancestor "${candidate_pid}" "$$" && continue
+    candidate_start_time="$(local_runtime_process_start_time "${candidate_pid}" || true)"
+    [[ "${candidate_start_time}" =~ ^[0-9]+$ ]] || continue
+    (( candidate_start_time >= minimum_start_time )) || continue
+    printf '%s\n' "${candidate_pid}"
+    return 0
+  done < <(local_runtime_same_session_or_group_pids "${expected_group_id}" "${expected_session_id}")
+
+  return 1
+}
+
+local_runtime_find_untracked_same_session_or_group_ambiguity_pid_with_quiesce() {
+  local expected_group_id="${1:-}"
+  local expected_session_id="${2:-}"
+  local root_pid="$3"
+  local minimum_start_time="${4:-}"
+  local sleep_seconds="$5"
+  local attempts="$6"
+  local attempt ambiguity_pid previous_ambiguity_pid=""
+
+  for attempt in $(seq 1 "${attempts}"); do
+    ambiguity_pid="$(local_runtime_find_untracked_same_session_or_group_ambiguity_pid \
+      "${expected_group_id}" "${expected_session_id}" "${root_pid}" "${minimum_start_time}" || true)"
+    if [[ -n "${ambiguity_pid}" && "${ambiguity_pid}" == "${previous_ambiguity_pid}" ]]; then
+      printf '%s\n' "${ambiguity_pid}"
+      return 0
+    fi
+    previous_ambiguity_pid="${ambiguity_pid}"
+    [[ "${attempt}" -lt "${attempts}" ]] || break
+    sleep "${sleep_seconds}"
+  done
+
+  return 1
+}
+
 local_runtime_remove_sidecars_for_pid() {
   local pid="$1"
   local state_dir
@@ -911,7 +985,7 @@ local_runtime_stop_owned_process_tree() {
   local pid="$1"
   local service_kind="${2:-}"
   local port="${3:-}"
-  local sidecar_file expected_owner_token root_process_group_id root_session_id sidecar_token sidecar_command sidecar_schema_version root_is_alive=0
+  local sidecar_file expected_owner_token root_process_group_id root_session_id sidecar_token sidecar_command sidecar_schema_version root_start_time root_is_alive=0
   [[ -n "${pid}" ]] || return 0
 
   sidecar_file="$(local_runtime_find_sidecar "${pid}" "${service_kind}" "${port}")" || {
@@ -929,6 +1003,7 @@ local_runtime_stop_owned_process_tree() {
   fi
   sidecar_schema_version="$(local_runtime_read_sidecar_field "${sidecar_file}" schema_version || true)"
   sidecar_token="$(local_runtime_read_sidecar_field "${sidecar_file}" process_identity.token || true)"
+  root_start_time="$(local_runtime_identity_token_start_time "${sidecar_token}" || true)"
   sidecar_command="$(local_runtime_read_sidecar_field "${sidecar_file}" command || true)"
   root_process_group_id="$(local_runtime_read_sidecar_field "${sidecar_file}" process_group_id || true)"
   root_session_id="$(local_runtime_read_sidecar_field "${sidecar_file}" session_id || true)"
@@ -1094,6 +1169,18 @@ local_runtime_stop_owned_process_tree() {
       echo "[local-runtime-processes] ownership verification failed for pid ${late_discovery_hint_pid}: cannot confirm descendant ownership" >&2
       return 1
     fi
+  fi
+
+  if [[ "${root_is_alive}" -eq 0 ]]; then
+    local root_dead_ambiguity_pid=""
+    root_dead_ambiguity_pid="$(local_runtime_find_untracked_same_session_or_group_ambiguity_pid_with_quiesce \
+      "${root_process_group_id}" "${root_session_id}" "${pid}" "${root_start_time}" "${term_grace_sleep_seconds}" 3 || true)"
+    if [[ -n "${root_dead_ambiguity_pid}" ]]; then
+      echo "[local-runtime-processes] ownership verification failed for pid ${root_dead_ambiguity_pid}: cannot confirm descendant ownership" >&2
+      return 1
+    fi
+    echo "[local-runtime-processes] ownership verification failed for pid ${pid}: missing post-root cleanup completion authority" >&2
+    return 1
   fi
 
   if local_runtime_all_pids_exited "${pids[@]}"; then

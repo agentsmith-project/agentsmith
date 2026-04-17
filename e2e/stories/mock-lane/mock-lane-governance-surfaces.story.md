@@ -274,7 +274,12 @@
           ],
           "semanticAssertions": {
             "primaryActionTestIds": [
-              "system-workspaces__empty-create"
+              "system-workspaces__empty::system-workspaces__empty-create"
+            ],
+            "prominentActionScopeTestIds": [
+              "page-layout__header",
+              "system-workspaces__list",
+              "system-workspaces__editor-empty"
             ],
             "maxProminentActions": 1
           }
@@ -295,11 +300,18 @@
           ],
           "semanticAssertions": {
             "primaryActionTestIds": [
-              "system-workspaces__new-workspace"
+              "page-layout__header::system-workspaces__new-workspace"
+            ],
+            "prominentActionScopeTestIds": [
+              "page-layout__header",
+              "system-workspaces__list",
+              "system-workspaces__editor"
             ],
             "maxProminentActions": 1,
             "requiredViewerLocalDateTimeTestIds": [
-              "system-workspaces__initialized-at"
+              "system-workspaces__list::system-workspaces__card-initialized-at--ws_seeded",
+              "system-workspaces__editor::system-workspaces__detail-header-initialized-at",
+              "system-workspaces__editor::system-workspaces__detail-facts-initialized-at"
             ]
           }
         },
@@ -316,11 +328,18 @@
           "authLane": "system_admin",
           "semanticAssertions": {
             "primaryActionTestIds": [
-              "system-workspaces__save"
+              "system-workspaces__editor::system-workspaces__save"
+            ],
+            "prominentActionScopeTestIds": [
+              "page-layout__header",
+              "system-workspaces__list",
+              "system-workspaces__editor"
             ],
             "maxProminentActions": 1,
             "requiredViewerLocalDateTimeTestIds": [
-              "system-workspaces__initialized-at"
+              "system-workspaces__list::system-workspaces__card-initialized-at--ws_seeded",
+              "system-workspaces__editor::system-workspaces__detail-header-initialized-at",
+              "system-workspaces__editor::system-workspaces__detail-facts-initialized-at"
             ]
           },
           "themes": [
@@ -358,7 +377,12 @@
           ],
           "semanticAssertions": {
             "primaryActionTestIds": [
-              "system-workspaces__enable-edit"
+              "system-workspaces__editor::system-workspaces__enable-edit"
+            ],
+            "prominentActionScopeTestIds": [
+              "page-layout__header",
+              "system-workspaces__list",
+              "system-workspaces__editor"
             ],
             "maxProminentActions": 1
           }
@@ -376,11 +400,19 @@
           "authLane": "system_admin",
           "semanticAssertions": {
             "primaryActionTestIds": [
-              "system-workspaces__delete-confirm"
+              "system-workspaces__delete-dialog::system-workspaces__delete-confirm"
+            ],
+            "prominentActionScopeTestIds": [
+              "page-layout__header",
+              "system-workspaces__list",
+              "system-workspaces__editor",
+              "system-workspaces__delete-dialog"
             ],
             "maxProminentActions": 1,
             "requiredViewerLocalDateTimeTestIds": [
-              "system-workspaces__initialized-at"
+              "system-workspaces__list::system-workspaces__card-initialized-at--ws_seeded",
+              "system-workspaces__editor::system-workspaces__detail-header-initialized-at",
+              "system-workspaces__editor::system-workspaces__detail-facts-initialized-at"
             ]
           },
           "themes": [

@@ -102,6 +102,9 @@ describe('WorkspaceEditorPanel', () => {
     expect(screen.queryByTestId('system-workspaces__idp')).not.toBeInTheDocument();
     expect(screen.queryByTestId('system-workspaces__admin')).not.toBeInTheDocument();
     expect(screen.queryByTestId('system-workspaces__lifecycle')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('system-workspaces__publish')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('system-workspaces__disable')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('system-workspaces__delete')).not.toBeInTheDocument();
     expect(screen.queryByTestId('system-workspaces__save')).not.toBeInTheDocument();
   });
 
@@ -133,7 +136,10 @@ describe('WorkspaceEditorPanel', () => {
     expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__lifecycle')).toBeInTheDocument();
+    expect(screen.queryByTestId('system-workspaces__lifecycle')).not.toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__publish')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__disable')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__delete')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__save')).toHaveAttribute('data-visual-prominence', 'primary');
     expect(screen.getByTestId('system-workspaces__login-preview')).toHaveTextContent('/en-US/workspaces/alpha_workspace/login');
     expect(screen.getByTestId('system-workspaces__callback-preview')).toHaveTextContent('/en-US/workspaces/alpha_workspace/login/callback');
@@ -175,7 +181,7 @@ describe('WorkspaceEditorPanel', () => {
     expect(screen.getByTestId('system-workspaces__enable-edit')).toHaveAttribute('data-visual-prominence', 'primary');
   });
 
-  it('renders initialized timestamps as viewer-local time elements with machine-readable metadata', () => {
+  it('renders initialized-at detail timestamps with surface-specific ids and leaves the non-authoritative lifecycle preview anonymous', () => {
     render(
       <WorkspaceEditorPanel
         locale="en-US"
@@ -200,15 +206,19 @@ describe('WorkspaceEditorPanel', () => {
       />,
     );
 
-    const timestamps = screen.getAllByTestId('system-workspaces__initialized-at');
-    expect(timestamps.length).toBeGreaterThan(0);
+    const timestamps = [
+      screen.getByTestId('system-workspaces__detail-header-initialized-at'),
+      screen.getByTestId('system-workspaces__detail-facts-initialized-at'),
+    ];
+
+    expect(screen.queryByTestId('system-workspaces__initialized-at')).not.toBeInTheDocument();
 
     for (const timestamp of timestamps) {
       expect(timestamp.tagName).toBe('TIME');
       expect(timestamp).toHaveAttribute('dateTime', '2026-03-10T01:00:00.000Z');
       expect(timestamp).toHaveAttribute('data-visual-datetime', '2026-03-10T01:00:00.000Z');
       expect(timestamp).toHaveAttribute('data-visual-datetime-policy', 'viewer_local');
-      expect(timestamp).not.toHaveTextContent('2026-03-10T01:00:00.000Z');
+      expect(timestamp).toHaveTextContent('Mar 9, 2026, 06:00 PM PDT');
     }
   });
 });

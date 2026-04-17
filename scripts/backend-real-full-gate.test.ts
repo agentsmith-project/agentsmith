@@ -276,7 +276,8 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('--failure-message "${failure_message}"');
     expect(script).toContain('if [[ "${RESOURCE_RECOVERY_PRE_READY_FAILURE}" == "1" ]]; then');
     expect(script).toContain('report_paths=("${RESOURCE_RECOVERY_STARTUP_JSON}")');
-    expect(script).toContain('capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"');
+    expect(script).toContain('capture_resource_recovery_baseline "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"');
+    expect(script).toContain('--failure-observation "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"');
     expect(script).toContain('File library gate could not materialize startup resource recovery evidence before exiting.');
   });
 
@@ -288,12 +289,14 @@ describe('backend-real full gate runtime ownership contract', () => {
 
     expect(helperStart).toBeGreaterThanOrEqual(0);
     expect(helperEnd).toBeGreaterThan(helperStart);
-    expect(helperBody).toContain('if [[ -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" ]]; then');
-    expect(helperBody).toContain('cp "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${RESOURCE_RECOVERY_BASELINE_JSON}"');
-    expect(helperBody).toContain('write_startup_resource_recovery_report "${failure_message}" "${STARTUP_QUIESCE_SNAPSHOT_JSON}"');
-    expect(helperBody).toContain('if write_startup_resource_recovery_report "${failure_message}"; then');
+    expect(helperBody).toContain('capture_resource_recovery_baseline "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"');
+    expect(helperBody).toContain('startup_candidate_args=(');
+    expect(helperBody).toContain('--startup-candidate "${STARTUP_QUIESCE_SNAPSHOT_JSON}"');
+    expect(helperBody).toContain('--failure-observation "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"');
+    expect(helperBody).toContain('if write_startup_resource_recovery_report "${failure_message}"');
     expect(helperBody).toContain('[[ -f "${RESOURCE_RECOVERY_STARTUP_JSON}" ]]');
     expect(helperBody).toContain('return 0');
+    expect(helperBody).not.toContain('cp "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${RESOURCE_RECOVERY_BASELINE_JSON}"');
   });
 
   it('runs stale JuiceFS orphan preflight before capturing the file-library boot baseline', () => {
@@ -430,7 +433,7 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).not.toContain('STARTUP_WARMED_FLOOR_API_TCP_REQUIREMENTS=(');
   });
 
-  it('binds startup steady-state proof and ready-baseline freeze to the same listener identity and fails closed on handoff', () => {
+  it('binds startup steady-state proof and ready-baseline freeze to the same authority object instead of a pid-only handoff check', () => {
     const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
     const freezeFnStart = script.indexOf('freeze_startup_ready_baseline_from_quiesce_proof()');
     const freezeFnEnd = script.indexOf('write_startup_resource_recovery_report()', freezeFnStart);
@@ -438,12 +441,32 @@ describe('backend-real full gate runtime ownership contract', () => {
 
     expect(freezeFnStart).toBeGreaterThanOrEqual(0);
     expect(freezeFnEnd).toBeGreaterThan(freezeFnStart);
-    expect(script).toContain('STARTUP_QUIESCE_PROVEN_LISTENER_PID=""');
-    expect(script).toContain('STARTUP_QUIESCE_PROVEN_LISTENER_PID="${listener_pid}"');
+    expect(script).toContain('STARTUP_QUIESCE_AUTHORITY_JSON=');
+    expect(script).toContain('write_startup_listener_authority_file()');
+    expect(script).toContain('startup_listener_authority_matches_saved_file()');
+    expect(script).toContain('local_runtime_process_identity_token');
+    expect(script).toContain('local_runtime_read_sidecar_field');
     expect(freezeBody).toContain('current_listener_pid="$(resolve_owned_api_listener_pid 2>/dev/null || true)"');
-    expect(freezeBody).toContain('[[ "${current_listener_pid}" == "${STARTUP_QUIESCE_PROVEN_LISTENER_PID}" ]]');
+    expect(freezeBody).toContain('startup_listener_authority_matches_saved_file "${STARTUP_QUIESCE_AUTHORITY_JSON}" "${current_listener_pid}"');
     expect(freezeBody).toContain('cp "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${RESOURCE_RECOVERY_BASELINE_JSON}"');
+    expect(script).not.toContain('STARTUP_QUIESCE_PROVEN_LISTENER_PID=');
+    expect(freezeBody).not.toContain('[[ "${current_listener_pid}" == "${STARTUP_QUIESCE_PROVEN_LISTENER_PID}" ]]');
     expect(freezeBody).not.toContain('capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"');
+  });
+
+  it('revalidates the saved startup authority object before reusing a startup candidate during pre-ready failure materialization', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const helperStart = script.indexOf('materialize_pre_ready_failure_evidence()');
+    const helperEnd = script.indexOf('write_resource_recovery_summary()', helperStart);
+    const helperBody = script.slice(helperStart, helperEnd);
+
+    expect(helperStart).toBeGreaterThanOrEqual(0);
+    expect(helperEnd).toBeGreaterThan(helperStart);
+    expect(helperBody).toContain('if [[ -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" && -f "${STARTUP_QUIESCE_AUTHORITY_JSON}" ]]; then');
+    expect(helperBody).toContain('current_listener_pid="$(resolve_owned_api_listener_pid 2>/dev/null || true)"');
+    expect(helperBody).toContain('startup_listener_authority_matches_saved_file "${STARTUP_QUIESCE_AUTHORITY_JSON}" "${current_listener_pid}"');
+    expect(helperBody).toContain('startup_candidate_args+=(--comparison-current-source startup_candidate)');
+    expect(helperBody).toContain('startup_candidate_args+=(--comparison-current-source failure_observation)');
   });
 
   it('uses a single startup steady-state contract inside startup-report instead of a shell-only warmed floor authority', () => {
@@ -469,9 +492,11 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(quiesceFnEnd).toBeGreaterThan(quiesceFnIndex);
     expect(quiesceBody).toContain('local snapshot_tmp="${STARTUP_QUIESCE_SNAPSHOT_JSON}.tmp"');
     expect(quiesceBody).toContain('local report_tmp="${STARTUP_QUIESCE_REPORT_JSON}.tmp"');
-    expect(quiesceBody).toContain('if [[ -f "${snapshot_tmp}" && -f "${report_tmp}" ]]; then');
+    expect(quiesceBody).toContain('local authority_tmp="${STARTUP_QUIESCE_AUTHORITY_JSON}.tmp"');
+    expect(quiesceBody).toContain('if [[ -f "${snapshot_tmp}" && -f "${report_tmp}" && -f "${authority_tmp}" ]]; then');
     expect(quiesceBody).toContain('mv "${snapshot_tmp}" "${STARTUP_QUIESCE_SNAPSHOT_JSON}"');
     expect(quiesceBody).toContain('mv "${report_tmp}" "${STARTUP_QUIESCE_REPORT_JSON}"');
+    expect(quiesceBody).toContain('mv "${authority_tmp}" "${STARTUP_QUIESCE_AUTHORITY_JSON}"');
     expect(quiesceBody).not.toContain('rm -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${STARTUP_QUIESCE_REPORT_JSON}"');
   });
 

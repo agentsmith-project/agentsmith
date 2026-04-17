@@ -151,8 +151,26 @@ The markdown body is optional and ignored by the loader for canonical stories.
 - `themes?: StoryVisualReviewTheme[]`
 - `viewport?: StoryVisualReviewViewport`
 - `setupNotes?: string[]`
+- `semanticAssertions?: StoryRuntimeVisualSemanticAssertionsDefinition`
 
 `themes` may use `light` / `dark` for paired theme captures, or `default` for a single canonical screenshot when the scene does not need theme-specific variants.
+
+### Visual semantic assertions
+
+- `forbiddenVisibleText?: string[]`
+- `forbiddenVisibleTextPatterns?: string[]`
+- `allowedDefaultForbiddenVisibleText?: string[]`
+- `requiredViewportTestIds?: string[]`
+- `requiredViewerLocalDateTimeTestIds?: string[]`
+- `primaryActionTestIds?: string[]`
+- `prominentActionScopeTestIds?: string[]`
+- `maxProminentActions?: number`
+
+`requiredViewportTestIds`, `requiredViewerLocalDateTimeTestIds`, and `primaryActionTestIds` accept either a page-unique `target` test id or a surface-scoped `surface::target` reference.
+
+Use `surface::target` when the same target family can appear in multiple surfaces on the same page. The `surface` part is expected to resolve to a unique visible surface for that scene at runtime.
+
+`prominentActionScopeTestIds` is scope-only. Each value must be a unique visible scope container test id for the scene, not a `surface::target` reference.
 
 ### Visual review
 
@@ -194,6 +212,8 @@ The markdown body is optional and ignored by the loader for canonical stories.
 - `externalDependencies[].dependencyId` must be non-empty and unique within a story
 - steps with `visual` evidence must reference an existing `sceneId`
 - if `note` is present, it must be non-empty
+- semantic target references may be raw `target` ids or surface-scoped `surface::target` ids
+- if a semantic target uses `surface::target`, both sides must be non-empty
 - committed filename and `storyId` must match exactly
 - committed story ids must be unique across the discovered canonical lane roots
 

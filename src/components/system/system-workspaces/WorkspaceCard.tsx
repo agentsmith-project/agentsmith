@@ -62,7 +62,9 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
             <span className="truncate text-foreground">{workspace.workspace_admin}</span>
             <span className="text-tertiary">·</span>
             <span className="text-tertiary">{t('initialized_at_label')}</span>
-            <span className="truncate text-foreground">{renderInitializedAt(summary.timestamp)}</span>
+            <span className="truncate text-foreground">
+              {renderInitializedAt(summary.timestamp, `system-workspaces__card-initialized-at--${workspace.id}`)}
+            </span>
           </div>
 
           <div className="flex items-start gap-2 border-t border-subtle pt-3">
@@ -112,7 +114,7 @@ export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSe
   );
 }
 
-function renderInitializedAt(presentation: ViewerLocalDateTimePresentation) {
+function renderInitializedAt(presentation: ViewerLocalDateTimePresentation, testId?: string) {
   if (!presentation.dateTime) {
     return <span>{presentation.text}</span>;
   }
@@ -121,7 +123,7 @@ function renderInitializedAt(presentation: ViewerLocalDateTimePresentation) {
     <time
       dateTime={presentation.dateTime}
       title={presentation.title}
-      data-testid="system-workspaces__initialized-at"
+      data-testid={testId}
       data-visual-datetime={presentation.visualDateTime}
       data-visual-datetime-policy={presentation.visualDateTimePolicy}
     >

@@ -14,6 +14,7 @@ describe('user story contract docs', () => {
     expect(contractSource).toContain('export type StoryRuntimeVisualReviewSceneDefinition');
     expect(contractSource).toContain('export type StoryRuntimeVisualReviewDefinition');
     expect(contractSource).toContain('export type StoryRuntimeVisualReviewNotebookTaskDefinition');
+    expect(contractSource).toContain('export type StoryRuntimeVisualSemanticAssertionsDefinition');
     expect(contractSource).toContain('export type StoryRuntimeData');
     expect(contractSource).toContain('export type StoryVisualReviewScenarioGroup');
     expect(contractSource).toContain('export type StoryVisualReviewCaptureMode');
@@ -59,6 +60,19 @@ describe('user story contract docs', () => {
     expect(docSource).toContain('`default` for a single canonical screenshot');
     expect(docSource).toContain('- `viewport?: StoryVisualReviewViewport`');
     expect(docSource).toContain('- `setupNotes?: string[]`');
+    expect(docSource).toContain('- `semanticAssertions?: StoryRuntimeVisualSemanticAssertionsDefinition`');
+    expect(docSource).toContain('### Visual semantic assertions');
+    expect(docSource).toContain('- `forbiddenVisibleText?: string[]`');
+    expect(docSource).toContain('- `forbiddenVisibleTextPatterns?: string[]`');
+    expect(docSource).toContain('- `allowedDefaultForbiddenVisibleText?: string[]`');
+    expect(docSource).toContain('- `requiredViewportTestIds?: string[]`');
+    expect(docSource).toContain('- `requiredViewerLocalDateTimeTestIds?: string[]`');
+    expect(docSource).toContain('- `primaryActionTestIds?: string[]`');
+    expect(contractSource).toContain('prominentActionScopeTestIds?: readonly string[];');
+    expect(docSource).toContain('- `prominentActionScopeTestIds?: string[]`');
+    expect(docSource).toContain('unique visible scope container');
+    expect(docSource).toContain('- `maxProminentActions?: number`');
+    expect(docSource).toContain('surface::target');
     expect(docSource).toContain('### Visual review');
     expect(docSource).toContain('- `scenes: StoryRuntimeVisualReviewSceneDefinition[]`');
     expect(docSource).toContain('- `notebookTask?: StoryRuntimeVisualReviewNotebookTaskDefinition`');

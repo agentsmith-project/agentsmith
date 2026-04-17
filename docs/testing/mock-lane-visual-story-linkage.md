@@ -17,6 +17,16 @@ This document defines the canonical linkage between mock-lane visual scenes, sto
 - The story-scene truth lives in the top-level `scenes` array.
 - Visual catalog metadata lives under the canonical story contract at `runtimeData.visualReview.scenes`.
 - Each visual catalog scene must reference a story scene via `sceneId`.
+- Scene-level semantic acceptance rules live under `runtimeData.visualReview.scenes[].semanticAssertions`.
+
+## Semantic linkage
+
+- `semanticAssertions` is part of the canonical story-owned visual scene payload.
+- Semantic target families currently used by the visual lane are `requiredViewportTestIds`, `requiredViewerLocalDateTimeTestIds`, `primaryActionTestIds`, and `prominentActionScopeTestIds`.
+- `requiredViewportTestIds`, `requiredViewerLocalDateTimeTestIds`, and `primaryActionTestIds` may point at a raw page-unique `target`, or at a surface-scoped `surface::target`.
+- When a story uses `surface::target`, the `surface` must be a unique surface container for that scene before the target assertion runs.
+- `prominentActionScopeTestIds` is different: it names the unique surface containers that bound prominent-action counting, so scope and target stay separate.
+- This keeps repeated page-local test ids reviewable without inventing a separate visual scenario catalog.
 
 ## Required linkage fields
 

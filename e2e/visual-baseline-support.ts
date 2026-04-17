@@ -58,6 +58,7 @@ export type VisualBaselineSemanticAssertions = {
   requiredViewportTestIds: readonly string[];
   requiredViewerLocalDateTimeTestIds: readonly string[];
   primaryActionTestIds: readonly string[];
+  prominentActionScopeTestIds: readonly string[];
   maxProminentActions: number | null;
 };
 
@@ -102,6 +103,7 @@ function resolveSemanticAssertionsFromStoryScene(
       viewerLocalDateTimeAssertions?.requiredViewerLocalDateTimeTestIds ?? [],
     ),
     primaryActionTestIds: uniqueNonEmptyTexts(assertions?.primaryActionTestIds ?? []),
+    prominentActionScopeTestIds: uniqueNonEmptyTexts(assertions?.prominentActionScopeTestIds ?? []),
     maxProminentActions: assertions?.maxProminentActions ?? null,
   };
 }
@@ -560,6 +562,7 @@ function visualBaselineScenarioMetadataLines(
   const forbiddenVisibleTextPatterns = scenario.semanticAssertions.forbiddenVisibleTextPatterns;
   const requiredViewportTestIds = scenario.semanticAssertions.requiredViewportTestIds;
   const primaryActionTestIds = scenario.semanticAssertions.primaryActionTestIds;
+  const prominentActionScopeTestIds = scenario.semanticAssertions.prominentActionScopeTestIds;
   const maxProminentActions = scenario.semanticAssertions.maxProminentActions;
   return [
     `- scenario_id: ${scenario.scenarioId}`,
@@ -581,6 +584,7 @@ function visualBaselineScenarioMetadataLines(
     `- semantic_forbidden_visible_text_patterns: ${forbiddenVisibleTextPatterns.length > 0 ? forbiddenVisibleTextPatterns.join(', ') : '<none>'}`,
     `- semantic_required_viewport_test_ids: ${requiredViewportTestIds.length > 0 ? requiredViewportTestIds.join(', ') : '<none>'}`,
     `- semantic_primary_action_test_ids: ${primaryActionTestIds.length > 0 ? primaryActionTestIds.join(', ') : '<none>'}`,
+    `- semantic_prominent_action_scope_test_ids: ${prominentActionScopeTestIds.length > 0 ? prominentActionScopeTestIds.join(', ') : '<none>'}`,
     `- semantic_max_prominent_actions: ${maxProminentActions ?? '<none>'}`,
   ];
 }

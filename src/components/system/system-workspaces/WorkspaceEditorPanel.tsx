@@ -109,7 +109,7 @@ export function WorkspaceEditorPanel({
   );
   const saveButtonVariant = suspendLifecyclePrimaryProminence ? 'action' : 'primary';
 
-  const renderInitializedAt = (presentation: ViewerLocalDateTimePresentation) => {
+  const renderInitializedAt = (presentation: ViewerLocalDateTimePresentation, testId?: string) => {
     if (!presentation.dateTime) {
       return <span>{presentation.text}</span>;
     }
@@ -118,7 +118,7 @@ export function WorkspaceEditorPanel({
       <time
         dateTime={presentation.dateTime}
         title={presentation.title}
-        data-testid="system-workspaces__initialized-at"
+        data-testid={testId}
         data-visual-datetime={presentation.visualDateTime}
         data-visual-datetime-policy={presentation.visualDateTimePolicy}
       >
@@ -144,7 +144,7 @@ export function WorkspaceEditorPanel({
                   <span>·</span>
                   <span>{workspace?.workspace_admin || t('none')}</span>
                   <span>·</span>
-                  <span>{renderInitializedAt(lastInitializedValue)}</span>
+                  <span>{renderInitializedAt(lastInitializedValue, 'system-workspaces__detail-header-initialized-at')}</span>
                 </div>
               </div>
               {showFailedRepairAction ? (
@@ -230,7 +230,9 @@ export function WorkspaceEditorPanel({
           </div>
           <div className="space-y-1 border-t border-subtle/60 pt-3">
             <dt className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('initialized_at_label')}</dt>
-            <dd className="truncate text-sm font-medium text-foreground">{renderInitializedAt(lastInitializedValue)}</dd>
+            <dd className="truncate text-sm font-medium text-foreground">
+              {renderInitializedAt(lastInitializedValue, 'system-workspaces__detail-facts-initialized-at')}
+            </dd>
           </div>
         </dl>
           {!state.isEditMode ? (
@@ -528,7 +530,7 @@ export function WorkspaceEditorPanel({
             )}
           </div>
 
-          <section className="space-y-4 px-5 py-5" data-testid="system-workspaces__lifecycle">
+          <section className="space-y-4 px-5 py-5">
             <div className="space-y-1">
               <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_actions_label')}</p>
               <p className="text-base font-medium text-foreground">{t('workspace_actions_title')}</p>

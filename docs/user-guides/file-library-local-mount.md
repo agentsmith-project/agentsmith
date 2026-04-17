@@ -170,6 +170,7 @@ bash scripts/run-file-library-real-gate.sh
 
 Expected resource recovery proof:
 - a `boot-baseline.json` snapshot is captured before the API starts, and `file-library-api-startup.json` turns that boot snapshot into an explicit startup verdict instead of summary-only evidence
+- startup quiesce proof is bound to a saved authority object in `startup-quiesce.authority.json`, so freeze and failure observation both revalidate the same owned listener identity instead of trusting pid-only handoff
 - temporary file-library gateway state returns exactly to the pre-run baseline
 - managed `juicefs gateway` processes return exactly to the pre-run baseline, including the same per-library pid set
 - the API process and every managed gateway process return to the ready baseline for `open_fd_count` and `socket_fd_count`
@@ -184,14 +185,20 @@ Failure-path expectation:
 The real gate writes a structured recovery report under:
 - `artifacts/backend-real/current/file-library-real-gate/resource-recovery/boot-baseline.json`
 - `artifacts/backend-real/current/file-library-real-gate/resource-recovery/baseline.json`
+- `artifacts/backend-real/current/file-library-real-gate/resource-recovery/startup-quiesce.snapshot.json`
+- `artifacts/backend-real/current/file-library-real-gate/resource-recovery/startup-quiesce.authority.json`
+- `artifacts/backend-real/current/file-library-real-gate/resource-recovery/failure-observation.json` when the gate fails before the ready baseline is frozen
 - `artifacts/backend-real/current/file-library-real-gate/resource-recovery/file-library-api-startup.json`
 - `artifacts/backend-real/current/file-library-real-gate/resource-recovery/report.json`
 - `artifacts/backend-real/current/file-library-real-gate/resource-recovery/report.md`
 
-`report.json` and `report.md` now preserve both ends of the baseline chain:
+`report.json` and `report.md` now preserve the startup evidence chain instead of flattening every pre-ready snapshot into a fake ready baseline:
 - `boot-baseline.json` proves what existed before the API booted
-- `file-library-api-startup.json` proves startup only introduced the steady-state API resources that are expected before the smoke steps begin
-- `baseline.json` proves the steady-state ready baseline that every smoke step must return to
+- `startup-quiesce.snapshot.json` is the startup candidate that satisfied the declared steady-state contract before the ready baseline freeze
+- `startup-quiesce.authority.json` proves which owned listener identity the startup candidate belonged to
+- `failure-observation.json` records the later pre-ready observation when startup fails before the ready baseline is frozen
+- `file-library-api-startup.json` distinguishes whether startup was evaluated against the ready baseline, the startup candidate, or the failure observation
+- `baseline.json` exists only when the ready baseline was actually frozen and is the baseline that every smoke step must return to
 
 This report is a file-library real-gate substep artifact.
 It is not a new global governance evidence kind.

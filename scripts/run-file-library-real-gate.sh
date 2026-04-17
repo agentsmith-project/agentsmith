@@ -117,6 +117,7 @@ RESOURCE_RECOVERY_DIR="${FILE_LIBRARY_REAL_GATE_ARTIFACT_DIR}/resource-recovery"
 RESOURCE_RECOVERY_BOOT_BASELINE_JSON="${RESOURCE_RECOVERY_DIR}/boot-baseline.json"
 RESOURCE_RECOVERY_BASELINE_JSON="${RESOURCE_RECOVERY_DIR}/baseline.json"
 RESOURCE_RECOVERY_STARTUP_JSON="${RESOURCE_RECOVERY_DIR}/file-library-api-startup.json"
+RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON="${RESOURCE_RECOVERY_DIR}/failure-observation.json"
 RESOURCE_RECOVERY_SMOKE_JSON="${RESOURCE_RECOVERY_DIR}/file-library-real-smoke.json"
 RESOURCE_RECOVERY_MOUNT_SYNC_JSON="${RESOURCE_RECOVERY_DIR}/file-library-mount-sync-smoke.json"
 RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON="${RESOURCE_RECOVERY_DIR}/file-library-mount-sync-probe.json"
@@ -124,6 +125,7 @@ RESOURCE_RECOVERY_REPORT_JSON="${RESOURCE_RECOVERY_DIR}/report.json"
 RESOURCE_RECOVERY_REPORT_MD="${RESOURCE_RECOVERY_DIR}/report.md"
 STARTUP_QUIESCE_SNAPSHOT_JSON="${RESOURCE_RECOVERY_DIR}/startup-quiesce.snapshot.json"
 STARTUP_QUIESCE_REPORT_JSON="${RESOURCE_RECOVERY_DIR}/startup-quiesce.report.json"
+STARTUP_QUIESCE_AUTHORITY_JSON="${RESOURCE_RECOVERY_DIR}/startup-quiesce.authority.json"
 STARTUP_WARMUP_DIR="${FILE_LIBRARY_REAL_GATE_RUNTIME_DIR}/startup-warmup"
 STARTUP_WARMUP_TOKEN_FILE="${STARTUP_WARMUP_DIR}/token.txt"
 STARTUP_WARMUP_BODY_FILE="${STARTUP_WARMUP_DIR}/body.json"
@@ -140,7 +142,6 @@ STARTUP_STEADY_STATE_API_TCP_CONTRACTS=(
 STARTUP_STEADY_STATE_HELPER_LABEL_ALLOWANCES=(
   "helper:mc|0"
 )
-STARTUP_QUIESCE_PROVEN_LISTENER_PID=""
 API_ROOT_PID=""
 API_PID=""
 
@@ -153,6 +154,7 @@ rm -f \
   "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}" \
   "${RESOURCE_RECOVERY_BASELINE_JSON}" \
   "${RESOURCE_RECOVERY_STARTUP_JSON}" \
+  "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}" \
   "${RESOURCE_RECOVERY_SMOKE_JSON}" \
   "${RESOURCE_RECOVERY_MOUNT_SYNC_JSON}" \
   "${RESOURCE_RECOVERY_MOUNT_SYNC_PROBE_JSON}" \
@@ -160,6 +162,7 @@ rm -f \
   "${RESOURCE_RECOVERY_REPORT_MD}" \
   "${STARTUP_QUIESCE_SNAPSHOT_JSON}" \
   "${STARTUP_QUIESCE_REPORT_JSON}" \
+  "${STARTUP_QUIESCE_AUTHORITY_JSON}" \
   "${STARTUP_WARMUP_TOKEN_FILE}" \
   "${STARTUP_WARMUP_BODY_FILE}" \
   "${STARTUP_WARMUP_HEADERS_FILE}"
@@ -191,6 +194,128 @@ resolve_owned_api_listener_pid() {
   fi
 
   printf '%s\n' "${owned_listener_pids[0]}"
+}
+
+write_startup_listener_authority_file() {
+  local output_path="$1"
+  local listener_pid="$2"
+  local owner_root_pid owner_root_identity listener_identity sidecar_file owner_token verified_at
+
+  owner_root_pid="$(local_runtime_verified_owner_pid_for_tree_member "${listener_pid}" api "${API_PORT}" 2>/dev/null || true)"
+  [[ -n "${owner_root_pid}" && "${owner_root_pid}" == "${API_ROOT_PID}" ]] || {
+    echo "File library gate could not resolve an owned API root for listener pid ${listener_pid} while capturing startup authority." >&2
+    return 1
+  }
+
+  owner_root_identity="$(local_runtime_process_identity_token "${owner_root_pid}" 2>/dev/null || true)"
+  listener_identity="$(local_runtime_process_identity_token "${listener_pid}" 2>/dev/null || true)"
+  [[ -n "${owner_root_identity}" && -n "${listener_identity}" ]] || {
+    echo "File library gate could not capture process identity for startup authority on listener pid ${listener_pid}." >&2
+    return 1
+  }
+
+  sidecar_file="$(local_runtime_find_sidecar "${owner_root_pid}" api "${API_PORT}" 2>/dev/null || true)"
+  [[ -n "${sidecar_file}" ]] || {
+    echo "File library gate could not locate the local runtime sidecar for startup authority on owner root pid ${owner_root_pid}." >&2
+    return 1
+  }
+  owner_token="$(local_runtime_read_sidecar_field "${sidecar_file}" owner_token 2>/dev/null || true)"
+  [[ -n "${owner_token}" ]] || {
+    echo "File library gate could not read the owner token for startup authority on owner root pid ${owner_root_pid}." >&2
+    return 1
+  }
+
+  verified_at="$(local_runtime_now_utc)"
+  STARTUP_AUTHORITY_OUTPUT_PATH="${output_path}" \
+  STARTUP_AUTHORITY_API_PORT="${API_PORT}" \
+  STARTUP_AUTHORITY_OWNER_ROOT_PID="${owner_root_pid}" \
+  STARTUP_AUTHORITY_OWNER_ROOT_IDENTITY="${owner_root_identity}" \
+  STARTUP_AUTHORITY_OWNER_TOKEN="${owner_token}" \
+  STARTUP_AUTHORITY_LISTENER_PID="${listener_pid}" \
+  STARTUP_AUTHORITY_LISTENER_IDENTITY="${listener_identity}" \
+  STARTUP_AUTHORITY_VERIFIED_AT="${verified_at}" \
+  node <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+
+const outputPath = process.env.STARTUP_AUTHORITY_OUTPUT_PATH;
+if (!outputPath) {
+  throw new Error('STARTUP_AUTHORITY_OUTPUT_PATH is required');
+}
+
+const payload = {
+  schema_version: 1,
+  authority_kind: 'local_runtime_owned_api_listener',
+  service_kind: 'api',
+  port: Number(process.env.STARTUP_AUTHORITY_API_PORT),
+  owner_root_pid: Number(process.env.STARTUP_AUTHORITY_OWNER_ROOT_PID),
+  owner_root_identity: process.env.STARTUP_AUTHORITY_OWNER_ROOT_IDENTITY,
+  owner_token: process.env.STARTUP_AUTHORITY_OWNER_TOKEN,
+  listener_pid: Number(process.env.STARTUP_AUTHORITY_LISTENER_PID),
+  listener_identity: process.env.STARTUP_AUTHORITY_LISTENER_IDENTITY,
+  verified_at: process.env.STARTUP_AUTHORITY_VERIFIED_AT,
+};
+
+fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`);
+NODE
+}
+
+startup_listener_authority_key_from_file() {
+  local authority_path="$1"
+  STARTUP_AUTHORITY_PATH="${authority_path}" node <<'NODE'
+const fs = require('node:fs');
+const payload = JSON.parse(fs.readFileSync(process.env.STARTUP_AUTHORITY_PATH, 'utf8'));
+const key = [
+  payload.owner_root_pid ?? '',
+  payload.owner_root_identity ?? '',
+  payload.owner_token ?? '',
+  payload.listener_pid ?? '',
+  payload.listener_identity ?? '',
+].join('|');
+process.stdout.write(key);
+NODE
+}
+
+startup_listener_authority_matches_saved_file() {
+  local authority_path="$1"
+  local listener_pid="$2"
+  local current_authority_tmp="${authority_path}.current"
+
+  [[ -f "${authority_path}" ]] || return 1
+  rm -f "${current_authority_tmp}"
+  write_startup_listener_authority_file "${current_authority_tmp}" "${listener_pid}" || {
+    rm -f "${current_authority_tmp}"
+    return 1
+  }
+
+  STARTUP_AUTHORITY_SAVED_PATH="${authority_path}" \
+  STARTUP_AUTHORITY_CURRENT_PATH="${current_authority_tmp}" \
+  node <<'NODE'
+const fs = require('node:fs');
+
+function comparable(payload) {
+  return {
+    authority_kind: payload.authority_kind ?? null,
+    service_kind: payload.service_kind ?? null,
+    port: Number.isFinite(payload.port) ? payload.port : null,
+    owner_root_pid: Number.isFinite(payload.owner_root_pid) ? payload.owner_root_pid : null,
+    owner_root_identity: payload.owner_root_identity ?? null,
+    owner_token: payload.owner_token ?? null,
+    listener_pid: Number.isFinite(payload.listener_pid) ? payload.listener_pid : null,
+    listener_identity: payload.listener_identity ?? null,
+  };
+}
+
+const saved = comparable(JSON.parse(fs.readFileSync(process.env.STARTUP_AUTHORITY_SAVED_PATH, 'utf8')));
+const current = comparable(JSON.parse(fs.readFileSync(process.env.STARTUP_AUTHORITY_CURRENT_PATH, 'utf8')));
+if (JSON.stringify(saved) !== JSON.stringify(current)) {
+  process.exitCode = 1;
+}
+NODE
+  local status=$?
+  rm -f "${current_authority_tmp}"
+  return ${status}
 }
 
 append_startup_steady_state_args() {
@@ -232,6 +357,7 @@ startup_quiesce_snapshot_satisfies_steady_state() {
   local listener_pid="$1"
   local snapshot_tmp="${STARTUP_QUIESCE_SNAPSHOT_JSON}.tmp"
   local report_tmp="${STARTUP_QUIESCE_REPORT_JSON}.tmp"
+  local authority_tmp="${STARTUP_QUIESCE_AUTHORITY_JSON}.tmp"
   local -a snapshot_args=(
     tsx
     "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
@@ -244,13 +370,18 @@ startup_quiesce_snapshot_satisfies_steady_state() {
     "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
     startup-report
     --boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
-    --baseline "${snapshot_tmp}"
+    --startup-candidate "${snapshot_tmp}"
+    --comparison-current-source startup_candidate
     --output "${report_tmp}"
   )
   append_startup_steady_state_args startup_args
 
-  rm -f "${snapshot_tmp}" "${report_tmp}"
+  rm -f "${snapshot_tmp}" "${report_tmp}" "${authority_tmp}"
   npx "${snapshot_args[@]}" >/dev/null 2>&1 || return 1
+  write_startup_listener_authority_file "${authority_tmp}" "${listener_pid}" >/dev/null 2>&1 || {
+    rm -f "${snapshot_tmp}" "${report_tmp}" "${authority_tmp}"
+    return 1
+  }
 
   local startup_status=0
   set +e
@@ -258,11 +389,12 @@ startup_quiesce_snapshot_satisfies_steady_state() {
   startup_status=$?
   set -e
 
-  if [[ -f "${snapshot_tmp}" && -f "${report_tmp}" ]]; then
+  if [[ -f "${snapshot_tmp}" && -f "${report_tmp}" && -f "${authority_tmp}" ]]; then
     mv "${snapshot_tmp}" "${STARTUP_QUIESCE_SNAPSHOT_JSON}"
     mv "${report_tmp}" "${STARTUP_QUIESCE_REPORT_JSON}"
+    mv "${authority_tmp}" "${STARTUP_QUIESCE_AUTHORITY_JSON}"
   else
-    rm -f "${snapshot_tmp}" "${report_tmp}"
+    rm -f "${snapshot_tmp}" "${report_tmp}" "${authority_tmp}"
     return 1
   fi
 
@@ -272,34 +404,32 @@ startup_quiesce_snapshot_satisfies_steady_state() {
 wait_for_startup_quiesce() {
   local deadline=$((SECONDS + STARTUP_QUIESCE_TIMEOUT_SECONDS))
   local stable_samples=0
-  local last_listener_pid=""
   local listener_pid=""
-  STARTUP_QUIESCE_PROVEN_LISTENER_PID=""
+  local last_authority_key=""
+  local current_authority_key=""
 
   while (( SECONDS <= deadline )); do
     listener_pid="$(resolve_owned_api_listener_pid 2>/dev/null || true)"
     if [[ -n "${listener_pid}" ]]; then
       API_PID="${listener_pid}"
       if startup_quiesce_snapshot_satisfies_steady_state "${listener_pid}"; then
-        if [[ "${listener_pid}" == "${last_listener_pid}" ]]; then
+        current_authority_key="$(startup_listener_authority_key_from_file "${STARTUP_QUIESCE_AUTHORITY_JSON}" 2>/dev/null || true)"
+        if [[ -n "${current_authority_key}" && "${current_authority_key}" == "${last_authority_key}" ]]; then
           stable_samples=$((stable_samples + 1))
         else
           stable_samples=1
-          last_listener_pid="${listener_pid}"
+          last_authority_key="${current_authority_key}"
         fi
         if (( stable_samples >= STARTUP_QUIESCE_STABLE_SAMPLES )); then
-          STARTUP_QUIESCE_PROVEN_LISTENER_PID="${listener_pid}"
           return 0
         fi
       else
         stable_samples=0
-        last_listener_pid=""
-        STARTUP_QUIESCE_PROVEN_LISTENER_PID=""
+        last_authority_key=""
       fi
     else
       stable_samples=0
-      last_listener_pid=""
-      STARTUP_QUIESCE_PROVEN_LISTENER_PID=""
+      last_authority_key=""
     fi
     sleep "${STARTUP_QUIESCE_INTERVAL_SECONDS}"
   done
@@ -308,11 +438,7 @@ wait_for_startup_quiesce() {
 }
 
 freeze_startup_ready_baseline_from_quiesce_proof() {
-  [[ -n "${STARTUP_QUIESCE_PROVEN_LISTENER_PID}" ]] || {
-    echo "File library gate has no proven startup listener authority to freeze the ready baseline." >&2
-    return 1
-  }
-  [[ -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" && -f "${STARTUP_QUIESCE_REPORT_JSON}" ]] || {
+  [[ -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" && -f "${STARTUP_QUIESCE_REPORT_JSON}" && -f "${STARTUP_QUIESCE_AUTHORITY_JSON}" ]] || {
     echo "File library gate is missing the proven startup candidate snapshot/report needed to freeze the ready baseline." >&2
     return 1
   }
@@ -323,8 +449,8 @@ freeze_startup_ready_baseline_from_quiesce_proof() {
     echo "File library gate could not resolve the current owned API listener while freezing the ready baseline." >&2
     return 1
   }
-  [[ "${current_listener_pid}" == "${STARTUP_QUIESCE_PROVEN_LISTENER_PID}" ]] || {
-    echo "File library gate startup listener handoff changed authority from ${STARTUP_QUIESCE_PROVEN_LISTENER_PID} to ${current_listener_pid} after steady-state proof and before ready baseline freeze." >&2
+  startup_listener_authority_matches_saved_file "${STARTUP_QUIESCE_AUTHORITY_JSON}" "${current_listener_pid}" || {
+    echo "File library gate startup listener handoff changed authority after steady-state proof and before ready baseline freeze." >&2
     return 1
   }
 
@@ -375,15 +501,25 @@ capture_resource_recovery_baseline() {
 
 write_startup_resource_recovery_report() {
   local failure_message="${1:-}"
-  local baseline_path="${2:-${RESOURCE_RECOVERY_BASELINE_JSON}}"
+  shift || true
   local -a startup_args=(
     tsx
     "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
     startup-report
     --boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
-    --baseline "${baseline_path}"
     --output "${RESOURCE_RECOVERY_STARTUP_JSON}"
   )
+  if [[ "$#" -gt 0 ]]; then
+    startup_args+=("$@")
+  else
+    startup_args+=(
+      --ready-baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
+      --comparison-current-source ready_baseline
+    )
+    if [[ -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" ]]; then
+      startup_args+=(--startup-candidate "${STARTUP_QUIESCE_SNAPSHOT_JSON}")
+    fi
+  fi
   append_startup_steady_state_args startup_args
   if [[ -n "${failure_message}" ]]; then
     startup_args+=(--failure-message "${failure_message}")
@@ -403,28 +539,36 @@ ensure_boot_resource_recovery_baseline() {
 
 materialize_pre_ready_failure_evidence() {
   local failure_message="$1"
+  local current_listener_pid=""
+  local -a startup_candidate_args=(
+    --failure-observation "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"
+  )
   RESOURCE_RECOVERY_PRE_READY_FAILURE=1
   ensure_boot_resource_recovery_baseline
 
-  if [[ -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" ]]; then
-    cp "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${RESOURCE_RECOVERY_BASELINE_JSON}"
-    if write_startup_resource_recovery_report "${failure_message}" "${STARTUP_QUIESCE_SNAPSHOT_JSON}"; then
-      return 0
+  capture_resource_recovery_baseline "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"
+
+  if [[ -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" && -f "${STARTUP_QUIESCE_AUTHORITY_JSON}" ]]; then
+    startup_candidate_args+=(--startup-candidate "${STARTUP_QUIESCE_SNAPSHOT_JSON}")
+    current_listener_pid="$(resolve_owned_api_listener_pid 2>/dev/null || true)"
+    if [[ -n "${current_listener_pid}" ]] \
+      && startup_listener_authority_matches_saved_file "${STARTUP_QUIESCE_AUTHORITY_JSON}" "${current_listener_pid}"; then
+      startup_candidate_args+=(--comparison-current-source startup_candidate)
+    else
+      startup_candidate_args+=(--comparison-current-source failure_observation)
     fi
-    if [[ -f "${RESOURCE_RECOVERY_STARTUP_JSON}" ]]; then
-      return 0
-    fi
+  else
+    startup_candidate_args+=(--comparison-current-source failure_observation)
   fi
 
-  capture_resource_recovery_baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
-  if write_startup_resource_recovery_report "${failure_message}"; then
+  if write_startup_resource_recovery_report "${failure_message}" "${startup_candidate_args[@]}"; then
     return 0
   fi
   [[ -f "${RESOURCE_RECOVERY_STARTUP_JSON}" ]]
 }
 
 write_resource_recovery_summary() {
-  if [[ ! -f "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}" || ! -f "${RESOURCE_RECOVERY_BASELINE_JSON}" ]]; then
+  if [[ ! -f "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}" ]]; then
     return 0
   fi
 
@@ -452,10 +596,18 @@ write_resource_recovery_summary() {
     "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
     summary
     --boot-baseline "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}"
-    --baseline "${RESOURCE_RECOVERY_BASELINE_JSON}"
     --output-json "${RESOURCE_RECOVERY_REPORT_JSON}"
     --output-markdown "${RESOURCE_RECOVERY_REPORT_MD}"
   )
+  if [[ -f "${RESOURCE_RECOVERY_BASELINE_JSON}" ]]; then
+    summary_args+=(--ready-baseline "${RESOURCE_RECOVERY_BASELINE_JSON}")
+  fi
+  if [[ -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" ]]; then
+    summary_args+=(--startup-candidate "${STARTUP_QUIESCE_SNAPSHOT_JSON}")
+  fi
+  if [[ -f "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}" ]]; then
+    summary_args+=(--failure-observation "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}")
+  fi
   for report_path in "${report_paths[@]}"; do
     summary_args+=(--report "${report_path}")
   done

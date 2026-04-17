@@ -781,8 +781,8 @@
     "entryRoute": "/en-US/system/workspaces",
     "goal": "统一描述 system 管理侧与 project governance 核心面的 mock-lane visual scene 真相。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-governance-surfaces.story.md#mock-lane-governance-surfaces",
-    "sourceFingerprint": "18fc8a6d5398c5274dc129451a795a905e3efd2b19bacc201a7326d14722be79",
-    "storyFingerprint": "15cb1323a8aebc89f62f00bef4d209161a2af8640d6e09ede22217acc85e70b1",
+    "sourceFingerprint": "44434828babc5d486af59b1a3d52d092e44ba3da853caa196988fbc376e0af86",
+    "storyFingerprint": "f380eb0e43be5103b0cbb7289021b6034c07de9d265b7457ec0251ae6c22539f",
     "stepMapFingerprint": "f99ec14da80cffc353760d6ea51b65e8d2555e30be432554aab37189c5855ff6",
     "sceneIds": [
       "system-workspaces-empty",

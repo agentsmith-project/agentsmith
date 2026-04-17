@@ -285,6 +285,129 @@ describe('story contract', () => {
     ).toThrow(/semantic assertion/i);
   });
 
+  it('rejects malformed surface-scoped semantic target references before visual runtime', () => {
+    expect(() =>
+      parseStoryDefinition(`
+---
+{
+  "storyId": "invalid-surface-scoped-semantic-target",
+  "title": "Invalid surface scoped semantic target",
+  "actor": "reviewer",
+  "lane": "mock-lane",
+  "family": "visual-review",
+  "personas": ["reviewer"],
+  "kind": "review",
+  "gatePolicy": {
+    "tier": "default",
+    "requiredEvidence": ["visual"]
+  },
+  "externalDependencies": [],
+  "entryRoute": "/en-US/system/workspaces",
+  "goal": "Verify surface-scoped semantic targets stay structurally valid before runtime.",
+  "narrative": "Scoped semantic targets must resolve to a unique surface and a concrete target test id.",
+  "scenes": [
+    {
+      "sceneId": "system-workspaces-default",
+      "route": "/en-US/system/workspaces",
+      "stableMarkers": ["system-workspaces__list", "system-workspaces__editor"]
+    }
+  ],
+  "steps": [
+    {
+      "stepId": "open-system-workspaces",
+      "sceneId": "system-workspaces-default",
+      "intent": "Open system workspaces",
+      "action": "Open system workspaces",
+      "target": "system-workspaces__list",
+      "expectedFeedback": "System workspaces are ready for review",
+      "evidence": ["visual"]
+    }
+  ],
+  "runtimeData": {
+    "visualReview": {
+      "scenes": [
+        {
+          "sceneId": "system-workspaces-default",
+          "scenarioId": "system-workspaces-default",
+          "scenario": "System workspaces visual review.",
+          "group": "system_pages",
+          "codeRefs": ["e2e/visual.spec.ts"],
+          "capture": "full_page",
+          "semanticAssertions": {
+            "requiredViewerLocalDateTimeTestIds": ["system-workspaces__editor::"],
+            "primaryActionTestIds": ["::system-workspaces__new-workspace", "page-layout__header::system-workspaces__new-workspace::extra"]
+          }
+        }
+      ]
+    }
+  }
+}
+---
+`),
+    ).toThrow(/surface-scoped semantic target/i);
+  });
+
+  it('rejects surface-scoped prominent action scope ids because scope and target must stay separate', () => {
+    expect(() =>
+      parseStoryDefinition(`
+---
+{
+  "storyId": "invalid-prominent-action-scope",
+  "title": "Invalid prominent action scope",
+  "actor": "reviewer",
+  "lane": "mock-lane",
+  "family": "visual-review",
+  "personas": ["reviewer"],
+  "kind": "review",
+  "gatePolicy": {
+    "tier": "default",
+    "requiredEvidence": ["visual"]
+  },
+  "externalDependencies": [],
+  "entryRoute": "/en-US/system/workspaces",
+  "goal": "Verify prominent action scope ids stay scope-only before visual runtime.",
+  "narrative": "Prominent action scope ids should name unique visible scope containers instead of mixing scope and target.",
+  "scenes": [
+    {
+      "sceneId": "system-workspaces-default",
+      "route": "/en-US/system/workspaces",
+      "stableMarkers": ["system-workspaces__list", "system-workspaces__editor"]
+    }
+  ],
+  "steps": [
+    {
+      "stepId": "open-system-workspaces",
+      "sceneId": "system-workspaces-default",
+      "intent": "Open system workspaces",
+      "action": "Open system workspaces",
+      "target": "system-workspaces__list",
+      "expectedFeedback": "System workspaces are ready for review",
+      "evidence": ["visual"]
+    }
+  ],
+  "runtimeData": {
+    "visualReview": {
+      "scenes": [
+        {
+          "sceneId": "system-workspaces-default",
+          "scenarioId": "system-workspaces-default",
+          "scenario": "System workspaces visual review.",
+          "group": "system_pages",
+          "codeRefs": ["e2e/visual.spec.ts"],
+          "capture": "full_page",
+          "semanticAssertions": {
+            "prominentActionScopeTestIds": ["page-layout__header::system-workspaces__new-workspace"]
+          }
+        }
+      ]
+    }
+  }
+}
+---
+`),
+    ).toThrow(/prominent action scope/i);
+  });
+
   it('keeps story-contract focused on schema/fingerprint helpers instead of parser and loader logic', async () => {
     const contractSource = await readFile(path.resolve('e2e/story-contract.ts'), 'utf-8');
     const loaderSource = await readFile(path.resolve('e2e/story-loader.ts'), 'utf-8');

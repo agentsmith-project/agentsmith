@@ -326,6 +326,119 @@ while true; do sleep 1; done
     }
   });
 
+  it('keeps killing owned descendants when descendant cmdline reads race during KILL revalidation', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const childPidFile = path.join(tempRoot, 'child.pid');
+    const cmdlineRaceCountFile = path.join(tempRoot, 'cmdline-race.count');
+    const stubbornChildScript = path.join(tempRoot, 'stubborn-child.sh');
+    const rootScript = path.join(tempRoot, 'root-exits-on-term.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      stubbornChildScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+while true; do sleep 1; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+bash "${stubbornChildScript}" &
+echo "$!" > "${childPidFile}"
+trap 'exit 0' TERM
+while true; do sleep 1; done
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let childPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'term-reparent-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'term-reparent-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      for (let attempt = 0; attempt < 20 && !existsSync(childPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(childPidFile)).toBe(true);
+      childPid = Number.parseInt(readFileSync(childPidFile, 'utf8').trim(), 10);
+      expect(childPid).toBeGreaterThan(0);
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          eval "$(declare -f local_runtime_process_command | sed '1s/local_runtime_process_command/local_runtime_process_command_original/')"
+          local_runtime_process_command() {
+            local pid="$1"
+            if [[ "\${pid}" == "\${LOCAL_RUNTIME_TEST_RACY_DESCENDANT_PID}" ]]; then
+              local count=0
+              if [[ -f "\${LOCAL_RUNTIME_TEST_CMDLINE_RACE_COUNT_FILE}" ]]; then
+                count="$(cat "\${LOCAL_RUNTIME_TEST_CMDLINE_RACE_COUNT_FILE}")"
+              fi
+              count="$((count + 1))"
+              printf '%s\n' "\${count}" > "\${LOCAL_RUNTIME_TEST_CMDLINE_RACE_COUNT_FILE}"
+              if [[ "\${count}" -ge 3 ]]; then
+                return 0
+              fi
+            fi
+            local_runtime_process_command_original "\${pid}"
+          }
+          started_ms="$(date +%s%3N)"
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+          finished_ms="$(date +%s%3N)"
+          echo "elapsed_ms=$((finished_ms - started_ms))"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'term-reparent-owner',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '80',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.1',
+          LOCAL_RUNTIME_TEST_RACY_DESCENDANT_PID: String(childPid),
+          LOCAL_RUNTIME_TEST_CMDLINE_RACE_COUNT_FILE: cmdlineRaceCountFile,
+        },
+      );
+
+      expect(stopResult.status).toBe(0);
+      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(2_000);
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      expect(await waitForPidExit(childPid)).toBe(true);
+      expect(Number.parseInt(readFileSync(cmdlineRaceCountFile, 'utf8').trim(), 10)).toBeGreaterThanOrEqual(3);
+    } finally {
+      for (const pid of [childPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+    }
+  });
+
   it('falls back to conservative default grace budgets when grace environment values are invalid', () => {
     const result = runBash(
       `

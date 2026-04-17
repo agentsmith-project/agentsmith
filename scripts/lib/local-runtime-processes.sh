@@ -72,6 +72,15 @@ local_runtime_process_identity_token() {
   printf 'pid:%s:start:%s:cmd:%s\n' "${pid}" "${start_time:-unknown}" "${command_hash}"
 }
 
+local_runtime_process_owner_token() {
+  local pid="$1"
+  local owner_token
+  [[ -r "/proc/${pid}/environ" ]] || return 1
+  owner_token="$(tr '\0' '\n' <"/proc/${pid}/environ" 2>/dev/null | sed -n 's/^LOCAL_RUNTIME_OWNER_TOKEN=//p' | head -n 1 || true)"
+  [[ -n "${owner_token}" ]] || return 1
+  printf '%s\n' "${owner_token}"
+}
+
 local_runtime_sidecar_file_for() {
   local service_kind="$1"
   local pid="$2"
@@ -326,6 +335,80 @@ local_runtime_captured_pid_identity_matches() {
   [[ -n "${expected_token}" && -n "${live_token}" && "${live_token}" == "${expected_token}" ]]
 }
 
+local_runtime_process_owner_token_matches() {
+  local pid="$1"
+  local expected_owner_token="$2"
+  local live_owner_token
+  [[ -n "${expected_owner_token}" ]] || return 1
+  live_owner_token="$(local_runtime_process_owner_token "${pid}" || true)"
+  [[ -n "${live_owner_token}" && "${live_owner_token}" == "${expected_owner_token}" ]]
+}
+
+local_runtime_tracked_pid_ownership_status() {
+  local pid="$1"
+  local expected_token="${2:-}"
+  local expected_owner_token="${3:-}"
+  local role="${4:-descendant}"
+  local live_token
+
+  if ! local_runtime_pid_is_alive "${pid}"; then
+    printf 'exited\n'
+    return 0
+  fi
+
+  live_token="$(local_runtime_process_identity_token "${pid}" || true)"
+  if [[ -n "${expected_token}" && -n "${live_token}" && "${live_token}" == "${expected_token}" ]]; then
+    printf 'identity_match\n'
+    return 0
+  fi
+
+  if [[ "${role}" == "root" ]]; then
+    if [[ -z "${live_token}" ]]; then
+      printf 'identity_unknown\n'
+      return 0
+    fi
+    printf 'identity_changed\n'
+    return 0
+  fi
+
+  if local_runtime_process_owner_token_matches "${pid}" "${expected_owner_token}"; then
+    printf 'owner_token_match\n'
+    return 0
+  fi
+
+  if [[ -z "${live_token}" ]]; then
+    printf 'identity_unknown\n'
+    return 0
+  fi
+
+  printf 'identity_changed\n'
+}
+
+local_runtime_tracked_pid_refusal_reason() {
+  local ownership_status="$1"
+  local role="${2:-descendant}"
+  case "${ownership_status}" in
+    identity_unknown)
+      if [[ "${role}" == "root" ]]; then
+        printf 'cannot confirm root process identity\n'
+        return 0
+      fi
+      printf 'cannot confirm descendant ownership\n'
+      return 0
+      ;;
+    identity_changed)
+      printf 'captured process identity changed\n'
+      return 0
+      ;;
+  esac
+
+  if [[ "${role}" == "root" ]]; then
+    printf 'cannot confirm root process identity\n'
+    return 0
+  fi
+  printf 'cannot confirm descendant ownership\n'
+}
+
 local_runtime_all_pids_exited() {
   local pid
   for pid in "$@"; do
@@ -387,6 +470,7 @@ local_runtime_stop_owned_process_tree() {
   local pid="$1"
   local service_kind="${2:-}"
   local port="${3:-}"
+  local sidecar_file expected_owner_token
   [[ -n "${pid}" ]] || return 0
   if ! local_runtime_pid_is_alive "${pid}"; then
     local_runtime_remove_sidecars_for_pid "${pid}"
@@ -394,31 +478,55 @@ local_runtime_stop_owned_process_tree() {
   fi
 
   local_runtime_verify_owned_process "${pid}" "${service_kind}" "${port}" || return 1
+  sidecar_file="$(local_runtime_find_sidecar "${pid}" "${service_kind}" "${port}")" || return 1
+  expected_owner_token="$(local_runtime_read_sidecar_field "${sidecar_file}" owner_token || true)"
 
   local pids=()
-  local tree_pid captured_token failed_signal=0
+  local tree_pid captured_token failed_signal=0 ownership_status signal_role refusal_reason
   declare -A captured_tokens=()
+  declare -A tracked_pids=()
   while read -r tree_pid; do
     [[ -n "${tree_pid}" ]] || continue
+    [[ -z "${tracked_pids[${tree_pid}]+x}" ]] || continue
     captured_token="$(local_runtime_process_identity_token "${tree_pid}" || true)"
     if [[ -z "${captured_token}" ]]; then
       if local_runtime_pid_is_alive "${tree_pid}"; then
-        echo "[local-runtime-processes] ownership verification failed for pid ${tree_pid}: cannot capture process identity" >&2
+        if [[ "${tree_pid}" != "${pid}" ]] && local_runtime_process_owner_token_matches "${tree_pid}" "${expected_owner_token}"; then
+          pids+=("${tree_pid}")
+          tracked_pids["${tree_pid}"]=1
+          captured_tokens["${tree_pid}"]=""
+          continue
+        fi
+        if [[ "${tree_pid}" == "${pid}" ]]; then
+          echo "[local-runtime-processes] ownership verification failed for pid ${tree_pid}: cannot capture root process identity" >&2
+          return 1
+        fi
+        echo "[local-runtime-processes] ownership verification failed for pid ${tree_pid}: cannot confirm descendant ownership" >&2
         return 1
       fi
       continue
     fi
     pids+=("${tree_pid}")
+    tracked_pids["${tree_pid}"]=1
     captured_tokens["${tree_pid}"]="${captured_token}"
   done < <(local_runtime_process_tree_pids "${pid}")
 
   for tree_pid in "${pids[@]}"; do
-    if local_runtime_captured_pid_identity_matches "${tree_pid}" "${captured_tokens[${tree_pid}]}"; then
-      kill -TERM "${tree_pid}" >/dev/null 2>&1 || true
-      continue
-    fi
+    signal_role="descendant"
+    [[ "${tree_pid}" == "${pid}" ]] && signal_role="root"
+    ownership_status="$(local_runtime_tracked_pid_ownership_status "${tree_pid}" "${captured_tokens[${tree_pid}]}" "${expected_owner_token}" "${signal_role}")"
+    case "${ownership_status}" in
+      exited)
+        continue
+        ;;
+      identity_match|owner_token_match)
+        kill -TERM "${tree_pid}" >/dev/null 2>&1 || true
+        continue
+        ;;
+    esac
     if local_runtime_pid_is_alive "${tree_pid}"; then
-      echo "[local-runtime-processes] refusing to TERM pid ${tree_pid}: captured process identity changed" >&2
+      refusal_reason="$(local_runtime_tracked_pid_refusal_reason "${ownership_status}" "${signal_role}")"
+      echo "[local-runtime-processes] refusing to TERM pid ${tree_pid}: ${refusal_reason}" >&2
       failed_signal=1
     fi
   done
@@ -435,17 +543,67 @@ local_runtime_stop_owned_process_tree() {
     sleep "${term_grace_sleep_seconds}"
   done
 
+  local expansion_root expansion_role expansion_status
+  for expansion_root in "${pids[@]}"; do
+    expansion_role="descendant"
+    [[ "${expansion_root}" == "${pid}" ]] && expansion_role="root"
+    expansion_status="$(local_runtime_tracked_pid_ownership_status "${expansion_root}" "${captured_tokens[${expansion_root}]}" "${expected_owner_token}" "${expansion_role}")"
+    case "${expansion_status}" in
+      exited)
+        continue
+        ;;
+      identity_match|owner_token_match)
+        while read -r tree_pid; do
+          [[ -n "${tree_pid}" ]] || continue
+          [[ -z "${tracked_pids[${tree_pid}]+x}" ]] || continue
+          captured_token="$(local_runtime_process_identity_token "${tree_pid}" || true)"
+          if [[ -z "${captured_token}" ]]; then
+            if ! local_runtime_pid_is_alive "${tree_pid}"; then
+              continue
+            fi
+            if local_runtime_process_owner_token_matches "${tree_pid}" "${expected_owner_token}"; then
+              pids+=("${tree_pid}")
+              tracked_pids["${tree_pid}"]=1
+              captured_tokens["${tree_pid}"]=""
+              continue
+            fi
+            echo "[local-runtime-processes] ownership verification failed for pid ${tree_pid}: cannot confirm descendant ownership" >&2
+            return 1
+          fi
+          pids+=("${tree_pid}")
+          tracked_pids["${tree_pid}"]=1
+          captured_tokens["${tree_pid}"]="${captured_token}"
+        done < <(local_runtime_descendant_pids "${expansion_root}")
+        ;;
+      *)
+        if [[ "${expansion_role}" == "root" ]] && local_runtime_pid_is_alive "${expansion_root}"; then
+          refusal_reason="$(local_runtime_tracked_pid_refusal_reason "${expansion_status}" "${expansion_role}")"
+          echo "[local-runtime-processes] refusing to expand descendants for pid ${expansion_root}: ${refusal_reason}" >&2
+          return 1
+        fi
+        ;;
+    esac
+  done
+
   failed_signal=0
   for tree_pid in "${pids[@]}"; do
-    if ! local_runtime_pid_is_alive "${tree_pid}"; then
-      continue
+    signal_role="descendant"
+    [[ "${tree_pid}" == "${pid}" ]] && signal_role="root"
+    ownership_status="$(local_runtime_tracked_pid_ownership_status "${tree_pid}" "${captured_tokens[${tree_pid}]}" "${expected_owner_token}" "${signal_role}")"
+    case "${ownership_status}" in
+      exited)
+        continue
+        ;;
+      identity_match|owner_token_match)
+        kill -KILL "${tree_pid}" >/dev/null 2>&1 || true
+        continue
+        ;;
+    esac
+    if local_runtime_pid_is_alive "${tree_pid}"; then
+      refusal_reason="$(local_runtime_tracked_pid_refusal_reason "${ownership_status}" "${signal_role}")"
+      echo "[local-runtime-processes] refusing to KILL pid ${tree_pid}: ${refusal_reason}" >&2
+      failed_signal=1
     fi
-    if local_runtime_captured_pid_identity_matches "${tree_pid}" "${captured_tokens[${tree_pid}]}"; then
-      kill -KILL "${tree_pid}" >/dev/null 2>&1 || true
-      continue
-    fi
-    echo "[local-runtime-processes] refusing to KILL pid ${tree_pid}: captured process identity changed" >&2
-    failed_signal=1
   done
   [[ "${failed_signal}" -eq 0 ]] || return 1
 

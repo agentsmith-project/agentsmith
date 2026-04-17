@@ -693,6 +693,86 @@ describe('file library resource recovery', () => {
     );
   });
 
+  it('preserves startup candidate and failure observation as distinct evidence sources when no ready baseline exists yet', () => {
+    const bootBaseline = buildSnapshot({
+      captured_at: '2026-04-15T09:55:00.000Z',
+    });
+    const startupCandidate = buildSnapshot({
+      captured_at: '2026-04-15T09:59:00.000Z',
+      api_processes: [
+        {
+          pid: 42001,
+          label: 'api-entry',
+          open_fd_count: 24,
+          socket_fd_count: 6,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 1,
+        },
+      ],
+    });
+    const failureObservation = buildSnapshot({
+      captured_at: '2026-04-15T10:01:00.000Z',
+      api_processes: [
+        {
+          pid: 43002,
+          label: 'api-entry',
+          open_fd_count: 29,
+          socket_fd_count: 8,
+        },
+      ],
+      tcp_connections: [
+        {
+          process_label: 'api-entry',
+          remote_host: '127.0.0.1',
+          remote_port: 15432,
+          state: 'ESTABLISHED',
+          count: 2,
+        },
+      ],
+    });
+
+    const report = buildStartupResourceRecoveryReport({
+      bootBaseline,
+      startupCandidate,
+      failureObservation,
+      comparisonCurrentSource: 'failure_observation',
+      steadyState: {
+        api_tcp_connections: [
+          {
+            process_label: 'api-entry',
+            remote_port: 15432,
+            state: 'ESTABLISHED',
+            max_count: 1,
+          },
+        ],
+      },
+      extraFindings: ['file-library gate startup listener handoff changed authority after steady-state proof'],
+    });
+
+    expect(report.status).toBe('fail');
+    expect(report.current).toEqual(failureObservation);
+    expect(report.evidence_chain).toEqual({
+      boot_baseline: bootBaseline,
+      ready_baseline: null,
+      startup_candidate: startupCandidate,
+      failure_observation: failureObservation,
+      comparison_current_source: 'failure_observation',
+    });
+    expect(report.findings).toEqual(
+      expect.arrayContaining([
+        'file-library gate startup listener handoff changed authority after steady-state proof',
+        'startup api tcp connection count exceeded the declared steady-state allowance before smoke steps for api-entry remote_port 15432 [ESTABLISHED]: expected <= 1, found 2',
+      ]),
+    );
+  });
+
   it('passes when the runtime state returns to the baseline and the mount cleanup probe is clean', () => {
     const baseline = buildSnapshot({
       gateway_state_files: ['existing-library.json'],
@@ -1100,7 +1180,11 @@ describe('file library resource recovery', () => {
     });
     const summary = buildResourceRecoverySummary({
       bootBaseline,
-      baseline: buildSnapshot(),
+      readyBaseline: buildSnapshot(),
+      startupCandidate: buildSnapshot({
+        captured_at: '2026-04-15T09:59:00.000Z',
+      }),
+      failureObservation: null,
       reports: [
         compareResourceRecoveryBaseline({
           step: 'file-library-real-smoke',
@@ -1119,6 +1203,11 @@ describe('file library resource recovery', () => {
 
     expect(summary.status).toBe('fail');
     expect(summary.boot_baseline).toEqual(bootBaseline);
+    expect(summary.ready_baseline).toEqual(buildSnapshot());
+    expect(summary.startup_candidate).toEqual(buildSnapshot({
+      captured_at: '2026-04-15T09:59:00.000Z',
+    }));
+    expect(summary.failure_observation).toBeNull();
     expect(summary.steps).toEqual([
       { step: 'file-library-real-smoke', status: 'pass' },
       { step: 'file-library-mount-sync-smoke', status: 'fail' },
@@ -1130,5 +1219,7 @@ describe('file library resource recovery', () => {
     expect(summary.markdown).toContain('- overall_status: fail');
     expect(summary.markdown).toContain('- boot_baseline_captured_at: 2026-04-15T09:55:00.000Z');
     expect(summary.markdown).toContain('- ready_baseline_captured_at: 2026-04-15T10:00:00.000Z');
+    expect(summary.markdown).toContain('- startup_candidate_captured_at: 2026-04-15T09:59:00.000Z');
+    expect(summary.markdown).toContain('- failure_observation_captured_at: not_captured');
   });
 });

@@ -77,6 +77,19 @@ export interface FileLibraryResourceRecoveryProbe extends FileLibraryResourceRec
   cleanup_probe_errors?: string[];
 }
 
+export type FileLibraryResourceRecoveryStartupComparisonCurrentSource =
+  | 'ready_baseline'
+  | 'startup_candidate'
+  | 'failure_observation';
+
+export interface FileLibraryResourceRecoveryEvidenceChain {
+  boot_baseline: FileLibraryResourceRecoverySnapshot | null;
+  ready_baseline: FileLibraryResourceRecoverySnapshot | null;
+  startup_candidate: FileLibraryResourceRecoverySnapshot | null;
+  failure_observation: FileLibraryResourceRecoverySnapshot | null;
+  comparison_current_source: FileLibraryResourceRecoveryStartupComparisonCurrentSource;
+}
+
 export interface FileLibraryResourceRecoveryStepReport {
   schema_version: 1;
   step: string;
@@ -85,6 +98,7 @@ export interface FileLibraryResourceRecoveryStepReport {
   current: FileLibraryResourceRecoverySnapshot;
   findings: string[];
   probe: FileLibraryResourceRecoveryProbe | null;
+  evidence_chain?: FileLibraryResourceRecoveryEvidenceChain | null;
   attempts?: number;
   wait_ms?: number;
   interval_ms?: number;
@@ -95,7 +109,9 @@ export interface FileLibraryResourceRecoverySummary {
   generated_at: string;
   status: 'pass' | 'fail';
   boot_baseline: FileLibraryResourceRecoverySnapshot | null;
-  baseline: FileLibraryResourceRecoverySnapshot;
+  ready_baseline: FileLibraryResourceRecoverySnapshot | null;
+  startup_candidate: FileLibraryResourceRecoverySnapshot | null;
+  failure_observation: FileLibraryResourceRecoverySnapshot | null;
   steps: Array<{
     step: string;
     status: 'pass' | 'fail';
@@ -603,7 +619,7 @@ function stripStartupBootOrphanGatewayStateTruth(
 }
 
 function buildStartupApiConnectionFindings(args: {
-  readyBaseline: FileLibraryResourceRecoverySnapshot;
+  observedStartupState: FileLibraryResourceRecoverySnapshot;
   steadyState?: FileLibraryStartupSteadyStateContract;
 }): string[] {
   const findings: string[] = [];
@@ -619,7 +635,7 @@ function buildStartupApiConnectionFindings(args: {
   );
   const observedCounts = new Map<string, number>();
 
-  for (const connection of args.readyBaseline.tcp_connections) {
+  for (const connection of args.observedStartupState.tcp_connections) {
     if (connection.process_label !== 'api-entry') {
       continue;
     }
@@ -653,7 +669,7 @@ function buildStartupApiConnectionFindings(args: {
 }
 
 function buildStartupHelperFindings(args: {
-  readyBaseline: FileLibraryResourceRecoverySnapshot;
+  observedStartupState: FileLibraryResourceRecoverySnapshot;
   steadyState?: FileLibraryStartupSteadyStateContract;
 }): string[] {
   const findings: string[] = [];
@@ -663,7 +679,7 @@ function buildStartupHelperFindings(args: {
   }
 
   const observedCounts = new Map<string, number>();
-  for (const helperProcess of args.readyBaseline.helper_processes) {
+  for (const helperProcess of args.observedStartupState.helper_processes) {
     observedCounts.set(helperProcess.label, (observedCounts.get(helperProcess.label) ?? 0) + 1);
   }
 
@@ -1000,25 +1016,40 @@ export function compareResourceRecoveryBaseline(args: {
 
 export function buildStartupResourceRecoveryReport(args: {
   bootBaseline: FileLibraryResourceRecoverySnapshot;
-  readyBaseline: FileLibraryResourceRecoverySnapshot;
+  readyBaseline?: FileLibraryResourceRecoverySnapshot | null;
+  startupCandidate?: FileLibraryResourceRecoverySnapshot | null;
+  failureObservation?: FileLibraryResourceRecoverySnapshot | null;
+  comparisonCurrentSource?: FileLibraryResourceRecoveryStartupComparisonCurrentSource | null;
   steadyState?: FileLibraryStartupSteadyStateContract;
   extraFindings?: readonly string[];
 }): FileLibraryResourceRecoveryStepReport {
   const step = 'file-library-api-startup';
+  const comparisonCurrentSource = resolveStartupComparisonCurrentSource({
+    readyBaseline: args.readyBaseline,
+    startupCandidate: args.startupCandidate,
+    failureObservation: args.failureObservation,
+    comparisonCurrentSource: args.comparisonCurrentSource ?? null,
+  });
+  const comparisonCurrent = resolveStartupComparisonCurrentSnapshot({
+    readyBaseline: args.readyBaseline,
+    startupCandidate: args.startupCandidate,
+    failureObservation: args.failureObservation,
+    comparisonCurrentSource,
+  });
   const compared = compareResourceRecoveryBaseline({
     step,
     baseline: stripStartupApiTcpTruth(stripStartupBootOrphanGatewayStateTruth(args.bootBaseline)),
-    current: stripStartupApiTcpTruth(args.readyBaseline),
+    current: stripStartupApiTcpTruth(comparisonCurrent),
   });
   const findings = appendUniqueFindings(
     compared.findings,
     [
       ...buildStartupApiConnectionFindings({
-        readyBaseline: args.readyBaseline,
+        observedStartupState: comparisonCurrent,
         steadyState: args.steadyState,
       }),
       ...buildStartupHelperFindings({
-        readyBaseline: args.readyBaseline,
+        observedStartupState: comparisonCurrent,
         steadyState: args.steadyState,
       }),
       ...(args.extraFindings ?? []),
@@ -1027,9 +1058,16 @@ export function buildStartupResourceRecoveryReport(args: {
   return {
     ...compared,
     baseline: args.bootBaseline,
-    current: args.readyBaseline,
+    current: comparisonCurrent,
     status: findings.length === 0 ? 'pass' : 'fail',
     findings,
+    evidence_chain: {
+      boot_baseline: args.bootBaseline,
+      ready_baseline: args.readyBaseline ?? null,
+      startup_candidate: args.startupCandidate ?? null,
+      failure_observation: args.failureObservation ?? null,
+      comparison_current_source: comparisonCurrentSource,
+    },
   };
 }
 
@@ -1043,6 +1081,52 @@ function appendUniqueFindings(findings: readonly string[], extras: readonly stri
     nextFindings.push(normalized);
   }
   return nextFindings;
+}
+
+function resolveStartupComparisonCurrentSource(args: {
+  readyBaseline?: FileLibraryResourceRecoverySnapshot | null;
+  startupCandidate?: FileLibraryResourceRecoverySnapshot | null;
+  failureObservation?: FileLibraryResourceRecoverySnapshot | null;
+  comparisonCurrentSource?: FileLibraryResourceRecoveryStartupComparisonCurrentSource | null;
+}): FileLibraryResourceRecoveryStartupComparisonCurrentSource {
+  if (args.comparisonCurrentSource) {
+    return args.comparisonCurrentSource;
+  }
+  if (args.readyBaseline) {
+    return 'ready_baseline';
+  }
+  if (args.startupCandidate) {
+    return 'startup_candidate';
+  }
+  return 'failure_observation';
+}
+
+function resolveStartupComparisonCurrentSnapshot(args: {
+  readyBaseline?: FileLibraryResourceRecoverySnapshot | null;
+  startupCandidate?: FileLibraryResourceRecoverySnapshot | null;
+  failureObservation?: FileLibraryResourceRecoverySnapshot | null;
+  comparisonCurrentSource: FileLibraryResourceRecoveryStartupComparisonCurrentSource;
+}): FileLibraryResourceRecoverySnapshot {
+  switch (args.comparisonCurrentSource) {
+    case 'ready_baseline':
+      if (args.readyBaseline) {
+        return args.readyBaseline;
+      }
+      break;
+    case 'startup_candidate':
+      if (args.startupCandidate) {
+        return args.startupCandidate;
+      }
+      break;
+    case 'failure_observation':
+      if (args.failureObservation) {
+        return args.failureObservation;
+      }
+      break;
+  }
+  throw new Error(
+    `startup comparison current source ${args.comparisonCurrentSource} requires a matching snapshot`,
+  );
 }
 
 export function finalizeResourceRecoveryStepReport(
@@ -1080,16 +1164,28 @@ export function buildResourceRecoveryFailureReport(
   });
 }
 
+function formatSnapshotCapturedAt(snapshot: FileLibraryResourceRecoverySnapshot | null): string {
+  return snapshot?.captured_at ?? 'not_captured';
+}
+
+function resolveSummaryObservationReference(summary: Omit<FileLibraryResourceRecoverySummary, 'markdown'>):
+  FileLibraryResourceRecoverySnapshot | null {
+  return summary.ready_baseline ?? summary.startup_candidate ?? summary.failure_observation;
+}
+
 function renderResourceRecoveryMarkdown(summary: Omit<FileLibraryResourceRecoverySummary, 'markdown'>): string {
+  const observationReference = resolveSummaryObservationReference(summary);
   const lines = [
     '# File Library Resource Recovery Report',
     '',
     `- generated_at: ${summary.generated_at}`,
     `- overall_status: ${summary.status}`,
-    `- boot_baseline_captured_at: ${summary.boot_baseline?.captured_at ?? 'not_provided'}`,
-    `- ready_baseline_captured_at: ${summary.baseline.captured_at}`,
-    `- gateway_state_dir: ${summary.baseline.gateway_state_dir}`,
-    `- task_mount_root: ${summary.baseline.task_mount_root}`,
+    `- boot_baseline_captured_at: ${formatSnapshotCapturedAt(summary.boot_baseline)}`,
+    `- ready_baseline_captured_at: ${formatSnapshotCapturedAt(summary.ready_baseline)}`,
+    `- startup_candidate_captured_at: ${formatSnapshotCapturedAt(summary.startup_candidate)}`,
+    `- failure_observation_captured_at: ${formatSnapshotCapturedAt(summary.failure_observation)}`,
+    `- gateway_state_dir: ${observationReference?.gateway_state_dir ?? 'not_captured'}`,
+    `- task_mount_root: ${observationReference?.task_mount_root ?? 'not_captured'}`,
     '',
     '## Steps',
     '',
@@ -1105,16 +1201,23 @@ function renderResourceRecoveryMarkdown(summary: Omit<FileLibraryResourceRecover
 
 export function buildResourceRecoverySummary(args: {
   bootBaseline?: FileLibraryResourceRecoverySnapshot | null;
-  baseline: FileLibraryResourceRecoverySnapshot;
+  readyBaseline?: FileLibraryResourceRecoverySnapshot | null;
+  startupCandidate?: FileLibraryResourceRecoverySnapshot | null;
+  failureObservation?: FileLibraryResourceRecoverySnapshot | null;
   reports: readonly FileLibraryResourceRecoveryStepReport[];
 }): FileLibraryResourceRecoverySummary {
+  if (!args.readyBaseline && !args.startupCandidate && !args.failureObservation) {
+    throw new Error('resource recovery summary requires at least one of readyBaseline, startupCandidate, or failureObservation');
+  }
   const findings = args.reports.flatMap((report) => report.findings);
   const baseSummary = {
     schema_version: 1 as const,
     generated_at: new Date().toISOString(),
     status: findings.length === 0 ? 'pass' as const : 'fail' as const,
     boot_baseline: args.bootBaseline ?? null,
-    baseline: args.baseline,
+    ready_baseline: args.readyBaseline ?? null,
+    startup_candidate: args.startupCandidate ?? null,
+    failure_observation: args.failureObservation ?? null,
     steps: args.reports.map((report) => ({
       step: report.step,
       status: report.status,
@@ -1252,8 +1355,11 @@ async function runVerify(argv: string[]): Promise<void> {
 
 async function runStartupReport(argv: string[]): Promise<void> {
   const bootBaselinePath = parseOption(argv, '--boot-baseline');
-  const baselinePath = parseOption(argv, '--baseline');
+  const readyBaselinePath = parseOption(argv, '--ready-baseline') ?? parseOption(argv, '--baseline');
+  const startupCandidatePath = parseOption(argv, '--startup-candidate');
+  const failureObservationPath = parseOption(argv, '--failure-observation');
   const outputPath = parseOption(argv, '--output');
+  const comparisonCurrentSourceRaw = parseOption(argv, '--comparison-current-source');
   const steadyStateApiTcpAllowances = parseMultiOption(argv, '--steady-state-api-tcp')
     .map((rawAllowance) => {
       const [processLabel, rawPort, state, rawMinCount, rawMaxCount] = rawAllowance.split('|');
@@ -1298,16 +1404,48 @@ async function runStartupReport(argv: string[]): Promise<void> {
       };
     });
   const failureMessage = parseOption(argv, '--failure-message');
+  const comparisonCurrentSource = comparisonCurrentSourceRaw
+    ? (() => {
+      if (
+        comparisonCurrentSourceRaw !== 'ready_baseline'
+        && comparisonCurrentSourceRaw !== 'startup_candidate'
+        && comparisonCurrentSourceRaw !== 'failure_observation'
+      ) {
+        throw new Error(
+          'startup-report --comparison-current-source must be one of ready_baseline, startup_candidate, failure_observation',
+        );
+      }
+      return comparisonCurrentSourceRaw;
+    })()
+    : null;
 
-  if (!bootBaselinePath || !baselinePath || !outputPath) {
-    throw new Error('startup-report requires --boot-baseline <path> --baseline <path> --output <path>');
+  if (!bootBaselinePath || !outputPath) {
+    throw new Error(
+      'startup-report requires --boot-baseline <path> --output <path> and at least one of --ready-baseline <path>, --startup-candidate <path>, --failure-observation <path>',
+    );
+  }
+  if (!readyBaselinePath && !startupCandidatePath && !failureObservationPath) {
+    throw new Error(
+      'startup-report requires at least one of --ready-baseline <path>, --startup-candidate <path>, --failure-observation <path>',
+    );
   }
 
   const bootBaseline = await readJsonFile<FileLibraryResourceRecoverySnapshot>(bootBaselinePath);
-  const readyBaseline = await readJsonFile<FileLibraryResourceRecoverySnapshot>(baselinePath);
+  const readyBaseline = readyBaselinePath
+    ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(readyBaselinePath)
+    : null;
+  const startupCandidate = startupCandidatePath
+    ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(startupCandidatePath)
+    : null;
+  const failureObservation = failureObservationPath
+    ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(failureObservationPath)
+    : null;
   const report = buildStartupResourceRecoveryReport({
     bootBaseline,
     readyBaseline,
+    startupCandidate,
+    failureObservation,
+    comparisonCurrentSource,
     steadyState: {
       api_tcp_connections: steadyStateApiTcpAllowances,
       helper_labels: steadyStateHelperLabels,
@@ -1354,22 +1492,37 @@ async function runFallbackReport(argv: string[]): Promise<void> {
 
 async function runSummary(argv: string[]): Promise<void> {
   const bootBaselinePath = parseOption(argv, '--boot-baseline');
-  const baselinePath = parseOption(argv, '--baseline');
+  const readyBaselinePath = parseOption(argv, '--ready-baseline') ?? parseOption(argv, '--baseline');
+  const startupCandidatePath = parseOption(argv, '--startup-candidate');
+  const failureObservationPath = parseOption(argv, '--failure-observation');
   const outputJsonPath = parseOption(argv, '--output-json');
   const outputMarkdownPath = parseOption(argv, '--output-markdown');
   const reportPaths = parseMultiOption(argv, '--report');
 
-  if (!baselinePath || !outputJsonPath || !outputMarkdownPath) {
-    throw new Error('summary requires --baseline <path> --output-json <path> --output-markdown <path>');
+  if (!outputJsonPath || !outputMarkdownPath) {
+    throw new Error('summary requires --output-json <path> --output-markdown <path>');
   }
   if (reportPaths.length === 0) {
     throw new Error('summary requires at least one --report <path>');
+  }
+  if (!readyBaselinePath && !startupCandidatePath && !failureObservationPath) {
+    throw new Error(
+      'summary requires at least one of --ready-baseline <path>, --startup-candidate <path>, --failure-observation <path>',
+    );
   }
 
   const bootBaseline = bootBaselinePath
     ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(bootBaselinePath)
     : null;
-  const baseline = await readJsonFile<FileLibraryResourceRecoverySnapshot>(baselinePath);
+  const readyBaseline = readyBaselinePath
+    ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(readyBaselinePath)
+    : null;
+  const startupCandidate = startupCandidatePath
+    ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(startupCandidatePath)
+    : null;
+  const failureObservation = failureObservationPath
+    ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(failureObservationPath)
+    : null;
   const reports = await Promise.all(
     reportPaths
       .filter(Boolean)
@@ -1377,7 +1530,9 @@ async function runSummary(argv: string[]): Promise<void> {
   );
   const summary = buildResourceRecoverySummary({
     bootBaseline,
-    baseline,
+    readyBaseline,
+    startupCandidate,
+    failureObservation,
     reports,
   });
   await writeJsonFile(outputJsonPath, summary);

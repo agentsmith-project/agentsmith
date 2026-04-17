@@ -18,15 +18,7 @@ describe('formatDisplayDateTime', () => {
     });
 
     expect(formatDisplayDateTime('2026-03-19T08:00:00.000Z', { locale: 'en-US' }))
-      .toBe(new Intl.DateTimeFormat('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'America/Los_Angeles',
-        timeZoneName: 'short',
-      }).format(new Date('2026-03-19T08:00:00.000Z')));
+      .toBe('Mar 19, 2026, 01:00 AM PDT');
   });
 
   it('supports explicit locale and timezone overrides without leaking raw ISO protocol text', () => {
@@ -57,19 +49,9 @@ describe('formatDisplayDateTime', () => {
       locale: 'en-US',
     });
 
-    const expectedLabel = new Intl.DateTimeFormat('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'America/Los_Angeles',
-      timeZoneName: 'short',
-    }).format(new Date('2026-03-19T08:00:00.000Z'));
-
     expect(presentation).toEqual({
-      text: expectedLabel,
-      title: expectedLabel,
+      text: 'Mar 19, 2026, 01:00 AM PDT',
+      title: 'Mar 19, 2026, 01:00 AM PDT',
       dateTime: '2026-03-19T08:00:00.000Z',
       visualDateTime: '2026-03-19T08:00:00.000Z',
       visualDateTimePolicy: 'viewer_local',

@@ -98,6 +98,9 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.queryByTestId('system-workspaces__idp')).not.toBeInTheDocument();
     expect(screen.queryByTestId('system-workspaces__admin')).not.toBeInTheDocument();
     expect(screen.queryByTestId('system-workspaces__lifecycle')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('system-workspaces__publish')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('system-workspaces__disable')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('system-workspaces__delete')).not.toBeInTheDocument();
     expect(screen.queryByTestId('system-workspaces__save')).not.toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
 
@@ -106,7 +109,10 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__lifecycle')).toBeInTheDocument();
+    expect(screen.queryByTestId('system-workspaces__lifecycle')).not.toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__publish')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__disable')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__delete')).toBeInTheDocument();
     expectPrimaryProminence('system-workspaces__save');
     expectNotPrimaryProminence('system-workspaces__new-workspace');
     expect(screen.getByDisplayValue('Alpha Workspace')).toBeInTheDocument();
@@ -173,22 +179,25 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
   });
 
-  it('renders workspace timestamps as viewer-local time elements with machine-readable metadata across the list and detail panel', async () => {
+  it('renders initialized-at timestamps with surface-specific ids across the list and detail panel', async () => {
     render(<SystemWorkspacesPage />);
 
-    const timestamps = await screen.findAllByTestId('system-workspaces__initialized-at');
-    expect(timestamps.length).toBeGreaterThan(0);
+    const cardTimestamp = await screen.findByTestId('system-workspaces__card-initialized-at--ws_alpha');
+    const detailHeaderTimestamp = screen.getByTestId('system-workspaces__detail-header-initialized-at');
+    const detailFactsTimestamp = screen.getByTestId('system-workspaces__detail-facts-initialized-at');
 
-    for (const timestamp of timestamps) {
+    expect(screen.queryByTestId('system-workspaces__initialized-at')).not.toBeInTheDocument();
+
+    for (const timestamp of [cardTimestamp, detailHeaderTimestamp, detailFactsTimestamp]) {
       expect(timestamp.tagName).toBe('TIME');
+      expect(timestamp).toHaveAttribute('dateTime', '2026-03-10T01:00:00.000Z');
+      expect(timestamp).toHaveAttribute('data-visual-datetime', '2026-03-10T01:00:00.000Z');
       expect(timestamp).toHaveAttribute('data-visual-datetime-policy', 'viewer_local');
-      expect(timestamp).toHaveAttribute('data-visual-datetime');
-      expect(timestamp).toHaveAttribute('dateTime');
-      expect(timestamp).not.toHaveTextContent(/^\d{4}-\d{2}-\d{2}T/);
+      expect(timestamp).toHaveTextContent('Mar 9, 2026, 06:00 PM PDT');
     }
   });
 
-  it('promotes the delete confirmation dialog as the only primary CTA in the overlay scene', async () => {
+  it('keeps the delete confirmation CTA order aligned with DOM order and exposes destructive semantics explicitly', async () => {
     fetchMock.mockResolvedValueOnce(mockWorkspaceListResponse([
       makeWorkspace({
         id: 'ws_alpha',
@@ -205,11 +214,16 @@ describe('SystemWorkspacesPage', () => {
 
     fireEvent.click(screen.getByTestId('system-workspaces__delete'));
 
+    const deleteCancel = await screen.findByTestId('system-workspaces__delete-cancel');
     const deleteConfirm = await screen.findByTestId('system-workspaces__delete-confirm');
+    const buttonRow = deleteConfirm.parentElement;
+
+    expect(deleteCancel.compareDocumentPosition(deleteConfirm) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(buttonRow).not.toBeNull();
+    expect(buttonRow?.className).not.toContain('flex-col-reverse');
     expect(deleteConfirm).toHaveAttribute('data-visual-prominence', 'primary');
-    expect(deleteConfirm.className).toContain('bg-error');
-    expect(deleteConfirm.className).toContain('text-background');
-    expect(deleteConfirm.className).not.toContain('bg-error/5');
+    expect(deleteConfirm).toHaveAttribute('data-alert-dialog-action-variant', 'destructive');
+    expect(deleteConfirm).toHaveAttribute('data-alert-dialog-action-prominence', 'primary');
     expect(screen.getByTestId('system-workspaces__save')).not.toHaveAttribute('data-visual-prominence');
   });
 

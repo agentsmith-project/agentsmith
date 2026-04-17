@@ -6,7 +6,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { formatDisplayDateTime } from '@/lib/utils/date-time-format';
 import { TaskList } from '../TaskList';
 import type { Task } from '@/lib/types/task';
 
@@ -314,17 +313,13 @@ describe('TaskList', () => {
       const firstTaskCard = getTaskCard('Test Task 1');
       const lastActivity = within(firstTaskCard).getByTestId('notebook__task-last-activity');
       const lastActivityRow = lastActivity.closest('span');
-      const expectedLastActivityTitle = formatDisplayDateTime(mockTasks[0].last_activity_at, {
-        locale: 'en-US',
-        timeZone: 'America/Los_Angeles',
-      });
 
       expect(lastActivity).toHaveAttribute('dateTime', mockTasks[0].last_activity_at);
       expect(lastActivity).toHaveAttribute('data-visual-datetime', mockTasks[0].last_activity_at);
       expect(lastActivity).toHaveAttribute('data-visual-datetime-policy', 'viewer_local');
-      expect(lastActivity).toHaveAttribute('title', expectedLastActivityTitle);
+      expect(lastActivity).toHaveAttribute('title', 'Jan 2, 2024, 04:00 AM PST');
       expect(lastActivity).toHaveTextContent('5m ago');
-      expect(lastActivity).not.toHaveTextContent(expectedLastActivityTitle);
+      expect(lastActivity).not.toHaveTextContent('Jan 2, 2024, 04:00 AM PST');
       expect(lastActivityRow).toHaveTextContent('Last activity: 5m ago');
     });
 
@@ -341,17 +336,13 @@ describe('TaskList', () => {
 
       const createdAt = within(getTaskCard('Test Task 1')).getByTestId('notebook__task-created-at');
       const createdAtRow = createdAt.closest('span');
-      const expectedCreatedAtLabel = formatDisplayDateTime(mockTasks[0].created_at, {
-        locale: 'en-US',
-        timeZone: 'America/Los_Angeles',
-      });
 
       expect(createdAt).toHaveAttribute('dateTime', mockTasks[0].created_at);
       expect(createdAt).toHaveAttribute('data-visual-datetime', mockTasks[0].created_at);
       expect(createdAt).toHaveAttribute('data-visual-datetime-policy', 'viewer_local');
-      expect(createdAt).toHaveAttribute('title', expectedCreatedAtLabel);
-      expect(createdAt).toHaveTextContent(expectedCreatedAtLabel);
-      expect(createdAtRow).toHaveTextContent(`Created: ${expectedCreatedAtLabel}`);
+      expect(createdAt).toHaveAttribute('title', 'Dec 31, 2023, 04:00 PM PST');
+      expect(createdAt).toHaveTextContent('Dec 31, 2023, 04:00 PM PST');
+      expect(createdAtRow).toHaveTextContent('Created: Dec 31, 2023, 04:00 PM PST');
       expect(createdAt).not.toHaveTextContent(/:\d{2}:\d{2}/);
       expect(createdAt).not.toHaveTextContent(/\d{1,2}\/\d{1,2}\/\d{4}/);
     });

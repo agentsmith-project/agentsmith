@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   assertProminentActionCountFits,
   assertProminentActionsUseDesignSystemMetadata,
+  parseSemanticTargetReference,
+  resolveProminentActionScopeTestIds,
   assertViewerLocalDateTimeMetadata,
   summarizeProminentActionCandidates,
   assertViewportBoxFits,
@@ -151,5 +153,65 @@ describe('visual semantic viewport assertions', () => {
       dateTime: '2026-03-19T00:00:00.000Z',
       policy: 'viewer_local',
     })).not.toThrow();
+  });
+
+  it('parses a surface-scoped semantic target reference into unique surface and target ids', () => {
+    expect(parseSemanticTargetReference('system-workspaces__editor::system-workspaces__detail-header-initialized-at')).toEqual({
+      raw: 'system-workspaces__editor::system-workspaces__detail-header-initialized-at',
+      surfaceTestId: 'system-workspaces__editor',
+      targetTestId: 'system-workspaces__detail-header-initialized-at',
+    });
+    expect(parseSemanticTargetReference('system-workspaces__save')).toEqual({
+      raw: 'system-workspaces__save',
+      surfaceTestId: null,
+      targetTestId: 'system-workspaces__save',
+    });
+  });
+
+  it('rejects malformed surface-scoped semantic target references', () => {
+    expect(() => parseSemanticTargetReference('system-workspaces__editor::')).toThrow(/surface-scoped semantic target/i);
+    expect(() => parseSemanticTargetReference('::system-workspaces__save')).toThrow(/surface-scoped semantic target/i);
+    expect(() => parseSemanticTargetReference('page-layout__header::system-workspaces__new-workspace::extra')).toThrow(
+      /surface-scoped semantic target/i,
+    );
+  });
+
+  it('prefers explicit prominent action scopes over primary-target-derived fallback', () => {
+    expect(resolveProminentActionScopeTestIds({
+      prominentActionScopeTestIds: [
+        'page-layout__header',
+        'system-workspaces__list',
+        'system-workspaces__editor',
+      ],
+      primaryActionTestIds: [
+        'system-workspaces__editor::system-workspaces__save',
+      ],
+    })).toEqual([
+      'page-layout__header',
+      'system-workspaces__list',
+      'system-workspaces__editor',
+    ]);
+  });
+
+  it('derives unique prominent action scopes from scoped primary targets when explicit scopes are absent', () => {
+    expect(resolveProminentActionScopeTestIds({
+      primaryActionTestIds: [
+        'page-layout__header::system-workspaces__new-workspace',
+        'system-workspaces__editor::system-workspaces__save',
+        'system-workspaces__editor::system-workspaces__delete',
+      ],
+    })).toEqual([
+      'page-layout__header',
+      'system-workspaces__editor',
+    ]);
+  });
+
+  it('falls back to page-wide prominent action scanning when primary targets are not all surface-scoped', () => {
+    expect(resolveProminentActionScopeTestIds({
+      primaryActionTestIds: [
+        'page-layout__header::system-workspaces__new-workspace',
+        'system-workspaces__delete-confirm',
+      ],
+    })).toBeNull();
   });
 });

@@ -233,21 +233,57 @@ describe('visual baseline support', () => {
     const disabledConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-disabled');
     const connectedConnections = groupVisualBaselineCatalogByScenario().get('workspace-connections-feishu-connected');
 
-    expect(systemWorkspacesEmpty?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__empty-create']);
+    expect(systemWorkspacesEmpty?.semanticAssertions.primaryActionTestIds).toEqual([
+      'system-workspaces__empty::system-workspaces__empty-create',
+    ]);
+    expect(systemWorkspacesEmpty?.semanticAssertions.prominentActionScopeTestIds).toEqual([
+      'page-layout__header',
+      'system-workspaces__list',
+      'system-workspaces__editor-empty',
+    ]);
     expect(systemWorkspacesEmpty?.semanticAssertions.maxProminentActions).toBe(1);
-    expect(systemWorkspacesDefault?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__new-workspace']);
+    expect(systemWorkspacesDefault?.semanticAssertions.primaryActionTestIds).toEqual([
+      'page-layout__header::system-workspaces__new-workspace',
+    ]);
+    expect(systemWorkspacesDefault?.semanticAssertions.prominentActionScopeTestIds).toEqual([
+      'page-layout__header',
+      'system-workspaces__list',
+      'system-workspaces__editor',
+    ]);
     expect(systemWorkspacesDefault?.semanticAssertions.maxProminentActions).toBe(1);
-    expect(systemWorkspacesEditMode?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__save']);
+    expect(systemWorkspacesEditMode?.semanticAssertions.primaryActionTestIds).toEqual([
+      'system-workspaces__editor::system-workspaces__save',
+    ]);
+    expect(systemWorkspacesEditMode?.semanticAssertions.prominentActionScopeTestIds).toEqual([
+      'page-layout__header',
+      'system-workspaces__list',
+      'system-workspaces__editor',
+    ]);
     expect(systemWorkspacesEditMode?.semanticAssertions.maxProminentActions).toBe(1);
-    expect(failedSystemWorkspaces?.semanticAssertions.primaryActionTestIds).toEqual(['system-workspaces__enable-edit']);
+    expect(failedSystemWorkspaces?.semanticAssertions.primaryActionTestIds).toEqual([
+      'system-workspaces__editor::system-workspaces__enable-edit',
+    ]);
+    expect(failedSystemWorkspaces?.semanticAssertions.prominentActionScopeTestIds).toEqual([
+      'page-layout__header',
+      'system-workspaces__list',
+      'system-workspaces__editor',
+    ]);
     expect(failedSystemWorkspaces?.semanticAssertions.maxProminentActions).toBe(1);
     expect(systemWorkspacesDeleteConfirmation?.semanticAssertions.primaryActionTestIds).toEqual([
-      'system-workspaces__delete-confirm',
+      'system-workspaces__delete-dialog::system-workspaces__delete-confirm',
+    ]);
+    expect(systemWorkspacesDeleteConfirmation?.semanticAssertions.prominentActionScopeTestIds).toEqual([
+      'page-layout__header',
+      'system-workspaces__list',
+      'system-workspaces__editor',
+      'system-workspaces__delete-dialog',
     ]);
     expect(systemWorkspacesDeleteConfirmation?.semanticAssertions.maxProminentActions).toBe(1);
     expect(disabledConnections?.semanticAssertions.primaryActionTestIds).toEqual([]);
+    expect(disabledConnections?.semanticAssertions.prominentActionScopeTestIds).toEqual([]);
     expect(disabledConnections?.semanticAssertions.maxProminentActions).toBe(0);
     expect(connectedConnections?.semanticAssertions.primaryActionTestIds).toEqual([]);
+    expect(connectedConnections?.semanticAssertions.prominentActionScopeTestIds).toEqual([]);
     expect(connectedConnections?.semanticAssertions.maxProminentActions).toBe(0);
   });
 
@@ -267,6 +303,7 @@ describe('visual baseline support', () => {
     const notebookLifecycleList = groupVisualBaselineCatalogByScenario().get('notebook-task-lifecycle-list');
     const systemWorkspacesDefault = groupVisualBaselineCatalogByScenario().get('system-workspaces-default');
     const systemWorkspacesEditMode = groupVisualBaselineCatalogByScenario().get('system-workspaces-edit-mode');
+    const failedSystemWorkspaces = groupVisualBaselineCatalogByScenario().get('system-workspaces-failed-state');
     const systemWorkspacesDeleteConfirmation = groupVisualBaselineCatalogByScenario().get('system-workspaces-delete-confirmation');
 
     expect(connectedConnections?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
@@ -277,13 +314,20 @@ describe('visual baseline support', () => {
       'notebook__task-created-at',
     ]);
     expect(systemWorkspacesDefault?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
-      'system-workspaces__initialized-at',
+      'system-workspaces__list::system-workspaces__card-initialized-at--ws_seeded',
+      'system-workspaces__editor::system-workspaces__detail-header-initialized-at',
+      'system-workspaces__editor::system-workspaces__detail-facts-initialized-at',
     ]);
     expect(systemWorkspacesEditMode?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
-      'system-workspaces__initialized-at',
+      'system-workspaces__list::system-workspaces__card-initialized-at--ws_seeded',
+      'system-workspaces__editor::system-workspaces__detail-header-initialized-at',
+      'system-workspaces__editor::system-workspaces__detail-facts-initialized-at',
     ]);
+    expect(failedSystemWorkspaces?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([]);
     expect(systemWorkspacesDeleteConfirmation?.semanticAssertions.requiredViewerLocalDateTimeTestIds).toEqual([
-      'system-workspaces__initialized-at',
+      'system-workspaces__list::system-workspaces__card-initialized-at--ws_seeded',
+      'system-workspaces__editor::system-workspaces__detail-header-initialized-at',
+      'system-workspaces__editor::system-workspaces__detail-facts-initialized-at',
     ]);
     expect(resolveVisualBaselineSemanticAssertions('workspace-connections-feishu-connected').requiredViewerLocalDateTimeTestIds)
       .toContain('workspace-connections__last-refresh-value');
@@ -1410,10 +1454,27 @@ describe('visual baseline support', () => {
 
     expect(docSource).toContain('e2e/stories/mock-lane/*.story.md');
     expect(docSource).toContain('runtimeData.visualReview.scenes');
+    expect(docSource).toContain('semanticAssertions');
+    expect(docSource).toContain('surface::target');
+    expect(docSource).toContain('prominentActionScopeTestIds');
+    expect(docSource).toContain('unique surface');
     expect(docSource).toContain('storySourceFile');
     expect(docSource).toContain('storySceneId');
     expect(docSource).toContain('visual-baseline-support.ts');
     expect(docSource).not.toContain('standalone scenario seed');
+  });
+
+  it('documents the allowed semantic test-id families and the unique-surface boundary', async () => {
+    const docSource = await readFile(path.resolve('docs/testing/2026-02-05-前端-testid-规范.md'), 'utf-8');
+
+    expect(docSource).toContain('语义族');
+    expect(docSource).toContain('requiredViewportTestIds');
+    expect(docSource).toContain('requiredViewerLocalDateTimeTestIds');
+    expect(docSource).toContain('primaryActionTestIds');
+    expect(docSource).toContain('prominentActionScopeTestIds');
+    expect(docSource).toContain('surface::target');
+    expect(docSource).toContain('scope 容器');
+    expect(docSource).toContain('唯一 surface');
   });
 
   it('finalizes lane-local generated root state when the mock visual lane exits', async () => {

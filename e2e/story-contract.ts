@@ -60,6 +60,7 @@ export type StoryRuntimeVisualSemanticAssertionsDefinition = {
   requiredViewportTestIds?: readonly string[];
   requiredViewerLocalDateTimeTestIds?: readonly string[];
   primaryActionTestIds?: readonly string[];
+  prominentActionScopeTestIds?: readonly string[];
   maxProminentActions?: number;
 };
 
@@ -206,6 +207,51 @@ function validateRepoRelativeCodeRef(codeRef: string, storyId: string, sceneId: 
   }
 }
 
+function validateSurfaceScopedSemanticTargetReference(
+  value: string,
+  storyId: string,
+  sceneId: string,
+  field: string,
+) {
+  const segments = value.split('::');
+  if (segments.length === 1) {
+    return;
+  }
+  if (segments.length !== 2 || segments.some((segment) => segment.trim().length === 0)) {
+    throw new Error(
+      `story ${storyId} visual review scene ${sceneId} has invalid surface-scoped semantic target for ${field}: ${value}`,
+    );
+  }
+}
+
+function validateSemanticTargetReferenceList(
+  field: string,
+  values: readonly string[],
+  storyId: string,
+  sceneId: string,
+) {
+  validateUniqueList(field, values, storyId);
+  for (const value of values) {
+    validateSurfaceScopedSemanticTargetReference(value, storyId, sceneId, field);
+  }
+}
+
+function validateProminentActionScopeReferenceList(
+  field: string,
+  values: readonly string[],
+  storyId: string,
+  sceneId: string,
+) {
+  validateUniqueList(field, values, storyId);
+  for (const value of values) {
+    if (value.includes('::')) {
+      throw new Error(
+        `story ${storyId} visual review scene ${sceneId} has invalid prominent action scope for ${field}: ${value}`,
+      );
+    }
+  }
+}
+
 function validateVisualReviewScene(scene: StoryRuntimeVisualReviewSceneDefinition, storyId: string) {
   validateNonEmptyText('visual review scene id', scene.sceneId, storyId);
   validateNonEmptyText('visual review scenario id', scene.scenarioId, storyId);
@@ -303,30 +349,44 @@ function validateVisualSemanticAssertions(
     if (!Array.isArray(assertions.requiredViewportTestIds)) {
       throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertion required viewport test ids must be a list`);
     }
-    validateUniqueList(
+    validateSemanticTargetReferenceList(
       'visual semantic assertion required viewport test id',
       assertions.requiredViewportTestIds,
       storyId,
+      sceneId,
     );
   }
   if (assertions.requiredViewerLocalDateTimeTestIds !== undefined) {
     if (!Array.isArray(assertions.requiredViewerLocalDateTimeTestIds)) {
       throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertion viewer-local datetime test ids must be a list`);
     }
-    validateUniqueList(
+    validateSemanticTargetReferenceList(
       'visual semantic assertion viewer-local datetime test id',
       assertions.requiredViewerLocalDateTimeTestIds,
       storyId,
+      sceneId,
     );
   }
   if (assertions.primaryActionTestIds !== undefined) {
     if (!Array.isArray(assertions.primaryActionTestIds)) {
       throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertion primary action test ids must be a list`);
     }
-    validateUniqueList(
+    validateSemanticTargetReferenceList(
       'visual semantic assertion primary action test id',
       assertions.primaryActionTestIds,
       storyId,
+      sceneId,
+    );
+  }
+  if (assertions.prominentActionScopeTestIds !== undefined) {
+    if (!Array.isArray(assertions.prominentActionScopeTestIds)) {
+      throw new Error(`story ${storyId} visual review scene ${sceneId} semantic assertion prominent action scope test ids must be a list`);
+    }
+    validateProminentActionScopeReferenceList(
+      'visual semantic assertion prominent action scope test id',
+      assertions.prominentActionScopeTestIds,
+      storyId,
+      sceneId,
     );
   }
   if (assertions.maxProminentActions !== undefined) {

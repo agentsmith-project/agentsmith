@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import type { VisualBaselineSemanticAssertions } from '../visual-baseline-support';
 
 export interface ViewportBox {
@@ -49,6 +49,39 @@ export type ProminentActionCandidateSummary = {
   prominentActionCount: number;
   unmarkedProminentActions: readonly ProminentActionCandidate[];
 };
+
+export type SemanticTargetReference = {
+  raw: string;
+  surfaceTestId: string | null;
+  targetTestId: string;
+};
+
+export function parseSemanticTargetReference(reference: string): SemanticTargetReference {
+  const raw = reference.trim();
+  const segments = raw.split('::');
+
+  if (raw.length === 0) {
+    throw new Error('visual semantic contract requires a non-empty semantic target reference');
+  }
+  if (segments.length === 1) {
+    return {
+      raw,
+      surfaceTestId: null,
+      targetTestId: raw,
+    };
+  }
+  if (segments.length !== 2 || segments.some((segment) => segment.trim().length === 0)) {
+    throw new Error(
+      `visual semantic contract requires surface-scoped semantic target references in the form surface::target, received: ${reference}`,
+    );
+  }
+
+  return {
+    raw,
+    surfaceTestId: segments[0]!.trim(),
+    targetTestId: segments[1]!.trim(),
+  };
+}
 
 export function assertViewerLocalDateTimeMetadata(args: {
   testId: string;
@@ -275,8 +308,10 @@ export function assertProminentActionCountFits({
   );
 }
 
-async function collectProminentActionCandidates(page: Page): Promise<ProminentActionCandidate[]> {
-  return page.locator('button, a[href], [role="button"], input[type="button"], input[type="submit"]').evaluateAll((elements) => {
+type LocatorRoot = Page | Locator;
+
+async function collectProminentActionCandidatesWithinScope(root: LocatorRoot): Promise<ProminentActionCandidate[]> {
+  return root.locator('button, a[href], [role="button"], input[type="button"], input[type="submit"]').evaluateAll((elements) => {
     const bodyStyle = window.getComputedStyle(document.body);
     const htmlStyle = window.getComputedStyle(document.documentElement);
     const rootBackgroundColor = bodyStyle.backgroundColor === 'rgba(0, 0, 0, 0)'
@@ -322,6 +357,70 @@ async function collectProminentActionCandidates(page: Page): Promise<ProminentAc
   });
 }
 
+async function resolveSemanticTargetLocator(
+  page: Page,
+  referenceValue: string,
+): Promise<{ locator: Locator; resolvedReference: SemanticTargetReference }> {
+  const resolvedReference = parseSemanticTargetReference(referenceValue);
+  if (resolvedReference.surfaceTestId === null) {
+    return {
+      locator: page.getByTestId(resolvedReference.targetTestId),
+      resolvedReference,
+    };
+  }
+
+  const surface = page.getByTestId(resolvedReference.surfaceTestId);
+  await expect(
+    surface,
+    `visual semantic contract requires unique surface: ${resolvedReference.surfaceTestId}`,
+  ).toHaveCount(1);
+  await expect(
+    surface,
+    `visual semantic contract requires visible surface: ${resolvedReference.surfaceTestId}`,
+  ).toBeVisible();
+
+  return {
+    locator: surface.getByTestId(resolvedReference.targetTestId),
+    resolvedReference,
+  };
+}
+
+export function resolveProminentActionScopeTestIds(
+  assertions: Pick<VisualBaselineSemanticAssertions, 'primaryActionTestIds'>
+    & Partial<Pick<VisualBaselineSemanticAssertions, 'prominentActionScopeTestIds'>>,
+): string[] | null {
+  if ((assertions.prominentActionScopeTestIds?.length ?? 0) > 0) {
+    return [...assertions.prominentActionScopeTestIds!];
+  }
+
+  const primaryActionReferences = assertions.primaryActionTestIds.map(parseSemanticTargetReference);
+  const hasOnlyScopedPrimaryTargets = primaryActionReferences.every((reference) => reference.surfaceTestId !== null);
+  if (!hasOnlyScopedPrimaryTargets) {
+    return null;
+  }
+
+  return [...new Set(primaryActionReferences.map((reference) => reference.surfaceTestId!))];
+}
+
+async function collectProminentActionCandidatesForScenario(
+  page: Page,
+  assertions: VisualBaselineSemanticAssertions,
+): Promise<ProminentActionCandidate[]> {
+  const prominentActionScopeTestIds = resolveProminentActionScopeTestIds(assertions);
+  if (prominentActionScopeTestIds === null) {
+    return collectProminentActionCandidatesWithinScope(page);
+  }
+
+  const candidates: ProminentActionCandidate[] = [];
+  for (const scopeTestId of prominentActionScopeTestIds) {
+    const scope = page.getByTestId(scopeTestId);
+    await expect(scope, `visual semantic contract requires unique prominent action scope: ${scopeTestId}`).toHaveCount(1);
+    await expect(scope, `visual semantic contract requires visible prominent action scope: ${scopeTestId}`).toBeVisible();
+    candidates.push(...await collectProminentActionCandidatesWithinScope(scope));
+  }
+  return candidates;
+}
+
 export async function expectVisualSemanticAssertions(
   page: Page,
   assertions: VisualBaselineSemanticAssertions,
@@ -344,28 +443,28 @@ export async function expectVisualSemanticAssertions(
   }
 
   for (const testId of assertions.requiredViewportTestIds) {
-    const locator = page.getByTestId(testId);
-    await expect(locator, `visual semantic contract requires unique viewport target: ${testId}`).toHaveCount(1);
-    await expect(locator, `visual semantic contract requires visible viewport target: ${testId}`).toBeVisible();
+    const { locator, resolvedReference } = await resolveSemanticTargetLocator(page, testId);
+    await expect(locator, `visual semantic contract requires unique viewport target: ${resolvedReference.raw}`).toHaveCount(1);
+    await expect(locator, `visual semantic contract requires visible viewport target: ${resolvedReference.raw}`).toBeVisible();
 
     const box = await locator.boundingBox();
     const viewport = page.viewportSize();
-    assertViewportBoxFits(testId, box, viewport);
+    assertViewportBoxFits(resolvedReference.raw, box, viewport);
   }
 
   for (const testId of assertions.requiredViewerLocalDateTimeTestIds) {
-    const locator = page.getByTestId(testId);
+    const { locator, resolvedReference } = await resolveSemanticTargetLocator(page, testId);
     const count = await locator.count();
     expect(
       count,
-      `visual semantic contract requires at least one viewer-local datetime target: ${testId}`,
+      `visual semantic contract requires at least one viewer-local datetime target: ${resolvedReference.raw}`,
     ).toBeGreaterThan(0);
 
     for (let index = 0; index < count; index += 1) {
       const item = locator.nth(index);
       await expect(
         item,
-        `visual semantic contract requires visible viewer-local datetime target: ${testId} (match ${index + 1} of ${count})`,
+        `visual semantic contract requires visible viewer-local datetime target: ${resolvedReference.raw} (match ${index + 1} of ${count})`,
       ).toBeVisible();
 
       const metadata = await item.evaluate((element) => ({
@@ -374,7 +473,7 @@ export async function expectVisualSemanticAssertions(
       }));
 
       assertViewerLocalDateTimeMetadata({
-        testId: `${testId} (match ${index + 1} of ${count})`,
+        testId: `${resolvedReference.raw} (match ${index + 1} of ${count})`,
         dateTime: metadata.dateTime,
         policy: metadata.policy,
       });
@@ -382,18 +481,18 @@ export async function expectVisualSemanticAssertions(
   }
 
   for (const testId of assertions.primaryActionTestIds) {
-    const locator = page.getByTestId(testId);
-    await expect(locator, `visual semantic contract requires unique primary action: ${testId}`).toHaveCount(1);
-    await expect(locator, `visual semantic contract requires visible primary action: ${testId}`).toBeVisible();
-    await expect(locator, `visual semantic contract requires primary action prominence: ${testId}`)
+    const { locator, resolvedReference } = await resolveSemanticTargetLocator(page, testId);
+    await expect(locator, `visual semantic contract requires unique primary action: ${resolvedReference.raw}`).toHaveCount(1);
+    await expect(locator, `visual semantic contract requires visible primary action: ${resolvedReference.raw}`).toBeVisible();
+    await expect(locator, `visual semantic contract requires primary action prominence: ${resolvedReference.raw}`)
       .toHaveAttribute('data-visual-prominence', 'primary');
 
     const box = await locator.boundingBox();
     const viewport = page.viewportSize();
-    assertViewportBoxFits(testId, box, viewport);
+    assertViewportBoxFits(resolvedReference.raw, box, viewport);
   }
 
-  const prominentActionCandidates = await collectProminentActionCandidates(page);
+  const prominentActionCandidates = await collectProminentActionCandidatesForScenario(page, assertions);
   assertProminentActionsUseDesignSystemMetadata({
     scenarioId,
     candidates: prominentActionCandidates,

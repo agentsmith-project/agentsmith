@@ -450,6 +450,31 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(cleanupBody).not.toContain('wait "${API_PID}" >/dev/null 2>&1 || true');
   });
 
+  it('does not let api port release masquerade as owned runtime cleanup truth in the final summary', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const cleanupStart = script.indexOf('cleanup() {');
+    const cleanupEnd = script.indexOf("trap 'cleanup $?' EXIT", cleanupStart);
+    const cleanupBody = script.slice(cleanupStart, cleanupEnd);
+    const stopConditionIndex = cleanupBody.indexOf('if [[ "${cleanup_stop_status}" -ne 0 ]]; then');
+    const waitConditionIndex = cleanupBody.indexOf('if [[ "${cleanup_wait_status}" -ne 0 ]]; then');
+    const stopFindingIndex = cleanupBody.indexOf(
+      '"cleanup failed to stop the owned api process tree on port ${API_PORT} with exit code ${cleanup_stop_status}"',
+    );
+    const waitFindingIndex = cleanupBody.indexOf(
+      '"cleanup failed to confirm api port ${API_PORT} became free after stopping the owned api process tree with exit code ${cleanup_wait_status}"',
+    );
+
+    expect(stopConditionIndex).toBeGreaterThanOrEqual(0);
+    expect(waitConditionIndex).toBeGreaterThan(stopConditionIndex);
+    expect(stopFindingIndex).toBeGreaterThan(stopConditionIndex);
+    expect(waitFindingIndex).toBeGreaterThan(waitConditionIndex);
+    expect(cleanupBody).toContain('if [[ "${#summary_extra_args[@]}" -gt 0 ]]; then');
+    expect(cleanupBody).toContain('write_resource_recovery_summary "${summary_extra_args[@]}"');
+    expect(cleanupBody).not.toContain('cleanup confirmed the owned api process tree was cleared');
+    expect(cleanupBody).not.toContain('cleanup succeeded because api port');
+    expect(cleanupBody).not.toContain('if [[ "${cleanup_stop_status}" -eq 0 && "${cleanup_wait_status}" -eq 0 ]]; then');
+  });
+
   it('waits for a minimally stable startup window before freezing the ready baseline so startup helper transients do not immediately poison it', () => {
     const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
 

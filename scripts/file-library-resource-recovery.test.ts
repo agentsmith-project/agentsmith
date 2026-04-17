@@ -1428,6 +1428,61 @@ describe('file library resource recovery', () => {
     }
   });
 
+  it('fails the final summary when cleanup cannot prove trusted owned-stop truth even if the port becomes free', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'file-library-summary-stop-truth-'));
+    const bootBaselinePath = path.join(root, 'boot-baseline.json');
+    const readyBaselinePath = path.join(root, 'ready-baseline.json');
+    const reportPath = path.join(root, 'file-library-real-smoke.json');
+    const outputJsonPath = path.join(root, 'report.json');
+    const outputMarkdownPath = path.join(root, 'report.md');
+
+    try {
+      const bootBaseline = buildSnapshot({
+        captured_at: '2026-04-15T09:55:00.000Z',
+      });
+      const readyBaseline = buildSnapshot({
+        captured_at: '2026-04-15T10:00:00.000Z',
+      });
+      const passingReport = compareResourceRecoveryBaseline({
+        step: 'file-library-real-smoke',
+        baseline: readyBaseline,
+        current: readyBaseline,
+      });
+
+      writeJsonFile(bootBaselinePath, bootBaseline);
+      writeJsonFile(readyBaselinePath, readyBaseline);
+      writeJsonFile(reportPath, passingReport);
+
+      const result = runSummaryCli([
+        '--boot-baseline', bootBaselinePath,
+        '--ready-baseline', readyBaselinePath,
+        '--report', reportPath,
+        '--output-json', outputJsonPath,
+        '--output-markdown', outputMarkdownPath,
+        '--extra-finding',
+        'cleanup could not prove the owned api process tree was cleared after port 21010 became free because trusted stop truth was unavailable',
+      ]);
+
+      expect(result.status).toBe(0);
+      const summary = JSON.parse(readFileSync(outputJsonPath, 'utf8')) as {
+        status: string;
+        findings: string[];
+      };
+      const markdown = readFileSync(outputMarkdownPath, 'utf8');
+
+      expect(summary.status).toBe('fail');
+      expect(summary.findings).toContain(
+        'cleanup could not prove the owned api process tree was cleared after port 21010 became free because trusted stop truth was unavailable',
+      );
+      expect(markdown).toContain('- overall_status: fail');
+      expect(markdown).toContain(
+        '- cleanup could not prove the owned api process tree was cleared after port 21010 became free because trusted stop truth was unavailable',
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('fails closed when summary is given a declared startup-candidate path that disappears even if ready-baseline still exists', () => {
     const root = mkdtempSync(path.join(tmpdir(), 'file-library-summary-required-startup-'));
     const bootBaselinePath = path.join(root, 'boot-baseline.json');

@@ -253,7 +253,7 @@ local_runtime_write_process_sidecar() {
   local pid="$2"
   local port="$3"
   local command="$4"
-  local state_dir sidecar_file token cwd started_at run_id line_kind owner_token
+  local state_dir sidecar_file token cwd started_at run_id line_kind owner_token process_group_id session_id
 
   state_dir="$(local_runtime_process_state_dir)"
   mkdir -p "${state_dir}"
@@ -267,9 +267,11 @@ local_runtime_write_process_sidecar() {
   run_id="${LOCAL_RUNTIME_RUN_ID:-local-runtime-$$}"
   line_kind="${LOCAL_RUNTIME_LINE_KIND:-local_runtime}"
   owner_token="${LOCAL_RUNTIME_OWNER_TOKEN:-${run_id}:${line_kind}:$$}"
+  process_group_id="$(local_runtime_process_group_id "${pid}" || true)"
+  session_id="$(local_runtime_process_session_id "${pid}" || true)"
 
   LOCAL_RUNTIME_SIDECAR_FILE="${sidecar_file}" \
-  LOCAL_RUNTIME_SIDECAR_SCHEMA_VERSION="1" \
+  LOCAL_RUNTIME_SIDECAR_SCHEMA_VERSION="2" \
   LOCAL_RUNTIME_SIDECAR_RUN_ID="${run_id}" \
   LOCAL_RUNTIME_SIDECAR_LINE_KIND="${line_kind}" \
   LOCAL_RUNTIME_SIDECAR_SERVICE_KIND="${service_kind}" \
@@ -279,6 +281,8 @@ local_runtime_write_process_sidecar() {
   LOCAL_RUNTIME_SIDECAR_COMMAND="${command}" \
   LOCAL_RUNTIME_SIDECAR_OWNER_TOKEN="${owner_token}" \
   LOCAL_RUNTIME_SIDECAR_STARTED_AT="${started_at}" \
+  LOCAL_RUNTIME_SIDECAR_PROCESS_GROUP_ID="${process_group_id}" \
+  LOCAL_RUNTIME_SIDECAR_SESSION_ID="${session_id}" \
   LOCAL_RUNTIME_SIDECAR_IDENTITY_TOKEN="${token}" \
   node <<'NODE'
 const fs = require('node:fs');
@@ -290,7 +294,7 @@ if (!file) {
 }
 
 const payload = {
-  schema_version: Number(process.env.LOCAL_RUNTIME_SIDECAR_SCHEMA_VERSION || '1'),
+  schema_version: Number(process.env.LOCAL_RUNTIME_SIDECAR_SCHEMA_VERSION || '2'),
   run_id: process.env.LOCAL_RUNTIME_SIDECAR_RUN_ID,
   line_kind: process.env.LOCAL_RUNTIME_SIDECAR_LINE_KIND,
   service_kind: process.env.LOCAL_RUNTIME_SIDECAR_SERVICE_KIND,
@@ -301,6 +305,12 @@ const payload = {
   owner_token: process.env.LOCAL_RUNTIME_SIDECAR_OWNER_TOKEN,
   started_at: process.env.LOCAL_RUNTIME_SIDECAR_STARTED_AT,
   captured_at: process.env.LOCAL_RUNTIME_SIDECAR_STARTED_AT,
+  process_group_id: process.env.LOCAL_RUNTIME_SIDECAR_PROCESS_GROUP_ID
+    ? Number(process.env.LOCAL_RUNTIME_SIDECAR_PROCESS_GROUP_ID)
+    : null,
+  session_id: process.env.LOCAL_RUNTIME_SIDECAR_SESSION_ID
+    ? Number(process.env.LOCAL_RUNTIME_SIDECAR_SESSION_ID)
+    : null,
   captured_by: 'local-runtime-processes',
   process_identity: {
     token: process.env.LOCAL_RUNTIME_SIDECAR_IDENTITY_TOKEN,
@@ -373,7 +383,7 @@ for (const name of fs.readdirSync(dir)) {
   const file = path.join(dir, name);
   try {
     const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (payload.schema_version !== 1 || payload.pid !== pid) {
+    if (![1, 2].includes(payload.schema_version) || payload.pid !== pid) {
       continue;
     }
     if (serviceKind && payload.service_kind !== serviceKind) {
@@ -593,6 +603,16 @@ local_runtime_all_pids_exited() {
   return 0
 }
 
+local_runtime_has_tracked_descendants() {
+  local root_pid="$1"
+  shift || true
+  local tree_pid
+  for tree_pid in "$@"; do
+    [[ -n "${tree_pid}" && "${tree_pid}" != "${root_pid}" ]] && return 0
+  done
+  return 1
+}
+
 local_runtime_track_owned_tree_candidate_pid() {
   local tree_pid="$1"
   local expected_owner_token="$2"
@@ -679,6 +699,168 @@ local_runtime_discover_owned_tree_candidates_with_quiesce() {
   [[ "${added_pids}" -eq 1 ]]
 }
 
+local_runtime_discover_same_session_or_group_owned_tree_candidates() {
+  local expected_owner_token="$1"
+  local service_kind="$2"
+  local root_pid="$3"
+  local root_process_group_id="${4:-}"
+  local root_session_id="${5:-}"
+  local discover_status
+  [[ -n "${root_process_group_id}" || -n "${root_session_id}" ]] || return 1
+
+  if local_runtime_discover_owned_tree_candidates_from_stream "${expected_owner_token}" \
+    < <(local_runtime_owned_tree_process_pids "${expected_owner_token}" "${service_kind}" "${root_pid}" "${root_process_group_id}" "${root_session_id}"); then
+    return 0
+  fi
+  discover_status=$?
+  case "${discover_status}" in
+    1)
+      return 1
+      ;;
+  esac
+  return "${discover_status}"
+}
+
+local_runtime_discover_authoritative_descendants_for_tracked_pids() {
+  local expected_owner_token="$1"
+  local root_pid="$2"
+  local expansion_root expansion_role expansion_status discover_status added_pids=0
+
+  for expansion_root in "${pids[@]}"; do
+    expansion_role="descendant"
+    [[ "${expansion_root}" == "${root_pid}" ]] && expansion_role="root"
+    expansion_status="$(local_runtime_tracked_pid_ownership_status "${expansion_root}" "${captured_tokens[${expansion_root}]}" "${expected_owner_token}" "${expansion_role}" "${captured_start_times[${expansion_root}]}")"
+    case "${expansion_status}" in
+      exited)
+        continue
+        ;;
+      identity_match|owner_token_match|start_time_match)
+        if local_runtime_discover_owned_tree_candidates_from_stream "${expected_owner_token}" \
+          < <(local_runtime_descendant_pids "${expansion_root}"); then
+          discover_status=0
+        else
+          discover_status=$?
+        fi
+        case "${discover_status}" in
+          0)
+            added_pids=1
+            ;;
+          1)
+            ;;
+          *)
+            return "${discover_status}"
+            ;;
+        esac
+        ;;
+      *)
+        if [[ "${expansion_role}" == "root" ]] && local_runtime_pid_is_alive "${expansion_root}"; then
+          local refusal_reason
+          refusal_reason="$(local_runtime_tracked_pid_refusal_reason "${expansion_status}" "${expansion_role}")"
+          echo "[local-runtime-processes] refusing to expand descendants for pid ${expansion_root}: ${refusal_reason}" >&2
+          return 2
+        fi
+        ;;
+    esac
+  done
+
+  [[ "${added_pids}" -eq 1 ]]
+}
+
+local_runtime_discover_descendants_for_tracked_pid_with_quiesce() {
+  local expected_owner_token="$1"
+  local expansion_root="$2"
+  local sleep_seconds="$3"
+  local attempts="$4"
+  local attempt discover_status added_pids=0
+
+  for attempt in $(seq 1 "${attempts}"); do
+    if local_runtime_discover_owned_tree_candidates_from_stream "${expected_owner_token}" \
+      < <(local_runtime_descendant_pids "${expansion_root}"); then
+      discover_status=0
+    else
+      discover_status=$?
+    fi
+    case "${discover_status}" in
+      0)
+        added_pids=1
+        ;;
+      1)
+        ;;
+      *)
+        return "${discover_status}"
+        ;;
+    esac
+    [[ "${attempt}" -lt "${attempts}" ]] || break
+    sleep "${sleep_seconds}"
+  done
+
+  [[ "${added_pids}" -eq 1 ]]
+}
+
+local_runtime_quiesce_authoritative_descendant_discovery() {
+  local expected_owner_token="$1"
+  local root_pid="$2"
+  local sleep_seconds="$3"
+  local attempts="$4"
+  local attempt discover_status added_pids=0
+
+  for attempt in $(seq 1 "${attempts}"); do
+    if local_runtime_discover_authoritative_descendants_for_tracked_pids "${expected_owner_token}" "${root_pid}"; then
+      discover_status=0
+    else
+      discover_status=$?
+    fi
+    case "${discover_status}" in
+      0)
+        added_pids=1
+        ;;
+      1)
+        ;;
+      *)
+        return "${discover_status}"
+        ;;
+    esac
+    [[ "${attempt}" -lt "${attempts}" ]] || break
+    sleep "${sleep_seconds}"
+  done
+
+  [[ "${added_pids}" -eq 1 ]]
+}
+
+local_runtime_find_untracked_owned_tree_hint_pid_from_stream() {
+  local tree_pid
+  while read -r tree_pid; do
+    [[ -n "${tree_pid}" ]] || continue
+    [[ -z "${tracked_pids[${tree_pid}]+x}" ]] || continue
+    local_runtime_pid_is_alive "${tree_pid}" || continue
+    printf '%s\n' "${tree_pid}"
+    return 0
+  done
+  return 1
+}
+
+local_runtime_find_untracked_owned_tree_hint_pid_with_quiesce() {
+  local expected_owner_token="$1"
+  local service_kind="$2"
+  local root_pid="$3"
+  local sleep_seconds="$4"
+  local attempts="$5"
+  local attempt hint_pid
+
+  for attempt in $(seq 1 "${attempts}"); do
+    hint_pid="$(local_runtime_find_untracked_owned_tree_hint_pid_from_stream \
+      < <(local_runtime_owned_tree_process_pids_all "${expected_owner_token}" "${service_kind}" "${root_pid}") || true)"
+    if [[ -n "${hint_pid}" ]]; then
+      printf '%s\n' "${hint_pid}"
+      return 0
+    fi
+    [[ "${attempt}" -lt "${attempts}" ]] || break
+    sleep "${sleep_seconds}"
+  done
+
+  return 1
+}
+
 local_runtime_remove_sidecars_for_pid() {
   local pid="$1"
   local state_dir
@@ -729,52 +911,81 @@ local_runtime_stop_owned_process_tree() {
   local pid="$1"
   local service_kind="${2:-}"
   local port="${3:-}"
-  local sidecar_file expected_owner_token root_process_group_id root_session_id
+  local sidecar_file expected_owner_token root_process_group_id root_session_id sidecar_token sidecar_command sidecar_schema_version root_is_alive=0
   [[ -n "${pid}" ]] || return 0
-  if ! local_runtime_pid_is_alive "${pid}"; then
-    local_runtime_remove_sidecars_for_pid "${pid}"
-    return 0
-  fi
 
-  local_runtime_verify_owned_process "${pid}" "${service_kind}" "${port}" || return 1
-  sidecar_file="$(local_runtime_find_sidecar "${pid}" "${service_kind}" "${port}")" || return 1
-  expected_owner_token="$(local_runtime_read_sidecar_field "${sidecar_file}" owner_token || true)"
-  root_process_group_id="$(local_runtime_process_group_id "${pid}" || true)"
-  root_session_id="$(local_runtime_process_session_id "${pid}" || true)"
+  sidecar_file="$(local_runtime_find_sidecar "${pid}" "${service_kind}" "${port}")" || {
+    echo "[local-runtime-processes] ownership verification failed for pid ${pid}: missing sidecar" >&2
+    return 1
+  }
+  if [[ -n "${LOCAL_RUNTIME_OWNER_TOKEN:-}" ]]; then
+    expected_owner_token="$(local_runtime_read_sidecar_field "${sidecar_file}" owner_token || true)"
+    if [[ "${expected_owner_token}" != "${LOCAL_RUNTIME_OWNER_TOKEN}" ]]; then
+      echo "[local-runtime-processes] ownership verification failed for pid ${pid}: owner token mismatch" >&2
+      return 1
+    fi
+  else
+    expected_owner_token="$(local_runtime_read_sidecar_field "${sidecar_file}" owner_token || true)"
+  fi
+  sidecar_schema_version="$(local_runtime_read_sidecar_field "${sidecar_file}" schema_version || true)"
+  sidecar_token="$(local_runtime_read_sidecar_field "${sidecar_file}" process_identity.token || true)"
+  sidecar_command="$(local_runtime_read_sidecar_field "${sidecar_file}" command || true)"
+  root_process_group_id="$(local_runtime_read_sidecar_field "${sidecar_file}" process_group_id || true)"
+  root_session_id="$(local_runtime_read_sidecar_field "${sidecar_file}" session_id || true)"
+
+  if local_runtime_pid_is_alive "${pid}"; then
+    local_runtime_verify_owned_process "${pid}" "${service_kind}" "${port}" || return 1
+    root_is_alive=1
+    root_process_group_id="$(local_runtime_process_group_id "${pid}" || printf '%s\n' "${root_process_group_id}")"
+    root_session_id="$(local_runtime_process_session_id "${pid}" || printf '%s\n' "${root_session_id}")"
+  elif [[ ! "${sidecar_schema_version}" =~ ^[0-9]+$ || "${sidecar_schema_version}" -lt 2 ]]; then
+    echo "[local-runtime-processes] ownership verification failed for pid ${pid}: legacy sidecar schema does not support post-root cleanup" >&2
+    return 1
+  elif [[ -z "${root_process_group_id}" && -z "${root_session_id}" ]]; then
+    echo "[local-runtime-processes] ownership verification failed for pid ${pid}: missing post-root cleanup authority" >&2
+    return 1
+  fi
 
   local pids=()
   local tree_pid captured_token captured_start_time failed_signal=0 ownership_status signal_role refusal_reason track_status
   declare -A captured_tokens=()
   declare -A captured_start_times=()
   declare -A tracked_pids=()
-  while read -r tree_pid; do
-    [[ -n "${tree_pid}" ]] || continue
-    [[ -z "${tracked_pids[${tree_pid}]+x}" ]] || continue
-    captured_token="$(local_runtime_process_identity_token "${tree_pid}" || true)"
-    captured_start_time="$(local_runtime_process_start_time "${tree_pid}" || true)"
-    if [[ -z "${captured_token}" ]]; then
-      if local_runtime_pid_is_alive "${tree_pid}"; then
-        if [[ "${tree_pid}" != "${pid}" ]] && local_runtime_process_owner_token_matches "${tree_pid}" "${expected_owner_token}"; then
-          pids+=("${tree_pid}")
-          tracked_pids["${tree_pid}"]=1
-          captured_tokens["${tree_pid}"]=""
-          captured_start_times["${tree_pid}"]="${captured_start_time}"
-          continue
-        fi
-        if [[ "${tree_pid}" == "${pid}" ]]; then
-          echo "[local-runtime-processes] ownership verification failed for pid ${tree_pid}: cannot capture root process identity" >&2
+  if [[ "${root_is_alive}" -eq 1 ]]; then
+    while read -r tree_pid; do
+      [[ -n "${tree_pid}" ]] || continue
+      [[ -z "${tracked_pids[${tree_pid}]+x}" ]] || continue
+      captured_token="$(local_runtime_process_identity_token "${tree_pid}" || true)"
+      captured_start_time="$(local_runtime_process_start_time "${tree_pid}" || true)"
+      if [[ -z "${captured_token}" ]]; then
+        if local_runtime_pid_is_alive "${tree_pid}"; then
+          if [[ "${tree_pid}" != "${pid}" ]] && local_runtime_process_owner_token_matches "${tree_pid}" "${expected_owner_token}"; then
+            pids+=("${tree_pid}")
+            tracked_pids["${tree_pid}"]=1
+            captured_tokens["${tree_pid}"]=""
+            captured_start_times["${tree_pid}"]="${captured_start_time}"
+            continue
+          fi
+          if [[ "${tree_pid}" == "${pid}" ]]; then
+            echo "[local-runtime-processes] ownership verification failed for pid ${tree_pid}: cannot capture root process identity" >&2
+            return 1
+          fi
+          echo "[local-runtime-processes] ownership verification failed for pid ${tree_pid}: cannot confirm descendant ownership" >&2
           return 1
         fi
-        echo "[local-runtime-processes] ownership verification failed for pid ${tree_pid}: cannot confirm descendant ownership" >&2
-        return 1
+        continue
       fi
-      continue
-    fi
-    pids+=("${tree_pid}")
-    tracked_pids["${tree_pid}"]=1
-    captured_tokens["${tree_pid}"]="${captured_token}"
-    captured_start_times["${tree_pid}"]="${captured_start_time}"
-  done < <(local_runtime_process_tree_pids "${pid}")
+      pids+=("${tree_pid}")
+      tracked_pids["${tree_pid}"]=1
+      captured_tokens["${tree_pid}"]="${captured_token}"
+      captured_start_times["${tree_pid}"]="${captured_start_time}"
+    done < <(local_runtime_process_tree_pids "${pid}")
+  else
+    pids+=("${pid}")
+    tracked_pids["${pid}"]=1
+    captured_tokens["${pid}"]="${sidecar_token}"
+    captured_start_times["${pid}"]=""
+  fi
 
   for tree_pid in "${pids[@]}"; do
     signal_role="descendant"
@@ -786,6 +997,18 @@ local_runtime_stop_owned_process_tree() {
         ;;
       identity_match|owner_token_match|start_time_match)
         kill -TERM "${tree_pid}" >/dev/null 2>&1 || true
+        if local_runtime_discover_descendants_for_tracked_pid_with_quiesce "${expected_owner_token}" "${tree_pid}" 0.005 20; then
+          track_status=0
+        else
+          track_status=$?
+        fi
+        case "${track_status}" in
+          0|1)
+            ;;
+          *)
+            return "${track_status}"
+            ;;
+        esac
         continue
         ;;
     esac
@@ -800,7 +1023,31 @@ local_runtime_stop_owned_process_tree() {
   local term_grace_attempts term_grace_sleep_seconds term_tracked_pids_exited=0
   term_grace_attempts="$(local_runtime_term_grace_attempts)"
   term_grace_sleep_seconds="$(local_runtime_term_grace_sleep_seconds)"
+  if local_runtime_quiesce_authoritative_descendant_discovery "${expected_owner_token}" "${pid}" 0.01 10; then
+    track_status=0
+  else
+    track_status=$?
+  fi
+  case "${track_status}" in
+    0|1)
+      ;;
+    *)
+      return "${track_status}"
+      ;;
+  esac
   for _ in $(seq 1 "${term_grace_attempts}"); do
+    if local_runtime_discover_authoritative_descendants_for_tracked_pids "${expected_owner_token}" "${pid}"; then
+      track_status=0
+    else
+      track_status=$?
+    fi
+    case "${track_status}" in
+      0|1)
+        ;;
+      *)
+        return "${track_status}"
+        ;;
+    esac
     if local_runtime_all_pids_exited "${pids[@]}"; then
       term_tracked_pids_exited=1
       break
@@ -808,82 +1055,45 @@ local_runtime_stop_owned_process_tree() {
     sleep "${term_grace_sleep_seconds}"
   done
 
-  local expansion_root expansion_role expansion_status
-  for expansion_root in "${pids[@]}"; do
-    expansion_role="descendant"
-    [[ "${expansion_root}" == "${pid}" ]] && expansion_role="root"
-    expansion_status="$(local_runtime_tracked_pid_ownership_status "${expansion_root}" "${captured_tokens[${expansion_root}]}" "${expected_owner_token}" "${expansion_role}" "${captured_start_times[${expansion_root}]}")"
-    case "${expansion_status}" in
-      exited)
-        continue
-        ;;
-      identity_match|owner_token_match|start_time_match)
-        while read -r tree_pid; do
-          [[ -n "${tree_pid}" ]] || continue
-          [[ -z "${tracked_pids[${tree_pid}]+x}" ]] || continue
-          captured_token="$(local_runtime_process_identity_token "${tree_pid}" || true)"
-          captured_start_time="$(local_runtime_process_start_time "${tree_pid}" || true)"
-          if [[ -z "${captured_token}" ]]; then
-            if ! local_runtime_pid_is_alive "${tree_pid}"; then
-              continue
-            fi
-            if local_runtime_process_owner_token_matches "${tree_pid}" "${expected_owner_token}"; then
-              pids+=("${tree_pid}")
-              tracked_pids["${tree_pid}"]=1
-              captured_tokens["${tree_pid}"]=""
-              captured_start_times["${tree_pid}"]="${captured_start_time}"
-              continue
-            fi
-            echo "[local-runtime-processes] ownership verification failed for pid ${tree_pid}: cannot confirm descendant ownership" >&2
-            return 1
-          fi
-          pids+=("${tree_pid}")
-          tracked_pids["${tree_pid}"]=1
-          captured_tokens["${tree_pid}"]="${captured_token}"
-          captured_start_times["${tree_pid}"]="${captured_start_time}"
-        done < <(local_runtime_descendant_pids "${expansion_root}")
-        ;;
-      *)
-        if [[ "${expansion_role}" == "root" ]] && local_runtime_pid_is_alive "${expansion_root}"; then
-          refusal_reason="$(local_runtime_tracked_pid_refusal_reason "${expansion_status}" "${expansion_role}")"
-          echo "[local-runtime-processes] refusing to expand descendants for pid ${expansion_root}: ${refusal_reason}" >&2
-          return 1
-        fi
-        ;;
-    esac
-  done
-
-  if [[ "${term_tracked_pids_exited}" -eq 1 ]]; then
-    while read -r tree_pid; do
-      if local_runtime_track_owned_tree_candidate_pid "${tree_pid}" "${expected_owner_token}"; then
-        track_status=0
-      else
-        track_status=$?
-      fi
-      case "${track_status}" in
-        0|1)
-          ;;
-        *)
-          return 1
-          ;;
-      esac
-    done < <(local_runtime_owned_tree_process_pids "${expected_owner_token}" "${service_kind}" "${pid}" "${root_process_group_id}" "${root_session_id}")
+  if local_runtime_discover_authoritative_descendants_for_tracked_pids "${expected_owner_token}" "${pid}"; then
+    track_status=0
+  else
+    track_status=$?
   fi
+  case "${track_status}" in
+    0|1)
+      ;;
+    *)
+      return "${track_status}"
+      ;;
+  esac
 
-  local post_term_quiesce_status late_discovery_rounds=0 all_exited_after_kill=0
-  if [[ "${term_tracked_pids_exited}" -eq 1 ]]; then
-    if local_runtime_discover_owned_tree_candidates_with_quiesce "${expected_owner_token}" "${service_kind}" "${pid}" "${term_grace_sleep_seconds}" 3; then
-      post_term_quiesce_status=0
+  if [[ "${root_is_alive}" -eq 1 && "${term_tracked_pids_exited}" -eq 1 ]]; then
+    if local_runtime_discover_same_session_or_group_owned_tree_candidates "${expected_owner_token}" "${service_kind}" "${pid}" "${root_process_group_id}" "${root_session_id}"; then
+      track_status=0
     else
-      post_term_quiesce_status=$?
+      track_status=$?
     fi
-    case "${post_term_quiesce_status}" in
+    case "${track_status}" in
       0|1)
         ;;
       *)
-        return 1
+        return "${track_status}"
         ;;
     esac
+  fi
+
+  local late_discovery_hint_pid="" late_discovery_status late_discovery_attempts_after_term
+  if [[ "${term_tracked_pids_exited}" -eq 1 ]]; then
+    late_discovery_attempts_after_term=3
+    if ! local_runtime_has_tracked_descendants "${pid}" "${pids[@]}" && [[ "${sidecar_command}" =~ ^(bash|sh|zsh)([[:space:]]|$) ]]; then
+      late_discovery_attempts_after_term=20
+    fi
+    late_discovery_hint_pid="$(local_runtime_find_untracked_owned_tree_hint_pid_with_quiesce "${expected_owner_token}" "${service_kind}" "${pid}" "${term_grace_sleep_seconds}" "${late_discovery_attempts_after_term}" || true)"
+    if [[ -n "${late_discovery_hint_pid}" ]]; then
+      echo "[local-runtime-processes] ownership verification failed for pid ${late_discovery_hint_pid}: cannot confirm descendant ownership" >&2
+      return 1
+    fi
   fi
 
   if local_runtime_all_pids_exited "${pids[@]}"; then
@@ -891,7 +1101,7 @@ local_runtime_stop_owned_process_tree() {
     return 0
   fi
 
-  local kill_grace_attempts kill_grace_sleep_seconds
+  local all_exited_after_kill=0 kill_grace_attempts kill_grace_sleep_seconds late_discovery_attempts_after_kill
   kill_grace_attempts="$(local_runtime_kill_grace_attempts)"
   kill_grace_sleep_seconds="$(local_runtime_kill_grace_sleep_seconds)"
   while true; do
@@ -919,6 +1129,18 @@ local_runtime_stop_owned_process_tree() {
 
     all_exited_after_kill=0
     for _ in $(seq 1 "${kill_grace_attempts}"); do
+      if local_runtime_discover_authoritative_descendants_for_tracked_pids "${expected_owner_token}" "${pid}"; then
+        track_status=0
+      else
+        track_status=$?
+      fi
+      case "${track_status}" in
+        0|1)
+          ;;
+        *)
+          return "${track_status}"
+          ;;
+      esac
       if local_runtime_all_pids_exited "${pids[@]}"; then
         all_exited_after_kill=1
         break
@@ -928,27 +1150,18 @@ local_runtime_stop_owned_process_tree() {
 
     [[ "${all_exited_after_kill}" -eq 1 ]] || break
 
-    if local_runtime_discover_owned_tree_candidates_with_quiesce "${expected_owner_token}" "${service_kind}" "${pid}" "${kill_grace_sleep_seconds}" 2; then
-      post_term_quiesce_status=0
-    else
-      post_term_quiesce_status=$?
+    late_discovery_attempts_after_kill=2
+    if ! local_runtime_has_tracked_descendants "${pid}" "${pids[@]}" && [[ "${sidecar_command}" =~ ^(bash|sh|zsh)([[:space:]]|$) ]]; then
+      late_discovery_attempts_after_kill=20
     fi
-    case "${post_term_quiesce_status}" in
-      0)
-        late_discovery_rounds=$((late_discovery_rounds + 1))
-        if [[ "${late_discovery_rounds}" -gt 3 ]]; then
-          break
-        fi
-        continue
-        ;;
-      1)
-        local_runtime_remove_sidecars_for_pid "${pid}"
-        return 0
-        ;;
-      *)
-        return 1
-        ;;
-    esac
+    late_discovery_hint_pid="$(local_runtime_find_untracked_owned_tree_hint_pid_with_quiesce "${expected_owner_token}" "${service_kind}" "${pid}" "${kill_grace_sleep_seconds}" "${late_discovery_attempts_after_kill}" || true)"
+    if [[ -n "${late_discovery_hint_pid}" ]]; then
+      echo "[local-runtime-processes] ownership verification failed for pid ${late_discovery_hint_pid}: cannot confirm descendant ownership" >&2
+      return 1
+    fi
+
+    local_runtime_remove_sidecars_for_pid "${pid}"
+    return 0
   done
 
   echo "[local-runtime-processes] failed to stop owned ${service_kind:-process} tree rooted at pid ${pid}" >&2

@@ -589,6 +589,7 @@ describe('chat-llm-runner', () => {
     const server = http.createServer();
     servers.push(server);
     const wss = new WebSocketServer({ noServer: true });
+    let upstreamStarted = false;
     let upstreamAborted = false;
     let readyPayload: Record<string, unknown> | null = null;
     let donePayload: Record<string, unknown> | null = null;
@@ -597,6 +598,7 @@ describe('chat-llm-runner', () => {
     let connection: WebSocket | null = null;
 
     const upstreamServer = http.createServer((req) => {
+      upstreamStarted = true;
       req.on('aborted', () => {
         upstreamAborted = true;
       });
@@ -650,15 +652,6 @@ describe('chat-llm-runner', () => {
             },
           },
         }));
-        setTimeout(() => {
-          cancelSent = true;
-          ws.send(JSON.stringify({
-            type: 'server.request.cancel',
-            request_id: 'req_chat_cancel',
-            timestamp: new Date().toISOString(),
-            payload: { reason: 'client_cancelled' },
-          }));
-        }, 50);
       });
       ws.on('message', (raw) => {
         const message = JSON.parse(raw.toString('utf-8')) as {
@@ -719,17 +712,207 @@ describe('chat-llm-runner', () => {
       });
 
     await expect
+      .poll(() => upstreamStarted, { timeout: 5_000, intervals: [10, 25, 50, 100] })
+      .toBe(true);
+
+    cancelSent = true;
+    connection?.send(JSON.stringify({
+      type: 'server.request.cancel',
+      request_id: 'req_chat_cancel',
+      timestamp: new Date().toISOString(),
+      payload: { reason: 'client_cancelled' },
+    }));
+
+    await expect
       .poll(
-        () => ({ cancelSent, upstreamAborted, finish: donePayload?.finish_reason }),
-        { timeout: 30_000, intervals: [100, 250, 500] },
+        () => ({
+          cancelSent,
+          upstreamAborted,
+          finish: donePayload?.finish_reason,
+          errorPayload,
+        }),
+        { timeout: 5_000, intervals: [25, 50, 100] },
       )
       .toEqual({
         cancelSent: true,
         upstreamAborted: true,
         finish: 'cancelled',
+        errorPayload: null,
+      });
+    expect(upstreamStarted).toBe(true);
+
+    await new Promise<void>((resolve) => {
+      if (!connection) {
+        resolve();
+        return;
+      }
+      connection.once('close', () => resolve());
+      connection.close();
+    });
+    await new Promise<void>((resolve) => {
+      runner.once('exit', () => resolve());
+      runner.kill('SIGTERM');
+      setTimeout(() => resolve(), 2_000);
+    });
+
+    expect(stderr.join('')).not.toContain('chat_runner_upstream_error');
+  }, 30_000);
+
+  it('cancels before the upstream request starts when the server cancels during pre-upstream session setup', async () => {
+    const server = http.createServer();
+    servers.push(server);
+    const wss = new WebSocketServer({ noServer: true });
+    const sessionRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'chat-runner-pre-upstream-cancel-'));
+    tempRoots.push(sessionRoot);
+    let upstreamStarted = false;
+    let upstreamAborted = false;
+    let readyPayload: Record<string, unknown> | null = null;
+    let donePayload: Record<string, unknown> | null = null;
+    let errorPayload: Record<string, unknown> | null = null;
+    let cancelSent = false;
+    let connection: WebSocket | null = null;
+
+    const upstreamServer = http.createServer((req) => {
+      upstreamStarted = true;
+      req.on('aborted', () => {
+        upstreamAborted = true;
+      });
+      req.on('close', () => {
+        upstreamAborted = true;
+      });
+    });
+    servers.push(upstreamServer);
+    await new Promise<void>((resolve, reject) => {
+      upstreamServer.once('error', reject);
+      upstreamServer.listen(0, '127.0.0.1', () => resolve());
+    });
+    const upstreamAddress = upstreamServer.address();
+    if (!upstreamAddress || typeof upstreamAddress === 'string') {
+      throw new Error('chat_runner_test_upstream_missing_address');
+    }
+    const upstreamBaseUrl = `http://127.0.0.1:${upstreamAddress.port}/api/v1`;
+
+    wss.on('connection', (ws) => {
+      connection = ws;
+      ws.send(JSON.stringify({
+        type: 'server.hello',
+        timestamp: new Date().toISOString(),
+        payload: {
+          protocol_version: '1.0',
+          heartbeat_interval_sec: 15,
+        },
+      }));
+      ws.once('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as {
+          type?: string;
+          payload?: Record<string, unknown>;
+        };
+        expect(message.type).toBe('agent.ready');
+        readyPayload = message.payload ?? {};
+        ws.send(JSON.stringify({
+          type: 'server.request.start',
+          request_id: 'req_chat_cancel_pre_upstream',
+          timestamp: new Date().toISOString(),
+          payload: {
+            messages: [{ role: 'user', content: 'cancel before upstream starts' }],
+            execution_context: {
+              interaction_kind: 'chat',
+              session_id: 'session_chat_cancel_pre_upstream',
+              workspace_id: 'ws_test',
+              project_id: 'proj_test',
+              endpoint_id: 'ep_test',
+              execution_ticket: 'exec_test',
+              api_base: upstreamBaseUrl,
+              username: 'tester',
+            },
+          },
+        }));
+        cancelSent = true;
+        ws.send(JSON.stringify({
+          type: 'server.request.cancel',
+          request_id: 'req_chat_cancel_pre_upstream',
+          timestamp: new Date().toISOString(),
+          payload: { reason: 'client_cancelled' },
+        }));
+      });
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as {
+          type?: string;
+          payload?: Record<string, unknown>;
+        };
+        if (message.type === 'agent.response.done') {
+          donePayload = message.payload ?? {};
+        }
+        if (message.type === 'agent.response.error') {
+          errorPayload = message.payload ?? {};
+        }
+      });
+    });
+
+    server.on('upgrade', (req, socket, head) => {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => resolve());
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('chat_runner_test_server_missing_address');
+    }
+
+    const runner = spawn(
+      'node_modules/.bin/tsx',
+      [path.resolve('packages/chat-llm-runner/src/index.ts')],
+      {
+        env: {
+          ...process.env,
+          MBOS_AGENT_WS_URL: `ws://127.0.0.1:${address.port}/api/v1/agent-execution/ws?agent_id=ag_chat_test`,
+          MBOS_AGENT_KEY: 'ask_test',
+          MBOS_CHAT_SESSION_ROOT: sessionRoot,
+          MBOS_CHAT_SESSION_JANITOR_INTERVAL_MS: '0',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    children.push(runner);
+
+    const stderr: string[] = [];
+    runner.stderr.on('data', (chunk) => {
+      stderr.push(chunk.toString('utf-8'));
+    });
+
+    await expect
+      .poll(
+        () => readyPayload?.runner_spec,
+        { timeout: 30_000, intervals: [250, 500, 1000] },
+      )
+      .toMatchObject({
+        interaction_kind: 'chat',
+        app_family: 'llm_runner',
       });
 
-    expect(errorPayload).toBeNull();
+    await expect
+      .poll(
+        () => ({
+          cancelSent,
+          finish: donePayload?.finish_reason,
+          errorPayload,
+        }),
+        { timeout: 5_000, intervals: [25, 50, 100] },
+      )
+      .toEqual({
+        cancelSent: true,
+        finish: 'cancelled',
+        errorPayload: null,
+      });
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(upstreamStarted).toBe(false);
+    expect(upstreamAborted).toBe(false);
 
     await new Promise<void>((resolve) => {
       if (!connection) {

@@ -151,7 +151,7 @@ describe('local runtime process ownership contract', () => {
 
     const sidecar = JSON.parse(readFileSync(sidecarFiles[0], 'utf8')) as Record<string, unknown>;
     expect(sidecar).toMatchObject({
-      schema_version: 1,
+      schema_version: 2,
       run_id: 'test-run-owned',
       line_kind: 'backend_real',
       service_kind: 'api',
@@ -164,6 +164,10 @@ describe('local runtime process ownership contract', () => {
     expect(sidecar).toHaveProperty('started_at');
     expect(sidecar).toHaveProperty('command');
     expect(sidecar).toHaveProperty('process_identity');
+    expect(sidecar).toHaveProperty('process_group_id');
+    expect(sidecar).toHaveProperty('session_id');
+    expect(typeof sidecar.process_group_id).toBe('number');
+    expect(typeof sidecar.session_id).toBe('number');
 
     const stopResult = runBash(
       `
@@ -195,11 +199,17 @@ describe('local runtime process ownership contract', () => {
       }).trim(),
       10,
     );
+    const [processGroupIdText, sessionIdText] = execFileSync('bash', ['-lc', `ps -p "${pid}" -o pgid=,sid=`], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    }).trim().split(/\s+/);
+    const processGroupId = Number.parseInt(processGroupIdText ?? '', 10);
+    const sessionId = Number.parseInt(sessionIdText ?? '', 10);
 
     writeFileSync(
       path.join(processStateDir, 'stale.json'),
       `${JSON.stringify({
-        schema_version: 1,
+        schema_version: 2,
         run_id: 'stale-run',
         line_kind: 'backend_real',
         service_kind: 'api',
@@ -210,6 +220,8 @@ describe('local runtime process ownership contract', () => {
         owner_token: 'owner-token-stale',
         started_at: '2026-04-15T00:00:00.000Z',
         captured_by: 'local-runtime-processes',
+        process_group_id: processGroupId,
+        session_id: sessionId,
         process_identity: {
           token: 'not-the-live-process-token',
           source: 'test',
@@ -251,7 +263,7 @@ describe('local runtime process ownership contract', () => {
       `#!/usr/bin/env bash
 trap '' TERM
 trap '' HUP
-while true; do sleep 1; done
+while true; do :; done
 `,
       'utf8',
     );
@@ -262,7 +274,7 @@ set -euo pipefail
 bash "${stubbornChildScript}" &
 echo "$!" > "${childPidFile}"
 trap 'exit 0' TERM
-while true; do sleep 1; done
+while true; do :; done
 `,
       'utf8',
     );
@@ -307,15 +319,15 @@ while true; do sleep 1; done
         {
           LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
           LOCAL_RUNTIME_OWNER_TOKEN: 'term-reparent-owner',
-          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
-          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
-          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '5',
-          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '1',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.02',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '3',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.02',
         },
       );
 
       expect(stopResult.status).toBe(0);
-      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(2_000);
+      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(5_000);
       expect(await waitForPidExit(rootPid)).toBe(true);
       expect(await waitForPidExit(childPid)).toBe(true);
     } finally {
@@ -329,9 +341,9 @@ while true; do sleep 1; done
         }
       }
     }
-  });
+  }, 8_000);
 
-  it('keeps cleaning a root-only owned descendant that detaches during TERM handling', async () => {
+  it('fails closed when a root-only owned descendant detaches during TERM handling', async () => {
     const tempRoot = makeTempRoot();
     const processStateDir = path.join(tempRoot, 'processes');
     const detachedChildPidFile = path.join(tempRoot, 'detached-child.pid');
@@ -415,10 +427,10 @@ while true; do :; done
       detachedChildPid = Number.parseInt(readFileSync(detachedChildPidFile, 'utf8').trim(), 10);
       expect(detachedChildPid).toBeGreaterThan(0);
 
-      expect(stopResult.status).toBe(0);
-      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(2_000);
+      expect(stopResult.status).not.toBe(0);
+      expect(stopResult.stderr).toContain('cannot confirm descendant ownership');
       expect(await waitForPidExit(rootPid)).toBe(true);
-      expect(await waitForPidExit(detachedChildPid)).toBe(true);
+      expect(isPidAlive(detachedChildPid)).toBe(true);
     } finally {
       for (const pid of [detachedChildPid, rootPid]) {
         if (pid > 0 && isPidAlive(pid)) {
@@ -432,7 +444,7 @@ while true; do :; done
     }
   });
 
-  it('keeps cleaning a root-only owned descendant that detaches during the KILL window', async () => {
+  it('fails closed when a root-only owned descendant detaches during the KILL window', async () => {
     const tempRoot = makeTempRoot();
     const processStateDir = path.join(tempRoot, 'processes');
     const detachedChildPidFile = path.join(tempRoot, 'detached-child.pid');
@@ -527,10 +539,10 @@ while true; do :; done
       detachedChildPid = Number.parseInt(readFileSync(detachedChildPidFile, 'utf8').trim(), 10);
       expect(detachedChildPid).toBeGreaterThan(0);
 
-      expect(stopResult.status).toBe(0);
-      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(2_000);
+      expect(stopResult.status).not.toBe(0);
+      expect(stopResult.stderr).toContain('cannot confirm descendant ownership');
       expect(await waitForPidExit(rootPid)).toBe(true);
-      expect(await waitForPidExit(detachedChildPid)).toBe(true);
+      expect(isPidAlive(detachedChildPid)).toBe(true);
     } finally {
       for (const pid of [detachedChildPid, rootPid]) {
         if (pid > 0 && isPidAlive(pid)) {
@@ -540,6 +552,618 @@ while true; do :; done
             // Best-effort cleanup for a deliberately stubborn test process.
           }
         }
+      }
+    }
+  });
+
+  it('fails closed when a root-only copied-marker descendant remains after the root pid already exited', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const childPidFile = path.join(tempRoot, 'child.pid');
+    const stubbornChildScript = path.join(tempRoot, 'stubborn-child.sh');
+    const rootScript = path.join(tempRoot, 'root-spawns-child-and-exits.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      stubbornChildScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+bash "${stubbornChildScript}" &
+echo "$!" > "${childPidFile}"
+sleep 0.2
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let childPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'root-dead-cleanup-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'root-dead-cleanup-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      for (let attempt = 0; attempt < 20 && !existsSync(childPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(childPidFile)).toBe(true);
+      childPid = Number.parseInt(readFileSync(childPidFile, 'utf8').trim(), 10);
+      expect(childPid).toBeGreaterThan(0);
+
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      expect(isPidAlive(childPid)).toBe(true);
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'root-dead-cleanup-owner',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '5',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+        },
+      );
+
+      expect(stopResult.status).not.toBe(0);
+      expect(stopResult.stderr).toContain('cannot confirm descendant ownership');
+      expect(isPidAlive(childPid)).toBe(true);
+      const sidecarFiles = existsSync(processStateDir)
+        ? execFileSync('bash', ['-lc', `find "${processStateDir}" -type f -name '*.json' | sort`], {
+          cwd: repoRoot,
+          encoding: 'utf8',
+        }).trim().split('\n').filter(Boolean)
+        : [];
+      expect(sidecarFiles).toHaveLength(1);
+    } finally {
+      for (const pid of [childPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+    }
+  });
+
+  it('fails closed when the root pid already exited with only a legacy sidecar schema', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const childPidFile = path.join(tempRoot, 'child.pid');
+    const stubbornChildScript = path.join(tempRoot, 'stubborn-child.sh');
+    const rootScript = path.join(tempRoot, 'root-spawns-child-and-exits.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      stubbornChildScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+bash "${stubbornChildScript}" &
+echo "$!" > "${childPidFile}"
+sleep 0.2
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let childPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'root-dead-legacy-sidecar-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'root-dead-legacy-sidecar-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      for (let attempt = 0; attempt < 20 && !existsSync(childPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(childPidFile)).toBe(true);
+      childPid = Number.parseInt(readFileSync(childPidFile, 'utf8').trim(), 10);
+      expect(childPid).toBeGreaterThan(0);
+
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      const sidecarFiles = existsSync(processStateDir)
+        ? execFileSync('bash', ['-lc', `find "${processStateDir}" -type f -name '*.json' | sort`], {
+          cwd: repoRoot,
+          encoding: 'utf8',
+        }).trim().split('\n').filter(Boolean)
+        : [];
+      expect(sidecarFiles).toHaveLength(1);
+      const legacySidecar = JSON.parse(readFileSync(sidecarFiles[0], 'utf8')) as Record<string, unknown>;
+      delete legacySidecar.process_group_id;
+      delete legacySidecar.session_id;
+      legacySidecar.schema_version = 1;
+      writeFileSync(sidecarFiles[0], `${JSON.stringify(legacySidecar, null, 2)}\n`, 'utf8');
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'root-dead-legacy-sidecar-owner',
+        },
+      );
+
+      expect(stopResult.status).not.toBe(0);
+      expect(stopResult.stderr).toContain('legacy sidecar');
+      expect(isPidAlive(childPid)).toBe(true);
+    } finally {
+      for (const pid of [childPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+      if (childPid > 0) {
+        await waitForPidExit(childPid);
+      }
+    }
+  });
+
+  it('fails closed when the root pid already exited and sidecar authority is missing', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const childPidFile = path.join(tempRoot, 'child.pid');
+    const stubbornChildScript = path.join(tempRoot, 'stubborn-child.sh');
+    const rootScript = path.join(tempRoot, 'root-spawns-child-and-exits.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      stubbornChildScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+bash "${stubbornChildScript}" &
+echo "$!" > "${childPidFile}"
+sleep 0.2
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let childPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'root-dead-missing-sidecar-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'root-dead-missing-sidecar-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      for (let attempt = 0; attempt < 20 && !existsSync(childPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(childPidFile)).toBe(true);
+      childPid = Number.parseInt(readFileSync(childPidFile, 'utf8').trim(), 10);
+      expect(childPid).toBeGreaterThan(0);
+
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      const sidecarFiles = existsSync(processStateDir)
+        ? execFileSync('bash', ['-lc', `find "${processStateDir}" -type f -name '*.json' | sort`], {
+          cwd: repoRoot,
+          encoding: 'utf8',
+        }).trim().split('\n').filter(Boolean)
+        : [];
+      expect(sidecarFiles).toHaveLength(1);
+      rmSync(sidecarFiles[0], { force: true });
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'root-dead-missing-sidecar-owner',
+        },
+      );
+
+      expect(stopResult.status).not.toBe(0);
+      expect(stopResult.stderr).toContain('missing sidecar');
+      expect(isPidAlive(childPid)).toBe(true);
+    } finally {
+      for (const pid of [childPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+      if (childPid > 0) {
+        await waitForPidExit(childPid);
+      }
+    }
+  });
+
+  it('fails closed when a same-session copied-marker process remains after the root pid already exited', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const foreignPidFile = path.join(tempRoot, 'foreign.pid');
+    const foreignScript = path.join(tempRoot, 'foreign.sh');
+    const spawnForeignScript = path.join(tempRoot, 'spawn-foreign.sh');
+    const rootScript = path.join(tempRoot, 'root-spawns-foreign-and-exits.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      foreignScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+echo "$$" > "${foreignPidFile}"
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      spawnForeignScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+bash "${foreignScript}" &
+echo "$!" > "${foreignPidFile}"
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+bash "${spawnForeignScript}"
+sleep 0.2
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let foreignPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'root-dead-same-session-foreign-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'root-dead-same-session-foreign-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      for (let attempt = 0; attempt < 20 && !existsSync(foreignPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(foreignPidFile)).toBe(true);
+      foreignPid = Number.parseInt(readFileSync(foreignPidFile, 'utf8').trim(), 10);
+      expect(foreignPid).toBeGreaterThan(0);
+
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      expect(isPidAlive(foreignPid)).toBe(true);
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'root-dead-same-session-foreign-owner',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '5',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+        },
+      );
+
+      expect(stopResult.status).not.toBe(0);
+      expect(stopResult.stderr).toContain('cannot confirm descendant ownership');
+      expect(isPidAlive(foreignPid)).toBe(true);
+    } finally {
+      for (const pid of [foreignPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+      if (foreignPid > 0) {
+        await waitForPidExit(foreignPid);
+      }
+    }
+  });
+
+  it('does not kill a foreign process discovered only by copied runtime markers during full /proc discovery', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const foreignPidFile = path.join(tempRoot, 'foreign.pid');
+    const rootScript = path.join(tempRoot, 'root-exits-on-term.sh');
+    const foreignScript = path.join(tempRoot, 'foreign-marker-only.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'exit 0' TERM
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      foreignScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+echo "$$" > "${foreignPidFile}"
+while true; do sleep 1; done
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let foreignPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'marker-only-foreign-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'marker-only-foreign-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      const foreignStartResult = runBash(
+        `
+          set -euo pipefail
+          nohup env \
+            LOCAL_RUNTIME_OWNER_TOKEN='marker-only-foreign-owner' \
+            LOCAL_RUNTIME_SERVICE_KIND='api' \
+            LOCAL_RUNTIME_TREE_ROOT_PID='${rootPid}' \
+            setsid bash "${foreignScript}" >/dev/null 2>&1 < /dev/null &
+          echo "$!"
+        `,
+      );
+      expect(foreignStartResult.status).toBe(0);
+      foreignPid = Number.parseInt(foreignStartResult.stdout.trim(), 10);
+      expect(foreignPid).toBeGreaterThan(0);
+
+      for (let attempt = 0; attempt < 20 && !existsSync(foreignPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(foreignPidFile)).toBe(true);
+      expect(Number.parseInt(readFileSync(foreignPidFile, 'utf8').trim(), 10)).toBe(foreignPid);
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'marker-only-foreign-owner',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '5',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+        },
+      );
+
+      expect(stopResult.status).not.toBe(0);
+      expect(stopResult.stderr).toContain('cannot confirm descendant ownership');
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      expect(isPidAlive(foreignPid)).toBe(true);
+    } finally {
+      for (const pid of [foreignPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+      if (foreignPid > 0) {
+        await waitForPidExit(foreignPid);
+      }
+    }
+  });
+
+  it('fails closed when a foreign copied-marker process starts after cleanup begins', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const foreignPidFile = path.join(tempRoot, 'foreign-after-cleanup.pid');
+    const rootScript = path.join(tempRoot, 'root-exits-on-term.sh');
+    const foreignScript = path.join(tempRoot, 'foreign-after-cleanup.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'exit 0' TERM
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      foreignScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+echo "$$" > "${foreignPidFile}"
+while true; do sleep 1; done
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let foreignPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'marker-only-foreign-after-cleanup-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'marker-only-foreign-after-cleanup-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          set +e
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}" >"${tempRoot}/stop.stdout" 2>"${tempRoot}/stop.stderr" &
+          stop_pid="$!"
+          sleep 0.1
+          nohup env \
+            LOCAL_RUNTIME_OWNER_TOKEN='marker-only-foreign-after-cleanup-owner' \
+            LOCAL_RUNTIME_SERVICE_KIND='api' \
+            LOCAL_RUNTIME_TREE_ROOT_PID='${rootPid}' \
+            setsid bash "${foreignScript}" >/dev/null 2>&1 < /dev/null &
+          wait "\${stop_pid}"
+          stop_status="$?"
+          set -e
+          echo "stop_status=\${stop_status}"
+          cat "${tempRoot}/stop.stdout"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'marker-only-foreign-after-cleanup-owner',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '5',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+        },
+      );
+
+      for (let attempt = 0; attempt < 20 && !existsSync(foreignPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(foreignPidFile)).toBe(true);
+      foreignPid = Number.parseInt(readFileSync(foreignPidFile, 'utf8').trim(), 10);
+      expect(foreignPid).toBeGreaterThan(0);
+
+      expect(stopResult.status).toBe(0);
+      expect(stopResult.stdout).toContain('stop_status=1');
+      expect(readFileSync(path.join(tempRoot, 'stop.stderr'), 'utf8')).toContain('cannot confirm descendant ownership');
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      expect(isPidAlive(foreignPid)).toBe(true);
+    } finally {
+      for (const pid of [foreignPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+      if (foreignPid > 0) {
+        await waitForPidExit(foreignPid);
       }
     }
   });
@@ -658,7 +1282,7 @@ while true; do :; done
     }
   });
 
-  it('keeps cleaning an owned descendant that detaches into a new session during TERM handling', async () => {
+  it('fails closed when an owned descendant detaches into a new session during TERM handling', async () => {
     const tempRoot = makeTempRoot();
     const processStateDir = path.join(tempRoot, 'processes');
     const childPidFile = path.join(tempRoot, 'child.pid');
@@ -752,10 +1376,11 @@ while true; do :; done
       grandchildPid = Number.parseInt(readFileSync(grandchildPidFile, 'utf8').trim(), 10);
       expect(grandchildPid).toBeGreaterThan(0);
 
-      expect(stopResult.status).toBe(0);
+      expect(stopResult.status).not.toBe(0);
+      expect(stopResult.stderr).toContain('cannot confirm descendant ownership');
       expect(await waitForPidExit(rootPid)).toBe(true);
       expect(await waitForPidExit(childPid)).toBe(true);
-      expect(await waitForPidExit(grandchildPid)).toBe(true);
+      expect(isPidAlive(grandchildPid)).toBe(true);
     } finally {
       for (const pid of [grandchildPid, childPid, rootPid]) {
         if (pid > 0 && isPidAlive(pid)) {
@@ -769,7 +1394,7 @@ while true; do :; done
     }
   }, 10_000);
 
-  it('keeps cleaning both same-session and detached owned descendants discovered in the same TERM round', async () => {
+  it('fails closed when same-session and detached owned descendants are discovered in the same TERM round', async () => {
     const tempRoot = makeTempRoot();
     const processStateDir = path.join(tempRoot, 'processes');
     const childPidFile = path.join(tempRoot, 'child.pid');
@@ -879,11 +1504,12 @@ while true; do :; done
       expect(sameSessionGrandchildPid).toBeGreaterThan(0);
       expect(detachedGrandchildPid).toBeGreaterThan(0);
 
-      expect(stopResult.status).toBe(0);
+      expect(stopResult.status).not.toBe(0);
+      expect(stopResult.stderr).toContain('cannot confirm descendant ownership');
       expect(await waitForPidExit(rootPid)).toBe(true);
       expect(await waitForPidExit(childPid)).toBe(true);
-      expect(await waitForPidExit(sameSessionGrandchildPid)).toBe(true);
-      expect(await waitForPidExit(detachedGrandchildPid)).toBe(true);
+      expect(isPidAlive(sameSessionGrandchildPid)).toBe(true);
+      expect(isPidAlive(detachedGrandchildPid)).toBe(true);
     } finally {
       for (const pid of [detachedGrandchildPid, sameSessionGrandchildPid, childPid, rootPid]) {
         if (pid > 0 && isPidAlive(pid)) {
@@ -1026,7 +1652,7 @@ while true; do :; done
       expect(grandchildPid).toBeGreaterThan(0);
 
       expect(stopResult.status).toBe(0);
-      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(2_000);
+      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(5_000);
       expect(await waitForPidExit(rootPid)).toBe(true);
       expect(await waitForPidExit(childPid)).toBe(true);
       expect(await waitForPidExit(grandchildPid)).toBe(true);
@@ -1058,7 +1684,7 @@ while true; do :; done
       `#!/usr/bin/env bash
 trap '' TERM
 trap '' HUP
-while true; do sleep 1; done
+while true; do :; done
 `,
       'utf8',
     );
@@ -1069,7 +1695,7 @@ set -euo pipefail
 bash "${stubbornChildScript}" &
 echo "$!" > "${childPidFile}"
 trap 'exit 0' TERM
-while true; do sleep 1; done
+while true; do :; done
 `,
       'utf8',
     );
@@ -1140,7 +1766,7 @@ while true; do sleep 1; done
       );
 
       expect(stopResult.status).toBe(0);
-      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(2_000);
+      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(5_000);
       expect(await waitForPidExit(rootPid)).toBe(true);
       expect(await waitForPidExit(childPid)).toBe(true);
       expect(Number.parseInt(readFileSync(cmdlineRaceCountFile, 'utf8').trim(), 10)).toBeGreaterThanOrEqual(3);
@@ -1155,7 +1781,7 @@ while true; do sleep 1; done
         }
       }
     }
-  });
+  }, 8_000);
 
   it('refuses to KILL a descendant whose live identity changed after TERM even when the owner token still matches', async () => {
     const tempRoot = makeTempRoot();

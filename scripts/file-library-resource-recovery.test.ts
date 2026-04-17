@@ -1,3 +1,8 @@
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -41,6 +46,36 @@ function buildProbe(
     notes: [],
     ...overrides,
   };
+}
+
+type StartupReportCliResult = ReturnType<typeof spawnSync>;
+type SummaryCliResult = ReturnType<typeof spawnSync>;
+
+function writeJsonFile(filePath: string, payload: unknown): void {
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function runStartupReportCli(args: readonly string[]): StartupReportCliResult {
+  return spawnSync(
+    'npx',
+    ['tsx', 'scripts/file-library-resource-recovery.ts', 'startup-report', ...args],
+    {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    },
+  );
+}
+
+function runSummaryCli(args: readonly string[]): SummaryCliResult {
+  return spawnSync(
+    'npx',
+    ['tsx', 'scripts/file-library-resource-recovery.ts', 'summary', ...args],
+    {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    },
+  );
 }
 
 describe('file library resource recovery', () => {
@@ -262,6 +297,122 @@ describe('file library resource recovery', () => {
         'unexpected api startup tcp connections remained before smoke steps: api-entry -> 127.0.0.1:19000 [ESTABLISHED] x1',
       ]),
     );
+  });
+
+  it('treats a missing failure-observation path as an absent optional snapshot when startup_candidate is the comparison source', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'file-library-startup-report-'));
+    const bootBaselinePath = path.join(root, 'boot-baseline.json');
+    const startupCandidatePath = path.join(root, 'startup-candidate.json');
+    const missingFailureObservationPath = path.join(root, 'failure-observation.json');
+    const outputPath = path.join(root, 'startup-report.json');
+
+    try {
+      const bootBaseline = buildSnapshot({
+        captured_at: '2026-04-15T09:55:00.000Z',
+      });
+      const startupCandidate = buildSnapshot({
+        captured_at: '2026-04-15T09:59:00.000Z',
+        api_processes: [
+          {
+            pid: 42001,
+            label: 'api-entry',
+            open_fd_count: 24,
+            socket_fd_count: 6,
+          },
+        ],
+      });
+
+      writeJsonFile(bootBaselinePath, bootBaseline);
+      writeJsonFile(startupCandidatePath, startupCandidate);
+
+      const result = runStartupReportCli([
+        '--boot-baseline', bootBaselinePath,
+        '--startup-candidate', startupCandidatePath,
+        '--failure-observation', missingFailureObservationPath,
+        '--comparison-current-source', 'startup_candidate',
+        '--output', outputPath,
+      ]);
+
+      expect(result.status).toBe(0);
+      const report = JSON.parse(readFileSync(outputPath, 'utf8')) as {
+        evidence_chain: {
+          failure_observation: FileLibraryResourceRecoverySnapshot | null;
+          comparison_current_source: string;
+        };
+      };
+      expect(report.evidence_chain.failure_observation).toBeNull();
+      expect(report.evidence_chain.comparison_current_source).toBe('startup_candidate');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when startup-report is given a declared ready-baseline path that disappears even if startup-candidate still exists', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'file-library-startup-report-required-ready-'));
+    const bootBaselinePath = path.join(root, 'boot-baseline.json');
+    const missingReadyBaselinePath = path.join(root, 'ready-baseline.json');
+    const startupCandidatePath = path.join(root, 'startup-candidate.json');
+    const outputPath = path.join(root, 'startup-report.json');
+
+    try {
+      writeJsonFile(bootBaselinePath, buildSnapshot({
+        captured_at: '2026-04-15T09:55:00.000Z',
+      }));
+      writeJsonFile(startupCandidatePath, buildSnapshot({
+        captured_at: '2026-04-15T09:59:00.000Z',
+      }));
+
+      const result = runStartupReportCli([
+        '--boot-baseline', bootBaselinePath,
+        '--ready-baseline', missingReadyBaselinePath,
+        '--startup-candidate', startupCandidatePath,
+        '--comparison-current-source', 'startup_candidate',
+        '--output', outputPath,
+      ]);
+
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain(
+        'startup-report requires the declared ready_baseline snapshot',
+      );
+      expect(`${result.stdout}\n${result.stderr}`).not.toContain(
+        'startup comparison current source startup_candidate requires a matching snapshot',
+      );
+      expect(existsSync(outputPath)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('raises a startup comparison error instead of surfacing ENOENT when comparison_current_source points at a missing optional snapshot', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'file-library-startup-report-missing-'));
+    const bootBaselinePath = path.join(root, 'boot-baseline.json');
+    const startupCandidatePath = path.join(root, 'startup-candidate.json');
+    const missingFailureObservationPath = path.join(root, 'failure-observation.json');
+    const outputPath = path.join(root, 'startup-report.json');
+
+    try {
+      writeJsonFile(bootBaselinePath, buildSnapshot({
+        captured_at: '2026-04-15T09:55:00.000Z',
+      }));
+      writeJsonFile(startupCandidatePath, buildSnapshot({
+        captured_at: '2026-04-15T09:59:00.000Z',
+      }));
+
+      const result = runStartupReportCli([
+        '--boot-baseline', bootBaselinePath,
+        '--startup-candidate', startupCandidatePath,
+        '--failure-observation', missingFailureObservationPath,
+        '--comparison-current-source', 'failure_observation',
+        '--output', outputPath,
+      ]);
+
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain(
+        'startup comparison current source failure_observation requires a matching snapshot',
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('fails startup verification when helper or gateway resources already drift before any smoke step runs', () => {
@@ -1221,5 +1372,105 @@ describe('file library resource recovery', () => {
     expect(summary.markdown).toContain('- ready_baseline_captured_at: 2026-04-15T10:00:00.000Z');
     expect(summary.markdown).toContain('- startup_candidate_captured_at: 2026-04-15T09:59:00.000Z');
     expect(summary.markdown).toContain('- failure_observation_captured_at: not_captured');
+  });
+
+  it('marks the final summary as failed when cleanup adds an extra finding after all recovery reports passed', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'file-library-summary-cleanup-'));
+    const bootBaselinePath = path.join(root, 'boot-baseline.json');
+    const readyBaselinePath = path.join(root, 'ready-baseline.json');
+    const reportPath = path.join(root, 'file-library-real-smoke.json');
+    const outputJsonPath = path.join(root, 'report.json');
+    const outputMarkdownPath = path.join(root, 'report.md');
+
+    try {
+      const bootBaseline = buildSnapshot({
+        captured_at: '2026-04-15T09:55:00.000Z',
+      });
+      const readyBaseline = buildSnapshot({
+        captured_at: '2026-04-15T10:00:00.000Z',
+      });
+      const passingReport = compareResourceRecoveryBaseline({
+        step: 'file-library-real-smoke',
+        baseline: readyBaseline,
+        current: readyBaseline,
+      });
+
+      writeJsonFile(bootBaselinePath, bootBaseline);
+      writeJsonFile(readyBaselinePath, readyBaseline);
+      writeJsonFile(reportPath, passingReport);
+
+      const result = runSummaryCli([
+        '--boot-baseline', bootBaselinePath,
+        '--ready-baseline', readyBaselinePath,
+        '--report', reportPath,
+        '--output-json', outputJsonPath,
+        '--output-markdown', outputMarkdownPath,
+        '--extra-finding', 'cleanup failed to stop the owned api process tree on port 21010 with exit code 9',
+      ]);
+
+      expect(result.status).toBe(0);
+      const summary = JSON.parse(readFileSync(outputJsonPath, 'utf8')) as {
+        status: string;
+        findings: string[];
+      };
+      const markdown = readFileSync(outputMarkdownPath, 'utf8');
+
+      expect(summary.status).toBe('fail');
+      expect(summary.findings).toContain(
+        'cleanup failed to stop the owned api process tree on port 21010 with exit code 9',
+      );
+      expect(markdown).toContain('- overall_status: fail');
+      expect(markdown).toContain(
+        '- cleanup failed to stop the owned api process tree on port 21010 with exit code 9',
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when summary is given a declared startup-candidate path that disappears even if ready-baseline still exists', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'file-library-summary-required-startup-'));
+    const bootBaselinePath = path.join(root, 'boot-baseline.json');
+    const readyBaselinePath = path.join(root, 'ready-baseline.json');
+    const missingStartupCandidatePath = path.join(root, 'startup-candidate.json');
+    const reportPath = path.join(root, 'file-library-real-smoke.json');
+    const outputJsonPath = path.join(root, 'report.json');
+    const outputMarkdownPath = path.join(root, 'report.md');
+
+    try {
+      const bootBaseline = buildSnapshot({
+        captured_at: '2026-04-15T09:55:00.000Z',
+      });
+      const readyBaseline = buildSnapshot({
+        captured_at: '2026-04-15T10:00:00.000Z',
+      });
+      const passingReport = compareResourceRecoveryBaseline({
+        step: 'file-library-real-smoke',
+        baseline: readyBaseline,
+        current: readyBaseline,
+      });
+
+      writeJsonFile(bootBaselinePath, bootBaseline);
+      writeJsonFile(readyBaselinePath, readyBaseline);
+      writeJsonFile(reportPath, passingReport);
+
+      const result = runSummaryCli([
+        '--boot-baseline', bootBaselinePath,
+        '--ready-baseline', readyBaselinePath,
+        '--startup-candidate', missingStartupCandidatePath,
+        '--report', reportPath,
+        '--output-json', outputJsonPath,
+        '--output-markdown', outputMarkdownPath,
+      ]);
+
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain(
+        'summary requires the declared startup_candidate snapshot',
+      );
+      expect(existsSync(outputJsonPath)).toBe(false);
+      expect(existsSync(outputMarkdownPath)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

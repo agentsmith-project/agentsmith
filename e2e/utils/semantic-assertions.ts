@@ -100,6 +100,18 @@ export function assertViewerLocalDateTimeMetadata(args: {
   }
 }
 
+export function assertSingularSemanticTargetMatchCount(args: {
+  count: number;
+  kind: string;
+  reference: string;
+}) {
+  if (args.count !== 1) {
+    throw new Error(
+      `visual semantic contract requires unique ${args.kind}: ${args.reference} (found ${args.count})`,
+    );
+  }
+}
+
 function assertViewportCondition(condition: boolean, message: string) {
   if (!condition) {
     throw new Error(message);
@@ -385,6 +397,22 @@ async function resolveSemanticTargetLocator(
   };
 }
 
+async function resolveSingularSemanticTargetLocator(
+  page: Page,
+  referenceValue: string,
+  kind: string,
+): Promise<{ locator: Locator; resolvedReference: SemanticTargetReference }> {
+  const { locator, resolvedReference } = await resolveSemanticTargetLocator(page, referenceValue);
+  await expect(
+    locator,
+    `visual semantic contract requires unique ${kind}: ${resolvedReference.raw}`,
+  ).toHaveCount(1);
+  return {
+    locator,
+    resolvedReference,
+  };
+}
+
 export function resolveProminentActionScopeTestIds(
   assertions: Pick<VisualBaselineSemanticAssertions, 'primaryActionTestIds'>
     & Partial<Pick<VisualBaselineSemanticAssertions, 'prominentActionScopeTestIds'>>,
@@ -443,8 +471,7 @@ export async function expectVisualSemanticAssertions(
   }
 
   for (const testId of assertions.requiredViewportTestIds) {
-    const { locator, resolvedReference } = await resolveSemanticTargetLocator(page, testId);
-    await expect(locator, `visual semantic contract requires unique viewport target: ${resolvedReference.raw}`).toHaveCount(1);
+    const { locator, resolvedReference } = await resolveSingularSemanticTargetLocator(page, testId, 'viewport target');
     await expect(locator, `visual semantic contract requires visible viewport target: ${resolvedReference.raw}`).toBeVisible();
 
     const box = await locator.boundingBox();
@@ -453,36 +480,30 @@ export async function expectVisualSemanticAssertions(
   }
 
   for (const testId of assertions.requiredViewerLocalDateTimeTestIds) {
-    const { locator, resolvedReference } = await resolveSemanticTargetLocator(page, testId);
-    const count = await locator.count();
-    expect(
-      count,
-      `visual semantic contract requires at least one viewer-local datetime target: ${resolvedReference.raw}`,
-    ).toBeGreaterThan(0);
+    const { locator, resolvedReference } = await resolveSingularSemanticTargetLocator(
+      page,
+      testId,
+      'viewer-local datetime target',
+    );
+    await expect(
+      locator,
+      `visual semantic contract requires visible viewer-local datetime target: ${resolvedReference.raw}`,
+    ).toBeVisible();
 
-    for (let index = 0; index < count; index += 1) {
-      const item = locator.nth(index);
-      await expect(
-        item,
-        `visual semantic contract requires visible viewer-local datetime target: ${resolvedReference.raw} (match ${index + 1} of ${count})`,
-      ).toBeVisible();
+    const metadata = await locator.evaluate((element) => ({
+      dateTime: element instanceof HTMLTimeElement ? element.dateTime : element.getAttribute('datetime'),
+      policy: element.getAttribute('data-visual-datetime-policy'),
+    }));
 
-      const metadata = await item.evaluate((element) => ({
-        dateTime: element instanceof HTMLTimeElement ? element.dateTime : element.getAttribute('datetime'),
-        policy: element.getAttribute('data-visual-datetime-policy'),
-      }));
-
-      assertViewerLocalDateTimeMetadata({
-        testId: `${resolvedReference.raw} (match ${index + 1} of ${count})`,
-        dateTime: metadata.dateTime,
-        policy: metadata.policy,
-      });
-    }
+    assertViewerLocalDateTimeMetadata({
+      testId: resolvedReference.raw,
+      dateTime: metadata.dateTime,
+      policy: metadata.policy,
+    });
   }
 
   for (const testId of assertions.primaryActionTestIds) {
-    const { locator, resolvedReference } = await resolveSemanticTargetLocator(page, testId);
-    await expect(locator, `visual semantic contract requires unique primary action: ${resolvedReference.raw}`).toHaveCount(1);
+    const { locator, resolvedReference } = await resolveSingularSemanticTargetLocator(page, testId, 'primary action');
     await expect(locator, `visual semantic contract requires visible primary action: ${resolvedReference.raw}`).toBeVisible();
     await expect(locator, `visual semantic contract requires primary action prominence: ${resolvedReference.raw}`)
       .toHaveAttribute('data-visual-prominence', 'primary');

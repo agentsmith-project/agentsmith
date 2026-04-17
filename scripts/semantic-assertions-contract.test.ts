@@ -1,15 +1,37 @@
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   assertProminentActionCountFits,
   assertProminentActionsUseDesignSystemMetadata,
   parseSemanticTargetReference,
   resolveProminentActionScopeTestIds,
+  assertSingularSemanticTargetMatchCount,
   assertViewerLocalDateTimeMetadata,
   summarizeProminentActionCandidates,
   assertViewportBoxFits,
   type ProminentActionCandidate,
 } from '../e2e/utils/semantic-assertions';
+
+function parseStoryFrontMatter(filePath: string) {
+  const source = readFileSync(filePath, 'utf8');
+  const match = source.match(/^---\n([\s\S]*?)\n---/);
+  if (!match?.[1]) {
+    throw new Error(`story front matter is missing in ${filePath}`);
+  }
+  return JSON.parse(match[1]) as {
+    runtimeData?: {
+      visualReview?: {
+        scenes?: Array<{
+          sceneId: string;
+          semanticAssertions?: {
+            requiredViewerLocalDateTimeTestIds?: string[];
+          };
+        }>;
+      };
+    };
+  };
+}
 
 describe('visual semantic viewport assertions', () => {
   const viewport = { width: 320, height: 240 };
@@ -155,6 +177,34 @@ describe('visual semantic viewport assertions', () => {
     })).not.toThrow();
   });
 
+  it('rejects duplicate raw viewer-local datetime targets instead of treating count > 0 as good enough', () => {
+    expect(() => assertSingularSemanticTargetMatchCount({
+      count: 2,
+      kind: 'viewer-local datetime target',
+      reference: 'notebook__task-last-activity',
+    })).toThrow(/requires unique viewer-local datetime target: notebook__task-last-activity/);
+  });
+
+  it('accepts a singular scoped viewer-local datetime target match', () => {
+    expect(() => assertSingularSemanticTargetMatchCount({
+      count: 1,
+      kind: 'viewer-local datetime target',
+      reference: 'notebook__task-card--task_001::notebook__task-last-activity',
+    })).not.toThrow();
+  });
+
+  it('requires the notebook lifecycle list story to use unique surface-scoped datetime targets', () => {
+    const story = parseStoryFrontMatter('e2e/stories/mock-lane/mock-lane-notebook-task-lifecycle.story.md');
+    const notebookLifecycleListScene = story.runtimeData?.visualReview?.scenes?.find(
+      (scene) => scene.sceneId === 'notebook-task-lifecycle-list',
+    );
+
+    expect(notebookLifecycleListScene?.semanticAssertions?.requiredViewerLocalDateTimeTestIds ?? []).toEqual([
+      'notebook__task-card--task_001::notebook__task-last-activity',
+      'notebook__task-card--task_001::notebook__task-created-at',
+    ]);
+  });
+
   it('parses a surface-scoped semantic target reference into unique surface and target ids', () => {
     expect(parseSemanticTargetReference('system-workspaces__editor::system-workspaces__detail-header-initialized-at')).toEqual({
       raw: 'system-workspaces__editor::system-workspaces__detail-header-initialized-at',
@@ -213,5 +263,89 @@ describe('visual semantic viewport assertions', () => {
         'system-workspaces__delete-confirm',
       ],
     })).toBeNull();
+  });
+});
+
+describe('visual semantic singular target auto-wait assertions', () => {
+  afterEach(() => {
+    vi.doUnmock('@playwright/test');
+    vi.resetModules();
+  });
+
+  it('waits for a viewport target to converge to a singular match before enforcing viewport semantics', async () => {
+    class SequencedLocator {
+      private readonly counts: number[];
+
+      constructor(counts: number[]) {
+        this.counts = [...counts];
+      }
+
+      async count() {
+        if (this.counts.length > 1) {
+          return this.counts.shift()!;
+        }
+        return this.counts[0] ?? 0;
+      }
+
+      async boundingBox() {
+        return {
+          x: 16,
+          y: 24,
+          width: 120,
+          height: 32,
+        };
+      }
+    }
+
+    vi.resetModules();
+    vi.doMock('@playwright/test', () => ({
+      expect(actual: { count?: () => Promise<number> }, message?: string) {
+        return {
+          async toHaveCount(expected: number) {
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+              if (typeof actual.count === 'function' && await actual.count() === expected) {
+                return;
+              }
+            }
+
+            const finalCount = typeof actual.count === 'function' ? await actual.count() : Number.NaN;
+            throw new Error(message ?? `expected locator count ${expected}, received ${finalCount}`);
+          },
+          async toBeVisible() {
+            return;
+          },
+        };
+      },
+    }));
+
+    const { expectVisualSemanticAssertions } = await import('../e2e/utils/semantic-assertions');
+    const viewportTarget = new SequencedLocator([0, 1]);
+    const page = {
+      locator(selector: string) {
+        if (selector === 'body') {
+          return new SequencedLocator([1]);
+        }
+        throw new Error(`unexpected selector: ${selector}`);
+      },
+      getByTestId(testId: string) {
+        if (testId === 'workspace__status') {
+          return viewportTarget;
+        }
+        throw new Error(`unexpected test id: ${testId}`);
+      },
+      viewportSize() {
+        return { width: 320, height: 240 };
+      },
+    };
+
+    await expect(expectVisualSemanticAssertions(page as never, {
+      forbiddenVisibleText: [],
+      forbiddenVisibleTextPatterns: [],
+      requiredViewportTestIds: ['workspace__status'],
+      requiredViewerLocalDateTimeTestIds: [],
+      primaryActionTestIds: [],
+      prominentActionScopeTestIds: [],
+      maxProminentActions: null,
+    })).resolves.toBeUndefined();
   });
 });

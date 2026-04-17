@@ -120,8 +120,8 @@
           "uxState": "happy",
           "semanticAssertions": {
             "requiredViewerLocalDateTimeTestIds": [
-              "notebook__task-last-activity",
-              "notebook__task-created-at"
+              "notebook__task-card--task_001::notebook__task-last-activity",
+              "notebook__task-card--task_001::notebook__task-created-at"
             ],
             "requiredViewportTestIds": [
               "notebook__create-task-btn"

@@ -1205,11 +1205,15 @@ export function buildResourceRecoverySummary(args: {
   startupCandidate?: FileLibraryResourceRecoverySnapshot | null;
   failureObservation?: FileLibraryResourceRecoverySnapshot | null;
   reports: readonly FileLibraryResourceRecoveryStepReport[];
+  extraFindings?: readonly string[];
 }): FileLibraryResourceRecoverySummary {
   if (!args.readyBaseline && !args.startupCandidate && !args.failureObservation) {
     throw new Error('resource recovery summary requires at least one of readyBaseline, startupCandidate, or failureObservation');
   }
-  const findings = args.reports.flatMap((report) => report.findings);
+  const findings = appendUniqueFindings(
+    args.reports.flatMap((report) => report.findings),
+    args.extraFindings ?? [],
+  );
   const baseSummary = {
     schema_version: 1 as const,
     generated_at: new Date().toISOString(),
@@ -1276,6 +1280,44 @@ function parseOptionalPidOption(argv: string[], flag: string): number | null {
     throw new Error(`${flag} requires a positive integer pid`);
   }
   return parsed;
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+}
+
+async function readOptionalJsonFile<T>(filePath: string | null): Promise<T | null> {
+  if (!filePath) {
+    return null;
+  }
+  try {
+    return await readJsonFile<T>(filePath);
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function readDeclaredJsonFile<T>(args: {
+  command: 'startup-report' | 'summary';
+  snapshotFamily: 'ready_baseline' | 'startup_candidate';
+  filePath: string | null;
+}): Promise<T | null> {
+  if (!args.filePath) {
+    return null;
+  }
+  try {
+    return await readJsonFile<T>(args.filePath);
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      throw new Error(
+        `${args.command} requires the declared ${args.snapshotFamily} snapshot at ${args.filePath} to exist once the path is provided`,
+      );
+    }
+    throw error;
+  }
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -1424,22 +1466,24 @@ async function runStartupReport(argv: string[]): Promise<void> {
       'startup-report requires --boot-baseline <path> --output <path> and at least one of --ready-baseline <path>, --startup-candidate <path>, --failure-observation <path>',
     );
   }
-  if (!readyBaselinePath && !startupCandidatePath && !failureObservationPath) {
+
+  const bootBaseline = await readJsonFile<FileLibraryResourceRecoverySnapshot>(bootBaselinePath);
+  const readyBaseline = await readDeclaredJsonFile<FileLibraryResourceRecoverySnapshot>({
+    command: 'startup-report',
+    snapshotFamily: 'ready_baseline',
+    filePath: readyBaselinePath,
+  });
+  const startupCandidate = await readDeclaredJsonFile<FileLibraryResourceRecoverySnapshot>({
+    command: 'startup-report',
+    snapshotFamily: 'startup_candidate',
+    filePath: startupCandidatePath,
+  });
+  const failureObservation = await readOptionalJsonFile<FileLibraryResourceRecoverySnapshot>(failureObservationPath);
+  if (!readyBaseline && !startupCandidate && !failureObservation) {
     throw new Error(
       'startup-report requires at least one of --ready-baseline <path>, --startup-candidate <path>, --failure-observation <path>',
     );
   }
-
-  const bootBaseline = await readJsonFile<FileLibraryResourceRecoverySnapshot>(bootBaselinePath);
-  const readyBaseline = readyBaselinePath
-    ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(readyBaselinePath)
-    : null;
-  const startupCandidate = startupCandidatePath
-    ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(startupCandidatePath)
-    : null;
-  const failureObservation = failureObservationPath
-    ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(failureObservationPath)
-    : null;
   const report = buildStartupResourceRecoveryReport({
     bootBaseline,
     readyBaseline,
@@ -1498,6 +1542,7 @@ async function runSummary(argv: string[]): Promise<void> {
   const outputJsonPath = parseOption(argv, '--output-json');
   const outputMarkdownPath = parseOption(argv, '--output-markdown');
   const reportPaths = parseMultiOption(argv, '--report');
+  const extraFindings = parseMultiOption(argv, '--extra-finding');
 
   if (!outputJsonPath || !outputMarkdownPath) {
     throw new Error('summary requires --output-json <path> --output-markdown <path>');
@@ -1505,24 +1550,26 @@ async function runSummary(argv: string[]): Promise<void> {
   if (reportPaths.length === 0) {
     throw new Error('summary requires at least one --report <path>');
   }
-  if (!readyBaselinePath && !startupCandidatePath && !failureObservationPath) {
-    throw new Error(
-      'summary requires at least one of --ready-baseline <path>, --startup-candidate <path>, --failure-observation <path>',
-    );
-  }
 
   const bootBaseline = bootBaselinePath
     ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(bootBaselinePath)
     : null;
-  const readyBaseline = readyBaselinePath
-    ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(readyBaselinePath)
-    : null;
-  const startupCandidate = startupCandidatePath
-    ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(startupCandidatePath)
-    : null;
-  const failureObservation = failureObservationPath
-    ? await readJsonFile<FileLibraryResourceRecoverySnapshot>(failureObservationPath)
-    : null;
+  const readyBaseline = await readDeclaredJsonFile<FileLibraryResourceRecoverySnapshot>({
+    command: 'summary',
+    snapshotFamily: 'ready_baseline',
+    filePath: readyBaselinePath,
+  });
+  const startupCandidate = await readDeclaredJsonFile<FileLibraryResourceRecoverySnapshot>({
+    command: 'summary',
+    snapshotFamily: 'startup_candidate',
+    filePath: startupCandidatePath,
+  });
+  const failureObservation = await readOptionalJsonFile<FileLibraryResourceRecoverySnapshot>(failureObservationPath);
+  if (!readyBaseline && !startupCandidate && !failureObservation) {
+    throw new Error(
+      'summary requires at least one of --ready-baseline <path>, --startup-candidate <path>, --failure-observation <path>',
+    );
+  }
   const reports = await Promise.all(
     reportPaths
       .filter(Boolean)
@@ -1534,6 +1581,7 @@ async function runSummary(argv: string[]): Promise<void> {
     startupCandidate,
     failureObservation,
     reports,
+    extraFindings,
   });
   await writeJsonFile(outputJsonPath, summary);
   await writeTextFile(outputMarkdownPath, summary.markdown);

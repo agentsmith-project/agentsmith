@@ -277,7 +277,7 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('if [[ "${RESOURCE_RECOVERY_PRE_READY_FAILURE}" == "1" ]]; then');
     expect(script).toContain('report_paths=("${RESOURCE_RECOVERY_STARTUP_JSON}")');
     expect(script).toContain('capture_resource_recovery_baseline "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"');
-    expect(script).toContain('--failure-observation "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"');
+    expect(script).toContain('startup_candidate_args+=(--failure-observation "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}")');
     expect(script).toContain('File library gate could not materialize startup resource recovery evidence before exiting.');
   });
 
@@ -292,11 +292,29 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(helperBody).toContain('capture_resource_recovery_baseline "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"');
     expect(helperBody).toContain('startup_candidate_args=(');
     expect(helperBody).toContain('--startup-candidate "${STARTUP_QUIESCE_SNAPSHOT_JSON}"');
-    expect(helperBody).toContain('--failure-observation "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"');
+    expect(helperBody).toContain('if [[ -f "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}" ]]; then');
+    expect(helperBody).toContain('startup_candidate_args+=(--failure-observation "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}")');
     expect(helperBody).toContain('if write_startup_resource_recovery_report "${failure_message}"');
     expect(helperBody).toContain('[[ -f "${RESOURCE_RECOVERY_STARTUP_JSON}" ]]');
     expect(helperBody).toContain('return 0');
     expect(helperBody).not.toContain('cp "${STARTUP_QUIESCE_SNAPSHOT_JSON}" "${RESOURCE_RECOVERY_BASELINE_JSON}"');
+  });
+
+  it('falls back to a plain failure-observation snapshot when owned api capture loses authority mid-materialization', () => {
+    const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const helperStart = script.indexOf('materialize_pre_ready_failure_evidence()');
+    const helperEnd = script.indexOf('write_resource_recovery_summary()', helperStart);
+    const helperBody = script.slice(helperStart, helperEnd);
+
+    expect(helperStart).toBeGreaterThanOrEqual(0);
+    expect(helperEnd).toBeGreaterThan(helperStart);
+    expect(helperBody).toContain('capture_resource_recovery_baseline "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"');
+    expect(helperBody).toContain('if [[ "${capture_status}" -ne 0 ]]; then');
+    expect(helperBody).toContain('local -a plain_snapshot_args=(');
+    expect(helperBody).toContain('snapshot');
+    expect(helperBody).toContain('--output "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"');
+    expect(helperBody).toContain('npx "${plain_snapshot_args[@]}"');
+    expect(helperBody).not.toContain('--api-pid "${API_PID}"');
   });
 
   it('runs stale JuiceFS orphan preflight before capturing the file-library boot baseline', () => {
@@ -404,13 +422,32 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('API_PID="$(resolve_owned_api_listener_pid');
   });
 
-  it('uses the owned root pid for cleanup and waits for the api port to go free', () => {
+  it('uses the owned root pid for cleanup, records cleanup failures, and still writes the summary first', () => {
     const script = readFileSync('scripts/run-file-library-real-gate.sh', 'utf8');
+    const cleanupStart = script.indexOf('cleanup() {');
+    const cleanupEnd = script.indexOf("trap 'cleanup $?' EXIT", cleanupStart);
+    const cleanupBody = script.slice(cleanupStart, cleanupEnd);
 
-    expect(script).toContain('local_runtime_stop_owned_process_tree "${API_ROOT_PID}" api "${API_PORT}" || true');
-    expect(script).toContain('local_runtime_wait_port_free "${API_PORT}" api 10 || true');
-    expect(script).not.toContain('kill "${API_PID}" >/dev/null 2>&1 || true');
-    expect(script).not.toContain('wait "${API_PID}" >/dev/null 2>&1 || true');
+    expect(cleanupStart).toBeGreaterThanOrEqual(0);
+    expect(cleanupEnd).toBeGreaterThan(cleanupStart);
+    expect(cleanupBody).toContain('write_resource_recovery_summary');
+    expect(cleanupBody).toContain('local cleanup_stop_status=0');
+    expect(cleanupBody).toContain('local cleanup_wait_status=0');
+    expect(cleanupBody).toContain('local -a summary_extra_args=()');
+    expect(cleanupBody).toContain('local_runtime_stop_owned_process_tree "${API_ROOT_PID}" api "${API_PORT}"');
+    expect(cleanupBody).toContain('cleanup_stop_status=$?');
+    expect(cleanupBody).toContain('local_runtime_wait_port_free "${API_PORT}" api 10');
+    expect(cleanupBody).toContain('cleanup_wait_status=$?');
+    expect(cleanupBody).toContain('summary_extra_args+=(');
+    expect(cleanupBody).toContain('--extra-finding');
+    expect(cleanupBody).toContain('cleanup failed to stop the owned api process tree');
+    expect(cleanupBody).toContain('cleanup failed to confirm api port');
+    expect(cleanupBody).toContain('write_resource_recovery_summary "${summary_extra_args[@]}"');
+    expect(cleanupBody).toContain('if [[ "${summary_status}" -ne 0 || "${cleanup_stop_status}" -ne 0 || "${cleanup_wait_status}" -ne 0 ]]; then');
+    expect(cleanupBody).not.toContain('local_runtime_stop_owned_process_tree "${API_ROOT_PID}" api "${API_PORT}" || true');
+    expect(cleanupBody).not.toContain('local_runtime_wait_port_free "${API_PORT}" api 10 || true');
+    expect(cleanupBody).not.toContain('kill "${API_PID}" >/dev/null 2>&1 || true');
+    expect(cleanupBody).not.toContain('wait "${API_PID}" >/dev/null 2>&1 || true');
   });
 
   it('waits for a minimally stable startup window before freezing the ready baseline so startup helper transients do not immediately poison it', () => {

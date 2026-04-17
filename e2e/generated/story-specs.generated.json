@@ -838,8 +838,8 @@
     "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/notebook",
     "goal": "用一组 mock-lane story scenes 统一描述 notebook task 从列表、创建、详情到产物检查的高频任务生命周期。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-notebook-task-lifecycle.story.md#mock-lane-notebook-task-lifecycle",
-    "sourceFingerprint": "c607dac760ba04a95462093d34fe57ff8ed56a47d58101c5ef96a1b95f497962",
-    "storyFingerprint": "e945cdc01afcb2fdbc8d162fea3ea61141b0ff6140e70348b352ce7da837b76d",
+    "sourceFingerprint": "27421c4e3c06c2494a5e8ee97f6593fd095a31142172636e969f4c94914d9609",
+    "storyFingerprint": "998fa887c4e7af822b42125c41d37e7d80264b4d4301eb623dd0696aa10ee3a8",
     "stepMapFingerprint": "fafa2add94be782963e45a8208404b3c19434432fa192bd4ea65d270302241de",
     "sceneIds": [
       "notebook-task-lifecycle-list",

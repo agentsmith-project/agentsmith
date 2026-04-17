@@ -164,11 +164,7 @@ describe('TaskList', () => {
     });
   };
 
-  const getTaskCard = (title: string) => {
-    const taskCard = screen.getByText(title).closest('[data-testid="notebook__task-card"]');
-    expect(taskCard).toBeTruthy();
-    return taskCard as HTMLElement;
-  };
+  const getTaskCardSurface = (taskId: string) => screen.getByTestId(`notebook__task-card--${taskId}`);
 
   describe('Loading State', () => {
     it('renders loading state', () => {
@@ -310,8 +306,8 @@ describe('TaskList', () => {
         wrapper,
       });
 
-      const firstTaskCard = getTaskCard('Test Task 1');
-      const lastActivity = within(firstTaskCard).getByTestId('notebook__task-last-activity');
+      const firstTaskCardSurface = getTaskCardSurface(mockTasks[0].id);
+      const lastActivity = within(firstTaskCardSurface).getByTestId('notebook__task-last-activity');
       const lastActivityRow = lastActivity.closest('span');
 
       expect(lastActivity).toHaveAttribute('dateTime', mockTasks[0].last_activity_at);
@@ -334,7 +330,7 @@ describe('TaskList', () => {
         wrapper,
       });
 
-      const createdAt = within(getTaskCard('Test Task 1')).getByTestId('notebook__task-created-at');
+      const createdAt = within(getTaskCardSurface(mockTasks[0].id)).getByTestId('notebook__task-created-at');
       const createdAtRow = createdAt.closest('span');
 
       expect(createdAt).toHaveAttribute('dateTime', mockTasks[0].created_at);
@@ -345,6 +341,33 @@ describe('TaskList', () => {
       expect(createdAtRow).toHaveTextContent('Created: Dec 31, 2023, 04:00 PM PST');
       expect(createdAt).not.toHaveTextContent(/:\d{2}:\d{2}/);
       expect(createdAt).not.toHaveTextContent(/\d{1,2}\/\d{1,2}\/\d{4}/);
+    });
+
+    it('scopes shared datetime targets to unique task card surfaces so visual review can target a single card', () => {
+      vi.mocked(useTasks).mockReturnValue({
+        data: { items: mockTasks.slice(0, 2), total: 2, page: 1, page_size: 10 },
+        isLoading: false,
+      } as any);
+
+      render(<TaskList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateTask={true} />, {
+        wrapper,
+      });
+
+      const firstTaskCardSurface = getTaskCardSurface(mockTasks[0].id);
+      const secondTaskCardSurface = getTaskCardSurface(mockTasks[1].id);
+
+      expect(within(firstTaskCardSurface).getByTestId('notebook__task-last-activity'))
+        .toHaveAttribute('dateTime', mockTasks[0].last_activity_at);
+      expect(within(firstTaskCardSurface).getByTestId('notebook__task-created-at'))
+        .toHaveAttribute('dateTime', mockTasks[0].created_at);
+      expect(within(secondTaskCardSurface).getByTestId('notebook__task-last-activity'))
+        .toHaveAttribute('dateTime', mockTasks[1].last_activity_at);
+      expect(within(secondTaskCardSurface).getByTestId('notebook__task-created-at'))
+        .toHaveAttribute('dateTime', mockTasks[1].created_at);
+      expect(screen.getAllByTestId('notebook__task-last-activity')).toHaveLength(2);
+      expect(screen.getAllByTestId('notebook__task-created-at')).toHaveLength(2);
+      expect(screen.queryByTestId(`notebook__task-last-activity--${mockTasks[0].id}`)).not.toBeInTheDocument();
+      expect(screen.queryByTestId(`notebook__task-created-at--${mockTasks[0].id}`)).not.toBeInTheDocument();
     });
   });
 

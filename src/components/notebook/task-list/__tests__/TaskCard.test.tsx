@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskCard } from '../TaskCard';
 
@@ -50,8 +50,9 @@ describe('TaskCard', () => {
   it('renders viewer-local task timestamps with machine-readable datetime metadata', () => {
     render(<TaskCard t={t} task={task} onClick={vi.fn()} />);
 
-    const lastActivity = screen.getByTestId('notebook__task-last-activity');
-    const createdAt = screen.getByTestId('notebook__task-created-at');
+    const cardSurface = screen.getByTestId(`notebook__task-card--${task.id}`);
+    const lastActivity = within(cardSurface).getByTestId('notebook__task-last-activity');
+    const createdAt = within(cardSurface).getByTestId('notebook__task-created-at');
 
     expect(lastActivity).toHaveAttribute('dateTime', task.last_activity_at);
     expect(lastActivity).toHaveAttribute('data-visual-datetime-policy', 'viewer_local');
@@ -61,5 +62,7 @@ describe('TaskCard', () => {
     expect(createdAt).toHaveAttribute('dateTime', task.created_at);
     expect(createdAt).toHaveAttribute('data-visual-datetime-policy', 'viewer_local');
     expect(createdAt).toHaveTextContent('Mar 18, 2026, 05:00 PM PDT');
+    expect(screen.queryByTestId(`notebook__task-last-activity--${task.id}`)).not.toBeInTheDocument();
+    expect(screen.queryByTestId(`notebook__task-created-at--${task.id}`)).not.toBeInTheDocument();
   });
 });

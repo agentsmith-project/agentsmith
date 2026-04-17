@@ -540,13 +540,30 @@ ensure_boot_resource_recovery_baseline() {
 materialize_pre_ready_failure_evidence() {
   local failure_message="$1"
   local current_listener_pid=""
-  local -a startup_candidate_args=(
-    --failure-observation "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"
-  )
+  local capture_status=0
+  local -a startup_candidate_args=()
   RESOURCE_RECOVERY_PRE_READY_FAILURE=1
   ensure_boot_resource_recovery_baseline
 
+  set +e
   capture_resource_recovery_baseline "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"
+  capture_status=$?
+  set -e
+  if [[ "${capture_status}" -ne 0 ]]; then
+    local -a plain_snapshot_args=(
+      tsx
+      "${ROOT_DIR}/scripts/file-library-resource-recovery.ts"
+      snapshot
+      --output "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}"
+    )
+    set +e
+    npx "${plain_snapshot_args[@]}"
+    capture_status=$?
+    set -e
+  fi
+  if [[ -f "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}" ]]; then
+    startup_candidate_args+=(--failure-observation "${RESOURCE_RECOVERY_FAILURE_OBSERVATION_JSON}")
+  fi
 
   if [[ -f "${STARTUP_QUIESCE_SNAPSHOT_JSON}" && -f "${STARTUP_QUIESCE_AUTHORITY_JSON}" ]]; then
     startup_candidate_args+=(--startup-candidate "${STARTUP_QUIESCE_SNAPSHOT_JSON}")
@@ -568,6 +585,7 @@ materialize_pre_ready_failure_evidence() {
 }
 
 write_resource_recovery_summary() {
+  local -a extra_summary_args=("$@")
   if [[ ! -f "${RESOURCE_RECOVERY_BOOT_BASELINE_JSON}" ]]; then
     return 0
   fi
@@ -611,6 +629,9 @@ write_resource_recovery_summary() {
   for report_path in "${report_paths[@]}"; do
     summary_args+=(--report "${report_path}")
   done
+  if [[ "${#extra_summary_args[@]}" -gt 0 ]]; then
+    summary_args+=("${extra_summary_args[@]}")
+  fi
 
   npx "${summary_args[@]}"
   RESOURCE_RECOVERY_SUMMARY_WRITTEN=1
@@ -619,6 +640,9 @@ write_resource_recovery_summary() {
 cleanup() {
   local exit_code="$1"
   local summary_status=0
+  local cleanup_stop_status=0
+  local cleanup_wait_status=0
+  local -a summary_extra_args=()
   trap - EXIT
   if [[ "${RESOURCE_RECOVERY_SUMMARY_WRITTEN}" != "1" ]]; then
     set +e
@@ -627,10 +651,32 @@ cleanup() {
     set -e
   fi
   if [[ -n "${API_ROOT_PID}" ]]; then
-    local_runtime_stop_owned_process_tree "${API_ROOT_PID}" api "${API_PORT}" || true
-    local_runtime_wait_port_free "${API_PORT}" api 10 || true
+    set +e
+    local_runtime_stop_owned_process_tree "${API_ROOT_PID}" api "${API_PORT}"
+    cleanup_stop_status=$?
+    local_runtime_wait_port_free "${API_PORT}" api 10
+    cleanup_wait_status=$?
+    set -e
   fi
-  if [[ "${summary_status}" -ne 0 ]]; then
+  if [[ "${cleanup_stop_status}" -ne 0 ]]; then
+    summary_extra_args+=(
+      --extra-finding
+      "cleanup failed to stop the owned api process tree on port ${API_PORT} with exit code ${cleanup_stop_status}"
+    )
+  fi
+  if [[ "${cleanup_wait_status}" -ne 0 ]]; then
+    summary_extra_args+=(
+      --extra-finding
+      "cleanup failed to confirm api port ${API_PORT} became free after stopping the owned api process tree with exit code ${cleanup_wait_status}"
+    )
+  fi
+  if [[ "${#summary_extra_args[@]}" -gt 0 ]]; then
+    set +e
+    write_resource_recovery_summary "${summary_extra_args[@]}"
+    summary_status=$?
+    set -e
+  fi
+  if [[ "${summary_status}" -ne 0 || "${cleanup_stop_status}" -ne 0 || "${cleanup_wait_status}" -ne 0 ]]; then
     exit_code=1
   fi
   exit "${exit_code}"

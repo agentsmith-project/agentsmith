@@ -85,7 +85,12 @@ setInterval(() => {}, 1000);
 function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
+    const stat = execFileSync('bash', ['-lc', `ps -p "${pid}" -o stat=`], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return stat !== '' && !stat.startsWith('Z');
   } catch {
     return false;
   }
@@ -326,6 +331,506 @@ while true; do sleep 1; done
     }
   });
 
+  it('keeps cleaning newly discovered owned descendants after root and child exit during TERM grace', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const childPidFile = path.join(tempRoot, 'child.pid');
+    const grandchildPidFile = path.join(tempRoot, 'grandchild.pid');
+    const stubbornGrandchildScript = path.join(tempRoot, 'stubborn-grandchild.sh');
+    const childScript = path.join(tempRoot, 'child-spawns-grandchild-on-term.sh');
+    const rootScript = path.join(tempRoot, 'root-exits-on-term.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      stubbornGrandchildScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+echo "$$" > "${grandchildPidFile}"
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      childScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'bash "${stubbornGrandchildScript}" & exit 0' TERM
+trap '' HUP
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+bash "${childScript}" &
+echo "$!" > "${childPidFile}"
+trap 'exit 0' TERM
+while true; do :; done
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let childPid = 0;
+    let grandchildPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'term-grandchild-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'term-grandchild-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      for (let attempt = 0; attempt < 20 && !existsSync(childPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(childPidFile)).toBe(true);
+      childPid = Number.parseInt(readFileSync(childPidFile, 'utf8').trim(), 10);
+      expect(childPid).toBeGreaterThan(0);
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          started_ms="$(date +%s%3N)"
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+          finished_ms="$(date +%s%3N)"
+          echo "elapsed_ms=$((finished_ms - started_ms))"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'term-grandchild-owner',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '20',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+        },
+      );
+
+      for (let attempt = 0; attempt < 20 && !existsSync(grandchildPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(grandchildPidFile)).toBe(true);
+      grandchildPid = Number.parseInt(readFileSync(grandchildPidFile, 'utf8').trim(), 10);
+      expect(grandchildPid).toBeGreaterThan(0);
+
+      expect(stopResult.status).toBe(0);
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      expect(await waitForPidExit(childPid)).toBe(true);
+      expect(await waitForPidExit(grandchildPid)).toBe(true);
+    } finally {
+      for (const pid of [grandchildPid, childPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+    }
+  });
+
+  it('keeps cleaning an owned descendant that detaches into a new session during TERM handling', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const childPidFile = path.join(tempRoot, 'child.pid');
+    const grandchildPidFile = path.join(tempRoot, 'detached-grandchild.pid');
+    const detachedGrandchildScript = path.join(tempRoot, 'detached-grandchild.sh');
+    const childScript = path.join(tempRoot, 'child-setsid-grandchild-on-term.sh');
+    const rootScript = path.join(tempRoot, 'root-exits-on-term.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      detachedGrandchildScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+echo "$$" > "${grandchildPidFile}"
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      childScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'setsid bash "${detachedGrandchildScript}" & exit 0' TERM
+trap '' HUP
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+bash "${childScript}" &
+echo "$!" > "${childPidFile}"
+trap 'exit 0' TERM
+while true; do :; done
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let childPid = 0;
+    let grandchildPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'term-detached-grandchild-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'term-detached-grandchild-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      for (let attempt = 0; attempt < 20 && !existsSync(childPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(childPidFile)).toBe(true);
+      childPid = Number.parseInt(readFileSync(childPidFile, 'utf8').trim(), 10);
+      expect(childPid).toBeGreaterThan(0);
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'term-detached-grandchild-owner',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '20',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+        },
+      );
+
+      for (let attempt = 0; attempt < 20 && !existsSync(grandchildPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(grandchildPidFile)).toBe(true);
+      grandchildPid = Number.parseInt(readFileSync(grandchildPidFile, 'utf8').trim(), 10);
+      expect(grandchildPid).toBeGreaterThan(0);
+
+      expect(stopResult.status).toBe(0);
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      expect(await waitForPidExit(childPid)).toBe(true);
+      expect(await waitForPidExit(grandchildPid)).toBe(true);
+    } finally {
+      for (const pid of [grandchildPid, childPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+    }
+  }, 10_000);
+
+  it('keeps cleaning both same-session and detached owned descendants discovered in the same TERM round', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const childPidFile = path.join(tempRoot, 'child.pid');
+    const sameSessionGrandchildPidFile = path.join(tempRoot, 'same-session-grandchild.pid');
+    const detachedGrandchildPidFile = path.join(tempRoot, 'detached-grandchild.pid');
+    const sameSessionGrandchildScript = path.join(tempRoot, 'same-session-grandchild.sh');
+    const detachedGrandchildScript = path.join(tempRoot, 'detached-grandchild.sh');
+    const childScript = path.join(tempRoot, 'child-spawns-both-on-term.sh');
+    const rootScript = path.join(tempRoot, 'root-exits-on-term.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      sameSessionGrandchildScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+echo "$$" > "${sameSessionGrandchildPidFile}"
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      detachedGrandchildScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+echo "$$" > "${detachedGrandchildPidFile}"
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      childScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'bash "${sameSessionGrandchildScript}" & setsid bash "${detachedGrandchildScript}" & exit 0' TERM
+trap '' HUP
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+bash "${childScript}" &
+echo "$!" > "${childPidFile}"
+trap 'exit 0' TERM
+while true; do :; done
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let childPid = 0;
+    let sameSessionGrandchildPid = 0;
+    let detachedGrandchildPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'term-mixed-grandchildren-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'term-mixed-grandchildren-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      for (let attempt = 0; attempt < 20 && !existsSync(childPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(childPidFile)).toBe(true);
+      childPid = Number.parseInt(readFileSync(childPidFile, 'utf8').trim(), 10);
+      expect(childPid).toBeGreaterThan(0);
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'term-mixed-grandchildren-owner',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '20',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+        },
+      );
+
+      for (let attempt = 0; attempt < 20 && (!existsSync(sameSessionGrandchildPidFile) || !existsSync(detachedGrandchildPidFile)); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(sameSessionGrandchildPidFile)).toBe(true);
+      expect(existsSync(detachedGrandchildPidFile)).toBe(true);
+      sameSessionGrandchildPid = Number.parseInt(readFileSync(sameSessionGrandchildPidFile, 'utf8').trim(), 10);
+      detachedGrandchildPid = Number.parseInt(readFileSync(detachedGrandchildPidFile, 'utf8').trim(), 10);
+      expect(sameSessionGrandchildPid).toBeGreaterThan(0);
+      expect(detachedGrandchildPid).toBeGreaterThan(0);
+
+      expect(stopResult.status).toBe(0);
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      expect(await waitForPidExit(childPid)).toBe(true);
+      expect(await waitForPidExit(sameSessionGrandchildPid)).toBe(true);
+      expect(await waitForPidExit(detachedGrandchildPid)).toBe(true);
+    } finally {
+      for (const pid of [detachedGrandchildPid, sameSessionGrandchildPid, childPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+    }
+  }, 10_000);
+
+  it('keeps killing a same-tree scanned descendant when later identity and owner rereads race', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const childPidFile = path.join(tempRoot, 'child.pid');
+    const grandchildPidFile = path.join(tempRoot, 'grandchild.pid');
+    const racyCommandCountFile = path.join(tempRoot, 'same-tree-racy-command.count');
+    const stubbornGrandchildScript = path.join(tempRoot, 'same-tree-racy-grandchild.sh');
+    const childScript = path.join(tempRoot, 'child-spawns-racy-grandchild-on-term.sh');
+    const rootScript = path.join(tempRoot, 'root-exits-on-term.sh');
+    const escapedGrandchildScript = stubbornGrandchildScript.replace(/(["\\$`])/g, '\\$1');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      stubbornGrandchildScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+echo "$$" > "${grandchildPidFile}"
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      childScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'bash "${stubbornGrandchildScript}" & exit 0' TERM
+trap '' HUP
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+bash "${childScript}" &
+echo "$!" > "${childPidFile}"
+trap 'exit 0' TERM
+while true; do :; done
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let childPid = 0;
+    let grandchildPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'same-tree-racy-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'same-tree-racy-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      for (let attempt = 0; attempt < 20 && !existsSync(childPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(childPidFile)).toBe(true);
+      childPid = Number.parseInt(readFileSync(childPidFile, 'utf8').trim(), 10);
+      expect(childPid).toBeGreaterThan(0);
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          eval "$(declare -f local_runtime_process_command | sed '1s/local_runtime_process_command/local_runtime_process_command_original/')"
+          eval "$(declare -f local_runtime_process_owner_token | sed '1s/local_runtime_process_owner_token/local_runtime_process_owner_token_original/')"
+          local_runtime_process_command() {
+            local pid="$1"
+            local command
+            command="$(local_runtime_process_command_original "\${pid}")"
+            if [[ "\${command}" == *"${escapedGrandchildScript}"* ]]; then
+              local count=0
+              if [[ -f "\${LOCAL_RUNTIME_TEST_SAME_TREE_RACY_COMMAND_COUNT_FILE}" ]]; then
+                count="$(cat "\${LOCAL_RUNTIME_TEST_SAME_TREE_RACY_COMMAND_COUNT_FILE}")"
+              fi
+              count="$((count + 1))"
+              printf '%s\n' "\${count}" > "\${LOCAL_RUNTIME_TEST_SAME_TREE_RACY_COMMAND_COUNT_FILE}"
+              if [[ "\${count}" -ge 2 ]]; then
+                return 0
+              fi
+            fi
+            printf '%s\n' "\${command}"
+          }
+          local_runtime_process_owner_token() {
+            local pid="$1"
+            local command
+            command="$(local_runtime_process_command_original "\${pid}")"
+            if [[ "\${command}" == *"${escapedGrandchildScript}"* ]]; then
+              return 1
+            fi
+            local_runtime_process_owner_token_original "\${pid}"
+          }
+          started_ms="$(date +%s%3N)"
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+          finished_ms="$(date +%s%3N)"
+          echo "elapsed_ms=$((finished_ms - started_ms))"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'same-tree-racy-owner',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '20',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_TEST_SAME_TREE_RACY_COMMAND_COUNT_FILE: racyCommandCountFile,
+        },
+      );
+
+      for (let attempt = 0; attempt < 20 && !existsSync(grandchildPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(grandchildPidFile)).toBe(true);
+      grandchildPid = Number.parseInt(readFileSync(grandchildPidFile, 'utf8').trim(), 10);
+      expect(grandchildPid).toBeGreaterThan(0);
+
+      expect(stopResult.status).toBe(0);
+      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(2_000);
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      expect(await waitForPidExit(childPid)).toBe(true);
+      expect(await waitForPidExit(grandchildPid)).toBe(true);
+      expect(Number.parseInt(readFileSync(racyCommandCountFile, 'utf8').trim(), 10)).toBeGreaterThanOrEqual(2);
+    } finally {
+      for (const pid of [grandchildPid, childPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+    }
+  });
+
   it('keeps killing owned descendants when descendant cmdline reads race during KILL revalidation', async () => {
     const tempRoot = makeTempRoot();
     const processStateDir = path.join(tempRoot, 'processes');
@@ -435,6 +940,119 @@ while true; do sleep 1; done
             // Best-effort cleanup for a deliberately stubborn test process.
           }
         }
+      }
+    }
+  });
+
+  it('refuses to KILL a descendant whose live identity changed after TERM even when the owner token still matches', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const childPidFile = path.join(tempRoot, 'child.pid');
+    const childChangedMarkerFile = path.join(tempRoot, 'child-changed.marker');
+    const replacementChildScript = path.join(tempRoot, 'replacement-child.sh');
+    const switchingChildScript = path.join(tempRoot, 'switching-child.sh');
+    const rootScript = path.join(tempRoot, 'root-exits-on-term.sh');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      replacementChildScript,
+      `#!/usr/bin/env bash
+trap '' TERM
+trap '' HUP
+printf 'changed\n' > "${childChangedMarkerFile}"
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      switchingChildScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+trap 'exec bash "${replacementChildScript}"' TERM
+trap '' HUP
+while true; do :; done
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+bash "${switchingChildScript}" &
+echo "$!" > "${childPidFile}"
+trap 'exit 0' TERM
+while true; do :; done
+`,
+      'utf8',
+    );
+
+    let rootPid = 0;
+    let childPid = 0;
+
+    try {
+      const startResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          local_runtime_start_owned_service api "${port}" "${tempRoot}/api.log" bash "${rootScript}"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_RUN_ID: 'term-identity-change-run',
+          LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+          LOCAL_RUNTIME_OWNER_TOKEN: 'term-identity-change-owner',
+        },
+      );
+      expect(startResult.status).toBe(0);
+      rootPid = Number.parseInt(startResult.stdout.trim(), 10);
+      expect(rootPid).toBeGreaterThan(0);
+
+      for (let attempt = 0; attempt < 20 && !existsSync(childPidFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(existsSync(childPidFile)).toBe(true);
+      childPid = Number.parseInt(readFileSync(childPidFile, 'utf8').trim(), 10);
+      expect(childPid).toBeGreaterThan(0);
+
+      const stopResult = runBash(
+        `
+          set -euo pipefail
+          source scripts/lib/local-runtime-processes.sh
+          started_ms="$(date +%s%3N)"
+          local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+          finished_ms="$(date +%s%3N)"
+          echo "elapsed_ms=$((finished_ms - started_ms))"
+        `,
+        {
+          LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+          LOCAL_RUNTIME_OWNER_TOKEN: 'term-identity-change-owner',
+          LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '5',
+          LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '5',
+          LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+        },
+      );
+
+      expect(stopResult.status).not.toBe(0);
+      expect(stopResult.stderr).toContain(`refusing to KILL pid ${childPid}: captured process identity changed`);
+      expect(existsSync(childChangedMarkerFile)).toBe(true);
+      expect(await waitForPidExit(rootPid)).toBe(true);
+      expect(isPidAlive(childPid)).toBe(true);
+    } finally {
+      for (const pid of [childPid, rootPid]) {
+        if (pid > 0 && isPidAlive(pid)) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // Best-effort cleanup for a deliberately stubborn test process.
+          }
+        }
+      }
+      if (childPid > 0) {
+        await waitForPidExit(childPid);
+      }
+      if (rootPid > 0) {
+        await waitForPidExit(rootPid);
       }
     }
   });

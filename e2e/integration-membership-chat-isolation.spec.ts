@@ -300,10 +300,10 @@ test.describe('@lane-real invite flow and chat isolation', () => {
       await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview$`), {
         timeout: 30_000,
       });
-      await expect(memberPage.getByTestId('project-hub__page')).toBeVisible({ timeout: 30_000 });
+      await expect(memberPage.getByTestId('project-overview__page')).toBeVisible({ timeout: 30_000 });
       await captureInviteFirstWorkTrace(memberPage, 'land-on-invited-project-overview');
 
-      await memberPage.getByTestId('project-hub__next-step--chat').click();
+      await memberPage.getByTestId('project-overview__primary-cta').click();
       await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/chat$`), {
         timeout: 30_000,
       });
@@ -469,8 +469,8 @@ test.describe('@lane-real invite flow and chat isolation', () => {
           { projectId, preserveCurrentWorkspaceLoginPage: true },
         );
         await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview$`), { timeout: 30_000 });
-        await expect(memberPage.getByTestId('project-hub__page')).toBeVisible({ timeout: 30_000 });
-        await memberPage.getByTestId('project-hub__next-step--chat').click();
+        await expect(memberPage.getByTestId('project-overview__page')).toBeVisible({ timeout: 30_000 });
+        await memberPage.getByTestId('project-overview__primary-cta').click();
         await expect(memberPage.getByTestId('chat__surface')).toBeVisible({ timeout: 30_000 });
         await capturePrivacyTrace(memberPage, 'start-first-chat-use');
 

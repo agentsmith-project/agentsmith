@@ -20,7 +20,6 @@ export interface OverviewNextStepEntry {
   href: ProjectRoutePolicy['href'];
   label: string;
   description: string;
-  testId: string;
 }
 
 export interface OverviewPrimaryStepSplit {
@@ -34,6 +33,23 @@ export function buildOverviewPaths(locale: string, workspaceId: string, projectI
     basePath,
     workspaceBasePath: `/${locale}/workspaces/${workspaceId}`,
   };
+}
+
+const OVERVIEW_TEST_ID_PREFIX = 'project-overview';
+
+export const overviewTestIds = {
+  page: `${OVERVIEW_TEST_ID_PREFIX}__page`,
+  backToWorkspace: `${OVERVIEW_TEST_ID_PREFIX}__back-to-workspace`,
+  primaryCta: `${OVERVIEW_TEST_ID_PREFIX}__primary-cta`,
+  primaryTask: `${OVERVIEW_TEST_ID_PREFIX}__primary-task`,
+  secondarySteps: `${OVERVIEW_TEST_ID_PREFIX}__secondary-steps`,
+  availableSurfaces: `${OVERVIEW_TEST_ID_PREFIX}__available-surfaces`,
+  surfaceGroup: (section: 'use' | 'govern' | 'develop') =>
+    `${OVERVIEW_TEST_ID_PREFIX}__surface-group--${section}`,
+};
+
+export function getOverviewSecondaryStepTestId(href: ProjectRoutePolicy['href']) {
+  return `${OVERVIEW_TEST_ID_PREFIX}__secondary-step--${href}`;
 }
 
 export function buildOverviewSurfaceSummary(
@@ -72,17 +88,16 @@ export function buildOverviewSurfaceSummary(
 const OVERVIEW_NEXT_STEP_PRIORITY: Array<{
   href: ProjectRoutePolicy['href'];
   descriptionKey: string;
-  testId: string;
 }> = [
-  { href: 'chat', descriptionKey: 'next_steps.chat_description', testId: 'project-hub__next-step--chat' },
-  { href: 'notebook', descriptionKey: 'next_steps.notebook_description', testId: 'project-hub__next-step--notebook' },
-  { href: 'files', descriptionKey: 'next_steps.files_description', testId: 'project-hub__next-step--files' },
-  { href: 'context', descriptionKey: 'next_steps.context_description', testId: 'project-hub__next-step--context' },
-  { href: 'members', descriptionKey: 'next_steps.members_description', testId: 'project-hub__next-step--members' },
-  { href: 'settings', descriptionKey: 'next_steps.settings_description', testId: 'project-hub__next-step--settings' },
-  { href: 'audit', descriptionKey: 'next_steps.audit_description', testId: 'project-hub__next-step--audit' },
-  { href: 'endpoints', descriptionKey: 'next_steps.endpoints_description', testId: 'project-hub__next-step--endpoints' },
-  { href: 'agents', descriptionKey: 'next_steps.agents_description', testId: 'project-hub__next-step--agents' },
+  { href: 'chat', descriptionKey: 'next_steps.chat_description' },
+  { href: 'notebook', descriptionKey: 'next_steps.notebook_description' },
+  { href: 'files', descriptionKey: 'next_steps.files_description' },
+  { href: 'context', descriptionKey: 'next_steps.context_description' },
+  { href: 'members', descriptionKey: 'next_steps.members_description' },
+  { href: 'settings', descriptionKey: 'next_steps.settings_description' },
+  { href: 'audit', descriptionKey: 'next_steps.audit_description' },
+  { href: 'endpoints', descriptionKey: 'next_steps.endpoints_description' },
+  { href: 'agents', descriptionKey: 'next_steps.agents_description' },
 ];
 
 export function buildOverviewNextStepEntries(
@@ -103,7 +118,6 @@ export function buildOverviewNextStepEntries(
       href: policy.href,
       label,
       description: tOverview(item.descriptionKey),
-      testId: item.testId,
     }];
   }).slice(0, 4);
 }

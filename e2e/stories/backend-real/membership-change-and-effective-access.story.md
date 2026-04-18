@@ -80,7 +80,7 @@
       "sceneId": "project-overview",
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/overview",
       "stableMarkers": [
-        "project-hub__page"
+        "project-overview__page"
       ]
     }
   ],
@@ -174,7 +174,7 @@
       "sceneId": "project-overview",
       "intent": "Re-login the removed member in a fresh session and confirm the project is no longer accessible.",
       "action": "Verify removed access",
-      "target": "project-hub__page",
+      "target": "project-overview__page",
       "expectedFeedback": "移除后在新会话里访问项目时，应无法再在项目列表中发现它，直接打开时则进入 Project unavailable 恢复面，而不是 generic error 或旧缓存。",
       "note": "必须用 fresh member session 复验，先确认 removed member 不再 discover 该项目，再确认项目布局层给出 Project unavailable 恢复面，避免同一 SPA context 里的旧 React Query 缓存掩盖真实后端不可访问状态。",
       "evidence": [

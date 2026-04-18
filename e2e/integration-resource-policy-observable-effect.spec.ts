@@ -130,7 +130,7 @@ test.describe('@lane-real resource policy change leads to observable effect', ()
           const parsed = new URL(url.toString());
           return parsed.pathname === `/${LOCALE}/workspaces/${WORKSPACE_ID}/projects/${projectId}/overview`;
         }, { timeout: 30_000 });
-        await expect(memberPage.getByTestId('project-hub__page')).toBeVisible({ timeout: 30_000 });
+        await expect(memberPage.getByTestId('project-overview__page')).toBeVisible({ timeout: 30_000 });
         const memberToken = await readStoredAuthToken(memberPage);
         const memberUserId = readUserIdFromJwt(memberToken);
 

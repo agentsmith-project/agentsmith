@@ -6,6 +6,8 @@ import { createProjectRoutePolicy } from '@/lib/routes/project-route-policy';
 import {
   buildOverviewNextStepEntries,
   buildOverviewSurfaceSummary,
+  getOverviewSecondaryStepTestId,
+  overviewTestIds,
   splitOverviewPrimaryStep,
 } from '../overview-page-utils';
 
@@ -77,7 +79,28 @@ describe('overview page utils', () => {
 
     const featuredEntries = buildOverviewNextStepEntries(policies, tNav, tContext, tOverview);
 
-    expect(featuredEntries.map((entry) => entry.href)).toEqual(['chat', 'notebook', 'files', 'context']);
+    expect(featuredEntries).toEqual([
+      {
+        href: 'chat',
+        label: 'chat',
+        description: 'next_steps.chat_description',
+      },
+      {
+        href: 'notebook',
+        label: 'notebook',
+        description: 'next_steps.notebook_description',
+      },
+      {
+        href: 'files',
+        label: 'files',
+        description: 'next_steps.files_description',
+      },
+      {
+        href: 'context',
+        label: 'context:project_title',
+        description: 'next_steps.context_description',
+      },
+    ]);
 
     const { primaryStep, secondarySteps } = splitOverviewPrimaryStep(featuredEntries);
 
@@ -101,5 +124,12 @@ describe('overview page utils', () => {
     expect(summary.governLabels).toEqual([
       { href: 'resource-policy', label: 'resource_policy' },
     ]);
+  });
+
+  it('keeps overview selectors in the project-overview namespace', () => {
+    expect(overviewTestIds.page).toBe('project-overview__page');
+    expect(overviewTestIds.primaryCta).toBe('project-overview__primary-cta');
+    expect(overviewTestIds.surfaceGroup('govern')).toBe('project-overview__surface-group--govern');
+    expect(getOverviewSecondaryStepTestId('notebook')).toBe('project-overview__secondary-step--notebook');
   });
 });

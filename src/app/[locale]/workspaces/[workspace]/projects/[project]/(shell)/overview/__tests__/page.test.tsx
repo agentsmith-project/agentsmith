@@ -5,6 +5,7 @@ import { useCurrentPermissions, useProjectOverviewCapabilities } from '@/lib/hoo
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 
 import OverviewPage from '../page';
+import { getOverviewSecondaryStepTestId, overviewTestIds } from '../overview-page-utils';
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({
@@ -145,45 +146,46 @@ describe('OverviewPage', () => {
   it('anchors the primary next step in the shared header and keeps workspace return quiet', () => {
     render(<OverviewPage />);
 
-    expect(screen.getByTestId('project-overview__page')).toBeInTheDocument();
-    expect(screen.getByTestId('project-overview__back-to-workspace')).toHaveAttribute(
+    expect(screen.getByTestId(overviewTestIds.page)).toBeInTheDocument();
+    expect(screen.getByTestId(overviewTestIds.backToWorkspace)).toHaveAttribute(
       'href',
       '/en-US/workspaces/ws_default',
     );
 
-    expect(within(screen.getByTestId('page-layout__header')).getByTestId('project-overview__primary-cta')).toHaveAttribute(
+    expect(within(screen.getByTestId('page-layout__header')).getByTestId(overviewTestIds.primaryCta)).toHaveAttribute(
       'href',
       '/en-US/workspaces/ws_default/projects/proj_001/chat',
     );
-    expect(screen.getByTestId('project-overview__primary-task')).toHaveTextContent('Chat');
-    expect(screen.getByTestId('project-overview__secondary-step--notebook')).toHaveAttribute(
+    expect(screen.getByTestId(overviewTestIds.primaryTask)).toHaveTextContent('Chat');
+    expect(screen.getByTestId(getOverviewSecondaryStepTestId('notebook'))).toHaveAttribute(
       'href',
       '/en-US/workspaces/ws_default/projects/proj_001/notebook',
     );
-    expect(screen.getByTestId('project-overview__secondary-step--files')).toHaveAttribute(
+    expect(screen.getByTestId(getOverviewSecondaryStepTestId('files'))).toHaveAttribute(
       'href',
       '/en-US/workspaces/ws_default/projects/proj_001/files',
     );
-    expect(screen.getByTestId('project-overview__secondary-step--context')).toHaveAttribute(
+    expect(screen.getByTestId(getOverviewSecondaryStepTestId('context'))).toHaveAttribute(
       'href',
       '/en-US/workspaces/ws_default/projects/proj_001/context',
     );
-    expect(screen.getByTestId('project-overview__available-surfaces')).toBeInTheDocument();
-    expect(screen.getByTestId('project-overview__surface-group--use')).toBeInTheDocument();
-    expect(screen.getByTestId('project-overview__surface-group--govern')).toBeInTheDocument();
-    expect(screen.getByTestId('project-overview__surface-group--develop')).toBeInTheDocument();
+    expect(screen.getByTestId(overviewTestIds.availableSurfaces)).toBeInTheDocument();
+    expect(screen.getByTestId(overviewTestIds.surfaceGroup('use'))).toBeInTheDocument();
+    expect(screen.getByTestId(overviewTestIds.surfaceGroup('govern'))).toBeInTheDocument();
+    expect(screen.getByTestId(overviewTestIds.surfaceGroup('develop'))).toBeInTheDocument();
+    expect(document.querySelector('[data-testid^="project-hub__"]')).toBeNull();
   });
 
   it('renders follow-up steps separately from the quieter grouped surface map', () => {
     render(<OverviewPage />);
 
-    expect(screen.getByTestId('project-overview__secondary-steps').querySelectorAll('a')).toHaveLength(3);
+    expect(screen.getByTestId(overviewTestIds.secondarySteps).querySelectorAll('a')).toHaveLength(3);
 
-    expect(screen.getByTestId('project-overview__surface-group--use')).toHaveTextContent('Usage');
-    expect(screen.getByTestId('project-overview__surface-group--use')).toHaveTextContent('Access guide');
-    expect(screen.getByTestId('project-overview__surface-group--govern')).toHaveTextContent('Policy');
-    expect(screen.getByTestId('project-overview__surface-group--govern')).toHaveTextContent('Project secrets');
-    expect(screen.getByTestId('project-overview__surface-group--develop')).toHaveTextContent('Agents');
+    expect(screen.getByTestId(overviewTestIds.surfaceGroup('use'))).toHaveTextContent('Usage');
+    expect(screen.getByTestId(overviewTestIds.surfaceGroup('use'))).toHaveTextContent('Access guide');
+    expect(screen.getByTestId(overviewTestIds.surfaceGroup('govern'))).toHaveTextContent('Policy');
+    expect(screen.getByTestId(overviewTestIds.surfaceGroup('govern'))).toHaveTextContent('Project secrets');
+    expect(screen.getByTestId(overviewTestIds.surfaceGroup('develop'))).toHaveTextContent('Agents');
 
     expect(screen.getByRole('link', { name: 'Usage' })).toHaveAttribute(
       'href',
@@ -202,9 +204,9 @@ describe('OverviewPage', () => {
   it('derives remaining summary groups from accessible surfaces', () => {
     render(<OverviewPage />);
 
-    const useSummary = screen.getByTestId('project-overview__surface-group--use');
-    const governanceSummary = screen.getByTestId('project-overview__surface-group--govern');
-    const developSummary = screen.getByTestId('project-overview__surface-group--develop');
+    const useSummary = screen.getByTestId(overviewTestIds.surfaceGroup('use'));
+    const governanceSummary = screen.getByTestId(overviewTestIds.surfaceGroup('govern'));
+    const developSummary = screen.getByTestId(overviewTestIds.surfaceGroup('develop'));
 
     expect(useSummary).toHaveTextContent('Usage');
     expect(useSummary).toHaveTextContent('Access guide');
@@ -222,10 +224,10 @@ describe('OverviewPage', () => {
 
     render(<OverviewPage />);
 
-    expect(screen.getByTestId('project-overview__surface-group--govern')).toHaveTextContent('Governance reach');
-    expect(screen.getByTestId('project-overview__surface-group--govern')).toHaveTextContent('Not available');
-    expect(screen.getByTestId('project-overview__surface-group--develop')).toHaveTextContent('Develop surfaces');
-    expect(screen.getByTestId('project-overview__surface-group--develop')).toHaveTextContent('Not available');
+    expect(screen.getByTestId(overviewTestIds.surfaceGroup('govern'))).toHaveTextContent('Governance reach');
+    expect(screen.getByTestId(overviewTestIds.surfaceGroup('govern'))).toHaveTextContent('Not available');
+    expect(screen.getByTestId(overviewTestIds.surfaceGroup('develop'))).toHaveTextContent('Develop surfaces');
+    expect(screen.getByTestId(overviewTestIds.surfaceGroup('develop'))).toHaveTextContent('Not available');
   });
 
   it('shows invalid parameter error for unsafe route params', () => {

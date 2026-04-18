@@ -51,7 +51,7 @@
       "sceneId": "project-overview",
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/overview",
       "stableMarkers": [
-        "project-hub__page"
+        "project-overview__page"
       ]
     },
     {
@@ -136,7 +136,7 @@
       "sceneId": "project-overview",
       "intent": "Verify the workspace/project access matrix after onboarding.",
       "action": "Verify access matrix",
-      "target": "project-hub__page",
+      "target": "project-overview__page",
       "expectedFeedback": "workspace / project 访问矩阵已收敛到预期状态",
       "note": "workspace / project 访问矩阵已收敛到预期状态",
       "evidence": [

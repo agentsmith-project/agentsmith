@@ -17,6 +17,8 @@ import {
   buildOverviewSurfaceSummary,
   buildOverviewNextStepEntries,
   createOverviewErrorContent,
+  getOverviewSecondaryStepTestId,
+  overviewTestIds,
   splitOverviewPrimaryStep,
 } from './overview-page-utils';
 import { listAccessibleSidebarProjectRoutePolicies } from '@/lib/projects/project-surface-access';
@@ -102,7 +104,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
               <Button asChild variant="primary">
                 <Link
                   href={buildProjectSurfacePath(locale, workspaceId, projectId, primaryStep.href)}
-                  data-testid="project-overview__primary-cta"
+                  data-testid={overviewTestIds.primaryCta}
                 >
                   {tOverview('next_steps.open')} {primaryStep.label}
                 </Link>
@@ -111,11 +113,11 @@ export default function OverviewPage({ params }: OverviewPageProps) {
           />
         )}
       >
-        <div className="space-y-6" data-testid="project-overview__page">
+        <div className="space-y-6" data-testid={overviewTestIds.page}>
           <Link
             href={workspaceBasePath}
             className="inline-flex items-center gap-2 text-sm text-tertiary transition-colors hover:text-foreground"
-            data-testid="project-overview__back-to-workspace"
+            data-testid={overviewTestIds.backToWorkspace}
           >
             <ArrowLeft className="h-4 w-4" />
             {tProjects('back_to_workspace')}
@@ -124,7 +126,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
           <section className="grid gap-8 border-t border-subtle pt-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)] xl:items-start">
             <div className="space-y-8">
               {primaryStep ? (
-                <section className="space-y-4" data-testid="project-overview__primary-task">
+                <section className="space-y-4" data-testid={overviewTestIds.primaryTask}>
                   <div className="space-y-2">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
                       {tOverview('next_steps.primary_badge')}
@@ -136,14 +138,14 @@ export default function OverviewPage({ params }: OverviewPageProps) {
                   </div>
                 </section>
               ) : (
-                <section className="space-y-3" data-testid="project-overview__primary-task">
+                <section className="space-y-3" data-testid={overviewTestIds.primaryTask}>
                   <p className="type-system-caption text-tertiary">{tWorkspace('workspace_home_next_steps_title')}</p>
                   <p className="type-body-ui max-w-2xl text-secondary">{tWorkspace('workspace_home_next_steps_description')}</p>
                 </section>
               )}
 
               {secondarySteps.length > 0 ? (
-                <section className="space-y-3" data-testid="project-overview__secondary-steps">
+                <section className="space-y-3" data-testid={overviewTestIds.secondarySteps}>
                   <p className="type-system-caption text-tertiary">{tWorkspace('workspace_home_next_steps_title')}</p>
                   <div className="divide-y divide-subtle border-y border-subtle">
                     {secondarySteps.map((entry, index) => (
@@ -151,7 +153,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
                         key={entry.href}
                         href={buildProjectSurfacePath(locale, workspaceId, projectId, entry.href)}
                         className="group flex items-start justify-between gap-4 px-0 py-4 transition-colors hover:text-foreground"
-                        data-testid={`project-overview__secondary-step--${entry.href}`}
+                        data-testid={getOverviewSecondaryStepTestId(entry.href)}
                       >
                         <div className="space-y-1">
                           <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
@@ -170,7 +172,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
 
             <aside
               className="space-y-5 border-t border-subtle pt-5 xl:border-l xl:border-t-0 xl:pl-8 xl:pt-0"
-              data-testid="project-overview__available-surfaces"
+              data-testid={overviewTestIds.availableSurfaces}
             >
               <OverviewSurfaceGroup
                 items={remainingSurfaceSummary.useLabels}
@@ -179,7 +181,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
                 locale={locale}
                 workspaceId={workspaceId}
                 projectId={projectId}
-                testId="project-overview__surface-group--use"
+                testId={overviewTestIds.surfaceGroup('use')}
               />
               <OverviewSurfaceGroup
                 items={remainingSurfaceSummary.governLabels}
@@ -188,7 +190,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
                 locale={locale}
                 workspaceId={workspaceId}
                 projectId={projectId}
-                testId="project-overview__surface-group--govern"
+                testId={overviewTestIds.surfaceGroup('govern')}
               />
               <OverviewSurfaceGroup
                 items={remainingSurfaceSummary.developLabels}
@@ -197,7 +199,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
                 locale={locale}
                 workspaceId={workspaceId}
                 projectId={projectId}
-                testId="project-overview__surface-group--develop"
+                testId={overviewTestIds.surfaceGroup('develop')}
               />
             </aside>
           </section>

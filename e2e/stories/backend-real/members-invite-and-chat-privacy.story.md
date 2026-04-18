@@ -59,7 +59,7 @@
       "sceneId": "project-overview",
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/overview",
       "stableMarkers": [
-        "project-hub__page"
+        "project-overview__page"
       ]
     },
     {
@@ -88,7 +88,7 @@
       "sceneId": "project-overview",
       "intent": "Open the project as a newly joined member and verify first usable access.",
       "action": "Verify member first access",
-      "target": "project-hub__page",
+      "target": "project-overview__page",
       "expectedFeedback": "新成员能进入项目并开始第一次使用，而不是只停留在已加入的抽象状态。",
       "note": "第一次可用应该落到真实项目工作面，不只是接口返回成功。",
       "evidence": [

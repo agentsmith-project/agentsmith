@@ -22,7 +22,7 @@ test.describe('Controls Matrix', () => {
   test('project pages expose primary controls', async ({ authedPage }) => {
     test.setTimeout(120000);
     await goToProject(authedPage, 'overview');
-    await expect(authedPage.getByTestId('project-hub__page')).toBeVisible();
+    await expect(authedPage.getByTestId('project-overview__page')).toBeVisible();
 
     await goToProject(authedPage, 'chat');
     await expect(authedPage.getByTestId('chat__new-thread-btn')).toBeVisible();

@@ -51,9 +51,11 @@ describe('invite to first effective work story', () => {
     expect(source).toContain('join__continue-btn');
     expect(source).toContain('workspace-login__heading');
     expect(source).toContain('workspace-login__keycloak-btn');
-    expect(source).toContain('project-hub__page');
-    expect(source).toContain('project-hub__next-step--chat');
+    expect(source).toContain('project-overview__page');
+    expect(source).toContain('project-overview__primary-cta');
     expect(source).toContain('verify-private-chat-boundary');
+    expect(source).not.toContain('project-hub__page');
+    expect(source).not.toContain('project-hub__next-step--chat');
     expect(source).not.toContain('workspace-select__list');
     expect(source).not.toContain('workspace-select__item--ws_default');
     expect(source).not.toContain('workspace-selection');

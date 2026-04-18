@@ -86,7 +86,7 @@
       "sceneId": "project-overview",
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/overview",
       "stableMarkers": [
-        "project-hub__page"
+        "project-overview__page"
       ]
     }
   ],
@@ -132,7 +132,7 @@
       "sceneId": "project-overview",
       "intent": "Remove the member and verify the project no longer remains reachable in a fresh session.",
       "action": "Remove member and verify loss of access",
-      "target": "project-hub__page",
+      "target": "project-overview__page",
       "expectedFeedback": "成员被移除后，在 fresh workspace-specific login 里不应再看到该项目；直接访问 chat、notebook、task detail 等 project URL 时，应进入 Project unavailable，而不是被带去泛化 workspace selector 或继续看到旧页面。",
       "note": "最终要证明 removed member 不会靠旧缓存继续工作。",
       "evidence": [

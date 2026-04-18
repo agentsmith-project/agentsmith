@@ -70,8 +70,8 @@
       "sceneId": "project-overview",
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/overview",
       "stableMarkers": [
-        "project-hub__page",
-        "project-hub__next-step--chat"
+        "project-overview__page",
+        "project-overview__primary-cta"
       ]
     },
     {
@@ -124,7 +124,7 @@
       "sceneId": "project-overview",
       "intent": "Land directly on the invited project overview after the callback has completed.",
       "action": "Land on invited project overview",
-      "target": "project-hub__page",
+      "target": "project-overview__page",
       "expectedFeedback": "成员完成登录后，直接落到被邀请项目的 overview，而不是先绕到项目列表里找项目。",
       "note": "The landing should be the invited project overview, not a generic workspace project list.",
       "evidence": [
@@ -136,7 +136,7 @@
       "sceneId": "project-chat",
       "intent": "Start the first concrete work path from overview into chat.",
       "action": "Start first chat work",
-      "target": "project-hub__next-step--chat",
+      "target": "project-overview__primary-cta",
       "expectedFeedback": "成员通过 overview 的下一步进入 chat，并开始第一次真实工作。",
       "note": "第一次有效工作应是具体工作面，而不是只停留在登录或治理状态。",
       "evidence": [

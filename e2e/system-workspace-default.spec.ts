@@ -209,7 +209,7 @@ test.describe('System Workspace Mainline', () => {
     await page.waitForURL(new RegExp(`/en-US/workspaces/${workspaceId}/projects/${createdProject.id}/overview$`), {
       timeout: 15_000,
     });
-    await expect(page.getByTestId('project-hub__page')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('project-overview__page')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(projectName).first()).toBeVisible({ timeout: 10_000 });
   });
 });

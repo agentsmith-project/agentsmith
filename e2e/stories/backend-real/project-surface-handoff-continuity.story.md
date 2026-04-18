@@ -31,7 +31,7 @@
       "sceneId": "project-overview",
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/overview",
       "stableMarkers": [
-        "project-hub__page",
+        "project-overview__page",
         "project-workbench__heading"
       ]
     },
@@ -66,7 +66,7 @@
       "sceneId": "project-overview",
       "intent": "Open the project overview as the daily handoff hub.",
       "action": "Open project overview",
-      "target": "project-hub__page",
+      "target": "project-overview__page",
       "expectedFeedback": "成员看到同一个 project context 的 overview 工作面，知道接下来可以继续往 chat、notebook 或 files 去。",
       "note": "overview 是日常工作中心，不是单独的 landing page。",
       "evidence": [

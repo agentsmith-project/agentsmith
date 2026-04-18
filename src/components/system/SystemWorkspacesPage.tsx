@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { PageState } from '@/components/layout/PageState';
+import { SurfaceThemeToggle } from '@/components/theme/SurfaceThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -209,10 +210,17 @@ export function SystemWorkspacesPage() {
         )}
         toolbar={(
           <PageToolbar className="w-full">
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-secondary">
-              <span>{t('workspaces_summary_total_inline', { count: String(workspaces.length) })}</span>
-              <span>{t('workspaces_attention_summary_inline', { count: String(attentionCount) })}</span>
-              <span>{t('workspaces_ready_summary_inline', { count: String(readyCount) })}</span>
+            <div className="flex w-full flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 type-system-body text-secondary">
+                <span>{t('workspaces_summary_total_inline', { count: String(workspaces.length) })}</span>
+                <span>{t('workspaces_attention_summary_inline', { count: String(attentionCount) })}</span>
+                <span>{t('workspaces_ready_summary_inline', { count: String(readyCount) })}</span>
+              </div>
+              <SurfaceThemeToggle
+                showLabel
+                dataTestId="system-workspaces__theme-toggle"
+                optionTestIdPrefix="system-workspaces__theme"
+              />
             </div>
           </PageToolbar>
         )}
@@ -226,11 +234,11 @@ export function SystemWorkspacesPage() {
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
-                      <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_directory_label')}</p>
-                      <p className="text-xl font-semibold text-foreground">{t('workspace_directory_title')}</p>
-                      <p className="text-sm text-tertiary">{t('workspace_directory_description')}</p>
+                      <p className="type-system-label text-tertiary">{t('workspace_directory_label')}</p>
+                      <p className="type-system-title text-foreground">{t('workspace_directory_title')}</p>
+                      <p className="type-system-body text-tertiary">{t('workspace_directory_description')}</p>
                     </div>
-                    <div className="inline-flex items-center gap-2 text-xs text-tertiary">
+                    <div className="inline-flex items-center gap-2 type-system-caption text-tertiary">
                       <Filter className="h-3.5 w-3.5" />
                       {t('workspaces_filtered_summary', { count: String(listedWorkspaces.length) })}
                     </div>

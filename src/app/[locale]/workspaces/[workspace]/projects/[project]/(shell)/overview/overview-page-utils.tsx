@@ -23,6 +23,11 @@ export interface OverviewNextStepEntry {
   testId: string;
 }
 
+export interface OverviewPrimaryStepSplit {
+  primaryStep: OverviewNextStepEntry | null;
+  secondarySteps: OverviewNextStepEntry[];
+}
+
 export function buildOverviewPaths(locale: string, workspaceId: string, projectId: string) {
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   return {
@@ -101,6 +106,16 @@ export function buildOverviewNextStepEntries(
       testId: item.testId,
     }];
   }).slice(0, 4);
+}
+
+export function splitOverviewPrimaryStep(
+  entries: readonly OverviewNextStepEntry[],
+): OverviewPrimaryStepSplit {
+  const [primaryStep, ...secondarySteps] = entries;
+  return {
+    primaryStep: primaryStep ?? null,
+    secondarySteps,
+  };
 }
 
 export function createOverviewErrorContent(

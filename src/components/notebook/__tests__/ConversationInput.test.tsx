@@ -386,10 +386,18 @@ describe('ConversationInput', () => {
 
   describe('Layout and Styling', () => {
     it('has correct container classes', () => {
-      const { container } = renderComponent();
+      renderComponent();
 
-      const containerDiv = container.querySelector('.border-t');
-      expect(containerDiv).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__conversation-input-shell')).toHaveClass(
+        'rounded-xl',
+        'border',
+        'shadow-ambient',
+      );
+      expect(screen.getByTestId('notebook__conversation-input-surface')).toHaveClass(
+        'rounded-lg',
+        'border',
+        'focus-within:ring-2',
+      );
     });
 
     it('has correct textarea styling', () => {

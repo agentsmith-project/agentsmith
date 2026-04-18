@@ -871,8 +871,14 @@ describe('TaskPage', () => {
       await renderComponentReady();
 
       const taskDetailShell = screen.getByTestId('notebook__task-detail-shell');
+      const workspace = screen.getByTestId('notebook__task-content-workspace');
+      const primaryColumn = screen.getByTestId('notebook__task-primary-column');
+      const secondaryColumn = screen.getByTestId('notebook__task-secondary-column');
+      expect(taskDetailShell.className).not.toContain('gradient');
       expect(taskDetailShell).toContainElement(screen.getByTestId('task-header'));
-      expect(taskDetailShell).toContainElement(screen.getByTestId('notebook__task-conversation-shell'));
+      expect(taskDetailShell).toContainElement(workspace);
+      expect(primaryColumn).toContainElement(screen.getByTestId('notebook__task-conversation-shell'));
+      expect(secondaryColumn).toContainElement(screen.getByTestId('notebook__task-artifacts-drawer'));
       expect(
         within(screen.getByTestId('task-header-accessory')).getByTestId(
           'notebook__task-artifacts-toggle',

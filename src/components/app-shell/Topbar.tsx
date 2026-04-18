@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
+import { SurfaceThemeToggle } from '@/components/theme/SurfaceThemeToggle';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
@@ -280,6 +281,13 @@ export function Topbar({ className = '', workspaceId: workspaceIdProp, projectId
             {layoutMode === 'ultrawide' ? t('layout_ultrawide') : t('layout_standard')}
           </Button>
         ) : null}
+
+        <SurfaceThemeToggle
+          compact
+          dataTestId='topbar__theme-toggle'
+          optionTestIdPrefix='topbar__theme'
+          className='shrink-0'
+        />
 
         <NotificationCenter />
 

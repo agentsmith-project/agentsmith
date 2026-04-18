@@ -474,7 +474,15 @@ describe('TaskHeader', () => {
       const { container } = renderComponent();
 
       const header = container.querySelector('[data-testid="notebook__task-header"]');
-      expect(header).toHaveClass('border-b', 'border-subtle', 'bg-transparent', 'px-4', 'py-2.5');
+      expect(header).toHaveClass('rounded-xl', 'border', 'px-4', 'py-3', 'shadow-ambient');
+    });
+
+    it('renders distinct summary, meta, and action regions to keep header density legible', () => {
+      renderComponent();
+
+      expect(screen.getByTestId('notebook__task-header-summary')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__task-header-meta')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__task-header-actions')).toBeInTheDocument();
     });
 
     it('renders action buttons in correct order', () => {

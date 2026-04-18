@@ -384,18 +384,7 @@ export default function ChatPage({ params }: ChatPageProps) {
       >
         <div
           className={cn(
-            'flex h-full min-h-0 flex-1 overflow-hidden rounded-md border border-subtle bg-surface/90',
-            "[&_[data-testid='chat__main-pane']]:!bg-none",
-            "[&_[data-testid='chat__main-pane']]:!shadow-none",
-            "[&_[data-testid='chat__composer-recovery']]:!border-0",
-            "[&_[data-testid='chat__composer-recovery']]:!bg-transparent",
-            "[&_[data-testid='chat__composer-recovery']]:!px-0",
-            "[&_[data-testid='chat__composer-recovery']]:!py-0",
-            "[&_[data-testid='chat__composer-recovery']]:!shadow-none",
-            "[&_[data-testid='chat__composer-recovery']>div]:!rounded-none",
-            "[&_[data-testid='chat__composer-recovery']>div]:!border-0",
-            "[&_[data-testid='chat__composer-recovery']>div]:!bg-transparent",
-            "[&_[data-testid='chat__composer-recovery']>div]:!shadow-none",
+            'flex h-full min-h-0 flex-1 overflow-hidden rounded-xl border border-subtle bg-surface/90',
           )}
           data-testid="chat__surface"
         >

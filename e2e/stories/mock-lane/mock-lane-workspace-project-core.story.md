@@ -129,9 +129,10 @@
       "recipeFamily": "work_surface_standard",
       "authLane": "authed",
       "stableMarkers": [
-        "project-hub__summary",
-        "project-hub__use-summary",
-        "project-hub__governance-summary"
+        "project-overview__page",
+        "project-overview__primary-cta",
+        "project-overview__secondary-steps",
+        "project-overview__surface-group--govern"
       ]
     },
     {
@@ -290,7 +291,7 @@
       "sceneId": "project-overview",
       "intent": "Open the project overview surface.",
       "action": "Open project overview",
-      "target": "project-overview__heading",
+      "target": "project-overview__page",
       "expectedFeedback": "project overview 页面可见。",
       "note": "overview 仍是 project work surface 的入口。",
       "evidence": [

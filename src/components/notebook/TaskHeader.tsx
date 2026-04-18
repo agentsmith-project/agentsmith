@@ -155,11 +155,11 @@ export function TaskHeader({
 
   return (
     <div
-      className="flex items-center justify-between gap-3 border-b border-subtle bg-transparent px-4 py-2.5"
+      className="flex flex-wrap items-start justify-between gap-4 rounded-xl border border-subtle bg-background/95 px-4 py-3 shadow-ambient"
       data-testid="notebook__task-header"
       data-terminal-truth-state={terminalTruthState}
     >
-      <div className="flex items-center gap-3 flex-1 min-w-0">
+      <div className="flex min-w-0 flex-1 items-start gap-3" data-testid="notebook__task-header-summary">
         {/* Leave Task Button */}
         <TooltipProvider>
           <Tooltip>
@@ -167,7 +167,7 @@ export function TaskHeader({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 flex-shrink-0"
+                className="h-8 w-8 flex-shrink-0 rounded-lg border border-subtle bg-background/80"
                 onClick={handleLeave}
                 aria-label={t('leave')}
               >
@@ -181,10 +181,12 @@ export function TaskHeader({
         </TooltipProvider>
 
         {/* Task Info */}
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold text-foreground md:text-base">{task.title}</h1>
-          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] text-tertiary">Agent: {task.agent_name}</span>
+          <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="notebook__task-header-meta">
+            <div className="inline-flex items-center gap-1.5 rounded-lg border border-subtle bg-background/80 px-2.5 py-1.5 text-[11px] text-secondary">
+              <span className="font-medium text-foreground">Agent: {task.agent_name}</span>
+            </div>
             {agentPresenceLabel && agentPresenceVariant ? (
               <Badge variant={agentPresenceVariant} className="text-[11px]">
                 {agentPresenceLabel}
@@ -212,44 +214,47 @@ export function TaskHeader({
                 {t('agent_busy', { duration: formatElapsed(agentRunActivity.elapsedSeconds) })}
               </Badge>
             ) : null}
+            {onSetViewMode && hasTerminalTabs ? (
+              <div className="inline-flex items-center rounded-lg border border-subtle bg-background/80 p-1">
+                <Button
+                  type="button"
+                  variant={viewMode === 'conversation' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-7 px-2.5 text-[11px]"
+                  onClick={() => onSetViewMode('conversation')}
+                  data-testid="notebook__task-header-mode-conversation"
+                >
+                  {conversationModeLabel}
+                </Button>
+                <Button
+                  type="button"
+                  variant={viewMode === 'terminal' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-7 px-2.5 text-[11px]"
+                  onClick={() => onSetViewMode('terminal')}
+                  data-testid="notebook__task-header-mode-terminal"
+                >
+                  {terminalModeLabel}
+                </Button>
+              </div>
+            ) : null}
+            {hasTerminalTabs ? (
+              <Badge
+                variant={hasTerminalRecoveryAttention ? 'destructive' : 'secondary'}
+                className="text-[11px]"
+                data-testid="notebook__task-header-terminal-summary"
+              >
+                {terminalSessionSummary}
+              </Badge>
+            ) : null}
           </div>
         </div>
       </div>
 
-      <div className="flex flex-shrink-0 items-center gap-2">
-        {onSetViewMode && hasTerminalTabs ? (
-          <div className="inline-flex items-center rounded-md border border-subtle bg-surface-low/40 p-0.5">
-            <Button
-              type="button"
-              variant={viewMode === 'conversation' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-7 px-2.5 text-[11px]"
-              onClick={() => onSetViewMode('conversation')}
-              data-testid="notebook__task-header-mode-conversation"
-            >
-              {conversationModeLabel}
-            </Button>
-            <Button
-              type="button"
-              variant={viewMode === 'terminal' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-7 px-2.5 text-[11px]"
-              onClick={() => onSetViewMode('terminal')}
-              data-testid="notebook__task-header-mode-terminal"
-            >
-              {terminalModeLabel}
-            </Button>
-          </div>
-        ) : null}
-        {hasTerminalTabs ? (
-          <Badge
-            variant={hasTerminalRecoveryAttention ? 'destructive' : 'secondary'}
-            className="text-[11px]"
-            data-testid="notebook__task-header-terminal-summary"
-          >
-            {terminalSessionSummary}
-          </Badge>
-        ) : null}
+      <div
+        className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2"
+        data-testid="notebook__task-header-actions"
+      >
         {headerAccessory ? (
           <div className="flex items-center" data-testid="notebook__task-header-accessory">
             {headerAccessory}

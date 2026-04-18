@@ -109,7 +109,7 @@ test.describe('@lane-real integration workspace settings directory search', () =
         }),
         dialog.getByRole('button', { name: /Create|创建/i }).click(),
       ]);
-      await expect(page.getByTestId('project-hub__summary')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('project-overview__page')).toBeVisible({ timeout: 30_000 });
       outcome = 'pass';
     } finally {
       await trace.finish({

@@ -145,7 +145,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
 
   return (
     <section
-      className="flex min-w-0 flex-1 flex-col overflow-hidden"
+      className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background/40"
       data-testid="chat__main-pane"
     >
       <ChatHeader
@@ -163,35 +163,40 @@ export function ChatMainPane(props: ChatMainPaneProps) {
       />
 
       {showEndpointRecovery ? (
-        <div className="px-4 py-3" data-testid="chat__composer-recovery">
+        <div className="border-t border-subtle px-4 py-3" data-testid="chat__composer-recovery">
           <div
-            className="flex flex-wrap items-start justify-between gap-3"
+            className="mx-auto w-full"
             data-testid="chat__composer-recovery-inline"
           >
-            <div className="min-w-0 space-y-1">
-              <div className="text-sm font-medium text-foreground">{labels.noEndpointRecoveryTitle}</div>
-              <div className="text-sm text-secondary">{labels.noEndpointRecoveryDescription}</div>
-              {endpoints.length === 0 ? (
-                <div className="text-xs text-tertiary">{labels.noEndpointRecoveryHint}</div>
+            <div
+              className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-subtle bg-background/95 px-4 py-3 shadow-ambient"
+              data-testid="chat__composer-recovery-shell"
+            >
+              <div className="min-w-0 space-y-1">
+                <div className="text-sm font-medium text-foreground">{labels.noEndpointRecoveryTitle}</div>
+                <div className="text-sm text-secondary">{labels.noEndpointRecoveryDescription}</div>
+                {endpoints.length === 0 ? (
+                  <div className="text-xs text-tertiary">{labels.noEndpointRecoveryHint}</div>
+                ) : null}
+              </div>
+              {endpoints.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {endpoints.slice(0, 4).map((endpoint) => (
+                    <Button
+                      key={endpoint.id}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => onSelectActiveEndpoint(endpoint)}
+                      data-testid={`chat__composer-recovery-endpoint--${endpoint.id}`}
+                    >
+                      {endpoint.name}
+                    </Button>
+                  ))}
+                </div>
               ) : null}
             </div>
-            {endpoints.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {endpoints.slice(0, 4).map((endpoint) => (
-                  <Button
-                    key={endpoint.id}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8"
-                    onClick={() => onSelectActiveEndpoint(endpoint)}
-                    data-testid={`chat__composer-recovery-endpoint--${endpoint.id}`}
-                  >
-                    {endpoint.name}
-                  </Button>
-                ))}
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { APIError } from '@/lib/api/errors';
@@ -204,6 +204,19 @@ describe('ProjectsPage route', () => {
     });
     expect(screen.getByTestId('projects__back-to-workspace')).toHaveAttribute('href', '/en/workspaces/ws_1');
     expect(screen.getByTestId('projects__table__row')).toBeInTheDocument();
+  });
+
+  it('uses the shared work surface header and toolbar instead of a page-local width shell', async () => {
+    render(<ProjectsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('projects__create-btn')).toBeInTheDocument();
+    });
+
+    expect(within(screen.getByTestId('page-layout__header')).getByTestId('projects__create-btn')).toBeInTheDocument();
+    expect(within(screen.getByTestId('page-layout__toolbar')).getByTestId('projects__search')).toBeInTheDocument();
+    expect(screen.getByTestId('projects__page')).not.toHaveClass('mx-auto');
+    expect(screen.getByTestId('projects__page')).not.toHaveClass('max-w-[1640px]');
   });
 
   it('navigates to overview when clicking a project table row', async () => {

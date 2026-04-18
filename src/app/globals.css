@@ -28,6 +28,22 @@
     --font-body-serif: var(--font-jjannon), Iowan Old Style, Palatino Linotype, URW Palladio L, P052, ui-serif, Georgia, Cambria, Times New Roman, Times, serif;
     --font-body-sans: var(--font-cursor-gothic), system-ui, Helvetica Neue, Helvetica, Arial, sans-serif;
     --font-mono-ui: var(--font-berkeley-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;
+
+    --font-size-body: 15.5px;
+    --line-height-body: 1.62;
+    --tracking-body: 0.006em;
+    --font-size-title: 1.12rem;
+    --font-size-body-serif: 1.045rem;
+    --font-size-body-ui: 0.99rem;
+    --font-size-caption: 0.7rem;
+    --tracking-caption: 0.13em;
+    --font-size-system-title: 1.22rem;
+    --font-size-system-heading: 1.12rem;
+    --font-size-system-body: 0.94rem;
+    --font-size-system-caption: 0.8rem;
+    --font-size-system-label: 0.73rem;
+    --tracking-system-label: 0.12em;
+    --font-size-mono: 0.82rem;
   }
 
   :root[data-theme='light'] {
@@ -114,9 +130,9 @@
   body {
     @apply bg-background text-primary;
     font-family: var(--font-body-sans);
-    font-size: 15px;
-    line-height: 1.58;
-    letter-spacing: 0.005em;
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    letter-spacing: var(--tracking-body);
     font-feature-settings: 'rlig' 1, 'calt' 1, 'ss09' 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -222,7 +238,7 @@
 
   .type-title {
     font-family: var(--font-display);
-    font-size: 1.08rem;
+    font-size: var(--font-size-title);
     line-height: 1.24;
     letter-spacing: -0.018em;
     font-weight: 400;
@@ -230,7 +246,7 @@
 
   .type-body-serif {
     font-family: var(--font-body-serif);
-    font-size: 1.02rem;
+    font-size: var(--font-size-body-serif);
     line-height: 1.56;
     font-weight: 400;
     font-feature-settings: 'cswh' 1;
@@ -238,39 +254,64 @@
 
   .type-body-ui {
     font-family: var(--font-body-sans);
-    font-size: 0.96rem;
+    font-size: var(--font-size-body-ui);
     line-height: 1.56;
-    letter-spacing: 0.008em;
+    letter-spacing: 0.007em;
     font-weight: 400;
   }
 
   .type-caption {
     font-family: var(--font-display);
-    font-size: 0.68rem;
+    font-size: var(--font-size-caption);
     line-height: 1.45;
-    letter-spacing: 0.14em;
+    letter-spacing: var(--tracking-caption);
     font-weight: 400;
     text-transform: uppercase;
   }
 
   .type-system-heading {
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 1.08rem;
-    line-height: 1.38;
+    font-size: var(--font-size-system-heading);
+    line-height: 1.36;
     font-weight: 600;
   }
 
   .type-system-caption {
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 0.78rem;
-    line-height: 1.35;
+    font-size: var(--font-size-system-caption);
+    line-height: 1.36;
     font-weight: 500;
   }
 
   .type-mono {
     font-family: var(--font-mono-ui);
-    font-size: 0.78rem;
+    font-size: var(--font-size-mono);
     line-height: 1.5;
+  }
+
+  .type-system-title {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: var(--font-size-system-title);
+    line-height: 1.28;
+    letter-spacing: -0.012em;
+    font-weight: 600;
+  }
+
+  .type-system-body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: var(--font-size-system-body);
+    line-height: 1.6;
+    letter-spacing: 0.006em;
+    font-weight: 400;
+  }
+
+  .type-system-label {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: var(--font-size-system-label);
+    line-height: 1.42;
+    letter-spacing: var(--tracking-system-label);
+    font-weight: 600;
+    text-transform: uppercase;
   }
 
   .surface-card {
@@ -287,6 +328,57 @@
 
   .control-pill {
     @apply rounded-pill border border-border/20 bg-transparent;
+  }
+
+  .theme-switch-shell {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid rgb(var(--border) / 0.22);
+    background: rgb(var(--bg-surface-low) / 0.62);
+  }
+
+  .theme-switch-shell[data-tone='public'] {
+    border-color: rgb(var(--border) / 0.28);
+    background: rgb(var(--bg-base) / 0.9);
+  }
+
+  .theme-switch-option {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: var(--radius-pill);
+    color: rgb(var(--text-secondary));
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  .theme-switch-option[data-density='compact'] {
+    min-height: 1.875rem;
+    padding-inline: 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .theme-switch-option[data-density='comfortable'] {
+    min-height: 2rem;
+    padding-inline: 0.875rem;
+    font-size: 0.875rem;
+  }
+
+  .theme-switch-option[data-active='true'] {
+    background: rgb(var(--bg-surface));
+    color: rgb(var(--text-strong));
+  }
+
+  .theme-switch-shell[data-tone='public'] .theme-switch-option[data-active='true'] {
+    background: rgb(var(--bg-surface-low));
+  }
+
+  .theme-switch-option[data-active='false']:hover {
+    background: rgb(var(--bg-surface-low) / 0.72);
+    color: rgb(var(--text-strong));
   }
 }
 

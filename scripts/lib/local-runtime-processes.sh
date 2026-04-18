@@ -1158,7 +1158,30 @@ local_runtime_stop_owned_process_tree() {
     esac
   fi
 
-  local late_discovery_hint_pid="" late_discovery_status late_discovery_attempts_after_term
+  if [[ "${root_is_alive}" -eq 0 ]]; then
+    # Once the root has already exited we can only fail closed. Do one immediate
+    # owned-marker scan and one same-session/group ambiguity scan so we still
+    # surface suspicious descendants without waiting through shell-oriented
+    # late-discovery loops that cannot restore completion authority.
+    local root_dead_owned_tree_hint_pid=""
+    root_dead_owned_tree_hint_pid="$(local_runtime_find_untracked_owned_tree_hint_pid_from_stream \
+      < <(local_runtime_owned_tree_process_pids_all "${expected_owner_token}" "${service_kind}" "${pid}") || true)"
+    if [[ -n "${root_dead_owned_tree_hint_pid}" ]]; then
+      echo "[local-runtime-processes] ownership verification failed for pid ${root_dead_owned_tree_hint_pid}: cannot confirm descendant ownership" >&2
+      return 1
+    fi
+    local root_dead_ambiguity_pid=""
+    root_dead_ambiguity_pid="$(local_runtime_find_untracked_same_session_or_group_ambiguity_pid \
+      "${root_process_group_id}" "${root_session_id}" "${pid}" "${root_start_time}" || true)"
+    if [[ -n "${root_dead_ambiguity_pid}" ]]; then
+      echo "[local-runtime-processes] ownership verification failed for pid ${root_dead_ambiguity_pid}: cannot confirm descendant ownership" >&2
+      return 1
+    fi
+    echo "[local-runtime-processes] ownership verification failed for pid ${pid}: missing post-root cleanup completion authority" >&2
+    return 1
+  fi
+
+  local late_discovery_hint_pid="" late_discovery_attempts_after_term
   if [[ "${term_tracked_pids_exited}" -eq 1 ]]; then
     late_discovery_attempts_after_term=3
     if ! local_runtime_has_tracked_descendants "${pid}" "${pids[@]}" && [[ "${sidecar_command}" =~ ^(bash|sh|zsh)([[:space:]]|$) ]]; then
@@ -1169,18 +1192,6 @@ local_runtime_stop_owned_process_tree() {
       echo "[local-runtime-processes] ownership verification failed for pid ${late_discovery_hint_pid}: cannot confirm descendant ownership" >&2
       return 1
     fi
-  fi
-
-  if [[ "${root_is_alive}" -eq 0 ]]; then
-    local root_dead_ambiguity_pid=""
-    root_dead_ambiguity_pid="$(local_runtime_find_untracked_same_session_or_group_ambiguity_pid_with_quiesce \
-      "${root_process_group_id}" "${root_session_id}" "${pid}" "${root_start_time}" "${term_grace_sleep_seconds}" 3 || true)"
-    if [[ -n "${root_dead_ambiguity_pid}" ]]; then
-      echo "[local-runtime-processes] ownership verification failed for pid ${root_dead_ambiguity_pid}: cannot confirm descendant ownership" >&2
-      return 1
-    fi
-    echo "[local-runtime-processes] ownership verification failed for pid ${pid}: missing post-root cleanup completion authority" >&2
-    return 1
   fi
 
   if local_runtime_all_pids_exited "${pids[@]}"; then

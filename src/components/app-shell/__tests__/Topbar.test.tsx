@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import { Topbar } from '../Topbar';
 
 const mockPush = vi.fn();
@@ -128,15 +129,20 @@ function renderTopbar(props?: { workspaceId?: string; projectId?: string }) {
     },
   });
   return render(
-    <QueryClientProvider client={renderQueryClient}>
-      <Topbar {...props} />
-    </QueryClientProvider>,
+    <ThemeProvider>
+      <QueryClientProvider client={renderQueryClient}>
+        <Topbar {...props} />
+      </QueryClientProvider>
+    </ThemeProvider>,
   );
 }
 
 describe('Topbar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.documentElement.style.colorScheme = 'light';
     canManageWorkspaceGovernance = false;
     mockProjects = [
       {
@@ -229,6 +235,25 @@ describe('Topbar', () => {
 
     const shell = screen.getByTestId('topbar');
     expect(shell.className).not.toMatch(/shadow-|backdrop-blur/);
+  });
+
+  it('exposes a direct topbar theme switch with a stable light-to-dark order', async () => {
+    renderTopbar();
+
+    const toggle = screen.getByTestId('topbar__theme-toggle');
+    const light = within(toggle).getByTestId('topbar__theme-light');
+    const dark = within(toggle).getByTestId('topbar__theme-dark');
+
+    expect(light.compareDocumentPosition(dark) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(toggle.className).not.toMatch(/shadow-|backdrop-blur/);
+
+    await waitFor(() => expect(light).toHaveAttribute('aria-pressed', 'true'));
+
+    fireEvent.click(dark);
+
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(document.documentElement.style.colorScheme).toBe('dark');
+    expect(window.localStorage.getItem('mbos.theme')).toBe('dark');
   });
 
   it('keeps system logo navigation on system surfaces without workspace context', () => {

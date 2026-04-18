@@ -37,7 +37,7 @@ function buildFilters(overrides: Partial<AuditListParams> = {}): AuditListParams
 }
 
 describe('AuditFilters', () => {
-  it('keeps investigation filters collapsed by default', () => {
+  it('keeps advanced query controls collapsed by default', () => {
     render(
       <AuditFilters
         filters={buildFilters()}
@@ -46,14 +46,16 @@ describe('AuditFilters', () => {
       />
     );
 
-    expect(screen.getByTestId('audit-filters__investigation')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'expand' })).toBeInTheDocument();
+    expect(screen.getByTestId('audit-filters__actions')).toBeInTheDocument();
+    expect(screen.getByTestId('audit-filters__toggle-advanced')).toHaveTextContent('expand');
     expect(screen.queryByLabelText('filters.action')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('filters.resource_id')).toBeInTheDocument();
     expect(screen.queryByLabelText('filters.actor_type')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('filters.request_id')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('audit-filters__active-tokens')).not.toBeInTheDocument();
   });
 
-  it('auto-expands investigation filters when trace fields are active', () => {
+  it('auto-expands advanced query controls when trace fields are active', () => {
     render(
       <AuditFilters
         filters={buildFilters({ trace_ref: 'trace_1' })}
@@ -62,7 +64,8 @@ describe('AuditFilters', () => {
       />
     );
 
-    expect(screen.getByRole('button', { name: 'collapse' })).toBeInTheDocument();
+    expect(screen.getByTestId('audit-filters__toggle-advanced')).toHaveTextContent('collapse');
+    expect(screen.getByTestId('audit-filters__advanced')).toBeInTheDocument();
     expect(screen.getByLabelText('filters.action')).toBeInTheDocument();
     expect(screen.getByLabelText('filters.trace_ref')).toBeInTheDocument();
     expect(screen.getByLabelText('filters.trace_incident_id')).toBeInTheDocument();
@@ -80,7 +83,7 @@ describe('AuditFilters', () => {
       />
     );
 
-    expect(screen.getByRole('button', { name: 'collapse' })).toBeInTheDocument();
+    expect(screen.getByTestId('audit-filters__toggle-advanced')).toHaveTextContent('collapse');
     const input = screen.getByLabelText('filters.trace_run_id');
     fireEvent.change(input, { target: { value: 'run_1' } });
 
@@ -112,7 +115,7 @@ describe('AuditFilters', () => {
   it('renders compact embedded chrome without boxed surfaces', () => {
     render(
       <AuditFilters
-        filters={buildFilters({ trace_ref: 'trace_1' })}
+        filters={buildFilters({ resource_id: 'resource_1', trace_ref: 'trace_1', actor_id: 'actor_1' })}
         onChange={vi.fn()}
         onClear={vi.fn()}
         compact
@@ -120,10 +123,14 @@ describe('AuditFilters', () => {
     );
 
     expect(screen.getByTestId('audit-filters__surface').className).not.toMatch(/rounded-md|border|bg-surface/);
-    expect(screen.getByTestId('audit-filters__investigation').className).not.toMatch(/rounded-md|border border-border/);
-    expect(screen.queryByText('filters')).not.toBeInTheDocument();
+    expect(screen.getByTestId('audit-filters__actions')).toBeInTheDocument();
+    expect(screen.getByTestId('audit-filters__toggle-advanced')).toHaveTextContent('collapse');
     expect(screen.getByTestId('audit-filters__primary-controls').className).toMatch(/flex-wrap/);
     expect(screen.getByTestId('audit-filters__primary-controls').className).not.toMatch(/grid-cols-|lg:grid-cols-/);
+    expect(screen.getByLabelText('filters.resource_id')).toHaveValue('resource_1');
+    expect(screen.getByTestId('audit-filters__advanced-controls').className).toMatch(/flex-wrap/);
+    expect(screen.getByTestId('audit-filters__active-tokens')).toHaveTextContent('filters.actor_id');
+    expect(screen.getByTestId('audit-filters__active-tokens')).toHaveTextContent('actor_1');
     expect(screen.getByTestId('audit-filters__investigation-controls').className).toMatch(/flex-wrap/);
     expect(screen.getByTestId('audit-filters__investigation-controls').className).not.toMatch(/grid-cols-|lg:grid-cols-/);
   });

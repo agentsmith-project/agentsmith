@@ -133,18 +133,22 @@ describe('visual baseline support', () => {
     const semanticIndex = visualSpec.indexOf('expectVisualSemanticAssertions(page, scenario.semanticAssertions, scenario.scenarioId)');
     const helperIndex = visualSpec.indexOf('async function captureSnapshotBoundActualScreenshot');
     const captureIndex = visualSpec.indexOf('const actualCapture = await captureSnapshotBoundActualScreenshot({');
-    const snapshotIndex = visualSpec.indexOf('._expectScreenshot({');
+    const screenshotIndex = visualSpec.indexOf('const actual = await args.page.screenshot({');
+    const comparatorIndex = visualSpec.indexOf('const comparison = screenshotComparator(actual, expected, {');
     const writeCaptureIndex = visualSpec.indexOf('actualCapture,');
 
     expect(semanticIndex).toBeGreaterThan(-1);
     expect(helperIndex).toBeGreaterThan(-1);
     expect(captureIndex).toBeGreaterThan(-1);
-    expect(snapshotIndex).toBeGreaterThan(-1);
+    expect(screenshotIndex).toBeGreaterThan(-1);
+    expect(comparatorIndex).toBeGreaterThan(-1);
     expect(writeCaptureIndex).toBeGreaterThan(-1);
     expect(helperIndex).toBeLessThan(captureIndex);
     expect(semanticIndex).toBeLessThan(captureIndex);
-    expect(snapshotIndex).toBeLessThan(writeCaptureIndex);
+    expect(screenshotIndex).toBeLessThan(comparatorIndex);
+    expect(comparatorIndex).toBeLessThan(writeCaptureIndex);
     expect(visualSpec).not.toContain('toHaveScreenshot(entry.screenshot');
+    expect(visualSpec).not.toContain('._expectScreenshot({');
     expect(visualSpec).toMatch(/'workspace-overview':[\s\S]*screenshotOptions:[\s\S]*maxDiffPixelRatio: 0/);
     expect(visualSpec).toContain('scenario.semanticAssertions.requiredViewportTestIds.length > 0');
     expect(visualSpec).toContain('maxDiffPixelRatio: 0');
@@ -721,9 +725,10 @@ describe('visual baseline support', () => {
       'system-workspaces__basics',
     ]);
     expect(grouped.get('overview')?.stableMarkers).toEqual([
-      'project-hub__summary',
-      'project-hub__use-summary',
-      'project-hub__governance-summary',
+      'project-overview__page',
+      'project-overview__primary-cta',
+      'project-overview__secondary-steps',
+      'project-overview__surface-group--govern',
     ]);
     expect(grouped.get('system-workspaces-create-wizard')?.stableMarkers).toEqual([
       'system-workspace-create__shell',
@@ -866,9 +871,10 @@ describe('visual baseline support', () => {
     ]);
 
     expect(resolveVisualBaselineStableMarkers('overview')).toEqual([
-      'project-hub__summary',
-      'project-hub__use-summary',
-      'project-hub__governance-summary',
+      'project-overview__page',
+      'project-overview__primary-cta',
+      'project-overview__secondary-steps',
+      'project-overview__surface-group--govern',
     ]);
 
     expect(resolveVisualBaselineStableMarkers('system-info')).toEqual([

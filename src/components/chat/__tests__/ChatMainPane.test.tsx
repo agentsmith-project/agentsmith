@@ -91,7 +91,7 @@ describe('ChatMainPane', () => {
     expect(screen.queryByRole('button', { name: 'newThread' })).not.toBeInTheDocument();
   });
 
-  it('keeps the recovery state inline and drops the local gradient', () => {
+  it('keeps the recovery state inline as a distinct work shelf', () => {
     render(
       <ChatMainPane
         currentSessionId="session_1"
@@ -151,10 +151,9 @@ describe('ChatMainPane', () => {
       />
     );
 
-    expect(screen.getByTestId('chat__main-pane').className).not.toContain('bg-[linear-gradient');
-    expect(screen.getByTestId('chat__composer-recovery').className).not.toContain('bg-surface-low');
-    expect(screen.getByTestId('chat__composer-recovery').className).not.toContain('border-b');
-    expect(screen.getByTestId('chat__composer-recovery').className).not.toContain('rounded-md');
+    expect(screen.getByTestId('chat__main-pane').className).not.toContain('gradient');
+    expect(screen.getByTestId('chat__composer-recovery').className).toContain('border-t');
+    expect(screen.getByTestId('chat__composer-recovery-shell')).toHaveClass('rounded-xl', 'border', 'shadow-ambient');
     expect(screen.getByTestId('chat__message-list')).toBeInTheDocument();
   });
 });

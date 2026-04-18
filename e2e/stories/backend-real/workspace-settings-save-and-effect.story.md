@@ -52,7 +52,7 @@
       "sceneId": "project-overview",
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/overview",
       "stableMarkers": [
-        "project-hub__summary"
+        "project-overview__page"
       ]
     }
   ],

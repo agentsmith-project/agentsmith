@@ -107,8 +107,8 @@ describe('ChatPage', () => {
     });
     expect(screen.queryByTestId('project-workbench')).not.toBeInTheDocument();
     expect(screen.getByTestId('chat__surface')).toBeInTheDocument();
-    expect(screen.getByTestId('chat__surface').className).toContain("[&_[data-testid='chat__main-pane']]:!bg-none");
-    expect(screen.getByTestId('chat__surface').className).toContain("[&_[data-testid='chat__composer-recovery']]:!bg-transparent");
+    expect(screen.getByTestId('chat__surface').className).not.toContain("[&_[data-testid='chat__main-pane']]:!bg-none");
+    expect(screen.getByTestId('chat__surface').className).not.toContain("[&_[data-testid='chat__composer-recovery']]:!bg-transparent");
     expect(screen.getByTestId('chat__surface').className).not.toContain('shadow-card');
     expect(screen.getByTestId('chat__new-thread-btn')).toBeInTheDocument();
   });

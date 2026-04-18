@@ -10,7 +10,7 @@
  * Update baselines: npx playwright test e2e/visual.spec.ts --project=visual --update-snapshots
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { test as base, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
@@ -1010,6 +1010,9 @@ async function captureSnapshotBoundActualScreenshot(args: {
   screenshotOptions: VisualScreenshotOptions;
 }): Promise<Buffer> {
   const testInfo = test.info() as {
+    config: {
+      updateSnapshots: 'all' | 'changed' | 'missing' | 'none';
+    };
     snapshotPath: (name: string, options: { kind: 'screenshot' }) => string;
     _projectInternal?: {
       expect?: {
@@ -1029,49 +1032,36 @@ async function captureSnapshotBoundActualScreenshot(args: {
     };
   };
   const configOptions = testInfo._projectInternal?.expect?.toHaveScreenshot ?? {};
+  const updateSnapshots = testInfo.config.updateSnapshots;
   const expectedPath = testInfo.snapshotPath(args.entry.screenshot, { kind: 'screenshot' });
-  const expected = readFileSync(expectedPath);
-  const screenshotComparator = await getScreenshotComparator();
-  const result = await (args.page as Page & {
-    _expectScreenshot: (options: {
-      expected?: Buffer;
-      isNot: boolean;
-      locator?: Locator;
-      animations?: 'disabled' | 'allow';
-      caret?: 'hide' | 'initial';
-      comparator?: string;
-      fullPage?: boolean;
-      maskColor?: string;
-      maxDiffPixels?: number;
-      maxDiffPixelRatio?: number;
-      omitBackground?: boolean;
-      scale?: 'css' | 'device';
-      threshold?: number;
-      timeout: number;
-    }) => Promise<{
-      actual?: Buffer;
-      errorMessage?: string;
-    }>;
-  })._expectScreenshot({
-    isNot: false,
+  const hasExpected = existsSync(expectedPath);
+  const expected = hasExpected ? readFileSync(expectedPath) : undefined;
+  const actual = await args.page.screenshot({
     animations: configOptions.animations ?? 'disabled',
     caret: configOptions.caret ?? 'hide',
-    comparator: configOptions.comparator,
     fullPage: args.screenshotOptions.fullPage,
     maskColor: configOptions.maskColor,
-    maxDiffPixels: configOptions.maxDiffPixels,
-    maxDiffPixelRatio: args.screenshotOptions.maxDiffPixelRatio ?? configOptions.maxDiffPixelRatio,
     omitBackground: configOptions.omitBackground,
     scale: configOptions.scale ?? 'css',
-    threshold: configOptions.threshold,
-    timeout: configOptions.timeout ?? 5_000,
   });
 
-  if (result.errorMessage || !result.actual) {
-    throw new Error(result.errorMessage ?? `Playwright screenshot assertion did not return an actual buffer for ${args.entry.screenshot}`);
+  if (updateSnapshots === 'all' || updateSnapshots === 'changed') {
+    mkdirSync(path.dirname(expectedPath), { recursive: true });
+    writeFileSync(expectedPath, actual);
+    return actual;
   }
 
-  const comparison = screenshotComparator(result.actual, expected, {
+  if (!expected) {
+    if (updateSnapshots !== 'none') {
+      mkdirSync(path.dirname(expectedPath), { recursive: true });
+      writeFileSync(expectedPath, actual);
+      return actual;
+    }
+    throw new Error(`Missing expected visual baseline for ${args.entry.screenshot}`);
+  }
+
+  const screenshotComparator = await getScreenshotComparator();
+  const comparison = screenshotComparator(actual, expected, {
     comparator: configOptions.comparator,
     maxDiffPixels: configOptions.maxDiffPixels,
     maxDiffPixelRatio: args.screenshotOptions.maxDiffPixelRatio ?? configOptions.maxDiffPixelRatio,
@@ -1081,7 +1071,7 @@ async function captureSnapshotBoundActualScreenshot(args: {
     throw new Error(comparison.errorMessage);
   }
 
-  return result.actual;
+  return actual;
 }
 
 async function runVisualScenario(context: VisualScenarioContext) {

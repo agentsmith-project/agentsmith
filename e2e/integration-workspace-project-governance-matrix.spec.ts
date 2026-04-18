@@ -782,7 +782,7 @@ test('workspace admin delegates project creator without granting workspace admin
         workspaceId,
         projectName,
       });
-      await expect(page.getByTestId('project-hub__summary')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('project-overview__page')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('sidebar__nav-item--settings')).toBeVisible({ timeout: 30_000 });
       await page.getByTestId('sidebar__nav-item--settings').click();
       await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/.+/settings(?:$|\\?)`), { timeout: 30_000 });

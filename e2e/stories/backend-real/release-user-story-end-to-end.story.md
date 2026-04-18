@@ -89,7 +89,7 @@
       "sceneId": "project-overview",
       "route": "/en-US/workspaces/{workspaceId}/projects/{projectId}/overview",
       "stableMarkers": [
-        "project-overview__heading"
+        "project-overview__page"
       ]
     },
     {
@@ -216,7 +216,7 @@
       "sceneId": "project-overview",
       "intent": "Open the new project overview.",
       "action": "Open project overview",
-      "target": "project-overview__heading",
+      "target": "project-overview__page",
       "expectedFeedback": "项目创建成功后的 overview",
       "note": "项目创建成功后的 overview",
       "evidence": [

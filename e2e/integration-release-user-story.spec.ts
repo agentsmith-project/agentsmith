@@ -796,7 +796,7 @@ test.describe('@lane-real release user story end-to-end', () => {
         visibility: 'public',
         joinPolicy: 'approval_required',
       });
-      await captureTrace('project-overview', 'Open project overview', 'project-overview__heading', '项目创建成功后的 overview');
+      await captureTrace('project-overview', 'Open project overview', 'project-overview__page', '项目创建成功后的 overview');
 
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
       await captureTrace('projects-list-member', 'Review projects as member', 'projects__heading', '普通成员查看项目列表');

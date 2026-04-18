@@ -461,6 +461,17 @@ describe('Composer', () => {
       const composer = screen.getByTestId('chat__composer');
       expect(composer).toBeInTheDocument();
     });
+
+    it('renders a dedicated composer shell and input surface so the work area is visually bounded', () => {
+      render(<Composer {...defaultProps} />);
+
+      expect(screen.getByTestId('chat__composer-shell')).toHaveClass('rounded-xl', 'border', 'shadow-ambient');
+      expect(screen.getByTestId('chat__composer-input-surface')).toHaveClass(
+        'rounded-lg',
+        'border',
+        'focus-within:ring-2',
+      );
+    });
   });
 
   describe('Disabled State', () => {

@@ -131,21 +131,22 @@ export function Composer({
 
   return (
     <div
-      className="border-t border-subtle bg-transparent"
+      className="border-t border-subtle bg-background/70"
       data-testid="chat__composer"
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <div className={cn('mx-auto w-full px-4 py-2.5', contentWidthClass)}>
+      <div className={cn('mx-auto w-full px-4 py-3', contentWidthClass)}>
         <div
+          data-testid="chat__composer-shell"
           className={cn(
-            'rounded-md bg-surface/55 px-3 py-2.5 sm:px-4 sm:py-3 transition-colors',
-            dragActive && 'bg-surface-high/80 ring-1 ring-accent/40',
+            'rounded-xl border border-subtle bg-background/95 px-3 py-3 shadow-ambient transition-[border-color,box-shadow,background-color] sm:px-4',
+            dragActive && 'border-accent/40 bg-background shadow-ambient ring-2 ring-accent/15',
           )}
         >
           {mode === 'edit' ? (
-            <div className="mb-2 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between">
               <div className="text-xs text-tertiary">{t('composer.editing_message')}</div>
               <Button type="button" variant="ghost" size="sm" onClick={onCancelEdit} disabled={disabled || streaming}>
                 {t('composer.cancel')}
@@ -154,7 +155,7 @@ export function Composer({
           ) : null}
 
           {attachments.length > 0 ? (
-            <div className="mb-2 flex flex-wrap gap-2">
+            <div className="mb-3 flex flex-wrap gap-2">
               {attachments.map((a) => {
                 const status = a.upload_status;
                 const hasImagePreview =
@@ -206,9 +207,9 @@ export function Composer({
             </div>
           ) : null}
 
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-3">
             {attachmentEnabled ? (
-              <div className="flex h-10 items-center gap-1 rounded-md bg-surface-high/70 px-1">
+              <div className="flex h-11 items-center gap-1 rounded-lg border border-subtle bg-surface-low/65 px-1.5">
                 <Button
                   type="button"
                   variant="ghost"
@@ -251,7 +252,10 @@ export function Composer({
               </div>
             ) : null}
 
-            <div className="flex-1 rounded-md bg-surface-high/80 px-3 py-2 focus-within:ring-2 focus-within:ring-accent/35">
+            <div
+              className="flex-1 rounded-lg border border-subtle bg-surface-high/80 px-3 py-2 focus-within:border-accent/30 focus-within:ring-2 focus-within:ring-accent/20"
+              data-testid="chat__composer-input-surface"
+            >
               <textarea
                 ref={textareaRef}
                 value={value}

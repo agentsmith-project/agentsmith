@@ -419,24 +419,12 @@ export function WorkspaceProjectsEntryPage({
 
   return (
     <PageState state="success">
-      <PageLayout contentWidth="full">
-        <div className="flex min-h-screen flex-col bg-background">
-          <Topbar />
+      <div className="flex min-h-screen flex-col bg-background">
+        <Topbar />
 
-          <main
-            className="mx-auto flex w-full max-w-[1640px] flex-1 flex-col px-4 py-6 md:px-6 md:py-8"
-            data-testid="projects__page"
-          >
-            <div className="space-y-6">
-              {showBackLink ? (
-                <Button asChild variant="ghost" className="w-fit px-0 text-secondary hover:text-foreground" data-testid="projects__back-to-workspace">
-                  <Link href={workspaceBasePath}>
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    {t('back_to_workspace')}
-                  </Link>
-                </Button>
-              ) : null}
-
+        <div className="flex-1 min-h-0">
+          <PageLayout
+            header={(
               <PageHeader
                 title={t('title')}
                 subtitle={`${t('workspace_label')} ${workspaceName}`}
@@ -452,8 +440,12 @@ export function WorkspaceProjectsEntryPage({
                   </Button>
                 )}
               />
-
-              <section className="flex flex-col gap-3 border-t border-subtle pt-4 xl:flex-row xl:items-center xl:justify-between">
+            )}
+            toolbar={(
+              <section
+                className="flex flex-col gap-3 border-t border-subtle pt-4 xl:flex-row xl:items-start xl:justify-between"
+                data-testid="projects__toolbar"
+              >
                 <div className="space-y-1">
                   <p className="type-system-caption text-tertiary">
                     {workspaceName} · {filteredProjects.length} {t('summary.total_label')}
@@ -486,6 +478,17 @@ export function WorkspaceProjectsEntryPage({
                   ) : null}
                 </div>
               </section>
+            )}
+          >
+            <div className="flex flex-1 flex-col gap-6" data-testid="projects__page">
+              {showBackLink ? (
+                <Button asChild variant="ghost" className="w-fit px-0 text-secondary hover:text-foreground" data-testid="projects__back-to-workspace">
+                  <Link href={workspaceBasePath}>
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    {t('back_to_workspace')}
+                  </Link>
+                </Button>
+              ) : null}
 
               {!isAuthenticated || (isProjectsLoading && projects.length === 0) ? (
                 <div className="flex min-h-[320px] items-center justify-center">
@@ -604,70 +607,70 @@ export function WorkspaceProjectsEntryPage({
                 </div>
               )}
             </div>
-          </main>
-
-          <CreateProjectDialog
-            open={canCreateProject && createDialogOpen}
-            onOpenChange={setCreateDialogOpen}
-            workspaceId={workspaceId}
-            onSuccess={handleCreateProjectSuccess}
-          />
-
-          <DeleteProjectDialog
-            open={!!deleteDialogProject}
-            onOpenChange={(open) => !open && setDeleteDialogProject(null)}
-            project={deleteDialogProject}
-            workspaceId={workspaceId}
-            onDeleted={handleDeleteProjectSuccess}
-            deleteProject={handleDeleteProject}
-          />
-
-          <AlertDialog open={!!joinDialogProject} onOpenChange={(open) => !open && setJoinDialogProject(null)}>
-            <AlertDialogContent
-              data-testid={
-                joinDialogMode === 'open'
-                  ? 'projects__join-now-dialog'
-                  : 'projects__join-request-dialog'
-              }
-            >
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {joinDialogMode === 'open' ? t('join_request.join_now_title') : t('join_request.confirm_title')}
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {isJoinDialogPending
-                    ? t('join_request.pending_description', { project: joinDialogProject?.name ?? '' })
-                    : joinDialogMode === 'open'
-                      ? t('join_request.join_now_description', { project: joinDialogProject?.name ?? '' })
-                      : t('join_request.confirm_description', { project: joinDialogProject?.name ?? '' })}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel data-testid="projects__join-dialog-cancel">{t('join_request.cancel')}</AlertDialogCancel>
-                <AlertDialogAction
-                  data-testid={
-                    joinDialogMode === 'open'
-                      ? 'projects__join-now-confirm'
-                      : 'projects__join-request-confirm'
-                  }
-                  onClick={(event) => {
-                    event.preventDefault();
-                    if (!joinDialogProject || isJoinDialogPending || isJoinDialogBusy) return;
-                    void handleCreateJoinRequest(joinDialogProject);
-                  }}
-                  disabled={!joinDialogProject || isJoinDialogPending || isJoinDialogBusy}
-                >
-                  {isJoinDialogPending
-                    ? t('join_request.pending')
-                    : joinDialogMode === 'open'
-                      ? t('join_request.join_now')
-                      : t('join_request.action')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          </PageLayout>
         </div>
-      </PageLayout>
+
+        <CreateProjectDialog
+          open={canCreateProject && createDialogOpen}
+          onOpenChange={setCreateDialogOpen}
+          workspaceId={workspaceId}
+          onSuccess={handleCreateProjectSuccess}
+        />
+
+        <DeleteProjectDialog
+          open={!!deleteDialogProject}
+          onOpenChange={(open) => !open && setDeleteDialogProject(null)}
+          project={deleteDialogProject}
+          workspaceId={workspaceId}
+          onDeleted={handleDeleteProjectSuccess}
+          deleteProject={handleDeleteProject}
+        />
+
+        <AlertDialog open={!!joinDialogProject} onOpenChange={(open) => !open && setJoinDialogProject(null)}>
+          <AlertDialogContent
+            data-testid={
+              joinDialogMode === 'open'
+                ? 'projects__join-now-dialog'
+                : 'projects__join-request-dialog'
+            }
+          >
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {joinDialogMode === 'open' ? t('join_request.join_now_title') : t('join_request.confirm_title')}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {isJoinDialogPending
+                  ? t('join_request.pending_description', { project: joinDialogProject?.name ?? '' })
+                  : joinDialogMode === 'open'
+                    ? t('join_request.join_now_description', { project: joinDialogProject?.name ?? '' })
+                    : t('join_request.confirm_description', { project: joinDialogProject?.name ?? '' })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="projects__join-dialog-cancel">{t('join_request.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                data-testid={
+                  joinDialogMode === 'open'
+                    ? 'projects__join-now-confirm'
+                    : 'projects__join-request-confirm'
+                }
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (!joinDialogProject || isJoinDialogPending || isJoinDialogBusy) return;
+                  void handleCreateJoinRequest(joinDialogProject);
+                }}
+                disabled={!joinDialogProject || isJoinDialogPending || isJoinDialogBusy}
+              >
+                {isJoinDialogPending
+                  ? t('join_request.pending')
+                  : joinDialogMode === 'open'
+                    ? t('join_request.join_now')
+                    : t('join_request.action')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </PageState>
   );
 }

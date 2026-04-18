@@ -6,6 +6,7 @@ import { createProjectRoutePolicy } from '@/lib/routes/project-route-policy';
 import {
   buildOverviewNextStepEntries,
   buildOverviewSurfaceSummary,
+  splitOverviewPrimaryStep,
 } from '../overview-page-utils';
 
 const tNav = ((key: string) => key) as ReturnType<typeof useTranslations<'nav'>>;
@@ -77,6 +78,11 @@ describe('overview page utils', () => {
     const featuredEntries = buildOverviewNextStepEntries(policies, tNav, tContext, tOverview);
 
     expect(featuredEntries.map((entry) => entry.href)).toEqual(['chat', 'notebook', 'files', 'context']);
+
+    const { primaryStep, secondarySteps } = splitOverviewPrimaryStep(featuredEntries);
+
+    expect(primaryStep?.href).toBe('chat');
+    expect(secondarySteps.map((entry) => entry.href)).toEqual(['notebook', 'files', 'context']);
 
     const summary = buildOverviewSurfaceSummary(
       policies,

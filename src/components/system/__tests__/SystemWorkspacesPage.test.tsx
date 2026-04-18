@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import { makeWorkspace, mockWorkspaceListResponse } from './systemWorkspacesTestUtils';
 
 const replaceMock = vi.fn();
@@ -42,6 +43,9 @@ describe('SystemWorkspacesPage', () => {
   };
 
   beforeEach(() => {
+    window.localStorage.clear();
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.documentElement.style.colorScheme = 'light';
     document.documentElement.lang = 'en-US';
     replaceMock.mockReset();
     fetchMock.mockReset();
@@ -80,12 +84,19 @@ describe('SystemWorkspacesPage', () => {
     vi.restoreAllMocks();
   });
 
+  const renderPage = () => render(
+    <ThemeProvider>
+      <SystemWorkspacesPage />
+    </ThemeProvider>,
+  );
+
   it('renders a quieter workspace directory and keeps the editor collapsed until edit mode', async () => {
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     expect(await screen.findByRole('heading', { name: 'workspaces_title' })).toBeInTheDocument();
     expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
     expect(screen.getByTestId('page-layout__toolbar')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__theme-toggle')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__new-workspace')).toBeInTheDocument();
     expectPrimaryProminence('system-workspaces__new-workspace');
     expect(screen.queryByTestId('system-workspaces__summary-line')).not.toBeInTheDocument();
@@ -118,10 +129,29 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByDisplayValue('Alpha Workspace')).toBeInTheDocument();
   });
 
+  it('switches theme directly from the system workspaces surface toolbar', async () => {
+    renderPage();
+
+    await screen.findByTestId('system-workspaces__card--ws_alpha');
+
+    const toggle = screen.getByTestId('system-workspaces__theme-toggle');
+    const light = within(toggle).getByTestId('system-workspaces__theme-light');
+    const dark = within(toggle).getByTestId('system-workspaces__theme-dark');
+
+    expect(light.compareDocumentPosition(dark) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await waitFor(() => expect(light).toHaveAttribute('aria-pressed', 'true'));
+
+    fireEvent.click(dark);
+
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(document.documentElement.style.colorScheme).toBe('dark');
+    expect(window.localStorage.getItem('mbos.theme')).toBe('dark');
+  });
+
   it('renders the empty editor as a quiet working area rather than a second boxed panel', async () => {
     fetchMock.mockResolvedValueOnce(mockWorkspaceListResponse([]));
 
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     expect(await screen.findByTestId('system-workspaces__editor-empty')).toBeInTheDocument();
     expectPrimaryProminence('system-workspaces__empty-create');
@@ -130,7 +160,7 @@ describe('SystemWorkspacesPage', () => {
   });
 
   it('filters workspaces from the list without exposing tenant implementation details', async () => {
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     expect(await screen.findByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('system-workspaces__search'), { target: { value: 'beta' } });
@@ -140,7 +170,7 @@ describe('SystemWorkspacesPage', () => {
   });
 
   it('offers recovery actions when the current list view filters every workspace out', async () => {
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     expect(await screen.findByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('system-workspaces__search'), { target: { value: 'missing' } });
@@ -156,7 +186,7 @@ describe('SystemWorkspacesPage', () => {
 
 
   it('shows a filtered empty state with a clear filters recovery action', async () => {
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     expect(await screen.findByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('system-workspaces__search'), { target: { value: 'gamma' } });
@@ -170,7 +200,7 @@ describe('SystemWorkspacesPage', () => {
   });
 
   it('updates the workspace query param when selecting another workspace from the list', async () => {
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     expect(await screen.findByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__card--ws_beta'));
@@ -180,7 +210,7 @@ describe('SystemWorkspacesPage', () => {
   });
 
   it('renders initialized-at timestamps with surface-specific ids across the list and detail panel', async () => {
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     const cardTimestamp = await screen.findByTestId('system-workspaces__card-initialized-at--ws_alpha');
     const detailHeaderTimestamp = screen.getByTestId('system-workspaces__detail-header-initialized-at');
@@ -206,7 +236,7 @@ describe('SystemWorkspacesPage', () => {
       }),
     ]));
 
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     expect(await screen.findByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));
@@ -231,7 +261,7 @@ describe('SystemWorkspacesPage', () => {
     fetchMock.mockReset();
     fetchMock.mockResolvedValue({ ok: false });
 
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     expect(await screen.findByTestId('system-workspaces__error')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__retry'));
@@ -255,7 +285,7 @@ describe('SystemWorkspacesPage', () => {
       ]),
     );
 
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     const failedStatus = await screen.findByTestId('system-workspaces__status');
     expect(failedStatus).toHaveTextContent('provisioning_status.failed');
@@ -312,7 +342,7 @@ describe('SystemWorkspacesPage', () => {
         },
       })]));
 
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     expect(await screen.findByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));
@@ -362,7 +392,7 @@ describe('SystemWorkspacesPage', () => {
       }),
     ]));
 
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     expect(await screen.findByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));
@@ -403,7 +433,7 @@ describe('SystemWorkspacesPage', () => {
         }),
       ]));
 
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     expect(await screen.findByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));
@@ -443,7 +473,7 @@ describe('SystemWorkspacesPage', () => {
         json: async () => ({ items: [] }),
       });
 
-    render(<SystemWorkspacesPage />);
+    renderPage();
 
     expect(await screen.findByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));

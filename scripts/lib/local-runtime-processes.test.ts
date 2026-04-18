@@ -759,6 +759,7 @@ sleep 0.2
   it('fails closed when the root pid already exited and completion authority is unavailable', async () => {
     const tempRoot = makeTempRoot();
     const processStateDir = path.join(tempRoot, 'processes');
+    const lateHintCountFile = path.join(tempRoot, 'late-hint.count');
     const rootScript = path.join(tempRoot, 'root-exits-immediately.sh');
     const port = await reserveTcpPort();
 
@@ -797,7 +798,24 @@ sleep 0.2
         `
           set -euo pipefail
           source scripts/lib/local-runtime-processes.sh
+          eval "$(declare -f local_runtime_find_untracked_owned_tree_hint_pid_with_quiesce | sed '1s/local_runtime_find_untracked_owned_tree_hint_pid_with_quiesce/local_runtime_find_untracked_owned_tree_hint_pid_with_quiesce_original/')"
+          local_runtime_find_untracked_owned_tree_hint_pid_with_quiesce() {
+            local count=0
+            if [[ -f "\${LOCAL_RUNTIME_TEST_LATE_HINT_COUNT_FILE}" ]]; then
+              count="$(cat "\${LOCAL_RUNTIME_TEST_LATE_HINT_COUNT_FILE}")"
+            fi
+            count="$((count + 1))"
+            printf '%s\n' "\${count}" > "\${LOCAL_RUNTIME_TEST_LATE_HINT_COUNT_FILE}"
+            local_runtime_find_untracked_owned_tree_hint_pid_with_quiesce_original "$@"
+          }
+          started_ms="$(date +%s%3N)"
+          set +e
           local_runtime_stop_owned_process_tree "${rootPid}" api "${port}"
+          stop_status=$?
+          set -e
+          finished_ms="$(date +%s%3N)"
+          echo "elapsed_ms=$((finished_ms - started_ms))"
+          exit "\${stop_status}"
         `,
         {
           LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
@@ -806,11 +824,14 @@ sleep 0.2
           LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
           LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '5',
           LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+          LOCAL_RUNTIME_TEST_LATE_HINT_COUNT_FILE: lateHintCountFile,
         },
       );
 
       expect(stopResult.status).not.toBe(0);
       expect(stopResult.stderr).toContain('completion authority');
+      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(1_500);
+      expect(existsSync(lateHintCountFile)).toBe(false);
       const sidecarFiles = existsSync(processStateDir)
         ? execFileSync('bash', ['-lc', `find "${processStateDir}" -type f -name '*.json' | sort`], {
           cwd: repoRoot,

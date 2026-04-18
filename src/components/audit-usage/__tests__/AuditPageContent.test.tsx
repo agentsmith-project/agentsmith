@@ -78,8 +78,10 @@ describe('AuditPageContent', () => {
     expect(screen.getByTestId('audit__work-surface').className).not.toMatch(/shadow-card/);
     expect(screen.getByTestId('audit__investigation-anchor')).toHaveAttribute('data-compact', 'true');
     expect(screen.getByTestId('audit__summary-line')).toBeInTheDocument();
-    expect(screen.getByTestId('audit__filters')).toBeInTheDocument();
+    expect(screen.getByTestId('audit__query-strip')).toBeInTheDocument();
+    expect(screen.getByTestId('audit__query-strip').className).not.toMatch(/shadow-card|rounded-xl/);
     expect(screen.getByTestId('audit__filters-content')).toHaveAttribute('data-compact', 'true');
+    expect(screen.getByTestId('audit__list-surface').className).toMatch(/min-h-0 flex-1/);
     expect(screen.getByTestId('audit__table-region').className).not.toMatch(/rounded-md|border|bg-background/);
     expect(screen.getByTestId('audit__table')).toBeInTheDocument();
   });

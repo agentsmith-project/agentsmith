@@ -850,7 +850,7 @@ async function captureProjectPages(
   role: string,
 ) {
   const pages: Array<{ name: string; path: string; waitFor?: string }> = [
-    { name: 'project-overview', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/overview`, waitFor: 'project-hub__page' },
+    { name: 'project-overview', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/overview`, waitFor: 'project-overview__page' },
     { name: 'project-chat', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/chat`, waitFor: 'chat__main-pane' },
     { name: 'project-notebook', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/notebook`, waitFor: 'notebook__task-list' },
     { name: 'project-files', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/files`, waitFor: 'files__library-create' },
@@ -928,10 +928,10 @@ async function captureProjectSurfaceHandoffContinuity(
     {
       name: 'open-project-overview',
       action: 'Open project overview',
-      target: 'project-hub__page',
+      target: 'project-overview__page',
       notes: '成员先回到 overview 作为日常 handoff hub。',
       route: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/overview`,
-      waitFor: 'project-hub__page',
+      waitFor: 'project-overview__page',
     },
     {
       name: 'handoff-to-chat',
@@ -963,7 +963,7 @@ async function captureProjectSurfaceHandoffContinuity(
       target: 'sidebar__nav-item--overview',
       notes: '回到 overview 后可以继续下一轮工作。',
       route: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/overview`,
-      waitFor: 'project-hub__page',
+      waitFor: 'project-overview__page',
     },
   ];
 

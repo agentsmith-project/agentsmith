@@ -137,88 +137,96 @@ export function TaskPageContent({
   const hasArtifacts = artifacts.length > 0;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3 pt-2">
       {terminalStatusStrip}
       <div
-        className={`relative flex min-h-0 flex-1 gap-3 overflow-hidden ${
+        className={`flex min-h-0 flex-1 gap-4 overflow-hidden ${
           terminalStatusStrip ? "mt-3" : ""
         }`}
+        data-testid="notebook__task-content-workspace"
       >
-        {hasTerminalWorkspace ? (
-          <div
-            className={
-              showTerminalMode
-                ? "min-h-0 min-w-0 w-full flex-1 basis-0 overflow-hidden"
-                : "pointer-events-none absolute h-0 w-0 overflow-hidden"
-            }
-            data-testid="notebook__task-terminal-workspace-shell"
-            aria-hidden={!showTerminalMode}
-          >
-            <div className="flex h-full min-h-0 w-full flex-1">
-              {terminalWorkspace}
+        <div
+          className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
+          data-testid="notebook__task-primary-column"
+        >
+          {hasTerminalWorkspace ? (
+            <div
+              className={
+                showTerminalMode
+                  ? "min-h-0 min-w-0 w-full flex-1 basis-0 overflow-hidden"
+                  : "pointer-events-none absolute h-0 w-0 overflow-hidden"
+              }
+              data-testid="notebook__task-terminal-workspace-shell"
+              aria-hidden={!showTerminalMode}
+            >
+              <div className="flex h-full min-h-0 w-full flex-1">
+                {terminalWorkspace}
+              </div>
             </div>
-          </div>
-        ) : null}
-        {showConversationMode ? (
-          <div
-            className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border border-subtle bg-surface/70 p-1.5 shadow-ambient"
-            data-testid="notebook__task-conversation-shell"
-          >
-            <>
-              {showSseDebugPanel ? (
-                <NotebookSseDebugPanel events={sseDebugEvents} />
-              ) : null}
-              <ConversationPanel
-                messages={messages}
-                streamingMessageId={streamingMessageId}
-                streamingContent={streamingContent}
-                connectionStatus={connectionStatus}
-                connectionErrorCode={connectionErrorCode}
-                connectionErrorMessage={connectionErrorMessage}
-                traceEventsByMessageId={traceEventsByMessageId}
-                traceHasMoreByMessageId={traceHasMoreByMessageId}
-                traceLoadingByMessageId={traceLoadingByMessageId}
-                traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
-                traceErrorByMessageId={traceErrorByMessageId}
-                diagnosticsLinks={diagnosticsLinks}
-                onTraceExpand={fetchTracesForMessage}
-                onTraceLoadMore={loadMoreTracesForMessage}
-                onSendMessage={handleSendMessage}
-                agentRunning={agentIsBusy}
-                pendingQueue={pendingMessages}
-                onPendingUpdate={handlePendingUpdate}
-                onPendingRemove={handlePendingRemove}
-                runActivity={runActivity}
-                onCancelActiveRun={handleCancelActiveRun}
-                onRunActionClick={onRunActionClick}
-                focusTraceMessageId={focusTraceMessageId}
-                focusTraceName={focusTraceName}
-                focusTraceToken={focusTraceToken}
-                sandboxStarting={sandboxStarting}
-                disabled={disabled}
-                activeAgentMessageId={activeAgentMessageId}
-                sending={sending}
-                inputPlaceholder={inputPlaceholder}
-                blockedState={conversationBlockedState}
-              />
-            </>
-          </div>
-        ) : null}
+          ) : null}
+          {showConversationMode ? (
+            <div
+              className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-subtle bg-background/92 p-1.5 shadow-ambient"
+              data-testid="notebook__task-conversation-shell"
+            >
+              <>
+                {showSseDebugPanel ? (
+                  <NotebookSseDebugPanel events={sseDebugEvents} />
+                ) : null}
+                <ConversationPanel
+                  messages={messages}
+                  streamingMessageId={streamingMessageId}
+                  streamingContent={streamingContent}
+                  connectionStatus={connectionStatus}
+                  connectionErrorCode={connectionErrorCode}
+                  connectionErrorMessage={connectionErrorMessage}
+                  traceEventsByMessageId={traceEventsByMessageId}
+                  traceHasMoreByMessageId={traceHasMoreByMessageId}
+                  traceLoadingByMessageId={traceLoadingByMessageId}
+                  traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
+                  traceErrorByMessageId={traceErrorByMessageId}
+                  diagnosticsLinks={diagnosticsLinks}
+                  onTraceExpand={fetchTracesForMessage}
+                  onTraceLoadMore={loadMoreTracesForMessage}
+                  onSendMessage={handleSendMessage}
+                  agentRunning={agentIsBusy}
+                  pendingQueue={pendingMessages}
+                  onPendingUpdate={handlePendingUpdate}
+                  onPendingRemove={handlePendingRemove}
+                  runActivity={runActivity}
+                  onCancelActiveRun={handleCancelActiveRun}
+                  onRunActionClick={onRunActionClick}
+                  focusTraceMessageId={focusTraceMessageId}
+                  focusTraceName={focusTraceName}
+                  focusTraceToken={focusTraceToken}
+                  sandboxStarting={sandboxStarting}
+                  disabled={disabled}
+                  activeAgentMessageId={activeAgentMessageId}
+                  sending={sending}
+                  inputPlaceholder={inputPlaceholder}
+                  blockedState={conversationBlockedState}
+                />
+              </>
+            </div>
+          ) : null}
+        </div>
         {hasArtifacts && artifactsDrawerOpen ? (
-          <div
-            className={`flex h-full min-h-0 flex-shrink-0 overflow-hidden rounded-md border border-subtle bg-surface/68 p-1.5 shadow-ambient ${
-              showConversationMode ? "w-[216px]" : "w-[256px]"
-            }`}
-            data-testid="notebook__task-artifacts-drawer"
-          >
-            <ArtifactsPanel
-              artifacts={artifacts}
-              onView={handleViewArtifact}
-              onDownload={handleDownloadArtifact}
-              onRefresh={handleRefreshArtifacts}
-              refreshing={artifactsRefreshing}
-              disabled={isDisabled || !canUpdateTask}
-            />
+          <div className="flex min-h-0 flex-shrink-0" data-testid="notebook__task-secondary-column">
+            <div
+              className={`flex h-full min-h-0 flex-shrink-0 overflow-hidden rounded-xl border border-subtle bg-background/92 p-1.5 shadow-ambient ${
+                showConversationMode ? "w-[232px]" : "w-[272px]"
+              }`}
+              data-testid="notebook__task-artifacts-drawer"
+            >
+              <ArtifactsPanel
+                artifacts={artifacts}
+                onView={handleViewArtifact}
+                onDownload={handleDownloadArtifact}
+                onRefresh={handleRefreshArtifacts}
+                refreshing={artifactsRefreshing}
+                disabled={isDisabled || !canUpdateTask}
+              />
+            </div>
           </div>
         ) : null}
       </div>

@@ -4,9 +4,7 @@ import {
   BookText,
   Languages,
   LogOut,
-  MoonStar,
   Settings,
-  SunMedium,
   User,
   type LucideIcon,
 } from 'lucide-react';
@@ -19,7 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useTheme } from '@/components/providers/ThemeProvider';
-import type { Theme } from '@/lib/theme';
+import { THEME_OPTIONS } from '@/components/theme/themeOptions';
 
 interface UserMenuItem {
   id: string;
@@ -40,11 +38,6 @@ const LOCALES = [
   { id: 'en-US', label: 'English', icon: Languages },
   { id: 'zh-CN', label: '中文', icon: Languages },
 ] as const;
-
-const THEME_OPTIONS: Array<{ id: Theme; labelKey: 'theme_light' | 'theme_dark'; icon: LucideIcon }> = [
-  { id: 'light', labelKey: 'theme_light', icon: SunMedium },
-  { id: 'dark', labelKey: 'theme_dark', icon: MoonStar },
-];
 
 interface UserMenuProps {
   user: {

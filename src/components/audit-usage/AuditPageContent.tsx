@@ -102,19 +102,21 @@ export function AuditPageContent({
               : commonT('trace_context_match_missing')}
           </p>
         ) : null}
-        <div data-testid="audit__filters">
-          <AuditFilters
-            filters={filters}
-            onChange={onFiltersChange}
-            onClear={onClearFilters}
-            compact
-            defaultEndUserId={defaultEndUserId}
-            categoryFilter={categoryFilter}
-            onCategoryFilterChange={onCategoryFilterChange}
-          />
+        <div className="border-b border-subtle/70 pb-4" data-testid="audit__query-strip">
+          <div data-testid="audit__filters">
+            <AuditFilters
+              filters={filters}
+              onChange={onFiltersChange}
+              onClear={onClearFilters}
+              compact
+              defaultEndUserId={defaultEndUserId}
+              categoryFilter={categoryFilter}
+              onCategoryFilterChange={onCategoryFilterChange}
+            />
+          </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col border-t border-subtle/70 pt-4">
+        <div className="flex min-h-0 flex-1 flex-col pt-1" data-testid="audit__list-surface">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">{t('title')}</p>

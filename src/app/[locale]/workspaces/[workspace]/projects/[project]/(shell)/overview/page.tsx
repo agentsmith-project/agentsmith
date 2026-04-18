@@ -8,6 +8,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
+import { Button } from '@/components/ui/button';
 import { useCurrentPermissions, useProjectOverviewCapabilities } from '@/lib/hooks/use-permissions';
 import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { buildProjectSurfacePath, type ProjectSurfaceHref } from '@/lib/projects/project-surface-access';
@@ -16,6 +17,7 @@ import {
   buildOverviewSurfaceSummary,
   buildOverviewNextStepEntries,
   createOverviewErrorContent,
+  splitOverviewPrimaryStep,
 } from './overview-page-utils';
 import { listAccessibleSidebarProjectRoutePolicies } from '@/lib/projects/project-surface-access';
 
@@ -79,6 +81,7 @@ export default function OverviewPage({ params }: OverviewPageProps) {
   const { workspaceBasePath } = buildOverviewPaths(locale, workspaceId, projectId);
   const accessiblePolicies = listAccessibleSidebarProjectRoutePolicies(currentPermissions);
   const nextStepEntries = buildOverviewNextStepEntries(accessiblePolicies, tNav, tContextStore, tOverview);
+  const { primaryStep, secondarySteps } = splitOverviewPrimaryStep(nextStepEntries);
   const nextStepHrefs = nextStepEntries.map((entry) => entry.href);
   const remainingSurfaceSummary = buildOverviewSurfaceSummary(
     accessiblePolicies,
@@ -90,77 +93,113 @@ export default function OverviewPage({ params }: OverviewPageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout header={<PageHeader title={tNav('overview')} subtitle={tOverview('subtitle')} />}>
-        <div className="space-y-5" data-testid="project-hub__page">
+      <PageLayout
+        header={(
+          <PageHeader
+            title={tNav('overview')}
+            subtitle={tOverview('subtitle')}
+            actions={primaryStep ? (
+              <Button asChild variant="primary">
+                <Link
+                  href={buildProjectSurfacePath(locale, workspaceId, projectId, primaryStep.href)}
+                  data-testid="project-overview__primary-cta"
+                >
+                  {tOverview('next_steps.open')} {primaryStep.label}
+                </Link>
+              </Button>
+            ) : null}
+          />
+        )}
+      >
+        <div className="space-y-6" data-testid="project-overview__page">
           <Link
             href={workspaceBasePath}
             className="inline-flex items-center gap-2 text-sm text-tertiary transition-colors hover:text-foreground"
-            data-testid="project-hub__back-to-workspace"
+            data-testid="project-overview__back-to-workspace"
           >
             <ArrowLeft className="h-4 w-4" />
             {tProjects('back_to_workspace')}
           </Link>
 
-          <section className="space-y-6 border-t border-subtle pt-5" data-testid="project-hub__summary">
-            <p className="type-body-ui max-w-3xl text-secondary">
-              {tWorkspace('workspace_home_next_steps_description')}
-            </p>
-
-            <div className="space-y-3" data-testid="project-hub__next-steps">
-              <p className="type-system-caption text-tertiary">{tWorkspace('workspace_home_next_steps_title')}</p>
-              <div className="divide-y divide-subtle border-y border-subtle">
-                {nextStepEntries.map((entry, index) => (
-                  <Link
-                    key={entry.href}
-                    href={buildProjectSurfacePath(locale, workspaceId, projectId, entry.href)}
-                    className="group flex items-start justify-between gap-4 px-0 py-4 transition-colors hover:text-foreground"
-                    data-testid={entry.testId}
-                  >
-                    <div className="space-y-1">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
-                        {index === 0 ? tOverview('next_steps_primary_badge') : tOverview('next_steps_secondary_badge')}
-                      </div>
-                      <div className="type-system-heading text-[1rem] font-semibold text-foreground">{entry.label}</div>
-                      <p className="text-sm leading-6 text-secondary">{entry.description}</p>
+          <section className="grid gap-8 border-t border-subtle pt-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)] xl:items-start">
+            <div className="space-y-8">
+              {primaryStep ? (
+                <section className="space-y-4" data-testid="project-overview__primary-task">
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
+                      {tOverview('next_steps.primary_badge')}
+                    </p>
+                    <div className="space-y-3">
+                      <h2 className="type-section-heading text-foreground">{primaryStep.label}</h2>
+                      <p className="type-body-ui max-w-2xl text-secondary">{primaryStep.description}</p>
                     </div>
-                    <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-icon-default transition-transform group-hover:translate-x-0.5" />
-                  </Link>
-                ))}
-              </div>
+                  </div>
+                </section>
+              ) : (
+                <section className="space-y-3" data-testid="project-overview__primary-task">
+                  <p className="type-system-caption text-tertiary">{tWorkspace('workspace_home_next_steps_title')}</p>
+                  <p className="type-body-ui max-w-2xl text-secondary">{tWorkspace('workspace_home_next_steps_description')}</p>
+                </section>
+              )}
+
+              {secondarySteps.length > 0 ? (
+                <section className="space-y-3" data-testid="project-overview__secondary-steps">
+                  <p className="type-system-caption text-tertiary">{tWorkspace('workspace_home_next_steps_title')}</p>
+                  <div className="divide-y divide-subtle border-y border-subtle">
+                    {secondarySteps.map((entry, index) => (
+                      <Link
+                        key={entry.href}
+                        href={buildProjectSurfacePath(locale, workspaceId, projectId, entry.href)}
+                        className="group flex items-start justify-between gap-4 px-0 py-4 transition-colors hover:text-foreground"
+                        data-testid={`project-overview__secondary-step--${entry.href}`}
+                      >
+                        <div className="space-y-1">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-tertiary">
+                            {tOverview('next_steps.secondary_badge')} {index + 1}
+                          </div>
+                          <div className="type-system-heading text-[1rem] font-semibold text-foreground">{entry.label}</div>
+                          <p className="text-sm leading-6 text-secondary">{entry.description}</p>
+                        </div>
+                        <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-icon-default transition-transform group-hover:translate-x-0.5" />
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
             </div>
 
-            <div className="grid gap-5 md:grid-cols-3">
-              <section data-testid="project-hub__use-summary">
-                <OverviewSummaryList
-                  items={remainingSurfaceSummary.useLabels}
-                  title={tOverview('signals.execution_title')}
-                  emptyLabel={noSurfaceLabel}
-                  locale={locale}
-                  workspaceId={workspaceId}
-                  projectId={projectId}
-                />
-              </section>
-              <section data-testid="project-hub__governance-summary">
-                <OverviewSummaryList
-                  items={remainingSurfaceSummary.governLabels}
-                  title={tOverview('signals.governance_title')}
-                  emptyLabel={noSurfaceLabel}
-                  locale={locale}
-                  workspaceId={workspaceId}
-                  projectId={projectId}
-                />
-              </section>
-              <section data-testid="project-hub__develop-summary">
-                <OverviewSummaryList
-                  items={remainingSurfaceSummary.developLabels}
-                  title={tOverview('signals.develop_title')}
-                  emptyLabel={noSurfaceLabel}
-                  locale={locale}
-                  workspaceId={workspaceId}
-                  projectId={projectId}
-                />
-              </section>
-            </div>
+            <aside
+              className="space-y-5 border-t border-subtle pt-5 xl:border-l xl:border-t-0 xl:pl-8 xl:pt-0"
+              data-testid="project-overview__available-surfaces"
+            >
+              <OverviewSurfaceGroup
+                items={remainingSurfaceSummary.useLabels}
+                title={tOverview('signals.execution_title')}
+                emptyLabel={noSurfaceLabel}
+                locale={locale}
+                workspaceId={workspaceId}
+                projectId={projectId}
+                testId="project-overview__surface-group--use"
+              />
+              <OverviewSurfaceGroup
+                items={remainingSurfaceSummary.governLabels}
+                title={tOverview('signals.governance_title')}
+                emptyLabel={noSurfaceLabel}
+                locale={locale}
+                workspaceId={workspaceId}
+                projectId={projectId}
+                testId="project-overview__surface-group--govern"
+              />
+              <OverviewSurfaceGroup
+                items={remainingSurfaceSummary.developLabels}
+                title={tOverview('signals.develop_title')}
+                emptyLabel={noSurfaceLabel}
+                locale={locale}
+                workspaceId={workspaceId}
+                projectId={projectId}
+                testId="project-overview__surface-group--develop"
+              />
+            </aside>
           </section>
         </div>
       </PageLayout>
@@ -168,13 +207,14 @@ export default function OverviewPage({ params }: OverviewPageProps) {
   );
 }
 
-function OverviewSummaryList({
+function OverviewSurfaceGroup({
   items,
   title,
   emptyLabel,
   locale,
   workspaceId,
   projectId,
+  testId,
 }: {
   items: Array<{ href: ProjectSurfaceHref; label: string }>;
   title: string;
@@ -182,10 +222,11 @@ function OverviewSummaryList({
   locale: string;
   workspaceId: string;
   projectId: string;
+  testId: string;
 }) {
   return (
-    <div className="space-y-3">
-      <div className="type-system-caption text-tertiary">{title}</div>
+    <section className="space-y-3" data-testid={testId}>
+      <h3 className="type-system-caption text-tertiary">{title}</h3>
       {items.length > 0 ? (
         <ul className="divide-y divide-subtle">
           {items.map((item) => (
@@ -204,6 +245,6 @@ function OverviewSummaryList({
           {emptyLabel}
         </div>
       )}
-    </div>
+    </section>
   );
 }

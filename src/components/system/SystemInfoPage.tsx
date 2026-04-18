@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { PageState } from '@/components/layout/PageState';
+import { SurfaceThemeToggle } from '@/components/theme/SurfaceThemeToggle';
 import { Button } from '@/components/ui/button';
 import type { SystemInfoSnapshot } from '@/lib/system-admin/config';
 import { SystemLogoutButton } from './SystemLogoutButton';
@@ -61,28 +62,35 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
         )}
         toolbar={(
           <PageToolbar className="w-full">
-            <div className="flex w-full flex-wrap items-center justify-between gap-3 rounded-md border border-subtle bg-surface-low px-4 py-3 text-sm text-secondary">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex w-full flex-col gap-3 rounded-md border border-subtle bg-surface-low px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2 type-system-body text-secondary">
                 <span>{t('system_info_health_title')}</span>
                 <span>·</span>
                 <span>{t('system_info_configuration_title')}</span>
                 <span>·</span>
                 <span>{t('system_info_next_steps_title')}</span>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {quickActions.map((action, index) => (
-                  <Button
-                    key={action.href}
-                    asChild
-                    type="button"
-                    variant={index === 1 ? 'primary' : 'outline'}
-                    size="sm"
-                  >
-                    <Link href={action.href}>
-                      {action.cta}
-                    </Link>
-                  </Button>
-                ))}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <SurfaceThemeToggle
+                  showLabel
+                  dataTestId="system-info__theme-toggle"
+                  optionTestIdPrefix="system-info__theme"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  {quickActions.map((action, index) => (
+                    <Button
+                      key={action.href}
+                      asChild
+                      type="button"
+                      variant={index === 1 ? 'primary' : 'outline'}
+                      size="sm"
+                    >
+                      <Link href={action.href}>
+                        {action.cta}
+                      </Link>
+                    </Button>
+                  ))}
+                </div>
               </div>
             </div>
           </PageToolbar>
@@ -245,8 +253,8 @@ function SectionBlock({
   return (
     <section className="border-t border-subtle pt-4" data-testid={dataTestId}>
       <div className="space-y-1">
-        <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{eyebrow}</p>
-        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+        <p className="type-system-label text-tertiary">{eyebrow}</p>
+        <h2 className="type-system-heading text-foreground">{title}</h2>
       </div>
       <div className="mt-4">{children}</div>
     </section>
@@ -266,7 +274,7 @@ function InlineMetric({
 
   return (
     <div className="min-w-[9rem] space-y-1">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</p>
+      <p className="type-system-label text-tertiary">{label}</p>
       <p className={`text-base font-semibold ${toneClassName}`}>{value}</p>
     </div>
   );
@@ -283,8 +291,8 @@ function StatusLine({
 }) {
   return (
     <div className="space-y-1 border-t border-subtle pt-3 first:border-t-0 first:pt-0">
-      <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{label}</p>
-      <p className={`text-sm font-medium ${tone === 'positive' ? 'text-success' : 'text-warning'}`}>{value}</p>
+      <p className="type-system-label text-tertiary">{label}</p>
+      <p className={`type-system-body font-medium ${tone === 'positive' ? 'text-success' : 'text-warning'}`}>{value}</p>
     </div>
   );
 }
@@ -298,12 +306,12 @@ function InfoGroup({
 }) {
   return (
     <div className="space-y-3 border-t border-subtle pt-3 first:border-t-0 first:pt-0">
-      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="type-system-heading text-foreground">{title}</p>
       <div className="divide-y divide-subtle">
         {rows.map((row) => (
           <div key={row.label} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
-            <p className="max-w-[42%] text-[11px] uppercase tracking-[0.08em] text-tertiary">{row.label}</p>
-            <code className="max-w-[58%] break-all text-right text-sm text-foreground">{row.value}</code>
+            <p className="type-system-label max-w-[42%] text-tertiary">{row.label}</p>
+            <code className="type-mono max-w-[58%] break-all text-right text-foreground">{row.value}</code>
           </div>
         ))}
       </div>
@@ -320,8 +328,8 @@ function TimelineRow({
 }) {
   return (
     <div className="flex items-start justify-between gap-3 border-b border-subtle py-2 first:pt-0 last:border-b-0 last:pb-0">
-      <p className="text-sm text-tertiary">{label}</p>
-      <p className="max-w-[60%] text-right text-sm font-medium text-foreground">{value}</p>
+      <p className="type-system-body text-tertiary">{label}</p>
+      <p className="type-system-body max-w-[60%] text-right font-medium text-foreground">{value}</p>
     </div>
   );
 }

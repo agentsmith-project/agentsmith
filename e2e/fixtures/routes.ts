@@ -17,7 +17,7 @@ export const ROUTES = {
     { path: '/zh-CN/workspaces/ws_default/context', testId: 'context-store__list-card' },
   ],
   project: [
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/overview', testId: 'project-hub__page' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/overview', testId: 'project-overview__page' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/chat', testId: 'chat__main-pane' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/notebook', testId: 'notebook__task-list' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001', testId: 'notebook__task-header' },

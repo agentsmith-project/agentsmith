@@ -142,13 +142,13 @@ export function ConversationPanel({
     !runActivity?.active;
   const showBlockedEmptyState = showEmptyOrientation && blockedState;
   const blockedStateCardClassName = blockedState?.tone === 'critical'
-    ? 'border-error/30 bg-error/5'
-    : 'border-subtle bg-surface-low';
+    ? 'border-error/30 bg-background'
+    : 'border-subtle bg-background';
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-md bg-background/55">
+    <div className="flex h-full flex-col overflow-hidden rounded-[14px] bg-background/96">
       {(connectionStatus && connectionStatus !== 'connected') || sandboxStarting || runActivity?.active ? (
-        <div className="border-b border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.018),rgba(255,255,255,0.008))] px-3.5 py-2">
+        <div className="border-b border-subtle bg-surface-low/45 px-3.5 py-2">
           <div className="flex flex-wrap items-start justify-between gap-3" data-testid="notebook__execution-visibility">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -227,7 +227,7 @@ export function ConversationPanel({
           </div>
         </div>
       ) : null}
-      <div className="min-h-0 flex-1 bg-[linear-gradient(180deg,rgba(255,255,255,0.012),transparent_12%)]">
+      <div className="min-h-0 flex-1 bg-background">
         {showBlockedEmptyState ? (
           <div className="flex h-full items-center justify-center px-4 py-8" data-testid="notebook__conversation-blocked-state">
             <div className={`w-full max-w-xl rounded-md border p-5 shadow-ambient ${blockedStateCardClassName}`}>
@@ -298,7 +298,7 @@ export function ConversationPanel({
           />
         )}
       </div>
-      <div className="border-t border-subtle bg-transparent">
+      <div className="border-t border-subtle bg-background/88">
         <ConversationInput
           value={inputValue}
           onChange={setInputValue}

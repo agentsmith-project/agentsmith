@@ -25,8 +25,8 @@
         "projectName": "Story Chat Continuity",
         "chatTitle": "story-chat-continuity",
         "rememberToken": "CHAT_CONTINUITY_OK",
-        "rememberPrompt": "Remember this token for our session: CHAT_CONTINUITY_OK. Make sure your reply includes the token.",
-        "recallPrompt": "What token did I ask you to remember? Reply with only the token."
+        "rememberPrompt": "Remember this token for our session: CHAT_CONTINUITY_OK. Briefly confirm that you will remember it for later.",
+        "recallPrompt": "After refresh, what token did I ask you to remember earlier? Reply with exactly the token and nothing else."
       }
     }
   },

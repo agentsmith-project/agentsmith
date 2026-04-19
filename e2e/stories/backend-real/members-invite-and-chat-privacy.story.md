@@ -11,7 +11,7 @@
   "kind": "journey",
   "lane": "backend-real",
   "entryRoute": "/en-US/join",
-  "goal": "被邀请的成员接受邀请后，应该立刻成为可用成员，能进入项目并开始第一次使用；与此同时，别人的私人聊天内容不能泄露给他。",
+  "goal": "被邀请的成员在已登录状态下接受邀请后，应该直接落到项目 overview，立刻成为可用成员并开始第一次使用；与此同时，别人的私人聊天内容不能泄露给他。",
   "gatePolicy": {
     "tier": "default",
     "requiredEvidence": [
@@ -46,7 +46,7 @@
       "memberTokenPrefix": "MEMBER_CHAT"
     }
   },
-  "narrative": "成员加入主故事不是审批流程本身，而是从接受邀请到第一次真正可用：先进入项目，再开始聊天使用，同时确认私人会话不会串给别的成员。",
+  "narrative": "成员加入主故事不是审批流程本身，而是从已登录成员接受邀请到第一次真正可用：直接进入项目 overview，再开始聊天使用，同时确认私人会话不会串给别的成员。",
   "scenes": [
     {
       "sceneId": "join-invite",
@@ -77,8 +77,8 @@
       "intent": "Accept the project invite.",
       "action": "Accept invite",
       "target": "join__accept-btn",
-      "expectedFeedback": "被邀请成员成功接受邀请并获得项目访问资格。",
-      "note": "成员加入路径的关键是让接受邀请后的去向清晰、没有身份迷路。",
+      "expectedFeedback": "被邀请成员成功接受邀请并获得项目访问资格，而且不会被带去 workspace 选择或重复登录。",
+      "note": "成员加入路径的关键是让已登录成员在接受邀请后直接落到被邀请项目的 overview，没有身份迷路。",
       "evidence": [
         "trace"
       ]
@@ -89,8 +89,8 @@
       "intent": "Open the project as a newly joined member and verify first usable access.",
       "action": "Verify member first access",
       "target": "project-overview__page",
-      "expectedFeedback": "新成员能进入项目并开始第一次使用，而不是只停留在已加入的抽象状态。",
-      "note": "第一次可用应该落到真实项目工作面，不只是接口返回成功。",
+      "expectedFeedback": "新成员接受邀请后直接落到项目 overview，并开始第一次使用，而不是只停留在已加入的抽象状态。",
+      "note": "第一次可用应该直接落到真实项目工作面，不只是接口返回成功，也不应绕去额外的 workspace 入口。",
       "evidence": [
         "trace"
       ]

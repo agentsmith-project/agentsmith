@@ -148,11 +148,8 @@ function selectWorkspaceScopedExternalConnection(
   provider: UserExternalConnectionProvider,
   workspaceId: string,
 ): UserExternalConnectionRecord | null {
-  const scopedConnections = connections.filter((item) => item.provider === provider && item.workspace_id === workspaceId);
-  if (scopedConnections.length === 0) return null;
-  return scopedConnections.find((item) => item.status === 'active')
-    ?? scopedConnections[0]
-    ?? null;
+  const scopedOrGlobalConnections = connections.filter((item) => item.workspace_id === workspaceId || item.workspace_id == null);
+  return selectUserExternalConnectionForProvider(scopedOrGlobalConnections, provider, workspaceId);
 }
 
 export async function resolveManagedCredentialConnection(args: {

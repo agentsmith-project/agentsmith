@@ -493,6 +493,52 @@ describe('context-route-handler', () => {
     expect(content.fields.access_token).toBe('workspace_token');
   });
 
+  it('falls back to the global active managed credential projection when the workspace has no match', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    await createUserExternalConnection(docStore, {
+      user_id: 'user_1',
+      workspace_id: 'ws_other',
+      provider: 'feishu',
+      kind: 'oauth_account',
+      display_name: 'other workspace feishu',
+      status: 'active',
+      fields: [{ key: 'access_token', value: 'other_workspace_token', secret: true }],
+      scopes: ['search:docs:read'],
+    });
+    await createUserExternalConnection(docStore, {
+      user_id: 'user_1',
+      workspace_id: null,
+      provider: 'feishu',
+      kind: 'oauth_account',
+      display_name: 'global feishu',
+      status: 'active',
+      fields: [{ key: 'access_token', value: 'global_token', secret: true }],
+      scopes: ['search:docs:read'],
+    });
+
+    const response = await executeContextRoute({
+      deps: { docStore } as unknown as NodeApiDeps,
+      method: 'GET',
+      reqUrl: '/api/v1/context?scope=member&key=managed_credentials.feishu&workspace_id=ws_default',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual(expect.objectContaining({
+      scope: 'member',
+      key: 'managed_credentials.feishu',
+    }));
+    const content = JSON.parse((response.body as { content: string }).content) as {
+      display_name: string;
+      workspace_id: string | null;
+      provenance?: { source?: string };
+      fields: { access_token: string };
+    };
+    expect(content.display_name).toBe('global feishu');
+    expect(content.workspace_id).toBeNull();
+    expect(content.provenance?.source).toBe('workspace_active_connection');
+    expect(content.fields.access_token).toBe('global_token');
+  });
+
   it('prefers project-member managed credential bindings over member defaults', async () => {
     const docStore = new InMemoryJsonDocStore();
     const memberConnection = await createUserExternalConnection(docStore, {

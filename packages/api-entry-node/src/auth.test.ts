@@ -26,10 +26,18 @@ vi.mock('./system-workspace-persistence.js', () => ({
 function makeRequest(args: {
   url: string;
   authorization?: string;
+  executionTicketHeader?: string;
 }): http.IncomingMessage {
+  const headers: Record<string, string> = {};
+  if (args.authorization) {
+    headers.authorization = args.authorization;
+  }
+  if (args.executionTicketHeader) {
+    headers['x-agentsmith-execution-ticket'] = args.executionTicketHeader;
+  }
   return {
     url: args.url,
-    headers: args.authorization ? { authorization: args.authorization } : {},
+    headers,
   } as http.IncomingMessage;
 }
 
@@ -127,6 +135,112 @@ describe('auth', () => {
       url: '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_1/proxy/openai/responses',
       authorization: `Bearer ${issued.ticket}`,
     }), { cache });
+
+    expect(auth?.tokenType).toBe('internal_ticket');
+    expect(auth?.user).toMatchObject({ id: 'user_exec' });
+    expect(auth?.internalTicket).toMatchObject({
+      purpose: 'agent_execution',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      payload: expect.objectContaining({
+        endpoint_id: 'ep_1',
+      }),
+    });
+    expect(jwtVerifyMock).not.toHaveBeenCalled();
+  });
+
+  it('does not treat the execution ticket header as implicit global auth by default', async () => {
+    const issued = await issueInternalTicket(cache, {
+      purpose: 'agent_execution',
+      userId: 'user_exec',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      prefix: 'exec',
+      payload: {
+        endpoint_id: 'ep_1',
+        task_id: 'task_1',
+        session_id: 'task_1',
+        agent_id: 'agent_1',
+        mode: 'notebook',
+      },
+    });
+    issuedTickets.push(issued.ticket);
+
+    const auth = await verifyRequestAuth(makeRequest({
+      url: '/api/v1/me/profile',
+      executionTicketHeader: issued.ticket,
+    }), { cache });
+
+    expect(auth).toBeNull();
+    expect(jwtVerifyMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts an explicit internal ticket token channel without requiring bearer authorization', async () => {
+    const issued = await issueInternalTicket(cache, {
+      purpose: 'agent_execution',
+      userId: 'user_exec',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      prefix: 'exec',
+      payload: {
+        endpoint_id: 'ep_1',
+        task_id: 'task_1',
+        session_id: 'task_1',
+        agent_id: 'agent_1',
+        mode: 'notebook',
+      },
+    });
+    issuedTickets.push(issued.ticket);
+
+    const auth = await verifyRequestAuth(
+      makeRequest({
+        url: '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_1/proxy/openai/responses',
+        executionTicketHeader: issued.ticket,
+      }),
+      {
+        cache,
+        internalTicketToken: issued.ticket,
+      } as { cache: InMemoryCache; internalTicketToken: string },
+    );
+
+    expect(auth?.tokenType).toBe('internal_ticket');
+    expect(auth?.user).toMatchObject({ id: 'user_exec' });
+    expect(auth?.internalTicket).toMatchObject({
+      purpose: 'agent_execution',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+    });
+    expect(jwtVerifyMock).not.toHaveBeenCalled();
+  });
+
+  it('prefers an explicit internal ticket token over an unrelated bearer authorization header', async () => {
+    const issued = await issueInternalTicket(cache, {
+      purpose: 'agent_execution',
+      userId: 'user_exec',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      prefix: 'exec',
+      payload: {
+        endpoint_id: 'ep_1',
+        task_id: 'task_1',
+        session_id: 'task_1',
+        agent_id: 'agent_1',
+        mode: 'notebook',
+      },
+    });
+    issuedTickets.push(issued.ticket);
+
+    const auth = await verifyRequestAuth(
+      makeRequest({
+        url: '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_1/proxy/openai/responses',
+        authorization: 'Bearer unrelated-token',
+        executionTicketHeader: issued.ticket,
+      }),
+      {
+        cache,
+        internalTicketToken: issued.ticket,
+      },
+    );
 
     expect(auth?.tokenType).toBe('internal_ticket');
     expect(auth?.user).toMatchObject({ id: 'user_exec' });

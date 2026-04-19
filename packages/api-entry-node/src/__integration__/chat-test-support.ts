@@ -10,6 +10,110 @@ type ParsedDefaultSseBlock = {
   payload: Record<string, unknown> | null;
 };
 
+export type UniversalProxyAdminConfigRequest = {
+  namespace: string;
+  headers: IncomingHttpHeaders;
+  body: unknown;
+  responseStatus: number;
+  responseBody: unknown;
+  appliedRevision: string | null;
+};
+
+type UniversalProxyAdminHarnessOptions = {
+  failConfigPush?: boolean;
+};
+
+type UniversalProxyAdminRequest = {
+  req: http.IncomingMessage;
+  res: http.ServerResponse;
+  path: string;
+  body: unknown;
+};
+
+type UniversalProxyAdminHarness = {
+  handleAdminRequest: (request: UniversalProxyAdminRequest) => boolean;
+  configRequests: () => UniversalProxyAdminConfigRequest[];
+  currentRevision: (namespace: string) => string | null;
+  hasNamespace: (namespace: string) => boolean;
+};
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function createUniversalProxyAdminHarness(
+  options?: UniversalProxyAdminHarnessOptions,
+): UniversalProxyAdminHarness {
+  const configRequests: UniversalProxyAdminConfigRequest[] = [];
+  const revisions = new Map<string, string>();
+  let revisionCounter = 0;
+
+  const nextRevision = (namespace: string): string => {
+    revisionCounter += 1;
+    return `${namespace}:srv-${String(revisionCounter).padStart(4, '0')}`;
+  };
+
+  return {
+    handleAdminRequest({ req, res, path, body }) {
+      const configMatch = path.match(/^\/admin\/namespaces\/([^/]+)\/config$/);
+      if (req.method !== 'POST' || !configMatch) {
+        return false;
+      }
+
+      const namespace = decodeURIComponent(configMatch[1] ?? '');
+      let responseStatus = 200;
+      let responseBody: unknown = { revision: '' };
+      let appliedRevision: string | null = null;
+
+      if (options?.failConfigPush) {
+        responseStatus = 500;
+        responseBody = { error: 'config_push_failed' };
+      } else if (!isObjectRecord(body)) {
+        responseStatus = 400;
+        responseBody = { error: 'invalid_config_payload' };
+      } else if (Object.prototype.hasOwnProperty.call(body, 'revision')) {
+        responseStatus = 400;
+        responseBody = {
+          error: 'top_level_revision_forbidden',
+          message: 'top_level_revision_forbidden',
+        };
+      } else {
+        const currentRevision = revisions.get(namespace) ?? null;
+        const hasIfRevision = Object.prototype.hasOwnProperty.call(body, 'if_revision');
+        const ifRevision = hasIfRevision ? (body.if_revision as string | null) : undefined;
+
+        if (!hasIfRevision || ifRevision !== currentRevision) {
+          responseStatus = 412;
+          responseBody = {
+            error: 'revision_mismatch',
+            current_revision: currentRevision,
+          };
+        } else {
+          appliedRevision = nextRevision(namespace);
+          revisions.set(namespace, appliedRevision);
+          responseBody = { revision: appliedRevision };
+        }
+      }
+
+      configRequests.push({
+        namespace,
+        headers: req.headers,
+        body,
+        responseStatus,
+        responseBody,
+        appliedRevision,
+      });
+      res.statusCode = responseStatus;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(responseBody));
+      return true;
+    },
+    configRequests: () => configRequests,
+    currentRevision: (namespace: string) => revisions.get(namespace) ?? null,
+    hasNamespace: (namespace: string) => revisions.has(namespace),
+  };
+}
+
 function allocateTestPort(): number {
   const raw = execFileSync(
     'python3',
@@ -108,10 +212,13 @@ export function startUniversalProxyChatServer(): {
   lastBody: () => unknown;
   lastPath: () => string;
   lastHeaders: () => IncomingHttpHeaders;
+  configRequests: () => UniversalProxyAdminConfigRequest[];
+  currentRevision: (namespace: string) => string | null;
 } {
   let body: unknown = null;
   let path = '';
   let headers: IncomingHttpHeaders = {};
+  const adminHarness = createUniversalProxyAdminHarness();
   const server = http.createServer((req, res) => {
     void (async () => {
       path = req.url ?? '';
@@ -123,11 +230,16 @@ export function startUniversalProxyChatServer(): {
       const text = Buffer.concat(chunks).toString('utf-8');
       body = text ? JSON.parse(text) : {};
 
-      const configMatch = path.match(/^\/admin\/namespaces\/([^/]+)\/config$/);
-      if (req.method === 'POST' && configMatch) {
-        res.statusCode = 200;
+      if (adminHarness.handleAdminRequest({ req, res, path, body })) {
+        return;
+      }
+
+      const namespaceMatch = path.match(/^\/namespaces\/([^/]+)\/(.+)$/);
+      const namespace = namespaceMatch ? decodeURIComponent(namespaceMatch[1] ?? '') : null;
+      if (namespace && !adminHarness.hasNamespace(namespace)) {
+        res.statusCode = 404;
         res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ status: 'applied' }));
+        res.end(JSON.stringify({ error: 'namespace_not_found' }));
         return;
       }
 
@@ -188,6 +300,8 @@ export function startUniversalProxyChatServer(): {
     lastBody: () => body,
     lastPath: () => path,
     lastHeaders: () => headers,
+    configRequests: () => adminHarness.configRequests(),
+    currentRevision: (namespace: string) => adminHarness.currentRevision(namespace),
   };
 }
 

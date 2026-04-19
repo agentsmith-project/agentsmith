@@ -296,6 +296,35 @@ describe('backend-real gate port ownership cleanup', () => {
     expect(result.stderr).not.toContain('rescue cleanup for unowned listener');
   });
 
+  it('does not misclassify current-run owner-aware api supervisors as legacy cleanup targets', () => {
+    const result = runBash(`
+      set -euo pipefail
+      source scripts/lib/backend-real-gate-ports.sh
+      pgrep() {
+        if [[ "$1" == "-f" && "$2" == "tsx src/index.ts" ]]; then
+          printf '1234\\n'
+          return 0
+        fi
+        return 1
+      }
+      local_runtime_process_env_contains() {
+        [[ "$1" == "1234" && "$2" == "INTEGRATION_API_PORT=20040" ]]
+      }
+      local_runtime_verified_owner_pid_for_tree_member() {
+        [[ "$1" == "1234" && "$2" == "api" && "$3" == "20040" ]] || return 1
+        printf '1234\\n'
+      }
+      backend_real_gate_stop_legacy_supervisor_or_fail_closed() {
+        echo "[test] legacy cleanup should not run for owner-aware api pid $1" >&2
+        return 1
+      }
+      backend_real_gate_stop_matching_supervisors "20040" "3041" "e2e/example.spec.ts"
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain('legacy cleanup should not run');
+  });
+
   it('requires an explicit rescue flag before killing unowned listeners', async () => {
     const tempRoot = makeTempRoot();
     const apiPort = await reserveTcpPort();

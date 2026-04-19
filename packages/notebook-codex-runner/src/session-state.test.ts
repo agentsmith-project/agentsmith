@@ -2,9 +2,22 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ensureCodexSessionStateCompatible } from './session-state.js';
+import {
+  ensureCodexSessionStateCompatible,
+  markCodexSessionStateReusable,
+} from './session-state.js';
 
 const tempDirs: string[] = [];
+const baseInput = {
+  taskId: 'task_alpha',
+  model: 'placeholder-model',
+  wireApi: 'responses' as const,
+  resourceProxyBase: 'http://proxy-a',
+  interactionKind: 'notebook' as const,
+  modelContextWindow: 128000,
+  modelAutoCompactTokenLimit: 121600,
+  modelCatalogSignature: '{"input_modalities":["text"]}',
+};
 
 async function createCodexDir(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'runner-session-state-'));
@@ -14,85 +27,117 @@ async function createCodexDir(): Promise<string> {
   return codexDir;
 }
 
+async function seedReusableCodexState(codexDir: string): Promise<void> {
+  await mkdir(join(codexDir, 'sessions'), { recursive: true });
+  await writeFile(join(codexDir, 'sessions', 'last.jsonl'), '{"type":"assistant"}\n');
+  await writeFile(join(codexDir, 'state_5.sqlite'), 'state');
+  await writeFile(join(codexDir, 'logs_5.sqlite'), 'logs');
+}
+
 describe('ensureCodexSessionStateCompatible', () => {
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => import('node:fs/promises').then(({ rm }) => rm(dir, { recursive: true, force: true }))));
   });
 
-  it('writes initial fingerprint without resetting state', async () => {
+  it('writes initial fingerprint and requires a fresh exec for a task without reusable local codex state', async () => {
     const codexDir = await createCodexDir();
     const result = await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'placeholder-model',
-      wireApi: 'responses',
-      resourceProxyBase: 'http://proxy-a',
-      interactionKind: 'notebook',
-      modelContextWindow: 128000,
-      modelAutoCompactTokenLimit: 121600,
-      modelCatalogSignature: '{"input_modalities":["text"]}',
+      ...baseInput,
     });
-    expect(result).toEqual({ resetPerformed: false, reason: 'missing' });
+    expect(result).toEqual({ resetPerformed: false, reason: 'missing', resumeAllowed: false });
   });
 
-  it('keeps existing session state when fingerprint is unchanged', async () => {
+  it('keeps same-task codex state and allows resume only after reusable local state is explicitly marked', async () => {
     const codexDir = await createCodexDir();
     await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'placeholder-model',
-      wireApi: 'responses',
-      resourceProxyBase: 'http://proxy-a',
-      interactionKind: 'notebook',
-      modelContextWindow: 128000,
-      modelAutoCompactTokenLimit: 121600,
-      modelCatalogSignature: '{"input_modalities":["text"]}',
+      ...baseInput,
     });
-    await writeFile(join(codexDir, 'state_5.sqlite'), 'keep');
+    await seedReusableCodexState(codexDir);
+    await markCodexSessionStateReusable({ codexDir, taskId: baseInput.taskId });
     const result = await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'placeholder-model',
-      wireApi: 'responses',
-      resourceProxyBase: 'http://proxy-a',
-      interactionKind: 'notebook',
-      modelContextWindow: 128000,
-      modelAutoCompactTokenLimit: 121600,
-      modelCatalogSignature: '{"input_modalities":["text"]}',
+      ...baseInput,
     });
-    expect(result).toEqual({ resetPerformed: false, reason: 'unchanged' });
-    await expect(import('node:fs/promises').then(({ readFile }) => readFile(join(codexDir, 'state_5.sqlite'), 'utf8'))).resolves.toBe('keep');
+    expect(result).toEqual({ resetPerformed: false, reason: 'unchanged', resumeAllowed: true });
+    await expect(import('node:fs/promises').then(({ readFile }) => readFile(join(codexDir, 'state_5.sqlite'), 'utf8'))).resolves.toBe('state');
+  });
+
+  it('uses a fresh exec when fingerprint is unchanged but no reusable local codex state exists yet', async () => {
+    const codexDir = await createCodexDir();
+    await ensureCodexSessionStateCompatible({
+      codexDir,
+      ...baseInput,
+    });
+
+    const result = await ensureCodexSessionStateCompatible({
+      codexDir,
+      ...baseInput,
+    });
+
+    expect(result).toEqual({ resetPerformed: false, reason: 'unchanged', resumeAllowed: false });
+  });
+
+  it('resets stale local codex state when fingerprint matches but ownership was never marked for this task', async () => {
+    const codexDir = await createCodexDir();
+    await ensureCodexSessionStateCompatible({
+      codexDir,
+      ...baseInput,
+    });
+    await seedReusableCodexState(codexDir);
+
+    const result = await ensureCodexSessionStateCompatible({
+      codexDir,
+      ...baseInput,
+    });
+
+    expect(result).toEqual({ resetPerformed: true, reason: 'changed', resumeAllowed: false });
+    await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'state_5.sqlite')))).rejects.toBeTruthy();
+    await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'logs_5.sqlite')))).rejects.toBeTruthy();
+    await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'sessions')))).rejects.toBeTruthy();
+  });
+
+  it('resets stale local codex state when it was marked for a different task', async () => {
+    const codexDir = await createCodexDir();
+    await ensureCodexSessionStateCompatible({
+      codexDir,
+      ...baseInput,
+    });
+    await seedReusableCodexState(codexDir);
+    await markCodexSessionStateReusable({ codexDir, taskId: 'task_other' });
+
+    const result = await ensureCodexSessionStateCompatible({
+      codexDir,
+      ...baseInput,
+    });
+
+    expect(result).toEqual({ resetPerformed: true, reason: 'changed', resumeAllowed: false });
+    await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'state_5.sqlite')))).rejects.toBeTruthy();
+    await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'sessions')))).rejects.toBeTruthy();
   });
 
   it('resets persisted codex session files when fingerprint changes', async () => {
     const codexDir = await createCodexDir();
     await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'placeholder-model',
-      wireApi: 'responses',
-      resourceProxyBase: 'http://proxy-a',
-      interactionKind: 'notebook',
-      modelContextWindow: 128000,
-      modelAutoCompactTokenLimit: 121600,
-      modelCatalogSignature: '{"input_modalities":["text"]}',
+      ...baseInput,
     });
-    await writeFile(join(codexDir, 'state_5.sqlite'), 'stale');
+    await seedReusableCodexState(codexDir);
     await writeFile(join(codexDir, 'state_5.sqlite-wal'), 'stale');
-    await mkdir(join(codexDir, 'sessions'), { recursive: true });
-    await writeFile(join(codexDir, 'sessions', 'old.jsonl'), 'stale');
     await mkdir(join(codexDir, 'tmp'), { recursive: true });
     await writeFile(join(codexDir, 'tmp', 'old.tmp'), 'stale');
+    await markCodexSessionStateReusable({ codexDir, taskId: baseInput.taskId });
 
     const result = await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'placeholder-model',
-      wireApi: 'responses',
+      ...baseInput,
       resourceProxyBase: 'http://proxy-b',
-      interactionKind: 'notebook',
-      modelContextWindow: 128000,
-      modelAutoCompactTokenLimit: 121600,
-      modelCatalogSignature: '{"input_modalities":["text"]}',
     });
 
-    expect(result).toEqual({ resetPerformed: true, reason: 'changed' });
+    expect(result).toEqual({ resetPerformed: true, reason: 'changed', resumeAllowed: false });
     await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'state_5.sqlite')))).rejects.toBeTruthy();
+    await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'logs_5.sqlite')))).rejects.toBeTruthy();
     await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'sessions')))).rejects.toBeTruthy();
     await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'tmp')))).rejects.toBeTruthy();
   });
@@ -101,48 +146,32 @@ describe('ensureCodexSessionStateCompatible', () => {
     const codexDir = await createCodexDir();
     await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'placeholder-model',
-      wireApi: 'responses',
-      resourceProxyBase: 'http://proxy-a',
-      interactionKind: 'notebook',
-      modelContextWindow: 128000,
-      modelAutoCompactTokenLimit: 121600,
+      ...baseInput,
     });
-    await writeFile(join(codexDir, 'state_5.sqlite'), 'stale');
+    await seedReusableCodexState(codexDir);
+    await markCodexSessionStateReusable({ codexDir, taskId: baseInput.taskId });
 
     const result = await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'placeholder-model',
-      wireApi: 'responses',
-      resourceProxyBase: 'http://proxy-a',
-      interactionKind: 'notebook',
+      ...baseInput,
       modelContextWindow: 256000,
       modelAutoCompactTokenLimit: 243200,
-      modelCatalogSignature: '{"input_modalities":["text"]}',
     });
 
-    expect(result).toEqual({ resetPerformed: true, reason: 'changed' });
+    expect(result).toEqual({ resetPerformed: true, reason: 'changed', resumeAllowed: false });
     await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'state_5.sqlite')))).rejects.toBeTruthy();
   });
-
 
   it('resets only the changed task-scoped codex directory', async () => {
     const codexDirA = await createCodexDir();
     const codexDirB = await createCodexDir();
-    const baseInput = {
-      model: 'placeholder-model',
-      wireApi: 'responses' as const,
-      resourceProxyBase: 'http://proxy-a',
-      interactionKind: 'notebook' as const,
-      modelContextWindow: 128000,
-      modelAutoCompactTokenLimit: 121600,
-      modelCatalogSignature: '{"input_modalities":["text"]}',
-    };
 
     await ensureCodexSessionStateCompatible({ codexDir: codexDirA, ...baseInput });
     await ensureCodexSessionStateCompatible({ codexDir: codexDirB, ...baseInput });
-    await writeFile(join(codexDirA, 'state_5.sqlite'), 'stale-a');
-    await writeFile(join(codexDirB, 'state_5.sqlite'), 'keep-b');
+    await seedReusableCodexState(codexDirA);
+    await seedReusableCodexState(codexDirB);
+    await markCodexSessionStateReusable({ codexDir: codexDirA, taskId: baseInput.taskId });
+    await markCodexSessionStateReusable({ codexDir: codexDirB, taskId: baseInput.taskId });
 
     const result = await ensureCodexSessionStateCompatible({
       codexDir: codexDirA,
@@ -150,37 +179,28 @@ describe('ensureCodexSessionStateCompatible', () => {
       modelCatalogSignature: '{"input_modalities":["text","image"]}',
     });
 
-    expect(result).toEqual({ resetPerformed: true, reason: 'changed' });
+    expect(result).toEqual({ resetPerformed: true, reason: 'changed', resumeAllowed: false });
     await expect(import('node:fs/promises').then(({ access }) => access(join(codexDirA, 'state_5.sqlite')))).rejects.toBeTruthy();
-    await expect(import('node:fs/promises').then(({ readFile }) => readFile(join(codexDirB, 'state_5.sqlite'), 'utf8'))).resolves.toBe('keep-b');
+    await expect(import('node:fs/promises').then(({ readFile }) => readFile(join(codexDirB, 'state_5.sqlite'), 'utf8'))).resolves.toBe('state');
   });
 
   it('resets persisted session files when model catalog signature changes', async () => {
     const codexDir = await createCodexDir();
     await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'placeholder-model',
-      wireApi: 'responses',
-      resourceProxyBase: 'http://proxy-a',
-      interactionKind: 'notebook',
-      modelContextWindow: 128000,
-      modelAutoCompactTokenLimit: 121600,
+      ...baseInput,
       modelCatalogSignature: '{"input_modalities":["text"],"supports_search_tool":false}',
     });
-    await writeFile(join(codexDir, 'state_5.sqlite'), 'stale');
+    await seedReusableCodexState(codexDir);
+    await markCodexSessionStateReusable({ codexDir, taskId: baseInput.taskId });
 
     const result = await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'placeholder-model',
-      wireApi: 'responses',
-      resourceProxyBase: 'http://proxy-a',
-      interactionKind: 'notebook',
-      modelContextWindow: 128000,
-      modelAutoCompactTokenLimit: 121600,
+      ...baseInput,
       modelCatalogSignature: '{"input_modalities":["text","image"],"supports_search_tool":false}',
     });
 
-    expect(result).toEqual({ resetPerformed: true, reason: 'changed' });
+    expect(result).toEqual({ resetPerformed: true, reason: 'changed', resumeAllowed: false });
     await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'state_5.sqlite')))).rejects.toBeTruthy();
   });
 });

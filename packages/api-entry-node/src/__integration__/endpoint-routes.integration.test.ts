@@ -2,10 +2,15 @@ import { execFileSync } from 'node:child_process';
 import http, { type IncomingHttpHeaders, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { issueInternalTicket } from '../internal-ticket-store.js';
+import {
+  createUniversalProxyAdminHarness,
+  type UniversalProxyAdminConfigRequest,
+} from './chat-test-support.js';
 import { apiFetch, startServer } from './test-support.js';
 import { recordUsageFact } from '../audit-usage-store.js';
 
 const upstreamServers: Server[] = [];
+const EXECUTION_TICKET_HEADER = 'x-agentsmith-execution-ticket';
 function allocateMockProxyPort(): number {
   const raw = execFileSync('python3', ['-c', 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'], {
     encoding: 'utf8',
@@ -39,7 +44,7 @@ afterEach(async () => {
 
 function startUniversalProxyMockServer(): {
   baseUrl: string;
-  configRequests: () => Array<{ namespace: string; body: unknown }>;
+  configRequests: () => UniversalProxyAdminConfigRequest[];
   namespaceRequests: () => Array<{
     method: string;
     path: string;
@@ -47,13 +52,13 @@ function startUniversalProxyMockServer(): {
     body: unknown;
   }>;
 } {
-  const configRequests: Array<{ namespace: string; body: unknown }> = [];
   const namespaceRequests: Array<{
     method: string;
     path: string;
     headers: IncomingHttpHeaders;
     body: unknown;
   }> = [];
+  const adminHarness = createUniversalProxyAdminHarness();
   const server = http.createServer((req, res) => {
     void (async () => {
       const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -64,20 +69,19 @@ function startUniversalProxyMockServer(): {
       const text = Buffer.concat(chunks).toString('utf-8');
       const body = text ? JSON.parse(text) : {};
 
-      const configMatch = requestUrl.pathname.match(/^\/admin\/namespaces\/([^/]+)\/config$/);
-      if (req.method === 'POST' && configMatch) {
-        configRequests.push({
-          namespace: decodeURIComponent(configMatch[1]),
-          body,
-        });
-        res.statusCode = 200;
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ status: 'applied' }));
+      if (adminHarness.handleAdminRequest({ req, res, path: requestUrl.pathname, body })) {
         return;
       }
 
       const namespaceMatch = requestUrl.pathname.match(/^\/namespaces\/([^/]+)\/(.+)$/);
       if (req.method === 'POST' && namespaceMatch) {
+        const namespace = decodeURIComponent(namespaceMatch[1] ?? '');
+        if (!adminHarness.hasNamespace(namespace)) {
+          res.statusCode = 404;
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({ error: 'namespace_not_found' }));
+          return;
+        }
         namespaceRequests.push({
           method: req.method,
           path: requestUrl.pathname,
@@ -100,7 +104,7 @@ function startUniversalProxyMockServer(): {
   upstreamServers.push(server);
   return {
     baseUrl: `http://127.0.0.1:${port}`,
-    configRequests: () => configRequests,
+    configRequests: () => adminHarness.configRequests(),
     namespaceRequests: () => namespaceRequests,
   };
 }
@@ -140,7 +144,7 @@ describe('api-entry-node endpoint and credential routes', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       prefix: 'exec',
-      maxUses: 5,
+      maxUses: 8,
       payload: {
         endpoint_id: endpoint.id,
         task_id: 'task_1',
@@ -165,6 +169,23 @@ describe('api-entry-node endpoint and credential routes', () => {
       },
     );
     expect(okRes.status).toBe(200);
+
+    const customHeaderRes = await fetch(
+      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/responses`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer unrelated-token',
+          [EXECUTION_TICKET_HEADER]: executionTicket.ticket,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'ignored',
+          input: 'hello via custom execution ticket header',
+        }),
+      },
+    );
+    expect(customHeaderRes.status).toBe(200);
 
     const wrongEndpointRes = await fetch(
       `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${otherEndpoint.id}/proxy/openai/responses`,
@@ -234,6 +255,17 @@ describe('api-entry-node endpoint and credential routes', () => {
       error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
     });
 
+    const disallowedCustomHeaderRes = await fetch(`${baseUrl}/api/v1/me/profile`, {
+      headers: {
+        Authorization: 'Bearer unrelated-token',
+        [EXECUTION_TICKET_HEADER]: executionTicket.ticket,
+      },
+    });
+    expect(disallowedCustomHeaderRes.status).toBe(401);
+    await expect(disallowedCustomHeaderRes.json()).resolves.toMatchObject({
+      error_code: 'UNAUTHORIZED',
+    });
+
     const expiredExecutionTicket = await issueInternalTicket(deps.cache, {
       purpose: 'agent_execution',
       userId: 'user_test',
@@ -265,6 +297,89 @@ describe('api-entry-node endpoint and credential routes', () => {
       },
     );
     expect(expiredRes.status).toBe(401);
+  });
+
+  it('accepts scoped execution tickets via x-agentsmith-execution-ticket only on endpoint proxy routes', async () => {
+    const universalProxy = startUniversalProxyMockServer();
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
+    const { baseUrl, deps } = startServer();
+    const credential = await deps.endpointResourceService.createCredential('ws_default', 'proj_1', {
+      name: 'exec-header-key',
+      value: 'sk-exec-header',
+      type: 'api_key',
+    });
+    const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+      name: 'exec-header-endpoint',
+      model: 'scope-model',
+      type: 'catalog',
+      base_url: 'https://openai-compatible.provider.example/v1',
+      credential_ref: credential.id,
+      provider_family: 'openai',
+      upstream_protocol: 'openai_chat_completions',
+    });
+    const executionTicket = await issueInternalTicket(deps.cache, {
+      purpose: 'agent_execution',
+      userId: 'user_test',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      prefix: 'exec',
+      maxUses: 5,
+      payload: {
+        endpoint_id: endpoint.id,
+        task_id: 'task_1',
+        session_id: 'task_1',
+        agent_id: 'agent_1',
+        mode: 'notebook',
+      },
+    });
+
+    const proxyRes = await fetch(
+      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/responses`,
+      {
+        method: 'POST',
+        headers: {
+          [EXECUTION_TICKET_HEADER]: executionTicket.ticket,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'ignored',
+          input: 'hello via execution ticket header',
+        }),
+      },
+    );
+    expect(proxyRes.status).toBe(200);
+
+    const proxyResWithUnrelatedAuthorization = await fetch(
+      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/responses`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer unrelated-token',
+          [EXECUTION_TICKET_HEADER]: executionTicket.ticket,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'ignored',
+          input: 'hello via execution ticket header with unrelated bearer',
+        }),
+      },
+    );
+    expect(proxyResWithUnrelatedAuthorization.status).toBe(200);
+
+    const meRes = await fetch(`${baseUrl}/api/v1/me/profile`, {
+      headers: {
+        [EXECUTION_TICKET_HEADER]: executionTicket.ticket,
+      },
+    });
+    expect(meRes.status).toBe(401);
+
+    expect(universalProxy.namespaceRequests()).toHaveLength(2);
+    expect(universalProxy.namespaceRequests()[0]?.path).toBe(
+      `/namespaces/ws_default__proj_1__${endpoint.id}/openai/v1/responses`,
+    );
+    expect(universalProxy.namespaceRequests()[1]?.path).toBe(
+      `/namespaces/ws_default__proj_1__${endpoint.id}/openai/v1/responses`,
+    );
   });
 
   it('supports credentials and endpoints CRUD plus openai-compatible proxy', async () => {
@@ -326,6 +441,14 @@ describe('api-entry-node endpoint and credential routes', () => {
     const proxied = (await proxy.json()) as { ok: boolean };
     expect(proxied.ok).toBe(true);
     expect(universalProxy.configRequests()).toHaveLength(1);
+    expect((universalProxy.configRequests()[0]?.body as {
+      if_revision?: string | null;
+      revision?: string;
+    }).revision).toBeUndefined();
+    expect((universalProxy.configRequests()[0]?.body as {
+      if_revision?: string | null;
+    }).if_revision ?? null).toBeNull();
+    expect(universalProxy.configRequests()[0]?.appliedRevision).toEqual(expect.any(String));
     expect(universalProxy.namespaceRequests()).toHaveLength(1);
     expect(universalProxy.namespaceRequests()[0]?.path).toBe(
       `/namespaces/ws_default__proj_1__${endpoint.id}/openai/v1/chat/completions`,

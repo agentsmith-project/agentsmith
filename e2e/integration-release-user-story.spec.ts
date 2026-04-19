@@ -6,6 +6,7 @@ import {
   createCredentialViaUi,
   createProjectInWorkspace,
   expectNotebookTaskConversationSurface,
+  reconnectCodexRunnerDockerProcessToTask,
   startCodexRunnerDockerProcess,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
@@ -883,15 +884,14 @@ test.describe('@lane-real release user story end-to-end', () => {
       if (!externalAgent.wsUrl || !externalAgent.key) {
         throw new Error('external_agent_connection_info_missing');
       }
+      await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
+      await captureTrace('member-workspace-home', 'Return as member', 'projects__heading', '成员重新进入 workspace');
+
       externalRunner = await startCodexRunnerDockerProcess({
         wsUrl: externalAgent.wsUrl,
         agentKey: externalAgent.key,
       });
-
       await waitForAgentPresenceOnline(page, workspaceId, projectId, externalAgent.id);
-      await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
-      await captureTrace('member-workspace-home', 'Return as member', 'projects__heading', '成员重新进入 workspace');
-
       const externalTaskOne = await createTaskViaUi({
         page,
         workspaceId,
@@ -908,6 +908,13 @@ test.describe('@lane-real release user story end-to-end', () => {
         projectId,
         taskId: externalTaskOne.taskId,
       });
+      externalRunner = await reconnectCodexRunnerDockerProcessToTask({
+        presenceRunner: externalRunner,
+        wsUrl: externalAgent.wsUrl,
+        agentKey: externalAgent.key,
+        taskId: externalTaskOne.taskId,
+      });
+      await waitForAgentPresenceOnline(page, workspaceId, projectId, externalAgent.id);
       const externalCreateFlow = requireReleaseNotebookFlow('external_create');
       await sendNotebookMessage(page, externalCreateFlow.turnOne.prompt);
       await waitForAgentReply({
@@ -954,9 +961,16 @@ test.describe('@lane-real release user story end-to-end', () => {
         blocked: false,
       });
       await captureTrace('notebook-task-detail-external', 'Review task detail', 'notebook__task-header', 'external task 详情页');
+      await externalRunner.stop();
+      externalRunner = null;
 
       await deleteCurrentTaskViaUi(page, workspaceId, projectId);
 
+      externalRunner = await startCodexRunnerDockerProcess({
+        wsUrl: externalAgent.wsUrl,
+        agentKey: externalAgent.key,
+      });
+      await waitForAgentPresenceOnline(page, workspaceId, projectId, externalAgent.id);
       const externalTaskTwo = await createTaskViaUi({
         page,
         workspaceId,
@@ -973,6 +987,13 @@ test.describe('@lane-real release user story end-to-end', () => {
         taskId: externalTaskTwo.taskId,
       });
       expect(externalTaskTwo.workspaceName).toBe(externalTaskOne.workspaceName);
+      externalRunner = await reconnectCodexRunnerDockerProcessToTask({
+        presenceRunner: externalRunner,
+        wsUrl: externalAgent.wsUrl,
+        agentKey: externalAgent.key,
+        taskId: externalTaskTwo.taskId,
+      });
+      await waitForAgentPresenceOnline(page, workspaceId, projectId, externalAgent.id);
       const externalReuseFlow = requireReleaseNotebookFlow('external_reuse');
       await sendNotebookMessage(page, externalReuseFlow.turnOne.prompt);
       await waitForAgentReply({
@@ -1006,6 +1027,8 @@ test.describe('@lane-real release user story end-to-end', () => {
         blocked: false,
       });
       await captureTrace('notebook-task-detail-external-reuse', 'Review reused workspace task', 'notebook__task-header', 'external task B 复用 workspace 成功');
+      await externalRunner.stop();
+      externalRunner = null;
 
       if (DEMO_MODE_IS_FULL) {
         const internalTask = await createTaskViaUi({

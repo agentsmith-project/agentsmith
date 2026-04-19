@@ -67,7 +67,62 @@ ensure_cluster_rehearsal_site_env() {
     fi
   fi
   apply_flow_site_env_overrides "${site_env}"
+  rewrite_cluster_rehearsal_sandbox_public_base_url "${site_env}"
   validate_cluster_rehearsal_site_env "${site_env}"
+}
+
+rewrite_cluster_rehearsal_sandbox_public_base_url() {
+  local site_env="$1"
+  local sandbox_host_port="${CLUSTER_REHEARSAL_SANDBOX_HOST_PORT:-}"
+  [[ -n "${sandbox_host_port}" ]] || return 0
+
+  python3 - <<'PY' "${site_env}" "${sandbox_host_port}"
+from pathlib import Path
+import sys
+from urllib.parse import urlsplit, urlunsplit
+
+path = Path(sys.argv[1])
+target_port = int(sys.argv[2])
+lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+
+def rewrite_url(raw_value: str) -> str:
+    value = raw_value.strip().strip('"').strip("'")
+    if not value:
+        return f"http://127.0.0.1:{target_port}"
+
+    parsed = urlsplit(value)
+    if not parsed.scheme or not parsed.hostname:
+        return f"http://127.0.0.1:{target_port}"
+
+    hostname = parsed.hostname
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+
+    auth = ""
+    if parsed.username:
+        auth = parsed.username
+        if parsed.password:
+            auth += f":{parsed.password}"
+        auth += "@"
+
+    netloc = f"{auth}{hostname}:{target_port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+
+updated = []
+seen = False
+for line in lines:
+    if line.startswith("SANDBOX_MANAGER_PUBLIC_BASE_URL="):
+        _, value = line.split("=", 1)
+        updated.append(f"SANDBOX_MANAGER_PUBLIC_BASE_URL={rewrite_url(value)}")
+        seen = True
+        continue
+    updated.append(line)
+
+if not seen:
+    updated.append(f"SANDBOX_MANAGER_PUBLIC_BASE_URL=http://127.0.0.1:{target_port}")
+
+path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+PY
 }
 
 validate_cluster_rehearsal_site_env() {

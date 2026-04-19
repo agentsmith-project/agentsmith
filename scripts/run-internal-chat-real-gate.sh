@@ -13,7 +13,15 @@ source "${ROOT_DIR}/scripts/lib/backend-real-gate-ports.sh"
 info() { echo "[internal-chat-real-gate] $*"; }
 die() { echo "[internal-chat-real-gate] $*" >&2; exit 1; }
 
+ORIGINAL_INTEGRATION_API_PORT="${INTEGRATION_API_PORT:-}"
+ORIGINAL_INTEGRATION_WEB_PORT="${INTEGRATION_WEB_PORT:-}"
 load_backend_real_env
+if [[ -n "${ORIGINAL_INTEGRATION_API_PORT}" ]]; then
+  export INTEGRATION_API_PORT="${ORIGINAL_INTEGRATION_API_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_WEB_PORT}" ]]; then
+  export INTEGRATION_WEB_PORT="${ORIGINAL_INTEGRATION_WEB_PORT}"
+fi
 export_backend_real_endpoint_env
 
 [[ -n "${BACKEND_REAL_API_KEY_VALUE:-}" ]] || die "missing PRESET_ENDPOINT_API_KEY in .env.backend-real"

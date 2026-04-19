@@ -11,9 +11,19 @@ import {
   INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS,
 } from "@mbos/contracts";
 
-const mockCreate = vi.fn();
-const mockUpdate = vi.fn();
-const mockEndpointList = vi.fn();
+const {
+  mockCreate,
+  mockUpdate,
+  mockEndpointList,
+  mockToastSuccess,
+  mockToastError,
+} = vi.hoisted(() => ({
+  mockCreate: vi.fn(),
+  mockUpdate: vi.fn(),
+  mockEndpointList: vi.fn(),
+  mockToastSuccess: vi.fn(),
+  mockToastError: vi.fn(),
+}));
 
 const mockMessages = {
   agents: {
@@ -115,8 +125,8 @@ vi.mock("@/lib/api", () => ({
 
 vi.mock("@/components/ui/toast", () => ({
   toast: {
-    success: vi.fn(),
-    error: vi.fn(),
+    success: mockToastSuccess,
+    error: mockToastError,
   },
 }));
 
@@ -214,6 +224,7 @@ describe("Agent dialogs", () => {
           name: "OpenAI Main",
           model: "gpt-4.1",
           provider_family: "openai",
+          upstream_protocol: "openai_chat_completions",
           status: "active",
         },
         {
@@ -221,6 +232,7 @@ describe("Agent dialogs", () => {
           name: "Disabled",
           model: "gpt-4o-mini",
           provider_family: "openai",
+          upstream_protocol: "openai_chat_completions",
           status: "disabled",
         },
       ],
@@ -285,6 +297,54 @@ describe("Agent dialogs", () => {
     expect(payload.execution_preferences?.notebook).toBeUndefined();
   });
 
+  it("CreateAgentDialog uses anthropic_messages wire for chat agents when the selected endpoint is anthropic-native", async () => {
+    mockEndpointList.mockResolvedValueOnce({
+      items: [
+        {
+          id: "ep_anthropic",
+          name: "Anthropic Main",
+          model: "claude-sonnet-4-5",
+          provider_family: "custom",
+          upstream_protocol: "anthropic_messages",
+          status: "active",
+        },
+      ],
+    });
+
+    const { onOpenChange } = renderCreateDialog();
+
+    fireEvent.change(await screen.findByLabelText("Name"), {
+      target: { value: "agent-anthropic" },
+    });
+
+    const endpointSelect = screen.getByLabelText(
+      "Execution target",
+    ) as HTMLSelectElement;
+    await waitFor(() => {
+      expect(endpointSelect.value).toBe("ep_anthropic");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("agents__create-dialog__product-summary"),
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(mockCreate).toHaveBeenCalled();
+    });
+    await expectDialogClosed("agents__create-dialog", onOpenChange);
+
+    const payload = mockCreate.mock.calls[0][2];
+    expect(payload.interaction_kind).toBe("chat");
+    expect(payload.execution_preferences?.chat?.endpoint_id).toBe(
+      "ep_anthropic",
+    );
+    expect(payload.execution_preferences?.chat?.wire_api).toBe("anthropic_messages");
+  });
+
   it("CreateAgentDialog switches to notebook and submits notebook execution preferences", async () => {
     const { onOpenChange } = renderCreateDialog();
 
@@ -322,7 +382,130 @@ describe("Agent dialogs", () => {
       "ep_active_1",
     );
     expect(payload.execution_preferences?.notebook?.executor).toBe("codex_cli");
+    expect(payload.execution_preferences?.notebook?.wire_api).toBe("chat");
     expect(payload.execution_preferences?.chat).toBeUndefined();
+  });
+
+  it("CreateAgentDialog allows notebook Codex agents to select anthropic-native endpoints", async () => {
+    mockEndpointList.mockResolvedValueOnce({
+      items: [
+        {
+          id: "ep_openai",
+          name: "OpenAI Main",
+          model: "gpt-4.1",
+          provider_family: "openai",
+          upstream_protocol: "openai_responses",
+          status: "active",
+        },
+        {
+          id: "ep_anthropic",
+          name: "Anthropic Main",
+          model: "claude-sonnet-4-5",
+          provider_family: "custom",
+          upstream_protocol: "anthropic_messages",
+          status: "active",
+        },
+      ],
+    });
+
+    renderCreateDialog();
+
+    fireEvent.change(await screen.findByLabelText("Name"), {
+      target: { value: "agent-notebook-anthropic-ok" },
+    });
+    fireEvent.change(
+      document.getElementById("agent-interaction-kind") as HTMLSelectElement,
+      { target: { value: "notebook" } },
+    );
+
+    const endpointSelect = screen.getByLabelText(
+      "Execution target",
+    ) as HTMLSelectElement;
+    await waitFor(() => {
+      expect(endpointSelect.value).toBe("ep_openai");
+    });
+
+    expect(
+      screen.getByText("Anthropic Main (custom/claude-sonnet-4-5)"),
+    ).toBeInTheDocument();
+
+    fireEvent.change(endpointSelect, { target: { value: "ep_anthropic" } });
+    expect(endpointSelect.value).toBe("ep_anthropic");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("agents__create-dialog__product-summary"),
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+    const payload = mockCreate.mock.calls[0][2];
+    expect(payload.interaction_kind).toBe("notebook");
+    expect(payload.execution_preferences?.notebook?.endpoint_id).toBe(
+      "ep_anthropic",
+    );
+    expect(payload.execution_preferences?.notebook?.executor).toBe("codex_cli");
+    expect(payload.execution_preferences?.notebook?.wire_api).toBe("chat");
+    expect(payload.execution_preferences?.chat).toBeUndefined();
+  });
+
+  it("CreateAgentDialog allows notebook submission when only anthropic-native endpoints are available", async () => {
+    mockEndpointList.mockResolvedValueOnce({
+      items: [
+        {
+          id: "ep_anthropic",
+          name: "Anthropic Main",
+          model: "claude-sonnet-4-5",
+          provider_family: "custom",
+          upstream_protocol: "anthropic_messages",
+          status: "active",
+        },
+      ],
+    });
+
+    renderCreateDialog();
+
+    fireEvent.change(await screen.findByLabelText("Name"), {
+      target: { value: "agent-notebook-blocked" },
+    });
+    fireEvent.change(
+      document.getElementById("agent-interaction-kind") as HTMLSelectElement,
+      { target: { value: "notebook" } },
+    );
+
+    const endpointSelect = screen.getByLabelText(
+      "Execution target",
+    ) as HTMLSelectElement;
+    await waitFor(() => {
+      expect(endpointSelect.value).toBe("ep_anthropic");
+    });
+
+    expect(
+      screen.getByText("Anthropic Main (custom/claude-sonnet-4-5)"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("agents__create-dialog__product-summary"),
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+    const payload = mockCreate.mock.calls[0][2];
+    expect(payload.interaction_kind).toBe("notebook");
+    expect(payload.execution_preferences?.notebook?.endpoint_id).toBe(
+      "ep_anthropic",
+    );
+    expect(payload.execution_preferences?.notebook?.executor).toBe("codex_cli");
+    expect(payload.execution_preferences?.notebook?.wire_api).toBe("chat");
   });
 
   it("EditAgentDialog submits updated internal env and notebook endpoint selection", async () => {
@@ -380,6 +563,130 @@ describe("Agent dialogs", () => {
       "ep_active_1",
     );
     expect(payload.execution_preferences.notebook.executor).toBe("codex_cli");
+  });
+
+  it("EditAgentDialog rewrites broken anthropic chat agents back to the anthropic_messages wire", async () => {
+    mockEndpointList.mockResolvedValueOnce({
+      items: [
+        {
+          id: "ep_anthropic",
+          name: "Anthropic Main",
+          model: "claude-sonnet-4-5",
+          provider_family: "custom",
+          upstream_protocol: "anthropic_messages",
+          status: "active",
+        },
+      ],
+    });
+
+    const externalAgent = {
+      id: "ag_external_anthropic_1",
+      name: "Anthropic Agent",
+      description: "",
+      mode: "external",
+      status: "enabled",
+      interaction_kind: "chat",
+      execution_preferences_json: {
+        chat: {
+          endpoint_id: "ep_anthropic",
+          wire_api: "chat",
+        },
+      },
+      created_at: "2026-03-04T00:00:00.000Z",
+      updated_at: "2026-03-04T00:00:00.000Z",
+    };
+
+    const { onOpenChange } = renderEditDialog(externalAgent);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Anthropic Main (custom/claude-sonnet-4-5)"),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalled();
+    });
+    await expectDialogClosed("agents__edit-dialog", onOpenChange);
+
+    const payload = mockUpdate.mock.calls[0][3];
+    expect(payload.interaction_kind).toBe("chat");
+    expect(payload.execution_preferences.chat.endpoint_id).toBe("ep_anthropic");
+    expect(payload.execution_preferences.chat.executor).toBe("llm_passthrough");
+    expect(payload.execution_preferences.chat.wire_api).toBe("anthropic_messages");
+  });
+
+  it("EditAgentDialog keeps anthropic-native endpoints for notebook Codex agents", async () => {
+    mockEndpointList.mockResolvedValueOnce({
+      items: [
+        {
+          id: "ep_openai",
+          name: "OpenAI Main",
+          model: "gpt-4.1",
+          provider_family: "openai",
+          upstream_protocol: "openai_responses",
+          status: "active",
+        },
+        {
+          id: "ep_anthropic",
+          name: "Anthropic Main",
+          model: "claude-sonnet-4-5",
+          provider_family: "custom",
+          upstream_protocol: "anthropic_messages",
+          status: "active",
+        },
+      ],
+    });
+
+    const externalAgent = {
+      id: "ag_external_notebook_1",
+      name: "Notebook Agent",
+      description: "",
+      mode: "external",
+      status: "enabled",
+      interaction_kind: "notebook",
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: "ep_anthropic",
+        },
+      },
+      created_at: "2026-03-04T00:00:00.000Z",
+      updated_at: "2026-03-04T00:00:00.000Z",
+    };
+
+    renderEditDialog(externalAgent);
+
+    const endpointSelect = await waitFor(() => {
+      const candidate = screen
+        .getAllByRole("combobox")
+        .find(
+          (element) =>
+            element.querySelector('option[value="ep_anthropic"]') !== null,
+        );
+      expect(candidate).toBeDefined();
+      return candidate as HTMLSelectElement;
+    });
+
+    expect(endpointSelect.value).toBe("ep_anthropic");
+    expect(
+      screen.getByText("Anthropic Main (custom/claude-sonnet-4-5)"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalledTimes(1);
+    });
+    const payload = mockUpdate.mock.calls[0][3];
+    expect(payload.interaction_kind).toBe("notebook");
+    expect(payload.execution_preferences.notebook.endpoint_id).toBe(
+      "ep_anthropic",
+    );
+    expect(payload.execution_preferences.notebook.executor).toBe("codex_cli");
+    expect(payload.execution_preferences.notebook.wire_api).toBe("chat");
+    expect(payload.execution_preferences.chat).toBeUndefined();
   });
 
   it("EditAgentDialog switches an external agent to chat and updates chat endpoint selection", async () => {

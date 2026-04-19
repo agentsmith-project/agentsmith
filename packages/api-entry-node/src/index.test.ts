@@ -10,6 +10,7 @@ import {
 import { sanitizeWorkloadId } from "./internal-agent-pod-manager.js";
 import { UniversalProxyService } from "./universal-proxy-service.js";
 import { startUniversalProxyChatServer } from "./__integration__/chat-test-support.js";
+import { readAgentExecutionPreferences } from "./agent-execution-preferences.js";
 import {
   apiFetch,
   startServer,
@@ -44,11 +45,14 @@ async function createFileLibrary(
   return (await createLibraryRes.json()) as { id: string; name: string };
 }
 
-function buildChatExecutionPreferences(endpointId = "ep_chat_default") {
+function buildChatExecutionPreferences(
+  endpointId = "ep_chat_default",
+  wireApi: "chat" | "responses" | "anthropic_messages" = "chat",
+) {
   return {
     chat: {
       endpoint_id: endpointId,
-      wire_api: "chat",
+      wire_api: wireApi,
     },
   };
 }
@@ -894,8 +898,31 @@ describe("api-entry-node sse ticket routes", () => {
   });
 });
 
+describe("agent execution preferences", () => {
+  it("preserves anthropic_messages chat wire preferences instead of collapsing them to chat", () => {
+    expect(
+      readAgentExecutionPreferences({
+        interaction_kind: "chat",
+        execution_preferences_json: {
+          chat: {
+            endpoint_id: "ep_anthropic",
+            wire_api: "anthropic_messages",
+            model: "claude-sonnet",
+          },
+        },
+      }),
+    ).toEqual({
+      interactionKind: "chat",
+      endpointId: "ep_anthropic",
+      wireApi: "anthropic_messages",
+      model: "claude-sonnet",
+      executor: null,
+    });
+  });
+});
+
 describe("api-entry-node projects routes", () => {
-  it("streams chat via external agent websocket execution channel", async () => {
+  it("streams chat via external agent websocket execution channel with anthropic_messages wire preserved", async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     let ws: WebSocket | null = null;
     try {
@@ -912,7 +939,10 @@ describe("api-entry-node projects routes", () => {
             name: "echo-agent",
             mode: "external",
             interaction_kind: "chat",
-            execution_preferences: buildChatExecutionPreferences(),
+            execution_preferences: buildChatExecutionPreferences(
+              "ep_chat_default",
+              "anthropic_messages",
+            ),
             capabilities: {
               streaming_completion: true,
               multimodal_completion: true,
@@ -1082,7 +1112,7 @@ describe("api-entry-node projects routes", () => {
       expect(text).toContain("event: done");
       expect(observedApiBase).toBe(`${baseUrl}/api/v1`);
       expect(observedEndpointId).toBe("ep_chat_default");
-      expect(observedWireApi).toBe("chat");
+      expect(observedWireApi).toBe("anthropic_messages");
       expect(observedExecutionTicket).toMatch(/^exec_/);
       expect(observedLegacyBearer).toBe("");
     } finally {

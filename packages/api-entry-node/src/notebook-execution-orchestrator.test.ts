@@ -44,6 +44,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           credential_ref: 'cred_1',
           name: 'endpoint-1',
           type: 'openai',
+          upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
             max_context_tokens: 128000,
@@ -175,6 +176,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           credential_ref: 'cred_internal',
           name: 'endpoint-internal',
           type: 'openai',
+          upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
             max_context_tokens: 256000,
@@ -326,6 +328,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           credential_ref: 'cred_1',
           name: 'endpoint-external',
           type: 'openai',
+          upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           capabilities: [
             { type: 'chat_completion', enabled: true },
@@ -569,6 +572,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           credential_ref: 'cred_1',
           name: 'endpoint-empty-error',
           type: 'openai',
+          upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
             max_context_tokens: 128000,
@@ -677,6 +681,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           credential_ref: 'cred_external',
           name: 'endpoint-external',
           type: 'openai',
+          upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
             max_context_tokens: 200000,
@@ -782,6 +787,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           credential_ref: 'cred_invalid',
           name: 'endpoint-invalid',
           type: 'openai',
+          upstream_protocol: 'openai_chat_completions',
           base_url: 'https://example.com',
           model_profile: {
             max_context_tokens: 0,

@@ -8,8 +8,19 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-gate-ports.sh"
+
+# Preserve caller-selected first-lane ports across backend-real runtime defaults.
+ORIGINAL_INTEGRATION_API_PORT="${INTEGRATION_API_PORT:-}"
+ORIGINAL_INTEGRATION_WEB_PORT="${INTEGRATION_WEB_PORT:-}"
+
 ensure_backend_real_state
 load_backend_real_env
+if [[ -n "${ORIGINAL_INTEGRATION_API_PORT}" ]]; then
+  export INTEGRATION_API_PORT="${ORIGINAL_INTEGRATION_API_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_WEB_PORT}" ]]; then
+  export INTEGRATION_WEB_PORT="${ORIGINAL_INTEGRATION_WEB_PORT}"
+fi
 export_backend_real_endpoint_env
 
 if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
@@ -27,11 +38,14 @@ run_real_cmd() {
     "$@")
 }
 
+FIRST_LANE_API_PORT="${INTEGRATION_API_PORT:-20040}"
+FIRST_LANE_WEB_PORT="${INTEGRATION_WEB_PORT:-3041}"
+
 info "running external default backend-real checks"
-cleanup_gate_ports 20040 3041 e2e/integration-minimal.spec.ts
+cleanup_gate_ports "${FIRST_LANE_API_PORT}" "${FIRST_LANE_WEB_PORT}" e2e/integration-minimal.spec.ts
 run_real_cmd \
-  INTEGRATION_API_PORT=20040 \
-  INTEGRATION_WEB_PORT=3041 \
+  INTEGRATION_API_PORT="${FIRST_LANE_API_PORT}" \
+  INTEGRATION_WEB_PORT="${FIRST_LANE_WEB_PORT}" \
   npm run test:backend-real:core
 
 info "running notebook backend-real smoke"

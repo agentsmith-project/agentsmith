@@ -20,6 +20,7 @@ import {
   KEYCLOAK_INTEGRATION_USER_USERNAME,
   keycloakLoginToWorkspace,
   putContextEntryViaApi,
+  reconnectCodexRunnerProcessToTask,
   startCodexRunnerProcess,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
@@ -488,15 +489,14 @@ test.describe('@lane-real context store isolation', () => {
       title: `task-isolation-${Date.now()}`,
     });
 
-    const runner = await startCodexRunnerProcess({
+    let runner = await startCodexRunnerProcess({
       wsUrl: agentBundle.wsUrl,
       agentKey: agentBundle.agentKey,
     });
-    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+    test.info().annotations.push({ type: 'codex_runner_presence_log', description: runner.logPath });
 
     try {
       await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
-
       const taskId = await createNotebookTaskViaApi({
         page,
         workspaceId: 'ws_default',
@@ -505,6 +505,14 @@ test.describe('@lane-real context store isolation', () => {
         agentId: agentBundle.agentId,
         fileLibraryId,
       });
+      runner = await reconnectCodexRunnerProcessToTask({
+        presenceRunner: runner,
+        wsUrl: agentBundle.wsUrl,
+        agentKey: agentBundle.agentKey,
+        taskId,
+      });
+      test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
 
       const contextKey = `notes.task_private_${Date.now()}`;
       const contextValue = `task_private_${Date.now()}`;

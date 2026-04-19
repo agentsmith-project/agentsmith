@@ -1,6 +1,7 @@
 import type { AgentRecord } from './resource-models.js';
 
 type ExecutionPreferencesRecord = Record<string, unknown>;
+export type AgentExecutionWireApi = 'chat' | 'responses' | 'anthropic_messages';
 
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
@@ -27,7 +28,7 @@ export function readAgentExecutionPreferences(
 ): {
   interactionKind: 'chat' | 'notebook';
   endpointId: string | null;
-  wireApi: 'chat' | 'responses';
+  wireApi: AgentExecutionWireApi;
   model: string | null;
   executor: string | null;
 } {
@@ -45,7 +46,12 @@ export function readAgentExecutionPreferences(
   return {
     interactionKind,
     endpointId: asNonEmptyString(scoped.endpoint_id),
-    wireApi: scoped.wire_api === 'responses' ? 'responses' : 'chat',
+    wireApi:
+      scoped.wire_api === 'responses'
+        ? 'responses'
+        : interactionKind === 'chat' && scoped.wire_api === 'anthropic_messages'
+          ? 'anthropic_messages'
+          : 'chat',
     model: asNonEmptyString(scoped.model),
     executor: asNonEmptyString(scoped.executor),
   };

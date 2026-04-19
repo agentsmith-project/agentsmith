@@ -608,6 +608,19 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).not.toMatch(/\bkill_port_listeners\b/);
   });
 
+  it('sources backend-real state helpers before using release run ownership helpers', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const sourceIndex = script.indexOf('source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"');
+    const newRunDirIndex = script.indexOf('backend_real_new_run_dir');
+    const pruneCurrentIndex = script.indexOf('backend_real_prune_forbidden_current_entries');
+    const markRunStatusIndex = script.indexOf('backend_real_mark_run_status');
+
+    expect(sourceIndex).toBeGreaterThanOrEqual(0);
+    expect(newRunDirIndex).toBeGreaterThan(sourceIndex);
+    expect(pruneCurrentIndex).toBeGreaterThan(sourceIndex);
+    expect(markRunStatusIndex).toBeGreaterThan(sourceIndex);
+  });
+
   it('assigns release services to a run-scoped owner token before starting local API and Web', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
 
@@ -617,12 +630,38 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toMatch(/LOCAL_RUNTIME_PROCESS_STATE_DIR="\$\{RELEASE_RUN_ROOT\}\/processes"/);
   });
 
+  it('captures an authoritative release-ready API pid from the shared local runtime helper while preserving root cleanup ownership', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+
+    expect(script).toContain('LOCAL_API_ROOT_PID=""');
+    expect(script).toContain('LOCAL_API_PID=""');
+    expect(script).toContain('LOCAL_API_ROOT_PID="$(');
+    expect(script).toContain('local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" env');
+    expect(script).toContain(
+      'LOCAL_API_PID="$(local_runtime_capture_authoritative_service_pid "${LOCAL_API_ROOT_PID}" api "${API_PORT}"',
+    );
+    expect(script).toContain('local_runtime_stop_owned_process_tree "${LOCAL_API_ROOT_PID}" api "${API_PORT}"');
+    expect(script).not.toContain('LOCAL_API_PID="$(\n      local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" env');
+  });
+
   it('passes executable commands to local_runtime_start_owned_service instead of shell-only helper functions', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
 
     expect(script).not.toMatch(/local_runtime_start_owned_service[\s\S]*?env[\s\S]*?run_clean npm run api:node:dev/);
     expect(script).not.toMatch(/local_runtime_start_owned_service[\s\S]*?env[\s\S]*?run_clean bash scripts\/run-next-dev-safe\.sh/);
     expect(script).toContain('env -u http_proxy -u https_proxy -u all_proxy');
+  });
+
+  it('invokes backend-real:ready with explicit release-ready ports and without ambient integration port leakage', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+
+    expect(script).toContain(
+      "run_cmd \"env -u INTEGRATION_API_PORT -u INTEGRATION_WEB_PORT BACKEND_REAL_STATE_DIR='${RELEASE_RUN_ROOT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}'",
+    );
+    expect(script).toContain("API_BASE='${RUNTIME_HOST_API_BASE_URL}'");
+    expect(script).toContain("BASE_URL='${RUNTIME_BROWSER_WEB_BASE_URL}'");
+    expect(script).toContain("KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}'");
+    expect(script).toContain('npm run backend-real:ready');
   });
 
   it('delegates standalone UX trace evidence acceptance to the semantic validator instead of find review.md', () => {

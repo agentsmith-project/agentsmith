@@ -1,6 +1,13 @@
 import type { CreateAgentRequest } from '@/lib/api/endpoints/agents';
+import type { EndpointUpstreamProtocol } from '@/lib/api/types';
 
 import type { AgentInteractionKind, AgentMode, EnvEntry } from './types';
+
+export function resolveChatExecutionWireApi(
+  upstreamProtocol?: EndpointUpstreamProtocol | null,
+): 'chat' | 'anthropic_messages' {
+  return upstreamProtocol === 'anthropic_messages' ? 'anthropic_messages' : 'chat';
+}
 
 export function endpointLabel(endpoint: {
   name: string;
@@ -18,6 +25,7 @@ export function buildCreateAgentPayload(params: {
   description: string;
   envEntries: EnvEntry[];
   executionEndpointId: string;
+  executionEndpointUpstreamProtocol?: EndpointUpstreamProtocol | null;
   externalAcceptedMimeTypes: string;
   externalMaxFileCount: string;
   externalMaxTotalBytes: string;
@@ -62,7 +70,7 @@ export function buildCreateAgentPayload(params: {
             chat: {
               executor: 'llm_passthrough',
               endpoint_id: endpointId,
-              wire_api: 'chat',
+              wire_api: resolveChatExecutionWireApi(params.executionEndpointUpstreamProtocol),
             },
           }
       : {

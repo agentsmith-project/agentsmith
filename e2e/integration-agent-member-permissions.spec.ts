@@ -16,6 +16,7 @@ import {
   KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
   keycloakLoginToWorkspace,
   LOCALE,
+  reconnectCodexRunnerProcessToTask,
   startCodexRunnerProcess,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
@@ -135,10 +136,6 @@ test.describe('@lane-real ordinary members can use agents but cannot manage them
         title: `${RUNTIME_SETUP.externalTitlePrefix} ${Date.now()}`,
       });
       await trace.capture(memberPage, { stepId: 'agents-created' });
-      runner = await startCodexRunnerProcess({
-        wsUrl: agentBundle.wsUrl,
-        agentKey: agentBundle.agentKey,
-      });
       const invitePath = await createInvite(page, workspaceId, projectId, 'integration-member@example.com');
 
       const joinContext = await browser.newContext();
@@ -154,10 +151,14 @@ test.describe('@lane-real ordinary members can use agents but cannot manage them
         await expect(joinPage.getByTestId('join__accept-btn')).toBeVisible({ timeout: 30_000 });
         await joinPage.getByTestId('join__accept-btn').click();
         await joinPage.waitForURL(/\/login\/workspace/, { timeout: 30_000 });
-        await waitForAgentPresenceOnline(memberPage, workspaceId, projectId, agentBundle.agentId);
 
         const memberLibraryName = `Agent Member Library ${Date.now()}`;
         const memberLibraryId = await createFileLibraryViaUi(joinPage, workspaceId, projectId, memberLibraryName);
+        runner = await startCodexRunnerProcess({
+          wsUrl: agentBundle.wsUrl,
+          agentKey: agentBundle.agentKey,
+        });
+        await waitForAgentPresenceOnline(joinPage, workspaceId, projectId, agentBundle.agentId);
         const taskId = await createNotebookTaskViaApi({
           page: joinPage,
           workspaceId,
@@ -166,6 +167,13 @@ test.describe('@lane-real ordinary members can use agents but cannot manage them
           agentId: agentBundle.agentId,
           fileLibraryId: memberLibraryId,
         });
+        runner = await reconnectCodexRunnerProcessToTask({
+          presenceRunner: runner,
+          wsUrl: agentBundle.wsUrl,
+          agentKey: agentBundle.agentKey,
+          taskId,
+        });
+        await waitForAgentPresenceOnline(joinPage, workspaceId, projectId, agentBundle.agentId);
         expect(taskId).toBeTruthy();
         await trace.capture(joinPage, { stepId: 'member-task-created' });
 

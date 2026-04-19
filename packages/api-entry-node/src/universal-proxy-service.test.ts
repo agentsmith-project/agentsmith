@@ -42,10 +42,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function getRequest(fetchMock: ReturnType<typeof vi.fn>, index = 0): { url: string; init: RequestInit } {
+  const [url, init] = fetchMock.mock.calls[index] as [string, RequestInit];
+  return { url, init };
+}
+
 describe('UniversalProxyService', () => {
-  it('pushes endpoint config as a namespace snapshot', async () => {
+  it('pushes endpoint config with the server-owned revision contract', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ status: 'applied' }), {
+      new Response(JSON.stringify({ revision: 'srv_rev_1' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -62,13 +67,13 @@ describe('UniversalProxyService', () => {
 
     expect(namespace).toBe('ws_default__proj_1__ep_1');
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const { url, init } = getRequest(fetchMock);
     expect(url).toBe('http://proxy.internal:8080/admin/namespaces/ws_default__proj_1__ep_1/config');
     const payload = JSON.parse(String(init.body)) as {
-      revision: string;
+      if_revision: string | null;
       config: { upstreams: Array<{ api_root: string; fixed_upstream_format?: string; auth_policy: string }> };
     };
-    expect(payload.revision).toContain('2026-03-22T00:00:00.000Z:');
+    expect(payload.if_revision).toBeNull();
     expect(payload.config.upstreams[0]).toMatchObject({
       api_root: 'https://anthropic-compatible.provider.example/v1',
       fixed_upstream_format: 'anthropic',
@@ -78,7 +83,7 @@ describe('UniversalProxyService', () => {
 
   it('normalizes explicit upstream route suffixes out of api_root snapshots', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ status: 'applied' }), {
+      new Response(JSON.stringify({ revision: 'srv_rev_1' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -101,6 +106,219 @@ describe('UniversalProxyService', () => {
       config: { upstreams: Array<{ api_root: string }> };
     };
     expect(payload.config.upstreams[0]?.api_root).toBe('https://openai-compatible.provider.example');
+  });
+
+  it('does not rewrite unchanged config when only endpoint metadata changes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ revision: 'srv_rev_1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new UniversalProxyService('http://proxy.internal:8080');
+    await service.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint(),
+      'secret-key',
+    );
+    await service.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint({
+        name: 'Renamed Endpoint',
+        updated_at: '2026-04-01T12:00:00.000Z',
+      }),
+      'secret-key',
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses the last known server revision when config changes', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ revision: 'srv_rev_1' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ revision: 'srv_rev_2' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new UniversalProxyService('http://proxy.internal:8080');
+    await service.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint(),
+      'secret-key',
+    );
+    await service.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint({
+        limits: { timeout_seconds: 45 },
+        updated_at: '2026-04-01T12:00:00.000Z',
+      }),
+      'secret-key',
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstPayload = JSON.parse(String(getRequest(fetchMock, 0).init.body)) as { if_revision: string | null };
+    const secondPayload = JSON.parse(String(getRequest(fetchMock, 1).init.body)) as {
+      if_revision: string | null;
+      config: { upstream_timeout_secs: number };
+    };
+    expect(firstPayload.if_revision).toBeNull();
+    expect(secondPayload.if_revision).toBe('srv_rev_1');
+    expect(secondPayload.config.upstream_timeout_secs).toBe(45);
+  });
+
+  it('retries once with current_revision after a 412 CAS conflict', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ current_revision: 'srv_rev_0' }), {
+          status: 412,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ revision: 'srv_rev_1' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new UniversalProxyService('http://proxy.internal:8080');
+    await service.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint(),
+      'secret-key',
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstPayload = JSON.parse(String(getRequest(fetchMock, 0).init.body)) as { if_revision: string | null };
+    const secondPayload = JSON.parse(String(getRequest(fetchMock, 1).init.body)) as { if_revision: string | null };
+    expect(firstPayload.if_revision).toBeNull();
+    expect(secondPayload.if_revision).toBe('srv_rev_0');
+  });
+
+  it('retries with null if_revision when a stale cached revision hits a restarted proxy namespace', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ revision: 'srv_rev_1' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ current_revision: null }), {
+          status: 412,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ revision: 'srv_rev_2' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new UniversalProxyService('http://proxy.internal:8080');
+    await service.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint(),
+      'secret-key',
+    );
+    await service.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint({
+        limits: { timeout_seconds: 45 },
+        updated_at: '2026-04-01T12:00:00.000Z',
+      }),
+      'secret-key',
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const retryAttemptPayload = JSON.parse(String(getRequest(fetchMock, 1).init.body)) as { if_revision: string | null };
+    const recreatePayload = JSON.parse(String(getRequest(fetchMock, 2).init.body)) as {
+      if_revision: string | null;
+      config: { upstream_timeout_secs: number };
+    };
+    expect(retryAttemptPayload.if_revision).toBe('srv_rev_1');
+    expect(recreatePayload.if_revision).toBeNull();
+    expect(recreatePayload.config.upstream_timeout_secs).toBe(45);
+  });
+
+  it('requires the server to return a revision on success', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: 'applied' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new UniversalProxyService('http://proxy.internal:8080');
+
+    await expect(
+      service.ensureEndpointNamespace(
+        'ws_default',
+        'proj_1',
+        createEndpoint(),
+        'secret-key',
+      ),
+    ).rejects.toThrow('universal_proxy_config_push_missing_revision');
+  });
+
+  it('serializes concurrent reconcile calls for the same namespace', async () => {
+    let resolveFetch: ((response: Response) => void) | undefined;
+    const firstResponse = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetchMock = vi.fn().mockReturnValue(firstResponse);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new UniversalProxyService('http://proxy.internal:8080');
+    const pendingA = service.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint(),
+      'secret-key',
+    );
+    const pendingB = service.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint(),
+      'secret-key',
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    resolveFetch?.(
+      new Response(JSON.stringify({ revision: 'srv_rev_1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    await Promise.all([pendingA, pendingB]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('forwards a unified request through the namespaced proxy route', async () => {

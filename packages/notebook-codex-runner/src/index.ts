@@ -27,7 +27,10 @@ import {
 import { inspectBuiltinSkills, resolveBuiltinSkillsConfig, seedBuiltinSkills } from './builtin-skills.js';
 import { selectLatestInstruction } from './prompt-selection.js';
 import { resolveRunnerSuccessPolicy } from './run-result-policy.js';
-import { ensureCodexSessionStateCompatible } from './session-state.js';
+import {
+  ensureCodexSessionStateCompatible,
+  markCodexSessionStateReusable,
+} from './session-state.js';
 import { resolveCodexTerminalOutcome } from './terminal-outcome.js';
 import { startTerminalProcess, type TerminalExecutionContext, type TerminalProcess } from './terminal-runtime.js';
 import { prepareLaunchCommand } from './child-launcher.js';
@@ -61,7 +64,7 @@ const key = process.env.MBOS_AGENT_KEY;
 const codexBin = process.env.CODEX_BIN ?? 'codex';
 const runnerDebug = process.env.MBOS_AGENT_RUNNER_DEBUG === '1';
 const codexYolo = process.env.MBOS_AGENT_CODEX_YOLO !== '0';
-const proxyAuthHeaderEnvName = 'MBOS_CODEX_PROXY_AUTH_HEADER';
+const proxyExecutionTicketHeaderEnvName = 'MBOS_CODEX_PROXY_EXECUTION_TICKET';
 const cancelKillDelayMs = (() => {
   const raw = Number.parseInt(process.env.MBOS_AGENT_CANCEL_KILL_DELAY_MS ?? '', 10);
   if (Number.isFinite(raw) && raw >= 1_000) return raw;
@@ -797,7 +800,7 @@ function flushCodexStdoutBuffer(requestId: string, buffer: string): string {
 async function runCodexRequest(requestId: string, payload: ServerStartPayload): Promise<void> {
   const executionContext = assertNotebookExecutionContext(payload.execution_context);
   const taskId = sanitizePathPart(executionContext.task_id, `task_${requestId.slice(0, 8)}`);
-  const sessionId = sanitizePathPart(executionContext.session_id, taskId);
+  const agentSessionId = sanitizePathPart(executionContext.session_id, '');
   const username = sanitizePathPart(executionContext.username, 'unknown_user');
   debugLog('preparing task workspace', { request_id: requestId, task_id: taskId });
   const cwdResult = await prepareTaskWorkspace({
@@ -832,7 +835,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     manifestDir: taskPaths.mbosDir,
   });
   const interactionKind = 'notebook';
-  const resumeSession = sessionId.length > 0;
   const userPrompt = selectLatestInstruction(payload.messages);
   const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
   debugLog('preparing notebook workspace assets', { request_id: requestId, cwd });
@@ -870,8 +872,9 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const modelCatalogSupportsParallelToolCalls = executionContext.model_catalog?.supports_parallel_tool_calls === true;
   const sessionStateResult = await ensureCodexSessionStateCompatible({
     codexDir: taskPaths.codexDir,
+    taskId,
     model: payload.model ?? executionContext.model ?? 'gpt-5-codex',
-    wireApi: executionContext.wire_api ?? 'responses',
+    wireApi: executionContext.wire_api === 'chat' ? 'chat' : 'responses',
     resourceProxyBase: endpointProxyBase,
     interactionKind,
     modelContextWindow,
@@ -887,7 +890,9 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     codex_dir: taskPaths.codexDir,
     reset_performed: sessionStateResult.resetPerformed,
     reason: sessionStateResult.reason,
+    resume_allowed: sessionStateResult.resumeAllowed,
   });
+  const resumeSession = sessionStateResult.resumeAllowed;
   // codex-cli >=0.104 no longer accepts wire_api=chat in provider config.
   const wireApi = 'responses';
 
@@ -921,7 +926,9 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       modelContextWindow,
       modelAutoCompactTokenLimit,
       modelCatalogPath,
-      proxyAuthHeaderEnvName: executionContext.execution_ticket ? proxyAuthHeaderEnvName : undefined,
+      executionTicketHeaderEnvName: executionContext.execution_ticket
+        ? proxyExecutionTicketHeaderEnvName
+        : undefined,
     }),
     'utf-8',
   );
@@ -942,7 +949,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     has_execution_ticket: Boolean(executionContext.execution_ticket && executionContext.execution_ticket.trim()),
     interaction_kind: interactionKind,
     resume_session: resumeSession,
-    session_id: sessionId || null,
+    session_id: agentSessionId || null,
     task_inputs_count: taskInputs.length,
     builtin_skills_source_dir: builtinSkillsResult.sourceDir,
     builtin_skills_runtime_dir: builtinSkillsRuntime.targetDir,
@@ -972,7 +979,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       NO_COLOR: '1',
       ...buildAgentRuntimeEnv(executionContext),
       ...(executionContext.execution_ticket ? {
-        [proxyAuthHeaderEnvName]: `Bearer ${executionContext.execution_ticket}`,
+        [proxyExecutionTicketHeaderEnvName]: executionContext.execution_ticket,
       } : {}),
     }),
   });
@@ -1257,6 +1264,20 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
           visibleAgentCharsByRequestId.delete(requestId);
           commandCountByRequestId.delete(requestId);
           return;
+        }
+        try {
+          await markCodexSessionStateReusable({
+            codexDir: taskPaths.codexDir,
+            taskId,
+          });
+        } catch (error) {
+          sendTraceEvent(requestId, {
+            category: 'warning',
+            phase: 'update',
+            status: 'running',
+            name: 'codex.session_state',
+            summary: error instanceof Error ? error.message : 'codex_session_state_mark_failed',
+          });
         }
         sendRunLifecycleEvent(requestId, 'completed', 'success', 'Run completed');
         sendRunSummaryEvent(requestId, 'success', {

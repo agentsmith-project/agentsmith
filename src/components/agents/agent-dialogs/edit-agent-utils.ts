@@ -1,5 +1,5 @@
 import type { UpdateAgentRequest } from '@/lib/api/endpoints/agents';
-import type { Agent } from '@/lib/api/types';
+import type { Agent, EndpointUpstreamProtocol } from '@/lib/api/types';
 import type { ExecutionPreferences } from '@/components/settings/ExecutionPreferencesEditor';
 import {
   INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
@@ -7,6 +7,7 @@ import {
 } from '@mbos/contracts';
 
 import type { AgentInteractionKind, EnvEntry } from './types';
+import { resolveChatExecutionWireApi } from './utils';
 
 export interface EditAgentFormState {
   cpuLimit: string;
@@ -84,6 +85,7 @@ export function buildUpdateAgentPayload(params: {
   description: string;
   envEntries: EnvEntry[];
   executionEndpointId: string;
+  executionEndpointUpstreamProtocol?: EndpointUpstreamProtocol | null;
   executionPreferences: ExecutionPreferences;
   externalAcceptedMimeTypes: string;
   externalMaxFileCount: string;
@@ -125,7 +127,7 @@ export function buildUpdateAgentPayload(params: {
           ...chatExecutionPreferences,
           endpoint_id: endpointId,
           executor: 'llm_passthrough',
-          wire_api: 'chat',
+          wire_api: resolveChatExecutionWireApi(params.executionEndpointUpstreamProtocol),
         };
         delete nextPreferences.notebook;
       } else {

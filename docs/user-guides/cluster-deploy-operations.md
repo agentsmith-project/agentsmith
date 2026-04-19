@@ -46,6 +46,7 @@ Do not use it to replace the current demo deployment line.
 For local rehearsal on a development host, use the `cluster-rehearsal` commands instead of this runbook.
 
 In `cluster-rehearsal`, generated handoff artifacts do not live under the shared operator config root. They are written under `artifacts/runtime/scenario/cluster-rehearsal/state/generated/` so rehearsal reset can return to a clean-room starting point without changing the target-host contract.
+Fresh `cluster-rehearsal` roots still seed from the local operator `site.env`, but the tracked rehearsal flow rewrites sandbox-manager URLs onto the scenario-owned local ingress port (`:29180`) before deploy and verify consume them.
 
 Important:
 

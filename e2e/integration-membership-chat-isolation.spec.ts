@@ -266,49 +266,44 @@ test.describe('@lane-real invite flow and chat isolation', () => {
     const memberContext = await browser.newContext();
     const memberPage = await memberContext.newPage();
     try {
-      await keycloakLoginToWorkspace(
-        memberPage,
-        workspaceId,
-        KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
-        KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
-        { ensureProjectCreatorAccess: false },
-      );
       await memberPage.goto(`/${LOCALE}${invitePath}`);
-      await expect(memberPage.getByTestId('join__accept-btn')).toBeVisible({ timeout: 30_000 });
-      await captureInviteFirstWorkTrace(memberPage, 'accept-invite');
-      await memberPage.getByTestId('join__accept-btn').click();
+      await expect(memberPage.getByTestId('join__invite-card')).toBeVisible({ timeout: 30_000 });
+      await expect(memberPage.getByTestId('join__invite-workspace')).toBeVisible({ timeout: 30_000 });
+      await expect(memberPage.getByTestId('join__invite-project')).toBeVisible({ timeout: 30_000 });
+      await captureInviteFirstWorkTrace(memberPage, 'inspect-invite-truth');
 
-      await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/login/workspace(?:\\?project_id=${projectId})?$`), { timeout: 30_000 });
-      await expect(memberPage.getByTestId('workspace-select__list')).toBeVisible({ timeout: 30_000 });
-      await captureInviteFirstWorkTrace(memberPage, 'choose-invited-workspace');
-      const workspaceEntry = memberPage.getByTestId(`workspace-select__item--${workspaceId}`);
-      await expect(workspaceEntry).toBeVisible({ timeout: 30_000 });
-      await workspaceEntry.click();
-
-      await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/login(?:\\?project_id=${projectId})?$`), { timeout: 30_000 });
+      await memberPage.getByTestId('join__continue-btn').click();
+      await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/login(?:\\?.*)?$`), { timeout: 30_000 });
+      const loginUrl = new URL(memberPage.url());
+      expect(loginUrl.pathname).toBe(`/${LOCALE}/workspaces/${workspaceId}/login`);
+      expect(loginUrl.searchParams.get('project_id')).toBe(projectId);
       await expect(memberPage.getByTestId('workspace-login__heading')).toBeVisible({ timeout: 30_000 });
-      await captureInviteFirstWorkTrace(memberPage, 'enter-invited-workspace-login');
+      const workspaceLoginButton = memberPage.getByTestId('workspace-login__keycloak-btn');
+      await expect(workspaceLoginButton).toBeVisible({ timeout: 30_000 });
+      await expect(workspaceLoginButton).toBeEnabled({ timeout: 30_000 });
+      await captureInviteFirstWorkTrace(memberPage, 'continue-to-invited-workspace-login');
 
       await keycloakLoginToWorkspace(
         memberPage,
         workspaceId,
         KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
         KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
-        { projectId, preserveCurrentWorkspaceLoginPage: true },
+        { ensureProjectCreatorAccess: false, projectId, preserveCurrentWorkspaceLoginPage: true },
       );
 
       await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview$`), {
         timeout: 30_000,
       });
       await expect(memberPage.getByTestId('project-overview__page')).toBeVisible({ timeout: 30_000 });
+      await captureInviteFirstWorkTrace(memberPage, 'complete-workspace-login-and-accept');
       await captureInviteFirstWorkTrace(memberPage, 'land-on-invited-project-overview');
+      await captureInviteFirstWorkTrace(memberPage, 'start-first-chat-work');
 
       await memberPage.getByTestId('project-overview__primary-cta').click();
       await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/chat$`), {
         timeout: 30_000,
       });
       await expect(memberPage.getByTestId('chat__surface')).toBeVisible({ timeout: 30_000 });
-      await captureInviteFirstWorkTrace(memberPage, 'start-first-chat-work');
 
       const memberToken = await readStoredAuthToken(memberPage);
       const memberUserId = readUserIdFromJwt(memberToken);
@@ -446,30 +441,15 @@ test.describe('@lane-real invite flow and chat isolation', () => {
           workspaceId,
           KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
           KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
-          { projectId, preserveCurrentWorkspaceLoginPage: true },
+          { ensureProjectCreatorAccess: false },
         );
         await memberPage.goto(`/${LOCALE}${invitePath}`);
         await expect(memberPage.getByTestId('join__accept-btn')).toBeVisible({ timeout: 30_000 });
         await capturePrivacyTrace(memberPage, 'accept-invite');
         await memberPage.getByTestId('join__accept-btn').click();
-        await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/login/workspace(?:\\?project_id=${projectId})?$`), { timeout: 30_000 });
-        await expect(memberPage.getByTestId('workspace-select__list')).toBeVisible({ timeout: 30_000 });
-
-        const workspaceEntry = memberPage.getByTestId(`workspace-select__item--${workspaceId}`);
-        await expect(workspaceEntry).toBeVisible({ timeout: 30_000 });
-        await workspaceEntry.click();
-        await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/login(?:\\?project_id=${projectId})?$`), { timeout: 30_000 });
-        await expect(memberPage.getByTestId('workspace-login__heading')).toBeVisible({ timeout: 30_000 });
-
-        await keycloakLoginToWorkspace(
-          memberPage,
-          workspaceId,
-          KEYCLOAK_INTEGRATION_MEMBER_USERNAME,
-          KEYCLOAK_INTEGRATION_MEMBER_PASSWORD,
-          { projectId, preserveCurrentWorkspaceLoginPage: true },
-        );
         await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview$`), { timeout: 30_000 });
         await expect(memberPage.getByTestId('project-overview__page')).toBeVisible({ timeout: 30_000 });
+        await capturePrivacyTrace(memberPage, 'verify-member-first-access');
         await memberPage.getByTestId('project-overview__primary-cta').click();
         await expect(memberPage.getByTestId('chat__surface')).toBeVisible({ timeout: 30_000 });
         await capturePrivacyTrace(memberPage, 'start-first-chat-use');
@@ -509,6 +489,7 @@ test.describe('@lane-real invite flow and chat isolation', () => {
         const memberMessages = await memberMessagesRes.json() as { items?: Array<{ role?: string; content?: string }> };
         expect((memberMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(memberToken))).toBe(true);
         expect((memberMessages.items ?? []).some((item) => item.role === 'assistant' && item.content?.includes(ownerToken))).toBe(false);
+        await capturePrivacyTrace(memberPage, 'verify-chat-privacy');
         await capturePrivacyTrace(memberPage, 'verify-shared-runner-isolation');
         outcome = 'pass';
       } finally {

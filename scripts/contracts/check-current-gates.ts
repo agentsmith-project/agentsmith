@@ -252,7 +252,8 @@ for (const scriptName of ['lane:visual', 'lane:demo-rehearsal', 'lane:cluster-re
     failures,
   );
 }
-requireMatch(backendRealRun, /cleanup_gate_ports 20040 3041 e2e\/integration-minimal\.spec\.ts/, 'backend-real-run must clean stale ports before the external default backend-real lane', failures);
+requireMatch(backendRealRun, /FIRST_LANE_API_PORT="\$\{INTEGRATION_API_PORT:-20040\}"[\s\S]*FIRST_LANE_WEB_PORT="\$\{INTEGRATION_WEB_PORT:-3041\}"/, 'backend-real-run must resolve first-lane ports from inherited integration ports before defaulting to 20040/3041', failures);
+requireMatch(backendRealRun, /cleanup_gate_ports "\$\{FIRST_LANE_API_PORT\}" "\$\{FIRST_LANE_WEB_PORT\}" e2e\/integration-minimal\.spec\.ts/, 'backend-real-run must clean stale ports before the external default backend-real lane using the resolved first-lane ports', failures);
 requireMatch(backendRealRun, /cleanup_gate_ports 20060 3061 e2e\/integration-system-notebook-default\.spec\.ts/, 'backend-real-run must clean stale ports before the notebook backend-real smoke lane', failures);
 requireMatch(backendRealRun, /cleanup_gate_ports 20064 3065 e2e\/integration-chat-llm-runner\.spec\.ts/, 'backend-real-run must clean stale ports before the external chat runner backend-real lane', failures);
 requireMatch(backendRealRun, /cleanup_gate_ports 20064 3065 e2e\/integration-notebook-codex-runner\.spec\.ts/, 'backend-real-run must clean stale ports before the external notebook runner backend-real lane', failures);

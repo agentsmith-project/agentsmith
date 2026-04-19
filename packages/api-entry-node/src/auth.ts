@@ -26,6 +26,12 @@ export interface VerifiedRequestAuth {
   tokenType: 'jwt' | 'api_key' | 'sse_ticket' | 'internal_ticket' | 'desktop_token';
 }
 
+interface VerifyRequestAuthOptions {
+  cache?: CachePort;
+  docStore?: JsonDocStorePort;
+  internalTicketToken?: string | null;
+}
+
 interface IssuerConfig {
   issuer: string;
   jwksUrl: string;
@@ -191,6 +197,19 @@ export function extractBearerToken(req: http.IncomingMessage): string | null {
   return token || null;
 }
 
+export function extractExecutionTicketHeader(req: http.IncomingMessage): string | null {
+  const raw = req.headers['x-agentsmith-execution-ticket'];
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    return trimmed || null;
+  }
+  if (Array.isArray(raw)) {
+    const trimmed = raw[0]?.trim();
+    return trimmed || null;
+  }
+  return null;
+}
+
 function extractApiKeyHeaderToken(req: http.IncomingMessage): string | null {
   const raw = req.headers['x-api-key'];
   if (typeof raw === 'string') {
@@ -235,19 +254,32 @@ function toInternalTicketUser(ticket: ResolvedInternalTicket): AuthenticatedUser
 
 export async function verifyRequestAuth(
   req: http.IncomingMessage,
-  options?: { cache?: CachePort; docStore?: JsonDocStorePort },
+  options?: VerifyRequestAuthOptions,
 ): Promise<VerifiedRequestAuth | null> {
   const headerToken = extractBearerToken(req);
   const apiKeyHeaderToken = extractApiKeyHeaderToken(req);
-  const internalTicket = headerToken && options?.cache
-    ? await resolveInternalTicket(options.cache, headerToken)
-    : null;
-  if (internalTicket) {
-    return {
-      user: toInternalTicketUser(internalTicket),
-      internalTicket,
-      tokenType: 'internal_ticket',
-    };
+  const explicitInternalTicketToken = options?.internalTicketToken?.trim() || null;
+  // Allowed execution routes can provide a dedicated ticket header that must win
+  // over any unrelated Authorization bearer injected by the caller runtime.
+  if (options?.cache && explicitInternalTicketToken) {
+    const internalTicket = await resolveInternalTicket(options.cache, explicitInternalTicketToken);
+    if (internalTicket) {
+      return {
+        user: toInternalTicketUser(internalTicket),
+        internalTicket,
+        tokenType: 'internal_ticket',
+      };
+    }
+  }
+  if (options?.cache && headerToken) {
+    const internalTicket = await resolveInternalTicket(options.cache, headerToken);
+    if (internalTicket) {
+      return {
+        user: toInternalTicketUser(internalTicket),
+        internalTicket,
+        tokenType: 'internal_ticket',
+      };
+    }
   }
   const desktopToken = headerToken && options?.cache
     ? await resolveDesktopAccessToken(options.cache, headerToken)

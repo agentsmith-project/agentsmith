@@ -36,6 +36,7 @@ const {
   ensureCodexSessionStateCompatibleMock,
   filterNewArtifactsForRunMock,
   inspectBuiltinSkillsMock,
+  markCodexSessionStateReusableMock,
   mkdirMock,
   prepareLaunchCommandMock,
   prepareNotebookWorkspaceAssetsMock,
@@ -68,13 +69,22 @@ const {
       HOME: homeDir,
     })),
     diffWorkspaceFileSnapshotsMock: vi.fn(() => ({ added: [], modified: [], deleted: [] })),
-    ensureCodexSessionStateCompatibleMock: vi.fn(async () => ({ resetPerformed: false, reason: 'missing' as const })),
+    ensureCodexSessionStateCompatibleMock: vi.fn(async (): Promise<{
+      resetPerformed: boolean;
+      reason: 'missing' | 'unchanged' | 'changed';
+      resumeAllowed: boolean;
+    }> => ({
+      resetPerformed: false,
+      reason: 'missing' as const,
+      resumeAllowed: false,
+    })),
     filterNewArtifactsForRunMock: vi.fn(() => []),
     inspectBuiltinSkillsMock: vi.fn(async () => ({
       sourceDir: '/seed-skills',
       available: [],
       missing: [],
     })),
+    markCodexSessionStateReusableMock: vi.fn(async () => undefined),
     mkdirMock: vi.fn(async () => undefined),
     prepareLaunchCommandMock: vi.fn(async (input: { file: string; args: string[]; env: NodeJS.ProcessEnv }) => ({
       file: input.file,
@@ -103,7 +113,12 @@ const {
       required: false,
       skills: [],
     })),
-    resolveCodexTerminalOutcomeMock: vi.fn(() => ({
+    resolveCodexTerminalOutcomeMock: vi.fn((): {
+      finalStatus: 'success' | 'error' | 'cancelled';
+      codexTraceStatus: 'success' | 'error' | 'cancelled';
+      errorCode: 'AGENT_CANCELLED' | 'AGENT_UPSTREAM_ERROR' | null;
+      errorMessage: string | null;
+    } => ({
       finalStatus: 'success' as const,
       codexTraceStatus: 'success' as const,
       errorCode: null,
@@ -219,6 +234,7 @@ vi.mock('./run-result-policy.js', () => ({
 
 vi.mock('./session-state.js', () => ({
   ensureCodexSessionStateCompatible: ensureCodexSessionStateCompatibleMock,
+  markCodexSessionStateReusable: markCodexSessionStateReusableMock,
 }));
 
 vi.mock('./task-workspace.js', () => ({
@@ -339,7 +355,10 @@ describe('notebook-codex-runner entry lifecycle', () => {
     }));
   }
 
-  function serverRequestStart(requestId: string): Buffer {
+  function serverRequestStart(
+    requestId: string,
+    executionContextOverrides: Record<string, unknown> = {},
+  ): Buffer {
     return Buffer.from(JSON.stringify({
       type: 'server.request.start',
       request_id: requestId,
@@ -356,6 +375,7 @@ describe('notebook-codex-runner entry lifecycle', () => {
           username: 'alice',
           api_base: 'http://127.0.0.1:20000/api/v1',
           execution_ticket: 'ticket_1',
+          ...executionContextOverrides,
         },
       },
     }));
@@ -457,6 +477,148 @@ describe('notebook-codex-runner entry lifecycle', () => {
       frame.type === 'agent.terminal.started'
       && frame.terminal_session_id === 'terminal_invalid_shell'
     ))).toBe(false);
+  });
+
+  it('starts a fresh codex exec even when AgentSmith sends a session id but no reusable local codex state was approved', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    spawnMock.mockReturnValueOnce(createCodexChild());
+    socket.emit('message', serverHello());
+    socket.emit('message', serverRequestStart('req_fresh_exec', {
+      session_id: 'session_remote_from_agentsmith',
+    }));
+
+    await vi.waitFor(() => {
+      expect(buildCodexExecArgsMock).toHaveBeenCalledWith(expect.objectContaining({
+        resumeSession: false,
+      }));
+    });
+  });
+
+  it('writes a custom execution ticket header into codex config and launch env without using Authorization', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    spawnMock.mockReturnValueOnce(createCodexChild());
+    socket.emit('message', serverHello());
+    socket.emit('message', serverRequestStart('req_execution_ticket_header'));
+
+    await vi.waitFor(() => {
+      expect(buildTaskCodexConfigMock).toHaveBeenCalledWith(expect.objectContaining({
+        executionTicketHeaderEnvName: 'MBOS_CODEX_PROXY_EXECUTION_TICKET',
+      }));
+      expect(prepareLaunchCommandMock).toHaveBeenCalled();
+    });
+
+    const launchEnv = prepareLaunchCommandMock.mock.calls.at(-1)?.[0]?.env as NodeJS.ProcessEnv | undefined;
+    expect(launchEnv?.MBOS_CODEX_PROXY_EXECUTION_TICKET).toBe('ticket_1');
+    expect(launchEnv?.MBOS_CODEX_PROXY_AUTH_HEADER).toBeUndefined();
+  });
+
+  it('does not inject execution ticket env_http_headers or launch env when no execution ticket is present', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    spawnMock.mockReturnValueOnce(createCodexChild());
+    socket.emit('message', serverHello());
+    socket.emit('message', serverRequestStart('req_without_execution_ticket', {
+      execution_ticket: '',
+    }));
+
+    await vi.waitFor(() => {
+      expect(buildTaskCodexConfigMock).toHaveBeenCalledWith(expect.objectContaining({
+        executionTicketHeaderEnvName: undefined,
+      }));
+      expect(prepareLaunchCommandMock).toHaveBeenCalled();
+    });
+
+    const launchEnv = prepareLaunchCommandMock.mock.calls.at(-1)?.[0]?.env as NodeJS.ProcessEnv | undefined;
+    expect(launchEnv?.MBOS_CODEX_PROXY_EXECUTION_TICKET).toBeUndefined();
+    expect(launchEnv?.MBOS_CODEX_PROXY_AUTH_HEADER).toBeUndefined();
+  });
+
+  it('resumes only when session-state compatibility explicitly allows local codex reuse for this task', async () => {
+    ensureCodexSessionStateCompatibleMock.mockResolvedValueOnce({
+      resetPerformed: false,
+      reason: 'unchanged',
+      resumeAllowed: true,
+    });
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    spawnMock.mockReturnValueOnce(createCodexChild());
+    socket.emit('message', serverHello());
+    socket.emit('message', serverRequestStart('req_resume_allowed', {
+      session_id: 'session_remote_from_agentsmith',
+    }));
+
+    await vi.waitFor(() => {
+      expect(buildCodexExecArgsMock).toHaveBeenCalledWith(expect.objectContaining({
+        resumeSession: true,
+      }));
+    });
+  });
+
+  it('marks local codex session state reusable only after a successful task run completes', async () => {
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_successful_run');
+    closeCodexChild(child, 0);
+
+    await vi.waitFor(() => {
+      expect(markCodexSessionStateReusableMock).toHaveBeenCalledWith({
+        codexDir: '/workspace/task_1/.codex',
+        taskId: 'task_1',
+      });
+    });
+  });
+
+  it('does not mark local codex session state reusable when the task run fails', async () => {
+    resolveCodexTerminalOutcomeMock.mockReturnValueOnce({
+      finalStatus: 'error',
+      codexTraceStatus: 'error',
+      errorCode: 'AGENT_UPSTREAM_ERROR',
+      errorMessage: 'codex_exit_code_1',
+    });
+
+    await import('./index.js');
+    const socket = websocketInstances.at(-1);
+    if (!socket) {
+      throw new Error('websocket_instance_missing');
+    }
+
+    socket.emit('open');
+    const child = await startCodexRun(socket, 'req_failed_run');
+    closeCodexChild(child, 1);
+
+    await vi.waitFor(() => {
+      const frames = readSentFrames(socket);
+      expect(frames.some((frame) => frame.type === 'agent.response.error')).toBe(true);
+    });
+    expect(markCodexSessionStateReusableMock).not.toHaveBeenCalled();
   });
 
   it('waits for running children to exit before releasing tracked workspaces and exiting on websocket close', async () => {

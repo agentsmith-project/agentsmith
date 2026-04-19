@@ -6,6 +6,7 @@ import { loadStoryDefinitionSync } from '../e2e/story-loader';
 describe('invite to first effective work story', () => {
   it('defines a backend-real invited-member journey from public invite truth through direct workspace login and first work', () => {
     const story = loadStoryDefinitionSync('invite-to-first-effective-work');
+    const startFirstChatWorkStep = story.steps.find((step) => step.stepId === 'start-first-chat-work');
 
     expect(story.lane).toBe('backend-real');
     expect(story.family).toBe('invite-first-effective-work');
@@ -37,10 +38,14 @@ describe('invite to first effective work story', () => {
       'start-first-chat-work',
       'verify-private-chat-boundary',
     ]);
+    expect(startFirstChatWorkStep?.sceneId).toBe('project-overview');
+    expect(startFirstChatWorkStep?.target).toBe('project-overview__primary-cta');
   });
 
   it('wires the focused invite story spec to the canonical story and trace binding', async () => {
     const source = await readFile(path.resolve(process.cwd(), 'e2e/integration-invite-first-effective-work.spec.ts'), 'utf-8');
+    const startFirstChatWorkTraceIndex = source.indexOf("captureInviteTrace(memberPage, 'start-first-chat-work');");
+    const firstChatClickIndex = source.indexOf("memberPage.getByTestId('project-overview__primary-cta').click();");
 
     expect(source).toContain("loadStoryDefinitionSync('invite-to-first-effective-work')");
     expect(source).toContain('buildTraceStoryBinding(STORY)');
@@ -61,5 +66,8 @@ describe('invite to first effective work story', () => {
     expect(source).not.toContain('workspace-selection');
     expect(source).not.toContain('discover-invited-project');
     expect(source).not.toContain('workspace public entry and login truth');
+    expect(startFirstChatWorkTraceIndex).toBeGreaterThan(-1);
+    expect(firstChatClickIndex).toBeGreaterThan(-1);
+    expect(startFirstChatWorkTraceIndex).toBeLessThan(firstChatClickIndex);
   });
 });

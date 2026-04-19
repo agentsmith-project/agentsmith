@@ -1,6 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import http, { type IncomingHttpHeaders, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  createUniversalProxyAdminHarness,
+  type UniversalProxyAdminConfigRequest,
+} from './chat-test-support.js';
 import { apiFetch, startServer } from './test-support.js';
 
 vi.mock('../auth.js', async () => {
@@ -50,7 +54,7 @@ afterEach(async () => {
 
 function startUniversalProxyMockServer(): {
   baseUrl: string;
-  configRequests: () => Array<{ namespace: string; body: unknown }>;
+  configRequests: () => UniversalProxyAdminConfigRequest[];
   namespaceRequests: () => Array<{
     method: string;
     path: string;
@@ -58,13 +62,13 @@ function startUniversalProxyMockServer(): {
     body: unknown;
   }>;
 } {
-  const configRequests: Array<{ namespace: string; body: unknown }> = [];
   const namespaceRequests: Array<{
     method: string;
     path: string;
     headers: IncomingHttpHeaders;
     body: unknown;
   }> = [];
+  const adminHarness = createUniversalProxyAdminHarness();
 
   const server = http.createServer((req, res) => {
     void (async () => {
@@ -76,20 +80,19 @@ function startUniversalProxyMockServer(): {
       const text = Buffer.concat(chunks).toString('utf-8');
       const body = text ? JSON.parse(text) : {};
 
-      const configMatch = requestUrl.pathname.match(/^\/admin\/namespaces\/([^/]+)\/config$/);
-      if (req.method === 'POST' && configMatch) {
-        configRequests.push({
-          namespace: decodeURIComponent(configMatch[1]),
-          body,
-        });
-        res.statusCode = 200;
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ status: 'applied' }));
+      if (adminHarness.handleAdminRequest({ req, res, path: requestUrl.pathname, body })) {
         return;
       }
 
       const namespaceMatch = requestUrl.pathname.match(/^\/namespaces\/([^/]+)\/(.+)$/);
       if (req.method === 'POST' && namespaceMatch) {
+        const namespace = decodeURIComponent(namespaceMatch[1] ?? '');
+        if (!adminHarness.hasNamespace(namespace)) {
+          res.statusCode = 404;
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({ error: 'namespace_not_found' }));
+          return;
+        }
         namespaceRequests.push({
           method: req.method,
           path: requestUrl.pathname,
@@ -160,7 +163,7 @@ function startUniversalProxyMockServer(): {
   servers.push(server);
   return {
     baseUrl: `http://127.0.0.1:${port}`,
-    configRequests: () => configRequests,
+    configRequests: () => adminHarness.configRequests(),
     namespaceRequests: () => namespaceRequests,
   };
 }
@@ -223,6 +226,14 @@ describe('api-entry-node endpoint proxy and llm-gateway routing', () => {
     expect(payload.object).toBe('chat.completion');
     expect(payload.choices?.[0]?.message?.content).toBe('Hello from universal proxy chat.');
     expect(universalProxy.configRequests()).toHaveLength(1);
+    expect((universalProxy.configRequests()[0]?.body as {
+      if_revision?: string | null;
+      revision?: string;
+    }).revision).toBeUndefined();
+    expect((universalProxy.configRequests()[0]?.body as {
+      if_revision?: string | null;
+    }).if_revision ?? null).toBeNull();
+    expect(universalProxy.configRequests()[0]?.appliedRevision).toEqual(expect.any(String));
     expect(universalProxy.namespaceRequests()).toHaveLength(1);
     expect(universalProxy.namespaceRequests()[0]?.path).toBe(
       `/namespaces/ws_default__proj_1__${endpoint.id}/openai/v1/chat/completions`,
@@ -375,6 +386,11 @@ describe('api-entry-node endpoint proxy and llm-gateway routing', () => {
     );
     expect(gatewayResInternalName.status).toBe(200);
     expect((universalProxy.namespaceRequests()[2]?.body as { model?: string }).model).toBe('placeholder-model');
+    expect(universalProxy.configRequests()).toHaveLength(1);
+    const firstConfigRequest = universalProxy.configRequests()[0];
+    expect((firstConfigRequest?.body as { revision?: string }).revision).toBeUndefined();
+    expect((firstConfigRequest?.body as { if_revision?: string | null }).if_revision ?? null).toBeNull();
+    expect(firstConfigRequest?.appliedRevision).toEqual(expect.any(String));
   });
 
   it('forwards anthropic protocol headers through canonical llm-gateway path and preserves messages/count_tokens path', async () => {
@@ -430,6 +446,13 @@ describe('api-entry-node endpoint proxy and llm-gateway routing', () => {
       },
     );
     expect(gatewayRes.status).toBe(200);
+    expect((universalProxy.configRequests()[0]?.body as {
+      if_revision?: string | null;
+      revision?: string;
+    }).revision).toBeUndefined();
+    expect((universalProxy.configRequests()[0]?.body as {
+      if_revision?: string | null;
+    }).if_revision ?? null).toBeNull();
     expect(universalProxy.namespaceRequests()).toHaveLength(1);
     expect(universalProxy.namespaceRequests()[0]?.path).toContain('/anthropic/v1/messages/count_tokens');
     expect(universalProxy.namespaceRequests()[0]?.headers['anthropic-version']).toBe('2023-06-01');

@@ -1,12 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { createDefaultNodeApiDeps } from '../index.js';
 import { UniversalProxyService } from '../universal-proxy-service.js';
 import { apiFetch, startServer, startServerWithDeps } from './test-support.js';
-import { startPassthroughUpstreamServer } from './chat-test-support.js';
+import {
+  cleanupChatUpstreamServers,
+  startPassthroughUpstreamServer,
+  startUniversalProxyChatServer,
+} from './chat-test-support.js';
+
+afterEach(async () => {
+  await cleanupChatUpstreamServers();
+});
 
 describe('api-entry-node chat attachment integrations', () => {
   it('sends image attachments to upstream multimodal chat payload', async () => {
-    const upstream = await startPassthroughUpstreamServer();
+    const upstream = startUniversalProxyChatServer();
     const deps = createDefaultNodeApiDeps();
     deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
     const { baseUrl } = startServerWithDeps(deps);
@@ -128,6 +136,16 @@ describe('api-entry-node chat attachment integrations', () => {
       },
     );
     expect(streamRes.status).toBe(200);
+    expect(upstream.configRequests()).toHaveLength(1);
+    expect((upstream.configRequests()[0]?.body as {
+      if_revision?: string | null;
+      revision?: string;
+    }).revision).toBeUndefined();
+    expect((upstream.configRequests()[0]?.body as {
+      if_revision?: string | null;
+    }).if_revision ?? null).toBeNull();
+    expect(upstream.configRequests()[0]?.appliedRevision).toEqual(expect.any(String));
+    expect(upstream.lastPath()).toContain(`/namespaces/ws_default__proj_1__${endpoint.id}/openai/v1/chat/completions`);
 
     const upstreamBody = upstream.lastBody() as {
       messages?: Array<{ role: string; content: unknown }>;
@@ -143,7 +161,7 @@ describe('api-entry-node chat attachment integrations', () => {
   });
 
   it('treats octet-stream webp attachments as image in preview and upstream payload', async () => {
-    const upstream = await startPassthroughUpstreamServer();
+    const upstream = startUniversalProxyChatServer();
     const deps = createDefaultNodeApiDeps();
     deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
     const { baseUrl } = startServerWithDeps(deps);
@@ -238,6 +256,16 @@ describe('api-entry-node chat attachment integrations', () => {
       },
     );
     expect(streamRes.status).toBe(200);
+    expect(upstream.configRequests()).toHaveLength(1);
+    expect((upstream.configRequests()[0]?.body as {
+      if_revision?: string | null;
+      revision?: string;
+    }).revision).toBeUndefined();
+    expect((upstream.configRequests()[0]?.body as {
+      if_revision?: string | null;
+    }).if_revision ?? null).toBeNull();
+    expect(upstream.configRequests()[0]?.appliedRevision).toEqual(expect.any(String));
+    expect(upstream.lastPath()).toContain(`/namespaces/ws_default__proj_1__${endpoint.id}/openai/v1/chat/completions`);
 
     const upstreamBody = upstream.lastBody() as {
       messages?: Array<{ role: string; content: unknown }>;

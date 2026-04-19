@@ -15,7 +15,15 @@ source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-verification.sh"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/scenarios/common.sh"
+ORIGINAL_INTEGRATION_API_PORT="${INTEGRATION_API_PORT:-}"
+ORIGINAL_INTEGRATION_WEB_PORT="${INTEGRATION_WEB_PORT:-}"
 load_backend_real_env
+if [[ -n "${ORIGINAL_INTEGRATION_API_PORT}" ]]; then
+  export INTEGRATION_API_PORT="${ORIGINAL_INTEGRATION_API_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_WEB_PORT}" ]]; then
+  export INTEGRATION_WEB_PORT="${ORIGINAL_INTEGRATION_WEB_PORT}"
+fi
 export_backend_real_endpoint_env
 
 API_PORT="${INTEGRATION_API_PORT:-20072}"

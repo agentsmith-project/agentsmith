@@ -1,6 +1,10 @@
 import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
-import { extractBearerToken, verifyRequestAuth } from './auth.js';
+import {
+  extractBearerToken,
+  extractExecutionTicketHeader,
+  verifyRequestAuth,
+} from './auth.js';
 import { handleProjectRoute } from './project-route-handler.js';
 import { handleAuditUsageRoute } from './audit-usage-route-handler.js';
 import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
@@ -63,6 +67,23 @@ type AuthorizationRequestBody = {
 function sseWrite(res: http.ServerResponse, event: string, data: unknown): void {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function isAgentExecutionRouteAllowed(
+  route: ReturnType<typeof matchProjectsRoute>,
+  method: string,
+  pathname: string,
+): boolean {
+  return (
+    route !== null
+    && (
+      (route.kind === 'endpointProxy' && method === 'POST')
+      || (route.kind === 'taskWorkspaceAccess' && method === 'POST')
+    )
+  )
+    || pathname === '/api/v1/context'
+    || pathname === '/api/v1/context/list'
+    || /^\/api\/v1\/context\/managed-credentials\/[^/]+\/refresh$/.test(pathname);
 }
 
 export async function handleRequest(
@@ -176,25 +197,22 @@ export async function handleRequest(
       return;
     }
 
-    const requestAuth = await verifyRequestAuth(req, { cache: deps.cache, docStore: deps.docStore });
+    const route = matchProjectsRoute(req.url ?? '');
+    const agentExecutionRouteAllowed = isAgentExecutionRouteAllowed(route, method, requestUrl.pathname);
+    const executionTicketToken = agentExecutionRouteAllowed
+      ? extractExecutionTicketHeader(req)
+      : null;
+    const requestAuth = await verifyRequestAuth(req, {
+      cache: deps.cache,
+      docStore: deps.docStore,
+      internalTicketToken: executionTicketToken,
+    });
     if (!requestAuth) {
       unauthorized(res);
       return;
     }
     const { user, internalTicket } = requestAuth;
-    const route = matchProjectsRoute(req.url ?? '');
     if (isAgentExecutionTicket(internalTicket)) {
-      const agentExecutionRouteAllowed =
-        (
-          route !== null
-          && (
-            (route.kind === 'endpointProxy' && method === 'POST')
-            || (route.kind === 'taskWorkspaceAccess' && method === 'POST')
-          )
-        )
-        || requestUrl.pathname === '/api/v1/context'
-        || requestUrl.pathname === '/api/v1/context/list'
-        || /^\/api\/v1\/context\/managed-credentials\/[^/]+\/refresh$/.test(requestUrl.pathname);
       if (!agentExecutionRouteAllowed) {
         json(res, 403, {
           error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',

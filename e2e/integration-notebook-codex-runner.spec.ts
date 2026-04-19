@@ -8,7 +8,7 @@ import {
   KEYCLOAK_DEV_ADMIN_USERNAME,
   KEYCLOAK_INTEGRATION_USER_PASSWORD,
   KEYCLOAK_INTEGRATION_USER_USERNAME,
-  BACKEND_REAL_ANTHROPIC_BASE_URL,
+  BACKEND_REAL_OPENAI_BASE_URL,
   BACKEND_REAL_MODEL,
   createExternalConnectionViaApi,
   createTerminalSessionViaApi,
@@ -27,6 +27,8 @@ import {
   resolveMountedTaskRoot,
   runTerminalCommandInSession,
   sendTaskMessage,
+  reconnectCodexRunnerDockerProcessToTask,
+  reconnectCodexRunnerProcessToTask,
   startMockFeishuMcpServer,
   startMockJiraServer,
   startCodexRunnerProcess,
@@ -259,6 +261,124 @@ async function createNotebookTaskViaDialog(args: {
   return taskId!;
 }
 
+async function createNotebookTaskViaApiWithRunner(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  title: string;
+  agentId: string;
+  fileLibraryId: string;
+  runnerWsUrl: string;
+  runnerAgentKey: string;
+}): Promise<{
+  taskId: string;
+  runner: Awaited<ReturnType<typeof reconnectCodexRunnerProcessToTask>>;
+  presenceLogPath: string;
+}> {
+  const presenceRunner = await startCodexRunnerProcess({
+    wsUrl: args.runnerWsUrl,
+    agentKey: args.runnerAgentKey,
+  });
+  await waitForAgentPresenceOnline(args.page, args.workspaceId, args.projectId, args.agentId);
+  const taskId = await createNotebookTaskViaApi({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    title: args.title,
+    agentId: args.agentId,
+    fileLibraryId: args.fileLibraryId,
+  });
+  const presenceLogPath = presenceRunner.logPath;
+  const runner = await reconnectCodexRunnerProcessToTask({
+    presenceRunner,
+    wsUrl: args.runnerWsUrl,
+    agentKey: args.runnerAgentKey,
+    taskId,
+  });
+  await waitForAgentPresenceOnline(args.page, args.workspaceId, args.projectId, args.agentId);
+  return { taskId, runner, presenceLogPath };
+}
+
+async function createNotebookTaskViaDialogWithRunner(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  agentId: string;
+  agentName: string;
+  workspaceLibraryName?: string;
+  title: string;
+  runnerWsUrl: string;
+  runnerAgentKey: string;
+}): Promise<{
+  taskId: string;
+  runner: Awaited<ReturnType<typeof reconnectCodexRunnerProcessToTask>>;
+  presenceLogPath: string;
+}> {
+  const presenceRunner = await startCodexRunnerProcess({
+    wsUrl: args.runnerWsUrl,
+    agentKey: args.runnerAgentKey,
+  });
+  await waitForAgentPresenceOnline(args.page, args.workspaceId, args.projectId, args.agentId);
+  await args.page.goto(`/en-US/workspaces/${args.workspaceId}/projects/${args.projectId}/notebook`);
+  const taskId = await createNotebookTaskViaDialog({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    agentName: args.agentName,
+    workspaceLibraryName: args.workspaceLibraryName,
+    title: args.title,
+  });
+  const presenceLogPath = presenceRunner.logPath;
+  const runner = await reconnectCodexRunnerProcessToTask({
+    presenceRunner,
+    wsUrl: args.runnerWsUrl,
+    agentKey: args.runnerAgentKey,
+    taskId,
+  });
+  await waitForAgentPresenceOnline(args.page, args.workspaceId, args.projectId, args.agentId);
+  return { taskId, runner, presenceLogPath };
+}
+
+async function createNotebookTaskViaDialogWithDockerRunner(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  agentId: string;
+  agentName: string;
+  workspaceLibraryName?: string;
+  title: string;
+  runnerWsUrl: string;
+  runnerAgentKey: string;
+}): Promise<{
+  taskId: string;
+  runner: Awaited<ReturnType<typeof reconnectCodexRunnerDockerProcessToTask>>;
+  presenceLogPath: string;
+}> {
+  const presenceRunner = await startCodexRunnerDockerProcess({
+    wsUrl: args.runnerWsUrl,
+    agentKey: args.runnerAgentKey,
+  });
+  await waitForAgentPresenceOnline(args.page, args.workspaceId, args.projectId, args.agentId);
+  await args.page.goto(`/en-US/workspaces/${args.workspaceId}/projects/${args.projectId}/notebook`);
+  const taskId = await createNotebookTaskViaDialog({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    agentName: args.agentName,
+    workspaceLibraryName: args.workspaceLibraryName,
+    title: args.title,
+  });
+  const presenceLogPath = presenceRunner.logPath;
+  const runner = await reconnectCodexRunnerDockerProcessToTask({
+    presenceRunner,
+    wsUrl: args.runnerWsUrl,
+    agentKey: args.runnerAgentKey,
+    taskId,
+  });
+  await waitForAgentPresenceOnline(args.page, args.workspaceId, args.projectId, args.agentId);
+  return { taskId, runner, presenceLogPath };
+}
+
 async function openFileLibraryRoot(args: {
   page: Page;
   workspaceId: string;
@@ -312,7 +432,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `Provider Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
-      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      upstreamBaseUrl: BACKEND_REAL_OPENAI_BASE_URL,
       credentialName,
     });
     const agentBundle = await createExternalRunnerAgentBundle(page, {
@@ -346,26 +466,26 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       });
     };
 
-    const runner = await startCodexRunnerProcess({
-      wsUrl: agentBundle.wsUrl,
-      agentKey: agentBundle.agentKey,
-    });
+    let runner: Awaited<ReturnType<typeof startCodexRunnerProcess>> | null = null;
     let runnerStopped = false;
-    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
     let outcome: 'pass' | 'fail' = 'fail';
 
     try {
-      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
-
-      await page.goto(`/en-US/workspaces/ws_default/projects/${projectId}/notebook`);
-      const taskId = await createNotebookTaskViaDialog({
+      const createdTask = await createNotebookTaskViaDialogWithRunner({
         page,
         workspaceId: 'ws_default',
         projectId,
+        agentId: agentBundle.agentId,
         agentName: agentBundle.agentName,
         workspaceLibraryName,
         title: `${runtime.taskTitle} ${Date.now()}`,
+        runnerWsUrl: agentBundle.wsUrl,
+        runnerAgentKey: agentBundle.agentKey,
       });
+      const { taskId } = createdTask;
+      runner = createdTask.runner;
+      test.info().annotations.push({ type: 'codex_runner_presence_log', description: createdTask.presenceLogPath });
+      test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
       await captureTrace('open-notebook-task');
 
       const replyToken = runtime.artifactToken;
@@ -458,7 +578,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       outcome = 'pass';
 
     } finally {
-      if (!runnerStopped) {
+      if (runner && !runnerStopped) {
         await runner.stop();
       }
       await trace.finish({ outcome });
@@ -478,7 +598,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `Provider Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
-      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      upstreamBaseUrl: BACKEND_REAL_OPENAI_BASE_URL,
       credentialName,
     });
     const agentBundle = await createExternalRunnerAgentBundle(page, {
@@ -488,23 +608,21 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       title: 'codex-notebook-context',
     });
 
-    const runner = await startCodexRunnerProcess({
-      wsUrl: agentBundle.wsUrl,
-      agentKey: agentBundle.agentKey,
+    const createdTask = await createNotebookTaskViaApiWithRunner({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      title: `Notebook Context ${Date.now()}`,
+      agentId: agentBundle.agentId,
+      fileLibraryId,
+      runnerWsUrl: agentBundle.wsUrl,
+      runnerAgentKey: agentBundle.agentKey,
     });
+    const { taskId, runner } = createdTask;
+    test.info().annotations.push({ type: 'codex_runner_presence_log', description: createdTask.presenceLogPath });
     test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
 
     try {
-      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
-      const taskId = await createNotebookTaskViaApi({
-        page,
-        workspaceId: 'ws_default',
-        projectId,
-        title: `Notebook Context ${Date.now()}`,
-        agentId: agentBundle.agentId,
-        fileLibraryId,
-      });
-
       const taskNote = `TASK_CTX_${Date.now()}`;
       await putContextEntryViaApi({
         page,
@@ -554,7 +672,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `Provider Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
-      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      upstreamBaseUrl: BACKEND_REAL_OPENAI_BASE_URL,
       credentialName,
     });
     const agentBundle = await createExternalRunnerAgentBundle(page, {
@@ -564,23 +682,21 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       title: 'codex-notebook-context-write',
     });
 
-    const runner = await startCodexRunnerProcess({
-      wsUrl: agentBundle.wsUrl,
-      agentKey: agentBundle.agentKey,
+    const createdTask = await createNotebookTaskViaApiWithRunner({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      title: `Notebook Context Write ${Date.now()}`,
+      agentId: agentBundle.agentId,
+      fileLibraryId,
+      runnerWsUrl: agentBundle.wsUrl,
+      runnerAgentKey: agentBundle.agentKey,
     });
+    const { taskId, runner } = createdTask;
+    test.info().annotations.push({ type: 'codex_runner_presence_log', description: createdTask.presenceLogPath });
     test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
 
     try {
-      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
-      const taskId = await createNotebookTaskViaApi({
-        page,
-        workspaceId: 'ws_default',
-        projectId,
-        title: `Notebook Context Write ${Date.now()}`,
-        agentId: agentBundle.agentId,
-        fileLibraryId,
-      });
-
       const contextKey = `notes.task_roundtrip_${Date.now()}`;
       const contextValue = `CTX_TASK_VALUE_${Date.now()}`;
       await sendTaskMessage({
@@ -637,7 +753,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `Provider Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
-      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      upstreamBaseUrl: BACKEND_REAL_OPENAI_BASE_URL,
       credentialName,
     });
     const agentBundle = await createExternalRunnerAgentBundle(page, {
@@ -647,23 +763,21 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       title: 'codex-notebook-terminal-context',
     });
 
-    const runner = await startCodexRunnerProcess({
-      wsUrl: agentBundle.wsUrl,
-      agentKey: agentBundle.agentKey,
+    const createdTask = await createNotebookTaskViaApiWithRunner({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      title: `Notebook Terminal Context ${Date.now()}`,
+      agentId: agentBundle.agentId,
+      fileLibraryId,
+      runnerWsUrl: agentBundle.wsUrl,
+      runnerAgentKey: agentBundle.agentKey,
     });
+    const { taskId, runner } = createdTask;
+    test.info().annotations.push({ type: 'codex_runner_presence_log', description: createdTask.presenceLogPath });
     test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
 
     try {
-      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
-      const taskId = await createNotebookTaskViaApi({
-        page,
-        workspaceId: 'ws_default',
-        projectId,
-        title: `Notebook Terminal Context ${Date.now()}`,
-        agentId: agentBundle.agentId,
-        fileLibraryId,
-      });
-
       const taskNote = `TERM_TASK_CTX_${Date.now()}`;
       const doneMarker = `TERM_CTX_DONE_${Date.now()}`;
       await putContextEntryViaApi({
@@ -714,7 +828,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `Provider Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
-      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      upstreamBaseUrl: BACKEND_REAL_OPENAI_BASE_URL,
       credentialName,
     });
     const agentBundle = await createExternalRunnerAgentBundle(page, {
@@ -724,23 +838,21 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       title: 'codex-notebook-terminal-shared-ro',
     });
 
-    const runner = await startCodexRunnerProcess({
-      wsUrl: agentBundle.wsUrl,
-      agentKey: agentBundle.agentKey,
+    const createdTask = await createNotebookTaskViaApiWithRunner({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      title: `Notebook Terminal Shared Read Only ${Date.now()}`,
+      agentId: agentBundle.agentId,
+      fileLibraryId,
+      runnerWsUrl: agentBundle.wsUrl,
+      runnerAgentKey: agentBundle.agentKey,
     });
+    const { taskId, runner } = createdTask;
+    test.info().annotations.push({ type: 'codex_runner_presence_log', description: createdTask.presenceLogPath });
     test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
 
     try {
-      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
-      const taskId = await createNotebookTaskViaApi({
-        page,
-        workspaceId: 'ws_default',
-        projectId,
-        title: `Notebook Terminal Shared Read Only ${Date.now()}`,
-        agentId: agentBundle.agentId,
-        fileLibraryId,
-      });
-
       const doneMarker = `TERM_SHARED_DONE_${Date.now()}`;
       const terminalSession = await createTerminalSessionViaApi({
         page,
@@ -791,7 +903,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `Provider Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
-      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      upstreamBaseUrl: BACKEND_REAL_OPENAI_BASE_URL,
       credentialName,
     });
     const agentBundle = await createExternalRunnerAgentBundle(page, {
@@ -801,10 +913,18 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       title: `notebook-jira-${Date.now()}`,
     });
 
-    const runner = await startCodexRunnerProcess({
-      wsUrl: agentBundle.wsUrl,
-      agentKey: agentBundle.agentKey,
+    const createdTask = await createNotebookTaskViaApiWithRunner({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      title: `Notebook Jira Task ${Date.now()}`,
+      agentId: agentBundle.agentId,
+      fileLibraryId,
+      runnerWsUrl: agentBundle.wsUrl,
+      runnerAgentKey: agentBundle.agentKey,
     });
+    const { taskId, runner } = createdTask;
+    test.info().annotations.push({ type: 'codex_runner_presence_log', description: createdTask.presenceLogPath });
     test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
 
     try {
@@ -827,15 +947,6 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
 
       stage = 'wait_agent_online';
       await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
-      stage = 'create_task';
-      const taskId = await createNotebookTaskViaApi({
-        page,
-        workspaceId: 'ws_default',
-        projectId,
-        title: `Notebook Jira Task ${Date.now()}`,
-        agentId: agentBundle.agentId,
-        fileLibraryId,
-      });
 
       stage = 'put_task_jira_base_url';
       await putContextEntryViaApi({
@@ -928,7 +1039,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `Provider Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
-      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      upstreamBaseUrl: BACKEND_REAL_OPENAI_BASE_URL,
       credentialName,
     });
     const agentBundle = await createExternalRunnerAgentBundle(page, {
@@ -938,10 +1049,18 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       title: `notebook-feishu-${Date.now()}`,
     });
 
-    const runner = await startCodexRunnerProcess({
-      wsUrl: agentBundle.wsUrl,
-      agentKey: agentBundle.agentKey,
+    const createdTask = await createNotebookTaskViaApiWithRunner({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      title: `Notebook Feishu Task ${Date.now()}`,
+      agentId: agentBundle.agentId,
+      fileLibraryId,
+      runnerWsUrl: agentBundle.wsUrl,
+      runnerAgentKey: agentBundle.agentKey,
     });
+    const { taskId, runner } = createdTask;
+    test.info().annotations.push({ type: 'codex_runner_presence_log', description: createdTask.presenceLogPath });
     test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
 
     try {
@@ -960,15 +1079,6 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       });
 
       await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
-      const taskId = await createNotebookTaskViaApi({
-        page,
-        workspaceId: 'ws_default',
-        projectId,
-        title: `Notebook Feishu Task ${Date.now()}`,
-        agentId: agentBundle.agentId,
-        fileLibraryId,
-      });
-
       await sendTaskMessage({
         page,
         workspaceId: 'ws_default',
@@ -1006,7 +1116,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `Provider Docker Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
-      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      upstreamBaseUrl: BACKEND_REAL_OPENAI_BASE_URL,
       credentialName,
     });
     const agentBundle = await createExternalRunnerAgentBundle(page, {
@@ -1016,25 +1126,22 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       title: 'codex-docker-notebook',
     });
 
-    const runner = await startCodexRunnerDockerProcess({
-      wsUrl: agentBundle.wsUrl,
-      agentKey: agentBundle.agentKey,
+    const createdTask = await createNotebookTaskViaDialogWithDockerRunner({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      agentId: agentBundle.agentId,
+      agentName: agentBundle.agentName,
+      workspaceLibraryName,
+      title: `Codex Docker Notebook ${Date.now()}`,
+      runnerWsUrl: agentBundle.wsUrl,
+      runnerAgentKey: agentBundle.agentKey,
     });
+    const { taskId, runner } = createdTask;
+    test.info().annotations.push({ type: 'codex_runner_presence_log', description: createdTask.presenceLogPath });
     let runnerStopped = false;
 
     try {
-      await waitForAgentPresenceOnline(page, 'ws_default', projectId, agentBundle.agentId);
-
-      await page.goto(`/en-US/workspaces/ws_default/projects/${projectId}/notebook`);
-      const taskId = await createNotebookTaskViaDialog({
-        page,
-        workspaceId: 'ws_default',
-        projectId,
-        agentName: agentBundle.agentName,
-        workspaceLibraryName,
-        title: `Codex Docker Notebook ${Date.now()}`,
-      });
-
       const replyToken = `REAL_CODEX_DOCKER_NOTEBOOK_OK_${Date.now()}`;
       const artifactName = `docker-artifact-${Date.now()}.md`;
       const prompt = buildNotebookArtifactPrompt({

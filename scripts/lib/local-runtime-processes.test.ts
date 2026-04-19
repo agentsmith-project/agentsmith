@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
 const tempRoots: string[] = [];
+const processHeavyOwnershipTestTimeoutMs = 8_000;
+const processHeavyCleanupElapsedBudgetMs = 6_000;
 
 function makeTempRoot(): string {
   const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'agentsmith-local-runtime-'));
@@ -114,6 +116,89 @@ afterEach(() => {
 });
 
 describe('local runtime process ownership contract', () => {
+  it('captures the authoritative API listener pid while refreshing root ownership truth after startup handoff', async () => {
+    const tempRoot = makeTempRoot();
+    const processStateDir = path.join(tempRoot, 'processes');
+    const logFile = path.join(tempRoot, 'api.log');
+    const serverScript = writeFakeTcpServer(tempRoot);
+    const handoffScript = path.join(tempRoot, 'handoff.sh');
+    const rootScript = path.join(tempRoot, 'root-launcher.sh');
+    const childPidFile = path.join(tempRoot, 'child.pid');
+    const port = await reserveTcpPort();
+
+    writeFileSync(
+      handoffScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+sleep 0.4
+exec bash "$@"
+`,
+      'utf8',
+    );
+    writeFileSync(
+      rootScript,
+      `#!/usr/bin/env bash
+set -euo pipefail
+port="$1"
+child_pid_file="$2"
+server_script="$3"
+child_pid=""
+cleanup() {
+  if [[ -n "$child_pid" ]]; then
+    kill "$child_pid" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup TERM EXIT
+node "$server_script" "$port" &
+child_pid="$!"
+printf '%s\n' "$child_pid" > "$child_pid_file"
+wait "$child_pid"
+`,
+      'utf8',
+    );
+    execFileSync('chmod', ['+x', handoffScript, rootScript], { cwd: repoRoot, stdio: 'pipe' });
+
+    const startResult = runBash(
+      `
+        set -euo pipefail
+        source scripts/lib/local-runtime-processes.sh
+        root_pid="$(local_runtime_start_owned_service api "${port}" "${logFile}" bash "${handoffScript}" "${rootScript}" "${port}" "${childPidFile}" "${serverScript}")"
+        listener_pid="$(local_runtime_capture_authoritative_service_pid "\${root_pid}" api "${port}" 10)"
+        resolved_root_pid="$(local_runtime_verified_owner_pid_for_tree_member "\${listener_pid}" api "${port}")"
+        local_runtime_verify_owned_process "\${root_pid}" api "${port}"
+        echo "root_pid=$root_pid"
+        echo "listener_pid=$listener_pid"
+        echo "resolved_root_pid=$resolved_root_pid"
+        local_runtime_stop_owned_process_tree "\${root_pid}" api "${port}"
+        local_runtime_wait_port_free "${port}" api 5
+      `,
+      {
+        LOCAL_RUNTIME_PROCESS_STATE_DIR: processStateDir,
+        LOCAL_RUNTIME_RUN_ID: 'test-run-authoritative-api',
+        LOCAL_RUNTIME_LINE_KIND: 'backend_real',
+        LOCAL_RUNTIME_OWNER_TOKEN: 'owner-token-authoritative-api',
+        LOCAL_RUNTIME_TERM_GRACE_ATTEMPTS: '2',
+        LOCAL_RUNTIME_TERM_GRACE_SLEEP_SECONDS: '0.05',
+        LOCAL_RUNTIME_KILL_GRACE_ATTEMPTS: '5',
+        LOCAL_RUNTIME_KILL_GRACE_SLEEP_SECONDS: '0.05',
+      },
+    );
+
+    expect(startResult.status).toBe(0);
+    const rootPid = Number.parseInt(startResult.stdout.match(/root_pid=(\d+)/)?.[1] ?? '', 10);
+    const listenerPid = Number.parseInt(startResult.stdout.match(/listener_pid=(\d+)/)?.[1] ?? '', 10);
+    const resolvedRootPid = Number.parseInt(startResult.stdout.match(/resolved_root_pid=(\d+)/)?.[1] ?? '', 10);
+    const childPid = Number.parseInt(readFileSync(childPidFile, 'utf8').trim(), 10);
+
+    expect(Number.isInteger(rootPid)).toBe(true);
+    expect(Number.isInteger(listenerPid)).toBe(true);
+    expect(rootPid).toBeGreaterThan(0);
+    expect(listenerPid).toBeGreaterThan(0);
+    expect(listenerPid).toBe(childPid);
+    expect(resolvedRootPid).toBe(rootPid);
+    expect(await waitForPidExit(rootPid)).toBe(true);
+  }, processHeavyOwnershipTestTimeoutMs);
+
   it('starts a service with a machine-readable sidecar and stops the verified owned tree', async () => {
     const tempRoot = makeTempRoot();
     const processStateDir = path.join(tempRoot, 'processes');
@@ -248,6 +333,16 @@ describe('local runtime process ownership contract', () => {
 
     process.kill(pid, 'SIGKILL');
     await waitForPidExit(pid);
+  });
+
+  it('keeps integration-with-api cleanup rooted in the local runtime owner while resolving an authoritative API pid for consumers', () => {
+    const script = readFileSync('scripts/run-integration-e2e-with-api.sh', 'utf8');
+
+    expect(script).toContain('API_ROOT_PID="$(');
+    expect(script).toContain('local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" env');
+    expect(script).toContain('API_PID="$(local_runtime_capture_authoritative_service_pid "${API_ROOT_PID}" api "${API_PORT}"');
+    expect(script).toContain('local_runtime_stop_owned_process_tree "${API_ROOT_PID}" api "${API_PORT}"');
+    expect(script).not.toContain('API_PID="$(\n  local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" env');
   });
 
   it('continues killing captured child pids with a test-scoped TERM/KILL grace budget', async () => {
@@ -1950,7 +2045,7 @@ while true; do :; done
       expect(grandchildPid).toBeGreaterThan(0);
 
       expect(stopResult.status).toBe(0);
-      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(5_000);
+      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(processHeavyCleanupElapsedBudgetMs);
       expect(await waitForPidExit(rootPid)).toBe(true);
       expect(await waitForPidExit(childPid)).toBe(true);
       expect(await waitForPidExit(grandchildPid)).toBe(true);
@@ -1966,7 +2061,7 @@ while true; do :; done
         }
       }
     }
-  });
+  }, processHeavyOwnershipTestTimeoutMs);
 
   it('keeps killing owned descendants when descendant cmdline reads race during KILL revalidation', async () => {
     const tempRoot = makeTempRoot();
@@ -2064,7 +2159,7 @@ while true; do :; done
       );
 
       expect(stopResult.status).toBe(0);
-      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(5_000);
+      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(processHeavyCleanupElapsedBudgetMs);
       expect(await waitForPidExit(rootPid)).toBe(true);
       expect(await waitForPidExit(childPid)).toBe(true);
       expect(Number.parseInt(readFileSync(cmdlineRaceCountFile, 'utf8').trim(), 10)).toBeGreaterThanOrEqual(3);
@@ -2079,7 +2174,7 @@ while true; do :; done
         }
       }
     }
-  }, 8_000);
+  }, processHeavyOwnershipTestTimeoutMs);
 
   it('refuses to KILL a descendant whose live identity changed after TERM even when the owner token still matches', async () => {
     const tempRoot = makeTempRoot();

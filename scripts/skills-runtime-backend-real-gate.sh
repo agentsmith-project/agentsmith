@@ -42,7 +42,7 @@ run_grep() {
 }
 
 run_grep e2e/integration-chat-llm-runner.spec.ts "streams multi-turn chat through the real local chat runner and persists replies" 20071 3051
-run_grep e2e/integration-chat-llm-runner.spec.ts "preserves session continuity across refresh with the real local chat runner" 20072 3061
+run_grep e2e/integration-chat-llm-runner.spec.ts "preserves conversation continuity across refresh with story-bound trace evidence" 20072 3061
 
 run_grep e2e/integration-notebook-codex-runner.spec.ts "reads task context through mbos-context in a real notebook codex runner task" 20073 3066
 run_grep e2e/integration-notebook-codex-runner.spec.ts "writes task context through mbos-context and persists it for the task owner" 20074 3069

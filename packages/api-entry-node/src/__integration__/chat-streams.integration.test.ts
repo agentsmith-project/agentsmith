@@ -78,6 +78,15 @@ describe('api-entry-node chat stream routes', () => {
     const upstreamBody = universalProxy.lastBody() as { model?: string; messages?: Array<{ role: string }> };
     expect(upstreamBody.model).toBe('deepseek-chat');
     expect(upstreamBody.messages?.at(-1)?.role).toBe('user');
+    expect(universalProxy.configRequests()).toHaveLength(1);
+    expect((universalProxy.configRequests()[0]?.body as {
+      if_revision?: string | null;
+      revision?: string;
+    }).revision).toBeUndefined();
+    expect((universalProxy.configRequests()[0]?.body as {
+      if_revision?: string | null;
+    }).if_revision ?? null).toBeNull();
+    expect(universalProxy.configRequests()[0]?.appliedRevision).toEqual(expect.any(String));
     expect(universalProxy.lastPath()).toContain(`/namespaces/ws_default__proj_1__${endpointId}/openai/v1/chat/completions`);
   });
 

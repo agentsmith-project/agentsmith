@@ -34,11 +34,13 @@ export LOCAL_RUNTIME_PROCESS_STATE_DIR="${INTEGRATION_RUN_ROOT}/processes"
 mkdir -p "${INTEGRATION_LOG_DIR}"
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 PLAYWRIGHT_STATUS=1
+API_ROOT_PID=""
+API_PID=""
 
 # Always clear proxy-related env vars for deterministic local integration testing.
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
-API_PID="$(
+API_ROOT_PID="$(
   local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" env \
     -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
     PORT="${API_PORT}" \
@@ -46,9 +48,10 @@ API_PID="$(
     KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
     npm run api:node:dev
 )"
+API_PID="$(local_runtime_capture_authoritative_service_pid "${API_ROOT_PID}" api "${API_PORT}" 60)"
 
 cleanup() {
-  local_runtime_stop_owned_process_tree "${API_PID}" api "${API_PORT}" || true
+  local_runtime_stop_owned_process_tree "${API_ROOT_PID}" api "${API_PORT}" || true
   local_runtime_wait_port_free "${API_PORT}" api 10 || true
   if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" success

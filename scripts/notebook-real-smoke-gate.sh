@@ -6,7 +6,15 @@ unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+ORIGINAL_INTEGRATION_API_PORT="${INTEGRATION_API_PORT:-}"
+ORIGINAL_INTEGRATION_WEB_PORT="${INTEGRATION_WEB_PORT:-}"
 load_backend_real_env
+if [[ -n "${ORIGINAL_INTEGRATION_API_PORT}" ]]; then
+  export INTEGRATION_API_PORT="${ORIGINAL_INTEGRATION_API_PORT}"
+fi
+if [[ -n "${ORIGINAL_INTEGRATION_WEB_PORT}" ]]; then
+  export INTEGRATION_WEB_PORT="${ORIGINAL_INTEGRATION_WEB_PORT}"
+fi
 export_backend_real_endpoint_env
 API_PORT="${INTEGRATION_API_PORT:-20060}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3061}"

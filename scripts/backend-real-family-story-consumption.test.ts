@@ -150,8 +150,16 @@ describe('backend-real family story consumption', () => {
     expect(membersSource).toContain("loadStoryDefinitionSync('members-invite-and-chat-privacy')");
     expect(membersSource).toContain('buildTraceStoryBinding');
     expect(membersSource).toContain('createUxTraceBundleWriter');
+    expect(membersSource).toContain("captureInviteFirstWorkTrace(memberPage, 'inspect-invite-truth')");
+    expect(membersSource).toContain("captureInviteFirstWorkTrace(memberPage, 'continue-to-invited-workspace-login')");
+    expect(membersSource).toContain("captureInviteFirstWorkTrace(memberPage, 'complete-workspace-login-and-accept')");
+    expect(membersSource).toContain("capturePrivacyTrace(memberPage, 'verify-member-first-access')");
+    expect(membersSource).toContain("capturePrivacyTrace(memberPage, 'verify-chat-privacy')");
     expect(membersSource).not.toContain('Invite Chat Isolation');
     expect(membersSource).not.toContain('OWNER_PRIVATE_MESSAGE_');
+    expect(membersSource).not.toContain('choose-invited-workspace');
+    expect(membersSource).not.toContain('enter-invited-workspace-login');
+    expect(membersSource).not.toContain('workspace-select__list');
 
     expect(publishSource).toContain("loadStoryDefinitionSync('workspace-publish-to-usable-access')");
     expect(publishSource).toContain('buildTraceStoryBinding');
@@ -243,6 +251,26 @@ describe('backend-real family story consumption', () => {
     const notebookFirstStory = loadCommittedStoryDefinitionByIdSync('notebook-first-success');
     expect(notebookFirstStory.goal).toContain('第一次');
     expect(notebookFirstStory.goal).not.toContain('WebSocket');
+  });
+
+  it('keeps chat continuity focused on post-refresh recall instead of first-turn token echo', async () => {
+    const story = loadCommittedStoryDefinitionByIdSync('chat-conversation-continuity');
+    const runtimeRoot = story.runtimeData as Record<string, unknown> | undefined;
+    const chatRuntime = runtimeRoot?.chat as Record<string, unknown> | undefined;
+    const continuity = chatRuntime?.continuity as Record<string, unknown> | undefined;
+    const chatSource = await readFile(path.resolve(process.cwd(), 'e2e/integration-chat-llm-runner.spec.ts'), 'utf-8');
+    const rememberPhasePattern =
+      /const rememberedMessages = await waitForLatestAssistantContent\(\{\s*page,\s*projectId,\s*sessionId: agentBundle\.sessionId,\s*minMessages: 2,\s*\}\);/s;
+    const recallPhasePattern =
+      /const sessionMessages = await waitForLatestAssistantContent\(\{\s*page,\s*projectId,\s*sessionId: agentBundle\.sessionId,\s*requiredSubstring: runtime\.rememberToken,\s*minMessages: 4,\s*\}\);/s;
+
+    expect(continuity?.rememberPrompt).toContain('Remember this token for our session: CHAT_CONTINUITY_OK.');
+    expect(continuity?.rememberPrompt).not.toContain('Make sure your reply includes the token.');
+    expect(continuity?.recallPrompt).toContain('Reply with exactly the token and nothing else.');
+    expect(chatSource).toContain("hasText: runtime.rememberPrompt");
+    expect(chatSource).toMatch(rememberPhasePattern);
+    expect(chatSource).toMatch(recallPhasePattern);
+    expect(chatSource).not.toContain("hasText: runtime.rememberToken }).first()).toBeVisible({ timeout: 240_000");
   });
 
   it('keeps notebook terminal recovery stories in the generated catalog with canonical source refs', async () => {

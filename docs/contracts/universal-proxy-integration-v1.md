@@ -42,6 +42,17 @@ AgentSmith 通过命名空间配置接口向协议层推送完整配置快照：
 
 每次推送都是完整替换，不做 patch。
 
+配置推送使用 server-owned revision 的 CAS 语义：
+
+- 请求体必须是 `{ if_revision, config }`
+- `revision` 顶层字段由 `llm-universal-proxy` 生成并返回，AgentSmith 禁止上传
+- namespace 首次创建时，AgentSmith 必须发送 `if_revision: null`
+- namespace 已存在时，AgentSmith 必须发送上一次成功响应返回的 `if_revision`
+- 成功响应返回新的服务端 revision，例如 `200 { "revision": "..." }`
+- `if_revision` 缺失或过期时，协议层返回 `412`，并带上 `current_revision`
+
+当前约束下，AgentSmith 只维护本地缓存的“上次成功 revision”，不把 revision 暴露为产品对象。
+
 ### Request Path
 
 AgentSmith 在 endpoint proxy 主路径上优先把支持的聊天协议请求转发到：
@@ -66,6 +77,8 @@ AgentSmith 在 endpoint proxy 主路径上优先把支持的聊天协议请求�
 - endpoint protocol 不在支持矩阵内时，不进入 universal proxy
 - proxy path 不在支持矩阵内时，不进入 universal proxy
 - 配置快照校验失败时，整份拒绝，不部分生效
+- AgentSmith 发送顶层 `revision` 时，协议层返回 `400`
+- AgentSmith 缺失 `if_revision` 或发送过期值时，协议层返回 `412` + `current_revision`
 - namespace 不存在时，协议层返回显式错误
 
 ## Verification Gate
@@ -81,4 +94,3 @@ AgentSmith 在 endpoint proxy 主路径上优先把支持的聊天协议请求�
 - endpoint proxy 经 universal proxy 的真实集成测试
 - runner -> AgentSmith -> universal proxy -> upstream 的 stream / non-stream 测试
 - unsupported path 的 fail-fast 测试
-

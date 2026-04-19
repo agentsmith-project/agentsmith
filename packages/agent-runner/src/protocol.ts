@@ -1,4 +1,6 @@
 export type AgentInteractionKind = 'chat' | 'notebook';
+export const SUPPORTED_AGENT_WIRE_APIS = ['chat', 'responses', 'anthropic_messages'] as const;
+export type AgentWireApi = (typeof SUPPORTED_AGENT_WIRE_APIS)[number];
 
 export type AgentExecutionModelCatalog = {
   input_modalities?: string[];
@@ -14,7 +16,7 @@ export type AgentExecutionContextBase = {
   project_id?: string;
   execution_ticket?: string;
   endpoint_id?: string;
-  wire_api?: 'chat' | 'responses';
+  wire_api?: AgentWireApi;
   model?: string;
   username?: string;
   run_id?: string;
@@ -75,11 +77,19 @@ function hasTrimmedStringField(input: Record<string, unknown>, key: string): boo
   return typeof input[key] === 'string' && input[key].trim().length > 0;
 }
 
+function hasValidWireApi(input: Record<string, unknown>): boolean {
+  const wireApi = input.wire_api;
+  return wireApi === undefined
+    || (typeof wireApi === 'string'
+      && SUPPORTED_AGENT_WIRE_APIS.includes(wireApi as AgentWireApi));
+}
+
 export function isChatExecutionContext(input: unknown): input is ChatExecutionContext {
   if (!isPlainObject(input)) return false;
   if (input.interaction_kind !== 'chat') return false;
   if (!hasTrimmedStringField(input, 'session_id')) return false;
   if (input.task_id !== undefined) return false;
+  if (!hasValidWireApi(input)) return false;
   return true;
 }
 
@@ -87,6 +97,7 @@ export function isNotebookExecutionContext(input: unknown): input is NotebookExe
   if (!isPlainObject(input)) return false;
   if (input.interaction_kind !== 'notebook') return false;
   if (!hasTrimmedStringField(input, 'task_id')) return false;
+  if (!hasValidWireApi(input)) return false;
   return true;
 }
 

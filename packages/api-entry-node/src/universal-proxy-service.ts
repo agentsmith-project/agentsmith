@@ -12,7 +12,6 @@ type RuntimeUpstreamConfig = {
 };
 
 type RuntimeConfigSnapshot = {
-  revision: string;
   config: {
     listen: string;
     upstream_timeout_secs: number;
@@ -27,6 +26,14 @@ type RuntimeConfigSnapshot = {
       usage: null;
     };
   };
+};
+
+type RuntimeNamespaceConfig = RuntimeConfigSnapshot['config'];
+
+type NamespaceReconcileState = {
+  desiredConfigHash?: string;
+  serverRevision?: string;
+  inflight?: Promise<void>;
 };
 
 type ProxyOptions = {
@@ -88,23 +95,50 @@ function fixedUpstreamFormat(protocol: EndpointUpstreamProtocol): RuntimeUpstrea
   return undefined;
 }
 
-function buildRevision(endpoint: EndpointRecord, apiKey: string): string {
-  const normalizedApiRoot = normalizeEndpointApiRoot(endpoint);
-  const upstreamFormat = fixedUpstreamFormat(endpoint.upstream_protocol) ?? null;
-  const fingerprint = createHash('sha256')
-    .update(JSON.stringify({
-      endpoint_id: endpoint.id,
-      base_url: endpoint.base_url,
-      normalized_api_root: normalizedApiRoot,
-      upstream_protocol: endpoint.upstream_protocol,
-      upstream_format: upstreamFormat,
-      model: endpoint.model,
-      updated_at: endpoint.updated_at,
-      api_key: apiKey,
-    }))
-    .digest('hex')
-    .slice(0, 16);
-  return `${endpoint.updated_at}:${fingerprint}`;
+function buildRuntimeConfig(endpoint: EndpointRecord, apiKey: string): RuntimeNamespaceConfig {
+  return {
+    listen: '0.0.0.0:8080',
+    upstream_timeout_secs: endpoint.limits?.timeout_seconds ?? 120,
+    upstreams: [{
+      name: 'primary',
+      api_root: normalizeEndpointApiRoot(endpoint),
+      fixed_upstream_format: fixedUpstreamFormat(endpoint.upstream_protocol),
+      fallback_credential_actual: apiKey,
+      auth_policy: 'force_server',
+      upstream_headers: [],
+    }],
+    model_aliases: {},
+    hooks: {
+      max_pending_bytes: 104857600,
+      timeout_secs: 30,
+      failure_threshold: 3,
+      cooldown_secs: 300,
+      exchange: null,
+      usage: null,
+    },
+  };
+}
+
+function buildConfigHash(config: RuntimeNamespaceConfig): string {
+  return createHash('sha256')
+    .update(JSON.stringify(config))
+    .digest('hex');
+}
+
+async function readJsonRecord(response: Response): Promise<{ text: string; json: Record<string, unknown> | null }> {
+  const text = await response.text();
+  if (!text) {
+    return { text, json: {} };
+  }
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { text, json: parsed as Record<string, unknown> };
+    }
+  } catch {
+    // Keep the raw text for error reporting when the response is not JSON.
+  }
+  return { text, json: null };
 }
 
 function parseTokenTotal(body: unknown): number | undefined {
@@ -118,6 +152,8 @@ function parseTokenTotal(body: unknown): number | undefined {
 }
 
 export class UniversalProxyService {
+  private readonly namespaceReconcileStates = new Map<string, NamespaceReconcileState>();
+
   constructor(private readonly baseUrl: string) {}
 
   static fromEnv(env: NodeJS.ProcessEnv): UniversalProxyService | undefined {
@@ -138,6 +174,110 @@ export class UniversalProxyService {
     return `${workspaceId}__${projectId}__${endpointId}`.replace(/[^a-zA-Z0-9_.-]+/g, '-');
   }
 
+  private getNamespaceReconcileState(namespace: string): NamespaceReconcileState {
+    let state = this.namespaceReconcileStates.get(namespace);
+    if (!state) {
+      state = {};
+      this.namespaceReconcileStates.set(namespace, state);
+    }
+    return state;
+  }
+
+  private async reconcileNamespaceConfig(
+    namespace: string,
+    config: RuntimeNamespaceConfig,
+    desiredConfigHash: string,
+  ): Promise<void> {
+    const state = this.getNamespaceReconcileState(namespace);
+
+    while (true) {
+      if (state.desiredConfigHash === desiredConfigHash && state.serverRevision) {
+        return;
+      }
+      if (state.inflight) {
+        await state.inflight;
+        continue;
+      }
+
+      const inflight = this.pushNamespaceConfig(namespace, config, desiredConfigHash, state);
+      state.inflight = inflight;
+
+      try {
+        await inflight;
+        return;
+      } finally {
+        if (state.inflight === inflight) {
+          state.inflight = undefined;
+        }
+      }
+    }
+  }
+
+  private async pushNamespaceConfig(
+    namespace: string,
+    config: RuntimeNamespaceConfig,
+    desiredConfigHash: string,
+    state: NamespaceReconcileState,
+  ): Promise<void> {
+    const maxAttempts = 2;
+    let ifRevision: string | null = state.serverRevision ?? null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const response = await fetch(
+        `${sanitizeBaseUrl(this.baseUrl)}/admin/namespaces/${encodeURIComponent(namespace)}/config`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            if_revision: ifRevision,
+            config,
+          }),
+        },
+      );
+
+      if (response.status === 412) {
+        const conflict = await readJsonRecord(response);
+        const currentRevision = conflict.json?.current_revision;
+        if (currentRevision === null) {
+          state.serverRevision = undefined;
+          ifRevision = null;
+          if (attempt + 1 < maxAttempts) {
+            continue;
+          }
+          throw new Error(`universal_proxy_config_push_conflict_exhausted:${namespace}`);
+        }
+        if (typeof currentRevision !== 'string' || currentRevision.length === 0) {
+          throw new Error(
+            `universal_proxy_config_push_failed:${response.status}:${conflict.text || 'missing_current_revision'}`,
+          );
+        }
+        state.serverRevision = currentRevision;
+        ifRevision = currentRevision;
+        if (attempt + 1 < maxAttempts) {
+          continue;
+        }
+        throw new Error(`universal_proxy_config_push_conflict_exhausted:${namespace}`);
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`universal_proxy_config_push_failed:${response.status}:${errorText}`);
+      }
+
+      const success = await readJsonRecord(response);
+      const revision = success.json?.revision;
+      if (typeof revision !== 'string' || revision.length === 0) {
+        throw new Error('universal_proxy_config_push_missing_revision');
+      }
+
+      state.serverRevision = revision;
+      state.desiredConfigHash = desiredConfigHash;
+      return;
+    }
+  }
+
   async ensureEndpointNamespace(
     workspaceId: string,
     projectId: string,
@@ -145,45 +285,9 @@ export class UniversalProxyService {
     apiKey: string,
   ): Promise<string> {
     const namespace = this.buildNamespace(workspaceId, projectId, endpoint.id);
-    const snapshot: RuntimeConfigSnapshot = {
-      revision: buildRevision(endpoint, apiKey),
-      config: {
-        listen: '0.0.0.0:8080',
-        upstream_timeout_secs: endpoint.limits?.timeout_seconds ?? 120,
-        upstreams: [{
-          name: 'primary',
-          api_root: normalizeEndpointApiRoot(endpoint),
-          fixed_upstream_format: fixedUpstreamFormat(endpoint.upstream_protocol),
-          fallback_credential_actual: apiKey,
-          auth_policy: 'force_server',
-          upstream_headers: [],
-        }],
-        model_aliases: {},
-        hooks: {
-          max_pending_bytes: 104857600,
-          timeout_secs: 30,
-          failure_threshold: 3,
-          cooldown_secs: 300,
-          exchange: null,
-          usage: null,
-        },
-      },
-    };
-
-    const response = await fetch(
-      `${sanitizeBaseUrl(this.baseUrl)}/admin/namespaces/${encodeURIComponent(namespace)}/config`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify(snapshot),
-      },
-    );
-    if (!response.ok && response.status !== 409) {
-      const errorText = await response.text();
-      throw new Error(`universal_proxy_config_push_failed:${response.status}:${errorText}`);
-    }
+    const config = buildRuntimeConfig(endpoint, apiKey);
+    const desiredConfigHash = buildConfigHash(config);
+    await this.reconcileNamespaceConfig(namespace, config, desiredConfigHash);
     return namespace;
   }
 

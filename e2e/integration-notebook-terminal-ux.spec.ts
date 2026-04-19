@@ -17,6 +17,7 @@ import {
   expectNotebookTaskConversationSurface,
   keycloakLoginToWorkspace,
   listTerminalSessionsViaApi,
+  reconnectCodexRunnerProcessToTask,
   startCodexRunnerProcess,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
@@ -137,19 +138,32 @@ async function prepareTerminalReadyTask(page: Page): Promise<TerminalReadyTask> 
     endpointId,
     title: 'story-notebook-terminal-workspace',
   });
-  const runner = await startCodexRunnerProcess({
+  let runner = await startCodexRunnerProcess({
     wsUrl: agentBundle.wsUrl,
     agentKey: agentBundle.agentKey,
   });
-  await waitForAgentPresenceOnline(page, WORKSPACE_ID, projectId, agentBundle.agentId);
-  const taskId = await createNotebookTaskViaApi({
-    page,
-    workspaceId: WORKSPACE_ID,
-    projectId,
-    title: `Story Notebook Terminal Task ${Date.now()}`,
-    agentId: agentBundle.agentId,
-    fileLibraryId,
-  });
+  let taskId = '';
+  try {
+    await waitForAgentPresenceOnline(page, WORKSPACE_ID, projectId, agentBundle.agentId);
+    taskId = await createNotebookTaskViaApi({
+      page,
+      workspaceId: WORKSPACE_ID,
+      projectId,
+      title: `Story Notebook Terminal Task ${Date.now()}`,
+      agentId: agentBundle.agentId,
+      fileLibraryId,
+    });
+    runner = await reconnectCodexRunnerProcessToTask({
+      presenceRunner: runner,
+      wsUrl: agentBundle.wsUrl,
+      agentKey: agentBundle.agentKey,
+      taskId,
+    });
+    await waitForAgentPresenceOnline(page, WORKSPACE_ID, projectId, agentBundle.agentId);
+  } catch (error) {
+    await runner.stop().catch(() => undefined);
+    throw error;
+  }
 
   return {
     projectId,

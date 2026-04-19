@@ -553,6 +553,7 @@ Notes:
 2. `npm run gate:release:full` is aggregate-only. Use it only with explicit campaign context, for example `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full`, and do not expect it to execute any suite.
 3. When diagnosing a failed campaign, rerun the owning evidence command such as `npm run gate:release`, `npm run lane:visual`, `npm run lane:demo-rehearsal`, or `npm run lane:cluster-rehearsal`, then return to `npm run release:campaign:full`.
 4. Real-lane notebook verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).
+5. Fresh demo rehearsal roots seeded during `npm run release:campaign:full` keep `infra/deploy/demo/env/site.env.example` secret-free and derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
 
 ## Test & Evidence Directory Contract
 

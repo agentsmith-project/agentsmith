@@ -11,6 +11,7 @@ import {
   BACKEND_REAL_MODEL,
   BACKEND_REAL_OPENAI_BASE_URL,
   BACKEND_REAL_OPENAI_MODEL,
+  reconnectCodexRunnerProcessToTask,
   startCodexRunnerProcess,
 } from './integration-real-helpers';
 
@@ -301,6 +302,63 @@ async function createNotebookTaskViaApi(args: {
   const payload = (await response.json()) as { id?: string };
   expect(payload.id).toBeTruthy();
   return payload.id!;
+}
+
+async function createNotebookTaskViaApiWithRunner(args: {
+  page: Page;
+  token: string;
+  projectId: string;
+  agentId: string;
+  workspaceLibraryId: string;
+  title: string;
+  runnerWsUrl: string;
+  runnerAgentKey: string;
+}): Promise<{
+  taskId: string;
+  runner: Awaited<ReturnType<typeof startCodexRunnerProcess>>;
+  presenceLogPath: string;
+}> {
+  let runner = await startCodexRunnerProcess({
+    wsUrl: args.runnerWsUrl,
+    agentKey: args.runnerAgentKey,
+  });
+  const presenceLogPath = runner.logPath;
+  try {
+    await waitForAgentPresenceOnline({
+      page: args.page,
+      token: args.token,
+      projectId: args.projectId,
+      agentId: args.agentId,
+    });
+    const taskId = await createNotebookTaskViaApi({
+      page: args.page,
+      token: args.token,
+      projectId: args.projectId,
+      agentId: args.agentId,
+      workspaceLibraryId: args.workspaceLibraryId,
+      title: args.title,
+    });
+    runner = await reconnectCodexRunnerProcessToTask({
+      presenceRunner: runner,
+      wsUrl: args.runnerWsUrl,
+      agentKey: args.runnerAgentKey,
+      taskId,
+    });
+    await waitForAgentPresenceOnline({
+      page: args.page,
+      token: args.token,
+      projectId: args.projectId,
+      agentId: args.agentId,
+    });
+    return {
+      taskId,
+      runner,
+      presenceLogPath,
+    };
+  } catch (error) {
+    await runner.stop().catch(() => undefined);
+    throw error;
+  }
 }
 
 async function sendNotebookMessage(args: {
@@ -603,27 +661,21 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
           endpointId,
           title: `upx-notebook-${scenario.kind}`,
         });
-        const runner = await startCodexRunnerProcess({
-          wsUrl: agentBundle.wsUrl,
-          agentKey: agentBundle.agentKey,
+        const createdTask = await createNotebookTaskViaApiWithRunner({
+          page,
+          token,
+          projectId,
+          agentId: agentBundle.agentId,
+          workspaceLibraryId,
+          title: `UPX Notebook Task ${scenario.kind} ${Date.now()}`,
+          runnerWsUrl: agentBundle.wsUrl,
+          runnerAgentKey: agentBundle.agentKey,
         });
+        const { taskId, runner } = createdTask;
+        test.info().annotations.push({ type: `runner_presence_log_${scenario.kind}`, description: createdTask.presenceLogPath });
         test.info().annotations.push({ type: `runner_log_${scenario.kind}`, description: runner.logPath });
 
         try {
-          await waitForAgentPresenceOnline({
-            page,
-            token,
-            projectId,
-            agentId: agentBundle.agentId,
-          });
-          const taskId = await createNotebookTaskViaApi({
-            page,
-            token,
-            projectId,
-            agentId: agentBundle.agentId,
-            workspaceLibraryId,
-            title: `UPX Notebook Task ${scenario.kind} ${Date.now()}`,
-          });
           await sendNotebookMessage({
             page,
             token,
@@ -716,28 +768,21 @@ test.describe('@lane-real notebook runner real upstream stability via universal 
         title: `upx-real-notebook-${scenario.kind}`,
         model: scenario.model,
       });
-      const runner = await startCodexRunnerProcess({
-        wsUrl: agentBundle.wsUrl,
-        agentKey: agentBundle.agentKey,
+      const createdTask = await createNotebookTaskViaApiWithRunner({
+        page,
+        token,
+        projectId,
+        agentId: agentBundle.agentId,
+        workspaceLibraryId,
+        title: `UPX Real Notebook Task ${scenario.kind} ${Date.now()}`,
+        runnerWsUrl: agentBundle.wsUrl,
+        runnerAgentKey: agentBundle.agentKey,
       });
+      const { taskId, runner } = createdTask;
+      test.info().annotations.push({ type: `runner_presence_log_real_${scenario.kind}`, description: createdTask.presenceLogPath });
       test.info().annotations.push({ type: `runner_log_real_${scenario.kind}`, description: runner.logPath });
 
       try {
-        await waitForAgentPresenceOnline({
-          page,
-          token,
-          projectId,
-          agentId: agentBundle.agentId,
-        });
-
-        const taskId = await createNotebookTaskViaApi({
-          page,
-          token,
-          projectId,
-          agentId: agentBundle.agentId,
-          workspaceLibraryId,
-          title: `UPX Real Notebook Task ${scenario.kind} ${Date.now()}`,
-        });
         const starryPrompt = [
           'Use Python to draw a simple starry sky image.',
           'Save the final image to exactly .artifacts/starry_sky.png.',

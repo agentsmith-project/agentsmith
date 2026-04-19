@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
@@ -11,6 +12,10 @@ import {
   renderGeneratedStorySpecsJson,
 } from '../e2e/story-generated-spec';
 import type { GeneratedStorySpec as CanonicalGeneratedStorySpec } from '../e2e/story-generated-spec';
+import {
+  checkGeneratedStorySpecsFreshness,
+  syncGeneratedStorySpecs,
+} from './story-generated-spec';
 
 type TypeEqual<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends
@@ -26,6 +31,16 @@ const _generatedStorySpecSchemaAligned: ExpectTrue<
 > = true;
 
 describe('generated story specs', () => {
+  it('exposes explicit sync and check commands and wires freshness into contracts:check', async () => {
+    const packageJson = JSON.parse(await readFile(path.resolve('package.json'), 'utf-8')) as {
+      scripts?: Record<string, string>;
+    };
+
+    expect(packageJson.scripts?.['story-generated-spec:sync']).toBe('tsx scripts/story-generated-spec.ts');
+    expect(packageJson.scripts?.['story-generated-spec:check']).toBe('tsx scripts/story-generated-spec.ts --check');
+    expect(packageJson.scripts?.['contracts:check']).toContain('npm run story-generated-spec:check');
+  });
+
   it('derives generated specs from markdown story sources without hand-maintained prose drift', async () => {
     const { stories, generatedSpecs } = await loadCanonicalStoryCatalog();
     const specs = buildGeneratedStorySpecs(stories);
@@ -62,15 +77,57 @@ describe('generated story specs', () => {
     expect(committedStories[0]).toHaveProperty('personas');
   });
 
-  it('keeps the committed generated cache byte-for-byte aligned with regenerated story specs', async () => {
+  it('routes committed generated cache freshness through the explicit check flow', async () => {
     const { stories } = await loadCanonicalStoryCatalog();
     const regenerated = renderGeneratedStorySpecsJson(buildGeneratedStorySpecs(stories));
-    const committedStories = await readCommittedGeneratedStorySpecs();
-    const regeneratedStories = JSON.parse(regenerated) as typeof committedStories;
-    const committed = await readFile(path.resolve('e2e/generated/story-specs.generated.json'), 'utf-8');
+    const generatedPath = path.resolve('e2e/generated/story-specs.generated.json');
+    const committed = await readFile(generatedPath, 'utf-8');
 
-    expect(committedStories.map((entry) => entry.storyId)).toEqual(stories.map((story) => story.storyId));
-    expect(committedStories).toEqual(regeneratedStories);
-    expect(committed).toBe(regenerated);
+    if (committed === regenerated) {
+      await expect(checkGeneratedStorySpecsFreshness(generatedPath)).resolves.toBeUndefined();
+      return;
+    }
+
+    await expect(checkGeneratedStorySpecsFreshness(generatedPath)).rejects.toThrow(
+      /npm run story-generated-spec:sync/,
+    );
+  });
+
+  it('syncs generated story specs through the canonical story loader and generator', async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'story-generated-spec-'));
+    const outputPath = path.join(tempDir, 'story-specs.generated.json');
+
+    try {
+      const firstSync = await syncGeneratedStorySpecs(outputPath);
+      const written = await readFile(outputPath, 'utf-8');
+      const { generatedSpecs } = await loadCanonicalStoryCatalog();
+
+      expect(firstSync.updated).toBe(true);
+      expect(written).toBe(renderGeneratedStorySpecsJson(generatedSpecs));
+
+      const secondSync = await syncGeneratedStorySpecs(outputPath);
+      expect(secondSync.updated).toBe(false);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails freshness checks with the sync command hint when the generated cache drifts', async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'story-generated-spec-'));
+    const outputPath = path.join(tempDir, 'story-specs.generated.json');
+
+    try {
+      await syncGeneratedStorySpecs(outputPath);
+      await writeFile(outputPath, '[]\n', 'utf-8');
+
+      await expect(checkGeneratedStorySpecsFreshness(outputPath)).rejects.toThrow(
+        /npm run story-generated-spec:sync/,
+      );
+
+      await syncGeneratedStorySpecs(outputPath);
+      await expect(checkGeneratedStorySpecsFreshness(outputPath)).resolves.toBeUndefined();
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

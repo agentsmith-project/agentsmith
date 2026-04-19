@@ -54,6 +54,7 @@ function assertNoCamelCaseKeys(label: string, payload: JsonRecord): void {
 function generateRuntimeResult(gateId: string, evidenceDir: string): JsonRecord {
   const definition = findCurrentGateDefinitionById(gateId);
   assert(definition, `Unknown gate id in writer registry: ${gateId}`);
+  const lineKind = findWriterLineKind(gateId);
 
   execFileSync(
     "bash",
@@ -61,8 +62,8 @@ function generateRuntimeResult(gateId: string, evidenceDir: string): JsonRecord 
       "-lc",
       [
         `source "${resolve("scripts/lib/runtime-verification.sh")}"`,
-        `gate_evidence_init "${evidenceDir}" "${findWriterLineKind(gateId)}"`,
-        `gate_record_success "${evidenceDir}" "${findWriterLineKind(gateId)}"`,
+        `gate_evidence_init "${evidenceDir}" "${lineKind}"`,
+        `gate_record_success "${evidenceDir}" "${lineKind}"`,
       ].join("; "),
     ],
     {
@@ -70,6 +71,7 @@ function generateRuntimeResult(gateId: string, evidenceDir: string): JsonRecord 
       env: {
         ...process.env,
         CURRENT_GATE_RESULT_GATE_ID: gateId,
+        CURRENT_GATE_RESULT_LINE_KIND: lineKind,
         CURRENT_GATE_RESULT_NPM_SCRIPT: definition.npmScript,
         ...(definition.ciJob ? { CURRENT_GATE_RESULT_CI_JOB: definition.ciJob } : {}),
       },

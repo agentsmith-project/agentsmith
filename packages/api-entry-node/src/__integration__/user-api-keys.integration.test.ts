@@ -1,6 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import http, { type IncomingHttpHeaders, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  createUniversalProxyAdminHarness,
+  type UniversalProxyAdminConfigRequest,
+} from './chat-test-support.js';
 import { apiFetch, apiFetchWithToken, startServer } from './test-support.js';
 
 const upstreamServers: Server[] = [];
@@ -38,6 +42,7 @@ afterEach(async () => {
 
 function startUniversalProxyMockServer(): {
   baseUrl: string;
+  configRequests: () => UniversalProxyAdminConfigRequest[];
   namespaceRequests: () => Array<{
     path: string;
     headers: IncomingHttpHeaders;
@@ -49,6 +54,7 @@ function startUniversalProxyMockServer(): {
     headers: IncomingHttpHeaders;
     body: unknown;
   }> = [];
+  const adminHarness = createUniversalProxyAdminHarness();
   const server = http.createServer((req, res) => {
     void (async () => {
       const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -58,16 +64,19 @@ function startUniversalProxyMockServer(): {
       }
       const body = JSON.parse(Buffer.concat(chunks).toString('utf-8') || '{}') as Record<string, unknown>;
 
-      const configMatch = requestUrl.pathname.match(/^\/admin\/namespaces\/([^/]+)\/config$/);
-      if (req.method === 'POST' && configMatch) {
-        res.statusCode = 200;
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ status: 'applied' }));
+      if (adminHarness.handleAdminRequest({ req, res, path: requestUrl.pathname, body })) {
         return;
       }
 
       const namespaceMatch = requestUrl.pathname.match(/^\/namespaces\/([^/]+)\/(.+)$/);
       if (req.method === 'POST' && namespaceMatch) {
+        const namespace = decodeURIComponent(namespaceMatch[1] ?? '');
+        if (!adminHarness.hasNamespace(namespace)) {
+          res.statusCode = 404;
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({ error: 'namespace_not_found' }));
+          return;
+        }
         namespaceRequests.push({
           path: requestUrl.pathname,
           headers: req.headers,
@@ -140,6 +149,7 @@ function startUniversalProxyMockServer(): {
   upstreamServers.push(server);
   return {
     baseUrl: `http://127.0.0.1:${port}`,
+    configRequests: () => adminHarness.configRequests(),
     namespaceRequests: () => namespaceRequests,
   };
 }
@@ -294,6 +304,24 @@ describe('user api keys integration', () => {
       },
     );
     expect(countTokensRes.status).toBe(200);
+    expect(universalProxy.configRequests()).toHaveLength(2);
+    const firstConfigRequest = universalProxy.configRequests()[0];
+    const secondConfigRequest = universalProxy.configRequests()[1];
+    expect((firstConfigRequest?.body as {
+      if_revision?: string | null;
+      revision?: string;
+    }).revision).toBeUndefined();
+    expect((firstConfigRequest?.body as {
+      if_revision?: string | null;
+    }).if_revision ?? null).toBeNull();
+    expect((secondConfigRequest?.body as {
+      if_revision?: string | null;
+      revision?: string;
+    }).revision).toBeUndefined();
+    expect((secondConfigRequest?.body as {
+      if_revision?: string | null;
+    }).if_revision ?? null).toBeNull();
+    expect(secondConfigRequest?.namespace).not.toBe(firstConfigRequest?.namespace);
     expect(universalProxy.namespaceRequests().map((item) => item.path)).toEqual(
       expect.arrayContaining([
         expect.stringMatching(/\/openai\/v1\/responses$/),

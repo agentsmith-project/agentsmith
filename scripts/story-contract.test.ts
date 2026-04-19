@@ -224,6 +224,55 @@ describe('story contract', () => {
     ).toThrow(/stable markers/i);
   });
 
+  it('rejects step targets that resolve to another scene stable marker inside the same story', () => {
+    expect(() =>
+      parseStoryDefinition(`
+---
+{
+  "storyId": "cross-scene-target-drift",
+  "title": "Cross scene target drift",
+  "actor": "reviewer",
+  "lane": "mock-lane",
+  "family": "scene-target-coherence",
+  "personas": ["reviewer"],
+  "kind": "journey",
+  "gatePolicy": {
+    "tier": "default",
+    "requiredEvidence": ["trace"]
+  },
+  "externalDependencies": [],
+  "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/overview",
+  "goal": "Verify story steps cannot point at another scene's stable marker.",
+  "narrative": "Scene ownership should stay coherent so traces do not encode cross-scene aliases.",
+  "scenes": [
+    {
+      "sceneId": "project-overview",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/overview",
+      "stableMarkers": ["project-overview__page", "project-overview__primary-cta"]
+    },
+    {
+      "sceneId": "project-chat",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/chat",
+      "stableMarkers": ["chat__surface"]
+    }
+  ],
+  "steps": [
+    {
+      "stepId": "cross-scene-action",
+      "sceneId": "project-chat",
+      "intent": "Attempt to bind a chat scene step to an overview target.",
+      "action": "Start first chat work",
+      "target": "project-overview__primary-cta",
+      "expectedFeedback": "The step should fail validation because the target belongs to another scene.",
+      "evidence": ["trace"]
+    }
+  ]
+}
+---
+`),
+    ).toThrow(/cross-scene|scene.*target|target.*scene/i);
+  });
+
   it('rejects empty story-owned visual semantic assertions before they enter the screenshot catalog', () => {
     expect(() =>
       parseStoryDefinition(`

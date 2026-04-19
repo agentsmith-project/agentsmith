@@ -19,5 +19,8 @@ describe('story source-of-truth docs', () => {
     expect(source).toContain('major product surface coverage guard');
     expect(source).toContain('scripts/story-product-surface-coverage.test.ts');
     expect(source).toContain('byte-for-byte projection');
+    expect(source).toContain('npm run story-generated-spec:sync');
+    expect(source).toContain('npm run story-generated-spec:check');
+    expect(source).toContain('npm run contracts:check');
   });
 });

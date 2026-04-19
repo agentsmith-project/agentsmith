@@ -17,6 +17,11 @@ Derived artifacts are not truth sources:
 
 The committed generated cache is still a checked-in artifact, but it must be a byte-for-byte projection of the canonical story markdown files. Tests must fail if the cache drifts from regenerated output.
 
+Command path:
+
+- `npm run story-generated-spec:sync` rewrites `e2e/generated/story-specs.generated.json` from the canonical story loader/generator pipeline.
+- `npm run story-generated-spec:check` fails on cache drift and is part of `npm run contracts:check`.
+
 ## Ownership
 
 - `e2e/story-loader.ts`

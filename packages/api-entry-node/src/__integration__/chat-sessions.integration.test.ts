@@ -213,6 +213,15 @@ describe('api-entry-node chat session routes', () => {
     const secondAssistantId = String(secondDone?.message_id ?? '');
     expect(secondAssistantId).toContain('chat_msg_');
     expect(secondAssistantId).not.toBe(firstAssistantId);
+    expect(upstream.configRequests()).toHaveLength(1);
+    expect((upstream.configRequests()[0]?.body as {
+      if_revision?: string | null;
+      revision?: string;
+    }).revision).toBeUndefined();
+    expect((upstream.configRequests()[0]?.body as {
+      if_revision?: string | null;
+    }).if_revision ?? null).toBeNull();
+    expect(upstream.configRequests()[0]?.appliedRevision).toEqual(expect.any(String));
 
     const history = await apiFetch(
       baseUrl,

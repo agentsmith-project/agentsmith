@@ -35,7 +35,79 @@ ensure_demo_rehearsal_site_env() {
     cp "${ROOT_DIR}/infra/deploy/demo/env/site.env.example" "${site_env}"
   fi
   apply_flow_site_env_overrides "${site_env}"
+  hydrate_demo_rehearsal_site_env_secrets "${site_env}"
   validate_demo_rehearsal_site_env "${site_env}"
+}
+
+site_env_value() {
+  local path="$1"
+  local key="$2"
+  python3 - <<'PY' "${path}" "${key}"
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+key = sys.argv[2]
+if not path.exists():
+    raise SystemExit(0)
+for raw_line in path.read_text(encoding='utf-8').splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith('#') or '=' not in line:
+        continue
+    name, value = line.split('=', 1)
+    if name.strip() == key:
+        print(value.strip().strip('"').strip("'"))
+        break
+PY
+}
+
+write_site_env_value() {
+  local path="$1"
+  local key="$2"
+  local value="$3"
+  python3 - <<'PY' "${path}" "${key}" "${value}"
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+value = sys.argv[3]
+lines = path.read_text(encoding='utf-8').splitlines() if path.exists() else []
+updated = []
+replaced = False
+
+for line in lines:
+    stripped = line.strip()
+    if stripped and not stripped.startswith('#') and stripped.startswith(f"{key}="):
+        updated.append(f"{key}={value}")
+        replaced = True
+        continue
+    updated.append(line)
+
+if not replaced:
+    updated.append(f"{key}={value}")
+
+path.write_text("\n".join(updated) + "\n", encoding='utf-8')
+PY
+}
+
+hydrate_demo_rehearsal_site_env_secrets() {
+  local site_env="$1"
+  local current_value resolved_value
+
+  current_value="$(site_env_value "${site_env}" PRESET_ENDPOINT_API_KEY)"
+  if [[ -n "${current_value}" ]]; then
+    return 0
+  fi
+
+  load_agentsmith_presets "${ROOT_DIR}"
+  apply_preset_endpoint_defaults
+  resolved_value="${PRESET_ENDPOINT_API_KEY:-}"
+  if [[ -z "${resolved_value}" ]]; then
+    return 0
+  fi
+
+  write_site_env_value "${site_env}" PRESET_ENDPOINT_API_KEY "${resolved_value}"
 }
 
 validate_demo_rehearsal_site_env() {
@@ -113,23 +185,7 @@ demo_env_value() {
   local key="$1"
   local path
   path="$(demo_site_env_path)"
-  python3 - <<'PY' "${path}" "${key}"
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-key = sys.argv[2]
-if not path.exists():
-    raise SystemExit(0)
-for raw_line in path.read_text(encoding='utf-8').splitlines():
-    line = raw_line.strip()
-    if not line or line.startswith('#') or '=' not in line:
-        continue
-    name, value = line.split('=', 1)
-    if name.strip() == key:
-        print(value.strip().strip('"').strip("'"))
-        break
-PY
+  site_env_value "${path}" "${key}"
 }
 
 http_code() {

@@ -5,6 +5,7 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/local-runtime-processes.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-gate-ports.sh"
@@ -41,6 +42,7 @@ gate_record_task_summary "${LOCAL_READY_LOG_DIR}" "{\"line_kind\":\"release_back
 API_LOG="${LOCAL_READY_LOG_DIR}/api.log"
 WEB_LOG="${LOCAL_READY_LOG_DIR}/web.log"
 NEXT_WEB_PID_FILE="${LOCAL_READY_LOG_DIR}/next-dev.pid"
+LOCAL_API_ROOT_PID=""
 LOCAL_API_PID=""
 LOCAL_WEB_PID=""
 FINAL_STATUS="failed"
@@ -71,7 +73,7 @@ ensure_local_release_stack() {
 
   if ! local_runtime_port_is_listening "${API_PORT}"; then
     info "starting local API on :${API_PORT} for release readiness"
-    LOCAL_API_PID="$(
+    LOCAL_API_ROOT_PID="$(
       local_runtime_start_owned_service api "${API_PORT}" "${API_LOG}" env \
         -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
         PORT="${API_PORT}" \
@@ -92,6 +94,7 @@ ensure_local_release_stack() {
         MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
         npm run api:node:dev
     )"
+    LOCAL_API_PID="$(local_runtime_capture_authoritative_service_pid "${LOCAL_API_ROOT_PID}" api "${API_PORT}" 120)"
   fi
 
   if ! local_runtime_port_is_listening "${WEB_PORT}"; then
@@ -153,7 +156,7 @@ prewarm_internal_kind_cluster() {
 
 cleanup() {
   local_runtime_stop_owned_process_tree "${LOCAL_WEB_PID}" web "${WEB_PORT}" || true
-  local_runtime_stop_owned_process_tree "${LOCAL_API_PID}" api "${API_PORT}" || true
+  local_runtime_stop_owned_process_tree "${LOCAL_API_ROOT_PID}" api "${API_PORT}" || true
   local_runtime_wait_port_free "${WEB_PORT}" web 10 || true
   local_runtime_wait_port_free "${API_PORT}" api 10 || true
   rm -f "${NEXT_WEB_PID_FILE}"
@@ -188,7 +191,7 @@ gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "kind_cluster_ready" "passe
 ensure_local_release_stack
 ACCESS_TOKEN="$(gate_run_auth_preflight "${LOCAL_READY_LOG_DIR}" "${KEYCLOAK_BASE_URL}" "${KEYCLOAK_REALM}" "${KEYCLOAK_CLIENT_ID}" "${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}" "${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}" "${RUNTIME_HOST_API_BASE_URL}/api/v1/me/profile" "failed to obtain release-ready token" "release-ready token missing access_token" "authenticated /api/v1/me/profile unavailable")" || exit 1
 record_service auth ready "release-ready dev-admin token bootstrap"
-run_cmd "BACKEND_REAL_STATE_DIR='${RELEASE_RUN_ROOT}' API_BASE='${RUNTIME_HOST_API_BASE_URL}' BASE_URL='${RUNTIME_BROWSER_WEB_BASE_URL}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
+run_cmd "env -u INTEGRATION_API_PORT -u INTEGRATION_WEB_PORT BACKEND_REAL_STATE_DIR='${RELEASE_RUN_ROOT}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}' API_BASE='${RUNTIME_HOST_API_BASE_URL}' BASE_URL='${RUNTIME_BROWSER_WEB_BASE_URL}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_ready" "passed" "backend-real ready"
 record_service backend_ready ready "backend-real ready"
 run_real_cmd 20050 3051 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' npm run backend-real:run"

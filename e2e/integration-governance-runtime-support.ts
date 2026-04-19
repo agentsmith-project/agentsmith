@@ -1,6 +1,8 @@
 import { expect, type Page } from '@playwright/test';
-import { API_BASE, LOCALE } from './integration-real-helpers';
+import { API_BASE, LOCALE, bindNotebookExecutionSocketToTask } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
+
+export { bindNotebookExecutionSocketToTask };
 
 export function readUserIdFromJwt(token: string): string {
   const [, payload] = token.split('.');
@@ -189,16 +191,6 @@ export async function waitForNotebookAgentReply(args: {
     )
     .toBeTruthy();
   return matchedReply ?? '';
-}
-
-export function bindNotebookExecutionSocketToTask(args: {
-  wsUrl: string;
-  taskId: string;
-}): string {
-  const httpUrl = args.wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
-  const boundUrl = new URL(httpUrl);
-  boundUrl.searchParams.set('session_id', args.taskId);
-  return boundUrl.toString().replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 }
 
 export async function waitForNotebookAgentToken(args: {

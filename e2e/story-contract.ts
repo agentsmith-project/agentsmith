@@ -430,6 +430,13 @@ function validateRuntimeData(runtimeData: StoryRuntimeData | undefined, story: S
   }
 }
 
+function stableMarkerMatchesTarget(marker: string, target: string, mode: StoryTargetMatch): boolean {
+  if (mode === 'prefix') {
+    return marker.startsWith(target);
+  }
+  return marker === target;
+}
+
 export function buildStorySourceFingerprint(source: string): string {
   return hashStableObject(source.replace(/\r\n/g, '\n').trim());
 }
@@ -563,7 +570,8 @@ export function validateStoryDefinition(story: StoryDefinition) {
   }
 
   const sceneIds = new Set<string>();
-  for (const scene of story.scenes) {
+  const sceneOrder = new Map<string, number>();
+  for (const [index, scene] of story.scenes.entries()) {
     validateNonEmptyText('scene id', scene.sceneId, story.storyId);
     if (!scene.route.startsWith('/')) {
       throw new Error(`story ${story.storyId} scene ${scene.sceneId} has invalid route`);
@@ -572,6 +580,7 @@ export function validateStoryDefinition(story: StoryDefinition) {
       throw new Error(`story ${story.storyId} has duplicate scene id: ${scene.sceneId}`);
     }
     sceneIds.add(scene.sceneId);
+    sceneOrder.set(scene.sceneId, index);
   }
 
   const stepIds = new Set<string>();
@@ -589,6 +598,28 @@ export function validateStoryDefinition(story: StoryDefinition) {
     stepIds.add(step.stepId);
     if (step.sceneId && !sceneIds.has(step.sceneId)) {
       throw new Error(`story ${story.storyId} step ${step.stepId} references unknown scene: ${step.sceneId}`);
+    }
+    if (step.sceneId && step.target) {
+      const targetMatchMode = step.targetMatch ?? 'exact';
+      const currentSceneOrder = sceneOrder.get(step.sceneId);
+      const currentScene = story.scenes.find((scene) => scene.sceneId === step.sceneId);
+      const currentSceneOwnsTarget = currentScene?.stableMarkers.some((marker) =>
+        stableMarkerMatchesTarget(marker, step.target as string, targetMatchMode),
+      ) ?? false;
+      const priorOwningSceneIds = story.scenes
+        .filter((scene) => {
+          const ownerSceneOrder = sceneOrder.get(scene.sceneId);
+          return ownerSceneOrder !== undefined
+            && currentSceneOrder !== undefined
+            && ownerSceneOrder < currentSceneOrder
+            && scene.stableMarkers.some((marker) => stableMarkerMatchesTarget(marker, step.target as string, targetMatchMode));
+        })
+        .map((scene) => scene.sceneId);
+      if (!currentSceneOwnsTarget && priorOwningSceneIds.length > 0) {
+        throw new Error(
+          `story ${story.storyId} step ${step.stepId} target ${step.target} points back to earlier scene-owned stable marker(s) ${priorOwningSceneIds.join(', ')} from step scene ${step.sceneId}`,
+        );
+      }
     }
     if (step.evidence.length === 0) {
       throw new Error(`story ${story.storyId} step ${step.stepId} must declare evidence`);

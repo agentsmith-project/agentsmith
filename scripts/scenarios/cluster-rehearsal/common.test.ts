@@ -6,6 +6,49 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('cluster-rehearsal generated state ownership', () => {
+  it('rewrites fresh site.env seeds to the tracked rehearsal sandbox URL truth', () => {
+    const repoRoot = process.cwd();
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-site-env-'));
+
+    try {
+      const output = execFileSync(
+        'bash',
+        [
+          '-lc',
+          `
+            set -euo pipefail
+            mkdir -p "${tempRoot}/.infra/cluster-deploy"
+            ln -s "${repoRoot}/scripts" "${tempRoot}/scripts"
+            ln -s "${repoRoot}/infra" "${tempRoot}/infra"
+            cat > "${tempRoot}/.infra/cluster-deploy/site.env" <<'EOF'
+SANDBOX_MANAGER_PUBLIC_BASE_URL=http://192.168.0.210:29080
+COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=http://192.168.0.210:29080
+EOF
+            export ROOT_DIR="${tempRoot}"
+            export HOME="${tempRoot}"
+            export CLUSTER_REHEARSAL_ROOT="${tempRoot}/scenario"
+            source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+            init_cluster_rehearsal_env
+            ensure_cluster_rehearsal_site_env
+            grep '^SANDBOX_MANAGER_PUBLIC_BASE_URL=' "${tempRoot}/scenario/config/site.env"
+            grep '^COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=' "${tempRoot}/scenario/config/site.env"
+          `,
+        ],
+        {
+          cwd: repoRoot,
+          env: { ...process.env },
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
+
+      expect(output).toContain('SANDBOX_MANAGER_PUBLIC_BASE_URL=http://192.168.0.210:29180');
+      expect(output).toContain('COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=http://host.docker.internal:29180');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('routes handoff and shared kubeconfig paths into scenario-generated state', () => {
     const repoRoot = process.cwd();
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-common-'));

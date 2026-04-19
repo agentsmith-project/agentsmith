@@ -76,6 +76,7 @@ export function CreateAgentDialog({
     () => (endpointsData?.items ?? []).filter((item) => item.status === 'active'),
     [endpointsData?.items],
   );
+  const selectedEndpoint = endpointOptions.find((item) => item.id === executionEndpointId) ?? null;
 
   const createMutation = useMutation({
     mutationFn: async (data: CreateAgentRequest) => {
@@ -121,10 +122,15 @@ export function CreateAgentDialog({
   }, [open]);
 
   React.useEffect(() => {
-    if (executionEndpointId) return;
-    if (endpointOptions.length === 0) return;
+    if (endpointOptions.length === 0) {
+      if (endpointsData && executionEndpointId) {
+        setExecutionEndpointId('');
+      }
+      return;
+    }
+    if (endpointOptions.some((item) => item.id === executionEndpointId)) return;
     setExecutionEndpointId(endpointOptions[0].id);
-  }, [executionEndpointId, endpointOptions]);
+  }, [endpointsData, executionEndpointId, endpointOptions]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,6 +171,7 @@ export function CreateAgentDialog({
       mode,
       name,
       executionEndpointId,
+      executionEndpointUpstreamProtocol: selectedEndpoint?.upstream_protocol ?? null,
     }));
   };
 
@@ -183,7 +190,7 @@ export function CreateAgentDialog({
     );
 
   const canSubmit = name.trim().length > 0 && !createMutation.isPending;
-  const canContinueToDeployment = canSubmit && executionEndpointId.trim().length > 0;
+  const canContinueToDeployment = canSubmit && selectedEndpoint !== null;
 
   const handleAdvanceToDeployment = React.useCallback(() => {
     // Defer the step swap until after the current click finishes so the

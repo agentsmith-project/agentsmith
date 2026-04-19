@@ -133,7 +133,7 @@
     },
     {
       "stepId": "start-first-chat-work",
-      "sceneId": "project-chat",
+      "sceneId": "project-overview",
       "intent": "Start the first concrete work path from overview into chat.",
       "action": "Start first chat work",
       "target": "project-overview__primary-cta",

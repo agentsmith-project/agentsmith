@@ -1309,6 +1309,80 @@ local_runtime_port_is_listening() {
   [[ -n "$(local_runtime_port_listener_pids "${port}")" ]]
 }
 
+local_runtime_refresh_owned_process_sidecar() {
+  local service_kind="$1"
+  local pid="$2"
+  local port="$3"
+  local command
+
+  command="$(local_runtime_process_command "${pid}" || true)"
+  [[ -n "${command}" ]] || {
+    echo "[local-runtime-processes] cannot refresh process identity for ${service_kind} pid ${pid}" >&2
+    return 1
+  }
+
+  local_runtime_write_process_sidecar "${service_kind}" "${pid}" "${port}" "${command}"
+}
+
+local_runtime_owned_port_listener_pids() {
+  local root_pid="$1"
+  local service_kind="$2"
+  local port="$3"
+  local owner_token="${LOCAL_RUNTIME_OWNER_TOKEN:-}"
+  local listener_pid
+
+  [[ -n "${root_pid}" && -n "${service_kind}" && -n "${port}" ]] || return 0
+
+  while read -r listener_pid; do
+    [[ -n "${listener_pid}" ]] || continue
+    local_runtime_pid_is_alive "${listener_pid}" || continue
+    local_runtime_process_service_kind_matches "${listener_pid}" "${service_kind}" || continue
+    local_runtime_process_tree_root_pid_matches "${listener_pid}" "${root_pid}" || continue
+    if [[ -n "${owner_token}" ]] && ! local_runtime_process_owner_token_matches "${listener_pid}" "${owner_token}"; then
+      continue
+    fi
+    printf '%s\n' "${listener_pid}"
+  done < <(local_runtime_port_listener_pids "${port}")
+}
+
+local_runtime_capture_authoritative_service_pid() {
+  local root_pid="$1"
+  local service_kind="$2"
+  local port="$3"
+  local timeout_seconds="${4:-30}"
+  local deadline=$((SECONDS + timeout_seconds))
+  local listener_pid
+  local -a owned_listener_pids=()
+
+  [[ -n "${root_pid}" && -n "${service_kind}" && -n "${port}" ]] || return 1
+
+  while (( SECONDS <= deadline )); do
+    mapfile -t owned_listener_pids < <(local_runtime_owned_port_listener_pids "${root_pid}" "${service_kind}" "${port}")
+    if [[ "${#owned_listener_pids[@]}" -eq 1 ]]; then
+      listener_pid="${owned_listener_pids[0]}"
+      if ! local_runtime_refresh_owned_process_sidecar "${service_kind}" "${root_pid}" "${port}"; then
+        echo "[local-runtime-processes] failed to refresh ${service_kind} root pid ${root_pid} while capturing authoritative pid on port ${port}" >&2
+        return 1
+      fi
+      printf '%s\n' "${listener_pid}"
+      return 0
+    fi
+
+    if [[ "${#owned_listener_pids[@]}" -gt 1 ]]; then
+      echo "[local-runtime-processes] expected exactly one owned ${service_kind} listener on port ${port}, found ${#owned_listener_pids[@]}" >&2
+      return 1
+    fi
+
+    if ! local_runtime_pid_is_alive "${root_pid}" && ! local_runtime_port_is_listening "${port}"; then
+      break
+    fi
+    sleep 0.2
+  done
+
+  echo "[local-runtime-processes] failed to capture authoritative ${service_kind} listener pid on port ${port} for root pid ${root_pid}" >&2
+  return 1
+}
+
 local_runtime_wait_port_free() {
   local port="$1"
   local label="${2:-service}"

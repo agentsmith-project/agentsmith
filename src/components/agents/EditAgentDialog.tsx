@@ -81,6 +81,7 @@ export function EditAgentDialog({
     () => (endpointsData?.items ?? []).filter((item) => item.status === 'active'),
     [endpointsData?.items],
   );
+  const selectedEndpoint = endpointOptions.find((item) => item.id === executionEndpointId) ?? null;
 
   const updateMutation = useMutation({
     mutationFn: async (data: UpdateAgentRequest) => {
@@ -122,10 +123,15 @@ export function EditAgentDialog({
   }, [open, agent]);
 
   React.useEffect(() => {
-    if (executionEndpointId) return;
-    if (endpointOptions.length === 0) return;
+    if (endpointOptions.length === 0) {
+      if (endpointsData && executionEndpointId) {
+        setExecutionEndpointId('');
+      }
+      return;
+    }
+    if (endpointOptions.some((item) => item.id === executionEndpointId)) return;
     setExecutionEndpointId(endpointOptions[0].id);
-  }, [executionEndpointId, endpointOptions]);
+  }, [endpointsData, executionEndpointId, endpointOptions]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,6 +168,7 @@ export function EditAgentDialog({
       memoryRequest,
       name,
       executionEndpointId,
+      executionEndpointUpstreamProtocol: selectedEndpoint?.upstream_protocol ?? null,
       visibility,
     }));
   };

@@ -1021,6 +1021,23 @@ export async function createExternalRunnerAgentBundle(
   },
 ): Promise<{ agentId: string; agentName: string; wsUrl: string; agentKey: string; sessionId: string }> {
   const token = await readStoredAuthToken(page);
+  const interactionKind = args.interactionKind ?? 'notebook';
+  const endpointUpstreamProtocol = interactionKind === 'chat'
+    ? await (async (): Promise<'openai_chat_completions' | 'openai_responses' | 'anthropic_messages'> => {
+      const endpointRes = await page.request.get(
+        `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/endpoints/${args.endpointId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      expect(endpointRes.ok()).toBeTruthy();
+      const endpoint = (await endpointRes.json().catch(() => null)) as {
+        upstream_protocol?: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
+      } | null;
+      expect(endpoint?.upstream_protocol).toBeTruthy();
+      return endpoint!.upstream_protocol!;
+    })()
+    : null;
   const agentName = `${args.title}-${Date.now()}`;
   const createAgentRes = await page.request.post(
     `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/agents`,
@@ -1032,13 +1049,13 @@ export async function createExternalRunnerAgentBundle(
       data: {
         name: agentName,
         mode: 'external',
-        interaction_kind: args.interactionKind ?? 'notebook',
+        interaction_kind: interactionKind,
         execution_preferences:
-          (args.interactionKind ?? 'notebook') === 'chat'
+          interactionKind === 'chat'
             ? {
                 chat: {
                   endpoint_id: args.endpointId,
-                  wire_api: 'chat',
+                  wire_api: endpointUpstreamProtocol === 'anthropic_messages' ? 'anthropic_messages' : 'chat',
                   model: BACKEND_REAL_MODEL,
                 },
               }
@@ -1302,6 +1319,39 @@ export async function createNotebookTaskViaApi(args: {
   const taskId = payload?.id ?? payload?.data?.id;
   expect(taskId).toBeTruthy();
   return taskId!;
+}
+
+export function bindNotebookExecutionSocketToTask(args: {
+  wsUrl: string;
+  taskId: string;
+}): string {
+  const httpUrl = args.wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+  const boundUrl = new URL(httpUrl);
+  boundUrl.searchParams.set('session_id', args.taskId);
+  return boundUrl.toString().replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+}
+
+export function resolveNotebookRunnerSocketUrl(args:
+  | {
+    wsUrl: string;
+    scope: 'agent_presence';
+  }
+  | {
+    wsUrl: string;
+    scope: 'task_execution';
+    taskId?: string | null;
+  }): string {
+  if (args.scope === 'agent_presence') {
+    return args.wsUrl;
+  }
+  const taskId = args.taskId?.trim();
+  if (!taskId) {
+    throw new Error('task_id_required_for_task_bound_notebook_runner');
+  }
+  return bindNotebookExecutionSocketToTask({
+    wsUrl: args.wsUrl,
+    taskId,
+  });
 }
 
 export async function sendTaskMessage(args: {
@@ -2402,17 +2452,26 @@ export async function openChatSession(
   await expect(composer).toBeVisible({ timeout: 30_000 });
 }
 
-export async function startCodexRunnerProcess(args: {
-  wsUrl: string;
-  agentKey: string;
-  codeBin?: string;
-}): Promise<{
+export type CodexRunnerProcessHandle = {
   proc: ChildProcessWithIgnoredStdin;
   logPath: string;
   workspaceRoot: string;
   stop: () => Promise<void>;
-}> {
+};
+
+type NotebookRunnerProcessStartArgs = {
+  wsUrl: string;
+  agentKey: string;
+  scope: 'agent_presence' | 'task_execution';
+  taskId?: string | null;
+  codeBin?: string;
+};
+
+async function startNotebookRunnerProcessInternal(args: NotebookRunnerProcessStartArgs): Promise<CodexRunnerProcessHandle> {
   return new Promise((resolve, reject) => {
+    const runnerWsUrl = resolveNotebookRunnerSocketUrl(args.scope === 'task_execution'
+      ? { wsUrl: args.wsUrl, scope: 'task_execution', taskId: args.taskId }
+      : { wsUrl: args.wsUrl, scope: 'agent_presence' });
     const logPath = path.join(tmpdir(), `agentsmith-notebook-runner-${Date.now()}.log`);
     const workspaceRoot = path.join(tmpdir(), `agentsmith-notebook-workspaces-${Date.now()}`);
     const builtinSkillsDir = path.resolve(__dirname, '../packages/notebook-codex-runner/builtin-skills');
@@ -2423,7 +2482,7 @@ export async function startCodexRunnerProcess(args: {
         env: {
           ...process.env,
           MBOS_RUNNER_MODE: 'host_external',
-          MBOS_AGENT_WS_URL: args.wsUrl,
+          MBOS_AGENT_WS_URL: runnerWsUrl,
           MBOS_AGENT_KEY: args.agentKey,
           MBOS_AGENT_CODEX_YOLO: '1',
           MBOS_AGENT_RUNNER_DEBUG: '1',
@@ -2506,6 +2565,47 @@ export async function startCodexRunnerProcess(args: {
     });
 
     proc.stdout.on('data', onStdout);
+  });
+}
+
+export async function startCodexRunnerProcess(args: {
+  wsUrl: string;
+  agentKey: string;
+  codeBin?: string;
+}): Promise<CodexRunnerProcessHandle> {
+  return startNotebookRunnerProcessInternal({
+    ...args,
+    scope: 'agent_presence',
+  });
+}
+
+export async function startTaskBoundCodexRunnerProcess(args: {
+  wsUrl: string;
+  agentKey: string;
+  taskId: string;
+  codeBin?: string;
+}): Promise<CodexRunnerProcessHandle> {
+  return startNotebookRunnerProcessInternal({
+    ...args,
+    scope: 'task_execution',
+  });
+}
+
+export async function reconnectCodexRunnerProcessToTask(args: {
+  presenceRunner: CodexRunnerProcessHandle | null;
+  wsUrl: string;
+  agentKey: string;
+  taskId: string;
+  codeBin?: string;
+}): Promise<CodexRunnerProcessHandle> {
+  if (args.presenceRunner) {
+    await args.presenceRunner.stop();
+  }
+  return startTaskBoundCodexRunnerProcess({
+    wsUrl: args.wsUrl,
+    agentKey: args.agentKey,
+    taskId: args.taskId,
+    codeBin: args.codeBin,
   });
 }
 
@@ -2629,21 +2729,31 @@ export async function ensureInternalChatRunnerImage(): Promise<string> {
   return imageTag;
 }
 
-export async function startCodexRunnerDockerProcess(args: {
-  wsUrl: string;
-  agentKey: string;
-  codeBin?: string;
-}): Promise<{
+export type CodexRunnerDockerHandle = {
   containerName: string;
   workspaceRoot: string;
   imageTag: string;
+  logPath: string;
   stop: () => Promise<void>;
-}> {
+};
+
+type NotebookRunnerDockerStartArgs = {
+  wsUrl: string;
+  agentKey: string;
+  scope: 'agent_presence' | 'task_execution';
+  taskId?: string | null;
+  codeBin?: string;
+};
+
+async function startNotebookRunnerDockerProcessInternal(args: NotebookRunnerDockerStartArgs): Promise<CodexRunnerDockerHandle> {
   const baseImageTag = process.env.INTEGRATION_CODEX_RUNNER_BASE_DOCKER_IMAGE?.trim() || 'agentsmith-notebook-codex-runner-base:local';
   const imageTag = process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() || 'agentsmith-notebook-codex-runner:local';
   const embeddedRunner = process.env.INTEGRATION_CODEX_RUNNER_EMBEDDED?.trim() === '1';
   const rebuildBaseImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_BASE_IMAGE?.trim() !== '0';
   const rebuildRunnerImage = process.env.INTEGRATION_CODEX_RUNNER_REBUILD_IMAGE?.trim() !== '0';
+  const runnerWsUrl = resolveNotebookRunnerSocketUrl(args.scope === 'task_execution'
+    ? { wsUrl: args.wsUrl, scope: 'task_execution', taskId: args.taskId }
+    : { wsUrl: args.wsUrl, scope: 'agent_presence' });
   const builtinSkillsList = process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS?.trim() ?? 'mbos-context,feishu-docs,jira-ops';
   const builtinSkillsRequired = process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED?.trim() ?? '1';
   const builtinSkillsDir = embeddedRunner
@@ -2730,7 +2840,7 @@ export async function startCodexRunnerDockerProcess(args: {
     '--env',
     'MBOS_RUNNER_MODE=docker_external',
     '--env',
-    `MBOS_AGENT_WS_URL=${args.wsUrl}`,
+    `MBOS_AGENT_WS_URL=${runnerWsUrl}`,
     '--env',
     `MBOS_AGENT_KEY=${args.agentKey}`,
     '--env',
@@ -2777,6 +2887,7 @@ export async function startCodexRunnerDockerProcess(args: {
         containerName,
         workspaceRoot,
         imageTag,
+        logPath: runnerLogPath,
         stop: async () => {
           await preserveRunnerLogs();
           await spawnAndCapture('docker', ['rm', '-f', containerName]);
@@ -2808,6 +2919,47 @@ export async function startCodexRunnerDockerProcess(args: {
   const logs = await spawnAndCapture('docker', ['logs', containerName]);
   await spawnAndCapture('docker', ['rm', '-f', containerName]);
   throw new Error(`docker_runner_connect_timeout:${`${logs.stdout}\n${logs.stderr}`.slice(-1200)}:log=${runnerLogPath}`);
+}
+
+export async function startCodexRunnerDockerProcess(args: {
+  wsUrl: string;
+  agentKey: string;
+  codeBin?: string;
+}): Promise<CodexRunnerDockerHandle> {
+  return startNotebookRunnerDockerProcessInternal({
+    ...args,
+    scope: 'agent_presence',
+  });
+}
+
+export async function startTaskBoundCodexRunnerDockerProcess(args: {
+  wsUrl: string;
+  agentKey: string;
+  taskId: string;
+  codeBin?: string;
+}): Promise<CodexRunnerDockerHandle> {
+  return startNotebookRunnerDockerProcessInternal({
+    ...args,
+    scope: 'task_execution',
+  });
+}
+
+export async function reconnectCodexRunnerDockerProcessToTask(args: {
+  presenceRunner: CodexRunnerDockerHandle | null;
+  wsUrl: string;
+  agentKey: string;
+  taskId: string;
+  codeBin?: string;
+}): Promise<CodexRunnerDockerHandle> {
+  if (args.presenceRunner) {
+    await args.presenceRunner.stop();
+  }
+  return startTaskBoundCodexRunnerDockerProcess({
+    wsUrl: args.wsUrl,
+    agentKey: args.agentKey,
+    taskId: args.taskId,
+    codeBin: args.codeBin,
+  });
 }
 
 export async function mountFileLibraryLocally(

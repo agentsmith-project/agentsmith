@@ -23,6 +23,7 @@ const ws = new WebSocket(wsUrl, {
 });
 const sessionWorkspaceManager = new ChatSessionWorkspaceManager();
 const inFlightRequests = new Map<string, AbortController>();
+const SUPPORTED_WIRE_APIS = ['chat', 'responses', 'anthropic_messages'] as const;
 
 function sendDone(requestId: string, usage: number, finishReason: string = 'stop') {
   ws.send(JSON.stringify({
@@ -85,10 +86,13 @@ ws.on('open', () => {
       capabilities: {
         streaming_completion: true,
         multimodal_completion: true,
+        supported_wire_apis: [...SUPPORTED_WIRE_APIS],
       },
       request_details: {
         executor: 'llm_passthrough',
         wire_api: 'chat',
+        default_wire_api: 'chat',
+        supported_wire_apis: [...SUPPORTED_WIRE_APIS],
       },
     },
   }));

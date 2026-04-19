@@ -163,7 +163,7 @@ describe('managed credential resolver', () => {
     expect(resolved?.source).toBe('workspace_active_connection');
   });
 
-  it('does not cross workspaces when resolving workspace-scoped managed credentials', async () => {
+  it('falls back to the global active connection when the workspace has no matching connection', async () => {
     const docStore = new InMemoryJsonDocStore();
     await createUserExternalConnection(docStore, {
       user_id: 'user_1',
@@ -175,7 +175,7 @@ describe('managed credential resolver', () => {
       fields: [{ key: 'access_token', value: 'other_workspace_token', secret: true }],
       scopes: ['search:docs:read'],
     });
-    await createUserExternalConnection(docStore, {
+    const globalConnection = await createUserExternalConnection(docStore, {
       user_id: 'user_1',
       workspace_id: null,
       provider: 'feishu',
@@ -183,6 +183,30 @@ describe('managed credential resolver', () => {
       display_name: 'global active',
       status: 'active',
       fields: [{ key: 'access_token', value: 'global_workspace_token', secret: true }],
+      scopes: ['search:docs:read'],
+    });
+
+    const resolved = await resolveManagedCredentialConnection({
+      docStore,
+      userId: 'user_1',
+      provider: 'feishu',
+      workspaceId: 'ws_default',
+    });
+
+    expect(resolved?.connection.id).toBe(globalConnection.id);
+    expect(resolved?.source).toBe('workspace_active_connection');
+  });
+
+  it('does not cross to another workspace when no workspace or global connection matches', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    await createUserExternalConnection(docStore, {
+      user_id: 'user_1',
+      workspace_id: 'ws_other',
+      provider: 'feishu',
+      kind: 'oauth_account',
+      display_name: 'other workspace active',
+      status: 'active',
+      fields: [{ key: 'access_token', value: 'other_workspace_token', secret: true }],
       scopes: ['search:docs:read'],
     });
 

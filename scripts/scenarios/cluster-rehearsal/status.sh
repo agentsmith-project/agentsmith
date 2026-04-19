@@ -11,7 +11,7 @@ SANDBOX_HOST_PORT="$(cluster_env_value SANDBOX_HOST_PORT)"
 WEB_PORT="${WEB_PORT:-3001}"
 API_PORT="${API_PORT:-20000}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
-SANDBOX_HOST_PORT="${SANDBOX_HOST_PORT:-29180}"
+SANDBOX_HOST_PORT="${SANDBOX_HOST_PORT:-${CLUSTER_REHEARSAL_SANDBOX_HOST_PORT:-29180}}"
 
 printf 'Scenario: %s\n' "cluster-rehearsal"
 printf 'Active scenario: %s\n' "$(current_active_scenario || true)"

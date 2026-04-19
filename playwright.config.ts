@@ -43,8 +43,8 @@ const defaultE2ESpecMatch = [
   /governance-default\.spec\.ts$/,
   /login\.spec\.ts$/,
   /notebook\.spec\.ts$/,
+  /overview\.spec\.ts$/,
   /projects-join-governance\.spec\.ts$/,
-  /workspace-overview\.spec\.ts$/,
   /workspace-settings\.spec\.ts$/,
   /usage\.spec\.ts$/,
 ];

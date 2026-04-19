@@ -1,8 +1,14 @@
-import type { AgentServerStartPayload, ChatExecutionContext } from '@mbos/agent-runner';
+import type {
+  AgentServerStartPayload,
+  AgentWireApi,
+  ChatExecutionContext,
+} from '@mbos/agent-runner';
 
-type ExecutionContext = ChatExecutionContext & {
-  wire_api?: 'chat' | 'responses';
-  model?: string;
+type ExecutionContext = Pick<
+  ChatExecutionContext,
+  'api_base' | 'workspace_id' | 'project_id' | 'execution_ticket' | 'endpoint_id' | 'model'
+> & {
+  wire_api?: AgentWireApi;
 };
 
 type RequestArgs = {
@@ -49,8 +55,89 @@ function toResponsesContent(content: unknown): Array<Record<string, unknown>> {
   return output;
 }
 
-function buildProxyPath(wireApi: 'chat' | 'responses'): string {
-  return wireApi === 'responses' ? 'responses' : 'chat/completions';
+function normalizeWireApi(wireApi: AgentWireApi | undefined): AgentWireApi {
+  if (wireApi === 'responses' || wireApi === 'anthropic_messages') return wireApi;
+  return 'chat';
+}
+
+function buildProxyRoute(wireApi: AgentWireApi): { provider: 'openai' | 'anthropic'; path: string } {
+  if (wireApi === 'responses') {
+    return { provider: 'openai', path: 'responses' };
+  }
+  if (wireApi === 'anthropic_messages') {
+    return { provider: 'anthropic', path: 'messages' };
+  }
+  return { provider: 'openai', path: 'chat/completions' };
+}
+
+function toAnthropicContentBlocks(content: unknown): Array<Record<string, unknown>> {
+  if (typeof content === 'string') {
+    return [{ type: 'text', text: content }];
+  }
+  if (!Array.isArray(content)) {
+    return [{ type: 'text', text: '' }];
+  }
+  const blocks: Array<Record<string, unknown>> = [];
+  for (const part of content) {
+    if (!part || typeof part !== 'object') continue;
+    const typed = part as { type?: string; text?: unknown };
+    if (typed.type === 'text' && typeof typed.text === 'string') {
+      blocks.push({ type: 'text', text: typed.text });
+    }
+  }
+  return blocks.length > 0 ? blocks : [{ type: 'text', text: '' }];
+}
+
+function toAnthropicMessages(
+  messages: AgentServerStartPayload['messages'],
+): { system?: string; messages: Array<Record<string, unknown>> } {
+  const anthropicMessages: Array<Record<string, unknown>> = [];
+  const systemParts: string[] = [];
+
+  for (const message of messages ?? []) {
+    const role = typeof message.role === 'string' ? message.role : 'user';
+    if (role === 'system') {
+      const text = stringifyTextPart(message.content).trim();
+      if (text.length > 0) systemParts.push(text);
+      continue;
+    }
+
+    anthropicMessages.push({
+      role: role === 'assistant' ? 'assistant' : 'user',
+      content: toAnthropicContentBlocks(message.content),
+    });
+  }
+
+  return {
+    ...(systemParts.length > 0 ? { system: systemParts.join('\n\n') } : {}),
+    messages: anthropicMessages,
+  };
+}
+
+function readAnthropicText(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return '';
+  const content = (payload as { content?: Array<{ type?: unknown; text?: unknown }> }).content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((part) => (part?.type === 'text' && typeof part.text === 'string' ? part.text : ''))
+    .filter(Boolean)
+    .join('')
+    .trim();
+}
+
+function readAnthropicUsageTokens(payload: unknown): number | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const usage = (payload as { usage?: { input_tokens?: unknown; output_tokens?: unknown } }).usage;
+  const inputTokens = typeof usage?.input_tokens === 'number' && Number.isFinite(usage.input_tokens)
+    ? usage.input_tokens
+    : 0;
+  const outputTokens = typeof usage?.output_tokens === 'number' && Number.isFinite(usage.output_tokens)
+    ? usage.output_tokens
+    : 0;
+  if (inputTokens > 0 || outputTokens > 0) {
+    return inputTokens + outputTokens;
+  }
+  return undefined;
 }
 
 export function buildEndpointProxyUrl(executionContext: ExecutionContext): string {
@@ -61,14 +148,15 @@ export function buildEndpointProxyUrl(executionContext: ExecutionContext): strin
   if (!apiBase || !workspaceId || !projectId || !endpointId) {
     throw new Error('chat_runner_execution_context_incomplete');
   }
+  const route = buildProxyRoute(normalizeWireApi(executionContext.wire_api));
   return `${apiBase}/workspaces/${encodeURIComponent(workspaceId)}`
     + `/projects/${encodeURIComponent(projectId)}`
     + `/endpoints/${encodeURIComponent(endpointId)}`
-    + `/proxy/openai/${buildProxyPath(executionContext.wire_api === 'responses' ? 'responses' : 'chat')}`;
+    + `/proxy/${route.provider}/${route.path}`;
 }
 
 export function buildProxyRequestBody(args: RequestArgs): Record<string, unknown> {
-  const wireApi = args.executionContext.wire_api === 'responses' ? 'responses' : 'chat';
+  const wireApi = normalizeWireApi(args.executionContext.wire_api);
   const model = args.model?.trim() || args.executionContext.model?.trim() || undefined;
   if (wireApi === 'responses') {
     return {
@@ -78,6 +166,15 @@ export function buildProxyRequestBody(args: RequestArgs): Record<string, unknown
         role: message.role ?? 'user',
         content: toResponsesContent(message.content),
       })),
+    };
+  }
+  if (wireApi === 'anthropic_messages') {
+    const anthropicMessages = toAnthropicMessages(args.messages);
+    return {
+      ...(model ? { model } : {}),
+      stream: false,
+      max_tokens: 1024,
+      ...anthropicMessages,
     };
   }
   return {
@@ -141,9 +238,12 @@ export async function requestChatProxyCompletion(args: RequestArgs): Promise<{
         : `chat_runner_upstream_http_${response.status}`;
     throw new Error(message);
   }
-  const wireApi = args.executionContext.wire_api === 'responses' ? 'responses' : 'chat';
+  const wireApi = normalizeWireApi(args.executionContext.wire_api);
   return {
-    text: wireApi === 'responses' ? readResponsesText(parsed) : readChatCompletionText(parsed),
-    usageTokens: readUsageTokens(parsed),
+    text:
+      wireApi === 'responses'
+        ? readResponsesText(parsed)
+        : (wireApi === 'anthropic_messages' ? readAnthropicText(parsed) : readChatCompletionText(parsed)),
+    usageTokens: wireApi === 'anthropic_messages' ? readAnthropicUsageTokens(parsed) : readUsageTokens(parsed),
   };
 }

@@ -224,13 +224,13 @@ test.describe('@lane-real invite to first effective work', () => {
       await expect(memberPage.getByTestId('project-overview__page')).toBeVisible({ timeout: 30_000 });
       await captureInviteTrace(memberPage, 'complete-workspace-login-and-accept');
       await captureInviteTrace(memberPage, 'land-on-invited-project-overview');
+      await captureInviteTrace(memberPage, 'start-first-chat-work');
 
       await memberPage.getByTestId('project-overview__primary-cta').click();
       await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/chat$`), {
         timeout: 30_000,
       });
       await expect(memberPage.getByTestId('chat__surface')).toBeVisible({ timeout: 30_000 });
-      await captureInviteTrace(memberPage, 'start-first-chat-work');
 
       const memberToken = await readStoredAuthToken(memberPage);
       const memberUserId = readUserIdFromJwt(memberToken);

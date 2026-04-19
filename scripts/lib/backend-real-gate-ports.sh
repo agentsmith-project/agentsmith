@@ -40,6 +40,19 @@ backend_real_gate_stop_legacy_supervisor_or_fail_closed() {
   return 1
 }
 
+backend_real_gate_has_owner_aware_process_truth() {
+  local pid="$1"
+  local service_kind="$2"
+  local port="$3"
+  local owner_pid
+
+  # Listener cleanup intentionally accepts verified sidecars from previous runs,
+  # so supervisor preflight must also consult sidecar/process-state truth without
+  # narrowing to the current owner token.
+  owner_pid="$( (unset LOCAL_RUNTIME_OWNER_TOKEN; local_runtime_verified_owner_pid_for_tree_member "${pid}" "${service_kind}" "${port}") 2>/dev/null || true )"
+  [[ -n "${owner_pid}" ]]
+}
+
 backend_real_gate_stop_matching_supervisors() {
   local api_port="$1"
   local web_port="$2"
@@ -56,11 +69,17 @@ backend_real_gate_stop_matching_supervisors() {
   for pid in $(pgrep -f 'tsx src/index.ts' 2>/dev/null || true); do
     if local_runtime_process_env_contains "${pid}" "INTEGRATION_API_PORT=${api_port}" \
       || local_runtime_process_env_contains "${pid}" "PORT=${api_port}"; then
+      if backend_real_gate_has_owner_aware_process_truth "${pid}" api "${api_port}"; then
+        continue
+      fi
       backend_real_gate_stop_legacy_supervisor_or_fail_closed "${pid}" api-env-port "api port ${api_port}" || failed=1
     fi
   done
 
   for pid in $(pgrep -f "next dev --port ${web_port}" 2>/dev/null || true); do
+    if backend_real_gate_has_owner_aware_process_truth "${pid}" web "${web_port}"; then
+      continue
+    fi
     backend_real_gate_stop_legacy_supervisor_or_fail_closed "${pid}" web-next-dev "web port ${web_port}" || failed=1
   done
 

@@ -6,7 +6,7 @@ import {
 } from './codex-command-builder.js';
 
 describe('codex-command-builder', () => {
-  it('writes model context window, compact limit, and env-based auth into task codex config', () => {
+  it('writes model context window, compact limit, and execution ticket header env into task codex config', () => {
     const config = buildTaskCodexConfig({
       model: 'placeholder-model',
       endpointProxyBase: 'http://proxy.local',
@@ -14,14 +14,15 @@ describe('codex-command-builder', () => {
       modelContextWindow: 128000,
       modelAutoCompactTokenLimit: 121600,
       modelCatalogPath: '/tmp/catalog.json',
-      proxyAuthHeaderEnvName: 'MBOS_CODEX_PROXY_AUTH_HEADER',
+      executionTicketHeaderEnvName: 'MBOS_CODEX_PROXY_EXECUTION_TICKET',
     });
 
     expect(config).toContain('model_context_window = 128000');
     expect(config).toContain('model_auto_compact_token_limit = 121600');
     expect(config).toContain('model_catalog_json = "/tmp/catalog.json"');
-    expect(config).toContain('env_http_headers = { Authorization = "MBOS_CODEX_PROXY_AUTH_HEADER" }');
-    expect(config).not.toContain('experimental_bearer_token');
+    expect(config).toContain('env_http_headers = { "x-agentsmith-execution-ticket" = "MBOS_CODEX_PROXY_EXECUTION_TICKET" }');
+    expect(config).not.toContain('Authorization');
+    expect(config).not.toContain('MBOS_CODEX_PROXY_AUTH_HEADER');
   });
 
 
@@ -55,6 +56,21 @@ describe('codex-command-builder', () => {
     expect(args).toContain('model_catalog_json="/tmp/catalog.json"');
     expect(args.join(' ')).not.toContain('experimental_bearer_token');
     expect(args).not.toContain('--full-auto');
+  });
+
+  it('builds a fresh exec command when local codex state was not proven reusable for this task', () => {
+    const args = buildCodexExecArgs({
+      model: 'placeholder-model',
+      prompt: 'hello',
+      cwd: '/tmp/task',
+      endpointProxyBase: 'http://proxy.local',
+      wireApi: 'responses',
+      resumeSession: false,
+    });
+
+    expect(args.slice(0, 4)).toEqual(['exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check', '--json']);
+    expect(args).not.toContain('resume');
+    expect(args).not.toContain('--last');
   });
 
   it('builds a text-only model catalog for a proxy-backed codex alias', () => {

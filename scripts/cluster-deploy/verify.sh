@@ -101,10 +101,20 @@ gate_require_command "${VERIFY_EVIDENCE_DIR}" "docker inspect -f '{{.State.Runni
 if ! gate_wait_for_external_runner_connection "${VERIFY_EVIDENCE_DIR}" "${EXTERNAL_RUNNER_CONTAINER_NAME}" 60; then
   exit 1
 fi
-gate_require_command "${VERIFY_EVIDENCE_DIR}" "docker_compose ps --status running universal-proxy | grep -q universal-proxy" infra_dependency_unready infra_preflight_proxy "universal-proxy not running"
+PROXY_ADMIN_STATE_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-http://universal-proxy:8080}"
+if ! gate_wait_for_universal_proxy_admin_state \
+  "${VERIFY_EVIDENCE_DIR}" \
+  "${PROXY_ADMIN_STATE_BASE_URL}" \
+  "${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN:-}" \
+  60 \
+  infra_dependency_unready \
+  infra_preflight_proxy; then
+  exit 1
+fi
 record_service external_runner ready "${EXTERNAL_RUNNER_CONTAINER_NAME}"
-record_service universal_proxy ready "docker compose"
+record_service universal_proxy ready "${PROXY_ADMIN_STATE_BASE_URL%/}/admin/state"
 gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "external_runner" "passed" "${EXTERNAL_RUNNER_CONTAINER_NAME}"
+gate_record_preflight_check "${VERIFY_EVIDENCE_DIR}" "universal_proxy" "passed" "${PROXY_ADMIN_STATE_BASE_URL%/}/admin/state"
 
 ACCESS_TOKEN="$(gate_run_auth_preflight   "${VERIFY_EVIDENCE_DIR}"   "${HOST_LOCAL_KEYCLOAK_BASE_URL}"   "${KEYCLOAK_REALM}"   "${KEYCLOAK_CLIENT_ID}"   "${INTEGRATION_DEV_ADMIN_USERNAME}"   "${INTEGRATION_DEV_ADMIN_PASSWORD}"   "${HOST_LOCAL_API_BASE_URL}/api/v1/me/profile"   "failed to obtain dev-admin token during verify"   "verify token missing access_token"   "authenticated /api/v1/me/profile unavailable")" || exit 1
 record_service auth ready "dev-admin token bootstrap"

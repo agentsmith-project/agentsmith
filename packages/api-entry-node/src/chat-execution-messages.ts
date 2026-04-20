@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import { resolveImageMimeType, toImageDataUrl } from './chat-image-utils.js';
-import type { ChatAttachmentRecord } from './resource-models.js';
+import type { ChatAttachmentRecord, ChatMessageRecord } from './resource-models.js';
 
 type AttachmentSnapshot = {
   id: string;
@@ -9,10 +9,21 @@ type AttachmentSnapshot = {
   file_size: number;
 };
 
-type ChatMessageInput = {
-  id: string;
-  role: string;
-  content: string;
+type ChatMessageInput = Pick<
+  ChatMessageRecord,
+  | 'id'
+  | 'role'
+  | 'content'
+  | 'attachment_snapshots'
+  | 'parent_id'
+  | 'created_at'
+  | 'logical_id'
+  | 'revision_of'
+  | 'revision_index'
+  | 'variant_group_id'
+  | 'variant_index'
+  | 'is_stale'
+> & {
   attachment_snapshots?: AttachmentSnapshot[];
 };
 
@@ -65,6 +76,34 @@ function buildHistoricalAttachmentText(
   };
 }
 
+export function selectChatExecutionMessages(
+  messages: ChatMessageInput[],
+  branchLeafMessageId: string,
+): ChatMessageInput[] {
+  if (messages.length === 0) return [];
+  const byId = new Map(messages.map((item) => [item.id, item] as const));
+  const selectedChain: ChatMessageInput[] = [];
+  const selectedIds = new Set<string>();
+  let cursor = byId.get(branchLeafMessageId);
+
+  while (cursor && !selectedIds.has(cursor.id)) {
+    selectedIds.add(cursor.id);
+    if (!cursor.is_stale) {
+      selectedChain.push(cursor);
+    }
+    cursor = cursor.parent_id ? byId.get(cursor.parent_id) : undefined;
+  }
+
+  if (selectedChain.length === 0) {
+    return messages.filter((item) => !item.is_stale);
+  }
+
+  const systemMessages = messages.filter(
+    (item) => item.role === 'system' && !item.is_stale && !selectedIds.has(item.id),
+  );
+  return [...systemMessages, ...selectedChain.reverse()];
+}
+
 export async function buildChatExecutionMessages(args: {
   downloadFileLibraryObject: DownloadFileLibraryObject;
   route: { workspaceId: string; projectId: string; sessionId: string };
@@ -76,7 +115,8 @@ export async function buildChatExecutionMessages(args: {
   missingCurrentImageDataUrl: boolean;
 }> {
   let missingCurrentImageDataUrl = false;
-  const upstreamMessages = await Promise.all(args.messages.map(async (item) => {
+  const executionMessages = selectChatExecutionMessages(args.messages, args.currentUserMessageId);
+  const upstreamMessages = await Promise.all(executionMessages.map(async (item) => {
     if (item.role !== 'user' || !item.attachment_snapshots || item.attachment_snapshots.length === 0) {
       return { role: item.role, content: item.content };
     }

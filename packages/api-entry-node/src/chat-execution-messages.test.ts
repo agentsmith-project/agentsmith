@@ -43,6 +43,7 @@ describe('buildChatExecutionMessages', () => {
           id: 'msg_history',
           role: 'user',
           content: 'old image',
+          parent_id: null,
           attachment_snapshots: [
             {
               id: historicalAttachment.id,
@@ -53,9 +54,16 @@ describe('buildChatExecutionMessages', () => {
           ],
         },
         {
+          id: 'msg_history_assistant',
+          role: 'assistant',
+          content: 'I saw the old image',
+          parent_id: 'msg_history',
+        },
+        {
           id: 'msg_current',
           role: 'user',
           content: 'new image',
+          parent_id: 'msg_history_assistant',
           attachment_snapshots: [
             {
               id: currentAttachment.id,
@@ -77,6 +85,10 @@ describe('buildChatExecutionMessages', () => {
       ],
     });
     expect(result.messages[1]).toEqual({
+      role: 'assistant',
+      content: 'I saw the old image',
+    });
+    expect(result.messages[2]).toEqual({
       role: 'user',
       content: [
         { type: 'text', text: 'new image' },
@@ -121,5 +133,114 @@ describe('buildChatExecutionMessages', () => {
       role: 'user',
       content: [{ type: 'text', text: 'broken image' }],
     });
+  });
+
+  it('keeps only the stable ancestor chain for the requested branch leaf', async () => {
+    const result = await buildChatExecutionMessages({
+      downloadFileLibraryObject: vi.fn(),
+      route: { workspaceId: 'ws_1', projectId: 'proj_1', sessionId: 'session_1' },
+      currentUserMessageId: 'msg_recall',
+      attachmentById: new Map(),
+      messages: [
+        {
+          id: 'msg_alt_assistant',
+          role: 'assistant',
+          content: 'Alternative branch answer',
+          parent_id: 'msg_root_user',
+          variant_group_id: 'asst_msg_root_user',
+          variant_index: 1,
+          created_at: '2026-01-01T00:00:03.000Z',
+        },
+        {
+          id: 'msg_recall',
+          role: 'user',
+          content: 'After refresh, what token did I ask you to remember?',
+          parent_id: 'msg_visible_assistant',
+          created_at: '2026-01-01T00:00:04.000Z',
+        },
+        {
+          id: 'msg_root_user',
+          role: 'user',
+          content: 'Remember this token: CHAT_CONTINUITY_OK',
+          created_at: '2026-01-01T00:00:01.000Z',
+        },
+        {
+          id: 'msg_visible_assistant',
+          role: 'assistant',
+          content: 'I will remember CHAT_CONTINUITY_OK',
+          parent_id: 'msg_root_user',
+          variant_group_id: 'asst_msg_root_user',
+          variant_index: 0,
+          created_at: '2026-01-01T00:00:02.000Z',
+        },
+      ],
+    });
+
+    expect(result.missingCurrentImageDataUrl).toBe(false);
+    expect(result.messages).toEqual([
+      { role: 'user', content: 'Remember this token: CHAT_CONTINUITY_OK' },
+      { role: 'assistant', content: 'I will remember CHAT_CONTINUITY_OK' },
+      { role: 'user', content: 'After refresh, what token did I ask you to remember?' },
+    ]);
+  });
+
+  it('prefers the revised user branch over earlier sibling revisions when building execution history', async () => {
+    const result = await buildChatExecutionMessages({
+      downloadFileLibraryObject: vi.fn(),
+      route: { workspaceId: 'ws_1', projectId: 'proj_1', sessionId: 'session_1' },
+      currentUserMessageId: 'msg_followup',
+      attachmentById: new Map(),
+      messages: [
+        {
+          id: 'msg_original',
+          role: 'user',
+          content: 'Original draft question',
+          logical_id: 'log_msg_original',
+          revision_index: 0,
+          created_at: '2026-01-01T00:00:01.000Z',
+        },
+        {
+          id: 'msg_original_assistant',
+          role: 'assistant',
+          content: 'Answer for original draft',
+          parent_id: 'msg_original',
+          variant_group_id: 'asst_msg_original',
+          variant_index: 0,
+          created_at: '2026-01-01T00:00:02.000Z',
+        },
+        {
+          id: 'msg_revised',
+          role: 'user',
+          content: 'Revised draft question',
+          parent_id: null,
+          logical_id: 'log_msg_original',
+          revision_of: 'msg_original',
+          revision_index: 1,
+          created_at: '2026-01-01T00:00:03.000Z',
+        },
+        {
+          id: 'msg_revised_assistant',
+          role: 'assistant',
+          content: 'Answer for revised draft',
+          parent_id: 'msg_revised',
+          variant_group_id: 'asst_msg_revised',
+          variant_index: 0,
+          created_at: '2026-01-01T00:00:04.000Z',
+        },
+        {
+          id: 'msg_followup',
+          role: 'user',
+          content: 'Continue from the revised branch',
+          parent_id: 'msg_revised_assistant',
+          created_at: '2026-01-01T00:00:05.000Z',
+        },
+      ],
+    });
+
+    expect(result.messages).toEqual([
+      { role: 'user', content: 'Revised draft question' },
+      { role: 'assistant', content: 'Answer for revised draft' },
+      { role: 'user', content: 'Continue from the revised branch' },
+    ]);
   });
 });

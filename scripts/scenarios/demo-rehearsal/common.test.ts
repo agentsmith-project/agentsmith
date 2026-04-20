@@ -138,6 +138,27 @@ describe('demo-rehearsal site env seeding', () => {
     }
   });
 
+  it('hydrates a fresh rehearsal site env with MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN without mutating the tracked example', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-proxy-token-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+
+      runDemoRehearsalCommon(tempRoot);
+      const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
+      const exampleSiteEnv = path.join(tempRoot, 'infra', 'deploy', 'demo', 'env', 'site.env.example');
+      const firstToken = readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
+
+      runDemoRehearsalCommon(tempRoot);
+      const secondToken = readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
+
+      expect(firstToken).not.toBe('');
+      expect(secondToken).toBe(firstToken);
+      expect(readEnvValue(exampleSiteEnv, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN')).toBe('');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('preserves an explicit rehearsal PRESET_ENDPOINT_API_KEY instead of overwriting it from .env.backend-real', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-common-explicit-'));
     try {
@@ -151,6 +172,23 @@ describe('demo-rehearsal site env seeding', () => {
 
       const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
       expect(readEnvValue(seededSiteEnv, 'PRESET_ENDPOINT_API_KEY')).toBe('site-env-secret');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves an explicit rehearsal MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN instead of replacing it', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-proxy-token-explicit-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+
+      runDemoRehearsalCommon(
+        tempRoot,
+        'printf \'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=site-proxy-token\\n\' > "${DEMO_REHEARSAL_CONFIG_DIR}/site.env"',
+      );
+
+      const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
+      expect(readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN')).toBe('site-proxy-token');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

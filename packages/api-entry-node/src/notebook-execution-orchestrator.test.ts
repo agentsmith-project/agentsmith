@@ -413,6 +413,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
             supports_search_tool: false,
             supports_parallel_tool_calls: false,
           },
+          runner_session_scope: 'agent_presence',
           workspace_binding_mode: 'file_library',
           workspace_file_library_id: 'flib_external',
         }),

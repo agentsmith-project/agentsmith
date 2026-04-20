@@ -14,7 +14,7 @@ import {
   summarizeNotebookTraces,
 } from './notebook-execution-outcome';
 import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
-import { buildWorkspaceLoginLandingHref } from '../src/lib/auth/invite-handoff';
+import { buildWorkspaceLoginLandingHref } from '@mbos/contracts/src/auth-handoff-paths';
 
 export const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 export const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';

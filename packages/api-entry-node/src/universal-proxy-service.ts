@@ -154,12 +154,16 @@ function parseTokenTotal(body: unknown): number | undefined {
 export class UniversalProxyService {
   private readonly namespaceReconcileStates = new Map<string, NamespaceReconcileState>();
 
-  constructor(private readonly baseUrl: string) {}
+  constructor(
+    private readonly baseUrl: string,
+    private readonly adminToken?: string,
+  ) {}
 
   static fromEnv(env: NodeJS.ProcessEnv): UniversalProxyService | undefined {
     const raw = env.MBOS_UNIVERSAL_PROXY_BASE_URL?.trim();
     if (!raw) return undefined;
-    return new UniversalProxyService(raw);
+    const adminToken = env.MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN?.trim() || undefined;
+    return new UniversalProxyService(raw, adminToken);
   }
 
   supportsProxyPath(proxyPath: string): boolean {
@@ -229,6 +233,7 @@ export class UniversalProxyService {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
+            ...(this.adminToken ? { Authorization: `Bearer ${this.adminToken}` } : {}),
           },
           body: JSON.stringify({
             if_revision: ifRevision,

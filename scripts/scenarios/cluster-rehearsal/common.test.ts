@@ -1,9 +1,59 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+function stageClusterRehearsalFixture(tempRoot: string): void {
+  for (const relativePath of [
+    'scripts/scenarios/cluster-rehearsal/common.sh',
+    'scripts/scenarios/common.sh',
+    'scripts/lib/preset-common.sh',
+    'scripts/lib/local-kind-world.sh',
+    'infra/deploy/cluster/env/site.env.example',
+    'infra/deploy/demo/kind/config.yaml',
+    'infra/flows/cluster-rehearsal.env',
+  ]) {
+    const sourcePath = path.join(process.cwd(), relativePath);
+    const targetPath = path.join(tempRoot, relativePath);
+    mkdirSync(path.dirname(targetPath), { recursive: true });
+    copyFileSync(sourcePath, targetPath);
+  }
+}
+
+function runClusterRehearsalCommand(tempRoot: string, script: string, extraEnv: NodeJS.ProcessEnv = {}): string {
+  return execFileSync(
+    'bash',
+    [
+      '-lc',
+      `
+        set -euo pipefail
+        export ROOT_DIR="${tempRoot}"
+        export HOME="${tempRoot}"
+        export CLUSTER_REHEARSAL_ROOT="${tempRoot}/scenario"
+        ${script}
+      `,
+    ],
+    {
+      cwd: process.cwd(),
+      env: { ...process.env, ...extraEnv },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    },
+  );
+}
+
+function readEnvValue(filePath: string, key: string): string {
+  for (const rawLine of readFileSync(filePath, 'utf8').split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#') || !line.startsWith(`${key}=`)) {
+      continue;
+    }
+    return line.slice(key.length + 1).trim().replace(/^['"]|['"]$/g, '');
+  }
+  return '';
+}
 
 describe('cluster-rehearsal generated state ownership', () => {
   it('rewrites fresh site.env seeds to the tracked rehearsal sandbox URL truth', () => {
@@ -102,6 +152,133 @@ EOF
 
       expect(withFastPath).toContain('skip=1');
       expect(withoutFastPath).toContain('skip=');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('passes SKIP_RELEASE_ARCHIVE=1 to the cluster bundle builder only when the rehearsal fast-path flag is enabled, while preserving an explicit caller override', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-archive-flag-'));
+
+    try {
+      stageClusterRehearsalFixture(tempRoot);
+      mkdirSync(path.join(tempRoot, 'scripts', 'cluster-deploy'), { recursive: true });
+      writeFileSync(
+        path.join(tempRoot, 'scripts', 'cluster-deploy', 'build-bundle.sh'),
+        `#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p "\${OUT_DIR}"
+printf 'SKIP_RELEASE_ARCHIVE=%s\\n' "\${SKIP_RELEASE_ARCHIVE:-}" > "\${OUT_DIR}/builder.env"
+mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
+`,
+        'utf8',
+      );
+
+      const withFastPath = runClusterRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+          init_cluster_rehearsal_env
+          ensure_cluster_rehearsal_release_bundle
+          cat "${tempRoot}/scenario/releases/builder.env"
+          printf 'release_root=%s\\n' "\${RELEASE_ROOT}"
+        `,
+        { CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE: '1' },
+      );
+
+      const withExplicitOverride = runClusterRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+          init_cluster_rehearsal_env
+          rm -f "${tempRoot}/scenario/releases/builder.env"
+          ensure_cluster_rehearsal_release_bundle
+          cat "${tempRoot}/scenario/releases/builder.env"
+        `,
+        { SKIP_RELEASE_ARCHIVE: '1' },
+      );
+
+      const withoutFastPath = runClusterRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+          init_cluster_rehearsal_env
+          rm -f "${tempRoot}/scenario/releases/builder.env"
+          ensure_cluster_rehearsal_release_bundle
+          cat "${tempRoot}/scenario/releases/builder.env"
+        `,
+      );
+
+      expect(withFastPath).toContain('SKIP_RELEASE_ARCHIVE=1');
+      expect(withFastPath).toContain(`release_root=${path.join(tempRoot, 'scenario', 'releases', 'agentsmith-')}`);
+      expect(withExplicitOverride).toContain('SKIP_RELEASE_ARCHIVE=1');
+      expect(withoutFastPath).toContain('SKIP_RELEASE_ARCHIVE=');
+      expect(withoutFastPath).not.toContain('SKIP_RELEASE_ARCHIVE=1');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('hydrates a fresh rehearsal site env with MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN without mutating the tracked example', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-proxy-token-'));
+
+    try {
+      stageClusterRehearsalFixture(tempRoot);
+
+      runClusterRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+          init_cluster_rehearsal_env
+          ensure_cluster_rehearsal_site_env
+        `,
+      );
+
+      const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
+      const exampleSiteEnv = path.join(tempRoot, 'infra', 'deploy', 'cluster', 'env', 'site.env.example');
+      const firstToken = readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
+
+      runClusterRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+          init_cluster_rehearsal_env
+          ensure_cluster_rehearsal_site_env
+        `,
+      );
+
+      const secondToken = readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
+      expect(firstToken).not.toBe('');
+      expect(secondToken).toBe(firstToken);
+      expect(readEnvValue(exampleSiteEnv, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN')).toBe('');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves an explicit rehearsal MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN instead of replacing it', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-proxy-token-explicit-'));
+
+    try {
+      stageClusterRehearsalFixture(tempRoot);
+      mkdirSync(path.join(tempRoot, '.infra', 'cluster-deploy'), { recursive: true });
+      writeFileSync(
+        path.join(tempRoot, '.infra', 'cluster-deploy', 'site.env'),
+        'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=site-proxy-token\n',
+        'utf8',
+      );
+
+      runClusterRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+          init_cluster_rehearsal_env
+          ensure_cluster_rehearsal_site_env
+        `,
+      );
+
+      const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
+      expect(readEnvValue(seededSiteEnv, 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN')).toBe('site-proxy-token');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

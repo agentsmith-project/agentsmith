@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { APIRequestContext } from '@playwright/test';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -19,6 +19,13 @@ describe('integration-real-helpers', () => {
     status: () => 200,
     json: async () => body,
     text: async () => JSON.stringify(body),
+  });
+
+  it('keeps workspace landing path builders sourced from the shared helper instead of the app boundary', async () => {
+    const source = await readFile(path.resolve('e2e/integration-real-helpers.ts'), 'utf8');
+
+    expect(source).toContain("from '@mbos/contracts/src/auth-handoff-paths'");
+    expect(source).not.toContain("from '../src/lib/auth/invite-handoff'");
   });
 
   it('creates an external connection through the API without mutating page state', async () => {

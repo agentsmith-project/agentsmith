@@ -48,6 +48,62 @@ function getRequest(fetchMock: ReturnType<typeof vi.fn>, index = 0): { url: stri
 }
 
 describe('UniversalProxyService', () => {
+  it('adds bearer authorization to admin config pushes when admin token is configured from env', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ revision: 'srv_rev_1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = UniversalProxyService.fromEnv({
+      MBOS_UNIVERSAL_PROXY_BASE_URL: 'http://proxy.internal:8080',
+      MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN: ' proxy-admin-token ',
+    });
+
+    expect(service).toBeDefined();
+
+    await service?.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint(),
+      'secret-key',
+    );
+
+    expect(getRequest(fetchMock).init.headers).toEqual({
+      'content-type': 'application/json',
+      Authorization: 'Bearer proxy-admin-token',
+    });
+  });
+
+  it('keeps admin config pushes unchanged when no admin token is configured', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ revision: 'srv_rev_1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = UniversalProxyService.fromEnv({
+      MBOS_UNIVERSAL_PROXY_BASE_URL: 'http://proxy.internal:8080',
+    });
+
+    expect(service).toBeDefined();
+
+    await service?.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint(),
+      'secret-key',
+    );
+
+    expect(getRequest(fetchMock).init.headers).toEqual({
+      'content-type': 'application/json',
+    });
+  });
+
   it('pushes endpoint config with the server-owned revision contract', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ revision: 'srv_rev_1' }), {

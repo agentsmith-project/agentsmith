@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch, startServer } from './test-support.js';
 import {
   cleanupChatUpstreamServers,
@@ -6,6 +6,8 @@ import {
   parseSseEventPayload,
   startUniversalProxyChatServer,
 } from './chat-test-support.js';
+import { createDefaultNodeApiDeps } from '../index.js';
+import { startServerWithDeps } from './test-support.js';
 
 const originalUniversalProxyBaseUrl = process.env.MBOS_UNIVERSAL_PROXY_BASE_URL;
 
@@ -281,5 +283,126 @@ describe('api-entry-node chat stream routes', () => {
     );
     expect(stopBySession.status).toBe(202);
     await firstStream.text();
+  });
+
+  it('dispatches only the stable branch history to external agents on recall turns', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    const dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_external_chat',
+      stream: (async function* () {
+        yield { type: 'delta' as const, delta: 'CHAT_CONTINUITY_OK' };
+        yield { type: 'done' as const, finish_reason: 'stop', usage_tokens: 1 };
+      })(),
+      cancel: () => undefined,
+    }));
+    deps.agentExecutionService.dispatchStreamingRequest =
+      dispatchStreamingRequest as typeof deps.agentExecutionService.dispatchStreamingRequest;
+    const { baseUrl } = startServerWithDeps(deps);
+    process.env.PUBLIC_API_BASE_URL = baseUrl;
+
+    try {
+      const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'external-chat-agent',
+        mode: 'external',
+        interaction_kind: 'chat',
+        status: 'enabled',
+        execution_preferences_json: {
+          chat: {
+            endpoint_id: 'ep_chat_default',
+            wire_api: 'chat',
+          },
+        },
+        capabilities: {
+          streaming_completion: true,
+          multimodal_completion: false,
+        },
+      });
+      const session = await deps.chatResourceService.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        ownerUserId: 'user_test',
+        title: 'Chat continuity',
+        model: 'external-agent',
+        endpointId: '',
+        externalAgentId: agent.id,
+      });
+      const rememberUser = await deps.chatResourceService.createMessage({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        sessionId: session.id,
+        role: 'user',
+        content: 'Remember this token for our session: CHAT_CONTINUITY_OK',
+      });
+      const visibleAssistant = await deps.chatResourceService.createMessage({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        sessionId: session.id,
+        role: 'assistant',
+        content: 'I will remember CHAT_CONTINUITY_OK',
+        parentId: rememberUser.id,
+        variantGroupId: `asst_${rememberUser.id}`,
+        variantIndex: 0,
+      });
+      await deps.chatResourceService.createMessage({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        sessionId: session.id,
+        role: 'assistant',
+        content: 'I do not remember previous sessions',
+        parentId: rememberUser.id,
+        variantGroupId: `asst_${rememberUser.id}`,
+        variantIndex: 1,
+      });
+      const recallUser = await deps.chatResourceService.createMessage({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        sessionId: session.id,
+        role: 'user',
+        content: 'After refresh, what token did I ask you to remember?',
+        parentId: visibleAssistant.id,
+      });
+
+      const stream = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            branch_leaf_message_id: recallUser.id,
+            input: { role: 'user', content: recallUser.content },
+          }),
+        },
+      );
+
+      expect(stream.status).toBe(200);
+      await stream.text();
+      expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);
+      expect(dispatchStreamingRequest).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: agent.id,
+        sessionId: session.id,
+        messages: [
+          {
+            role: 'user',
+            content: 'Remember this token for our session: CHAT_CONTINUITY_OK',
+          },
+          {
+            role: 'assistant',
+            content: 'I will remember CHAT_CONTINUITY_OK',
+          },
+          {
+            role: 'user',
+            content: 'After refresh, what token did I ask you to remember?',
+          },
+        ],
+      }));
+    } finally {
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
+    }
   });
 });

@@ -1166,6 +1166,83 @@ describe('AgentExecutionService', () => {
     expect(requestFrames).toEqual([]);
   });
 
+  it('allows notebook dispatch through an agent-level socket when compose-managed agent presence is declared', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const startFrame = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type === 'server.request.start') {
+          resolve(message);
+        }
+      });
+    });
+
+    const dispatched = await executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_compose_presence',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'compose-managed notebook may use agent presence' }],
+      executionContext: {
+        interaction_kind: 'notebook',
+        runner_session_scope: 'agent_presence',
+      },
+    });
+
+    expect(dispatched.requestId).toEqual(expect.any(String));
+    await expect(startFrame).resolves.toMatchObject({
+      type: 'server.request.start',
+      session_id: 'task_compose_presence',
+      request_id: dispatched.requestId,
+    });
+  });
+
+  it('keeps compose-managed agent-presence notebook dispatch fenced off when a task-scoped authority exists', async () => {
+    const { agentResourceService, executionService, agent, ws } = await setupExecutionService({ interactionKind: 'notebook' });
+    const requestFrames: Array<Record<string, unknown>> = [];
+    ws.on('message', (raw) => {
+      const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+      if (message.type === 'server.request.start') {
+        requestFrames.push(message);
+      }
+    });
+
+    const agentLevelConnection = await waitForConnectionInfo(
+      agentResourceService,
+      agent.id,
+      (connection) => connection?.socket_key === agent.id,
+    );
+    vi.spyOn(agentResourceService, 'getSessionConnectionInfo').mockImplementation(async (_agentId, sessionId, options) => {
+      if (sessionId === 'task_compose_fenced' && options?.allowAgentFallback === false) {
+        return {
+          ...agentLevelConnection!,
+          session_id: 'task_compose_fenced',
+          socket_key: `${agent.id}::task_compose_fenced`,
+          connection_id: 'conn_remote_task_owner',
+          api_instance_id: 'api_remote',
+        };
+      }
+      return agentLevelConnection;
+    });
+
+    await expect(executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_compose_fenced',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'compose-managed notebook still respects task authority' }],
+      executionContext: {
+        interaction_kind: 'notebook',
+        runner_session_scope: 'agent_presence',
+      },
+    })).rejects.toThrow('agent_offline');
+
+    expect(requestFrames).toEqual([]);
+    expect(executionService.getAgentOnlineState(agent.id)).toBe(true);
+  });
+
   it('keeps chat dispatch available through the agent-level socket when no session-scoped socket exists', async () => {
     const { executionService, agent, ws } = await setupExecutionService({ interactionKind: 'chat' });
     const startFrame = new Promise<Record<string, unknown>>((resolve) => {

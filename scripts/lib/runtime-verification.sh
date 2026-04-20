@@ -624,6 +624,51 @@ gate_wait_for_external_runner_connection() {
   done
 }
 
+gate_wait_for_universal_proxy_admin_state() {
+  local evidence_dir="$1"
+  local reported_base_url="${2:-http://universal-proxy:8080}"
+  local admin_token="${3:-}"
+  local timeout_seconds="${4:-60}"
+  local classification="${5:-infra_dependency_unready}"
+  local stage="${6:-infra_preflight_proxy}"
+  local probe_url="http://localhost:8080/admin/state"
+  local started last_code
+
+  if ! gate_require_command \
+    "${evidence_dir}" \
+    "docker_compose ps --status running universal-proxy | grep -q universal-proxy" \
+    "${classification}" \
+    "${stage}" \
+    "universal-proxy not running"; then
+    return 1
+  fi
+
+  started="$(date +%s)"
+  while true; do
+    last_code="$(
+      docker_compose exec -T \
+        -e "GATE_PROXY_ADMIN_URL=${probe_url}" \
+        -e "GATE_PROXY_ADMIN_TOKEN=${admin_token}" \
+        universal-proxy \
+        sh -lc '
+          if [ -n "$GATE_PROXY_ADMIN_TOKEN" ]; then
+            curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GATE_PROXY_ADMIN_TOKEN" "$GATE_PROXY_ADMIN_URL"
+          else
+            curl -s -o /dev/null -w "%{http_code}" "$GATE_PROXY_ADMIN_URL"
+          fi
+        ' 2>/dev/null || true
+    )"
+    if [[ "${last_code}" == "200" ]]; then
+      return 0
+    fi
+    if (( $(date +%s) - started >= timeout_seconds )); then
+      gate_record_failure "${evidence_dir}" "${classification}" "${stage}" "unreachable ${reported_base_url%/}/admin/state via compose universal-proxy (last status: ${last_code:-n/a})"
+      return 1
+    fi
+    sleep 2
+  done
+}
+
 
 gate_wait_for_http() {
   local evidence_dir="$1"

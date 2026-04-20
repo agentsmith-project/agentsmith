@@ -73,6 +73,97 @@ path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 PY
 }
 
+site_env_value() {
+  local path="$1"
+  local key="$2"
+  python3 - <<'PY' "${path}" "${key}"
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+key = sys.argv[2]
+if not path.exists():
+    raise SystemExit(0)
+for raw_line in path.read_text(encoding='utf-8').splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith('#') or '=' not in line:
+        continue
+    name, value = line.split('=', 1)
+    if name.strip() == key:
+        print(value.strip().strip('"').strip("'"))
+        break
+PY
+}
+
+write_site_env_value() {
+  local path="$1"
+  local key="$2"
+  local value="$3"
+  python3 - <<'PY' "${path}" "${key}" "${value}"
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+value = sys.argv[3]
+lines = path.read_text(encoding='utf-8').splitlines() if path.exists() else []
+updated = []
+replaced = False
+
+for line in lines:
+    stripped = line.strip()
+    if stripped and not stripped.startswith('#') and stripped.startswith(f"{key}="):
+        updated.append(f"{key}={value}")
+        replaced = True
+        continue
+    updated.append(line)
+
+if not replaced:
+    updated.append(f"{key}={value}")
+
+path.write_text("\n".join(updated) + "\n", encoding='utf-8')
+PY
+}
+
+scenario_deterministic_secret_value() {
+  local secret_scope="$1"
+  local site_env_path="$2"
+  local key="$3"
+  python3 - <<'PY' "${secret_scope}" "${site_env_path}" "${key}"
+import hashlib
+from pathlib import Path
+import sys
+
+secret_scope = sys.argv[1]
+site_env_path = str(Path(sys.argv[2]).resolve())
+key = sys.argv[3]
+seed = f"{secret_scope}:{key}:{site_env_path}".encode("utf-8")
+digest = hashlib.sha256(seed).hexdigest()
+print(f"scenario-{secret_scope}-{digest[:32]}")
+PY
+}
+
+ensure_scenario_site_env_secret() {
+  local site_env="$1"
+  local key="$2"
+  local secret_scope="$3"
+  local current_value generated_value
+
+  current_value="$(site_env_value "${site_env}" "${key}")"
+  if [[ -n "${current_value}" ]]; then
+    return 0
+  fi
+
+  generated_value="$(scenario_deterministic_secret_value "${secret_scope}" "${site_env}" "${key}")"
+  write_site_env_value "${site_env}" "${key}" "${generated_value}"
+}
+
+ensure_scenario_site_env_proxy_admin_token() {
+  local site_env="$1"
+  local scenario_name="${2:-scenario}"
+  ensure_scenario_site_env_secret "${site_env}" MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN "${scenario_name}-proxy-admin-token"
+}
+
 render_scenario_owned_kind_config() {
   local template_path="$1"
   local output_path="$2"

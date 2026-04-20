@@ -87,6 +87,7 @@ ensure_cluster_rehearsal_site_env() {
   fi
   apply_flow_site_env_overrides "${site_env}"
   rewrite_cluster_rehearsal_sandbox_public_base_url "${site_env}"
+  ensure_scenario_site_env_proxy_admin_token "${site_env}" "${CLUSTER_REHEARSAL_NAME}"
   render_cluster_rehearsal_kind_config
   validate_cluster_rehearsal_site_env "${site_env}"
 }
@@ -163,7 +164,11 @@ validate_cluster_rehearsal_site_env() {
 
 ensure_cluster_rehearsal_release_bundle() {
   local release_id="cluster-rehearsal-$(date -u +%Y%m%dT%H%M%SZ)"
-  OUT_DIR="${CLUSTER_REHEARSAL_RELEASES_DIR}" RELEASE_ID="${release_id}" bash "${ROOT_DIR}/scripts/cluster-deploy/build-bundle.sh"
+  local skip_release_archive="${SKIP_RELEASE_ARCHIVE:-${CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE:-}}"
+  OUT_DIR="${CLUSTER_REHEARSAL_RELEASES_DIR}" \
+    RELEASE_ID="${release_id}" \
+    SKIP_RELEASE_ARCHIVE="${skip_release_archive}" \
+    bash "${ROOT_DIR}/scripts/cluster-deploy/build-bundle.sh"
   export RELEASE_ROOT="${CLUSTER_REHEARSAL_RELEASES_DIR}/agentsmith-${release_id}"
 }
 

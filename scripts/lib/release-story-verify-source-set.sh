@@ -25,6 +25,12 @@ e2e/generated/story-specs.generated.json
 EOF
 }
 
+release_story_verify_support_source_files() {
+  cat <<'EOF'
+packages/contracts/src/auth-handoff-paths.ts
+EOF
+}
+
 release_story_verify_source_set() {
   local root_dir="${1:-${ROOT_DIR:-$(pwd)}}"
   local story_root_relpath
@@ -35,6 +41,7 @@ release_story_verify_source_set() {
   story_root="${root_dir%/}/${story_root_relpath}"
 
   release_story_verify_contract_files
+  release_story_verify_support_source_files
 
   if [[ ! -d "${story_root}" ]]; then
     echo "missing release story root: ${story_root}" >&2

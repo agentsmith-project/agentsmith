@@ -77,8 +77,10 @@ describe('release story verify source set', () => {
         'e2e/story-loader.ts',
         'e2e/story-trace-binding.ts',
         'e2e/generated/story-specs.generated.json',
+        'packages/contracts/src/auth-handoff-paths.ts',
       ]),
     );
+    expect(sources).not.toContain('src/lib/auth/invite-handoff.ts');
     expect(sources).toEqual(expect.arrayContaining(storyFiles));
   });
 
@@ -131,5 +133,22 @@ describe('release story verify source set', () => {
     expect(demoVerify).toContain('"${RELEASE_STORY_VERIFY_MOUNTS[@]}"');
     expect(clusterVerify).toContain('prepare_release_story_verify_mounts');
     expect(clusterVerify).toContain('"${RELEASE_STORY_VERIFY_MOUNTS[@]}"');
+  });
+
+  it('makes demo and cluster verify share a token-aware universal proxy admin-state preflight', () => {
+    const runtimeVerification = read('scripts/lib/runtime-verification.sh');
+    const demoVerify = read('scripts/demo-deploy/verify.sh');
+    const clusterVerify = read('scripts/cluster-deploy/verify.sh');
+
+    expect(runtimeVerification).toContain('gate_wait_for_universal_proxy_admin_state()');
+    expect(runtimeVerification).toContain('http://localhost:8080/admin/state');
+    expect(runtimeVerification).toContain('docker_compose exec -T');
+    expect(runtimeVerification).toContain('if [ -n "$GATE_PROXY_ADMIN_TOKEN" ]; then');
+    expect(runtimeVerification).toContain('-H "Authorization: Bearer $GATE_PROXY_ADMIN_TOKEN"');
+
+    for (const script of [demoVerify, clusterVerify]) {
+      expect(script).toContain('gate_wait_for_universal_proxy_admin_state');
+      expect(script).not.toContain('docker_compose ps --status running universal-proxy | grep -q universal-proxy');
+    }
   });
 });

@@ -140,6 +140,8 @@ services:
   universal-proxy:
     image: ${LLM_UNIVERSAL_PROXY_IMAGE}
     restart: unless-stopped
+    env_file:
+      - ../env/internal.env
     command: ["--config", "/app/config/config.yaml"]
     volumes:
       - ../universal-proxy/config.yaml:/app/config/config.yaml:ro

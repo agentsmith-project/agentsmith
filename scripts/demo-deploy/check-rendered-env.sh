@@ -35,14 +35,20 @@ mode = sys.argv[2]
 lines = path.read_text(encoding='utf-8').splitlines()
 updated = []
 replaced = False
+replaced_proxy_admin_token = False
 for line in lines:
     if line.startswith('DEMO_DEPLOY_MODE='):
         updated.append(f'DEMO_DEPLOY_MODE={mode}')
         replaced = True
+    elif line.startswith('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN='):
+        updated.append('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token')
+        replaced_proxy_admin_token = True
     else:
         updated.append(line)
 if not replaced:
     updated.append(f'DEMO_DEPLOY_MODE={mode}')
+if not replaced_proxy_admin_token:
+    updated.append('MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token')
 path.write_text("\n".join(updated) + "\n", encoding='utf-8')
 PY
   RESOLVED_RUNNER_HOST="${runner_host}" \
@@ -82,6 +88,8 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AG
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE=15432' 'rendered_env_mismatch:api.env:DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://runner.internal.test:19000' 'rendered_env_mismatch:api.env:DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE'
 release_check_require_pattern "${RELEASE_ROOT}/env/base.env" '^NO_PROXY=.*(^|,)(postgres|minio)(,|$)' 'rendered_env_mismatch:base.env:NO_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' 'rendered_env_mismatch:internal.env:MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' 'rendered_env_mismatch:internal.env:LLM_UNIVERSAL_PROXY_ADMIN_TOKEN'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.agentsmith-sandbox.svc.cluster.local' 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE=5432' 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT=http://minio-external.agentsmith-sandbox.svc.cluster.local:9000' 'rendered_env_mismatch:internal.env:JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT'
@@ -95,6 +103,8 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AG
 release_check_forbid_pattern "${RELEASE_ROOT}/env/api.env" '^SANDBOX_MANAGER_URL=' 'rendered_env_unexpected:simple:api.env:SANDBOX_MANAGER_URL'
 release_check_forbid_pattern "${RELEASE_ROOT}/env/api.env" '^AGENT_EXECUTION_HTTP_BASE_URL=' 'rendered_env_unexpected:simple:api.env:AGENT_EXECUTION_HTTP_BASE_URL'
 release_check_forbid_pattern "${RELEASE_ROOT}/env/api.env" '^AGENT_EXECUTION_WS_BASE_URL=' 'rendered_env_unexpected:simple:api.env:AGENT_EXECUTION_WS_BASE_URL'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' 'rendered_env_mismatch:simple:internal.env:MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' 'rendered_env_mismatch:simple:internal.env:LLM_UNIVERSAL_PROXY_ADMIN_TOKEN'
 release_check_require_pattern "${RELEASE_ROOT}/env/internal.env" 'internal sandbox runtime is disabled' 'rendered_env_mismatch:simple:internal.env'
 
 echo "[rendered-env] ok"

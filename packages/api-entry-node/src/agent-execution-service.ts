@@ -18,7 +18,7 @@ export type RunnerSessionDispatchAuthority =
   | 'remote_owned_not_local_dispatchable'
   | 'offline';
 
-type DispatchScope = 'agent_fallback' | 'session_strict';
+type DispatchScope = 'agent_fallback' | 'session_strict' | 'session_preferred_agent_fallback';
 type AgentSocketLifecyclePhase = 'registering' | 'active' | 'superseded' | 'closing' | 'closed';
 
 export interface AgentStreamEvent {
@@ -286,6 +286,15 @@ function parseArtifactPayload(input: unknown): AgentExecutionArtifactPayload | n
 
 function isPlainObject(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
+}
+
+function resolveStreamingDispatchScope(executionContext?: Record<string, unknown>): DispatchScope {
+  if (executionContext?.interaction_kind !== 'notebook') {
+    return 'agent_fallback';
+  }
+  return executionContext.runner_session_scope === 'agent_presence'
+    ? 'session_preferred_agent_fallback'
+    : 'session_strict';
 }
 
 function readRunnerSpec(input: unknown): Partial<AgentRunnerSpec> | null {
@@ -861,45 +870,96 @@ export class AgentExecutionService {
     return this.socketsByKey.get(buildSocketKey(agentId));
   }
 
+  private releaseStaleSocket(socket: AgentSocketState | undefined): void {
+    if (!socket) {
+      return;
+    }
+    this.releaseSocketState(socket, {
+      errorCode: 'AGENT_STALE_CONNECTION',
+      errorMessage: 'agent_stale_connection',
+      closeCode: 4001,
+      closeReason: 'agent_stale_connection',
+    });
+  }
+
+  private async resolveSessionPreferredAgentFallbackSocket(input: {
+    agentId: string;
+    sessionId: string;
+  }): Promise<AgentSocketState | null> {
+    const exactLocal = this.socketsByKey.get(buildSocketKey(input.agentId, input.sessionId));
+    const exactAuthoritative = await this.getAuthoritativeConnection(
+      input.agentId,
+      input.sessionId,
+      'session_strict',
+    );
+    if (exactAuthoritative) {
+      if (exactAuthoritative.api_instance_id && exactAuthoritative.api_instance_id !== this.apiInstanceId) {
+        this.releaseStaleSocket(exactLocal);
+        return null;
+      }
+      if (!this.isSocketDispatchable(exactLocal)) {
+        return null;
+      }
+      if (exactLocal.connectionId !== exactAuthoritative.connection_id) {
+        this.releaseStaleSocket(exactLocal);
+        return null;
+      }
+      return exactLocal;
+    }
+
+    const fallbackLocal = this.socketsByKey.get(buildSocketKey(input.agentId));
+    const fallbackAuthoritative = await this.getAuthoritativeConnection(
+      input.agentId,
+      input.sessionId,
+      'agent_fallback',
+    );
+    if (!fallbackAuthoritative) {
+      this.releaseStaleSocket(fallbackLocal);
+      return null;
+    }
+    if (fallbackAuthoritative.session_id !== undefined) {
+      return null;
+    }
+    if (fallbackAuthoritative.api_instance_id && fallbackAuthoritative.api_instance_id !== this.apiInstanceId) {
+      this.releaseStaleSocket(fallbackLocal);
+      return null;
+    }
+    if (!this.isSocketDispatchable(fallbackLocal)) {
+      return null;
+    }
+    if (fallbackLocal.connectionId !== fallbackAuthoritative.connection_id) {
+      this.releaseStaleSocket(fallbackLocal);
+      return null;
+    }
+    return fallbackLocal;
+  }
+
   private async resolveDispatchSocket(input: {
     agentId: string;
     sessionId: string;
     scope: DispatchScope;
   }): Promise<AgentSocketState | null> {
+    if (input.scope === 'session_preferred_agent_fallback') {
+      return this.resolveSessionPreferredAgentFallbackSocket({
+        agentId: input.agentId,
+        sessionId: input.sessionId,
+      });
+    }
     const local = this.resolvePrimarySocket(input.agentId, input.sessionId, input.scope);
     const authoritative = await this.getAuthoritativeConnection(input.agentId, input.sessionId, input.scope);
     if (!authoritative) {
-      if (local) {
-        this.releaseSocketState(local, {
-          errorCode: 'AGENT_STALE_CONNECTION',
-          errorMessage: 'agent_stale_connection',
-          closeCode: 4001,
-          closeReason: 'agent_stale_connection',
-        });
-      }
+      this.releaseStaleSocket(local);
       return null;
     }
     if (authoritative.api_instance_id && authoritative.api_instance_id !== this.apiInstanceId) {
-      if (local) {
-        this.releaseSocketState(local, {
-          errorCode: 'AGENT_STALE_CONNECTION',
-          errorMessage: 'agent_stale_connection',
-          closeCode: 4001,
-          closeReason: 'agent_stale_connection',
-        });
-      }
+      this.releaseStaleSocket(local);
       return null;
     }
     if (!this.isSocketDispatchable(local)) {
       return null;
     }
     if (local.connectionId !== authoritative.connection_id) {
-      this.releaseSocketState(local, {
-        errorCode: 'AGENT_STALE_CONNECTION',
-        errorMessage: 'agent_stale_connection',
-        closeCode: 4001,
-        closeReason: 'agent_stale_connection',
-      });
+      this.releaseStaleSocket(local);
       return null;
     }
     return local;
@@ -1202,9 +1262,7 @@ export class AgentExecutionService {
     if (this.shuttingDown) {
       throw new Error('agent_execution_service_shutdown');
     }
-    const dispatchScope: DispatchScope = input.executionContext?.interaction_kind === 'notebook'
-      ? 'session_strict'
-      : 'agent_fallback';
+    const dispatchScope = resolveStreamingDispatchScope(input.executionContext);
     const socket = await this.resolveDispatchSocket({
       agentId: input.agentId,
       sessionId: input.sessionId,

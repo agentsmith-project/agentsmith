@@ -1,3 +1,8 @@
+export {
+  buildWorkspaceLoginLandingHref,
+  buildWorkspaceLoginLandingPath,
+} from '@mbos/contracts/src/auth-handoff-paths';
+
 type InviteHandoffOptions = {
   projectId?: string | null;
   desktopAuthRequestId?: string | null;
@@ -176,22 +181,6 @@ export function buildWorkspaceLoginHref(
   options?: InviteHandoffOptions,
 ): string {
   return `${localePrefix(locale)}${buildWorkspaceLoginPath(workspaceId, options)}`;
-}
-
-export function buildWorkspaceLoginLandingPath(workspaceId: string, projectId?: string | null): string {
-  const targetProjectId = projectId?.trim();
-  if (targetProjectId) {
-    return `/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(targetProjectId)}/overview`;
-  }
-  return `/workspaces/${encodeURIComponent(workspaceId)}/projects`;
-}
-
-export function buildWorkspaceLoginLandingHref(
-  locale: string | null | undefined,
-  workspaceId: string,
-  projectId?: string | null,
-): string {
-  return `${localePrefix(locale)}${buildWorkspaceLoginLandingPath(workspaceId, projectId)}`;
 }
 
 export function buildInviteInspectPath(token: string): string {

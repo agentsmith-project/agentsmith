@@ -266,6 +266,13 @@ for relative in required_source_files:
         raise SystemExit(f"missing_bundle_source_set_file:{relative}")
 PY
 
-ARCHIVE_PATH="${OUT_DIR}/agentsmith-${RELEASE_ID}.tar.gz"
-tar -C "${OUT_DIR}" -czf "${ARCHIVE_PATH}" "agentsmith-${RELEASE_ID}"
-log "bundle ready: ${ARCHIVE_PATH}"
+TMP_TAR_PATH="${OUT_DIR}/agentsmith-${RELEASE_ID}.tar.gz.tmp"
+FINAL_TAR_PATH="${OUT_DIR}/agentsmith-${RELEASE_ID}.tar.gz"
+if [[ "${SKIP_RELEASE_ARCHIVE:-0}" == "1" ]]; then
+  log "skipped release archive packaging for ${BUNDLE_DIR}"
+else
+  rm -f "${TMP_TAR_PATH}" "${FINAL_TAR_PATH}"
+  (cd "${OUT_DIR}" && tar -czf "${TMP_TAR_PATH##*/}" "agentsmith-${RELEASE_ID}")
+  mv "${TMP_TAR_PATH}" "${FINAL_TAR_PATH}"
+  log "bundle ready: ${FINAL_TAR_PATH}"
+fi

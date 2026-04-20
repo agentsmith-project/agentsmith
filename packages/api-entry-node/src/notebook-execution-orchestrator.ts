@@ -417,6 +417,10 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         model_context_window: modelContextWindow,
         model_auto_compact_token_limit: modelAutoCompactTokenLimit,
         model_catalog: modelCatalog,
+        runner_session_scope:
+          agent.mode === 'external' && isComposeManagedExternalAgent(agent)
+            ? 'agent_presence'
+            : 'task_execution',
         workspace_binding_mode: agent.mode === 'internal' ? 'pre_mounted' : 'file_library',
         workspace_path: agent.mode === 'internal' ? internalWorkspacePath : undefined,
         workspace_file_library_id: task.workspace_file_library_id ?? null,

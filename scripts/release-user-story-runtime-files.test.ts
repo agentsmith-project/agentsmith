@@ -52,9 +52,13 @@ describe('release story verify source set runtime contract', () => {
     const sources = listReleaseStoryVerifySources();
 
     expect(helper).toContain('e2e/trace-bundle-support.ts');
+    expect(helper).toContain('packages/contracts/src/auth-handoff-paths.ts');
+    expect(helper).not.toContain('src/lib/auth/invite-handoff.ts');
     expect(helper).toContain('find "${story_root}" -type f -name \'*.story.md\'');
     expect(sources).toContain('e2e/integration-release-user-story.spec.ts');
     expect(sources).toContain('e2e/trace-bundle-support.ts');
+    expect(sources).toContain('packages/contracts/src/auth-handoff-paths.ts');
+    expect(sources).not.toContain('src/lib/auth/invite-handoff.ts');
     expect(sources.some((relativePath) => relativePath.endsWith('.story.md'))).toBe(true);
   });
 

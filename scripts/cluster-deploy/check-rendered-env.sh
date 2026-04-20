@@ -8,6 +8,20 @@ RELEASE_ROOT="${TMP_ROOT}/release"
 mkdir -p "${RELEASE_ROOT}/env"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${RELEASE_ROOT}/env/site.env.example"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${RELEASE_ROOT}/env/site.env"
+python3 - <<'PY' "${RELEASE_ROOT}/env/site.env"
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+updated = text.replace(
+    "MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=",
+    "MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token",
+)
+if updated == text:
+    updated = text + "\nMBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token\n"
+path.write_text(updated, encoding="utf-8")
+PY
 cat > "${RELEASE_ROOT}/env/registry.env" <<'EOF'
 REGISTRY_HOST=localhost:5001
 REGISTRY_PROJECT=mbos
@@ -49,6 +63,8 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'AGENT_EXECUTION_
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE=host.docker.internal' '[cluster-rendered-env] missing docker manual metadata host override'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://host.docker.internal:19000' '[cluster-rendered-env] missing docker manual storage endpoint override'
 release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'JUICEFS_BUCKET_ENDPOINT_FOR_GATEWAY=http://minio:9000' '[cluster-rendered-env] missing gateway storage endpoint override'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' '[cluster-rendered-env] missing universal proxy admin token'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' '[cluster-rendered-env] missing proxy runtime admin token'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_DEFAULT_CPU_REQUEST=1' '[cluster-rendered-env] missing internal cpu request default'
 release_check_require_pattern "${RELEASE_ROOT}/env/base.env" '^NO_PROXY=.*(^|,)(postgres|minio)(,|$)' '[cluster-rendered-env] missing compose no_proxy entries'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.mbos.svc.cluster.local' '[cluster-rendered-env] missing internal postgres external fqdn'
@@ -67,6 +83,7 @@ text = source.read_text(encoding="utf-8")
 text = text.replace("SANDBOX_MANAGER_INGRESS_HOST=sandbox-manager.mbos.imotion.ai", "SANDBOX_MANAGER_INGRESS_HOST=")
 text = text.replace("SANDBOX_MANAGER_PUBLIC_BASE_URL=https://sandbox-manager.mbos.imotion.ai", "SANDBOX_MANAGER_PUBLIC_BASE_URL=http://172.30.1.244")
 text = text.replace("COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=", "COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=http://172.30.1.244")
+text = text.replace("MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=", "MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token")
 (release / "env/site.env.example").write_text(text, encoding="utf-8")
 (release / "env/site.env").write_text(text, encoding="utf-8")
 (release / "env/registry.env").write_text(

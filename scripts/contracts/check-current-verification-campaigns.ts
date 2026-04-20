@@ -71,8 +71,8 @@ function main(): void {
   }
   const visualStep = releaseFull.steps.find((step) => step.id === 'lane-visual');
   assert(
-    visualStep?.evidenceChecks.some((check) => check.kind === 'visual_baseline_reviews'),
-    'lane-visual campaign step must require visual baseline review artifacts.',
+    visualStep?.evidenceChecks.some((check) => check.kind === 'visual_baseline_automated_passes'),
+    'lane-visual campaign step must require visual baseline automated-pass artifacts.',
   );
   const gateReleaseStep = releaseFull.steps.find((step) => step.id === 'gate-release');
   assert(

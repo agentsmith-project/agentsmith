@@ -198,6 +198,15 @@ describe('current gate governance', () => {
     expect(releaseFull?.campaignEvidenceArtifacts).not.toContain(
       '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
     );
+    expect(CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY.laneVisual).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'visual_automated_pass_artifacts',
+          path: '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/automated-pass.md',
+          kind: 'visual_baseline_automated_passes',
+        }),
+      ]),
+    );
     expect(releaseFull?.campaignEvidenceArtifacts).not.toEqual(
       expect.arrayContaining([
         'artifacts/visual-baseline-reviews/<run-id>/run-manifest.json',

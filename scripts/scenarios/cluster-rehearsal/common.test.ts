@@ -56,6 +56,77 @@ function readEnvValue(filePath: string, key: string): string {
 }
 
 describe('cluster-rehearsal generated state ownership', () => {
+  it('canonicalizes legacy operator protocol aliases into scenario-owned site env truth without mutating the operator file', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-legacy-protocols-'));
+
+    try {
+      stageClusterRehearsalFixture(tempRoot);
+      mkdirSync(path.join(tempRoot, '.infra', 'cluster-deploy'), { recursive: true });
+      writeFileSync(
+        path.join(tempRoot, '.infra', 'cluster-deploy', 'site.env'),
+        [
+          'PRESET_ANTHROPIC_ENDPOINT_PROTOCOL=anthropic_compatible',
+          'PRESET_OPENAI_ENDPOINT_PROTOCOL=openai_compatible',
+        ].join('\n') + '\n',
+        'utf8',
+      );
+
+      runClusterRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+          init_cluster_rehearsal_env
+          ensure_cluster_rehearsal_site_env
+        `,
+      );
+
+      const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
+      const operatorSiteEnv = path.join(tempRoot, '.infra', 'cluster-deploy', 'site.env');
+
+      expect(readEnvValue(seededSiteEnv, 'PRESET_ANTHROPIC_ENDPOINT_PROTOCOL')).toBe('anthropic_messages');
+      expect(readEnvValue(seededSiteEnv, 'PRESET_OPENAI_ENDPOINT_PROTOCOL')).toBe('openai_chat_completions');
+      expect(readEnvValue(operatorSiteEnv, 'PRESET_ANTHROPIC_ENDPOINT_PROTOCOL')).toBe('anthropic_compatible');
+      expect(readEnvValue(operatorSiteEnv, 'PRESET_OPENAI_ENDPOINT_PROTOCOL')).toBe('openai_compatible');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps rejecting unsupported unknown endpoint protocols after ingest', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-unknown-protocol-'));
+
+    try {
+      stageClusterRehearsalFixture(tempRoot);
+      mkdirSync(path.join(tempRoot, '.infra', 'cluster-deploy'), { recursive: true });
+      writeFileSync(
+        path.join(tempRoot, '.infra', 'cluster-deploy', 'site.env'),
+        'PRESET_ANTHROPIC_ENDPOINT_PROTOCOL=totally_unknown\n',
+        'utf8',
+      );
+
+      let failure: Error | undefined;
+      try {
+        runClusterRehearsalCommand(
+          tempRoot,
+          `
+            source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+            init_cluster_rehearsal_env
+            ensure_cluster_rehearsal_site_env
+          `,
+        );
+      } catch (error) {
+        failure = error as Error & { stderr?: Buffer | string };
+      }
+
+      expect(failure).toBeDefined();
+      expect(String((failure as Error & { stderr?: Buffer | string }).stderr ?? failure?.message)).toContain(
+        'unsupported endpoint protocol: totally_unknown',
+      );
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rewrites fresh site.env seeds to the tracked rehearsal sandbox URL truth', () => {
     const repoRoot = process.cwd();
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-site-env-'));

@@ -95,11 +95,12 @@ export function useFileFolderMoveManager({
     const nextPrefix = `${prefix}${name}/`;
     try {
       await createFolder({ workspaceId, projectId, libraryId: selectedLibraryId, prefix: nextPrefix });
-      await refreshCurrentListing();
       setCreateFolderOpen(false);
       setFolderName('');
       toast.success(t('file_manager.folder_created'));
       navigateToPrefix(nextPrefix);
+      // Refresh the previous listing in the background without blocking the post-create UX.
+      void refreshCurrentListing().catch(() => undefined);
     } catch (err) {
       const msg = getOperationErrorDetail(err, tErrors, t('file_manager.folder_create_failed'));
       toast.error(`${t('file_manager.folder_create_failed')}: ${msg}`);

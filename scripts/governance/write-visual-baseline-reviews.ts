@@ -278,7 +278,8 @@ for (const scenario of runArtifacts.capturedScenarios) {
         actualUrl: scenario.route,
         notes: [
           'Playwright visual lane completed for this scenario.',
-          'This automated artifact is not a UX/UI release acceptance. A reviewer must write review.md with the UX acceptance contract before release.',
+          'This automated artifact is the release-campaign lane:visual evidence when paired with run-manifest.json.',
+          'Human review.md UX acceptance remains a separate UX/UI review runbook artifact.',
         ],
       },
     }),

@@ -34,6 +34,7 @@ export type CurrentGateEvidenceArtifactKind =
   | 'directory'
   | 'directory_non_empty'
   | 'recursive_file'
+  | 'visual_baseline_automated_passes'
   | 'visual_run_manifest'
   | 'visual_baseline_reviews';
 export type CurrentGateExecutionTarget =
@@ -175,9 +176,9 @@ export const CURRENT_RELEASE_CAMPAIGN_EVIDENCE_TOPOLOGY = {
       kind: 'visual_run_manifest',
     },
     {
-      id: 'visual_review_artifacts',
-      path: '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
-      kind: 'visual_baseline_reviews',
+      id: 'visual_automated_pass_artifacts',
+      path: '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/automated-pass.md',
+      kind: 'visual_baseline_automated_passes',
     },
   ],
   gateRelease: [

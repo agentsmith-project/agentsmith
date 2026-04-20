@@ -104,8 +104,13 @@ backend_real_new_run_dir() {
   runs_root="$(backend_real_runs_root)"
   run_id="${BACKEND_REAL_RUN_ID:-$(backend_real_generate_run_id "${prefix}")}"
   run_dir="${runs_root}/${run_id}"
-  mkdir -p "${run_dir}"
+  backend_real_ensure_run_dir "${run_dir}"
   printf '%s\n' "${run_dir}"
+}
+
+backend_real_ensure_run_dir() {
+  local run_dir="$1"
+  mkdir -p "${run_dir}"
 }
 
 backend_real_run_status_file() {
@@ -116,6 +121,7 @@ backend_real_run_status_file() {
 backend_real_mark_run_status() {
   local run_dir="$1"
   local status="$2"
+  backend_real_ensure_run_dir "${run_dir}"
   printf '%s\n' "${status}" > "$(backend_real_run_status_file "${run_dir}")"
 }
 

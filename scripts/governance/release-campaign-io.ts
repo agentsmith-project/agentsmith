@@ -279,13 +279,14 @@ function requireMetadataFields(args: {
   metadata: Map<string, string>;
   scenarioId: string;
   fields: readonly string[];
+  artifactLabel: string;
   label: string;
 }): { ok: true } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
   const missing = collectMissingMetadata(args.metadata, args.fields);
   if (missing.length > 0) {
     return visualReviewValidationFailure(
       'contract_drift',
-      `visual UX acceptance metadata for ${args.scenarioId} must include ${args.label}: ${missing.join(', ')}.`,
+      `${args.artifactLabel} metadata for ${args.scenarioId} must include ${args.label}: ${missing.join(', ')}.`,
     );
   }
   return { ok: true };
@@ -819,9 +820,10 @@ export function readVisualBaselineRunManifestArtifact(args: {
   };
 }
 
-function validateVisualHashMetadata(args: {
+function validateVisualAcceptedHashMetadata(args: {
   scenario: VisualRunManifestScenarioRecord;
   metadata: Map<string, string>;
+  artifactLabel: string;
 }): { ok: true } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
   const screenshotHashes = parseSha256HashMap(requiredMetadata(args.metadata, 'accepted_screenshot_hashes'));
   const baselineHashes = parseSha256HashMap(requiredMetadata(args.metadata, 'accepted_baseline_hashes'));
@@ -829,7 +831,7 @@ function validateVisualHashMetadata(args: {
   if (!screenshotHashes.ok || !baselineHashes.ok) {
     return visualReviewValidationFailure(
       'contract_drift',
-      `visual UX acceptance metadata for ${args.scenario.scenarioId} has malformed accepted screenshot/baseline hashes: ${
+      `${args.artifactLabel} metadata for ${args.scenario.scenarioId} has malformed accepted screenshot/baseline hashes: ${
         !screenshotHashes.ok ? screenshotHashes.message : baselineHashes.message
       }.`,
     );
@@ -845,7 +847,7 @@ function validateVisualHashMetadata(args: {
       if (!actualFiles.has(fileName)) {
         return visualReviewValidationFailure(
           'contract_drift',
-          `visual UX acceptance metadata for ${args.scenario.scenarioId} ${field} missing ${fileName}.`,
+          `${args.artifactLabel} metadata for ${args.scenario.scenarioId} ${field} missing ${fileName}.`,
         );
       }
     }
@@ -853,7 +855,7 @@ function validateVisualHashMetadata(args: {
       if (!expectedFiles.has(fileName)) {
         return visualReviewValidationFailure(
           'contract_drift',
-          `visual UX acceptance metadata for ${args.scenario.scenarioId} ${field} includes unexpected ${fileName}.`,
+          `${args.artifactLabel} metadata for ${args.scenario.scenarioId} ${field} includes unexpected ${fileName}.`,
         );
       }
     }
@@ -863,13 +865,58 @@ function validateVisualHashMetadata(args: {
     if (screenshotHashes.hashes.get(expected.fileName) !== expected.actualSha256.replace(/^sha256:/, '')) {
       return visualReviewValidationFailure(
         'contract_drift',
-        `visual UX acceptance screenshot hash drift for ${args.scenario.scenarioId}: ${expected.fileName}.`,
+        `${args.artifactLabel} screenshot hash drift for ${args.scenario.scenarioId}: ${expected.fileName}.`,
       );
     }
     if (baselineHashes.hashes.get(expected.fileName) !== expected.baselineSha256.replace(/^sha256:/, '')) {
       return visualReviewValidationFailure(
         'contract_drift',
-        `visual UX acceptance baseline hash drift for ${args.scenario.scenarioId}: ${expected.fileName}.`,
+        `${args.artifactLabel} baseline hash drift for ${args.scenario.scenarioId}: ${expected.fileName}.`,
+      );
+    }
+  }
+
+  return { ok: true };
+}
+
+function validateVisualActualHashMetadata(args: {
+  scenario: VisualRunManifestScenarioRecord;
+  metadata: Map<string, string>;
+  artifactLabel: string;
+}): { ok: true } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
+  const screenshotHashes = parseSha256HashMap(requiredMetadata(args.metadata, 'actual_screenshot_hashes'));
+
+  if (!screenshotHashes.ok) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `${args.artifactLabel} metadata for ${args.scenario.scenarioId} has malformed actual screenshot hashes: ${screenshotHashes.message}.`,
+    );
+  }
+
+  const expectedFiles = new Set(args.scenario.screenshots.map((entry) => entry.fileName));
+  const actualFiles = new Set(screenshotHashes.hashes.keys());
+  for (const fileName of expectedFiles) {
+    if (!actualFiles.has(fileName)) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `${args.artifactLabel} metadata for ${args.scenario.scenarioId} actual_screenshot_hashes missing ${fileName}.`,
+      );
+    }
+  }
+  for (const fileName of actualFiles) {
+    if (!expectedFiles.has(fileName)) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `${args.artifactLabel} metadata for ${args.scenario.scenarioId} actual_screenshot_hashes includes unexpected ${fileName}.`,
+      );
+    }
+  }
+
+  for (const expected of args.scenario.screenshots) {
+    if (screenshotHashes.hashes.get(expected.fileName) !== expected.actualSha256.replace(/^sha256:/, '')) {
+      return visualReviewValidationFailure(
+        'contract_drift',
+        `${args.artifactLabel} actual screenshot hash drift for ${args.scenario.scenarioId}: ${expected.fileName}.`,
       );
     }
   }
@@ -915,6 +962,7 @@ function validateVisualBaselineReviewArtifact(args: {
   const requiredIdentity = requireMetadataFields({
     metadata,
     scenarioId,
+    artifactLabel: 'visual UX acceptance',
     fields: [
       'scenario_id',
       'actual_url',
@@ -1032,7 +1080,11 @@ function validateVisualBaselineReviewArtifact(args: {
     );
   }
 
-  const hashValidation = validateVisualHashMetadata({ scenario: args.scenario, metadata });
+  const hashValidation = validateVisualAcceptedHashMetadata({
+    scenario: args.scenario,
+    metadata,
+    artifactLabel: 'visual UX acceptance',
+  });
   if (!hashValidation.ok) {
     return hashValidation;
   }
@@ -1047,7 +1099,181 @@ function validateVisualBaselineReviewArtifact(args: {
   return { ok: true };
 }
 
-function evaluateVisualBaselineReviews(
+function validateVisualBaselineAutomatedPassArtifact(args: {
+  manifest: VisualRunManifestSnapshot;
+  scenario: VisualRunManifestScenarioRecord;
+  path: string;
+}): { ok: true } | { ok: false; failureClass: CurrentGateResultFailureClass; message: string } {
+  const scenarioId = args.scenario.scenarioId;
+  let markdown = '';
+  try {
+    if (!statSync(args.path).isFile()) {
+      return visualReviewValidationFailure('evidence_missing', `Missing automated visual pass artifact: ${args.path}`);
+    }
+    markdown = readFileSync(args.path, 'utf8');
+  } catch {
+    return visualReviewValidationFailure('evidence_missing', `Missing automated visual pass artifact: ${args.path}`);
+  }
+
+  if (!markdown.startsWith(`# ${scenarioId}\n`)) {
+    return visualReviewValidationFailure('contract_drift', `Automated visual pass scenario mismatch for ${scenarioId}.`);
+  }
+
+  const metadata = readMarkdownMetadata(markdown);
+  if (metadata.get('schema') !== 'visual_baseline_automated_pass/v1') {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass metadata for ${scenarioId} must include schema: visual_baseline_automated_pass/v1.`,
+    );
+  }
+
+  const requiredIdentity = requireMetadataFields({
+    metadata,
+    scenarioId,
+    artifactLabel: 'automated visual pass',
+    fields: [
+      'scenario_id',
+      'actual_url',
+      'story_fingerprint',
+      'accepted_screenshot_hashes',
+      'accepted_baseline_hashes',
+      'build_lane',
+      'build_run_id',
+      'build_git_sha',
+      'build_fingerprint',
+      'build_started_at',
+      'actual_build_run_id',
+      'actual_screenshot_hashes',
+      'generated_at',
+      'automated_verdict',
+      'semantic_verdict',
+    ],
+    label: 'scenario, URL, story, hash, build, and verdict fields',
+  });
+  if (!requiredIdentity.ok) {
+    return requiredIdentity;
+  }
+
+  if (metadata.get('scenario_id') !== scenarioId) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass scenario_id mismatch for ${scenarioId}.`,
+    );
+  }
+  if (metadata.get('story_evidence_owner') !== 'lane:visual') {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass metadata for ${scenarioId} must include story_evidence_owner: lane:visual.`,
+    );
+  }
+  if (requiredMetadata(metadata, 'build_lane') !== args.manifest.build.lane) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass metadata for ${scenarioId} build_lane must match the producer snapshot.`,
+    );
+  }
+  if (requiredMetadata(metadata, 'build_run_id') !== args.manifest.runId) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass metadata for ${scenarioId} must include build_run_id for the current campaign run.`,
+    );
+  }
+  if (requiredMetadata(metadata, 'build_git_sha') !== args.manifest.build.gitSha) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass metadata for ${scenarioId} build_git_sha must match the producer snapshot.`,
+    );
+  }
+  if (requiredMetadata(metadata, 'build_fingerprint') !== args.manifest.build.fingerprint) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass metadata for ${scenarioId} build_fingerprint must match the producer snapshot.`,
+    );
+  }
+  if (requiredMetadata(metadata, 'build_started_at') !== args.manifest.build.startedAt) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass metadata for ${scenarioId} build_started_at must match the producer snapshot.`,
+    );
+  }
+  if (requiredMetadata(metadata, 'actual_build_run_id') !== args.manifest.runId) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass metadata for ${scenarioId} actual_build_run_id must match the current campaign run.`,
+    );
+  }
+
+  const generatedAt = requiredMetadata(metadata, 'generated_at');
+  if (generatedAt && Number.isNaN(Date.parse(generatedAt))) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass metadata for ${scenarioId} has an invalid generated_at value.`,
+    );
+  }
+
+  const actualUrl = requiredMetadata(metadata, 'actual_url');
+  if (actualUrl && normalizeVisualBaselineManifestUrlPath(actualUrl) !== normalizeVisualBaselineManifestUrlPath(args.scenario.actualUrl)) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass actual_url drift for ${scenarioId}.`,
+    );
+  }
+  if (metadata.get('story_fingerprint') !== args.scenario.storyFingerprint) {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass story_fingerprint drift for ${scenarioId}.`,
+    );
+  }
+
+  const acceptedHashValidation = validateVisualAcceptedHashMetadata({
+    scenario: args.scenario,
+    metadata,
+    artifactLabel: 'automated visual pass',
+  });
+  if (!acceptedHashValidation.ok) {
+    return acceptedHashValidation;
+  }
+  const actualHashValidation = validateVisualActualHashMetadata({
+    scenario: args.scenario,
+    metadata,
+    artifactLabel: 'automated visual pass',
+  });
+  if (!actualHashValidation.ok) {
+    return actualHashValidation;
+  }
+
+  const automatedVerdict = metadata.get('automated_verdict');
+  if (automatedVerdict !== 'passed' && automatedVerdict !== 'failed') {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass metadata for ${scenarioId} automated_verdict must be passed or failed.`,
+    );
+  }
+  if (automatedVerdict !== 'passed') {
+    return visualReviewValidationFailure(
+      'product_regression',
+      `Automated visual pass ${scenarioId} automated_verdict must be passed before release.`,
+    );
+  }
+
+  const semanticVerdict = metadata.get('semantic_verdict');
+  if (semanticVerdict !== 'passed' && semanticVerdict !== 'failed') {
+    return visualReviewValidationFailure(
+      'contract_drift',
+      `automated visual pass metadata for ${scenarioId} semantic_verdict must be passed or failed.`,
+    );
+  }
+  if (semanticVerdict !== 'passed') {
+    return visualReviewValidationFailure(
+      'product_regression',
+      `Automated visual pass ${scenarioId} semantic_verdict must be passed before release.`,
+    );
+  }
+
+  return { ok: true };
+}
+
+function evaluateVisualBaselineAutomatedPasses(
   campaignRoot: string,
   check: CurrentVerificationCampaignEvidenceCheck,
 ): ReleaseCampaignEvidencePointer['required_paths'] {
@@ -1074,7 +1300,7 @@ function evaluateVisualBaselineReviews(
       campaignRoot,
       check.path.replaceAll('<visual-scenario-id>', scenario.scenarioId),
     );
-    const validation = validateVisualBaselineReviewArtifact({
+    const validation = validateVisualBaselineAutomatedPassArtifact({
       manifest: manifest.snapshot,
       scenario,
       path,
@@ -1389,6 +1615,8 @@ function evaluateEvidenceCheck(
   switch (check.kind) {
     case 'visual_run_manifest':
       return evaluateVisualRunManifest(campaignRoot, check);
+    case 'visual_baseline_automated_passes':
+      return evaluateVisualBaselineAutomatedPasses(campaignRoot, check);
     case 'visual_baseline_reviews':
       return evaluateVisualBaselineReviews(campaignRoot, check);
     case 'file': {

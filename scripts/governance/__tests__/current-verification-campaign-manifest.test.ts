@@ -86,11 +86,11 @@ describe('current verification campaign manifest', () => {
     const visualEvidenceKinds = visualStep?.evidenceChecks.map((check) => (check as { kind: string }).kind);
     expect(visualStep?.evidenceChecks).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: 'visual_baseline_reviews' }),
+        expect.objectContaining({ kind: 'visual_baseline_automated_passes' }),
       ]),
     );
     expect(visualEvidenceKinds).toEqual(
-      expect.arrayContaining(['visual_run_manifest', 'visual_baseline_reviews']),
+      expect.arrayContaining(['visual_run_manifest', 'visual_baseline_automated_passes']),
     );
     expect(releaseFull.steps.find((step) => step.id === 'gate-release')?.evidenceChecks).toEqual(
       expect.arrayContaining([
@@ -155,11 +155,11 @@ describe('current verification campaign manifest', () => {
     expect(visualStep?.evidenceChecks.map((check) => check.path)).toEqual(
       expect.arrayContaining([
         '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/run-manifest.json',
-        '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/review.md',
+        '<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<visual-scenario-id>/automated-pass.md',
       ]),
     );
     expect(visualCheckKinds).toEqual(
-      expect.arrayContaining(['visual_run_manifest', 'visual_baseline_reviews']),
+      expect.arrayContaining(['visual_run_manifest', 'visual_baseline_automated_passes']),
     );
   });
 });

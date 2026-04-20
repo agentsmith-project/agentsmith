@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -114,5 +114,26 @@ describe('backend-real-state', () => {
     expect(output[2]).toBe(
       path.join(tempRoot, 'artifacts/backend-real/current/integration-release-user-story/sandbox-manager.log'),
     );
+  });
+
+  it('materializes a missing campaign-owned run root before writing the run status file', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'backend-real-run-status-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/backend-real-state.sh');
+    const campaignOwnedRunRoot = path.join(
+      tempRoot,
+      'artifacts/release-runs/20260420T111449Z/gate-release/backend-real-run',
+    );
+
+    const statusFile = runBash(
+      `
+        source "${helper}"
+        backend_real_mark_run_status "${campaignOwnedRunRoot}" incomplete
+        printf '%s\\n' "$(backend_real_run_status_file "${campaignOwnedRunRoot}")"
+      `,
+      tempRoot,
+    );
+
+    expect(statusFile).toBe(path.join(campaignOwnedRunRoot, '.status'));
+    expect(readFileSync(statusFile, 'utf8')).toBe('incomplete\n');
   });
 });

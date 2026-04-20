@@ -48,8 +48,6 @@ import {
   buildVisualBaselineScenarioEvidence,
   groupVisualBaselineCatalogByScenario,
   renderVisualBaselineAutomatedPassMarkdown,
-  renderVisualBaselineScenarioReviewMarkdown,
-  type VisualBaselineReviewRecord,
   type VisualBaselineReviewEvidenceSnapshot,
   type VisualBaselineScenarioRecord,
 } from '../../../e2e/visual-baseline-support';
@@ -63,6 +61,7 @@ type AggregateFixtureEvidenceKind =
   | 'directory'
   | 'directory_non_empty'
   | 'recursive_file'
+  | 'visual_baseline_automated_passes'
   | 'visual_baseline_reviews'
   | 'visual_run_manifest';
 
@@ -158,15 +157,15 @@ function getVisualRunManifestPath(campaignRoot: string): string {
   );
 }
 
-function getVisualReviewCheck(): CurrentVerificationCampaignEvidenceCheck {
+function getVisualAutomatedPassCheck(): CurrentVerificationCampaignEvidenceCheck {
   const visualStep = getCampaignStep('lane-visual');
-  const visualReviewCheck = visualStep.evidenceChecks.find(
-    (check) => aggregateFixtureEvidenceKind(check) === 'visual_baseline_reviews',
+  const visualAutomatedPassCheck = visualStep.evidenceChecks.find(
+    (check) => aggregateFixtureEvidenceKind(check) === 'visual_baseline_automated_passes',
   );
-  if (!visualReviewCheck) {
-    throw new Error('Missing visual review evidence check.');
+  if (!visualAutomatedPassCheck) {
+    throw new Error('Missing visual automated-pass evidence check.');
   }
-  return visualReviewCheck;
+  return visualAutomatedPassCheck;
 }
 
 function getVisualRunManifestCheck(): CurrentVerificationCampaignEvidenceCheck {
@@ -196,14 +195,14 @@ function createManifestEvidenceForCheck(
     return;
   }
 
-  if (kind === 'visual_baseline_reviews') {
+  if (kind === 'visual_baseline_automated_passes') {
     for (const scenario of groupVisualBaselineCatalogByScenario().values()) {
       createFile(
         materializeCampaignPath(
           campaignRoot,
           check.path.replaceAll('<visual-scenario-id>', scenario.scenarioId),
         ),
-        renderVisualReviewFixture(campaignRoot, scenario),
+        renderVisualAutomatedPassFixture(campaignRoot, scenario),
       );
     }
     return;
@@ -290,36 +289,40 @@ function buildVisualReviewEvidenceSnapshot(
   };
 }
 
-function renderVisualReviewFixture(
+function buildVisualFixtureBuild(campaignRoot: string) {
+  return {
+    lane: 'mock-lane' as const,
+    runId: resolveCampaignRunId(campaignRoot),
+    gitSha: 'aggregate-test-git-sha',
+    fingerprint: `${resolveCampaignRunId(campaignRoot)}:mock-lane:visual`,
+    startedAt: '2026-04-12T11:59:00.000Z',
+  };
+}
+
+function renderVisualAutomatedPassFixture(
   campaignRoot: string,
   scenario: VisualBaselineScenarioRecord,
-  reviewOverrides: Partial<VisualBaselineReviewRecord> = {},
   options: {
-    includeBuild?: boolean;
     evidenceSnapshot?: VisualBaselineReviewEvidenceSnapshot;
+    automatedOverrides?: Partial<{
+      generatedAt: string;
+      automatedVerdict: 'passed' | 'failed';
+      semanticVerdict: 'passed' | 'failed';
+      actualUrl: string;
+      notes: readonly string[];
+    }>;
   } = {},
 ): string {
-  const includeBuild = options.includeBuild ?? true;
-  return renderVisualBaselineScenarioReviewMarkdown({
+  return renderVisualBaselineAutomatedPassMarkdown({
     scenario,
-    build: includeBuild
-      ? {
-          lane: 'mock-lane',
-          runId: resolveCampaignRunId(campaignRoot),
-          gitSha: 'aggregate-test-git-sha',
-          fingerprint: `${resolveCampaignRunId(campaignRoot)}:mock-lane:visual`,
-          startedAt: '2026-04-12T11:59:00.000Z',
-        }
-      : undefined,
-    review: {
-      reviewerId: 'aggregate-test',
-      reviewerKind: 'ai_reviewer',
-      reviewMode: 'ai_native_screenshot_review',
-      reviewedAt: '2026-04-12T12:00:00.000Z',
-      verdict: 'accepted',
+    build: buildVisualFixtureBuild(campaignRoot),
+    automated: {
+      generatedAt: '2026-04-12T12:00:00.000Z',
+      automatedVerdict: 'passed',
+      semanticVerdict: 'passed',
       actualUrl: scenario.route,
-      findings: ['Aggregate test visual review fixture.'],
-      ...reviewOverrides,
+      notes: ['Aggregate test automated visual pass fixture.'],
+      ...options.automatedOverrides,
     },
     evidenceSnapshot: options.evidenceSnapshot ?? buildVisualReviewEvidenceSnapshot(scenario),
   });
@@ -422,16 +425,16 @@ function writeVisualRunManifestFixture(
   );
 }
 
-function overwriteVisualReviewFixture(
+function overwriteVisualAutomatedPassFixture(
   campaignRoot: string,
   scenarioId: string,
   content: string,
 ): void {
-  const visualReviewCheck = getVisualReviewCheck();
+  const visualAutomatedPassCheck = getVisualAutomatedPassCheck();
   createFile(
     materializeCampaignPath(
       campaignRoot,
-      visualReviewCheck.path.replaceAll('<visual-scenario-id>', scenarioId),
+      visualAutomatedPassCheck.path.replaceAll('<visual-scenario-id>', scenarioId),
     ),
     content,
   );
@@ -783,20 +786,20 @@ describe('release-full aggregate gate', () => {
     expect(evidence.required_paths.some((record) => record.path.includes(campaignRoot))).toBe(true);
   });
 
-  it('keeps lane-visual authority manifest generation separate from review artifact generation', () => {
+  it('keeps lane-visual authority manifest generation separate from automated-pass artifact generation', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-visual-fixture-ownership-'));
-    const visualReviewCheck = getVisualReviewCheck();
+    const visualAutomatedPassCheck = getVisualAutomatedPassCheck();
     const visualRunManifestCheck = getVisualRunManifestCheck();
     const manifestPath = getVisualRunManifestPath(campaignRoot);
 
-    createManifestEvidenceForCheck(campaignRoot, visualReviewCheck);
+    createManifestEvidenceForCheck(campaignRoot, visualAutomatedPassCheck);
 
     expect(existsSync(manifestPath)).toBe(false);
     expect(
       existsSync(
         materializeCampaignPath(
           campaignRoot,
-          visualReviewCheck.path.replaceAll('<visual-scenario-id>', 'desktop-auth-complete'),
+          visualAutomatedPassCheck.path.replaceAll('<visual-scenario-id>', 'desktop-auth-complete'),
         ),
       ),
     ).toBe(true);
@@ -1004,14 +1007,17 @@ describe('release-full aggregate gate', () => {
     });
   });
 
-  it('fails with contract drift when a visual review exists but omits current build metadata', () => {
+  it('fails with contract drift when an automated visual pass omits current build metadata', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-metadata-'));
     seedPassedCampaign(campaignRoot);
     const scenario = getVisualScenario('desktop-auth-complete');
-    overwriteVisualReviewFixture(
+    overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
-      renderVisualReviewFixture(campaignRoot, scenario, {}, { includeBuild: false }),
+      renderVisualAutomatedPassFixture(campaignRoot, scenario).replace(
+        `- build_run_id: ${resolveCampaignRunId(campaignRoot)}\n`,
+        '',
+      ),
     );
 
     expect(() => runAggregate(campaignRoot)).toThrow();
@@ -1023,7 +1029,7 @@ describe('release-full aggregate gate', () => {
       status: 'failed',
       failure_class: 'contract_drift',
     });
-    expect(terminalResult.summary).toContain('visual UX acceptance metadata');
+    expect(terminalResult.summary).toContain('automated visual pass metadata');
   });
 
   it('hard fails when lane-visual evidence keeps review markdown but loses run-manifest.json', () => {
@@ -1167,77 +1173,37 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('ux-trace-index.json');
   });
 
-  it('fails when an automated visual pass artifact is copied into the UX acceptance slot', () => {
+  it('passes when lane-visual evidence is automated-pass.md aligned with the run-manifest producer snapshot', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-automated-pass-'));
     seedPassedCampaign(campaignRoot);
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('lane-visual'));
+
+    runAggregate(campaignRoot);
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'passed',
+      failure_class: 'none',
+    });
+  });
+
+  it('fails when a lane-visual automated pass drifted away from the run-manifest producer snapshot', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-automated-pass-drift-'));
+    seedPassedCampaign(campaignRoot);
     const scenario = getVisualScenario('desktop-auth-complete');
-    overwriteVisualReviewFixture(
+    overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
-      renderVisualBaselineAutomatedPassMarkdown({
-        scenario,
-        build: {
-          lane: 'mock-lane',
-          runId: resolveCampaignRunId(campaignRoot),
-          gitSha: 'aggregate-test-git-sha',
-          fingerprint: `${resolveCampaignRunId(campaignRoot)}:mock-lane:visual`,
-          startedAt: '2026-04-12T11:59:00.000Z',
-        },
-        automated: {
-          generatedAt: '2026-04-12T12:00:00.000Z',
-          automatedVerdict: 'passed',
-          semanticVerdict: 'passed',
-          actualUrl: scenario.route,
+      renderVisualAutomatedPassFixture(campaignRoot, scenario, {
+        automatedOverrides: {
+          actualUrl: '/en-US/drifted-route',
           notes: ['Playwright visual lane completed for this scenario.'],
         },
       }),
     );
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = JSON.parse(
-      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
-    ) as { status: string; failure_class: string; summary: string };
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('Automated visual pass cannot be used as UX acceptance');
-  });
-
-  it('fails with contract drift when a visual UX acceptance omits reviewer proof', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-reviewer-proof-'));
-    seedPassedCampaign(campaignRoot);
-    const scenario = getVisualScenario('desktop-auth-complete');
-    overwriteVisualReviewFixture(
-      campaignRoot,
-      scenario.scenarioId,
-      renderVisualReviewFixture(campaignRoot, scenario).replace('- reviewer_id: aggregate-test\n', ''),
-    );
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = JSON.parse(
-      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
-    ) as { status: string; failure_class: string; summary: string };
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'contract_drift',
-    });
-    expect(terminalResult.summary).toContain('reviewer_id');
-  });
-
-  it('fails with contract drift when visual UX acceptance omits actual URL or story fingerprint', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-story-proof-'));
-    seedPassedCampaign(campaignRoot);
-    const scenario = getVisualScenario('desktop-auth-complete');
-    overwriteVisualReviewFixture(
-      campaignRoot,
-      scenario.scenarioId,
-      renderVisualReviewFixture(campaignRoot, scenario)
-        .replace('- actual_url: /en-US/desktop/auth/complete?desktop_auth_request_id=req_visual_001\n', '')
-        .replace(/- story_fingerprint: .+\n/, ''),
-    );
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('lane-visual'));
 
     expect(() => runAggregate(campaignRoot)).toThrow();
 
@@ -1249,16 +1215,46 @@ describe('release-full aggregate gate', () => {
       failure_class: 'contract_drift',
     });
     expect(terminalResult.summary).toContain('actual_url');
-    expect(terminalResult.summary).toContain('story_fingerprint');
   });
 
-  it('passes when visual UX acceptance stays self-consistent with the producer snapshot even if checkout story fingerprints drift', () => {
+  it('ignores standalone visual review.md artifacts while automated release campaign evidence stays producer-owned', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-review-sidecar-'));
+    seedPassedCampaign(campaignRoot);
+    const scenario = getVisualScenario('desktop-auth-complete');
+    createFile(
+      resolve(
+        campaignRoot,
+        'lane-visual',
+        'visual-baseline-reviews',
+        resolveCampaignRunId(campaignRoot),
+        scenario.scenarioId,
+        'review.md',
+      ),
+      [
+        `# ${scenario.scenarioId}`,
+        '',
+        '- schema: visual_baseline_ux_acceptance/v1',
+        '- reviewer_kind: human',
+      ].join('\n'),
+    );
+
+    runAggregate(campaignRoot);
+
+    const terminalResult = JSON.parse(
+      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
+    ) as { status: string; failure_class: string; summary: string };
+    expect(terminalResult).toMatchObject({
+      status: 'passed',
+      failure_class: 'none',
+    });
+  });
+
+  it('passes when automated visual pass stays self-consistent with the producer snapshot even if checkout story fingerprints drift', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-snapshot-owned-pass-'));
     seedPassedCampaign(campaignRoot);
     const scenario = getVisualScenario('desktop-auth-complete');
-    const evidence = buildVisualBaselineScenarioEvidence(scenario);
     const customStoryFingerprint = `sha256:${'4'.repeat(64)}`;
-    const screenshotFixtures = evidence.screenshots.map((entry, index) => ({
+    const screenshotFixtures = buildVisualBaselineScenarioEvidence(scenario).screenshots.map((entry, index) => ({
       file_name: entry.fileName,
       actual_relpath: `captured/${scenario.scenarioId}/${entry.fileName}`,
       actual_sha256: '',
@@ -1273,10 +1269,10 @@ describe('release-full aggregate gate', () => {
         },
       },
     });
-    overwriteVisualReviewFixture(
+    overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
-      renderVisualReviewFixture(campaignRoot, scenario, {}, {
+      renderVisualAutomatedPassFixture(campaignRoot, scenario, {
         evidenceSnapshot: buildVisualReviewEvidenceSnapshot(scenario, {
           story_fingerprint: customStoryFingerprint,
           screenshots: screenshotFixtures,
@@ -1295,15 +1291,17 @@ describe('release-full aggregate gate', () => {
     });
   });
 
-  it('fails with contract drift when visual UX acceptance build metadata drifts from the run-manifest snapshot', () => {
+  it('fails with contract drift when automated visual pass build metadata drifts from the run-manifest snapshot', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-build-drift-'));
     seedPassedCampaign(campaignRoot);
     const scenario = getVisualScenario('desktop-auth-complete');
-    overwriteVisualReviewFixture(
+    overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
-      renderVisualReviewFixture(campaignRoot, scenario)
-        .replace('- build_git_sha: aggregate-test-git-sha\n', '- build_git_sha: foreign-git-sha\n'),
+      renderVisualAutomatedPassFixture(campaignRoot, scenario).replace(
+        '- build_git_sha: aggregate-test-git-sha\n',
+        '- build_git_sha: foreign-git-sha\n',
+      ),
     );
 
     expect(() => runAggregate(campaignRoot)).toThrow();
@@ -1318,26 +1316,28 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('build_git_sha');
   });
 
-  it('fails with contract drift when visual UX acceptance hashes drift from committed baselines', () => {
+  it('fails with contract drift when automated visual pass hashes drift from committed baselines', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-hash-drift-'));
     seedPassedCampaign(campaignRoot);
     const scenario = getVisualScenario('desktop-auth-complete');
-    const evidence = buildVisualBaselineScenarioEvidence(scenario);
-    const firstScreenshot = evidence.screenshots[0];
+    const firstScreenshot = buildVisualBaselineScenarioEvidence(scenario).screenshots[0];
     if (!firstScreenshot) {
       throw new Error('Missing visual screenshot fixture.');
     }
-    const baselineHashLine = `- accepted_baseline_hashes: ${evidence.screenshots
+    const baselineHashLine = `- accepted_baseline_hashes: ${buildVisualBaselineScenarioEvidence(scenario).screenshots
       .map((entry) => `${entry.fileName}=sha256:${entry.baselineSha256}`)
       .join('; ')}`;
     const driftedBaselineHashLine = baselineHashLine.replace(
       `${firstScreenshot.fileName}=sha256:${firstScreenshot.baselineSha256}`,
       `${firstScreenshot.fileName}=sha256:${'0'.repeat(64)}`,
     );
-    overwriteVisualReviewFixture(
+    overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
-      renderVisualReviewFixture(campaignRoot, scenario).replace(baselineHashLine, driftedBaselineHashLine),
+      renderVisualAutomatedPassFixture(campaignRoot, scenario).replace(
+        baselineHashLine,
+        driftedBaselineHashLine,
+      ),
     );
 
     expect(() => runAggregate(campaignRoot)).toThrow();
@@ -1352,14 +1352,17 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('baseline hash drift');
   });
 
-  it('fails with contract drift when visual UX acceptance story fingerprint drifts', () => {
+  it('fails with contract drift when automated visual pass story fingerprint drifts', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-story-drift-'));
     seedPassedCampaign(campaignRoot);
     const scenario = getVisualScenario('desktop-auth-complete');
-    overwriteVisualReviewFixture(
+    overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
-      renderVisualReviewFixture(campaignRoot, scenario).replace(/- story_fingerprint: .+\n/, `- story_fingerprint: sha256:${'1'.repeat(64)}\n`),
+      renderVisualAutomatedPassFixture(campaignRoot, scenario).replace(
+        /- story_fingerprint: .+\n/,
+        `- story_fingerprint: sha256:${'1'.repeat(64)}\n`,
+      ),
     );
 
     expect(() => runAggregate(campaignRoot)).toThrow();
@@ -1374,15 +1377,17 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('story_fingerprint drift');
   });
 
-  it('fails with product regression when a visual UX acceptance verdict is not accepted', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-verdict-'));
+  it('fails with product regression when automated visual pass automated_verdict is not passed', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-automated-verdict-'));
     seedPassedCampaign(campaignRoot);
     const scenario = getVisualScenario('desktop-auth-complete');
-    overwriteVisualReviewFixture(
+    overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
-      renderVisualReviewFixture(campaignRoot, scenario, {
-        verdict: 'needs_work',
+      renderVisualAutomatedPassFixture(campaignRoot, scenario, {
+        automatedOverrides: {
+          automatedVerdict: 'failed',
+        },
       }),
     );
 
@@ -1395,18 +1400,20 @@ describe('release-full aggregate gate', () => {
       status: 'failed',
       failure_class: 'product_regression',
     });
-    expect(terminalResult.summary).toContain('verdict must be accepted');
+    expect(terminalResult.summary).toContain('automated_verdict must be passed');
   });
 
-  it('fails with product regression when a visual UX acceptance verdict is blocked', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-blocked-verdict-'));
+  it('fails with product regression when automated visual pass semantic_verdict is not passed', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-semantic-verdict-'));
     seedPassedCampaign(campaignRoot);
     const scenario = getVisualScenario('desktop-auth-complete');
-    overwriteVisualReviewFixture(
+    overwriteVisualAutomatedPassFixture(
       campaignRoot,
       scenario.scenarioId,
-      renderVisualReviewFixture(campaignRoot, scenario, {
-        verdict: 'blocked',
+      renderVisualAutomatedPassFixture(campaignRoot, scenario, {
+        automatedOverrides: {
+          semanticVerdict: 'failed',
+        },
       }),
     );
 
@@ -1419,31 +1426,7 @@ describe('release-full aggregate gate', () => {
       status: 'failed',
       failure_class: 'product_regression',
     });
-    expect(terminalResult.summary).toContain('verdict must be accepted');
-  });
-
-  it('fails with product regression when a visual review contains blocking findings', () => {
-    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-aggregate-visual-blocker-'));
-    seedPassedCampaign(campaignRoot);
-    const scenario = getVisualScenario('desktop-auth-complete');
-    overwriteVisualReviewFixture(
-      campaignRoot,
-      scenario.scenarioId,
-      renderVisualReviewFixture(campaignRoot, scenario, {
-        blockingFindings: ['The auth completion state lost its primary recovery action.'],
-      }),
-    );
-
-    expect(() => runAggregate(campaignRoot)).toThrow();
-
-    const terminalResult = JSON.parse(
-      readFileSync(resolve(campaignRoot, 'gate-release-full', 'result.json'), 'utf8'),
-    ) as { status: string; failure_class: string; summary: string };
-    expect(terminalResult).toMatchObject({
-      status: 'failed',
-      failure_class: 'product_regression',
-    });
-    expect(terminalResult.summary).toContain('blocking findings');
+    expect(terminalResult.summary).toContain('semantic_verdict must be passed');
   });
 
   it('rejects legacy evidence pointers that omit current manifest evidence check ids', () => {

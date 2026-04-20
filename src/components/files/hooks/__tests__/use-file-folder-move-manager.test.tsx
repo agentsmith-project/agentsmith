@@ -51,6 +51,7 @@ describe('useFileFolderMoveManager', () => {
     );
 
     act(() => {
+      result.current.setCreateFolderOpen(true);
       result.current.setFolderName('reports');
     });
 
@@ -66,23 +67,26 @@ describe('useFileFolderMoveManager', () => {
     });
     expect(refreshCurrentListing).toHaveBeenCalledTimes(1);
     expect(navigateToPrefix).toHaveBeenCalledWith('docs/reports/');
+    expect(result.current.createFolderOpen).toBe(false);
+    expect(result.current.folderName).toBe('');
     expect(mockToast.success).toHaveBeenCalled();
   });
 
-  it('waits for the current listing to refresh before navigating into a new folder', async () => {
+  it('navigates into a new folder without waiting for the current listing refresh to finish', async () => {
     const createFolder = vi.fn().mockResolvedValue(undefined);
+    const refreshControl: { resolve: null | (() => void) } = { resolve: null };
     let refreshResolved = false;
     const refreshCurrentListing = vi.fn().mockImplementation(
       () =>
         new Promise<void>((resolve) => {
-          setTimeout(() => {
+          refreshControl.resolve = () => {
             refreshResolved = true;
             resolve();
-          }, 0);
+          };
         }),
     );
     const navigateToPrefix = vi.fn(() => {
-      expect(refreshResolved).toBe(true);
+      expect(refreshResolved).toBe(false);
     });
 
     const { result } = renderHook(() =>
@@ -103,16 +107,30 @@ describe('useFileFolderMoveManager', () => {
     );
 
     act(() => {
+      result.current.setCreateFolderOpen(true);
       result.current.setFolderName('docs');
     });
 
+    let handleCreateFolderPromise!: Promise<void>;
     await act(async () => {
-      await result.current.handleCreateFolder();
+      handleCreateFolderPromise = result.current.handleCreateFolder();
+      await Promise.resolve();
     });
 
     expect(createFolder).toHaveBeenCalledTimes(1);
     expect(refreshCurrentListing).toHaveBeenCalledTimes(1);
     expect(navigateToPrefix).toHaveBeenCalledWith('docs/');
+    expect(result.current.createFolderOpen).toBe(false);
+    expect(result.current.folderName).toBe('');
+    expect(mockToast.success).toHaveBeenCalledWith('file_manager.folder_created');
+
+    if (refreshControl.resolve) {
+      refreshControl.resolve();
+    }
+
+    await act(async () => {
+      await handleCreateFolderPromise;
+    });
   });
 
   it('opens move conflict dialog when destination exists', async () => {

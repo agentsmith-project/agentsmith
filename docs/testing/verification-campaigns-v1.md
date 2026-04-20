@@ -213,7 +213,11 @@ verdict 路径的目标是：**给出当前变更是否可接受的正式判断*
 1. `visual_scene_catalog`
 - owner: `test:visual` / `lane:visual`
 - canonical linkage 见 gate manifest contract
-- release campaign review root: `<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<scenario-id>/review.md`
+- release campaign automated evidence:
+  - `<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/run-manifest.json`
+  - `<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<scenario-id>/automated-pass.md`
+- standalone UX/UI review runbook artifact:
+  - `<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<scenario-id>/review.md`
 
 2. `ux_trace_bundle`
 - default-tier owner: `test:backend-real:core` / `lane:backend-real:core`

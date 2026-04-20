@@ -108,12 +108,14 @@ artifacts/release-runs/<campaign-run-id>
 - terminal aggregate verdict：
   - `<campaign-root>/gate-release-full/result.json`
   - `<campaign-root>/gate-release-full/evidence.json`
-- full visual scene catalog and review evidence：
+- full visual scene catalog and release campaign visual evidence：
   - `e2e/visual-baseline-support.ts`
   - `e2e/__screenshots__/visual.spec.ts`
   - `<campaign-root>/lane-visual/native/result.json`
   - `<campaign-root>/lane-visual/evidence.json`
-  - `<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<scenario-id>/review.md`
+  - `<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/run-manifest.json`
+  - `<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<scenario-id>/automated-pass.md`
+  - `<campaign-root>/lane-visual/visual-baseline-reviews/<campaign-run-id>/<scenario-id>/review.md`（独立 UX/UI review runbook）
 - release backend-real review and trace evidence：
   - `<campaign-root>/gate-release/native/result.json`
   - `<campaign-root>/gate-release/evidence.json`

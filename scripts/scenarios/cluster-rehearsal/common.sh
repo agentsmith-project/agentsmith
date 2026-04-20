@@ -86,10 +86,27 @@ ensure_cluster_rehearsal_site_env() {
     fi
   fi
   apply_flow_site_env_overrides "${site_env}"
+  canonicalize_cluster_rehearsal_site_env_protocol_aliases "${site_env}"
   rewrite_cluster_rehearsal_sandbox_public_base_url "${site_env}"
   ensure_scenario_site_env_proxy_admin_token "${site_env}" "${CLUSTER_REHEARSAL_NAME}"
   render_cluster_rehearsal_kind_config
   validate_cluster_rehearsal_site_env "${site_env}"
+}
+
+canonicalize_cluster_rehearsal_site_env_protocol_aliases() {
+  local site_env="$1"
+  local anthropic_protocol
+  local openai_protocol
+
+  anthropic_protocol="$(site_env_value "${site_env}" PRESET_ANTHROPIC_ENDPOINT_PROTOCOL)"
+  if [[ "${anthropic_protocol}" == "anthropic_compatible" ]]; then
+    write_site_env_value "${site_env}" PRESET_ANTHROPIC_ENDPOINT_PROTOCOL anthropic_messages
+  fi
+
+  openai_protocol="$(site_env_value "${site_env}" PRESET_OPENAI_ENDPOINT_PROTOCOL)"
+  if [[ "${openai_protocol}" == "openai_compatible" ]]; then
+    write_site_env_value "${site_env}" PRESET_OPENAI_ENDPOINT_PROTOCOL openai_chat_completions
+  fi
 }
 
 rewrite_cluster_rehearsal_sandbox_public_base_url() {

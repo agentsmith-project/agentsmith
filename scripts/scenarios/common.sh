@@ -5,6 +5,7 @@ ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 source "${ROOT_DIR}/scripts/lib/local-kind-world.sh"
 SCENARIO_RUNTIME_ROOT="${SCENARIO_RUNTIME_ROOT:-${ROOT_DIR}/artifacts/runtime}"
 ACTIVE_SCENARIO_LOCK_FILE="${ACTIVE_SCENARIO_LOCK_FILE:-${SCENARIO_RUNTIME_ROOT}/active-scenario.lock}"
+ACTIVE_SCENARIO_STATE_FILE="${ACTIVE_SCENARIO_STATE_FILE:-${SCENARIO_RUNTIME_ROOT}/active-scenario.env}"
 SCENARIO_CLEANUP_TRAP_ARMED="${SCENARIO_CLEANUP_TRAP_ARMED:-0}"
 
 ensure_scenario_dirs() {
@@ -19,6 +20,30 @@ scenario_command_lock_dir() {
 current_active_scenario() {
   [[ -f "${ACTIVE_SCENARIO_LOCK_FILE}" ]] || return 0
   cat "${ACTIVE_SCENARIO_LOCK_FILE}" 2>/dev/null || true
+}
+
+write_active_scenario_state() {
+  local scenario="$1"
+  local scenario_root="${2:-}"
+  if [[ -z "${scenario_root}" ]]; then
+    rm -f "${ACTIVE_SCENARIO_STATE_FILE}"
+    return 0
+  fi
+  cat > "${ACTIVE_SCENARIO_STATE_FILE}" <<EOF
+SCENARIO=${scenario}
+SCENARIO_ROOT=${scenario_root}
+EOF
+}
+
+current_active_scenario_root() {
+  local active
+  active="$(current_active_scenario || true)"
+  [[ -n "${active}" ]] || return 0
+  [[ -f "${ACTIVE_SCENARIO_STATE_FILE}" ]] || return 0
+  local state_scenario
+  state_scenario="$(site_env_value "${ACTIVE_SCENARIO_STATE_FILE}" SCENARIO)"
+  [[ "${state_scenario}" == "${active}" ]] || return 0
+  site_env_value "${ACTIVE_SCENARIO_STATE_FILE}" SCENARIO_ROOT
 }
 
 flow_env_file() {
@@ -224,22 +249,114 @@ scenario_service_status() {
 
 acquire_scenario_lock() {
   local scenario="$1"
+  local scenario_root="${2:-}"
   ensure_scenario_dirs
   local current="$(current_active_scenario)"
   if [[ -n "${current}" && "${current}" != "${scenario}" ]]; then
     echo "[scenario] ERROR: active scenario is ${current}; stop it before starting ${scenario}." >&2
     exit 1
   fi
-  printf '%s
-' "${scenario}" > "${ACTIVE_SCENARIO_LOCK_FILE}"
+  printf '%s\n' "${scenario}" > "${ACTIVE_SCENARIO_LOCK_FILE}"
+  write_active_scenario_state "${scenario}" "${scenario_root}"
 }
 
 release_scenario_lock() {
   local scenario="$1"
   local current="$(current_active_scenario)"
   if [[ "${current}" == "${scenario}" ]]; then
-    rm -f "${ACTIVE_SCENARIO_LOCK_FILE}"
+    rm -f "${ACTIVE_SCENARIO_LOCK_FILE}" "${ACTIVE_SCENARIO_STATE_FILE}"
   fi
+}
+
+is_rehearsal_scenario() {
+  local scenario="$1"
+  case "${scenario}" in
+    demo-rehearsal|cluster-rehearsal)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+rehearsal_scenario_root_env_var() {
+  local scenario="$1"
+  case "${scenario}" in
+    demo-rehearsal)
+      printf 'DEMO_REHEARSAL_ROOT\n'
+      ;;
+    cluster-rehearsal)
+      printf 'CLUSTER_REHEARSAL_ROOT\n'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+rehearsal_scenario_reset_script() {
+  local scenario="$1"
+  case "${scenario}" in
+    demo-rehearsal)
+      printf '%s/scripts/scenarios/demo-rehearsal/reset.sh\n' "${ROOT_DIR}"
+      ;;
+    cluster-rehearsal)
+      printf '%s/scripts/scenarios/cluster-rehearsal/reset.sh\n' "${ROOT_DIR}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+handoff_active_rehearsal_for_reset() {
+  local target="$1"
+  local active
+  active="$(current_active_scenario || true)"
+  [[ -n "${active}" ]] || return 0
+  [[ "${active}" == "${target}" ]] && return 0
+
+  if ! is_rehearsal_scenario "${active}" || ! is_rehearsal_scenario "${target}"; then
+    echo "[scenario] ERROR: active scenario is ${active}; stop it before starting ${target}." >&2
+    return 1
+  fi
+
+  local active_root
+  active_root="$(current_active_scenario_root || true)"
+  if [[ -z "${active_root}" ]]; then
+    echo "[scenario] ERROR: active scenario is ${active}, but its scenario root is unknown; rerun ${active}-reset before starting ${target}." >&2
+    return 1
+  fi
+
+  local reset_script
+  reset_script="$(rehearsal_scenario_reset_script "${active}" || true)"
+  if [[ -z "${reset_script}" || ! -f "${reset_script}" ]]; then
+    echo "[scenario] ERROR: active scenario ${active} cannot hand off to ${target} because its reset script is missing." >&2
+    return 1
+  fi
+
+  local root_env_var
+  root_env_var="$(rehearsal_scenario_root_env_var "${active}" || true)"
+  if [[ -z "${root_env_var}" ]]; then
+    echo "[scenario] ERROR: active scenario ${active} cannot hand off to ${target} because its scenario root binding is missing." >&2
+    return 1
+  fi
+
+  env \
+    -u DEMO_REHEARSAL_ROOT \
+    -u DEMO_REHEARSAL_KUBECONFIG \
+    -u DEMO_DEPLOY_ROOT \
+    -u CLUSTER_REHEARSAL_ROOT \
+    -u CLUSTER_DEPLOY_ROOT \
+    -u CLUSTER_DEPLOY_SHARED_KUBECONFIG \
+    -u CLUSTER_DEPLOY_SHARED_ADMIN_KUBECONFIG \
+    -u CLUSTER_DEPLOY_SHARED_MANAGER_KUBECONFIG \
+    -u CLUSTER_DEPLOY_SHARED_ADMIN_READY_ENV \
+    -u CLUSTER_DEPLOY_ADMIN_HANDOFF_DIR \
+    -u KUBECONFIG \
+    "${root_env_var}=${active_root}" \
+    bash "${reset_script}"
 }
 
 current_scenario_command() {

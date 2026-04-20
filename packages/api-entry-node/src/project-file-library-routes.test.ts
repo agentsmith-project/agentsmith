@@ -569,6 +569,168 @@ describe('project-file-library-routes', () => {
     );
   });
 
+  it('waits for a newly created root folder to become immediately visible before returning', async () => {
+    const json = vi.fn();
+    const createRes = {} as never;
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: createRes,
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Fresh Visibility Contract',
+      }),
+    });
+
+    const createdBody = json.mock.calls.at(-1)?.[2] as { id: string };
+    let rootListCalls = 0;
+    const putObject = vi.fn().mockResolvedValue(undefined);
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      putObject,
+      listObjectsV2: vi.fn().mockImplementation((_bucket: string, prefix: string) => {
+        if (prefix !== '') {
+          return Readable.from([]);
+        }
+        rootListCalls += 1;
+        if (rootListCalls < 2) {
+          return Readable.from([]);
+        }
+        return Readable.from([{ prefix: 'docs/' }]);
+      }),
+    });
+
+    const folderRes = {
+      statusCode: 200,
+      end: vi.fn(),
+    } as unknown as http.ServerResponse & { end: ReturnType<typeof vi.fn>; statusCode: number };
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryFolders',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req: {} as never,
+      res: folderRes,
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn().mockResolvedValue({
+        path: 'docs',
+      }),
+    })).resolves.toBe(true);
+
+    expect(putObject).toHaveBeenCalledWith(
+      expect.any(String),
+      'docs/',
+      expect.any(Buffer),
+      0,
+      expect.objectContaining({
+        'Content-Type': 'application/x-directory',
+      }),
+    );
+    expect(folderRes.statusCode).toBe(204);
+    expect(folderRes.end).toHaveBeenCalledTimes(1);
+
+    const entriesJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryEntries',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req: {
+        url: '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/entries',
+      } as never,
+      res: {} as never,
+      deps,
+      user: OWNER_USER,
+      json: entriesJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(entriesJson).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({
+        path: '',
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'directory',
+            path: 'docs/',
+            name: 'docs',
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it('retries a transient first folder write for a freshly created library', async () => {
+    const json = vi.fn();
+    const createRes = {} as never;
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: createRes,
+      deps,
+      user: OWNER_USER,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Fresh Retry Contract',
+      }),
+    });
+
+    const createdBody = json.mock.calls.at(-1)?.[2] as { id: string };
+    const transientBucketNotReadyError = Object.assign(
+      new Error('The specified bucket does not exist'),
+      { code: 'NoSuchBucket' },
+    );
+    const putObject = vi.fn()
+      .mockRejectedValueOnce(transientBucketNotReadyError)
+      .mockResolvedValue(undefined);
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      putObject,
+      listObjectsV2: vi.fn().mockReturnValue(Readable.from([{ prefix: 'docs/' }])),
+    });
+
+    const folderRes = {
+      statusCode: 200,
+      end: vi.fn(),
+    } as unknown as http.ServerResponse & { end: ReturnType<typeof vi.fn>; statusCode: number };
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryFolders',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req: {} as never,
+      res: folderRes,
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn().mockResolvedValue({
+        path: 'docs',
+      }),
+    })).resolves.toBe(true);
+
+    expect(putObject).toHaveBeenCalledTimes(2);
+    expect(folderRes.statusCode).toBe(204);
+    expect(folderRes.end).toHaveBeenCalledTimes(1);
+  });
+
   it('cancels file library downloads when the client disconnects mid-stream', async () => {
     const json = vi.fn();
     const createRes = {} as never;

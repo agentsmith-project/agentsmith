@@ -33,7 +33,7 @@ fi
 
 cleanup_stale_cluster_runtime_containers
 
-cleanup_report_dir_artifacts "${REPORT_DIR}"
-rm -rf "${STATE_DIR}"/* "${LOG_DIR}"/* "${REPORT_DIR}"/*
+# Reports are formal rehearsal evidence and must survive reset/handoff.
+rm -rf "${STATE_DIR}"/* "${LOG_DIR}"/*
 state_set release.phase reset_completed
 log "reset ok (compose and local state only; kubernetes resources were left untouched)"

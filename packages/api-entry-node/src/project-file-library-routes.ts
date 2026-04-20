@@ -51,6 +51,10 @@ type GatewayObjectItem = {
   lastModified: string;
 };
 
+const FILE_LIBRARY_FOLDER_CREATE_MAX_ATTEMPTS = 3;
+const FILE_LIBRARY_FOLDER_VISIBILITY_MAX_POLLS = 5;
+const FILE_LIBRARY_FOLDER_RETRY_DELAY_MS = 150;
+
 function ensureDirectoryPath(input: string): string {
   const normalized = normalizeFileLibraryPath(input);
   if (!normalized) {
@@ -234,6 +238,148 @@ function firstHeaderValue(input: string | string[] | undefined): string | null {
   const raw = Array.isArray(input) ? input[0] : input;
   const first = raw.split(',')[0]?.trim();
   return first && first.length > 0 ? first : null;
+}
+
+function folderParentPath(folderPath: string): string {
+  const trimmedPath = folderPath.endsWith('/') ? folderPath.slice(0, -1) : folderPath;
+  const lastSlash = trimmedPath.lastIndexOf('/');
+  if (lastSlash < 0) {
+    return '';
+  }
+  return `${trimmedPath.slice(0, lastSlash + 1)}`;
+}
+
+function isRetriableFolderCreateError(error: unknown): boolean {
+  const code = typeof error === 'object' && error !== null && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+    ? (error as { code: string }).code
+    : '';
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  if (code === 'NoSuchBucket' || code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ETIMEDOUT') {
+    return true;
+  }
+  return message.includes('no such bucket')
+    || message.includes('specified bucket does not exist')
+    || message.includes('socket hang up')
+    || message.includes('connection reset')
+    || message.includes('econnrefused')
+    || message.includes('econnreset')
+    || message.includes('etimedout')
+    || message.includes('timed out')
+    || message.includes('file_library_folder_not_visible');
+}
+
+async function waitForAbortableDelay(
+  ms: number,
+  signal: AbortSignal | undefined,
+  abortMessage: string,
+): Promise<void> {
+  if (signal?.aborted) {
+    throw createAbortError(signal.reason, abortMessage);
+  }
+  if (ms <= 0) {
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timeoutHandle = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      clearTimeout(timeoutHandle);
+      signal?.removeEventListener('abort', onAbort);
+      reject(createAbortError(signal.reason, abortMessage));
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function waitForFolderVisibility(args: {
+  client: MinioClient;
+  bucket: string;
+  folderPath: string;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const parentPath = folderParentPath(args.folderPath);
+  for (let attempt = 0; attempt < FILE_LIBRARY_FOLDER_VISIBILITY_MAX_POLLS; attempt += 1) {
+    const listed = await listGatewayObjects(args.client, args.bucket, {
+      prefix: parentPath,
+      pageSize: 1000,
+      signal: args.signal,
+    });
+    const isVisible = listed.commonPrefixes.includes(args.folderPath)
+      || listed.objects.some((item) => item.key === args.folderPath);
+    if (isVisible) {
+      return;
+    }
+    if (attempt < FILE_LIBRARY_FOLDER_VISIBILITY_MAX_POLLS - 1) {
+      await waitForAbortableDelay(
+        FILE_LIBRARY_FOLDER_RETRY_DELAY_MS,
+        args.signal,
+        'file_library_folder_create_aborted',
+      );
+    }
+  }
+  throw new Error('file_library_folder_not_visible');
+}
+
+async function createFolderAndWaitForVisibility(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  filesystemName: string;
+  folderPath: string;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const bucket = fileLibraryBucketName(args.filesystemName);
+
+  for (let attempt = 0; attempt < FILE_LIBRARY_FOLDER_CREATE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const client = await awaitAbortableOperation(
+        createFileLibraryGatewayClient({
+          deps: args.deps,
+          workspaceId: args.workspaceId,
+          projectId: args.projectId,
+          libraryId: args.libraryId,
+          filesystemName: args.filesystemName,
+          signal: args.signal,
+        }),
+        {
+          signal: args.signal,
+          abortMessage: 'file_library_folder_create_aborted',
+        },
+      );
+      await awaitAbortableOperation(
+        client.putObject(bucket, args.folderPath, Buffer.alloc(0), 0, {
+          'Content-Type': 'application/x-directory',
+        }),
+        {
+          signal: args.signal,
+          abortMessage: 'file_library_folder_create_aborted',
+        },
+      );
+      await waitForFolderVisibility({
+        client,
+        bucket,
+        folderPath: args.folderPath,
+        signal: args.signal,
+      });
+      return;
+    } catch (error) {
+      const canRetry = isRetriableFolderCreateError(error) && attempt < FILE_LIBRARY_FOLDER_CREATE_MAX_ATTEMPTS - 1;
+      if (!canRetry) {
+        throw error;
+      }
+      await waitForAbortableDelay(
+        FILE_LIBRARY_FOLDER_RETRY_DELAY_MS * (attempt + 1),
+        args.signal,
+        'file_library_folder_create_aborted',
+      );
+    }
+  }
 }
 
 function normalizeBaseUrl(value: string): string {
@@ -614,25 +760,38 @@ export async function handleProjectFileLibraryRoutes(args: {
   }
 
   if (routeKind === 'fileLibraryFolders' && method === 'POST') {
-    const parsed = CreateFileLibraryFolderRequestSchema.safeParse(await readBody(req));
-    if (!parsed.success) {
-      json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_folder_request' });
+    const operation = createHttpOperationEnvelope({ req, res });
+    try {
+      const parsed = CreateFileLibraryFolderRequestSchema.safeParse(await readBody(req));
+      operation.markRequestBodyConsumed();
+      if (!parsed.success) {
+        json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_folder_request' });
+        return true;
+      }
+      const folderPath = ensureDirectoryPath(parsed.data.path);
+      await createFolderAndWaitForVisibility({
+        deps,
+        workspaceId,
+        projectId,
+        libraryId,
+        filesystemName: library.filesystem_name,
+        folderPath,
+        signal: operation.signal,
+      });
+      if (operation.signal.aborted) {
+        return true;
+      }
+      res.statusCode = 204;
+      res.end();
       return true;
+    } catch (error) {
+      if (operation.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+        return true;
+      }
+      throw error;
+    } finally {
+      operation.cleanup();
     }
-    const folderPath = ensureDirectoryPath(parsed.data.path);
-    const client = await createFileLibraryGatewayClient({
-      deps,
-      workspaceId,
-      projectId,
-      libraryId,
-      filesystemName: library.filesystem_name,
-    });
-    await client.putObject(fileLibraryBucketName(library.filesystem_name), folderPath, Buffer.alloc(0), 0, {
-      'Content-Type': 'application/x-directory',
-    });
-    res.statusCode = 204;
-    res.end();
-    return true;
   }
 
   if (routeKind === 'fileLibraryDelete' && method === 'POST') {

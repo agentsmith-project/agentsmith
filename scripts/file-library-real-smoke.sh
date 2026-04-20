@@ -359,6 +359,19 @@ if [[ "${status}" != "204" ]]; then
   exit 1
 fi
 
+status="$(api_json GET "/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}/entries")"
+if [[ "${status}" != "200" ]]; then
+  err "failed to list root entries after folder create: ${status}"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+ROOT_HAS_DOCS_FOLDER="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) && j.items.some((item) => item.kind === 'directory' && item.path === 'docs/' && item.name === 'docs') ? '1' : ''" || true)"
+if [[ "${ROOT_HAS_DOCS_FOLDER}" != "1" ]]; then
+  err "new docs folder missing from root entries immediately after create"
+  cat "${BODY_FILE}" >&2
+  exit 1
+fi
+
 printf 'hello from file-library smoke\n' > "${UPLOAD_FILE}"
 status="$(curl -sS -D "${HEADERS_FILE}" -o "${BODY_FILE}" -w '%{http_code}' \
   -H "Authorization: Bearer $(cat "${TOKEN_FILE}")" \

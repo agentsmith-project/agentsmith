@@ -55,8 +55,8 @@ if demo_mode_is_full; then
     "${DEMO_KIND_KUBECONFIG_PATH}"
 fi
 
-cleanup_report_dir_artifacts "${REPORT_DIR}"
-rm -rf "${STATE_DIR}"/* "${LOG_DIR}"/* "${REPORT_DIR}"/*
+# Reports are formal rehearsal evidence and must survive reset/handoff.
+rm -rf "${STATE_DIR}"/* "${LOG_DIR}"/*
 state_set release.phase reset_completed
 state_set reset.mode "$(demo_deploy_mode)"
 log "reset ok"

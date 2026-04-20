@@ -108,7 +108,14 @@ test.describe('@lane-real files integration flow', () => {
 
       await page.getByTestId('files__new-folder').click();
       await page.getByTestId('files__dialog__new-folder').locator('input').fill(folderName);
+      const createFolderResponsePromise = page.waitForResponse((response) => (
+        response.request().method() === 'POST'
+        && response.url().includes(`/workspaces/${workspaceId}/projects/${projectId}/file-libraries/`)
+        && response.url().includes('/folders')
+      ));
       await page.getByTestId('files__dialog__new-folder').getByRole('button', { name: /Create|创建/i }).click();
+      const createFolderResponse = await createFolderResponsePromise;
+      expect(createFolderResponse.status()).toBe(204);
       await expect(page.getByRole('button', { name: folderName }).first()).toHaveCount(1, { timeout: 30_000 });
       await page.getByRole('button', { name: /^root$/i }).click();
       await expect(page.getByRole('button', { name: /^root$/i })).toBeVisible({ timeout: 30_000 });

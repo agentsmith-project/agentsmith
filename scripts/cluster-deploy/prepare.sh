@@ -20,7 +20,9 @@ require_release_path "${RELEASE_ROOT}/docs/contracts/cluster-deployment-spec-v1.
 require_release_path "${RELEASE_ROOT}/docs/user-guides/cluster-admin-runbook.md" "cluster admin runbook"
 require_release_path "${TOOLS_DIR}/kubectl" "bundled kubectl" "exe"
 require_release_path "${RELEASE_ROOT}/compose/docker-compose.yml" "compose asset"
-require_release_path "${RELEASE_ROOT}/images" "bundled image archives directory" "dir"
+if release_bundle_includes_bundled_image_archives; then
+  require_release_path "${RELEASE_ROOT}/images" "bundled image archives directory" "dir"
+fi
 if [[ "$(cluster_deploy_mode)" == "full-auto" ]]; then
   require_release_path "${RELEASE_ROOT}/addons/ingress-nginx/upstream-deploy.yaml" "bundled ingress-nginx manifest for full-auto mode"
   require_release_path "${RELEASE_ROOT}/addons/juicefs-csi/upstream-manifest.yaml" "bundled juicefs-csi manifest for full-auto mode"

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -78,6 +78,7 @@ render_k8s_external_dependency_services() { :; }
       'agentsmith_runner_image=agentsmith-runner:test',
       'sandbox_manager_image=sandbox-manager:test',
       'llm_universal_proxy_image=llm-universal-proxy:test',
+      'bundled_image_archives_included=1',
       '',
     ].join('\n'),
     'utf8',
@@ -106,6 +107,16 @@ exit 0
     'utf8',
   );
   chmodSync(path.join(binDir, 'docker'), 0o755);
+  writeFileSync(
+    path.join(binDir, 'kind'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${tempRoot}/kind.log"
+exit 0
+`,
+    'utf8',
+  );
+  chmodSync(path.join(binDir, 'kind'), 0o755);
 }
 
 function runDemoLoadBundledImages(tempRoot: string, extraEnv: NodeJS.ProcessEnv = {}): string {
@@ -121,6 +132,30 @@ function runDemoLoadBundledImages(tempRoot: string, extraEnv: NodeJS.ProcessEnv 
         export PATH="${path.join(tempRoot, 'bin')}:$PATH"
         source "${path.join(tempRoot, 'scripts', 'demo-deploy', 'deploy.sh')}"
         load_demo_bundled_images
+      `,
+    ],
+    {
+      cwd: tempRoot,
+      env: { ...process.env, ...extraEnv },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    },
+  );
+}
+
+function runDemoLoadKindImages(tempRoot: string, extraEnv: NodeJS.ProcessEnv = {}): string {
+  return execFileSync(
+    'bash',
+    [
+      '-lc',
+      `
+        set -euo pipefail
+        export HOME="${tempRoot}"
+        export RELEASE_ROOT="${path.join(tempRoot, 'release')}"
+        export DEMO_DEPLOY_ROOT="${path.join(tempRoot, 'deploy-root')}"
+        export PATH="${path.join(tempRoot, 'bin')}:$PATH"
+        source "${path.join(tempRoot, 'scripts', 'demo-deploy', 'deploy.sh')}"
+        load_demo_kind_images
       `,
     ],
     {
@@ -149,8 +184,37 @@ describe('demo deploy bundled image loading', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-deploy-skip-load-'));
     try {
       stageDemoDeployFixture(tempRoot);
+      unlinkSync(path.join(tempRoot, 'release', 'images', 'example.tar'));
       runDemoLoadBundledImages(tempRoot, { SKIP_BUNDLED_IMAGE_LOAD: '1' });
       expect(existsSync(path.join(tempRoot, 'docker.log'))).toBe(false);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('preloads demo full-mode kind images from local docker images when the release bundle omits archives', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-deploy-kind-local-'));
+    try {
+      stageDemoDeployFixture(tempRoot);
+      writeFileSync(
+        path.join(tempRoot, 'release', 'VERSION'),
+        [
+          'agentsmith_app_image=agentsmith-app:test',
+          'agentsmith_runner_image=agentsmith-runner:test',
+          'sandbox_manager_image=sandbox-manager:test',
+          'llm_universal_proxy_image=llm-universal-proxy:test',
+          'bundled_image_archives_included=0',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+      unlinkSync(path.join(tempRoot, 'release', 'images', 'example.tar'));
+
+      runDemoLoadKindImages(tempRoot);
+      const kindLog = readFileSync(path.join(tempRoot, 'kind.log'), 'utf8');
+
+      expect(kindLog).toContain('load docker-image agentsmith-runner:test');
+      expect(kindLog).not.toContain('load image-archive');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

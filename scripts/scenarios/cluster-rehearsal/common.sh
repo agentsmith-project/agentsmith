@@ -23,6 +23,9 @@ apply_cluster_rehearsal_fast_path_env() {
   if [[ -z "${SKIP_BUNDLED_IMAGE_LOAD:-}" && -n "${CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD:-}" ]]; then
     export SKIP_BUNDLED_IMAGE_LOAD="${CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD}"
   fi
+  if [[ -z "${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-}" && "${SKIP_BUNDLED_IMAGE_LOAD:-0}" == "1" ]]; then
+    export SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1
+  fi
 }
 
 init_cluster_rehearsal_env() {
@@ -182,9 +185,11 @@ validate_cluster_rehearsal_site_env() {
 ensure_cluster_rehearsal_release_bundle() {
   local release_id="cluster-rehearsal-$(date -u +%Y%m%dT%H%M%SZ)"
   local skip_release_archive="${SKIP_RELEASE_ARCHIVE:-${CLUSTER_REHEARSAL_SKIP_RELEASE_ARCHIVE:-}}"
+  local skip_bundled_image_archive_generation="${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-}"
   OUT_DIR="${CLUSTER_REHEARSAL_RELEASES_DIR}" \
     RELEASE_ID="${release_id}" \
     SKIP_RELEASE_ARCHIVE="${skip_release_archive}" \
+    SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION="${skip_bundled_image_archive_generation}" \
     bash "${ROOT_DIR}/scripts/cluster-deploy/build-bundle.sh"
   export RELEASE_ROOT="${CLUSTER_REHEARSAL_RELEASES_DIR}/agentsmith-${release_id}"
 }

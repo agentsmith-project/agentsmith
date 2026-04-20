@@ -18,6 +18,9 @@ apply_demo_rehearsal_fast_path_env() {
   if [[ -z "${SKIP_BUNDLED_IMAGE_LOAD:-}" && -n "${DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD:-}" ]]; then
     export SKIP_BUNDLED_IMAGE_LOAD="${DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD}"
   fi
+  if [[ -z "${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-}" && "${SKIP_BUNDLED_IMAGE_LOAD:-0}" == "1" ]]; then
+    export SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1
+  fi
 }
 
 init_demo_rehearsal_env() {
@@ -99,10 +102,12 @@ validate_demo_rehearsal_site_env() {
 ensure_demo_rehearsal_release_bundle() {
   local release_id="demo-rehearsal-$(date -u +%Y%m%dT%H%M%SZ)"
   local skip_release_archive="${SKIP_RELEASE_ARCHIVE:-${DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE:-}}"
+  local skip_bundled_image_archive_generation="${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-}"
   OUT_DIR="${DEMO_REHEARSAL_RELEASES_DIR}" \
     RELEASE_ID="${release_id}" \
     SKIP_RELEASE_PRECHECK=1 \
     SKIP_RELEASE_ARCHIVE="${skip_release_archive}" \
+    SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION="${skip_bundled_image_archive_generation}" \
     bash "${ROOT_DIR}/scripts/demo-deploy/build-offline-bundle.sh"
   export RELEASE_ROOT="${DEMO_REHEARSAL_RELEASES_DIR}/agentsmith-${release_id}"
   sync_demo_rehearsal_release_site_env

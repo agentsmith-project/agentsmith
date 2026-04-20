@@ -194,7 +194,7 @@ describe('demo-rehearsal site env seeding', () => {
     }
   });
 
-  it('passes SKIP_RELEASE_ARCHIVE=1 to the demo bundle builder only when the rehearsal fast-path flag is enabled', () => {
+  it('passes release bundle fast-path env to the demo bundle builder only when the rehearsal fast-path flag is enabled', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-archive-flag-'));
     try {
       stageDemoRehearsalFixture(tempRoot);
@@ -205,6 +205,7 @@ describe('demo-rehearsal site env seeding', () => {
 set -euo pipefail
 mkdir -p "\${OUT_DIR}"
 printf 'SKIP_RELEASE_ARCHIVE=%s\\n' "\${SKIP_RELEASE_ARCHIVE:-}" > "\${OUT_DIR}/builder.env"
+printf 'SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=%s\\n' "\${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-}" >> "\${OUT_DIR}/builder.env"
 mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
 `,
         'utf8',
@@ -219,7 +220,19 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
           cat "${tempRoot}/scenario/releases/builder.env"
           printf 'release_root=%s\\n' "\${RELEASE_ROOT}"
         `,
-        { DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE: '1' },
+        { DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE: '1', DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD: '1' },
+      );
+
+      const withExplicitArchiveOverride = runDemoRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/demo-rehearsal/common.sh"
+          init_demo_rehearsal_env
+          rm -f "${tempRoot}/scenario/releases/builder.env"
+          ensure_demo_rehearsal_release_bundle
+          cat "${tempRoot}/scenario/releases/builder.env"
+        `,
+        { SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1' },
       );
 
       const withoutFastPath = runDemoRehearsalCommand(
@@ -234,9 +247,13 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
       );
 
       expect(withFastPath).toContain('SKIP_RELEASE_ARCHIVE=1');
+      expect(withFastPath).toContain('SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1');
       expect(withFastPath).toContain(`release_root=${path.join(tempRoot, 'scenario', 'releases', 'agentsmith-')}`);
+      expect(withExplicitArchiveOverride).toContain('SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1');
       expect(withoutFastPath).toContain('SKIP_RELEASE_ARCHIVE=');
       expect(withoutFastPath).not.toContain('SKIP_RELEASE_ARCHIVE=1');
+      expect(withoutFastPath).toContain('SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=');
+      expect(withoutFastPath).not.toContain('SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

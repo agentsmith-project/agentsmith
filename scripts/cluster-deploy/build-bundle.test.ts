@@ -254,4 +254,20 @@ describe('cluster build bundle archive packaging', () => {
       rmSync(tempRoot, { recursive: true, force: true });
     }
   });
+
+  it('omits bundled image archives when SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION=1 while preserving bundle metadata', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-build-bundle-no-images-'));
+
+    try {
+      stageClusterBuildBundleFixture(tempRoot);
+
+      runClusterBuildBundle(tempRoot, { SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION: '1' });
+      const bundleDir = path.join(tempRoot, 'out', 'agentsmith-test-release');
+
+      expect(existsSync(path.join(bundleDir, 'images'))).toBe(false);
+      expect(readFileSync(path.join(bundleDir, 'VERSION'), 'utf8')).toContain('bundled_image_archives_included=0');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
 });

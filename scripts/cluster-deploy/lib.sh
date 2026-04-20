@@ -193,6 +193,18 @@ read_version_value() {
   awk -F= -v target="${key}" '$1==target{print $2}' "${RELEASE_ROOT}/VERSION"
 }
 
+release_bundle_includes_bundled_image_archives() {
+  local bundled_archives_included=""
+  if [[ -n "${RELEASE_ROOT:-}" && -f "${RELEASE_ROOT}/VERSION" ]]; then
+    bundled_archives_included="$(read_version_value bundled_image_archives_included)"
+  fi
+  if [[ -n "${bundled_archives_included}" ]]; then
+    [[ "${bundled_archives_included}" != "0" ]]
+    return
+  fi
+  [[ "${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-0}" != "1" ]]
+}
+
 require_version_images() {
   if [[ -z "${REGISTRY_HOST:-}" || -z "${K8S_REGISTRY_HOST:-}" ]]; then
     load_registry_env
@@ -265,9 +277,11 @@ bundled_image_archives() {
 load_bundled_images() {
   local tar_file
   if [[ "${SKIP_BUNDLED_IMAGE_LOAD:-0}" == "1" ]]; then
-    bundled_image_archives >/dev/null
     log "skipping bundled image reload because SKIP_BUNDLED_IMAGE_LOAD=1"
     return 0
+  fi
+  if ! release_bundle_includes_bundled_image_archives; then
+    die "release bundle omits bundled image archives; rerun with SKIP_BUNDLED_IMAGE_LOAD=1 and local images available"
   fi
   while IFS= read -r tar_file; do
     docker load -i "${tar_file}" >/dev/null

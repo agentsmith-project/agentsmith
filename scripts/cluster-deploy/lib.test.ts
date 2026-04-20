@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -86,6 +86,7 @@ describe('cluster deploy bundled image loading', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-lib-skip-load-'));
     try {
       stageClusterLibFixture(tempRoot);
+      unlinkSync(path.join(tempRoot, 'release', 'images', 'example.tar'));
       runClusterLoadBundledImages(tempRoot, { SKIP_BUNDLED_IMAGE_LOAD: '1' });
       expect(existsSync(path.join(tempRoot, 'docker.log'))).toBe(false);
     } finally {

@@ -16,6 +16,10 @@ BUNDLE_DIR="${OUT_DIR}/agentsmith-${RELEASE_ID}"
 IMAGES_DIR="${BUNDLE_DIR}/images"
 TOOLS_DIR="${BUNDLE_DIR}/tools"
 BUNDLE_PLATFORM="${BUNDLE_PLATFORM:-linux/amd64}"
+BUNDLED_IMAGE_ARCHIVES_INCLUDED=1
+if [[ "${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-0}" == "1" ]]; then
+  BUNDLED_IMAGE_ARCHIVES_INCLUDED=0
+fi
 
 require_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "missing command: $1" >&2; exit 1; }; }
 require_cmd docker
@@ -87,7 +91,10 @@ done
 
 mkdir -p "${OUT_DIR}"
 rm -rf "${BUNDLE_DIR}"
-mkdir -p "${BUNDLE_DIR}" "${IMAGES_DIR}" "${TOOLS_DIR}"
+mkdir -p "${BUNDLE_DIR}" "${TOOLS_DIR}"
+if [[ "${BUNDLED_IMAGE_ARCHIVES_INCLUDED}" == "1" ]]; then
+  mkdir -p "${IMAGES_DIR}"
+fi
 
 APP_BASE_HASH="$(hash_files \
   "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-app-base" \
@@ -221,15 +228,19 @@ ALL_IMAGES=(
   "${DEPENDENCY_IMAGES[@]}"
 )
 
-for image in "${ALL_IMAGES[@]}"; do
-  file_name="$(printf '%s' "${image}" | tr '/:@' '---').tar"
-  echo "[bundle] saving ${image}"
-  if printf '%s\n' "${DEPENDENCY_IMAGES[@]}" | grep -Fxq "${image}"; then
-    docker save --platform "${BUNDLE_PLATFORM}" "${image}" -o "${IMAGES_DIR}/${file_name}"
-  else
-    docker save "${image}" -o "${IMAGES_DIR}/${file_name}"
-  fi
-done
+if [[ "${BUNDLED_IMAGE_ARCHIVES_INCLUDED}" == "1" ]]; then
+  for image in "${ALL_IMAGES[@]}"; do
+    file_name="$(printf '%s' "${image}" | tr '/:@' '---').tar"
+    echo "[bundle] saving ${image}"
+    if printf '%s\n' "${DEPENDENCY_IMAGES[@]}" | grep -Fxq "${image}"; then
+      docker save --platform "${BUNDLE_PLATFORM}" "${image}" -o "${IMAGES_DIR}/${file_name}"
+    else
+      docker save "${image}" -o "${IMAGES_DIR}/${file_name}"
+    fi
+  done
+else
+  echo "[bundle] skipped bundled image archive generation for ${BUNDLE_DIR}"
+fi
 
 mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/kind" "${BUNDLE_DIR}/scripts" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/k8s" "${BUNDLE_DIR}/e2e" "${BUNDLE_DIR}/infra/runtime"
 mkdir -p "${BUNDLE_DIR}/universal-proxy"
@@ -308,6 +319,7 @@ agentsmith_verify_runner_base_image=${VERIFY_RUNNER_BASE_IMAGE}
 agentsmith_verify_runner_image=${VERIFY_RUNNER_IMAGE}
 sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}
 llm_universal_proxy_image=${UNIVERSAL_PROXY_IMAGE}
+bundled_image_archives_included=${BUNDLED_IMAGE_ARCHIVES_INCLUDED}
 EOF
 
 (cd "${BUNDLE_DIR}" && find . -type f -print0 | sort -z | xargs -0 sha256sum > checksums.txt)

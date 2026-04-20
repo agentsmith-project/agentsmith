@@ -15,6 +15,10 @@ RELEASE_ID="${RELEASE_ID:-$(git -C "${ROOT_DIR}" rev-parse --short HEAD)-$(date 
 BUNDLE_DIR="${OUT_DIR}/agentsmith-${RELEASE_ID}"
 IMAGES_DIR="${BUNDLE_DIR}/images"
 TOOLS_DIR="${BUNDLE_DIR}/tools"
+BUNDLED_IMAGE_ARCHIVES_INCLUDED=1
+if [[ "${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-0}" == "1" ]]; then
+  BUNDLED_IMAGE_ARCHIVES_INCLUDED=0
+fi
 
 require_cmd tar
 require_cmd sha256sum
@@ -37,7 +41,10 @@ INGRESS_NGINX_VERSION="${INGRESS_NGINX_VERSION:-v1.15.1}"
 
 mkdir -p "${OUT_DIR}"
 rm -rf "${BUNDLE_DIR}"
-mkdir -p "${BUNDLE_DIR}" "${IMAGES_DIR}" "${TOOLS_DIR}"
+mkdir -p "${BUNDLE_DIR}" "${TOOLS_DIR}"
+if [[ "${BUNDLED_IMAGE_ARCHIVES_INCLUDED}" == "1" ]]; then
+  mkdir -p "${IMAGES_DIR}"
+fi
 
 copy_bundle_file() {
   local source_file="$1"
@@ -213,9 +220,13 @@ save_image_archive() {
   docker save "${image}" -o "${IMAGES_DIR}/${archive_name}"
 }
 
-for image in "${FIRST_PARTY_IMAGES[@]}" "${COMPOSE_DEPENDENCY_IMAGES[@]}" "${CLUSTER_DEPENDENCY_TARGET_IMAGES[@]}"; do
-  save_image_archive "${image}"
-done
+if [[ "${BUNDLED_IMAGE_ARCHIVES_INCLUDED}" == "1" ]]; then
+  for image in "${FIRST_PARTY_IMAGES[@]}" "${COMPOSE_DEPENDENCY_IMAGES[@]}" "${CLUSTER_DEPENDENCY_TARGET_IMAGES[@]}"; do
+    save_image_archive "${image}"
+  done
+else
+  log "skipped bundled image archive generation for ${BUNDLE_DIR}"
+fi
 
 cat >> "${BUNDLE_DIR}/VERSION" <<EOF
 juicefs_version=${JUICEFS_VERSION}
@@ -229,6 +240,7 @@ juicefs_csi_node_registrar_image=${JUICEFS_CSI_NODE_REGISTRAR_IMAGE}
 ingress_nginx_version=${INGRESS_NGINX_VERSION}
 ingress_nginx_controller_image=${INGRESS_NGINX_CONTROLLER_IMAGE}
 ingress_nginx_certgen_image=${INGRESS_NGINX_CERTGEN_IMAGE}
+bundled_image_archives_included=${BUNDLED_IMAGE_ARCHIVES_INCLUDED}
 EOF
 
 (cd "${BUNDLE_DIR}" && find . -type f -print0 | sort -z | xargs -0 sha256sum > checksums.txt)

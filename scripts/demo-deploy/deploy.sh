@@ -36,20 +36,65 @@ image_tar_name() {
   printf '%s' "$1" | tr '/:@' '---'
 }
 
+release_bundle_includes_bundled_image_archives() {
+  local bundled_archives_included=""
+  if [[ -f "${RELEASE_ROOT}/VERSION" ]]; then
+    bundled_archives_included="$(awk -F= '$1=="bundled_image_archives_included"{print $2}' "${RELEASE_ROOT}/VERSION")"
+  fi
+  if [[ -n "${bundled_archives_included}" ]]; then
+    [[ "${bundled_archives_included}" != "0" ]]
+    return
+  fi
+  [[ "${SKIP_BUNDLED_IMAGE_ARCHIVE_GENERATION:-0}" != "1" ]]
+}
+
 load_demo_bundled_images() {
+  if [[ "${SKIP_BUNDLED_IMAGE_LOAD:-0}" == "1" ]]; then
+    log "skipping bundled image reload because SKIP_BUNDLED_IMAGE_LOAD=1"
+    return 0
+  fi
+  if ! release_bundle_includes_bundled_image_archives; then
+    die "release bundle omits bundled image archives; rerun with SKIP_BUNDLED_IMAGE_LOAD=1 and local images available"
+  fi
   local tar_file
   local -a image_archives=()
   shopt -s nullglob
   image_archives=("${RELEASE_ROOT}"/images/*.tar)
   shopt -u nullglob
   (( ${#image_archives[@]} > 0 )) || die "no image archives found under ${RELEASE_ROOT}/images"
-  if [[ "${SKIP_BUNDLED_IMAGE_LOAD:-0}" == "1" ]]; then
-    log "skipping bundled image reload because SKIP_BUNDLED_IMAGE_LOAD=1"
-    return 0
-  fi
   for tar_file in "${image_archives[@]}"; do
     log "loading $(basename "${tar_file}")"
     docker load -i "${tar_file}" >/dev/null
+  done
+}
+
+load_demo_kind_images() {
+  local image archive_path
+  local juicefs_csi_version="${JUICEFS_CSI_VERSION:-v0.31.3}"
+  local -a kind_images=(
+    "${RUNNER_IMAGE}"
+    "${SANDBOX_MANAGER_IMAGE}"
+    "juicedata/juicefs-csi-driver:${juicefs_csi_version}"
+    "juicedata/csi-dashboard:${juicefs_csi_version}"
+    "juicedata/mount:ce-v1.3.1"
+    "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0"
+    "registry.k8s.io/sig-storage/csi-resizer:v1.9.0"
+    "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0"
+    "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
+  )
+
+  if release_bundle_includes_bundled_image_archives; then
+    for image in "${kind_images[@]}"; do
+      archive_path="${RELEASE_ROOT}/images/$(image_tar_name "${image}").tar"
+      [[ -f "${archive_path}" ]] || die "missing kind image archive: ${archive_path}"
+      kind load image-archive "${archive_path}" --name "${KIND_CLUSTER_NAME}" >/dev/null
+    done
+    return 0
+  fi
+
+  for image in "${kind_images[@]}"; do
+    docker image inspect "${image}" >/dev/null 2>&1 || die "missing local image for demo kind preload: ${image}"
+    kind load docker-image "${image}" --name "${KIND_CLUSTER_NAME}" >/dev/null
   done
 }
 
@@ -111,12 +156,7 @@ main() {
     export KUBECONFIG="${DEMO_KIND_KUBECONFIG_PATH}"
   fi
 
-  JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
-  for image in "${RUNNER_IMAGE}" "${SANDBOX_MANAGER_IMAGE}" "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}" "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}" "juicedata/mount:ce-v1.3.1" "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0" "registry.k8s.io/sig-storage/csi-resizer:v1.9.0" "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0" "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"; do
-    archive_path="${RELEASE_ROOT}/images/$(image_tar_name "${image}").tar"
-    [[ -f "${archive_path}" ]] || die "missing kind image archive: ${archive_path}"
-    kind load image-archive "${archive_path}" --name "${KIND_CLUSTER_NAME}" >/dev/null
-  done
+  load_demo_kind_images
 
   kubectl apply -f "${RELEASE_ROOT}/k8s/juicefs-csi.yaml" >/dev/null
   kubectl rollout restart statefulset/juicefs-csi-controller -n kube-system >/dev/null

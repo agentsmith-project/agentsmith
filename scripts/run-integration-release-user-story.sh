@@ -11,6 +11,7 @@ source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
+source "${ROOT_DIR}/scripts/lib/kind-cluster-bootstrap.sh"
 source "${ROOT_DIR}/scripts/lib/runner-image-common.sh"
 ensure_backend_real_state
 
@@ -67,9 +68,9 @@ fi
 
 ensure_backend_real_state
 INTEGRATION_DIR="$(backend_real_tmp_file integration-release-user-story)"
-mkdir -p "${INTEGRATION_DIR}"
-SANDBOX_LOG="${INTEGRATION_SANDBOX_LOG:-${INTEGRATION_DIR}/sandbox-manager.log}"
-CONFIG_PATH="${INTEGRATION_SANDBOX_CONFIG:-${INTEGRATION_DIR}/sandbox-manager.yaml}"
+SANDBOX_LOG="$(backend_real_resolve_runtime_path "${INTEGRATION_SANDBOX_LOG:-${INTEGRATION_DIR}/sandbox-manager.log}")"
+CONFIG_PATH="$(backend_real_resolve_runtime_path "${INTEGRATION_SANDBOX_CONFIG:-${INTEGRATION_DIR}/sandbox-manager.yaml}")"
+mkdir -p "${INTEGRATION_DIR}" "$(dirname "${SANDBOX_LOG}")" "$(dirname "${CONFIG_PATH}")"
 
 if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
   info "building internal runner image ${RUNNER_IMAGE}"
@@ -80,7 +81,17 @@ elif ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
 fi
 
 CONTEXT_NAME="$(kubectl config current-context 2>/dev/null || true)"
-KIND_NODE_NAME="kind-control-plane"
+KIND_CLUSTER_NAME="$(
+  kind_cluster_name_from_context_or_override \
+    "${INTERNAL_AGENT_KIND_CLUSTER_NAME:-}" \
+    "${CONTEXT_NAME}"
+)"
+KIND_NODE_NAME="$(
+  kind_control_plane_node_name_from_context_or_override \
+    "${CONTEXT_NAME}" \
+    "${LOCAL_KIND_CONTROL_PLANE_NODE_NAME:-}" \
+    "${INTERNAL_AGENT_KIND_CLUSTER_NAME:-}"
+)"
 
 ensure_kind_image() {
   local image="$1"
@@ -133,8 +144,7 @@ ensure_juicefs_csi() {
   kubectl apply --validate=false -f "${csi_manifest}" >/dev/null
 
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
-    local cluster_name="${CONTEXT_NAME#kind-}"
-    info "loading images into kind cluster ${cluster_name}"
+    info "loading images into kind cluster ${KIND_CLUSTER_NAME}"
     ensure_local_image "${JUICEFS_MOUNT_IMAGE}"
     ensure_kind_image "${RUNNER_IMAGE}"
     ensure_kind_image "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}"

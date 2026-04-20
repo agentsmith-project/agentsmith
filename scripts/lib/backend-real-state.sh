@@ -1,36 +1,56 @@
 #!/usr/bin/env bash
 
+backend_real_root_dir() {
+  printf '%s\n' "${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+}
+
+backend_real_resolve_runtime_path() {
+  local input_path="${1-}"
+  local root_dir
+  root_dir="$(backend_real_root_dir)"
+  if [[ -z "${input_path}" ]]; then
+    printf '\n'
+    return 0
+  fi
+  if [[ "${input_path}" = /* ]]; then
+    realpath -m "${input_path}"
+    return 0
+  fi
+  realpath -m "${root_dir}/${input_path}"
+}
+
 backend_real_state_root() {
-  local root_dir="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-  printf '%s\n' "${BACKEND_REAL_STATE_DIR:-${root_dir}/artifacts/backend-real/current}"
+  local root_dir
+  root_dir="$(backend_real_root_dir)"
+  backend_real_resolve_runtime_path "${BACKEND_REAL_STATE_DIR:-${root_dir}/artifacts/backend-real/current}"
 }
 
 backend_real_state_file() {
-  printf '%s/state.json\n' "${BACKEND_REAL_STATE_FILE:-$(backend_real_state_root)}"
+  backend_real_resolve_runtime_path "${BACKEND_REAL_STATE_FILE:-$(backend_real_state_root)/state.json}"
 }
 
 backend_real_token_file() {
-  printf '%s/token.txt\n' "$(backend_real_state_root)"
+  backend_real_resolve_runtime_path "$(backend_real_state_root)/token.txt"
 }
 
 backend_real_summary_file() {
-  printf '%s/summary.env\n' "$(backend_real_state_root)"
+  backend_real_resolve_runtime_path "$(backend_real_state_root)/summary.env"
 }
 
 backend_real_demo_root() {
-  printf '%s/demo\n' "$(backend_real_state_root)"
+  backend_real_resolve_runtime_path "$(backend_real_state_root)/demo"
 }
 
 backend_real_demo_log_file() {
-  printf '%s/%s.log\n' "$(backend_real_demo_root)" "$1"
+  backend_real_resolve_runtime_path "$(backend_real_demo_root)/$1.log"
 }
 
 backend_real_demo_pid_file() {
-  printf '%s/%s.pid\n' "$(backend_real_demo_root)" "$1"
+  backend_real_resolve_runtime_path "$(backend_real_demo_root)/$1.pid"
 }
 
 backend_real_tmp_file() {
-  printf '%s/%s\n' "$(backend_real_state_root)" "$1"
+  backend_real_resolve_runtime_path "$(backend_real_state_root)/$1"
 }
 
 backend_real_current_boundary_violations() {
@@ -68,8 +88,9 @@ backend_real_prune_forbidden_current_entries() {
 }
 
 backend_real_runs_root() {
-  local root_dir="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-  printf '%s\n' "${BACKEND_REAL_RUNS_DIR:-${root_dir}/artifacts/backend-real/runs}"
+  local root_dir
+  root_dir="$(backend_real_root_dir)"
+  backend_real_resolve_runtime_path "${BACKEND_REAL_RUNS_DIR:-${root_dir}/artifacts/backend-real/runs}"
 }
 
 backend_real_generate_run_id() {

@@ -68,6 +68,80 @@ export const SYSTEM_ADMIN_PASSWORD = process.env.SYSTEM_ADMIN_PASSWORD ?? 'mbos-
 const TASK_WORKSPACE_MOUNT_SESSIONS_FILE = 'task-workspace-mount-sessions.json';
 type ChildProcessWithIgnoredStdin = ChildProcessByStdio<null, Readable, Readable>;
 
+function trimTrailingSlash(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function firstNonEmptyEnvValue(
+  env: NodeJS.ProcessEnv,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = env[key]?.trim();
+    if (value) {
+      return trimTrailingSlash(value);
+    }
+  }
+  return null;
+}
+
+function firstNonEmptyScalarEnvValue(
+  env: NodeJS.ProcessEnv,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = env[key]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return null;
+}
+
+type ResolveIntegrationKeycloakBaseUrlOptions = {
+  target?: 'host' | 'browser';
+};
+
+function integrationKeycloakBaseUrlKeys(target: ResolveIntegrationKeycloakBaseUrlOptions['target']): string[] {
+  if (target === 'browser') {
+    return [
+      'KEYCLOAK_BASE_URL',
+      'RUNTIME_BROWSER_KEYCLOAK_BASE_URL',
+      'PUBLIC_KEYCLOAK_BASE_URL',
+      'RUNTIME_HOST_KEYCLOAK_BASE_URL',
+      'INTERNAL_KEYCLOAK_BASE_URL',
+    ];
+  }
+
+  return [
+    'KEYCLOAK_BASE_URL',
+    'RUNTIME_HOST_KEYCLOAK_BASE_URL',
+    'RUNTIME_BROWSER_KEYCLOAK_BASE_URL',
+    'PUBLIC_KEYCLOAK_BASE_URL',
+    'INTERNAL_KEYCLOAK_BASE_URL',
+  ];
+}
+
+export function resolveIntegrationKeycloakBaseUrl(
+  env: NodeJS.ProcessEnv = process.env,
+  options: ResolveIntegrationKeycloakBaseUrlOptions = {},
+): string {
+  const explicitBaseUrl = firstNonEmptyEnvValue(env, integrationKeycloakBaseUrlKeys(options.target ?? 'host'));
+  if (explicitBaseUrl) {
+    return explicitBaseUrl;
+  }
+
+  const keycloakPort = firstNonEmptyScalarEnvValue(env, [
+    'KEYCLOAK_PORT',
+    'INTEGRATION_KEYCLOAK_PORT',
+  ]);
+  if (keycloakPort) {
+    return `http://127.0.0.1:${keycloakPort}`;
+  }
+
+  throw new Error('integration_keycloak_base_url_missing');
+}
+
 async function collectChildPids(pid: number): Promise<number[]> {
   return new Promise((resolve) => {
     const child = spawn('pgrep', ['-P', String(pid)], { stdio: ['ignore', 'pipe', 'ignore'] });
@@ -143,6 +217,37 @@ export async function collectTrackedTaskWorkspaceMounts(workspaceRoot: string): 
     return mounts;
   } catch {
     return [];
+  }
+}
+
+const PREPARED_TASK_WORKSPACE_LOG_PREFIX = '[notebook-codex-runner][debug] prepared task workspace ';
+
+export function findPreparedTaskWorkspaceRootInRunnerLog(logText: string): string | null {
+  const lines = logText.split('\n');
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]?.trim();
+    if (!line || !line.startsWith(PREPARED_TASK_WORKSPACE_LOG_PREFIX)) {
+      continue;
+    }
+    const payload = line.slice(PREPARED_TASK_WORKSPACE_LOG_PREFIX.length);
+    try {
+      const parsed = JSON.parse(payload) as { cwd?: unknown };
+      if (typeof parsed.cwd === 'string' && parsed.cwd.trim().length > 0) {
+        return parsed.cwd;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+export async function readPreparedTaskWorkspaceRootFromRunnerLog(logPath: string): Promise<string | null> {
+  try {
+    const logText = await readFile(logPath, 'utf8');
+    return findPreparedTaskWorkspaceRootInRunnerLog(logText);
+  } catch {
+    return null;
   }
 }
 
@@ -418,7 +523,7 @@ export async function createAndPublishWorkspaceWithDirectoryAdmin(args: {
   directoryClientSecret?: string;
   adminEmail?: string;
 }): Promise<string> {
-  const keycloakBaseUrl = args.keycloakBaseUrl ?? (process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080');
+  const keycloakBaseUrl = args.keycloakBaseUrl ?? resolveIntegrationKeycloakBaseUrl(process.env, { target: 'browser' });
   const keycloakRealm = args.keycloakRealm ?? (process.env.KEYCLOAK_REALM ?? 'mbos');
   const loginClientId = args.loginClientId ?? (process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith');
   const directoryClientId = args.directoryClientId ?? KEYCLOAK_DIRECTORY_CLIENT_ID;
@@ -2456,6 +2561,7 @@ export type CodexRunnerProcessHandle = {
   proc: ChildProcessWithIgnoredStdin;
   logPath: string;
   workspaceRoot: string;
+  resolveTaskWorkspaceRoot: () => Promise<string | null>;
   stop: () => Promise<void>;
 };
 
@@ -2513,6 +2619,7 @@ async function startNotebookRunnerProcessInternal(args: NotebookRunnerProcessSta
           proc,
           logPath,
           workspaceRoot,
+          resolveTaskWorkspaceRoot: async () => readPreparedTaskWorkspaceRootFromRunnerLog(logPath),
           stop: async () => {
             if (!proc.killed && proc.exitCode === null) {
               const pid = proc.pid;

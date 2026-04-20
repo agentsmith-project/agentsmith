@@ -4,15 +4,19 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-function runBash(script: string, rootDir: string): string {
+function runBash(script: string, rootDir: string, envOverrides: NodeJS.ProcessEnv = {}): string {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ROOT_DIR: rootDir,
+    BACKEND_REAL_STATE_DIR: path.join(rootDir, 'artifacts/backend-real/current'),
+    BACKEND_REAL_RUNS_DIR: path.join(rootDir, 'artifacts/backend-real/runs'),
+  };
+  for (const [key, value] of Object.entries(envOverrides)) {
+    env[key] = value;
+  }
   return execFileSync('bash', ['-lc', script], {
     cwd: process.cwd(),
-    env: {
-      ...process.env,
-      ROOT_DIR: rootDir,
-      BACKEND_REAL_STATE_DIR: path.join(rootDir, 'artifacts/backend-real/current'),
-      BACKEND_REAL_RUNS_DIR: path.join(rootDir, 'artifacts/backend-real/runs'),
-    },
+    env,
     encoding: 'utf8',
   }).trim();
 }
@@ -83,5 +87,32 @@ describe('backend-real-state', () => {
     expect(output[0]).toContain('release-ready');
     expect(output[0]).toContain('local-manual-internal-runtime.cleanup');
     expect(output[1]).toBe('after=');
+  });
+
+  it('normalizes relative backend-real state roots and derived runtime paths against ROOT_DIR', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'backend-real-relative-root-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/backend-real-state.sh');
+
+    const output = runBash(
+      `
+        source "${helper}"
+        printf '%s\\n%s\\n%s\\n' \
+          "$(backend_real_state_root)" \
+          "$(backend_real_tmp_file integration-release-user-story/sandbox-manager.yaml)" \
+          "$(backend_real_resolve_runtime_path artifacts/backend-real/current/integration-release-user-story/sandbox-manager.log)"
+      `,
+      tempRoot,
+      {
+        BACKEND_REAL_STATE_DIR: 'artifacts/backend-real/current',
+      },
+    ).split('\n');
+
+    expect(output[0]).toBe(path.join(tempRoot, 'artifacts/backend-real/current'));
+    expect(output[1]).toBe(
+      path.join(tempRoot, 'artifacts/backend-real/current/integration-release-user-story/sandbox-manager.yaml'),
+    );
+    expect(output[2]).toBe(
+      path.join(tempRoot, 'artifacts/backend-real/current/integration-release-user-story/sandbox-manager.log'),
+    );
   });
 });

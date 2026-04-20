@@ -21,6 +21,8 @@ WEB_PORT="${PORT_WEB:-3001}"
 KEYCLOAK_PORT="${KEYCLOAK_PORT:-18080}"
 RUN_ID="${RELEASE_REAL_VISUAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/${RUN_ID}}"
+AUTHORITATIVE_UX_TRACE_ROOT="${ARTIFACT_DIR}/ux-traces"
+VISUAL_REVIEW_ARTIFACT_DIR="${ARTIFACT_DIR}/visual-review"
 RELEASE_RUN_ROOT="${RELEASE_REAL_RUN_ROOT:-$(BACKEND_REAL_RUN_ID="${RUN_ID}" backend_real_new_run_dir release-real)}"
 LOCAL_READY_LOG_DIR="${RELEASE_REAL_READY_LOG_DIR:-${RELEASE_RUN_ROOT}/release-ready}"
 export LOCAL_RUNTIME_RUN_ID="${RUN_ID}"
@@ -195,22 +197,25 @@ run_cmd "env -u INTEGRATION_API_PORT -u INTEGRATION_WEB_PORT BACKEND_REAL_STATE_
 gate_record_preflight_check "${LOCAL_READY_LOG_DIR}" "backend_ready" "passed" "backend-real ready"
 record_service backend_ready ready "backend-real ready"
 run_real_cmd 20050 3051 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' npm run backend-real:run"
-run_real_cmd 20080 3081 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' npm run test:visual:backend-real:review"
+run_real_cmd 20080 3081 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${VISUAL_REVIEW_ARTIFACT_DIR}' npm run test:visual:backend-real:review"
+run_real_cmd 20074 3074 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' ARTIFACT_DIR='${ARTIFACT_DIR}' RESET_FIRST=0 bash scripts/run-integration-release-user-story.sh"
 UX_TRACE_VALIDATION_REPORT="${ARTIFACT_DIR}/ux-trace-validation.json"
 UX_TRACE_VALID_BUNDLES="${ARTIFACT_DIR}/ux-trace-valid-bundles.txt"
-if ! run_cmd "npx tsx scripts/governance/run-release-full-aggregate.ts validate-ux-trace-root --campaign-id release-full --step-id gate-release --path '${ARTIFACT_DIR}/ux-traces' --report '${UX_TRACE_VALIDATION_REPORT}' --valid-paths '${UX_TRACE_VALID_BUNDLES}'"; then
-  gate_record_failure "${LOCAL_READY_LOG_DIR}" "evidence_missing" "backend_real_ux_trace_bundle" "invalid backend-real UX trace evidence under ${ARTIFACT_DIR}/ux-traces"
+if ! run_cmd "npx tsx scripts/governance/run-release-full-aggregate.ts validate-ux-trace-root --campaign-id release-full --step-id gate-release --path '${AUTHORITATIVE_UX_TRACE_ROOT}' --report '${UX_TRACE_VALIDATION_REPORT}' --valid-paths '${UX_TRACE_VALID_BUNDLES}'"; then
+  gate_record_failure "${LOCAL_READY_LOG_DIR}" "evidence_missing" "backend_real_ux_trace_bundle" "invalid backend-real UX trace evidence under ${AUTHORITATIVE_UX_TRACE_ROOT}"
   exit 1
 fi
 mapfile -t ux_trace_bundle_dirs < "${UX_TRACE_VALID_BUNDLES}"
 if [[ "${#ux_trace_bundle_dirs[@]}" -eq 0 ]]; then
-  gate_record_failure "${LOCAL_READY_LOG_DIR}" "evidence_missing" "backend_real_ux_trace_bundle" "missing release-authoritative backend-real UX trace bundle under ${ARTIFACT_DIR}/ux-traces"
+  gate_record_failure "${LOCAL_READY_LOG_DIR}" "evidence_missing" "backend_real_ux_trace_bundle" "missing release-authoritative backend-real UX trace bundle under ${AUTHORITATIVE_UX_TRACE_ROOT}"
   exit 1
 fi
 {
-  printf '# Backend-real visual review\n\n'
+  printf '# Backend-real Release Gate\n\n'
   printf -- '- run_id: %s\n' "${RUN_ID}"
   printf -- '- artifact_dir: %s\n' "${ARTIFACT_DIR}"
+  printf -- '- authoritative_ux_trace_root: %s\n' "${AUTHORITATIVE_UX_TRACE_ROOT}"
+  printf -- '- visual_review_artifact_dir: %s\n' "${VISUAL_REVIEW_ARTIFACT_DIR}"
   printf -- '- ux_trace_bundle_count: %s\n' "${#ux_trace_bundle_dirs[@]}"
   printf -- '- ux_trace_validation_report: %s\n\n' "${UX_TRACE_VALIDATION_REPORT}"
   printf '## Review Bundles\n\n'

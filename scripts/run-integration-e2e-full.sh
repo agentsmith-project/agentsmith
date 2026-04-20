@@ -92,8 +92,12 @@ gate_record_task_summary "${INTEGRATION_LOG_DIR}" "{\"line_kind\":\"backend_real
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
 NEXT_WEB_PID_FILE="${INTEGRATION_RUN_ROOT}/next-dev.pid"
+NEXT_WEB_PROCESS_STATE_FILE="${INTEGRATION_RUN_ROOT}/web.process.json"
+NEXT_DEV_EXIT_MARKER_FILE="${INTEGRATION_RUN_ROOT}/next-dev-exit.json"
 NEXT_DIST_DIR="${INTEGRATION_NEXT_DIST_DIR:-artifacts/backend-real/runs/${INTEGRATION_RUN_ID}/next-dist}"
+INTEGRATION_LIFECYCLE_ARTIFACT_DIR="${INTEGRATION_LIFECYCLE_ARTIFACT_DIR:-$(backend_real_state_root)/integration-lifecycle/${INTEGRATION_RUN_ID}}"
 next_generated_root_normalize
+next_generated_root_write_lane_owner "${INTEGRATION_RUN_ROOT}" "backend-real" "$$" "run-integration-e2e-full.sh"
 API_PID=""
 WEB_PID=""
 PROXY_PID=""
@@ -190,6 +194,152 @@ stop_background_job() {
 curl_status() {
   local url="$1"
   curl -s -o /dev/null -w "%{http_code}" "${url}" || true
+}
+
+lane_owner_field_value() {
+  local file_path="$1"
+  local field_name="$2"
+  [[ -f "${file_path}" ]] || return 0
+  sed -n "s/^${field_name}=//p" "${file_path}" | head -n 1
+}
+
+pid_is_alive() {
+  local pid="${1:-}"
+  [[ -n "${pid}" ]] || return 1
+  kill -0 "${pid}" >/dev/null 2>&1
+}
+
+capture_integration_lifecycle_observation() {
+  local phase="$1"
+  local output_file="${INTEGRATION_LIFECYCLE_ARTIFACT_DIR}/${phase}.json"
+  local api_probe_url="${INTEGRATION_API_BASE}/api/v1/workspaces"
+  local web_probe_url="${PLAYWRIGHT_BASE_URL}/${INTEGRATION_LOCALE}/login"
+  local api_probe_status web_probe_status next_web_pid lane_owner_file lane_name owner_pid owner_label started_at
+  local api_alive="false"
+  local web_alive="false"
+  local next_alive="false"
+
+  mkdir -p "${INTEGRATION_LIFECYCLE_ARTIFACT_DIR}"
+  api_probe_status="$(curl_status "${api_probe_url}")"
+  web_probe_status="$(curl_status "${web_probe_url}")"
+  next_web_pid="$(cat "${NEXT_WEB_PID_FILE}" 2>/dev/null || true)"
+  lane_owner_file="$(next_generated_root_lane_owner_file "${INTEGRATION_RUN_ROOT}")"
+  lane_name="$(lane_owner_field_value "${lane_owner_file}" lane_name)"
+  owner_pid="$(lane_owner_field_value "${lane_owner_file}" owner_pid)"
+  owner_label="$(lane_owner_field_value "${lane_owner_file}" owner_label)"
+  started_at="$(lane_owner_field_value "${lane_owner_file}" started_at)"
+
+  if pid_is_alive "${API_PID}"; then
+    api_alive="true"
+  fi
+  if pid_is_alive "${WEB_PID}"; then
+    web_alive="true"
+  fi
+  if pid_is_alive "${next_web_pid}"; then
+    next_alive="true"
+  fi
+
+  node - <<'NODE' \
+    "${output_file}" \
+    "${phase}" \
+    "${INTEGRATION_RUN_ID}" \
+    "${API_PID:-}" \
+    "${api_alive}" \
+    "${api_probe_url}" \
+    "${api_probe_status}" \
+    "${WEB_PID:-}" \
+    "${web_alive}" \
+    "${next_web_pid}" \
+    "${next_alive}" \
+    "${web_probe_url}" \
+    "${web_probe_status}" \
+    "${NEXT_WEB_PROCESS_STATE_FILE}" \
+    "${NEXT_DEV_EXIT_MARKER_FILE}" \
+    "${lane_owner_file}" \
+    "${lane_name}" \
+    "${owner_pid}" \
+    "${owner_label}" \
+    "${started_at}"
+const fs = require('node:fs');
+const path = require('node:path');
+
+const [
+  outputFile,
+  phase,
+  runId,
+  apiPid,
+  apiAlive,
+  apiProbeUrl,
+  apiProbeStatus,
+  webPid,
+  webAlive,
+  nextWebPid,
+  nextAlive,
+  webProbeUrl,
+  webProbeStatus,
+  processStateFile,
+  exitMarkerFile,
+  laneOwnerFile,
+  laneName,
+  ownerPid,
+  ownerLabel,
+  startedAt,
+] = process.argv.slice(2);
+
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+const laneOwnerPresent = fs.existsSync(laneOwnerFile);
+const processStatePresent = fs.existsSync(processStateFile);
+const exitMarkerPresent = fs.existsSync(exitMarkerFile);
+
+const payload = {
+  schema_version: 1,
+  captured_at: new Date().toISOString(),
+  captured_by: 'run-integration-e2e-full',
+  phase,
+  run_id: runId,
+  api: {
+    pid: apiPid || null,
+    alive: apiAlive === 'true',
+    probe: {
+      url: apiProbeUrl,
+      status: apiProbeStatus || '000',
+    },
+  },
+  web: {
+    wrapper_pid: webPid || null,
+    wrapper_alive: webAlive === 'true',
+    next_pid: nextWebPid || null,
+    next_alive: nextAlive === 'true',
+    probe: {
+      url: webProbeUrl,
+      status: webProbeStatus || '000',
+    },
+    process_state_file: processStateFile,
+    process_state_present: processStatePresent,
+    next_dev_exit_marker_file: exitMarkerFile,
+    next_dev_exit_marker_present: exitMarkerPresent,
+    next_dev_exit_marker: exitMarkerPresent ? readJson(exitMarkerFile) : null,
+  },
+  lane_owner: {
+    file: laneOwnerFile,
+    present: laneOwnerPresent,
+    lane_name: laneName || null,
+    owner_pid: ownerPid || null,
+    owner_label: ownerLabel || null,
+    started_at: startedAt || null,
+  },
+};
+
+fs.mkdirSync(path.dirname(outputFile), { recursive: true });
+fs.writeFileSync(outputFile, `${JSON.stringify(payload, null, 2)}\n`);
+NODE
 }
 
 warm_route() {
@@ -369,6 +519,10 @@ WEB_PID="$(
     NEXT_GENERATED_ROOT_ALLOWED_ACTIVE_RUN_ROOT="${INTEGRATION_RUN_ROOT}" \
     NEXT_GENERATED_ROOT_MANAGED=1 \
     NEXT_DEV_PID_FILE="${NEXT_WEB_PID_FILE}" \
+    NEXT_DEV_PROCESS_STATE_FILE="${NEXT_WEB_PROCESS_STATE_FILE}" \
+    NEXT_DEV_PROCESS_KIND=web \
+    NEXT_DEV_PROCESS_CAPTURED_BY=run-integration-e2e-full \
+    NEXT_DEV_EXIT_MARKER_FILE="${NEXT_DEV_EXIT_MARKER_FILE}" \
     NEXT_PUBLIC_USE_MSW=false \
     AGENTSMITH_ENABLE_TEST_ROUTES=true \
     NEXT_PUBLIC_API_BASE="${INTEGRATION_API_BASE}/api/v1" \
@@ -379,6 +533,7 @@ WEB_PID="$(
 )"
 
 cleanup() {
+  capture_integration_lifecycle_observation "pre-stop"
   if [[ "${KEEP_FAILED_ENV}" == "1" && "${PLAYWRIGHT_STATUS}" -ne 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" failed
     echo "[integration-e2e-full] keeping failed integration environment for inspection" >&2
@@ -399,7 +554,10 @@ cleanup() {
   wait "${PROXY_PID}" >/dev/null 2>&1 || true
   wait "${WEB_PID}" >/dev/null 2>&1 || true
   wait "${API_PID}" >/dev/null 2>&1 || true
+  capture_integration_lifecycle_observation "post-stop"
+  next_generated_root_clear_lane_owner "${INTEGRATION_RUN_ROOT}"
   next_generated_root_normalize
+  next_generated_root_finalize_lane_cleanup
   rm -f "${NEXT_WEB_PID_FILE}"
   if [[ "${PLAYWRIGHT_STATUS}" -eq 0 ]]; then
     lane_mark_status "${INTEGRATION_RUN_ROOT}" success

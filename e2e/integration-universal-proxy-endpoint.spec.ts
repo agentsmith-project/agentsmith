@@ -5,6 +5,7 @@ import {
   API_BASE,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
+  resolveIntegrationKeycloakBaseUrl,
 } from './integration-real-helpers';
 
 type UpstreamServer = {
@@ -36,7 +37,9 @@ function extractResponsesText(body: unknown): string | null {
 }
 
 async function issueDevToken(page: Page): Promise<string> {
-  const response = await page.request.post('http://localhost:18080/realms/mbos/protocol/openid-connect/token', {
+  const keycloakBaseUrl = resolveIntegrationKeycloakBaseUrl(process.env, { target: 'host' });
+  const keycloakRealm = process.env.KEYCLOAK_REALM ?? 'mbos';
+  const response = await page.request.post(`${keycloakBaseUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`, {
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     form: {
       grant_type: 'password',

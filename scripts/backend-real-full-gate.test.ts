@@ -664,6 +664,21 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain('npm run backend-real:ready');
   });
 
+  it('keeps authoritative release ux traces scoped to the release user story and isolates visual review traces under a side artifact dir', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const visualReviewIndex = script.indexOf("RELEASE_REAL_VISUAL_ARTIFACT_DIR='${VISUAL_REVIEW_ARTIFACT_DIR}' npm run test:visual:backend-real:review");
+    const releaseStoryIndex = script.indexOf("ARTIFACT_DIR='${ARTIFACT_DIR}' RESET_FIRST=0 bash scripts/run-integration-release-user-story.sh");
+
+    expect(script).toContain('AUTHORITATIVE_UX_TRACE_ROOT="${ARTIFACT_DIR}/ux-traces"');
+    expect(script).toContain('VISUAL_REVIEW_ARTIFACT_DIR="${ARTIFACT_DIR}/visual-review"');
+    expect(script).toContain("RELEASE_REAL_VISUAL_ARTIFACT_DIR='${VISUAL_REVIEW_ARTIFACT_DIR}'");
+    expect(script).toContain('npm run test:visual:backend-real:review');
+    expect(script).toContain("ARTIFACT_DIR='${ARTIFACT_DIR}' RESET_FIRST=0 bash scripts/run-integration-release-user-story.sh");
+    expect(script).toContain("--path '${AUTHORITATIVE_UX_TRACE_ROOT}'");
+    expect(visualReviewIndex).toBeGreaterThanOrEqual(0);
+    expect(releaseStoryIndex).toBeGreaterThan(visualReviewIndex);
+  });
+
   it('delegates standalone UX trace evidence acceptance to the semantic validator instead of find review.md', () => {
     const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
 

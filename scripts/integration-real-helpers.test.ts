@@ -8,6 +8,8 @@ import {
   collectTrackedTaskWorkspaceMounts,
   createExternalConnectionViaApi,
   createExternalRunnerAgentBundle,
+  findPreparedTaskWorkspaceRootInRunnerLog,
+  resolveIntegrationKeycloakBaseUrl,
   resolveNotebookRunnerSocketUrl,
 } from '../e2e/integration-real-helpers';
 
@@ -82,6 +84,101 @@ describe('integration-real-helpers', () => {
       '/home/alice/ags-workspace/task_1',
       '/home/alice/ags-workspace/task_2',
     ]);
+  });
+
+  it('extracts the prepared task workspace cwd from notebook runner debug logs', () => {
+    const logText = [
+      '[notebook-codex-runner][debug] received start {"task_id":"task_123"}',
+      '[notebook-codex-runner][debug] prepared task workspace {"cwd":"/home/alice/ags-workspace/task_123","codex_config":"/home/alice/ags-workspace/task_123/.codex/config.toml"}',
+    ].join('\n');
+
+    expect(findPreparedTaskWorkspaceRootInRunnerLog(logText)).toBe('/home/alice/ags-workspace/task_123');
+  });
+
+  it('prefers the latest prepared task workspace entry when a runner reconnects across tasks', () => {
+    const logText = [
+      '[notebook-codex-runner][debug] prepared task workspace {"cwd":"/home/alice/ags-workspace/task_old"}',
+      '[notebook-codex-runner][debug] prepared task workspace {"cwd":"/home/alice/ags-workspace/task_new"}',
+    ].join('\n');
+
+    expect(findPreparedTaskWorkspaceRootInRunnerLog(logText)).toBe('/home/alice/ags-workspace/task_new');
+  });
+
+  it('returns null when the runner log has not yet declared a prepared task workspace', () => {
+    expect(findPreparedTaskWorkspaceRootInRunnerLog('[notebook-codex-runner] connected')).toBeNull();
+  });
+
+  it('prefers KEYCLOAK_BASE_URL over every other integration keycloak env source', () => {
+    expect(resolveIntegrationKeycloakBaseUrl({
+      KEYCLOAK_BASE_URL: 'http://auth.example.test:39090/',
+      RUNTIME_HOST_KEYCLOAK_BASE_URL: 'http://runtime-host.example.test:39091',
+      RUNTIME_BROWSER_KEYCLOAK_BASE_URL: 'http://runtime-browser.example.test:39092',
+      PUBLIC_KEYCLOAK_BASE_URL: 'http://public.example.test:39093',
+      INTERNAL_KEYCLOAK_BASE_URL: 'http://internal.example.test:39094',
+      KEYCLOAK_PORT: '39095',
+      INTEGRATION_KEYCLOAK_PORT: '39096',
+    })).toBe('http://auth.example.test:39090');
+  });
+
+  it('prefers RUNTIME_HOST_KEYCLOAK_BASE_URL before browser and public/internal fallbacks', () => {
+    expect(resolveIntegrationKeycloakBaseUrl({
+      RUNTIME_HOST_KEYCLOAK_BASE_URL: 'http://runtime-host.example.test:39091/',
+      RUNTIME_BROWSER_KEYCLOAK_BASE_URL: 'http://runtime-browser.example.test:39092',
+      PUBLIC_KEYCLOAK_BASE_URL: 'http://public.example.test:39093',
+      INTERNAL_KEYCLOAK_BASE_URL: 'http://internal.example.test:39094',
+      KEYCLOAK_PORT: '39095',
+    })).toBe('http://runtime-host.example.test:39091');
+  });
+
+  it('prefers RUNTIME_BROWSER_KEYCLOAK_BASE_URL before public/internal fallbacks', () => {
+    expect(resolveIntegrationKeycloakBaseUrl({
+      RUNTIME_BROWSER_KEYCLOAK_BASE_URL: 'http://runtime-browser.example.test:39092/',
+      PUBLIC_KEYCLOAK_BASE_URL: 'http://public.example.test:39093',
+      INTERNAL_KEYCLOAK_BASE_URL: 'http://internal.example.test:39094',
+      KEYCLOAK_PORT: '39095',
+    })).toBe('http://runtime-browser.example.test:39092');
+  });
+
+  it('uses browser runtime truth for browser-facing flows when host and browser urls diverge', () => {
+    expect(resolveIntegrationKeycloakBaseUrl({
+      RUNTIME_HOST_KEYCLOAK_BASE_URL: 'http://runtime-host.example.test:39091',
+      RUNTIME_BROWSER_KEYCLOAK_BASE_URL: 'http://runtime-browser.example.test:39092/',
+      PUBLIC_KEYCLOAK_BASE_URL: 'http://public.example.test:39093',
+      INTERNAL_KEYCLOAK_BASE_URL: 'http://internal.example.test:39094',
+    }, { target: 'browser' })).toBe('http://runtime-browser.example.test:39092');
+  });
+
+  it('prefers PUBLIC_KEYCLOAK_BASE_URL before INTERNAL_KEYCLOAK_BASE_URL', () => {
+    expect(resolveIntegrationKeycloakBaseUrl({
+      PUBLIC_KEYCLOAK_BASE_URL: 'http://public.example.test:39093/',
+      INTERNAL_KEYCLOAK_BASE_URL: 'http://internal.example.test:39094',
+      KEYCLOAK_PORT: '39095',
+    })).toBe('http://public.example.test:39093');
+  });
+
+  it('falls back to INTERNAL_KEYCLOAK_BASE_URL before constructing loopback from a port', () => {
+    expect(resolveIntegrationKeycloakBaseUrl({
+      INTERNAL_KEYCLOAK_BASE_URL: 'http://internal.example.test:39094/',
+      KEYCLOAK_PORT: '39095',
+      INTEGRATION_KEYCLOAK_PORT: '39096',
+    })).toBe('http://internal.example.test:39094');
+  });
+
+  it('constructs a loopback base url from KEYCLOAK_PORT when no base url env is declared', () => {
+    expect(resolveIntegrationKeycloakBaseUrl({
+      KEYCLOAK_PORT: '39095',
+      INTEGRATION_KEYCLOAK_PORT: '39096',
+    })).toBe('http://127.0.0.1:39095');
+  });
+
+  it('falls back to INTEGRATION_KEYCLOAK_PORT when KEYCLOAK_PORT is absent', () => {
+    expect(resolveIntegrationKeycloakBaseUrl({
+      INTEGRATION_KEYCLOAK_PORT: '39096',
+    })).toBe('http://127.0.0.1:39096');
+  });
+
+  it('fails fast when the integration runtime does not declare any keycloak base url truth', () => {
+    expect(() => resolveIntegrationKeycloakBaseUrl({})).toThrow('integration_keycloak_base_url_missing');
   });
 
   it('binds notebook execution sockets to the task session while preserving other query params', () => {

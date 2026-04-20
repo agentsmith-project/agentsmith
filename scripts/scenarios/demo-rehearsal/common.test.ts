@@ -46,6 +46,28 @@ function runDemoRehearsalCommon(tempRoot: string, extraScript = ''): void {
   );
 }
 
+function runDemoRehearsalCommand(tempRoot: string, script: string, extraEnv: NodeJS.ProcessEnv = {}): string {
+  return execFileSync(
+    'bash',
+    [
+      '-lc',
+      `
+        set -euo pipefail
+        export ROOT_DIR="${tempRoot}"
+        export HOME="${tempRoot}"
+        export DEMO_REHEARSAL_ROOT="${tempRoot}/scenario"
+        ${script}
+      `,
+    ],
+    {
+      cwd: repoRoot,
+      env: { ...process.env, ...extraEnv },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    },
+  );
+}
+
 function readEnvValue(filePath: string, key: string): string {
   for (const rawLine of readFileSync(filePath, 'utf8').split('\n')) {
     const line = rawLine.trim();
@@ -88,6 +110,85 @@ describe('demo-rehearsal site env seeding', () => {
 
       const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
       expect(readEnvValue(seededSiteEnv, 'PRESET_ENDPOINT_API_KEY')).toBe('site-env-secret');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('passes SKIP_RELEASE_ARCHIVE=1 to the demo bundle builder only when the rehearsal fast-path flag is enabled', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-archive-flag-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+      mkdirSync(path.join(tempRoot, 'scripts', 'demo-deploy'), { recursive: true });
+      writeFileSync(
+        path.join(tempRoot, 'scripts', 'demo-deploy', 'build-offline-bundle.sh'),
+        `#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p "\${OUT_DIR}"
+printf 'SKIP_RELEASE_ARCHIVE=%s\\n' "\${SKIP_RELEASE_ARCHIVE:-}" > "\${OUT_DIR}/builder.env"
+mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
+`,
+        'utf8',
+      );
+
+      const withFastPath = runDemoRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/demo-rehearsal/common.sh"
+          init_demo_rehearsal_env
+          ensure_demo_rehearsal_release_bundle
+          cat "${tempRoot}/scenario/releases/builder.env"
+          printf 'release_root=%s\\n' "\${RELEASE_ROOT}"
+        `,
+        { DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE: '1' },
+      );
+
+      const withoutFastPath = runDemoRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/demo-rehearsal/common.sh"
+          init_demo_rehearsal_env
+          rm -f "${tempRoot}/scenario/releases/builder.env"
+          ensure_demo_rehearsal_release_bundle
+          cat "${tempRoot}/scenario/releases/builder.env"
+        `,
+      );
+
+      expect(withFastPath).toContain('SKIP_RELEASE_ARCHIVE=1');
+      expect(withFastPath).toContain(`release_root=${path.join(tempRoot, 'scenario', 'releases', 'agentsmith-')}`);
+      expect(withoutFastPath).toContain('SKIP_RELEASE_ARCHIVE=');
+      expect(withoutFastPath).not.toContain('SKIP_RELEASE_ARCHIVE=1');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('exports SKIP_BUNDLED_IMAGE_LOAD=1 only when the demo rehearsal fast-path flag is enabled', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-image-load-flag-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+
+      const withFastPath = runDemoRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/demo-rehearsal/common.sh"
+          init_demo_rehearsal_env
+          printf 'skip=%s\\n' "\${SKIP_BUNDLED_IMAGE_LOAD:-}"
+        `,
+        { DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD: '1' },
+      );
+
+      const withoutFastPath = runDemoRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/demo-rehearsal/common.sh"
+          init_demo_rehearsal_env
+          printf 'skip=%s\\n' "\${SKIP_BUNDLED_IMAGE_LOAD:-}"
+        `,
+      );
+
+      expect(withFastPath).toContain('skip=1');
+      expect(withoutFastPath).toContain('skip=');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

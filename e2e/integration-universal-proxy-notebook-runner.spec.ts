@@ -12,6 +12,7 @@ import {
   BACKEND_REAL_OPENAI_BASE_URL,
   BACKEND_REAL_OPENAI_MODEL,
   reconnectCodexRunnerProcessToTask,
+  resolveIntegrationKeycloakBaseUrl,
   startCodexRunnerProcess,
 } from './integration-real-helpers';
 
@@ -88,7 +89,9 @@ async function findFileRecursively(root: string, relativeParts: string[]): Promi
 }
 
 async function issueDevToken(page: Page): Promise<string> {
-  const response = await page.request.post('http://localhost:18080/realms/mbos/protocol/openid-connect/token', {
+  const keycloakBaseUrl = resolveIntegrationKeycloakBaseUrl(process.env, { target: 'host' });
+  const keycloakRealm = process.env.KEYCLOAK_REALM ?? 'mbos';
+  const response = await page.request.post(`${keycloakBaseUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`, {
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     form: {
       grant_type: 'password',
@@ -817,14 +820,17 @@ test.describe('@lane-real notebook runner real upstream stability via universal 
           expectedPath: '.artifacts/starry_sky.png',
         });
 
-        const configPath = await findFileRecursively(runner.workspaceRoot, ['.codex', 'config.toml']);
+        const taskWorkspaceRoot = await runner.resolveTaskWorkspaceRoot();
+        expect(taskWorkspaceRoot).toBeTruthy();
+
+        const configPath = await findFileRecursively(taskWorkspaceRoot!, ['.codex', 'config.toml']);
         expect(configPath).toBeTruthy();
         const configText = await readFile(configPath!, 'utf8');
         expect(configText).toContain('model_context_window = 128000');
         expect(configText).toContain(`model_auto_compact_token_limit = ${scenario.expectedCompactLimit}`);
         expect(configText).toContain('model_catalog_json = ');
 
-        const catalogPath = await findFileRecursively(runner.workspaceRoot, ['.codex', 'catalog.json']);
+        const catalogPath = await findFileRecursively(taskWorkspaceRoot!, ['.codex', 'catalog.json']);
         expect(catalogPath).toBeTruthy();
         const catalog = JSON.parse(await readFile(catalogPath!, 'utf8')) as {
           models?: Array<Record<string, unknown>>;

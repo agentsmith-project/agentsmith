@@ -264,6 +264,11 @@ bundled_image_archives() {
 
 load_bundled_images() {
   local tar_file
+  if [[ "${SKIP_BUNDLED_IMAGE_LOAD:-0}" == "1" ]]; then
+    bundled_image_archives >/dev/null
+    log "skipping bundled image reload because SKIP_BUNDLED_IMAGE_LOAD=1"
+    return 0
+  fi
   while IFS= read -r tar_file; do
     docker load -i "${tar_file}" >/dev/null
   done < <(bundled_image_archives)

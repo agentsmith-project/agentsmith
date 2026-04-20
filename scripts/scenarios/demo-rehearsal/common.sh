@@ -13,8 +13,15 @@ DEMO_REHEARSAL_CURRENT_LINK="${DEMO_REHEARSAL_ROOT}/current"
 DEMO_REHEARSAL_CONFIG_DIR="${DEMO_REHEARSAL_ROOT}/config"
 DEMO_REHEARSAL_KUBECONFIG="${DEMO_REHEARSAL_KUBECONFIG:-}"
 
+apply_demo_rehearsal_fast_path_env() {
+  if [[ -z "${SKIP_BUNDLED_IMAGE_LOAD:-}" && -n "${DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD:-}" ]]; then
+    export SKIP_BUNDLED_IMAGE_LOAD="${DEMO_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD}"
+  fi
+}
+
 init_demo_rehearsal_env() {
   load_flow_env "${DEMO_REHEARSAL_NAME}"
+  apply_demo_rehearsal_fast_path_env
   if [[ -z "${DEMO_REHEARSAL_KUBECONFIG:-}" ]]; then
     DEMO_REHEARSAL_KUBECONFIG="${DEMO_REHEARSAL_CONFIG_DIR}/$(scenario_kind_context_name).kubeconfig"
   fi
@@ -128,7 +135,12 @@ validate_demo_rehearsal_site_env() {
 
 ensure_demo_rehearsal_release_bundle() {
   local release_id="demo-rehearsal-$(date -u +%Y%m%dT%H%M%SZ)"
-  OUT_DIR="${DEMO_REHEARSAL_RELEASES_DIR}" RELEASE_ID="${release_id}" SKIP_RELEASE_PRECHECK=1 bash "${ROOT_DIR}/scripts/demo-deploy/build-offline-bundle.sh"
+  local skip_release_archive="${SKIP_RELEASE_ARCHIVE:-${DEMO_REHEARSAL_SKIP_RELEASE_ARCHIVE:-}}"
+  OUT_DIR="${DEMO_REHEARSAL_RELEASES_DIR}" \
+    RELEASE_ID="${release_id}" \
+    SKIP_RELEASE_PRECHECK=1 \
+    SKIP_RELEASE_ARCHIVE="${skip_release_archive}" \
+    bash "${ROOT_DIR}/scripts/demo-deploy/build-offline-bundle.sh"
   export RELEASE_ROOT="${DEMO_REHEARSAL_RELEASES_DIR}/agentsmith-${release_id}"
 }
 

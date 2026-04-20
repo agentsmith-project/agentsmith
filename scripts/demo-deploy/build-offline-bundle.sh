@@ -366,8 +366,11 @@ PY
 
 TMP_TAR_PATH="${OUT_DIR}/agentsmith-${RELEASE_ID}.tar.gz.tmp"
 FINAL_TAR_PATH="${OUT_DIR}/agentsmith-${RELEASE_ID}.tar.gz"
-rm -f "${TMP_TAR_PATH}" "${FINAL_TAR_PATH}"
-(cd "${OUT_DIR}" && tar -czf "${TMP_TAR_PATH##*/}" "agentsmith-${RELEASE_ID}")
-mv "${TMP_TAR_PATH}" "${FINAL_TAR_PATH}"
-
-echo "[bundle] wrote ${FINAL_TAR_PATH}"
+if [[ "${SKIP_RELEASE_ARCHIVE:-0}" == "1" ]]; then
+  echo "[bundle] skipped release archive packaging for ${BUNDLE_DIR}"
+else
+  rm -f "${TMP_TAR_PATH}" "${FINAL_TAR_PATH}"
+  (cd "${OUT_DIR}" && tar -czf "${TMP_TAR_PATH##*/}" "agentsmith-${RELEASE_ID}")
+  mv "${TMP_TAR_PATH}" "${FINAL_TAR_PATH}"
+  echo "[bundle] wrote ${FINAL_TAR_PATH}"
+fi

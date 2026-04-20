@@ -12,6 +12,50 @@ function runBash(script: string): string {
 }
 
 describe('kind-cluster-bootstrap', () => {
+  it('derives a cluster name from a kind context when no override is provided', () => {
+    const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
+
+    const output = runBash(`
+      source "${helper}"
+      kind_cluster_name_from_context_or_override "" "kind-agentsmith"
+    `);
+
+    expect(output).toBe('agentsmith');
+  });
+
+  it('prefers an explicit cluster name override over the current context', () => {
+    const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
+
+    const output = runBash(`
+      source "${helper}"
+      kind_cluster_name_from_context_or_override "explicit-cluster" "kind-agentsmith"
+    `);
+
+    expect(output).toBe('explicit-cluster');
+  });
+
+  it('computes the control-plane node name from an explicit override', () => {
+    const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
+
+    const output = runBash(`
+      source "${helper}"
+      kind_control_plane_node_name_from_context_or_override "kind-local" "explicit-node"
+    `);
+
+    expect(output).toBe('explicit-node');
+  });
+
+  it('computes the control-plane node name from a kind context when no explicit override is provided', () => {
+    const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
+
+    const output = runBash(`
+      source "${helper}"
+      kind_control_plane_node_name_from_context_or_override "kind-agentsmith" ""
+    `);
+
+    expect(output).toBe('agentsmith-control-plane');
+  });
+
   it('removes proxy env blocks from kubeadm control-plane manifests', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kind-bootstrap-'));
     const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');

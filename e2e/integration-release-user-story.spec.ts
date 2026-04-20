@@ -7,17 +7,21 @@ import {
   createProjectInWorkspace,
   expectNotebookTaskConversationSurface,
   reconnectCodexRunnerDockerProcessToTask,
+  resolveIntegrationKeycloakBaseUrl,
   startCodexRunnerDockerProcess,
   waitForAgentPresenceOnline,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
+import {
+  resolveReleaseStoryAdminMode,
+  type ReleaseStoryIdpVerifyResponse,
+} from './integration-release-user-story.helpers';
 import { RELEASE_USER_STORY } from './release-user-story.contract';
 import { buildTraceStoryBinding } from './story-trace-binding';
 import { createUxTraceBundleWriter } from './trace-bundle-support';
 import { waitForSystemWorkspacesReady } from './utils/system-workspaces';
 
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
-const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
 const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
 const ANTHROPIC_BASE_URL = process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ?? 'https://anthropic-compatible.provider.example/v1';
@@ -202,7 +206,7 @@ async function loginToWorkspace(page: Page, workspaceId: string, username: strin
   throw new Error(`workspace_login_retry_exhausted:${workspaceId}:${username}`);
 }
 
-async function verifyIdentityProvider(page: Page): Promise<void> {
+async function verifyIdentityProvider(page: Page): Promise<'directory_user' | 'email_pending'> {
   const responsePromise = page.waitForResponse(
     (candidate) => candidate.url().includes('/api/system/workspaces/idp/verify') && candidate.request().method() === 'POST',
     { timeout: 15_000 },
@@ -210,7 +214,15 @@ async function verifyIdentityProvider(page: Page): Promise<void> {
   await page.getByTestId('system-workspace-create__next').click();
   const response = await responsePromise;
   expect(response.ok()).toBeTruthy();
-  await expect(page.getByTestId('system-workspaces__draft-admin')).toBeVisible({ timeout: 15_000 });
+  const payload = (await response.json().catch(() => null)) as ReleaseStoryIdpVerifyResponse | null;
+  const adminMode = resolveReleaseStoryAdminMode(payload);
+  await expect(page.getByTestId('system-workspaces__admin-mode--email')).toBeVisible({ timeout: 15_000 });
+  if (adminMode === 'directory_user') {
+    await expect(page.getByTestId('system-workspaces__draft-admin')).toBeVisible({ timeout: 15_000 });
+  } else {
+    await expect(page.getByTestId('system-workspaces__draft-admin-email')).toBeVisible({ timeout: 15_000 });
+  }
+  return adminMode;
 }
 
 async function waitForWorkspaceId(page: Page, workspaceName: string): Promise<string> {
@@ -242,12 +254,15 @@ async function createAndPublishWorkspace(page: Page): Promise<string> {
   await expect(page.getByTestId('system-workspace-create__shell')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
   await page.getByTestId('system-workspace-create__next').click();
-  await page.getByTestId('system-workspaces__draft-idp-url').fill(KEYCLOAK_BASE_URL);
+  await page.getByTestId('system-workspaces__draft-idp-url').fill(
+    resolveIntegrationKeycloakBaseUrl(process.env, { target: 'browser' }),
+  );
   await page.getByTestId('system-workspaces__draft-idp-realm').fill(KEYCLOAK_REALM);
   await page.getByTestId('system-workspaces__draft-idp-client-id').fill(KEYCLOAK_WORKSPACE_CLIENT_ID);
-  await verifyIdentityProvider(page);
-  await page.getByTestId('system-workspace-create__next').click();
-  await page.getByTestId('system-workspaces__admin-mode--email').click();
+  const adminMode = await verifyIdentityProvider(page);
+  if (adminMode === 'directory_user') {
+    await page.getByTestId('system-workspaces__admin-mode--email').click();
+  }
   await page.getByTestId('system-workspaces__draft-admin-email').fill('dev-admin@example.com');
   await page.getByTestId('system-workspace-create__next').click();
   await page.getByTestId('system-workspace-create__create').click();

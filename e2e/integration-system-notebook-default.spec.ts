@@ -4,6 +4,7 @@ import {
   bindNotebookExecutionSocketToTask,
   waitForNotebookAgentReply,
 } from './integration-governance-runtime-support';
+import { resolveIntegrationKeycloakBaseUrl } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 import { loadStoryDefinitionSync } from './story-loader';
 import { buildTraceStoryBinding } from './story-trace-binding';
@@ -11,7 +12,6 @@ import { createUxTraceBundleWriter } from './trace-bundle-support';
 
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
-const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
 const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
 const BACKEND_REAL_ANTHROPIC_BASE_URL = process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ?? 'https://anthropic-compatible.provider.example/v1';
@@ -221,7 +221,9 @@ async function createAndPublishWorkspace(page: Page, runtime: NotebookFirstSucce
   await expect(page.getByTestId('system-workspaces__draft-name')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
   await page.getByTestId('system-workspace-create__next').click();
-  await page.getByTestId('system-workspaces__draft-idp-url').fill(KEYCLOAK_BASE_URL);
+  await page.getByTestId('system-workspaces__draft-idp-url').fill(
+    resolveIntegrationKeycloakBaseUrl(process.env, { target: 'browser' }),
+  );
   await page.getByTestId('system-workspaces__draft-idp-realm').fill(KEYCLOAK_REALM);
   await page.getByTestId('system-workspaces__draft-idp-client-id').fill(KEYCLOAK_WORKSPACE_CLIENT_ID);
   await verifyIdentityProvider(page);

@@ -1,6 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+kind_cluster_name_from_context_or_override() {
+  local cluster_name_override="${1:-}"
+  local context_name="${2:-}"
+
+  if [[ -n "${cluster_name_override}" ]]; then
+    printf '%s\n' "${cluster_name_override}"
+    return 0
+  fi
+
+  if [[ "${context_name}" == kind-* ]]; then
+    printf '%s\n' "${context_name#kind-}"
+  fi
+}
+
+kind_control_plane_node_name_from_context_or_override() {
+  local context_name="${1:-}"
+  local control_plane_node_override="${2:-}"
+  local cluster_name_override="${3:-}"
+
+  if [[ -n "${control_plane_node_override}" ]]; then
+    printf '%s\n' "${control_plane_node_override}"
+    return 0
+  fi
+
+  local cluster_name
+  cluster_name="$(kind_cluster_name_from_context_or_override "${cluster_name_override}" "${context_name}")"
+  if [[ -n "${cluster_name}" ]]; then
+    printf '%s-control-plane\n' "${cluster_name}"
+  fi
+}
+
 kind_write_docker_config_without_proxies() {
   local source_config_path="$1"
   local destination_config_path="$2"

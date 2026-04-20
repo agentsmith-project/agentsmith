@@ -49,6 +49,62 @@ EOF
     }
   });
 
+  it('exports SKIP_BUNDLED_IMAGE_LOAD=1 only when the cluster rehearsal fast-path flag is enabled', () => {
+    const repoRoot = process.cwd();
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-fast-path-'));
+
+    try {
+      const withFastPath = execFileSync(
+        'bash',
+        [
+          '-lc',
+          `
+            set -euo pipefail
+            export ROOT_DIR="${repoRoot}"
+            export HOME="${tempRoot}"
+            export CLUSTER_REHEARSAL_ROOT="${tempRoot}/scenario"
+            export CLUSTER_REHEARSAL_SKIP_BUNDLED_IMAGE_LOAD=1
+            source "${repoRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+            init_cluster_rehearsal_env
+            printf 'skip=%s\\n' "\${SKIP_BUNDLED_IMAGE_LOAD:-}"
+          `,
+        ],
+        {
+          cwd: repoRoot,
+          env: { ...process.env },
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
+      const withoutFastPath = execFileSync(
+        'bash',
+        [
+          '-lc',
+          `
+            set -euo pipefail
+            export ROOT_DIR="${repoRoot}"
+            export HOME="${tempRoot}"
+            export CLUSTER_REHEARSAL_ROOT="${tempRoot}/scenario"
+            source "${repoRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
+            init_cluster_rehearsal_env
+            printf 'skip=%s\\n' "\${SKIP_BUNDLED_IMAGE_LOAD:-}"
+          `,
+        ],
+        {
+          cwd: repoRoot,
+          env: { ...process.env },
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
+
+      expect(withFastPath).toContain('skip=1');
+      expect(withoutFastPath).toContain('skip=');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('routes handoff and shared kubeconfig paths into scenario-generated state', () => {
     const repoRoot = process.cwd();
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-rehearsal-common-'));

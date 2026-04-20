@@ -36,6 +36,10 @@ image_tar_name() {
   printf '%s' "$1" | tr '/:@' '---'
 }
 
+demo_kind_preload_platform() {
+  printf '%s\n' "${DEMO_KIND_PRELOAD_PLATFORM:-${BUNDLE_PLATFORM:-linux/amd64}}"
+}
+
 release_bundle_includes_bundled_image_archives() {
   local bundled_archives_included=""
   if [[ -f "${RELEASE_ROOT}/VERSION" ]]; then
@@ -68,6 +72,50 @@ load_demo_bundled_images() {
   done
 }
 
+load_demo_kind_image_from_local_archive() {
+  local image="$1"
+  local archive_path=""
+  local archive_platform
+  archive_platform="$(demo_kind_preload_platform)"
+
+  archive_path="$(mktemp "${TMPDIR:-/tmp}/demo-kind-image.XXXXXX.tar")"
+  if ! docker save --platform "${archive_platform}" "${image}" -o "${archive_path}"; then
+    rm -f "${archive_path}"
+    return 1
+  fi
+  if ! kind load image-archive "${archive_path}" --name "${KIND_CLUSTER_NAME}" >/dev/null; then
+    local status=$?
+    rm -f "${archive_path}"
+    return "${status}"
+  fi
+  rm -f "${archive_path}"
+}
+
+load_demo_kind_image_from_local_image() {
+  local image="$1"
+  local direct_load_error_file=""
+  local direct_load_error=""
+  local archive_platform
+  archive_platform="$(demo_kind_preload_platform)"
+
+  docker image inspect "${image}" >/dev/null 2>&1 || die "missing local image for demo kind preload: ${image}"
+
+  direct_load_error_file="$(mktemp "${TMPDIR:-/tmp}/demo-kind-direct-load.XXXXXX.log")"
+  if kind load docker-image "${image}" --name "${KIND_CLUSTER_NAME}" >/dev/null 2>"${direct_load_error_file}"; then
+    rm -f "${direct_load_error_file}"
+    return 0
+  fi
+
+  direct_load_error="$(tr '\n' ' ' < "${direct_load_error_file}" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
+  rm -f "${direct_load_error_file}"
+  if [[ -n "${direct_load_error}" ]]; then
+    log "kind load docker-image failed for ${image}; retrying with temporary ${archive_platform} archive (${direct_load_error})"
+  else
+    log "kind load docker-image failed for ${image}; retrying with temporary ${archive_platform} archive"
+  fi
+  load_demo_kind_image_from_local_archive "${image}"
+}
+
 load_demo_kind_images() {
   local image archive_path
   local juicefs_csi_version="${JUICEFS_CSI_VERSION:-v0.31.3}"
@@ -93,8 +141,7 @@ load_demo_kind_images() {
   fi
 
   for image in "${kind_images[@]}"; do
-    docker image inspect "${image}" >/dev/null 2>&1 || die "missing local image for demo kind preload: ${image}"
-    kind load docker-image "${image}" --name "${KIND_CLUSTER_NAME}" >/dev/null
+    load_demo_kind_image_from_local_image "${image}"
   done
 }
 

@@ -95,7 +95,33 @@ render_k8s_external_dependency_services() { :; }
 set -euo pipefail
 printf '%s\\n' "$*" >> "${tempRoot}/docker.log"
 case "$1" in
+  image)
+    if [[ "$2" == "inspect" ]]; then
+      exit 0
+    fi
+    ;;
   ps)
+    exit 0
+    ;;
+  save)
+    output=''
+    shift
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        --platform)
+          shift 2
+          ;;
+        -o)
+          output="$2"
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    mkdir -p "$(dirname "$output")"
+    printf 'temp archive\\n' > "$output"
     exit 0
     ;;
   rm|load|compose)
@@ -112,6 +138,14 @@ exit 0
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "${tempRoot}/kind.log"
+if [[ "$1" == "load" && "$2" == "docker-image" && -n "\${KIND_FAIL_DOCKER_IMAGE_MATCH:-}" ]]; then
+  for arg in "$@"; do
+    if [[ "$arg" == *"\${KIND_FAIL_DOCKER_IMAGE_MATCH}"* ]]; then
+      printf 'ctr: rpc error: code = NotFound desc = content digest sha256:test not found\\n' >&2
+      exit 1
+    fi
+  done
+fi
 exit 0
 `,
     'utf8',
@@ -215,6 +249,42 @@ describe('demo deploy bundled image loading', () => {
 
       expect(kindLog).toContain('load docker-image agentsmith-runner:test');
       expect(kindLog).not.toContain('load image-archive');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to a temporary platform-specific archive when direct local kind loading fails for a dependency image', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-deploy-kind-fallback-'));
+    try {
+      stageDemoDeployFixture(tempRoot);
+      writeFileSync(
+        path.join(tempRoot, 'release', 'VERSION'),
+        [
+          'agentsmith_app_image=agentsmith-app:test',
+          'agentsmith_runner_image=agentsmith-runner:test',
+          'sandbox_manager_image=sandbox-manager:test',
+          'llm_universal_proxy_image=llm-universal-proxy:test',
+          'bundled_image_archives_included=0',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+      unlinkSync(path.join(tempRoot, 'release', 'images', 'example.tar'));
+
+      runDemoLoadKindImages(tempRoot, {
+        KIND_FAIL_DOCKER_IMAGE_MATCH: 'juicedata/juicefs-csi-driver:v0.31.3',
+      });
+
+      const kindLog = readFileSync(path.join(tempRoot, 'kind.log'), 'utf8');
+      const dockerLog = readFileSync(path.join(tempRoot, 'docker.log'), 'utf8');
+      const archiveMatch = kindLog.match(/load image-archive (\S+) --name/);
+
+      expect(kindLog).toContain('load docker-image juicedata/juicefs-csi-driver:v0.31.3');
+      expect(kindLog).toContain('load image-archive ');
+      expect(dockerLog).toContain('save --platform linux/amd64 juicedata/juicefs-csi-driver:v0.31.3 -o');
+      expect(archiveMatch).not.toBeNull();
+      expect(existsSync(archiveMatch?.[1] ?? '')).toBe(false);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

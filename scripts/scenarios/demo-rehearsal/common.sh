@@ -11,6 +11,7 @@ DEMO_REHEARSAL_ROOT="${DEMO_REHEARSAL_ROOT:-${DEMO_REHEARSAL_ROOT_DEFAULT}}"
 DEMO_REHEARSAL_RELEASES_DIR="${DEMO_REHEARSAL_ROOT}/releases"
 DEMO_REHEARSAL_CURRENT_LINK="${DEMO_REHEARSAL_ROOT}/current"
 DEMO_REHEARSAL_CONFIG_DIR="${DEMO_REHEARSAL_ROOT}/config"
+DEMO_REHEARSAL_KIND_CONFIG_PATH="${DEMO_REHEARSAL_KIND_CONFIG_PATH:-${DEMO_REHEARSAL_CONFIG_DIR}/kind-config.yaml}"
 DEMO_REHEARSAL_KUBECONFIG="${DEMO_REHEARSAL_KUBECONFIG:-}"
 
 apply_demo_rehearsal_fast_path_env() {
@@ -25,15 +26,26 @@ init_demo_rehearsal_env() {
   if [[ -z "${DEMO_REHEARSAL_KUBECONFIG:-}" ]]; then
     DEMO_REHEARSAL_KUBECONFIG="${DEMO_REHEARSAL_CONFIG_DIR}/$(scenario_kind_context_name).kubeconfig"
   fi
-  mkdir -p "${DEMO_REHEARSAL_ROOT}" "${DEMO_REHEARSAL_RELEASES_DIR}" "${DEMO_REHEARSAL_CONFIG_DIR}" "$(dirname "${DEMO_REHEARSAL_KUBECONFIG}")"
+  mkdir -p "${DEMO_REHEARSAL_ROOT}" "${DEMO_REHEARSAL_RELEASES_DIR}" "${DEMO_REHEARSAL_CONFIG_DIR}" "$(dirname "${DEMO_REHEARSAL_KUBECONFIG}")" "$(dirname "${DEMO_REHEARSAL_KIND_CONFIG_PATH}")"
   export ROOT_DIR
   export DEMO_DEPLOY_ROOT="${DEMO_REHEARSAL_ROOT}"
   export KUBECONFIG="${DEMO_REHEARSAL_KUBECONFIG}"
+  export LOCAL_KIND_CONFIG_PATH="${DEMO_REHEARSAL_KIND_CONFIG_PATH}"
   if [[ -e "${DEMO_REHEARSAL_CURRENT_LINK}" ]]; then
     export RELEASE_ROOT="$(cd -P "${DEMO_REHEARSAL_CURRENT_LINK}" && pwd)"
   else
     export RELEASE_ROOT="${ROOT_DIR}"
   fi
+}
+
+render_demo_rehearsal_kind_config() {
+  local sandbox_host_port="${DEMO_REHEARSAL_SANDBOX_HOST_PORT:-}"
+  [[ -n "${sandbox_host_port}" ]] || return 0
+  render_scenario_owned_kind_config \
+    "${ROOT_DIR}/infra/deploy/demo/kind/config.yaml" \
+    "${DEMO_REHEARSAL_KIND_CONFIG_PATH}" \
+    "$(scenario_kind_cluster_name)" \
+    "${sandbox_host_port}"
 }
 
 ensure_demo_rehearsal_site_env() {
@@ -42,6 +54,7 @@ ensure_demo_rehearsal_site_env() {
     cp "${ROOT_DIR}/infra/deploy/demo/env/site.env.example" "${site_env}"
   fi
   apply_flow_site_env_overrides "${site_env}"
+  render_demo_rehearsal_kind_config
   hydrate_demo_rehearsal_site_env_secrets "${site_env}"
   validate_demo_rehearsal_site_env "${site_env}"
 }
@@ -142,6 +155,14 @@ ensure_demo_rehearsal_release_bundle() {
     SKIP_RELEASE_ARCHIVE="${skip_release_archive}" \
     bash "${ROOT_DIR}/scripts/demo-deploy/build-offline-bundle.sh"
   export RELEASE_ROOT="${DEMO_REHEARSAL_RELEASES_DIR}/agentsmith-${release_id}"
+  sync_demo_rehearsal_release_site_env
+}
+
+sync_demo_rehearsal_release_site_env() {
+  local scenario_site_env="${DEMO_REHEARSAL_CONFIG_DIR}/site.env"
+  [[ -f "${scenario_site_env}" ]] || return 0
+  mkdir -p "${RELEASE_ROOT}/env"
+  cp "${scenario_site_env}" "${RELEASE_ROOT}/env/site.env"
 }
 
 demo_state_file() {

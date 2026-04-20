@@ -7,7 +7,16 @@ else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 fi
 source "${ROOT_DIR}/scripts/lib/common.sh"
+source "${ROOT_DIR}/scripts/lib/kind-cluster-bootstrap.sh"
 source "${ROOT_DIR}/scripts/lib/release-stage-common.sh"
+
+KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-${LOCAL_KIND_CLUSTER_NAME:-agentsmith}}"
+KIND_CONTROL_PLANE_NODE_NAME="$(
+  kind_control_plane_node_name_from_context_or_override \
+    "kind-${KIND_CLUSTER_NAME}" \
+    "" \
+    "${KIND_CLUSTER_NAME}"
+)"
 
 ensure_dirs
 for cmd in docker curl tar sha256sum; do
@@ -140,11 +149,11 @@ finally:
 PY
   then
     owner_lines="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk -v port="${port}" 'index($0, ":" port "->") { print }')"
-    if [[ -n "${owner_lines}" ]] && printf '%s\n' "${owner_lines}" | awk -F'\t' '
+    if [[ -n "${owner_lines}" ]] && printf '%s\n' "${owner_lines}" | awk -F'\t' -v control_plane="${KIND_CONTROL_PLANE_NODE_NAME}" '
       $1 ~ /^agentsmith-demo-/ { next }
-      $1 == "agentsmith-control-plane" { next }
-      { exit 1 }
-      END { exit 0 }
+      $1 == control_plane { next }
+      { invalid = 1 }
+      END { exit invalid }
     '; then
       log "port ${port} already in use by current AgentSmith deployment resources; reset will clear it"
       continue

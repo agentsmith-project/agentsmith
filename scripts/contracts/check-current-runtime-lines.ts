@@ -35,6 +35,29 @@ function parseKeyValueOutput(output: string): Record<string, string> {
   );
 }
 
+function parseUrlPort(rawUrl: string | undefined): number | undefined {
+  if (!rawUrl) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(rawUrl);
+    if (url.port) {
+      return Number(url.port);
+    }
+    if (url.protocol === 'https:') {
+      return 443;
+    }
+    if (url.protocol === 'http:') {
+      return 80;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
 function readRuntimeLinePathTruthFromShell(lineId: string): Record<string, string> {
   return parseKeyValueOutput(execFileSync(
     'bash',
@@ -103,6 +126,15 @@ if (!demoRehearsal || !clusterRehearsal) {
   if (Number(demoEnv.LOCAL_KIND_REGISTRY_HOST_PORT) !== demoRehearsal.localRegistryHostPort) {
     failures.push(`demo rehearsal registry host port must stay aligned with ${demoRehearsal.localRegistryHostPort}`);
   }
+  if (demoRehearsal.localRegistryHostPort !== 5003) {
+    failures.push('demo rehearsal registry host port truth must stay isolated at 5003');
+  }
+  if (Number(demoEnv.DEMO_REHEARSAL_SANDBOX_HOST_PORT) !== demoRehearsal.sandboxHostPort) {
+    failures.push(`demo rehearsal sandbox host port truth must stay aligned with ${demoRehearsal.sandboxHostPort}`);
+  }
+  if (Number(demoEnv.FLOW_SITE_ENV_SANDBOX_HOST_PORT) !== demoRehearsal.sandboxHostPort) {
+    failures.push(`demo rehearsal site.env sandbox host port override must stay aligned with ${demoRehearsal.sandboxHostPort}`);
+  }
 
   if (clusterEnv.LOCAL_KIND_CLUSTER_NAME !== clusterRehearsal.localKindClusterName) {
     failures.push(`cluster rehearsal local kind cluster must stay aligned with ${clusterRehearsal.localKindClusterName}`);
@@ -113,8 +145,20 @@ if (!demoRehearsal || !clusterRehearsal) {
   if (Number(clusterEnv.LOCAL_KIND_REGISTRY_HOST_PORT) !== clusterRehearsal.localRegistryHostPort) {
     failures.push(`cluster rehearsal registry host port must stay aligned with ${clusterRehearsal.localRegistryHostPort}`);
   }
+  if (clusterRehearsal.localRegistryHostPort !== 5002) {
+    failures.push('cluster rehearsal registry host port truth must stay isolated at 5002');
+  }
   if (clusterEnv.CLUSTER_REHEARSAL_K8S_REGISTRY_HOST !== clusterRehearsal.k8sRegistryHost) {
     failures.push(`cluster rehearsal in-cluster registry host must stay aligned with ${clusterRehearsal.k8sRegistryHost}`);
+  }
+  if (Number(clusterEnv.CLUSTER_REHEARSAL_SANDBOX_HOST_PORT) !== clusterRehearsal.sandboxHostPort) {
+    failures.push(`cluster rehearsal sandbox host port truth must stay aligned with ${clusterRehearsal.sandboxHostPort}`);
+  }
+  if (Number(clusterEnv.FLOW_SITE_ENV_SANDBOX_HOST_PORT) !== clusterRehearsal.sandboxHostPort) {
+    failures.push(`cluster rehearsal site.env sandbox host port override must stay aligned with ${clusterRehearsal.sandboxHostPort}`);
+  }
+  if (parseUrlPort(clusterEnv.FLOW_SITE_ENV_COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL) !== clusterRehearsal.sandboxHostPort) {
+    failures.push(`cluster rehearsal compose-internal sandbox URL override must stay aligned with ${clusterRehearsal.sandboxHostPort}`);
   }
 }
 

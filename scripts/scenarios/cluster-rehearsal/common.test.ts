@@ -30,6 +30,7 @@ EOF
             source "${tempRoot}/scripts/scenarios/cluster-rehearsal/common.sh"
             init_cluster_rehearsal_env
             ensure_cluster_rehearsal_site_env
+            grep '^SANDBOX_HOST_PORT=' "${tempRoot}/scenario/config/site.env"
             grep '^SANDBOX_MANAGER_PUBLIC_BASE_URL=' "${tempRoot}/scenario/config/site.env"
             grep '^COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=' "${tempRoot}/scenario/config/site.env"
           `,
@@ -42,8 +43,9 @@ EOF
         },
       );
 
-      expect(output).toContain('SANDBOX_MANAGER_PUBLIC_BASE_URL=http://192.168.0.210:29180');
-      expect(output).toContain('COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=http://host.docker.internal:29180');
+      expect(output).toContain('SANDBOX_HOST_PORT=29080');
+      expect(output).toContain('SANDBOX_MANAGER_PUBLIC_BASE_URL=http://192.168.0.210:29080');
+      expect(output).toContain('COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=http://host.docker.internal:29080');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

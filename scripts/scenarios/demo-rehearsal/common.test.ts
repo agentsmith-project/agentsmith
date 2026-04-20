@@ -14,6 +14,8 @@ function stageDemoRehearsalFixture(tempRoot: string): void {
     'scripts/lib/preset-common.sh',
     'scripts/lib/local-kind-world.sh',
     'infra/deploy/demo/env/site.env.example',
+    'infra/deploy/demo/kind/config.yaml',
+    'infra/flows/demo-rehearsal.env',
   ]) {
     const sourcePath = path.join(repoRoot, relativePath);
     const targetPath = path.join(tempRoot, relativePath);
@@ -80,6 +82,45 @@ function readEnvValue(filePath: string, key: string): string {
 }
 
 describe('demo-rehearsal site env seeding', () => {
+  it('keeps demo rehearsal local registry host-port truth isolated at 5003', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-registry-port-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+
+      const output = runDemoRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/demo-rehearsal/common.sh"
+          init_demo_rehearsal_env
+          printf 'registry_host_port=%s\\n' "$(scenario_kind_registry_host_port)"
+        `,
+      );
+
+      expect(output).toContain('registry_host_port=5003');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('seeds sandbox host-port truth to 29280 and renders a scenario-owned kind config', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-sandbox-port-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+
+      runDemoRehearsalCommon(tempRoot);
+
+      const seededSiteEnv = path.join(tempRoot, 'scenario', 'config', 'site.env');
+      const renderedKindConfig = path.join(tempRoot, 'scenario', 'config', 'kind-config.yaml');
+      const kindConfig = readFileSync(renderedKindConfig, 'utf8');
+
+      expect(readEnvValue(seededSiteEnv, 'SANDBOX_HOST_PORT')).toBe('29280');
+      expect(kindConfig).toContain('name: agentsmith-demo');
+      expect(kindConfig).toContain('hostPort: 29280');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('hydrates a fresh rehearsal site env with PRESET_ENDPOINT_API_KEY from .env.backend-real without mutating the tracked example', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-common-'));
     try {
@@ -158,6 +199,42 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
       expect(withFastPath).toContain(`release_root=${path.join(tempRoot, 'scenario', 'releases', 'agentsmith-')}`);
       expect(withoutFastPath).toContain('SKIP_RELEASE_ARCHIVE=');
       expect(withoutFastPath).not.toContain('SKIP_RELEASE_ARCHIVE=1');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('copies scenario-owned site.env truth into the generated release root after bundle creation', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-rehearsal-release-site-env-'));
+    try {
+      stageDemoRehearsalFixture(tempRoot);
+      mkdirSync(path.join(tempRoot, 'scripts', 'demo-deploy'), { recursive: true });
+      writeFileSync(
+        path.join(tempRoot, 'scripts', 'demo-deploy', 'build-offline-bundle.sh'),
+        `#!/usr/bin/env bash
+set -euo pipefail
+release_root="\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
+mkdir -p "\${release_root}/env"
+printf 'SANDBOX_HOST_PORT=29180\\n' > "\${release_root}/env/site.env.example"
+`,
+        'utf8',
+      );
+
+      const output = runDemoRehearsalCommand(
+        tempRoot,
+        `
+          source "${tempRoot}/scripts/scenarios/demo-rehearsal/common.sh"
+          init_demo_rehearsal_env
+          ensure_demo_rehearsal_site_env
+          ensure_demo_rehearsal_release_bundle
+          printf 'release_site_env=%s\\n' "\${RELEASE_ROOT}/env/site.env"
+          cat "\${RELEASE_ROOT}/env/site.env"
+        `,
+      );
+
+      expect(output).toContain(`release_site_env=${path.join(tempRoot, 'scenario', 'releases', 'agentsmith-')}`);
+      expect(output).toContain('SANDBOX_HOST_PORT=29280');
+      expect(output).not.toContain('SANDBOX_HOST_PORT=29180');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

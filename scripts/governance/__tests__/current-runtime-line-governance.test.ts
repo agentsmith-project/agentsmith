@@ -43,6 +43,32 @@ describe('current runtime-line governance', () => {
     ]);
   });
 
+  it('keeps rehearsal sandbox host-port truth explicit and stable', () => {
+    const sandboxPortsByLine = Object.fromEntries(
+      CURRENT_RUNTIME_LINE_MANIFEST.map((line) => [
+        line.id,
+        (line as { sandboxHostPort?: number }).sandboxHostPort,
+      ]),
+    );
+
+    expect(sandboxPortsByLine['demo-rehearsal']).toBe(29280);
+    expect(sandboxPortsByLine['cluster-rehearsal']).toBe(29080);
+    expect(new Set([sandboxPortsByLine['demo-rehearsal'], sandboxPortsByLine['cluster-rehearsal']]).size).toBe(2);
+  });
+
+  it('keeps rehearsal local registry host-port truth isolated from the shared local registry', () => {
+    const registryPortsByLine = Object.fromEntries(
+      CURRENT_RUNTIME_LINE_MANIFEST.map((line) => [
+        line.id,
+        (line as { localRegistryHostPort?: number }).localRegistryHostPort,
+      ]),
+    );
+
+    expect(registryPortsByLine['demo-rehearsal']).toBe(5003);
+    expect(registryPortsByLine['cluster-rehearsal']).toBe(5002);
+    expect(registryPortsByLine['demo-rehearsal']).not.toBe(5001);
+  });
+
   it('keeps runtime-line artifact roots machine-readable and aligned with the shell helper', () => {
     for (const line of CURRENT_RUNTIME_LINE_MANIFEST) {
       const helperOutput = execFileSync(

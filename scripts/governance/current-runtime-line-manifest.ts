@@ -30,6 +30,7 @@ export interface CurrentRuntimeLineDefinition {
   localRegistryName?: string;
   localRegistryHostPort?: number;
   k8sRegistryHost?: string;
+  sandboxHostPort?: number;
 }
 
 function defineRuntimeLinePathTruth(lineId: string): CurrentRuntimeLinePathTruth {
@@ -103,7 +104,8 @@ export const CURRENT_RUNTIME_LINE_MANIFEST: readonly CurrentRuntimeLineDefinitio
     runtimePath: defineRuntimeLinePathTruth('demo-rehearsal'),
     localKindClusterName: 'agentsmith-demo',
     localRegistryName: 'agentsmith-demo-registry',
-    localRegistryHostPort: 5001,
+    localRegistryHostPort: 5003,
+    sandboxHostPort: 29280,
   },
   {
     id: 'demo-deploy',
@@ -134,6 +136,7 @@ export const CURRENT_RUNTIME_LINE_MANIFEST: readonly CurrentRuntimeLineDefinitio
     localRegistryName: 'agentsmith-cluster-registry',
     localRegistryHostPort: 5002,
     k8sRegistryHost: 'agentsmith-cluster-registry:5000',
+    sandboxHostPort: 29080,
   },
   {
     id: 'cluster-deploy',

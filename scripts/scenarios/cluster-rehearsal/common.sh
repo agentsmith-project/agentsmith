@@ -11,6 +11,7 @@ CLUSTER_REHEARSAL_ROOT="${CLUSTER_REHEARSAL_ROOT:-${CLUSTER_REHEARSAL_ROOT_DEFAU
 CLUSTER_REHEARSAL_RELEASES_DIR="${CLUSTER_REHEARSAL_ROOT}/releases"
 CLUSTER_REHEARSAL_CURRENT_LINK="${CLUSTER_REHEARSAL_ROOT}/current"
 CLUSTER_REHEARSAL_CONFIG_DIR="${CLUSTER_REHEARSAL_ROOT}/config"
+CLUSTER_REHEARSAL_KIND_CONFIG_PATH="${CLUSTER_REHEARSAL_KIND_CONFIG_PATH:-${CLUSTER_REHEARSAL_CONFIG_DIR}/kind-config.yaml}"
 CLUSTER_REHEARSAL_GENERATED_DIR="${CLUSTER_REHEARSAL_ROOT}/state/generated"
 CLUSTER_REHEARSAL_LEGACY_SHARED_KUBECONFIG="${CLUSTER_REHEARSAL_CONFIG_DIR}/kubeconfig"
 CLUSTER_REHEARSAL_LEGACY_SHARED_ADMIN_KUBECONFIG="${CLUSTER_REHEARSAL_CONFIG_DIR}/admin-kubeconfig"
@@ -30,6 +31,7 @@ init_cluster_rehearsal_env() {
   mkdir -p "${CLUSTER_REHEARSAL_ROOT}" "${CLUSTER_REHEARSAL_RELEASES_DIR}" "${CLUSTER_REHEARSAL_CONFIG_DIR}" "${CLUSTER_REHEARSAL_GENERATED_DIR}"
   export ROOT_DIR
   export CLUSTER_DEPLOY_ROOT="${CLUSTER_REHEARSAL_ROOT}"
+  export LOCAL_KIND_CONFIG_PATH="${CLUSTER_REHEARSAL_KIND_CONFIG_PATH}"
   export CLUSTER_DEPLOY_SHARED_KUBECONFIG="${CLUSTER_REHEARSAL_GENERATED_DIR}/kubeconfig"
   export CLUSTER_DEPLOY_SHARED_ADMIN_KUBECONFIG="${CLUSTER_REHEARSAL_GENERATED_DIR}/admin-kubeconfig"
   export CLUSTER_DEPLOY_SHARED_MANAGER_KUBECONFIG="${CLUSTER_REHEARSAL_GENERATED_DIR}/manager-kubeconfig"
@@ -41,6 +43,16 @@ init_cluster_rehearsal_env() {
     export RELEASE_ROOT="${ROOT_DIR}"
   fi
   export CLUSTER_DEPLOY_MODE="${CLUSTER_DEPLOY_MODE:-full-auto}"
+}
+
+render_cluster_rehearsal_kind_config() {
+  local sandbox_host_port="${CLUSTER_REHEARSAL_SANDBOX_HOST_PORT:-}"
+  [[ -n "${sandbox_host_port}" ]] || return 0
+  render_scenario_owned_kind_config \
+    "${ROOT_DIR}/infra/deploy/demo/kind/config.yaml" \
+    "${CLUSTER_REHEARSAL_KIND_CONFIG_PATH}" \
+    "$(scenario_kind_cluster_name)" \
+    "${sandbox_host_port}"
 }
 
 cleanup_cluster_rehearsal_legacy_generated_state() {
@@ -75,6 +87,7 @@ ensure_cluster_rehearsal_site_env() {
   fi
   apply_flow_site_env_overrides "${site_env}"
   rewrite_cluster_rehearsal_sandbox_public_base_url "${site_env}"
+  render_cluster_rehearsal_kind_config
   validate_cluster_rehearsal_site_env "${site_env}"
 }
 

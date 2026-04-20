@@ -73,6 +73,47 @@ path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 PY
 }
 
+render_scenario_owned_kind_config() {
+  local template_path="$1"
+  local output_path="$2"
+  local cluster_name="$3"
+  local sandbox_host_port="$4"
+  python3 - <<'PY' "${template_path}" "${output_path}" "${cluster_name}" "${sandbox_host_port}"
+from pathlib import Path
+import sys
+
+template_path = Path(sys.argv[1])
+output_path = Path(sys.argv[2])
+cluster_name = sys.argv[3]
+sandbox_host_port = sys.argv[4]
+lines = template_path.read_text(encoding="utf-8").splitlines()
+
+updated = []
+replaced_name = False
+replaced_host_port = False
+for line in lines:
+    stripped = line.lstrip()
+    if line.startswith("name: "):
+        updated.append(f"name: {cluster_name}")
+        replaced_name = True
+        continue
+    if stripped.startswith("hostPort: "):
+        indent = line[: len(line) - len(stripped)]
+        updated.append(f"{indent}hostPort: {sandbox_host_port}")
+        replaced_host_port = True
+        continue
+    updated.append(line)
+
+if not replaced_name:
+    raise SystemExit(f"missing cluster name field in {template_path}")
+if not replaced_host_port:
+    raise SystemExit(f"missing hostPort field in {template_path}")
+
+output_path.parent.mkdir(parents=True, exist_ok=True)
+output_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+PY
+}
+
 scenario_http_code() {
   local url="$1"
   curl -sS -o /dev/null -w '%{http_code}' "${url}" 2>/dev/null || true

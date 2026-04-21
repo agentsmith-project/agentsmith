@@ -386,6 +386,7 @@ preload_cluster_rehearsal_kind_images() {
   cluster_name="$(scenario_kind_cluster_name)"
   local host_images=(
     "${RUNNER_IMAGE}"
+    "${CHAT_RUNNER_IMAGE}"
     "${SANDBOX_MANAGER_IMAGE}"
     "${JUICEFS_MOUNT_IMAGE}"
     "${JUICEFS_CSI_DRIVER_IMAGE}"
@@ -399,6 +400,7 @@ preload_cluster_rehearsal_kind_images() {
   )
   local kind_images=(
     "${K8S_RUNNER_IMAGE}"
+    "${K8S_CHAT_RUNNER_IMAGE}"
     "${K8S_SANDBOX_MANAGER_IMAGE}"
     "${K8S_JUICEFS_MOUNT_IMAGE}"
     "${K8S_JUICEFS_CSI_DRIVER_IMAGE}"

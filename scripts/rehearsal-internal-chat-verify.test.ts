@@ -20,7 +20,14 @@ describe('rehearsal internal chat verification contract', () => {
     const clusterVerify = read('scripts/cluster-deploy/verify.sh');
 
     expect(demoVerify).toContain('VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC=');
+    expect(demoVerify).toContain('VERIFY_BUNDLED_KUBECTL="${RELEASE_ROOT}/tools/kubectl"');
+    expect(demoVerify).toContain('[[ -x "${VERIFY_BUNDLED_KUBECTL}" ]] || die "bundled kubectl missing from release tools"');
+    expect(demoVerify).toContain('VERIFY_KUBECONFIG_SOURCE="${KUBECONFIG:-}"');
+    expect(demoVerify).toContain('[[ -f "${VERIFY_KUBECONFIG_SOURCE}" ]] || die "verify kubeconfig missing"');
     expect(demoVerify).toContain('-v "${VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC}:/app/e2e/integration-internal-chat-runner.spec.ts:ro"');
+    expect(demoVerify).toContain('-v "${VERIFY_BUNDLED_KUBECTL}:/usr/local/bin/kubectl:ro"');
+    expect(demoVerify).toContain('-v "${VERIFY_KUBECONFIG_SOURCE}:/tmp/verify-kubeconfig:ro"');
+    expect(demoVerify).toContain('-e KUBECONFIG=/tmp/verify-kubeconfig');
     expect(demoVerify).toContain('-e SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}"');
     expect(demoVerify).toContain('-e SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}"');
     expect(demoVerify).toContain('-e INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}"');
@@ -33,7 +40,19 @@ describe('rehearsal internal chat verification contract', () => {
     expect(demoVerify).toContain('VERIFY_PLAYWRIGHT_SPECS+=(e2e/integration-internal-chat-runner.spec.ts)');
 
     expect(clusterVerify).toContain('VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC=');
+    expect(clusterVerify).toContain('VERIFY_BUNDLED_KUBECTL="${RELEASE_ROOT}/tools/kubectl"');
+    expect(clusterVerify).toContain('[[ -x "${VERIFY_BUNDLED_KUBECTL}" ]] || die "bundled kubectl missing from release tools"');
+    expect(clusterVerify).toContain('ensure_operator_manager_kubeconfig');
+    expect(clusterVerify).toContain('VERIFY_KUBECONFIG_SOURCE="${SHARED_MANAGER_KUBECONFIG}"');
+    expect(clusterVerify).toContain('[[ -f "${VERIFY_KUBECONFIG_SOURCE}" ]] || die "verify kubeconfig missing"');
+    expect(clusterVerify).toContain('infra_preflight_verify_kubeconfig');
+    expect(clusterVerify).toContain('verify kubeconfig cannot read pods -n ${INTERNAL_AGENT_K8S_NAMESPACE}');
+    expect(clusterVerify).toContain('get pods -n \\"${INTERNAL_AGENT_K8S_NAMESPACE}\\" >/dev/null');
+    expect(clusterVerify).toContain('record_service verify_kubeconfig ready "${VERIFY_KUBECONFIG_SOURCE}"');
     expect(clusterVerify).toContain('-v "${VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC}:/app/e2e/integration-internal-chat-runner.spec.ts:ro"');
+    expect(clusterVerify).toContain('-v "${VERIFY_BUNDLED_KUBECTL}:/usr/local/bin/kubectl:ro"');
+    expect(clusterVerify).toContain('-v "${VERIFY_KUBECONFIG_SOURCE}:/tmp/verify-kubeconfig:ro"');
+    expect(clusterVerify).toContain('-e KUBECONFIG=/tmp/verify-kubeconfig');
     expect(clusterVerify).toContain('-e SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL}"');
     expect(clusterVerify).toContain('-e SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY}"');
     expect(clusterVerify).toContain('-e INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE}"');

@@ -56,6 +56,21 @@ export async function gotoAndWait(
   throw lastError instanceof Error ? lastError : new Error(`Failed to navigate to ${url}`);
 }
 
+/** Navigate to an entry URL while waiting for the full redirect chain to settle on the target URL. */
+export async function gotoAndWaitForRedirect(
+  page: Page,
+  entryUrl: string,
+  expectedUrl: RegExp,
+  timeout = DEFAULT_NAVIGATION_TIMEOUT,
+  readyTimeout = 30000,
+) {
+  await Promise.all([
+    page.waitForURL(expectedUrl, { timeout }),
+    gotoAndWait(page, entryUrl, timeout),
+  ]);
+  await waitForPageReady(page, readyTimeout);
+}
+
 /** Wait for the page to reach a ready state */
 export async function waitForPageReady(page: Page, timeout = 30000) {
   // Some routes briefly render an MSW bootstrapping screen before the app layout is mounted.

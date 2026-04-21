@@ -55,4 +55,22 @@ describe('run-mock-lane-playwright', () => {
       script.indexOf('bash scripts/run-next-dev-safe.sh --port "${PORT_WEB}"'),
     );
   });
+
+  it('warms the English login entry and slow workspace routes before Playwright starts', () => {
+    const script = readFileSync('scripts/run-mock-lane-playwright.sh', 'utf8');
+
+    expect(script).toContain("WARM_URLS_DEFAULT=$'/zh-CN/login\\n/en-US/login\\n/en-US/login/workspace");
+    expect(script.indexOf('/en-US/login\\n/en-US/login/workspace')).toBeGreaterThanOrEqual(0);
+    expect(script).toContain('/en-US/workspaces/ws_default');
+    expect(script).toContain('/en-US/workspaces/ws_default/settings');
+  });
+
+  it('accepts login redirects as successful warm-route responses', () => {
+    const script = readFileSync('scripts/run-mock-lane-playwright.sh', 'utf8');
+    const warmRouteIndex = script.indexOf('warm_route() {');
+    const acceptedStatusIndex = script.indexOf('if [[ "${code}" == "200" || "${code}" == "307" || "${code}" == "308" ]]; then');
+
+    expect(warmRouteIndex).toBeGreaterThanOrEqual(0);
+    expect(acceptedStatusIndex).toBeGreaterThan(warmRouteIndex);
+  });
 });

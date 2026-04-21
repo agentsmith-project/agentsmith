@@ -18,7 +18,7 @@ PORT_WEB="${PORT_WEB:-3001}"
 NEXT_DIST_DIR="${MOCK_NEXT_DIST_DIR:-artifacts/mock-lane/runs/${MOCK_RUN_ID}/next-dist}"
 BASE_URL="http://127.0.0.1:${PORT_WEB}"
 HEALTH_URL="${BASE_URL}/zh-CN/login"
-WARM_URLS_DEFAULT=$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/user/profile\n/en-US/workspaces/ws_default/projects/proj_001/files'
+WARM_URLS_DEFAULT=$'/zh-CN/login\n/en-US/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default\n/en-US/workspaces/ws_default/settings\n/en-US/user/profile\n/en-US/workspaces/ws_default/projects/proj_001/files'
 WARM_ROUTE_ATTEMPTS="${MOCK_LANE_WARM_ROUTE_ATTEMPTS:-15}"
 
 PID_FILE="${MOCK_STATE_DIR}/web.pid"
@@ -299,7 +299,7 @@ warm_route() {
   for i in $(seq 1 "${attempts}"); do
     local code
     code="$(curl -sS -o /dev/null -w '%{http_code}' "${BASE_URL}${route}" 2>/dev/null || true)"
-    if [[ "${code}" == "200" ]]; then
+    if [[ "${code}" == "200" || "${code}" == "307" || "${code}" == "308" ]]; then
       return 0
     fi
     sleep 1

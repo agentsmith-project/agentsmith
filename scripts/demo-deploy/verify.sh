@@ -252,6 +252,10 @@ VERIFY_INTEGRATION_WORKSPACE_ENTRY_SPEC="$(resolve_verify_source_file "e2e/integ
 VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC="$(resolve_verify_source_file "e2e/integration-workspace-publish-usable.spec.ts")"
 VERIFY_INTEGRATION_PRESET_FILELIB_SPEC="$(resolve_verify_source_file "e2e/integration-preset-external-file-library.spec.ts")"
 VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC="$(resolve_verify_source_file "e2e/integration-internal-chat-runner.spec.ts")"
+VERIFY_BUNDLED_KUBECTL="${RELEASE_ROOT}/tools/kubectl"
+[[ -x "${VERIFY_BUNDLED_KUBECTL}" ]] || die "bundled kubectl missing from release tools"
+VERIFY_KUBECONFIG_SOURCE="${KUBECONFIG:-}"
+[[ -f "${VERIFY_KUBECONFIG_SOURCE}" ]] || die "verify kubeconfig missing"
 prepare_release_story_verify_mounts || exit 1
 VERIFY_PLAYWRIGHT_SPECS=(
   e2e/integration-files.spec.ts
@@ -271,6 +275,8 @@ docker run --rm \
   --security-opt apparmor:unconfined \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "${REPORT_DIR}/verify-artifacts:/app/test-results" \
+  -v "${VERIFY_BUNDLED_KUBECTL}:/usr/local/bin/kubectl:ro" \
+  -v "${VERIFY_KUBECONFIG_SOURCE}:/tmp/verify-kubeconfig:ro" \
   -v "${VERIFY_INTEGRATION_REAL_HELPERS}:/app/e2e/integration-real-helpers.ts:ro" \
   -v "${VERIFY_INTEGRATION_FILES_SPEC}:/app/e2e/integration-files.spec.ts:ro" \
   -v "${VERIFY_NOTEBOOK_EXECUTION_OUTCOME}:/app/e2e/notebook-execution-outcome.ts:ro" \
@@ -282,6 +288,7 @@ docker run --rm \
   "${RELEASE_STORY_VERIFY_MOUNTS[@]}" \
   -e BASE_URL="${HOST_LOCAL_WEB_BASE_URL}" \
   -e INTEGRATION_API_BASE="${HOST_LOCAL_API_BASE_URL}" \
+  -e KUBECONFIG=/tmp/verify-kubeconfig \
   -e EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL="${EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL}" \
   -e EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE}" \
   -e EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE}" \

@@ -463,4 +463,15 @@ mkdir -p "\${OUT_DIR}/agentsmith-\${RELEASE_ID}"
       rmSync(tempRoot, { recursive: true, force: true });
     }
   });
+
+  it('preloads both notebook and chat runner images into the rehearsal kind node', () => {
+    const commonScript = readFileSync(path.join(process.cwd(), 'scripts', 'scenarios', 'cluster-rehearsal', 'common.sh'), 'utf8');
+
+    expect(commonScript).toContain('local host_images=(');
+    expect(commonScript).toContain('local kind_images=(');
+    expect(commonScript).toContain('"${RUNNER_IMAGE}"');
+    expect(commonScript).toContain('"${CHAT_RUNNER_IMAGE}"');
+    expect(commonScript).toContain('"${K8S_RUNNER_IMAGE}"');
+    expect(commonScript).toContain('"${K8S_CHAT_RUNNER_IMAGE}"');
+  });
 });

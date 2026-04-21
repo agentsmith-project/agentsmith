@@ -21,7 +21,7 @@ import {
   safeAssistantUsageTokens,
 } from './chat-openai-payload.js';
 import { logChatStreamEvent } from './chat-observability.js';
-import type { ChatAttachmentRecord } from './resource-models.js';
+import type { ChatAttachmentRecord, ChatMessageRecord } from './resource-models.js';
 import {
   indexChatAttachmentsByLibraryObjectRef,
   readChatMessageInputs,
@@ -34,6 +34,7 @@ import { issueInternalTicket, type ResolvedInternalTicket } from './internal-tic
 import { resolveRequiredConfiguredPublicApiBase } from './agent-execution-api-base.js';
 import { readAgentExecutionPreferences } from './agent-execution-preferences.js';
 import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
+import { ensureInternalChatSessionWorkspace } from './chat-internal-workspace.js';
 
 interface ChatStreamHandlerArgs {
   route: ChatRoute;
@@ -105,6 +106,43 @@ function endpointSupportsMultimodal(endpoint: { capabilities?: Array<{ type: str
 function buildProxyUsername(user: AuthenticatedUser): string {
   const base = (user.email || user.id || 'unknown').toLowerCase();
   return base.replace(/[^a-z0-9._-]/g, '_').slice(0, 64) || 'unknown';
+}
+
+export function selectLatestCanonicalBranchLeaf(
+  messages: Pick<ChatMessageRecord, 'id' | 'role' | 'parent_id' | 'created_at' | 'is_stale'>[],
+): Pick<ChatMessageRecord, 'id' | 'role' | 'parent_id' | 'created_at' | 'is_stale'> | null {
+  const candidates = messages.filter((item) => item.role !== 'system' && !item.is_stale);
+  if (candidates.length === 0) return null;
+
+  const candidateIds = new Set(candidates.map((item) => item.id));
+  const parentIdsWithNonStaleChildren = new Set<string>();
+  for (const item of candidates) {
+    if (item.parent_id && candidateIds.has(item.parent_id)) {
+      parentIdsWithNonStaleChildren.add(item.parent_id);
+    }
+  }
+
+  const leafCandidates = candidates.filter((item) => !parentIdsWithNonStaleChildren.has(item.id));
+  const rankedCandidates = leafCandidates.length > 0 ? leafCandidates : candidates;
+  return rankedCandidates.reduce((latest, item) => {
+    if (!latest) return item;
+    const createdAtComparison = item.created_at.localeCompare(latest.created_at);
+    if (createdAtComparison > 0) return item;
+    if (createdAtComparison < 0) return latest;
+    return item.id.localeCompare(latest.id) > 0 ? item : latest;
+  }, null as typeof rankedCandidates[number] | null);
+}
+
+async function resolveLatestCanonicalBranchLeaf(
+  deps: NodeApiDeps,
+  route: { workspaceId: string; projectId: string; sessionId: string },
+): Promise<ChatMessageRecord | null> {
+  const history = await deps.chatResourceService.listMessages(
+    route.workspaceId,
+    route.projectId,
+    route.sessionId,
+  );
+  return selectLatestCanonicalBranchLeaf(history);
 }
 
 function readAttachmentIdsFromInput(rawAttachments: unknown): string[] | null {
@@ -368,33 +406,32 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       }
       attachmentSnapshots = toChatAttachmentSnapshots(attachments);
     }
-    let branchLeaf: {
-      id: string;
-      role: string;
-      content: string;
-      attachment_snapshots?: Array<{ id: string }>;
-    } | null = null;
+    let inputParentMessage: ChatMessageRecord | null = null;
     if (raw.branch_leaf_message_id) {
-      branchLeaf = await deps.chatResourceService.getMessage(
+      inputParentMessage = await deps.chatResourceService.getMessage(
         route.workspaceId,
         route.projectId,
         route.sessionId,
         raw.branch_leaf_message_id,
       );
-      if (!branchLeaf) {
+      if (!inputParentMessage) {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_branch_leaf_not_found' });
         return true;
       }
+    } else if (fromMessage) {
+      inputParentMessage = fromMessage;
+    } else {
+      inputParentMessage = await resolveLatestCanonicalBranchLeaf(deps, route);
     }
-    const branchLeafAttachmentIds = new Set((branchLeaf?.attachment_snapshots ?? []).map((item) => item.id));
+    const inputParentAttachmentIds = new Set((inputParentMessage?.attachment_snapshots ?? []).map((item) => item.id));
     const canReuseLeafUser =
-      !!branchLeaf &&
-      branchLeaf.role === 'user' &&
-      branchLeaf.content === raw.input.content &&
-      attachmentSnapshots.length === branchLeafAttachmentIds.size &&
-      attachmentSnapshots.every((item) => branchLeafAttachmentIds.has(item.id));
-    if (canReuseLeafUser && branchLeaf) {
-      parentForAssistant = branchLeaf.id;
+      !!inputParentMessage &&
+      inputParentMessage.role === 'user' &&
+      inputParentMessage.content === raw.input.content &&
+      attachmentSnapshots.length === inputParentAttachmentIds.size &&
+      attachmentSnapshots.every((item) => inputParentAttachmentIds.has(item.id));
+    if (canReuseLeafUser && inputParentMessage) {
+      parentForAssistant = inputParentMessage.id;
     } else {
       const createdInput = await deps.chatResourceService.createMessage({
         workspaceId: route.workspaceId,
@@ -402,7 +439,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         sessionId: route.sessionId,
         role: 'user',
         content: raw.input.content,
-        parentId: raw.branch_leaf_message_id ?? null,
+        parentId: inputParentMessage?.id ?? null,
         logicalId: undefined,
         attachmentSnapshots: attachmentSnapshots.length > 0 ? attachmentSnapshots : undefined,
       });
@@ -563,15 +600,29 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         throw new AgentStreamRouteError('AGENT_ENDPOINT_NOT_CONFIGURED', 'agent_endpoint_not_configured');
       }
       if (agent?.mode === 'internal') {
-        if (!deps.internalAgentPodManager) {
+        const workspaceBindingManager = deps.internalAgentWorkspaceBindingManager ?? deps.internalAgentWorkspaceProvisioner;
+        if (!deps.internalAgentPodManager || !workspaceBindingManager) {
           throw new AgentStreamRouteError('AGENT_SANDBOX_NOT_CONFIGURED', 'agent_sandbox_not_configured');
         }
-        const workloadId = sanitizeWorkloadId(externalAgentId);
+        const preparedSession = await ensureInternalChatSessionWorkspace({
+          deps,
+          session,
+          agent,
+        });
+        const workspaceBinding = await workspaceBindingManager.ensureWorkspaceBinding({
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          fileLibraryId: preparedSession.workspaceFileLibraryId,
+          taskId: route.sessionId,
+        });
+        const workloadId = sanitizeWorkloadId(route.sessionId);
         await deps.internalAgentPodManager.ensureAgentReady({
           workspaceId: route.workspaceId,
           projectId: route.projectId,
           workloadId,
+          sessionId: route.sessionId,
           agent,
+          workspaceMount: workspaceBinding.workspaceMount,
         });
         await deps.internalAgentPodManager.keepalive(
           route.workspaceId,

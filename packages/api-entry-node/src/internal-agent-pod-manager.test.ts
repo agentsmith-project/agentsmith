@@ -70,6 +70,7 @@ describe('internal-agent-pod-manager', () => {
       }),
       workspaceMount: {
         bindingId: 'flib_demo',
+        mountPath: '/workspace/task_1',
       },
     });
 
@@ -111,8 +112,40 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({ image: 'runner:v1' }),
+        workspaceMount: {
+          bindingId: 'flib_demo',
+          mountPath: '/workspace/task_1',
+        },
       }),
     ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
+  });
+
+  it('fails fast when workspace binding is missing', async () => {
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn().mockResolvedValue({ phase: 'offline' }),
+        createOrEnsurePod: vi.fn(),
+        deletePod: vi.fn(),
+        keepalive: vi.fn(),
+        exec: vi.fn(),
+      },
+      { getAgentOnlineState: vi.fn().mockReturnValue(false) },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
+      }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+      message: 'workspace_binding_id_required',
+    });
   });
 
   it('fails with AGENT_SANDBOX_UNAVAILABLE when sandbox readyz preflight fails', async () => {
@@ -136,6 +169,10 @@ describe('internal-agent-pod-manager', () => {
         workloadId: 'task_1',
         sessionId: 'task_1',
         agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
+        workspaceMount: {
+          bindingId: 'flib_demo',
+          mountPath: '/workspace/task_1',
+        },
       }),
     ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_UNAVAILABLE' });
   });
@@ -194,6 +231,7 @@ describe('internal-agent-pod-manager', () => {
         }),
         workspaceMount: {
           bindingId: 'flib_demo',
+          mountPath: '/workspace/task_1',
         },
       });
 
@@ -260,6 +298,10 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
+      workspaceMount: {
+        bindingId: 'flib_demo',
+        mountPath: '/workspace/task_1',
+      },
     });
 
     expect(createOrEnsurePod).toHaveBeenCalledWith(
@@ -315,6 +357,10 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
+      workspaceMount: {
+        bindingId: 'flib_demo',
+        mountPath: '/workspace/task_1',
+      },
     });
 
     expect(deletePod).toHaveBeenCalledWith('ws_1', 'proj_1', 'task_1');
@@ -360,6 +406,10 @@ describe('internal-agent-pod-manager', () => {
           image: 'runner:v1',
           _internal_raw_key: 'ask_xxx',
         }),
+        workspaceMount: {
+          bindingId: 'flib_demo',
+          mountPath: '/workspace/task_1',
+        },
       }),
     ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_REMOTE_OWNED' });
     expect(createOrEnsurePod).not.toHaveBeenCalled();
@@ -394,6 +444,10 @@ describe('internal-agent-pod-manager', () => {
           image: 'runner:v1',
           _internal_raw_key: 'ask_xxx',
         }),
+        workspaceMount: {
+          bindingId: 'flib_demo',
+          mountPath: '/workspace/task_1',
+        },
       }),
     ).resolves.toBeUndefined();
     expect(createOrEnsurePod).not.toHaveBeenCalled();

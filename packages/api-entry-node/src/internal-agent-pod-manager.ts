@@ -45,7 +45,7 @@ export interface InternalAgentPodManager {
     workloadId: string;
     sessionId?: string;
     agent: AgentRecord;
-    workspaceMount?: InternalAgentWorkspaceMount;
+    workspaceMount: InternalAgentWorkspaceMount;
   }): Promise<void>;
   keepalive(workspaceId: string, projectId: string, workloadId: string): Promise<void>;
   releasePod(workspaceId: string, projectId: string, workloadId: string): Promise<void>;
@@ -68,6 +68,26 @@ function defaultSleep(ms: number): Promise<void> {
 
 function isTerminalPodPhase(phase: string | undefined): boolean {
   return phase === 'Failed' || phase === 'Succeeded' || phase === 'Completed';
+}
+
+function requireWorkspaceMount(workspaceMount: InternalAgentWorkspaceMount | undefined): InternalAgentWorkspaceMount {
+  const bindingId = typeof workspaceMount?.bindingId === 'string' ? workspaceMount.bindingId.trim() : '';
+  if (!bindingId) {
+    throw Object.assign(new Error('workspace_binding_id_required'), {
+      code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+    });
+  }
+  const mountPath = typeof workspaceMount.mountPath === 'string' ? workspaceMount.mountPath.trim() : '';
+  if (!mountPath) {
+    throw Object.assign(new Error('workspace_mount_path_required'), {
+      code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+    });
+  }
+  return {
+    ...workspaceMount,
+    bindingId,
+    mountPath,
+  };
 }
 
 export function mapRunnerSessionAuthorityToSandboxError(
@@ -181,12 +201,13 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     workloadId: string;
     sessionId?: string;
     agent: AgentRecord;
-    workspaceMount?: InternalAgentWorkspaceMount;
+    workspaceMount: InternalAgentWorkspaceMount;
   }): Promise<void> {
     const { workspaceId, projectId, workloadId, agent } = input;
     if (agent.mode !== 'internal') {
       throw Object.assign(new Error('agent_mode_not_internal'), { code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
     }
+    const workspaceMount = requireWorkspaceMount(input.workspaceMount);
 
     const lockKey = `${workspaceId}/${projectId}/${workloadId}`;
     for (;;) {
@@ -205,7 +226,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     this.locks.set(lockKey, lock);
 
     try {
-      await this.doEnsure(workspaceId, projectId, workloadId, input.sessionId, agent, input.workspaceMount);
+      await this.doEnsure(workspaceId, projectId, workloadId, input.sessionId, agent, workspaceMount);
     } finally {
       this.locks.delete(lockKey);
       releaseLock();
@@ -273,7 +294,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     workloadId: string,
     sessionId: string | undefined,
     agent: AgentRecord,
-    workspaceMount?: InternalAgentWorkspaceMount,
+    workspaceMount: InternalAgentWorkspaceMount,
   ): Promise<void> {
     if (await this.isReadyForSession(agent.id, sessionId)) return;
 
@@ -313,7 +334,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         await this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
           image: config.image,
           env: {
-            ...(workspaceMount?.mountPath ? { WORKSPACE_PATH: workspaceMount.mountPath } : {}),
+            WORKSPACE_PATH: workspaceMount.mountPath,
             MBOS_AGENT_WS_URL: wsUrl,
             MBOS_AGENT_KEY: config.rawKey,
             MBOS_RUNNER_MODE: 'k8s_internal',
@@ -331,7 +352,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
           memory_limit: config.memoryLimit ?? '4Gi',
           idle_timeout_sec: idleTimeoutSec,
           max_lifetime_sec: maxLifetimeSec,
-          ...(workspaceMount?.bindingId ? { workspace_binding_id: workspaceMount.bindingId } : {}),
+          workspace_binding_id: workspaceMount.bindingId,
         });
         status = await this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId);
       }

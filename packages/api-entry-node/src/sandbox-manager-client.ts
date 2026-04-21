@@ -23,7 +23,7 @@ export interface SandboxPodCreateBody {
   memory_limit?: string;
   idle_timeout_sec?: number;
   max_lifetime_sec?: number;
-  workspace_binding_id?: string;
+  workspace_binding_id: string;
 }
 
 export interface SandboxWorkspaceBindingBody {

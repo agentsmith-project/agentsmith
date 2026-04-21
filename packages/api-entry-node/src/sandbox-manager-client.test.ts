@@ -20,7 +20,10 @@ describe('SandboxManagerClient', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const client = new SandboxManagerClient('http://sandbox:8080/', 'svc-key');
-    const result = await client.createOrEnsurePod('ws_1', 'proj_1', 'workload_1', { image: 'runner:latest' });
+    const result = await client.createOrEnsurePod('ws_1', 'proj_1', 'workload_1', {
+      image: 'runner:latest',
+      workspace_binding_id: 'flib_demo',
+    });
 
     expect(result.httpStatus).toBe(201);
     expect(result.pod.phase).toBe('Running');

@@ -53,6 +53,8 @@ cat > "\${RELEASE_ROOT}/VERSION" <<'EOF'
 release_id=test-release
 agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release
 agentsmith_runner_image=localhost:5001/mbos/agentsmith-notebook-codex-runner:test-release
+agentsmith_chat_runner_image=localhost:5001/mbos/agentsmith-chat-llm-runner:test-release
+agentsmith_chat_runner_k8s_image=kind-registry:5000/mbos/agentsmith-chat-llm-runner:test-release
 agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:test-release
 sandbox_manager_image=localhost:5001/mbos/sandbox-manager:test-release
 llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:test-release
@@ -142,6 +144,7 @@ release_story_verify_source_set() {
     'e2e/integration-workspace-entry.spec.ts',
     'e2e/integration-workspace-publish-usable.spec.ts',
     'e2e/integration-preset-external-file-library.spec.ts',
+    'e2e/integration-internal-chat-runner.spec.ts',
     'e2e/stories/backend-real/example.story.md',
   ]) {
     writeFile(path.join(tempRoot, relativePath), 'placeholder\n');

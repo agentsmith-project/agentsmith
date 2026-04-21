@@ -13,6 +13,7 @@ source "${ROOT_DIR}/scripts/app/deploy-common.sh"
 
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
+CHAT_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_chat_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 SANDBOX_MANAGER_IMAGE="$(awk -F= '$1=="sandbox_manager_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-${LOCAL_KIND_CLUSTER_NAME:-agentsmith}}"
@@ -121,6 +122,7 @@ load_demo_kind_images() {
   local juicefs_csi_version="${JUICEFS_CSI_VERSION:-v0.31.3}"
   local -a kind_images=(
     "${RUNNER_IMAGE}"
+    "${CHAT_RUNNER_IMAGE}"
     "${SANDBOX_MANAGER_IMAGE}"
     "juicedata/juicefs-csi-driver:${juicefs_csi_version}"
     "juicedata/csi-dashboard:${juicefs_csi_version}"

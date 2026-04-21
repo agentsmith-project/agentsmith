@@ -163,7 +163,16 @@ VERIFY_INTEGRATION_WORKSPACE_ACCESS="$(resolve_verify_source_file "e2e/integrati
 VERIFY_INTEGRATION_WORKSPACE_ENTRY_SPEC="$(resolve_verify_source_file "e2e/integration-workspace-entry.spec.ts")"
 VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC="$(resolve_verify_source_file "e2e/integration-workspace-publish-usable.spec.ts")"
 VERIFY_INTEGRATION_PRESET_FILELIB_SPEC="$(resolve_verify_source_file "e2e/integration-preset-external-file-library.spec.ts")"
+VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC="$(resolve_verify_source_file "e2e/integration-internal-chat-runner.spec.ts")"
 prepare_release_story_verify_mounts || exit 1
+VERIFY_PLAYWRIGHT_SPECS=(
+  e2e/integration-files.spec.ts
+  e2e/integration-workspace-entry.spec.ts
+  e2e/integration-workspace-publish-usable.spec.ts
+  e2e/integration-preset-external-file-library.spec.ts
+  e2e/integration-release-user-story.spec.ts
+  e2e/integration-internal-chat-runner.spec.ts
+)
 docker run --rm \
   --network host \
   --ipc host \
@@ -179,6 +188,7 @@ docker run --rm \
   -v "${VERIFY_INTEGRATION_WORKSPACE_ENTRY_SPEC}:/app/e2e/integration-workspace-entry.spec.ts:ro" \
   -v "${VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC}:/app/e2e/integration-workspace-publish-usable.spec.ts:ro" \
   -v "${VERIFY_INTEGRATION_PRESET_FILELIB_SPEC}:/app/e2e/integration-preset-external-file-library.spec.ts:ro" \
+  -v "${VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC}:/app/e2e/integration-internal-chat-runner.spec.ts:ro" \
   "${RELEASE_STORY_VERIFY_MOUNTS[@]}" \
   -e BASE_URL="${HOST_LOCAL_WEB_BASE_URL}" \
   -e INTEGRATION_API_BASE="${HOST_LOCAL_API_BASE_URL}" \
@@ -195,6 +205,9 @@ docker run --rm \
   -e KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
   -e KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
   -e KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+  -e SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL}" \
+  -e SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY}" \
+  -e INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE}" \
   -e INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES=true \
   -e BACKEND_REAL_API_KEY="${PRESET_ENDPOINT_API_KEY:-}" \
   -e BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL}" \
@@ -202,6 +215,10 @@ docker run --rm \
   -e BACKEND_REAL_MODEL="${PRESET_ENDPOINT_MODEL:-placeholder-model}" \
   -e INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_INTERNAL_AGENT_IMAGE="${K8S_RUNNER_IMAGE}" \
+  -e INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${K8S_CHAT_RUNNER_IMAGE}" \
+  -e INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${CHAT_RUNNER_IMAGE}" \
+  -e INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE=0 \
+  -e INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE=0 \
   -e INTEGRATION_CODEX_RUNNER_EMBEDDED=1 \
   -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS:-feishu-docs,jira-ops}" \
   -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED:-1}" \
@@ -210,11 +227,7 @@ docker run --rm \
   "${VERIFY_RUNNER_IMAGE}" \
   npx playwright test \
     --config playwright.config.integration.ts \
-    e2e/integration-files.spec.ts \
-    e2e/integration-workspace-entry.spec.ts \
-    e2e/integration-workspace-publish-usable.spec.ts \
-    e2e/integration-preset-external-file-library.spec.ts \
-    e2e/integration-release-user-story.spec.ts \
+    "${VERIFY_PLAYWRIGHT_SPECS[@]}" \
     --project=chromium \
     --workers=1 || {
       gate_record_failure "${VERIFY_EVIDENCE_DIR}" "scenario_assertion_failed" "scenario_gate_playwright" "deploy verify playwright failed"

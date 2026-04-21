@@ -109,8 +109,65 @@ async function waitForPidExit(pid: number, timeoutMs = 4_000): Promise<boolean> 
   return !isPidAlive(pid);
 }
 
-afterEach(() => {
+function listTempRootProcessPids(tempRoot: string): number[] {
+  const output = execFileSync('ps', ['-eo', 'pid=,command='], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  return [...new Set(
+    output
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const match = line.match(/^(\d+)\s+(.*)$/);
+        if (!match) {
+          return null;
+        }
+        const pid = Number.parseInt(match[1], 10);
+        const command = match[2] ?? '';
+        if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid || !command.includes(tempRoot)) {
+          return null;
+        }
+        return pid;
+      })
+      .filter((pid): pid is number => pid !== null),
+  )];
+}
+
+async function killPidAndWait(pid: number, timeoutMs = processHeavyOwnershipTestTimeoutMs): Promise<void> {
+  if (pid <= 0 || !isPidAlive(pid)) {
+    return;
+  }
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {
+    // Best-effort cleanup for leaked process state from intentionally stubborn fixtures.
+  }
+  if (!(await waitForPidExit(pid, timeoutMs))) {
+    throw new Error(`failed to reap leaked local runtime test process pid ${pid}`);
+  }
+}
+
+async function reapTempRootProcesses(tempRoot: string): Promise<void> {
+  const leakedPids = listTempRootProcessPids(tempRoot);
+  for (const pid of leakedPids) {
+    try {
+      await killPidAndWait(pid);
+    } catch {
+      // Keep reaping the rest so one stubborn leak does not mask the full cleanup set.
+    }
+  }
+  const remainingPids = listTempRootProcessPids(tempRoot);
+  if (remainingPids.length > 0) {
+    throw new Error(`failed to clean temp-root local runtime processes for ${tempRoot}: ${remainingPids.join(', ')}`);
+  }
+}
+
+afterEach(async () => {
   for (const tempRoot of tempRoots.splice(0)) {
+    await reapTempRootProcesses(tempRoot);
     rmSync(tempRoot, { recursive: true, force: true });
   }
 });
@@ -1673,7 +1730,7 @@ while true; do :; done
         }
       }
     }
-  });
+  }, processHeavyOwnershipTestTimeoutMs);
 
   it('fails closed when an owned descendant detaches into a new session during TERM handling', async () => {
     const tempRoot = makeTempRoot();
@@ -2287,7 +2344,7 @@ while true; do :; done
         await waitForPidExit(rootPid);
       }
     }
-  });
+  }, processHeavyOwnershipTestTimeoutMs);
 
   it('falls back to conservative default grace budgets when grace environment values are invalid', () => {
     const result = runBash(

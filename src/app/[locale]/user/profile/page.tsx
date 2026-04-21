@@ -15,6 +15,7 @@ import { PageLoading } from '@/components/ui/loading';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MeAPI, getApiClient } from '@/lib/api';
 import { MemberAPI } from '@/lib/api/endpoints/members';
+import type { UserProfile } from '@/lib/api/endpoints/me';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { handleErrorForToast } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
@@ -26,6 +27,69 @@ const GREETING_OPTIONS = [
   { value: 'professional', labelKey: 'professional' },
 ] as const;
 
+type ProfileDraft = {
+  displayName: string;
+  bio: string;
+  jobTitle: string;
+  company: string;
+  timezone: string;
+  locale: string;
+  greetingPreference: string;
+  interestsStr: string;
+};
+
+const EMPTY_PROFILE_DRAFT: ProfileDraft = {
+  displayName: '',
+  bio: '',
+  jobTitle: '',
+  company: '',
+  timezone: '',
+  locale: '',
+  greetingPreference: '',
+  interestsStr: '',
+};
+
+function buildProfileDraft(profile?: UserProfile | null): ProfileDraft {
+  return {
+    displayName: profile?.display_name ?? '',
+    bio: profile?.bio ?? '',
+    jobTitle: profile?.job_title ?? '',
+    company: profile?.company ?? '',
+    timezone: profile?.timezone ?? '',
+    locale: profile?.locale ?? '',
+    greetingPreference: profile?.greeting_preference ?? '',
+    interestsStr: (profile?.interests ?? []).join(', '),
+  };
+}
+
+function buildProfileUpdatePayload(draft: ProfileDraft): Partial<UserProfile> {
+  return {
+    display_name: draft.displayName || undefined,
+    bio: draft.bio || undefined,
+    job_title: draft.jobTitle || undefined,
+    company: draft.company || undefined,
+    timezone: draft.timezone || undefined,
+    locale: draft.locale || undefined,
+    greeting_preference: draft.greetingPreference || undefined,
+    interests: draft.interestsStr
+      ? draft.interestsStr.split(',').map((item) => item.trim()).filter(Boolean)
+      : undefined,
+  };
+}
+
+function areProfileDraftsEqual(left: ProfileDraft, right: ProfileDraft): boolean {
+  return (
+    left.displayName === right.displayName &&
+    left.bio === right.bio &&
+    left.jobTitle === right.jobTitle &&
+    left.company === right.company &&
+    left.timezone === right.timezone &&
+    left.locale === right.locale &&
+    left.greetingPreference === right.greetingPreference &&
+    left.interestsStr === right.interestsStr
+  );
+}
+
 export default function ProfilePage() {
   const t = useTranslations('profile');
   const user = useAuthStore((state) => state.user);
@@ -36,15 +100,8 @@ export default function ProfilePage() {
   const contextWorkspaceId = searchParams.get('workspace') ?? '';
   const contextProjectId = searchParams.get('project') ?? '';
   const { data: contextMembers = [] } = useWorkspaceMembers(contextWorkspaceId);
-
-  const [displayName, setDisplayName] = React.useState('');
-  const [bio, setBio] = React.useState('');
-  const [jobTitle, setJobTitle] = React.useState('');
-  const [company, setCompany] = React.useState('');
-  const [timezone, setTimezone] = React.useState('');
-  const [locale, setLocale] = React.useState('');
-  const [greetingPreference, setGreetingPreference] = React.useState('');
-  const [interestsStr, setInterestsStr] = React.useState('');
+  const [draft, setDraft] = React.useState<ProfileDraft>(EMPTY_PROFILE_DRAFT);
+  const lastHydratedDraftRef = React.useRef<ProfileDraft>(EMPTY_PROFILE_DRAFT);
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['me', 'profile'],
@@ -57,34 +114,30 @@ export default function ProfilePage() {
   });
 
   React.useEffect(() => {
-    if (profile) {
-      setDisplayName(profile.display_name ?? '');
-      setBio(profile.bio ?? '');
-      setJobTitle(profile.job_title ?? '');
-      setCompany(profile.company ?? '');
-      setTimezone(profile.timezone ?? '');
-      setLocale(profile.locale ?? '');
-      setGreetingPreference(profile.greeting_preference ?? '');
-      setInterestsStr((profile.interests ?? []).join(', '));
-    }
+    if (!profile) return;
+
+    const previousHydratedDraft = lastHydratedDraftRef.current;
+    const nextHydratedDraft = buildProfileDraft(profile);
+
+    setDraft((currentDraft) => (
+      areProfileDraftsEqual(currentDraft, previousHydratedDraft)
+        ? nextHydratedDraft
+        : currentDraft
+    ));
+    lastHydratedDraftRef.current = nextHydratedDraft;
   }, [profile]);
 
   const saveMutation = useMutation({
     mutationFn: () =>
-      api.updateProfile({
-        display_name: displayName || undefined,
-        bio: bio || undefined,
-        job_title: jobTitle || undefined,
-        company: company || undefined,
-        timezone: timezone || undefined,
-        locale: locale || undefined,
-        greeting_preference: greetingPreference || undefined,
-        interests: interestsStr
-          ? interestsStr.split(',').map((s) => s.trim()).filter(Boolean)
-          : undefined,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['me', 'profile'] });
+      api.updateProfile(buildProfileUpdatePayload(draft)),
+    onSuccess: (savedProfile) => {
+      const nextProfile = { ...profile, ...savedProfile };
+      const nextHydratedDraft = buildProfileDraft(nextProfile);
+
+      lastHydratedDraftRef.current = nextHydratedDraft;
+      setDraft(nextHydratedDraft);
+      queryClient.setQueryData(['me', 'profile'], nextProfile);
+      void queryClient.invalidateQueries({ queryKey: ['me', 'profile'] });
       toast.success(t('saved'));
     },
     onError: (err) => handleErrorForToast(err, 'ProfilePage.save'),
@@ -171,8 +224,8 @@ export default function ProfilePage() {
                     {t('display_name')}
                   </label>
                   <Input
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
+                    value={draft.displayName}
+                    onChange={(e) => setDraft((currentDraft) => ({ ...currentDraft, displayName: e.target.value }))}
                     placeholder={t('display_name_placeholder')}
                     className="bg-surface-high"
                     data-testid="profile__display-name"
@@ -183,8 +236,8 @@ export default function ProfilePage() {
                     {t('bio')}
                   </label>
                   <Textarea
-                    value={bio}
-                    onChange={(e) => setBio(e.target.value)}
+                    value={draft.bio}
+                    onChange={(e) => setDraft((currentDraft) => ({ ...currentDraft, bio: e.target.value }))}
                     placeholder={t('bio_placeholder')}
                     rows={4}
                     className="resize-none bg-surface-high"
@@ -204,8 +257,8 @@ export default function ProfilePage() {
                       {t('job_title')}
                     </label>
                     <Input
-                      value={jobTitle}
-                      onChange={(e) => setJobTitle(e.target.value)}
+                      value={draft.jobTitle}
+                      onChange={(e) => setDraft((currentDraft) => ({ ...currentDraft, jobTitle: e.target.value }))}
                       placeholder={t('job_title_placeholder')}
                       className="bg-surface-high"
                     />
@@ -215,8 +268,8 @@ export default function ProfilePage() {
                       {t('company')}
                     </label>
                     <Input
-                      value={company}
-                      onChange={(e) => setCompany(e.target.value)}
+                      value={draft.company}
+                      onChange={(e) => setDraft((currentDraft) => ({ ...currentDraft, company: e.target.value }))}
                       placeholder={t('company_placeholder')}
                       className="bg-surface-high"
                     />
@@ -235,8 +288,8 @@ export default function ProfilePage() {
                       {t('timezone')}
                     </label>
                     <Input
-                      value={timezone}
-                      onChange={(e) => setTimezone(e.target.value)}
+                      value={draft.timezone}
+                      onChange={(e) => setDraft((currentDraft) => ({ ...currentDraft, timezone: e.target.value }))}
                       placeholder={t('timezone_placeholder')}
                       className="bg-surface-high"
                     />
@@ -246,8 +299,8 @@ export default function ProfilePage() {
                       {t('locale')}
                     </label>
                     <Input
-                      value={locale}
-                      onChange={(e) => setLocale(e.target.value)}
+                      value={draft.locale}
+                      onChange={(e) => setDraft((currentDraft) => ({ ...currentDraft, locale: e.target.value }))}
                       placeholder="en-US"
                       className="bg-surface-high"
                     />
@@ -257,8 +310,8 @@ export default function ProfilePage() {
                       {t('greeting_preference')}
                     </label>
                     <select
-                      value={greetingPreference}
-                      onChange={(e) => setGreetingPreference(e.target.value)}
+                      value={draft.greetingPreference}
+                      onChange={(e) => setDraft((currentDraft) => ({ ...currentDraft, greetingPreference: e.target.value }))}
                       className="h-10 w-full rounded-md border border-subtle bg-surface-high px-3 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-accent/50"
                     >
                       <option value="">—</option>
@@ -274,8 +327,8 @@ export default function ProfilePage() {
                       {t('interests')}
                     </label>
                     <Input
-                      value={interestsStr}
-                      onChange={(e) => setInterestsStr(e.target.value)}
+                      value={draft.interestsStr}
+                      onChange={(e) => setDraft((currentDraft) => ({ ...currentDraft, interestsStr: e.target.value }))}
                       placeholder={t('interests_placeholder')}
                       className="bg-surface-high"
                     />

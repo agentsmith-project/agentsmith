@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   acceptMockProjectInviteRecord,
   createMockProjectInviteRecord,
@@ -6,6 +6,15 @@ import {
 import { createMockAuthToken, parseMockAuthToken } from '../src/mocks/utils/mock-auth-token';
 
 describe('member mock handlers', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-13T10:01:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('accepts an invite when the quick-login actor token carries the invited email', () => {
     const inviterToken = createMockAuthToken({
       userId: 'user_001',

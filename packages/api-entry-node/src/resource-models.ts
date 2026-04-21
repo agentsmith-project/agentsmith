@@ -139,6 +139,8 @@ export interface ChatSessionRecord {
   model: string;
   endpoint_id: string;
   external_agent_id?: string;
+  workspace_file_library_id?: string;
+  workspace_file_library_name?: string;
   pinned?: boolean;
   starred?: boolean;
   created_at: string;

@@ -98,6 +98,7 @@ copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-access.ts" "${BUNDLE_DIR
 copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-entry.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-entry.spec.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-workspace-publish-usable.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-publish-usable.spec.ts"
 copy_bundle_file "${ROOT_DIR}/e2e/integration-preset-external-file-library.spec.ts" "${BUNDLE_DIR}/e2e/integration-preset-external-file-library.spec.ts"
+copy_bundle_file "${ROOT_DIR}/e2e/integration-internal-chat-runner.spec.ts" "${BUNDLE_DIR}/e2e/integration-internal-chat-runner.spec.ts"
 while IFS= read -r relative_path; do
   [[ -n "${relative_path}" ]] || continue
   copy_bundle_file "${ROOT_DIR}/${relative_path}" "${BUNDLE_DIR}/${relative_path}"
@@ -143,6 +144,7 @@ INGRESS_NGINX_CERTGEN_IMAGE="$(dep_registry_ref "registry.k8s.io/ingress-nginx/k
 
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
 RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
+CHAT_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_chat_runner_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
 VERIFY_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_verify_runner_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
 SANDBOX_MANAGER_IMAGE="$(awk -F= '$1=="sandbox_manager_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
 UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
@@ -150,6 +152,7 @@ UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${
 FIRST_PARTY_IMAGES=(
   "${APP_IMAGE}"
   "${RUNNER_IMAGE}"
+  "${CHAT_RUNNER_IMAGE}"
   "${VERIFY_RUNNER_IMAGE}"
   "${SANDBOX_MANAGER_IMAGE}"
   "${UNIVERSAL_PROXY_IMAGE}"

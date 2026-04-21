@@ -126,6 +126,7 @@ release_story_verify_source_set() {
     'e2e/integration-workspace-entry.spec.ts',
     'e2e/integration-workspace-publish-usable.spec.ts',
     'e2e/integration-preset-external-file-library.spec.ts',
+    'e2e/integration-internal-chat-runner.spec.ts',
     'e2e/stories/backend-real/example.story.md',
     'infra/deploy/Dockerfile.agentsmith-app-base',
     'infra/deploy/Dockerfile.agentsmith-app',

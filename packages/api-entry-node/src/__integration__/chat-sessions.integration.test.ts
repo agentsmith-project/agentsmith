@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createDefaultNodeApiDeps } from '../index.js';
 import { UniversalProxyService } from '../universal-proxy-service.js';
 import { apiFetch, startServer, startServerWithDeps } from './test-support.js';
+import { JsonDocProjectFileLibraryCatalogRepo } from '../file-library-persistence.js';
 import {
   cleanupChatUpstreamServers,
   parseSseEventPayload,
@@ -72,6 +73,66 @@ async function createChatEndpointAndSession(baseUrl: string, endpointBaseUrl: st
 }
 
 describe('api-entry-node chat session routes', () => {
+  it('provisions a workspace file library for internal-agent chat sessions', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const { baseUrl } = startServerWithDeps(deps);
+    const internalAgent = await deps.agentResourceService.createAgent(
+      'ws_default',
+      'proj_1',
+      {
+        name: 'internal-chat',
+        mode: 'internal',
+        interaction_kind: 'chat',
+        status: 'enabled',
+        config: {
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_test',
+        } as never,
+        owner_id: 'user_test',
+        visibility: 'private',
+        execution_preferences_json: {
+          chat: {
+            endpoint_id: 'ep_internal',
+          },
+        },
+      },
+    );
+
+    const createSession = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          external_agent_id: internalAgent.id,
+          model: 'gpt-5-codex',
+        }),
+      },
+    );
+    expect(createSession.status).toBe(201);
+    const session = (await createSession.json()) as {
+      id: string;
+      workspace_file_library_id?: string;
+      workspace_file_library_name?: string;
+    };
+    expect(session.workspace_file_library_id).toMatch(/^flib_/);
+    expect(session.workspace_file_library_name).toBeTruthy();
+
+    const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(deps.docStore);
+    const workspaceLibrary = await catalogRepo.getById(
+      'ws_default',
+      'proj_1',
+      session.workspace_file_library_id ?? '',
+    );
+    expect(workspaceLibrary).toMatchObject({
+      id: session.workspace_file_library_id,
+      name: session.workspace_file_library_name,
+      created_by_user_id: 'user_test',
+      status: 'ready',
+    });
+  });
+
   it('applies chat pagination defaults and bounds consistently', async () => {
     const { baseUrl } = startServer();
     const upstream = startOpenAICompatibleUpstreamServer();

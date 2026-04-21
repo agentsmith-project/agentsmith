@@ -1469,6 +1469,98 @@ describe("api-entry-node projects routes", () => {
     }
   });
 
+  it("falls back to the latest visible session leaf when branch_leaf_message_id is omitted", async () => {
+    const deps = createDefaultNodeApiDeps();
+    const dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: "req_chat_leaf_fallback",
+      stream: (async function* streamEvents() {
+        yield { type: "done", finish_reason: "stop", usage_tokens: 1 };
+      })(),
+      cancel: vi.fn(),
+    }));
+    deps.agentExecutionService.dispatchStreamingRequest =
+      dispatchStreamingRequest as typeof deps.agentExecutionService.dispatchStreamingRequest;
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = baseUrl;
+
+      const agent = await deps.agentResourceService.createAgent(
+        "ws_default",
+        "proj_1",
+        {
+          name: "leaf-fallback-agent",
+          mode: "external",
+          interaction_kind: "chat",
+          status: "enabled",
+          owner_id: "user_test",
+          visibility: "private",
+          execution_preferences_json: buildChatExecutionPreferences(),
+          capabilities: {
+            streaming_completion: true,
+          },
+        },
+      );
+
+      const session = await deps.chatResourceService.createSession({
+        workspaceId: "ws_default",
+        projectId: "proj_1",
+        ownerUserId: "user_test",
+        model: "external-echo",
+        endpointId: "",
+        externalAgentId: agent.id,
+      });
+      const historyUser = await deps.chatResourceService.createMessage({
+        workspaceId: "ws_default",
+        projectId: "proj_1",
+        sessionId: session.id,
+        role: "user",
+        content: "history prompt",
+      });
+
+      const streamRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            input: {
+              role: "user",
+              content: "follow-up prompt",
+            },
+          }),
+        },
+      );
+      expect(streamRes.status).toBe(200);
+      await streamRes.text();
+
+      expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);
+      expect(dispatchStreamingRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: [
+            { role: "user", content: "history prompt" },
+            { role: "user", content: "follow-up prompt" },
+          ],
+        }),
+      );
+
+      const messages = await deps.chatResourceService.listMessages(
+        "ws_default",
+        "proj_1",
+        session.id,
+      );
+      const followupUser = messages.find((item) => item.content === "follow-up prompt");
+      expect(followupUser?.parent_id).toBe(historyUser.id);
+    } finally {
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
+    }
+  });
+
   it("fails fast for external chat agent execution when public api base is not configured", async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     let ws: WebSocket | null = null;
@@ -2117,10 +2209,33 @@ describe("api-entry-node projects routes", () => {
     const deps = createDefaultNodeApiDeps();
     const ensureAgentReady = vi.fn(async () => undefined);
     const keepalive = vi.fn(async () => undefined);
+    const ensureWorkspaceBinding = vi.fn(async () => ({
+      workspaceMount: {
+        bindingId: "flib_internal_chat_binding",
+        mountPath: "/workspace/chat-session",
+      },
+      binding: {
+        file_library_id: "flib_internal_chat",
+        workspace_id: "ws_default",
+        project_id: "proj_1",
+        namespace: "default",
+        secret_name: "secret",
+        pv_name: "pv",
+        pvc_name: "pvc",
+        volume_handle: "handle",
+        filesystem_name: "flib-internal-chat",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    }));
     deps.internalAgentPodManager = {
       ensureAgentReady,
       keepalive,
       releasePod: vi.fn(async () => undefined),
+    };
+    deps.internalAgentWorkspaceBindingManager = {
+      ensureWorkspaceBinding,
+      deleteWorkspaceBinding: vi.fn(async () => undefined),
     };
     const dispatchStreamingRequest = vi.fn(async () => ({
       requestId: "req_internal_chat_keepalive",
@@ -2174,7 +2289,11 @@ describe("api-entry-node projects routes", () => {
         },
       );
       expect(createSessionRes.status).toBe(201);
-      const session = (await createSessionRes.json()) as { id: string };
+      const session = (await createSessionRes.json()) as {
+        id: string;
+        workspace_file_library_id?: string;
+      };
+      expect(session.workspace_file_library_id).toMatch(/^flib_/);
 
       const streamRes = await apiFetch(
         baseUrl,
@@ -2188,11 +2307,23 @@ describe("api-entry-node projects routes", () => {
         },
       );
       expect(streamRes.status).toBe(200);
+      expect(ensureWorkspaceBinding).toHaveBeenCalledTimes(1);
+      expect(ensureWorkspaceBinding).toHaveBeenCalledWith({
+        workspaceId: "ws_default",
+        projectId: "proj_1",
+        fileLibraryId: session.workspace_file_library_id,
+        taskId: session.id,
+      });
       expect(ensureAgentReady).toHaveBeenCalledTimes(1);
       expect(keepalive).toHaveBeenCalled();
       expect(ensureAgentReady).toHaveBeenCalledWith(
         expect.objectContaining({
-          workloadId: sanitizeWorkloadId(internalAgent.id),
+          sessionId: session.id,
+          workloadId: sanitizeWorkloadId(session.id),
+          workspaceMount: {
+            bindingId: "flib_internal_chat_binding",
+            mountPath: "/workspace/chat-session",
+          },
         }),
       );
       expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);

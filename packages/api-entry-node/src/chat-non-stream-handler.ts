@@ -26,6 +26,8 @@ import {
 import {
   resolveInputRef,
 } from './input-ref-input-resolver.js';
+import { ensureInternalChatSessionWorkspace } from './chat-internal-workspace.js';
+import { mapFileLibraryInfraError } from './project-file-library-service.js';
 
 interface ChatNonStreamHandlerArgs {
   route: ChatRoute;
@@ -181,7 +183,25 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
         endpointId: raw.endpoint_id ?? '',
         externalAgentId,
       });
-      json(res, 201, created);
+      if (agent.mode !== 'internal') {
+        json(res, 201, created);
+        return true;
+      }
+      try {
+        const resolved = await ensureInternalChatSessionWorkspace({
+          deps,
+          session: created,
+          agent,
+        });
+        json(res, 201, resolved.session);
+      } catch (error) {
+        await deps.chatResourceService.deleteSession(route.workspaceId, route.projectId, created.id).catch(() => undefined);
+        const mapped = mapFileLibraryInfraError(error);
+        json(res, mapped.statusCode, {
+          error_code: mapped.errorCode,
+          message: mapped.message,
+        });
+      }
       return true;
     }
     const endpoints = await deps.endpointResourceService.listEndpoints(route.workspaceId, route.projectId);

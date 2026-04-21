@@ -94,6 +94,8 @@ export class ChatResourceService {
     model: string;
     endpointId: string;
     externalAgentId?: string;
+    workspaceFileLibraryId?: string;
+    workspaceFileLibraryName?: string;
     title?: string;
   }): Promise<ChatSessionRecord> {
     const now = new Date().toISOString();
@@ -106,6 +108,8 @@ export class ChatResourceService {
       model: input.model,
       endpoint_id: input.endpointId,
       external_agent_id: input.externalAgentId,
+      workspace_file_library_id: input.workspaceFileLibraryId,
+      workspace_file_library_name: input.workspaceFileLibraryName,
       pinned: false,
       starred: false,
       created_at: now,

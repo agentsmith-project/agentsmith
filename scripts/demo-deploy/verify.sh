@@ -81,6 +81,8 @@ resolve_verify_source_file() {
 }
 
 RELEASE_STORY_VERIFY_MOUNTS=()
+DEMO_FULL_MODE_VERIFY_MOUNTS=()
+DEMO_FULL_MODE_VERIFY_ENV=()
 
 prepare_release_story_verify_mounts() {
   RELEASE_STORY_VERIFY_MOUNTS=()
@@ -92,6 +94,38 @@ prepare_release_story_verify_mounts() {
     source_path="$(resolve_verify_source_file "${relative_path}")" || return 1
     RELEASE_STORY_VERIFY_MOUNTS+=(-v "${source_path}:/app/${relative_path}:ro")
   done < <(release_story_verify_source_set "${RELEASE_ROOT}")
+}
+
+prepare_demo_full_mode_verify_inputs() {
+  DEMO_FULL_MODE_VERIFY_MOUNTS=()
+  DEMO_FULL_MODE_VERIFY_ENV=()
+
+  if ! demo_mode_is_full; then
+    return 0
+  fi
+
+  VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC="$(resolve_verify_source_file "e2e/integration-internal-chat-runner.spec.ts")"
+  VERIFY_BUNDLED_KUBECTL="${RELEASE_ROOT}/tools/kubectl"
+  [[ -x "${VERIFY_BUNDLED_KUBECTL}" ]] || die "bundled kubectl missing from release tools"
+  VERIFY_KUBECONFIG_SOURCE="${KUBECONFIG:-}"
+  [[ -f "${VERIFY_KUBECONFIG_SOURCE}" ]] || die "verify kubeconfig missing"
+
+  DEMO_FULL_MODE_VERIFY_MOUNTS+=(
+    -v "${VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC}:/app/e2e/integration-internal-chat-runner.spec.ts:ro"
+    -v "${VERIFY_BUNDLED_KUBECTL}:/usr/local/bin/kubectl:ro"
+    -v "${VERIFY_KUBECONFIG_SOURCE}:/tmp/verify-kubeconfig:ro"
+  )
+  DEMO_FULL_MODE_VERIFY_ENV+=(
+    -e KUBECONFIG=/tmp/verify-kubeconfig
+    -e SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}"
+    -e SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}"
+    -e INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}"
+    -e INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${CHAT_RUNNER_IMAGE}"
+    -e INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${CHAT_RUNNER_IMAGE}"
+    -e INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE=0
+    -e INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE=0
+  )
+  VERIFY_PLAYWRIGHT_SPECS+=(e2e/integration-internal-chat-runner.spec.ts)
 }
 
 
@@ -251,11 +285,6 @@ VERIFY_INTEGRATION_WORKSPACE_ACCESS="$(resolve_verify_source_file "e2e/integrati
 VERIFY_INTEGRATION_WORKSPACE_ENTRY_SPEC="$(resolve_verify_source_file "e2e/integration-workspace-entry.spec.ts")"
 VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC="$(resolve_verify_source_file "e2e/integration-workspace-publish-usable.spec.ts")"
 VERIFY_INTEGRATION_PRESET_FILELIB_SPEC="$(resolve_verify_source_file "e2e/integration-preset-external-file-library.spec.ts")"
-VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC="$(resolve_verify_source_file "e2e/integration-internal-chat-runner.spec.ts")"
-VERIFY_BUNDLED_KUBECTL="${RELEASE_ROOT}/tools/kubectl"
-[[ -x "${VERIFY_BUNDLED_KUBECTL}" ]] || die "bundled kubectl missing from release tools"
-VERIFY_KUBECONFIG_SOURCE="${KUBECONFIG:-}"
-[[ -f "${VERIFY_KUBECONFIG_SOURCE}" ]] || die "verify kubeconfig missing"
 prepare_release_story_verify_mounts || exit 1
 VERIFY_PLAYWRIGHT_SPECS=(
   e2e/integration-files.spec.ts
@@ -264,9 +293,7 @@ VERIFY_PLAYWRIGHT_SPECS=(
   e2e/integration-preset-external-file-library.spec.ts
   e2e/integration-release-user-story.spec.ts
 )
-if demo_mode_is_full; then
-  VERIFY_PLAYWRIGHT_SPECS+=(e2e/integration-internal-chat-runner.spec.ts)
-fi
+prepare_demo_full_mode_verify_inputs || exit 1
 docker run --rm \
   --network host \
   --ipc host \
@@ -275,8 +302,6 @@ docker run --rm \
   --security-opt apparmor:unconfined \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "${REPORT_DIR}/verify-artifacts:/app/test-results" \
-  -v "${VERIFY_BUNDLED_KUBECTL}:/usr/local/bin/kubectl:ro" \
-  -v "${VERIFY_KUBECONFIG_SOURCE}:/tmp/verify-kubeconfig:ro" \
   -v "${VERIFY_INTEGRATION_REAL_HELPERS}:/app/e2e/integration-real-helpers.ts:ro" \
   -v "${VERIFY_INTEGRATION_FILES_SPEC}:/app/e2e/integration-files.spec.ts:ro" \
   -v "${VERIFY_NOTEBOOK_EXECUTION_OUTCOME}:/app/e2e/notebook-execution-outcome.ts:ro" \
@@ -284,11 +309,10 @@ docker run --rm \
   -v "${VERIFY_INTEGRATION_WORKSPACE_ENTRY_SPEC}:/app/e2e/integration-workspace-entry.spec.ts:ro" \
   -v "${VERIFY_INTEGRATION_WORKSPACE_PUBLISH_SPEC}:/app/e2e/integration-workspace-publish-usable.spec.ts:ro" \
   -v "${VERIFY_INTEGRATION_PRESET_FILELIB_SPEC}:/app/e2e/integration-preset-external-file-library.spec.ts:ro" \
-  -v "${VERIFY_INTEGRATION_INTERNAL_CHAT_RUNNER_SPEC}:/app/e2e/integration-internal-chat-runner.spec.ts:ro" \
+  "${DEMO_FULL_MODE_VERIFY_MOUNTS[@]}" \
   "${RELEASE_STORY_VERIFY_MOUNTS[@]}" \
   -e BASE_URL="${HOST_LOCAL_WEB_BASE_URL}" \
   -e INTEGRATION_API_BASE="${HOST_LOCAL_API_BASE_URL}" \
-  -e KUBECONFIG=/tmp/verify-kubeconfig \
   -e EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL="${EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL}" \
   -e EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE}" \
   -e EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE}" \
@@ -302,9 +326,7 @@ docker run --rm \
   -e KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
   -e KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
   -e KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-  -e SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}" \
-  -e SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}" \
-  -e INTERNAL_AGENT_K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-}" \
+  "${DEMO_FULL_MODE_VERIFY_ENV[@]}" \
   -e INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES=true \
   -e BACKEND_REAL_API_KEY="${PRESET_ENDPOINT_API_KEY:-}" \
   -e BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL}" \
@@ -313,10 +335,6 @@ docker run --rm \
   -e INTEGRATION_DEMO_DEPLOY_MODE="${DEMO_DEPLOY_MODE}" \
   -e INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
-  -e INTEGRATION_INTERNAL_CHAT_AGENT_IMAGE="${CHAT_RUNNER_IMAGE}" \
-  -e INTEGRATION_CHAT_RUNNER_BASE_DOCKER_IMAGE="${CHAT_RUNNER_IMAGE}" \
-  -e INTEGRATION_CHAT_RUNNER_REBUILD_BASE_IMAGE=0 \
-  -e INTEGRATION_CHAT_RUNNER_REBUILD_IMAGE=0 \
   -e INTEGRATION_CODEX_RUNNER_EMBEDDED=1 \
   -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS:-feishu-docs,jira-ops}" \
   -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED="${INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_REQUIRED:-1}" \

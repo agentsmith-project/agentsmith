@@ -18,6 +18,8 @@ import {
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
+const INTERNAL_CHAT_STREAM_COLD_START_TIMEOUT_MS = 240_000;
+
 function requireInternalSandboxNamespace(): string {
   if (!process.env.SANDBOX_MANAGER_URL?.trim()) {
     throw new Error('missing_SANDBOX_MANAGER_URL');
@@ -46,6 +48,7 @@ async function runChatStreamTurn(
   projectId: string,
   sessionId: string,
   content: string,
+  options?: { timeoutMs?: number },
 ): Promise<void> {
   const token = await readStoredAuthToken(page);
   const response = await page.request.post(
@@ -61,6 +64,7 @@ async function runChatStreamTurn(
           content,
         },
       },
+      ...(options?.timeoutMs ? { timeout: options.timeoutMs } : {}),
     },
   );
   expect(response.ok()).toBeTruthy();
@@ -105,7 +109,7 @@ async function waitForAssistantToken(args: {
 }
 
 test.describe('@lane-real internal chat runner integration', () => {
-  test('starts one shared internal chat pod and keeps session transcripts isolated across sessions', async ({ page }) => {
+  test('starts a distinct internal chat pod per session and keeps session transcripts isolated across sessions', async ({ page }) => {
     test.setTimeout(720_000);
     const namespace = requireInternalSandboxNamespace();
     const providerApiKey = requireRealLaneApiKey();
@@ -147,6 +151,7 @@ test.describe('@lane-real internal chat runner integration', () => {
       projectId,
       sessionOne.id,
       `Reply with the exact token ${tokenOne} and nothing else.`,
+      { timeoutMs: INTERNAL_CHAT_STREAM_COLD_START_TIMEOUT_MS },
     );
     const sessionOneMessages = await waitForAssistantToken({
       page,
@@ -156,8 +161,8 @@ test.describe('@lane-real internal chat runner integration', () => {
       token: tokenOne,
     });
 
-    const workloadId = sanitizeWorkloadId(internalAgent.agentId);
-    const podOne = await waitForWorkloadPodIdentity({ namespace, workloadId, timeoutMs: 180_000 });
+    const workloadIdOne = sanitizeWorkloadId(sessionOne.id);
+    const podOne = await waitForWorkloadPodIdentity({ namespace, workloadId: workloadIdOne, timeoutMs: 180_000 });
 
     const sessionTwo = await createChatSessionViaApi({
       page,
@@ -173,6 +178,7 @@ test.describe('@lane-real internal chat runner integration', () => {
       projectId,
       sessionTwo.id,
       `Reply with the exact token ${tokenTwo} and nothing else.`,
+      { timeoutMs: INTERNAL_CHAT_STREAM_COLD_START_TIMEOUT_MS },
     );
     const sessionTwoMessages = await waitForAssistantToken({
       page,
@@ -182,8 +188,10 @@ test.describe('@lane-real internal chat runner integration', () => {
       token: tokenTwo,
     });
 
-    const podTwo = await waitForWorkloadPodIdentity({ namespace, workloadId, timeoutMs: 60_000 });
-    expect(podTwo).toBe(podOne);
+    const workloadIdTwo = sanitizeWorkloadId(sessionTwo.id);
+    const podTwo = await waitForWorkloadPodIdentity({ namespace, workloadId: workloadIdTwo, timeoutMs: 180_000 });
+    expect(podTwo.uid).not.toBe(podOne.uid);
+    expect(podTwo.name).not.toBe(podOne.name);
 
     expect(sessionOneMessages.some((item) => item.role === 'assistant' && item.content?.includes(tokenOne))).toBe(true);
     expect(sessionOneMessages.some((item) => item.role === 'assistant' && item.content?.includes(tokenTwo))).toBe(false);

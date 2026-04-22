@@ -37,6 +37,25 @@ if [[ ! -f "${SITE_ENV}" ]]; then
   cp "${SITE_ENV_EXAMPLE}" "${SITE_ENV}"
 fi
 
+declare -A SITE_ENV_DECLARED=()
+while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
+  line="${raw_line#"${raw_line%%[![:space:]]*}"}"
+  [[ -z "${line}" || "${line}" == \#* || "${line}" != *=* ]] && continue
+  key="${line%%=*}"
+  SITE_ENV_DECLARED["${key}"]=1
+done < "${SITE_ENV}"
+
+for runtime_proxy_key in \
+  RUNTIME_PROXY_MODE \
+  RUNTIME_HTTP_PROXY \
+  RUNTIME_HTTPS_PROXY \
+  RUNTIME_ALL_PROXY \
+  RUNTIME_ADDITIONAL_NO_PROXY; do
+  if [[ -z "${SITE_ENV_DECLARED[${runtime_proxy_key}]:-}" ]]; then
+    die "missing required site.env key: ${runtime_proxy_key}"
+  fi
+done
+
 for deprecated_key in KEYCLOAK_INTERNAL_BASE_URL KEYCLOAK_PUBLIC_BASE_URL MBOS_API_BASE MBOS_DEFAULT_WORKSPACE_ADMIN_USER_ID MBOS_INTEGRATION_USER_ID INTERNAL_API_BASE_URL INTERNAL_KEYCLOAK_BASE_URL FILE_LIBRARY_POSTGRES_PUBLIC_HOST FILE_LIBRARY_POSTGRES_PUBLIC_PORT FILE_LIBRARY_MINIO_PUBLIC_ENDPOINT EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL AGENT_EXECUTION_HTTP_BASE_URL AGENT_EXECUTION_WS_BASE_URL SANDBOX_MANAGER_URL INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE; do
   if grep -Eq "^[[:space:]]*${deprecated_key}=" "${SITE_ENV}"; then
     die "deprecated site.env key detected: ${deprecated_key}; update ${SITE_ENV} to deployment-spec-v1"
@@ -49,6 +68,7 @@ load_agentsmith_presets "${ROOT_DIR}"
 source "${SITE_ENV}"
 apply_non_environment_preset_defaults
 apply_preset_endpoint_defaults
+runtime_proxy_mode >/dev/null
 DEMO_DEPLOY_MODE="$(demo_deploy_mode)"
 MBOS_AGENT_JUICEFS_MOUNT_OPTIONS="${MBOS_AGENT_JUICEFS_MOUNT_OPTIONS:-}"
 if [[ -z "${SYSTEM_ADMIN_SESSION_COOKIE_SECURE:-}" ]]; then
@@ -60,14 +80,6 @@ if [[ -z "${SYSTEM_ADMIN_SESSION_COOKIE_SECURE:-}" ]]; then
 fi
 COMPOSE_RUNTIME_NO_PROXY="$(compose_runtime_no_proxy)"
 set +a
-
-declare -A SITE_ENV_DECLARED=()
-while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
-  line="${raw_line#"${raw_line%%[![:space:]]*}"}"
-  [[ -z "${line}" || "${line}" == \#* || "${line}" != *=* ]] && continue
-  key="${line%%=*}"
-  SITE_ENV_DECLARED["${key}"]=1
-done < "${SITE_ENV}"
 
 for required_key in \
   DEMO_DEPLOY_MODE \
@@ -311,7 +323,7 @@ PRESET_ANTHROPIC_ENDPOINT_PROTOCOL=${PRESET_ANTHROPIC_ENDPOINT_PROTOCOL}
 PRESET_OPENAI_ENDPOINT_BASE_URL=${PRESET_OPENAI_ENDPOINT_BASE_URL}
 PRESET_OPENAI_ENDPOINT_PROTOCOL=${PRESET_OPENAI_ENDPOINT_PROTOCOL}
 MBOS_AGENT_CODEX_YOLO=${MBOS_AGENT_CODEX_YOLO}
-$(compose_runtime_proxy_sanitization_env)
+$(compose_runtime_proxy_env)
 NO_PROXY=${COMPOSE_RUNTIME_NO_PROXY}
 no_proxy=${COMPOSE_RUNTIME_NO_PROXY}
 EOF
@@ -427,7 +439,9 @@ EOF
 
 if demo_mode_is_full; then
   cat > "${RELEASE_ROOT}/env/internal.env" <<EOF
-$(compose_runtime_proxy_sanitization_env)
+$(compose_runtime_proxy_env)
+NO_PROXY=${COMPOSE_RUNTIME_NO_PROXY}
+no_proxy=${COMPOSE_RUNTIME_NO_PROXY}
 MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN}
 LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN}
 INTERNAL_AGENT_K8S_NAMESPACE=${INTERNAL_AGENT_K8S_NAMESPACE}
@@ -444,7 +458,9 @@ JUICEFS_BUCKET_ENDPOINT_FOR_INTERNAL_MOUNT=http://$(k8s_external_minio_fqdn "${I
 EOF
 else
   cat > "${RELEASE_ROOT}/env/internal.env" <<EOF
-$(compose_runtime_proxy_sanitization_env)
+$(compose_runtime_proxy_env)
+NO_PROXY=${COMPOSE_RUNTIME_NO_PROXY}
+no_proxy=${COMPOSE_RUNTIME_NO_PROXY}
 MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN}
 LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN}
 # DEMO_DEPLOY_MODE=simple

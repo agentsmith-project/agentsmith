@@ -289,20 +289,134 @@ PY
 
 compose_runtime_no_proxy() {
   merge_no_proxy_entries \
+    "${RUNTIME_ADDITIONAL_NO_PROXY:-}" \
     "${NO_PROXY:-${no_proxy:-}}" \
     "postgres,mongo,redis,minio,keycloak,api,web,external-runner,universal-proxy,host.docker.internal,postgres-external,minio-external,sandbox-manager" \
     "$(no_proxy_hosts_from_inputs "$@")"
 }
 
-compose_runtime_proxy_sanitization_env() {
+runtime_proxy_mode() {
+  local mode="${RUNTIME_PROXY_MODE:-sanitized}"
+  case "${mode}" in
+    sanitized|inherit|custom)
+      printf '%s\n' "${mode}"
+      ;;
+    *)
+      die "invalid RUNTIME_PROXY_MODE: ${mode} (expected sanitized, inherit, or custom)"
+      ;;
+  esac
+}
+
+runtime_proxy_env_names() {
   cat <<'EOF'
-HTTP_PROXY=
-HTTPS_PROXY=
-ALL_PROXY=
-http_proxy=
-https_proxy=
-all_proxy=
+HTTP_PROXY
+HTTPS_PROXY
+ALL_PROXY
+http_proxy
+https_proxy
+all_proxy
 EOF
+}
+
+runtime_proxy_value_from_pair() {
+  local uppercase_key="$1"
+  local lowercase_key="$2"
+  local uppercase_value="${!uppercase_key-}"
+  local lowercase_value="${!lowercase_key-}"
+
+  if [[ -n "${uppercase_value}" ]]; then
+    printf '%s\n' "${uppercase_value}"
+  else
+    printf '%s\n' "${lowercase_value}"
+  fi
+}
+
+runtime_proxy_custom_value() {
+  local key="$1"
+  case "${key}" in
+    HTTP_PROXY|http_proxy)
+      printf '%s\n' "${RUNTIME_HTTP_PROXY:-}"
+      ;;
+    HTTPS_PROXY|https_proxy)
+      printf '%s\n' "${RUNTIME_HTTPS_PROXY:-}"
+      ;;
+    ALL_PROXY|all_proxy)
+      printf '%s\n' "${RUNTIME_ALL_PROXY:-}"
+      ;;
+    *)
+      die "unsupported runtime proxy env key: ${key}"
+      ;;
+  esac
+}
+
+runtime_proxy_env_value() {
+  local key="$1"
+  local mode
+  mode="$(runtime_proxy_mode)"
+
+  case "${mode}" in
+    sanitized)
+      printf '%s\n' ""
+      ;;
+    inherit)
+      case "${key}" in
+        HTTP_PROXY|http_proxy)
+          runtime_proxy_value_from_pair HTTP_PROXY http_proxy
+          ;;
+        HTTPS_PROXY|https_proxy)
+          runtime_proxy_value_from_pair HTTPS_PROXY https_proxy
+          ;;
+        ALL_PROXY|all_proxy)
+          runtime_proxy_value_from_pair ALL_PROXY all_proxy
+          ;;
+        *)
+          die "unsupported runtime proxy env key: ${key}"
+          ;;
+      esac
+      ;;
+    custom)
+      runtime_proxy_custom_value "${key}"
+      ;;
+  esac
+}
+
+compose_runtime_proxy_env() {
+  local runtime_proxy_key runtime_proxy_value
+  while IFS= read -r runtime_proxy_key; do
+    [[ -n "${runtime_proxy_key}" ]] || continue
+    runtime_proxy_value="$(runtime_proxy_env_value "${runtime_proxy_key}")"
+    printf '%s=%s\n' "${runtime_proxy_key}" "${runtime_proxy_value}"
+  done < <(runtime_proxy_env_names)
+}
+
+compose_runtime_proxy_sanitization_env() {
+  compose_runtime_proxy_env
+}
+
+runtime_proxy_env_fingerprint_from_lines() {
+  python3 - "$@" <<'PY'
+import hashlib
+import json
+import sys
+
+payload = {}
+for raw in sys.argv[1:]:
+    if "=" not in raw:
+        continue
+    key, value = raw.split("=", 1)
+    payload[key] = value
+
+fingerprint = hashlib.sha256(
+    json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+).hexdigest()
+print(fingerprint)
+PY
+}
+
+runtime_proxy_env_fingerprint() {
+  local -a runtime_proxy_lines=()
+  mapfile -t runtime_proxy_lines < <(compose_runtime_proxy_env)
+  runtime_proxy_env_fingerprint_from_lines "${runtime_proxy_lines[@]}"
 }
 
 docker_run_runtime_proxy_env_args() {
@@ -310,7 +424,7 @@ docker_run_runtime_proxy_env_args() {
   while IFS= read -r runtime_env; do
     [[ -n "${runtime_env}" ]] || continue
     printf '%s\n' -e "${runtime_env}"
-  done < <(compose_runtime_proxy_sanitization_env)
+  done < <(compose_runtime_proxy_env)
 }
 
 write_compose_env() {

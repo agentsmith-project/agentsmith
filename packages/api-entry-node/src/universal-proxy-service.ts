@@ -140,6 +140,15 @@ function routePathForProxyPath(proxyPath: string): string | null {
   return null;
 }
 
+function requestAllowsAutomaticReplay(method: string | undefined, proxyPath: string): boolean {
+  const normalizedMethod = (method ?? 'POST').trim().toUpperCase();
+  if (normalizedMethod === 'GET' || normalizedMethod === 'HEAD') {
+    return true;
+  }
+
+  return normalizedMethod === 'POST' && normalizeProxyPath(proxyPath) === 'anthropic/messages/count_tokens';
+}
+
 function fixedUpstreamFormat(protocol: EndpointUpstreamProtocol): RuntimeUpstreamConfig['fixed_upstream_format'] | undefined {
   if (protocol === 'anthropic_messages') return 'anthropic';
   if (protocol === 'openai_chat_completions') return 'openai-completion';
@@ -462,6 +471,7 @@ export class UniversalProxyService {
     if (!routePath) {
       throw new Error(`unsupported_universal_proxy_path:${options.proxyPath}`);
     }
+    const allowsAutomaticReplay = requestAllowsAutomaticReplay(options.req.method, options.proxyPath);
     const url = `${sanitizeBaseUrl(this.baseUrl)}/namespaces/${encodeURIComponent(options.namespace)}${routePath}`;
     const init: RequestInit = {
       method: options.req.method ?? 'POST',
@@ -481,15 +491,18 @@ export class UniversalProxyService {
       if (attempt >= this.options.maxTransientProviderRetries) {
         return response;
       }
-      const retryDecision = await this.getTransientRetryDecision(response);
+      const retryDecision = await this.getTransientProviderRetryDecision(response);
       if (!retryDecision.shouldRetry) {
+        return response;
+      }
+      if (!allowsAutomaticReplay) {
         return response;
       }
       await delayWithAbort(retryDecision.retryDelayMs, options.signal);
     }
   }
 
-  private async getTransientRetryDecision(response: Response): Promise<TransientRetryDecision> {
+  private async getTransientProviderRetryDecision(response: Response): Promise<TransientRetryDecision> {
     if (response.ok) {
       return { shouldRetry: false, retryDelayMs: 0 };
     }

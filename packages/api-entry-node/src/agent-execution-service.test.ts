@@ -2060,6 +2060,153 @@ describe('AgentExecutionService', () => {
     }).socketsByKey.get(agent.id)?.pendingByRequestId.size).toBe(0);
   });
 
+  it('keeps chat first meaningful output timeout armed when only lifecycle running events arrive', async () => {
+    const { executionService, agent, ws } = await setupExecutionService({
+      executionServiceOptions: {
+        streamFirstEventTimeoutMs: 25,
+        streamIdleTimeoutMs: 250,
+        streamMaxRuntimeMs: 10_000,
+        heartbeatIntervalMs: 10_000,
+      },
+    });
+    const startFrame = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type !== 'server.request.start') {
+          return;
+        }
+        resolve(message);
+        ws.send(JSON.stringify({
+          type: 'agent.response.event',
+          request_id: message.request_id,
+          payload: {
+            sequence: 1,
+            at: new Date().toISOString(),
+            category: 'lifecycle',
+            phase: 'update',
+            status: 'running',
+            name: 'chat.request_running',
+            summary: 'chat_request_running',
+          },
+        }));
+      });
+    });
+
+    const dispatched = await executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'sess_chat_running_only',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'hello' }],
+      executionContext: {
+        interaction_kind: 'chat',
+      },
+    });
+
+    await expect(startFrame).resolves.toMatchObject({
+      type: 'server.request.start',
+      session_id: 'sess_chat_running_only',
+    });
+    const iterator = dispatched.stream[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'event',
+        event: {
+          category: 'lifecycle',
+          status: 'running',
+          name: 'chat.request_running',
+        },
+      },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: {
+        type: 'error',
+        error_code: 'AGENT_REQUEST_TIMEOUT',
+        error_message: 'agent_request_first_event_timeout',
+      },
+    });
+  });
+
+  it('treats notebook lifecycle trace events as meaningful output and falls back to idle timeout', async () => {
+    const { executionService, agent, keyPair, wsBase } = await setupExecutionService({
+      interactionKind: 'notebook',
+      executionServiceOptions: {
+        streamFirstEventTimeoutMs: 25,
+        streamIdleTimeoutMs: 50,
+        streamMaxRuntimeMs: 10_000,
+        heartbeatIntervalMs: 10_000,
+      },
+    });
+    const ws = await openAgentWebSocket({
+      wsBase,
+      agentId: agent.id,
+      key: keyPair.key,
+      sessionId: 'task_trace_event',
+    });
+    const startFrame = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+        if (message.type !== 'server.request.start') {
+          return;
+        }
+        resolve(message);
+        ws.send(JSON.stringify({
+          type: 'agent.response.event',
+          request_id: message.request_id,
+          payload: {
+            sequence: 1,
+            at: new Date().toISOString(),
+            category: 'lifecycle',
+            phase: 'start',
+            status: 'running',
+            name: 'notebook.execution',
+            summary: 'Notebook execution started',
+          },
+        }));
+      });
+    });
+
+    const dispatched = await executionService.dispatchStreamingRequest({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      sessionId: 'task_trace_event',
+      agentId: agent.id,
+      model: 'external-test',
+      messages: [{ role: 'user', content: 'hello' }],
+      executionContext: {
+        interaction_kind: 'notebook',
+      },
+    });
+
+    await expect(startFrame).resolves.toMatchObject({
+      type: 'server.request.start',
+      session_id: 'task_trace_event',
+    });
+    const iterator = dispatched.stream[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'event',
+        event: {
+          category: 'lifecycle',
+          status: 'running',
+          name: 'notebook.execution',
+        },
+      },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: {
+        type: 'error',
+        error_code: 'AGENT_REQUEST_TIMEOUT',
+        error_message: 'agent_request_idle_timeout',
+      },
+    });
+  });
+
   it('expires a terminal start that never receives runner terminal events and removes its pending map entry', async () => {
     const { executionService, agent, keyPair, wsBase } = await setupExecutionService({
       interactionKind: 'notebook',

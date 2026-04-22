@@ -1,14 +1,29 @@
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-function runBash(script: string): string {
-  return execFileSync('bash', ['-lc', script], {
+function runBashResult(script: string): { status: number; stdout: string; stderr: string } {
+  const result = spawnSync('bash', ['-lc', script], {
     cwd: process.cwd(),
     encoding: 'utf8',
-  }).trim();
+  });
+
+  return {
+    status: result.status ?? 0,
+    stdout: result.stdout.trim(),
+    stderr: result.stderr.trim(),
+  };
+}
+
+function runBash(script: string): string {
+  const result = runBashResult(script);
+  if (result.status !== 0) {
+    throw new Error(`bash exited with ${result.status}: ${result.stderr}`);
+  }
+
+  return result.stdout;
 }
 
 describe('kind-cluster-bootstrap', () => {
@@ -212,7 +227,7 @@ EOF_RESOLVERS
     expect(output).toBe('10.0.0.2 10.0.0.3');
   });
 
-  it('uses filtered host resolvers before repo fallbacks when no explicit CoreDNS override is configured', () => {
+  it('uses filtered host resolvers when no explicit CoreDNS override is configured', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kind-bootstrap-dns-host-'));
     const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
     const resolvConfPath = path.join(tempRoot, 'resolv.conf');
@@ -223,7 +238,7 @@ nameserver 127.0.0.11
 nameserver 169.254.20.10
 nameserver 172.19.0.1
 nameserver 10.0.0.2
-nameserver 8.8.8.8
+nameserver 10.0.0.3
 EOF_RESOLV
     `);
 
@@ -234,10 +249,10 @@ EOF_RESOLV
       kind_resolve_coredns_upstream_resolvers
     `);
 
-    expect(output).toBe('10.0.0.2 8.8.8.8 1.1.1.1');
+    expect(output).toBe('10.0.0.2 10.0.0.3');
   });
 
-  it('falls back to repo defaults when configured CoreDNS upstreams and host resolvers are local-only', () => {
+  it('falls back to repo-owned resolvers when explicit and host resolver sources only resolve to local stub addresses', () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kind-bootstrap-dns-local-only-'));
     const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
     const resolvConfPath = path.join(tempRoot, 'resolv.conf');
@@ -260,6 +275,56 @@ EOF_RESOLV
     `);
 
     expect(output).toBe('1.1.1.1 8.8.8.8');
+  });
+
+  it('discovers alternate host resolver truth when the primary host resolv.conf is only a local stub', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kind-bootstrap-dns-alt-host-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
+    const stubResolvConfPath = path.join(tempRoot, 'stub-resolv.conf');
+    const alternateResolvConfPath = path.join(tempRoot, 'enterprise-resolv.conf');
+
+    runBash(`
+      cat > "${stubResolvConfPath}" <<'EOF_STUB'
+nameserver 127.0.0.53
+nameserver 169.254.20.10
+EOF_STUB
+      cat > "${alternateResolvConfPath}" <<'EOF_ALT'
+nameserver 10.200.0.2
+nameserver 10.200.0.3
+EOF_ALT
+    `);
+
+    const output = runBash(`
+      source "${helper}"
+      LOCAL_KIND_COREDNS_HOST_RESOLV_CONF="${stubResolvConfPath}"
+      LOCAL_KIND_COREDNS_HOST_RESOLV_CONF_ALT="${alternateResolvConfPath}"
+      kind_resolve_coredns_upstream_resolvers
+    `);
+
+    expect(output).toBe('10.200.0.2 10.200.0.3');
+  });
+
+  it('filters blocked docker gateway addresses out of the repo-owned fallback list', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kind-bootstrap-dns-fallback-blocklist-'));
+    const helper = path.join(process.cwd(), 'scripts/lib/kind-cluster-bootstrap.sh');
+    const resolvConfPath = path.join(tempRoot, 'resolv.conf');
+
+    runBash(`
+      cat > "${resolvConfPath}" <<'EOF_RESOLV'
+nameserver 127.0.0.11
+nameserver 169.254.25.10
+EOF_RESOLV
+    `);
+
+    const output = runBash(`
+      source "${helper}"
+      LOCAL_KIND_COREDNS_HOST_RESOLV_CONF="${resolvConfPath}"
+      LOCAL_KIND_COREDNS_BLOCKLIST="172.19.0.1"
+      LOCAL_KIND_COREDNS_REPO_FALLBACK_UPSTREAMS="172.19.0.1 9.9.9.9 149.112.112.112"
+      kind_resolve_coredns_upstream_resolvers
+    `);
+
+    expect(output).toBe('9.9.9.9 149.112.112.112');
   });
 
   it('rewrites the CoreDNS forward stanza to explicit upstream resolvers', () => {

@@ -94,7 +94,7 @@ function runApplyKindDns(tempRoot: string, extraEnv: NodeJS.ProcessEnv = {}): st
       HOME: tempRoot,
       PATH: `${path.join(tempRoot, 'bin')}:${process.env.PATH}`,
       KUBECONFIG: path.join(tempRoot, 'kubeconfig'),
-      KIND_CLUSTER_DNS_UPSTREAMS: '1.1.1.1 8.8.8.8',
+      KIND_CLUSTER_DNS_UPSTREAMS: '10.0.0.2 10.0.0.3',
       ...extraEnv,
     },
     encoding: 'utf8',
@@ -114,10 +114,53 @@ describe('cluster kind DNS apply helper', () => {
       const kubectlLog = readFileSync(path.join(tempRoot, 'kubectl.log'), 'utf8');
 
       expect(output).toContain('kind cluster DNS');
-      expect(appliedConfig).toContain('forward . 1.1.1.1 8.8.8.8');
+      expect(appliedConfig).toContain('forward . 10.0.0.2 10.0.0.3');
       expect(kubectlLog).toContain('-n kube-system patch configmap coredns --type merge');
       expect(kubectlLog).toContain('-n kube-system rollout restart deployment/coredns');
       expect(kubectlLog).toContain('-n kube-system rollout status deployment/coredns --timeout=180s');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the site-driven upstream file when no direct override is exported', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-kind-dns-file-'));
+    const resolverFilePath = path.join(tempRoot, 'enterprise-resolvers.txt');
+
+    try {
+      stageApplyKindDnsFixture(tempRoot);
+      writeFileSync(resolverFilePath, '10.20.0.2\n10.20.0.3\n', 'utf8');
+
+      const output = runApplyKindDns(tempRoot, {
+        KIND_CLUSTER_DNS_UPSTREAMS: '',
+        KIND_CLUSTER_DNS_UPSTREAMS_FILE: resolverFilePath,
+      });
+      const appliedConfig = readFileSync(path.join(tempRoot, 'applied-config.json'), 'utf8');
+
+      expect(output).toContain('kind cluster DNS');
+      expect(appliedConfig).toContain('forward . 10.20.0.2 10.20.0.3');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to the repo-owned resolver list when site and host inputs only expose local stub resolvers', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'cluster-kind-dns-repo-fallback-'));
+    const stubResolvConfPath = path.join(tempRoot, 'stub-resolv.conf');
+
+    try {
+      stageApplyKindDnsFixture(tempRoot);
+      writeFileSync(stubResolvConfPath, 'nameserver 127.0.0.53\nnameserver 127.0.0.1\n', 'utf8');
+
+      const output = runApplyKindDns(tempRoot, {
+        KIND_CLUSTER_DNS_UPSTREAMS: '',
+        KIND_CLUSTER_DNS_HOST_RESOLV_CONF: stubResolvConfPath,
+        LOCAL_KIND_COREDNS_REPO_FALLBACK_UPSTREAMS: '9.9.9.9 149.112.112.112',
+      });
+      const appliedConfig = readFileSync(path.join(tempRoot, 'applied-config.json'), 'utf8');
+
+      expect(output).toContain('kind cluster DNS');
+      expect(appliedConfig).toContain('forward . 9.9.9.9 149.112.112.112');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

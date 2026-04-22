@@ -8,11 +8,78 @@ source "${ROOT_DIR}/scripts/lib/preset-common.sh"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/runner-lifecycle-log.sh"
 
+external_runner_env_listing() {
+  docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null
+}
+
+external_runner_env_value_from_listing() {
+  local env_listing="$1"
+  local key="$2"
+  printf '%s\n' "${env_listing}" | awk -F= -v target="${key}" '
+    $1 == target {
+      print substr($0, length(target) + 2)
+      found = 1
+      exit
+    }
+    END {
+      if (!found) {
+        print ""
+      }
+    }
+  '
+}
+
+expected_runner_no_proxy_value() {
+  printf '%s\n' "${RUNNER_NO_PROXY:-${NO_PROXY:-${no_proxy:-}}}"
+}
+
+external_runner_has_expected_no_proxy() {
+  local env_listing current_no_proxy current_no_proxy_lower expected_no_proxy
+  env_listing="$(external_runner_env_listing || true)"
+  [[ -n "${env_listing}" ]] || return 1
+  expected_no_proxy="$(expected_runner_no_proxy_value)"
+  current_no_proxy="$(external_runner_env_value_from_listing "${env_listing}" NO_PROXY)"
+  current_no_proxy_lower="$(external_runner_env_value_from_listing "${env_listing}" no_proxy)"
+  [[ "${current_no_proxy}" == "${expected_no_proxy}" && "${current_no_proxy_lower}" == "${expected_no_proxy}" ]]
+}
+
+external_runner_has_expected_mode() {
+  local env_listing current_mode current_agent_mode
+  env_listing="$(external_runner_env_listing || true)"
+  [[ -n "${env_listing}" ]] || return 1
+  current_mode="$(external_runner_env_value_from_listing "${env_listing}" MBOS_RUNNER_MODE)"
+  current_agent_mode="$(external_runner_env_value_from_listing "${env_listing}" MBOS_AGENT_RUNNER_MODE)"
+  [[ "${current_mode}" == "docker_external" || "${current_agent_mode}" == "docker_external" ]]
+}
+
+runtime_proxy_env_fingerprint_from_listing() {
+  local env_listing="$1"
+  local runtime_proxy_key
+  local -a runtime_proxy_lines=()
+
+  while IFS= read -r runtime_proxy_key; do
+    [[ -n "${runtime_proxy_key}" ]] || continue
+    runtime_proxy_lines+=("${runtime_proxy_key}=$(external_runner_env_value_from_listing "${env_listing}" "${runtime_proxy_key}")")
+  done < <(runtime_proxy_env_names)
+
+  runtime_proxy_env_fingerprint_from_lines "${runtime_proxy_lines[@]}"
+}
+
+external_runner_has_expected_runtime_proxy_env() {
+  local env_listing current_fingerprint expected_fingerprint
+  env_listing="$(external_runner_env_listing || true)"
+  [[ -n "${env_listing}" ]] || return 1
+  current_fingerprint="$(runtime_proxy_env_fingerprint_from_listing "${env_listing}")"
+  expected_fingerprint="$(runtime_proxy_env_fingerprint)"
+  [[ "${current_fingerprint}" == "${expected_fingerprint}" ]]
+}
+
 run_deploy_bootstrap() {
   load_agentsmith_presets "${ROOT_DIR}"
   load_release_env
   apply_non_environment_preset_defaults
   apply_preset_endpoint_defaults
+  runtime_proxy_mode >/dev/null
   local bootstrap_mode=""
   local bootstrap_internal_agent_enabled="1"
   if command -v demo_deploy_mode >/dev/null 2>&1; then
@@ -90,20 +157,6 @@ run_deploy_bootstrap() {
     local runner_logs
     runner_logs="$(docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 || true)"
     runner_lifecycle_logs_connected "${runner_logs}"
-  }
-
-  external_runner_has_expected_no_proxy() {
-    local current_no_proxy current_no_proxy_lower
-    current_no_proxy="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | awk -F= '$1=="NO_PROXY"{print substr($0,10)}')"
-    current_no_proxy_lower="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | awk -F= '$1=="no_proxy"{print substr($0,10)}')"
-    [[ "${current_no_proxy}" == "${RUNNER_NO_PROXY}" && "${current_no_proxy_lower}" == "${RUNNER_NO_PROXY}" ]]
-  }
-
-  external_runner_has_expected_mode() {
-    local current_mode current_agent_mode
-    current_mode="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | awk -F= '$1=="MBOS_RUNNER_MODE"{print substr($0,18)}')"
-    current_agent_mode="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | awk -F= '$1=="MBOS_AGENT_RUNNER_MODE"{print substr($0,24)}')"
-    [[ "${current_mode}" == "docker_external" || "${current_agent_mode}" == "docker_external" ]]
   }
 
   wait_docker_daemon() {
@@ -419,7 +472,7 @@ MBOS_AGENT_WS_URL=${EXTERNAL_AGENT_WS_URL}
 MBOS_AGENT_KEY=${EXTERNAL_AGENT_KEY}
 EOF
 
-  if external_runner_running && external_runner_connected && external_runner_matches_release_image && external_runner_has_expected_no_proxy && external_runner_has_expected_mode && [[ -n "${PREVIOUS_EXTERNAL_AGENT_ID}" && "${PREVIOUS_EXTERNAL_AGENT_ID}" == "${EXTERNAL_AGENT_ID}" ]]; then
+  if external_runner_running && external_runner_connected && external_runner_matches_release_image && external_runner_has_expected_no_proxy && external_runner_has_expected_runtime_proxy_env && external_runner_has_expected_mode && [[ -n "${PREVIOUS_EXTERNAL_AGENT_ID}" && "${PREVIOUS_EXTERNAL_AGENT_ID}" == "${EXTERNAL_AGENT_ID}" ]]; then
     log "checking existing external-runner readiness"
     existing_runner_ready=0
     for _ in $(seq 1 20); do
@@ -443,7 +496,7 @@ EOF
         sleep 2
       done
     fi
-  elif external_runner_running && external_runner_connected && external_runner_matches_release_image && external_runner_has_expected_no_proxy && external_runner_has_expected_mode; then
+  elif external_runner_running && external_runner_connected && external_runner_matches_release_image && external_runner_has_expected_no_proxy && external_runner_has_expected_runtime_proxy_env && external_runner_has_expected_mode; then
     log "external-runner is connected for a stale external agent; recreating"
     timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
     ensure_external_runner_slot_available
@@ -461,6 +514,11 @@ EOF
       quarantine_stale_external_runner
       run_external_runner_up
     elif external_runner_running && external_runner_connected && ! external_runner_has_expected_no_proxy; then
+      log "existing external-runner proxy environment is stale; recreating"
+      timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
+      ensure_external_runner_slot_available
+      run_external_runner_up
+    elif external_runner_running && external_runner_connected && ! external_runner_has_expected_runtime_proxy_env; then
       log "existing external-runner proxy environment is stale; recreating"
       timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
       ensure_external_runner_slot_available

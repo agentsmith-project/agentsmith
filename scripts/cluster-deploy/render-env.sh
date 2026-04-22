@@ -40,11 +40,31 @@ if [[ ! -f "${SITE_ENV}" ]]; then
   cp "${SITE_ENV_EXAMPLE}" "${SITE_ENV}"
 fi
 
+declare -A SITE_ENV_DECLARED=()
+while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
+  line="${raw_line#"${raw_line%%[![:space:]]*}"}"
+  [[ -z "${line}" || "${line}" == \#* || "${line}" != *=* ]] && continue
+  key="${line%%=*}"
+  SITE_ENV_DECLARED["${key}"]=1
+done < "${SITE_ENV}"
+
+for runtime_proxy_key in \
+  RUNTIME_PROXY_MODE \
+  RUNTIME_HTTP_PROXY \
+  RUNTIME_HTTPS_PROXY \
+  RUNTIME_ALL_PROXY \
+  RUNTIME_ADDITIONAL_NO_PROXY; do
+  if [[ -z "${SITE_ENV_DECLARED[${runtime_proxy_key}]:-}" ]]; then
+    die "missing required site.env key: ${runtime_proxy_key}"
+  fi
+done
+
 set -a
 load_agentsmith_presets "${ROOT_DIR}"
 source "${SITE_ENV}"
 apply_non_environment_preset_defaults
 apply_preset_endpoint_defaults
+runtime_proxy_mode >/dev/null
 MBOS_AGENT_JUICEFS_MOUNT_OPTIONS="${MBOS_AGENT_JUICEFS_MOUNT_OPTIONS:-}"
 if [[ -z "${SYSTEM_ADMIN_SESSION_COOKIE_SECURE:-}" ]]; then
   if [[ "${PUBLIC_WEB_BASE_URL}" == https://* ]]; then
@@ -171,7 +191,7 @@ PRESET_ANTHROPIC_ENDPOINT_PROTOCOL=${PRESET_ANTHROPIC_ENDPOINT_PROTOCOL}
 PRESET_OPENAI_ENDPOINT_BASE_URL=${PRESET_OPENAI_ENDPOINT_BASE_URL}
 PRESET_OPENAI_ENDPOINT_PROTOCOL=${PRESET_OPENAI_ENDPOINT_PROTOCOL}
 MBOS_AGENT_CODEX_YOLO=${MBOS_AGENT_CODEX_YOLO}
-$(compose_runtime_proxy_sanitization_env)
+$(compose_runtime_proxy_env)
 NO_PROXY=${COMPOSE_RUNTIME_NO_PROXY}
 no_proxy=${COMPOSE_RUNTIME_NO_PROXY}
 EOF
@@ -249,7 +269,9 @@ INTEGRATION_MEMBER_PASSWORD=${INTEGRATION_MEMBER_PASSWORD}
 EOF
 
 cat > "${RELEASE_ROOT}/env/internal.env" <<EOF
-$(compose_runtime_proxy_sanitization_env)
+$(compose_runtime_proxy_env)
+NO_PROXY=${COMPOSE_RUNTIME_NO_PROXY}
+no_proxy=${COMPOSE_RUNTIME_NO_PROXY}
 MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN}
 LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=${MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN}
 INTERNAL_AGENT_K8S_NAMESPACE=${INTERNAL_AGENT_K8S_NAMESPACE}

@@ -8,20 +8,56 @@ RELEASE_ROOT="${TMP_ROOT}/release"
 mkdir -p "${RELEASE_ROOT}/env"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${RELEASE_ROOT}/env/site.env.example"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${RELEASE_ROOT}/env/site.env"
-python3 - <<'PY' "${RELEASE_ROOT}/env/site.env"
+
+set_site_env_key() {
+  local key="$1"
+  local value="$2"
+  python3 - <<'PY' "${RELEASE_ROOT}/env/site.env" "${key}" "${value}"
 from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
-text = path.read_text(encoding="utf-8")
-updated = text.replace(
-    "MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=",
-    "MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token",
-)
-if updated == text:
-    updated = text + "\nMBOS_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token\n"
-path.write_text(updated, encoding="utf-8")
+key = sys.argv[2]
+value = sys.argv[3]
+lines = path.read_text(encoding="utf-8").splitlines()
+updated = []
+replaced = False
+for line in lines:
+    if line.startswith(f"{key}="):
+        updated.append(f"{key}={value}")
+        replaced = True
+    else:
+        updated.append(line)
+if not replaced:
+    updated.append(f"{key}={value}")
+path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 PY
+}
+
+remove_site_env_keys() {
+  python3 - <<'PY' "${RELEASE_ROOT}/env/site.env" "$@"
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+remove = set(sys.argv[2:])
+lines = path.read_text(encoding="utf-8").splitlines()
+updated = []
+for line in lines:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        updated.append(line)
+        continue
+    key = stripped.split("=", 1)[0]
+    if key in remove:
+        continue
+    updated.append(line)
+path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+PY
+}
+
+set_site_env_key MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN fake-proxy-admin-token
+
 cat > "${RELEASE_ROOT}/env/registry.env" <<'EOF'
 REGISTRY_HOST=localhost:5001
 REGISTRY_PROJECT=mbos
@@ -80,6 +116,34 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'http_proxy=
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'https_proxy=' '[cluster-rendered-env] missing cleared internal https_proxy'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'all_proxy=' '[cluster-rendered-env] missing cleared internal all_proxy'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.mbos.svc.cluster.local' '[cluster-rendered-env] missing internal postgres external fqdn'
+
+set_site_env_key RUNTIME_PROXY_MODE custom
+set_site_env_key RUNTIME_HTTP_PROXY http://cluster-custom-http.proxy.internal:8080
+set_site_env_key RUNTIME_HTTPS_PROXY http://cluster-custom-https.proxy.internal:8443
+set_site_env_key RUNTIME_ALL_PROXY socks5://cluster-custom-all.proxy.internal:1080
+set_site_env_key RUNTIME_ADDITIONAL_NO_PROXY cluster.internal,registry.internal
+
+HTTP_PROXY=http://ambient-http.proxy.internal:8080 \
+HTTPS_PROXY=http://ambient-https.proxy.internal:8443 \
+ALL_PROXY=socks5://ambient-all.proxy.internal:1080 \
+DEPLOY_ROOT="${TMP_ROOT}/cluster-root-custom" RELEASE_ROOT="${RELEASE_ROOT}" \
+  bash "${ROOT_DIR}/scripts/cluster-deploy/render-env.sh"
+
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'HTTP_PROXY=http://cluster-custom-http.proxy.internal:8080' '[cluster-rendered-env] missing custom HTTP_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'HTTPS_PROXY=http://cluster-custom-https.proxy.internal:8443' '[cluster-rendered-env] missing custom HTTPS_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'ALL_PROXY=socks5://cluster-custom-all.proxy.internal:1080' '[cluster-rendered-env] missing custom ALL_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'http_proxy=http://cluster-custom-http.proxy.internal:8080' '[cluster-rendered-env] missing custom http_proxy'
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'https_proxy=http://cluster-custom-https.proxy.internal:8443' '[cluster-rendered-env] missing custom https_proxy'
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'all_proxy=socks5://cluster-custom-all.proxy.internal:1080' '[cluster-rendered-env] missing custom all_proxy'
+release_check_require_pattern "${RELEASE_ROOT}/env/base.env" '^NO_PROXY=.*(^|,)(cluster.internal|registry.internal)(,|$)' '[cluster-rendered-env] missing custom compose no_proxy entries'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'HTTP_PROXY=http://cluster-custom-http.proxy.internal:8080' '[cluster-rendered-env] missing custom internal HTTP_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'HTTPS_PROXY=http://cluster-custom-https.proxy.internal:8443' '[cluster-rendered-env] missing custom internal HTTPS_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'ALL_PROXY=socks5://cluster-custom-all.proxy.internal:1080' '[cluster-rendered-env] missing custom internal ALL_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'http_proxy=http://cluster-custom-http.proxy.internal:8080' '[cluster-rendered-env] missing custom internal http_proxy'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'https_proxy=http://cluster-custom-https.proxy.internal:8443' '[cluster-rendered-env] missing custom internal https_proxy'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'all_proxy=socks5://cluster-custom-all.proxy.internal:1080' '[cluster-rendered-env] missing custom internal all_proxy'
+release_check_forbid_pattern "${RELEASE_ROOT}/env/base.env" 'ambient-http\.proxy\.internal' '[cluster-rendered-env] unexpected ambient base proxy'
+release_check_forbid_pattern "${RELEASE_ROOT}/env/internal.env" 'ambient-http\.proxy\.internal' '[cluster-rendered-env] unexpected ambient internal proxy'
 
 python3 - <<'PY' "${ROOT_DIR}" "${TMP_ROOT}"
 import os
@@ -154,5 +218,27 @@ subprocess.run(
 api_env = (release / "env/api.env").read_text(encoding="utf-8")
 assert "SANDBOX_MANAGER_URL=http://172.30.1.244" in api_env, "missing IP sandbox manager url"
 PY
+
+remove_site_env_keys RUNTIME_PROXY_MODE RUNTIME_HTTP_PROXY RUNTIME_HTTPS_PROXY RUNTIME_ALL_PROXY RUNTIME_ADDITIONAL_NO_PROXY
+set +e
+missing_runtime_proxy_output="$(
+  RUNTIME_PROXY_MODE=inherit \
+  RUNTIME_HTTP_PROXY=http://ambient-http.proxy.internal:8080 \
+  RUNTIME_HTTPS_PROXY=http://ambient-https.proxy.internal:8443 \
+  RUNTIME_ALL_PROXY=socks5://ambient-all.proxy.internal:1080 \
+  RUNTIME_ADDITIONAL_NO_PROXY=ambient.internal \
+  DEPLOY_ROOT="${TMP_ROOT}/cluster-root-missing-runtime-proxy" RELEASE_ROOT="${RELEASE_ROOT}" \
+  bash "${ROOT_DIR}/scripts/cluster-deploy/render-env.sh" 2>&1
+)"
+missing_runtime_proxy_status=$?
+set -e
+if [[ "${missing_runtime_proxy_status}" == "0" ]]; then
+  echo '[cluster-rendered-env] unexpected success without runtime proxy keys' >&2
+  exit 1
+fi
+printf '%s' "${missing_runtime_proxy_output}" | grep -F 'missing required site.env key: RUNTIME_PROXY_MODE' >/dev/null || {
+  echo '[cluster-rendered-env] missing runtime proxy key failure message' >&2
+  exit 1
+}
 
 echo "[cluster-rendered-env] ok"

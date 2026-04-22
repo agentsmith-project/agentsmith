@@ -76,7 +76,8 @@ interface PendingStream {
   firstEventTimer?: NodeJS.Timeout;
   idleTimer?: NodeJS.Timeout;
   maxRuntimeTimer?: NodeJS.Timeout;
-  hasReceivedEvent?: boolean;
+  hasReceivedMeaningfulOutput?: boolean;
+  interactionKind?: 'chat' | 'notebook';
 }
 
 interface PendingTerminal {
@@ -302,6 +303,14 @@ function readRunnerSpec(input: unknown): Partial<AgentRunnerSpec> | null {
   const runnerSpec = input.runner_spec;
   if (!isPlainObject(runnerSpec)) return null;
   return runnerSpec as Partial<AgentRunnerSpec>;
+}
+
+function resolveStreamInteractionKind(
+  executionContext?: Record<string, unknown>,
+): 'chat' | 'notebook' | undefined {
+  return executionContext?.interaction_kind === 'chat' || executionContext?.interaction_kind === 'notebook'
+    ? executionContext.interaction_kind
+    : undefined;
 }
 
 export type AgentExecutionServiceOptions = {
@@ -598,19 +607,32 @@ export class AgentExecutionService {
     pending.close();
   }
 
-  private markStreamEvent(socket: AgentSocketState, requestId: string, pending: PendingStream): void {
-    if (!pending.hasReceivedEvent) {
-      pending.hasReceivedEvent = true;
+  private markStreamMeaningfulOutput(pending: PendingStream): void {
+    if (!pending.hasReceivedMeaningfulOutput) {
+      pending.hasReceivedMeaningfulOutput = true;
       if (pending.firstEventTimer) {
         clearTimeout(pending.firstEventTimer);
         pending.firstEventTimer = undefined;
       }
     }
+  }
+
+  private markStreamActivity(socket: AgentSocketState, requestId: string, pending: PendingStream): void {
     if (pending.idleTimer) clearTimeout(pending.idleTimer);
     pending.idleTimer = setTimeout(() => {
       this.failPendingStream(socket, requestId, 'AGENT_REQUEST_TIMEOUT', 'agent_request_idle_timeout');
     }, this.options.streamIdleTimeoutMs);
     pending.idleTimer.unref?.();
+  }
+
+  private shouldTreatEventAsMeaningfulOutput(
+    pending: PendingStream,
+    eventPayload: AgentExecutionTraceEventPayload,
+  ): boolean {
+    if (pending.interactionKind === 'chat' && eventPayload.category === 'lifecycle') {
+      return false;
+    }
+    return true;
   }
 
   private markTerminalEvent(socket: AgentSocketState, terminalSessionId: string, pending: PendingTerminal): void {
@@ -1281,6 +1303,7 @@ export class AgentExecutionService {
       push: queue.push,
       close: queue.close,
       fail: queue.fail,
+      interactionKind: resolveStreamInteractionKind(input.executionContext),
     };
     socket.pendingByRequestId.set(requestId, pending);
     this.armStreamTimeouts(socket, requestId, pending);
@@ -1792,7 +1815,8 @@ export class AgentExecutionService {
     if (!pending) return;
 
     if (payload.type === 'agent.response.delta') {
-      this.markStreamEvent(socket, requestId, pending);
+      this.markStreamActivity(socket, requestId, pending);
+      this.markStreamMeaningfulOutput(pending);
       if (typeof payload.payload?.delta !== 'string') {
         socket.pendingByRequestId.delete(requestId);
         this.clearStreamTimers(pending);
@@ -1812,7 +1836,6 @@ export class AgentExecutionService {
     }
 
     if (payload.type === 'agent.response.event') {
-      this.markStreamEvent(socket, requestId, pending);
       const eventPayload = parseTraceEventPayload(payload.payload);
       if (!eventPayload) {
         socket.pendingByRequestId.delete(requestId);
@@ -1824,6 +1847,10 @@ export class AgentExecutionService {
         });
         pending.close();
         return;
+      }
+      this.markStreamActivity(socket, requestId, pending);
+      if (this.shouldTreatEventAsMeaningfulOutput(pending, eventPayload)) {
+        this.markStreamMeaningfulOutput(pending);
       }
       pending.push({
         type: 'event',
@@ -1847,7 +1874,8 @@ export class AgentExecutionService {
     }
 
     if (payload.type === 'agent.response.artifact') {
-      this.markStreamEvent(socket, requestId, pending);
+      this.markStreamActivity(socket, requestId, pending);
+      this.markStreamMeaningfulOutput(pending);
       const artifactPayload = parseArtifactPayload(payload.payload);
       if (!artifactPayload) {
         socket.pendingByRequestId.delete(requestId);

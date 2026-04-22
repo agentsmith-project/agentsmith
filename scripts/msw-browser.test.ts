@@ -45,6 +45,7 @@ describe('initMSW', () => {
 
   afterEach(() => {
     resetMSWForTests();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -156,10 +157,68 @@ describe('initMSW', () => {
       },
     });
 
-    await expect(initMSW()).rejects.toThrow(startError);
+    await expect(initMSW()).rejects.toMatchObject({
+      code: 'bootstrap_failed',
+      message: 'start failed',
+    });
     await expect(initMSW()).resolves.toBeUndefined();
 
     expect(setupWorker).toHaveBeenCalledTimes(1);
     expect(start).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails with an explicit timeout when service worker takeover never happens', async () => {
+    vi.useFakeTimers();
+
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        ready: Promise.resolve(),
+        controller: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      },
+    });
+
+    const initPromise = initMSW();
+    const initRejection = expect(initPromise).rejects.toMatchObject({
+      code: 'service_worker_takeover_timeout',
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await initRejection;
+  });
+
+  it('fails with an explicit timeout when serviceWorker.ready never resolves', async () => {
+    vi.useFakeTimers();
+
+    let resolveReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      resolveReady = resolve;
+    });
+
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        ready,
+        controller: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      },
+    });
+
+    const initPromise = initMSW();
+    const initRejection = expect(initPromise).rejects.toMatchObject({
+      code: 'service_worker_ready_timeout',
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await initRejection;
+
+    resolveReady();
   });
 });

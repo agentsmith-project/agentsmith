@@ -145,12 +145,6 @@ kind_sanitize_control_plane_proxy_env() {
   return 0
 }
 
-kind_repo_public_coredns_fallback_resolvers() {
-  printf '%s\n' \
-    "1.1.1.1" \
-    "8.8.8.8"
-}
-
 kind_normalize_coredns_upstream_resolvers_text() {
   local raw_text="${1:-}"
   python3 - "${raw_text}" <<'PY'
@@ -244,35 +238,96 @@ kind_docker_gateway_resolver_blocklist() {
   kind_normalize_coredns_upstream_resolvers_text "${gateway_lines}"
 }
 
-kind_host_coredns_upstream_resolvers() {
-  local resolv_conf_path="${LOCAL_KIND_COREDNS_HOST_RESOLV_CONF:-/etc/resolv.conf}"
-  [[ -f "${resolv_conf_path}" ]] || return 0
+kind_usable_coredns_upstream_resolvers_text() {
+  local raw_text="${1:-}"
   local normalized blocked
-  normalized="$(kind_normalize_coredns_upstream_resolvers_text "$(cat "${resolv_conf_path}")")"
+  normalized="$(kind_normalize_coredns_upstream_resolvers_text "${raw_text}")"
   blocked="$(kind_docker_gateway_resolver_blocklist)"
+
   if [[ -n "${blocked}" ]]; then
-    kind_filter_coredns_upstream_resolvers_against_blocklist "${normalized}" "${blocked}"
-    return 0
+    normalized="$(kind_filter_coredns_upstream_resolvers_against_blocklist "${normalized}" "${blocked}")"
   fi
+
   printf '%s\n' "${normalized}"
 }
 
-kind_default_coredns_upstream_resolvers() {
-  kind_normalize_coredns_upstream_resolvers_text "$(
-    {
-      kind_host_coredns_upstream_resolvers
-      kind_repo_public_coredns_fallback_resolvers
-    }
-  )"
+kind_repo_owned_coredns_fallback_resolvers_text() {
+  printf '%s\n' \
+    "1.1.1.1" \
+    "8.8.8.8"
+}
+
+kind_repo_owned_coredns_fallback_resolvers_source_text() {
+  if [[ "${LOCAL_KIND_COREDNS_REPO_FALLBACK_UPSTREAMS+set}" == "set" ]]; then
+    printf '%s\n' "${LOCAL_KIND_COREDNS_REPO_FALLBACK_UPSTREAMS}"
+  else
+    kind_repo_owned_coredns_fallback_resolvers_text
+  fi
+}
+
+kind_repo_owned_coredns_fallback_resolvers() {
+  kind_usable_coredns_upstream_resolvers_text "$(kind_repo_owned_coredns_fallback_resolvers_source_text)"
+}
+
+kind_coredns_host_resolver_candidate_paths() {
+  local configured_resolv_conf_path="${LOCAL_KIND_COREDNS_HOST_RESOLV_CONF:-}"
+  local alternate_resolv_conf_path="${LOCAL_KIND_COREDNS_HOST_RESOLV_CONF_ALT:-}"
+  local candidate
+  local -a candidates=()
+  local -A seen=()
+
+  if [[ -n "${configured_resolv_conf_path}" ]]; then
+    candidates+=("${configured_resolv_conf_path}")
+    if [[ -n "${alternate_resolv_conf_path}" ]]; then
+      candidates+=("${alternate_resolv_conf_path}")
+    fi
+  else
+    candidates+=("/etc/resolv.conf")
+    if [[ -n "${alternate_resolv_conf_path}" ]]; then
+      candidates+=("${alternate_resolv_conf_path}")
+    fi
+    candidates+=(
+      "/run/systemd/resolve/resolv.conf"
+      "/run/NetworkManager/no-stub-resolv.conf"
+    )
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    [[ -n "${candidate}" ]] || continue
+    if [[ -n "${seen["${candidate}"]+x}" ]]; then
+      continue
+    fi
+    seen["${candidate}"]=1
+    printf '%s\n' "${candidate}"
+  done
+}
+
+kind_host_coredns_upstream_resolvers() {
+  local candidate_path normalized
+
+  while IFS= read -r candidate_path; do
+    [[ -n "${candidate_path}" ]] || continue
+    [[ -f "${candidate_path}" ]] || continue
+
+    normalized="$(kind_usable_coredns_upstream_resolvers_text "$(cat "${candidate_path}")")"
+    if [[ -n "${normalized}" ]]; then
+      printf '%s\n' "${normalized}"
+      return 0
+    fi
+  done < <(kind_coredns_host_resolver_candidate_paths)
+
+  return 0
 }
 
 kind_resolve_coredns_upstream_resolvers() {
   local normalized=""
   local configured_upstreams="${LOCAL_KIND_COREDNS_UPSTREAMS:-}"
   local configured_upstreams_file="${LOCAL_KIND_COREDNS_UPSTREAMS_FILE:-}"
+  local host_resolver_sources=""
+  local repo_fallback_sources=""
 
   if [[ -n "${configured_upstreams}" ]]; then
-    normalized="$(kind_normalize_coredns_upstream_resolvers_text "${configured_upstreams}")"
+    normalized="$(kind_usable_coredns_upstream_resolvers_text "${configured_upstreams}")"
     if [[ -z "${normalized}" ]]; then
       echo "[kind-bootstrap] ignoring invalid LOCAL_KIND_COREDNS_UPSTREAMS override; falling back to next resolver source" >&2
     fi
@@ -280,17 +335,28 @@ kind_resolve_coredns_upstream_resolvers() {
 
   if [[ -z "${normalized}" && -n "${configured_upstreams_file}" ]]; then
     if [[ -f "${configured_upstreams_file}" ]]; then
-      normalized="$(kind_normalize_coredns_upstream_resolvers_text "$(cat "${configured_upstreams_file}")")"
+      normalized="$(kind_usable_coredns_upstream_resolvers_text "$(cat "${configured_upstreams_file}")")"
       if [[ -z "${normalized}" ]]; then
-        echo "[kind-bootstrap] ignoring invalid LOCAL_KIND_COREDNS_UPSTREAMS_FILE=${configured_upstreams_file}; falling back to default resolver chain" >&2
+        echo "[kind-bootstrap] ignoring invalid LOCAL_KIND_COREDNS_UPSTREAMS_FILE=${configured_upstreams_file}; falling back to host resolver discovery" >&2
       fi
     else
-      echo "[kind-bootstrap] LOCAL_KIND_COREDNS_UPSTREAMS_FILE not found: ${configured_upstreams_file}; falling back to default resolver chain" >&2
+      echo "[kind-bootstrap] LOCAL_KIND_COREDNS_UPSTREAMS_FILE not found: ${configured_upstreams_file}; falling back to host resolver discovery" >&2
     fi
   fi
 
   if [[ -z "${normalized}" ]]; then
-    normalized="$(kind_default_coredns_upstream_resolvers)"
+    normalized="$(kind_host_coredns_upstream_resolvers)"
+  fi
+
+  if [[ -z "${normalized}" ]]; then
+    normalized="$(kind_repo_owned_coredns_fallback_resolvers)"
+  fi
+
+  if [[ -z "${normalized}" ]]; then
+    host_resolver_sources="$(kind_coredns_host_resolver_candidate_paths | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    repo_fallback_sources="$(kind_repo_owned_coredns_fallback_resolvers_source_text | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    echo "[kind-bootstrap] ERROR: no usable CoreDNS upstream resolvers found from LOCAL_KIND_COREDNS_UPSTREAMS, LOCAL_KIND_COREDNS_UPSTREAMS_FILE, host resolver sources (${host_resolver_sources}), or repo-owned fallback resolvers (${repo_fallback_sources})" >&2
+    return 1
   fi
 
   printf '%s\n' "${normalized}" | paste -sd ' ' -

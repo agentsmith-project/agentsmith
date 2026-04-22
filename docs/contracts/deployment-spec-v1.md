@@ -141,10 +141,51 @@ The deployment flow must not reuse public MinIO ports such as `19000` for contai
 
 This value controls user-space JuiceFS mount options for external runner file-library workspaces. The default deployed value should be empty so mounts prefer consistency-oriented behavior. Performance-oriented options such as `writeback_cache` must only be enabled explicitly and documented for the target environment.
 
+### Runtime Proxy Model
+- `RUNTIME_PROXY_MODE`
+- `RUNTIME_HTTP_PROXY`
+- `RUNTIME_HTTPS_PROXY`
+- `RUNTIME_ALL_PROXY`
+- `RUNTIME_ADDITIONAL_NO_PROXY`
+
+Runtime proxy configuration is formal operator input, not an implicit hard-coded sanitization rule.
+
+- `RUNTIME_PROXY_MODE=sanitized`
+  - generated runtime env must clear `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and their lowercase variants
+- `RUNTIME_PROXY_MODE=inherit`
+  - generated runtime env must inherit the current shell proxy values at render/bootstrap time and normalize them into both uppercase and lowercase variants
+- `RUNTIME_PROXY_MODE=custom`
+  - generated runtime env must use `RUNTIME_HTTP_PROXY`, `RUNTIME_HTTPS_PROXY`, and `RUNTIME_ALL_PROXY`
+
+`NO_PROXY` / `no_proxy` must keep the merged deployment strategy:
+- built-in runtime bypass hosts are always included
+- operator-supplied `RUNTIME_ADDITIONAL_NO_PROXY` entries are appended
+- existing shell `NO_PROXY` / `no_proxy` input remains honored for backward compatibility
+
+The same runtime proxy truth must drive:
+- rendered `base.env` / `internal.env`
+- docker runtime `-e` arguments for external runner / verify containers
+- external runner reuse or rebuild decisions during bootstrap
+
+External runner reuse must fail closed when the runtime proxy env fingerprint differs, even if `NO_PROXY` still matches.
+
 ### Internal Sandbox Address
 - `SANDBOX_HOST_PORT`
 
 The operator provides the exposed host port only. The runtime sandbox manager URL is derived by the deployment environment and must not be edited directly.
+
+### kind DNS Overrides
+- `KIND_CLUSTER_DNS_UPSTREAMS`
+- `KIND_CLUSTER_DNS_UPSTREAMS_FILE`
+
+These inputs are optional operator overrides for `scripts/cluster-deploy/apply-kind-dns.sh` when the local `kind` cluster needs explicit CoreDNS upstream resolvers.
+
+- `KIND_CLUSTER_DNS_UPSTREAMS`
+  - inline resolver list, accepting whitespace/comma/newline-separated values
+- `KIND_CLUSTER_DNS_UPSTREAMS_FILE`
+  - path to a resolver file consumed by the same DNS apply flow
+
+When both are empty, the DNS apply flow falls back to host resolver discovery and repo defaults.
 
 ## Shared Persistent Truth
 
@@ -211,6 +252,8 @@ Preset workspace admin and project creator identities are selected by stable use
 - `SYSTEM_WORKSPACE_REGISTRY_MODE`
 - `COMPOSE_INTERNAL_API_BASE_URL`
 - `COMPOSE_INTERNAL_KEYCLOAK_BASE_URL`
+- `RUNTIME_PROXY_MODE`
+- `RUNTIME_ADDITIONAL_NO_PROXY`
 - `HOST_LOCAL_POSTGRES_HOST`
 - `HOST_LOCAL_POSTGRES_PORT`
 - `HOST_LOCAL_MINIO_ENDPOINT`
@@ -219,8 +262,15 @@ Preset workspace admin and project creator identities are selected by stable use
 - `CLIENT_PUBLIC_MINIO_ENDPOINT`
 - `SANDBOX_SERVICE_KEY`
 - `SANDBOX_HOST_PORT`
+- `KIND_CLUSTER_DNS_UPSTREAMS`
+- `KIND_CLUSTER_DNS_UPSTREAMS_FILE`
 - `MBOS_AGENT_BUILTIN_SKILLS_DIR`
 - `MBOS_AGENT_JUICEFS_MOUNT_OPTIONS`
+
+### Runtime Proxy (`custom` only for explicit upstream values)
+- `RUNTIME_HTTP_PROXY`
+- `RUNTIME_HTTPS_PROXY`
+- `RUNTIME_ALL_PROXY`
 
 ### Internal JuiceFS CSI (`full` only)
 - `INTERNAL_AGENT_K8S_NAMESPACE`

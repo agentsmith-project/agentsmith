@@ -423,84 +423,88 @@ describe('UniversalProxyService', () => {
     expect(res.end).toHaveBeenCalled();
   });
 
-  it('retries one transient 429 capacity response before surfacing the successful proxy result', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        createJsonResponse({
-          error: {
-            type: 'rate_limit_error',
-            error_class: 'provider_retryable',
-            message: 'Selected model is at capacity, please retry.',
-          },
-        }, 429, { 'retry-after': '0' }),
-      )
-      .mockResolvedValueOnce(
-        createJsonResponse({
-          object: 'response',
-          usage: { total_tokens: 21 },
-        }, 200),
-      );
-    vi.stubGlobal('fetch', fetchMock);
-
-    const service = new UniversalProxyService('http://proxy.internal:8080', undefined, {
-      maxTransientProviderRetries: 1,
-      transientProviderRetryDelayMs: 0,
-    });
-    const res = createResponse();
-    const result = await service.proxyJsonRequest({
-      req: createRequest(),
-      res,
-      namespace: 'ws_default__proj_1__ep_1',
+  [
+    {
+      name: 'openai chat completions 429',
+      proxyPath: 'openai/chat/completions',
+      status: 429,
+      model: 'gpt-4.1',
+      requestBody: { messages: [{ role: 'user', content: 'hello' }] },
+    },
+    {
+      name: 'openai chat completions 503',
+      proxyPath: 'openai/chat/completions',
+      status: 503,
+      model: 'gpt-4.1',
+      requestBody: { messages: [{ role: 'user', content: 'hello' }] },
+    },
+    {
+      name: 'openai responses 429',
       proxyPath: 'openai/responses',
-      model: 'placeholder-model',
+      status: 429,
+      model: 'gpt-4.1',
       requestBody: { input: 'hello' },
-    });
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(result).toEqual({ upstream_status: 200, tokens_total: 21 });
-    expect(res.statusCode).toBe(200);
-  });
-
-  it('retries one transient 503 overloaded response and preserves the shared request shape', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        createJsonResponse({
-          error: {
-            error_class: 'provider_retryable',
-            message: 'Provider overloaded, retry later.',
-          },
-        }, 503),
-      )
-      .mockResolvedValueOnce(
-        createJsonResponse({
-          id: 'msg_1',
-          content: [{ type: 'text', text: 'ok' }],
-        }, 200),
-      );
-    vi.stubGlobal('fetch', fetchMock);
-
-    const service = new UniversalProxyService('http://proxy.internal:8080', undefined, {
-      maxTransientProviderRetries: 1,
-      transientProviderRetryDelayMs: 0,
-    });
-    const upstreamResponse = await service.forwardRequest({
-      req: createRequest(),
-      namespace: 'ws_default__proj_1__ep_1',
+    },
+    {
+      name: 'openai responses 503',
+      proxyPath: 'openai/responses',
+      status: 503,
+      model: 'gpt-4.1',
+      requestBody: { input: 'hello' },
+    },
+    {
+      name: 'anthropic messages 429',
       proxyPath: 'anthropic/messages',
+      status: 429,
       model: 'claude-sonnet-4-5',
       requestBody: { messages: [{ role: 'user', content: 'hello' }] },
-    });
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(upstreamResponse.status).toBe(200);
-    expect(JSON.parse(await upstreamResponse.text())).toMatchObject({
-      id: 'msg_1',
-    });
-    expect(JSON.parse(String(getRequest(fetchMock, 1).init.body))).toMatchObject({
+    },
+    {
+      name: 'anthropic messages 503',
+      proxyPath: 'anthropic/messages',
+      status: 503,
       model: 'claude-sonnet-4-5',
-      messages: [{ role: 'user', content: 'hello' }],
+      requestBody: { messages: [{ role: 'user', content: 'hello' }] },
+    },
+  ].forEach(({ name, proxyPath, status, model, requestBody }) => {
+    it(`does not auto-retry non-idempotent ${name} requests by default`, async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          createJsonResponse({
+            error: {
+              error_class: 'provider_retryable',
+              message: status === 429
+                ? 'Selected model is at capacity, please retry.'
+                : 'Provider overloaded, retry later.',
+            },
+          }, status, { 'retry-after': '0' }),
+        )
+        .mockResolvedValueOnce(
+          createJsonResponse({
+            object: 'response',
+            usage: { total_tokens: 21 },
+          }, 200),
+        );
+      vi.stubGlobal('fetch', fetchMock);
+
+      const service = new UniversalProxyService('http://proxy.internal:8080', undefined, {
+        maxTransientProviderRetries: 1,
+        transientProviderRetryDelayMs: 0,
+      });
+      const upstreamResponse = await service.forwardRequest({
+        req: createRequest(),
+        namespace: 'ws_default__proj_1__ep_1',
+        proxyPath,
+        model,
+        requestBody,
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(upstreamResponse.status).toBe(status);
+      expect(await upstreamResponse.text()).toContain(
+        status === 429 ? 'Selected model is at capacity' : 'Provider overloaded',
+      );
     });
   });
 
@@ -518,14 +522,18 @@ describe('UniversalProxyService', () => {
     const retryableResponse = await retryingService.forwardRequest({
       req: createRequest(),
       namespace: 'ws_default__proj_1__ep_1',
-      proxyPath: 'openai/chat/completions',
-      model: 'gpt-4.1',
+      proxyPath: 'anthropic/messages/count_tokens',
+      model: 'claude-sonnet-4-5',
       requestBody: { messages: [{ role: 'user', content: 'hello' }] },
     });
 
     expect(retryableFetchMock).toHaveBeenCalledTimes(2);
     expect(retryableResponse.status).toBe(503);
     expect(await retryableResponse.text()).toContain('still overloaded');
+    expect(JSON.parse(String(getRequest(retryableFetchMock, 1).init.body))).toMatchObject({
+      model: 'claude-sonnet-4-5',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
 
     const authFailureFetchMock = vi.fn().mockResolvedValue(
       createJsonResponse({

@@ -51,10 +51,15 @@ main() {
   if [[ -n "${KIND_CLUSTER_DNS_HOST_RESOLV_CONF:-}" ]]; then
     export LOCAL_KIND_COREDNS_HOST_RESOLV_CONF="${KIND_CLUSTER_DNS_HOST_RESOLV_CONF}"
   fi
+  if [[ -n "${KIND_CLUSTER_DNS_HOST_RESOLV_CONF_ALT:-}" ]]; then
+    export LOCAL_KIND_COREDNS_HOST_RESOLV_CONF_ALT="${KIND_CLUSTER_DNS_HOST_RESOLV_CONF_ALT}"
+  fi
 
   local kubeconfig_path upstreams
   kubeconfig_path="$(current_kubeconfig_path)"
-  upstreams="$(kind_resolve_coredns_upstream_resolvers)"
+  if ! upstreams="$(kind_resolve_coredns_upstream_resolvers)"; then
+    die "failed to resolve kind cluster DNS upstreams"
+  fi
   [[ -n "${upstreams}" ]] || die "kind cluster DNS upstreams resolved empty"
 
   kind_reconcile_coredns_upstreams "${kubeconfig_path}"

@@ -93,6 +93,7 @@ describe('msw browser init', () => {
     restoreServiceWorker?.();
     restoreServiceWorker = null;
     delete window.__MBOS_PUBLIC_RUNTIME_CONFIG__;
+    vi.useRealTimers();
     vi.resetModules();
     vi.clearAllMocks();
   });
@@ -176,5 +177,52 @@ describe('msw browser init', () => {
     await expect(mod.initMSW()).resolves.toBeUndefined();
     expect(setupWorkerMock).toHaveBeenCalledTimes(1);
     expect(startMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails with an explicit timeout error when the service worker never takes control', async () => {
+    vi.useFakeTimers();
+
+    const serviceWorker = createServiceWorkerMock({
+      ready: Promise.resolve(undefined),
+      controller: null,
+    });
+    restoreServiceWorker = installServiceWorkerMock(serviceWorker);
+
+    const startMock = vi.fn().mockResolvedValue(undefined);
+    const { mod } = await loadBrowserModule({ startMock });
+
+    const initPromise = mod.initMSW();
+    const initRejection = expect(initPromise).rejects.toMatchObject({
+      code: 'service_worker_takeover_timeout',
+    });
+
+    await flushMicrotasks(5);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await initRejection;
+  });
+
+  it('fails with an explicit timeout error when serviceWorker.ready never resolves', async () => {
+    vi.useFakeTimers();
+
+    const readyDeferred = createDeferred<void>();
+    const serviceWorker = createServiceWorkerMock({
+      ready: readyDeferred.promise,
+      controller: null,
+    });
+    restoreServiceWorker = installServiceWorkerMock(serviceWorker);
+
+    const startMock = vi.fn().mockResolvedValue(undefined);
+    const { mod } = await loadBrowserModule({ startMock });
+
+    const initPromise = mod.initMSW();
+    const initRejection = expect(initPromise).rejects.toMatchObject({
+      code: 'service_worker_ready_timeout',
+    });
+
+    await flushMicrotasks(5);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await initRejection;
   });
 });

@@ -56,6 +56,76 @@ function inferProxyPathFromUpstreamUrl(upstreamUrl: string): string {
   return upstreamUrl.split('/').slice(-2).join('/');
 }
 
+function normalizeAttachmentFilename(filename: string): string {
+  const sanitized = filename
+    .replace(/[\u0000-\u001F\u007F]+/g, '')
+    .trim()
+    .split(/[\\/]/)
+    .at(-1)
+    ?.trim();
+  return sanitized && sanitized.length > 0 ? sanitized : 'download';
+}
+
+function splitAsciiExtension(filename: string): { base: string; extension: string } {
+  const lastDot = filename.lastIndexOf('.');
+  if (lastDot <= 0 || lastDot === filename.length - 1) {
+    return { base: filename, extension: '' };
+  }
+  const extension = filename.slice(lastDot);
+  if (!/^\.[A-Za-z0-9._-]+$/.test(extension)) {
+    return { base: filename, extension: '' };
+  }
+  return {
+    base: filename.slice(0, lastDot),
+    extension,
+  };
+}
+
+function buildAsciiAttachmentFilenameFallback(filename: string): string {
+  const normalized = normalizeAttachmentFilename(filename);
+  const { base, extension } = splitAsciiExtension(normalized);
+  const preserveLeadingDot = base.startsWith('.');
+  const asciiBase = Array.from(base.normalize('NFKD'))
+    .flatMap((char) => {
+      if (/[\u0300-\u036f]/.test(char)) {
+        return [];
+      }
+      if (char >= ' ' && char <= '~' && char !== '"' && char !== '\\') {
+        return [char];
+      }
+      return ['_'];
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .replace(/_+/g, '_')
+    .trim();
+  const trimmedAsciiBase = preserveLeadingDot
+    ? asciiBase.replace(/^[ ]+|[. ]+$/g, '')
+    : asciiBase.replace(/^[. ]+|[. ]+$/g, '');
+  const normalizedAsciiBase = preserveLeadingDot
+    && trimmedAsciiBase.length > 0
+    && !trimmedAsciiBase.startsWith('.')
+    ? `.${trimmedAsciiBase}`
+    : trimmedAsciiBase;
+
+  if (!normalizedAsciiBase) {
+    return `download${extension}`;
+  }
+  return `${normalizedAsciiBase}${extension}`;
+}
+
+function encodeRfc5987FilenameValue(filename: string): string {
+  return encodeURIComponent(filename)
+    .replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+export function buildAttachmentContentDisposition(filename: string): string {
+  const normalized = normalizeAttachmentFilename(filename);
+  const fallback = buildAsciiAttachmentFilenameFallback(normalized)
+    .replace(/(["\\])/g, '\\$1');
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeRfc5987FilenameValue(normalized)}`;
+}
+
 export function json(res: http.ServerResponse, status: number, data: unknown): void {
   res.statusCode = status;
   res.setHeader('content-type', 'application/json; charset=utf-8');

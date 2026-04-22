@@ -2,6 +2,7 @@ import type http from 'node:http';
 import type { AuthenticatedUser } from './auth.js';
 import type { RunnerSessionDispatchAuthority } from './agent-execution-service.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import { buildAttachmentContentDisposition } from './http-utils.js';
 import {
   observeNotebookTraceQueryLatency,
   type TraceQueryScope,
@@ -498,7 +499,7 @@ async function streamTaskArtifactFromWorkspaceLibrary(args: {
       stat.metaData?.['content-type'] ?? args.artifact.mime_type?.trim() ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream',
     );
     args.res.setHeader('Content-Length', String(stat.size));
-    args.res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+    args.res.setHeader('Content-Disposition', buildAttachmentContentDisposition(filename));
     pipeGatewayDownloadToHttpResponse({
       req: args.req,
       res: args.res,
@@ -1523,7 +1524,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const filename = (artifact.title?.trim() || `${artifact.id}`);
     const contentType = artifact.mime_type?.trim() || 'application/octet-stream';
     res.statusCode = 200;
-    res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+    res.setHeader('Content-Disposition', buildAttachmentContentDisposition(filename));
 
     if (typeof artifact.content === 'string' && artifact.content.startsWith('data:')) {
       const match = artifact.content.match(/^data:([^;,]+)?(?:;base64)?,(.*)$/s);

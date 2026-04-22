@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyCors, proxyJsonRequest } from './http-utils.js';
+import { applyCors, buildAttachmentContentDisposition, proxyJsonRequest } from './http-utils.js';
 
 describe('http-utils', () => {
   it('applyCors includes PUT in allowed methods', () => {
@@ -94,6 +94,15 @@ describe('http-utils', () => {
     delete process.env.MBOS_ENDPOINT_PROXY_DEFAULT_TIMEOUT_SECONDS;
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('preserves legal ASCII dotfile names in attachment filename fallbacks', () => {
+    expect(buildAttachmentContentDisposition('.bashrc')).toContain(
+      'filename=".bashrc"',
+    );
+    expect(buildAttachmentContentDisposition('.env.local')).toContain(
+      'filename=".env.local"',
+    );
   });
 
   it('falls back responses API requests to chat completions for openai-compatible providers', async () => {

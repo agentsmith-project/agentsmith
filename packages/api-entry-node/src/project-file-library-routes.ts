@@ -34,6 +34,7 @@ import {
   pipeGatewayDownloadToHttpResponse,
   putGatewayObjectStream,
 } from './object-stream-bridge.js';
+import { buildAttachmentContentDisposition } from './http-utils.js';
 import { resolveFileLibraryStorageBucketUrlForClientMount } from './file-library-runtime.js';
 import {
   createAndProvisionProjectFileLibrary,
@@ -986,6 +987,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         (headers) =>
           Busboy({
             headers,
+            defParamCharset: 'utf8',
             limits: { fileSize: 1024 * 1024 * 1024 },
           }),
         {
@@ -1055,7 +1057,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       res.statusCode = 200;
       res.setHeader('Content-Type', stat.metaData?.['content-type'] ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream');
       res.setHeader('Content-Length', String(stat.size));
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+      res.setHeader('Content-Disposition', buildAttachmentContentDisposition(fileName));
       pipeGatewayDownloadToHttpResponse({
         req,
         res,

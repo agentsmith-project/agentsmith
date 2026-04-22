@@ -34,6 +34,18 @@ describe('task-route-handler workspace access', () => {
     createFileLibraryGatewayClientMock.mockReset();
   });
 
+  function readContentDispositionHeader(
+    setHeader: ReturnType<typeof vi.fn>,
+  ): { raw: string; fallback: string | null } {
+    const match = setHeader.mock.calls.find(([name]) => name === 'Content-Disposition');
+    const raw = match ? String(match[1]) : '';
+    const fallbackMatch = raw.match(/filename="([^"]+)"/);
+    return {
+      raw,
+      fallback: fallbackMatch?.[1] ?? null,
+    };
+  }
+
   it('keeps local mount access untouched for non-external agents', () => {
     const resolved = resolveTaskWorkspaceMountAccess({
       agentMode: 'internal',
@@ -670,6 +682,161 @@ describe('task-route-handler workspace access', () => {
 
     await expect(routePromise).resolves.toBe(true);
     expect(receivedSignal?.aborted).toBe(true);
+  });
+
+  it('sets a UTF-8 aware attachment header for inline task artifact downloads', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const now = new Date().toISOString();
+    await docStore.upsert(notebookTasksCollection('ws_default'), 'task_inline_1', {
+      id: 'task_inline_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Inline Artifact Task',
+      agent_id: 'agent_1',
+      agent_name: 'Agent One',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await docStore.upsert(notebookTaskArtifactsCollection('ws_default'), 'artifact_inline_1', {
+      id: 'artifact_inline_1',
+      task_id: 'task_inline_1',
+      type: 'file',
+      title: '中文结果.txt',
+      mime_type: 'text/plain',
+      content: 'hello inline artifact',
+      created_at: now,
+    });
+
+    const setHeader = vi.fn();
+    const end = vi.fn();
+
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskArtifactDownload',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_inline_1',
+        artifactId: 'artifact_inline_1',
+      } as never,
+      method: 'GET',
+      req: {
+        headers: {},
+        url: '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_inline_1/artifacts/artifact_inline_1/download',
+      } as never,
+      res: {
+        statusCode: 200,
+        setHeader,
+        end,
+      } as never,
+      deps: {
+        docStore,
+      } as never,
+      user: { id: 'user_1' } as never,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    const contentDisposition = readContentDispositionHeader(setHeader);
+    expect(contentDisposition.raw).toContain('attachment;');
+    expect(contentDisposition.raw).toContain(
+      "filename*=UTF-8''%E4%B8%AD%E6%96%87%E7%BB%93%E6%9E%9C.txt",
+    );
+    expect(contentDisposition.fallback).not.toBeNull();
+    expect(contentDisposition.fallback).toMatch(/^[\x20-\x7E]+$/);
+    expect(contentDisposition.fallback).toMatch(/\.txt$/);
+    expect(end).toHaveBeenCalledWith('hello inline artifact');
+  });
+
+  it('sets the same UTF-8 aware attachment header for workspace-library-backed task artifact downloads', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const now = new Date().toISOString();
+    await docStore.upsert('project_file_libraries', 'lib_utf8_1', {
+      id: 'lib_utf8_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Workspace Library',
+      status: 'ready',
+      filesystem_name: 'flib-workspace-library',
+      created_by_user_id: 'user_1',
+      created_at: now,
+      updated_at: now,
+    });
+    await docStore.upsert(notebookTasksCollection('ws_default'), 'task_stream_1', {
+      id: 'task_stream_1',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Stream Artifact Task',
+      agent_id: 'agent_1',
+      agent_name: 'Agent One',
+      workspace_file_library_id: 'lib_utf8_1',
+      workspace_file_library_name: 'Workspace Library',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await docStore.upsert(notebookTaskArtifactsCollection('ws_default'), 'artifact_stream_1', {
+      id: 'artifact_stream_1',
+      task_id: 'task_stream_1',
+      type: 'file',
+      title: '中文图表.png',
+      task_relative_path: '.artifacts/中文图表.png',
+      mime_type: 'image/png',
+      file_size: 12,
+      created_at: now,
+    });
+
+    const objectStream = new PassThrough();
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject: vi.fn().mockResolvedValue({
+        size: 12,
+        metaData: { 'content-type': 'image/png' },
+      }),
+      getObject: vi.fn().mockResolvedValue(objectStream),
+    });
+
+    const setHeader = vi.fn();
+    const res = new PassThrough() as PassThrough & http.ServerResponse;
+    res.statusCode = 200;
+    res.setHeader = setHeader as never;
+
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskArtifactDownload',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_stream_1',
+        artifactId: 'artifact_stream_1',
+      } as never,
+      method: 'GET',
+      req: {
+        headers: {},
+        url: '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_stream_1/artifacts/artifact_stream_1/download',
+      } as never,
+      res: res as unknown as http.ServerResponse,
+      deps: {
+        docStore,
+      } as never,
+      user: { id: 'user_1' } as never,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    objectStream.end(Buffer.from([1, 2, 3]));
+    const contentDisposition = readContentDispositionHeader(setHeader);
+    expect(contentDisposition.raw).toContain('attachment;');
+    expect(contentDisposition.raw).toContain(
+      "filename*=UTF-8''%E4%B8%AD%E6%96%87%E5%9B%BE%E8%A1%A8.png",
+    );
+    expect(contentDisposition.fallback).not.toBeNull();
+    expect(contentDisposition.fallback).toMatch(/^[\x20-\x7E]+$/);
+    expect(contentDisposition.fallback).toMatch(/\.png$/);
   });
 
   it('uses session dispatch authority for terminal creation even when local online booleans are still true', async () => {

@@ -33,6 +33,17 @@ describe('project-file-library-routes', () => {
     createFileLibraryGatewayClientMock.mockReset();
   });
 
+  function readContentDispositionHeader(
+    headers: Record<string, string> | undefined,
+  ): { raw: string; fallback: string | null } {
+    const raw = headers?.['content-disposition'] ?? '';
+    const fallbackMatch = raw.match(/filename="([^"]+)"/);
+    return {
+      raw,
+      fallback: fallbackMatch?.[1] ?? null,
+    };
+  }
+
   async function nextTick(): Promise<void> {
     await new Promise((resolve) => setImmediate(resolve));
   }
@@ -951,6 +962,183 @@ describe('project-file-library-routes', () => {
     expect(destroyError?.name).toBe('AbortError');
   });
 
+  it('keeps a raw UTF-8 multipart filename decoded as UTF-8 during file library upload', async () => {
+    const createJson = vi.fn();
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: {} as never,
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'UTF-8 Uploads',
+      }),
+    });
+
+    const createdBody = createJson.mock.calls.at(-1)?.[2] as { id: string };
+    const statObject = vi.fn()
+      .mockRejectedValueOnce(new Error('object_not_found'))
+      .mockResolvedValueOnce({
+        size: 5,
+        metaData: { 'content-type': 'text/plain' },
+        lastModified: new Date('2026-04-22T10:00:00.000Z'),
+        etag: 'etag-utf8-upload',
+      });
+    const putObject = vi.fn().mockImplementation(async (
+      _bucket: string,
+      _key: string,
+      stream: Readable,
+    ) => {
+      await new Promise<void>((resolve, reject) => {
+        stream.on('end', () => resolve());
+        stream.on('error', reject);
+        stream.resume();
+      });
+    });
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject,
+      putObject,
+    });
+
+    const boundary = '----agentsmith-upload-utf8-filename';
+    const req = new PassThrough() as PassThrough & http.IncomingMessage;
+    req.headers = {
+      'content-type': `multipart/form-data; boundary=${boundary}`,
+    };
+    const uploadJson = vi.fn();
+
+    const routePromise = handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryUpload',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req,
+      res: {
+        setHeader: vi.fn(),
+        end: vi.fn(),
+      } as never,
+      deps,
+      user: OWNER_USER,
+      json: uploadJson,
+      readBody: vi.fn(),
+    });
+
+    req.write(`--${boundary}\r\n`);
+    req.write('Content-Disposition: form-data; name="file"; filename="中文材料.txt"\r\n');
+    req.write('Content-Type: text/plain\r\n\r\n');
+    req.write('hello');
+    req.end(`\r\n--${boundary}--\r\n`);
+
+    await expect(routePromise).resolves.toBe(true);
+    expect(putObject).toHaveBeenCalledTimes(1);
+    expect(uploadJson).toHaveBeenCalledWith(
+      expect.anything(),
+      201,
+      expect.objectContaining({
+        kind: 'file',
+        name: '中文材料.txt',
+        path: '中文材料.txt',
+      }),
+    );
+  });
+
+  it('accepts RFC 5987 filename* upload parameters and prefers the UTF-8 filename value', async () => {
+    const createJson = vi.fn();
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: {} as never,
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Extended Filename Uploads',
+      }),
+    });
+
+    const createdBody = createJson.mock.calls.at(-1)?.[2] as { id: string };
+    const statObject = vi.fn()
+      .mockRejectedValueOnce(new Error('object_not_found'))
+      .mockResolvedValueOnce({
+        size: 5,
+        metaData: { 'content-type': 'text/plain' },
+        lastModified: new Date('2026-04-22T10:00:00.000Z'),
+        etag: 'etag-filename-star-upload',
+      });
+    const putObject = vi.fn().mockImplementation(async (
+      _bucket: string,
+      _key: string,
+      stream: Readable,
+    ) => {
+      await new Promise<void>((resolve, reject) => {
+        stream.on('end', () => resolve());
+        stream.on('error', reject);
+        stream.resume();
+      });
+    });
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject,
+      putObject,
+    });
+
+    const boundary = '----agentsmith-upload-filename-star';
+    const req = new PassThrough() as PassThrough & http.IncomingMessage;
+    req.headers = {
+      'content-type': `multipart/form-data; boundary=${boundary}`,
+    };
+    const uploadJson = vi.fn();
+
+    const routePromise = handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryUpload',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req,
+      res: {
+        setHeader: vi.fn(),
+        end: vi.fn(),
+      } as never,
+      deps,
+      user: OWNER_USER,
+      json: uploadJson,
+      readBody: vi.fn(),
+    });
+
+    req.write(`--${boundary}\r\n`);
+    req.write(
+      'Content-Disposition: form-data; name="file"; filename="fallback.txt"; '
+      + 'filename*=UTF-8\'\'%E4%B8%AD%E6%96%87%E6%8A%A5%E5%91%8A.txt\r\n',
+    );
+    req.write('Content-Type: text/plain\r\n\r\n');
+    req.write('hello');
+    req.end(`\r\n--${boundary}--\r\n`);
+
+    await expect(routePromise).resolves.toBe(true);
+    expect(putObject).toHaveBeenCalledTimes(1);
+    expect(uploadJson).toHaveBeenCalledWith(
+      expect.anything(),
+      201,
+      expect.objectContaining({
+        kind: 'file',
+        name: '中文报告.txt',
+        path: '中文报告.txt',
+      }),
+    );
+  });
+
   it('stops waiting for file moves when the response closes after the JSON body has already been read', async () => {
     const createJson = vi.fn();
     const createRes = {} as never;
@@ -1717,5 +1905,139 @@ describe('project-file-library-routes', () => {
     } finally {
       await closeServer(gatewayServer);
     }
+  });
+
+  it('sets an RFC 6266 attachment header for ASCII file library downloads', async () => {
+    const createJson = vi.fn();
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: {} as never,
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'ASCII Downloads',
+      }),
+    });
+
+    const createdBody = createJson.mock.calls.at(-1)?.[2] as { id: string };
+    const objectStream = new PassThrough();
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject: vi.fn().mockResolvedValue({
+        size: 11,
+        metaData: { 'content-type': 'text/plain' },
+        lastModified: new Date('2026-04-22T10:00:00.000Z'),
+        etag: 'etag-ascii-download',
+      }),
+      getObject: vi.fn().mockResolvedValue(objectStream),
+    });
+
+    const req = new EventEmitter() as http.IncomingMessage;
+    req.url = '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/download?path=docs%2Fhello.txt';
+    req.headers = {};
+    const res = new PassThrough() as PassThrough & http.ServerResponse & {
+      headers: Record<string, string>;
+    };
+    res.statusCode = 200;
+    res.headers = {};
+    res.setHeader = vi.fn((name: string, value: string | number | readonly string[]) => {
+      res.headers[name.toLowerCase()] = Array.isArray(value) ? value.join(',') : String(value);
+      return res;
+    }) as never;
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryDownload',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req,
+      res: res as unknown as http.ServerResponse,
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    objectStream.end('hello world');
+    const contentDisposition = readContentDispositionHeader(res.headers);
+    expect(contentDisposition.raw).toContain('attachment;');
+    expect(contentDisposition.raw).toContain('filename="hello.txt"');
+    expect(contentDisposition.raw).toContain("filename*=UTF-8''hello.txt");
+  });
+
+  it('sets a UTF-8 aware attachment header for non-ASCII file library downloads', async () => {
+    const createJson = vi.fn();
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res: {} as never,
+      deps,
+      user: OWNER_USER,
+      json: createJson,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'UTF-8 Downloads',
+      }),
+    });
+
+    const createdBody = createJson.mock.calls.at(-1)?.[2] as { id: string };
+    const objectStream = new PassThrough();
+    createFileLibraryGatewayClientMock.mockResolvedValue({
+      statObject: vi.fn().mockResolvedValue({
+        size: 11,
+        metaData: { 'content-type': 'text/plain' },
+        lastModified: new Date('2026-04-22T10:00:00.000Z'),
+        etag: 'etag-utf8-download',
+      }),
+      getObject: vi.fn().mockResolvedValue(objectStream),
+    });
+
+    const req = new EventEmitter() as http.IncomingMessage;
+    req.url = '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/download?path=docs%2F%E4%B8%AD%E6%96%87%E6%8A%A5%E5%91%8A.txt';
+    req.headers = {};
+    const res = new PassThrough() as PassThrough & http.ServerResponse & {
+      headers: Record<string, string>;
+    };
+    res.statusCode = 200;
+    res.headers = {};
+    res.setHeader = vi.fn((name: string, value: string | number | readonly string[]) => {
+      res.headers[name.toLowerCase()] = Array.isArray(value) ? value.join(',') : String(value);
+      return res;
+    }) as never;
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryDownload',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req,
+      res: res as unknown as http.ServerResponse,
+      deps,
+      user: OWNER_USER,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    objectStream.end('hello world');
+    const contentDisposition = readContentDispositionHeader(res.headers);
+    expect(contentDisposition.raw).toContain('attachment;');
+    expect(contentDisposition.raw).toContain(
+      "filename*=UTF-8''%E4%B8%AD%E6%96%87%E6%8A%A5%E5%91%8A.txt",
+    );
+    expect(contentDisposition.fallback).not.toBeNull();
+    expect(contentDisposition.fallback).toMatch(/^[\x20-\x7E]+$/);
+    expect(contentDisposition.fallback).toMatch(/\.txt$/);
   });
 });

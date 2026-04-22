@@ -61,6 +61,12 @@ type MockAuthSnapshot = {
   } | null;
 };
 
+type MockAuthBrowserState = MockAuthSnapshot['storageState'];
+
+type MockAuthStoreReader = {
+  getState?: () => MockAuthSnapshot['storeState'];
+};
+
 let mockAuthSeedSequence = 0;
 
 function createAuthSeed(wsId: string, userEmail: string, userId: string): MockAuthSeed {
@@ -96,10 +102,21 @@ function isAppDocumentUrl(url: string): boolean {
 function applyAuthSeed(seed: MockAuthSeed) {
   const e2eWindow = window as typeof window & {
     __MBOS_AUTH_E2E_SEED_ISSUED_AT__?: number;
+    __MBOS_AUTH_E2E_RETRY_INTERVAL__?: number;
   };
   const currentSeedRevision = e2eWindow.__MBOS_AUTH_E2E_SEED_ISSUED_AT__;
   if (typeof currentSeedRevision === 'number' && currentSeedRevision > seed.seedRevision) {
     return;
+  }
+
+  const isStaleSeed = () => {
+    const latestSeedRevision = e2eWindow.__MBOS_AUTH_E2E_SEED_ISSUED_AT__;
+    return typeof latestSeedRevision === 'number' && latestSeedRevision > seed.seedRevision;
+  };
+
+  if (typeof e2eWindow.__MBOS_AUTH_E2E_RETRY_INTERVAL__ === 'number') {
+    window.clearInterval(e2eWindow.__MBOS_AUTH_E2E_RETRY_INTERVAL__);
+    e2eWindow.__MBOS_AUTH_E2E_RETRY_INTERVAL__ = undefined;
   }
 
   e2eWindow.__MBOS_AUTH_E2E_SEED_ISSUED_AT__ = seed.seedRevision;
@@ -127,6 +144,9 @@ function applyAuthSeed(seed: MockAuthSeed) {
   }
 
   const trySetAuth = () => {
+    if (isStaleSeed()) {
+      return true;
+    }
     const authStore = window.__MBOS_AUTH_STORE__;
     if (!authStore || typeof authStore.getState !== 'function') {
       return false;
@@ -147,8 +167,12 @@ function applyAuthSeed(seed: MockAuthSeed) {
       attempts += 1;
       if (trySetAuth() || attempts > 100) {
         window.clearInterval(interval);
+        if (e2eWindow.__MBOS_AUTH_E2E_RETRY_INTERVAL__ === interval) {
+          e2eWindow.__MBOS_AUTH_E2E_RETRY_INTERVAL__ = undefined;
+        }
       }
     }, 50);
+    e2eWindow.__MBOS_AUTH_E2E_RETRY_INTERVAL__ = interval;
   }
 }
 
@@ -233,22 +257,18 @@ async function verifyAuthSeed(
     await page.waitForFunction(
       ({ requireStore, token, userEmail, userId, wsId }) => {
         const context = window.__MBOS_AUTH_E2E_CONTEXT__;
-        let storageState: {
-          user?: {
-            id?: string;
-            email?: string;
-          } | null;
-          token?: string | null;
-          isAuthenticated?: boolean;
-        } | null = null;
+        let storageState: MockAuthBrowserState = null;
         try {
           const raw = window.localStorage.getItem('agentsmith-auth');
-          const parsed = raw ? JSON.parse(raw) as { state?: typeof storageState } : null;
+          const parsed = raw ? JSON.parse(raw) as { state?: MockAuthBrowserState } : null;
           storageState = parsed?.state ?? null;
         } catch {
           storageState = null;
         }
-        const storeState = window.__MBOS_AUTH_STORE__?.getState();
+        const authStore = window.__MBOS_AUTH_STORE__ as unknown as MockAuthStoreReader | undefined;
+        const storeState = typeof authStore?.getState === 'function'
+          ? authStore.getState() ?? null
+          : null;
         const contextOk = context?.token === token
           && context.userId === userId
           && context.userEmail === userEmail

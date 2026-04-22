@@ -58,8 +58,60 @@ type ProxyForwardOptions = {
 
 type ProxyResult = { upstream_status: number; tokens_total?: number };
 
+type UniversalProxyServiceOptions = {
+  maxTransientProviderRetries?: number;
+  transientProviderRetryDelayMs?: number;
+  maxTransientProviderRetryDelayMs?: number;
+};
+
+type ResolvedUniversalProxyServiceOptions = {
+  maxTransientProviderRetries: number;
+  transientProviderRetryDelayMs: number;
+  maxTransientProviderRetryDelayMs: number;
+};
+
+type TransientRetryDecision = {
+  shouldRetry: boolean;
+  retryDelayMs: number;
+};
+
+const DEFAULT_MAX_TRANSIENT_PROVIDER_RETRIES = 1;
+const DEFAULT_TRANSIENT_PROVIDER_RETRY_DELAY_MS = 250;
+const DEFAULT_MAX_TRANSIENT_PROVIDER_RETRY_DELAY_MS = 1_500;
+const EXPLICIT_TRANSIENT_PROVIDER_HINT_PATTERN = /\b(provider_retryable|capacity|overload(?:ed)?|rate[_ -]?limit|too many requests|retry later|temporar(?:ily)? unavailable)\b/i;
+
 function sanitizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
+}
+
+function clampNonNegativeInteger(value: number | undefined, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(0, Math.trunc(value));
+}
+
+function resolveServiceOptions(options: UniversalProxyServiceOptions | undefined): ResolvedUniversalProxyServiceOptions {
+  const maxTransientProviderRetries = clampNonNegativeInteger(
+    options?.maxTransientProviderRetries,
+    DEFAULT_MAX_TRANSIENT_PROVIDER_RETRIES,
+  );
+  const transientProviderRetryDelayMs = clampNonNegativeInteger(
+    options?.transientProviderRetryDelayMs,
+    DEFAULT_TRANSIENT_PROVIDER_RETRY_DELAY_MS,
+  );
+  const maxTransientProviderRetryDelayMs = Math.max(
+    transientProviderRetryDelayMs,
+    clampNonNegativeInteger(
+      options?.maxTransientProviderRetryDelayMs,
+      DEFAULT_MAX_TRANSIENT_PROVIDER_RETRY_DELAY_MS,
+    ),
+  );
+  return {
+    maxTransientProviderRetries,
+    transientProviderRetryDelayMs,
+    maxTransientProviderRetryDelayMs,
+  };
 }
 
 function normalizeEndpointApiRoot(endpoint: EndpointRecord): string {
@@ -151,13 +203,86 @@ function parseTokenTotal(body: unknown): number | undefined {
   return typeof total === 'number' && Number.isFinite(total) ? total : undefined;
 }
 
+function flattenStringValues(value: unknown, depth = 0): string[] {
+  if (depth > 4 || value === null || typeof value === 'undefined') return [];
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => flattenStringValues(item, depth + 1));
+  }
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).flatMap((item) => flattenStringValues(item, depth + 1));
+  }
+  return [];
+}
+
+function parseRetryAfterMs(value: string | null, maxDelayMs: number): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const seconds = Number.parseFloat(trimmed);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(maxDelayMs, Math.round(seconds * 1000));
+  }
+
+  const retryAt = Date.parse(trimmed);
+  if (!Number.isFinite(retryAt)) return null;
+  return Math.min(maxDelayMs, Math.max(0, retryAt - Date.now()));
+}
+
+async function readRetryableProviderHint(response: Response): Promise<boolean> {
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('json')) {
+    const text = await response.text();
+    return EXPLICIT_TRANSIENT_PROVIDER_HINT_PATTERN.test(text);
+  }
+
+  const { text, json } = await readJsonRecord(response);
+  if (EXPLICIT_TRANSIENT_PROVIDER_HINT_PATTERN.test(text)) {
+    return true;
+  }
+  return flattenStringValues(json).some((value) => EXPLICIT_TRANSIENT_PROVIDER_HINT_PATTERN.test(value));
+}
+
+function createAbortError(): Error {
+  const error = new Error('This operation was aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+async function delayWithAbort(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (delayMs <= 0) return;
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    timer.unref?.();
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      reject(createAbortError());
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 export class UniversalProxyService {
   private readonly namespaceReconcileStates = new Map<string, NamespaceReconcileState>();
+  private readonly options: ResolvedUniversalProxyServiceOptions;
 
   constructor(
     private readonly baseUrl: string,
     private readonly adminToken?: string,
-  ) {}
+    options?: UniversalProxyServiceOptions,
+  ) {
+    this.options = resolveServiceOptions(options);
+  }
 
   static fromEnv(env: NodeJS.ProcessEnv): UniversalProxyService | undefined {
     const raw = env.MBOS_UNIVERSAL_PROXY_BASE_URL?.trim();
@@ -337,20 +462,65 @@ export class UniversalProxyService {
     if (!routePath) {
       throw new Error(`unsupported_universal_proxy_path:${options.proxyPath}`);
     }
-    return fetch(
-      `${sanitizeBaseUrl(this.baseUrl)}/namespaces/${encodeURIComponent(options.namespace)}${routePath}`,
-      {
-        method: options.req.method ?? 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(options.passthroughHeaders ?? {}),
-        },
-        body: JSON.stringify({
-          ...(typeof options.requestBody === 'object' && options.requestBody !== null ? options.requestBody as Record<string, unknown> : {}),
-          model: options.model,
-        }),
-        signal: options.signal,
+    const url = `${sanitizeBaseUrl(this.baseUrl)}/namespaces/${encodeURIComponent(options.namespace)}${routePath}`;
+    const init: RequestInit = {
+      method: options.req.method ?? 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(options.passthroughHeaders ?? {}),
       },
+      body: JSON.stringify({
+        ...(typeof options.requestBody === 'object' && options.requestBody !== null ? options.requestBody as Record<string, unknown> : {}),
+        model: options.model,
+      }),
+      signal: options.signal,
+    };
+
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await fetch(url, init);
+      if (attempt >= this.options.maxTransientProviderRetries) {
+        return response;
+      }
+      const retryDecision = await this.getTransientRetryDecision(response);
+      if (!retryDecision.shouldRetry) {
+        return response;
+      }
+      await delayWithAbort(retryDecision.retryDelayMs, options.signal);
+    }
+  }
+
+  private async getTransientRetryDecision(response: Response): Promise<TransientRetryDecision> {
+    if (response.ok) {
+      return { shouldRetry: false, retryDelayMs: 0 };
+    }
+
+    const retryAfterMs = parseRetryAfterMs(
+      response.headers.get('retry-after'),
+      this.options.maxTransientProviderRetryDelayMs,
+    ) ?? Math.min(
+      this.options.transientProviderRetryDelayMs,
+      this.options.maxTransientProviderRetryDelayMs,
     );
+
+    if (response.status === 429 || response.status >= 500) {
+      return {
+        shouldRetry: true,
+        retryDelayMs: retryAfterMs,
+      };
+    }
+
+    if (response.status < 400) {
+      return { shouldRetry: false, retryDelayMs: 0 };
+    }
+
+    const hasExplicitRetryableHint = await readRetryableProviderHint(response.clone());
+    if (!hasExplicitRetryableHint) {
+      return { shouldRetry: false, retryDelayMs: 0 };
+    }
+
+    return {
+      shouldRetry: response.status !== 401 && response.status !== 403 && response.status !== 404 && response.status !== 422,
+      retryDelayMs: retryAfterMs,
+    };
   }
 }

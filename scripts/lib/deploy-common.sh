@@ -294,6 +294,25 @@ compose_runtime_no_proxy() {
     "$(no_proxy_hosts_from_inputs "$@")"
 }
 
+compose_runtime_proxy_sanitization_env() {
+  cat <<'EOF'
+HTTP_PROXY=
+HTTPS_PROXY=
+ALL_PROXY=
+http_proxy=
+https_proxy=
+all_proxy=
+EOF
+}
+
+docker_run_runtime_proxy_env_args() {
+  local runtime_env
+  while IFS= read -r runtime_env; do
+    [[ -n "${runtime_env}" ]] || continue
+    printf '%s\n' -e "${runtime_env}"
+  done < <(compose_runtime_proxy_sanitization_env)
+}
+
 write_compose_env() {
   local app_image="${1:-}"
   local runner_image="${2:-}"

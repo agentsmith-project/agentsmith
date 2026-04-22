@@ -186,7 +186,10 @@ VERIFY_PLAYWRIGHT_SPECS=(
   e2e/integration-release-user-story.spec.ts
   e2e/integration-internal-chat-runner.spec.ts
 )
+VERIFY_RUNTIME_PROXY_ENV_ARGS=()
+mapfile -t VERIFY_RUNTIME_PROXY_ENV_ARGS < <(docker_run_runtime_proxy_env_args)
 docker run --rm \
+  "${VERIFY_RUNTIME_PROXY_ENV_ARGS[@]}" \
   --network host \
   --ipc host \
   --privileged \

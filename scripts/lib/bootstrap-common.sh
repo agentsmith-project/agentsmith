@@ -185,6 +185,8 @@ run_deploy_bootstrap() {
 
   run_external_runner_up() {
     local output status
+    local -a runtime_proxy_env_args=()
+    mapfile -t runtime_proxy_env_args < <(docker_run_runtime_proxy_env_args)
     set +e
     output="$(
       docker run -d \
@@ -197,6 +199,7 @@ run_deploy_bootstrap() {
         --env-file "${RELEASE_ROOT}/env/base.env" \
         --env-file "${RELEASE_ROOT}/env/runner.env" \
         --env-file "${RELEASE_ROOT}/env/runner-runtime.env" \
+        "${runtime_proxy_env_args[@]}" \
         -e "NO_PROXY=${RUNNER_NO_PROXY}" \
         -e "no_proxy=${RUNNER_NO_PROXY}" \
         --add-host host.docker.internal:host-gateway \
@@ -223,6 +226,7 @@ run_deploy_bootstrap() {
         --env-file "${RELEASE_ROOT}/env/base.env" \
         --env-file "${RELEASE_ROOT}/env/runner.env" \
         --env-file "${RELEASE_ROOT}/env/runner-runtime.env" \
+        "${runtime_proxy_env_args[@]}" \
         -e "NO_PROXY=${RUNNER_NO_PROXY}" \
         -e "no_proxy=${RUNNER_NO_PROXY}" \
         --add-host host.docker.internal:host-gateway \

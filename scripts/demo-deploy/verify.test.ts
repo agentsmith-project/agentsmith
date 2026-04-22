@@ -42,6 +42,15 @@ INTERNAL_AGENT_K8S_NAMESPACE="\${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-intern
 load_release_env() {
   mkdir -p "\${RELEASE_ROOT}" "\${RELEASE_SCRIPT_DIR}" "\${REPORT_DIR}" "\${RELEASE_ROOT}/env"
 }
+docker_run_runtime_proxy_env_args() {
+  printf '%s\\n' \
+    -e HTTP_PROXY= \
+    -e HTTPS_PROXY= \
+    -e ALL_PROXY= \
+    -e http_proxy= \
+    -e https_proxy= \
+    -e all_proxy=
+}
 demo_deploy_mode() {
   printf '%s\\n' "\${DEMO_DEPLOY_MODE:-simple}"
 }
@@ -270,6 +279,44 @@ describe('demo verify mode contract', () => {
       expect(dockerLog).toContain('/tmp/verify-kubeconfig');
       expect(dockerLog).toContain('integration-internal-chat-runner.spec.ts:/app/e2e/integration-internal-chat-runner.spec.ts:ro');
       expect(dockerLog).toContain('KUBECONFIG=/tmp/verify-kubeconfig');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('clears runtime proxy env from verify-time docker runs', () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'demo-verify-proxy-sanitize-'));
+    try {
+      stageDemoVerifyFixture(tempRoot);
+
+      const result = runDemoVerify(tempRoot, {
+        DEMO_DEPLOY_MODE: 'simple',
+        HTTP_PROXY: 'http://proxy.example:8080',
+        HTTPS_PROXY: 'http://proxy.example:8443',
+        ALL_PROXY: 'socks5://proxy.example:1080',
+        http_proxy: 'http://proxy.example:8080',
+        https_proxy: 'http://proxy.example:8443',
+        all_proxy: 'socks5://proxy.example:1080',
+      });
+
+      expect(result.status).toBe(0);
+      const dockerLog = readFileSync(path.join(tempRoot, 'docker.log'), 'utf8');
+
+      for (const clearedProxy of [
+        'HTTP_PROXY=',
+        'HTTPS_PROXY=',
+        'ALL_PROXY=',
+        'http_proxy=',
+        'https_proxy=',
+        'all_proxy=',
+      ]) {
+        const matches = dockerLog.match(new RegExp(clearedProxy, 'g')) ?? [];
+        expect(matches.length).toBeGreaterThanOrEqual(2);
+      }
+
+      expect(dockerLog).not.toContain('HTTP_PROXY=http://proxy.example:8080');
+      expect(dockerLog).not.toContain('HTTPS_PROXY=http://proxy.example:8443');
+      expect(dockerLog).not.toContain('ALL_PROXY=socks5://proxy.example:1080');
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

@@ -47,6 +47,16 @@ function getRequest(fetchMock: ReturnType<typeof vi.fn>, index = 0): { url: stri
   return { url, init };
 }
 
+function createJsonResponse(body: Record<string, unknown>, status: number, headers?: Record<string, string>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'content-type': 'application/json',
+      ...(headers ?? {}),
+    },
+  });
+}
+
 describe('UniversalProxyService', () => {
   it('adds bearer authorization to admin config pushes when admin token is configured from env', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -411,5 +421,135 @@ describe('UniversalProxyService', () => {
       model: 'placeholder-model',
     });
     expect(res.end).toHaveBeenCalled();
+  });
+
+  it('retries one transient 429 capacity response before surfacing the successful proxy result', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          error: {
+            type: 'rate_limit_error',
+            error_class: 'provider_retryable',
+            message: 'Selected model is at capacity, please retry.',
+          },
+        }, 429, { 'retry-after': '0' }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          object: 'response',
+          usage: { total_tokens: 21 },
+        }, 200),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new UniversalProxyService('http://proxy.internal:8080', undefined, {
+      maxTransientProviderRetries: 1,
+      transientProviderRetryDelayMs: 0,
+    });
+    const res = createResponse();
+    const result = await service.proxyJsonRequest({
+      req: createRequest(),
+      res,
+      namespace: 'ws_default__proj_1__ep_1',
+      proxyPath: 'openai/responses',
+      model: 'placeholder-model',
+      requestBody: { input: 'hello' },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ upstream_status: 200, tokens_total: 21 });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('retries one transient 503 overloaded response and preserves the shared request shape', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          error: {
+            error_class: 'provider_retryable',
+            message: 'Provider overloaded, retry later.',
+          },
+        }, 503),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          id: 'msg_1',
+          content: [{ type: 'text', text: 'ok' }],
+        }, 200),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new UniversalProxyService('http://proxy.internal:8080', undefined, {
+      maxTransientProviderRetries: 1,
+      transientProviderRetryDelayMs: 0,
+    });
+    const upstreamResponse = await service.forwardRequest({
+      req: createRequest(),
+      namespace: 'ws_default__proj_1__ep_1',
+      proxyPath: 'anthropic/messages',
+      model: 'claude-sonnet-4-5',
+      requestBody: { messages: [{ role: 'user', content: 'hello' }] },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(upstreamResponse.status).toBe(200);
+    expect(JSON.parse(await upstreamResponse.text())).toMatchObject({
+      id: 'msg_1',
+    });
+    expect(JSON.parse(String(getRequest(fetchMock, 1).init.body))).toMatchObject({
+      model: 'claude-sonnet-4-5',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+  });
+
+  it('keeps transient retries bounded and does not retry clear non-retryable auth failures', async () => {
+    const retryableFetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(createJsonResponse({ error: { message: 'overloaded' } }, 503))
+      .mockResolvedValueOnce(createJsonResponse({ error: { message: 'still overloaded' } }, 503));
+    vi.stubGlobal('fetch', retryableFetchMock);
+
+    const retryingService = new UniversalProxyService('http://proxy.internal:8080', undefined, {
+      maxTransientProviderRetries: 1,
+      transientProviderRetryDelayMs: 0,
+    });
+    const retryableResponse = await retryingService.forwardRequest({
+      req: createRequest(),
+      namespace: 'ws_default__proj_1__ep_1',
+      proxyPath: 'openai/chat/completions',
+      model: 'gpt-4.1',
+      requestBody: { messages: [{ role: 'user', content: 'hello' }] },
+    });
+
+    expect(retryableFetchMock).toHaveBeenCalledTimes(2);
+    expect(retryableResponse.status).toBe(503);
+    expect(await retryableResponse.text()).toContain('still overloaded');
+
+    const authFailureFetchMock = vi.fn().mockResolvedValue(
+      createJsonResponse({
+        error: {
+          error_class: 'provider_non_retryable',
+          message: 'invalid_api_key',
+        },
+      }, 401),
+    );
+    vi.stubGlobal('fetch', authFailureFetchMock);
+
+    const authFailureService = new UniversalProxyService('http://proxy.internal:8080', undefined, {
+      maxTransientProviderRetries: 1,
+      transientProviderRetryDelayMs: 0,
+    });
+    const authFailureResponse = await authFailureService.forwardRequest({
+      req: createRequest(),
+      namespace: 'ws_default__proj_1__ep_1',
+      proxyPath: 'openai/chat/completions',
+      model: 'gpt-4.1',
+      requestBody: { messages: [{ role: 'user', content: 'hello' }] },
+    });
+
+    expect(authFailureFetchMock).toHaveBeenCalledTimes(1);
+    expect(authFailureResponse.status).toBe(401);
   });
 });

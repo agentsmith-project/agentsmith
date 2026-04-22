@@ -67,6 +67,11 @@ export const SYSTEM_ADMIN_USERNAME = process.env.SYSTEM_ADMIN_USERNAME ?? 'mbos-
 export const SYSTEM_ADMIN_PASSWORD = process.env.SYSTEM_ADMIN_PASSWORD ?? 'mbos-admin';
 const TASK_WORKSPACE_MOUNT_SESSIONS_FILE = 'task-workspace-mount-sessions.json';
 type ChildProcessWithIgnoredStdin = ChildProcessByStdio<null, Readable, Readable>;
+export type SupportedChatEndpointUpstreamProtocol =
+  | 'openai_chat_completions'
+  | 'openai_responses'
+  | 'anthropic_messages';
+export type SupportedChatWireApi = 'chat' | 'responses' | 'anthropic_messages';
 
 function trimTrailingSlash(value: string): string {
   return value.trim().replace(/\/+$/, '');
@@ -140,6 +145,51 @@ export function resolveIntegrationKeycloakBaseUrl(
   }
 
   throw new Error('integration_keycloak_base_url_missing');
+}
+
+export function resolveChatWireApiForEndpointUpstreamProtocol(
+  upstreamProtocol: SupportedChatEndpointUpstreamProtocol,
+): SupportedChatWireApi {
+  switch (upstreamProtocol) {
+    case 'openai_responses':
+      return 'responses';
+    case 'anthropic_messages':
+      return 'anthropic_messages';
+    case 'openai_chat_completions':
+    default:
+      return 'chat';
+  }
+}
+
+function isSupportedChatEndpointUpstreamProtocol(
+  value: unknown,
+): value is SupportedChatEndpointUpstreamProtocol {
+  return value === 'openai_chat_completions'
+    || value === 'openai_responses'
+    || value === 'anthropic_messages';
+}
+
+async function readEndpointUpstreamProtocol(args: {
+  page: Page;
+  token: string;
+  workspaceId: string;
+  projectId: string;
+  endpointId: string;
+}): Promise<SupportedChatEndpointUpstreamProtocol> {
+  const endpointRes = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/endpoints/${args.endpointId}`,
+    {
+      headers: { Authorization: `Bearer ${args.token}` },
+    },
+  );
+  expect(endpointRes.ok()).toBeTruthy();
+  const endpoint = (await endpointRes.json().catch(() => null)) as {
+    upstream_protocol?: unknown;
+  } | null;
+  if (!isSupportedChatEndpointUpstreamProtocol(endpoint?.upstream_protocol)) {
+    throw new Error('endpoint_upstream_protocol_missing_or_unsupported');
+  }
+  return endpoint.upstream_protocol;
 }
 
 async function collectChildPids(pid: number): Promise<number[]> {
@@ -1026,7 +1076,7 @@ export async function createEndpointViaApi(
     capability?: 'chat_completion' | 'multimodal_completion';
     endpointType?: 'catalog' | 'custom';
     providerFamily?: 'openai' | 'anthropic' | 'deepseek' | 'minimax' | 'kimi' | 'google' | 'glm' | 'alibaba' | 'custom';
-    upstreamProtocol?: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
+    upstreamProtocol?: SupportedChatEndpointUpstreamProtocol;
     modelProfile?: {
       max_context_tokens: number;
       max_output_tokens?: number;
@@ -1128,21 +1178,34 @@ export async function createExternalRunnerAgentBundle(
   const token = await readStoredAuthToken(page);
   const interactionKind = args.interactionKind ?? 'notebook';
   const endpointUpstreamProtocol = interactionKind === 'chat'
-    ? await (async (): Promise<'openai_chat_completions' | 'openai_responses' | 'anthropic_messages'> => {
-      const endpointRes = await page.request.get(
-        `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/endpoints/${args.endpointId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      expect(endpointRes.ok()).toBeTruthy();
-      const endpoint = (await endpointRes.json().catch(() => null)) as {
-        upstream_protocol?: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
-      } | null;
-      expect(endpoint?.upstream_protocol).toBeTruthy();
-      return endpoint!.upstream_protocol!;
-    })()
+    ? await readEndpointUpstreamProtocol({
+      page,
+      token: token!,
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      endpointId: args.endpointId,
+    })
     : null;
+  const executionPreferences = interactionKind === 'chat'
+    ? (() => {
+      if (endpointUpstreamProtocol === null) {
+        throw new Error('chat_endpoint_upstream_protocol_required');
+      }
+      return {
+        chat: {
+          endpoint_id: args.endpointId,
+          wire_api: resolveChatWireApiForEndpointUpstreamProtocol(endpointUpstreamProtocol),
+          model: BACKEND_REAL_MODEL,
+        },
+      };
+    })()
+    : {
+        notebook: {
+          endpoint_id: args.endpointId,
+          wire_api: 'responses',
+          model: BACKEND_REAL_MODEL,
+        },
+      };
   const agentName = `${args.title}-${Date.now()}`;
   const createAgentRes = await page.request.post(
     `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/agents`,
@@ -1155,22 +1218,7 @@ export async function createExternalRunnerAgentBundle(
         name: agentName,
         mode: 'external',
         interaction_kind: interactionKind,
-        execution_preferences:
-          interactionKind === 'chat'
-            ? {
-                chat: {
-                  endpoint_id: args.endpointId,
-                  wire_api: endpointUpstreamProtocol === 'anthropic_messages' ? 'anthropic_messages' : 'chat',
-                  model: BACKEND_REAL_MODEL,
-                },
-              }
-            : {
-                notebook: {
-                  endpoint_id: args.endpointId,
-                  wire_api: 'responses',
-                  model: BACKEND_REAL_MODEL,
-                },
-              },
+        execution_preferences: executionPreferences,
         capabilities: {
           streaming_completion: true,
           multimodal_completion: args.multimodal ?? false,
@@ -1338,6 +1386,13 @@ export async function createInternalChatAgent(
   },
 ): Promise<{ agentId: string; agentName: string }> {
   const token = await readStoredAuthToken(page);
+  const endpointUpstreamProtocol = await readEndpointUpstreamProtocol({
+    page,
+    token: token!,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    endpointId: args.endpointId,
+  });
   const agentName = `${args.title}-${Date.now()}`;
   const createAgentRes = await page.request.post(
     `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/agents`,
@@ -1353,7 +1408,7 @@ export async function createInternalChatAgent(
         execution_preferences: {
           chat: {
             endpoint_id: args.endpointId,
-            wire_api: 'chat',
+            wire_api: resolveChatWireApiForEndpointUpstreamProtocol(endpointUpstreamProtocol),
             model: BACKEND_REAL_MODEL,
           },
         },

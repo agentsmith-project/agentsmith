@@ -113,6 +113,13 @@ wait_for_kind_cluster_ready() {
   return 1
 }
 
+finalize_kind_cluster_bootstrap() {
+  write_super_admin_kubeconfig >/dev/null
+  kind_reconcile_coredns_upstreams "${SUPER_ADMIN_KUBECONFIG_PATH}"
+  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl config use-context "${KIND_CONTEXT}" >/dev/null
+  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl label node "${CONTROL_PLANE_NODE}" node=mbos --overwrite >/dev/null
+}
+
 kind_cluster_healthy() {
   kind_cmd get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}" || return 1
   docker ps --format '{{.Names}}' | grep -qx "${CONTROL_PLANE_NODE}" || return 1
@@ -156,9 +163,7 @@ ensure_local_kind_cluster() {
     if docker ps --format '{{.Names}}' | grep -qx "${CONTROL_PLANE_NODE}"; then
       kind_sanitize_control_plane_proxy_env "${CONTROL_PLANE_NODE}" || true
       if wait_for_kind_cluster_ready 120; then
-        write_super_admin_kubeconfig >/dev/null 2>&1 || true
-        KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl config use-context "${KIND_CONTEXT}" >/dev/null || true
-        KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl label node "${CONTROL_PLANE_NODE}" node=mbos --overwrite >/dev/null || true
+        finalize_kind_cluster_bootstrap
         return 0
       fi
     fi
@@ -187,8 +192,7 @@ ensure_local_kind_cluster() {
   fi
 
   wait_for_kind_cluster_ready 180
-  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl config use-context "${KIND_CONTEXT}" >/dev/null || true
-  KUBECONFIG="${SUPER_ADMIN_KUBECONFIG_PATH}" kind_kubectl label node "${CONTROL_PLANE_NODE}" node=mbos --overwrite >/dev/null
+  finalize_kind_cluster_bootstrap
 }
 
 ensure_local_kind_cluster

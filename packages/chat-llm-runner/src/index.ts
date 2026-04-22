@@ -23,7 +23,38 @@ const ws = new WebSocket(wsUrl, {
 });
 const sessionWorkspaceManager = new ChatSessionWorkspaceManager();
 const inFlightRequests = new Map<string, AbortController>();
+const eventSequenceByRequest = new Map<string, number>();
 const SUPPORTED_WIRE_APIS = ['chat', 'responses', 'anthropic_messages'] as const;
+
+function nextEventSequence(requestId: string): number {
+  const next = (eventSequenceByRequest.get(requestId) ?? 0) + 1;
+  eventSequenceByRequest.set(requestId, next);
+  return next;
+}
+
+function sendEvent(
+  requestId: string,
+  payload: {
+    category: 'lifecycle' | 'warning';
+    phase: 'update';
+    status: 'running';
+    name: string;
+    summary: string;
+    details?: Record<string, unknown>;
+  },
+) {
+  ws.send(JSON.stringify({
+    type: 'agent.response.event',
+    request_id: requestId,
+    timestamp: new Date().toISOString(),
+    payload: {
+      sequence: nextEventSequence(requestId),
+      at: new Date().toISOString(),
+      ...payload,
+      ...(payload.details ? { details: payload.details } : {}),
+    },
+  }));
+}
 
 function sendDone(requestId: string, usage: number, finishReason: string = 'stop') {
   ws.send(JSON.stringify({
@@ -48,21 +79,24 @@ function sendError(requestId: string, error: unknown) {
 }
 
 function sendWarningEvent(requestId: string, args: { name: string; summary: string; details?: Record<string, unknown> }) {
-  ws.send(JSON.stringify({
-    type: 'agent.response.event',
-    request_id: requestId,
-    timestamp: new Date().toISOString(),
-    payload: {
-      sequence: 1,
-      at: new Date().toISOString(),
-      category: 'warning',
-      phase: 'update',
-      status: 'running',
-      name: args.name,
-      summary: args.summary,
-      ...(args.details ? { details: args.details } : {}),
-    },
-  }));
+  sendEvent(requestId, {
+    category: 'warning',
+    phase: 'update',
+    status: 'running',
+    name: args.name,
+    summary: args.summary,
+    ...(args.details ? { details: args.details } : {}),
+  });
+}
+
+function sendRunningEvent(requestId: string) {
+  sendEvent(requestId, {
+    category: 'lifecycle',
+    phase: 'update',
+    status: 'running',
+    name: 'chat.request_running',
+    summary: 'chat_request_running',
+  });
 }
 
 function isAbortError(error: unknown): boolean {
@@ -124,6 +158,7 @@ ws.on('message', async (raw) => {
   inFlightRequests.set(message.request_id, abortController);
   try {
     const executionContext = assertChatExecutionContext(payload.execution_context);
+    sendRunningEvent(message.request_id);
     const sessionId = executionContext.session_id;
     if (sessionId) {
       const workspaceState = await sessionWorkspaceManager.ensureSessionWorkspace(
@@ -172,6 +207,7 @@ ws.on('message', async (raw) => {
     sendError(message.request_id, error);
   } finally {
     inFlightRequests.delete(message.request_id);
+    eventSequenceByRequest.delete(message.request_id);
   }
 });
 

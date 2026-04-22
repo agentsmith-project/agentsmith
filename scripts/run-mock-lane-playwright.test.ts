@@ -7,6 +7,20 @@ describe('run-mock-lane-playwright', () => {
     expect(() => execFileSync('bash', ['-n', 'scripts/run-mock-lane-playwright.sh'])).not.toThrow();
   });
 
+  it('forces strict MSW readiness for both the mock web server and the Playwright child lane', () => {
+    const script = readFileSync('scripts/run-mock-lane-playwright.sh', 'utf8');
+    const serverLaunchIndex = script.indexOf('start_mock_server() {');
+    const serverStrictReadyIndex = script.indexOf('NEXT_PUBLIC_MSW_STRICT_READY=true');
+    const playwrightLaunchIndex = script.indexOf('run_playwright_once() {');
+    const playwrightStrictReadyIndex = script.lastIndexOf('NEXT_PUBLIC_MSW_STRICT_READY=true');
+
+    expect(serverLaunchIndex).toBeGreaterThanOrEqual(0);
+    expect(serverStrictReadyIndex).toBeGreaterThan(serverLaunchIndex);
+    expect(playwrightLaunchIndex).toBeGreaterThanOrEqual(0);
+    expect(playwrightStrictReadyIndex).toBeGreaterThan(playwrightLaunchIndex);
+    expect(script.match(/NEXT_PUBLIC_MSW_STRICT_READY=true/g)).toHaveLength(2);
+  });
+
   it('uses lane-local generated-root cleanup instead of global validation cleanup on exit', () => {
     const script = readFileSync('scripts/run-mock-lane-playwright.sh', 'utf8');
 

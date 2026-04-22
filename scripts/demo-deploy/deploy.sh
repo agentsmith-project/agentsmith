@@ -204,6 +204,7 @@ main() {
     recreate_kind_cluster_for_demo "found ingress-nginx full-auto prereqs that reserve the demo sandbox node port"
     export KUBECONFIG="${DEMO_KIND_KUBECONFIG_PATH}"
   fi
+  bash "${ROOT_DIR}/scripts/cluster-deploy/apply-kind-dns.sh"
 
   load_demo_kind_images
 

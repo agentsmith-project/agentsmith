@@ -132,8 +132,11 @@ prepare_demo_full_mode_verify_inputs() {
 
 
 cleanup_verify_artifacts() {
+  local -a runtime_proxy_env_args=()
+  mapfile -t runtime_proxy_env_args < <(docker_run_runtime_proxy_env_args)
   mkdir -p "${REPORT_DIR}/verify-artifacts"
   docker run --rm \
+    "${runtime_proxy_env_args[@]}" \
     --user 0:0 \
     --entrypoint /bin/sh \
     -v "${REPORT_DIR}/verify-artifacts:/artifacts" \
@@ -294,7 +297,10 @@ VERIFY_PLAYWRIGHT_SPECS=(
   e2e/integration-release-user-story.spec.ts
 )
 prepare_demo_full_mode_verify_inputs || exit 1
+VERIFY_RUNTIME_PROXY_ENV_ARGS=()
+mapfile -t VERIFY_RUNTIME_PROXY_ENV_ARGS < <(docker_run_runtime_proxy_env_args)
 docker run --rm \
+  "${VERIFY_RUNTIME_PROXY_ENV_ARGS[@]}" \
   --network host \
   --ipc host \
   --privileged \

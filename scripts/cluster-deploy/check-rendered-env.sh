@@ -67,6 +67,18 @@ release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'MBOS_UNIVER
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'LLM_UNIVERSAL_PROXY_ADMIN_TOKEN=fake-proxy-admin-token' '[cluster-rendered-env] missing proxy runtime admin token'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_DEFAULT_CPU_REQUEST=1' '[cluster-rendered-env] missing internal cpu request default'
 release_check_require_pattern "${RELEASE_ROOT}/env/base.env" '^NO_PROXY=.*(^|,)(postgres|minio)(,|$)' '[cluster-rendered-env] missing compose no_proxy entries'
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'HTTP_PROXY=' '[cluster-rendered-env] missing cleared HTTP_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'HTTPS_PROXY=' '[cluster-rendered-env] missing cleared HTTPS_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'ALL_PROXY=' '[cluster-rendered-env] missing cleared ALL_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'http_proxy=' '[cluster-rendered-env] missing cleared http_proxy'
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'https_proxy=' '[cluster-rendered-env] missing cleared https_proxy'
+release_check_require_exact_line "${RELEASE_ROOT}/env/base.env" 'all_proxy=' '[cluster-rendered-env] missing cleared all_proxy'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'HTTP_PROXY=' '[cluster-rendered-env] missing cleared internal HTTP_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'HTTPS_PROXY=' '[cluster-rendered-env] missing cleared internal HTTPS_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'ALL_PROXY=' '[cluster-rendered-env] missing cleared internal ALL_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'http_proxy=' '[cluster-rendered-env] missing cleared internal http_proxy'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'https_proxy=' '[cluster-rendered-env] missing cleared internal https_proxy'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'all_proxy=' '[cluster-rendered-env] missing cleared internal all_proxy'
 release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.mbos.svc.cluster.local' '[cluster-rendered-env] missing internal postgres external fqdn'
 
 python3 - <<'PY' "${ROOT_DIR}" "${TMP_ROOT}"

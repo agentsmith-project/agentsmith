@@ -36,6 +36,7 @@ const mockTaskApiListTraces = vi.fn();
 const {
   mockSendMessageMutateAsync,
   mockSendMessageIsPending,
+  mockTaskSseState,
   mockHandleError,
   mockToastError,
   mockToastInfo,
@@ -58,6 +59,16 @@ const {
 } = vi.hoisted(() => ({
   mockSendMessageMutateAsync: vi.fn(),
   mockSendMessageIsPending: { value: false },
+  mockTaskSseState: {
+    connectionStatus: 'connected' as
+      | 'connecting'
+      | 'connected'
+      | 'reconnecting'
+      | 'disconnected'
+      | 'error',
+    connectionErrorCode: null as string | null,
+    connectionErrorMessage: null as string | null,
+  },
   mockHandleError: vi.fn(),
   mockToastError: vi.fn(),
   mockToastInfo: vi.fn(),
@@ -229,7 +240,9 @@ vi.mock('@/lib/hooks/use-task-sse', () => ({
   useTaskSSE: (_workspaceId: string, _projectId: string, _taskId: string, options: unknown) => {
     latestTaskSseOptionsRef.current = options;
     return ({
-    connectionStatus: 'connected',
+    connectionStatus: mockTaskSseState.connectionStatus,
+    connectionErrorCode: mockTaskSseState.connectionErrorCode,
+    connectionErrorMessage: mockTaskSseState.connectionErrorMessage,
     connect: vi.fn(),
     disconnect: vi.fn(),
     });
@@ -465,6 +478,9 @@ describe('TaskPage', () => {
     mockTaskArtifactsRefetch.mockReset();
     mockTaskArtifactsRefetch.mockResolvedValue({ data: mockArtifacts });
     mockTaskArtifactsIsRefetching.value = false;
+    mockTaskSseState.connectionStatus = 'connected';
+    mockTaskSseState.connectionErrorCode = null;
+    mockTaskSseState.connectionErrorMessage = null;
     mockUseTaskRefetch.mockReset();
     mockUseTaskRefetch.mockResolvedValue({ data: mockTask });
     mockUseTaskMessagesRefetch.mockReset();
@@ -2609,6 +2625,133 @@ describe('TaskPage', () => {
       // SSE connection is established via the useTaskSSE hook
       // This is tested indirectly by checking that the component renders without errors
       expect(screen.getByTestId('task-header')).toBeInTheDocument();
+    });
+
+    it('clears stale local realtime failure after reconcile succeeds without an SSE reconnect', async () => {
+      const user = userEvent.setup();
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'running',
+      };
+      mockSendMessageIsPending.value = true;
+
+      await renderComponentReady();
+
+      await act(async () => {
+        latestTaskSseOptionsRef.current?.onError?.(
+          Object.assign(new Error('Trace tail fetch returned 503'), {
+            code: 'TRACE_RECONCILE_FAILED',
+          }),
+        );
+      });
+
+      await waitFor(() => {
+        expect(latestConversationPanelPropsRef.current.connectionStatus).toBe('connected');
+        expect(latestConversationPanelPropsRef.current.connectionErrorCode).toBe(
+          'TRACE_RECONCILE_FAILED',
+        );
+        expect(latestConversationPanelPropsRef.current.connectionErrorMessage).toBe(
+          'Trace tail fetch returned 503',
+        );
+      });
+
+      await user.click(screen.getByText('Cancel Active Run'));
+
+      await waitFor(() => {
+        expect(mockTaskApiCancelRun).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+        expect(mockTaskApiListTraces).toHaveBeenCalled();
+        expect(latestConversationPanelPropsRef.current.connectionStatus).toBe('connected');
+        expect(latestConversationPanelPropsRef.current.connectionErrorCode).toBeNull();
+        expect(latestConversationPanelPropsRef.current.connectionErrorMessage).toBeNull();
+      });
+    });
+
+    it('keeps active hook-level connection failures visible after reconcile succeeds', async () => {
+      const user = userEvent.setup();
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'running',
+      };
+      mockSendMessageIsPending.value = true;
+      mockTaskSseState.connectionStatus = 'error';
+      mockTaskSseState.connectionErrorCode = 'TASK_EVENTS_STREAM_UNAVAILABLE';
+      mockTaskSseState.connectionErrorMessage =
+        'SSE connection failed after 5 reconnection attempts';
+
+      await renderComponentReady();
+
+      await waitFor(() => {
+        expect(latestConversationPanelPropsRef.current.connectionStatus).toBe('error');
+        expect(latestConversationPanelPropsRef.current.connectionErrorCode).toBe(
+          'TASK_EVENTS_STREAM_UNAVAILABLE',
+        );
+        expect(latestConversationPanelPropsRef.current.connectionErrorMessage).toBe(
+          'SSE connection failed after 5 reconnection attempts',
+        );
+      });
+
+      await user.click(screen.getByText('Cancel Active Run'));
+
+      await waitFor(() => {
+        expect(mockTaskApiCancelRun).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+        expect(mockTaskApiListTraces).toHaveBeenCalled();
+        expect(latestConversationPanelPropsRef.current.connectionStatus).toBe('error');
+        expect(latestConversationPanelPropsRef.current.connectionErrorCode).toBe(
+          'TASK_EVENTS_STREAM_UNAVAILABLE',
+        );
+        expect(latestConversationPanelPropsRef.current.connectionErrorMessage).toBe(
+          'SSE connection failed after 5 reconnection attempts',
+        );
+      });
+    });
+
+    it('keeps the local realtime failure visible when task truth refetch fails during reconcile', async () => {
+      const user = userEvent.setup();
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'running',
+      };
+      mockSendMessageIsPending.value = true;
+      mockUseTaskRefetch.mockResolvedValueOnce({
+        data: undefined,
+        error: new Error('Task detail refetch failed'),
+      });
+
+      await renderComponentReady();
+
+      await act(async () => {
+        latestTaskSseOptionsRef.current?.onError?.(
+          Object.assign(new Error('Trace tail fetch returned 503'), {
+            code: 'TRACE_RECONCILE_FAILED',
+          }),
+        );
+      });
+
+      await user.click(screen.getByText('Cancel Active Run'));
+
+      await waitFor(() => {
+        expect(mockTaskApiCancelRun).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+        );
+        expect(mockTaskApiListTraces).toHaveBeenCalled();
+        expect(latestConversationPanelPropsRef.current.connectionStatus).toBe('connected');
+        expect(latestConversationPanelPropsRef.current.connectionErrorCode).toBe(
+          'TRACE_RECONCILE_FAILED',
+        );
+        expect(latestConversationPanelPropsRef.current.connectionErrorMessage).toBe(
+          'Task detail refetch failed',
+        );
+      });
     });
   });
 

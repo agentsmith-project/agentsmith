@@ -194,6 +194,23 @@ function getNextTerminalTabOrdinal(tabs: TerminalWorkspaceTab[]) {
   );
 }
 
+function getReconcileRefetchError(result: PromiseSettledResult<unknown>) {
+  if (result.status === "rejected") {
+    return result.reason instanceof Error
+      ? result.reason
+      : new Error("Task runtime reconcile failed.");
+  }
+  if (typeof result.value !== "object" || result.value === null) {
+    return null;
+  }
+  if (!("error" in result.value) || result.value.error == null) {
+    return null;
+  }
+  return result.value.error instanceof Error
+    ? result.value.error
+    : new Error(String(result.value.error));
+}
+
 function removeListedTerminalSessionById(
   sessions: ListedTerminalSession[] | null,
   sessionId: string | null | undefined,
@@ -437,6 +454,10 @@ export function TaskPage({
     setRunClockNow(Date.now());
     setLastRunActionSummary(null);
   }, []);
+  const clearRealtimeFailure = React.useCallback(() => {
+    setRealtimeFailureCode(null);
+    setRealtimeFailureMessage(null);
+  }, []);
 
   React.useEffect(() => {
     if (!optimisticUserMessages.length || !(messages?.length ?? 0)) return;
@@ -527,16 +548,25 @@ export function TaskPage({
         },
         activeTraceMessageId,
       );
-      await Promise.allSettled([
+      const [taskRefetchResult, messagesRefetchResult, artifactsRefetchResult] =
+        await Promise.allSettled([
         refetchTask(),
         refetchMessages(),
         refetchArtifacts(),
       ]);
+      const reconcileRefetchError =
+        getReconcileRefetchError(taskRefetchResult) ??
+        getReconcileRefetchError(messagesRefetchResult);
+      void artifactsRefetchResult;
       try {
         const resp = await taskAPI.listTraces(workspaceId, projectId, taskId, {
           ...(afterId ? { after_id: afterId } : {}),
           page_size: 500,
         });
+        mergeTraceEvents(resp.items);
+        if (reconcileRefetchError) {
+          throw reconcileRefetchError;
+        }
         appendSseDebugEvent(
           {
             at: new Date().toISOString(),
@@ -545,7 +575,7 @@ export function TaskPage({
           },
           activeTraceMessageId,
         );
-        mergeTraceEvents(resp.items);
+        clearRealtimeFailure();
       } catch (err) {
         setRealtimeFailureCode("TRACE_RECONCILE_FAILED");
         setRealtimeFailureMessage(
@@ -565,6 +595,7 @@ export function TaskPage({
     [
       activeTraceMessageId,
       appendSseDebugEvent,
+      clearRealtimeFailure,
       handleError,
       lastTraceEventIdRef,
       mergeTraceEvents,
@@ -712,19 +743,14 @@ export function TaskPage({
         runtimeReconciliationActive,
       watchdogTimeoutMs: 20_000,
     });
+  const effectiveRealtimeFailureCode =
+    connectionErrorCode ?? realtimeFailureCode;
+  const effectiveRealtimeFailureMessage =
+    connectionErrorMessage ?? realtimeFailureMessage;
 
   const previousConnectionStatusRef = React.useRef<
     typeof connectionStatus | null
   >(null);
-  React.useEffect(() => {
-    if (connectionErrorCode || connectionErrorMessage) {
-      setRealtimeFailureCode(connectionErrorCode ?? null);
-      setRealtimeFailureMessage(connectionErrorMessage ?? null);
-    } else if (connectionStatus === "connected") {
-      setRealtimeFailureCode(null);
-      setRealtimeFailureMessage(null);
-    }
-  }, [connectionErrorCode, connectionErrorMessage, connectionStatus]);
 
   React.useEffect(() => {
     const prev = previousConnectionStatusRef.current;
@@ -2064,8 +2090,8 @@ export function TaskPage({
         artifacts={artifactsList}
         artifactsRefreshing={artifactsRefreshing}
         canUpdateTask={canUpdateTask}
-        connectionErrorCode={realtimeFailureCode}
-        connectionErrorMessage={realtimeFailureMessage}
+        connectionErrorCode={effectiveRealtimeFailureCode}
+        connectionErrorMessage={effectiveRealtimeFailureMessage}
         connectionStatus={connectionStatus}
         diagnosticsLinks={notebookDiagnosticsLinks}
         disabled={isConversationInputDisabled}

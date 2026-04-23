@@ -45,6 +45,8 @@ export interface UseTaskSSEOptions {
   enabled?: boolean;
   reconnectInterval?: number;
   maxReconnectAttempts?: number;
+  watchdogEnabled?: boolean;
+  watchdogTimeoutMs?: number;
 }
 
 /**
@@ -75,6 +77,8 @@ export function useTaskSSE(
     enabled = true,
     reconnectInterval = 3000,
     maxReconnectAttempts = 5,
+    watchdogEnabled = false,
+    watchdogTimeoutMs = 20000,
   } = options;
 
   const [connectionStatus, setConnectionStatus] = useState<
@@ -83,8 +87,10 @@ export function useTaskSSE(
   const [connectionErrorCode, setConnectionErrorCode] = useState<string | null>(null);
   const [connectionErrorMessage, setConnectionErrorMessage] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const connectRef = useRef<() => void>(() => {});
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const watchdogTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
   const hasOpenedRef = useRef(false);
 
@@ -117,10 +123,68 @@ export function useTaskSSE(
     });
   }, []);
 
+  const clearWatchdog = useCallback(() => {
+    if (watchdogTimeoutRef.current) {
+      clearTimeout(watchdogTimeoutRef.current);
+      watchdogTimeoutRef.current = null;
+    }
+  }, []);
+
+  const handleStreamFailure = useCallback((eventSource: EventSource, summary: string) => {
+    clearWatchdog();
+    const readyState = eventSource.readyState;
+    emitDebug({ phase: 'sse_error', summary });
+    if (readyState === EventSource.CLOSED) {
+      console.warn('SSE connection closed, will attempt reconnect');
+    }
+    eventSource.close();
+    eventSourceRef.current = null;
+    if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+      setConnectionStatus('reconnecting');
+      reconnectAttemptsRef.current += 1;
+      emitDebug({
+        phase: 'reconnect_scheduled',
+        summary: `attempt=${reconnectAttemptsRef.current}/${maxReconnectAttempts}`,
+      });
+      reconnectTimeoutRef.current = setTimeout(() => {
+        connectRef.current();
+      }, reconnectInterval);
+    } else {
+      const exhaustedCode = !hasOpenedRef.current && !lastEventIdRef.current
+        ? 'TASK_EVENTS_STREAM_UNAVAILABLE'
+        : lastEventIdRef.current
+          ? 'TASK_EVENTS_RECOVERY_EXHAUSTED'
+          : 'TASK_EVENTS_STREAM_INTERRUPTED';
+      setConnectionStatus('error');
+      setConnectionErrorCode(exhaustedCode);
+      setConnectionErrorMessage(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`);
+      emitDebug({ phase: 'reconnect_exhausted', summary: `max=${maxReconnectAttempts}` });
+      callbacksRef.current.onError?.(
+        Object.assign(
+          new Error(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`),
+          { code: exhaustedCode },
+        ),
+      );
+    }
+  }, [clearWatchdog, emitDebug, maxReconnectAttempts, reconnectInterval]);
+
+  const scheduleWatchdog = useCallback((eventSource: EventSource) => {
+    clearWatchdog();
+    if (!watchdogEnabled) return;
+    watchdogTimeoutRef.current = setTimeout(() => {
+      handleStreamFailure(
+        eventSource,
+        `watchdog_timeout_ms=${watchdogTimeoutMs} ready_state=${eventSource.readyState}`,
+      );
+    }, watchdogTimeoutMs);
+  }, [clearWatchdog, handleStreamFailure, watchdogEnabled, watchdogTimeoutMs]);
+
   const connect = useCallback(() => {
     if (!enabled || !workspaceId || !projectId || !taskId) {
       return;
     }
+
+    clearWatchdog();
 
     // Close existing connection if any
     if (eventSourceRef.current) {
@@ -166,6 +230,7 @@ export function useTaskSSE(
           hasOpenedRef.current = true;
           reconnectAttemptsRef.current = 0;
           emitDebug({ phase: 'open', summary: 'sse_open' });
+          scheduleWatchdog(eventSource);
           if (lastEventIdRef.current) {
             emitDebug({
               phase: 'trace_gap_fill_done',
@@ -178,6 +243,7 @@ export function useTaskSSE(
           try {
             const data = JSON.parse(event.data) as TaskSSEEvent;
             emitDebug({ phase: 'message', summary: `type=${data.type}` });
+            scheduleWatchdog(eventSource);
 
             // Store last event ID for reconnection
             if (event.lastEventId) {
@@ -216,40 +282,7 @@ export function useTaskSSE(
         };
 
         eventSource.onerror = (_error) => {
-          const readyState = eventSource.readyState;
-          emitDebug({ phase: 'sse_error', summary: `ready_state=${readyState}` });
-          if (readyState === EventSource.CLOSED) {
-            console.warn('SSE connection closed, will attempt reconnect');
-          }
-          eventSource.close();
-          eventSourceRef.current = null;
-          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            setConnectionStatus('reconnecting');
-            reconnectAttemptsRef.current += 1;
-            emitDebug({
-              phase: 'reconnect_scheduled',
-              summary: `attempt=${reconnectAttemptsRef.current}/${maxReconnectAttempts}`,
-            });
-            reconnectTimeoutRef.current = setTimeout(() => {
-              connect();
-            }, reconnectInterval);
-          } else {
-            const exhaustedCode = !hasOpenedRef.current && !lastEventIdRef.current
-              ? 'TASK_EVENTS_STREAM_UNAVAILABLE'
-              : lastEventIdRef.current
-                ? 'TASK_EVENTS_RECOVERY_EXHAUSTED'
-                : 'TASK_EVENTS_STREAM_INTERRUPTED';
-            setConnectionStatus('error');
-            setConnectionErrorCode(exhaustedCode);
-            setConnectionErrorMessage(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`);
-            emitDebug({ phase: 'reconnect_exhausted', summary: `max=${maxReconnectAttempts}` });
-            callbacksRef.current.onError?.(
-              Object.assign(
-                new Error(`SSE connection failed after ${maxReconnectAttempts} reconnection attempts`),
-                { code: exhaustedCode },
-              ),
-            );
-          }
+          handleStreamFailure(eventSource, `ready_state=${eventSource.readyState}`);
         };
 
         eventSourceRef.current = eventSource;
@@ -271,7 +304,27 @@ export function useTaskSSE(
         callbacksRef.current.onError?.(err instanceof Error ? err : new Error('SSE connection failed'));
       }
     })();
-  }, [enabled, workspaceId, projectId, taskId, reconnectInterval, maxReconnectAttempts, emitDebug]);
+  }, [
+    clearWatchdog,
+    enabled,
+    workspaceId,
+    projectId,
+    taskId,
+    emitDebug,
+    handleStreamFailure,
+    scheduleWatchdog,
+  ]);
+
+  connectRef.current = connect;
+
+  useEffect(() => {
+    if (!watchdogEnabled) {
+      clearWatchdog();
+      return;
+    }
+    if (connectionStatus !== 'connected' || !eventSourceRef.current) return;
+    scheduleWatchdog(eventSourceRef.current);
+  }, [clearWatchdog, connectionStatus, scheduleWatchdog, watchdogEnabled]);
 
   useEffect(() => {
     if (enabled) {
@@ -279,6 +332,7 @@ export function useTaskSSE(
     }
 
     return () => {
+      clearWatchdog();
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
@@ -289,9 +343,10 @@ export function useTaskSSE(
       setConnectionStatus('disconnected');
       reconnectAttemptsRef.current = 0;
     };
-  }, [enabled, connect]);
+  }, [clearWatchdog, enabled, connect]);
 
   const disconnect = useCallback(() => {
+    clearWatchdog();
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
@@ -305,7 +360,7 @@ export function useTaskSSE(
     setConnectionErrorMessage(null);
     hasOpenedRef.current = false;
     emitDebug({ phase: 'disconnect', summary: 'manual_disconnect' });
-  }, [emitDebug]);
+  }, [clearWatchdog, emitDebug]);
 
   return {
     connectionStatus,

@@ -10,7 +10,11 @@ import {
   resolveTerminalWebSocketBaseUrl,
   resolveTaskWorkspaceMountAccess,
 } from './task-route-handler.js';
-import { buildNotebookTaskRunState, refreshNotebookTaskRunLease } from './notebook-task/task-run-coordination.js';
+import {
+  acquireNotebookTaskRunLease,
+  buildNotebookTaskRunState,
+  refreshNotebookTaskRunLease,
+} from './notebook-task/task-run-coordination.js';
 import { ACTIVE_RUNS_BY_TASK, ARTIFACTS_BY_TASK, TASKS_BY_PROJECT } from './notebook-task/task-runtime-state.js';
 import { notebookTaskArtifactsCollection, notebookTasksCollection } from './notebook-task/task-store.js';
 
@@ -70,11 +74,13 @@ describe('task-route-handler workspace access', () => {
   it('keeps blocking terminal creation when shared run state still exists', async () => {
     const cache = new InMemoryCache();
     ACTIVE_RUNS_BY_TASK.add('task_terminal_busy');
-    await refreshNotebookTaskRunLease(cache, buildNotebookTaskRunState({
+    const state = buildNotebookTaskRunState({
       taskId: 'task_terminal_busy',
       runId: 'run_1',
       startedAt: '2026-04-02T08:00:00.000Z',
-    }));
+    });
+    await expect(acquireNotebookTaskRunLease(cache, state)).resolves.toBe(true);
+    await expect(refreshNotebookTaskRunLease(cache, state)).resolves.toBe(true);
 
     await expect(hasBlockingTaskRunForTerminal(cache, 'task_terminal_busy')).resolves.toBe(true);
     expect(ACTIVE_RUNS_BY_TASK.has('task_terminal_busy')).toBe(true);

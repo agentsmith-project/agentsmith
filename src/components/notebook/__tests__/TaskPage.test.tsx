@@ -46,6 +46,10 @@ const {
   latestTaskHeaderPropsRef,
   latestTaskTerminalPanelPropsRef,
   latestUseTaskArtifactsArgsRef,
+  latestUseTaskArgsRef,
+  latestUseTaskMessagesArgsRef,
+  mockUseTaskRefetch,
+  mockUseTaskMessagesRefetch,
   mockTaskApiCancelRun,
   mockTaskApiListTerminalSessions,
   mockTaskApiCloseTerminalSession,
@@ -64,6 +68,10 @@ const {
   latestTaskHeaderPropsRef: { current: null as any },
   latestTaskTerminalPanelPropsRef: { current: null as any },
   latestUseTaskArtifactsArgsRef: { current: null as any },
+  latestUseTaskArgsRef: { current: null as any },
+  latestUseTaskMessagesArgsRef: { current: null as any },
+  mockUseTaskRefetch: vi.fn(),
+  mockUseTaskMessagesRefetch: vi.fn(),
   mockTaskApiCancelRun: vi.fn(),
   mockTaskApiListTerminalSessions: vi.fn(),
   mockTaskApiCloseTerminalSession: vi.fn(),
@@ -177,14 +185,22 @@ let mockTaskHookState = {
 
 // Mock all the hooks
 vi.mock('@/lib/hooks/use-task', () => ({
-  useTask: () => ({
-    data: mockTaskHookState.task,
-    isLoading: mockTaskHookState.taskLoading,
-  }),
-  useTaskMessages: () => ({
-    data: mockTaskHookState.messages,
-    isLoading: false,
-  }),
+  useTask: (...args: any[]) => {
+    latestUseTaskArgsRef.current = args;
+    return ({
+      data: mockTaskHookState.task,
+      isLoading: mockTaskHookState.taskLoading,
+      refetch: mockUseTaskRefetch,
+    });
+  },
+  useTaskMessages: (...args: any[]) => {
+    latestUseTaskMessagesArgsRef.current = args;
+    return ({
+      data: mockTaskHookState.messages,
+      isLoading: false,
+      refetch: mockUseTaskMessagesRefetch,
+    });
+  },
   useTaskArtifacts: (...args: any[]) => {
     latestUseTaskArtifactsArgsRef.current = args;
     return ({
@@ -449,10 +465,16 @@ describe('TaskPage', () => {
     mockTaskArtifactsRefetch.mockReset();
     mockTaskArtifactsRefetch.mockResolvedValue({ data: mockArtifacts });
     mockTaskArtifactsIsRefetching.value = false;
+    mockUseTaskRefetch.mockReset();
+    mockUseTaskRefetch.mockResolvedValue({ data: mockTask });
+    mockUseTaskMessagesRefetch.mockReset();
+    mockUseTaskMessagesRefetch.mockResolvedValue({ data: mockMessages });
     mockSendMessageIsPending.value = false;
     latestTaskSseOptionsRef.current = null;
     latestConversationPanelPropsRef.current = null;
     latestTaskHeaderPropsRef.current = null;
+    latestUseTaskArgsRef.current = null;
+    latestUseTaskMessagesArgsRef.current = null;
     latestUseTaskArtifactsArgsRef.current = null;
     mockPush.mockReset();
   });
@@ -2726,6 +2748,199 @@ describe('TaskPage', () => {
       await user.click(screen.getByText('Cancel Active Run'));
       expect(mockTaskApiCancelRun).toHaveBeenCalledWith(mockWorkspaceId, mockProjectId, mockTaskId);
       expect(mockToastInfo).toHaveBeenCalled();
+    });
+
+    it('reconciles task truth after cancel is accepted', async () => {
+      const user = userEvent.setup();
+      await renderComponentReady();
+
+      await user.click(screen.getByText('Send Message'));
+      expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('true');
+
+      await user.click(screen.getByText('Cancel Active Run'));
+
+      await waitFor(() => {
+        expect(mockUseTaskRefetch).toHaveBeenCalled();
+        expect(mockUseTaskMessagesRefetch).toHaveBeenCalled();
+        expect(mockTaskArtifactsRefetch).toHaveBeenCalled();
+        expect(mockTaskApiListTraces).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+          expect.objectContaining({ page_size: 500 }),
+        );
+      });
+    });
+
+    it('queues input behind backend run truth on re-entry and flushes it after the task goes idle', async () => {
+      const user = userEvent.setup();
+      mockTaskHookState.task = { ...mockTask, run_state: 'running' };
+
+      const view = await renderComponentReady();
+
+      await user.click(screen.getByText('Send Message'));
+
+      expect(mockSendMessageMutateAsync).not.toHaveBeenCalled();
+      expect(screen.getByTestId('conversation-pending-count')).toHaveTextContent('1');
+
+      mockTaskHookState.task = { ...mockTask, run_state: 'idle' };
+      view.rerender(
+        <QueryClientProvider client={view.queryClient}>
+          <TaskPage
+            workspaceId={mockWorkspaceId}
+            projectId={mockProjectId}
+            taskId={mockTaskId}
+            canCreateTask={true}
+            canUpdateTask={true}
+            canDeleteTask={true}
+            canUseTerminal={true}
+          />
+        </QueryClientProvider>,
+      );
+
+      await waitFor(() => {
+        expect(mockSendMessageMutateAsync).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it('clears a cancelled run after authoritative idle recovery and does not re-enter the pending loop on refresh', async () => {
+      mockSendMessageMutateAsync
+        .mockResolvedValueOnce({
+          id: 'new-msg-id',
+          role: 'agent',
+          content: '',
+          created_at: '2026-03-06T04:00:00.000Z',
+        })
+        .mockResolvedValueOnce({
+          id: 'queued-msg-id',
+          role: 'agent',
+          content: '',
+          created_at: '2026-03-06T04:00:02.000Z',
+        });
+
+      const view = await renderComponentReady();
+      const user = userEvent.setup();
+
+      await user.click(screen.getByText('Send Message'));
+      await user.click(screen.getByText('Send Message'));
+      await waitFor(() => {
+        expect(screen.getByTestId('conversation-pending-count')).toHaveTextContent('1');
+      });
+
+      await user.click(screen.getByText('Cancel Active Run'));
+      await waitFor(() => {
+        expect(mockTaskApiCancelRun).toHaveBeenCalledTimes(1);
+      });
+
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'idle',
+        last_activity_at: '2026-03-06T04:00:03.000Z',
+      };
+      view.rerender(
+        <QueryClientProvider client={view.queryClient}>
+          <TaskPage
+            workspaceId={mockWorkspaceId}
+            projectId={mockProjectId}
+            taskId={mockTaskId}
+            canCreateTask={true}
+            canUpdateTask={true}
+            canDeleteTask={true}
+            canUseTerminal={true}
+          />
+        </QueryClientProvider>,
+      );
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1_100));
+      });
+
+      await waitFor(() => {
+        expect(mockSendMessageMutateAsync).toHaveBeenCalledTimes(2);
+        expect(mockSendMessageMutateAsync).toHaveBeenNthCalledWith(2, {
+          workspaceId: mockWorkspaceId,
+          projectId: mockProjectId,
+          taskId: mockTaskId,
+          data: {
+            task_id: mockTaskId,
+            content: 'Test message',
+          },
+        });
+        expect(screen.getByTestId('conversation-pending-count')).toHaveTextContent('0');
+        expect(latestConversationPanelPropsRef.current.streamingMessageId).toBe('queued-msg-id');
+      });
+
+      view.rerender(
+        <QueryClientProvider client={view.queryClient}>
+          <TaskPage
+            workspaceId={mockWorkspaceId}
+            projectId={mockProjectId}
+            taskId={mockTaskId}
+            canCreateTask={true}
+            canUpdateTask={true}
+            canDeleteTask={true}
+            canUseTerminal={true}
+          />
+        </QueryClientProvider>,
+      );
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1_100));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('false');
+        expect(latestConversationPanelPropsRef.current.streamingMessageId).toBeNull();
+        expect(screen.getByTestId('conversation-pending-count')).toHaveTextContent('0');
+        expect(mockSendMessageMutateAsync).toHaveBeenCalledTimes(2);
+      });
+    }, 12_000);
+
+    it.each([
+      {
+        terminalTraceEvent: {
+          id: 'trace_run_user_cancel',
+          task_id: mockTaskId,
+          message_id: 'new-msg-id',
+          run_id: 'run-1',
+          seq: 12,
+          at: '2026-03-06T04:00:01.000Z',
+          category: 'warning',
+          phase: 'end',
+          status: 'cancelled',
+          name: 'run.user_cancel',
+          summary: 'Run cancelled by request',
+        },
+      },
+      {
+        terminalTraceEvent: {
+          id: 'trace_execution_terminal',
+          task_id: mockTaskId,
+          message_id: 'new-msg-id',
+          run_id: 'run-1',
+          seq: 13,
+          at: '2026-03-06T04:00:02.000Z',
+          category: 'error',
+          phase: 'end',
+          status: 'error',
+          name: 'execution.terminal',
+          summary: 'Run terminated by backend truth',
+        },
+      },
+    ])('clears local busy state when $terminalTraceEvent.name arrives as terminal trace truth', async ({ terminalTraceEvent }) => {
+      const user = userEvent.setup();
+      await renderComponentReady();
+
+      await user.click(screen.getByText('Send Message'));
+      expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('true');
+      expect(screen.getByTestId('task-header-busy')).toHaveTextContent('true');
+
+      await act(async () => {
+        latestTaskSseOptionsRef.current?.onTraceEvent?.(terminalTraceEvent);
+      });
+
+      expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('false');
+      expect(screen.getByTestId('task-header-busy')).toHaveTextContent('false');
     });
 
     it('does not clear streaming state immediately during an idle gap after send', async () => {

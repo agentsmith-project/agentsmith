@@ -4,6 +4,7 @@ import {
   acquireNotebookTaskRunLease,
   buildNotebookTaskRunState,
   clearNotebookTaskRunCoordination,
+  finalizeNotebookTaskRun,
   getNotebookTaskRunCancellationRequest,
   getNotebookTaskRunState,
   isNotebookTaskRunActive,
@@ -68,6 +69,75 @@ describe('notebook task run coordination', () => {
       task_id: 'task_2',
       run_id: 'run_a',
       actor_user_id: 'user_1',
+    });
+  });
+
+  it('clears stale cancel state after run closure so the next shared lease can take over cleanly', async () => {
+    const cache = new InMemoryCache();
+    const initial = buildNotebookTaskRunState({
+      taskId: 'task_3',
+      runId: 'run_initial',
+      startedAt: '2026-03-18T03:00:00.000Z',
+    });
+    const replacement = buildNotebookTaskRunState({
+      taskId: 'task_3',
+      runId: 'run_replacement',
+      startedAt: '2026-03-18T03:00:05.000Z',
+    });
+
+    await expect(acquireNotebookTaskRunLease(cache, initial)).resolves.toBe(true);
+    await requestNotebookTaskRunCancellation(cache, {
+      task_id: 'task_3',
+      run_id: 'run_initial',
+      requested_at: '2026-03-18T03:00:03.000Z',
+      actor_user_id: 'user_recovery',
+    });
+
+    await clearNotebookTaskRunCoordination(cache, 'task_3');
+
+    await expect(isNotebookTaskRunActive(cache, 'task_3')).resolves.toBe(false);
+    await expect(getNotebookTaskRunCancellationRequest(cache, 'task_3')).resolves.toBeNull();
+    await expect(acquireNotebookTaskRunLease(cache, replacement)).resolves.toBe(true);
+    await expect(getNotebookTaskRunState(cache, 'task_3')).resolves.toMatchObject({
+      task_id: 'task_3',
+      run_id: 'run_replacement',
+    });
+  });
+
+  it('does not clear a replacement lease when an older run finalizes late', async () => {
+    const cache = new InMemoryCache();
+    const original = buildNotebookTaskRunState({
+      taskId: 'task_4',
+      runId: 'run_old',
+      startedAt: '2026-03-18T04:00:00.000Z',
+    });
+    const replacement = buildNotebookTaskRunState({
+      taskId: 'task_4',
+      runId: 'run_new',
+      startedAt: '2026-03-18T04:01:00.000Z',
+    });
+
+    await expect(acquireNotebookTaskRunLease(cache, original)).resolves.toBe(true);
+    await clearNotebookTaskRunCoordination(cache, 'task_4');
+    await expect(acquireNotebookTaskRunLease(cache, replacement)).resolves.toBe(true);
+    await requestNotebookTaskRunCancellation(cache, {
+      task_id: 'task_4',
+      run_id: 'run_new',
+      requested_at: '2026-03-18T04:01:05.000Z',
+      actor_user_id: 'user_2',
+    });
+
+    await expect(finalizeNotebookTaskRun(cache, {
+      taskId: 'task_4',
+      runId: 'run_old',
+    })).resolves.toBe(false);
+    await expect(getNotebookTaskRunState(cache, 'task_4')).resolves.toMatchObject({
+      task_id: 'task_4',
+      run_id: 'run_new',
+    });
+    await expect(getNotebookTaskRunCancellationRequest(cache, 'task_4')).resolves.toMatchObject({
+      task_id: 'task_4',
+      run_id: 'run_new',
     });
   });
 });

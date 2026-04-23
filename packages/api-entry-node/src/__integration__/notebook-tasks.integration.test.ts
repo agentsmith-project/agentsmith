@@ -8,10 +8,12 @@ import {
   acquireNotebookTaskRunLease,
   buildNotebookTaskRunState,
   getNotebookTaskRunCancellationRequest,
+  getNotebookTaskRunState,
+  requestNotebookTaskRunCancellation,
 } from '../notebook-task/task-run-coordination.js';
 import type { TaskRecord } from '../notebook-task/task-models.js';
 import { getTasks } from '../notebook-task/task-runtime-state.js';
-import { notebookTasksCollection } from '../notebook-task/task-store.js';
+import { notebookTaskMessagesCollection, notebookTasksCollection } from '../notebook-task/task-store.js';
 import { issueInternalTicket } from '../internal-ticket-store.js';
 import { NotebookTerminalService } from '../notebook-terminal-service.js';
 import {
@@ -115,6 +117,102 @@ async function createFileLibrary(
   );
   expect(createLibraryRes.status).toBe(201);
   return (await createLibraryRes.json()) as { id: string; name: string };
+}
+
+async function createExternalNotebookExecutionAgent(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+  name: string,
+  options?: {
+    workspaceId?: string;
+    projectId?: string;
+    endpointBaseUrl?: string;
+  },
+): Promise<{ agentId: string; endpointId: string }> {
+  const workspaceId = options?.workspaceId ?? 'ws_default';
+  const projectId = options?.projectId ?? 'proj_1';
+  const credential = await deps.endpointResourceService.createCredential(workspaceId, projectId, {
+    name: `${name}-credential`,
+    value: 'sk-test',
+  });
+  const endpoint = await deps.endpointResourceService.createEndpoint(workspaceId, projectId, {
+    name: `${name}-endpoint`,
+    model: 'gpt-5-codex',
+    type: 'openai',
+    mode: 'openai',
+    base_url: options?.endpointBaseUrl ?? 'https://example.com/v1',
+    credential_ref: credential.id,
+    model_profile: {
+      max_context_tokens: 204800,
+      max_output_tokens: 128000,
+      supports_file: false,
+      supports_tool_call: true,
+      supports_reasoning: false,
+      price_input_per_1m: 0,
+      price_output_per_1m: 0,
+      cache_read_discount_ratio: 0,
+      cache_write_discount_ratio: 0,
+    },
+  });
+  const agent = await deps.agentResourceService.createAgent(workspaceId, projectId, {
+    name,
+    mode: 'external',
+    interaction_kind: 'notebook',
+    status: 'enabled',
+    presence: 'online',
+    config: {
+      _external_key_source: 'generated',
+    } as never,
+    owner_id: 'user_test',
+    visibility: 'private',
+    execution_preferences_json: {
+      notebook: {
+        endpoint_id: endpoint.id,
+        wire_api: 'chat',
+        model: 'gpt-5-codex',
+      },
+    },
+  });
+  await deps.agentResourceService.markAgentConnected(agent.id, {
+    remote_ip: '127.0.0.1',
+    protocol_version: '1.0',
+    last_pong_at: new Date().toISOString(),
+  });
+  return {
+    agentId: agent.id,
+    endpointId: endpoint.id,
+  };
+}
+
+async function createNotebookTaskForAgent(
+  baseUrl: string,
+  input: {
+    title: string;
+    agentId: string;
+    workspaceFileLibraryId: string;
+    workspaceId?: string;
+    projectId?: string;
+    authToken?: string;
+  },
+): Promise<{ id: string }> {
+  const workspaceId = input.workspaceId ?? 'ws_default';
+  const projectId = input.projectId ?? 'proj_1';
+  const authToken = input.authToken ?? 'test-token';
+  const createTaskRes = await apiFetchWithToken(
+    baseUrl,
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks`,
+    authToken,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: input.title,
+        agent_id: input.agentId,
+        workspace_file_library_id: input.workspaceFileLibraryId,
+      }),
+    },
+  );
+  expect(createTaskRes.status).toBe(201);
+  return await createTaskRes.json() as { id: string };
 }
 
 async function createActiveExternalTaskForTerminal(
@@ -1080,6 +1178,371 @@ describe('api-entry-node notebook task routes', () => {
       error_code: 'TASK_STREAM_CONFLICT',
       message: 'task_stream_conflict',
     });
+  });
+
+  it('clears shared run coordination when assistant message persistence fails before dispatch', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    const originalUpsert = deps.docStore.upsert.bind(deps.docStore);
+    let assistantPersistFailed = false;
+    deps.docStore.upsert = async (collection, id, doc) => {
+      if (
+        !assistantPersistFailed
+        && collection === notebookTaskMessagesCollection('ws_default')
+        && typeof doc === 'object'
+        && doc !== null
+        && !Array.isArray(doc)
+        && (doc as { role?: unknown }).role === 'agent'
+        && (doc as { content?: unknown }).content === ''
+      ) {
+        assistantPersistFailed = true;
+        throw new Error('assistant_message_persist_failed');
+      }
+      return originalUpsert(collection, id, doc);
+    };
+    let dispatchCalled = false;
+    deps.agentExecutionService.dispatchStreamingRequest = async () => {
+      dispatchCalled = true;
+      throw new Error('dispatch_should_not_start');
+    };
+
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
+      const workspaceLibrary = await createFileLibrary(baseUrl, 'Pre-dispatch Cleanup Workspace');
+      const { agentId } = await createExternalNotebookExecutionAgent(deps, 'pre-dispatch-cleanup-agent');
+      const task = await createNotebookTaskForAgent(baseUrl, {
+        title: 'Pre-dispatch cleanup task',
+        agentId,
+        workspaceFileLibraryId: workspaceLibrary.id,
+      });
+
+      const postMessageRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'user',
+            content: 'run with failing assistant persist',
+          }),
+        },
+      );
+      expect(postMessageRes.status).toBeGreaterThanOrEqual(400);
+      expect(dispatchCalled).toBe(false);
+      await expect(getNotebookTaskRunState(deps.cache, task.id)).resolves.toBeNull();
+
+      const cancelRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+        'test-token',
+        { method: 'POST' },
+      );
+      expect(cancelRes.status).toBe(409);
+      await expect(cancelRes.json()).resolves.toMatchObject({
+        error_code: 'TASK_RUN_NOT_ACTIVE',
+        message: 'task_run_not_active',
+      });
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('honors shared cancel requests before dispatch starts and never opens the execution stream', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    const originalGetEndpoint = deps.endpointResourceService.getEndpoint.bind(deps.endpointResourceService);
+    let releaseEndpointGate: (() => void) | null = null;
+    const endpointGate = new Promise<void>((resolve) => {
+      releaseEndpointGate = resolve;
+    });
+    let endpointRequestObserved: (() => void) | null = null;
+    const endpointRequested = new Promise<void>((resolve) => {
+      endpointRequestObserved = resolve;
+    });
+    deps.endpointResourceService.getEndpoint = async (...args) => {
+      endpointRequestObserved?.();
+      await endpointGate;
+      return originalGetEndpoint(...args);
+    };
+    let dispatchCalls = 0;
+    deps.agentExecutionService.dispatchStreamingRequest = async () => {
+      dispatchCalls += 1;
+      return {
+        requestId: 'req_unexpected_dispatch',
+        cancel: () => undefined,
+        stream: (async function* stream() {
+          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+        })(),
+      };
+    };
+
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
+      const workspaceLibrary = await createFileLibrary(baseUrl, 'Cancel Before Dispatch Workspace');
+      const { agentId } = await createExternalNotebookExecutionAgent(deps, 'cancel-before-dispatch-agent');
+      const task = await createNotebookTaskForAgent(baseUrl, {
+        title: 'Cancel before dispatch task',
+        agentId,
+        workspaceFileLibraryId: workspaceLibrary.id,
+      });
+
+      const postMessageRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'user',
+            content: 'cancel before dispatch starts',
+          }),
+        },
+      );
+      expect(postMessageRes.status).toBe(200);
+      await endpointRequested;
+
+      const cancelRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+        'test-token',
+        { method: 'POST' },
+      );
+      expect(cancelRes.status).toBe(202);
+      await expect(cancelRes.json()).resolves.toMatchObject({
+        status: 'cancelling',
+        task_id: task.id,
+      });
+
+      releaseEndpointGate?.();
+
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        if ((await getNotebookTaskRunState(deps.cache, task.id)) === null) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(dispatchCalls).toBe(0);
+      await expect(getNotebookTaskRunState(deps.cache, task.id)).resolves.toBeNull();
+
+      let tracesBody: { items: Array<{ name?: string; status?: string }> } | null = null;
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const tracesRes = await apiFetchWithToken(
+          baseUrl,
+          `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/traces`,
+          'test-token',
+        );
+        expect(tracesRes.status).toBe(200);
+        tracesBody = (await tracesRes.json()) as { items: Array<{ name?: string; status?: string }> };
+        if (tracesBody.items.some((item) => item.name === 'run.user_cancel' && item.status === 'cancelled')) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(tracesBody?.items.some((item) => item.name === 'run.user_cancel' && item.status === 'cancelled')).toBe(true);
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('treats shared cancel markers as authoritative before dispatch even without a local cancel handle', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    const originalGetEndpoint = deps.endpointResourceService.getEndpoint.bind(deps.endpointResourceService);
+    let releaseEndpointGate: (() => void) | null = null;
+    const endpointGate = new Promise<void>((resolve) => {
+      releaseEndpointGate = resolve;
+    });
+    let endpointRequestObserved: (() => void) | null = null;
+    const endpointRequested = new Promise<void>((resolve) => {
+      endpointRequestObserved = resolve;
+    });
+    deps.endpointResourceService.getEndpoint = async (...args) => {
+      endpointRequestObserved?.();
+      await endpointGate;
+      return originalGetEndpoint(...args);
+    };
+    let dispatchCalls = 0;
+    deps.agentExecutionService.dispatchStreamingRequest = async () => {
+      dispatchCalls += 1;
+      return {
+        requestId: 'req_shared_marker_should_not_dispatch',
+        cancel: () => undefined,
+        stream: (async function* stream() {
+          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+        })(),
+      };
+    };
+
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
+      const workspaceLibrary = await createFileLibrary(baseUrl, 'Shared Marker Before Dispatch Workspace');
+      const { agentId } = await createExternalNotebookExecutionAgent(deps, 'shared-marker-before-dispatch-agent');
+      const task = await createNotebookTaskForAgent(baseUrl, {
+        title: 'Shared marker before dispatch task',
+        agentId,
+        workspaceFileLibraryId: workspaceLibrary.id,
+      });
+
+      const postMessageRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'user',
+            content: 'shared marker should cancel pre-dispatch',
+          }),
+        },
+      );
+      expect(postMessageRes.status).toBe(200);
+      await endpointRequested;
+
+      const activeRun = await getNotebookTaskRunState(deps.cache, task.id);
+      expect(activeRun?.run_id).toBeTruthy();
+      await requestNotebookTaskRunCancellation(deps.cache, {
+        task_id: task.id,
+        run_id: activeRun?.run_id ?? 'missing_run_id',
+        requested_at: new Date().toISOString(),
+        actor_user_id: 'user_test',
+      });
+      await expect(getNotebookTaskRunCancellationRequest(deps.cache, task.id)).resolves.toMatchObject({
+        task_id: task.id,
+        run_id: activeRun?.run_id,
+        actor_user_id: 'user_test',
+      });
+
+      releaseEndpointGate?.();
+
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        if ((await getNotebookTaskRunState(deps.cache, task.id)) === null) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+
+      expect(dispatchCalls).toBe(0);
+      await expect(getNotebookTaskRunState(deps.cache, task.id)).resolves.toBeNull();
+
+      let tracesBody: { items: Array<{ name?: string; status?: string }> } | null = null;
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const tracesRes = await apiFetchWithToken(
+          baseUrl,
+          `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/traces`,
+          'test-token',
+        );
+        expect(tracesRes.status).toBe(200);
+        tracesBody = (await tracesRes.json()) as { items: Array<{ name?: string; status?: string }> };
+        if (tracesBody.items.some((item) => item.name === 'run.user_cancel' && item.status === 'cancelled')) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+
+      expect(tracesBody?.items.some((item) => item.name === 'run.user_cancel' && item.status === 'cancelled')).toBe(true);
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('releases shared run_state before slow post-run audit writes complete', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    const originalUpsert = deps.docStore.upsert.bind(deps.docStore);
+    let releaseCompletedAudit: (() => void) | null = null;
+    const completedAuditGate = new Promise<void>((resolve) => {
+      releaseCompletedAudit = resolve;
+    });
+    let completedAuditObserved: (() => void) | null = null;
+    const completedAuditStarted = new Promise<void>((resolve) => {
+      completedAuditObserved = resolve;
+    });
+    deps.docStore.upsert = async (collection, id, doc) => {
+      if (
+        collection === 'ws_default_project_audit_events'
+        && typeof doc === 'object'
+        && doc !== null
+        && !Array.isArray(doc)
+        && (doc as { action?: unknown }).action === 'notebook.task.run.completed'
+      ) {
+        completedAuditObserved?.();
+        await completedAuditGate;
+      }
+      return originalUpsert(collection, id, doc);
+    };
+    deps.agentExecutionService.dispatchStreamingRequest = async () => ({
+      requestId: 'req_completed_before_audit',
+      cancel: () => undefined,
+      stream: (async function* stream() {
+        yield { type: 'done', finish_reason: 'stop', usage_tokens: 3 } as const;
+      })(),
+    });
+
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
+      const workspaceLibrary = await createFileLibrary(baseUrl, 'Slow Audit Coordination Workspace');
+      const { agentId } = await createExternalNotebookExecutionAgent(deps, 'slow-audit-coordination-agent');
+      const task = await createNotebookTaskForAgent(baseUrl, {
+        title: 'Slow audit coordination task',
+        agentId,
+        workspaceFileLibraryId: workspaceLibrary.id,
+      });
+
+      const postMessageRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'user',
+            content: 'finish quickly but hold audit',
+          }),
+        },
+      );
+      expect(postMessageRes.status).toBe(200);
+      await completedAuditStarted;
+
+      const taskRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
+        'test-token',
+      );
+      expect(taskRes.status).toBe(200);
+      await expect(taskRes.json()).resolves.toMatchObject({
+        id: task.id,
+        run_state: 'idle',
+      });
+
+      const cancelRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+        'test-token',
+        { method: 'POST' },
+      );
+      expect(cancelRes.status).toBe(409);
+      await expect(cancelRes.json()).resolves.toMatchObject({
+        error_code: 'TASK_RUN_NOT_ACTIVE',
+        message: 'task_run_not_active',
+      });
+
+      releaseCompletedAudit?.();
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
   });
 
   it('runs notebook task message through external execution service and enforces single active run per task', async () => {

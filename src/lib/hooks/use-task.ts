@@ -8,6 +8,8 @@ import {
   useQuery,
   useMutation,
   useQueryClient,
+  type Query,
+  type UseQueryOptions,
   type UseQueryResult,
 } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -46,18 +48,42 @@ export function useTasks(
 /**
  * Hook to query a single task
  */
+type TaskDetailQueryKey = ReturnType<typeof queryKeys.tasks.detail>;
+type TaskDetailQuery = Query<Task, Error, Task, TaskDetailQueryKey>;
+
+export interface UseTaskOptions {
+  refetchInterval?:
+    | number
+    | false
+    | ((query: TaskDetailQuery) => number | false | undefined);
+  refetchIntervalInBackground?: UseQueryOptions<
+    Task,
+    Error,
+    Task,
+    TaskDetailQueryKey
+  >['refetchIntervalInBackground'];
+  refetchOnWindowFocus?:
+    | boolean
+    | 'always'
+    | ((query: TaskDetailQuery) => boolean | 'always');
+}
+
 export function useTask(
   workspaceId: string,
   projectId: string,
   taskId: string,
+  options?: UseTaskOptions,
 ): UseQueryResult<Task> {
   const taskAPI = new TaskAPI(getApiClient());
 
-  return useQuery<Task>({
+  return useQuery<Task, Error, Task, ReturnType<typeof queryKeys.tasks.detail>>({
     queryKey: queryKeys.tasks.detail(workspaceId, projectId, taskId),
     queryFn: () => taskAPI.get(workspaceId, projectId, taskId),
     enabled: !!workspaceId && !!projectId && !!taskId,
     retry: false, // Don't retry on 404
+    refetchInterval: options?.refetchInterval,
+    refetchIntervalInBackground: options?.refetchIntervalInBackground,
+    refetchOnWindowFocus: options?.refetchOnWindowFocus,
   });
 }
 

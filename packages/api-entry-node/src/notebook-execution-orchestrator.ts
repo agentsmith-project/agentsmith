@@ -210,8 +210,8 @@ export async function runNotebookTaskWithExecutionAgent(input: {
   updateTaskActivity: (task: NotebookTaskRecord) => void;
   emitTaskEvent: (taskId: string, payload: ExecutionEventPayload) => void;
   onDispatched?: (args: { taskId: string; runId: string; requestId: string; cancel: () => void }) => void;
-  onFinalize: (taskId: string) => void;
-  isCancellationRequested?: () => boolean;
+  onFinalize: (taskId: string, runId: string) => void | Promise<void>;
+  isCancellationRequested?: () => boolean | Promise<boolean>;
   debugLog: (message: string, extra?: Record<string, unknown>) => void;
   taskCollections: {
     tasks: string;
@@ -255,6 +255,14 @@ export async function runNotebookTaskWithExecutionAgent(input: {
   let requestExecutionId: string | undefined;
   let keepaliveTimer: NodeJS.Timeout | undefined;
   let sawCancelledTerminalTrace = false;
+  const throwIfCancellationRequested = async (): Promise<void> => {
+    if (await isCancellationRequested?.() !== true) {
+      return;
+    }
+    throw Object.assign(new Error('user_cancel_requested'), {
+      code: 'AGENT_CANCELLED',
+    });
+  };
 
   try {
     const agent = await deps.agentResourceService.getAgent(task.workspace_id, task.project_id, agentId);
@@ -395,6 +403,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       ttlMs: 8 * 60 * 60 * 1000,
       maxUses: 500,
     });
+    await throwIfCancellationRequested();
     const dispatched = await deps.agentExecutionService.dispatchStreamingRequest({
       workspaceId: task.workspace_id,
       projectId: task.project_id,
@@ -635,7 +644,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         error_code: terminalErrorCode ?? null,
       });
     }
-    const cancellationRequested = isCancellationRequested?.() === true;
+    const cancellationRequested = await isCancellationRequested?.() === true;
     if (cancellationRequested && !sawCancelledTerminalTrace) {
       const userCancelledTrace = buildTaskTraceEvent({
         taskId: task.id,
@@ -670,50 +679,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       });
     }
     const durationMs = Math.max(0, Date.now() - startedAtMs);
-    await writeProjectAuditEvent(deps, {
-      workspaceId: task.workspace_id,
-      projectId: task.project_id,
-      actor: { type: 'agent', id: agentId },
-      action:
-        terminalResult === 'ok'
-          ? 'notebook.task.run.completed'
-          : 'notebook.task.run.failed',
-      result: terminalResult,
-      requestId: requestExecutionId,
-      resourceType: 'notebook_task',
-      resourceId: task.id,
-      errorCode: terminalErrorCode,
-      metadata: {
-        run_id: runId,
-        endpoint_id: endpointIdForLog,
-        duration_ms: durationMs,
-        usage_tokens: usageTokensTotal,
-      },
-    });
-    await writeProjectUsageFact(deps, {
-      workspaceId: task.workspace_id,
-      projectId: task.project_id,
-      resourceType: 'notebook_task',
-      resourceId: task.id,
-      requestId: requestExecutionId,
-      durationMs,
-      tokensTotal: usageTokensTotal,
-      result: terminalResult,
-      errorCode: terminalErrorCode,
-      metadata: { run_id: runId, agent_id: agentId, endpoint_id: endpointIdForLog },
-    });
-    await writeProjectUsageFact(deps, {
-      workspaceId: task.workspace_id,
-      projectId: task.project_id,
-      resourceType: 'agent',
-      resourceId: agentId,
-      endUserId: user.id,
-      requestId: requestExecutionId,
-      durationMs,
-      result: terminalResult,
-      errorCode: terminalErrorCode,
-      metadata: { run_id: runId, task_id: task.id, endpoint_id: endpointIdForLog },
-    });
     updateTaskActivity(task);
     assistantMessage.content = buildTerminalAssistantFallbackContent({
       terminalResult,
@@ -730,7 +695,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       reached_terminal: reachedTerminal,
     });
     // Finalize active run before emitting task_update so run_state is authoritative (idle) on the final update.
-    onFinalize(taskId);
+    await onFinalize(taskId, runId);
     emitTaskEvent(taskId, { type: 'message', data: assistantMessage });
     emitTaskEvent(taskId, { type: 'task_update', data: task });
     try {
@@ -742,6 +707,76 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         run_id: runId,
         message_id: assistantMessage.id,
         error: error instanceof Error ? error.message : 'persist_failed',
+      });
+    }
+    try {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        actor: { type: 'agent', id: agentId },
+        action:
+          terminalResult === 'ok'
+            ? 'notebook.task.run.completed'
+            : 'notebook.task.run.failed',
+        result: terminalResult,
+        requestId: requestExecutionId,
+        resourceType: 'notebook_task',
+        resourceId: task.id,
+        errorCode: terminalErrorCode,
+        metadata: {
+          run_id: runId,
+          endpoint_id: endpointIdForLog,
+          duration_ms: durationMs,
+          usage_tokens: usageTokensTotal,
+        },
+      });
+    } catch (error) {
+      debugLog('task_run_completion_audit_failed', {
+        task_id: task.id,
+        run_id: runId,
+        error: error instanceof Error ? error.message : 'audit_failed',
+      });
+    }
+    try {
+      await writeProjectUsageFact(deps, {
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        resourceType: 'notebook_task',
+        resourceId: task.id,
+        requestId: requestExecutionId,
+        durationMs,
+        tokensTotal: usageTokensTotal,
+        result: terminalResult,
+        errorCode: terminalErrorCode,
+        metadata: { run_id: runId, agent_id: agentId, endpoint_id: endpointIdForLog },
+      });
+    } catch (error) {
+      debugLog('task_run_usage_failed', {
+        task_id: task.id,
+        run_id: runId,
+        resource_type: 'notebook_task',
+        error: error instanceof Error ? error.message : 'usage_failed',
+      });
+    }
+    try {
+      await writeProjectUsageFact(deps, {
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        resourceType: 'agent',
+        resourceId: agentId,
+        endUserId: user.id,
+        requestId: requestExecutionId,
+        durationMs,
+        result: terminalResult,
+        errorCode: terminalErrorCode,
+        metadata: { run_id: runId, task_id: task.id, endpoint_id: endpointIdForLog },
+      });
+    } catch (error) {
+      debugLog('task_run_usage_failed', {
+        task_id: task.id,
+        run_id: runId,
+        resource_type: 'agent',
+        error: error instanceof Error ? error.message : 'usage_failed',
       });
     }
   }

@@ -101,6 +101,34 @@ export function mergeTerminalTabStatus(
   return mapListedTerminalSessionStatusToTabStatus(nextStatus);
 }
 
+function isTerminalRunTraceEvent(event: {
+  name: string;
+  phase?: string | null;
+  status?: string | null;
+}) {
+  if (event.name === "run.user_cancel") return true;
+  if (event.name === "execution.terminal") {
+    return (
+      event.phase === "end" ||
+      event.status === "success" ||
+      event.status === "error" ||
+      event.status === "cancelled"
+    );
+  }
+  if (event.name === "run.summary") {
+    return event.phase === "end";
+  }
+  if (event.name === "run.lifecycle") {
+    return (
+      event.phase === "end" &&
+      (event.status === "success" ||
+        event.status === "error" ||
+        event.status === "cancelled")
+    );
+  }
+  return false;
+}
+
 function getTaskTerminalWorkspaceStorageKey(
   workspaceId: string,
   projectId: string,
@@ -319,10 +347,29 @@ export function TaskPage({
   const taskAPI = React.useMemo(() => new TaskAPI(getApiClient()), []);
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
   const pendingFlushInFlightRef = React.useRef(false);
-  const { data: task, isLoading: taskLoading } = useTask(
+  const [runtimeReconciliationActive, setRuntimeReconciliationActive] =
+    React.useState(false);
+  const sendMessage = useSendMessage();
+  const updateTask = useUpdateTask();
+  const { data: task, isLoading: taskLoading, refetch: refetchTask } = useTask(
     workspaceId,
     projectId,
     taskId,
+    {
+      refetchInterval: (query) => {
+        const currentTask = query.state.data as Task | undefined;
+        return (
+          currentTask?.run_state === "running" ||
+            sendMessage.isPending ||
+            isAgentTurnRunning ||
+            runtimeReconciliationActive
+        )
+          ? 5000
+          : false;
+      },
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
+    },
   );
   const { data: taskAgent } = useQuery({
     queryKey: ["task-agent", workspaceId, projectId, task?.agent_id],
@@ -331,10 +378,16 @@ export function TaskPage({
     staleTime: 10_000,
     retry: false,
   });
-  const { data: messages } = useTaskMessages(workspaceId, projectId, taskId);
-  const sendMessage = useSendMessage();
+  const { data: messages, refetch: refetchMessages } = useTaskMessages(
+    workspaceId,
+    projectId,
+    taskId,
+  );
   const artifactsRefreshInterval = (
-    task?.run_state === "running" || sendMessage.isPending || isAgentTurnRunning
+    task?.run_state === "running" ||
+    sendMessage.isPending ||
+    isAgentTurnRunning ||
+    runtimeReconciliationActive
   ) ? 5000 : false;
   const {
     data: artifacts,
@@ -344,20 +397,6 @@ export function TaskPage({
     refetchInterval: artifactsRefreshInterval,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
-  });
-  const updateTask = useUpdateTask();
-  const cancelActiveRun = useMutation({
-    mutationFn: () => taskAPI.cancelRun(workspaceId, projectId, taskId),
-    onSuccess: () => {
-      setLastRunActionSummary(tConversation("run_cancel_requested"));
-      toast.info(tConversation("run_cancel_requested"));
-    },
-    onError: (err) => {
-      handleError(err, {
-        logContext: "TaskPage.cancelActiveRun",
-        showToast: true,
-      });
-    },
   });
 
   // Query keys for this task — used by both useQuery hooks and SSE cache writes
@@ -476,6 +515,84 @@ export function TaskPage({
     handleError,
   });
 
+  const reconcileTaskRuntime = React.useCallback(
+    async (reason: string) => {
+      setRuntimeReconciliationActive(true);
+      const afterId = lastTraceEventIdRef.current;
+      appendSseDebugEvent(
+        {
+          at: new Date().toISOString(),
+          phase: "trace_reconcile_start",
+          summary: `reason=${reason} mode=${afterId ? "after_id" : "refetch"} after_id=${afterId ?? "none"}`,
+        },
+        activeTraceMessageId,
+      );
+      await Promise.allSettled([
+        refetchTask(),
+        refetchMessages(),
+        refetchArtifacts(),
+      ]);
+      try {
+        const resp = await taskAPI.listTraces(workspaceId, projectId, taskId, {
+          ...(afterId ? { after_id: afterId } : {}),
+          page_size: 500,
+        });
+        appendSseDebugEvent(
+          {
+            at: new Date().toISOString(),
+            phase: "trace_reconcile_done",
+            summary: `reason=${reason} items=${resp.items.length}`,
+          },
+          activeTraceMessageId,
+        );
+        mergeTraceEvents(resp.items);
+      } catch (err) {
+        setRealtimeFailureCode("TRACE_RECONCILE_FAILED");
+        setRealtimeFailureMessage(
+          err instanceof Error ? err.message : "Task trace reconcile failed.",
+        );
+        appendSseDebugEvent(
+          {
+            at: new Date().toISOString(),
+            phase: "trace_reconcile_error",
+            summary: `reason=${reason} task_traces_reconcile_failed`,
+          },
+          activeTraceMessageId,
+        );
+        handleError(err, { logContext: "TaskPage.traceGapFill" });
+      }
+    },
+    [
+      activeTraceMessageId,
+      appendSseDebugEvent,
+      handleError,
+      lastTraceEventIdRef,
+      mergeTraceEvents,
+      projectId,
+      refetchArtifacts,
+      refetchMessages,
+      refetchTask,
+      taskAPI,
+      taskId,
+      workspaceId,
+    ],
+  );
+
+  const cancelActiveRun = useMutation({
+    mutationFn: () => taskAPI.cancelRun(workspaceId, projectId, taskId),
+    onSuccess: () => {
+      setLastRunActionSummary(tConversation("run_cancel_requested"));
+      toast.info(tConversation("run_cancel_requested"));
+      void reconcileTaskRuntime("cancel_request");
+    },
+    onError: (err) => {
+      handleError(err, {
+        logContext: "TaskPage.cancelActiveRun",
+        showToast: true,
+      });
+    },
+  });
+
   React.useEffect(() => {
     if (!(sendMessage.isPending || isAgentTurnRunning)) return;
     const timer = setInterval(() => {
@@ -565,20 +682,17 @@ export function TaskPage({
         mergeTraceEvents([traceEvent]);
         if (
           streamingMessageId === traceEvent.message_id &&
-          ((traceEvent.name === "run.lifecycle" &&
-            traceEvent.phase === "end" &&
-            (traceEvent.status === "success" ||
-              traceEvent.status === "error" ||
-              traceEvent.status === "cancelled")) ||
-            (traceEvent.name === "run.summary" && traceEvent.phase === "end"))
+          isTerminalRunTraceEvent(traceEvent)
         ) {
           setTaskUpdateCountForCurrentTurn(0);
           resetCurrentRunUiState();
+          void reconcileTaskRuntime(traceEvent.name);
         }
       },
       onError: (error) => {
         setTaskUpdateCountForCurrentTurn(0);
         resetCurrentRunUiState();
+        setRuntimeReconciliationActive(true);
         setRealtimeFailureCode(
           typeof error === "object" &&
             error !== null &&
@@ -591,6 +705,12 @@ export function TaskPage({
       },
       onDebug: (event) => appendSseDebugEvent(event, activeTraceMessageId),
       enabled: !!taskId && !taskLoading,
+      watchdogEnabled:
+        task?.run_state === "running" ||
+        sendMessage.isPending ||
+        isAgentTurnRunning ||
+        runtimeReconciliationActive,
+      watchdogTimeoutMs: 20_000,
     });
 
   const previousConnectionStatusRef = React.useRef<
@@ -616,61 +736,13 @@ export function TaskPage({
       prev === "error" ||
       prev === "disconnected"
     ) {
-      const afterId = lastTraceEventIdRef.current;
-      if (!afterId) {
-        appendSseDebugEvent({
-          at: new Date().toISOString(),
-          phase: "trace_reconcile_start",
-          summary: "mode=refetch after_id=none",
-        });
-        resetTraceBackfillState();
-        return;
-      }
-      // Refill only missing trace tail after reconnect to reduce payload size for long tasks.
-      appendSseDebugEvent({
-        at: new Date().toISOString(),
-        phase: "trace_reconcile_start",
-        summary: `mode=after_id after_id=${afterId}`,
-      });
-      void taskAPI
-        .listTraces(workspaceId, projectId, taskId, {
-          after_id: afterId,
-          page_size: 500,
-        })
-        .then((resp) => {
-          setRealtimeFailureCode(null);
-          setRealtimeFailureMessage(null);
-          appendSseDebugEvent({
-            at: new Date().toISOString(),
-            phase: "trace_reconcile_done",
-            summary: `items=${resp.items.length}`,
-          });
-          mergeTraceEvents(resp.items);
-        })
-        .catch((err) => {
-          setRealtimeFailureCode("TRACE_RECONCILE_FAILED");
-          setRealtimeFailureMessage(
-            err instanceof Error ? err.message : "Task trace reconcile failed.",
-          );
-          appendSseDebugEvent({
-            at: new Date().toISOString(),
-            phase: "trace_reconcile_error",
-            summary: "task_traces_reconcile_failed",
-          });
-          handleError(err, { logContext: "TaskPage.traceGapFill" });
-        });
+      resetTraceBackfillState();
+      void reconcileTaskRuntime("stream_recovered");
     }
   }, [
-    appendSseDebugEvent,
     connectionStatus,
-    handleError,
-    lastTraceEventIdRef,
-    mergeTraceEvents,
-    projectId,
     resetTraceBackfillState,
-    taskAPI,
-    taskId,
-    workspaceId,
+    reconcileTaskRuntime,
   ]);
 
   const enqueuePendingMessage = React.useCallback((content: string) => {
@@ -759,6 +831,8 @@ export function TaskPage({
         if (err instanceof ApiError) {
           const errorCode = err.errorCode?.toUpperCase();
           if (errorCode === "TASK_STREAM_CONFLICT") {
+            setRuntimeReconciliationActive(true);
+            void reconcileTaskRuntime("send_conflict");
             if (source === "queue") {
               setPendingMessages((prev) => [
                 createPendingMessage(content),
@@ -798,7 +872,9 @@ export function TaskPage({
       messagesKey,
       projectId,
       queryClient,
+      reconcileTaskRuntime,
       sendMessage,
+      setRuntimeReconciliationActive,
       tConversation,
       taskAgent?.mode,
       taskAgent?.presence,
@@ -815,7 +891,15 @@ export function TaskPage({
       toast.info(tTask("terminal_agent_run_blocked"));
       return;
     }
-    if (isAgentTurnRunning || sendMessage.isPending) {
+    if (
+      isAgentTurnRunning ||
+      sendMessage.isPending ||
+      backendRunActive ||
+      runtimeReconciliationActive
+    ) {
+      if (backendRunActive || runtimeReconciliationActive) {
+        setRuntimeReconciliationActive(true);
+      }
       enqueuePendingMessage(normalized);
       toast.info(tConversation("pending_enqueued"));
       return;
@@ -877,12 +961,49 @@ export function TaskPage({
     task?.run_state,
   ]);
 
+  const authoritativeRunState = task?.run_state ?? null;
+
+  React.useEffect(() => {
+    if (!runtimeReconciliationActive) return;
+    if (authoritativeRunState == null) return;
+    if (authoritativeRunState === "running") return;
+    if (sendMessage.isPending || isAgentTurnRunning || cancelActiveRun.isPending) {
+      return;
+    }
+    setRuntimeReconciliationActive(false);
+  }, [
+    cancelActiveRun.isPending,
+    isAgentTurnRunning,
+    runtimeReconciliationActive,
+    sendMessage.isPending,
+    authoritativeRunState,
+  ]);
+
+  React.useEffect(() => {
+    if (task?.run_state !== "running") return;
+    if (sendMessage.isPending || isAgentTurnRunning || runtimeReconciliationActive) {
+      return;
+    }
+    void reconcileTaskRuntime("backend_run_truth");
+  }, [
+    isAgentTurnRunning,
+    reconcileTaskRuntime,
+    runtimeReconciliationActive,
+    sendMessage.isPending,
+    task?.run_state,
+  ]);
+
   React.useEffect(() => {
     const isAgentUnavailable =
       taskAgent?.mode === "external" && taskAgent.presence !== "online";
     const taskArchived = task?.status === "archived";
     if (isAgentUnavailable || taskArchived || !canUpdateTask) return;
-    if (isAgentTurnRunning || sendMessage.isPending) return;
+    if (
+      isAgentTurnRunning ||
+      sendMessage.isPending ||
+      backendRunActive ||
+      runtimeReconciliationActive
+    ) return;
     if (pendingFlushInFlightRef.current) return;
     const next = pendingMessages[0];
     if (!next) return;
@@ -895,8 +1016,10 @@ export function TaskPage({
     });
   }, [
     canUpdateTask,
+    backendRunActive,
     isAgentTurnRunning,
     pendingMessages,
+    runtimeReconciliationActive,
     sendMessage.isPending,
     sendMessageNow,
     task?.status,

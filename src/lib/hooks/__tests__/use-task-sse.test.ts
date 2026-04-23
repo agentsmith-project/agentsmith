@@ -51,6 +51,7 @@ describe('useTaskSSE', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -294,5 +295,56 @@ describe('useTaskSSE', () => {
     });
 
     expect(result.current.connectionErrorCode).toBe('TASK_EVENTS_RECOVERY_EXHAUSTED');
+  });
+
+  it('reconnects when the stream goes silent during an active run', async () => {
+    vi.useFakeTimers();
+    const onDebug = vi.fn();
+
+    renderHook(() =>
+      useTaskSSE('ws_default', 'proj_1', 'task_watchdog', {
+        onDebug,
+        reconnectInterval: 10,
+        maxReconnectAttempts: 2,
+        watchdogEnabled: true,
+        watchdogTimeoutMs: 1_000,
+      } as Parameters<typeof useTaskSSE>[3]),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(currentEventSource).not.toBeNull();
+
+    act(() => {
+      currentEventSource?.onopen?.();
+    });
+
+    const first = currentEventSource;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    expect(first?.close).toHaveBeenCalledTimes(1);
+    expect(onDebug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: 'sse_error',
+        summary: expect.stringContaining('watchdog_timeout_ms=1000'),
+      }),
+    );
+    expect(onDebug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: 'reconnect_scheduled',
+        summary: 'attempt=1/2',
+      }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+      await Promise.resolve();
+    });
+
+    expect(currentEventSource).not.toBe(first);
   });
 });

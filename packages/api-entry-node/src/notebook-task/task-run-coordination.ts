@@ -91,9 +91,14 @@ export async function getNotebookTaskRunState(
 export async function refreshNotebookTaskRunLease(
   cache: CachePort,
   state: NotebookTaskRunState,
-): Promise<void> {
+): Promise<boolean> {
+  const current = await getNotebookTaskRunState(cache, state.task_id);
+  if (!current || current.run_id !== state.run_id) {
+    return false;
+  }
   await cache.set(activeRunLockKey(state.task_id), '1', NOTEBOOK_RUN_LEASE_TTL_SECONDS);
   await cache.set(activeRunStateKey(state.task_id), JSON.stringify(state), NOTEBOOK_RUN_LEASE_TTL_SECONDS);
+  return true;
 }
 
 export async function markNotebookTaskRunDispatched(
@@ -115,8 +120,8 @@ export async function markNotebookTaskRunDispatched(
     dispatched_at: input.dispatchedAt,
     heartbeat_at: input.dispatchedAt,
   };
-  await refreshNotebookTaskRunLease(cache, next);
-  return next;
+  const refreshed = await refreshNotebookTaskRunLease(cache, next);
+  return refreshed ? next : await getNotebookTaskRunState(cache, input.taskId);
 }
 
 export async function requestNotebookTaskRunCancellation(
@@ -133,6 +138,20 @@ export async function getNotebookTaskRunCancellationRequest(
   return parseJsonRecord<NotebookTaskRunCancellationRequest>(await cache.get(cancelRequestKey(taskId)));
 }
 
+export async function getNotebookTaskRunCancellationRequestForRun(
+  cache: CachePort,
+  input: {
+    taskId: string;
+    runId: string;
+  },
+): Promise<NotebookTaskRunCancellationRequest | null> {
+  const marker = await getNotebookTaskRunCancellationRequest(cache, input.taskId);
+  if (!marker || marker.run_id !== input.runId) {
+    return null;
+  }
+  return marker;
+}
+
 export async function clearNotebookTaskRunCoordination(
   cache: CachePort,
   taskId: string,
@@ -146,4 +165,42 @@ export async function clearNotebookTaskRunCoordination(
 
 export async function isNotebookTaskRunActive(cache: CachePort, taskId: string): Promise<boolean> {
   return (await getNotebookTaskRunState(cache, taskId)) !== null;
+}
+
+export async function finalizeNotebookTaskRun(
+  cache: CachePort,
+  input: {
+    taskId: string;
+    runId: string;
+  },
+): Promise<boolean> {
+  const stateKey = activeRunStateKey(input.taskId);
+  const currentRaw = await cache.get(stateKey);
+  const current = parseJsonRecord<NotebookTaskRunState>(currentRaw);
+  if (!current || current.run_id !== input.runId) {
+    return false;
+  }
+  if (typeof cache.compareAndSet === 'function' && currentRaw !== null) {
+    const cleared = await cache.compareAndSet(stateKey, currentRaw, null);
+    if (!cleared) {
+      return false;
+    }
+  } else {
+    await cache.del(stateKey);
+  }
+
+  await cache.del(activeRunLockKey(input.taskId));
+
+  const cancelKey = cancelRequestKey(input.taskId);
+  const cancelRaw = await cache.get(cancelKey);
+  const cancel = parseJsonRecord<NotebookTaskRunCancellationRequest>(cancelRaw);
+  if (!cancel || cancel.run_id === input.runId) {
+    if (typeof cache.compareAndSet === 'function' && cancelRaw !== null) {
+      await cache.compareAndSet(cancelKey, cancelRaw, null);
+    } else {
+      await cache.del(cancelKey);
+    }
+  }
+
+  return true;
 }

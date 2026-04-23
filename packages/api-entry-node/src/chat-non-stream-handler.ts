@@ -28,6 +28,8 @@ import {
 } from './input-ref-input-resolver.js';
 import { ensureInternalChatSessionWorkspace } from './chat-internal-workspace.js';
 import { mapFileLibraryInfraError } from './project-file-library-service.js';
+import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
+import { resolveInternalWorkloadCoordinator } from './internal-workload-coordinator.js';
 
 interface ChatNonStreamHandlerArgs {
   route: ChatRoute;
@@ -308,6 +310,23 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     if (!deleted) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
+    }
+    const agent = session.external_agent_id
+      ? await deps.agentResourceService.getAgent(
+        route.workspaceId,
+        route.projectId,
+        session.external_agent_id,
+      )
+      : null;
+    if (agent?.mode === 'internal') {
+      const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
+      if (internalWorkloadCoordinator) {
+        await internalWorkloadCoordinator.requestHardTeardown({
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          workloadId: sanitizeWorkloadId(route.sessionId),
+        });
+      }
     }
     json(res, 200, { success: true });
     return true;

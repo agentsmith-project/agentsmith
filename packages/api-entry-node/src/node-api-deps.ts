@@ -29,6 +29,7 @@ import type { FileLibraryOrchestrator } from './file-library-orchestrator.js';
 import type { FileLibraryGatewayManager } from './file-library-gateway-manager.js';
 import type { UniversalProxyService } from './universal-proxy-service.js';
 import type { NotebookTerminalService } from './notebook-terminal-service.js';
+import type { InternalWorkloadCoordinator } from './internal-workload-coordinator.js';
 
 export interface NodeApiDeps {
   governanceReportsDir?: string;
@@ -42,6 +43,7 @@ export interface NodeApiDeps {
   agentExecutionService: AgentExecutionService;
   notebookTerminalService: NotebookTerminalService;
   internalAgentPodManager?: InternalAgentPodManager;
+  internalWorkloadCoordinator?: InternalWorkloadCoordinator;
   internalAgentWorkspaceBindingManager?: InternalAgentWorkspaceBindingManager;
   /** @deprecated use internalAgentWorkspaceBindingManager */
   internalAgentWorkspaceProvisioner?: InternalAgentWorkspaceProvisioner;

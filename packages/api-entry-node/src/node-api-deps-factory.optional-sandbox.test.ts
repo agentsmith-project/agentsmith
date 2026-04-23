@@ -1,5 +1,6 @@
 import { MongoJsonDocStore } from '@mbos/adapters-private';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { createNodeApiDepsFromEnv } from './node-api-deps-factory.js';
 
 const baseEnv: NodeJS.ProcessEnv = {
@@ -19,6 +20,7 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
     const { deps, lifecycle } = createNodeApiDepsFromEnv({ ...baseEnv });
     try {
       expect(deps.internalAgentPodManager).toBeUndefined();
+      expect(deps.internalWorkloadCoordinator).toBeUndefined();
       expect(deps.internalAgentWorkspaceBindingManager).toBeUndefined();
       expect(deps.internalAgentWorkspaceProvisioner).toBeUndefined();
     } finally {
@@ -83,10 +85,71 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
 
     try {
       expect(deps.internalAgentPodManager).toBeDefined();
+      expect(deps.internalWorkloadCoordinator).toBeDefined();
       expect(deps.internalAgentWorkspaceBindingManager).toBeDefined();
       expect(deps.internalAgentWorkspaceProvisioner).toBeDefined();
       await new Promise((resolve) => setTimeout(resolve, 1500));
       expect(fetchSpy).toHaveBeenCalled();
+    } finally {
+      await shutdownSafe(lifecycle);
+    }
+  });
+
+  it('uses the sanitized task workload key for terminal lifecycle holders', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ expires_at: null }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const { deps, lifecycle } = createNodeApiDepsFromEnv({
+      ...baseEnv,
+      SANDBOX_MANAGER_URL: 'http://sandbox-manager:8080',
+      SANDBOX_SERVICE_KEY: 'svc-key',
+    });
+    const rawTaskId = 'TASK_ABC.123###';
+    const expectedWorkloadId = sanitizeWorkloadId(rawTaskId);
+
+    try {
+      expect(deps.internalWorkloadCoordinator).toBeDefined();
+
+      const created = await deps.notebookTerminalService.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: rawTaskId,
+        agentId: 'agent_1',
+        runnerSessionId: rawTaskId,
+        userId: 'user_1',
+        cols: 80,
+        rows: 24,
+      });
+
+      expect(deps.internalWorkloadCoordinator?.readSnapshotForTests()).toEqual([
+        {
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          workloadId: expectedWorkloadId,
+          holders: [`terminal_session:${created.sessionId}`],
+          hardTeardownRequested: false,
+        },
+      ]);
+      expect(deps.internalWorkloadCoordinator?.readSnapshotForTests()[0]?.workloadId).not.toBe(rawTaskId);
+
+      (
+        deps.notebookTerminalService as unknown as {
+          finishSession: (
+            sessionId: string,
+            status: 'closed' | 'failed',
+            closeReason?: string,
+            exitCode?: number | null,
+          ) => void;
+        }
+      ).finishSession(created.sessionId, 'closed', 'process_exited', 0);
+
+      await vi.waitFor(() => {
+        expect(deps.internalWorkloadCoordinator?.readSnapshotForTests()).toEqual([]);
+      });
     } finally {
       await shutdownSafe(lifecycle);
     }

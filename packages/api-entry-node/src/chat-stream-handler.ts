@@ -29,12 +29,15 @@ import {
   toChatAttachmentSnapshots,
 } from './chat-input-refs.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
-import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
 import { issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
 import { resolveRequiredConfiguredPublicApiBase } from './agent-execution-api-base.js';
 import { readAgentExecutionPreferences } from './agent-execution-preferences.js';
 import { resolveExecutionApiBase } from './notebook-execution-orchestrator.js';
 import { ensureInternalChatSessionWorkspace } from './chat-internal-workspace.js';
+import {
+  resolveInternalWorkloadCoordinator,
+  type InternalWorkloadHolderRef,
+} from './internal-workload-coordinator.js';
 
 interface ChatStreamHandlerArgs {
   route: ChatRoute;
@@ -584,12 +587,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
 
   if (useExternalAgent) {
     const externalAgentId = session.external_agent_id ?? '';
-    let internalKeepaliveTimer: NodeJS.Timeout | undefined;
-    const clearInternalKeepalive = () => {
-      if (!internalKeepaliveTimer) return;
-      clearInterval(internalKeepaliveTimer);
-      internalKeepaliveTimer = undefined;
-    };
+    let internalWorkloadHolder: InternalWorkloadHolderRef | undefined;
     try {
       const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, externalAgentId);
       const agentExecutionPreferences = readAgentExecutionPreferences(agent ?? {}, 'chat');
@@ -624,18 +622,19 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           agent,
           workspaceMount: workspaceBinding.workspaceMount,
         });
-        await deps.internalAgentPodManager.keepalive(
-          route.workspaceId,
-          route.projectId,
+        const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
+        const workloadHolder: InternalWorkloadHolderRef = {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
           workloadId,
-        ).catch(() => undefined);
-        internalKeepaliveTimer = setInterval(() => {
-          void deps.internalAgentPodManager?.keepalive(
-            route.workspaceId,
-            route.projectId,
-            workloadId,
-          ).catch(() => undefined);
-        }, INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS * 1000);
+          holderKind: 'chat_stream',
+          holderId: route.sessionId,
+        };
+        if (!internalWorkloadCoordinator) {
+          throw new AgentStreamRouteError('AGENT_SANDBOX_NOT_CONFIGURED', 'agent_sandbox_not_configured');
+        }
+        await internalWorkloadCoordinator.acquireHolder(workloadHolder);
+        internalWorkloadHolder = workloadHolder;
       }
       const issuedExecutionTicket = await issueInternalTicket(deps.cache, {
         purpose: 'agent_execution',
@@ -985,7 +984,10 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       }
       return true;
     } finally {
-      clearInternalKeepalive();
+      const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
+      if (internalWorkloadHolder && internalWorkloadCoordinator) {
+        await internalWorkloadCoordinator.releaseHolder(internalWorkloadHolder);
+      }
     }
   }
 

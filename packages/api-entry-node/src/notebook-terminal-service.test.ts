@@ -226,11 +226,12 @@ describe('NotebookTerminalService', () => {
 
   it('records terminal session completion metadata through lifecycle hooks', async () => {
     const cache = new InMemoryCache();
+    const onSessionCreated = vi.fn();
     const onSessionClosed = vi.fn();
     const service = new NotebookTerminalService(cache, {
       dispatchTerminalSession: vi.fn(),
     } as never);
-    service.configureLifecycleHooks({ onSessionClosed });
+    service.configureLifecycleHooks({ onSessionCreated, onSessionClosed });
 
     const created = await service.createSession({
       workspaceId: 'ws_default',
@@ -241,6 +242,13 @@ describe('NotebookTerminalService', () => {
       userId: 'user_1',
       cols: 80,
       rows: 24,
+    });
+
+    expect(onSessionCreated).toHaveBeenCalledTimes(1);
+    expect(onSessionCreated.mock.calls[0]?.[0]).toMatchObject({
+      id: created.sessionId,
+      status: 'pending',
+      taskId: 'task_1',
     });
 
     (service as unknown as {
@@ -263,6 +271,116 @@ describe('NotebookTerminalService', () => {
       status: 'closed',
       closeReason: 'process_exited',
       exitCode: 0,
+    });
+  });
+
+  it('keeps disconnect grace outside close hooks until the session actually times out', async () => {
+    vi.useFakeTimers();
+    try {
+      const cache = new InMemoryCache();
+      const onSessionClosed = vi.fn();
+      const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+      const service = new NotebookTerminalService(cache, {
+        dispatchTerminalSession: vi.fn(async () => ({
+          writeInput: vi.fn(),
+          resize: vi.fn(),
+          close: vi.fn(),
+          stream: runtimeEvents.stream,
+        })),
+      } as never, {
+        reconnectGraceMs: 25,
+      });
+      service.configureLifecycleHooks({ onSessionClosed });
+
+      const created = await service.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        agentId: 'agent_1',
+        runnerSessionId: 'task_1',
+        userId: 'user_1',
+        cols: 80,
+        rows: 24,
+      });
+
+      const session = await service.getSession(created.sessionId);
+      const ws = new FakeWebSocket();
+      await (service as unknown as {
+        bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+      }).bindBrowserSocket(ws, session!);
+
+      await runtimeEvents.push({
+        type: 'started',
+        session_id: created.sessionId,
+        cols: 80,
+        rows: 24,
+      });
+
+      ws.close(1000, 'browser_tab_closed');
+
+      await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+        id: created.sessionId,
+        status: 'disconnected',
+        closeReason: 'browser_disconnected',
+      });
+      expect(onSessionClosed).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(30);
+
+      await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+        id: created.sessionId,
+        status: 'closed',
+        closeReason: 'browser_disconnected_timeout',
+      });
+      expect(onSessionClosed).toHaveBeenCalledTimes(1);
+      expect(onSessionClosed.mock.calls[0]?.[0]).toMatchObject({
+        id: created.sessionId,
+        status: 'closed',
+        closeReason: 'browser_disconnected_timeout',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('invokes both configured and registered lifecycle hooks when reload reconciliation releases a persisted live session', async () => {
+    const seeded = await seedSessionForServiceReload('pending');
+    const configuredOnSessionClosed = vi.fn();
+    const registeredOnSessionClosed = vi.fn();
+    const reloadedService = new NotebookTerminalService(seeded.cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+    reloadedService.configureLifecycleHooks({
+      onSessionClosed: configuredOnSessionClosed,
+    });
+    (
+      reloadedService as unknown as {
+        registerLifecycleHooks: (
+          key: string,
+          hooks: { onSessionClosed?: (session: unknown) => void | Promise<void> },
+        ) => void;
+      }
+    ).registerLifecycleHooks('task_route_handler_internal_workload', {
+      onSessionClosed: registeredOnSessionClosed,
+    });
+
+    await expect(reloadedService.getSession(seeded.created.sessionId)).resolves.toMatchObject({
+      id: seeded.created.sessionId,
+      status: 'failed',
+      closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON,
+    });
+
+    expect(configuredOnSessionClosed).toHaveBeenCalledTimes(1);
+    expect(registeredOnSessionClosed).toHaveBeenCalledTimes(1);
+    expect(configuredOnSessionClosed.mock.calls[0]?.[0]).toMatchObject({
+      id: seeded.created.sessionId,
+      status: 'failed',
+      closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON,
+    });
+    expect(registeredOnSessionClosed.mock.calls[0]?.[0]).toMatchObject({
+      id: seeded.created.sessionId,
+      status: 'failed',
+      closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON,
     });
   });
 
@@ -1380,6 +1498,228 @@ describe('NotebookTerminalService', () => {
       { status: 'pending' },
     ]);
   });
+
+  it('keeps failed terminal history visible while excluding it from live task-session truth', async () => {
+    const cache = new InMemoryCache();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    (service as unknown as {
+      finishSession: (
+        sessionId: string,
+        status: 'closed' | 'failed',
+        closeReason?: string,
+        exitCode?: number | null,
+      ) => void;
+    }).finishSession(created.sessionId, 'failed', 'terminal_start_timeout');
+
+    await expect(
+      service.listSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+      }),
+    ).resolves.toMatchObject([
+      { id: created.sessionId, status: 'failed', closeReason: 'terminal_start_timeout' },
+    ]);
+    await expect(
+      service.hasLiveSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it('treats pending terminal sessions as live task blockers before any browser bind', async () => {
+    const cache = new InMemoryCache();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+
+    await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    await expect(
+      service.hasLiveSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+      }),
+    ).resolves.toBe(true);
+  });
+
+  it('treats active terminal sessions as live task blockers while the browser remains attached', async () => {
+    const cache = new InMemoryCache();
+    const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(async () => ({
+        writeInput: vi.fn(),
+        resize: vi.fn(),
+        close: vi.fn(),
+        stream: runtimeEvents.stream,
+      })),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_1',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    const session = await service.getSession(created.sessionId);
+    const ws = new FakeWebSocket();
+    await (service as unknown as {
+      bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+    }).bindBrowserSocket(ws, session!);
+
+    await runtimeEvents.push({
+      type: 'started',
+      session_id: created.sessionId,
+      cols: 80,
+      rows: 24,
+    });
+
+    await expect(
+      service.hasLiveSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        userId: 'user_1',
+      }),
+    ).resolves.toBe(true);
+  });
+
+  it('keeps disconnected terminal sessions in live task-session truth until reconnect grace expires', async () => {
+    vi.useFakeTimers();
+    try {
+      const cache = new InMemoryCache();
+      const runtimeEvents = createControlledRuntimeStream<TerminalRuntimeEvent>();
+      const service = new NotebookTerminalService(cache, {
+        dispatchTerminalSession: vi.fn(async () => ({
+          writeInput: vi.fn(),
+          resize: vi.fn(),
+          close: vi.fn(),
+          stream: runtimeEvents.stream,
+        })),
+      } as never, {
+        reconnectGraceMs: 25,
+      });
+
+      const created = await service.createSession({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_1',
+        agentId: 'agent_1',
+        runnerSessionId: 'task_1',
+        userId: 'user_1',
+        cols: 80,
+        rows: 24,
+      });
+
+      const session = await service.getSession(created.sessionId);
+      const ws = new FakeWebSocket();
+      await (service as unknown as {
+        bindBrowserSocket: (browserSocket: FakeWebSocket, session: NonNullable<typeof session>) => Promise<void>;
+      }).bindBrowserSocket(ws, session!);
+
+      await runtimeEvents.push({
+        type: 'started',
+        session_id: created.sessionId,
+        cols: 80,
+        rows: 24,
+      });
+      ws.close(1000, 'browser_tab_closed');
+
+      await expect(
+        service.hasLiveSessionsForTask({
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_1',
+          userId: 'user_1',
+        }),
+      ).resolves.toBe(true);
+
+      await vi.advanceTimersByTimeAsync(30);
+
+      await expect(
+        service.hasLiveSessionsForTask({
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_1',
+          userId: 'user_1',
+        }),
+      ).resolves.toBe(false);
+      await expect(service.getSession(created.sessionId)).resolves.toMatchObject({
+        id: created.sessionId,
+        status: 'closed',
+        closeReason: 'browser_disconnected_timeout',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  for (const persistedStatus of ['pending', 'active', 'disconnected'] as const) {
+    it(`frees live blocking truth when a persisted ${persistedStatus} session is reconciled to failed after service reload`, async () => {
+      const seeded = await seedSessionForServiceReload(persistedStatus);
+      const reloadedService = new NotebookTerminalService(seeded.cache, {
+        dispatchTerminalSession: vi.fn(),
+      } as never);
+
+      await expect(
+        reloadedService.hasLiveSessionsForTask({
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_1',
+          userId: 'user_1',
+        }),
+      ).resolves.toBe(false);
+
+      await expect(
+        reloadedService.listSessionsForTask({
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_1',
+          userId: 'user_1',
+        }),
+      ).resolves.toMatchObject([
+        {
+          id: seeded.created.sessionId,
+          status: 'failed',
+          closeReason: TERMINAL_SERVICE_RELOAD_CLOSE_REASON,
+        },
+      ]);
+    });
+  }
 
   it('reconciles persisted pending terminal sessions to failed truth after service reload', async () => {
     const cache = new InMemoryCache();

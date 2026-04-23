@@ -241,6 +241,74 @@ exec -a "${label}" node "${scriptPath}" --port "${args.port}"
   return pid;
 }
 
+function listenerPidsForPort(port: number): number[] {
+  const raw = execFileSync(
+    'bash',
+    ['-lc', `lsof -tiTCP:${port} -sTCP:LISTEN 2>/dev/null || true`],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    },
+  ).trim();
+  if (!raw) {
+    return [];
+  }
+  return raw
+    .split(/\s+/)
+    .map((value) => Number.parseInt(value, 10))
+    .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+async function waitForServiceListenerReady(args: {
+  pid: number;
+  port: number;
+  timeoutMs?: number;
+}): Promise<boolean> {
+  const deadline = Date.now() + (args.timeoutMs ?? 2_000);
+  while (Date.now() < deadline) {
+    if (!isPidAlive(args.pid)) {
+      return false;
+    }
+    if (listenerPidsForPort(args.port).includes(args.pid)) {
+      return true;
+    }
+    await sleep(50);
+  }
+  return isPidAlive(args.pid) && listenerPidsForPort(args.port).includes(args.pid);
+}
+
+async function spawnReadyDetachedServiceProcess(args: {
+  tempRoot: string;
+  kind: 'web' | 'api';
+  cwd?: string;
+  label?: string;
+  attempts?: number;
+  reservePort?: () => Promise<number>;
+}): Promise<{ pid: number; port: number }> {
+  const attempts = args.attempts ?? 5;
+  const reservePort = args.reservePort ?? reserveTcpPort;
+  let lastFailure = `failed to launch detached ${args.kind} service`;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const port = await reservePort();
+    const pid = spawnDetachedServiceProcess({
+      tempRoot: args.tempRoot,
+      kind: args.kind,
+      port,
+      cwd: args.cwd,
+      label: args.label,
+    });
+    const ready = await waitForServiceListenerReady({ pid, port });
+    if (ready) {
+      return { pid, port };
+    }
+    lastFailure = `detached ${args.kind} service failed to bind reserved port ${port} on attempt ${attempt}/${attempts}`;
+    killProcessTreeGroup(pid);
+    await waitForPidExit(pid, 1_000);
+  }
+  throw new Error(lastFailure);
+}
+
 function writeOwnedRunnerTreeScripts(tempRoot: string) {
   const level1Script = path.join(tempRoot, 'runner-level-1.sh');
   const level2Script = path.join(tempRoot, 'runner-level-2.sh');
@@ -1651,6 +1719,44 @@ EOF_PROCESS_STATE
     }
   }, 20_000);
 
+  it('retries detached service startup on a lost reserved-port race and only returns once the service is truly listening', async () => {
+    const fixture = setupRealCommonFixture();
+    tempRoots.push(fixture.tempRoot);
+
+    const blockedPortLease = await reserveTcpPort();
+    const fallbackPort = await reserveTcpPort();
+    const blockedPortServer = net.createServer();
+    blockedPortServer.unref();
+    await new Promise<void>((resolve, reject) => {
+      blockedPortServer.once('error', reject);
+      blockedPortServer.listen(blockedPortLease, '127.0.0.1', () => resolve());
+    });
+
+    let reserveAttempt = 0;
+    const service = await spawnReadyDetachedServiceProcess({
+      tempRoot: fixture.tempRoot,
+      kind: 'api',
+      cwd: path.join(repoRoot, 'packages/api-entry-node'),
+      attempts: 2,
+      reservePort: async () => {
+        reserveAttempt += 1;
+        return reserveAttempt === 1 ? blockedPortLease : fallbackPort;
+      },
+    });
+
+    try {
+      expect(reserveAttempt).toBe(2);
+      expect(service.port).toBe(fallbackPort);
+      expect(isPidAlive(service.pid)).toBe(true);
+      expect(listenerPidsForPort(blockedPortLease)).not.toContain(service.pid);
+      expect(listenerPidsForPort(fallbackPort)).toContain(service.pid);
+    } finally {
+      await new Promise<void>((resolve) => blockedPortServer.close(() => resolve()));
+      killProcessTreeGroup(service.pid);
+      await waitForPidExit(service.pid, 1_000);
+    }
+  }, 20_000);
+
   it('degrades malformed tracked process-state and preserves pid, port, and sidecar', async () => {
     const webPort = await reserveTcpPort();
     const fixture = setupRealCommonFixture({ webPort });
@@ -1707,32 +1813,41 @@ EOF_PROCESS_STATE
   }, 20_000);
 
   it('fails closed for live web/api pids when tracked process-state evidence is missing', async () => {
-    const apiPort = await reserveTcpPort();
-    const webPort = await reserveTcpPort();
-    const fixture = setupRealCommonFixture({ apiPort, webPort });
+    const fixture = setupRealCommonFixture();
     tempRoots.push(fixture.tempRoot);
 
-    const webPid = spawnDetachedServiceProcess({
+    const webService = await spawnReadyDetachedServiceProcess({
       tempRoot: fixture.tempRoot,
       kind: 'web',
-      port: webPort,
       label: 'local-manual-web-legacy-adopt',
     });
-    const apiPid = spawnDetachedServiceProcess({
+    const apiService = await spawnReadyDetachedServiceProcess({
       tempRoot: fixture.tempRoot,
       kind: 'api',
-      port: apiPort,
       cwd: path.join(repoRoot, 'packages/api-entry-node'),
       label: 'local-manual-api-legacy-adopt',
     });
+    const webPid = webService.pid;
+    const apiPid = apiService.pid;
+    const webPort = webService.port;
+    const apiPort = apiService.port;
 
     try {
-      await sleep(500);
+      writeFileSync(
+        fixture.envFile,
+        `PORT_API=${apiPort}
+PORT_WEB=${webPort}
+`,
+        'utf8',
+      );
       mkdirSync(fixture.localManualRoot, { recursive: true });
       writeFileSync(fixture.webPidFile, `${webPid}\n`, 'utf8');
       writeFileSync(fixture.webReadyFile, 'ready\n', 'utf8');
       writeFileSync(fixture.apiPidFile, `${apiPid}\n`, 'utf8');
       writeFileSync(fixture.apiReadyFile, 'ready\n', 'utf8');
+
+      expect(listenerPidsForPort(webPort)).toContain(webPid);
+      expect(listenerPidsForPort(apiPort)).toContain(apiPid);
 
       const output = execFileSync(
         'bash',

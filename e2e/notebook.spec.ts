@@ -5,7 +5,28 @@
  * navigation to task detail, and task detail page elements.
  */
 
+import type { Page } from '@playwright/test';
 import { test, expect, goToProject } from './fixtures/test-base';
+
+const REALTIME_TEST_TASK_ID = 'task_002';
+async function setMockTaskRealtimeMode(page: Page, mode: 'sse_ticket_upstream') {
+  await page.addInitScript((mockMode) => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : null;
+      const resolvedUrl = request?.url ?? String(input);
+      const url = new URL(resolvedUrl, window.location.origin);
+      if (url.pathname === '/api/v1/sse-ticket') {
+        url.searchParams.set('mock_task_realtime', mockMode);
+        if (request) {
+          return originalFetch(new Request(url.toString(), request), init);
+        }
+        return originalFetch(url.toString(), init);
+      }
+      return originalFetch(input, init);
+    };
+  }, mode);
+}
 
 test.describe('Notebook Page', () => {
   test.describe('Task List', () => {
@@ -253,6 +274,26 @@ test.describe('Notebook Page', () => {
       await copyButton.click();
 
       await expect(authedPage.getByTestId('notebook__message-trace-panel')).toBeVisible();
+    });
+  });
+
+  test.describe.serial('Realtime Reconciliation', () => {
+    test('should keep an active hook-level connection error visible after cancel reconcile succeeds', async ({ authedPage }) => {
+      await setMockTaskRealtimeMode(authedPage, 'sse_ticket_upstream');
+
+      await goToProject(authedPage, `notebook/tasks/${REALTIME_TEST_TASK_ID}`);
+      await expect(authedPage.getByTestId('notebook__task-header')).toBeVisible({ timeout: 10000 });
+      const cancelButton = authedPage.getByRole('button', { name: /^Cancel$/ });
+      await expect(cancelButton).toBeVisible();
+
+      const realtimeStatus = authedPage.getByTestId('notebook__sse-status');
+      await expect(realtimeStatus).toContainText('Realtime ticket exchange failed');
+
+      await cancelButton.click();
+
+      await expect(cancelButton).toHaveCount(0);
+      await expect(realtimeStatus).toContainText('Realtime ticket exchange failed');
+      await expect(authedPage.getByTestId('notebook__conversation-input')).toBeVisible();
     });
   });
 });

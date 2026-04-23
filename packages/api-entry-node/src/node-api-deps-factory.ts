@@ -38,6 +38,7 @@ import { AgentResourceService } from './agent-resource-service.js';
 import { AgentExecutionService } from './agent-execution-service.js';
 import { createAgentPresenceStore } from './agent-presence-store.js';
 import { InternalAgentPodManagerImpl } from './internal-agent-pod-manager.js';
+import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import {
   InternalAgentWorkspaceProvisionerImpl,
   parseCsiMountOptions,
@@ -54,6 +55,8 @@ import {
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { UniversalProxyService } from './universal-proxy-service.js';
 import { NotebookTerminalService } from './notebook-terminal-service.js';
+import { InternalWorkloadCoordinator } from './internal-workload-coordinator.js';
+import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
 
 export function createDefaultNodeApiDeps(): NodeApiDeps {
   const projectRepo = createProjectRepoFactoryResult({}).projectRepo;
@@ -68,6 +71,7 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
 
   const agentExecutionService = new AgentExecutionService(agentResourceService);
   const notebookTerminalService = new NotebookTerminalService(cache, agentExecutionService);
+  const internalWorkloadCoordinator = undefined;
   const deps: NodeApiDeps = {
     governanceReportsDir: join(process.cwd(), 'artifacts/governance-reports'),
     governanceRunsDir: join(process.cwd(), 'artifacts/governance-runs'),
@@ -112,7 +116,28 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     universalProxyService: UniversalProxyService.fromEnv(process.env),
   };
   notebookTerminalService.configureLifecycleHooks({
+    onSessionCreated: async (session) => {
+      if (!internalWorkloadCoordinator) return;
+      const workloadId = sanitizeWorkloadId(session.taskId);
+      await internalWorkloadCoordinator.acquireHolder({
+        workspaceId: session.workspaceId,
+        projectId: session.projectId,
+        workloadId,
+        holderKind: 'terminal_session',
+        holderId: session.id,
+      });
+    },
     onSessionClosed: async (session) => {
+      if (internalWorkloadCoordinator) {
+        const workloadId = sanitizeWorkloadId(session.taskId);
+        await internalWorkloadCoordinator.releaseHolder({
+          workspaceId: session.workspaceId,
+          projectId: session.projectId,
+          workloadId,
+          holderKind: 'terminal_session',
+          holderId: session.id,
+        });
+      }
       await writeProjectAuditEvent(deps, {
         workspaceId: session.workspaceId,
         projectId: session.projectId,
@@ -224,6 +249,12 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
         },
       )
     : undefined;
+  const internalWorkloadCoordinator = internalAgentPodManager
+    ? new InternalWorkloadCoordinator(
+        internalAgentPodManager,
+        { keepaliveIntervalMs: INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS * 1000 },
+      )
+    : undefined;
   if (sandboxClient) {
     void sandboxClient.checkReady().catch((error: unknown) => {
       const message = error instanceof Error ? error.message : 'unknown_error';
@@ -243,6 +274,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       agentExecutionService,
       notebookTerminalService,
       ...(internalAgentPodManager ? { internalAgentPodManager } : {}),
+      ...(internalWorkloadCoordinator ? { internalWorkloadCoordinator } : {}),
       ...(internalAgentWorkspaceBindingManager
         ? {
           internalAgentWorkspaceBindingManager,
@@ -286,7 +318,28 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       ...(universalProxyService ? { universalProxyService } : {}),
     };
   notebookTerminalService.configureLifecycleHooks({
+    onSessionCreated: async (session) => {
+      if (!internalWorkloadCoordinator) return;
+      const workloadId = sanitizeWorkloadId(session.taskId);
+      await internalWorkloadCoordinator.acquireHolder({
+        workspaceId: session.workspaceId,
+        projectId: session.projectId,
+        workloadId,
+        holderKind: 'terminal_session',
+        holderId: session.id,
+      });
+    },
     onSessionClosed: async (session) => {
+      if (internalWorkloadCoordinator) {
+        const workloadId = sanitizeWorkloadId(session.taskId);
+        await internalWorkloadCoordinator.releaseHolder({
+          workspaceId: session.workspaceId,
+          projectId: session.projectId,
+          workloadId,
+          holderKind: 'terminal_session',
+          holderId: session.id,
+        });
+      }
       await writeProjectAuditEvent(deps, {
         workspaceId: session.workspaceId,
         projectId: session.projectId,

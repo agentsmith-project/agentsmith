@@ -5,11 +5,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 
 import {
+  __resetInternalTerminalWorkloadLifecycleForTests,
   handleTaskRoute,
+  hasBlockingTerminalSessionsForTask,
   hasBlockingTaskRunForTerminal,
   resolveTerminalWebSocketBaseUrl,
   resolveTaskWorkspaceMountAccess,
 } from './task-route-handler.js';
+import { createDefaultNodeApiDeps } from './index.js';
+import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
+import { NotebookTerminalService } from './notebook-terminal-service.js';
 import {
   acquireNotebookTaskRunLease,
   buildNotebookTaskRunState,
@@ -36,6 +41,7 @@ describe('task-route-handler workspace access', () => {
     ARTIFACTS_BY_TASK.clear();
     TASKS_BY_PROJECT.clear();
     createFileLibraryGatewayClientMock.mockReset();
+    __resetInternalTerminalWorkloadLifecycleForTests();
   });
 
   function readContentDispositionHeader(
@@ -84,6 +90,51 @@ describe('task-route-handler workspace access', () => {
 
     await expect(hasBlockingTaskRunForTerminal(cache, 'task_terminal_busy')).resolves.toBe(true);
     expect(ACTIVE_RUNS_BY_TASK.has('task_terminal_busy')).toBe(true);
+  });
+
+  it('treats failed terminal history as visible but non-blocking live task truth', async () => {
+    const cache = new InMemoryCache();
+    const service = new NotebookTerminalService(cache, {
+      dispatchTerminalSession: vi.fn(),
+    } as never);
+
+    const created = await service.createSession({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_terminal_failed',
+      agentId: 'agent_1',
+      runnerSessionId: 'task_terminal_failed',
+      userId: 'user_1',
+      cols: 80,
+      rows: 24,
+    });
+
+    (service as unknown as {
+      finishSession: (
+        sessionId: string,
+        status: 'closed' | 'failed',
+        closeReason?: string,
+        exitCode?: number | null,
+      ) => void;
+    }).finishSession(created.sessionId, 'failed', 'terminal_start_timeout');
+
+    await expect(
+      service.listSessionsForTask({
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_terminal_failed',
+        userId: 'user_1',
+      }),
+    ).resolves.toMatchObject([
+      { id: created.sessionId, status: 'failed', closeReason: 'terminal_start_timeout' },
+    ]);
+    await expect(hasBlockingTerminalSessionsForTask({
+      terminalService: service,
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_terminal_failed',
+      userId: 'user_1',
+    })).resolves.toBe(false);
   });
 
   it('prefers the configured public api base for terminal websocket urls', () => {
@@ -1017,6 +1068,375 @@ describe('task-route-handler workspace access', () => {
         session_id: 'term_1',
         status: 'pending',
       }),
+    );
+  });
+
+  it('releases the internal task workload when the last live internal terminal session ends without any active run', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000/api/v1';
+
+    try {
+      const deps = createDefaultNodeApiDeps();
+      const ensureAgentReady = vi.fn(async () => undefined);
+      const releasePod = vi.fn(async () => undefined);
+      deps.internalAgentPodManager = {
+        ensureAgentReady,
+        keepalive: vi.fn(async () => undefined),
+        releasePod,
+      };
+      deps.notebookTerminalService = new NotebookTerminalService(
+        deps.cache,
+        deps.agentExecutionService,
+      );
+      deps.internalAgentWorkspaceBindingManager = {
+        ensureWorkspaceBinding: vi.fn(async (input: {
+          workspaceId: string;
+          projectId: string;
+          fileLibraryId: string;
+          taskId: string;
+        }) => ({
+          binding: {
+            id: 'bind_terminal_internal',
+            workspace_id: input.workspaceId,
+            project_id: input.projectId,
+            file_library_id: input.fileLibraryId,
+            kind: 'juicefs_volume',
+            status: 'ready',
+            metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
+            storage_bucket_url: 'http://localhost:19000/jfs-internal',
+            created_at: '2026-04-05T00:00:00.000Z',
+            updated_at: '2026-04-05T00:00:00.000Z',
+          },
+          workspaceMount: {
+            bindingId: 'bind_terminal_internal',
+            mountPath: `/workspace/${input.taskId}`,
+            fileLibraryId: input.fileLibraryId,
+          },
+        })),
+      } as never;
+
+      const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'internal-terminal-agent',
+        mode: 'internal',
+        interaction_kind: 'notebook',
+        status: 'enabled',
+        config: {
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_test',
+        } as never,
+        owner_id: 'user_test',
+        visibility: 'private',
+        execution_preferences_json: {
+          notebook: {
+            endpoint_id: 'ep_internal',
+          },
+        },
+      });
+
+      const now = new Date().toISOString();
+      await deps.docStore.upsert('project_file_libraries', 'lib_internal_terminal', {
+        id: 'lib_internal_terminal',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        name: 'Internal Terminal Workspace',
+        status: 'ready',
+        filesystem_name: 'flib-internal-terminal',
+        created_by_user_id: 'user_1',
+        created_at: now,
+        updated_at: now,
+      });
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_terminal', {
+        id: 'task_internal_terminal',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Internal terminal task',
+        agent_id: agent.id,
+        agent_name: agent.name,
+        workspace_file_library_id: 'lib_internal_terminal',
+        workspace_file_library_name: 'Internal Terminal Workspace',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      });
+
+      const createdSessionIds: string[] = [];
+      const user = { id: 'user_1', email: 'user_1@example.com' } as never;
+      for (let index = 0; index < 2; index += 1) {
+        const json = vi.fn();
+        await expect(handleTaskRoute({
+          route: {
+            kind: 'taskTerminalSessions',
+            workspaceId: 'ws_default',
+            projectId: 'proj_1',
+            taskId: 'task_internal_terminal',
+          } as never,
+          method: 'POST',
+          req: {
+            headers: {},
+            url: '/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_internal_terminal/terminal/sessions',
+          } as never,
+          res: { setHeader: vi.fn() } as never,
+          deps,
+          user,
+          json,
+          readBody: vi.fn().mockResolvedValue({ cols: 80 + index, rows: 24 + index }),
+        })).resolves.toBe(true);
+        createdSessionIds.push((json.mock.calls[0]?.[2] as { session_id: string }).session_id);
+      }
+
+      expect(ensureAgentReady).toHaveBeenCalledTimes(2);
+      expect(releasePod).not.toHaveBeenCalled();
+
+      for (const [index, sessionId] of createdSessionIds.entries()) {
+        const res = { statusCode: 0, end: vi.fn() } as never;
+        await expect(handleTaskRoute({
+          route: {
+            kind: 'taskTerminalSession',
+            workspaceId: 'ws_default',
+            projectId: 'proj_1',
+            taskId: 'task_internal_terminal',
+            terminalSessionId: sessionId,
+          } as never,
+          method: 'DELETE',
+          req: { headers: {}, url: '' } as never,
+          res,
+          deps,
+          user,
+          json: vi.fn(),
+          readBody: vi.fn(),
+      })).resolves.toBe(true);
+        expect(res.statusCode).toBe(204);
+        if (index === 0) {
+          expect(releasePod).not.toHaveBeenCalled();
+        }
+      }
+
+      await vi.waitFor(() => {
+        expect(releasePod).toHaveBeenCalledTimes(1);
+      });
+      expect(releasePod).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        sanitizeWorkloadId('task_internal_terminal'),
+      );
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('routes internal task archive and delete hard teardown through the coordinator instead of calling releasePod directly', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const requestHardTeardown = vi.fn(async () => undefined);
+    const releasePod = vi.fn(async () => undefined);
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown,
+    } as never;
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+      releasePod,
+    };
+
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-archive-delete-agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_archive', {
+      id: 'task_internal_archive',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal archive task',
+      agent_id: agent.id,
+      agent_name: agent.name,
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_delete', {
+      id: 'task_internal_delete',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal delete task',
+      agent_id: agent.id,
+      agent_name: agent.name,
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    const archiveJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskItem',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_archive',
+      } as never,
+      method: 'PATCH',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: archiveJson,
+      readBody: vi.fn(async () => ({ status: 'archived' })),
+    })).resolves.toBe(true);
+
+    const deleteJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskItem',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_delete',
+      } as never,
+      method: 'DELETE',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: deleteJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(requestHardTeardown).toHaveBeenNthCalledWith(1, {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: sanitizeWorkloadId('task_internal_archive'),
+    });
+    expect(requestHardTeardown).toHaveBeenNthCalledWith(2, {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: sanitizeWorkloadId('task_internal_delete'),
+    });
+    expect(releasePod).not.toHaveBeenCalled();
+  });
+
+  it('falls back to direct releasePod for internal task archive and delete when no coordinator is available', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const releasePod = vi.fn(async () => undefined);
+    deps.internalWorkloadCoordinator = undefined;
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+      releasePod,
+    };
+
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-archive-delete-fallback-agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_archive_fallback', {
+      id: 'task_internal_archive_fallback',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal archive fallback task',
+      agent_id: agent.id,
+      agent_name: agent.name,
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_delete_fallback', {
+      id: 'task_internal_delete_fallback',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal delete fallback task',
+      agent_id: agent.id,
+      agent_name: agent.name,
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskItem',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_archive_fallback',
+      } as never,
+      method: 'PATCH',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: vi.fn(),
+      readBody: vi.fn(async () => ({ status: 'archived' })),
+    })).resolves.toBe(true);
+
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskItem',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_delete_fallback',
+      } as never,
+      method: 'DELETE',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(releasePod).toHaveBeenNthCalledWith(
+      1,
+      'ws_default',
+      'proj_1',
+      sanitizeWorkloadId('task_internal_archive_fallback'),
+    );
+    expect(releasePod).toHaveBeenNthCalledWith(
+      2,
+      'ws_default',
+      'proj_1',
+      sanitizeWorkloadId('task_internal_delete_fallback'),
     );
   });
 

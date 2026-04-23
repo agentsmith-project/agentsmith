@@ -32,6 +32,10 @@ import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import {
+  resetInternalWorkloadHolderCoordinatorForTests,
+  resolveInternalWorkloadCoordinator,
+} from './internal-workload-coordinator.js';
+import {
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectFileLibraryMountAccessRepo,
 } from './file-library-persistence.js';
@@ -131,6 +135,16 @@ function debugNotebookExecution(message: string, extra?: Record<string, unknown>
 
 const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
 const NOTEBOOK_RUN_CANCEL_POLL_MS = 1_000;
+
+type InternalTaskWorkloadIdentity = {
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  userId: string;
+  agentId: string;
+};
+
+const registeredInternalTerminalLifecycleServices = new Set<object>();
 
 function listTasksForOwner(
   workspaceId: string,
@@ -264,13 +278,31 @@ export async function hasBlockingTerminalSessionsForTask(args: {
   taskId: string;
   userId: string;
 }): Promise<boolean> {
+  const liveSessionLookup = args.terminalService as NodeApiDeps['notebookTerminalService'] & {
+    hasLiveSessionsForTask?: (input: {
+      workspaceId: string;
+      projectId: string;
+      taskId: string;
+      userId: string;
+    }) => Promise<boolean>;
+  };
+  if (typeof liveSessionLookup.hasLiveSessionsForTask === 'function') {
+    return liveSessionLookup.hasLiveSessionsForTask({
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      taskId: args.taskId,
+      userId: args.userId,
+    });
+  }
   const sessions = await args.terminalService.listSessionsForTask({
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     taskId: args.taskId,
     userId: args.userId,
   });
-  return sessions.length > 0;
+  return sessions.some((session) => (
+    session.status === 'pending' || session.status === 'active' || session.status === 'disconnected'
+  ));
 }
 
 export function resolveTerminalWebSocketBaseUrl(req: http.IncomingMessage): string {
@@ -411,20 +443,102 @@ function findActiveTaskUsingWorkspace(
 
 async function maybeReleaseInternalAgentWorkload(
   deps: NodeApiDeps,
-  workspaceId: string,
-  projectId: string,
-  task: TaskRecord,
+  identity: InternalTaskWorkloadIdentity,
+  options?: {
+    force?: boolean;
+  },
 ): Promise<void> {
-  if (!deps.internalAgentPodManager) return;
-  const agent = await deps.agentResourceService.getAgent(workspaceId, projectId, task.agent_id);
+  const agent = await deps.agentResourceService.getAgent(
+    identity.workspaceId,
+    identity.projectId,
+    identity.agentId,
+  );
   if (!agent || agent.mode !== 'internal') return;
+  if (!options?.force) {
+    const hasLiveTerminalHolders = await hasBlockingTerminalSessionsForTask({
+      terminalService: deps.notebookTerminalService,
+      workspaceId: identity.workspaceId,
+      projectId: identity.projectId,
+      taskId: identity.taskId,
+      userId: identity.userId,
+    });
+    if (hasLiveTerminalHolders) {
+      return;
+    }
+    if (await hasBlockingTaskRunForTerminal(deps.cache, identity.taskId)) {
+      return;
+    }
+  }
+  const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
+  if (internalWorkloadCoordinator) {
+    await internalWorkloadCoordinator.requestHardTeardown({
+      workspaceId: identity.workspaceId,
+      projectId: identity.projectId,
+      workloadId: sanitizeWorkloadId(identity.taskId),
+    }).catch((err: unknown) => {
+      console.warn(
+        '[sandbox] requestHardTeardown failed for task %s: %s',
+        identity.taskId,
+        err instanceof Error ? err.message : err,
+      );
+    });
+    return;
+  }
+  if (!deps.internalAgentPodManager) return;
   await deps.internalAgentPodManager.releasePod(
-    workspaceId,
-    projectId,
-    sanitizeWorkloadId(task.id),
+    identity.workspaceId,
+    identity.projectId,
+    sanitizeWorkloadId(identity.taskId),
   ).catch((err: unknown) => {
-    console.warn('[sandbox] releasePod failed for task %s: %s', task.id, err instanceof Error ? err.message : err);
+    console.warn('[sandbox] releasePod failed for task %s: %s', identity.taskId, err instanceof Error ? err.message : err);
   });
+}
+
+function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
+  if (!deps.notebookTerminalService) {
+    return;
+  }
+  const service = deps.notebookTerminalService as NodeApiDeps['notebookTerminalService'] & {
+    registerLifecycleHooks?: (key: string, hooks: {
+      onSessionCreated?: (session: {
+        workspaceId: string;
+        projectId: string;
+        taskId: string;
+        userId: string;
+        agentId: string;
+      }) => void | Promise<void>;
+      onSessionClosed?: (session: {
+        workspaceId: string;
+        projectId: string;
+        taskId: string;
+        userId: string;
+        agentId: string;
+      }) => void | Promise<void>;
+    }) => void;
+  };
+  if (typeof service.registerLifecycleHooks !== 'function') {
+    return;
+  }
+  if (registeredInternalTerminalLifecycleServices.has(service)) {
+    return;
+  }
+  service.registerLifecycleHooks('task_route_handler_internal_terminal_workload', {
+    onSessionClosed: async (session) => {
+      await maybeReleaseInternalAgentWorkload(deps, {
+        workspaceId: session.workspaceId,
+        projectId: session.projectId,
+        taskId: session.taskId,
+        userId: session.userId,
+        agentId: session.agentId,
+      });
+    },
+  });
+  registeredInternalTerminalLifecycleServices.add(service);
+}
+
+export function __resetInternalTerminalWorkloadLifecycleForTests(): void {
+  registeredInternalTerminalLifecycleServices.clear();
+  resetInternalWorkloadHolderCoordinatorForTests();
 }
 
 async function streamTaskArtifactFromWorkspaceLibrary(args: {
@@ -547,6 +661,7 @@ async function ensureExternalTaskRunnerSessionDispatchable(args: {
 
 export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boolean> {
   const { route, method, req, res, deps, user, internalTicket, json, readBody } = args;
+  ensureInternalTerminalLifecycleIntegration(deps);
   const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(deps.docStore);
   const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore);
 
@@ -1009,7 +1124,15 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       previousStatus === 'active'
       && task.status === 'archived'
     ) {
-      await maybeReleaseInternalAgentWorkload(deps, route.workspaceId, route.projectId, task);
+      await maybeReleaseInternalAgentWorkload(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        taskId: task.id,
+        userId: task.owner_user_id,
+        agentId: task.agent_id,
+      }, {
+        force: true,
+      });
     }
     json(res, 200, task);
     return true;
@@ -1050,7 +1173,15 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     await deleteTaskArtifacts(deps, route.taskId);
     await deleteTaskTraceEvents(deps, route.workspaceId, route.taskId);
     if (removedTask) {
-      await maybeReleaseInternalAgentWorkload(deps, route.workspaceId, route.projectId, removedTask);
+      await maybeReleaseInternalAgentWorkload(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        taskId: removedTask.id,
+        userId: removedTask.owner_user_id,
+        agentId: removedTask.agent_id,
+      }, {
+        force: true,
+      });
     }
     json(res, 200, { success: true });
     return true;

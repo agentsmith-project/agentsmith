@@ -11,11 +11,18 @@ import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-rec
 import { buildNotebookTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store.js';
 import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
-import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
 import { isComposeManagedExternalAgent } from './agent-runner-profile.js';
 import { issueInternalTicket } from './internal-ticket-store.js';
+import {
+  resolveInternalWorkloadCoordinator,
+  type InternalWorkloadHolderRef,
+} from './internal-workload-coordinator.js';
+export {
+  readInternalWorkloadHolderSnapshotForTests,
+  resetInternalWorkloadHolderCoordinatorForTests,
+} from './internal-workload-coordinator.js';
 
 type NotebookTaskRecord = {
   id: string;
@@ -253,7 +260,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
   let terminalErrorCode: string | undefined;
   let usageTokensTotal: number | undefined;
   let requestExecutionId: string | undefined;
-  let keepaliveTimer: NodeJS.Timeout | undefined;
+  let internalWorkloadHolder: InternalWorkloadHolderRef | undefined;
   let sawCancelledTerminalTrace = false;
   const throwIfCancellationRequested = async (): Promise<void> => {
     if (await isCancellationRequested?.() !== true) {
@@ -362,13 +369,21 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         agent,
         workspaceMount: workspaceBinding.workspaceMount,
       });
-      keepaliveTimer = setInterval(() => {
-        void deps.internalAgentPodManager?.keepalive(
-          task.workspace_id,
-          task.project_id,
-          workloadId,
-        ).catch(() => undefined);
-      }, INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS * 1000);
+      const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
+      const workloadHolder: InternalWorkloadHolderRef = {
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        workloadId,
+        holderKind: 'notebook_run',
+        holderId: runId,
+      };
+      if (!internalWorkloadCoordinator) {
+        throw Object.assign(new Error('internal_workload_coordinator_not_configured'), {
+          code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+        });
+      }
+      await internalWorkloadCoordinator.acquireHolder(workloadHolder);
+      internalWorkloadHolder = workloadHolder;
     }
     const wireApi = notebookPreferences.wire_api === 'responses' ? 'responses' : 'chat';
     const userHandle = buildProxyUsername(user);
@@ -592,8 +607,9 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       },
     });
   } finally {
-    if (keepaliveTimer) {
-      clearInterval(keepaliveTimer);
+    const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
+    if (internalWorkloadHolder && internalWorkloadCoordinator) {
+      await internalWorkloadCoordinator.releaseHolder(internalWorkloadHolder);
     }
     if (!reachedTerminal) {
       terminalResult = 'error';

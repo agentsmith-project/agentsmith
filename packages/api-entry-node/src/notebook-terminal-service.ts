@@ -122,6 +122,7 @@ type TerminalRuntime = {
 type PersistedTerminalSession = Omit<RegisteredTerminalSession, 'browserSocket'>;
 
 type NotebookTerminalLifecycleHooks = {
+  onSessionCreated?: (session: RegisteredTerminalSession) => void | Promise<void>;
   onSessionClosed?: (session: RegisteredTerminalSession) => void | Promise<void>;
 };
 
@@ -136,7 +137,8 @@ type TerminalSessionScopeInput = {
 export class NotebookTerminalService {
   private readonly wsServer: WebSocketServer;
   private readonly sessions = new Map<string, RegisteredTerminalSession>();
-  private hooks: NotebookTerminalLifecycleHooks = {};
+  private configuredLifecycleHooks: NotebookTerminalLifecycleHooks = {};
+  private readonly registeredLifecycleHooks = new Map<string, NotebookTerminalLifecycleHooks>();
   private readonly reconnectGraceMs: number;
   private readonly maxSessionsPerTask = 3;
   private readonly sessionTtlSeconds = 24 * 60 * 60;
@@ -159,7 +161,32 @@ export class NotebookTerminalService {
   }
 
   configureLifecycleHooks(hooks: NotebookTerminalLifecycleHooks): void {
-    this.hooks = hooks;
+    this.configuredLifecycleHooks = hooks;
+  }
+
+  registerLifecycleHooks(key: string, hooks: NotebookTerminalLifecycleHooks): void {
+    this.registeredLifecycleHooks.set(key, hooks);
+  }
+
+  private async notifySessionCreated(session: RegisteredTerminalSession): Promise<void> {
+    await this.callLifecycleHooks(session, 'onSessionCreated');
+  }
+
+  private async notifySessionClosed(session: RegisteredTerminalSession): Promise<void> {
+    await this.callLifecycleHooks(session, 'onSessionClosed');
+  }
+
+  private async callLifecycleHooks(
+    session: RegisteredTerminalSession,
+    hookName: keyof NotebookTerminalLifecycleHooks,
+  ): Promise<void> {
+    const hooks = [
+      this.configuredLifecycleHooks,
+      ...this.registeredLifecycleHooks.values(),
+    ];
+    for (const hooksEntry of hooks) {
+      await hooksEntry[hookName]?.(session);
+    }
   }
 
   private isOpenSocket(socket?: WebSocket): socket is WebSocket {
@@ -193,11 +220,11 @@ export class NotebookTerminalService {
     return `notebook_terminal_task_sessions:${input.workspaceId}:${input.projectId}:${input.taskId}:${input.userId}`;
   }
 
-  private isCountedTaskSessionStatus(status: RegisteredTerminalSession['status']): boolean {
+  private isVisibleTaskSessionStatus(status: RegisteredTerminalSession['status']): boolean {
     return status === 'pending' || status === 'active' || status === 'disconnected' || status === 'failed';
   }
 
-  private isLiveQuotaSessionStatus(status: RegisteredTerminalSession['status']): boolean {
+  private isLiveTaskSessionStatus(status: RegisteredTerminalSession['status']): boolean {
     return status === 'pending' || status === 'active' || status === 'disconnected';
   }
 
@@ -230,6 +257,7 @@ export class NotebookTerminalService {
       bindVersion: undefined,
     };
     await this.persistSession(reconciled);
+    void this.notifySessionClosed(reconciled);
     return reconciled;
   }
 
@@ -249,7 +277,17 @@ export class NotebookTerminalService {
     userId: string;
   }): Promise<number> {
     const sessions = await this.listSessionsForTask(input);
-    return sessions.filter((session) => this.isLiveQuotaSessionStatus(session.status)).length;
+    return sessions.filter((session) => this.isLiveTaskSessionStatus(session.status)).length;
+  }
+
+  async hasLiveSessionsForTask(input: {
+    workspaceId: string;
+    projectId: string;
+    taskId: string;
+    userId: string;
+  }): Promise<boolean> {
+    const sessions = await this.listSessionsForTask(input);
+    return sessions.some((session) => this.isLiveTaskSessionStatus(session.status));
   }
 
   private async persistSession(session: RegisteredTerminalSession): Promise<void> {
@@ -586,6 +624,7 @@ export class NotebookTerminalService {
     });
     await this.persistSession(this.sessions.get(sessionId)!);
     await this.rememberTaskSession(this.sessions.get(sessionId)!);
+    await this.notifySessionCreated(this.sessions.get(sessionId)!);
 
     const issued = await issueInternalTicket(this.cache, {
       purpose: 'terminal_ws_access',
@@ -675,7 +714,7 @@ export class NotebookTerminalService {
       }
       retainedIds.push(session.id);
       seen.add(session.id);
-      if (this.isCountedTaskSessionStatus(session.status)) {
+      if (this.isVisibleTaskSessionStatus(session.status)) {
         sessions.push(session);
       }
     }
@@ -690,7 +729,7 @@ export class NotebookTerminalService {
         if (seen.has(session.id)) continue;
         retainedIds.push(session.id);
         seen.add(session.id);
-        if (this.isCountedTaskSessionStatus(session.status)) {
+        if (this.isVisibleTaskSessionStatus(session.status)) {
           sessions.push(session);
         }
       }
@@ -969,7 +1008,7 @@ export class NotebookTerminalService {
     if (status === 'closed') {
       void this.forgetTaskSession(session);
     }
-    void this.hooks.onSessionClosed?.(session);
+    void this.notifySessionClosed(session);
   }
 
   async shutdown(): Promise<void> {

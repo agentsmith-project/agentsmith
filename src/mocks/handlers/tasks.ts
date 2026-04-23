@@ -30,6 +30,24 @@ const issuedMockSseTickets = new Map<string, { bearerToken: string; expiresAt: s
 let nextTerminalSessionOrdinal = 1;
 let nextMockSseTicketOrdinal = 1;
 
+function readMockTaskRealtimeMode(request: Request) {
+  const headerMode = request.headers.get('x-mock-task-realtime')?.trim();
+  if (headerMode) return headerMode;
+
+  const url = new URL(request.url);
+  const queryMode = url.searchParams.get('mock_task_realtime')?.trim();
+  if (queryMode) return queryMode;
+
+  const cookieHeader = request.headers.get('cookie') ?? '';
+  const cookieMode = cookieHeader
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith('ags_mock_task_realtime='))
+    ?.split('=')[1]
+    ?.trim();
+  return cookieMode && cookieMode.length > 0 ? decodeURIComponent(cookieMode) : null;
+}
+
 function taskTerminalScopeKey(args: { workspaceId: string; projectId: string; taskId: string }) {
   return `${args.workspaceId}:${args.projectId}:${args.taskId}`;
 }
@@ -141,6 +159,13 @@ function createMockTaskEventsStream(taskId: string): ReadableStream<Uint8Array> 
 
 export const taskHandlers = [
   http.post(`${API_V1_PATTERN}/sse-ticket`, ({ request }) => {
+    if (readMockTaskRealtimeMode(request) === 'sse_ticket_upstream') {
+      return HttpResponse.json({
+        error_code: 'MOCK_SSE_TICKET_UPSTREAM',
+        message: 'mock_sse_ticket_upstream_failure',
+      }, { status: 503 });
+    }
+
     const bearerToken = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim();
     if (!bearerToken) {
       return HttpResponse.json({
@@ -258,6 +283,25 @@ export const taskHandlers = [
       tasks.splice(index, 1);
     }
     return HttpResponse.json({ ok: true });
+  }),
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/cancel`, ({ params }) => {
+    const taskId = params.id as string;
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) {
+      return HttpResponse.json({ error: 'task_not_found' }, { status: 404 });
+    }
+
+    const now = new Date().toISOString();
+    task.run_state = 'idle';
+    task.updated_at = now;
+    task.last_activity_at = now;
+
+    return HttpResponse.json({
+      status: 'cancelling',
+      task_id: taskId,
+      run_id: `mock_run_${taskId}`,
+      request_id: `mock_cancel_${taskId}`,
+    });
   }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/inputs`, async ({ request, params }) => {
     const taskId = params.id as string;

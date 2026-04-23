@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import http, { type Server } from 'node:http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { NOTEBOOK_RUNNER_SPEC } from '@mbos/agent-runner';
 import { createDefaultNodeApiDeps } from '../index.js';
@@ -15,6 +15,7 @@ import type { TaskRecord } from '../notebook-task/task-models.js';
 import { getTasks } from '../notebook-task/task-runtime-state.js';
 import { notebookTaskMessagesCollection, notebookTasksCollection } from '../notebook-task/task-store.js';
 import { issueInternalTicket } from '../internal-ticket-store.js';
+import { sanitizeWorkloadId } from '../internal-agent-pod-manager.js';
 import { NotebookTerminalService } from '../notebook-terminal-service.js';
 import {
   deleteProjectMembershipRecord,
@@ -287,6 +288,38 @@ async function createActiveExternalTaskForTerminal(
   );
   expect(createTaskRes.status).toBe(201);
   const task = await createTaskRes.json() as { id: string };
+  return { taskId: task.id, agentId: agent.id };
+}
+
+async function createActiveInternalTaskForTerminal(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+  baseUrl: string,
+  taskTitle: string,
+): Promise<{ taskId: string; agentId: string }> {
+  const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+    name: `${taskTitle}-agent`,
+    mode: 'internal',
+    interaction_kind: 'notebook',
+    status: 'enabled',
+    config: {
+      image: 'runner:v1',
+      _internal_raw_key: 'ask_test',
+    } as never,
+    owner_id: 'user_test',
+    visibility: 'private',
+    execution_preferences_json: {
+      notebook: {
+        endpoint_id: 'ep_internal',
+      },
+    },
+  });
+
+  const workspaceLibrary = await createFileLibrary(baseUrl, `${taskTitle} Workspace`);
+  const task = await createNotebookTaskForAgent(baseUrl, {
+    title: taskTitle,
+    agentId: agent.id,
+    workspaceFileLibraryId: workspaceLibrary.id,
+  });
   return { taskId: task.id, agentId: agent.id };
 }
 
@@ -3271,6 +3304,115 @@ describe('api-entry-node notebook task routes', () => {
     }
   });
 
+  it('releases the internal task workload when api reload reconciles a persisted live terminal session to failed truth', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    const releasePod = vi.fn(async () => undefined);
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+      releasePod,
+    };
+    deps.internalAgentWorkspaceBindingManager = {
+      ensureWorkspaceBinding: vi.fn(async (input: {
+        workspaceId: string;
+        projectId: string;
+        fileLibraryId: string;
+        taskId: string;
+      }) => ({
+        binding: {
+          id: 'bind_internal_terminal_reload',
+          workspace_id: input.workspaceId,
+          project_id: input.projectId,
+          file_library_id: input.fileLibraryId,
+          kind: 'juicefs_volume',
+          status: 'ready',
+          metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
+          storage_bucket_url: 'http://localhost:19000/jfs-internal',
+          created_at: '2026-04-05T00:00:00.000Z',
+          updated_at: '2026-04-05T00:00:00.000Z',
+        },
+        workspaceMount: {
+          bindingId: 'bind_internal_terminal_reload',
+          mountPath: `/workspace/${input.taskId}`,
+          fileLibraryId: input.fileLibraryId,
+        },
+      })),
+    } as never;
+    const firstServer = startServerWithDeps(deps);
+
+    try {
+      process.env.PUBLIC_API_BASE_URL = `${firstServer.baseUrl}/api/v1`;
+      const { taskId } = await createActiveInternalTaskForTerminal(
+        deps,
+        firstServer.baseUrl,
+        'Reloaded internal terminal holder',
+      );
+
+      const createTerminalRes = await apiFetchWithToken(
+        firstServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cols: 80, rows: 24 }),
+        },
+      );
+      expect(createTerminalRes.status).toBe(201);
+
+      firstServer.server.closeAllConnections?.();
+      firstServer.server.closeIdleConnections?.();
+      await new Promise<void>((resolve) => firstServer.server.close(() => resolve()));
+
+      deps.notebookTerminalService = new NotebookTerminalService(
+        deps.cache,
+        deps.agentExecutionService,
+      );
+      const secondServer = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = `${secondServer.baseUrl}/api/v1`;
+
+      const listAfterReload = await apiFetchWithToken(
+        secondServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions`,
+        'test-token',
+      );
+      expect(listAfterReload.status).toBe(200);
+      await expect(listAfterReload.json()).resolves.toMatchObject({
+        total: 1,
+        items: [
+          expect.objectContaining({
+            status: 'failed',
+            close_reason: 'terminal_connection_failed_service_reload',
+            ws_url: null,
+          }),
+        ],
+      });
+
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        if (releasePod.mock.calls.length > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(releasePod).toHaveBeenCalledWith(
+        'ws_default',
+        'proj_1',
+        sanitizeWorkloadId(taskId),
+      );
+
+      secondServer.server.closeAllConnections?.();
+      secondServer.server.closeIdleConnections?.();
+      await new Promise<void>((resolve) => secondServer.server.close(() => resolve()));
+    } finally {
+      if (firstServer.server.listening) {
+        firstServer.server.closeAllConnections?.();
+        firstServer.server.closeIdleConnections?.();
+        await new Promise<void>((resolve) => firstServer.server.close(() => resolve()));
+      }
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
   it('does not mutate a persisted terminal session when wrong-task terminal routes miss scope after api reload', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
@@ -3365,7 +3507,7 @@ describe('api-entry-node notebook task routes', () => {
     }
   });
 
-  it('lets a reloaded api clear a failed terminal session and resume notebook work', async () => {
+  it('keeps failed terminal history visible without blocking notebook work, and still lets a reloaded api clear it', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     const deps = createDefaultNodeApiDeps();
     deps.notebookTerminalService = new NotebookTerminalService(
@@ -3467,14 +3609,6 @@ describe('api-entry-node notebook task routes', () => {
         ws_url: null,
       });
 
-      const deleteFailedSession = await apiFetchWithToken(
-        firstServer.baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${created.session_id}`,
-        'test-token',
-        { method: 'DELETE' },
-      );
-      expect(deleteFailedSession.status).toBe(204);
-
       const sendMessageRes = await apiFetchWithToken(
         firstServer.baseUrl,
         `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/messages`,
@@ -3489,6 +3623,14 @@ describe('api-entry-node notebook task routes', () => {
         },
       );
       expect(sendMessageRes.status).toBe(200);
+
+      const deleteFailedSession = await apiFetchWithToken(
+        firstServer.baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/terminal/sessions/${created.session_id}`,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(deleteFailedSession.status).toBe(204);
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;

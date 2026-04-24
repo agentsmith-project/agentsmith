@@ -710,13 +710,11 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       agent_chars: assistantMessage.content.length,
       reached_terminal: reachedTerminal,
     });
-    // Finalize active run before emitting task_update so run_state is authoritative (idle) on the final update.
-    await onFinalize(taskId, runId);
-    emitTaskEvent(taskId, { type: 'message', data: assistantMessage });
-    emitTaskEvent(taskId, { type: 'task_update', data: task });
+    let persistedFinalState = false;
     try {
       await deps.docStore.upsert(taskCollections.messages, assistantMessage.id, assistantMessage);
       await deps.docStore.upsert(taskCollections.tasks, task.id, task);
+      persistedFinalState = true;
     } catch (error) {
       debugLog('task_run_persist_failed', {
         task_id: task.id,
@@ -724,6 +722,12 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         message_id: assistantMessage.id,
         error: error instanceof Error ? error.message : 'persist_failed',
       });
+    }
+    // Keep run_state authoritative until the terminal assistant/task truth is durably written.
+    await onFinalize(taskId, runId);
+    if (persistedFinalState) {
+      emitTaskEvent(taskId, { type: 'message', data: assistantMessage });
+      emitTaskEvent(taskId, { type: 'task_update', data: task });
     }
     try {
       await writeProjectAuditEvent(deps, {

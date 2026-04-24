@@ -14,6 +14,7 @@ import {
   removeTaskTraceEventsFromMemory,
 } from './notebook-trace-store.js';
 import {
+  activateNotebookTaskEventSubscription,
   clearNotebookTaskEventState,
   emitNotebookTaskEvent,
   replayBufferedNotebookTaskEvents,
@@ -254,6 +255,43 @@ function buildTerminalUsername(user: AuthenticatedUser): string {
   const local = user.email.split('@')[0]?.trim();
   if (local) return local;
   return user.id.trim() || 'unknown_user';
+}
+
+async function writeNotebookTaskSseSnapshot(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  userId: string;
+  res: http.ServerResponse;
+  includeMessages: boolean;
+  includeArtifacts: boolean;
+  includeTraces: boolean;
+}): Promise<void> {
+  const currentTask = findTaskForOwner(args.workspaceId, args.projectId, args.taskId, args.userId);
+  if (currentTask) {
+    writeNotebookTaskSseEvent(args.res, {
+      type: 'task_update',
+      data: await buildTaskRealtimeView(args.deps, args.workspaceId, args.projectId, currentTask),
+    });
+  }
+  if (args.includeMessages) {
+    await loadTaskMessages(args.deps, args.taskId);
+    for (const message of getTaskMessages(args.taskId)) {
+      writeNotebookTaskSseEvent(args.res, { type: 'message', data: message });
+    }
+  }
+  if (args.includeArtifacts) {
+    await loadTaskArtifacts(args.deps, args.taskId);
+    for (const artifact of getTaskArtifacts(args.taskId)) {
+      writeNotebookTaskSseEvent(args.res, { type: 'artifact', data: artifact });
+    }
+  }
+  if (args.includeTraces) {
+    for (const traceEvent of await loadTaskTraceEvents(args.deps, args.workspaceId, args.taskId)) {
+      writeNotebookTaskSseEvent(args.res, { type: 'trace_event', data: traceEvent });
+    }
+  }
 }
 
 export async function hasBlockingTaskRunForTerminal(
@@ -1146,6 +1184,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
     }
+    if (await getNotebookTaskRunState(deps.cache, route.taskId)) {
+      json(res, 409, {
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'task_run_in_progress',
+      });
+      return true;
+    }
     if (await hasBlockingTerminalSessionsForTask({
       terminalService: deps.notebookTerminalService,
       workspaceId: route.workspaceId,
@@ -1771,21 +1816,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     if (typeof res.flushHeaders === 'function') {
       res.flushHeaders();
     }
-    subscribeNotebookTaskEvents(route.taskId, res);
-    if (lastEventId) {
-      replayBufferedNotebookTaskEvents(res, route.taskId, lastEventId);
-    } else {
-      const currentTask = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
-      if (currentTask) {
-        writeNotebookTaskSseEvent(res, {
-          type: 'task_update',
-          data: await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, currentTask),
-        });
-      }
-      for (const traceEvent of await loadTaskTraceEvents(deps, route.workspaceId, route.taskId)) {
-        writeNotebookTaskSseEvent(res, { type: 'trace_event', data: traceEvent });
-      }
-    }
+    subscribeNotebookTaskEvents(route.taskId, res, { buffered: true });
     const timer = setInterval(() => {
       res.write('event: ping\n');
       res.write(`data: ${JSON.stringify({ type: 'ping' })}\n\n`);
@@ -1794,6 +1825,41 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       clearInterval(timer);
       unsubscribeNotebookTaskEvents(route.taskId, res);
     });
+    try {
+      if (lastEventId) {
+        const replay = replayBufferedNotebookTaskEvents(res, route.taskId, lastEventId);
+        if (replay.status === 'missing') {
+          await writeNotebookTaskSseSnapshot({
+            deps,
+            workspaceId: route.workspaceId,
+            projectId: route.projectId,
+            taskId: route.taskId,
+            userId: user.id,
+            res,
+            includeMessages: true,
+            includeArtifacts: true,
+            includeTraces: true,
+          });
+        }
+      } else {
+        await writeNotebookTaskSseSnapshot({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          taskId: route.taskId,
+          userId: user.id,
+          res,
+          includeMessages: false,
+          includeArtifacts: false,
+          includeTraces: true,
+        });
+      }
+      activateNotebookTaskEventSubscription(route.taskId, res);
+    } catch (error) {
+      clearInterval(timer);
+      unsubscribeNotebookTaskEvents(route.taskId, res);
+      throw error;
+    }
     return true;
   }
 

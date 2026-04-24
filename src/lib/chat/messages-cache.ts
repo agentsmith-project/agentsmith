@@ -17,7 +17,15 @@ export function upsertChatMessageInCache(
   queryClient.setQueryData(
     queryKey,
     (prev: ChatMessagesQueryData | undefined) => {
-      if (!prev) return prev;
+      if (!prev) {
+        return {
+          items: [message],
+          total: 1,
+          page: 1,
+          page_size: 1,
+          has_more: false,
+        };
+      }
       const index = prev.items.findIndex((item) => item.id === message.id);
       if (index >= 0) {
         const nextItems = [...prev.items];

@@ -5,7 +5,13 @@ interface BufferedTaskSseEvent {
   payload: unknown;
 }
 
-const TASK_EVENT_CLIENTS = new Map<string, Set<http.ServerResponse>>();
+interface NotebookTaskSseClient {
+  buffered: boolean;
+  pending: BufferedTaskSseEvent[];
+  res: http.ServerResponse;
+}
+
+const TASK_EVENT_CLIENTS = new Map<string, Map<http.ServerResponse, NotebookTaskSseClient>>();
 const TASK_EVENT_SEQUENCE_BY_TASK = new Map<string, number>();
 const TASK_EVENT_HISTORY_BY_TASK = new Map<string, BufferedTaskSseEvent[]>();
 const MAX_TASK_SSE_EVENTS_PER_TASK = Math.max(100, Number(process.env.NOTEBOOK_SSE_HISTORY_MAX_EVENTS ?? '2000') || 2000);
@@ -33,22 +39,36 @@ export function writeNotebookTaskSseEvent(res: http.ServerResponse, payload: unk
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
+function getTaskEventClients(taskId: string): Map<http.ServerResponse, NotebookTaskSseClient> {
+  let existing = TASK_EVENT_CLIENTS.get(taskId);
+  if (!existing) {
+    existing = new Map<http.ServerResponse, NotebookTaskSseClient>();
+    TASK_EVENT_CLIENTS.set(taskId, existing);
+  }
+  return existing;
+}
+
 export function emitNotebookTaskEvent(taskId: string, payload: unknown): void {
   const seq = (TASK_EVENT_SEQUENCE_BY_TASK.get(taskId) ?? 0) + 1;
   TASK_EVENT_SEQUENCE_BY_TASK.set(taskId, seq);
   const sseEventId = `${taskId}:${seq}`;
-  appendTaskEventHistory(taskId, { id: sseEventId, payload });
+  const event = { id: sseEventId, payload };
+  appendTaskEventHistory(taskId, event);
   const clients = TASK_EVENT_CLIENTS.get(taskId);
   if (!clients || clients.size === 0) return;
-  for (const client of clients) {
-    if (client.writableEnded || client.destroyed) {
-      clients.delete(client);
+  for (const [res, client] of clients.entries()) {
+    if (res.writableEnded || res.destroyed) {
+      clients.delete(res);
+      continue;
+    }
+    if (client.buffered) {
+      client.pending.push(event);
       continue;
     }
     try {
-      writeNotebookTaskSseEvent(client, payload, sseEventId);
+      writeNotebookTaskSseEvent(res, payload, sseEventId);
     } catch {
-      clients.delete(client);
+      clients.delete(res);
     }
   }
   if (clients.size === 0) {
@@ -56,28 +76,84 @@ export function emitNotebookTaskEvent(taskId: string, payload: unknown): void {
   }
 }
 
+function matchesEventReplayCursor(eventId: string, lastEventId: string): boolean {
+  if (eventId === lastEventId) return true;
+  const suffix = eventId.split(':').at(-1);
+  return Boolean(suffix) && suffix === lastEventId;
+}
+
 export function replayBufferedNotebookTaskEvents(
   res: http.ServerResponse,
   taskId: string,
   lastEventId: string | null,
-): void {
-  if (!lastEventId) return;
+): {
+  status: 'skipped' | 'missing' | 'replayed';
+  replayed_count: number;
+} {
+  if (!lastEventId) {
+    return {
+      status: 'skipped',
+      replayed_count: 0,
+    };
+  }
   const history = TASK_EVENT_HISTORY_BY_TASK.get(taskId);
-  if (!history || history.length === 0) return;
-  const idx = history.findIndex((item) => item.id === lastEventId);
-  const replayItems = idx >= 0 ? history.slice(idx + 1) : history;
+  if (!history || history.length === 0) {
+    return {
+      status: 'missing',
+      replayed_count: 0,
+    };
+  }
+  const idx = history.findIndex((item) => matchesEventReplayCursor(item.id, lastEventId));
+  if (idx < 0) {
+    return {
+      status: 'missing',
+      replayed_count: 0,
+    };
+  }
+  const replayItems = history.slice(idx + 1);
   for (const item of replayItems) {
     writeNotebookTaskSseEvent(res, item.payload, item.id);
   }
+  return {
+    status: 'replayed',
+    replayed_count: replayItems.length,
+  };
 }
 
-export function subscribeNotebookTaskEvents(taskId: string, res: http.ServerResponse): void {
-  let clients = TASK_EVENT_CLIENTS.get(taskId);
-  if (!clients) {
-    clients = new Set<http.ServerResponse>();
-    TASK_EVENT_CLIENTS.set(taskId, clients);
+export function subscribeNotebookTaskEvents(
+  taskId: string,
+  res: http.ServerResponse,
+  options?: {
+    buffered?: boolean;
+  },
+): void {
+  const clients = getTaskEventClients(taskId);
+  clients.set(res, {
+    res,
+    buffered: options?.buffered === true,
+    pending: [],
+  });
+}
+
+export function activateNotebookTaskEventSubscription(taskId: string, res: http.ServerResponse): void {
+  const clients = TASK_EVENT_CLIENTS.get(taskId);
+  const client = clients?.get(res);
+  if (!client) return;
+  if (res.writableEnded || res.destroyed) {
+    clients?.delete(res);
+    if (clients && clients.size === 0) {
+      TASK_EVENT_CLIENTS.delete(taskId);
+    }
+    return;
   }
-  clients.add(res);
+  client.buffered = false;
+  if (client.pending.length === 0) {
+    return;
+  }
+  const pending = client.pending.splice(0, client.pending.length);
+  for (const item of pending) {
+    writeNotebookTaskSseEvent(res, item.payload, item.id);
+  }
 }
 
 export function unsubscribeNotebookTaskEvents(taskId: string, res: http.ServerResponse): void {
@@ -99,11 +175,10 @@ export function getNotebookTaskSseBrokerStats(): {
   history_task_count: number;
   max_events_per_task: number;
 } {
-  const clientCount = [...TASK_EVENT_CLIENTS.values()].reduce((acc, set) => acc + set.size, 0);
+  const clientCount = [...TASK_EVENT_CLIENTS.values()].reduce((acc, clients) => acc + clients.size, 0);
   return {
     client_count: clientCount,
     history_task_count: TASK_EVENT_HISTORY_BY_TASK.size,
     max_events_per_task: MAX_TASK_SSE_EVENTS_PER_TASK,
   };
 }
-

@@ -160,6 +160,131 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     expect(audit.items.some((item) => item.error_code === 'RESOURCE_POLICY_DENIED')).toBe(true);
   });
 
+  it('persists final notebook task truth before finalizing the run and emitting terminal SSE updates', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const originalUpsert = docStore.upsert.bind(docStore);
+    const steps: string[] = [];
+    docStore.upsert = async (collection, id, doc) => {
+      if (collection === 'project_task_messages' && id === 'msg_final_order') {
+        steps.push('persist_message');
+      }
+      if (collection === 'project_tasks' && id === 'task_final_order') {
+        steps.push('persist_task');
+      }
+      return originalUpsert(collection, id, doc);
+    };
+
+    const deps = {
+      cache: new InMemoryCache(),
+      docStore,
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_final_order',
+          status: 'enabled',
+          mode: 'external',
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_final_order',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_final_order',
+          workspace_id: 'ws_final_order',
+          project_id: 'proj_final_order',
+          status: 'active',
+          model: 'placeholder-model',
+          credential_ref: 'cred_final_order',
+          name: 'endpoint-final-order',
+          type: 'openai',
+          upstream_protocol: 'openai_chat_completions',
+          base_url: 'https://example.com',
+          model_profile: {
+            max_context_tokens: 128000,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest: vi.fn(async () => ({
+          requestId: 'req_final_order',
+          cancel: () => undefined,
+          stream: (async function* stream() {
+            yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+          })(),
+        })),
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_final_order',
+      workspace_id: 'ws_final_order',
+      project_id: 'proj_final_order',
+      owner_user_id: 'user_final_order',
+      title: 'final order task',
+      agent_name: 'external agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_final_order',
+    };
+    const assistantMessage = {
+      id: 'msg_final_order',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    await runNotebookTaskWithExecutionAgent({
+      deps,
+      task,
+      assistantMessage,
+      agentId: 'agent_final_order',
+      user: { id: 'user_final_order', name: 'Final Order User', email: 'final@example.com' },
+      publicBaseUrl: 'http://localhost:20000',
+      buildRunId: () => 'run_final_order',
+      buildProxyUsername: () => 'final_order_user',
+      mapTaskMessagesForExecution: () => [],
+      updateTaskActivity: () => undefined,
+      emitTaskEvent: (_taskId, payload) => {
+        if (payload.type === 'message') {
+          steps.push('emit_message');
+        }
+        if (payload.type === 'task_update') {
+          steps.push('emit_task_update');
+        }
+      },
+      onFinalize: () => {
+        steps.push('finalize');
+      },
+      debugLog: () => undefined,
+      taskCollections: {
+        tasks: 'project_tasks',
+        messages: 'project_task_messages',
+      },
+      createTaskArtifact: async () => ({
+        id: 'artifact_final_order',
+        task_id: task.id,
+        type: 'file',
+        created_at: new Date().toISOString(),
+      }),
+    });
+
+    expect(steps).toEqual([
+      'persist_message',
+      'persist_task',
+      'finalize',
+      'emit_message',
+      'emit_task_update',
+    ]);
+  });
+
   it('uses internal execution api base derived from agent execution websocket base', async () => {
     const previousWsBase = process.env.AGENT_EXECUTION_WS_BASE_URL;
     const previousHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;

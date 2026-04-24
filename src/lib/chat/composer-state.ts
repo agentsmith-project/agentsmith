@@ -33,7 +33,13 @@ export function deriveChatComposerState(input: ChatComposerStateInput): ChatComp
   if (!input.currentSessionId || !input.activeSession) return 'no_thread';
   if (!hasEndpointBinding(input.activeSession)) return 'need_endpoint';
   if (input.editingMessageId) return 'editing';
-  if (input.streamStatus === 'connecting' || input.streamStatus === 'streaming') return 'streaming';
+  if (
+    input.streamStatus === 'connecting'
+    || input.streamStatus === 'recovering'
+    || input.streamStatus === 'streaming'
+  ) {
+    return 'streaming';
+  }
   if (input.createMessagePending || input.editMessagePending || input.initAttachmentPending) return 'pending';
   return 'ready';
 }

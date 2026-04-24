@@ -46,6 +46,7 @@ const {
   latestConversationPanelPropsRef,
   latestTaskHeaderPropsRef,
   latestTaskTerminalPanelPropsRef,
+  latestTaskTerminalPanelPropsByTabIdRef,
   latestUseTaskArtifactsArgsRef,
   latestUseTaskArgsRef,
   latestUseTaskMessagesArgsRef,
@@ -78,6 +79,7 @@ const {
   latestConversationPanelPropsRef: { current: null as any },
   latestTaskHeaderPropsRef: { current: null as any },
   latestTaskTerminalPanelPropsRef: { current: null as any },
+  latestTaskTerminalPanelPropsByTabIdRef: { current: {} as Record<string, any> },
   latestUseTaskArtifactsArgsRef: { current: null as any },
   latestUseTaskArgsRef: { current: null as any },
   latestUseTaskMessagesArgsRef: { current: null as any },
@@ -302,6 +304,7 @@ vi.mock('../TaskTerminalPanel', () => ({
   clearTaskTerminalPanelSessionStateForScope: mockClearTaskTerminalPanelSessionStateForScope,
   TaskTerminalPanel: (props: any) => {
     latestTaskTerminalPanelPropsRef.current = props;
+    latestTaskTerminalPanelPropsByTabIdRef.current[props.tabId ?? 'active'] = props;
     const { closeRequestToken, onOpenChange, open, visible, tabId } = props;
     React.useEffect(() => {
       if (open && closeRequestToken > 0) {
@@ -489,6 +492,7 @@ describe('TaskPage', () => {
     latestTaskSseOptionsRef.current = null;
     latestConversationPanelPropsRef.current = null;
     latestTaskHeaderPropsRef.current = null;
+    latestTaskTerminalPanelPropsByTabIdRef.current = {};
     latestUseTaskArgsRef.current = null;
     latestUseTaskMessagesArgsRef.current = null;
     latestUseTaskArtifactsArgsRef.current = null;
@@ -648,15 +652,77 @@ describe('TaskPage', () => {
   });
 
   describe('Task Rendering', () => {
-    it('prefers backend reconnectable truth over a stale local closed or failed tab state', () => {
+    it('preserves stronger local live terminal tab states across transient backend pending or disconnected truth, while still converging explicit backend terminal truth', () => {
       expect(mergeTerminalTabStatus('failed', 'disconnected')).toBe('recovering');
       expect(mergeTerminalTabStatus('closed', 'disconnected')).toBe('recovering');
-      expect(mergeTerminalTabStatus('connecting', 'disconnected')).toBe('recovering');
-      expect(mergeTerminalTabStatus('active', 'disconnected')).toBe('recovering');
+      expect(mergeTerminalTabStatus('connecting', 'disconnected')).toBe('connecting');
+      expect(mergeTerminalTabStatus('active', 'disconnected')).toBe('active');
+      expect(mergeTerminalTabStatus('connecting', 'pending')).toBe('connecting');
+      expect(mergeTerminalTabStatus('active', 'pending')).toBe('active');
       expect(mergeTerminalTabStatus('failed', 'pending')).toBe('preparing');
       expect(mergeTerminalTabStatus('closed', 'pending')).toBe('preparing');
       expect(mergeTerminalTabStatus('failed', 'active')).toBe('active');
       expect(mergeTerminalTabStatus('closed', 'failed')).toBe('failed');
+      expect(mergeTerminalTabStatus('connecting', 'closed')).toBe('closed');
+    });
+
+    it('does not downgrade an already-live terminal tab badge when backend poll truth briefly lags behind the panel state', async () => {
+      window.sessionStorage.setItem(
+        `agentsmith-terminal-workspace:${mockWorkspaceId}:${mockProjectId}:${mockTaskId}`,
+        JSON.stringify({
+          preferredViewMode: 'terminal',
+          preferredActiveSessionId: 'backend-session-1',
+          artifactsDrawerOpen: true,
+        }),
+      );
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          total: 1,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'disconnected',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+          ],
+        });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
+        expect(
+          screen.getByTestId('notebook__task-terminal-tab-terminal-session-1'),
+        ).toHaveTextContent('Active');
+      });
+
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onStatusChange('active');
+      });
+
+      await act(async () => {
+        latestTaskTerminalPanelPropsRef.current.onSessionResolved('backend-session-1');
+      });
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+        expect(
+          screen.getByTestId('notebook__task-terminal-tab-terminal-session-1'),
+        ).toHaveTextContent('Active');
+        expect(
+          screen.getByTestId('notebook__task-terminal-tab-terminal-session-1'),
+        ).not.toHaveTextContent('Recovering');
+      });
     });
 
     it('prefers the active recovery tab before the first recovery tab, then active, then the first tab', () => {
@@ -1824,6 +1890,109 @@ describe('TaskPage', () => {
       });
     });
 
+    it('ignores stale terminal sync snapshots that resolve after newer backend truth', async () => {
+      const user = userEvent.setup();
+      const firstSync = createDeferred<{
+        total: number;
+        items: Array<{ id: string; status: 'active'; created_at: string }>;
+      }>();
+      const secondSync = createDeferred<{
+        total: number;
+        items: Array<{ id: string; status: 'active'; created_at: string }>;
+      }>();
+
+      mockTaskApiListTerminalSessions
+        .mockResolvedValueOnce({ total: 0, items: [] })
+        .mockReturnValueOnce(firstSync.promise as any)
+        .mockReturnValueOnce(secondSync.promise as any);
+
+      await renderComponentAndWaitForTerminalHydration();
+
+      await act(async () => {
+        latestTaskHeaderPropsRef.current.onCreateTerminalSession();
+      });
+      await waitFor(() => {
+        expect(
+          latestTaskTerminalPanelPropsByTabIdRef.current['terminal-session-1'],
+        ).toBeTruthy();
+      });
+      await user.click(screen.getByTestId('notebook__task-terminal-create'));
+      await waitFor(() => {
+        expect(
+          latestTaskTerminalPanelPropsByTabIdRef.current['terminal-session-2'],
+        ).toBeTruthy();
+      });
+      await act(async () => {
+        latestTaskTerminalPanelPropsByTabIdRef.current[
+          'terminal-session-1'
+        ].onSessionResolved('backend-session-1');
+      });
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(2);
+      });
+
+      await act(async () => {
+        latestTaskTerminalPanelPropsByTabIdRef.current[
+          'terminal-session-2'
+        ].onSessionResolved('backend-session-2');
+      });
+
+      await waitFor(() => {
+        expect(mockTaskApiListTerminalSessions).toHaveBeenCalledTimes(3);
+      });
+
+      await act(async () => {
+        secondSync.resolve({
+          total: 2,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+            {
+              id: 'backend-session-2',
+              status: 'active',
+              created_at: '2026-04-13T01:00:01.000Z',
+            },
+          ],
+        });
+        await secondSync.promise;
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(2);
+        expect(
+          screen.getAllByTestId(/^notebook__task-terminal-tab-terminal-session-\d+$/),
+        ).toHaveLength(2);
+      });
+
+      await act(async () => {
+        firstSync.resolve({
+          total: 1,
+          items: [
+            {
+              id: 'backend-session-1',
+              status: 'active',
+              created_at: '2026-04-13T01:00:00.000Z',
+            },
+          ],
+        });
+        await firstSync.promise;
+      });
+
+      await waitFor(() => {
+        expect(latestTaskHeaderPropsRef.current.terminalSessionCount).toBe(2);
+        expect(
+          screen.getAllByTestId(/^notebook__task-terminal-tab-terminal-session-\d+$/),
+        ).toHaveLength(2);
+        expect(
+          screen.getByTestId('notebook__task-terminal-tab-terminal-session-2'),
+        ).toBeInTheDocument();
+      });
+    });
+
     it('uses the conversation blocker as the single recovery entry while sessions are active and supports reopening terminal workspace', async () => {
       const user = userEvent.setup();
       mockTaskHookState.messages = [];
@@ -2751,6 +2920,117 @@ describe('TaskPage', () => {
         expect(latestConversationPanelPropsRef.current.connectionErrorMessage).toBe(
           'Task detail refetch failed',
         );
+      });
+    });
+
+    it('reconciles final assistant content and trace tail after backend finishes while SSE recovery is exhausted', async () => {
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'running',
+        last_activity_at: '2026-03-06T04:00:00.000Z',
+      };
+      mockTaskHookState.messages = [
+        mockMessages[0],
+        {
+          ...mockMessages[1],
+          content: 'Partial assistant output',
+        },
+      ];
+
+      const finalMessages = [
+        mockMessages[0],
+        {
+          ...mockMessages[1],
+          content: 'Final assistant output from backend truth',
+        },
+      ];
+
+      mockUseTaskRefetch.mockImplementation(async () => ({
+        data: mockTaskHookState.task,
+      }));
+      mockUseTaskMessagesRefetch.mockImplementation(async () => {
+        mockTaskHookState.messages = finalMessages;
+        return { data: finalMessages };
+      });
+      mockTaskApiListTraces.mockResolvedValueOnce({
+        items: [
+          {
+            id: 'trace_run_done',
+            task_id: mockTaskId,
+            message_id: 'msg-2',
+            run_id: 'run-1',
+            seq: 12,
+            at: '2026-03-06T04:00:01.000Z',
+            category: 'lifecycle',
+            phase: 'end',
+            status: 'success',
+            name: 'run.lifecycle',
+            summary: 'Run completed',
+          },
+        ],
+        total: 1,
+        has_more: false,
+        next_after_id: null,
+      });
+
+      const view = await renderComponentReady();
+
+      await act(async () => {
+        latestTaskSseOptionsRef.current?.onError?.(
+          Object.assign(
+            new Error('SSE connection failed after 5 reconnection attempts'),
+            { code: 'TASK_EVENTS_RECOVERY_EXHAUSTED' },
+          ),
+        );
+      });
+
+      await waitFor(() => {
+        expect(latestConversationPanelPropsRef.current.connectionErrorCode).toBe(
+          'TASK_EVENTS_RECOVERY_EXHAUSTED',
+        );
+      });
+
+      mockTaskHookState.task = {
+        ...mockTaskHookState.task,
+        run_state: 'idle',
+        last_activity_at: '2026-03-06T04:00:02.000Z',
+      };
+
+      view.rerender(
+        <QueryClientProvider client={view.queryClient}>
+          <TaskPage
+            workspaceId={mockWorkspaceId}
+            projectId={mockProjectId}
+            taskId={mockTaskId}
+            canCreateTask={true}
+            canUpdateTask={true}
+            canDeleteTask={true}
+            canUseTerminal={true}
+          />
+        </QueryClientProvider>,
+      );
+
+      await waitFor(() => {
+        expect(mockUseTaskRefetch).toHaveBeenCalled();
+        expect(mockUseTaskMessagesRefetch).toHaveBeenCalled();
+        expect(mockTaskArtifactsRefetch).toHaveBeenCalled();
+        expect(mockTaskApiListTraces).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+          expect.objectContaining({ page_size: 500 }),
+        );
+        expect(latestConversationPanelPropsRef.current.messages).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: 'msg-2',
+              role: 'agent',
+              content: 'Final assistant output from backend truth',
+            }),
+          ]),
+        );
+        expect(latestConversationPanelPropsRef.current.connectionErrorCode).toBeNull();
+        expect(latestConversationPanelPropsRef.current.connectionErrorMessage).toBeNull();
       });
     });
   });

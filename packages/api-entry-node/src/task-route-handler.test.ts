@@ -20,6 +20,7 @@ import {
   buildNotebookTaskRunState,
   refreshNotebookTaskRunLease,
 } from './notebook-task/task-run-coordination.js';
+import { clearNotebookTaskEventState, emitNotebookTaskEvent } from './notebook-task-sse-broker.js';
 import { ACTIVE_RUNS_BY_TASK, ARTIFACTS_BY_TASK, TASKS_BY_PROJECT } from './notebook-task/task-runtime-state.js';
 import { notebookTaskArtifactsCollection, notebookTasksCollection } from './notebook-task/task-store.js';
 
@@ -135,6 +136,154 @@ describe('task-route-handler workspace access', () => {
       taskId: 'task_terminal_failed',
       userId: 'user_1',
     })).resolves.toBe(false);
+  });
+
+  it('rejects deleting a task while shared notebook run truth is still active', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_delete_busy', {
+      id: 'task_delete_busy',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Busy task',
+      agent_id: 'agent_1',
+      agent_name: 'Agent One',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_delete_busy',
+      runId: 'run_delete_busy',
+      startedAt: now,
+    }))).resolves.toBe(true);
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskItem',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_delete_busy',
+      } as never,
+      method: 'DELETE',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      { error_code: 'RESOURCE_CONFLICT', message: 'task_run_in_progress' },
+    );
+    await expect(
+      deps.docStore.get(notebookTasksCollection('ws_default'), 'task_delete_busy'),
+    ).resolves.toMatchObject({
+      id: 'task_delete_busy',
+    });
+  });
+
+  it('sends the initial notebook task snapshot before flushing live events on fresh SSE subscribe', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const now = new Date().toISOString();
+    const taskId = 'task_events_snapshot_first';
+    clearNotebookTaskEventState(taskId);
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), taskId, {
+      id: taskId,
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Fresh SSE snapshot ordering',
+      agent_id: 'agent_1',
+      agent_name: 'Agent One',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+
+    let releaseAgentLookup!: () => void;
+    let notifyAgentLookupStarted!: () => void;
+    const agentLookupStarted = new Promise<void>((resolve) => {
+      notifyAgentLookupStarted = resolve;
+    });
+    const agentLookupGate = new Promise<void>((resolve) => {
+      releaseAgentLookup = resolve;
+    });
+    deps.agentResourceService.getAgent = vi.fn(async () => {
+      notifyAgentLookupStarted();
+      await agentLookupGate;
+      return {
+        id: 'agent_1',
+        name: 'Agent One',
+        status: 'enabled',
+        mode: 'external',
+        presence: 'online',
+        interaction_kind: 'notebook',
+      } as never;
+    });
+
+    const req = new EventEmitter() as EventEmitter & http.IncomingMessage;
+    req.headers = {};
+    req.url = `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${taskId}/events`;
+    const writes: string[] = [];
+    const res = {
+      setHeader: vi.fn(),
+      flushHeaders: vi.fn(),
+      writableEnded: false,
+      destroyed: false,
+      write: vi.fn((chunk: string) => {
+        writes.push(chunk);
+        return true;
+      }),
+    } as unknown as http.ServerResponse;
+
+    const routePromise = handleTaskRoute({
+      route: {
+        kind: 'taskEvents',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId,
+      } as never,
+      method: 'GET',
+      req: req as never,
+      res,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: vi.fn(),
+      readBody: vi.fn(),
+    });
+
+    await agentLookupStarted;
+    emitNotebookTaskEvent(taskId, {
+      type: 'message',
+      data: {
+        id: 'msg_live_after_subscribe',
+        task_id: taskId,
+        role: 'agent',
+        content: 'live update',
+        created_at: now,
+      },
+    });
+    releaseAgentLookup();
+    await expect(routePromise).resolves.toBe(true);
+
+    const payload = writes.join('');
+    const snapshotIndex = payload.indexOf('"type":"task_update"');
+    const liveIndex = payload.indexOf('msg_live_after_subscribe');
+    expect(snapshotIndex).toBeGreaterThanOrEqual(0);
+    expect(liveIndex).toBeGreaterThan(snapshotIndex);
+
+    req.emit('close');
+    clearNotebookTaskEventState(taskId);
   });
 
   it('prefers the configured public api base for terminal websocket urls', () => {

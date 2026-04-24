@@ -1578,6 +1578,90 @@ describe('api-entry-node notebook task routes', () => {
     }
   });
 
+  it('rejects deleting a notebook task while its run is still active and preserves task truth', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    let notifyDispatchStarted!: () => void;
+    const dispatchStarted = new Promise<void>((resolve) => {
+      notifyDispatchStarted = resolve;
+    });
+    let releaseRun!: () => void;
+    const runGate = new Promise<void>((resolve) => {
+      releaseRun = resolve;
+    });
+    deps.agentExecutionService.dispatchStreamingRequest = async () => ({
+      requestId: 'req_delete_busy',
+      cancel: () => undefined,
+      stream: (async function* stream() {
+        notifyDispatchStarted();
+        await runGate;
+        yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+      })(),
+    });
+
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
+      const workspaceLibrary = await createFileLibrary(baseUrl, 'Delete Busy Workspace');
+      const { agentId } = await createExternalNotebookExecutionAgent(deps, 'delete-busy-agent');
+      const task = await createNotebookTaskForAgent(baseUrl, {
+        title: 'Delete busy task',
+        agentId,
+        workspaceFileLibraryId: workspaceLibrary.id,
+      });
+
+      const postMessageRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'user',
+            content: 'keep this run open',
+          }),
+        },
+      );
+      expect(postMessageRes.status).toBe(200);
+      await dispatchStarted;
+
+      const deleteRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
+        'test-token',
+        { method: 'DELETE' },
+      );
+      expect(deleteRes.status).toBe(409);
+      await expect(deleteRes.json()).resolves.toMatchObject({
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'task_run_in_progress',
+      });
+
+      const taskRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
+        'test-token',
+      );
+      expect(taskRes.status).toBe(200);
+      await expect(taskRes.json()).resolves.toMatchObject({
+        id: task.id,
+        run_state: 'running',
+      });
+
+      releaseRun();
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const activeRun = await getNotebookTaskRunState(deps.cache, task.id);
+        if (!activeRun) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      await expect(getNotebookTaskRunState(deps.cache, task.id)).resolves.toBeNull();
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
   it('runs notebook task message through external execution service and enforces single active run per task', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     try {

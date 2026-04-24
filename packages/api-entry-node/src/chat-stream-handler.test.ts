@@ -5,6 +5,12 @@ import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { InternalWorkloadCoordinator } from './internal-workload-coordinator.js';
 import type { ChatMessageRecord } from './resource-models.js';
+import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
+import {
+  ACTIVE_CHAT_STREAMS,
+  readSessionStreamState,
+  writeSessionStreamState,
+} from './chat-stream-state.js';
 
 const {
   buildChatExecutionMessagesMock,
@@ -106,6 +112,149 @@ function createResponse(): http.ServerResponse & {
   });
   return res;
 }
+
+function createExternalAgentStreamDeps(args?: {
+  cache?: InMemoryCache;
+  getAgent?: ReturnType<typeof vi.fn>;
+  dispatchStreamingRequest?: ReturnType<typeof vi.fn>;
+}) {
+  const cache = args?.cache ?? new InMemoryCache();
+  const docStore = new InMemoryJsonDocStore();
+  const messages: ChatMessageRecord[] = [];
+  const createdAt = new Date().toISOString();
+  const session = {
+    id: 'session_external_stream',
+    workspace_id: 'ws_external_stream',
+    project_id: 'proj_external_stream',
+    owner_user_id: 'user_external_stream',
+    title: 'External Stream',
+    model: 'external-agent',
+    endpoint_id: '',
+    external_agent_id: 'agent_external_stream',
+    created_at: createdAt,
+    updated_at: createdAt,
+    message_count: 0,
+    total_tokens: 0,
+  };
+  const getAgent = args?.getAgent ?? vi.fn(async () => ({
+    id: 'agent_external_stream',
+    workspace_id: 'ws_external_stream',
+    project_id: 'proj_external_stream',
+    name: 'external-stream-agent',
+    mode: 'external',
+    status: 'enabled',
+    execution_preferences_json: {
+      chat: {
+        endpoint_id: 'ep_external_stream',
+        wire_api: 'chat',
+      },
+    },
+    capabilities: {
+      streaming_completion: true,
+      multimodal_completion: false,
+    },
+    created_at: createdAt,
+    updated_at: createdAt,
+  }));
+  const dispatchStreamingRequest = args?.dispatchStreamingRequest ?? vi.fn(async () => ({
+    requestId: 'req_external_stream',
+    cancel: () => undefined,
+    stream: (async function* stream() {
+      yield { type: 'delta' as const, delta: 'hello' };
+      yield { type: 'done' as const, finish_reason: 'stop', usage_tokens: 5 };
+    })(),
+  }));
+  const createMessage = vi.fn(async (input: {
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+    parentId?: string | null;
+    variantGroupId?: string;
+    variantIndex?: number;
+    messageStatus?: 'streaming' | 'completed' | 'stopped' | 'failed';
+  }) => {
+    const created: ChatMessageRecord = {
+      id: `msg_${messages.length + 1}`,
+      workspace_id: session.workspace_id,
+      project_id: session.project_id,
+      session_id: session.id,
+      role: input.role,
+      content: input.content,
+      created_at: createdAt,
+      finish_reason: null,
+      message_status: input.messageStatus,
+      error_code: null,
+      error_message: null,
+      parent_id: input.parentId ?? null,
+      variant_group_id: input.variantGroupId,
+      variant_index: input.variantIndex,
+      is_stale: false,
+    };
+    messages.push(created);
+    return created;
+  });
+  const updateAssistantMessage = vi.fn(async (
+    _workspaceId: string,
+    _projectId: string,
+    _sessionId: string,
+    messageId: string,
+    patch: Partial<ChatMessageRecord>,
+  ) => {
+    const index = messages.findIndex((message) => message.id === messageId);
+    if (index < 0) return null;
+    messages[index] = {
+      ...messages[index],
+      ...(patch.content !== undefined ? { content: patch.content } : {}),
+      ...(patch.finishReason !== undefined ? { finish_reason: patch.finishReason } : {}),
+      ...(patch.tokens !== undefined ? { tokens: patch.tokens } : {}),
+      ...(patch.messageStatus !== undefined ? { message_status: patch.messageStatus } : {}),
+      ...(patch.errorCode !== undefined ? { error_code: patch.errorCode } : {}),
+      ...(patch.errorMessage !== undefined ? { error_message: patch.errorMessage } : {}),
+    };
+    return messages[index];
+  });
+  const deps = {
+    cache,
+    docStore,
+    chatResourceService: {
+      getSessionForUser: vi.fn(async () => session),
+      listMessages: vi.fn(async () => [...messages]),
+      getMessage: vi.fn(async () => null),
+      createMessage,
+      buildNextAssistantVariant: vi.fn(async () => ({
+        variantGroupId: 'variant_external_stream',
+        variantIndex: 0,
+      })),
+      listAttachments: vi.fn(async () => []),
+      listAttachmentsByIds: vi.fn(async () => []),
+      updateAssistantMessage,
+    },
+    agentResourceService: {
+      getAgent,
+    },
+    agentExecutionService: {
+      dispatchStreamingRequest,
+    },
+    downloadFileLibraryObjectUseCase: {
+      execute: vi.fn(async () => {
+        throw new Error('should_not_download_attachments_in_external_stream_tests');
+      }),
+    },
+  } as unknown as NodeApiDeps;
+
+  return {
+    cache,
+    deps,
+    messages,
+    session,
+    createMessage,
+    dispatchStreamingRequest,
+    getAgent,
+  };
+}
+
+afterEach(() => {
+  ACTIVE_CHAT_STREAMS.clear();
+});
 
 describe('selectLatestCanonicalBranchLeaf', () => {
   beforeEach(() => {
@@ -367,6 +516,218 @@ describe('selectLatestCanonicalBranchLeaf', () => {
       delete process.env.PUBLIC_API_BASE_URL;
     } else {
       process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+});
+
+describe('handleChatStreamRoute session state ordering', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('treats session execution_status=stopping as an authoritative stream conflict even without an active record', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
+    const { cache, deps, dispatchStreamingRequest, createMessage } = createExternalAgentStreamDeps();
+    const req = { headers: {} } as http.IncomingMessage;
+    const res = createResponse();
+    const json = vi.fn();
+
+    await writeSessionStreamState(
+      cache,
+      'ws_external_stream',
+      'proj_external_stream',
+      'session_external_stream',
+      'stopping',
+      60,
+    );
+
+    try {
+      await expect(handleChatStreamRoute({
+        route: {
+          kind: 'chatMessagesStream',
+          workspaceId: 'ws_external_stream',
+          projectId: 'proj_external_stream',
+          sessionId: 'session_external_stream',
+        },
+        method: 'POST',
+        req,
+        res,
+        deps,
+        user: { id: 'user_external_stream', name: 'External Stream User', email: 'external-stream@example.com' },
+        json,
+        readBody: async () => ({
+          input: { role: 'user', content: 'hello conflict' },
+        }),
+        sseWrite: vi.fn(),
+      })).resolves.toBe(true);
+
+      expect(json).toHaveBeenCalledWith(res, 409, {
+        error_code: 'CHAT_SESSION_STREAM_CONFLICT',
+        message: 'chat_session_stream_conflict',
+      });
+      expect(createMessage).not.toHaveBeenCalled();
+      expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+    } finally {
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
+    }
+  });
+
+  it('does not dispatch an external agent request after session stop wins in the pre-dispatch window', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
+    const agentLookupGate = createDeferred<Awaited<ReturnType<ReturnType<typeof vi.fn>>>>();
+    const getAgent = vi.fn(async () => agentLookupGate.promise);
+    const { cache, deps, messages, dispatchStreamingRequest } = createExternalAgentStreamDeps({ getAgent });
+    const streamReq = { headers: {} } as http.IncomingMessage;
+    const streamRes = createResponse();
+    const streamJson = vi.fn();
+    const sseWrite = vi.fn();
+    const stopRes = createResponse();
+    const stopJson = vi.fn();
+
+    try {
+      const streamPromise = handleChatStreamRoute({
+        route: {
+          kind: 'chatMessagesStream',
+          workspaceId: 'ws_external_stream',
+          projectId: 'proj_external_stream',
+          sessionId: 'session_external_stream',
+        },
+        method: 'POST',
+        req: streamReq,
+        res: streamRes,
+        deps,
+        user: { id: 'user_external_stream', name: 'External Stream User', email: 'external-stream@example.com' },
+        json: streamJson,
+        readBody: async () => ({
+          input: { role: 'user', content: 'hello pre-dispatch stop' },
+        }),
+        sseWrite,
+      });
+
+      await vi.waitFor(() => {
+        expect(getAgent).toHaveBeenCalledTimes(1);
+      });
+
+      await expect(handleChatNonStreamRoute({
+        route: {
+          kind: 'chatSessionStop',
+          workspaceId: 'ws_external_stream',
+          projectId: 'proj_external_stream',
+          sessionId: 'session_external_stream',
+        },
+        method: 'POST',
+        req: { headers: {} } as http.IncomingMessage,
+        res: stopRes,
+        deps,
+        user: { id: 'user_external_stream', name: 'External Stream User', email: 'external-stream@example.com' },
+        requestUrl: new URL('http://localhost/api/v1/workspaces/ws_external_stream/projects/proj_external_stream/chat/sessions/session_external_stream/stop'),
+        json: stopJson,
+        readBody: async () => ({}),
+      })).resolves.toBe(true);
+
+      expect(stopJson).toHaveBeenCalledWith(stopRes, 202, {
+        success: true,
+        session_id: 'session_external_stream',
+        state: 'stopping',
+      });
+
+      agentLookupGate.resolve({
+        id: 'agent_external_stream',
+        workspace_id: 'ws_external_stream',
+        project_id: 'proj_external_stream',
+        name: 'external-stream-agent',
+        mode: 'external',
+        status: 'enabled',
+        execution_preferences_json: {
+          chat: {
+            endpoint_id: 'ep_external_stream',
+            wire_api: 'chat',
+          },
+        },
+        capabilities: {
+          streaming_completion: true,
+          multimodal_completion: false,
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      await expect(streamPromise).resolves.toBe(true);
+
+      expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+      await expect(readSessionStreamState(
+        cache,
+        'ws_external_stream',
+        'proj_external_stream',
+        'session_external_stream',
+      )).resolves.toBe('stopped');
+      expect(messages.find((message) => message.role === 'assistant')?.message_status).toBe('stopped');
+      expect(sseWrite).toHaveBeenCalledWith(
+        streamRes,
+        'done',
+        expect.objectContaining({ message_status: 'stopped' }),
+      );
+    } finally {
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
+    }
+  });
+
+  it('writes terminal execution_status before emitting the done event', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
+    const doneStateReads: Array<Promise<string | null>> = [];
+    const { cache, deps } = createExternalAgentStreamDeps();
+    const req = { headers: {} } as http.IncomingMessage;
+    const res = createResponse();
+    const json = vi.fn();
+    const sseWrite = vi.fn((_res: http.ServerResponse, event: string) => {
+      if (event === 'done') {
+        doneStateReads.push(readSessionStreamState(
+          cache,
+          'ws_external_stream',
+          'proj_external_stream',
+          'session_external_stream',
+        ));
+      }
+    });
+
+    try {
+      await expect(handleChatStreamRoute({
+        route: {
+          kind: 'chatMessagesStream',
+          workspaceId: 'ws_external_stream',
+          projectId: 'proj_external_stream',
+          sessionId: 'session_external_stream',
+        },
+        method: 'POST',
+        req,
+        res,
+        deps,
+        user: { id: 'user_external_stream', name: 'External Stream User', email: 'external-stream@example.com' },
+        json,
+        readBody: async () => ({
+          input: { role: 'user', content: 'hello terminal ordering' },
+        }),
+        sseWrite,
+      })).resolves.toBe(true);
+
+      expect(await Promise.all(doneStateReads)).toEqual(['completed']);
+    } finally {
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
     }
   });
 });

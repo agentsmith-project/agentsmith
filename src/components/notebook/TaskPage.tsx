@@ -97,8 +97,16 @@ export function mergeTerminalTabStatus(
   currentStatus: TerminalStatus,
   nextStatus: ListedTerminalSession["status"],
 ): TerminalStatus {
-  void currentStatus;
-  return mapListedTerminalSessionStatusToTabStatus(nextStatus);
+  const mappedNextStatus = mapListedTerminalSessionStatusToTabStatus(nextStatus);
+  if (nextStatus === "failed" || nextStatus === "closed" || nextStatus === "active") {
+    return mappedNextStatus;
+  }
+  const localStatusIsStrongerLiveTruth =
+    currentStatus === "connecting" || currentStatus === "active";
+  if (localStatusIsStrongerLiveTruth) {
+    return currentStatus;
+  }
+  return mappedNextStatus;
 }
 
 function isTerminalRunTraceEvent(event: {
@@ -358,12 +366,15 @@ export function TaskPage({
   );
   const hydratedTerminalTaskScopeRef = React.useRef<string | null>(null);
   const terminalWorkspaceHydrationRequestRef = React.useRef(0);
+  const terminalWorkspaceTruthRequestRef = React.useRef(0);
 
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
   const taskAPI = React.useMemo(() => new TaskAPI(getApiClient()), []);
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
   const pendingFlushInFlightRef = React.useRef(false);
+  const runtimeIdleReconcileKeyRef = React.useRef<string | null>(null);
+  const runtimeIdleReconcileInFlightRef = React.useRef(false);
   const [runtimeReconciliationActive, setRuntimeReconciliationActive] =
     React.useState(false);
   const sendMessage = useSendMessage();
@@ -458,6 +469,16 @@ export function TaskPage({
     setRealtimeFailureCode(null);
     setRealtimeFailureMessage(null);
   }, []);
+  const beginTerminalWorkspaceTruthRequest = React.useCallback(() => {
+    const requestId = terminalWorkspaceTruthRequestRef.current + 1;
+    terminalWorkspaceTruthRequestRef.current = requestId;
+    return requestId;
+  }, []);
+  const isLatestTerminalWorkspaceTruthRequest = React.useCallback(
+    (requestId: number) =>
+      terminalWorkspaceTruthRequestRef.current === requestId,
+    [],
+  );
 
   React.useEffect(() => {
     if (!optimisticUserMessages.length || !(messages?.length ?? 0)) return;
@@ -988,6 +1009,14 @@ export function TaskPage({
   ]);
 
   const authoritativeRunState = task?.run_state ?? null;
+  const authoritativeLastActivityAt = task?.last_activity_at ?? null;
+
+  React.useEffect(() => {
+    if (authoritativeRunState === "running" || !runtimeReconciliationActive) {
+      runtimeIdleReconcileKeyRef.current = null;
+      runtimeIdleReconcileInFlightRef.current = false;
+    }
+  }, [authoritativeRunState, runtimeReconciliationActive]);
 
   React.useEffect(() => {
     if (!runtimeReconciliationActive) return;
@@ -996,12 +1025,33 @@ export function TaskPage({
     if (sendMessage.isPending || isAgentTurnRunning || cancelActiveRun.isPending) {
       return;
     }
-    setRuntimeReconciliationActive(false);
+    const reconcileKey = [
+      authoritativeLastActivityAt ?? "none",
+      activeTraceMessageId ?? "none",
+      effectiveRealtimeFailureCode ?? "none",
+    ].join(":");
+    if (runtimeIdleReconcileInFlightRef.current) {
+      return;
+    }
+    if (runtimeIdleReconcileKeyRef.current === reconcileKey) {
+      setRuntimeReconciliationActive(false);
+      return;
+    }
+    runtimeIdleReconcileKeyRef.current = reconcileKey;
+    runtimeIdleReconcileInFlightRef.current = true;
+    void reconcileTaskRuntime("backend_idle_truth").finally(() => {
+      runtimeIdleReconcileInFlightRef.current = false;
+      setRuntimeReconciliationActive(false);
+    });
   }, [
+    activeTraceMessageId,
     cancelActiveRun.isPending,
+    effectiveRealtimeFailureCode,
     isAgentTurnRunning,
+    reconcileTaskRuntime,
     runtimeReconciliationActive,
     sendMessage.isPending,
+    authoritativeLastActivityAt,
     authoritativeRunState,
   ]);
 
@@ -1442,17 +1492,23 @@ export function TaskPage({
   );
 
   const syncTerminalWorkspaceFromBackend = React.useCallback(async () => {
+    const requestId = beginTerminalWorkspaceTruthRequest();
     const listedSessions = await taskAPI.listTerminalSessions(
       workspaceId,
       projectId,
       taskId,
     );
+    if (!isLatestTerminalWorkspaceTruthRequest(requestId)) {
+      return null;
+    }
     hydrateTerminalWorkspaceFromBackendSessions(listedSessions.items, {
       modeStrategy: "preserve-current",
     });
     return listedSessions;
   }, [
+    beginTerminalWorkspaceTruthRequest,
     hydrateTerminalWorkspaceFromBackendSessions,
+    isLatestTerminalWorkspaceTruthRequest,
     projectId,
     taskAPI,
     taskId,
@@ -1461,7 +1517,7 @@ export function TaskPage({
 
   const hydrateTerminalWorkspace = React.useCallback(
     async (logContext: string = "TaskPage.hydrateTerminalWorkspace") => {
-      const requestId = terminalWorkspaceHydrationRequestRef.current + 1;
+      const requestId = beginTerminalWorkspaceTruthRequest();
       terminalWorkspaceHydrationRequestRef.current = requestId;
       hydratedTerminalTaskScopeRef.current = taskScopeKey;
       setTerminalWorkspaceHydrationState("pending");
@@ -1471,7 +1527,10 @@ export function TaskPage({
           projectId,
           taskId,
         );
-        if (terminalWorkspaceHydrationRequestRef.current !== requestId) {
+        if (
+          terminalWorkspaceHydrationRequestRef.current !== requestId ||
+          !isLatestTerminalWorkspaceTruthRequest(requestId)
+        ) {
           return null;
         }
         hydrateTerminalWorkspaceFromBackendSessions(listedSessions.items);
@@ -1479,7 +1538,10 @@ export function TaskPage({
         setTerminalWorkspaceHydrationState("ready");
         return listedSessions;
       } catch (error) {
-        if (terminalWorkspaceHydrationRequestRef.current !== requestId) {
+        if (
+          terminalWorkspaceHydrationRequestRef.current !== requestId ||
+          !isLatestTerminalWorkspaceTruthRequest(requestId)
+        ) {
           return null;
         }
         hydratedTerminalTaskScopeRef.current = taskScopeKey;
@@ -1492,8 +1554,10 @@ export function TaskPage({
       }
     },
     [
+      beginTerminalWorkspaceTruthRequest,
       handleError,
       hydrateTerminalWorkspaceFromBackendSessions,
+      isLatestTerminalWorkspaceTruthRequest,
       projectId,
       taskAPI,
       taskId,
@@ -1570,11 +1634,15 @@ export function TaskPage({
           ),
         ),
       );
+      const requestId = beginTerminalWorkspaceTruthRequest();
       const remainingSessions = await taskAPI.listTerminalSessions(
         workspaceId,
         projectId,
         taskId,
       );
+      if (!isLatestTerminalWorkspaceTruthRequest(requestId)) {
+        return;
+      }
       hydrateTerminalWorkspaceFromBackendSessions(remainingSessions.items, {
         modeStrategy: "preserve-current",
       });
@@ -1584,8 +1652,10 @@ export function TaskPage({
       });
     }
   }, [
+    beginTerminalWorkspaceTruthRequest,
     handleError,
     hydrateTerminalWorkspaceFromBackendSessions,
+    isLatestTerminalWorkspaceTruthRequest,
     projectId,
     resetTerminalWorkspaceState,
     taskAPI,

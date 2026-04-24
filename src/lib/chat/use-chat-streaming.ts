@@ -192,6 +192,17 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
   }, [clearStreamState, setStreamState]);
 
   useEffect(() => {
+    const sessionsById = new Map(sessions.map((session) => [session.id, session]));
+    for (const [sessionId, state] of Object.entries(streamStateBySession)) {
+      if (state.status !== 'stopped' && state.status !== 'error') continue;
+      const session = sessionsById.get(sessionId);
+      if (!session || session.execution_status === 'completed') {
+        clearStreamState(sessionId);
+      }
+    }
+  }, [clearStreamState, sessions, streamStateBySession]);
+
+  useEffect(() => {
     if (!workspaceId || !projectId || sessions.length === 0) return;
     const candidates = sessions.filter(
       (session) =>
@@ -443,6 +454,8 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
         status: reason === 'user' ? 'stopped' : 'idle',
         assistant: null,
       });
+      queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, sessionId) });
+      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
       return true;
     }
 
@@ -461,6 +474,8 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
       status: reason === 'user' ? 'stopped' : 'idle',
       assistant: null,
     });
+    queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, sessionId) });
+    queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
     return true;
   };
 

@@ -121,9 +121,12 @@ export function ChatMainPane(props: ChatMainPaneProps) {
   } = props;
 
   const showAppendFooter = Boolean(
-    activeStreamingAssistant &&
-    activeStreamingAssistant.mode === 'append' &&
-    !activeStreamingAssistant.messageId,
+    activeStreamingAssistant
+    && activeStreamingAssistant.mode === 'append'
+    && (
+      !activeStreamingAssistant.messageId
+      || !messages.some((message) => message.id === activeStreamingAssistant.messageId)
+    ),
   );
   const composerState = deriveChatComposerState({
     currentSessionId,
@@ -134,6 +137,11 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     editMessagePending,
     initAttachmentPending,
   });
+  const composerStreaming =
+    disabled
+    || activeStreamStatus === 'connecting'
+    || activeStreamStatus === 'recovering'
+    || activeStreamStatus === 'streaming';
   const composerDisabled = composerState !== 'ready';
   const composerDisabledReason =
     composerState === 'no_thread'
@@ -252,8 +260,8 @@ export function ChatMainPane(props: ChatMainPaneProps) {
         attachments={currentSessionId ? attachments : []}
         onRemoveAttachment={onRemoveAttachment}
         onRetryAttachment={onRetryAttachment}
-        disabled={composerDisabled || !canUseChat}
-        streaming={disabled}
+        disabled={composerDisabled || composerStreaming || !canUseChat}
+        streaming={composerStreaming}
         attachmentEnabled={Boolean(currentSessionId && canAttachFiles && composerState !== 'need_endpoint')}
         attachmentDisabledReason={composerDisabledReason}
         layoutMode={layoutMode}

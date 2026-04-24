@@ -10,6 +10,7 @@ import {
   STREAM_REGISTRY_FINAL_TTL_SECONDS,
   STREAM_REGISTRY_TTL_SECONDS,
   listActiveSessionStreams,
+  readSessionStreamState,
   readStreamRegistry,
   writeSessionStreamState,
   writeStreamRegistry,
@@ -244,6 +245,27 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   );
   if (!session) {
     json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+    return true;
+  }
+  const authoritativeSessionState = await readSessionStreamState(
+    deps.cache,
+    route.workspaceId,
+    route.projectId,
+    route.sessionId,
+  );
+  if (authoritativeSessionState === 'running' || authoritativeSessionState === 'stopping') {
+    logChatStreamEvent({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      sessionId: route.sessionId,
+      endpointId: session.endpoint_id,
+      status: 'rejected',
+      stopReason: 'session_stream_conflict',
+    });
+    json(res, 409, {
+      error_code: 'CHAT_SESSION_STREAM_CONFLICT',
+      message: 'chat_session_stream_conflict',
+    });
     return true;
   }
   const runningStreams = listActiveSessionStreams(route.workspaceId, route.projectId, route.sessionId);
@@ -585,6 +607,115 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     STREAM_REGISTRY_TTL_SECONDS,
   );
 
+  const writeTerminalStreamState = async (status: 'completed' | 'stopped' | 'failed') => {
+    await writeStreamRegistry(
+      deps.cache,
+      {
+        streamId,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sessionId: route.sessionId,
+        status,
+        updatedAt: new Date().toISOString(),
+      },
+      STREAM_REGISTRY_FINAL_TTL_SECONDS,
+    );
+    await writeSessionStreamState(
+      deps.cache,
+      route.workspaceId,
+      route.projectId,
+      route.sessionId,
+      status,
+      STREAM_REGISTRY_FINAL_TTL_SECONDS,
+    );
+  };
+
+  const finishActiveStream = () => {
+    const activeRecord = ACTIVE_CHAT_STREAMS.get(streamId);
+    if (activeRecord) {
+      activeRecord.status = 'finished';
+    }
+    return activeRecord;
+  };
+
+  const closeActiveClients = () => {
+    const activeRecord = ACTIVE_CHAT_STREAMS.get(streamId);
+    if (!activeRecord) return;
+    for (const client of activeRecord.clients) {
+      if (isWritable(client)) {
+        client.end();
+      }
+    }
+  };
+
+  const maybeFinalizeStoppedBeforeDispatch = async () => {
+    const latestSessionState = await readSessionStreamState(
+      deps.cache,
+      route.workspaceId,
+      route.projectId,
+      route.sessionId,
+    );
+    if (
+      !streamAbortController.signal.aborted &&
+      latestSessionState !== 'stopping' &&
+      latestSessionState !== 'stopped'
+    ) {
+      return false;
+    }
+    const activeRecord = finishActiveStream();
+    const finalized = await deps.chatResourceService.updateAssistantMessage(
+      route.workspaceId,
+      route.projectId,
+      route.sessionId,
+      createdAssistant.id,
+      {
+        content: activeRecord?.contentSoFar ?? '',
+        finishReason: null,
+        messageStatus: 'stopped',
+      },
+    );
+    await writeTerminalStreamState('stopped');
+    if (!res.headersSent) {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('x-chat-stream-id', streamId);
+      if (typeof res.flushHeaders === 'function') {
+        res.flushHeaders();
+      }
+      broadcast(streamId, 'meta', {
+        stream_id: streamId,
+        session_id: route.sessionId,
+        model: streamModel,
+        endpoint_id: streamEndpointId,
+        assistant_message_id: createdAssistant.id,
+        parent_message_id: parentForAssistant,
+        variant_group_id: variantMeta.variantGroupId,
+        variant_index: variantMeta.variantIndex,
+      });
+    }
+    broadcast(streamId, 'done', {
+      message_id: finalized?.id ?? createdAssistant.id,
+      finish_reason: null,
+      tokens: undefined,
+      message_status: 'stopped',
+    });
+    closeActiveClients();
+    ACTIVE_CHAT_STREAMS.delete(streamId);
+    logChatStreamEvent({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      sessionId: route.sessionId,
+      streamId,
+      endpointId: streamEndpointId,
+      status: 'stopped',
+      durationMs: Date.now() - streamStartedAtMs,
+      stopReason: activeRecord?.stopReason ?? 'session_stop',
+    });
+    return true;
+  };
+
   if (useExternalAgent) {
     const externalAgentId = session.external_agent_id ?? '';
     let internalWorkloadHolder: InternalWorkloadHolderRef | undefined;
@@ -651,6 +782,9 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         ttlMs: 8 * 60 * 60 * 1000,
         maxUses: 500,
       });
+      if (await maybeFinalizeStoppedBeforeDispatch()) {
+        return true;
+      }
       const dispatched = await deps.agentExecutionService.dispatchStreamingRequest({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -821,40 +955,15 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
 
       if (agentErrorCode) {
         clearInterval(pingTimer);
+        finishActiveStream();
+        await writeTerminalStreamState('failed');
         broadcast(streamId, 'error', {
           error_code: agentErrorCode,
           message: agentErrorMessage ?? 'agent_upstream_error',
           request_id: dispatched.requestId,
         });
-        const activeRecord = ACTIVE_CHAT_STREAMS.get(streamId);
-        if (activeRecord) {
-          for (const client of activeRecord.clients) {
-            if (isWritable(client)) {
-              client.end();
-            }
-          }
-        }
+        closeActiveClients();
         ACTIVE_CHAT_STREAMS.delete(streamId);
-        await writeStreamRegistry(
-          deps.cache,
-          {
-            streamId,
-            workspaceId: route.workspaceId,
-            projectId: route.projectId,
-            sessionId: route.sessionId,
-            status: 'failed',
-            updatedAt: new Date().toISOString(),
-          },
-          STREAM_REGISTRY_FINAL_TTL_SECONDS,
-        );
-        await writeSessionStreamState(
-          deps.cache,
-          route.workspaceId,
-          route.projectId,
-          route.sessionId,
-          'failed',
-          STREAM_REGISTRY_FINAL_TTL_SECONDS,
-        );
         logChatStreamEvent({
           workspaceId: route.workspaceId,
           projectId: route.projectId,
@@ -887,40 +996,15 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       if (activeRecord) {
         activeRecord.status = 'finished';
       }
+      await writeTerminalStreamState(messageStatus === 'stopped' ? 'stopped' : 'completed');
       broadcast(streamId, 'done', {
         message_id: finalized?.id ?? createdAssistant.id,
         finish_reason: finishReason,
         tokens: usageTokens,
         message_status: messageStatus,
       });
-      if (activeRecord) {
-        for (const client of activeRecord.clients) {
-          if (isWritable(client)) {
-            client.end();
-          }
-        }
-      }
+      closeActiveClients();
       ACTIVE_CHAT_STREAMS.delete(streamId);
-      await writeStreamRegistry(
-        deps.cache,
-        {
-          streamId,
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          sessionId: route.sessionId,
-          status: messageStatus === 'stopped' ? 'stopped' : 'completed',
-          updatedAt: new Date().toISOString(),
-        },
-        STREAM_REGISTRY_FINAL_TTL_SECONDS,
-      );
-      await writeSessionStreamState(
-        deps.cache,
-        route.workspaceId,
-        route.projectId,
-        route.sessionId,
-        messageStatus === 'stopped' ? 'stopped' : 'completed',
-        STREAM_REGISTRY_FINAL_TTL_SECONDS,
-      );
       logChatStreamEvent({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -1017,6 +1101,9 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     messages: upstreamMessages,
   };
   let upstreamRes: Response;
+  if (await maybeFinalizeStoppedBeforeDispatch()) {
+    return true;
+  }
   try {
     const namespace = await universalProxyService.ensureEndpointNamespace(
       route.workspaceId,
@@ -1033,47 +1120,10 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       signal: streamAbortController.signal,
     });
   } catch (error) {
-    ACTIVE_CHAT_STREAMS.delete(streamId);
     if (streamAbortController.signal.aborted) {
-      logChatStreamEvent({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        sessionId: route.sessionId,
-        streamId,
-        endpointId: endpoint.id,
-        status: 'stopped',
-        durationMs: Date.now() - streamStartedAtMs,
-        stopReason: ACTIVE_CHAT_STREAMS.get(streamId)?.stopReason ?? 'session_stop',
-      });
-      await writeStreamRegistry(
-        deps.cache,
-        {
-          streamId,
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          sessionId: route.sessionId,
-          status: 'stopped',
-          updatedAt: new Date().toISOString(),
-        },
-        STREAM_REGISTRY_FINAL_TTL_SECONDS,
-      );
-      await deps.chatResourceService.updateAssistantMessage(
-        route.workspaceId,
-        route.projectId,
-        route.sessionId,
-        createdAssistant.id,
-        { messageStatus: 'stopped' },
-      );
-      await writeSessionStreamState(
-        deps.cache,
-        route.workspaceId,
-        route.projectId,
-        route.sessionId,
-        'stopped',
-        STREAM_REGISTRY_FINAL_TTL_SECONDS,
-      );
-      return true;
+      return maybeFinalizeStoppedBeforeDispatch();
     }
+    ACTIVE_CHAT_STREAMS.delete(streamId);
     await writeStreamRegistry(
       deps.cache,
       {
@@ -1451,40 +1501,15 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   if (active) {
     active.status = 'finished';
   }
+  await writeTerminalStreamState(messageStatus === 'stopped' ? 'stopped' : 'completed');
   broadcast(streamId, 'done', {
     message_id: finalized?.id ?? createdAssistant.id,
     finish_reason: finishReason,
     tokens: usageTokens,
     message_status: messageStatus,
   });
-  if (active) {
-    for (const client of active.clients) {
-      if (isWritable(client)) {
-        client.end();
-      }
-    }
-  }
+  closeActiveClients();
   ACTIVE_CHAT_STREAMS.delete(streamId);
-  await writeStreamRegistry(
-    deps.cache,
-    {
-      streamId,
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      sessionId: route.sessionId,
-      status: messageStatus === 'stopped' ? 'stopped' : 'completed',
-      updatedAt: new Date().toISOString(),
-    },
-    STREAM_REGISTRY_FINAL_TTL_SECONDS,
-  );
-  await writeSessionStreamState(
-    deps.cache,
-    route.workspaceId,
-    route.projectId,
-    route.sessionId,
-    messageStatus === 'stopped' ? 'stopped' : 'completed',
-    STREAM_REGISTRY_FINAL_TTL_SECONDS,
-  );
   logChatStreamEvent({
     workspaceId: route.workspaceId,
     projectId: route.projectId,

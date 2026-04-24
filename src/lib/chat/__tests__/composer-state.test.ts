@@ -84,4 +84,18 @@ describe('composer-state', () => {
       }),
     ).toBe('ready');
   });
+
+  it('treats recovering as a blocked streaming state', () => {
+    expect(
+      deriveChatComposerState({
+        currentSessionId: 'session_1',
+        activeSession: createSession(),
+        editingMessageId: null,
+        streamStatus: 'recovering',
+        createMessagePending: false,
+        editMessagePending: false,
+        initAttachmentPending: false,
+      }),
+    ).toBe('streaming');
+  });
 });

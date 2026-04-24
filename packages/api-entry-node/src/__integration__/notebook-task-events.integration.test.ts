@@ -1,6 +1,21 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { NOTEBOOK_RUNNER_SPEC } from "@mbos/agent-runner";
+import { clearNotebookTaskEventState } from "../notebook-task-sse-broker.js";
+import {
+  ARTIFACTS_BY_TASK,
+  MESSAGES_BY_TASK,
+  TASKS_BY_PROJECT,
+} from "../notebook-task/task-runtime-state.js";
+import {
+  notebookTaskArtifactsCollection,
+  notebookTaskMessagesCollection,
+} from "../notebook-task/task-store.js";
+import {
+  buildTaskTraceEvent,
+  removeTaskTraceEventsFromMemory,
+  storeTaskTraceEvent,
+} from "../notebook-trace-store.js";
 import { apiFetch, startServer } from "./test-support.js";
 
 const sockets: WebSocket[] = [];
@@ -417,5 +432,164 @@ describe("api-entry-node notebook task event routes", () => {
         process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
       }
     }
+  });
+
+  it("falls back to persisted authoritative notebook task truth when SSE replay history is missing", async () => {
+    const { baseUrl, deps } = startServer();
+    const agent = await deps.agentResourceService.createAgent("ws_default", "proj_1", {
+      name: "Persisted fallback notebook agent",
+      mode: "external",
+      interaction_kind: "notebook",
+      status: "enabled",
+      presence: "online",
+      config: {
+        _external_key_source: "generated",
+      } as never,
+      owner_id: "user_test",
+      visibility: "private",
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: "ep_unused",
+        },
+      },
+    });
+    await deps.agentResourceService.markAgentConnected(agent.id, {
+      remote_ip: "127.0.0.1",
+      protocol_version: "1.0",
+      last_pong_at: new Date().toISOString(),
+    });
+
+    const createLibraryRes = await apiFetch(
+      baseUrl,
+      "/api/v1/workspaces/ws_default/projects/proj_1/file-libraries",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Persisted fallback workspace" }),
+      },
+    );
+    expect(createLibraryRes.status).toBe(201);
+    const workspaceLibrary = (await createLibraryRes.json()) as { id: string };
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      "/api/v1/workspaces/ws_default/projects/proj_1/tasks",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Persisted fallback task",
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string };
+
+    const createdAt = new Date().toISOString();
+    await deps.docStore.upsert(
+      notebookTaskMessagesCollection("ws_default"),
+      "msg_persisted_user",
+      {
+        id: "msg_persisted_user",
+        task_id: task.id,
+        role: "user",
+        content: "persisted user turn",
+        created_at: createdAt,
+      },
+    );
+    await deps.docStore.upsert(
+      notebookTaskMessagesCollection("ws_default"),
+      "msg_persisted_agent",
+      {
+        id: "msg_persisted_agent",
+        task_id: task.id,
+        role: "agent",
+        content: "persisted final answer",
+        created_at: createdAt,
+      },
+    );
+    await deps.docStore.upsert(
+      notebookTaskArtifactsCollection("ws_default"),
+      "artifact_persisted_1",
+      {
+        id: "artifact_persisted_1",
+        task_id: task.id,
+        type: "image",
+        title: "persisted-chart.png",
+        task_relative_path: ".artifacts/persisted-chart.png",
+        mime_type: "image/png",
+        created_at: createdAt,
+      },
+    );
+    await storeTaskTraceEvent(
+      deps,
+      "ws_default",
+      task.id,
+      buildTaskTraceEvent({
+        taskId: task.id,
+        messageId: "msg_persisted_agent",
+        runId: "run_persisted_fallback",
+        payload: {
+          sequence: 1,
+          at: createdAt,
+          category: "progress",
+          phase: "update",
+          status: "running",
+          name: "codex.exec",
+          summary: "Persisted trace event",
+        },
+      }),
+    );
+
+    clearNotebookTaskEventState(task.id);
+    MESSAGES_BY_TASK.delete(task.id);
+    ARTIFACTS_BY_TASK.delete(task.id);
+    TASKS_BY_PROJECT.delete("ws_default:proj_1");
+    removeTaskTraceEventsFromMemory(task.id);
+
+    const replayRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/events?last_event_id=${task.id}:999`,
+    );
+    expect(replayRes.status).toBe(200);
+    expect(replayRes.headers.get("content-type")).toContain(
+      "text/event-stream",
+    );
+
+    const replayText = await readSseBlocks(replayRes, 5, 4_000);
+    const replayBlocks = parseDefaultSseBlocks(replayText).filter(
+      (item) => item.payload && item.payload.type !== "ping",
+    );
+
+    expect(
+      replayBlocks.some((item) => item.payload?.type === "task_update"),
+    ).toBe(true);
+    expect(
+      replayBlocks.some(
+        (item) =>
+          item.payload?.type === "message" &&
+          item.payload?.data &&
+          (item.payload.data as { id?: string }).id === "msg_persisted_agent",
+      ),
+    ).toBe(true);
+    expect(
+      replayBlocks.some(
+        (item) =>
+          item.payload?.type === "artifact" &&
+          item.payload?.data &&
+          (item.payload.data as { id?: string }).id === "artifact_persisted_1",
+      ),
+    ).toBe(true);
+    expect(
+      replayBlocks.some(
+        (item) =>
+          item.payload?.type === "trace_event" &&
+          item.payload?.data &&
+          (item.payload.data as { summary?: string }).summary ===
+            "Persisted trace event",
+      ),
+    ).toBe(true);
   });
 });

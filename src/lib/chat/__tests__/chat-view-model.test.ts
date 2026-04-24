@@ -62,6 +62,67 @@ describe('buildChatViewModel', () => {
     expect(model.mergedStreamingSessionIds).toContain(session.id);
   });
 
+  it('keeps the session disabled while a stream is recovering', () => {
+    const session = makeSession({ execution_status: 'running' });
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      streamStateBySession: {
+        [session.id]: {
+          status: 'recovering',
+          assistant: {
+            messageId: null,
+            content: '',
+            mode: 'append',
+            startedAt: Date.now(),
+            lastTokenAt: Date.now(),
+          },
+        },
+      },
+    });
+
+    expect(model.activeStreamStatus).toBe('recovering');
+    expect(model.disabled).toBe(true);
+    expect(model.mergedStreamingSessionIds).toContain(session.id);
+  });
+
+  it('does not let stale local terminal state override an active backend execution', () => {
+    const session = makeSession({ execution_status: 'running' });
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      streamStateBySession: {
+        [session.id]: {
+          status: 'stopped',
+          assistant: null,
+        },
+      },
+    });
+
+    expect(model.activeStreamStatus).toBe('streaming');
+    expect(model.disabled).toBe(true);
+  });
+
+  it('drops stale local terminal status once the backend marks execution completed', () => {
+    const session = makeSession({ execution_status: 'completed' });
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      streamStateBySession: {
+        [session.id]: {
+          status: 'stopped',
+          assistant: null,
+        },
+      },
+    });
+
+    expect(model.activeStreamStatus).toBe('idle');
+    expect(model.disabled).toBe(false);
+  });
+
   it('returns idle state with no active session', () => {
     const model = buildChatViewModel({
       currentSessionId: null,

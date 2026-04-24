@@ -1,6 +1,5 @@
 import type { ChatSession } from '@/lib/api/types';
 import {
-  mapExecutionStatusToStreamStatus,
   type SessionStreamState,
   type SessionStreamStatus,
   type SessionStreamingAssistant,
@@ -15,6 +14,28 @@ export interface ChatViewModel {
   disabled: boolean;
 }
 
+function isLocalStreamActive(status: SessionStreamStatus): boolean {
+  return status === 'connecting' || status === 'recovering' || status === 'streaming';
+}
+
+function isExecutionActive(status: ChatSession['execution_status'] | undefined): boolean {
+  return status === 'running' || status === 'stopping';
+}
+
+function resolveActiveStreamStatus(
+  localStatus: SessionStreamStatus,
+  executionStatus: ChatSession['execution_status'] | undefined,
+): SessionStreamStatus {
+  if (localStatus === 'connecting' || localStatus === 'recovering') return localStatus;
+  if (isExecutionActive(executionStatus)) return 'streaming';
+  if (localStatus === 'streaming') return 'streaming';
+  if (executionStatus === 'failed') return 'error';
+  if (executionStatus === 'stopped') return 'stopped';
+  if (executionStatus === 'completed') return 'idle';
+  if (localStatus === 'error' || localStatus === 'stopped') return localStatus;
+  return 'idle';
+}
+
 export function buildChatViewModel(args: {
   currentSessionId: string | null;
   activeSession: ChatSession | null;
@@ -22,31 +43,30 @@ export function buildChatViewModel(args: {
   streamStateBySession: Record<string, SessionStreamState>;
 }): ChatViewModel {
   const { currentSessionId, activeSession, sessions, streamStateBySession } = args;
+  const activeLocalState = currentSessionId ? (streamStateBySession[currentSessionId] ?? null) : null;
+  const activeLocalStatus = activeLocalState?.status ?? 'idle';
+  const activeExecutionStatus = activeSession?.execution_status;
 
   const activeStreamStatus: SessionStreamStatus = currentSessionId
-    ? (() => {
-        const localStatus = streamStateBySession[currentSessionId]?.status ?? 'idle';
-        if (localStatus !== 'idle') return localStatus;
-        return mapExecutionStatusToStreamStatus(activeSession?.execution_status);
-      })()
+    ? resolveActiveStreamStatus(activeLocalStatus, activeExecutionStatus)
     : 'idle';
   const activeStreamingAssistant = currentSessionId
-    ? (streamStateBySession[currentSessionId]?.assistant ?? null)
+    ? (activeLocalState?.assistant ?? null)
     : null;
-  const activeStreamErrorCode = currentSessionId
-    ? (streamStateBySession[currentSessionId]?.errorCode ?? null)
+  const activeStreamErrorCode = currentSessionId && activeStreamStatus === 'error' && activeLocalStatus === 'error'
+    ? (activeLocalState?.errorCode ?? null)
     : null;
-  const activeStreamErrorMessage = currentSessionId
-    ? (streamStateBySession[currentSessionId]?.errorMessage ?? null)
+  const activeStreamErrorMessage = currentSessionId && activeStreamStatus === 'error' && activeLocalStatus === 'error'
+    ? (activeLocalState?.errorMessage ?? null)
     : null;
   const streamingSessionIds = Object.entries(streamStateBySession)
-    .filter(([, state]) => state.status === 'connecting' || state.status === 'streaming')
+    .filter(([, state]) => isLocalStreamActive(state.status))
     .map(([sessionId]) => sessionId);
   const executionStreamingSessionIds = sessions
-    .filter((session) => session.execution_status === 'running' || session.execution_status === 'stopping')
+    .filter((session) => isExecutionActive(session.execution_status))
     .map((session) => session.id);
   const mergedStreamingSessionIds = Array.from(new Set([...streamingSessionIds, ...executionStreamingSessionIds]));
-  const disabled = activeStreamStatus === 'connecting' || activeStreamStatus === 'streaming';
+  const disabled = isLocalStreamActive(activeLocalStatus) || isExecutionActive(activeExecutionStatus);
 
   return {
     activeStreamStatus,

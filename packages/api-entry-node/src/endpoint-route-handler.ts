@@ -3,6 +3,7 @@ import type { NodeApiDeps } from './node-api-deps.js';
 import type { AuthenticatedUser } from './auth.js';
 import type { EndpointBulkImportPayload, EndpointRecord } from './resource-models.js';
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
+import { createDownstreamAbortController } from './downstream-abort.js';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import {
   isCapabilitySupportedByProtocol,
@@ -74,6 +75,7 @@ interface EndpointHandlerArgs {
       timeoutSeconds?: number;
       requestBody?: unknown;
       passthroughHeaders?: Record<string, string>;
+      signal?: AbortSignal;
     },
   ) => Promise<{ upstream_status: number; tokens_total?: number }>;
 }
@@ -176,253 +178,265 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     if (!route.workspaceId || !route.projectId) {
       return false;
     }
-    const endpoint = await deps.endpointResourceService.getEndpoint(
-      route.workspaceId,
-      route.projectId,
-      endpointId,
-    );
-    if (!endpoint) {
-      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
-      return true;
-    }
-    if (internalTicket) {
-      if (!isAgentExecutionTicket(internalTicket)) {
-        json(res, 403, {
-          error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
-          message: 'internal_ticket_purpose_mismatch',
-        });
-        return true;
-      }
-      if (
-        internalTicket.workspace_id !== route.workspaceId
-        || internalTicket.project_id !== route.projectId
-        || internalTicket.payload.endpoint_id !== endpoint.id
-      ) {
-        json(res, 403, {
-          error_code: 'INTERNAL_TICKET_SCOPE_MISMATCH',
-          message: 'internal_ticket_scope_mismatch',
-        });
-        return true;
-      }
-    }
-    const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
-    const governancePreflight = await enforceEndpointGovernancePreflight({
-      deps,
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      endpoint,
-      userId: user.id,
-      requestId,
-      source: 'endpoint_proxy_preflight',
+    const downstreamAbort = createDownstreamAbortController({
+      req,
+      res,
+      requestAbortedMessage: 'endpoint_proxy_request_aborted',
+      requestClosedMessage: 'endpoint_proxy_request_closed',
+      responseClosedMessage: 'endpoint_proxy_response_closed',
     });
-    if (!governancePreflight.allowed) {
-      if (governancePreflight.retryAfterSeconds) {
-        res.setHeader('Retry-After', String(governancePreflight.retryAfterSeconds));
-      }
-      json(res, governancePreflight.statusCode, governancePreflight.responseBody);
-      return true;
-    }
-    if (endpoint.status !== 'active') {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_disabled' });
-      return true;
-    }
-    if (!endpoint.credential_ref) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_credential_missing' });
-      return true;
-    }
-    const apiKey = await deps.endpointResourceService.getCredentialSecret(
-      route.workspaceId,
-      route.projectId,
-      endpoint.credential_ref,
-    );
-    if (!apiKey) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_credential_not_found' });
-      return true;
-    }
-
-    const resolved = resolveEndpointTaskRoute(endpoint, action, jobId);
-    const capability = resolved.capability;
-    if (!isCapabilitySupportedByProtocol(endpoint.upstream_protocol, capability)) {
-      json(res, 422, {
-        error_code: 'VALIDATION_ERROR',
-        message: 'endpoint_capability_not_supported_for_protocol',
-      });
-      return true;
-    }
-    const isChatRoute = capability === 'chat_completion';
-    const chatEnabled =
-      endpoint.capabilities?.find((item) => item.type === 'chat_completion')?.enabled ??
-      true;
-    const multimodalEnabled =
-      endpoint.capabilities?.find((item) => item.type === 'multimodal_completion')?.enabled ??
-      false;
-    const enabled = isChatRoute
-      ? chatEnabled || multimodalEnabled
-      : (endpoint.capabilities?.find((item) => item.type === capability)?.enabled ?? false);
-    if (!enabled) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_capability_not_enabled' });
-      return true;
-    }
-    const defaultModelByCapability = {
-      chat_completion: endpoint.defaults?.chat_model_id ?? endpoint.defaults?.multimodal_model_id,
-      multimodal_completion: endpoint.defaults?.multimodal_model_id ?? endpoint.defaults?.chat_model_id,
-      rerank: endpoint.defaults?.rerank_model_id,
-      image_generation: endpoint.defaults?.image_model_id,
-      video_generation: endpoint.defaults?.video_model_id,
-    } as const;
-    const resolvedModel =
-      forceModel ??
-      defaultModelByCapability[capability] ??
-      endpoint.models?.find((item) => item.capability === capability)?.model_id ??
-      (isChatRoute
-        ? endpoint.models?.find((item) => item.capability === 'multimodal_completion')?.model_id
-        : undefined) ??
-      endpoint.model;
-    if (!resolvedModel) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_model_required' });
-      return true;
-    }
-
-    const estimatedCostPerTokenUsd = governancePreflight.estimatedCostPerTokenUsd;
-
-    const startedAtMs = Date.now();
     try {
-      const normalizedOriginalProxyPath = normalizeGatewayProxyPath(proxyPath);
-      const universalProxyService = deps.universalProxyService;
-      if (action === 'chat' && !canonicalUniversalProxyPath(normalizedOriginalProxyPath)) {
-        json(res, 422, {
-          error_code: 'VALIDATION_ERROR',
-          message: 'endpoint_proxy_path_not_supported',
-        });
-        return true;
-      }
-      const effectiveProxyPath = resolveEffectiveEndpointProxyPath(
-        action,
-        normalizedOriginalProxyPath,
-        resolved.proxyPath,
+      const endpoint = await deps.endpointResourceService.getEndpoint(
+        route.workspaceId,
+        route.projectId,
+        endpointId,
       );
-      const universalProxyPath =
-        action === 'chat'
-          ? canonicalUniversalProxyPath(effectiveProxyPath)
-          : null;
-      const requiresUniversalProxyForLlm = Boolean(universalProxyPath);
-      if (requiresUniversalProxyForLlm && !universalProxyService) {
-        json(res, 503, {
-          error_code: 'UNIVERSAL_PROXY_REQUIRED',
-          message: 'universal_proxy_required_for_llm_requests',
-        });
+      if (!endpoint) {
+        json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
         return true;
       }
-      if (
-        requiresUniversalProxyForLlm
-        && universalProxyService
-        && !universalProxyService.supportsEndpoint(endpoint)
-      ) {
+      if (internalTicket) {
+        if (!isAgentExecutionTicket(internalTicket)) {
+          json(res, 403, {
+            error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
+            message: 'internal_ticket_purpose_mismatch',
+          });
+          return true;
+        }
+        if (
+          internalTicket.workspace_id !== route.workspaceId
+          || internalTicket.project_id !== route.projectId
+          || internalTicket.payload.endpoint_id !== endpoint.id
+        ) {
+          json(res, 403, {
+            error_code: 'INTERNAL_TICKET_SCOPE_MISMATCH',
+            message: 'internal_ticket_scope_mismatch',
+          });
+          return true;
+        }
+      }
+      const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
+      const governancePreflight = await enforceEndpointGovernancePreflight({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        endpoint,
+        userId: user.id,
+        requestId,
+        source: 'endpoint_proxy_preflight',
+      });
+      if (!governancePreflight.allowed) {
+        if (governancePreflight.retryAfterSeconds) {
+          res.setHeader('Retry-After', String(governancePreflight.retryAfterSeconds));
+        }
+        json(res, governancePreflight.statusCode, governancePreflight.responseBody);
+        return true;
+      }
+      if (endpoint.status !== 'active') {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_disabled' });
+        return true;
+      }
+      if (!endpoint.credential_ref) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_credential_missing' });
+        return true;
+      }
+      const apiKey = await deps.endpointResourceService.getCredentialSecret(
+        route.workspaceId,
+        route.projectId,
+        endpoint.credential_ref,
+      );
+      if (!apiKey) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_credential_not_found' });
+        return true;
+      }
+
+      const resolved = resolveEndpointTaskRoute(endpoint, action, jobId);
+      const capability = resolved.capability;
+      if (!isCapabilitySupportedByProtocol(endpoint.upstream_protocol, capability)) {
         json(res, 422, {
           error_code: 'VALIDATION_ERROR',
-          message: 'universal_proxy_endpoint_protocol_not_supported',
+          message: 'endpoint_capability_not_supported_for_protocol',
         });
         return true;
       }
-      if (
-        requiresUniversalProxyForLlm
-        && universalProxyService
-        && universalProxyPath
-        && !universalProxyService.supportsProxyPath(universalProxyPath)
-      ) {
-        json(res, 422, {
-          error_code: 'VALIDATION_ERROR',
-          message: 'universal_proxy_path_not_supported',
-        });
+      const isChatRoute = capability === 'chat_completion';
+      const chatEnabled =
+        endpoint.capabilities?.find((item) => item.type === 'chat_completion')?.enabled ??
+        true;
+      const multimodalEnabled =
+        endpoint.capabilities?.find((item) => item.type === 'multimodal_completion')?.enabled ??
+        false;
+      const enabled = isChatRoute
+        ? chatEnabled || multimodalEnabled
+        : (endpoint.capabilities?.find((item) => item.type === capability)?.enabled ?? false);
+      if (!enabled) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_capability_not_enabled' });
         return true;
       }
-      const canUseUniversalProxy =
-        universalProxyService
-        && universalProxyService.supportsEndpoint(endpoint)
-        && universalProxyPath
-        && universalProxyService.supportsProxyPath(universalProxyPath);
-      const resolvedRequestBody =
-        typeof requestBody !== 'undefined'
-          ? requestBody
-          : (method !== 'GET' && method !== 'HEAD' ? await readBody(req) : {});
-      const targetUpstreamProxyPath =
-        normalizedOriginalProxyPath === 'anthropic/messages/count_tokens'
-          ? 'messages/count_tokens'
-          : resolved.proxyPath;
-      const proxyResult = canUseUniversalProxy
-        ? await (async () => {
-          const namespace = await universalProxyService.ensureEndpointNamespace(
-            route.workspaceId,
-            route.projectId,
-            endpoint,
+      const defaultModelByCapability = {
+        chat_completion: endpoint.defaults?.chat_model_id ?? endpoint.defaults?.multimodal_model_id,
+        multimodal_completion: endpoint.defaults?.multimodal_model_id ?? endpoint.defaults?.chat_model_id,
+        rerank: endpoint.defaults?.rerank_model_id,
+        image_generation: endpoint.defaults?.image_model_id,
+        video_generation: endpoint.defaults?.video_model_id,
+      } as const;
+      const resolvedModel =
+        forceModel ??
+        defaultModelByCapability[capability] ??
+        endpoint.models?.find((item) => item.capability === capability)?.model_id ??
+        (isChatRoute
+          ? endpoint.models?.find((item) => item.capability === 'multimodal_completion')?.model_id
+          : undefined) ??
+        endpoint.model;
+      if (!resolvedModel) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_model_required' });
+        return true;
+      }
+
+      const estimatedCostPerTokenUsd = governancePreflight.estimatedCostPerTokenUsd;
+      const startedAtMs = Date.now();
+      try {
+        const normalizedOriginalProxyPath = normalizeGatewayProxyPath(proxyPath);
+        const universalProxyService = deps.universalProxyService;
+        if (action === 'chat' && !canonicalUniversalProxyPath(normalizedOriginalProxyPath)) {
+          json(res, 422, {
+            error_code: 'VALIDATION_ERROR',
+            message: 'endpoint_proxy_path_not_supported',
+          });
+          return true;
+        }
+        const effectiveProxyPath = resolveEffectiveEndpointProxyPath(
+          action,
+          normalizedOriginalProxyPath,
+          resolved.proxyPath,
+        );
+        const universalProxyPath =
+          action === 'chat'
+            ? canonicalUniversalProxyPath(effectiveProxyPath)
+            : null;
+        const requiresUniversalProxyForLlm = Boolean(universalProxyPath);
+        if (requiresUniversalProxyForLlm && !universalProxyService) {
+          json(res, 503, {
+            error_code: 'UNIVERSAL_PROXY_REQUIRED',
+            message: 'universal_proxy_required_for_llm_requests',
+          });
+          return true;
+        }
+        if (
+          requiresUniversalProxyForLlm
+          && universalProxyService
+          && !universalProxyService.supportsEndpoint(endpoint)
+        ) {
+          json(res, 422, {
+            error_code: 'VALIDATION_ERROR',
+            message: 'universal_proxy_endpoint_protocol_not_supported',
+          });
+          return true;
+        }
+        if (
+          requiresUniversalProxyForLlm
+          && universalProxyService
+          && universalProxyPath
+          && !universalProxyService.supportsProxyPath(universalProxyPath)
+        ) {
+          json(res, 422, {
+            error_code: 'VALIDATION_ERROR',
+            message: 'universal_proxy_path_not_supported',
+          });
+          return true;
+        }
+        const canUseUniversalProxy =
+          universalProxyService
+          && universalProxyService.supportsEndpoint(endpoint)
+          && universalProxyPath
+          && universalProxyService.supportsProxyPath(universalProxyPath);
+        const resolvedRequestBody =
+          typeof requestBody !== 'undefined'
+            ? requestBody
+            : (method !== 'GET' && method !== 'HEAD' ? await readBody(req) : {});
+        const targetUpstreamProxyPath =
+          normalizedOriginalProxyPath === 'anthropic/messages/count_tokens'
+            ? 'messages/count_tokens'
+            : resolved.proxyPath;
+        const proxyResult = canUseUniversalProxy
+          ? await (async () => {
+            const namespace = await universalProxyService.ensureEndpointNamespace(
+              route.workspaceId,
+              route.projectId,
+              endpoint,
+              apiKey,
+            );
+            return universalProxyService.proxyJsonRequest({
+              req,
+              res,
+              namespace,
+              proxyPath: universalProxyPath ?? effectiveProxyPath,
+              model: resolvedModel,
+              requestBody: resolvedRequestBody,
+              passthroughHeaders: collectPassthroughHeaders(req),
+              signal: downstreamAbort.signal,
+            });
+          })()
+          : await proxyJsonRequest(req, res, {
+            upstreamUrl: buildUpstreamUrl(
+              endpoint.base_url,
+              targetUpstreamProxyPath,
+            ),
             apiKey,
-          );
-          return universalProxyService.proxyJsonRequest({
-            req,
-            res,
-            namespace,
-            proxyPath: universalProxyPath ?? effectiveProxyPath,
+            endpointProtocol: endpoint.upstream_protocol,
+            proxyPath: resolved.proxyPath,
             model: resolvedModel,
+            timeoutSeconds: endpoint.limits?.timeout_seconds,
             requestBody: resolvedRequestBody,
             passthroughHeaders: collectPassthroughHeaders(req),
+            signal: downstreamAbort.signal,
           });
-        })()
-        : await proxyJsonRequest(req, res, {
-          upstreamUrl: buildUpstreamUrl(
-            endpoint.base_url,
-            targetUpstreamProxyPath,
-          ),
-          apiKey,
-          endpointProtocol: endpoint.upstream_protocol,
-          proxyPath: resolved.proxyPath,
-          model: resolvedModel,
-          timeoutSeconds: endpoint.limits?.timeout_seconds,
-          requestBody: resolvedRequestBody,
-          passthroughHeaders: collectPassthroughHeaders(req),
+        await writeProjectUsageFact(deps, {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          resourceType: 'endpoint',
+          resourceId: endpoint.id,
+          endUserId: user.id,
+          requestId,
+          requests: 1,
+          tokensTotal: proxyResult.tokens_total,
+          durationMs: Date.now() - startedAtMs,
+          result: 'ok',
+          metadata: {
+            ...(typeof estimatedCostPerTokenUsd === 'number' && proxyResult.tokens_total
+              ? { cost_usd: Number((proxyResult.tokens_total * estimatedCostPerTokenUsd).toFixed(6)) }
+              : {}),
+            endpoint_upstream_protocol: endpoint.upstream_protocol,
+            capability,
+            model: resolvedModel,
+            proxy_path: resolved.proxyPath || proxyPath,
+          },
         });
-      await writeProjectUsageFact(deps, {
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        resourceType: 'endpoint',
-        resourceId: endpoint.id,
-        endUserId: user.id,
-        requestId,
-        requests: 1,
-        tokensTotal: proxyResult.tokens_total,
-        durationMs: Date.now() - startedAtMs,
-        result: 'ok',
-        metadata: {
-          ...(typeof estimatedCostPerTokenUsd === 'number' && proxyResult.tokens_total
-            ? { cost_usd: Number((proxyResult.tokens_total * estimatedCostPerTokenUsd).toFixed(6)) }
-            : {}),
-          endpoint_upstream_protocol: endpoint.upstream_protocol,
-          capability,
-          model: resolvedModel,
-          proxy_path: resolved.proxyPath || proxyPath,
-        },
-      });
-    } catch (error) {
-      await writeProjectUsageFact(deps, {
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        resourceType: 'endpoint',
-        resourceId: endpoint.id,
-        endUserId: user.id,
-        requestId,
-        requests: 1,
-        durationMs: Date.now() - startedAtMs,
-        result: 'error',
-        metadata: {
-          endpoint_upstream_protocol: endpoint.upstream_protocol,
-          capability,
-          model: resolvedModel,
-          proxy_path: resolved.proxyPath || proxyPath,
-          error: error instanceof Error ? error.message : 'proxy_request_error',
-        },
-      });
-      throw error;
+      } catch (error) {
+        await writeProjectUsageFact(deps, {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          resourceType: 'endpoint',
+          resourceId: endpoint.id,
+          endUserId: user.id,
+          requestId,
+          requests: 1,
+          durationMs: Date.now() - startedAtMs,
+          result: 'error',
+          metadata: {
+            endpoint_upstream_protocol: endpoint.upstream_protocol,
+            capability,
+            model: resolvedModel,
+            proxy_path: resolved.proxyPath || proxyPath,
+            error: error instanceof Error ? error.message : 'proxy_request_error',
+          },
+        });
+        throw error;
+      }
+      return true;
+    } finally {
+      downstreamAbort.cleanup();
     }
-    return true;
   };
 
   if (route.kind === 'credentials' && method === 'GET' && route.workspaceId && route.projectId) {

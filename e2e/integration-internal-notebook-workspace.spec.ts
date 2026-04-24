@@ -38,6 +38,27 @@ type CaptureEntry = {
   route: string;
 };
 
+type TaskRealtimeSnapshot = {
+  id?: string;
+  run_state?: string | null;
+  stop_mode?: string | null;
+  can_escalate?: boolean;
+  escalation_reason?: string | null;
+  last_activity_at?: string | null;
+};
+
+type TaskStopResponsePayload = {
+  status?: string;
+  task_id?: string;
+  run_id?: string | null;
+  request_id?: string | null;
+  stop_mode?: string;
+  can_escalate?: boolean;
+  escalation_reason?: string | null;
+  error_code?: string;
+  message?: string;
+};
+
 async function expectTaskRuntimeStatePersisted(args: {
   mountPath: string;
   artifactName: string;
@@ -222,6 +243,110 @@ async function sendTaskMessage(args: {
     },
   );
   expect(response.ok()).toBeTruthy();
+}
+
+async function fetchTaskRealtimeSnapshot(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}): Promise<TaskRealtimeSnapshot> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  expect(response.ok()).toBeTruthy();
+  return (await response.json().catch(() => null)) as TaskRealtimeSnapshot;
+}
+
+async function waitForTaskRunState(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  runState: string;
+  timeoutMs?: number;
+}): Promise<TaskRealtimeSnapshot> {
+  let latestSnapshot: TaskRealtimeSnapshot | null = null;
+  await expect
+    .poll(
+      async () => {
+        latestSnapshot = await fetchTaskRealtimeSnapshot(args);
+        return latestSnapshot?.run_state ?? null;
+      },
+      { timeout: args.timeoutMs ?? 180_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toBe(args.runState);
+  return latestSnapshot ?? {};
+}
+
+async function waitForTaskIdleAfterTerminateAccepted(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  timeoutMs?: number;
+  intervalMs?: number;
+}): Promise<TaskRealtimeSnapshot> {
+  const deadline = Date.now() + (args.timeoutMs ?? 300_000);
+  const intervalMs = args.intervalMs ?? 1_000;
+  const samples: string[] = [];
+  let latestSnapshot: TaskRealtimeSnapshot | null = null;
+
+  while (true) {
+    latestSnapshot = await fetchTaskRealtimeSnapshot(args);
+    const runState = latestSnapshot.run_state ?? 'null';
+    samples.push(runState);
+
+    if (runState === 'running') {
+      throw new Error(`task run_state regressed to running after terminate accepted: ${samples.join(' -> ')}`);
+    }
+
+    if (runState === 'idle') {
+      return latestSnapshot;
+    }
+
+    if (runState !== 'terminating') {
+      throw new Error(`unexpected task run_state after terminate accepted: ${samples.join(' -> ')}`);
+    }
+
+    if (Date.now() >= deadline) {
+      throw new Error(`task did not recover to idle after terminate accepted: ${samples.join(' -> ')}`);
+    }
+
+    await args.page.waitForTimeout(intervalMs);
+  }
+}
+
+async function requestTaskStop(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  mode: 'cancel' | 'terminate';
+}): Promise<{ status: number; payload: TaskStopResponsePayload }> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/cancel`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        mode: args.mode,
+      },
+    },
+  );
+  return {
+    status: response.status(),
+    payload: (await response.json().catch(() => null)) as TaskStopResponsePayload,
+  };
 }
 
 async function openFileLibraryRoot(args: {
@@ -516,5 +641,174 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
     await expect(downloadResponse.text()).resolves.toContain(firstToken);
     await capturePage(page, captures, 'internal-files-artifacts-visible', 'Files 页面中已可见 internal-k8s notebook 生成的 .artifacts 交付物');
     await flushArtifacts(captures);
+  });
+
+  test('terminate recovers internal notebook task truth after hard teardown and allows the next round', async ({ page }) => {
+    test.setTimeout(900_000);
+    const namespace = requireInternalSandboxEnv();
+    const providerApiKey = requireRealLaneApiKey();
+
+    console.log('[internal-real] login for terminate recovery');
+    await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
+    console.log('[internal-real] create project for terminate recovery');
+    const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Internal Notebook Terminate Recovery');
+    const workspaceLibraryName = `Internal Terminate Recovery ${Date.now()}`;
+    console.log('[internal-real] create file library for terminate recovery');
+    const fileLibraryId = await createFileLibraryViaUi(page, 'ws_default', projectId, workspaceLibraryName);
+    const credentialName = `Terminate Recovery Credential ${Date.now()}`;
+    console.log('[internal-real] create credential for terminate recovery');
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
+    console.log('[internal-real] create endpoint for terminate recovery');
+    const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
+      endpointName: `Terminate Recovery Endpoint ${Date.now()}`,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+      credentialName,
+    });
+    console.log('[internal-real] create internal agent for terminate recovery');
+    const internalAgent = await createInternalCodexAgent(page, {
+      workspaceId: 'ws_default',
+      projectId,
+      endpointId,
+      title: 'internal-codex-terminate-recovery',
+      image: INTERNAL_AGENT_IMAGE,
+      idleTimeoutSec: 180,
+      maxLifetimeSec: 3600,
+    });
+
+    const taskTitle = `Internal Terminate Recovery Task ${Date.now()}`;
+    console.log('[internal-real] create task for terminate recovery');
+    const taskId = await createNotebookTaskViaApi({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      title: taskTitle,
+      agentId: internalAgent.agentId,
+      fileLibraryId,
+    });
+    const workloadId = sanitizeWorkloadId(taskId);
+
+    await page.goto(`/en-US/workspaces/ws_default/projects/${projectId}/notebook/tasks/${taskId}`);
+    await expect(page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('notebook__conversation-input').locator('textarea').first()).toBeEnabled({ timeout: 30_000 });
+
+    const longRunningToken = `INTERNAL_TERMINATE_SHOULD_NOT_FINISH_${Date.now()}`;
+    const heartbeatArtifact = `terminate-heartbeat-${Date.now()}.txt`;
+    console.log('[internal-real] send long-running notebook message');
+    await sendTaskMessage({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      taskId,
+      content: [
+        'Run the following shell command exactly and do not send any final answer until the command exits.',
+        '```bash',
+        'mkdir -p .artifacts',
+        `i=0; while [ "$i" -lt 1200 ]; do i=$((i+1)); printf 'tick=%s\\n' "$i" > .artifacts/${heartbeatArtifact}; sleep 1; done`,
+        '```',
+        `After the command exits, reply with exactly: ${longRunningToken}`,
+      ].join('\n'),
+    });
+
+    console.log('[internal-real] wait for running task truth and active workload pod');
+    const [runningTask, runningPod] = await Promise.all([
+      waitForTaskRunState({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        runState: 'running',
+        timeoutMs: 180_000,
+      }),
+      waitForWorkloadPodIdentity({
+        namespace,
+        workloadId,
+        timeoutMs: 180_000,
+      }),
+    ]);
+    expect(runningTask.run_state).toBe('running');
+    expect(runningPod.name).toBeTruthy();
+    expect(runningPod.uid).toBeTruthy();
+
+    console.log('[internal-real] request terminate stop');
+    const terminate = await requestTaskStop({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      taskId,
+      mode: 'terminate',
+    });
+    expect(terminate.status).toBe(202);
+    expect(terminate.payload).toMatchObject({
+      status: 'terminating',
+      task_id: taskId,
+      stop_mode: 'terminate',
+      can_escalate: false,
+    });
+    if (typeof terminate.payload.escalation_reason === 'string' && terminate.payload.escalation_reason.trim().length > 0) {
+      expect(terminate.payload.escalation_reason).toBe('already_terminating');
+    }
+
+    console.log('[internal-real] wait for hard teardown and task truth to recover without running regression');
+    const [, recoveredTask] = await Promise.all([
+      waitForWorkloadPodDeleted({
+        namespace,
+        workloadId,
+        timeoutMs: 300_000,
+      }),
+      waitForTaskIdleAfterTerminateAccepted({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId,
+        timeoutMs: 300_000,
+        intervalMs: 1_000,
+      }),
+    ]);
+    expect(recoveredTask.run_state).toBe('idle');
+
+    console.log('[internal-real] refresh task detail after terminate recovery');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('notebook__conversation-blocked-state')).toHaveCount(0);
+    await expect(page.getByTestId('notebook__conversation-input').locator('textarea').first()).toBeEnabled({ timeout: 30_000 });
+    await expect(page.getByTestId('notebook__run-active-cancel')).toHaveCount(0);
+
+    const recoveryToken = `INTERNAL_TERMINATE_RECOVERY_${Date.now()}`;
+    const recoveryArtifact = `after-terminate-recovery-${Date.now()}.md`;
+    console.log('[internal-real] send recovery message after terminate');
+    await sendTaskMessage({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      taskId,
+      content: [
+        'Run the following shell command exactly, then reply with the token and filename.',
+        '```bash',
+        `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${recoveryArtifact}`,
+        '# Internal terminate recovery report',
+        `- Token: ${recoveryToken}`,
+        `- Previous workload pod: ${runningPod.name}`,
+        'EOF',
+        '```',
+        `After the file is written, reply with exactly: ${recoveryToken} ${recoveryArtifact}`,
+      ].join('\n'),
+    });
+    console.log('[internal-real] wait for next round to complete after terminate recovery');
+    await waitForAssistantToken({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      taskId,
+      token: recoveryToken,
+    });
+    await waitForTaskRunState({
+      page,
+      workspaceId: 'ws_default',
+      projectId,
+      taskId,
+      runState: 'idle',
+      timeoutMs: 300_000,
+    });
   });
 });

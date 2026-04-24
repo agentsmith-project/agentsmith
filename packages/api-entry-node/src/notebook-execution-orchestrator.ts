@@ -68,6 +68,22 @@ function buildTerminalAssistantFallbackContent(args: {
   return `Execution failed before any visible output was produced.\nError code: ${code}`;
 }
 
+function buildAgentCancelledError(reason?: unknown): Error {
+  const error = new Error(
+    reason instanceof Error
+      ? reason.message
+      : typeof reason === 'string' && reason.trim().length > 0
+        ? reason
+        : 'user_cancel_requested',
+  ) as Error & { code: string; cause?: unknown };
+  error.name = 'AbortError';
+  error.code = 'AGENT_CANCELLED';
+  if (reason instanceof Error) {
+    error.cause = reason;
+  }
+  return error;
+}
+
 type NotebookTaskMessageRecord = {
   id: string;
   task_id: string;
@@ -217,12 +233,13 @@ export async function runNotebookTaskWithExecutionAgent(input: {
   mapTaskMessagesForExecution: (taskId: string, assistantMessageId: string) => Array<Record<string, unknown>>;
   updateTaskActivity: (task: NotebookTaskRecord) => void;
   emitTaskEvent: (taskId: string, payload: ExecutionEventPayload) => void;
-  onDispatched?: (args: { taskId: string; runId: string; requestId: string; cancel: () => void }) => void;
+  onDispatched?: (args: { taskId: string; runId: string; requestId: string; cancel: () => void }) => boolean | void;
   onFinalize: (
     taskId: string,
     runId: string,
     summary: { durableTerminalTruth: boolean },
   ) => void | Promise<void>;
+  startupSignal?: AbortSignal;
   isCancellationRequested?: () => boolean | Promise<boolean>;
   debugLog: (message: string, extra?: Record<string, unknown>) => void;
   taskCollections: {
@@ -249,6 +266,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     emitTaskEvent,
     onDispatched,
     onFinalize,
+    startupSignal,
     isCancellationRequested,
     debugLog,
     taskCollections,
@@ -267,13 +285,17 @@ export async function runNotebookTaskWithExecutionAgent(input: {
   let requestExecutionId: string | undefined;
   let internalWorkloadHolder: InternalWorkloadHolderRef | undefined;
   let sawCancelledTerminalTrace = false;
+  let dispatchRejectedAsCancelled = false;
+  const isCancellationObserved = async (): Promise<boolean> => (
+    startupSignal?.aborted === true
+    || dispatchRejectedAsCancelled
+    || await isCancellationRequested?.() === true
+  );
   const throwIfCancellationRequested = async (): Promise<void> => {
-    if (await isCancellationRequested?.() !== true) {
+    if (!(await isCancellationObserved())) {
       return;
     }
-    throw Object.assign(new Error('user_cancel_requested'), {
-      code: 'AGENT_CANCELLED',
-    });
+    throw buildAgentCancelledError(startupSignal?.reason);
   };
 
   try {
@@ -340,6 +362,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     const model = explicitModel || endpointModel || 'gpt-5-codex';
     let internalWorkspacePath: string | undefined;
     if (agent.mode === 'internal') {
+      await throwIfCancellationRequested();
       if (!deps.internalAgentPodManager) {
         throw Object.assign(new Error('agent_sandbox_not_configured'), { code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
       }
@@ -365,6 +388,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         fileLibraryId: task.workspace_file_library_id,
         taskId: task.id,
       });
+      await throwIfCancellationRequested();
       internalWorkspacePath = workspaceBinding.workspaceMount.mountPath;
       await deps.internalAgentPodManager.ensureAgentReady({
         workspaceId: task.workspace_id,
@@ -373,7 +397,9 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         sessionId: task.id,
         agent,
         workspaceMount: workspaceBinding.workspaceMount,
+        signal: startupSignal,
       });
+      await throwIfCancellationRequested();
       const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
       const workloadHolder: InternalWorkloadHolderRef = {
         workspaceId: task.workspace_id,
@@ -461,12 +487,18 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       },
     });
     requestExecutionId = dispatched.requestId;
-    onDispatched?.({
+    const dispatchAccepted = onDispatched?.({
       taskId: task.id,
       runId,
       requestId: dispatched.requestId,
       cancel: dispatched.cancel,
-    });
+    }) !== false;
+    if (!dispatchAccepted) {
+      dispatchRejectedAsCancelled = true;
+      dispatched.cancel();
+      throw buildAgentCancelledError(startupSignal?.reason);
+    }
+    await throwIfCancellationRequested();
     debugLog('dispatch_streaming_request', {
       task_id: task.id,
       run_id: runId,
@@ -672,7 +704,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         error_code: terminalErrorCode ?? null,
       });
     }
-    const cancellationRequested = await isCancellationRequested?.() === true;
+    const cancellationRequested = await isCancellationObserved();
     if (cancellationRequested && !sawCancelledTerminalTrace) {
       const userCancelledTrace = buildTaskTraceEvent({
         taskId: task.id,

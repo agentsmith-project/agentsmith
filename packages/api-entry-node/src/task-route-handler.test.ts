@@ -24,6 +24,7 @@ import {
   markNotebookTaskRunHardTeardownFailed,
   refreshNotebookTaskRunLease,
 } from './notebook-task/task-run-coordination.js';
+import { buildTaskRealtimeView } from './notebook-task/task-realtime-view.js';
 import { clearNotebookTaskEventState, emitNotebookTaskEvent } from './notebook-task-sse-broker.js';
 import {
   ACTIVE_RUNS_BY_TASK,
@@ -32,7 +33,11 @@ import {
   ARTIFACTS_BY_TASK,
   TASKS_BY_PROJECT,
 } from './notebook-task/task-runtime-state.js';
-import { notebookTaskArtifactsCollection, notebookTasksCollection } from './notebook-task/task-store.js';
+import {
+  notebookTaskArtifactsCollection,
+  notebookTaskMessagesCollection,
+  notebookTasksCollection,
+} from './notebook-task/task-store.js';
 
 const { createFileLibraryGatewayClientMock } = vi.hoisted(() => ({
   createFileLibraryGatewayClientMock: vi.fn(),
@@ -227,7 +232,7 @@ describe('task-route-handler workspace access', () => {
     }) as never);
 
     const now = new Date().toISOString();
-    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_stale_internal', {
+    const task = {
       id: 'task_stale_internal',
       workspace_id: 'ws_default',
       project_id: 'proj_1',
@@ -240,7 +245,8 @@ describe('task-route-handler workspace access', () => {
       created_at: now,
       updated_at: now,
       last_activity_at: now,
-    });
+    };
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_stale_internal', task);
     await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
       taskId: 'task_stale_internal',
       runId: 'run_stale_internal',
@@ -278,13 +284,11 @@ describe('task-route-handler workspace access', () => {
         escalation_reason: 'already_terminating',
       }),
     );
-    await expect(getNotebookTaskRunState(deps.cache, 'task_stale_internal')).resolves.toMatchObject({
-      run_id: 'run_stale_internal',
-      phase: 'terminating',
-      stop: {
-        mode: 'terminate',
-        delivery: 'internal_teardown_requested',
-      },
+    await expect(getNotebookTaskRunState(deps.cache, 'task_stale_internal')).resolves.toBeNull();
+    await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_stale_internal')).resolves.toBeNull();
+    await expect(buildTaskRealtimeView(deps, 'ws_default', 'proj_1', task)).resolves.toMatchObject({
+      id: 'task_stale_internal',
+      run_state: 'idle',
     });
     expect(requestHardTeardown).toHaveBeenCalledWith({
       workspaceId: 'ws_default',
@@ -464,7 +468,7 @@ describe('task-route-handler workspace access', () => {
     expect(requestHardTeardown).not.toHaveBeenCalled();
   });
 
-  it('upgrades internal cancel to terminate once and keeps repeated terminate idempotent', async () => {
+  it('upgrades internal cancel to terminate and clears coordination after successful hard teardown', async () => {
     const deps = createDefaultNodeApiDeps();
     const requestHardTeardown = vi.fn(async () => undefined);
     deps.internalWorkloadCoordinator = {
@@ -573,27 +577,12 @@ describe('task-route-handler workspace access', () => {
 
     expect(retryJson).toHaveBeenCalledWith(
       expect.anything(),
-      202,
-      expect.objectContaining({
-        status: 'terminating',
-        task_id: 'task_internal_upgrade',
-        run_id: 'run_internal_upgrade',
-        request_id: 'req_internal_upgrade',
-        stop_mode: 'terminate',
-        can_escalate: false,
-        escalation_reason: 'already_terminating',
-      }),
+      409,
+      { error_code: 'TASK_RUN_NOT_ACTIVE', message: 'task_run_not_active' },
     );
     expect(requestHardTeardown).toHaveBeenCalledTimes(1);
-    const releasedUpgradeState = await getNotebookTaskRunState(deps.cache, 'task_internal_upgrade');
-    expect(releasedUpgradeState).toMatchObject({
-      phase: 'terminating',
-      stop: {
-        mode: 'terminate',
-        delivery: 'internal_teardown_requested',
-      },
-    });
-    expect(releasedUpgradeState?.stop?.hard_teardown).toBeUndefined();
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_upgrade')).resolves.toBeNull();
+    await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_internal_upgrade')).resolves.toBeNull();
   });
 
   it('retries internal terminate hard teardown after failed side effect without losing terminating truth', async () => {
@@ -687,15 +676,8 @@ describe('task-route-handler workspace access', () => {
       stop_mode: 'terminate',
     });
     expect(requestHardTeardown).toHaveBeenCalledTimes(2);
-    const releasedRetryState = await getNotebookTaskRunState(deps.cache, 'task_internal_retry');
-    expect(releasedRetryState).toMatchObject({
-      phase: 'terminating',
-      stop: {
-        mode: 'terminate',
-        delivery: 'internal_teardown_requested',
-      },
-    });
-    expect(releasedRetryState?.stop?.hard_teardown).toBeUndefined();
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_retry')).resolves.toBeNull();
+    await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_internal_retry')).resolves.toBeNull();
   });
 
   it('retries existing pending internal terminate hard teardown debt from cancel and keeps it retryable on failure', async () => {
@@ -800,15 +782,7 @@ describe('task-route-handler workspace access', () => {
       stop_mode: 'terminate',
     });
     expect(requestHardTeardown).toHaveBeenCalledTimes(2);
-    const releasedRetryState = await getNotebookTaskRunState(deps.cache, 'task_internal_pending_retry');
-    expect(releasedRetryState).toMatchObject({
-      phase: 'terminating',
-      stop: {
-        mode: 'terminate',
-        delivery: 'internal_teardown_requested',
-      },
-    });
-    expect(releasedRetryState?.stop?.hard_teardown).toBeUndefined();
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_pending_retry')).resolves.toBeNull();
     await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_internal_pending_retry')).resolves.toBeNull();
   });
 
@@ -914,15 +888,8 @@ describe('task-route-handler workspace access', () => {
       stop_mode: 'terminate',
     });
     expect(releasePod).toHaveBeenCalledTimes(2);
-    const releasedRealRetryState = await getNotebookTaskRunState(deps.cache, 'task_internal_real_retry');
-    expect(releasedRealRetryState).toMatchObject({
-      phase: 'terminating',
-      stop: {
-        mode: 'terminate',
-        delivery: 'internal_teardown_requested',
-      },
-    });
-    expect(releasedRealRetryState?.stop?.hard_teardown).toBeUndefined();
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_real_retry')).resolves.toBeNull();
+    await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_internal_real_retry')).resolves.toBeNull();
     expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([]);
 
     await internalWorkloadCoordinator.shutdown();
@@ -996,15 +963,7 @@ describe('task-route-handler workspace access', () => {
       stop_mode: 'terminate',
     }));
     expect(releasePod).toHaveBeenCalledTimes(1);
-    const releasedRunState = await getNotebookTaskRunState(deps.cache, 'task_internal_late_holder');
-    expect(releasedRunState).toMatchObject({
-      phase: 'terminating',
-      stop: {
-        mode: 'terminate',
-        delivery: 'internal_teardown_requested',
-      },
-    });
-    expect(releasedRunState?.stop?.hard_teardown).toBeUndefined();
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_late_holder')).resolves.toBeNull();
     await expect(getNotebookTaskRunHardTeardownDebt(
       deps.cache,
       'task_internal_late_holder',
@@ -1199,15 +1158,8 @@ describe('task-route-handler workspace access', () => {
       run_id: 'run_internal_live_retry',
       stop_mode: 'terminate',
     });
-    const releasedLiveRetryState = await getNotebookTaskRunState(deps.cache, 'task_internal_live_retry');
-    expect(releasedLiveRetryState).toMatchObject({
-      phase: 'terminating',
-      stop: {
-        mode: 'terminate',
-        delivery: 'internal_teardown_requested',
-      },
-    });
-    expect(releasedLiveRetryState?.stop?.hard_teardown).toBeUndefined();
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_live_retry')).resolves.toBeNull();
+    await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_internal_live_retry')).resolves.toBeNull();
     expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([]);
 
     await internalWorkloadCoordinator.shutdown();
@@ -1296,15 +1248,8 @@ describe('task-route-handler workspace access', () => {
       }),
     );
     expect(requestHardTeardown).toHaveBeenCalledTimes(1);
-    const releasedFinalizingDebtState = await getNotebookTaskRunState(deps.cache, 'task_internal_finalizing_debt');
-    expect(releasedFinalizingDebtState).toMatchObject({
-      phase: 'finalizing',
-      stop: {
-        mode: 'terminate',
-        delivery: 'internal_teardown_requested',
-      },
-    });
-    expect(releasedFinalizingDebtState?.stop?.hard_teardown).toBeUndefined();
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_finalizing_debt')).resolves.toBeNull();
+    await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_internal_finalizing_debt')).resolves.toBeNull();
   });
 
   it('retries terminal internal hard teardown debt after active run state was cleared', async () => {
@@ -1536,6 +1481,620 @@ describe('task-route-handler workspace access', () => {
     });
   });
 
+  it('registers a pre-dispatch internal cancel handle and finalizes terminate as cancelled instead of leaving an empty assistant message', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+
+    try {
+      const deps = createDefaultNodeApiDeps();
+      const startupObserved = createDeferred<void>();
+      let startupSignal: AbortSignal | undefined;
+      const dispatchStreamingRequest = vi.fn(async () => ({
+        requestId: 'req_should_not_dispatch',
+        cancel: () => undefined,
+        stream: (async function* stream() {
+          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+        })(),
+      }));
+      deps.agentExecutionService.dispatchStreamingRequest = dispatchStreamingRequest as never;
+      deps.internalAgentPodManager = {
+        ensureAgentReady: vi.fn(async (input: { signal?: AbortSignal }) => {
+          startupSignal = input.signal;
+          startupObserved.resolve();
+          if (!input.signal) {
+            await new Promise<void>(() => {});
+            return;
+          }
+          await new Promise<never>((_resolve, reject) => {
+            input.signal?.addEventListener('abort', () => {
+              reject(Object.assign(new Error('user_cancel_requested'), {
+                code: 'AGENT_CANCELLED',
+              }));
+            }, { once: true });
+          });
+        }),
+        keepalive: vi.fn(async () => undefined),
+        releasePod: vi.fn(async () => undefined),
+      } as never;
+      deps.internalAgentWorkspaceBindingManager = {
+        ensureWorkspaceBinding: vi.fn(async (input: {
+          workspaceId: string;
+          projectId: string;
+          fileLibraryId: string;
+          taskId: string;
+        }) => ({
+          binding: {
+            id: 'bind_internal_pre_dispatch_cancel',
+            workspace_id: input.workspaceId,
+            project_id: input.projectId,
+            file_library_id: input.fileLibraryId,
+            kind: 'juicefs_volume',
+            status: 'ready',
+            metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
+            storage_bucket_url: 'http://localhost:19000/jfs-internal',
+            created_at: '2026-04-05T00:00:00.000Z',
+            updated_at: '2026-04-05T00:00:00.000Z',
+          },
+          workspaceMount: {
+            bindingId: 'bind_internal_pre_dispatch_cancel',
+            mountPath: `/workspace/${input.taskId}`,
+            fileLibraryId: input.fileLibraryId,
+          },
+        })),
+      } as never;
+
+      const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+        name: 'internal pre-dispatch endpoint',
+        model: 'gpt-5-codex',
+        type: 'openai',
+        base_url: 'https://example.com/v1',
+        status: 'active',
+        credential_ref: 'cred_internal_pre_dispatch',
+        upstream_protocol: 'openai_chat_completions',
+        model_profile: {
+          max_context_tokens: 128000,
+        },
+      });
+      const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'internal-pre-dispatch-agent',
+        mode: 'internal',
+        interaction_kind: 'notebook',
+        status: 'enabled',
+        config: {
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_test',
+        } as never,
+        owner_id: 'user_test',
+        visibility: 'private',
+        execution_preferences_json: {
+          notebook: {
+            endpoint_id: endpoint.id,
+          },
+        },
+      });
+
+      const now = new Date().toISOString();
+      const task = {
+        id: 'task_internal_pre_dispatch_cancel',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Internal pre-dispatch cancel task',
+        agent_id: agent.id,
+        agent_name: agent.name,
+        workspace_file_library_id: 'lib_internal_pre_dispatch_cancel',
+        workspace_file_library_name: 'Internal Pre-dispatch Workspace',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      };
+      await deps.docStore.upsert('project_file_libraries', 'lib_internal_pre_dispatch_cancel', {
+        id: 'lib_internal_pre_dispatch_cancel',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        name: 'Internal Pre-dispatch Workspace',
+        status: 'ready',
+        filesystem_name: 'flib-internal-pre-dispatch',
+        created_by_user_id: 'user_1',
+        created_at: now,
+        updated_at: now,
+      });
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), task.id, task);
+
+      const postJson = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskMessages',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: task.id,
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json: postJson,
+        readBody: vi.fn(async () => ({ role: 'user', content: 'terminate before dispatch starts' })),
+      })).resolves.toBe(true);
+
+      const assistantMessage = postJson.mock.calls[0]?.[2] as { id: string; content: string };
+      expect(assistantMessage.content).toBe('');
+
+      await startupObserved.promise;
+      expect(startupSignal).toBeInstanceOf(AbortSignal);
+      expect(ACTIVE_RUN_CANCEL_BY_TASK.get(task.id)).toMatchObject({
+        runId: expect.any(String),
+        requestId: null,
+      });
+
+      const terminateJson = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskCancelRun',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: task.id,
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json: terminateJson,
+        readBody: vi.fn(async () => ({ mode: 'terminate' })),
+      })).resolves.toBe(true);
+
+      expect(terminateJson).toHaveBeenCalledWith(
+        expect.anything(),
+        202,
+        expect.objectContaining({
+          status: 'terminating',
+          task_id: task.id,
+          request_id: null,
+          stop_mode: 'terminate',
+        }),
+      );
+
+      await vi.waitFor(async () => {
+        expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+        expect(await getNotebookTaskRunState(deps.cache, task.id)).toBeNull();
+        const persistedAssistant = await deps.docStore.get<{
+          id: string;
+          role: string;
+          content: string;
+        }>(notebookTaskMessagesCollection('ws_default'), assistantMessage.id);
+        expect(persistedAssistant).toMatchObject({
+          id: assistantMessage.id,
+          role: 'agent',
+        });
+        expect(persistedAssistant?.content).toContain('AGENT_CANCELLED');
+      });
+
+      await expect(buildTaskRealtimeView(deps, 'ws_default', 'proj_1', task as never)).resolves.toMatchObject({
+        id: task.id,
+        run_state: 'idle',
+      });
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('keeps shared run truth in finalizing persist_failed when pre-dispatch terminate cannot persist the terminal assistant message', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+
+    try {
+      const deps = createDefaultNodeApiDeps();
+      const originalUpsert = deps.docStore.upsert.bind(deps.docStore);
+      const startupObserved = createDeferred<void>();
+      let startupSignal: AbortSignal | undefined;
+      deps.docStore.upsert = async (collection, id, doc) => {
+        if (
+          collection === notebookTaskMessagesCollection('ws_default')
+          && typeof doc === 'object'
+          && doc !== null
+          && !Array.isArray(doc)
+          && (doc as { role?: unknown }).role === 'agent'
+          && typeof (doc as { content?: unknown }).content === 'string'
+          && ((doc as { content: string }).content.length > 0)
+        ) {
+          throw new Error('final_terminal_truth_persist_failed');
+        }
+        return originalUpsert(collection, id, doc);
+      };
+      deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => ({
+        requestId: 'req_should_not_dispatch',
+        cancel: () => undefined,
+        stream: (async function* stream() {
+          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+        })(),
+      })) as never;
+      deps.internalAgentPodManager = {
+        ensureAgentReady: vi.fn(async (input: { signal?: AbortSignal }) => {
+          startupSignal = input.signal;
+          startupObserved.resolve();
+          if (!input.signal) {
+            await new Promise<void>(() => {});
+            return;
+          }
+          await new Promise<never>((_resolve, reject) => {
+            input.signal?.addEventListener('abort', () => {
+              reject(Object.assign(new Error('user_cancel_requested'), {
+                code: 'AGENT_CANCELLED',
+              }));
+            }, { once: true });
+          });
+        }),
+        keepalive: vi.fn(async () => undefined),
+        releasePod: vi.fn(async () => undefined),
+      } as never;
+      deps.internalAgentWorkspaceBindingManager = {
+        ensureWorkspaceBinding: vi.fn(async (input: {
+          workspaceId: string;
+          projectId: string;
+          fileLibraryId: string;
+          taskId: string;
+        }) => ({
+          binding: {
+            id: 'bind_internal_pre_dispatch_cancel_persist_failed',
+            workspace_id: input.workspaceId,
+            project_id: input.projectId,
+            file_library_id: input.fileLibraryId,
+            kind: 'juicefs_volume',
+            status: 'ready',
+            metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
+            storage_bucket_url: 'http://localhost:19000/jfs-internal',
+            created_at: '2026-04-05T00:00:00.000Z',
+            updated_at: '2026-04-05T00:00:00.000Z',
+          },
+          workspaceMount: {
+            bindingId: 'bind_internal_pre_dispatch_cancel_persist_failed',
+            mountPath: `/workspace/${input.taskId}`,
+            fileLibraryId: input.fileLibraryId,
+          },
+        })),
+      } as never;
+
+      const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+        name: 'internal pre-dispatch persist-failed endpoint',
+        model: 'gpt-5-codex',
+        type: 'openai',
+        base_url: 'https://example.com/v1',
+        status: 'active',
+        credential_ref: 'cred_internal_pre_dispatch_persist_failed',
+        upstream_protocol: 'openai_chat_completions',
+        model_profile: {
+          max_context_tokens: 128000,
+        },
+      });
+      const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'internal-pre-dispatch-persist-failed-agent',
+        mode: 'internal',
+        interaction_kind: 'notebook',
+        status: 'enabled',
+        config: {
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_test',
+        } as never,
+        owner_id: 'user_test',
+        visibility: 'private',
+        execution_preferences_json: {
+          notebook: {
+            endpoint_id: endpoint.id,
+          },
+        },
+      });
+
+      const now = new Date().toISOString();
+      const task = {
+        id: 'task_internal_pre_dispatch_cancel_persist_failed',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Internal pre-dispatch cancel persist-failed task',
+        agent_id: agent.id,
+        agent_name: agent.name,
+        workspace_file_library_id: 'lib_internal_pre_dispatch_cancel_persist_failed',
+        workspace_file_library_name: 'Internal Pre-dispatch Persist Failed Workspace',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      };
+      await deps.docStore.upsert('project_file_libraries', 'lib_internal_pre_dispatch_cancel_persist_failed', {
+        id: 'lib_internal_pre_dispatch_cancel_persist_failed',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        name: 'Internal Pre-dispatch Persist Failed Workspace',
+        status: 'ready',
+        filesystem_name: 'flib-internal-pre-dispatch-persist-failed',
+        created_by_user_id: 'user_1',
+        created_at: now,
+        updated_at: now,
+      });
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), task.id, task);
+
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskMessages',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: task.id,
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json: vi.fn(),
+        readBody: vi.fn(async () => ({ role: 'user', content: 'cancel before dispatch and fail persist' })),
+      })).resolves.toBe(true);
+
+      await startupObserved.promise;
+      expect(startupSignal).toBeInstanceOf(AbortSignal);
+
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskCancelRun',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: task.id,
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json: vi.fn(),
+        readBody: vi.fn(async () => ({ mode: 'terminate' })),
+      })).resolves.toBe(true);
+
+      await vi.waitFor(async () => {
+        expect(await getNotebookTaskRunState(deps.cache, task.id)).toMatchObject({
+          run_id: expect.any(String),
+          phase: 'finalizing',
+          stop: {
+            mode: 'terminate',
+          },
+          finalization: {
+            status: 'persist_failed',
+            error_code: 'AGENT_FINALIZE_PERSIST_FAILED',
+          },
+        });
+      });
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('keeps the second run local handle authoritative when a terminated first run dispatch resolves late', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://127.0.0.1:20000/api/v1';
+
+    try {
+      const deps = createDefaultNodeApiDeps();
+      const firstDispatch = createDeferred<{
+        requestId: string;
+        cancel: () => void;
+        stream: AsyncIterable<
+          | { type: 'delta'; delta: string }
+          | { type: 'done'; finish_reason: 'stop'; usage_tokens: number }
+        >;
+      }>();
+      deps.agentExecutionService.dispatchStreamingRequest = vi.fn()
+        .mockImplementationOnce(async () => firstDispatch.promise) as never;
+      deps.internalWorkloadCoordinator = {
+        acquireHolder: vi.fn(async () => undefined),
+        releaseHolder: vi.fn(async () => undefined),
+        requestHardTeardown: vi.fn(async () => undefined),
+      } as never;
+      deps.internalAgentPodManager = {
+        ensureAgentReady: vi.fn(async () => undefined),
+        keepalive: vi.fn(async () => undefined),
+        releasePod: vi.fn(async () => undefined),
+      } as never;
+      deps.internalAgentWorkspaceBindingManager = {
+        ensureWorkspaceBinding: vi.fn(async (input: {
+          workspaceId: string;
+          projectId: string;
+          fileLibraryId: string;
+          taskId: string;
+        }) => ({
+          binding: {
+            id: 'bind_internal_late_on_dispatched',
+            workspace_id: input.workspaceId,
+            project_id: input.projectId,
+            file_library_id: input.fileLibraryId,
+            kind: 'juicefs_volume',
+            status: 'ready',
+            metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
+            storage_bucket_url: 'http://localhost:19000/jfs-internal',
+            created_at: '2026-04-05T00:00:00.000Z',
+            updated_at: '2026-04-05T00:00:00.000Z',
+          },
+          workspaceMount: {
+            bindingId: 'bind_internal_late_on_dispatched',
+            mountPath: `/workspace/${input.taskId}`,
+            fileLibraryId: input.fileLibraryId,
+          },
+        })),
+      } as never;
+
+      const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+        name: 'internal late-on-dispatched endpoint',
+        model: 'gpt-5-codex',
+        type: 'openai',
+        base_url: 'https://example.com/v1',
+        status: 'active',
+        credential_ref: 'cred_internal_late_on_dispatched',
+        upstream_protocol: 'openai_chat_completions',
+        model_profile: {
+          max_context_tokens: 128000,
+        },
+      });
+      const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'internal-late-on-dispatched-agent',
+        mode: 'internal',
+        interaction_kind: 'notebook',
+        status: 'enabled',
+        config: {
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_test',
+        } as never,
+        owner_id: 'user_test',
+        visibility: 'private',
+        execution_preferences_json: {
+          notebook: {
+            endpoint_id: endpoint.id,
+          },
+        },
+      });
+
+      const now = new Date().toISOString();
+      const task = {
+        id: 'task_internal_late_on_dispatched',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        owner_user_id: 'user_1',
+        title: 'Internal late onDispatched task',
+        agent_id: agent.id,
+        agent_name: agent.name,
+        workspace_file_library_id: 'lib_internal_late_on_dispatched',
+        workspace_file_library_name: 'Internal Late onDispatched Workspace',
+        status: 'active',
+        attached_inputs: [],
+        created_at: now,
+        updated_at: now,
+        last_activity_at: now,
+      };
+      await deps.docStore.upsert('project_file_libraries', 'lib_internal_late_on_dispatched', {
+        id: 'lib_internal_late_on_dispatched',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        name: 'Internal Late onDispatched Workspace',
+        status: 'ready',
+        filesystem_name: 'flib-internal-late-on-dispatched',
+        created_by_user_id: 'user_1',
+        created_at: now,
+        updated_at: now,
+      });
+      await deps.docStore.upsert(notebookTasksCollection('ws_default'), task.id, task);
+
+      const firstMessageJson = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskMessages',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: task.id,
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1', email: 'user_1@example.com' } as never,
+        json: firstMessageJson,
+        readBody: vi.fn(async () => ({ role: 'user', content: 'first run should terminate before dispatch resolves' })),
+      })).resolves.toBe(true);
+      const firstAssistantMessage = firstMessageJson.mock.calls[0]?.[2] as { id: string; content: string };
+      expect(firstAssistantMessage).toMatchObject({
+        id: expect.any(String),
+        content: '',
+      });
+
+      const firstRunId = ACTIVE_RUN_CANCEL_BY_TASK.get(task.id)?.runId;
+      expect(firstRunId).toBeTruthy();
+
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskCancelRun',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: task.id,
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json: vi.fn(),
+        readBody: vi.fn(async () => ({ mode: 'terminate' })),
+      })).resolves.toBe(true);
+
+      await vi.waitFor(async () => {
+        expect(await getNotebookTaskRunState(deps.cache, task.id)).toBeNull();
+      });
+
+      const secondRunId = 'run_manual_second';
+      await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+        taskId: task.id,
+        runId: secondRunId,
+        requestId: 'req_second_dispatch',
+        startedAt: new Date().toISOString(),
+        heartbeatAt: new Date().toISOString(),
+      }))).resolves.toBe(true);
+      ACTIVE_RUN_CANCEL_BY_TASK.set(task.id, {
+        runId: secondRunId,
+        requestId: 'req_second_dispatch',
+        cancel: vi.fn(),
+        requestCancel: vi.fn(),
+      });
+
+      await vi.waitFor(async () => {
+        expect(ACTIVE_RUN_CANCEL_BY_TASK.get(task.id)).toMatchObject({
+          runId: secondRunId,
+          requestId: 'req_second_dispatch',
+        });
+        expect(await getNotebookTaskRunState(deps.cache, task.id)).toMatchObject({
+          run_id: secondRunId,
+          request_id: 'req_second_dispatch',
+        });
+      });
+
+      expect(secondRunId).not.toBe(firstRunId);
+
+      firstDispatch.resolve({
+        requestId: 'req_first_late',
+        cancel: () => undefined,
+        stream: (async function* stream() {
+          yield { type: 'delta', delta: 'stale success content' } as const;
+          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+        })(),
+      });
+
+      await vi.waitFor(async () => {
+        expect(ACTIVE_RUN_CANCEL_BY_TASK.get(task.id)).toMatchObject({
+          runId: secondRunId,
+          requestId: 'req_second_dispatch',
+        });
+        expect(await getNotebookTaskRunState(deps.cache, task.id)).toMatchObject({
+          run_id: secondRunId,
+          request_id: 'req_second_dispatch',
+        });
+        const persistedAssistant = await deps.docStore.get<{
+          id: string;
+          role: string;
+          content: string;
+        }>(notebookTaskMessagesCollection('ws_default'), firstAssistantMessage.id);
+        expect(persistedAssistant).toMatchObject({
+          id: firstAssistantMessage.id,
+          role: 'agent',
+        });
+        expect(persistedAssistant?.content).toContain('AGENT_CANCELLED');
+        expect(persistedAssistant?.content).not.toContain('stale success content');
+      });
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
   it('deduplicates concurrent internal terminate hard teardown requests', async () => {
     const deps = createDefaultNodeApiDeps();
     const teardown = createDeferred<void>();
@@ -1615,14 +2174,8 @@ describe('task-route-handler workspace access', () => {
         stop_mode: 'terminate',
       }),
     ]);
-    const releasedConcurrentState = await getNotebookTaskRunState(deps.cache, 'task_internal_concurrent');
-    expect(releasedConcurrentState).toMatchObject({
-      phase: 'terminating',
-      stop: {
-        mode: 'terminate',
-      },
-    });
-    expect(releasedConcurrentState?.stop?.hard_teardown).toBeUndefined();
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_concurrent')).resolves.toBeNull();
+    await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_internal_concurrent')).resolves.toBeNull();
   });
 
   it('rejects unsupported external terminate without creating terminating truth', async () => {

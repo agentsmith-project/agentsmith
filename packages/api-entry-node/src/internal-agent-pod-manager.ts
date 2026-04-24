@@ -15,9 +15,15 @@ interface SandboxManagerClientLike {
     projectId: string,
     workloadId: string,
     body: SandboxPodCreateBody,
+    signal?: AbortSignal,
   ): Promise<{ httpStatus: number; pod: PodStatusResponse }>;
-  getPodStatus(workspaceId: string, projectId: string, workloadId: string): Promise<PodStatusResponse>;
-  deletePod(workspaceId: string, projectId: string, workloadId: string): Promise<void>;
+  getPodStatus(
+    workspaceId: string,
+    projectId: string,
+    workloadId: string,
+    signal?: AbortSignal,
+  ): Promise<PodStatusResponse>;
+  deletePod(workspaceId: string, projectId: string, workloadId: string, signal?: AbortSignal): Promise<void>;
   keepalive(workspaceId: string, projectId: string, workloadId: string): Promise<string | null>;
   exec(
     workspaceId: string,
@@ -26,7 +32,7 @@ interface SandboxManagerClientLike {
     cmd: string[],
     timeoutSeconds?: number,
   ): Promise<ExecResponse>;
-  checkReady(): Promise<void>;
+  checkReady(signal?: AbortSignal): Promise<void>;
 }
 
 interface AgentExecutionLike {
@@ -46,6 +52,7 @@ export interface InternalAgentPodManager {
     sessionId?: string;
     agent: AgentRecord;
     workspaceMount: InternalAgentWorkspaceMount;
+    signal?: AbortSignal;
   }): Promise<void>;
   keepalive(workspaceId: string, projectId: string, workloadId: string): Promise<void>;
   releasePod(workspaceId: string, projectId: string, workloadId: string): Promise<void>;
@@ -64,6 +71,28 @@ const INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED = process.env.INTERNAL_AGENT_BUILTI
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildAgentCancelledError(reason?: unknown): Error {
+  const error = new Error(
+    reason instanceof Error
+      ? reason.message
+      : typeof reason === 'string' && reason.trim().length > 0
+        ? reason
+        : 'user_cancel_requested',
+  ) as Error & { code: string; cause?: unknown };
+  error.name = 'AbortError';
+  error.code = 'AGENT_CANCELLED';
+  if (reason instanceof Error) {
+    error.cause = reason;
+  }
+  return error;
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw buildAgentCancelledError(signal.reason);
+  }
 }
 
 function isTerminalPodPhase(phase: string | undefined): boolean {
@@ -202,21 +231,26 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     sessionId?: string;
     agent: AgentRecord;
     workspaceMount: InternalAgentWorkspaceMount;
+    signal?: AbortSignal;
   }): Promise<void> {
-    const { workspaceId, projectId, workloadId, agent } = input;
+    const { workspaceId, projectId, workloadId, agent, signal } = input;
     if (agent.mode !== 'internal') {
       throw Object.assign(new Error('agent_mode_not_internal'), { code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
     }
+    throwIfAborted(signal);
     const workspaceMount = requireWorkspaceMount(input.workspaceMount);
 
     const lockKey = `${workspaceId}/${projectId}/${workloadId}`;
     for (;;) {
+      throwIfAborted(signal);
       const existing = this.locks.get(lockKey);
       if (!existing) break;
-      await existing;
+      await this.waitForExistingLock(existing, signal);
+      throwIfAborted(signal);
       if (await this.isReadyForSession(input.agent.id, input.sessionId)) return;
     }
 
+    throwIfAborted(signal);
     if (await this.isReadyForSession(agent.id, input.sessionId)) return;
 
     let releaseLock!: () => void;
@@ -226,7 +260,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     this.locks.set(lockKey, lock);
 
     try {
-      await this.doEnsure(workspaceId, projectId, workloadId, input.sessionId, agent, workspaceMount);
+      await this.doEnsure(workspaceId, projectId, workloadId, input.sessionId, agent, workspaceMount, signal);
     } finally {
       this.locks.delete(lockKey);
       releaseLock();
@@ -247,37 +281,124 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     }
   }
 
+  private async waitForExistingLock(existing: Promise<void>, signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal);
+    if (!signal) {
+      await existing;
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const handleAbort = () => {
+        cleanup();
+        reject(buildAgentCancelledError(signal.reason));
+      };
+      const cleanup = () => signal.removeEventListener('abort', handleAbort);
+      signal.addEventListener('abort', handleAbort, { once: true });
+      void existing.then(
+        () => {
+          cleanup();
+          resolve();
+        },
+        (error: unknown) => {
+          cleanup();
+          reject(error);
+        },
+      );
+    });
+  }
+
+  private async sleepWithAbort(delayMs: number, signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal);
+    if (!signal) {
+      await this.sleep(delayMs);
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const handleAbort = () => {
+        cleanup();
+        reject(buildAgentCancelledError(signal.reason));
+      };
+      const cleanup = () => signal.removeEventListener('abort', handleAbort);
+      signal.addEventListener('abort', handleAbort, { once: true });
+      void this.sleep(delayMs).then(
+        () => {
+          cleanup();
+          resolve();
+        },
+        (error: unknown) => {
+          cleanup();
+          reject(error);
+        },
+      );
+    });
+  }
+
+  private async runAbortableSandboxRpc<T>(
+    invoke: (signal?: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    throwIfAborted(signal);
+    try {
+      const result = await invoke(signal);
+      throwIfAborted(signal);
+      return result;
+    } catch (error) {
+      throwIfAborted(signal);
+      throw error;
+    }
+  }
+
   private async waitForPhase(
     workspaceId: string,
     projectId: string,
     workloadId: string,
     target: string,
     deadline: number,
+    signal?: AbortSignal,
   ): Promise<void> {
+    throwIfAborted(signal);
     while (Date.now() < deadline) {
-      const status = await this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId);
+      throwIfAborted(signal);
+      const status = await this.runAbortableSandboxRpc(
+        (rpcSignal) => this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId, rpcSignal),
+        signal,
+      );
+      throwIfAborted(signal);
       if (status.phase === target) return;
       if (status.phase === 'Failed') {
         throw Object.assign(new Error('sandbox_pod_failed'), { code: 'AGENT_SANDBOX_POD_FAILED' });
       }
-      await this.sleep(this.phasePollIntervalMs);
+      await this.sleepWithAbort(this.phasePollIntervalMs, signal);
     }
+    throwIfAborted(signal);
     throw Object.assign(new Error('sandbox_startup_timeout'), { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' });
   }
 
-  private async waitForAgentOnline(agentId: string, deadline: number): Promise<void> {
+  private async waitForAgentOnline(agentId: string, deadline: number, signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal);
     while (Date.now() < deadline) {
+      throwIfAborted(signal);
       if (this.agentExecution.getAgentOnlineState(agentId)) return;
-      await this.sleep(this.onlinePollIntervalMs);
+      await this.sleepWithAbort(this.onlinePollIntervalMs, signal);
     }
+    throwIfAborted(signal);
     throw Object.assign(new Error('sandbox_startup_timeout'), { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' });
   }
 
-  private async waitForAgentSessionOnline(agentId: string, sessionId: string, deadline: number): Promise<void> {
+  private async waitForAgentSessionOnline(
+    agentId: string,
+    sessionId: string,
+    deadline: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    throwIfAborted(signal);
     while (Date.now() < deadline) {
+      throwIfAborted(signal);
       if (await this.isReadyForSession(agentId, sessionId)) return;
-      await this.sleep(this.onlinePollIntervalMs);
+      throwIfAborted(signal);
+      await this.sleepWithAbort(this.onlinePollIntervalMs, signal);
     }
+    throwIfAborted(signal);
     throw Object.assign(new Error('sandbox_startup_timeout'), { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' });
   }
 
@@ -295,8 +416,11 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     sessionId: string | undefined,
     agent: AgentRecord,
     workspaceMount: InternalAgentWorkspaceMount,
+    signal?: AbortSignal,
   ): Promise<void> {
+    throwIfAborted(signal);
     if (await this.isReadyForSession(agent.id, sessionId)) return;
+    throwIfAborted(signal);
 
     const config = readInternalConfig(agent);
     const idleTimeoutSec = Math.max(
@@ -310,8 +434,11 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     );
     const deadline = Date.now() + this.startupTimeoutMs;
     try {
-      await this.sandboxClient.checkReady();
+      throwIfAborted(signal);
+      await this.runAbortableSandboxRpc((rpcSignal) => this.sandboxClient.checkReady(rpcSignal), signal);
+      throwIfAborted(signal);
     } catch (error) {
+      throwIfAborted(signal);
       const code = error && typeof error === 'object' && 'code' in error
         ? (error as { code?: unknown }).code
         : undefined;
@@ -319,42 +446,61 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         code: typeof code === 'string' ? code : 'AGENT_SANDBOX_UNAVAILABLE',
       });
     }
-    let status = await this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId);
+    throwIfAborted(signal);
+    let status = await this.runAbortableSandboxRpc(
+      (rpcSignal) => this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId, rpcSignal),
+      signal,
+    );
+    throwIfAborted(signal);
     const wsUrl = `${this.wsBaseUrl.replace(/\/+$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}${
       sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : ''
     }`;
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
+      throwIfAborted(signal);
       if (isTerminalPodPhase(status.phase)) {
-        await this.sandboxClient.deletePod(workspaceId, projectId, workloadId).catch(() => undefined);
+        await this.runAbortableSandboxRpc(
+          (rpcSignal) => this.sandboxClient.deletePod(workspaceId, projectId, workloadId, rpcSignal).catch(() => undefined),
+          signal,
+        );
+        throwIfAborted(signal);
         status = { phase: 'offline' };
       }
 
       if (status.phase === 'offline') {
-        await this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
-          image: config.image,
-          env: {
-            WORKSPACE_PATH: workspaceMount.mountPath,
-            MBOS_AGENT_WS_URL: wsUrl,
-            MBOS_AGENT_KEY: config.rawKey,
-            MBOS_RUNNER_MODE: 'k8s_internal',
-            MBOS_AGENT_CODEX_YOLO: '1',
-            MBOS_AGENT_RUNNER_DEBUG: '1',
-            MBOS_AGENT_TASK_TIMEOUT_SEC: '55',
-            MBOS_AGENT_BUILTIN_SKILLS_DIR: INTERNAL_AGENT_BUILTIN_SKILLS_DIR,
-            MBOS_AGENT_BUILTIN_SKILLS: INTERNAL_AGENT_BUILTIN_SKILLS,
-            MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED,
-            ...(config.env ?? {}),
-          },
-          cpu_request: config.cpuRequest ?? '500m',
-          cpu_limit: config.cpuLimit ?? '2',
-          memory_request: config.memoryRequest ?? '512Mi',
-          memory_limit: config.memoryLimit ?? '4Gi',
-          idle_timeout_sec: idleTimeoutSec,
-          max_lifetime_sec: maxLifetimeSec,
-          workspace_binding_id: workspaceMount.bindingId,
-        });
-        status = await this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId);
+        throwIfAborted(signal);
+        await this.runAbortableSandboxRpc(
+          (rpcSignal) => this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
+            image: config.image,
+            env: {
+              WORKSPACE_PATH: workspaceMount.mountPath,
+              MBOS_AGENT_WS_URL: wsUrl,
+              MBOS_AGENT_KEY: config.rawKey,
+              MBOS_RUNNER_MODE: 'k8s_internal',
+              MBOS_AGENT_CODEX_YOLO: '1',
+              MBOS_AGENT_RUNNER_DEBUG: '1',
+              MBOS_AGENT_TASK_TIMEOUT_SEC: '55',
+              MBOS_AGENT_BUILTIN_SKILLS_DIR: INTERNAL_AGENT_BUILTIN_SKILLS_DIR,
+              MBOS_AGENT_BUILTIN_SKILLS: INTERNAL_AGENT_BUILTIN_SKILLS,
+              MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: INTERNAL_AGENT_BUILTIN_SKILLS_REQUIRED,
+              ...(config.env ?? {}),
+            },
+            cpu_request: config.cpuRequest ?? '500m',
+            cpu_limit: config.cpuLimit ?? '2',
+            memory_request: config.memoryRequest ?? '512Mi',
+            memory_limit: config.memoryLimit ?? '4Gi',
+            idle_timeout_sec: idleTimeoutSec,
+            max_lifetime_sec: maxLifetimeSec,
+            workspace_binding_id: workspaceMount.bindingId,
+          }, rpcSignal),
+          signal,
+        );
+        throwIfAborted(signal);
+        status = await this.runAbortableSandboxRpc(
+          (rpcSignal) => this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId, rpcSignal),
+          signal,
+        );
+        throwIfAborted(signal);
       }
 
       if (!isTerminalPodPhase(status.phase)) {
@@ -362,16 +508,18 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       }
     }
 
+    throwIfAborted(signal);
     this.checkDeadline(deadline);
     if (status.phase !== 'Running') {
-      await this.waitForPhase(workspaceId, projectId, workloadId, 'Running', deadline);
+      await this.waitForPhase(workspaceId, projectId, workloadId, 'Running', deadline, signal);
     }
 
+    throwIfAborted(signal);
     this.checkDeadline(deadline);
     if (sessionId) {
-      await this.waitForAgentSessionOnline(agent.id, sessionId, deadline);
+      await this.waitForAgentSessionOnline(agent.id, sessionId, deadline, signal);
     } else {
-      await this.waitForAgentOnline(agent.id, deadline);
+      await this.waitForAgentOnline(agent.id, deadline, signal);
     }
   }
 

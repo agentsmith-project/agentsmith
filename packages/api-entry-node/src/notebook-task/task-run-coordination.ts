@@ -1,6 +1,9 @@
 import type { CachePort } from '@mbos/ports';
 
 const NOTEBOOK_RUN_LEASE_TTL_SECONDS = 300;
+// Keep release ordering truth around well past the active run lease so delayed
+// failure callbacks cannot quickly resurrect terminal hard-teardown debt.
+const NOTEBOOK_HARD_TEARDOWN_ORDERING_FENCE_TTL_SECONDS = 24 * 60 * 60;
 const NOTEBOOK_RUN_OWNER_INSTANCE_ID = process.env.NOTEBOOK_RUN_INSTANCE_ID?.trim()
   || `api-${process.pid}`;
 
@@ -160,6 +163,43 @@ async function patchNotebookTaskRunState(
   return getNotebookTaskRunState(cache, input.taskId);
 }
 
+async function clearNotebookTaskRunCoordinationForRun(
+  cache: CachePort,
+  input: {
+    taskId: string;
+    runId: string;
+  },
+): Promise<{ cleared: boolean; current: NotebookTaskRunState | null }> {
+  const stateKey = activeRunStateKey(input.taskId);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const currentRaw = await cache.get(stateKey);
+    const current = parseJsonRecord<NotebookTaskRunState>(currentRaw);
+    if (!current) {
+      return { cleared: false, current: null };
+    }
+    if (current.run_id !== input.runId) {
+      return { cleared: false, current };
+    }
+    if (typeof cache.compareAndSet === 'function' && currentRaw !== null) {
+      const cleared = await cache.compareAndSet(stateKey, currentRaw, null);
+      if (!cleared) {
+        continue;
+      }
+    } else {
+      await cache.del(stateKey);
+    }
+    await Promise.all([
+      cache.del(activeRunLockKey(input.taskId)),
+      cache.del(legacyCancelRequestKey(input.taskId)),
+    ]);
+    return { cleared: true, current };
+  }
+  return {
+    cleared: false,
+    current: await getNotebookTaskRunState(cache, input.taskId),
+  };
+}
+
 function isNotebookHardTeardownStatus(value: unknown): value is NotebookTaskRunHardTeardownStatus {
   return value === 'pending' || value === 'requested' || value === 'failed';
 }
@@ -313,10 +353,15 @@ async function writeNotebookTaskRunHardTeardownReleaseFence(
       ...(input.attemptId ? { attempt_id: input.attemptId } : {}),
     } satisfies NotebookTaskRunHardTeardownReleaseFenceRecord);
     if (typeof cache.compareAndSet === 'function') {
-      if (await cache.compareAndSet(key, currentRaw, nextRaw, NOTEBOOK_RUN_LEASE_TTL_SECONDS)) return;
+      if (await cache.compareAndSet(
+        key,
+        currentRaw,
+        nextRaw,
+        NOTEBOOK_HARD_TEARDOWN_ORDERING_FENCE_TTL_SECONDS,
+      )) return;
       continue;
     }
-    await cache.set(key, nextRaw, NOTEBOOK_RUN_LEASE_TTL_SECONDS);
+    await cache.set(key, nextRaw, NOTEBOOK_HARD_TEARDOWN_ORDERING_FENCE_TTL_SECONDS);
     return;
   }
 }
@@ -417,11 +462,31 @@ export async function refreshNotebookTaskRunLease(
   cache: CachePort,
   state: NotebookTaskRunState,
 ): Promise<boolean> {
+  if (typeof cache.compareAndSet === 'function') {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const currentRaw = await cache.get(activeRunStateKey(state.task_id));
+      const current = parseJsonRecord<NotebookTaskRunState>(currentRaw);
+      if (!current || current.run_id !== state.run_id) {
+        return false;
+      }
+      const refreshed = await compareAndWriteRunState(cache, currentRaw, {
+        ...current,
+        heartbeat_at: state.heartbeat_at,
+      });
+      if (refreshed) {
+        return true;
+      }
+    }
+    return false;
+  }
   const current = await getNotebookTaskRunState(cache, state.task_id);
   if (!current || current.run_id !== state.run_id) {
     return false;
   }
-  await writeRunState(cache, state);
+  await writeRunState(cache, {
+    ...current,
+    heartbeat_at: state.heartbeat_at,
+  });
   return true;
 }
 
@@ -434,18 +499,16 @@ export async function markNotebookTaskRunDispatched(
     dispatchedAt: string;
   },
 ): Promise<NotebookTaskRunState | null> {
-  const current = await getNotebookTaskRunState(cache, input.taskId);
-  if (!current || current.run_id !== input.runId) {
-    return current;
-  }
-  const next: NotebookTaskRunState = {
-    ...current,
-    request_id: input.requestId,
-    dispatched_at: input.dispatchedAt,
-    heartbeat_at: input.dispatchedAt,
-  };
-  const refreshed = await refreshNotebookTaskRunLease(cache, next);
-  return refreshed ? next : await getNotebookTaskRunState(cache, input.taskId);
+  return patchNotebookTaskRunState(cache, {
+    taskId: input.taskId,
+    runId: input.runId,
+    mutate: (current) => ({
+      ...current,
+      request_id: input.requestId,
+      dispatched_at: input.dispatchedAt,
+      heartbeat_at: input.dispatchedAt,
+    }),
+  });
 }
 
 export async function requestNotebookTaskRunStop(
@@ -792,23 +855,11 @@ export async function markNotebookTaskRunHardTeardownReleased(
       currentHardTeardown ? getNotebookHardTeardownGeneration(currentHardTeardown) : 0,
     ),
   });
-  const next = await patchNotebookTaskRunState(cache, {
+  await finalizeNotebookTaskRun(cache, {
     taskId: input.taskId,
     runId: input.runId,
-    mutate: (current) => {
-      if (current.stop?.mode !== 'terminate' || current.stop.delivery !== 'internal_teardown_requested') {
-        return current;
-      }
-      const nextStop: NotebookTaskRunStopRequest = {
-        ...current.stop,
-      };
-      delete nextStop.hard_teardown;
-      return {
-        ...current,
-        stop: nextStop,
-      };
-    },
   });
+  const next = await getNotebookTaskRunState(cache, input.taskId);
   return next?.run_id === input.runId ? next : null;
 }
 
@@ -944,21 +995,19 @@ export async function markNotebookTaskRunFinalizing(
     errorCode?: string;
   },
 ): Promise<NotebookTaskRunState | null> {
-  const current = await getNotebookTaskRunState(cache, input.taskId);
-  if (!current || current.run_id !== input.runId) {
-    return current;
-  }
-  const next: NotebookTaskRunState = {
-    ...current,
-    phase: 'finalizing',
-    finalization: {
-      status: input.errorCode ? 'persist_failed' : 'pending',
-      updated_at: input.updatedAt,
-      ...(input.errorCode ? { error_code: input.errorCode } : {}),
-    },
-  };
-  const refreshed = await refreshNotebookTaskRunLease(cache, next);
-  return refreshed ? next : await getNotebookTaskRunState(cache, input.taskId);
+  return patchNotebookTaskRunState(cache, {
+    taskId: input.taskId,
+    runId: input.runId,
+    mutate: (current) => ({
+      ...current,
+      phase: 'finalizing',
+      finalization: {
+        status: input.errorCode ? 'persist_failed' : 'pending',
+        updated_at: input.updatedAt,
+        ...(input.errorCode ? { error_code: input.errorCode } : {}),
+      },
+    }),
+  });
 }
 
 export function isNotebookTaskRunOwnerHeartbeatFresh(
@@ -999,29 +1048,16 @@ export async function finalizeNotebookTaskRun(
     runId: string;
   },
 ): Promise<boolean> {
-  const stateKey = activeRunStateKey(input.taskId);
-  const currentRaw = await cache.get(stateKey);
-  const current = parseJsonRecord<NotebookTaskRunState>(currentRaw);
-  if (!current || current.run_id !== input.runId) {
+  const clearing = await clearNotebookTaskRunCoordinationForRun(cache, input);
+  const current = clearing.current;
+  if (current && current.run_id !== input.runId) {
     return false;
   }
-  const debtToPreserve = buildHardTeardownDebtFromRunState(current);
-  if (typeof cache.compareAndSet === 'function' && currentRaw !== null) {
-    const cleared = await cache.compareAndSet(stateKey, currentRaw, null);
-    if (!cleared) {
-      return false;
-    }
-  } else {
-    await cache.del(stateKey);
-  }
+  const debtToPreserve = current ? buildHardTeardownDebtFromRunState(current) : null;
+  if (!clearing.cleared) return false;
 
   if (debtToPreserve) {
     await writeNotebookTaskRunHardTeardownDebt(cache, debtToPreserve);
   }
-
-  await Promise.all([
-    cache.del(activeRunLockKey(input.taskId)),
-    cache.del(legacyCancelRequestKey(input.taskId)),
-  ]);
   return true;
 }

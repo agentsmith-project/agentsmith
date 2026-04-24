@@ -32,6 +32,16 @@ import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from '.
 const upstreamServers: Server[] = [];
 const sockets: WebSocket[] = [];
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve;
+    reject = innerReject;
+  });
+  return { promise, resolve, reject };
+}
+
 function normalizeApiBasePath(input: string): string {
   return input.replace(/\/api\/v1\/api\/v1(?=\/|$)/g, '/api/v1');
 }
@@ -1220,14 +1230,10 @@ describe('api-entry-node notebook task routes', () => {
         body: JSON.stringify({ mode: 'terminate' }),
       },
     );
-    expect(retryTerminateRes.status).toBe(202);
+    expect(retryTerminateRes.status).toBe(409);
     await expect(retryTerminateRes.json()).resolves.toMatchObject({
-      status: 'terminating',
-      task_id: task.id,
-      run_id: 'run_internal_stale_owner',
-      stop_mode: 'terminate',
-      can_escalate: false,
-      escalation_reason: 'already_terminating',
+      error_code: 'TASK_RUN_NOT_ACTIVE',
+      message: 'task_run_not_active',
     });
 
     const listRes = await apiFetchWithToken(
@@ -1240,10 +1246,7 @@ describe('api-entry-node notebook task routes', () => {
       items: expect.arrayContaining([
         expect.objectContaining({
           id: task.id,
-          run_state: 'terminating',
-          stop_mode: 'terminate',
-          can_escalate: false,
-          escalation_reason: 'already_terminating',
+          run_state: 'idle',
         }),
       ]),
     });
@@ -1256,10 +1259,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(detailRes.status).toBe(200);
     await expect(detailRes.json()).resolves.toMatchObject({
       id: task.id,
-      run_state: 'terminating',
-      stop_mode: 'terminate',
-      can_escalate: false,
-      escalation_reason: 'already_terminating',
+      run_state: 'idle',
     });
     expect(requestHardTeardown).toHaveBeenCalledTimes(1);
     expect(requestHardTeardown).toHaveBeenCalledWith({
@@ -1717,6 +1717,224 @@ describe('api-entry-node notebook task routes', () => {
       }
 
       expect(tracesBody?.items.some((item) => item.name === 'run.user_cancel' && item.status === 'cancelled')).toBe(true);
+    } finally {
+      if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+    }
+  });
+
+  it('dispatches a second internal run after terminate aborts a pre-dispatch startup lock from the first run', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    const deps = createDefaultNodeApiDeps();
+    const firstStartupObserved = createDeferred<void>();
+    const activeEnsureLocks = new Map<string, Promise<void>>();
+    let firstStartupSignal: AbortSignal | undefined;
+    let ensureCallCount = 0;
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async (input: {
+        workspaceId: string;
+        projectId: string;
+        workloadId: string;
+        signal?: AbortSignal;
+      }) => {
+        const lockKey = `${input.workspaceId}/${input.projectId}/${input.workloadId}`;
+        for (;;) {
+          const existing = activeEnsureLocks.get(lockKey);
+          if (!existing) break;
+          await existing;
+        }
+        let releaseLock!: () => void;
+        const lock = new Promise<void>((resolve) => {
+          releaseLock = resolve;
+        });
+        activeEnsureLocks.set(lockKey, lock);
+        ensureCallCount += 1;
+        try {
+          if (ensureCallCount === 1) {
+            firstStartupSignal = input.signal;
+            firstStartupObserved.resolve();
+            if (!input.signal) {
+              await new Promise<void>(() => {});
+              return;
+            }
+            await new Promise<never>((_resolve, reject) => {
+              input.signal?.addEventListener('abort', () => {
+                reject(Object.assign(new Error('user_cancel_requested'), {
+                  code: 'AGENT_CANCELLED',
+                }));
+              }, { once: true });
+            });
+          }
+        } finally {
+          if (activeEnsureLocks.get(lockKey) === lock) {
+            activeEnsureLocks.delete(lockKey);
+          }
+          releaseLock();
+        }
+      }),
+      keepalive: vi.fn(async () => undefined),
+      releasePod: vi.fn(async () => undefined),
+    } as never;
+    deps.internalAgentWorkspaceBindingManager = {
+      ensureWorkspaceBinding: vi.fn(async (input: {
+        workspaceId: string;
+        projectId: string;
+        fileLibraryId: string;
+        taskId: string;
+      }) => ({
+        binding: {
+          id: 'bind_internal_pre_dispatch_recovery',
+          workspace_id: input.workspaceId,
+          project_id: input.projectId,
+          file_library_id: input.fileLibraryId,
+          kind: 'juicefs_volume',
+          status: 'ready',
+          metadata_url: 'postgres://jfsu_user:secret@localhost:15432/jfs_internal?sslmode=disable',
+          storage_bucket_url: 'http://localhost:19000/jfs-internal',
+          created_at: '2026-04-05T00:00:00.000Z',
+          updated_at: '2026-04-05T00:00:00.000Z',
+        },
+        workspaceMount: {
+          bindingId: 'bind_internal_pre_dispatch_recovery',
+          mountPath: `/workspace/${input.taskId}`,
+          fileLibraryId: input.fileLibraryId,
+        },
+      })),
+    } as never;
+
+    const secondDispatchStarted = createDeferred<void>();
+    deps.agentExecutionService.dispatchStreamingRequest = vi.fn(async () => {
+      secondDispatchStarted.resolve();
+      return {
+        requestId: 'req_second_internal_dispatch',
+        cancel: () => undefined,
+        stream: (async function* stream() {
+          yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+        })(),
+      };
+    });
+
+    const credential = await deps.endpointResourceService.createCredential('ws_default', 'proj_1', {
+      name: 'internal-pre-dispatch-recovery-credential',
+      value: 'sk-test',
+    });
+    const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+      name: 'internal-pre-dispatch-recovery-endpoint',
+      model: 'gpt-5-codex',
+      type: 'openai',
+      mode: 'openai',
+      base_url: 'https://example.com/v1',
+      credential_ref: credential.id,
+      model_profile: {
+        max_context_tokens: 204800,
+        max_output_tokens: 128000,
+        supports_file: false,
+        supports_tool_call: true,
+        supports_reasoning: false,
+        price_input_per_1m: 0,
+        price_output_per_1m: 0,
+        cache_read_discount_ratio: 0,
+        cache_write_discount_ratio: 0,
+      },
+    });
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-pre-dispatch-recovery-agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: endpoint.id,
+          wire_api: 'chat',
+          model: 'gpt-5-codex',
+        },
+      },
+    });
+
+    try {
+      const { baseUrl } = startServerWithDeps(deps);
+      process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
+      const workspaceLibrary = await createFileLibrary(baseUrl, 'Internal Pre-dispatch Recovery Workspace');
+      const task = await createNotebookTaskForAgent(baseUrl, {
+        title: 'Internal pre-dispatch recovery task',
+        agentId: agent.id,
+        workspaceFileLibraryId: workspaceLibrary.id,
+      });
+
+      const firstMessageRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'user',
+            content: 'first run should be terminated before dispatch',
+          }),
+        },
+      );
+      expect(firstMessageRes.status).toBe(200);
+      await firstStartupObserved.promise;
+      expect(firstStartupSignal).toBeInstanceOf(AbortSignal);
+      expect((deps.agentExecutionService.dispatchStreamingRequest as typeof deps.agentExecutionService.dispatchStreamingRequest)).not.toHaveBeenCalled();
+
+      const terminateRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'terminate' }),
+        },
+      );
+      expect(terminateRes.status).toBe(202);
+      await expect(terminateRes.json()).resolves.toMatchObject({
+        status: 'terminating',
+        task_id: task.id,
+        request_id: null,
+        stop_mode: 'terminate',
+      });
+
+      await vi.waitFor(async () => {
+        expect(await getNotebookTaskRunState(deps.cache, task.id)).toBeNull();
+      });
+
+      const secondMessageRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+        'test-token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'user',
+            content: 'second run should dispatch after recovery',
+          }),
+        },
+      );
+      expect(secondMessageRes.status).toBe(200);
+
+      await secondDispatchStarted.promise;
+      expect(deps.agentExecutionService.dispatchStreamingRequest).toHaveBeenCalledTimes(1);
+
+      const taskRes = await apiFetchWithToken(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
+        'test-token',
+      );
+      expect(taskRes.status).toBe(200);
+      await expect(taskRes.json()).resolves.toMatchObject({
+        id: task.id,
+        run_state: 'idle',
+      });
     } finally {
       if (previousPublicApiBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;

@@ -423,6 +423,85 @@ describe('UniversalProxyService', () => {
     expect(res.end).toHaveBeenCalled();
   });
 
+  it('propagates downstream response close to the upstream fetch abort signal during proxyJsonRequest without retrying', async () => {
+    let upstreamSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      upstreamSignal = init?.signal;
+      init?.signal?.addEventListener('abort', () => {
+        reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+      }, { once: true });
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new UniversalProxyService('http://proxy.internal:8080', undefined, {
+      maxTransientProviderRetries: 1,
+      transientProviderRetryDelayMs: 0,
+    });
+    const req = createRequest();
+    const res = createResponse();
+
+    const pending = service.proxyJsonRequest({
+      req,
+      res,
+      namespace: 'ws_default__proj_1__ep_1',
+      proxyPath: 'openai/responses',
+      model: 'placeholder-model',
+      requestBody: { input: 'hello' },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    res.emit('close');
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(upstreamSignal?.aborted).toBe(true);
+  });
+
+  it('cancels the forwarded response body when the request signal aborts after forwardRequest resolves', async () => {
+    const cancelSpy = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          cancel(reason) {
+            cancelSpy(reason);
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new UniversalProxyService('http://proxy.internal:8080');
+    const abortController = new AbortController();
+    const response = await service.forwardRequest({
+      req: createRequest(),
+      namespace: 'ws_default__proj_1__ep_1',
+      proxyPath: 'openai/responses',
+      model: 'placeholder-model',
+      requestBody: { input: 'hello' },
+      signal: abortController.signal,
+    });
+
+    const reader = response.body?.getReader();
+    expect(reader).toBeTruthy();
+
+    const pendingRead = reader?.read().catch((error) => error);
+    abortController.abort();
+
+    const abortedRead = await pendingRead;
+    if (abortedRead instanceof Error) {
+      expect(abortedRead).toMatchObject({ name: 'AbortError' });
+    } else {
+      expect(abortedRead).toEqual({ done: true, value: undefined });
+    }
+    expect(cancelSpy).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   [
     {
       name: 'openai chat completions 429',

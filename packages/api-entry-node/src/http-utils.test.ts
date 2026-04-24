@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { applyCors, buildAttachmentContentDisposition, proxyJsonRequest } from './http-utils.js';
 
@@ -93,6 +94,85 @@ describe('http-utils', () => {
 
     delete process.env.MBOS_ENDPOINT_PROXY_DEFAULT_TIMEOUT_SECONDS;
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('propagates downstream response close to the upstream fetch abort signal', async () => {
+    let upstreamSignal: AbortSignal | undefined;
+    const upstream = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      upstreamSignal = init?.signal;
+      init?.signal?.addEventListener('abort', () => {
+        reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+      }, { once: true });
+    }));
+    vi.stubGlobal('fetch', upstream);
+
+    const req = new EventEmitter() as import('node:http').IncomingMessage;
+    req.method = 'POST';
+    req.headers = {};
+
+    const res = new EventEmitter() as import('node:http').ServerResponse;
+    res.statusCode = 0;
+    res.setHeader = vi.fn();
+    res.end = vi.fn();
+
+    const pending = proxyJsonRequest(req, res, {
+      upstreamUrl: 'http://example.com/v1/chat/completions',
+      apiKey: 'test-key',
+      requestBody: { prompt: 'hello' },
+      timeoutSeconds: 60,
+    });
+
+    expect(upstream).toHaveBeenCalledTimes(1);
+
+    res.emit('close');
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(upstreamSignal?.aborted).toBe(true);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('reuses a parent downstream signal without attaching duplicate request or response close listeners', async () => {
+    let upstreamSignal: AbortSignal | undefined;
+    const upstream = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      upstreamSignal = init?.signal;
+      init?.signal?.addEventListener('abort', () => {
+        reject(init?.signal?.reason ?? Object.assign(new Error('aborted'), { name: 'AbortError' }));
+      }, { once: true });
+    }));
+    vi.stubGlobal('fetch', upstream);
+
+    const req = new EventEmitter() as import('node:http').IncomingMessage;
+    req.method = 'POST';
+    req.headers = {};
+
+    const res = new EventEmitter() as import('node:http').ServerResponse;
+    res.statusCode = 0;
+    res.setHeader = vi.fn();
+    res.end = vi.fn();
+
+    const parentAbort = new AbortController();
+    const pending = proxyJsonRequest(req, res, {
+      upstreamUrl: 'http://example.com/v1/chat/completions',
+      apiKey: 'test-key',
+      requestBody: { prompt: 'hello' },
+      timeoutSeconds: 60,
+      signal: parentAbort.signal,
+    });
+
+    expect(upstream).toHaveBeenCalledTimes(1);
+    expect(req.listenerCount('close')).toBe(0);
+    expect(res.listenerCount('close')).toBe(0);
+
+    parentAbort.abort(Object.assign(new Error('route_request_closed'), { name: 'AbortError' }));
+
+    await expect(pending).rejects.toMatchObject({
+      name: 'AbortError',
+      message: 'route_request_closed',
+    });
+    expect(upstreamSignal?.aborted).toBe(true);
+
     vi.unstubAllGlobals();
   });
 

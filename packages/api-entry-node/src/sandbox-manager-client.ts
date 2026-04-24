@@ -88,6 +88,18 @@ export class SandboxManagerClient {
     await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  private static buildAbortError(reason?: unknown): Error {
+    const error = new Error(
+      reason instanceof Error
+        ? reason.message
+        : typeof reason === 'string' && reason.trim().length > 0
+          ? reason
+          : 'request_aborted',
+    );
+    error.name = 'AbortError';
+    return error;
+  }
+
   private buildUrl(path: string): string {
     return `${this.normalizedBaseUrl}${path}`;
   }
@@ -97,6 +109,38 @@ export class SandboxManagerClient {
       'X-Service-Key': this.serviceKey,
       ...(contentType ? { 'Content-Type': 'application/json' } : {}),
     };
+  }
+
+  private buildRequestSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    if (!signal) {
+      return timeoutSignal;
+    }
+    if (typeof AbortSignal.any === 'function') {
+      return AbortSignal.any([signal, timeoutSignal]);
+    }
+    const controller = new AbortController();
+    const abortFrom = (source: AbortSignal) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      controller.abort(source.reason);
+      cleanup();
+    };
+    const handleAbort = () => abortFrom(signal);
+    const handleTimeout = () => abortFrom(timeoutSignal);
+    const cleanup = () => {
+      signal.removeEventListener('abort', handleAbort);
+      timeoutSignal.removeEventListener('abort', handleTimeout);
+    };
+    signal.addEventListener('abort', handleAbort, { once: true });
+    timeoutSignal.addEventListener('abort', handleTimeout, { once: true });
+    if (signal.aborted) {
+      abortFrom(signal);
+    } else if (timeoutSignal.aborted) {
+      abortFrom(timeoutSignal);
+    }
+    return controller.signal;
   }
 
   private mapErrorCode(status: number): string {
@@ -114,20 +158,33 @@ export class SandboxManagerClient {
   private async requestWithRetry(
     operation: string,
     request: () => Promise<Response>,
+    signal?: AbortSignal,
   ): Promise<Response> {
     const maxAttempts = 3;
     let lastError: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      if (signal?.aborted) {
+        throw SandboxManagerClient.buildAbortError(signal.reason);
+      }
       try {
         const resp = await request();
         if (!resp.ok && this.isRetryableStatus(resp.status) && attempt < maxAttempts) {
+          if (signal?.aborted) {
+            throw SandboxManagerClient.buildAbortError(signal.reason);
+          }
           await SandboxManagerClient.sleep(200 * (2 ** (attempt - 1)));
           continue;
         }
         return resp;
       } catch (error) {
+        if (signal?.aborted) {
+          throw SandboxManagerClient.buildAbortError(signal.reason ?? error);
+        }
         lastError = error;
         if (attempt >= maxAttempts) break;
+        if (signal?.aborted) {
+          throw SandboxManagerClient.buildAbortError(signal.reason ?? error);
+        }
         await SandboxManagerClient.sleep(200 * (2 ** (attempt - 1)));
       }
     }
@@ -140,8 +197,9 @@ export class SandboxManagerClient {
   private async expectOk(
     operation: string,
     request: () => Promise<Response>,
+    signal?: AbortSignal,
   ): Promise<Response> {
-    const resp = await this.requestWithRetry(operation, request);
+    const resp = await this.requestWithRetry(operation, request, signal);
     if (resp.ok) return resp;
     const text = await resp.text().catch(() => '');
     throw new SandboxManagerHttpError({
@@ -152,12 +210,12 @@ export class SandboxManagerClient {
     });
   }
 
-  async checkReady(): Promise<void> {
+  async checkReady(signal?: AbortSignal): Promise<void> {
     const url = this.buildUrl('/readyz');
     await this.expectOk('readyz', async () => fetch(url, {
       headers: this.headers(),
-      signal: AbortSignal.timeout(5_000),
-    }));
+      signal: this.buildRequestSignal(5_000, signal),
+    }), signal);
   }
 
   async createOrEnsurePod(
@@ -165,6 +223,7 @@ export class SandboxManagerClient {
     projectId: string,
     workloadId: string,
     body: SandboxPodCreateBody,
+    signal?: AbortSignal,
   ): Promise<{ httpStatus: number; pod: PodStatusResponse }> {
     const url = this.buildUrl(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}`
@@ -175,8 +234,8 @@ export class SandboxManagerClient {
       method: 'PUT',
       headers: this.headers(true),
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(150_000),
-    }));
+      signal: this.buildRequestSignal(150_000, signal),
+    }), signal);
     return {
       httpStatus: resp.status,
       pod: await resp.json() as PodStatusResponse,
@@ -233,6 +292,7 @@ export class SandboxManagerClient {
     workspaceId: string,
     projectId: string,
     workloadId: string,
+    signal?: AbortSignal,
   ): Promise<PodStatusResponse> {
     const url = this.buildUrl(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}`
@@ -241,8 +301,8 @@ export class SandboxManagerClient {
     );
     const resp = await this.requestWithRetry('get_pod_status', async () => fetch(url, {
       headers: this.headers(),
-      signal: AbortSignal.timeout(10_000),
-    }));
+      signal: this.buildRequestSignal(10_000, signal),
+    }), signal);
     if (!resp.ok) {
       if (resp.status === 404) {
         return { phase: 'offline' };
@@ -262,6 +322,7 @@ export class SandboxManagerClient {
     workspaceId: string,
     projectId: string,
     workloadId: string,
+    signal?: AbortSignal,
   ): Promise<void> {
     const url = this.buildUrl(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}`
@@ -271,8 +332,8 @@ export class SandboxManagerClient {
     const resp = await this.requestWithRetry('delete_pod', async () => fetch(url, {
       method: 'DELETE',
       headers: this.headers(),
-      signal: AbortSignal.timeout(15_000),
-    }));
+      signal: this.buildRequestSignal(15_000, signal),
+    }), signal);
     if (!resp.ok && resp.status !== 404) {
       const text = await resp.text().catch(() => '');
       throw new SandboxManagerHttpError({

@@ -8,6 +8,7 @@ import {
   pipeAnthropicSseAsOpenAiChat,
   pipeOpenAiChatSseAsAnthropic,
 } from './anthropic-sse-translate.js';
+import { createDownstreamAbortController, throwIfAborted } from './downstream-abort.js';
 import { pipeTranslatedChatSseAsResponses } from './responses-sse-translate.js';
 
 function debugEndpointProxy(message: string, extra?: Record<string, unknown>): void {
@@ -175,6 +176,7 @@ export async function proxyJsonRequest(
     timeoutSeconds?: number;
     requestBody?: unknown;
     passthroughHeaders?: Record<string, string>;
+    signal?: AbortSignal;
   },
 ): Promise<{ upstream_status: number; tokens_total?: number }> {
   const method = req.method ?? 'POST';
@@ -230,9 +232,23 @@ export async function proxyJsonRequest(
   const upstreamUrl = bridgePlan.upstreamUrl;
   const upstreamBody = bridgePlan.upstreamBody;
 
-  const abortController = new AbortController();
   const timeoutMs = Math.max(1, options.timeoutSeconds ?? readDefaultEndpointProxyTimeoutSeconds()) * 1000;
-  const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+  const upstreamAbort = options.signal
+    ? createDownstreamAbortController({
+      parentSignal: options.signal,
+      parentAbortMessage: 'endpoint_proxy_request_aborted',
+      timeoutMs,
+      timeoutMessage: 'endpoint_proxy_timeout',
+    })
+    : createDownstreamAbortController({
+      req,
+      res,
+      timeoutMs,
+      timeoutMessage: 'endpoint_proxy_timeout',
+      requestAbortedMessage: 'endpoint_proxy_request_aborted',
+      requestClosedMessage: 'endpoint_proxy_request_closed',
+      responseClosedMessage: 'endpoint_proxy_response_closed',
+    });
   debugEndpointProxy('proxy_json_request', {
     method,
     use_responses_fallback: useResponsesFallback,
@@ -243,6 +259,7 @@ export async function proxyJsonRequest(
   });
 
   try {
+    throwIfAborted(upstreamAbort.signal, 'endpoint_proxy_request_aborted');
     const upstreamRes = await fetch(upstreamUrl, {
       method,
       headers: {
@@ -251,8 +268,9 @@ export async function proxyJsonRequest(
         ...(options.passthroughHeaders ?? {}),
       },
       body: isBodyAllowed ? JSON.stringify(upstreamBody) : undefined,
-      signal: abortController.signal,
+      signal: upstreamAbort.signal,
     });
+    throwIfAborted(upstreamAbort.signal, 'endpoint_proxy_request_aborted');
     const isStreamingChatUpstream =
       useResponsesFallback
       && requestedResponsesStream
@@ -281,6 +299,7 @@ export async function proxyJsonRequest(
         fallbackMode: useResponsesFallback,
         debug: debugEndpointProxy,
       });
+      throwIfAborted(upstreamAbort.signal, 'endpoint_proxy_response_closed');
       return { upstream_status: upstreamRes.status };
     }
 
@@ -294,6 +313,7 @@ export async function proxyJsonRequest(
       res.statusCode = upstreamRes.status;
       res.setHeader('content-type', 'text/event-stream; charset=utf-8');
       await pipeAnthropicSseAsOpenAiChat(upstreamRes.body, res, upstreamBody);
+      throwIfAborted(upstreamAbort.signal, 'endpoint_proxy_response_closed');
       return { upstream_status: upstreamRes.status };
     }
 
@@ -307,6 +327,7 @@ export async function proxyJsonRequest(
       res.statusCode = upstreamRes.status;
       res.setHeader('content-type', 'text/event-stream; charset=utf-8');
       await pipeAnthropicSseAsResponses(upstreamRes.body, res, upstreamBody);
+      throwIfAborted(upstreamAbort.signal, 'endpoint_proxy_response_closed');
       return { upstream_status: upstreamRes.status };
     }
 
@@ -320,6 +341,7 @@ export async function proxyJsonRequest(
       res.statusCode = upstreamRes.status;
       res.setHeader('content-type', 'text/event-stream; charset=utf-8');
       await pipeOpenAiChatSseAsAnthropic(upstreamRes.body, res, upstreamBody);
+      throwIfAborted(upstreamAbort.signal, 'endpoint_proxy_response_closed');
       return { upstream_status: upstreamRes.status };
     }
 
@@ -328,17 +350,21 @@ export async function proxyJsonRequest(
       res.setHeader('content-type', upstreamRes.headers.get('content-type') ?? 'text/event-stream; charset=utf-8');
       const reader = upstreamRes.body.getReader();
       while (true) {
+        throwIfAborted(upstreamAbort.signal, 'endpoint_proxy_response_closed');
         const next = await reader.read();
         if (next.done) break;
+        throwIfAborted(upstreamAbort.signal, 'endpoint_proxy_response_closed');
         if (next.value) {
           res.write(next.value);
         }
       }
+      throwIfAborted(upstreamAbort.signal, 'endpoint_proxy_response_closed');
       res.end();
       return { upstream_status: upstreamRes.status };
     }
 
     let payload = Buffer.from(await upstreamRes.arrayBuffer());
+    throwIfAborted(upstreamAbort.signal, 'endpoint_proxy_response_closed');
     let contentType = upstreamRes.headers.get('content-type') ?? 'application/json';
     let tokensTotal: number | undefined;
     try {
@@ -356,6 +382,7 @@ export async function proxyJsonRequest(
     }
     res.statusCode = upstreamRes.status;
     res.setHeader('content-type', contentType);
+    throwIfAborted(upstreamAbort.signal, 'endpoint_proxy_response_closed');
     res.end(payload);
     debugEndpointProxy('proxy_json_request_done', {
       status: upstreamRes.status,
@@ -366,6 +393,6 @@ export async function proxyJsonRequest(
     });
     return { upstream_status: upstreamRes.status, tokens_total: tokensTotal };
   } finally {
-    clearTimeout(timeout);
+    upstreamAbort.cleanup();
   }
 }

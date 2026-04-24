@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type http from 'node:http';
+import { createAbortError, createDownstreamAbortController, throwIfAborted } from './downstream-abort.js';
 import type { EndpointRecord, EndpointUpstreamProtocol } from './resource-models.js';
 
 type RuntimeUpstreamConfig = {
@@ -44,6 +45,7 @@ type ProxyOptions = {
   model: string;
   requestBody: unknown;
   passthroughHeaders?: Record<string, string>;
+  signal?: AbortSignal;
 };
 
 type ProxyForwardOptions = {
@@ -253,16 +255,10 @@ async function readRetryableProviderHint(response: Response): Promise<boolean> {
   return flattenStringValues(json).some((value) => EXPLICIT_TRANSIENT_PROVIDER_HINT_PATTERN.test(value));
 }
 
-function createAbortError(): Error {
-  const error = new Error('This operation was aborted');
-  error.name = 'AbortError';
-  return error;
-}
-
 async function delayWithAbort(delayMs: number, signal?: AbortSignal): Promise<void> {
   if (delayMs <= 0) return;
   if (signal?.aborted) {
-    throw createAbortError();
+    throw createAbortError('universal_proxy_request_aborted');
   }
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -274,10 +270,114 @@ async function delayWithAbort(delayMs: number, signal?: AbortSignal): Promise<vo
     const onAbort = () => {
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
-      reject(createAbortError());
+      reject(createAbortError('universal_proxy_request_aborted'));
     };
 
     signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function cancelResponseReader(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  reason?: unknown,
+): Promise<void> {
+  try {
+    await reader.cancel(reason);
+  } catch {
+    // best-effort cancellation
+  }
+}
+
+function createAbortableResponse(response: Response, signal?: AbortSignal): Response {
+  if (!signal || !response.body) {
+    return response;
+  }
+
+  const upstreamReader = response.body.getReader();
+  let settled = false;
+  let cleanupAbortListener = () => {};
+
+  const releaseReader = () => {
+    try {
+      upstreamReader.releaseLock();
+    } catch {
+      // ignore lock release races after cancellation/error
+    }
+  };
+
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const handleAbort = () => {
+        cleanupAbortListener();
+        void cancelResponseReader(upstreamReader, signal.reason).finally(() => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          controller.error(createAbortError('universal_proxy_response_aborted'));
+          releaseReader();
+        });
+      };
+
+      if (signal.aborted) {
+        handleAbort();
+        return;
+      }
+
+      signal.addEventListener('abort', handleAbort, { once: true });
+      cleanupAbortListener = () => {
+        signal.removeEventListener('abort', handleAbort);
+        cleanupAbortListener = () => {};
+      };
+    },
+    async pull(controller) {
+      try {
+        if (signal.aborted) {
+          throw createAbortError('universal_proxy_response_aborted');
+        }
+        const { done, value } = await upstreamReader.read();
+        if (done) {
+          if (!settled) {
+            settled = true;
+            cleanupAbortListener();
+            controller.close();
+          }
+          releaseReader();
+          return;
+        }
+        if (value) {
+          controller.enqueue(value);
+        }
+      } catch (error) {
+        if (settled) {
+          cleanupAbortListener();
+          releaseReader();
+          return;
+        }
+        settled = true;
+        cleanupAbortListener();
+        controller.error(
+          signal.aborted
+            ? createAbortError('universal_proxy_response_aborted')
+            : (error instanceof Error ? error : new Error(String(error))),
+        );
+        releaseReader();
+      }
+    },
+    async cancel(reason) {
+      if (!settled) {
+        settled = true;
+      }
+      cleanupAbortListener();
+      await cancelResponseReader(upstreamReader, reason);
+      releaseReader();
+    },
+  });
+
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
   });
 }
 
@@ -431,39 +531,61 @@ export class UniversalProxyService {
   }
 
   async proxyJsonRequest(options: ProxyOptions): Promise<ProxyResult> {
-    const upstreamResponse = await this.forwardRequest(options);
+    const downstreamAbort = options.signal
+      ? { signal: options.signal, cleanup: () => {} }
+      : createDownstreamAbortController({
+        req: options.req,
+        res: options.res,
+        requestAbortedMessage: 'universal_proxy_request_aborted',
+        requestClosedMessage: 'universal_proxy_request_closed',
+        responseClosedMessage: 'universal_proxy_response_closed',
+      });
 
-    options.res.statusCode = upstreamResponse.status;
-    const contentType = upstreamResponse.headers.get('content-type');
-    if (contentType) {
-      options.res.setHeader('content-type', contentType);
-    }
-    const isStream = (contentType ?? '').toLowerCase().includes('text/event-stream');
-    if (isStream && upstreamResponse.body) {
-      const reader = upstreamResponse.body.getReader();
-      while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        if (chunk.value) {
-          options.res.write(Buffer.from(chunk.value));
-        }
-      }
-      options.res.end();
-      return { upstream_status: upstreamResponse.status };
-    }
-
-    const text = await upstreamResponse.text();
-    options.res.end(text);
-    let parsed: unknown = undefined;
     try {
-      parsed = text ? JSON.parse(text) : undefined;
-    } catch {
-      parsed = undefined;
+      const upstreamResponse = await this.forwardRequest({
+        ...options,
+        signal: downstreamAbort.signal,
+      });
+      throwIfAborted(downstreamAbort.signal, 'universal_proxy_request_aborted');
+
+      options.res.statusCode = upstreamResponse.status;
+      const contentType = upstreamResponse.headers.get('content-type');
+      if (contentType) {
+        options.res.setHeader('content-type', contentType);
+      }
+      const isStream = (contentType ?? '').toLowerCase().includes('text/event-stream');
+      if (isStream && upstreamResponse.body) {
+        const reader = upstreamResponse.body.getReader();
+        while (true) {
+          throwIfAborted(downstreamAbort.signal, 'universal_proxy_response_closed');
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          throwIfAborted(downstreamAbort.signal, 'universal_proxy_response_closed');
+          if (chunk.value) {
+            options.res.write(Buffer.from(chunk.value));
+          }
+        }
+        throwIfAborted(downstreamAbort.signal, 'universal_proxy_response_closed');
+        options.res.end();
+        return { upstream_status: upstreamResponse.status };
+      }
+
+      const text = await upstreamResponse.text();
+      throwIfAborted(downstreamAbort.signal, 'universal_proxy_response_closed');
+      options.res.end(text);
+      let parsed: unknown = undefined;
+      try {
+        parsed = text ? JSON.parse(text) : undefined;
+      } catch {
+        parsed = undefined;
+      }
+      return {
+        upstream_status: upstreamResponse.status,
+        tokens_total: parseTokenTotal(parsed),
+      };
+    } finally {
+      downstreamAbort.cleanup();
     }
-    return {
-      upstream_status: upstreamResponse.status,
-      tokens_total: parseTokenTotal(parsed),
-    };
   }
 
   async forwardRequest(options: ProxyForwardOptions): Promise<Response> {
@@ -487,16 +609,17 @@ export class UniversalProxyService {
     };
 
     for (let attempt = 0; ; attempt += 1) {
+      throwIfAborted(options.signal, 'universal_proxy_request_aborted');
       const response = await fetch(url, init);
       if (attempt >= this.options.maxTransientProviderRetries) {
-        return response;
+        return createAbortableResponse(response, options.signal);
       }
       const retryDecision = await this.getTransientProviderRetryDecision(response);
       if (!retryDecision.shouldRetry) {
-        return response;
+        return createAbortableResponse(response, options.signal);
       }
       if (!allowsAutomaticReplay) {
-        return response;
+        return createAbortableResponse(response, options.signal);
       }
       await delayWithAbort(retryDecision.retryDelayMs, options.signal);
     }

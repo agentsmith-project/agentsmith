@@ -1307,4 +1307,309 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     expect(releasePod).not.toHaveBeenCalled();
     await internalWorkloadCoordinator.shutdown();
   });
+
+  it('passes startup abort to internal ensureAgentReady and persists cancelled terminal truth before dispatch', async () => {
+    const dispatchStreamingRequest = vi.fn();
+    const ensureAgentReady = vi.fn(async (input: { signal?: AbortSignal }) => {
+      if (!input.signal) {
+        throw new Error('missing_startup_signal');
+      }
+      await new Promise<never>((_resolve, reject) => {
+        input.signal?.addEventListener('abort', () => {
+          reject(Object.assign(new Error('user_cancel_requested'), {
+            code: 'AGENT_CANCELLED',
+          }));
+        }, { once: true });
+      });
+    });
+    const deps = {
+      cache: new InMemoryCache(),
+      docStore: new InMemoryJsonDocStore(),
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_internal_abort',
+          status: 'enabled',
+          mode: 'internal',
+          config: {
+            image: 'runner:v1',
+            _internal_raw_key: 'ask_test',
+          },
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_internal_abort',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_internal_abort',
+          workspace_id: 'ws_internal_abort',
+          project_id: 'proj_internal_abort',
+          status: 'active',
+          model: 'placeholder-model',
+          credential_ref: 'cred_internal_abort',
+          name: 'endpoint-internal-abort',
+          type: 'openai',
+          upstream_protocol: 'openai_chat_completions',
+          base_url: 'https://example.com',
+          model_profile: {
+            max_context_tokens: 256000,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest,
+      },
+      internalAgentPodManager: {
+        ensureAgentReady,
+      },
+      internalAgentWorkspaceBindingManager: {
+        ensureWorkspaceBinding: vi.fn(async () => ({
+          workspaceMount: {
+            bindingId: 'flib_internal_abort',
+            mountPath: '/workspace/task_internal_abort',
+          },
+          binding: {
+            file_library_id: 'flib_internal_abort',
+          },
+        })),
+      },
+      internalWorkloadCoordinator: {
+        acquireHolder: vi.fn(async () => undefined),
+        releaseHolder: vi.fn(async () => undefined),
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_internal_abort',
+      workspace_id: 'ws_internal_abort',
+      project_id: 'proj_internal_abort',
+      owner_user_id: 'user_internal_abort',
+      title: 'internal abort task',
+      agent_name: 'internal agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_internal_abort',
+      workspace_file_library_id: 'flib_internal_abort',
+      workspace_file_library_name: 'Internal Abort Workspace',
+    };
+    const assistantMessage = {
+      id: 'msg_internal_abort',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+    const emitted: Array<{ type: string; data: unknown }> = [];
+    const finalizeCalls: Array<{ durableTerminalTruth: boolean }> = [];
+    const controller = new AbortController();
+
+    const runPromise = runNotebookTaskWithExecutionAgent({
+      deps,
+      task,
+      assistantMessage,
+      agentId: 'agent_internal_abort',
+      user: { id: 'user_internal_abort', name: 'Internal Abort User', email: 'internal-abort@example.com' },
+      publicBaseUrl: 'http://localhost:20072',
+      buildRunId: () => 'run_internal_abort',
+      buildProxyUsername: () => 'internal_abort_user',
+      mapTaskMessagesForExecution: () => [],
+      updateTaskActivity: () => undefined,
+      emitTaskEvent: (_taskId, payload) => {
+        emitted.push(payload as { type: string; data: unknown });
+      },
+      onFinalize: (_taskId, _runId, summary) => {
+        finalizeCalls.push(summary);
+      },
+      isCancellationRequested: async () => controller.signal.aborted,
+      debugLog: () => undefined,
+      taskCollections: {
+        tasks: 'project_tasks',
+        messages: 'project_task_messages',
+      },
+      createTaskArtifact: async () => ({
+        id: 'artifact_internal_abort',
+        task_id: task.id,
+        type: 'file',
+        created_at: new Date().toISOString(),
+      }),
+      startupSignal: controller.signal,
+    } as never);
+
+    await vi.waitFor(() => {
+      expect(ensureAgentReady).toHaveBeenCalledTimes(1);
+    });
+    controller.abort('user_cancel_requested');
+    await runPromise;
+
+    expect(ensureAgentReady).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: task.id,
+      signal: controller.signal,
+    }));
+    expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+    expect(assistantMessage.content).toContain('AGENT_CANCELLED');
+    expect(assistantMessage.content.length).toBeGreaterThan(0);
+    expect(finalizeCalls).toEqual([
+      expect.objectContaining({ durableTerminalTruth: true }),
+    ]);
+    expect(emitted.find((item) => item.type === 'error')).toMatchObject({
+      type: 'error',
+      data: expect.objectContaining({
+        code: 'AGENT_CANCELLED',
+      }),
+    });
+    expect(emitted.find((item) => (
+      item.type === 'trace_event'
+      && typeof item.data === 'object'
+      && item.data !== null
+      && !Array.isArray(item.data)
+      && (item.data as { name?: unknown }).name === 'run.user_cancel'
+    ))).toBeTruthy();
+  });
+
+  it('treats a rejected late dispatch fence as terminal cancel and never consumes the old stream', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    let streamConsumed = false;
+    const deps = {
+      cache,
+      docStore,
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_late_dispatch_cancelled',
+          status: 'enabled',
+          mode: 'external',
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_late_dispatch_cancelled',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_late_dispatch_cancelled',
+          workspace_id: 'ws_late_dispatch_cancelled',
+          project_id: 'proj_late_dispatch_cancelled',
+          status: 'active',
+          model: 'placeholder-model',
+          credential_ref: 'cred_late_dispatch_cancelled',
+          name: 'endpoint-late-dispatch-cancelled',
+          type: 'openai',
+          upstream_protocol: 'openai_chat_completions',
+          base_url: 'https://example.com',
+          model_profile: {
+            max_context_tokens: 128000,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest: vi.fn(async () => ({
+          requestId: 'req_late_dispatch_cancelled',
+          cancel: () => undefined,
+          stream: (async function* stream() {
+            streamConsumed = true;
+            yield { type: 'delta', delta: 'stale success content' } as const;
+            yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+          })(),
+        })),
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_late_dispatch_cancelled',
+      workspace_id: 'ws_late_dispatch_cancelled',
+      project_id: 'proj_late_dispatch_cancelled',
+      owner_user_id: 'user_late_dispatch_cancelled',
+      title: 'late dispatch cancelled task',
+      agent_name: 'external agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_late_dispatch_cancelled',
+    };
+    const assistantMessage = {
+      id: 'msg_late_dispatch_cancelled',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    await expect(acquireNotebookTaskRunLease(cache, buildNotebookTaskRunState({
+      taskId: task.id,
+      runId: 'run_replacement_dispatch',
+      requestId: 'req_existing_second_run',
+      startedAt: new Date().toISOString(),
+    }))).resolves.toBe(true);
+
+    const emitted: Array<{ type: string; data: unknown }> = [];
+    const finalizeCalls: Array<{ durableTerminalTruth: boolean }> = [];
+
+    await runNotebookTaskWithExecutionAgent({
+      deps,
+      task,
+      assistantMessage,
+      agentId: 'agent_late_dispatch_cancelled',
+      user: {
+        id: 'user_late_dispatch_cancelled',
+        name: 'Late Dispatch Cancelled User',
+        email: 'late-dispatch-cancelled@example.com',
+      },
+      publicBaseUrl: 'http://localhost:20000',
+      buildRunId: () => 'run_late_dispatch_cancelled',
+      buildProxyUsername: () => 'late_dispatch_cancelled_user',
+      mapTaskMessagesForExecution: () => [],
+      updateTaskActivity: () => undefined,
+      emitTaskEvent: (_taskId, payload) => {
+        emitted.push(payload as { type: string; data: unknown });
+      },
+      onDispatched: () => false,
+      onFinalize: (_taskId, _runId, summary) => {
+        finalizeCalls.push(summary);
+      },
+      debugLog: () => undefined,
+      taskCollections: {
+        tasks: 'project_tasks',
+        messages: 'project_task_messages',
+      },
+      createTaskArtifact: async () => ({
+        id: 'artifact_late_dispatch_cancelled',
+        task_id: task.id,
+        type: 'file',
+        created_at: new Date().toISOString(),
+      }),
+    });
+
+    expect(streamConsumed).toBe(false);
+    expect(assistantMessage.content).toContain('AGENT_CANCELLED');
+    expect(assistantMessage.content).not.toContain('stale success content');
+    expect(finalizeCalls).toEqual([
+      expect.objectContaining({ durableTerminalTruth: true }),
+    ]);
+    expect(emitted.find((item) => item.type === 'error')).toMatchObject({
+      type: 'error',
+      data: expect.objectContaining({
+        code: 'AGENT_CANCELLED',
+      }),
+    });
+    await expect(docStore.get('project_task_messages', assistantMessage.id)).resolves.toMatchObject({
+      id: assistantMessage.id,
+      content: expect.stringContaining('AGENT_CANCELLED'),
+    });
+    await expect(getNotebookTaskRunState(cache, task.id)).resolves.toMatchObject({
+      run_id: 'run_replacement_dispatch',
+      request_id: 'req_existing_second_run',
+    });
+  });
 });

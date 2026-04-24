@@ -10,7 +10,7 @@ export const ARTIFACTS_BY_TASK = new Map<string, TaskArtifactRecord[]>();
 export const ACTIVE_RUNS_BY_TASK = new Set<string>();
 export const ACTIVE_RUN_CANCEL_BY_TASK = new Map<
   string,
-  { runId: string; requestId: string; cancel: () => void; requestCancel: () => void }
+  { runId: string; requestId: string | null; cancel: () => void; requestCancel: () => void }
 >();
 export const ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK = new Map<string, { runId: string; requestedAt: string }>();
 

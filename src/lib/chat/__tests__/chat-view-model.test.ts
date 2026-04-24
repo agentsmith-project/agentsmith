@@ -101,6 +101,112 @@ describe('buildChatViewModel', () => {
     expect(model.mergedStreamingSessionIds).toContain(session.id);
   });
 
+  it('keeps the session disabled while forced stop is terminating locally', () => {
+    const session = makeSession({ execution_status: 'stopping' });
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      streamStateBySession: {
+        [session.id]: {
+          status: 'terminating',
+          assistant: null,
+        },
+      },
+    });
+
+    expect(model.activeStreamStatus).toBe('terminating');
+    expect(model.disabled).toBe(true);
+    expect(model.mergedStreamingSessionIds).toContain(session.id);
+  });
+
+  it('surfaces authoritative terminating truth after reload without local stream state', () => {
+    const session = makeSession({
+      execution_status: 'terminating',
+      stop_mode: 'terminate',
+    });
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      streamStateBySession: {},
+    });
+
+    expect(model.activeStreamStatus).toBe('terminating');
+    expect(model.disabled).toBe(true);
+    expect(model.mergedStreamingSessionIds).toContain(session.id);
+  });
+
+  it('keeps terminal hard teardown debt active even when the backend execution is terminal', () => {
+    const session = makeSession({
+      execution_status: 'stopped',
+      stop_mode: 'terminate',
+      termination_state: 'terminating',
+    });
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      streamStateBySession: {},
+    });
+
+    expect(model.activeStreamStatus).toBe('terminating');
+    expect(model.disabled).toBe(true);
+    expect(model.mergedStreamingSessionIds).toContain(session.id);
+  });
+
+  it.each([
+    { executionStatus: 'completed' as const, expectedStatus: 'idle' as const },
+    { executionStatus: 'stopped' as const, expectedStatus: 'stopped' as const },
+    { executionStatus: 'failed' as const, expectedStatus: 'error' as const },
+  ])(
+    'uses final backend $executionStatus truth over stale terminate stop_mode',
+    ({ executionStatus, expectedStatus }) => {
+      const session = makeSession({
+        execution_status: executionStatus,
+        stop_mode: 'terminate',
+      });
+      const model = buildChatViewModel({
+        currentSessionId: session.id,
+        activeSession: session,
+        sessions: [session],
+        streamStateBySession: {
+          [session.id]: {
+            status: 'terminating',
+            assistant: null,
+          },
+        },
+      });
+
+      expect(model.activeStreamStatus).toBe(expectedStatus);
+      expect(model.disabled).toBe(false);
+      expect(model.mergedStreamingSessionIds).not.toContain(session.id);
+    },
+  );
+
+  it('does not turn a backend cancel stop into terminating after refetch', () => {
+    const session = makeSession({
+      execution_status: 'stopping',
+      stop_mode: 'cancel',
+      can_escalate: false,
+    });
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      streamStateBySession: {
+        [session.id]: {
+          status: 'stopping',
+          assistant: null,
+        },
+      },
+    });
+
+    expect(model.activeStreamStatus).toBe('stopping');
+    expect(model.disabled).toBe(true);
+    expect(model.mergedStreamingSessionIds).toContain(session.id);
+  });
+
   it('does not let local recovering hide an authoritative backend stopping state', () => {
     const session = makeSession({ execution_status: 'stopping' });
     const model = buildChatViewModel({

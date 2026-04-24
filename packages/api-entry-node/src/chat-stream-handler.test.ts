@@ -11,6 +11,7 @@ import {
   readSessionExecutionRecord,
   readSessionStreamState,
   requestSessionExecutionStop,
+  writeSessionExecutionRecord,
   writeSessionStreamState,
 } from './chat-stream-state.js';
 
@@ -579,6 +580,204 @@ describe('handleChatStreamRoute session state ordering', () => {
     }
   });
 
+  it.each(['pending', 'failed', 'requested'] as const)(
+    'treats terminal hard teardown %s debt as an authoritative stream conflict without overwriting it',
+    async (hardTeardownStatus) => {
+      const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+      process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
+      const { cache, deps, dispatchStreamingRequest, createMessage } = createExternalAgentStreamDeps();
+      const req = { headers: {} } as http.IncomingMessage;
+      const res = createResponse();
+      const json = vi.fn();
+
+      await writeSessionExecutionRecord(
+        cache,
+        {
+          workspaceId: 'ws_external_stream',
+          projectId: 'proj_external_stream',
+          sessionId: 'session_external_stream',
+          streamId: `stream_terminal_${hardTeardownStatus}_debt`,
+          ownerInstanceId: 'api-terminal-debt',
+          transport: 'agent_runner',
+          internalAgent: true,
+          status: 'stopped',
+          phase: 'terminal',
+          startedAt: '2026-04-23T12:00:00.000Z',
+          updatedAt: '2026-04-23T12:00:05.000Z',
+          stopMode: 'terminate',
+          stopReason: 'session_stop',
+          hardTeardownStatus,
+          ...(hardTeardownStatus === 'requested' ? { hardTeardownRequestedAt: '2026-04-23T12:00:06.000Z' } : {}),
+          ...(hardTeardownStatus === 'failed' ? { hardTeardownLastError: 'terminal release failed' } : {}),
+        },
+        60,
+      );
+
+      try {
+        await expect(handleChatStreamRoute({
+          route: {
+            kind: 'chatMessagesStream',
+            workspaceId: 'ws_external_stream',
+            projectId: 'proj_external_stream',
+            sessionId: 'session_external_stream',
+          },
+          method: 'POST',
+          req,
+          res,
+          deps,
+          user: { id: 'user_external_stream', name: 'External Stream User', email: 'external-stream@example.com' },
+          json,
+          readBody: async () => ({
+            input: { role: 'user', content: 'hello blocked by terminal debt' },
+          }),
+          sseWrite: vi.fn(),
+        })).resolves.toBe(true);
+
+        expect(json).toHaveBeenCalledWith(res, 409, {
+          error_code: 'CHAT_SESSION_STREAM_CONFLICT',
+          message: 'chat_session_stream_conflict',
+          reason: 'hard_teardown_pending',
+          hard_teardown_status: hardTeardownStatus,
+        });
+        expect(createMessage).not.toHaveBeenCalled();
+        expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+        await expect(readSessionExecutionRecord(
+          cache,
+          'ws_external_stream',
+          'proj_external_stream',
+          'session_external_stream',
+        )).resolves.toMatchObject({
+          streamId: `stream_terminal_${hardTeardownStatus}_debt`,
+          status: 'stopped',
+          phase: 'terminal',
+          stopMode: 'terminate',
+          hardTeardownStatus,
+        });
+      } finally {
+        if (previousPublicApiBase === undefined) {
+          delete process.env.PUBLIC_API_BASE_URL;
+        } else {
+          process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+        }
+      }
+    },
+  );
+
+  it('allows a new stream only after terminate retries and clears terminal hard teardown debt', async () => {
+    const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
+    process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
+    const { cache, deps, dispatchStreamingRequest, createMessage } = createExternalAgentStreamDeps();
+    const releasePod = vi.fn(async () => undefined);
+    const internalWorkloadCoordinator = new InternalWorkloadCoordinator({
+      keepalive: vi.fn(async () => undefined),
+      releasePod,
+    });
+    deps.internalWorkloadCoordinator = internalWorkloadCoordinator;
+
+    await writeSessionExecutionRecord(
+      cache,
+      {
+        workspaceId: 'ws_external_stream',
+        projectId: 'proj_external_stream',
+        sessionId: 'session_external_stream',
+        streamId: 'stream_terminal_retry_debt',
+        ownerInstanceId: 'api-terminal-debt',
+        transport: 'agent_runner',
+        internalAgent: true,
+        status: 'stopped',
+        phase: 'terminal',
+        startedAt: '2026-04-23T12:00:00.000Z',
+        updatedAt: '2026-04-23T12:00:05.000Z',
+        stopMode: 'terminate',
+        stopReason: 'session_stop',
+        hardTeardownStatus: 'failed',
+        hardTeardownLastError: 'terminal release failed',
+        hardTeardownAttemptCount: 1,
+      },
+      60,
+    );
+
+    try {
+      const stopJson = vi.fn();
+      await expect(handleChatNonStreamRoute({
+        route: {
+          kind: 'chatSessionStop',
+          workspaceId: 'ws_external_stream',
+          projectId: 'proj_external_stream',
+          sessionId: 'session_external_stream',
+        },
+        method: 'POST',
+        req: { headers: {} } as http.IncomingMessage,
+        res: {} as http.ServerResponse,
+        deps,
+        user: { id: 'user_external_stream', name: 'External Stream User', email: 'external-stream@example.com' },
+        requestUrl: new URL('http://localhost/api/v1/workspaces/ws_external_stream/projects/proj_external_stream/chat/sessions/session_external_stream/stop'),
+        json: stopJson,
+        readBody: async () => ({ mode: 'terminate' }),
+      })).resolves.toBe(true);
+
+      expect(stopJson).toHaveBeenCalledWith(
+        expect.anything(),
+        202,
+        expect.objectContaining({
+          state: 'terminating',
+          stop_mode: 'terminate',
+        }),
+      );
+      expect(releasePod).toHaveBeenCalledTimes(1);
+      const clearedDebt = await readSessionExecutionRecord(
+        cache,
+        'ws_external_stream',
+        'proj_external_stream',
+        'session_external_stream',
+      );
+      expect(clearedDebt).toMatchObject({
+        status: 'stopped',
+        phase: 'terminal',
+        stopMode: 'terminate',
+      });
+      expect(clearedDebt?.hardTeardownStatus).toBeUndefined();
+
+      await expect(handleChatStreamRoute({
+        route: {
+          kind: 'chatMessagesStream',
+          workspaceId: 'ws_external_stream',
+          projectId: 'proj_external_stream',
+          sessionId: 'session_external_stream',
+        },
+        method: 'POST',
+        req: { headers: {} } as http.IncomingMessage,
+        res: createResponse(),
+        deps,
+        user: { id: 'user_external_stream', name: 'External Stream User', email: 'external-stream@example.com' },
+        json: vi.fn(),
+        readBody: async () => ({
+          input: { role: 'user', content: 'hello after terminal debt cleared' },
+        }),
+        sseWrite: vi.fn(),
+      })).resolves.toBe(true);
+
+      expect(createMessage).toHaveBeenCalled();
+      expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);
+      await expect(readSessionExecutionRecord(
+        cache,
+        'ws_external_stream',
+        'proj_external_stream',
+        'session_external_stream',
+      )).resolves.toMatchObject({
+        status: 'completed',
+        phase: 'terminal',
+      });
+    } finally {
+      await internalWorkloadCoordinator.shutdown();
+      if (previousPublicApiBase === undefined) {
+        delete process.env.PUBLIC_API_BASE_URL;
+      } else {
+        process.env.PUBLIC_API_BASE_URL = previousPublicApiBase;
+      }
+    }
+  });
+
   it('creates a bootstrapping execution record before the first message write', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:20000';
@@ -684,6 +883,10 @@ describe('handleChatStreamRoute session state ordering', () => {
         success: true,
         session_id: 'session_external_stream',
         state: 'stopping',
+        status: 'stopping',
+        stop_mode: 'cancel',
+        can_escalate: false,
+        escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
       });
 
       agentLookupGate.resolve({
@@ -780,7 +983,7 @@ describe('handleChatStreamRoute session state ordering', () => {
     }
   });
 
-  it('uses shared session stop truth to stop a direct-provider stream', async () => {
+  it('uses shared terminating truth to stop a running stream', async () => {
     const createdAt = new Date().toISOString();
     const cache = new InMemoryCache();
     const docStore = new InMemoryJsonDocStore();
@@ -948,6 +1151,7 @@ describe('handleChatStreamRoute session state ordering', () => {
       sessionId: session.id,
       requestedBy: session.owner_user_id,
       stopReason: 'session_stop',
+      stopMode: 'terminate',
     });
     await new Promise((resolve) => setTimeout(resolve, 300));
     allowCompletion.resolve();
@@ -1202,6 +1406,7 @@ describe('handleChatStreamRoute session state ordering', () => {
         workspaceId: 'ws_internal_cancel_timeout',
         projectId: 'proj_internal_cancel_timeout',
         workloadId: 'session-internal-cancel-timeout',
+        epoch: expect.any(String),
       });
     } finally {
       if (previousPublicApiBase === undefined) {

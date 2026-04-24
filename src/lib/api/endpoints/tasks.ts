@@ -27,8 +27,20 @@ export type TaskCancelRunResponse = {
   status: 'cancelling' | 'terminating';
   task_id: string;
   run_id: string;
-  request_id: string;
+  request_id: string | null;
+  stop_mode?: 'cancel' | 'terminate';
+  can_escalate?: boolean;
+  escalation_reason?: string | null;
 };
+
+export type TaskCancelRunOptions = {
+  mode?: 'cancel' | 'terminate';
+};
+
+function buildTaskCancelRunRequest(options?: TaskCancelRunOptions) {
+  const stopMode = options?.mode ?? 'cancel';
+  return { mode: stopMode, stop_mode: stopMode };
+}
 
 export class TaskAPI {
   constructor(private client: ApiClient) {}
@@ -184,10 +196,11 @@ export class TaskAPI {
     workspaceId: string,
     projectId: string,
     taskId: string,
+    options?: TaskCancelRunOptions,
   ): Promise<TaskCancelRunResponse> {
     return this.client.post<TaskCancelRunResponse>(
       `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/cancel`,
-      {},
+      buildTaskCancelRunRequest(options),
     );
   }
 

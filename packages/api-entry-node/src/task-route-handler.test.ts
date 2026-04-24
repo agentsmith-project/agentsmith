@@ -14,15 +14,24 @@ import {
 } from './task-route-handler.js';
 import { createDefaultNodeApiDeps } from './index.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
+import { InternalWorkloadCoordinator } from './internal-workload-coordinator.js';
 import { NotebookTerminalService } from './notebook-terminal-service.js';
 import {
   acquireNotebookTaskRunLease,
   buildNotebookTaskRunState,
   getNotebookTaskRunState,
+  getNotebookTaskRunHardTeardownDebt,
+  markNotebookTaskRunHardTeardownFailed,
   refreshNotebookTaskRunLease,
 } from './notebook-task/task-run-coordination.js';
 import { clearNotebookTaskEventState, emitNotebookTaskEvent } from './notebook-task-sse-broker.js';
-import { ACTIVE_RUNS_BY_TASK, ARTIFACTS_BY_TASK, TASKS_BY_PROJECT } from './notebook-task/task-runtime-state.js';
+import {
+  ACTIVE_RUNS_BY_TASK,
+  ACTIVE_RUN_CANCEL_BY_TASK,
+  ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK,
+  ARTIFACTS_BY_TASK,
+  TASKS_BY_PROJECT,
+} from './notebook-task/task-runtime-state.js';
 import { notebookTaskArtifactsCollection, notebookTasksCollection } from './notebook-task/task-store.js';
 
 const { createFileLibraryGatewayClientMock } = vi.hoisted(() => ({
@@ -37,9 +46,21 @@ vi.mock('./file-library-gateway-client.js', async () => {
   };
 });
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve;
+    reject = innerReject;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('task-route-handler workspace access', () => {
   beforeEach(() => {
     ACTIVE_RUNS_BY_TASK.clear();
+    ACTIVE_RUN_CANCEL_BY_TASK.clear();
+    ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.clear();
     ARTIFACTS_BY_TASK.clear();
     TASKS_BY_PROJECT.clear();
     createFileLibraryGatewayClientMock.mockReset();
@@ -253,6 +274,8 @@ describe('task-route-handler workspace access', () => {
         task_id: 'task_stale_internal',
         run_id: 'run_stale_internal',
         stop_mode: 'terminate',
+        can_escalate: false,
+        escalation_reason: 'already_terminating',
       }),
     );
     await expect(getNotebookTaskRunState(deps.cache, 'task_stale_internal')).resolves.toMatchObject({
@@ -267,7 +290,1416 @@ describe('task-route-handler workspace access', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       workloadId: sanitizeWorkloadId('task_stale_internal'),
+      epoch: 'run_stale_internal',
     });
+  });
+
+  it('returns authoritative cancellable truth for internal active runs without duplicating local cancel delivery', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const requestHardTeardown = vi.fn(async () => undefined);
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown,
+    } as never;
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_internal_active',
+      name: 'Internal Active Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_active_cancel', {
+      id: 'task_internal_active_cancel',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal active cancel task',
+      agent_id: 'agent_internal_active',
+      agent_name: 'Internal Active Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_internal_active_cancel',
+      runId: 'run_internal_active_cancel',
+      requestId: 'req_internal_active_cancel',
+      startedAt: now,
+      heartbeatAt: now,
+    }))).resolves.toBe(true);
+
+    const cancel = vi.fn();
+    const requestCancel = vi.fn();
+    ACTIVE_RUN_CANCEL_BY_TASK.set('task_internal_active_cancel', {
+      runId: 'run_internal_active_cancel',
+      requestId: 'req_internal_active_cancel',
+      cancel,
+      requestCancel,
+    });
+
+    const firstJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_active_cancel',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: firstJson,
+      readBody: vi.fn(async () => ({ mode: 'cancel' })),
+    })).resolves.toBe(true);
+
+    expect(firstJson).toHaveBeenCalledWith(
+      expect.anything(),
+      202,
+      expect.objectContaining({
+        status: 'cancelling',
+        task_id: 'task_internal_active_cancel',
+        run_id: 'run_internal_active_cancel',
+        request_id: 'req_internal_active_cancel',
+        stop_mode: 'cancel',
+        can_escalate: true,
+      }),
+    );
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(requestCancel).not.toHaveBeenCalled();
+
+    const detailJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskItem',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_active_cancel',
+      } as never,
+      method: 'GET',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: detailJson,
+      readBody: vi.fn(async () => ({})),
+    })).resolves.toBe(true);
+    expect(detailJson).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({
+        id: 'task_internal_active_cancel',
+        run_state: 'cancelling',
+        stop_mode: 'cancel',
+        can_escalate: true,
+      }),
+    );
+    expect(detailJson.mock.calls[0]?.[2]).not.toHaveProperty('escalation_reason');
+
+    const listJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'tasks',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+      } as never,
+      method: 'GET',
+      req: { headers: {}, url: '/api/v1/workspaces/ws_default/projects/proj_1/tasks' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: listJson,
+      readBody: vi.fn(async () => ({})),
+    })).resolves.toBe(true);
+    expect(listJson).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'task_internal_active_cancel',
+            run_state: 'cancelling',
+            stop_mode: 'cancel',
+            can_escalate: true,
+          }),
+        ]),
+      }),
+    );
+
+    const secondJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_active_cancel',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: secondJson,
+      readBody: vi.fn(async () => ({ mode: 'cancel' })),
+    })).resolves.toBe(true);
+
+    expect(secondJson).toHaveBeenCalledWith(
+      expect.anything(),
+      202,
+      expect.objectContaining({
+        status: 'cancelling',
+        task_id: 'task_internal_active_cancel',
+        run_id: 'run_internal_active_cancel',
+        request_id: 'req_internal_active_cancel',
+        stop_mode: 'cancel',
+        can_escalate: true,
+      }),
+    );
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(requestCancel).not.toHaveBeenCalled();
+    expect(requestHardTeardown).not.toHaveBeenCalled();
+  });
+
+  it('upgrades internal cancel to terminate once and keeps repeated terminate idempotent', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const requestHardTeardown = vi.fn(async () => undefined);
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown,
+    } as never;
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_internal_upgrade',
+      name: 'Internal Upgrade Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_upgrade', {
+      id: 'task_internal_upgrade',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal upgrade task',
+      agent_id: 'agent_internal_upgrade',
+      agent_name: 'Internal Upgrade Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_internal_upgrade',
+      runId: 'run_internal_upgrade',
+      requestId: 'req_internal_upgrade',
+      startedAt: now,
+      heartbeatAt: now,
+    }))).resolves.toBe(true);
+    ACTIVE_RUN_CANCEL_BY_TASK.set('task_internal_upgrade', {
+      runId: 'run_internal_upgrade',
+      requestId: 'req_internal_upgrade',
+      cancel: vi.fn(),
+      requestCancel: vi.fn(),
+    });
+
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_upgrade',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: vi.fn(),
+      readBody: vi.fn(async () => ({ mode: 'cancel' })),
+    })).resolves.toBe(true);
+
+    const terminateJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_upgrade',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: terminateJson,
+      readBody: vi.fn(async () => ({ mode: 'terminate' })),
+    })).resolves.toBe(true);
+
+    expect(terminateJson).toHaveBeenCalledWith(
+      expect.anything(),
+      202,
+      expect.objectContaining({
+        status: 'terminating',
+        task_id: 'task_internal_upgrade',
+        run_id: 'run_internal_upgrade',
+        request_id: 'req_internal_upgrade',
+        stop_mode: 'terminate',
+        can_escalate: false,
+        escalation_reason: 'already_terminating',
+      }),
+    );
+
+    const retryJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_upgrade',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: retryJson,
+      readBody: vi.fn(async () => ({ mode: 'terminate' })),
+    })).resolves.toBe(true);
+
+    expect(retryJson).toHaveBeenCalledWith(
+      expect.anything(),
+      202,
+      expect.objectContaining({
+        status: 'terminating',
+        task_id: 'task_internal_upgrade',
+        run_id: 'run_internal_upgrade',
+        request_id: 'req_internal_upgrade',
+        stop_mode: 'terminate',
+        can_escalate: false,
+        escalation_reason: 'already_terminating',
+      }),
+    );
+    expect(requestHardTeardown).toHaveBeenCalledTimes(1);
+    const releasedUpgradeState = await getNotebookTaskRunState(deps.cache, 'task_internal_upgrade');
+    expect(releasedUpgradeState).toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+      },
+    });
+    expect(releasedUpgradeState?.stop?.hard_teardown).toBeUndefined();
+  });
+
+  it('retries internal terminate hard teardown after failed side effect without losing terminating truth', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const requestHardTeardown = vi.fn()
+      .mockRejectedValueOnce(new Error('pod teardown unavailable'))
+      .mockResolvedValueOnce(undefined);
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown,
+    } as never;
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_internal_retry',
+      name: 'Internal Retry Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_retry', {
+      id: 'task_internal_retry',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal retry task',
+      agent_id: 'agent_internal_retry',
+      agent_name: 'Internal Retry Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_internal_retry',
+      runId: 'run_internal_retry',
+      requestId: 'req_internal_retry',
+      startedAt: now,
+      heartbeatAt: now,
+    }))).resolves.toBe(true);
+    ACTIVE_RUN_CANCEL_BY_TASK.set('task_internal_retry', {
+      runId: 'run_internal_retry',
+      requestId: 'req_internal_retry',
+      cancel: vi.fn(),
+      requestCancel: vi.fn(),
+    });
+
+    const callTerminate = async () => {
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskCancelRun',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_internal_retry',
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(async () => ({ mode: 'terminate' })),
+      })).resolves.toBe(true);
+      return json.mock.calls[0]?.[2];
+    };
+
+    await expect(callTerminate()).resolves.toMatchObject({
+      status: 'terminating',
+      task_id: 'task_internal_retry',
+      run_id: 'run_internal_retry',
+      stop_mode: 'terminate',
+    });
+    expect(requestHardTeardown).toHaveBeenCalledTimes(1);
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_retry')).resolves.toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+        hard_teardown: {
+          status: 'failed',
+          last_error: 'pod teardown unavailable',
+        },
+      },
+    });
+
+    await expect(callTerminate()).resolves.toMatchObject({
+      status: 'terminating',
+      task_id: 'task_internal_retry',
+      run_id: 'run_internal_retry',
+      stop_mode: 'terminate',
+    });
+    expect(requestHardTeardown).toHaveBeenCalledTimes(2);
+    const releasedRetryState = await getNotebookTaskRunState(deps.cache, 'task_internal_retry');
+    expect(releasedRetryState).toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+      },
+    });
+    expect(releasedRetryState?.stop?.hard_teardown).toBeUndefined();
+  });
+
+  it('retries existing pending internal terminate hard teardown debt from cancel and keeps it retryable on failure', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const requestHardTeardown = vi.fn()
+      .mockRejectedValueOnce(new Error('pending notebook teardown dispatch failed'))
+      .mockResolvedValueOnce(undefined);
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown,
+    } as never;
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_internal_pending_retry',
+      name: 'Internal Pending Retry Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_pending_retry', {
+      id: 'task_internal_pending_retry',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal pending retry task',
+      agent_id: 'agent_internal_pending_retry',
+      agent_name: 'Internal Pending Retry Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_internal_pending_retry',
+      runId: 'run_internal_pending_retry',
+      requestId: 'req_internal_pending_retry',
+      phase: 'terminating',
+      startedAt: now,
+      heartbeatAt: now,
+      stop: {
+        mode: 'terminate',
+        requested_at: now,
+        actor_user_id: 'user_1',
+        delivery: 'internal_teardown_requested',
+        hard_teardown: {
+          status: 'pending',
+        },
+      },
+    }))).resolves.toBe(true);
+
+    const callStop = async (mode: 'cancel' | 'terminate') => {
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskCancelRun',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_internal_pending_retry',
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(async () => ({ mode })),
+      })).resolves.toBe(true);
+      return json.mock.calls[0]?.[2];
+    };
+
+    await expect(callStop('cancel')).resolves.toMatchObject({
+      status: 'terminating',
+      task_id: 'task_internal_pending_retry',
+      run_id: 'run_internal_pending_retry',
+      request_id: 'req_internal_pending_retry',
+      stop_mode: 'terminate',
+    });
+    expect(requestHardTeardown).toHaveBeenCalledTimes(1);
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_pending_retry')).resolves.toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+        hard_teardown: {
+          status: 'failed',
+          last_error: 'pending notebook teardown dispatch failed',
+        },
+      },
+    });
+    await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_internal_pending_retry')).resolves.toMatchObject({
+      run_id: 'run_internal_pending_retry',
+      status: 'failed',
+      last_error: 'pending notebook teardown dispatch failed',
+    });
+
+    await expect(callStop('terminate')).resolves.toMatchObject({
+      status: 'terminating',
+      task_id: 'task_internal_pending_retry',
+      run_id: 'run_internal_pending_retry',
+      request_id: 'req_internal_pending_retry',
+      stop_mode: 'terminate',
+    });
+    expect(requestHardTeardown).toHaveBeenCalledTimes(2);
+    const releasedRetryState = await getNotebookTaskRunState(deps.cache, 'task_internal_pending_retry');
+    expect(releasedRetryState).toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+      },
+    });
+    expect(releasedRetryState?.stop?.hard_teardown).toBeUndefined();
+    await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_internal_pending_retry')).resolves.toBeNull();
+  });
+
+  it('keeps internal terminate retryable when real releasePod fails in the coordinator', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const releasePod = vi.fn()
+      .mockRejectedValueOnce(new Error('real pod teardown unavailable'))
+      .mockResolvedValueOnce(undefined);
+    const internalWorkloadCoordinator = new InternalWorkloadCoordinator({
+      keepalive: vi.fn(async () => undefined),
+      releasePod,
+    });
+    deps.internalWorkloadCoordinator = internalWorkloadCoordinator as never;
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_internal_real_retry',
+      name: 'Internal Real Retry Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_real_retry', {
+      id: 'task_internal_real_retry',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal real retry task',
+      agent_id: 'agent_internal_real_retry',
+      agent_name: 'Internal Real Retry Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_internal_real_retry',
+      runId: 'run_internal_real_retry',
+      requestId: 'req_internal_real_retry',
+      startedAt: now,
+      heartbeatAt: now,
+    }))).resolves.toBe(true);
+    ACTIVE_RUN_CANCEL_BY_TASK.set('task_internal_real_retry', {
+      runId: 'run_internal_real_retry',
+      requestId: 'req_internal_real_retry',
+      cancel: vi.fn(),
+      requestCancel: vi.fn(),
+    });
+
+    const callTerminate = async () => {
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskCancelRun',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_internal_real_retry',
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(async () => ({ mode: 'terminate' })),
+      })).resolves.toBe(true);
+      return json.mock.calls[0]?.[2];
+    };
+
+    await expect(callTerminate()).resolves.toMatchObject({
+      status: 'terminating',
+      task_id: 'task_internal_real_retry',
+      run_id: 'run_internal_real_retry',
+      stop_mode: 'terminate',
+    });
+    expect(releasePod).toHaveBeenCalledTimes(1);
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_real_retry')).resolves.toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+        hard_teardown: {
+          status: 'failed',
+          last_error: 'real pod teardown unavailable',
+        },
+      },
+    });
+    expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([
+      {
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        workloadId: sanitizeWorkloadId('task_internal_real_retry'),
+        holders: [],
+        hardTeardownRequested: true,
+      },
+    ]);
+
+    await expect(callTerminate()).resolves.toMatchObject({
+      status: 'terminating',
+      task_id: 'task_internal_real_retry',
+      run_id: 'run_internal_real_retry',
+      stop_mode: 'terminate',
+    });
+    expect(releasePod).toHaveBeenCalledTimes(2);
+    const releasedRealRetryState = await getNotebookTaskRunState(deps.cache, 'task_internal_real_retry');
+    expect(releasedRealRetryState).toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+      },
+    });
+    expect(releasedRealRetryState?.stop?.hard_teardown).toBeUndefined();
+    expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([]);
+
+    await internalWorkloadCoordinator.shutdown();
+  });
+
+  it('rejects a late notebook holder after active run truth was terminated before holder registration', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const releasePod = vi.fn(async () => undefined);
+    const internalWorkloadCoordinator = new InternalWorkloadCoordinator({
+      keepalive: vi.fn(async () => undefined),
+      releasePod,
+    });
+    deps.internalWorkloadCoordinator = internalWorkloadCoordinator as never;
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_internal_late_holder',
+      name: 'Internal Late Holder Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_late_holder', {
+      id: 'task_internal_late_holder',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal late holder task',
+      agent_id: 'agent_internal_late_holder',
+      agent_name: 'Internal Late Holder Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_internal_late_holder',
+      runId: 'run_internal_late_holder',
+      requestId: 'req_internal_late_holder',
+      startedAt: now,
+      heartbeatAt: now,
+    }))).resolves.toBe(true);
+    ACTIVE_RUN_CANCEL_BY_TASK.set('task_internal_late_holder', {
+      runId: 'run_internal_late_holder',
+      requestId: 'req_internal_late_holder',
+      cancel: vi.fn(),
+      requestCancel: vi.fn(),
+    });
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_late_holder',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({ mode: 'terminate' })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(expect.anything(), 202, expect.objectContaining({
+      status: 'terminating',
+      run_id: 'run_internal_late_holder',
+      stop_mode: 'terminate',
+    }));
+    expect(releasePod).toHaveBeenCalledTimes(1);
+    const releasedRunState = await getNotebookTaskRunState(deps.cache, 'task_internal_late_holder');
+    expect(releasedRunState).toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+      },
+    });
+    expect(releasedRunState?.stop?.hard_teardown).toBeUndefined();
+    await expect(getNotebookTaskRunHardTeardownDebt(
+      deps.cache,
+      'task_internal_late_holder',
+    )).resolves.toBeNull();
+
+    await expect(internalWorkloadCoordinator.acquireHolder({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: sanitizeWorkloadId('task_internal_late_holder'),
+      holderKind: 'notebook_run',
+      holderId: 'run_internal_late_holder',
+      epoch: 'run_internal_late_holder',
+    })).rejects.toMatchObject({
+      code: 'INTERNAL_WORKLOAD_HARD_TEARDOWN_PENDING',
+    });
+    await expect(internalWorkloadCoordinator.acquireHolder({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: sanitizeWorkloadId('task_internal_late_holder'),
+      holderKind: 'notebook_run',
+      holderId: 'run_internal_late_holder_next',
+      epoch: 'run_internal_late_holder_next',
+    })).resolves.toBeUndefined();
+    await internalWorkloadCoordinator.releaseHolder({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: sanitizeWorkloadId('task_internal_late_holder'),
+      holderKind: 'notebook_run',
+      holderId: 'run_internal_late_holder_next',
+      epoch: 'run_internal_late_holder_next',
+    });
+    expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([]);
+
+    await internalWorkloadCoordinator.shutdown();
+  });
+
+  it('keeps live-holder internal terminate pending until real release completes and retries after releasePod failure', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const firstRelease = createDeferred<void>();
+    const secondRelease = createDeferred<void>();
+    const releaseAttempts = [firstRelease, secondRelease];
+    let releaseAttemptIndex = 0;
+    const releasePod = vi.fn(async () => {
+      const release = releaseAttempts[releaseAttemptIndex];
+      releaseAttemptIndex += 1;
+      if (release) {
+        await release.promise;
+      }
+    });
+    const internalWorkloadCoordinator = new InternalWorkloadCoordinator({
+      keepalive: vi.fn(async () => undefined),
+      releasePod,
+    });
+    deps.internalWorkloadCoordinator = internalWorkloadCoordinator as never;
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_internal_live_retry',
+      name: 'Internal Live Retry Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_live_retry', {
+      id: 'task_internal_live_retry',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal live retry task',
+      agent_id: 'agent_internal_live_retry',
+      agent_name: 'Internal Live Retry Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_internal_live_retry',
+      runId: 'run_internal_live_retry',
+      requestId: 'req_internal_live_retry',
+      startedAt: now,
+      heartbeatAt: now,
+    }))).resolves.toBe(true);
+    const holder = {
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: sanitizeWorkloadId('task_internal_live_retry'),
+      holderKind: 'notebook_run' as const,
+      holderId: 'run_internal_live_retry',
+    };
+    await internalWorkloadCoordinator.acquireHolder(holder);
+    const holderReleaseErrors: unknown[] = [];
+    ACTIVE_RUN_CANCEL_BY_TASK.set('task_internal_live_retry', {
+      runId: 'run_internal_live_retry',
+      requestId: 'req_internal_live_retry',
+      cancel: vi.fn(),
+      requestCancel: vi.fn(),
+    });
+
+    const callTerminate = async () => {
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskCancelRun',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_internal_live_retry',
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(async () => ({ mode: 'terminate' })),
+      })).resolves.toBe(true);
+      return json.mock.calls[0]?.[2];
+    };
+
+    const firstTerminate = callTerminate();
+    await vi.waitFor(() => {
+      expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([
+        {
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          workloadId: sanitizeWorkloadId('task_internal_live_retry'),
+          holders: ['notebook_run:run_internal_live_retry'],
+          hardTeardownRequested: true,
+        },
+      ]);
+    });
+    expect(releasePod).not.toHaveBeenCalled();
+    void internalWorkloadCoordinator.releaseHolder(holder).catch((error: unknown) => {
+      holderReleaseErrors.push(error);
+    });
+    await vi.waitFor(() => {
+      expect(releasePod).toHaveBeenCalledTimes(1);
+    });
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_live_retry')).resolves.toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+        hard_teardown: {
+          status: 'requested',
+        },
+      },
+    });
+
+    firstRelease.reject(new Error('live notebook pod release failed'));
+    await expect(firstTerminate).resolves.toMatchObject({
+      status: 'terminating',
+      task_id: 'task_internal_live_retry',
+      run_id: 'run_internal_live_retry',
+      stop_mode: 'terminate',
+    });
+    await vi.waitFor(() => {
+      expect(holderReleaseErrors).toHaveLength(1);
+    });
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_live_retry')).resolves.toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+        hard_teardown: {
+          status: 'failed',
+          last_error: 'live notebook pod release failed',
+        },
+      },
+    });
+
+    const secondTerminate = callTerminate();
+    await vi.waitFor(() => {
+      expect(releasePod).toHaveBeenCalledTimes(2);
+    });
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_live_retry')).resolves.toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+        hard_teardown: {
+          status: 'requested',
+        },
+      },
+    });
+
+    secondRelease.resolve();
+    await expect(secondTerminate).resolves.toMatchObject({
+      status: 'terminating',
+      task_id: 'task_internal_live_retry',
+      run_id: 'run_internal_live_retry',
+      stop_mode: 'terminate',
+    });
+    const releasedLiveRetryState = await getNotebookTaskRunState(deps.cache, 'task_internal_live_retry');
+    expect(releasedLiveRetryState).toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+      },
+    });
+    expect(releasedLiveRetryState?.stop?.hard_teardown).toBeUndefined();
+    expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([]);
+
+    await internalWorkloadCoordinator.shutdown();
+  });
+
+  it('retries finalizing internal terminate debt instead of rejecting TASK_RUN_FINALIZING', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const requestHardTeardown = vi.fn(async () => undefined);
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown,
+    } as never;
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_internal_finalizing_debt',
+      name: 'Internal Finalizing Debt Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_finalizing_debt', {
+      id: 'task_internal_finalizing_debt',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal finalizing debt task',
+      agent_id: 'agent_internal_finalizing_debt',
+      agent_name: 'Internal Finalizing Debt Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_internal_finalizing_debt',
+      runId: 'run_internal_finalizing_debt',
+      requestId: 'req_internal_finalizing_debt',
+      phase: 'finalizing',
+      startedAt: now,
+      heartbeatAt: now,
+      stop: {
+        mode: 'terminate',
+        requested_at: now,
+        actor_user_id: 'user_1',
+        delivery: 'internal_teardown_requested',
+        hard_teardown: {
+          status: 'failed',
+          last_attempt_at: now,
+          last_error: 'finalizing release failed',
+          attempt_count: 1,
+        },
+      },
+      finalization: {
+        status: 'pending',
+        updated_at: now,
+      },
+    }))).resolves.toBe(true);
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_finalizing_debt',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({ mode: 'terminate' })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      202,
+      expect.objectContaining({
+        status: 'terminating',
+        task_id: 'task_internal_finalizing_debt',
+        run_id: 'run_internal_finalizing_debt',
+        request_id: 'req_internal_finalizing_debt',
+        stop_mode: 'terminate',
+      }),
+    );
+    expect(requestHardTeardown).toHaveBeenCalledTimes(1);
+    const releasedFinalizingDebtState = await getNotebookTaskRunState(deps.cache, 'task_internal_finalizing_debt');
+    expect(releasedFinalizingDebtState).toMatchObject({
+      phase: 'finalizing',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+      },
+    });
+    expect(releasedFinalizingDebtState?.stop?.hard_teardown).toBeUndefined();
+  });
+
+  it('retries terminal internal hard teardown debt after active run state was cleared', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const requestHardTeardown = vi.fn(async () => undefined);
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown,
+    } as never;
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_internal_terminal_debt',
+      name: 'Internal Terminal Debt Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_terminal_debt', {
+      id: 'task_internal_terminal_debt',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal terminal debt task',
+      agent_id: 'agent_internal_terminal_debt',
+      agent_name: 'Internal Terminal Debt Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(markNotebookTaskRunHardTeardownFailed(deps.cache, {
+      taskId: 'task_internal_terminal_debt',
+      runId: 'run_internal_terminal_debt',
+      attemptedAt: now,
+      errorMessage: 'release failed after active run cleared',
+    })).resolves.toBeNull();
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_terminal_debt',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({ mode: 'cancel' })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      202,
+      expect.objectContaining({
+        status: 'terminating',
+        task_id: 'task_internal_terminal_debt',
+        run_id: 'run_internal_terminal_debt',
+        request_id: null,
+        stop_mode: 'terminate',
+      }),
+    );
+    expect(requestHardTeardown).toHaveBeenCalledTimes(1);
+    await expect(getNotebookTaskRunState(deps.cache, 'task_internal_terminal_debt')).resolves.toBeNull();
+
+    const retryJson = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_internal_terminal_debt',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json: retryJson,
+      readBody: vi.fn(async () => ({ mode: 'terminate' })),
+    })).resolves.toBe(true);
+    expect(retryJson).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      { error_code: 'TASK_RUN_NOT_ACTIVE', message: 'task_run_not_active' },
+    );
+    expect(requestHardTeardown).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a new user run while terminal hard teardown debt exists without masking the debt', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_terminal_debt_new_run', {
+      id: 'task_terminal_debt_new_run',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Terminal debt new run task',
+      agent_id: 'agent_terminal_debt_new_run',
+      agent_name: 'Terminal Debt Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(markNotebookTaskRunHardTeardownFailed(deps.cache, {
+      taskId: 'task_terminal_debt_new_run',
+      runId: 'run_terminal_debt_new_run',
+      attemptedAt: now,
+      errorMessage: 'terminal release failed before new run',
+    })).resolves.toBeNull();
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskMessages',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_terminal_debt_new_run',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({ role: 'user', content: 'start after debt' })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      expect.objectContaining({
+        error_code: 'TASK_STREAM_CONFLICT',
+        message: 'task_stream_conflict',
+        reason: 'hard_teardown_pending',
+        hard_teardown_status: 'failed',
+      }),
+    );
+    await expect(getNotebookTaskRunState(deps.cache, 'task_terminal_debt_new_run')).resolves.toBeNull();
+    await expect(getNotebookTaskRunHardTeardownDebt(deps.cache, 'task_terminal_debt_new_run')).resolves.toMatchObject({
+      run_id: 'run_terminal_debt_new_run',
+      status: 'failed',
+      last_error: 'terminal release failed before new run',
+    });
+  });
+
+  it('rejects a new user run while finalizing hard teardown debt exists without overwriting old run truth', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_finalizing_debt_new_run', {
+      id: 'task_finalizing_debt_new_run',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Finalizing debt new run task',
+      agent_id: 'agent_finalizing_debt_new_run',
+      agent_name: 'Finalizing Debt Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_finalizing_debt_new_run',
+      runId: 'run_finalizing_debt_new_run',
+      phase: 'finalizing',
+      startedAt: now,
+      heartbeatAt: now,
+      stop: {
+        mode: 'terminate',
+        requested_at: now,
+        delivery: 'internal_teardown_requested',
+        hard_teardown: {
+          status: 'failed',
+          last_error: 'finalizing release failed before new run',
+        },
+      },
+      finalization: {
+        status: 'pending',
+        updated_at: now,
+      },
+    }))).resolves.toBe(true);
+    await deps.cache.del('notebook:task:task_finalizing_debt_new_run:run:lock');
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskMessages',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_finalizing_debt_new_run',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({ role: 'user', content: 'start while finalizing debt' })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      expect.objectContaining({
+        error_code: 'TASK_STREAM_CONFLICT',
+        message: 'task_stream_conflict',
+        reason: 'hard_teardown_pending',
+        hard_teardown_status: 'failed',
+      }),
+    );
+    await expect(getNotebookTaskRunState(deps.cache, 'task_finalizing_debt_new_run')).resolves.toMatchObject({
+      run_id: 'run_finalizing_debt_new_run',
+      phase: 'finalizing',
+      stop: {
+        mode: 'terminate',
+        hard_teardown: {
+          status: 'failed',
+          last_error: 'finalizing release failed before new run',
+        },
+      },
+    });
+  });
+
+  it('deduplicates concurrent internal terminate hard teardown requests', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const teardown = createDeferred<void>();
+    const requestHardTeardown = vi.fn(async () => teardown.promise);
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown,
+    } as never;
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_internal_concurrent',
+      name: 'Internal Concurrent Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_internal_concurrent', {
+      id: 'task_internal_concurrent',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Internal concurrent task',
+      agent_id: 'agent_internal_concurrent',
+      agent_name: 'Internal Concurrent Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_internal_concurrent',
+      runId: 'run_internal_concurrent',
+      requestId: 'req_internal_concurrent',
+      startedAt: now,
+      heartbeatAt: now,
+    }))).resolves.toBe(true);
+    ACTIVE_RUN_CANCEL_BY_TASK.set('task_internal_concurrent', {
+      runId: 'run_internal_concurrent',
+      requestId: 'req_internal_concurrent',
+      cancel: vi.fn(),
+      requestCancel: vi.fn(),
+    });
+
+    const callTerminate = async () => {
+      const json = vi.fn();
+      await expect(handleTaskRoute({
+        route: {
+          kind: 'taskCancelRun',
+          workspaceId: 'ws_default',
+          projectId: 'proj_1',
+          taskId: 'task_internal_concurrent',
+        } as never,
+        method: 'POST',
+        req: { headers: {}, url: '' } as never,
+        res: {} as never,
+        deps,
+        user: { id: 'user_1' } as never,
+        json,
+        readBody: vi.fn(async () => ({ mode: 'terminate' })),
+      })).resolves.toBe(true);
+      return json.mock.calls[0]?.[2];
+    };
+
+    const responsesPromise = Promise.all([callTerminate(), callTerminate()]);
+    await vi.waitFor(() => {
+      expect(requestHardTeardown).toHaveBeenCalledTimes(1);
+    });
+    teardown.resolve();
+    await expect(responsesPromise).resolves.toEqual([
+      expect.objectContaining({
+        status: 'terminating',
+        stop_mode: 'terminate',
+      }),
+      expect.objectContaining({
+        status: 'terminating',
+        stop_mode: 'terminate',
+      }),
+    ]);
+    const releasedConcurrentState = await getNotebookTaskRunState(deps.cache, 'task_internal_concurrent');
+    expect(releasedConcurrentState).toMatchObject({
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+      },
+    });
+    expect(releasedConcurrentState?.stop?.hard_teardown).toBeUndefined();
+  });
+
+  it('rejects unsupported external terminate without creating terminating truth', async () => {
+    const deps = createDefaultNodeApiDeps();
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_external_terminate',
+      name: 'External Terminate Agent',
+      mode: 'external',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+      presence: 'online',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_external_terminate', {
+      id: 'task_external_terminate',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'External terminate task',
+      agent_id: 'agent_external_terminate',
+      agent_name: 'External Terminate Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_external_terminate',
+      runId: 'run_external_terminate',
+      requestId: 'req_external_terminate',
+      startedAt: now,
+      heartbeatAt: now,
+    }))).resolves.toBe(true);
+    ACTIVE_RUN_CANCEL_BY_TASK.set('task_external_terminate', {
+      runId: 'run_external_terminate',
+      requestId: 'req_external_terminate',
+      cancel: vi.fn(),
+      requestCancel: vi.fn(),
+    });
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_external_terminate',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({ mode: 'terminate' })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      expect.objectContaining({
+        error_code: 'STOP_ESCALATION_UNAVAILABLE',
+        message: 'stop_escalation_unavailable',
+        task_id: 'task_external_terminate',
+        run_id: 'run_external_terminate',
+        request_id: 'req_external_terminate',
+        can_escalate: false,
+        escalation_reason: 'unsupported_runner',
+      }),
+    );
+    const runStateAfterTerminate = await getNotebookTaskRunState(deps.cache, 'task_external_terminate');
+    expect(runStateAfterTerminate).toMatchObject({
+      phase: 'running',
+    });
+    expect(runStateAfterTerminate?.stop).toBeUndefined();
   });
 
   it('rejects stale external run ownership instead of pretending cancel succeeded', async () => {

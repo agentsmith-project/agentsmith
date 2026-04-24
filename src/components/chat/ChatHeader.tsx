@@ -4,10 +4,25 @@ import { useTranslations } from 'next-intl';
 
 import type { Agent, ChatSession, Endpoint } from '@/lib/api/types';
 import { getChatContentWidthClass, type ChatLayoutMode } from '@/lib/chat/layout';
-import type { SessionStreamStatus } from '@/lib/chat/stream-state';
+import {
+  CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT,
+  CHAT_STREAM_ESCALATION_CONFIRMATION_RESPONSE_EVENT,
+  type ChatStreamEscalationConfirmationRequestDetail,
+  type SessionStreamStatus,
+} from '@/lib/chat/stream-state';
 import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,6 +88,8 @@ export function ChatHeader({
   const [editing, setEditing] = React.useState(false);
   const [draftTitle, setDraftTitle] = React.useState(session?.title || '');
   const [executionTargetOpen, setExecutionTargetOpen] = React.useState(false);
+  const [escalationRequest, setEscalationRequest] =
+    React.useState<ChatStreamEscalationConfirmationRequestDetail | null>(null);
   const contentWidthClass = getChatContentWidthClass(layoutMode);
 
   React.useEffect(() => {
@@ -87,6 +104,37 @@ export function ChatHeader({
     return findCurrentExternalAgent(session, externalAgents ?? []) ?? undefined;
   }, [externalAgents, session]);
   const usingExternalAgent = !!session?.external_agent_id;
+
+  const respondToEscalationRequest = React.useCallback((confirmed: boolean) => {
+    if (!escalationRequest) return;
+    window.dispatchEvent(
+      new CustomEvent(CHAT_STREAM_ESCALATION_CONFIRMATION_RESPONSE_EVENT, {
+        detail: {
+          requestId: escalationRequest.requestId,
+          confirmed,
+        },
+      }),
+    );
+    setEscalationRequest(null);
+  }, [escalationRequest]);
+
+  React.useEffect(() => {
+    const handleEscalationRequest = (event: Event) => {
+      const detail = (event as CustomEvent<ChatStreamEscalationConfirmationRequestDetail>).detail;
+      if (!detail || detail.sessionId !== session?.id) return;
+      setEscalationRequest(detail);
+    };
+    window.addEventListener(
+      CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT,
+      handleEscalationRequest,
+    );
+    return () => {
+      window.removeEventListener(
+        CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT,
+        handleEscalationRequest,
+      );
+    };
+  }, [session?.id]);
 
   const statusText = React.useMemo(() => {
     return getStreamStatusText(streamStatus, t);
@@ -240,6 +288,43 @@ export function ChatHeader({
           )}
         </div>
       </div>
+      <AlertDialog
+        open={Boolean(escalationRequest)}
+        onOpenChange={(open) => {
+          if (!open) respondToEscalationRequest(false);
+        }}
+      >
+        <AlertDialogContent data-testid="chat__stop-escalation-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('header.stop_escalation_title')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('header.stop_escalation_description')}
+              {escalationRequest?.reason ? (
+                <span className="mt-2 block">
+                  {t('header.stop_escalation_reason', {
+                    reason: escalationRequest.reason,
+                  })}
+                </span>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="chat__stop-escalation-cancel">
+              {t('header.stop_escalation_cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="chat__stop-escalation-confirm"
+              variant="destructive"
+              onClick={(event) => {
+                event.preventDefault();
+                respondToEscalationRequest(true);
+              }}
+            >
+              {t('header.stop_escalation_confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -381,6 +381,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         workloadId,
         holderKind: 'notebook_run',
         holderId: runId,
+        epoch: runId,
       };
       if (!internalWorkloadCoordinator) {
         throw Object.assign(new Error('internal_workload_coordinator_not_configured'), {
@@ -614,7 +615,13 @@ export async function runNotebookTaskWithExecutionAgent(input: {
   } finally {
     const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
     if (internalWorkloadHolder && internalWorkloadCoordinator) {
-      await internalWorkloadCoordinator.releaseHolder(internalWorkloadHolder);
+      await internalWorkloadCoordinator.releaseHolder(internalWorkloadHolder).catch((error: unknown) => {
+        console.warn(
+          '[sandbox] releaseHolder failed for notebook task %s: %s',
+          task.id,
+          error instanceof Error ? error.message : String(error),
+        );
+      });
     }
     if (!reachedTerminal) {
       terminalResult = 'error';

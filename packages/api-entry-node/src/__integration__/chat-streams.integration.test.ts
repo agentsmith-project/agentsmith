@@ -128,8 +128,69 @@ describe('api-entry-node chat stream routes', () => {
       },
     );
     expect(stopBySession.status).toBe(202);
-    const stopBody = (await stopBySession.json()) as { state: string };
+    const stopBody = (await stopBySession.json()) as {
+      state: string;
+      status: string;
+      stop_mode: string;
+      can_escalate: boolean;
+      escalation_reason?: string;
+    };
     expect(stopBody.state).toBe('stopping');
+    expect(stopBody.status).toBe('stopping');
+    expect(stopBody.stop_mode).toBe('cancel');
+    expect(stopBody.can_escalate).toBe(false);
+    expect(stopBody.escalation_reason).toBe('STOP_ESCALATION_UNAVAILABLE');
+
+    const sse = await stream.text();
+    const done = parseSseEventPayload(sse, 'done');
+    expect(done?.message_status).toBe('stopped');
+  });
+
+  it('reports cooperative cancel truth when direct-provider session terminate is unavailable', async () => {
+    const universalProxy = startUniversalProxyChatServer();
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
+    const { baseUrl } = startServer();
+    const { endpointId, sessionId, userMessageId } = await createChatSession(
+      baseUrl,
+      'https://openai-compatible.provider.example/v1',
+    );
+
+    const stream = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${sessionId}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          endpoint_id: endpointId,
+          model: 'deepseek-chat',
+          branch_leaf_message_id: userMessageId,
+          input: { role: 'user', content: 'hello terminate unavailable' },
+        }),
+      },
+    );
+    expect(stream.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const stopBySession = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${sessionId}/stop`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: 'terminate' }),
+      },
+    );
+    expect(stopBySession.status).toBe(202);
+    await expect(stopBySession.json()).resolves.toMatchObject({
+      success: true,
+      session_id: sessionId,
+      state: 'stopping',
+      status: 'stopping',
+      stop_mode: 'cancel',
+      can_escalate: false,
+      escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
+    });
 
     const sse = await stream.text();
     const done = parseSseEventPayload(sse, 'done');

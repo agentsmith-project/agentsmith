@@ -583,6 +583,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       workloadId: 'task-internal',
       holderKind: 'notebook_run',
       holderId: 'run_internal',
+      epoch: 'run_internal',
     });
     expect(releaseHolder).toHaveBeenCalledWith({
       workspaceId: 'ws_internal',
@@ -590,6 +591,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       workloadId: 'task-internal',
       holderKind: 'notebook_run',
       holderId: 'run_internal',
+      epoch: 'run_internal',
     });
     const dispatchArg = dispatchStreamingRequest.mock.calls[0]?.[0] as { executionContext?: Record<string, unknown> } | undefined;
     expect(dispatchArg?.executionContext).not.toHaveProperty('user_bearer_token');

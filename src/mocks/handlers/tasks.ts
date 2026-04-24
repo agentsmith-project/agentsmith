@@ -2,6 +2,8 @@ import { http, HttpResponse } from 'msw';
 import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 import type {
   CreateTaskTerminalSessionRequest,
+  Task,
+  TaskRunState,
   TaskTerminalSessionCreateResponse,
   TaskTerminalSessionStatus,
 } from '@/lib/types/task';
@@ -19,16 +21,167 @@ import {
   docTaskTraceFixtures,
 } from '../doc-fixtures/notebook';
 
-const tasks = DOC_FIXTURES_ENABLED ? [...docTaskFixtures] : [...taskFixtures];
+const tasks: Task[] = (DOC_FIXTURES_ENABLED ? docTaskFixtures : taskFixtures)
+  .map((task) => ({ ...task })) as Task[];
 const taskMessages = DOC_FIXTURES_ENABLED ? [...docTaskMessageFixtures] : [...taskMessageFixtures];
 const artifacts = DOC_FIXTURES_ENABLED ? [...docArtifactFixtures] : [...artifactFixtures];
 const taskTraces = DOC_FIXTURES_ENABLED ? [...docTaskTraceFixtures] : [...taskTraceFixtures];
 const API_V1_PATTERN = '*/api/v1';
 const MOCK_SSE_TICKET_PREFIX = 'mock_sse_';
+const MOCK_TASK_STOP_RUNTIME_STORAGE_KEY = 'agentsmith:mock-task-stop-runtime';
 const terminalSessionsByScope = new Map<string, TaskTerminalSessionStatus[]>();
 const issuedMockSseTickets = new Map<string, { bearerToken: string; expiresAt: string; maxConnections: number }>();
 let nextTerminalSessionOrdinal = 1;
 let nextMockSseTicketOrdinal = 1;
+
+type MockTaskStopMode = 'cancel' | 'terminate';
+type MockTaskStopEscalationMode = 'supported' | 'unsupported';
+type MockTaskStopEscalationReason = 'already_terminating' | 'unmanaged_runner' | 'unsupported_runner';
+type MockTaskStopRuntimeTruth = {
+  runState: TaskRunState;
+  canEscalate: boolean;
+  escalationReason: MockTaskStopEscalationReason | null;
+  stopMode: MockTaskStopMode;
+  now: string;
+};
+type MockTaskStopRuntimeFields = {
+  run_state?: TaskRunState;
+  can_escalate?: boolean;
+  escalation_reason?: MockTaskStopEscalationReason | null;
+  stop_mode?: MockTaskStopMode;
+  updated_at?: string;
+  last_activity_at?: string;
+};
+type MockTaskStopRuntimeSnapshot = {
+  run_state: TaskRunState;
+  can_escalate: boolean;
+  escalation_reason: MockTaskStopEscalationReason | null;
+  stop_mode: MockTaskStopMode;
+  updated_at: string;
+  last_activity_at: string;
+};
+
+function isTaskRunState(value: unknown): value is TaskRunState {
+  return (
+    value === 'running' ||
+    value === 'cancelling' ||
+    value === 'terminating' ||
+    value === 'finalizing' ||
+    value === 'idle'
+  );
+}
+
+function isMockTaskStopMode(value: unknown): value is MockTaskStopMode {
+  return value === 'cancel' || value === 'terminate';
+}
+
+function isMockTaskStopEscalationReason(value: unknown): value is MockTaskStopEscalationReason {
+  return (
+    value === 'already_terminating' ||
+    value === 'unmanaged_runner' ||
+    value === 'unsupported_runner'
+  );
+}
+
+function getMockTaskStopRuntimeStorage() {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function readMockTaskStopRuntimeStore(): Record<string, unknown> {
+  const storage = getMockTaskStopRuntimeStorage();
+  if (!storage) return {};
+  const raw = storage.getItem(MOCK_TASK_STOP_RUNTIME_STORAGE_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object'
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function readPersistedMockTaskStopRuntimeTruth(
+  taskId: string,
+): MockTaskStopRuntimeSnapshot | null {
+  const entry = readMockTaskStopRuntimeStore()[taskId];
+  if (!entry || typeof entry !== 'object') return null;
+  const record = entry as Record<string, unknown>;
+  if (
+    !isTaskRunState(record.run_state) ||
+    !isMockTaskStopMode(record.stop_mode) ||
+    typeof record.can_escalate !== 'boolean' ||
+    typeof record.updated_at !== 'string' ||
+    typeof record.last_activity_at !== 'string'
+  ) {
+    return null;
+  }
+  const escalationReason = isMockTaskStopEscalationReason(record.escalation_reason)
+    ? record.escalation_reason
+    : null;
+  return {
+    run_state: record.run_state,
+    can_escalate: record.can_escalate,
+    escalation_reason: escalationReason,
+    stop_mode: record.stop_mode,
+    updated_at: record.updated_at,
+    last_activity_at: record.last_activity_at,
+  };
+}
+
+function persistMockTaskStopRuntimeTruth(
+  taskId: string,
+  truth: MockTaskStopRuntimeSnapshot,
+) {
+  const storage = getMockTaskStopRuntimeStorage();
+  if (!storage) return;
+  const next = readMockTaskStopRuntimeStore();
+  next[taskId] = truth;
+  try {
+    storage.setItem(MOCK_TASK_STOP_RUNTIME_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // Storage can be unavailable in restricted browser contexts; in-memory mock truth still applies.
+  }
+}
+
+function applyMockTaskStopRuntimeTruth(
+  task: MockTaskStopRuntimeFields,
+  truth: MockTaskStopRuntimeTruth,
+) {
+  task.run_state = truth.runState;
+  task.can_escalate = truth.canEscalate;
+  task.escalation_reason = truth.escalationReason;
+  task.stop_mode = truth.stopMode;
+  task.updated_at = truth.now;
+  task.last_activity_at = truth.now;
+}
+
+function applyMockTaskStopRuntimeSnapshot(
+  task: MockTaskStopRuntimeFields,
+  snapshot: MockTaskStopRuntimeSnapshot,
+) {
+  task.run_state = snapshot.run_state;
+  task.can_escalate = snapshot.can_escalate;
+  task.escalation_reason = snapshot.escalation_reason;
+  task.stop_mode = snapshot.stop_mode;
+  task.updated_at = snapshot.updated_at;
+  task.last_activity_at = snapshot.last_activity_at;
+}
+
+function hydrateMockTaskStopRuntimeTruth(
+  taskId: string,
+  task: MockTaskStopRuntimeFields,
+) {
+  const snapshot = readPersistedMockTaskStopRuntimeTruth(taskId);
+  if (!snapshot) return;
+  applyMockTaskStopRuntimeSnapshot(task, snapshot);
+}
 
 function readMockTaskRealtimeMode(request: Request) {
   const headerMode = request.headers.get('x-mock-task-realtime')?.trim();
@@ -46,6 +199,64 @@ function readMockTaskRealtimeMode(request: Request) {
     ?.split('=')[1]
     ?.trim();
   return cookieMode && cookieMode.length > 0 ? decodeURIComponent(cookieMode) : null;
+}
+
+function readMockTaskCancelEscalationMode(request: Request): MockTaskStopEscalationMode | null {
+  const headerMode = request.headers.get('x-mock-task-cancel-escalation')?.trim();
+  if (headerMode === 'supported' || headerMode === 'unsupported') return headerMode;
+
+  const url = new URL(request.url);
+  const queryMode = url.searchParams.get('mock_task_cancel_escalation')?.trim();
+  if (queryMode === 'supported' || queryMode === 'unsupported') return queryMode;
+
+  const cookieHeader = request.headers.get('cookie') ?? '';
+  const cookieMode = cookieHeader
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith('ags_mock_task_cancel_escalation='))
+    ?.split('=')[1]
+    ?.trim();
+  if (!cookieMode) return null;
+  const decoded = decodeURIComponent(cookieMode);
+  return decoded === 'supported' || decoded === 'unsupported' ? decoded : null;
+}
+
+function isTerminateMode(body: unknown) {
+  if (!body || typeof body !== 'object') return false;
+  const record = body as Record<string, unknown>;
+  return record.mode === 'terminate';
+}
+
+function resolveMockTaskStopEscalationReason(
+  task: MockTaskStopRuntimeFields,
+  fallback: MockTaskStopEscalationReason,
+): MockTaskStopEscalationReason {
+  return isMockTaskStopEscalationReason(task.escalation_reason)
+    ? task.escalation_reason
+    : fallback;
+}
+
+function mockTaskCancelUnavailableResponse(input: {
+  taskId: string;
+  task: MockTaskStopRuntimeFields;
+  reason: Exclude<MockTaskStopEscalationReason, 'already_terminating'>;
+}) {
+  const stopMode = input.task.stop_mode ?? 'cancel';
+  const status: Extract<TaskRunState, 'cancelling' | 'terminating'> =
+    stopMode === 'terminate' || input.task.run_state === 'terminating'
+      ? 'terminating'
+      : 'cancelling';
+  return {
+    error_code: 'STOP_ESCALATION_UNAVAILABLE',
+    message: 'stop_escalation_unavailable',
+    task_id: input.taskId,
+    run_id: `mock_run_${input.taskId}`,
+    request_id: input.task.stop_mode ? `mock_${input.task.stop_mode}_${input.taskId}` : null,
+    status,
+    stop_mode: stopMode,
+    can_escalate: false,
+    escalation_reason: input.reason,
+  };
 }
 
 function taskTerminalScopeKey(args: { workspaceId: string; projectId: string; taskId: string }) {
@@ -203,6 +414,9 @@ export const taskHandlers = [
     const pageSize = Number(url.searchParams.get('page_size') ?? 20);
     const start = (page - 1) * pageSize;
     const items = tasks.slice(start, start + pageSize);
+    for (const item of items) {
+      hydrateMockTaskStopRuntimeTruth(item.id, item as MockTaskStopRuntimeFields);
+    }
     return HttpResponse.json({
       items,
       total: tasks.length,
@@ -217,6 +431,7 @@ export const taskHandlers = [
     if (!task) {
       return HttpResponse.json({ error: 'task_not_found' }, { status: 404 });
     }
+    hydrateMockTaskStopRuntimeTruth(taskId, task as MockTaskStopRuntimeFields);
     return HttpResponse.json(task);
   }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks`, async ({ request, params }) => {
@@ -284,24 +499,77 @@ export const taskHandlers = [
     }
     return HttpResponse.json({ ok: true });
   }),
-  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/cancel`, ({ params }) => {
+  http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/cancel`, async ({ request, params }) => {
     const taskId = params.id as string;
     const task = tasks.find((item) => item.id === taskId);
     if (!task) {
       return HttpResponse.json({ error: 'task_not_found' }, { status: 404 });
     }
 
+    const body = await request.json().catch(() => ({}));
+    const terminateRequested = isTerminateMode(body);
+    const cancelEscalationMode = readMockTaskCancelEscalationMode(request);
+    const mutableTask = task as MockTaskStopRuntimeFields;
+    const alreadyTerminating =
+      mutableTask.stop_mode === 'terminate' ||
+      mutableTask.run_state === 'terminating';
+    const terminateSupported =
+      cancelEscalationMode === 'supported' ||
+      (cancelEscalationMode !== 'unsupported' && mutableTask.can_escalate === true) ||
+      alreadyTerminating;
+    if (terminateRequested && !terminateSupported) {
+      return HttpResponse.json(mockTaskCancelUnavailableResponse({
+        taskId,
+        task: mutableTask,
+        reason: 'unsupported_runner',
+      }), { status: 409 });
+    }
+    const shouldTerminate =
+      alreadyTerminating || (terminateRequested && terminateSupported);
+    const stopMode: MockTaskStopMode = shouldTerminate ? 'terminate' : 'cancel';
+    const canEscalate =
+      !terminateRequested &&
+      stopMode === 'cancel' &&
+      (
+        cancelEscalationMode === 'supported' ||
+        (cancelEscalationMode !== 'unsupported' && mutableTask.can_escalate === true)
+      );
+    const nextRunState: TaskRunState =
+      stopMode === 'terminate' ? 'terminating' : 'cancelling';
+    const escalationReason =
+      stopMode === 'terminate'
+        ? 'already_terminating'
+        : canEscalate
+          ? null
+          : resolveMockTaskStopEscalationReason(mutableTask, 'unsupported_runner');
+    const requestIdPrefix =
+      stopMode === 'terminate' ? 'mock_terminate' : 'mock_cancel';
     const now = new Date().toISOString();
-    task.run_state = 'idle';
-    task.updated_at = now;
-    task.last_activity_at = now;
+    applyMockTaskStopRuntimeTruth(mutableTask, {
+      runState: nextRunState,
+      canEscalate,
+      escalationReason,
+      stopMode,
+      now,
+    });
+    persistMockTaskStopRuntimeTruth(taskId, {
+      run_state: nextRunState,
+      can_escalate: canEscalate,
+      escalation_reason: escalationReason,
+      stop_mode: stopMode,
+      updated_at: now,
+      last_activity_at: now,
+    });
 
     return HttpResponse.json({
-      status: 'cancelling',
+      status: nextRunState,
       task_id: taskId,
       run_id: `mock_run_${taskId}`,
-      request_id: `mock_cancel_${taskId}`,
-    });
+      request_id: `${requestIdPrefix}_${taskId}`,
+      can_escalate: canEscalate,
+      ...(escalationReason ? { escalation_reason: escalationReason } : {}),
+      stop_mode: stopMode,
+    }, { status: 202 });
   }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/inputs`, async ({ request, params }) => {
     const taskId = params.id as string;
@@ -503,6 +771,13 @@ export const taskHandlers = [
   }),
   http.post(`${API_V1_PATTERN}/workspaces/:ws/projects/:prj/tasks/:id/messages`, async ({ request, params }) => {
     const taskId = params.id as string;
+    const task = tasks.find((item) => item.id === taskId);
+    if (task && task.run_state && task.run_state !== 'idle') {
+      return HttpResponse.json({
+        error_code: 'TASK_RUN_IN_PROGRESS',
+        message: 'task_run_in_progress',
+      }, { status: 409 });
+    }
     const body: any = await request.json().catch(() => ({}));
     const now = new Date().toISOString();
     const message = {

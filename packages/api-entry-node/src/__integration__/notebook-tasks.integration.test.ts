@@ -1143,6 +1143,7 @@ describe('api-entry-node notebook task routes', () => {
       task_id: task.id,
       run_id: 'run_restart_shared',
       stop_mode: 'cancel',
+      can_escalate: expect.any(Boolean),
     });
     await expect(getNotebookTaskRunStopRequestForRun(deps.cache, {
       taskId: task.id,
@@ -1205,6 +1206,28 @@ describe('api-entry-node notebook task routes', () => {
       task_id: task.id,
       run_id: 'run_internal_stale_owner',
       stop_mode: 'terminate',
+      can_escalate: false,
+      escalation_reason: 'already_terminating',
+    });
+
+    const retryTerminateRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+      'test-token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'terminate' }),
+      },
+    );
+    expect(retryTerminateRes.status).toBe(202);
+    await expect(retryTerminateRes.json()).resolves.toMatchObject({
+      status: 'terminating',
+      task_id: task.id,
+      run_id: 'run_internal_stale_owner',
+      stop_mode: 'terminate',
+      can_escalate: false,
+      escalation_reason: 'already_terminating',
     });
 
     const listRes = await apiFetchWithToken(
@@ -1218,13 +1241,95 @@ describe('api-entry-node notebook task routes', () => {
         expect.objectContaining({
           id: task.id,
           run_state: 'terminating',
+          stop_mode: 'terminate',
+          can_escalate: false,
+          escalation_reason: 'already_terminating',
         }),
       ]),
     });
+
+    const detailRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
+      'test-token',
+    );
+    expect(detailRes.status).toBe(200);
+    await expect(detailRes.json()).resolves.toMatchObject({
+      id: task.id,
+      run_state: 'terminating',
+      stop_mode: 'terminate',
+      can_escalate: false,
+      escalation_reason: 'already_terminating',
+    });
+    expect(requestHardTeardown).toHaveBeenCalledTimes(1);
     expect(requestHardTeardown).toHaveBeenCalledWith({
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       workloadId: sanitizeWorkloadId(task.id),
+      epoch: 'run_internal_stale_owner',
+    });
+  });
+
+  it('rejects unsupported external terminate without mutating shared run truth', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const { baseUrl } = startServerWithDeps(deps);
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'External Terminate Unavailable Workspace');
+    const { agentId } = await createExternalNotebookExecutionAgent(deps, 'external-terminate-unavailable-agent');
+    const task = await createNotebookTaskForAgent(baseUrl, {
+      title: 'External terminate unavailable task',
+      agentId,
+      workspaceFileLibraryId: workspaceLibrary.id,
+    });
+
+    const now = new Date().toISOString();
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: task.id,
+      runId: 'run_external_terminate_unavailable',
+      requestId: 'req_external_terminate_unavailable',
+      startedAt: now,
+      heartbeatAt: now,
+    }))).resolves.toBe(true);
+
+    const terminateRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+      'test-token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'terminate' }),
+      },
+    );
+    expect(terminateRes.status).toBe(409);
+    await expect(terminateRes.json()).resolves.toMatchObject({
+      error_code: 'STOP_ESCALATION_UNAVAILABLE',
+      message: 'stop_escalation_unavailable',
+      task_id: task.id,
+      run_id: 'run_external_terminate_unavailable',
+      request_id: 'req_external_terminate_unavailable',
+      can_escalate: false,
+      escalation_reason: 'unsupported_runner',
+    });
+    const runStateAfterTerminate = await getNotebookTaskRunState(deps.cache, task.id);
+    expect(runStateAfterTerminate).toMatchObject({
+      run_id: 'run_external_terminate_unavailable',
+      phase: 'running',
+    });
+    expect(runStateAfterTerminate?.stop).toBeUndefined();
+
+    const listRes = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      'test-token',
+    );
+    expect(listRes.status).toBe(200);
+    await expect(listRes.json()).resolves.toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          id: task.id,
+          run_state: 'running',
+        }),
+      ]),
     });
   });
 

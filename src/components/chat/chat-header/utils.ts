@@ -17,6 +17,7 @@ export function getStreamStatusText(
 ) {
   if (streamStatus === 'connecting' || streamStatus === 'streaming') return t('header.status_generating');
   if (streamStatus === 'stopping') return `${t('composer.stop')}…`;
+  if (streamStatus === 'terminating') return t('header.status_terminating');
   if (streamStatus === 'recovering') return t('header.status_recovering');
   if (streamStatus === 'stopped') return t('header.status_stopped');
   if (streamStatus === 'error') return t('header.status_error');

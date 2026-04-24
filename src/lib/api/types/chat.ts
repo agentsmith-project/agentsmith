@@ -1,5 +1,14 @@
 import type { ChatAttachmentInputRef } from '@/lib/types/input-ref';
 
+export type ChatStopMode = 'cancel' | 'terminate';
+export type ChatExecutionStatus =
+  | 'running'
+  | 'stopping'
+  | 'terminating'
+  | 'completed'
+  | 'stopped'
+  | 'failed';
+
 export interface ChatSession {
   id: string;
   project_id: string;
@@ -13,7 +22,12 @@ export interface ChatSession {
   updated_at: string;
   message_count: number;
   total_tokens: number;
-  execution_status?: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
+  execution_status?: ChatExecutionStatus;
+  stop_mode?: ChatStopMode;
+  can_escalate?: boolean;
+  escalation_reason?: string | null;
+  status?: 'running' | 'stopping' | 'terminating';
+  termination_state?: 'terminating' | null;
 }
 
 export interface ChatMessage {

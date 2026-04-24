@@ -112,4 +112,18 @@ describe('composer-state', () => {
       }),
     ).toBe('streaming');
   });
+
+  it('treats terminating as a blocked streaming state after forced stop confirmation', () => {
+    expect(
+      deriveChatComposerState({
+        currentSessionId: 'session_1',
+        activeSession: createSession(),
+        editingMessageId: null,
+        streamStatus: 'terminating',
+        createMessagePending: false,
+        editMessagePending: false,
+        initAttachmentPending: false,
+      }),
+    ).toBe('streaming');
+  });
 });

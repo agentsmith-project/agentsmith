@@ -7,6 +7,7 @@
 import type { ApiClient } from '../client';
 import type {
   ChatSession,
+  ChatStopMode,
   ChatMessage,
   Attachment,
   PaginatedResponse,
@@ -64,6 +65,35 @@ export interface CompleteAttachmentRequest {
   etag?: string;
   size?: number;
 }
+
+export interface StopStreamOptions {
+  mode?: ChatStopMode;
+}
+
+function buildStopStreamRequest(options?: StopStreamOptions) {
+  const stopMode = options?.mode ?? 'cancel';
+  return { mode: stopMode, stop_mode: stopMode };
+}
+
+export type StopStreamResponse = {
+  success: true;
+  stream_id: string;
+  state: 'stopping' | 'terminating' | 'not_found_or_finished';
+  status?: 'stopping' | 'terminating' | 'not_found_or_finished';
+  stop_mode?: ChatStopMode;
+  can_escalate?: boolean;
+  escalation_reason?: string | null;
+};
+
+export type StopSessionStreamResponse = {
+  success: true;
+  session_id: string;
+  state: 'stopping' | 'terminating' | 'not_found_or_finished';
+  status?: 'stopping' | 'terminating' | 'not_found_or_finished';
+  stop_mode?: ChatStopMode;
+  can_escalate?: boolean;
+  escalation_reason?: string | null;
+};
 
 export class ChatAPI {
   constructor(private client: ApiClient) {}
@@ -274,10 +304,11 @@ export class ChatAPI {
     projectId: string,
     sessionId: string,
     streamId: string,
-  ): Promise<{ success: true; stream_id: string; state: 'stopping' | 'not_found_or_finished' }> {
-    return this.client.post<{ success: true; stream_id: string; state: 'stopping' | 'not_found_or_finished' }>(
+    options?: StopStreamOptions,
+  ): Promise<StopStreamResponse> {
+    return this.client.post<StopStreamResponse>(
       `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/messages/streams/${streamId}/stop`,
-      {},
+      buildStopStreamRequest(options),
     );
   }
 
@@ -285,10 +316,11 @@ export class ChatAPI {
     workspaceId: string,
     projectId: string,
     sessionId: string,
-  ): Promise<{ success: true; session_id: string; state: 'stopping' | 'not_found_or_finished' }> {
-    return this.client.post<{ success: true; session_id: string; state: 'stopping' | 'not_found_or_finished' }>(
+    options?: StopStreamOptions,
+  ): Promise<StopSessionStreamResponse> {
+    return this.client.post<StopSessionStreamResponse>(
       `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/stop`,
-      {},
+      buildStopStreamRequest(options),
     );
   }
 
@@ -296,8 +328,8 @@ export class ChatAPI {
     workspaceId: string,
     projectId: string,
     sessionId: string,
-  ): Promise<{ items: Array<{ stream_id: string; status: 'running' | 'stopping'; started_at: string }>; total: number }> {
-    return this.client.get<{ items: Array<{ stream_id: string; status: 'running' | 'stopping'; started_at: string }>; total: number }>(
+  ): Promise<{ items: Array<{ stream_id: string; status: 'running' | 'stopping' | 'terminating'; started_at: string }>; total: number }> {
+    return this.client.get<{ items: Array<{ stream_id: string; status: 'running' | 'stopping' | 'terminating'; started_at: string }>; total: number }>(
       `/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}/streams`,
     );
   }

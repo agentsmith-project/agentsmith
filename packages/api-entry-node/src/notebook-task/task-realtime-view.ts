@@ -1,18 +1,149 @@
 import type http from 'node:http';
 import type { NodeApiDeps } from '../node-api-deps.js';
-import { getNotebookTaskRunState } from './task-run-coordination.js';
+import { resolveInternalWorkloadCoordinator } from '../internal-workload-coordinator.js';
+import {
+  getNotebookTaskRunHardTeardownDebt,
+  getNotebookTaskRunState,
+  type NotebookTaskRunHardTeardownDebtRecord,
+  type NotebookTaskRunState,
+  type NotebookTaskRunStopMode,
+} from './task-run-coordination.js';
 import type { TaskListItem, TaskRecord } from './task-models.js';
 import { loadTaskArtifacts, loadTaskMessages } from './task-store.js';
 import { getTaskArtifacts, getTaskMessages } from './task-runtime-state.js';
 
+export type NotebookRunStopStatus = 'cancelling' | 'terminating';
+export type NotebookRunStopEscalationReason =
+  | 'already_terminating'
+  | 'unmanaged_runner'
+  | 'unsupported_runner';
+
+type NotebookRunAgentMode = { mode?: 'external' | 'internal' } | null | undefined;
+
 function mapNotebookRunPhaseToTaskRunState(
   activeRun: Awaited<ReturnType<typeof getNotebookTaskRunState>>,
+  hardTeardownDebt?: NotebookTaskRunHardTeardownDebtRecord | null,
 ): TaskListItem['run_state'] {
+  if (hardTeardownDebt) return 'terminating';
   if (!activeRun) return 'idle';
   if (activeRun.phase === 'cancelling') return 'cancelling';
   if (activeRun.phase === 'terminating') return 'terminating';
   if (activeRun.phase === 'finalizing') return 'finalizing';
   return 'running';
+}
+
+function mapNotebookRunStopStatus(state: NotebookTaskRunState): NotebookRunStopStatus {
+  return state.stop?.mode === 'terminate' || state.phase === 'terminating'
+    ? 'terminating'
+    : 'cancelling';
+}
+
+export function canRequestNotebookRunHardTerminate(
+  deps: NodeApiDeps,
+  agent: NotebookRunAgentMode,
+): boolean {
+  return agent?.mode === 'internal' && resolveInternalWorkloadCoordinator(deps) !== undefined;
+}
+
+export function resolveNotebookRunEscalation(
+  deps: NodeApiDeps,
+  agent: NotebookRunAgentMode,
+  state: NotebookTaskRunState,
+): { can_escalate: boolean; escalation_reason?: NotebookRunStopEscalationReason } {
+  if (state.stop?.mode === 'terminate' || state.phase === 'terminating') {
+    return { can_escalate: false, escalation_reason: 'already_terminating' };
+  }
+  if (agent?.mode !== 'internal') {
+    return { can_escalate: false, escalation_reason: 'unsupported_runner' };
+  }
+  if (!canRequestNotebookRunHardTerminate(deps, agent)) {
+    return { can_escalate: false, escalation_reason: 'unmanaged_runner' };
+  }
+  return { can_escalate: true };
+}
+
+function resolveNotebookRunStopMode(state: NotebookTaskRunState): NotebookTaskRunStopMode {
+  return state.stop?.mode ?? (
+    state.phase === 'terminating' ? 'terminate' : 'cancel'
+  );
+}
+
+export function buildNotebookRunStopTruthResponse(input: {
+  deps: NodeApiDeps;
+  agent: NotebookRunAgentMode;
+  taskId: string;
+  state: NotebookTaskRunState;
+  requestId?: string | null;
+}): {
+  status: NotebookRunStopStatus;
+  task_id: string;
+  run_id: string;
+  request_id: string | null;
+  stop_mode: NotebookTaskRunStopMode;
+  can_escalate: boolean;
+  escalation_reason?: NotebookRunStopEscalationReason;
+} {
+  const escalation = resolveNotebookRunEscalation(input.deps, input.agent, input.state);
+  return {
+    status: mapNotebookRunStopStatus(input.state),
+    task_id: input.taskId,
+    run_id: input.state.run_id,
+    request_id: input.state.request_id ?? input.requestId ?? null,
+    stop_mode: resolveNotebookRunStopMode(input.state),
+    ...escalation,
+  };
+}
+
+export function buildNotebookRunStopEscalationUnavailableResponse(input: {
+  taskId: string;
+  state: NotebookTaskRunState | null;
+  requestId?: string | null;
+  reason: Exclude<NotebookRunStopEscalationReason, 'already_terminating'>;
+}): {
+  error_code: 'STOP_ESCALATION_UNAVAILABLE';
+  message: 'stop_escalation_unavailable';
+  task_id: string;
+  run_id: string | null;
+  request_id: string | null;
+  status?: NotebookRunStopStatus;
+  stop_mode?: NotebookTaskRunStopMode;
+  can_escalate: false;
+  escalation_reason: Exclude<NotebookRunStopEscalationReason, 'already_terminating'>;
+} {
+  return {
+    error_code: 'STOP_ESCALATION_UNAVAILABLE',
+    message: 'stop_escalation_unavailable',
+    task_id: input.taskId,
+    run_id: input.state?.run_id ?? null,
+    request_id: input.state?.request_id ?? input.requestId ?? null,
+    ...(input.state ? { status: mapNotebookRunStopStatus(input.state) } : {}),
+    ...(input.state?.stop?.mode ? { stop_mode: input.state.stop.mode } : {}),
+    can_escalate: false,
+    escalation_reason: input.reason,
+  };
+}
+
+function buildNotebookRunRealtimeTruth(
+  deps: NodeApiDeps,
+  agent: NotebookRunAgentMode,
+  activeRun: Awaited<ReturnType<typeof getNotebookTaskRunState>>,
+  hardTeardownDebt?: NotebookTaskRunHardTeardownDebtRecord | null,
+): Pick<TaskListItem, 'stop_mode' | 'can_escalate' | 'escalation_reason'> {
+  if (!activeRun) {
+    if (!hardTeardownDebt) return {};
+    return {
+      stop_mode: 'terminate',
+      can_escalate: false,
+      escalation_reason: canRequestNotebookRunHardTerminate(deps, agent)
+        ? 'already_terminating'
+        : agent?.mode === 'internal' ? 'unmanaged_runner' : 'unsupported_runner',
+    };
+  }
+  const escalation = resolveNotebookRunEscalation(deps, agent, activeRun);
+  return {
+    stop_mode: resolveNotebookRunStopMode(activeRun),
+    ...escalation,
+  };
 }
 
 export async function buildTaskRealtimeView(
@@ -28,7 +159,10 @@ export async function buildTaskRealtimeView(
   const messages = getTaskMessages(task.id);
   const artifacts = getTaskArtifacts(task.id);
   const userTurnCount = messages.filter((item) => item.role === 'user').length;
-  const activeRun = await getNotebookTaskRunState(deps.cache, task.id);
+  const [activeRun, hardTeardownDebt] = await Promise.all([
+    getNotebookTaskRunState(deps.cache, task.id),
+    getNotebookTaskRunHardTeardownDebt(deps.cache, task.id),
+  ]);
   const agent = await deps.agentResourceService.getAgent(workspaceId, projectId, task.agent_id);
   const agentPresence: TaskListItem['agent_presence'] = (
     !agent ? 'unknown'
@@ -38,7 +172,8 @@ export async function buildTaskRealtimeView(
   return {
     ...task,
     agent_presence: agentPresence,
-    run_state: mapNotebookRunPhaseToTaskRunState(activeRun),
+    run_state: mapNotebookRunPhaseToTaskRunState(activeRun, hardTeardownDebt),
+    ...buildNotebookRunRealtimeTruth(deps, agent, activeRun, hardTeardownDebt),
     stats: {
       user_turn_count: userTurnCount,
       message_count: messages.length,

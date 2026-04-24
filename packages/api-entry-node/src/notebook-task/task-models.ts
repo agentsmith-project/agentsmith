@@ -20,6 +20,9 @@ export interface TaskRecord {
 export interface TaskListItem extends TaskRecord {
   agent_presence?: 'online' | 'offline' | 'managed' | 'unknown';
   run_state?: 'running' | 'cancelling' | 'terminating' | 'finalizing' | 'idle';
+  stop_mode?: 'cancel' | 'terminate';
+  can_escalate?: boolean;
+  escalation_reason?: 'already_terminating' | 'unmanaged_runner' | 'unsupported_runner';
   stats?: {
     user_turn_count: number;
     message_count: number;

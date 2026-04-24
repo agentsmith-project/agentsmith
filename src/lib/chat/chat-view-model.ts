@@ -1,5 +1,6 @@
 import type { ChatSession } from '@/lib/api/types';
 import {
+  isFinalChatExecutionStatus,
   type SessionStreamState,
   type SessionStreamStatus,
   type SessionStreamingAssistant,
@@ -15,23 +16,45 @@ export interface ChatViewModel {
 }
 
 function isLocalStreamActive(status: SessionStreamStatus): boolean {
-  return status === 'connecting' || status === 'recovering' || status === 'streaming';
+  return status === 'connecting' || status === 'recovering' || status === 'streaming' || status === 'terminating';
 }
 
-function isExecutionActive(status: ChatSession['execution_status'] | undefined): boolean {
-  return status === 'running' || status === 'stopping';
+function isSessionTerminating(session: ChatSession | null | undefined): boolean {
+  if (!session) return false;
+  const hasTerminalDebt = session.termination_state === 'terminating';
+  if (hasTerminalDebt) return true;
+  if (isFinalChatExecutionStatus(session.execution_status)) return false;
+  if (session.stop_mode === 'cancel') return false;
+  return (
+    session.execution_status === 'terminating' ||
+    session.status === 'terminating' ||
+    session.stop_mode === 'terminate'
+  );
+}
+
+function isExecutionActive(session: ChatSession | null | undefined): boolean {
+  if (!session) return false;
+  return (
+    session.execution_status === 'running' ||
+    session.execution_status === 'stopping' ||
+    session.execution_status === 'terminating' ||
+    isSessionTerminating(session)
+  );
 }
 
 function resolveActiveStreamStatus(
   localStatus: SessionStreamStatus,
-  executionStatus: ChatSession['execution_status'] | undefined,
+  session: ChatSession | null | undefined,
 ): SessionStreamStatus {
+  const executionStatus = session?.execution_status;
+  if (isSessionTerminating(session)) return 'terminating';
+  if (localStatus === 'terminating' && !isFinalChatExecutionStatus(executionStatus)) return 'terminating';
   if (executionStatus === 'stopping') return 'stopping';
   if (localStatus === 'connecting' || localStatus === 'recovering') return localStatus;
   if (localStatus === 'stopping' && executionStatus !== 'completed' && executionStatus !== 'stopped' && executionStatus !== 'failed') {
     return 'stopping';
   }
-  if (isExecutionActive(executionStatus)) return 'streaming';
+  if (isExecutionActive(session)) return 'streaming';
   if (localStatus === 'streaming') return 'streaming';
   if (executionStatus === 'failed') return 'error';
   if (executionStatus === 'stopped') return 'stopped';
@@ -49,10 +72,9 @@ export function buildChatViewModel(args: {
   const { currentSessionId, activeSession, sessions, streamStateBySession } = args;
   const activeLocalState = currentSessionId ? (streamStateBySession[currentSessionId] ?? null) : null;
   const activeLocalStatus = activeLocalState?.status ?? 'idle';
-  const activeExecutionStatus = activeSession?.execution_status;
 
   const activeStreamStatus: SessionStreamStatus = currentSessionId
-    ? resolveActiveStreamStatus(activeLocalStatus, activeExecutionStatus)
+    ? resolveActiveStreamStatus(activeLocalStatus, activeSession)
     : 'idle';
   const activeStreamingAssistant = currentSessionId
     ? (activeLocalState?.assistant ?? null)
@@ -63,14 +85,19 @@ export function buildChatViewModel(args: {
   const activeStreamErrorMessage = currentSessionId && activeStreamStatus === 'error' && activeLocalStatus === 'error'
     ? (activeLocalState?.errorMessage ?? null)
     : null;
+  const sessionsById = new Map(sessions.map((session) => [session.id, session]));
   const streamingSessionIds = Object.entries(streamStateBySession)
-    .filter(([, state]) => isLocalStreamActive(state.status))
+    .filter(([sessionId, state]) => {
+      if (!isLocalStreamActive(state.status)) return false;
+      const session = sessionsById.get(sessionId);
+      return state.status !== 'terminating' || isSessionTerminating(session) || !isFinalChatExecutionStatus(session?.execution_status);
+    })
     .map(([sessionId]) => sessionId);
   const executionStreamingSessionIds = sessions
-    .filter((session) => isExecutionActive(session.execution_status))
+    .filter((session) => isExecutionActive(session))
     .map((session) => session.id);
   const mergedStreamingSessionIds = Array.from(new Set([...streamingSessionIds, ...executionStreamingSessionIds]));
-  const disabled = activeLocalStatus === 'stopping' || isLocalStreamActive(activeLocalStatus) || isExecutionActive(activeExecutionStatus);
+  const disabled = activeStreamStatus === 'stopping' || isLocalStreamActive(activeStreamStatus) || isExecutionActive(activeSession);
 
   return {
     activeStreamStatus,

@@ -255,6 +255,12 @@ paths:
             text/event-stream:
               schema:
                 type: string
+        "409":
+          description: CHAT_SESSION_STREAM_CONFLICT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatStreamConflictResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -291,23 +297,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/streams/{streamId}:stop:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - $ref: "#/components/parameters/sessionId"
-      - $ref: "#/components/parameters/streamId"
-    post:
-      tags:
-        - Chat
-      operationId: stopChatStreamByStreamId
-      responses:
-        "202":
-          description: Stop accepted
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/stop:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -317,9 +306,19 @@ paths:
       tags:
         - Chat
       operationId: stopChatStreamBySession
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatStopRequest"
       responses:
         "202":
           description: Stop accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatSessionStopResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2015,25 +2014,29 @@ paths:
       tags:
         - Chat
       operationId: post_chatMessagesStreamStop
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: true
+              $ref: "#/components/schemas/ChatStopRequest"
+      responses:
+        "200":
+          description: Legacy stop accepted response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatStreamStopResponse"
+        "202":
+          description: Stop accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatStreamStopResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/images/generations:
     post:
       tags:
@@ -2243,6 +2246,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "409":
           description: TASK_STREAM_CONFLICT or task_terminal_sessions_active
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/TaskStreamConflictResponse"
+                  - $ref: "#/components/schemas/ApiError"
         "422":
           description: Validation error (for example TASK_AGENT_ENDPOINT_NOT_CONFIGURED)
         "502":
@@ -2261,14 +2270,19 @@ paths:
         - Notebook
       operationId: cancelTaskRun
       description: Requests cancellation of the currently active notebook run.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskCancelRunRequest"
       responses:
         "202":
           description: Cancel request accepted
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/TaskCancelRunResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2277,6 +2291,12 @@ paths:
           description: task_not_found
         "409":
           description: TASK_RUN_NOT_ACTIVE
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ApiError"
+                  - $ref: "#/components/schemas/TaskCancelRunUnavailableResponse"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts:
     get:
       tags:
@@ -5285,6 +5305,241 @@ components:
           type: string
         external_agent_id:
           type: string
+        execution_status:
+          type: string
+          enum:
+            - running
+            - stopping
+            - terminating
+            - completed
+            - stopped
+            - failed
+        termination_state:
+          type: string
+          nullable: true
+          enum:
+            - terminating
+        stop_mode:
+          $ref: "#/components/schemas/StopMode"
+        can_escalate:
+          type: boolean
+        escalation_reason:
+          type: string
+          nullable: true
+          enum:
+            - STOP_ESCALATION_UNAVAILABLE
+    StopMode:
+      type: string
+      enum:
+        - cancel
+        - terminate
+    ChatStopRequest:
+      type: object
+      properties:
+        mode:
+          allOf:
+            - $ref: "#/components/schemas/StopMode"
+          description: Authoritative stop mode used by the backend.
+        stop_mode:
+          allOf:
+            - $ref: "#/components/schemas/StopMode"
+          description: Compatibility mirror sent by older clients; backend behavior is governed by `mode`.
+    HardTeardownDebtStatus:
+      type: string
+      enum:
+        - pending
+        - requested
+        - failed
+    ChatStreamConflictResponse:
+      type: object
+      required:
+        - error_code
+        - message
+      properties:
+        error_code:
+          type: string
+          enum:
+            - CHAT_SESSION_STREAM_CONFLICT
+        message:
+          type: string
+          enum:
+            - chat_session_stream_conflict
+        reason:
+          type: string
+          enum:
+            - hard_teardown_pending
+        hard_teardown_status:
+          $ref: "#/components/schemas/HardTeardownDebtStatus"
+    TaskStreamConflictResponse:
+      type: object
+      required:
+        - error_code
+        - message
+      properties:
+        error_code:
+          type: string
+          enum:
+            - TASK_STREAM_CONFLICT
+        message:
+          type: string
+          enum:
+            - task_stream_conflict
+        reason:
+          type: string
+          enum:
+            - hard_teardown_pending
+        hard_teardown_status:
+          $ref: "#/components/schemas/HardTeardownDebtStatus"
+    ChatStopState:
+      type: string
+      enum:
+        - stopping
+        - terminating
+        - not_found_or_finished
+    ChatSessionStopResponse:
+      type: object
+      required:
+        - success
+        - session_id
+        - state
+        - status
+        - stop_mode
+        - can_escalate
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        session_id:
+          type: string
+        state:
+          $ref: "#/components/schemas/ChatStopState"
+        status:
+          $ref: "#/components/schemas/ChatStopState"
+        stop_mode:
+          $ref: "#/components/schemas/StopMode"
+        can_escalate:
+          type: boolean
+        escalation_reason:
+          type: string
+          nullable: true
+          enum:
+            - STOP_ESCALATION_UNAVAILABLE
+    ChatStreamStopResponse:
+      type: object
+      required:
+        - success
+        - stream_id
+        - state
+        - status
+        - stop_mode
+        - can_escalate
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        stream_id:
+          type: string
+        state:
+          $ref: "#/components/schemas/ChatStopState"
+        status:
+          $ref: "#/components/schemas/ChatStopState"
+        stop_mode:
+          $ref: "#/components/schemas/StopMode"
+        can_escalate:
+          type: boolean
+        escalation_reason:
+          type: string
+          nullable: true
+          enum:
+            - STOP_ESCALATION_UNAVAILABLE
+    TaskCancelRunRequest:
+      type: object
+      properties:
+        mode:
+          allOf:
+            - $ref: "#/components/schemas/StopMode"
+          description: Authoritative stop mode used by the backend.
+        stop_mode:
+          allOf:
+            - $ref: "#/components/schemas/StopMode"
+          description: Compatibility mirror sent by older clients; backend behavior is governed by `mode`.
+    TaskCancelRunStatus:
+      type: string
+      enum:
+        - cancelling
+        - terminating
+    TaskCancelRunEscalationReason:
+      type: string
+      enum:
+        - already_terminating
+        - unmanaged_runner
+        - unsupported_runner
+    TaskCancelRunResponse:
+      type: object
+      required:
+        - status
+        - task_id
+        - run_id
+        - request_id
+        - stop_mode
+        - can_escalate
+      properties:
+        status:
+          $ref: "#/components/schemas/TaskCancelRunStatus"
+        task_id:
+          type: string
+        run_id:
+          type: string
+        request_id:
+          type: string
+          nullable: true
+        stop_mode:
+          $ref: "#/components/schemas/StopMode"
+        can_escalate:
+          type: boolean
+        escalation_reason:
+          allOf:
+            - $ref: "#/components/schemas/TaskCancelRunEscalationReason"
+          nullable: true
+    TaskCancelRunUnavailableResponse:
+      type: object
+      required:
+        - error_code
+        - message
+        - task_id
+        - run_id
+        - request_id
+        - can_escalate
+        - escalation_reason
+      properties:
+        error_code:
+          type: string
+          enum:
+            - STOP_ESCALATION_UNAVAILABLE
+        message:
+          type: string
+          enum:
+            - stop_escalation_unavailable
+        task_id:
+          type: string
+        run_id:
+          type: string
+          nullable: true
+        request_id:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/TaskCancelRunStatus"
+        stop_mode:
+          $ref: "#/components/schemas/StopMode"
+        can_escalate:
+          type: boolean
+          enum:
+            - false
+        escalation_reason:
+          $ref: "#/components/schemas/TaskCancelRunEscalationReason"
     CreateChatSessionRequest:
       type: object
       required:

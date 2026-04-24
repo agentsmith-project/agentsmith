@@ -74,8 +74,12 @@ import {
 import { createAndProvisionProjectFileLibrary, mapFileLibraryInfraError } from './project-file-library-service.js';
 import { isAgentExecutionTicket, issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
 import {
+  buildNotebookRunStopEscalationUnavailableResponse,
+  buildNotebookRunStopTruthResponse,
   buildTaskRealtimeView,
+  canRequestNotebookRunHardTerminate,
   mapTaskMessagesForExecution,
+  type NotebookRunStopEscalationReason,
   resolvePublicBaseUrl,
 } from './notebook-task/task-realtime-view.js';
 import {
@@ -86,10 +90,17 @@ import {
   getNotebookRunOwnerInstanceId,
   getNotebookTaskRunStopRequestForRun,
   getNotebookTaskRunState,
+  getNotebookTaskRunHardTeardownDebt,
+  hasIncompleteNotebookTaskRunHardTeardown,
   isNotebookTaskRunOwnerHeartbeatFresh,
   markNotebookTaskRunDispatched,
+  markNotebookTaskRunHardTeardownFailed,
+  markNotebookTaskRunHardTeardownRequested,
+  markNotebookTaskRunHardTeardownReleased,
   refreshNotebookTaskRunLease,
   requestNotebookTaskRunStop,
+  requestNotebookTaskRunStopTransition,
+  type NotebookTaskRunHardTeardownDebtRecord,
   type NotebookTaskRunStopMode,
 } from './notebook-task/task-run-coordination.js';
 import {
@@ -156,6 +167,7 @@ function parseNotebookRunStopMode(raw: unknown): NotebookTaskRunStopMode | null 
 }
 
 const registeredInternalTerminalLifecycleServices = new Set<object>();
+const notebookRunHardTeardownInFlight = new Map<string, Promise<void>>();
 
 function listTasksForOwner(
   workspaceId: string,
@@ -542,6 +554,128 @@ async function maybeReleaseInternalAgentWorkload(
   });
 }
 
+async function requestNotebookRunHardTeardown(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  runId: string;
+}): Promise<void> {
+  const workloadId = sanitizeWorkloadId(input.taskId);
+  const key = `${input.workspaceId}/${input.projectId}/${workloadId}/${input.runId}`;
+  let promise = notebookRunHardTeardownInFlight.get(key);
+  if (!promise) {
+    const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(input.deps);
+    promise = internalWorkloadCoordinator
+      ? internalWorkloadCoordinator.requestHardTeardown({
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        workloadId,
+        epoch: input.runId,
+      })
+      : Promise.resolve();
+    notebookRunHardTeardownInFlight.set(key, promise);
+    void promise.then(
+      () => {
+        if (notebookRunHardTeardownInFlight.get(key) === promise) {
+          notebookRunHardTeardownInFlight.delete(key);
+        }
+      },
+      () => {
+        if (notebookRunHardTeardownInFlight.get(key) === promise) {
+          notebookRunHardTeardownInFlight.delete(key);
+        }
+      },
+    );
+  }
+  await promise;
+}
+
+function normalizeErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function buildNotebookHardTeardownDebtStopResponse(input: {
+  deps: NodeApiDeps;
+  agent: { mode?: 'external' | 'internal' } | null | undefined;
+  taskId: string;
+  debt: NotebookTaskRunHardTeardownDebtRecord;
+}): {
+  status: 'terminating';
+  task_id: string;
+  run_id: string;
+  request_id: string | null;
+  stop_mode: 'terminate';
+  can_escalate: false;
+  escalation_reason: NotebookRunStopEscalationReason;
+} {
+  return {
+    status: 'terminating',
+    task_id: input.taskId,
+    run_id: input.debt.run_id,
+    request_id: input.debt.request_id ?? null,
+    stop_mode: 'terminate',
+    can_escalate: false,
+    escalation_reason: canRequestNotebookRunHardTerminate(input.deps, input.agent)
+      ? 'already_terminating'
+      : input.agent?.mode === 'internal' ? 'unmanaged_runner' : 'unsupported_runner',
+  };
+}
+
+async function dispatchNotebookRunHardTeardown(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  runId: string;
+}): Promise<void> {
+  const attemptedAt = nowIso();
+  await markNotebookTaskRunHardTeardownRequested(input.deps.cache, {
+    taskId: input.taskId,
+    runId: input.runId,
+    requestedAt: attemptedAt,
+  });
+  const claimedDebt = await getNotebookTaskRunHardTeardownDebt(input.deps.cache, input.taskId);
+  const claimedState = await getNotebookTaskRunState(input.deps.cache, input.taskId);
+  const claimedHardTeardown = claimedState?.run_id === input.runId
+    ? claimedState.stop?.hard_teardown
+    : undefined;
+  const attemptId = claimedDebt?.run_id === input.runId
+    ? claimedDebt.attempt_id ?? claimedHardTeardown?.attempt_id
+    : claimedHardTeardown?.attempt_id;
+  const generation = claimedDebt?.run_id === input.runId
+    ? claimedDebt.attempt_count ?? claimedHardTeardown?.attempt_count
+    : claimedHardTeardown?.attempt_count;
+  if (!attemptId) {
+    return;
+  }
+  try {
+    await requestNotebookRunHardTeardown(input);
+    await markNotebookTaskRunHardTeardownReleased(input.deps.cache, {
+      taskId: input.taskId,
+      runId: input.runId,
+      releasedAt: nowIso(),
+      attemptId,
+      ...(typeof generation === 'number' ? { generation } : {}),
+    });
+  } catch (error) {
+    const errorMessage = normalizeErrorMessage(error);
+    await markNotebookTaskRunHardTeardownFailed(input.deps.cache, {
+      taskId: input.taskId,
+      runId: input.runId,
+      attemptedAt,
+      errorMessage,
+      attemptId,
+      ...(typeof generation === 'number' ? { generation } : {}),
+    });
+    console.warn(
+      '[sandbox] requestHardTeardown failed for task %s: %s',
+      input.taskId,
+      errorMessage,
+    );
+  }
+}
+
 function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
   if (!deps.notebookTerminalService) {
     return;
@@ -586,6 +720,7 @@ function ensureInternalTerminalLifecycleIntegration(deps: NodeApiDeps): void {
 
 export function __resetInternalTerminalWorkloadLifecycleForTests(): void {
   registeredInternalTerminalLifecycleServices.clear();
+  notebookRunHardTeardownInFlight.clear();
   resetInternalWorkloadHolderCoordinatorForTests();
 }
 
@@ -895,6 +1030,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     if (task.status !== 'active') {
       json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_not_active' });
+      return true;
+    }
+    if (await getNotebookTaskRunHardTeardownDebt(deps.cache, task.id)) {
+      json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'task_run_hard_teardown_pending' });
       return true;
     }
     if (await hasBlockingTaskRunForTerminal(deps.cache, task.id)) {
@@ -1481,6 +1620,16 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       }
     };
     if (role === 'user') {
+      const hardTeardownDebt = await getNotebookTaskRunHardTeardownDebt(deps.cache, route.taskId);
+      if (hardTeardownDebt) {
+        json(res, 409, {
+          error_code: 'TASK_STREAM_CONFLICT',
+          message: 'task_stream_conflict',
+          reason: 'hard_teardown_pending',
+          hard_teardown_status: hardTeardownDebt.status,
+        });
+        return true;
+      }
       if (await hasBlockingTerminalSessionsForTask({
         terminalService: deps.notebookTerminalService,
         workspaceId: route.workspaceId,
@@ -1504,7 +1653,17 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       });
       const acquired = await acquireNotebookTaskRunLease(deps.cache, sharedRunState);
       if (!acquired) {
-        json(res, 409, { error_code: 'TASK_STREAM_CONFLICT', message: 'task_stream_conflict' });
+        const blockingDebt = await getNotebookTaskRunHardTeardownDebt(deps.cache, route.taskId);
+        json(res, 409, {
+          error_code: 'TASK_STREAM_CONFLICT',
+          message: 'task_stream_conflict',
+          ...(blockingDebt
+            ? {
+                reason: 'hard_teardown_pending',
+                hard_teardown_status: blockingDebt.status,
+              }
+            : {}),
+        });
         return true;
       }
     }
@@ -1544,15 +1703,19 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
             return false;
           }
           const localMarker = ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.get(route.taskId);
-          if (!localMarker || localMarker.runId !== runId || localMarker.requestedAt !== marker.requested_at) {
+          const alreadyDelivered = (
+            localMarker?.runId === runId
+            && localMarker.requestedAt === marker.requested_at
+          );
+          if (!alreadyDelivered) {
             ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.set(route.taskId, {
               runId,
               requestedAt: marker.requested_at,
             });
-          }
-          const active = ACTIVE_RUN_CANCEL_BY_TASK.get(route.taskId);
-          if (active && active.runId === runId) {
-            active.cancel();
+            const active = ACTIVE_RUN_CANCEL_BY_TASK.get(route.taskId);
+            if (active && active.runId === runId) {
+              active.cancel();
+            }
           }
           return true;
         };
@@ -1718,11 +1881,22 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     const active = ACTIVE_RUN_CANCEL_BY_TASK.get(route.taskId);
     const sharedActive = await getNotebookTaskRunState(deps.cache, route.taskId);
-    if (!active && !sharedActive) {
+    const hardTeardownDebt = await getNotebookTaskRunHardTeardownDebt(deps.cache, route.taskId);
+    const hasTerminalHardTeardownDebt = Boolean(
+      hardTeardownDebt
+      && (
+        hardTeardownDebt.status === 'pending'
+        || hardTeardownDebt.status === 'failed'
+        || hardTeardownDebt.status === 'requested'
+      ),
+    );
+    const hasSharedHardTeardownDebt = hasIncompleteNotebookTaskRunHardTeardown(sharedActive);
+    const hasHardTeardownDebt = hasSharedHardTeardownDebt || hasTerminalHardTeardownDebt;
+    if (!active && !sharedActive && !hasTerminalHardTeardownDebt) {
       json(res, 409, { error_code: 'TASK_RUN_NOT_ACTIVE', message: 'task_run_not_active' });
       return true;
     }
-    if (sharedActive?.phase === 'finalizing') {
+    if (sharedActive?.phase === 'finalizing' && !hasSharedHardTeardownDebt) {
       json(res, 409, { error_code: 'TASK_RUN_FINALIZING', message: 'task_run_finalizing' });
       return true;
     }
@@ -1731,17 +1905,80 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       route.projectId,
       task.agent_id,
     );
+    const canHardTerminate = canRequestNotebookRunHardTerminate(deps, agent);
+    const runId = active?.runId ?? sharedActive?.run_id ?? hardTeardownDebt?.run_id ?? 'unknown';
+    const requestId = active?.requestId ?? sharedActive?.request_id ?? hardTeardownDebt?.request_id ?? null;
+    if (
+      requestedMode === 'terminate'
+      && !canHardTerminate
+      && sharedActive?.stop?.mode !== 'terminate'
+      && !hasTerminalHardTeardownDebt
+    ) {
+      const reason: Exclude<NotebookRunStopEscalationReason, 'already_terminating'> = (
+        agent?.mode === 'internal' ? 'unmanaged_runner' : 'unsupported_runner'
+      );
+      json(res, 409, buildNotebookRunStopEscalationUnavailableResponse({
+        taskId: route.taskId,
+        state: sharedActive,
+        requestId,
+        reason,
+      }));
+      return true;
+    }
+    if (hasHardTeardownDebt && !canHardTerminate) {
+      const reason: Exclude<NotebookRunStopEscalationReason, 'already_terminating'> = (
+        agent?.mode === 'internal' ? 'unmanaged_runner' : 'unsupported_runner'
+      );
+      if (sharedActive) {
+        json(res, 409, buildNotebookRunStopEscalationUnavailableResponse({
+          taskId: route.taskId,
+          state: sharedActive,
+          requestId,
+          reason,
+        }));
+      } else if (hardTeardownDebt) {
+        json(res, 409, {
+          ...buildNotebookHardTeardownDebtStopResponse({
+            deps,
+            agent,
+            taskId: route.taskId,
+            debt: hardTeardownDebt,
+          }),
+          error_code: 'STOP_ESCALATION_UNAVAILABLE',
+          message: 'stop_escalation_unavailable',
+          escalation_reason: reason,
+        });
+      }
+      return true;
+    }
     const ownerFresh = sharedActive
       ? isNotebookTaskRunOwnerHeartbeatFresh(sharedActive, {
         maxAgeMs: NOTEBOOK_RUN_OWNER_STALE_AFTER_MS,
       })
       : true;
+    const shouldAutoTerminateStaleInternal = Boolean(
+      !active
+      && sharedActive
+      && !ownerFresh
+      && agent?.mode === 'internal'
+      && canHardTerminate,
+    );
     const resolvedMode: NotebookTaskRunStopMode = (
       requestedMode === 'terminate'
-      || (!active && sharedActive && !ownerFresh && agent?.mode === 'internal')
+      || shouldAutoTerminateStaleInternal
+      || hasHardTeardownDebt
         ? 'terminate'
         : 'cancel'
     );
+    if (!active && sharedActive && !ownerFresh && agent?.mode === 'internal' && !canHardTerminate) {
+      json(res, 409, buildNotebookRunStopEscalationUnavailableResponse({
+        taskId: route.taskId,
+        state: sharedActive,
+        requestId,
+        reason: 'unmanaged_runner',
+      }));
+      return true;
+    }
     if (!active && sharedActive && !ownerFresh && agent?.mode !== 'internal') {
       json(res, 409, {
         error_code: 'TASK_RUN_OWNER_UNAVAILABLE',
@@ -1749,16 +1986,33 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       });
       return true;
     }
-    const runId = active?.runId ?? sharedActive?.run_id ?? 'unknown';
-    const requestId = active?.requestId ?? sharedActive?.request_id ?? null;
     const requestedAt = nowIso();
-    ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.set(route.taskId, { runId, requestedAt });
     const delivery = resolvedMode === 'terminate' && agent?.mode === 'internal'
       ? 'internal_teardown_requested'
       : active
         ? 'owner_attached'
         : 'shared_owner';
-    await requestNotebookTaskRunStop(deps.cache, {
+    if (
+      hardTeardownDebt
+      && hasTerminalHardTeardownDebt
+      && (!sharedActive || sharedActive.run_id !== hardTeardownDebt.run_id)
+    ) {
+      await dispatchNotebookRunHardTeardown({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        taskId: route.taskId,
+        runId: hardTeardownDebt.run_id,
+      });
+      json(res, 202, buildNotebookHardTeardownDebtStopResponse({
+        deps,
+        agent,
+        taskId: route.taskId,
+        debt: hardTeardownDebt,
+      }));
+      return true;
+    }
+    const transition = await requestNotebookTaskRunStopTransition(deps.cache, {
       taskId: route.taskId,
       runId,
       mode: resolvedMode,
@@ -1766,43 +2020,67 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       actorUserId: user.id,
       delivery,
     });
-    active?.requestCancel();
-    if (resolvedMode === 'terminate' && agent?.mode === 'internal') {
-      await maybeReleaseInternalAgentWorkload(deps, {
+    const stopTruth = transition.state?.stop ?? null;
+    if (!transition.state || transition.state.run_id !== runId || !stopTruth) {
+      json(res, 409, { error_code: 'TASK_RUN_NOT_ACTIVE', message: 'task_run_not_active' });
+      return true;
+    }
+    const localMarker = ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.get(route.taskId);
+    const hasDeliveredLocalStop = (
+      localMarker?.runId === runId
+      && localMarker.requestedAt === stopTruth.requested_at
+    );
+    if (active?.runId === runId && !hasDeliveredLocalStop) {
+      ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.set(route.taskId, {
+        runId,
+        requestedAt: stopTruth.requested_at,
+      });
+      active.cancel();
+    }
+    if (
+      transition.hardTeardownDispatchRequired
+      && stopTruth.mode === 'terminate'
+      && stopTruth.delivery === 'internal_teardown_requested'
+      && canHardTerminate
+    ) {
+      await dispatchNotebookRunHardTeardown({
+        deps,
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         taskId: route.taskId,
-        userId: user.id,
-        agentId: task.agent_id,
-      }, { force: true });
+        runId,
+      });
     }
     debugNotebookExecution('task_run_cancel_requested', {
       task_id: route.taskId,
       run_id: runId,
       request_id: requestId,
-      stop_mode: resolvedMode,
+      stop_mode: stopTruth.mode,
       actor_user_id: user.id,
+      transition_changed: transition.changed,
     });
-    void writeProjectAuditEvent(deps, {
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      actor: { type: 'user', id: user.id },
-      action: 'notebook.task.run.cancel.requested',
-      resourceType: 'notebook_task',
-      resourceId: route.taskId,
-      metadata: {
-        run_id: runId,
-        request_id: requestId,
-        stop_mode: resolvedMode,
-      },
-    });
-    json(res, 202, {
-      status: resolvedMode === 'terminate' ? 'terminating' : 'cancelling',
-      task_id: route.taskId,
-      run_id: runId,
-      request_id: requestId,
-      stop_mode: resolvedMode,
-    });
+    if (transition.changed) {
+      void writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'notebook.task.run.cancel.requested',
+        resourceType: 'notebook_task',
+        resourceId: route.taskId,
+        metadata: {
+          run_id: runId,
+          request_id: requestId,
+          stop_mode: stopTruth.mode,
+        },
+      });
+    }
+    json(res, 202, buildNotebookRunStopTruthResponse({
+      deps,
+      agent,
+      taskId: route.taskId,
+      state: transition.state,
+      requestId,
+    }));
     return true;
   }
 

@@ -147,7 +147,11 @@ export interface ChatSessionRecord {
   updated_at: string;
   message_count: number;
   total_tokens: number;
-  execution_status?: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
+  execution_status?: 'running' | 'stopping' | 'terminating' | 'completed' | 'stopped' | 'failed';
+  termination_state?: 'terminating' | null;
+  stop_mode?: 'cancel' | 'terminate';
+  can_escalate?: boolean;
+  escalation_reason?: 'STOP_ESCALATION_UNAVAILABLE';
 }
 
 export interface AgentRecord {

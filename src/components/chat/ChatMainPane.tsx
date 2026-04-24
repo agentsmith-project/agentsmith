@@ -141,7 +141,8 @@ export function ChatMainPane(props: ChatMainPaneProps) {
     disabled
     || activeStreamStatus === 'connecting'
     || activeStreamStatus === 'recovering'
-    || activeStreamStatus === 'streaming';
+    || activeStreamStatus === 'streaming'
+    || activeStreamStatus === 'terminating';
   const composerDisabled = composerState !== 'ready';
   const composerDisabledReason =
     composerState === 'no_thread'

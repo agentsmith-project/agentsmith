@@ -186,6 +186,11 @@ vi.mock('next-intl', () => ({
       'notebook.conversation.run_terminating_description': 'Ending the current execution environment before the next action can start.',
       'notebook.conversation.run_finalizing_title': 'Saving final results',
       'notebook.conversation.run_finalizing_description': 'The run has ended. Saving the final answer and artifacts.',
+      'notebook.conversation.run_escalation_title': 'Force stop this run?',
+      'notebook.conversation.run_escalation_description': 'The run is still cancelling after backend confirmation. Force stop the execution environment before continuing.',
+      'notebook.conversation.run_escalation_reason': 'Backend reason: {reason}',
+      'notebook.conversation.run_escalation_confirm': 'Force stop',
+      'notebook.conversation.run_escalation_cancel': 'Keep waiting',
       'notebook.conversation.input_placeholder_cancelling': 'Wait for the current run to stop before sending another message.',
       'notebook.conversation.input_placeholder_terminating': 'Wait for the current execution environment to finish stopping before sending another message.',
       'notebook.conversation.input_placeholder_finalizing': 'Wait for the final results to finish saving before sending another message.',
@@ -3292,6 +3297,299 @@ describe('TaskPage', () => {
         );
       },
     );
+
+    it('does not requeue after backend conflict refetch exposes terminating hard teardown debt', async () => {
+      const user = userEvent.setup();
+      mockSendMessageMutateAsync.mockRejectedValueOnce(
+        new ApiError(
+          'TASK_STREAM_CONFLICT',
+          'Task run is waiting for hard teardown release.',
+          'req-hard-teardown',
+          409,
+          {
+            reason: 'hard_teardown_pending',
+            hard_teardown_status: 'failed',
+          },
+        ),
+      );
+      mockUseTaskRefetch.mockImplementationOnce(async () => {
+        const terminatingTask = {
+          ...mockTask,
+          run_state: 'terminating' as const,
+          stop_mode: 'terminate' as const,
+          can_escalate: false,
+          escalation_reason: 'Terminal hard teardown release failed.',
+        };
+        mockTaskHookState.task = terminatingTask;
+        return { data: terminatingTask };
+      });
+
+      const view = await renderComponentReady();
+
+      await user.click(screen.getByText('Send Message'));
+
+      await waitFor(() => {
+        expect(mockUseTaskRefetch).toHaveBeenCalled();
+        expect(mockToastInfo).toHaveBeenCalledWith(
+          'Wait for the current execution environment to finish stopping before sending another message.',
+        );
+        expect(screen.getByTestId('conversation-pending-count')).toHaveTextContent(
+          '0',
+        );
+      });
+      expect(mockSendMessageMutateAsync).toHaveBeenCalledTimes(1);
+      expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
+        'Wait for the current execution environment to finish stopping before sending another message.',
+      );
+
+      mockTaskHookState.task = { ...mockTask, run_state: 'idle' };
+      view.rerender(
+        <QueryClientProvider client={view.queryClient}>
+          <TaskPage
+            workspaceId={mockWorkspaceId}
+            projectId={mockProjectId}
+            taskId={mockTaskId}
+            canCreateTask={true}
+            canUpdateTask={true}
+            canDeleteTask={true}
+            canUseTerminal={true}
+          />
+        </QueryClientProvider>,
+      );
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1_100));
+      });
+
+      expect(screen.getByTestId('conversation-pending-count')).toHaveTextContent(
+        '0',
+      );
+      expect(mockSendMessageMutateAsync).toHaveBeenCalledTimes(1);
+    });
+
+    it('refetches authoritative cancelling truth before showing escalation confirmation and sends terminate once', async () => {
+      vi.useFakeTimers();
+      const terminateDeferred = createDeferred<{
+        status: 'terminating';
+        task_id: string;
+        run_id: string;
+        request_id: string;
+      }>();
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'cancelling',
+        can_escalate: false,
+      };
+      mockUseTaskRefetch.mockResolvedValueOnce({
+        data: {
+          ...mockTask,
+          run_state: 'cancelling',
+          can_escalate: true,
+          escalation_reason: 'agent did not acknowledge cancel',
+        },
+      });
+      mockTaskApiCancelRun.mockReturnValueOnce(terminateDeferred.promise);
+
+      try {
+        renderComponent();
+
+        await act(async () => {
+          await vi.runOnlyPendingTimersAsync();
+          await Promise.resolve();
+        });
+
+        expect(mockUseTaskRefetch).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId('notebook__cancel-escalation-dialog')).toBeInTheDocument();
+        expect(screen.getByText('Force stop this run?')).toBeInTheDocument();
+        expect(screen.getByText('Backend reason: agent did not acknowledge cancel')).toBeInTheDocument();
+        vi.useRealTimers();
+
+        const clickUser = userEvent.setup();
+        const confirm = screen.getByTestId('notebook__cancel-escalation-confirm');
+        await clickUser.click(confirm);
+        await clickUser.click(confirm);
+
+        expect(mockTaskApiCancelRun).toHaveBeenCalledTimes(1);
+        expect(mockTaskApiCancelRun).toHaveBeenCalledWith(
+          mockWorkspaceId,
+          mockProjectId,
+          mockTaskId,
+          { mode: 'terminate' },
+        );
+
+        terminateDeferred.resolve({
+          status: 'terminating',
+          task_id: mockTaskId,
+          run_id: 'run-1',
+          request_id: 'req-terminate',
+        });
+        await act(async () => {
+          await terminateDeferred.promise;
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not use previously known cancel capability when refetched truth omits capability fields', async () => {
+      vi.useFakeTimers();
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'cancelling',
+        can_escalate: true,
+        escalation_reason: 'cancel request exceeded the grace period',
+      };
+      mockUseTaskRefetch.mockResolvedValueOnce({
+        data: {
+          ...mockTask,
+          run_state: 'cancelling',
+        },
+      });
+
+      try {
+        renderComponent();
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(30_000);
+        });
+
+        expect(mockUseTaskRefetch).toHaveBeenCalledTimes(1);
+        expect(screen.queryByTestId('notebook__cancel-escalation-dialog')).not.toBeInTheDocument();
+        expect(screen.queryByText('Force stop this run?')).not.toBeInTheDocument();
+        expect(mockTaskApiCancelRun).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not retain cancel response escalation capability when authoritative refetch drops optional fields', async () => {
+      const user = userEvent.setup();
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'running',
+      };
+      mockTaskApiCancelRun.mockResolvedValueOnce({
+        status: 'cancelling',
+        task_id: mockTaskId,
+        run_id: 'run-1',
+        request_id: 'req-cancel',
+        can_escalate: true,
+        escalation_reason: 'cancel request exceeded the grace period',
+      });
+
+      const view = renderComponent();
+
+      await user.click(screen.getByText('Cancel Active Run'));
+      await waitFor(() => {
+        expect(mockTaskApiCancelRun).toHaveBeenCalledTimes(1);
+        expect(mockUseTaskRefetch).toHaveBeenCalled();
+      });
+
+      mockUseTaskRefetch.mockClear();
+      mockUseTaskRefetch.mockResolvedValueOnce({
+        data: {
+          ...mockTask,
+          run_state: 'cancelling',
+        },
+      });
+
+      vi.useFakeTimers();
+      try {
+        mockTaskHookState.task = {
+          ...mockTask,
+          run_state: 'cancelling',
+        };
+        await act(async () => {
+          view.rerender(
+            <QueryClientProvider client={view.queryClient}>
+              <TaskPage
+                workspaceId={mockWorkspaceId}
+                projectId={mockProjectId}
+                taskId={mockTaskId}
+                canCreateTask={true}
+                canUpdateTask={true}
+                canDeleteTask={true}
+                canUseTerminal={true}
+              />
+            </QueryClientProvider>,
+          );
+        });
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(30_000);
+        });
+
+        expect(mockUseTaskRefetch).toHaveBeenCalledTimes(1);
+        expect(screen.queryByTestId('notebook__cancel-escalation-dialog')).not.toBeInTheDocument();
+        expect(screen.queryByText('Force stop this run?')).not.toBeInTheDocument();
+        expect(mockTaskApiCancelRun).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not show escalation confirmation when refetched cancelling truth explicitly forbids escalation', async () => {
+      vi.useFakeTimers();
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'cancelling',
+        can_escalate: true,
+        escalation_reason: 'cancel request exceeded the grace period',
+      };
+      mockUseTaskRefetch.mockResolvedValueOnce({
+        data: {
+          ...mockTask,
+          run_state: 'cancelling',
+          can_escalate: false,
+          escalation_reason: 'unsupported_runner',
+        },
+      });
+
+      try {
+        renderComponent();
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(30_000);
+        });
+
+        expect(mockUseTaskRefetch).toHaveBeenCalledTimes(1);
+        expect(screen.queryByTestId('notebook__cancel-escalation-dialog')).not.toBeInTheDocument();
+        expect(screen.queryByText('Force stop this run?')).not.toBeInTheDocument();
+        expect(mockTaskApiCancelRun).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not show escalation confirmation when refetched task truth is no longer cancelling', async () => {
+      vi.useFakeTimers();
+      mockTaskHookState.task = {
+        ...mockTask,
+        run_state: 'cancelling',
+        can_escalate: true,
+      };
+      mockUseTaskRefetch.mockResolvedValueOnce({
+        data: {
+          ...mockTask,
+          run_state: 'idle',
+          can_escalate: true,
+        },
+      });
+
+      try {
+        renderComponent();
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(30_000);
+        });
+
+        expect(mockUseTaskRefetch).toHaveBeenCalledTimes(1);
+        expect(screen.queryByText('Force stop this run?')).not.toBeInTheDocument();
+        expect(mockTaskApiCancelRun).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
 
     it('clears a cancelled run after authoritative idle recovery and does not re-enter the pending loop on refresh', async () => {
       mockSendMessageMutateAsync

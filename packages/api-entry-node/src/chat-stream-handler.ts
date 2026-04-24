@@ -9,12 +9,12 @@ import {
   ACTIVE_CHAT_STREAMS,
   beginSessionExecution,
   finalizeSessionExecution,
+  hasSessionHardTeardownDebt,
   markSessionExecutionPhase,
   readSessionExecutionRecord,
   STREAM_REGISTRY_FINAL_TTL_SECONDS,
   STREAM_REGISTRY_TTL_SECONDS,
   listActiveSessionStreams,
-  readSessionStreamState,
   writeStreamRegistry,
 } from './chat-stream-state.js';
 import {
@@ -253,13 +253,20 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
     return true;
   }
-  const authoritativeSessionState = await readSessionStreamState(
+  const authoritativeExecution = await readSessionExecutionRecord(
     deps.cache,
     route.workspaceId,
     route.projectId,
     route.sessionId,
   );
-  if (authoritativeSessionState === 'running' || authoritativeSessionState === 'stopping') {
+  const authoritativeSessionState = authoritativeExecution?.status ?? null;
+  const authoritativeHardTeardownDebt = hasSessionHardTeardownDebt(authoritativeExecution);
+  if (
+    authoritativeSessionState === 'running' ||
+    authoritativeSessionState === 'stopping' ||
+    authoritativeSessionState === 'terminating' ||
+    authoritativeHardTeardownDebt
+  ) {
     logChatStreamEvent({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -271,6 +278,12 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     json(res, 409, {
       error_code: 'CHAT_SESSION_STREAM_CONFLICT',
       message: 'chat_session_stream_conflict',
+      ...(authoritativeHardTeardownDebt
+        ? {
+            reason: 'hard_teardown_pending',
+            hard_teardown_status: authoritativeExecution.hardTeardownStatus,
+          }
+        : {}),
     });
     return true;
   }
@@ -363,9 +376,9 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   const executionTransport = buildSessionExecutionTransport(useExternalAgent);
   let executionInternalAgent = false;
   let sessionExecutionBootstrapped = false;
-  const ensureSessionExecutionBootstrapped = async () => {
-    if (sessionExecutionBootstrapped) return;
-    await beginSessionExecution(
+  const ensureSessionExecutionBootstrapped = async (): Promise<boolean> => {
+    if (sessionExecutionBootstrapped) return true;
+    const execution = await beginSessionExecution(
       deps.cache,
       {
         workspaceId: route.workspaceId,
@@ -380,7 +393,36 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       },
       STREAM_REGISTRY_TTL_SECONDS,
     );
+    if (!execution) {
+      const blockingExecution = await readSessionExecutionRecord(
+        deps.cache,
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+      );
+      const hardTeardownDebt = hasSessionHardTeardownDebt(blockingExecution);
+      logChatStreamEvent({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sessionId: route.sessionId,
+        endpointId: streamEndpointId,
+        status: 'rejected',
+        stopReason: 'session_stream_conflict',
+      });
+      json(res, 409, {
+        error_code: 'CHAT_SESSION_STREAM_CONFLICT',
+        message: 'chat_session_stream_conflict',
+        ...(hardTeardownDebt
+          ? {
+              reason: 'hard_teardown_pending',
+              hard_teardown_status: blockingExecution.hardTeardownStatus,
+            }
+          : {}),
+      });
+      return false;
+    }
     sessionExecutionBootstrapped = true;
+    return true;
   };
 
   let parentForAssistant: string | null = null;
@@ -489,7 +531,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       inputParentMessage.content === raw.input.content &&
       attachmentSnapshots.length === inputParentAttachmentIds.size &&
       attachmentSnapshots.every((item) => inputParentAttachmentIds.has(item.id));
-    await ensureSessionExecutionBootstrapped();
+    if (!(await ensureSessionExecutionBootstrapped())) return true;
     if (canReuseLeafUser && inputParentMessage) {
       parentForAssistant = inputParentMessage.id;
     } else {
@@ -564,7 +606,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     parentForAssistant,
     fromMessage,
   );
-  await ensureSessionExecutionBootstrapped();
+  if (!(await ensureSessionExecutionBootstrapped())) return true;
   const createdAssistant = await deps.chatResourceService.createMessage({
     workspaceId: route.workspaceId,
     projectId: route.projectId,
@@ -760,6 +802,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     if (
       !streamAbortController.signal.aborted &&
       latestExecution?.status !== 'stopping' &&
+      latestExecution?.status !== 'terminating' &&
       latestExecution?.status !== 'stopped'
     ) {
       return false;
@@ -883,6 +926,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           workloadId,
           holderKind: 'chat_stream',
           holderId: route.sessionId,
+          epoch: streamId,
         };
         if (!internalWorkloadCoordinator) {
           throw new AgentStreamRouteError('AGENT_SANDBOX_NOT_CONFIGURED', 'agent_sandbox_not_configured');
@@ -967,7 +1011,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
             route.projectId,
             route.sessionId,
           );
-          if (execution?.status !== 'stopping' && execution?.status !== 'stopped') {
+          if (execution?.status !== 'stopping' && execution?.status !== 'terminating' && execution?.status !== 'stopped') {
             return;
           }
           const activeRecord = ACTIVE_CHAT_STREAMS.get(streamId);
@@ -1091,10 +1135,17 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         if (executionInternalAgent && agentErrorCode === 'AGENT_CANCEL_TIMEOUT') {
           const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
           if (internalWorkloadCoordinator) {
-            await internalWorkloadCoordinator.requestHardTeardown({
+            void internalWorkloadCoordinator.requestHardTeardown({
               workspaceId: route.workspaceId,
               projectId: route.projectId,
               workloadId: sanitizeWorkloadId(route.sessionId),
+              epoch: streamId,
+            }).catch((error: unknown) => {
+              console.warn(
+                '[sandbox] requestHardTeardown failed for chat session %s: %s',
+                route.sessionId,
+                error instanceof Error ? error.message : String(error),
+              );
             });
           }
         }
@@ -1207,7 +1258,13 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     } finally {
       const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
       if (internalWorkloadHolder && internalWorkloadCoordinator) {
-        await internalWorkloadCoordinator.releaseHolder(internalWorkloadHolder);
+        await internalWorkloadCoordinator.releaseHolder(internalWorkloadHolder).catch((error: unknown) => {
+          console.warn(
+            '[sandbox] releaseHolder failed for chat session %s: %s',
+            route.sessionId,
+            error instanceof Error ? error.message : String(error),
+          );
+        });
       }
     }
   }
@@ -1338,7 +1395,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         route.projectId,
         route.sessionId,
       );
-      if (execution?.status !== 'stopping' && execution?.status !== 'stopped') {
+      if (execution?.status !== 'stopping' && execution?.status !== 'terminating' && execution?.status !== 'stopped') {
         return;
       }
       const activeRecord = ACTIVE_CHAT_STREAMS.get(streamId);
@@ -1388,7 +1445,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           route.projectId,
           route.sessionId,
         );
-        if (execution?.status === 'stopping' || execution?.status === 'stopped') {
+        if (execution?.status === 'stopping' || execution?.status === 'terminating' || execution?.status === 'stopped') {
           streamAbortController.abort();
           break;
         }

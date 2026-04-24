@@ -6,6 +6,11 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ChatAPI } from '@/lib/api/endpoints/chat';
 import type { ChatMessage, ChatSession } from '@/lib/api/types';
 import { useChatStreaming } from '@/lib/chat/use-chat-streaming';
+import {
+  CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT,
+  CHAT_STREAM_ESCALATION_CONFIRMATION_RESPONSE_EVENT,
+  type ChatStreamEscalationConfirmationRequestDetail,
+} from '@/lib/chat/stream-state';
 import { useChatStreamStore } from '@/lib/chat/stream-store';
 import { toast } from '@/components/ui/toast';
 
@@ -37,6 +42,7 @@ const streamMessages = {
   streamErrorAgentProtocol: 'agent protocol error',
   streamErrorAgentUpstream: 'agent upstream error',
   streamWarningSessionWorkspaceRecreated: 'workspace reclaimed',
+  streamStopEscalationUnavailable: 'Forced stop is not available.',
 };
 
 beforeEach(() => {
@@ -211,6 +217,484 @@ describe('useChatStreaming attach recovery', () => {
       }),
     });
     expect(invalidateSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('refetches session truth after stop timeout and sends terminate only after confirmation', async () => {
+    vi.useFakeTimers();
+    const chatAPI: Pick<ChatAPI, 'getSession' | 'getSessionStreams' | 'stopSessionStream' | 'stopStream'> = {
+      getSession: vi.fn().mockResolvedValue({
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+        execution_status: 'stopping',
+        can_escalate: true,
+        escalation_reason: 'agent did not acknowledge stop',
+      }),
+      getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'stopping' }),
+      stopStream: vi.fn()
+        .mockResolvedValueOnce({ success: true, stream_id: 'st_1', state: 'stopping', stop_mode: 'cancel', can_escalate: true })
+        .mockResolvedValueOnce({ success: true, stream_id: 'st_1', state: 'terminating', status: 'terminating', stop_mode: 'terminate', can_escalate: false }),
+    };
+    const requests: ChatStreamEscalationConfirmationRequestDetail[] = [];
+    const onRequest = (event: Event) => {
+      const detail = (event as CustomEvent<ChatStreamEscalationConfirmationRequestDetail>).detail;
+      requests.push(detail);
+      window.dispatchEvent(
+        new CustomEvent(CHAT_STREAM_ESCALATION_CONFIRMATION_RESPONSE_EVENT, {
+          detail: { requestId: detail.requestId, confirmed: true },
+        }),
+      );
+    };
+    window.addEventListener(CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT, onRequest);
+
+    useChatStreamStore.setState({
+      streamIdBySession: { s_1: 'st_1' },
+      streamStateBySession: {
+        s_1: {
+          status: 'streaming',
+          assistant: {
+            messageId: 'm_asst',
+            content: 'partial',
+            mode: 'append',
+            startedAt: Date.now(),
+            lastTokenAt: Date.now(),
+          },
+        },
+      },
+    });
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const sessions: ChatSession[] = [
+      {
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+        execution_status: 'running',
+      },
+    ];
+
+    try {
+      const { result } = renderHook(
+        () =>
+          useChatStreaming({
+            token: 'tkn',
+            workspaceId: 'ws_1',
+            projectId: 'p_1',
+            sessions,
+            currentSessionId: 's_1',
+            chatAPI: chatAPI as unknown as ChatAPI,
+            queryClient: qc,
+            messages: streamMessages,
+            upsertStreamAssistantToCache: vi.fn(),
+            patchStreamAssistantInCache: vi.fn(),
+          }),
+        { wrapper },
+      );
+
+      await act(async () => {
+        await result.current.stopStreamingSession('s_1', 'user');
+      });
+
+      expect(chatAPI.stopStream).toHaveBeenCalledTimes(1);
+      expect(chatAPI.stopStream).toHaveBeenNthCalledWith(1, 'ws_1', 'p_1', 's_1', 'st_1');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+        await Promise.resolve();
+      });
+
+      expect(chatAPI.getSession).toHaveBeenCalledWith('ws_1', 'p_1', 's_1');
+      expect(requests).toHaveLength(1);
+      expect(chatAPI.stopStream).toHaveBeenCalledTimes(2);
+      expect(chatAPI.stopStream).toHaveBeenNthCalledWith(
+        2,
+        'ws_1',
+        'p_1',
+        's_1',
+        'st_1',
+        { mode: 'terminate' },
+      );
+      expect(result.current.streamStateBySession['s_1']?.status).toBe('terminating');
+    } finally {
+      window.removeEventListener(CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT, onRequest);
+      vi.useRealTimers();
+    }
+  });
+
+  it('schedules escalation from refreshed stopping session truth and confirms after refetch', async () => {
+    vi.useFakeTimers();
+    let resolveSession!: (session: ChatSession) => void;
+    const sessionTruth = new Promise<ChatSession>((resolve) => {
+      resolveSession = resolve;
+    });
+    const chatAPI: Pick<ChatAPI, 'getSession' | 'getSessionStreams' | 'stopSessionStream' | 'stopStream'> = {
+      getSession: vi.fn().mockReturnValue(sessionTruth),
+      getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      stopSessionStream: vi.fn().mockResolvedValue({
+        success: true,
+        session_id: 's_1',
+        state: 'terminating',
+        status: 'terminating',
+        stop_mode: 'terminate',
+      }),
+      stopStream: vi.fn().mockResolvedValue({
+        success: true,
+        stream_id: 'st_1',
+        state: 'terminating',
+        status: 'terminating',
+        stop_mode: 'terminate',
+      }),
+    };
+    const requests: ChatStreamEscalationConfirmationRequestDetail[] = [];
+    const onRequest = (event: Event) => {
+      const detail = (event as CustomEvent<ChatStreamEscalationConfirmationRequestDetail>).detail;
+      requests.push(detail);
+      window.dispatchEvent(
+        new CustomEvent(CHAT_STREAM_ESCALATION_CONFIRMATION_RESPONSE_EVENT, {
+          detail: { requestId: detail.requestId, confirmed: true },
+        }),
+      );
+    };
+    window.addEventListener(CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT, onRequest);
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const sessions: ChatSession[] = [
+      {
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+        execution_status: 'stopping',
+        can_escalate: true,
+        escalation_reason: 'agent did not acknowledge stop',
+      },
+    ];
+
+    try {
+      const { result } = renderHook(
+        () =>
+          useChatStreaming({
+            token: 'tkn',
+            workspaceId: 'ws_1',
+            projectId: 'p_1',
+            sessions,
+            currentSessionId: 's_1',
+            chatAPI: chatAPI as unknown as ChatAPI,
+            queryClient: qc,
+            messages: streamMessages,
+            upsertStreamAssistantToCache: vi.fn(),
+            patchStreamAssistantInCache: vi.fn(),
+          }),
+        { wrapper },
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+        await Promise.resolve();
+      });
+
+      expect(chatAPI.getSession).toHaveBeenCalledWith('ws_1', 'p_1', 's_1');
+      expect(requests).toHaveLength(0);
+      expect(chatAPI.stopSessionStream).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveSession({
+          ...sessions[0],
+          execution_status: 'stopping',
+          can_escalate: true,
+          escalation_reason: 'agent did not acknowledge stop',
+        });
+        await sessionTruth;
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        sessionId: 's_1',
+        reason: 'agent did not acknowledge stop',
+      });
+      expect(chatAPI.stopSessionStream).toHaveBeenCalledWith(
+        'ws_1',
+        'p_1',
+        's_1',
+        { mode: 'terminate' },
+      );
+      expect(chatAPI.stopStream).not.toHaveBeenCalled();
+      expect(result.current.streamStateBySession['s_1']?.status).toBe('terminating');
+    } finally {
+      window.removeEventListener(CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT, onRequest);
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps stopping when backend downgrades a terminate request to cancel truth', async () => {
+    vi.useFakeTimers();
+    const chatAPI: Pick<ChatAPI, 'getSession' | 'getSessionStreams' | 'stopSessionStream' | 'stopStream'> = {
+      getSession: vi.fn().mockResolvedValue({
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+        execution_status: 'stopping',
+        stop_mode: 'cancel',
+        can_escalate: true,
+        escalation_reason: 'agent did not acknowledge stop',
+      }),
+      getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'stopping', stop_mode: 'cancel', can_escalate: true }),
+      stopStream: vi.fn()
+        .mockResolvedValueOnce({ success: true, stream_id: 'st_1', state: 'stopping', stop_mode: 'cancel', can_escalate: true })
+        .mockResolvedValueOnce({ success: true, stream_id: 'st_1', state: 'stopping', status: 'stopping', stop_mode: 'cancel', can_escalate: false }),
+    };
+    const onRequest = (event: Event) => {
+      const detail = (event as CustomEvent<ChatStreamEscalationConfirmationRequestDetail>).detail;
+      window.dispatchEvent(
+        new CustomEvent(CHAT_STREAM_ESCALATION_CONFIRMATION_RESPONSE_EVENT, {
+          detail: { requestId: detail.requestId, confirmed: true },
+        }),
+      );
+    };
+    window.addEventListener(CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT, onRequest);
+
+    useChatStreamStore.setState({
+      streamIdBySession: { s_1: 'st_1' },
+      streamStateBySession: {
+        s_1: {
+          status: 'streaming',
+          assistant: null,
+        },
+      },
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const sessions: ChatSession[] = [
+      {
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+        execution_status: 'running',
+      },
+    ];
+
+    try {
+      const { result } = renderHook(
+        () =>
+          useChatStreaming({
+            token: 'tkn',
+            workspaceId: 'ws_1',
+            projectId: 'p_1',
+            sessions,
+            currentSessionId: 's_1',
+            chatAPI: chatAPI as unknown as ChatAPI,
+            queryClient: qc,
+            messages: streamMessages,
+            upsertStreamAssistantToCache: vi.fn(),
+            patchStreamAssistantInCache: vi.fn(),
+          }),
+        { wrapper },
+      );
+
+      await act(async () => {
+        await result.current.stopStreamingSession('s_1', 'user');
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+        await Promise.resolve();
+      });
+
+      expect(chatAPI.stopStream).toHaveBeenCalledTimes(2);
+      expect(result.current.streamStateBySession['s_1']?.status).toBe('stopping');
+      expect(toast.info).not.toHaveBeenCalledWith(expect.stringContaining('Forced stop is not available.'));
+    } finally {
+      window.removeEventListener(CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT, onRequest);
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows an informational prompt without dangerous confirmation when forced stop is unsupported', async () => {
+    vi.useFakeTimers();
+    const chatAPI: Pick<ChatAPI, 'getSession' | 'getSessionStreams' | 'stopSessionStream' | 'stopStream'> = {
+      getSession: vi.fn().mockResolvedValue({
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+        execution_status: 'stopping',
+        can_escalate: false,
+        escalation_reason: 'endpoint does not support terminate',
+      }),
+      getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'stopping' }),
+      stopStream: vi.fn().mockResolvedValue({ success: true, stream_id: 'st_1', state: 'stopping' }),
+    };
+    const onRequest = vi.fn();
+    window.addEventListener(CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT, onRequest);
+    useChatStreamStore.setState({
+      streamIdBySession: {},
+      streamStateBySession: {
+        s_1: {
+          status: 'streaming',
+          assistant: null,
+        },
+      },
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const sessions: ChatSession[] = [
+      {
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+        execution_status: 'running',
+      },
+    ];
+
+    try {
+      const { result } = renderHook(
+        () =>
+          useChatStreaming({
+            token: 'tkn',
+            workspaceId: 'ws_1',
+            projectId: 'p_1',
+            sessions,
+            currentSessionId: 's_1',
+            chatAPI: chatAPI as unknown as ChatAPI,
+            queryClient: qc,
+            messages: streamMessages,
+            upsertStreamAssistantToCache: vi.fn(),
+            patchStreamAssistantInCache: vi.fn(),
+          }),
+        { wrapper },
+      );
+
+      await act(async () => {
+        await result.current.stopStreamingSession('s_1', 'user');
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+        await Promise.resolve();
+      });
+
+      expect(chatAPI.getSession).toHaveBeenCalledWith('ws_1', 'p_1', 's_1');
+      expect(toast.info).toHaveBeenCalledWith(
+        'Forced stop is not available. endpoint does not support terminate',
+      );
+      expect(onRequest).not.toHaveBeenCalled();
+      expect(chatAPI.stopSessionStream).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT, onRequest);
+      vi.useRealTimers();
+    }
+  });
+
+  it('deduplicates repeated user stop clicks while stopping truth is already pending', async () => {
+    const chatAPI: Pick<ChatAPI, 'getSessionStreams' | 'stopSessionStream' | 'stopStream'> = {
+      getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'stopping' }),
+      stopStream: vi.fn().mockResolvedValue({ success: true, stream_id: 'st_1', state: 'stopping' }),
+    };
+    useChatStreamStore.setState({
+      streamIdBySession: {},
+      streamStateBySession: {
+        s_1: {
+          status: 'stopping',
+          assistant: null,
+        },
+      },
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const sessions: ChatSession[] = [
+      {
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+        execution_status: 'stopping',
+      },
+    ];
+    const { result } = renderHook(
+      () =>
+        useChatStreaming({
+          token: 'tkn',
+          workspaceId: 'ws_1',
+          projectId: 'p_1',
+          sessions,
+          currentSessionId: 's_1',
+          chatAPI: chatAPI as unknown as ChatAPI,
+          queryClient: qc,
+          messages: streamMessages,
+          upsertStreamAssistantToCache: vi.fn(),
+          patchStreamAssistantInCache: vi.fn(),
+        }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.stopStreamingSession('s_1', 'user');
+      await result.current.stopStreamingSession('s_1', 'user');
+    });
+
+    expect(chatAPI.stopSessionStream).not.toHaveBeenCalled();
+    expect(chatAPI.stopStream).not.toHaveBeenCalled();
   });
 
   it('does not synthesize a stopped state when session-stop reports not_found_or_finished', async () => {

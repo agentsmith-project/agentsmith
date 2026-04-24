@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mapTaskMessagesForExecution } from './task-realtime-view.js';
+import { createDefaultNodeApiDeps } from '../index.js';
+import { markNotebookTaskRunHardTeardownFailed } from './task-run-coordination.js';
+import { buildTaskRealtimeView, mapTaskMessagesForExecution } from './task-realtime-view.js';
 import { MESSAGES_BY_TASK } from './task-runtime-state.js';
+import type { TaskRecord } from './task-models.js';
 
 describe('mapTaskMessagesForExecution', () => {
   afterEach(() => {
@@ -59,5 +62,51 @@ describe('mapTaskMessagesForExecution', () => {
     ]);
 
     expect(mapTaskMessagesForExecution('task_2', 'msg_agent_pending')).toEqual([]);
+  });
+
+  it('exposes terminal hard teardown debt as terminating realtime truth without an active run', async () => {
+    const deps = createDefaultNodeApiDeps();
+    deps.agentResourceService.getAgent = async () => ({
+      id: 'agent_internal_debt',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      name: 'Internal debt agent',
+      mode: 'internal',
+      status: 'enabled',
+      interaction_kind: 'notebook',
+    }) as never;
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown: async () => undefined,
+    } as never;
+    const now = '2026-03-18T12:00:00.000Z';
+    const task: TaskRecord = {
+      id: 'task_realtime_debt',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Realtime debt task',
+      agent_id: 'agent_internal_debt',
+      agent_name: 'Internal debt agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    };
+
+    await markNotebookTaskRunHardTeardownFailed(deps.cache, {
+      taskId: task.id,
+      runId: 'run_realtime_debt',
+      attemptedAt: now,
+      errorMessage: 'release failed after active run cleared',
+    });
+
+    await expect(buildTaskRealtimeView(deps, task.workspace_id, task.project_id, task)).resolves.toMatchObject({
+      id: task.id,
+      run_state: 'terminating',
+      stop_mode: 'terminate',
+      can_escalate: false,
+      escalation_reason: 'already_terminating',
+    });
   });
 });

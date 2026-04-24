@@ -88,6 +88,16 @@ type TerminalWorkspaceHydrationState = "pending" | "ready" | "unavailable";
 
 type TaskTranslationFn = ReturnType<typeof useTranslations>;
 
+export const NOTEBOOK_CANCEL_ESCALATION_PROMPT_DELAY_MS = 30_000;
+
+function normalizeCancelEscalationReason(
+  reason: string | null | undefined,
+): string | null {
+  return typeof reason === "string" && reason.trim().length > 0
+    ? reason.trim()
+    : null;
+}
+
 function getAuthoritativeRunInputPlaceholder(
   tConversation: ReturnType<typeof useTranslations>,
   runState: TaskRunState | null,
@@ -377,6 +387,10 @@ export function TaskPage({
     React.useState<TerminalWorkspaceHydrationState>("pending");
   const [endAllTerminalDialogOpen, setEndAllTerminalDialogOpen] = React.useState(false);
   const [endAllTerminalPending, setEndAllTerminalPending] = React.useState(false);
+  const [cancelEscalationDialogOpen, setCancelEscalationDialogOpen] =
+    React.useState(false);
+  const [cancelEscalationReason, setCancelEscalationReason] =
+    React.useState<string | null>(null);
   const nextTerminalTabOrdinalRef = React.useRef(1);
   const terminalTabsRef = React.useRef<TerminalWorkspaceTab[]>([]);
   const activeTerminalTabIdRef = React.useRef<string | null>(null);
@@ -396,6 +410,9 @@ export function TaskPage({
   const pendingFlushInFlightRef = React.useRef(false);
   const runtimeIdleReconcileKeyRef = React.useRef<string | null>(null);
   const runtimeIdleReconcileInFlightRef = React.useRef(false);
+  const cancelEscalationTimerRef = React.useRef<number | null>(null);
+  const cancelEscalationPromptedRef = React.useRef(false);
+  const cancelEscalationCheckInFlightRef = React.useRef(false);
   const [runtimeReconciliationActive, setRuntimeReconciliationActive] =
     React.useState(false);
   const sendMessage = useSendMessage();
@@ -665,15 +682,27 @@ export function TaskPage({
         : "idle";
 
   const cancelActiveRun = useMutation({
-    mutationFn: () => taskAPI.cancelRun(workspaceId, projectId, taskId),
+    mutationFn: (options?: { mode?: "cancel" | "terminate" }) =>
+      options
+        ? taskAPI.cancelRun(workspaceId, projectId, taskId, options)
+        : taskAPI.cancelRun(workspaceId, projectId, taskId),
     onSuccess: (response) => {
       const nextRunState =
         response.status === "terminating" ? "terminating" : "cancelling";
+      if (nextRunState === "terminating") {
+        setCancelEscalationDialogOpen(false);
+      }
       queryClient.setQueryData(taskDetailKey, (old: Task | undefined) =>
         old
           ? {
               ...old,
               run_state: nextRunState,
+              stop_mode: response.stop_mode,
+              can_escalate: response.can_escalate,
+              escalation_reason:
+                response.escalation_reason !== undefined
+                  ? response.escalation_reason
+                  : null,
             }
           : old,
       );
@@ -696,6 +725,65 @@ export function TaskPage({
       });
     },
   });
+
+  const clearCancelEscalationTimer = React.useCallback(() => {
+    if (cancelEscalationTimerRef.current !== null) {
+      window.clearTimeout(cancelEscalationTimerRef.current);
+      cancelEscalationTimerRef.current = null;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      clearCancelEscalationTimer();
+    };
+  }, [clearCancelEscalationTimer]);
+
+  React.useEffect(() => {
+    if (authoritativeRunState !== "cancelling") {
+      clearCancelEscalationTimer();
+      cancelEscalationPromptedRef.current = false;
+      cancelEscalationCheckInFlightRef.current = false;
+      setCancelEscalationDialogOpen(false);
+      setCancelEscalationReason(null);
+      return;
+    }
+    if (
+      cancelEscalationTimerRef.current !== null ||
+      cancelEscalationPromptedRef.current ||
+      cancelEscalationCheckInFlightRef.current
+    ) {
+      return;
+    }
+    cancelEscalationTimerRef.current = window.setTimeout(() => {
+      cancelEscalationTimerRef.current = null;
+      if (cancelEscalationPromptedRef.current) return;
+      cancelEscalationCheckInFlightRef.current = true;
+      void refetchTask()
+        .then((result) => {
+          const authoritativeTask = result.data ?? null;
+          if (authoritativeTask?.run_state !== "cancelling") {
+            return;
+          }
+          if (authoritativeTask.can_escalate !== true) {
+            return;
+          }
+          const escalationReason = authoritativeTask.escalation_reason ?? null;
+          cancelEscalationPromptedRef.current = true;
+          setCancelEscalationReason(
+            normalizeCancelEscalationReason(escalationReason),
+          );
+          setCancelEscalationDialogOpen(true);
+        })
+        .finally(() => {
+          cancelEscalationCheckInFlightRef.current = false;
+        });
+    }, NOTEBOOK_CANCEL_ESCALATION_PROMPT_DELAY_MS);
+  }, [
+    authoritativeRunState,
+    clearCancelEscalationTimer,
+    refetchTask,
+  ]);
 
   React.useEffect(() => {
     if (!(sendMessage.isPending || isAgentTurnRunning)) return;
@@ -931,7 +1019,23 @@ export function TaskPage({
           const errorCode = err.errorCode?.toUpperCase();
           if (errorCode === "TASK_STREAM_CONFLICT") {
             setRuntimeReconciliationActive(true);
+            const refetchedTask = await refetchTask()
+              .then((result) => result.data ?? null)
+              .catch(() => null);
             void reconcileTaskRuntime("send_conflict");
+            const conflictRunState = refetchedTask?.run_state ?? null;
+            const conflictRunStoppingOrFinalizing =
+              isTaskRunStateStoppingOrFinalizing(conflictRunState);
+            if (conflictRunStoppingOrFinalizing) {
+              const stoppingInputPlaceholder = getAuthoritativeRunInputPlaceholder(
+                tConversation,
+                conflictRunState,
+              );
+              if (stoppingInputPlaceholder) {
+                toast.info(stoppingInputPlaceholder);
+              }
+              return;
+            }
             if (source === "queue") {
               setPendingMessages((prev) => [
                 createPendingMessage(content),
@@ -972,6 +1076,7 @@ export function TaskPage({
       projectId,
       queryClient,
       reconcileTaskRuntime,
+      refetchTask,
       sendMessage,
       setRuntimeReconciliationActive,
       tConversation,
@@ -1033,13 +1138,18 @@ export function TaskPage({
     if (!(isAgentTurnRunning || sendMessage.isPending || backendRunActive))
       return;
     if (cancelActiveRun.isPending) return;
-    void cancelActiveRun.mutateAsync();
+    void cancelActiveRun.mutateAsync(undefined);
   }, [
     backendRunActive,
     cancelActiveRun,
     isAgentTurnRunning,
     sendMessage.isPending,
   ]);
+
+  const handleConfirmCancelEscalation = React.useCallback(() => {
+    if (cancelActiveRun.isPending) return;
+    void cancelActiveRun.mutateAsync({ mode: "terminate" });
+  }, [cancelActiveRun]);
 
   // Keep local streaming state consistent with backend authoritative run_state.
   React.useEffect(() => {
@@ -2282,6 +2392,47 @@ export function TaskPage({
         traceLoadingByMessageId={traceLoadingByMessageId}
         workspaceId={workspaceId}
       />
+      <AlertDialog
+        open={cancelEscalationDialogOpen}
+        onOpenChange={(open) => {
+          if (cancelActiveRun.isPending) return;
+          setCancelEscalationDialogOpen(open);
+        }}
+      >
+        <AlertDialogContent data-testid="notebook__cancel-escalation-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {tConversation("run_escalation_title")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {tConversation("run_escalation_description")}
+              {cancelEscalationReason ? (
+                <span className="mt-2 block">
+                  {tConversation("run_escalation_reason", {
+                    reason: cancelEscalationReason,
+                  })}
+                </span>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelActiveRun.isPending}>
+              {tConversation("run_escalation_cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="notebook__cancel-escalation-confirm"
+              onClick={(event) => {
+                event.preventDefault();
+                handleConfirmCancelEscalation();
+              }}
+              disabled={cancelActiveRun.isPending}
+              variant="destructive"
+            >
+              {tConversation("run_escalation_confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={endAllTerminalDialogOpen} onOpenChange={setEndAllTerminalDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

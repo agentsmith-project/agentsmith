@@ -274,7 +274,13 @@ export function Composer({
             </div>
 
             {canStop ? (
-              <Button type="button" variant="outline" onClick={onStop} className="h-10 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onStop}
+                className="h-10 gap-2"
+                data-testid="chat__stop-btn"
+              >
                 <Square className="w-4 h-4" />
                 {t('composer.stop')}
               </Button>

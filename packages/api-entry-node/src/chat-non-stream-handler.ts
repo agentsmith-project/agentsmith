@@ -8,11 +8,18 @@ import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { parsePagination } from './pagination.js';
 import {
   ACTIVE_CHAT_STREAMS,
+  type ChatSessionExecutionRecord,
+  type ChatStopEscalationReason,
+  type ChatStopMode,
+  hasSessionHardTeardownDebt,
+  hasIncompleteSessionHardTeardown,
+  markSessionHardTeardownFailed,
+  markSessionHardTeardownRequested,
+  markSessionHardTeardownReleased,
   readSessionExecutionRecord,
   STREAM_REGISTRY_TTL_SECONDS,
   listActiveSessionStreams,
-  requestSessionExecutionStop,
-  readSessionStreamState,
+  requestSessionExecutionStopTransition,
   readStreamRegistry,
   stopActiveSessionStreams,
   writeStreamRegistry,
@@ -31,6 +38,7 @@ import { ensureInternalChatSessionWorkspace } from './chat-internal-workspace.js
 import { mapFileLibraryInfraError } from './project-file-library-service.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { resolveInternalWorkloadCoordinator } from './internal-workload-coordinator.js';
+import type { ChatSessionRecord } from './resource-models.js';
 
 interface ChatNonStreamHandlerArgs {
   route: ChatRoute;
@@ -47,6 +55,251 @@ interface ChatNonStreamHandlerArgs {
 const MAX_ATTACHMENTS_PER_MESSAGE = 8;
 const MAX_ATTACHMENT_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_ATTACHMENT_TOTAL_SIZE_BYTES = 60 * 1024 * 1024;
+const chatHardTeardownInFlight = new Map<string, Promise<void>>();
+
+type StopState = 'stopping' | 'terminating' | 'not_found_or_finished';
+type ActiveStopState = Exclude<StopState, 'not_found_or_finished'> | 'running';
+
+interface StopCapability {
+  supportsTerminate: boolean;
+  unavailableReason?: ChatStopEscalationReason;
+}
+
+function parseStopMode(raw: unknown): ChatStopMode | null {
+  if (raw == null) return 'cancel';
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const mode = (raw as { mode?: unknown }).mode;
+  if (mode == null) return 'cancel';
+  return mode === 'cancel' || mode === 'terminate' ? mode : null;
+}
+
+async function resolveStopCapability(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  session?: ChatSessionRecord | null;
+  execution?: ChatSessionExecutionRecord | null;
+  allowAgentLookup?: boolean;
+}): Promise<StopCapability> {
+  let internalAgent = input.execution?.transport === 'agent_runner' && input.execution.internalAgent === true;
+  if (!internalAgent && input.allowAgentLookup !== false && input.session?.external_agent_id) {
+    const agent = input.deps.agentResourceService
+      ? await input.deps.agentResourceService.getAgent(
+        input.workspaceId,
+        input.projectId,
+        input.session.external_agent_id,
+      ).catch(() => null)
+      : null;
+    internalAgent = agent?.mode === 'internal';
+  }
+  if (!internalAgent) {
+    return {
+      supportsTerminate: false,
+      unavailableReason: 'STOP_ESCALATION_UNAVAILABLE',
+    };
+  }
+  const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(input.deps);
+  return internalWorkloadCoordinator
+    ? { supportsTerminate: true }
+    : {
+        supportsTerminate: false,
+        unavailableReason: 'STOP_ESCALATION_UNAVAILABLE',
+      };
+}
+
+function resolveEffectiveStopMode(
+  requestedMode: ChatStopMode,
+  capability: StopCapability,
+  execution?: ChatSessionExecutionRecord | null,
+): ChatStopMode {
+  if (execution?.stopMode === 'terminate') return 'terminate';
+  return requestedMode === 'terminate' && capability.supportsTerminate ? 'terminate' : 'cancel';
+}
+
+function buildStopResponse(
+  ids: { sessionId?: string; streamId?: string },
+  input: {
+    state: StopState;
+    stopMode: ChatStopMode;
+    capability: StopCapability;
+  },
+): Record<string, unknown> {
+  const canEscalate = input.state !== 'not_found_or_finished'
+    && input.capability.supportsTerminate
+    && input.stopMode !== 'terminate';
+  return {
+    success: true,
+    ...(ids.sessionId ? { session_id: ids.sessionId } : {}),
+    ...(ids.streamId ? { stream_id: ids.streamId } : {}),
+    state: input.state,
+    status: input.state,
+    stop_mode: input.stopMode,
+    can_escalate: canEscalate,
+    ...(!canEscalate && input.capability.unavailableReason
+      ? { escalation_reason: input.capability.unavailableReason }
+      : {}),
+  };
+}
+
+function isActiveStopState(status: ChatSessionExecutionRecord['status']): status is ActiveStopState {
+  return status === 'running' || status === 'stopping' || status === 'terminating';
+}
+
+function isActiveStreamRegistryStatus(
+  status: NonNullable<Awaited<ReturnType<typeof readStreamRegistry>>>['status'],
+): status is 'running' | 'stopping' | 'terminating' {
+  return status === 'running' || status === 'stopping' || status === 'terminating';
+}
+
+function buildSessionStopTruth(
+  execution: ChatSessionExecutionRecord | null,
+  capability: StopCapability,
+): Pick<ChatSessionRecord, 'execution_status' | 'termination_state' | 'stop_mode' | 'can_escalate' | 'escalation_reason'> {
+  if (!execution) return {};
+  const active = isActiveStopState(execution.status);
+  const hardTeardownDebt = hasSessionHardTeardownDebt(execution);
+  const stopMode = execution.stopMode ?? (
+    active ? execution.status === 'terminating' ? 'terminate' : 'cancel' : undefined
+  );
+  const canEscalate = active && capability.supportsTerminate && stopMode !== 'terminate';
+  const escalationReason = canEscalate
+    ? undefined
+    : execution.stopEscalationReason ?? (active || hardTeardownDebt ? capability.unavailableReason : undefined);
+  return {
+    execution_status: execution.status,
+    ...(hardTeardownDebt ? { termination_state: 'terminating' as const } : {}),
+    ...(stopMode ? { stop_mode: stopMode } : {}),
+    can_escalate: canEscalate,
+    ...(escalationReason ? { escalation_reason: escalationReason } : {}),
+  };
+}
+
+async function attachSessionStopTruth(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  session: ChatSessionRecord;
+}): Promise<ChatSessionRecord> {
+  const execution = await readSessionExecutionRecord(
+    input.deps.cache,
+    input.workspaceId,
+    input.projectId,
+    input.session.id,
+  );
+  const capability = execution && (isActiveStopState(execution.status) || hasSessionHardTeardownDebt(execution))
+    ? await resolveStopCapability({
+      deps: input.deps,
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      session: input.session,
+      execution,
+      allowAgentLookup: true,
+    })
+    : {
+        supportsTerminate: false,
+      };
+  return {
+    ...input.session,
+    ...buildSessionStopTruth(execution, capability),
+  };
+}
+
+async function requestInternalChatHardTeardown(
+  deps: NodeApiDeps,
+  workspaceId: string,
+  projectId: string,
+  sessionId: string,
+  epoch?: string,
+): Promise<void> {
+  const internalWorkloadCoordinator = resolveInternalWorkloadCoordinator(deps);
+  if (!internalWorkloadCoordinator) return;
+  const workloadId = sanitizeWorkloadId(sessionId);
+  const key = `${workspaceId}/${projectId}/${workloadId}/${epoch ?? ''}`;
+  let promise = chatHardTeardownInFlight.get(key);
+  if (!promise) {
+    promise = internalWorkloadCoordinator.requestHardTeardown({
+      workspaceId,
+      projectId,
+      workloadId,
+      ...(epoch ? { epoch } : {}),
+    });
+    chatHardTeardownInFlight.set(key, promise);
+    void promise.then(
+      () => {
+        if (chatHardTeardownInFlight.get(key) === promise) {
+          chatHardTeardownInFlight.delete(key);
+        }
+      },
+      () => {
+        if (chatHardTeardownInFlight.get(key) === promise) {
+          chatHardTeardownInFlight.delete(key);
+        }
+      },
+    );
+  }
+  await promise;
+}
+
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function dispatchInternalChatHardTeardown(input: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  sessionId: string;
+  epoch?: string;
+}): Promise<void> {
+  const attemptedAt = new Date().toISOString();
+  const claim = await markSessionHardTeardownRequested(input.deps.cache, {
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+    requestedAt: attemptedAt,
+    ...(input.epoch ? { streamId: input.epoch } : {}),
+  });
+  if (!hasIncompleteSessionHardTeardown(claim) || claim.hardTeardownStatus !== 'requested') {
+    return;
+  }
+  const attemptId = claim.hardTeardownAttemptId;
+  const generation = claim.hardTeardownAttemptCount;
+  try {
+    await requestInternalChatHardTeardown(
+      input.deps,
+      input.workspaceId,
+      input.projectId,
+      input.sessionId,
+      input.epoch,
+    );
+    await markSessionHardTeardownReleased(input.deps.cache, {
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      releasedAt: new Date().toISOString(),
+      streamId: claim.streamId,
+      ...(attemptId ? { attemptId } : {}),
+      ...(typeof generation === 'number' ? { generation } : {}),
+    });
+  } catch (error) {
+    const errorMessage = toErrorMessage(error);
+    await markSessionHardTeardownFailed(input.deps.cache, {
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      attemptedAt,
+      errorMessage,
+      streamId: claim.streamId,
+      ...(attemptId ? { attemptId } : {}),
+      ...(typeof generation === 'number' ? { generation } : {}),
+    });
+    console.warn(
+      '[sandbox] requestHardTeardown failed for chat session %s: %s',
+      input.sessionId,
+      errorMessage,
+    );
+  }
+}
 
 function endpointSupportsMultimodal(endpoint: { capabilities?: Array<{ type: string; enabled: boolean }> }): boolean {
   return (
@@ -143,14 +396,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     const items = await deps.chatResourceService.listSessionsForUser(route.workspaceId, route.projectId, user.id);
     const pageItems = items.slice(offset, offset + pageSize);
     const itemsWithRequestDetails = await Promise.all(
-      pageItems.map(async (item) => ({
-        ...item,
-        execution_status: await readSessionStreamState(
-          deps.cache,
-          route.workspaceId,
-          route.projectId,
-          item.id,
-        ) ?? undefined,
+      pageItems.map(async (item) => attachSessionStopTruth({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        session: item,
       })),
     );
     json(res, 200, {
@@ -239,16 +489,12 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
-    const executionStatus = await readSessionStreamState(
-      deps.cache,
-      route.workspaceId,
-      route.projectId,
-      route.sessionId,
-    );
-    json(res, 200, {
-      ...session,
-      execution_status: executionStatus ?? undefined,
-    });
+    json(res, 200, await attachSessionStopTruth({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      session,
+    }));
     return true;
   }
 
@@ -334,6 +580,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   }
 
   if (route.kind === 'chatSessionStop' && method === 'POST') {
+    const requestedMode = parseStopMode(await readBody(req));
+    if (!requestedMode) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_stop_mode_invalid' });
+      return true;
+    }
     const session = await deps.chatResourceService.getSessionForUser(
       route.workspaceId,
       route.projectId,
@@ -344,24 +595,73 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
-    const execution = await requestSessionExecutionStop(deps.cache, {
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      sessionId: route.sessionId,
-      requestedBy: user.id,
-      stopReason: 'session_stop',
-    });
-    const stopped = await stopActiveSessionStreams(
+    const currentExecution = await readSessionExecutionRecord(
       deps.cache,
       route.workspaceId,
       route.projectId,
       route.sessionId,
     );
-    json(res, 202, {
-      success: true,
-      session_id: route.sessionId,
-      state: execution || stopped > 0 ? 'stopping' : 'not_found_or_finished',
+    const capability = await resolveStopCapability({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      session,
+      execution: currentExecution,
+      allowAgentLookup: requestedMode === 'terminate',
     });
+    const effectiveStopMode = resolveEffectiveStopMode(requestedMode, capability, currentExecution);
+    const stopEscalationReason = requestedMode === 'terminate' && effectiveStopMode !== 'terminate'
+      ? capability.unavailableReason
+      : undefined;
+    const stopTransition = await requestSessionExecutionStopTransition(deps.cache, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      sessionId: route.sessionId,
+      requestedBy: user.id,
+      stopReason: 'session_stop',
+      stopMode: effectiveStopMode,
+      ...(stopEscalationReason ? { stopEscalationReason } : {}),
+    });
+    const execution = stopTransition.record;
+    const stopped = await stopActiveSessionStreams(
+      deps.cache,
+      route.workspaceId,
+      route.projectId,
+      route.sessionId,
+      {
+        requestedBy: user.id,
+        stopReason: 'session_stop',
+        stopMode: effectiveStopMode,
+        ...(stopEscalationReason ? { stopEscalationReason } : {}),
+      },
+    );
+    if (
+      stopTransition.hardTeardownDispatchRequired
+      && capability.supportsTerminate
+    ) {
+      await dispatchInternalChatHardTeardown({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        sessionId: route.sessionId,
+        epoch: execution?.streamId ?? currentExecution?.streamId,
+      });
+    }
+    const stopMode = execution?.stopMode ?? effectiveStopMode;
+    const state: StopState = hasIncompleteSessionHardTeardown(execution)
+      ? 'terminating'
+      : execution?.status === 'terminating'
+      ? 'terminating'
+      : execution?.status === 'stopping'
+        ? 'stopping'
+        : stopped > 0
+          ? stopMode === 'terminate' ? 'terminating' : 'stopping'
+          : 'not_found_or_finished';
+    json(res, 202, buildStopResponse({ sessionId: route.sessionId }, {
+      state,
+      stopMode,
+      capability,
+    }));
     return true;
   }
 
@@ -384,7 +684,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     );
     const sharedItems = sharedExecution
       && sharedExecution.streamId
-      && (sharedExecution.status === 'running' || sharedExecution.status === 'stopping')
+      && (sharedExecution.status === 'running' || sharedExecution.status === 'stopping' || sharedExecution.status === 'terminating')
       ? [{
           stream_id: sharedExecution.streamId,
           status: sharedExecution.status,
@@ -806,6 +1106,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   }
 
   if (route.kind === 'chatMessagesStreamStop' && method === 'POST') {
+    const requestedMode = parseStopMode(await readBody(req));
+    if (!requestedMode) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_stop_mode_invalid' });
+      return true;
+    }
     const running = ACTIVE_CHAT_STREAMS.get(route.streamId);
     const registry = await readStreamRegistry(deps.cache, route.streamId);
     const execution = await readSessionExecutionRecord(
@@ -814,51 +1119,118 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.projectId,
       route.sessionId,
     );
-    const canStop =
-      running
-        ? running.workspaceId === route.workspaceId &&
-          running.projectId === route.projectId &&
-          running.sessionId === route.sessionId
-        : execution
-          ? execution.workspaceId === route.workspaceId &&
-            execution.projectId === route.projectId &&
-            execution.sessionId === route.sessionId &&
-            execution.streamId === route.streamId &&
-            (execution.status === 'running' || execution.status === 'stopping')
-        : registry
-          ? registry.workspaceId === route.workspaceId &&
-            registry.projectId === route.projectId &&
-            registry.sessionId === route.sessionId
-          : false;
+    const activeRunning = running &&
+      running.workspaceId === route.workspaceId &&
+      running.projectId === route.projectId &&
+      running.sessionId === route.sessionId &&
+      (running.status === 'running' || running.status === 'stopping' || running.status === 'terminating')
+      ? running
+      : null;
+    const executionCanStop = Boolean(
+      execution &&
+      execution.workspaceId === route.workspaceId &&
+      execution.projectId === route.projectId &&
+      execution.sessionId === route.sessionId &&
+      execution.streamId === route.streamId &&
+      isActiveStopState(execution.status),
+    );
+    const executionHasHardTeardownDebt = Boolean(
+      execution &&
+      execution.workspaceId === route.workspaceId &&
+      execution.projectId === route.projectId &&
+      execution.sessionId === route.sessionId &&
+      execution.streamId === route.streamId &&
+      hasIncompleteSessionHardTeardown(execution),
+    );
+    const registryCanStop = Boolean(
+      !execution &&
+      registry &&
+      registry.workspaceId === route.workspaceId &&
+      registry.projectId === route.projectId &&
+      registry.sessionId === route.sessionId &&
+      isActiveStreamRegistryStatus(registry.status),
+    );
+    const canStop = Boolean(activeRunning) || executionCanStop || registryCanStop || executionHasHardTeardownDebt;
+    let sessionForCapability: ChatSessionRecord | null = null;
+    if (
+      canStop &&
+      requestedMode === 'terminate' &&
+      !(execution?.transport === 'agent_runner' && execution.internalAgent === true) &&
+      deps.chatResourceService
+    ) {
+      sessionForCapability = await deps.chatResourceService.getSessionForUser(
+        route.workspaceId,
+        route.projectId,
+        route.sessionId,
+        user.id,
+      ).catch(() => null);
+    }
+    const capability = await resolveStopCapability({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      session: sessionForCapability,
+      execution,
+      allowAgentLookup: requestedMode === 'terminate',
+    });
     if (!canStop) {
-      json(res, 202, { success: true, stream_id: route.streamId, state: 'not_found_or_finished' });
+      json(res, 202, buildStopResponse({ streamId: route.streamId }, {
+        state: 'not_found_or_finished',
+        stopMode: requestedMode,
+        capability,
+      }));
       return true;
     }
-    await requestSessionExecutionStop(deps.cache, {
+    const effectiveStopMode = resolveEffectiveStopMode(requestedMode, capability, execution);
+    const stopEscalationReason = requestedMode === 'terminate' && effectiveStopMode !== 'terminate'
+      ? capability.unavailableReason
+      : undefined;
+    const stopTransition = await requestSessionExecutionStopTransition(deps.cache, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       sessionId: route.sessionId,
       requestedBy: user.id,
       stopReason: 'user_stop',
+      stopMode: effectiveStopMode,
+      ...(stopEscalationReason ? { stopEscalationReason } : {}),
     });
-    await writeStreamRegistry(
-      deps.cache,
-      {
-        streamId: route.streamId,
+    const activeStatus = effectiveStopMode === 'terminate' ? 'terminating' : 'stopping';
+    if (!executionHasHardTeardownDebt) {
+      await writeStreamRegistry(
+        deps.cache,
+        {
+          streamId: route.streamId,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          sessionId: route.sessionId,
+          status: activeStatus,
+          updatedAt: new Date().toISOString(),
+        },
+        STREAM_REGISTRY_TTL_SECONDS,
+      );
+    }
+    if (activeRunning) {
+      activeRunning.status = activeStatus;
+      activeRunning.stopReason = 'user_stop';
+      activeRunning.abortController.abort();
+    }
+    if (
+      stopTransition.hardTeardownDispatchRequired
+      && capability.supportsTerminate
+    ) {
+      await dispatchInternalChatHardTeardown({
+        deps,
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         sessionId: route.sessionId,
-        status: 'stopping',
-        updatedAt: new Date().toISOString(),
-      },
-      STREAM_REGISTRY_TTL_SECONDS,
-    );
-    if (running) {
-      running.status = 'stopping';
-      running.stopReason = 'user_stop';
-      running.abortController.abort();
+        epoch: route.streamId,
+      });
     }
-    json(res, 202, { success: true, stream_id: route.streamId, state: 'stopping' });
+    json(res, 202, buildStopResponse({ streamId: route.streamId }, {
+      state: executionHasHardTeardownDebt ? 'terminating' : activeStatus,
+      stopMode: effectiveStopMode,
+      capability,
+    }));
     return true;
   }
 

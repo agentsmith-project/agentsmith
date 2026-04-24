@@ -38,6 +38,7 @@ export function deriveChatComposerState(input: ChatComposerStateInput): ChatComp
     || input.streamStatus === 'recovering'
     || input.streamStatus === 'streaming'
     || input.streamStatus === 'stopping'
+    || input.streamStatus === 'terminating'
   ) {
     return 'streaming';
   }

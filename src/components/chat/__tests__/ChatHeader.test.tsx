@@ -3,6 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { ChatHeader } from '../ChatHeader';
 import type { ChatSession, Endpoint } from '@/lib/api/types';
+import {
+  CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT,
+  CHAT_STREAM_ESCALATION_CONFIRMATION_RESPONSE_EVENT,
+  type ChatStreamEscalationConfirmationResponseDetail,
+} from '@/lib/chat/stream-state';
 
 vi.mock('next-intl', () => ({
   useTranslations: (namespace: string) => (key: string) => {
@@ -25,10 +30,17 @@ vi.mock('next-intl', () => ({
         'composer.stop': 'Stop',
         'header.status_stopped': 'Stopped',
         'header.status_error': 'Interrupted',
+        'header.status_terminating': 'Force stopping…',
+        'header.stop_escalation_title': 'Force stop this generation?',
+        'header.stop_escalation_description': 'The generation is still stopping. You can force stop the execution environment before continuing.',
+        'header.stop_escalation_reason': 'Backend reason: {reason}',
+        'header.stop_escalation_confirm': 'Force stop',
+        'header.stop_escalation_cancel': 'Keep waiting',
         'new_thread': 'New Thread',
       },
     };
-    return translations[namespace]?.[key] ?? key;
+    const template = translations[namespace]?.[key] ?? key;
+    return template.replace(/\{(\w+)\}/g, (_, name) => name);
   },
 }));
 
@@ -172,6 +184,12 @@ describe('ChatHeader', () => {
       expect(screen.getByTestId('chat__stream-status')).toHaveTextContent('Interrupted');
     });
 
+    it('should show "Force stopping…" when terminating', () => {
+      render(<ChatHeader {...defaultProps} streamStatus="terminating" />);
+
+      expect(screen.getByTestId('chat__stream-status')).toHaveTextContent('Force stopping…');
+    });
+
     it('should show no status when idle', () => {
       render(<ChatHeader {...defaultProps} streamStatus="idle" />);
 
@@ -180,6 +198,41 @@ describe('ChatHeader', () => {
       expect(screen.queryByText('Stopped')).not.toBeInTheDocument();
       expect(screen.queryByText('Recovering stream...')).not.toBeInTheDocument();
       expect(screen.queryByText('Interrupted')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Stop Escalation Confirmation', () => {
+    it('renders a design-system confirmation and dispatches the user decision', async () => {
+      const user = userEvent.setup();
+      const responses: ChatStreamEscalationConfirmationResponseDetail[] = [];
+      const onResponse = (event: Event) => {
+        responses.push((event as CustomEvent<ChatStreamEscalationConfirmationResponseDetail>).detail);
+      };
+      window.addEventListener(CHAT_STREAM_ESCALATION_CONFIRMATION_RESPONSE_EVENT, onResponse);
+
+      try {
+        render(<ChatHeader {...defaultProps} streamStatus="stopping" />);
+
+        fireEvent(
+          window,
+          new CustomEvent(CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT, {
+            detail: {
+              requestId: 'req_1',
+              sessionId: mockSession.id,
+              reason: 'agent did not acknowledge stop',
+            },
+          }),
+        );
+
+        expect(await screen.findByText('Force stop this generation?')).toBeInTheDocument();
+        expect(screen.getByText('Backend reason: reason')).toBeInTheDocument();
+
+        await user.click(screen.getByTestId('chat__stop-escalation-confirm'));
+
+        expect(responses).toEqual([{ requestId: 'req_1', confirmed: true }]);
+      } finally {
+        window.removeEventListener(CHAT_STREAM_ESCALATION_CONFIRMATION_RESPONSE_EVENT, onResponse);
+      }
     });
   });
 

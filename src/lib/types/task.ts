@@ -113,6 +113,9 @@ export interface Task {
   last_activity_at: string; // ISO 8601
   agent_presence?: 'online' | 'offline' | 'managed' | 'unknown';
   run_state?: TaskRunState;
+  stop_mode?: 'cancel' | 'terminate';
+  can_escalate?: boolean;
+  escalation_reason?: string | null;
   stats?: {
     user_turn_count: number;
     message_count: number;

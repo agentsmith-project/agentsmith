@@ -932,27 +932,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/streams/{streamId}:stop": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: components["parameters"]["projectId"];
-                sessionId: components["parameters"]["sessionId"];
-                streamId: components["parameters"]["streamId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["stopChatStreamByStreamId"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials": {
         parameters: {
             query?: never;
@@ -2684,11 +2663,58 @@ export interface components {
             role: "user" | "assistant" | "system";
         };
         ChatSession: {
+            can_escalate?: boolean;
             endpoint_id?: string;
+            /** @enum {string|null} */
+            escalation_reason?: "STOP_ESCALATION_UNAVAILABLE" | null;
+            /** @enum {string} */
+            execution_status?: "running" | "stopping" | "terminating" | "completed" | "stopped" | "failed";
             external_agent_id?: string;
             id: string;
             model: string;
+            stop_mode?: components["schemas"]["StopMode"];
+            /** @enum {string|null} */
+            termination_state?: "terminating" | null;
             title: string;
+        };
+        ChatSessionStopResponse: {
+            can_escalate: boolean;
+            /** @enum {string|null} */
+            escalation_reason?: "STOP_ESCALATION_UNAVAILABLE" | null;
+            session_id: string;
+            state: components["schemas"]["ChatStopState"];
+            status: components["schemas"]["ChatStopState"];
+            stop_mode: components["schemas"]["StopMode"];
+            /** @enum {boolean} */
+            success: true;
+        };
+        ChatStopRequest: {
+            /** @description Authoritative stop mode used by the backend. */
+            mode?: components["schemas"]["StopMode"];
+            /** @description Compatibility mirror sent by older clients; backend behavior is governed by `mode`. */
+            stop_mode?: components["schemas"]["StopMode"];
+        };
+        /** @enum {string} */
+        ChatStopState: "stopping" | "terminating" | "not_found_or_finished";
+        ChatStreamConflictResponse: {
+            /** @enum {string} */
+            error_code: "CHAT_SESSION_STREAM_CONFLICT";
+            hard_teardown_status?: components["schemas"]["HardTeardownDebtStatus"];
+            /** @enum {string} */
+            message: "chat_session_stream_conflict";
+            /** @enum {string} */
+            reason?: "hard_teardown_pending";
+        };
+        ChatStreamStopResponse: {
+            can_escalate: boolean;
+            /** @enum {string|null} */
+            escalation_reason?: "STOP_ESCALATION_UNAVAILABLE" | null;
+            state: components["schemas"]["ChatStopState"];
+            status: components["schemas"]["ChatStopState"];
+            stop_mode: components["schemas"]["StopMode"];
+            stream_id: string;
+            /** @enum {boolean} */
+            success: true;
         };
         CreateAgentKeyResponse: {
             id: string;
@@ -2867,6 +2893,8 @@ export interface components {
             name: string;
             size_bytes?: number;
         };
+        /** @enum {string} */
+        HardTeardownDebtStatus: "pending" | "requested" | "failed";
         LimitCheckRequest: {
             /** @description Estimated tokens/bytes for the operation */
             estimated_cost?: number;
@@ -3152,6 +3180,8 @@ export interface components {
             /** @description Short-lived token (UUID) */
             ticket: string;
         };
+        /** @enum {string} */
+        StopMode: "cancel" | "terminate";
         StorageCredentialExchangeResponse: {
             client_mount_access: {
                 /** Format: date-time */
@@ -3167,6 +3197,48 @@ export interface components {
                 recommended_mount_path: string;
                 storage_bucket_url?: string;
             };
+        };
+        /** @enum {string} */
+        TaskCancelRunEscalationReason: "already_terminating" | "unmanaged_runner" | "unsupported_runner";
+        TaskCancelRunRequest: {
+            /** @description Authoritative stop mode used by the backend. */
+            mode?: components["schemas"]["StopMode"];
+            /** @description Compatibility mirror sent by older clients; backend behavior is governed by `mode`. */
+            stop_mode?: components["schemas"]["StopMode"];
+        };
+        TaskCancelRunResponse: {
+            can_escalate: boolean;
+            escalation_reason?: components["schemas"]["TaskCancelRunEscalationReason"] | null;
+            request_id: string | null;
+            run_id: string;
+            status: components["schemas"]["TaskCancelRunStatus"];
+            stop_mode: components["schemas"]["StopMode"];
+            task_id: string;
+        };
+        /** @enum {string} */
+        TaskCancelRunStatus: "cancelling" | "terminating";
+        TaskCancelRunUnavailableResponse: {
+            /** @enum {boolean} */
+            can_escalate: false;
+            /** @enum {string} */
+            error_code: "STOP_ESCALATION_UNAVAILABLE";
+            escalation_reason: components["schemas"]["TaskCancelRunEscalationReason"];
+            /** @enum {string} */
+            message: "stop_escalation_unavailable";
+            request_id: string | null;
+            run_id: string | null;
+            status?: components["schemas"]["TaskCancelRunStatus"];
+            stop_mode?: components["schemas"]["StopMode"];
+            task_id: string;
+        };
+        TaskStreamConflictResponse: {
+            /** @enum {string} */
+            error_code: "TASK_STREAM_CONFLICT";
+            hard_teardown_status?: components["schemas"]["HardTeardownDebtStatus"];
+            /** @enum {string} */
+            message: "task_stream_conflict";
+            /** @enum {string} */
+            reason?: "hard_teardown_pending";
         };
         TaskTraceEvent: {
             /** Format: date-time */
@@ -5298,6 +5370,15 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            /** @description CHAT_SESSION_STREAM_CONFLICT */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatStreamConflictResponse"];
+                };
+            };
         };
     };
     post_chatMessagesStreamAttach: {
@@ -5369,21 +5450,26 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["ChatStopRequest"];
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Legacy stop accepted response */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ChatStreamStopResponse"];
+                };
+            };
+            /** @description Stop accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatStreamStopResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -5431,14 +5517,20 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ChatStopRequest"];
+            };
+        };
         responses: {
             /** @description Stop accepted */
             202: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChatSessionStopResponse"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -5463,31 +5555,6 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    stopChatStreamByStreamId: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: components["parameters"]["projectId"];
-                sessionId: components["parameters"]["sessionId"];
-                streamId: components["parameters"]["streamId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Stop accepted */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -7845,7 +7912,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TaskCancelRunRequest"];
+            };
+        };
         responses: {
             /** @description Cancel request accepted */
             202: {
@@ -7853,9 +7924,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["TaskCancelRunResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -7872,7 +7941,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"] | components["schemas"]["TaskCancelRunUnavailableResponse"];
+                };
             };
         };
     };
@@ -8003,7 +8074,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["TaskStreamConflictResponse"] | components["schemas"]["ApiError"];
+                };
             };
             /** @description Validation error (for example TASK_AGENT_ENDPOINT_NOT_CONFIGURED) */
             422: {

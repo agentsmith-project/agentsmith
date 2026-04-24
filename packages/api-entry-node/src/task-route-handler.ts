@@ -84,11 +84,13 @@ import {
   clearNotebookTaskRunCoordination,
   finalizeNotebookTaskRun,
   getNotebookRunOwnerInstanceId,
-  getNotebookTaskRunCancellationRequestForRun,
+  getNotebookTaskRunStopRequestForRun,
   getNotebookTaskRunState,
+  isNotebookTaskRunOwnerHeartbeatFresh,
   markNotebookTaskRunDispatched,
   refreshNotebookTaskRunLease,
-  requestNotebookTaskRunCancellation,
+  requestNotebookTaskRunStop,
+  type NotebookTaskRunStopMode,
 } from './notebook-task/task-run-coordination.js';
 import {
   ACTIVE_RUNS_BY_TASK,
@@ -136,6 +138,7 @@ function debugNotebookExecution(message: string, extra?: Record<string, unknown>
 
 const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
 const NOTEBOOK_RUN_CANCEL_POLL_MS = 1_000;
+const NOTEBOOK_RUN_OWNER_STALE_AFTER_MS = (NOTEBOOK_RUN_LEASE_HEARTBEAT_MS * 2) + 5_000;
 
 type InternalTaskWorkloadIdentity = {
   workspaceId: string;
@@ -144,6 +147,13 @@ type InternalTaskWorkloadIdentity = {
   userId: string;
   agentId: string;
 };
+
+function parseNotebookRunStopMode(raw: unknown): NotebookTaskRunStopMode | null {
+  if (raw === undefined || raw === null || raw === '') {
+    return 'cancel';
+  }
+  return raw === 'terminate' ? 'terminate' : raw === 'cancel' ? 'cancel' : null;
+}
 
 const registeredInternalTerminalLifecycleServices = new Set<object>();
 
@@ -1435,17 +1445,28 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     let runId: string | null = null;
     let sharedRunState = null as ReturnType<typeof buildNotebookTaskRunState> | null;
     let runLaunchCommitted = false;
-    let runFinalizeStarted = false;
+    let localRunTrackingReleased = false;
+    let sharedRunControlCleared = false;
     let heartbeatTimer: NodeJS.Timeout | undefined;
     let cancelSyncTimer: NodeJS.Timeout | undefined;
-    const finalizeAcquiredRun = async (): Promise<void> => {
-      if (role !== 'user' || !runId || runFinalizeStarted) return;
-      runFinalizeStarted = true;
+    const releaseLocalRunTracking = (): void => {
+      if (role !== 'user' || localRunTrackingReleased) return;
+      localRunTrackingReleased = true;
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (cancelSyncTimer) clearInterval(cancelSyncTimer);
       ACTIVE_RUNS_BY_TASK.delete(route.taskId);
       ACTIVE_RUN_CANCEL_BY_TASK.delete(route.taskId);
       ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.delete(route.taskId);
+    };
+    const finalizeAcquiredRun = async (input?: {
+      clearSharedControl?: boolean;
+    }): Promise<void> => {
+      if (role !== 'user' || !runId) return;
+      releaseLocalRunTracking();
+      if (!input?.clearSharedControl || sharedRunControlCleared) {
+        return;
+      }
+      sharedRunControlCleared = true;
       try {
         await finalizeNotebookTaskRun(deps.cache, {
           taskId: route.taskId,
@@ -1514,8 +1535,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         await deps.docStore.upsert<TaskRecord>(notebookTasksCollection(route.workspaceId), task.id, task);
         ACTIVE_RUNS_BY_TASK.add(route.taskId);
 
-        const syncSharedCancellationRequest = async (): Promise<boolean> => {
-          const marker = await getNotebookTaskRunCancellationRequestForRun(deps.cache, {
+        const syncSharedStopRequest = async (): Promise<boolean> => {
+          const marker = await getNotebookTaskRunStopRequestForRun(deps.cache, {
             taskId: route.taskId,
             runId,
           });
@@ -1544,7 +1565,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           void refreshNotebookTaskRunLease(deps.cache, sharedRunState).catch(() => undefined);
         }, NOTEBOOK_RUN_LEASE_HEARTBEAT_MS);
         cancelSyncTimer = setInterval(() => {
-          void syncSharedCancellationRequest().catch(() => undefined);
+          void syncSharedStopRequest().catch(() => undefined);
         }, NOTEBOOK_RUN_CANCEL_POLL_MS);
 
         const runPromise = runNotebookTaskWithExecutionAgent({
@@ -1585,11 +1606,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
               requestCancel: () => {
                 const requestedAt = nowIso();
                 ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.set(taskId, { runId, requestedAt });
-                void requestNotebookTaskRunCancellation(deps.cache, {
-                  task_id: taskId,
-                  run_id: runId,
-                  requested_at: requestedAt,
-                  actor_user_id: user.id,
+                void requestNotebookTaskRunStop(deps.cache, {
+                  taskId,
+                  runId,
+                  mode: 'cancel',
+                  requestedAt,
+                  actorUserId: user.id,
+                  delivery: 'owner_attached',
                 });
                 cancel();
               },
@@ -1607,11 +1630,15 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
               requestId,
               dispatchedAt,
             });
-            void syncSharedCancellationRequest();
+            void syncSharedStopRequest();
           },
-          onFinalize: async (_taskId, finalizedRunId) => {
+          onFinalize: async (_taskId, finalizedRunId, summary) => {
             if (finalizedRunId !== runId) return;
-            await finalizeAcquiredRun();
+            if (summary.durableTerminalTruth) {
+              await finalizeAcquiredRun({ clearSharedControl: true });
+              return;
+            }
+            await finalizeAcquiredRun({ clearSharedControl: false });
           },
           isCancellationRequested: async () => {
             const marker = ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.get(route.taskId);
@@ -1619,7 +1646,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
               return true;
             }
             try {
-              return await syncSharedCancellationRequest();
+              return await syncSharedStopRequest();
             } catch {
               return false;
             }
@@ -1644,7 +1671,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
             run_id: runId,
             error: error instanceof Error ? error.message : 'run_promise_rejected',
           });
-          await finalizeAcquiredRun();
+          await finalizeAcquiredRun({ clearSharedControl: false });
         });
 
         emitNotebookTaskEvent(route.taskId, { type: 'message', data: message });
@@ -1666,7 +1693,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     } catch (error) {
       if (!runLaunchCommitted) {
-        await finalizeAcquiredRun();
+        await finalizeAcquiredRun({ clearSharedControl: true });
       }
       throw error;
     }
@@ -1679,27 +1706,81 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
     }
+    const body = asObject(await readBody(req));
+    const requestedMode = parseNotebookRunStopMode(body.mode);
+    if (!requestedMode) {
+      json(res, 422, {
+        error_code: 'VALIDATION_ERROR',
+        message: 'task_run_stop_mode_invalid',
+        field: 'mode',
+      });
+      return true;
+    }
     const active = ACTIVE_RUN_CANCEL_BY_TASK.get(route.taskId);
     const sharedActive = await getNotebookTaskRunState(deps.cache, route.taskId);
     if (!active && !sharedActive) {
       json(res, 409, { error_code: 'TASK_RUN_NOT_ACTIVE', message: 'task_run_not_active' });
       return true;
     }
+    if (sharedActive?.phase === 'finalizing') {
+      json(res, 409, { error_code: 'TASK_RUN_FINALIZING', message: 'task_run_finalizing' });
+      return true;
+    }
+    const agent = await deps.agentResourceService.getAgent(
+      route.workspaceId,
+      route.projectId,
+      task.agent_id,
+    );
+    const ownerFresh = sharedActive
+      ? isNotebookTaskRunOwnerHeartbeatFresh(sharedActive, {
+        maxAgeMs: NOTEBOOK_RUN_OWNER_STALE_AFTER_MS,
+      })
+      : true;
+    const resolvedMode: NotebookTaskRunStopMode = (
+      requestedMode === 'terminate'
+      || (!active && sharedActive && !ownerFresh && agent?.mode === 'internal')
+        ? 'terminate'
+        : 'cancel'
+    );
+    if (!active && sharedActive && !ownerFresh && agent?.mode !== 'internal') {
+      json(res, 409, {
+        error_code: 'TASK_RUN_OWNER_UNAVAILABLE',
+        message: 'task_run_owner_unavailable',
+      });
+      return true;
+    }
     const runId = active?.runId ?? sharedActive?.run_id ?? 'unknown';
     const requestId = active?.requestId ?? sharedActive?.request_id ?? null;
     const requestedAt = nowIso();
     ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.set(route.taskId, { runId, requestedAt });
-    await requestNotebookTaskRunCancellation(deps.cache, {
-      task_id: route.taskId,
-      run_id: runId,
-      requested_at: requestedAt,
-      actor_user_id: user.id,
+    const delivery = resolvedMode === 'terminate' && agent?.mode === 'internal'
+      ? 'internal_teardown_requested'
+      : active
+        ? 'owner_attached'
+        : 'shared_owner';
+    await requestNotebookTaskRunStop(deps.cache, {
+      taskId: route.taskId,
+      runId,
+      mode: resolvedMode,
+      requestedAt,
+      actorUserId: user.id,
+      delivery,
     });
     active?.requestCancel();
+    if (resolvedMode === 'terminate' && agent?.mode === 'internal') {
+      await maybeReleaseInternalAgentWorkload(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        taskId: route.taskId,
+        userId: user.id,
+        agentId: task.agent_id,
+      }, { force: true });
+    }
     debugNotebookExecution('task_run_cancel_requested', {
       task_id: route.taskId,
       run_id: runId,
       request_id: requestId,
+      stop_mode: resolvedMode,
       actor_user_id: user.id,
     });
     void writeProjectAuditEvent(deps, {
@@ -1712,13 +1793,15 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       metadata: {
         run_id: runId,
         request_id: requestId,
+        stop_mode: resolvedMode,
       },
     });
     json(res, 202, {
-      status: 'cancelling',
+      status: resolvedMode === 'terminate' ? 'terminating' : 'cancelling',
       task_id: route.taskId,
       run_id: runId,
       request_id: requestId,
+      stop_mode: resolvedMode,
     });
     return true;
   }

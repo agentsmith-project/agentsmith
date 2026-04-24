@@ -5,6 +5,11 @@ import { listAuditEvents } from './audit-usage-store.js';
 import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestrator.js';
 import { InternalWorkloadCoordinator } from './internal-workload-coordinator.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import {
+  acquireNotebookTaskRunLease,
+  buildNotebookTaskRunState,
+  getNotebookTaskRunState,
+} from './notebook-task/task-run-coordination.js';
 
 function createDeferred<T = void>(): {
   promise: Promise<T>;
@@ -283,6 +288,142 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       'emit_message',
       'emit_task_update',
     ]);
+  });
+
+  it('marks the shared run as finalizing instead of clearing it to idle when terminal truth persistence fails', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const originalUpsert = docStore.upsert.bind(docStore);
+    docStore.upsert = async (collection, id, doc) => {
+      if (
+        collection === 'project_task_messages'
+        && id === 'msg_finalizing_failure'
+        && typeof doc === 'object'
+        && doc !== null
+        && !Array.isArray(doc)
+        && (doc as { role?: unknown }).role === 'agent'
+        && typeof (doc as { content?: unknown }).content === 'string'
+        && ((doc as { content: string }).content.length > 0)
+      ) {
+        throw new Error('final_terminal_truth_persist_failed');
+      }
+      return originalUpsert(collection, id, doc);
+    };
+
+    const cache = new InMemoryCache();
+    const deps = {
+      cache,
+      docStore,
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_finalizing_failure',
+          status: 'enabled',
+          mode: 'external',
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_finalizing_failure',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_finalizing_failure',
+          workspace_id: 'ws_finalizing_failure',
+          project_id: 'proj_finalizing_failure',
+          status: 'active',
+          model: 'placeholder-model',
+          credential_ref: 'cred_finalizing_failure',
+          name: 'endpoint-finalizing-failure',
+          type: 'openai',
+          upstream_protocol: 'openai_chat_completions',
+          base_url: 'https://example.com',
+          model_profile: {
+            max_context_tokens: 128000,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest: vi.fn(async () => ({
+          requestId: 'req_finalizing_failure',
+          cancel: () => undefined,
+          stream: (async function* stream() {
+            yield { type: 'delta', delta: 'final answer' } as const;
+            yield { type: 'done', finish_reason: 'stop', usage_tokens: 1 } as const;
+          })(),
+        })),
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_finalizing_failure',
+      workspace_id: 'ws_finalizing_failure',
+      project_id: 'proj_finalizing_failure',
+      owner_user_id: 'user_finalizing_failure',
+      title: 'finalizing failure task',
+      agent_name: 'external agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_finalizing_failure',
+    };
+    const assistantMessage = {
+      id: 'msg_finalizing_failure',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    await expect(acquireNotebookTaskRunLease(cache, buildNotebookTaskRunState({
+      taskId: task.id,
+      runId: 'run_finalizing_failure',
+      startedAt: '2026-03-18T06:30:00.000Z',
+    }))).resolves.toBe(true);
+
+    const finalizeCalls: Array<{ durableTerminalTruth: boolean }> = [];
+    await runNotebookTaskWithExecutionAgent({
+      deps,
+      task,
+      assistantMessage,
+      agentId: 'agent_finalizing_failure',
+      user: { id: 'user_finalizing_failure', name: 'Finalizing Failure User', email: 'failure@example.com' },
+      publicBaseUrl: 'http://localhost:20000',
+      buildRunId: () => 'run_finalizing_failure',
+      buildProxyUsername: () => 'finalizing_failure_user',
+      mapTaskMessagesForExecution: () => [],
+      updateTaskActivity: () => undefined,
+      emitTaskEvent: () => undefined,
+      onFinalize: (_taskId, _runId, summary) => {
+        finalizeCalls.push(summary);
+      },
+      debugLog: () => undefined,
+      taskCollections: {
+        tasks: 'project_tasks',
+        messages: 'project_task_messages',
+      },
+      createTaskArtifact: async () => ({
+        id: 'artifact_finalizing_failure',
+        task_id: task.id,
+        type: 'file',
+        created_at: new Date().toISOString(),
+      }),
+    });
+
+    expect(finalizeCalls).toEqual([
+      expect.objectContaining({ durableTerminalTruth: false }),
+    ]);
+    await expect(getNotebookTaskRunState(cache, task.id)).resolves.toMatchObject({
+      run_id: 'run_finalizing_failure',
+      phase: 'finalizing',
+      finalization: {
+        status: 'persist_failed',
+        error_code: 'AGENT_FINALIZE_PERSIST_FAILED',
+      },
+    });
   });
 
   it('uses internal execution api base derived from agent execution websocket base', async () => {

@@ -22,6 +22,7 @@ vi.mock('next-intl', () => ({
         'header.no_active_thread_hint': 'Create or select a thread first, then choose an execution target and send messages',
         'header.status_generating': 'Generating…',
         'header.status_recovering': 'Recovering stream...',
+        'composer.stop': 'Stop',
         'header.status_stopped': 'Stopped',
         'header.status_error': 'Interrupted',
         'new_thread': 'New Thread',
@@ -153,6 +154,12 @@ describe('ChatHeader', () => {
       expect(screen.getByTestId('chat__stream-status')).toHaveTextContent('Recovering stream...');
     });
 
+    it('should show "Stop…" when stopping', () => {
+      render(<ChatHeader {...defaultProps} streamStatus="stopping" />);
+
+      expect(screen.getByTestId('chat__stream-status')).toHaveTextContent('Stop…');
+    });
+
     it('should show "Stopped" when stopped', () => {
       render(<ChatHeader {...defaultProps} streamStatus="stopped" />);
 
@@ -169,6 +176,7 @@ describe('ChatHeader', () => {
       render(<ChatHeader {...defaultProps} streamStatus="idle" />);
 
       expect(screen.queryByText('Generating…')).not.toBeInTheDocument();
+      expect(screen.queryByText('Stop…')).not.toBeInTheDocument();
       expect(screen.queryByText('Stopped')).not.toBeInTheDocument();
       expect(screen.queryByText('Recovering stream...')).not.toBeInTheDocument();
       expect(screen.queryByText('Interrupted')).not.toBeInTheDocument();

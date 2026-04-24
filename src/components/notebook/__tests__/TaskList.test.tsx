@@ -22,6 +22,9 @@ vi.mock('next-intl', () => ({
       'agent_unknown': 'Agent Unknown',
       'agent_presence_not_reported': 'Presence not reported',
       'run_running': 'Running',
+      'run_cancelling': 'Stopping',
+      'run_terminating': 'Terminating',
+      'run_finalizing': 'Saving',
       'last_activity': 'Last activity',
       'created_at': 'Created',
     };
@@ -291,6 +294,30 @@ describe('TaskList', () => {
       expect(screen.getByText('Turns 3')).toBeInTheDocument();
       expect(screen.getByText('Artifacts 2')).toBeInTheDocument();
       expect(screen.getByText('Inputs 2')).toBeInTheDocument();
+    });
+
+    it('renders authoritative run-state badges for stopping and finalizing tasks', () => {
+      vi.mocked(useTasks).mockReturnValue({
+        data: {
+          items: [
+            { ...mockTasks[0], id: 'task-cancelling', title: 'Stopping Task', run_state: 'cancelling' },
+            { ...mockTasks[1], id: 'task-terminating', title: 'Terminating Task', run_state: 'terminating' },
+            { ...mockTasks[2], id: 'task-finalizing', title: 'Saving Task', run_state: 'finalizing' },
+          ],
+          total: 3,
+          page: 1,
+          page_size: 10,
+        },
+        isLoading: false,
+      } as any);
+
+      render(<TaskList workspaceId={mockWorkspaceId} projectId={mockProjectId} canCreateTask={true} />, {
+        wrapper,
+      });
+
+      expect(within(getTaskCardSurface('task-cancelling')).getByText('Stopping')).toBeInTheDocument();
+      expect(within(getTaskCardSurface('task-terminating')).getByText('Terminating')).toBeInTheDocument();
+      expect(within(getTaskCardSurface('task-finalizing')).getByText('Saving')).toBeInTheDocument();
     });
 
     it('renders last activity labels with relative viewer-local text and absolute metadata', () => {

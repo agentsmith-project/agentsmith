@@ -5,6 +5,16 @@ import type { TaskListItem, TaskRecord } from './task-models.js';
 import { loadTaskArtifacts, loadTaskMessages } from './task-store.js';
 import { getTaskArtifacts, getTaskMessages } from './task-runtime-state.js';
 
+function mapNotebookRunPhaseToTaskRunState(
+  activeRun: Awaited<ReturnType<typeof getNotebookTaskRunState>>,
+): TaskListItem['run_state'] {
+  if (!activeRun) return 'idle';
+  if (activeRun.phase === 'cancelling') return 'cancelling';
+  if (activeRun.phase === 'terminating') return 'terminating';
+  if (activeRun.phase === 'finalizing') return 'finalizing';
+  return 'running';
+}
+
 export async function buildTaskRealtimeView(
   deps: NodeApiDeps,
   workspaceId: string,
@@ -28,7 +38,7 @@ export async function buildTaskRealtimeView(
   return {
     ...task,
     agent_presence: agentPresence,
-    run_state: activeRun ? 'running' : 'idle',
+    run_state: mapNotebookRunPhaseToTaskRunState(activeRun),
     stats: {
       user_turn_count: userTurnCount,
       message_count: messages.length,

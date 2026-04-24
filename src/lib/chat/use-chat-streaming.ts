@@ -191,6 +191,18 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     });
   }, [clearStreamState, setStreamState]);
 
+  const invalidateSessionTruth = useCallback((sessionId: string) => {
+    queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, sessionId) });
+    queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
+  }, [projectId, queryClient, workspaceId]);
+
+  const markSessionStopping = useCallback((sessionId: string) => {
+    setSessionStreamState(sessionId, (prev) => ({
+      status: 'stopping',
+      assistant: prev.assistant ?? null,
+    }));
+  }, [setSessionStreamState]);
+
   useEffect(() => {
     const sessionsById = new Map(sessions.map((session) => [session.id, session]));
     for (const [sessionId, state] of Object.entries(streamStateBySession)) {
@@ -377,13 +389,17 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
             if (streamStillActive()) {
               setSessionStreamState(session.id, { status: 'idle', assistant: null });
             }
-            queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, session.id) });
-            queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
+            invalidateSessionTruth(session.id);
           } catch (e: unknown) {
             if (controller.signal.aborted) {
               // Detaching shouldn't be treated as user stop; let execution_status drive indicators.
               if (streamStillActive()) {
-                setSessionStreamState(session.id, { status: 'idle', assistant: null });
+                const currentState = useChatStreamStore.getState().streamStateBySession[session.id];
+                if (currentState?.status === 'stopping') {
+                  markSessionStopping(session.id);
+                } else {
+                  setSessionStreamState(session.id, { status: 'idle', assistant: null });
+                }
               }
               return;
             }
@@ -391,8 +407,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
             // In that case we silently fall back to refetching messages, instead of showing a scary error.
             if (e instanceof ApiError && e.errorCode === 'RESOURCE_NOT_FOUND') {
               setSessionStreamState(session.id, { status: 'idle', assistant: null });
-              queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, session.id) });
-              queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
+              invalidateSessionTruth(session.id);
               return;
             }
             const errorCode = mapStreamErrorCode(e);
@@ -431,6 +446,8 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     upsertStreamAssistantToCache,
     workspaceId,
     chatAPI,
+    invalidateSessionTruth,
+    markSessionStopping,
     setSessionStreamState,
     setStreamIdForSession,
     streamIdBySession,
@@ -443,39 +460,45 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
   ): Promise<boolean> => {
     const streamId = streamIdsRef.current.get(sessionId) ?? streamIdBySession[sessionId] ?? null;
     const controller = streamControllersRef.current.get(sessionId);
-    if (!streamId && !controller) {
+    const currentState = useChatStreamStore.getState().streamStateBySession[sessionId];
+    if (!streamId) {
+      let response: { success: true; session_id: string; state: 'stopping' | 'not_found_or_finished' };
       try {
-        await chatAPI.stopSessionStream(workspaceId, projectId, sessionId);
+        response = await chatAPI.stopSessionStream(workspaceId, projectId, sessionId);
       } catch {
         toast.error(reason === 'replace' ? messages.stopRequiredBeforeReplaceFailed : messages.stopFailedRetry);
         return false;
       }
-      setSessionStreamState(sessionId, {
-        status: reason === 'user' ? 'stopped' : 'idle',
-        assistant: null,
-      });
-      queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, sessionId) });
-      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
+      invalidateSessionTruth(sessionId);
+      if (response.state === 'stopping') {
+        controller?.abort();
+        streamControllersRef.current.delete(sessionId);
+        markSessionStopping(sessionId);
+        return reason !== 'replace';
+      }
       return true;
     }
 
+    let response: { success: true; stream_id: string; state: 'stopping' | 'not_found_or_finished' } | null = null;
     if (streamId) {
       try {
-        await chatAPI.stopStream(workspaceId, projectId, sessionId, streamId);
+        response = await chatAPI.stopStream(workspaceId, projectId, sessionId, streamId);
       } catch {
         toast.error(reason === 'replace' ? messages.stopRequiredBeforeReplaceFailed : messages.stopFailedRetry);
         return false;
       }
     }
-    controller?.abort();
-    setStreamIdForSession(sessionId, null);
-    streamControllersRef.current.delete(sessionId);
-    setSessionStreamState(sessionId, {
-      status: reason === 'user' ? 'stopped' : 'idle',
-      assistant: null,
-    });
-    queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, sessionId) });
-    queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
+    invalidateSessionTruth(sessionId);
+    if (response?.state === 'stopping') {
+      controller?.abort();
+      setStreamIdForSession(sessionId, null);
+      streamControllersRef.current.delete(sessionId);
+      setSessionStreamState(sessionId, {
+        status: 'stopping',
+        assistant: currentState?.assistant ?? null,
+      });
+      return reason !== 'replace';
+    }
     return true;
   };
 
@@ -671,23 +694,25 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
         setSessionStreamState(runArgs.sessionId, { status: 'idle', assistant: null });
       }
 
-      queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, runArgs.sessionId) });
-      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
+      invalidateSessionTruth(runArgs.sessionId);
     } catch (e: unknown) {
       if (controller.signal.aborted) {
         if (streamStillActive()) {
-          setSessionStreamState(runArgs.sessionId, { status: 'stopped', assistant: null });
+          const currentState = useChatStreamStore.getState().streamStateBySession[runArgs.sessionId];
+          if (currentState?.status === 'stopping') {
+            markSessionStopping(runArgs.sessionId);
+          } else {
+            setSessionStreamState(runArgs.sessionId, { status: 'stopped', assistant: null });
+          }
         }
-        queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, runArgs.sessionId) });
-        queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
+        invalidateSessionTruth(runArgs.sessionId);
         return;
       }
       const errorCode = mapStreamErrorCode(e);
       const errorMessage = mapStreamErrorMessage(e, messages);
       setSessionStreamState(runArgs.sessionId, { status: 'error', assistant: null, errorCode, errorMessage });
       toast.error(errorMessage);
-      queryClient.invalidateQueries({ queryKey: chatMessagesKey(workspaceId, projectId, runArgs.sessionId) });
-      queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
+      invalidateSessionTruth(runArgs.sessionId);
     } finally {
       if (streamControllersRef.current.get(runArgs.sessionId) === controller) {
         streamControllersRef.current.delete(runArgs.sessionId);

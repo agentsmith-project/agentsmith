@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { ChatResourceService } from './chat-resource-service.js';
 import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
-import { ACTIVE_CHAT_STREAMS } from './chat-stream-state.js';
+import { ACTIVE_CHAT_STREAMS, writeSessionExecutionRecord } from './chat-stream-state.js';
 import { InternalWorkloadCoordinator } from './internal-workload-coordinator.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import type { NodeApiDeps } from './node-api-deps.js';
@@ -113,5 +113,99 @@ describe('handleChatNonStreamRoute delete lifecycle', () => {
     });
     expect(internalWorkloadCoordinator.readSnapshotForTests()).toEqual([]);
     await internalWorkloadCoordinator.shutdown();
+  });
+});
+
+describe('handleChatNonStreamRoute shared execution truth', () => {
+  it('stops a session and lists streams from the shared execution record without a local active stream', async () => {
+    const cache = new InMemoryCache();
+    const docStore = new InMemoryJsonDocStore();
+    const chatResourceService = new ChatResourceService(docStore);
+    const session = await chatResourceService.createSession({
+      workspaceId: 'ws_chat_shared',
+      projectId: 'proj_chat_shared',
+      ownerUserId: 'user_chat_shared',
+      model: 'deepseek-chat',
+      endpointId: 'ep_chat_shared',
+      title: 'Shared Execution Session',
+    });
+    await writeSessionExecutionRecord(
+      cache,
+      {
+        workspaceId: session.workspace_id,
+        projectId: session.project_id,
+        sessionId: session.id,
+        streamId: 'stream_shared_truth',
+        ownerInstanceId: 'api-remote',
+        transport: 'direct_provider',
+        status: 'running',
+        phase: 'streaming',
+        startedAt: '2026-04-23T12:00:00.000Z',
+        updatedAt: '2026-04-23T12:00:00.000Z',
+        endpointId: session.endpoint_id,
+      },
+      60,
+    );
+
+    const deps = {
+      cache,
+      docStore,
+      chatResourceService,
+    } as unknown as NodeApiDeps;
+
+    const stopRes = {} as http.ServerResponse;
+    const stopJson = vi.fn();
+    await expect(handleChatNonStreamRoute({
+      route: {
+        kind: 'chatSessionStop',
+        workspaceId: session.workspace_id,
+        projectId: session.project_id,
+        sessionId: session.id,
+      },
+      method: 'POST',
+      req: { headers: {} } as http.IncomingMessage,
+      res: stopRes,
+      deps,
+      user: { id: session.owner_user_id, name: 'Shared Stop User', email: 'shared-stop@example.com' },
+      requestUrl: new URL(`http://localhost/api/v1/workspaces/${session.workspace_id}/projects/${session.project_id}/chat/sessions/${session.id}/stop`),
+      json: stopJson,
+      readBody: async () => ({}),
+    })).resolves.toBe(true);
+
+    expect(stopJson).toHaveBeenCalledWith(stopRes, 202, {
+      success: true,
+      session_id: session.id,
+      state: 'stopping',
+    });
+
+    const listRes = {} as http.ServerResponse;
+    const listJson = vi.fn();
+    await expect(handleChatNonStreamRoute({
+      route: {
+        kind: 'chatSessionStreams',
+        workspaceId: session.workspace_id,
+        projectId: session.project_id,
+        sessionId: session.id,
+      },
+      method: 'GET',
+      req: { headers: {} } as http.IncomingMessage,
+      res: listRes,
+      deps,
+      user: { id: session.owner_user_id, name: 'Shared Stop User', email: 'shared-stop@example.com' },
+      requestUrl: new URL(`http://localhost/api/v1/workspaces/${session.workspace_id}/projects/${session.project_id}/chat/sessions/${session.id}/streams`),
+      json: listJson,
+      readBody: async () => ({}),
+    })).resolves.toBe(true);
+
+    expect(listJson).toHaveBeenCalledWith(listRes, 200, {
+      items: [
+        {
+          stream_id: 'stream_shared_truth',
+          status: 'stopping',
+          started_at: '2026-04-23T12:00:00.000Z',
+        },
+      ],
+      total: 1,
+    });
   });
 });

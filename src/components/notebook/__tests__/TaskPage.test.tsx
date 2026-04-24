@@ -179,6 +179,16 @@ vi.mock('next-intl', () => ({
       'notebook.task.terminal_recovery_show': 'Reopen Terminal Workspace',
       'notebook.task.terminal_hidden_active_title': 'Terminal session still active',
       'notebook.task.terminal_hidden_failed_title': 'Terminal needs recovery',
+      'notebook.conversation.run_cancel_requested': 'Cancel requested. Waiting for the agent to stop the current run.',
+      'notebook.conversation.run_cancelling_title': 'Stop requested',
+      'notebook.conversation.run_cancelling_description': 'Waiting for the agent to stop the current run.',
+      'notebook.conversation.run_terminating_title': 'Stopping execution',
+      'notebook.conversation.run_terminating_description': 'Ending the current execution environment before the next action can start.',
+      'notebook.conversation.run_finalizing_title': 'Saving final results',
+      'notebook.conversation.run_finalizing_description': 'The run has ended. Saving the final answer and artifacts.',
+      'notebook.conversation.input_placeholder_cancelling': 'Wait for the current run to stop before sending another message.',
+      'notebook.conversation.input_placeholder_terminating': 'Wait for the current execution environment to finish stopping before sending another message.',
+      'notebook.conversation.input_placeholder_finalizing': 'Wait for the final results to finish saving before sending another message.',
     };
     const template = dict[scoped];
     if (!template) return scoped;
@@ -1002,6 +1012,43 @@ describe('TaskPage', () => {
 
       expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
     });
+
+    it.each([
+      {
+        runState: 'cancelling',
+        expectedPlaceholder:
+          'Wait for the current run to stop before sending another message.',
+      },
+      {
+        runState: 'terminating',
+        expectedPlaceholder:
+          'Wait for the current execution environment to finish stopping before sending another message.',
+      },
+      {
+        runState: 'finalizing',
+        expectedPlaceholder:
+          'Wait for the final results to finish saving before sending another message.',
+      },
+    ] as const)(
+      'treats authoritative %s task truth as a busy, input-blocking state',
+      async ({ runState, expectedPlaceholder }) => {
+        mockTaskHookState.task = { ...mockTask, run_state: runState };
+
+        await renderComponentReady();
+
+        expect(latestConversationPanelPropsRef.current.disabled).toBe(true);
+        expect(latestConversationPanelPropsRef.current.runActivity).toMatchObject({
+          active: true,
+          state: runState,
+        });
+        expect(latestConversationPanelPropsRef.current.inputPlaceholder).toBe(
+          expectedPlaceholder,
+        );
+        expect(latestTaskHeaderPropsRef.current.agentRunActivity).toMatchObject({
+          active: true,
+        });
+      },
+    );
 
     it('stays conversation-first when storage prefers terminal but backend reports no live terminal sessions', async () => {
       window.sessionStorage.setItem(
@@ -3225,6 +3272,26 @@ describe('TaskPage', () => {
         expect(mockSendMessageMutateAsync).toHaveBeenCalledTimes(1);
       });
     });
+
+    it.each([
+      'cancelling',
+      'terminating',
+      'finalizing',
+    ] as const)(
+      'does not send or enqueue new messages while the authoritative run state is %s',
+      async (runState) => {
+        const user = userEvent.setup();
+        mockTaskHookState.task = { ...mockTask, run_state: runState };
+
+        await renderComponentReady();
+        await user.click(screen.getByText('Send Message'));
+
+        expect(mockSendMessageMutateAsync).not.toHaveBeenCalled();
+        expect(screen.getByTestId('conversation-pending-count')).toHaveTextContent(
+          '0',
+        );
+      },
+    );
 
     it('clears a cancelled run after authoritative idle recovery and does not re-enter the pending loop on refresh', async () => {
       mockSendMessageMutateAsync

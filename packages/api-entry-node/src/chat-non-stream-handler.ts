@@ -8,12 +8,13 @@ import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { parsePagination } from './pagination.js';
 import {
   ACTIVE_CHAT_STREAMS,
+  readSessionExecutionRecord,
   STREAM_REGISTRY_TTL_SECONDS,
   listActiveSessionStreams,
+  requestSessionExecutionStop,
   readSessionStreamState,
   readStreamRegistry,
   stopActiveSessionStreams,
-  writeSessionStreamState,
   writeStreamRegistry,
 } from './chat-stream-state.js';
 import {
@@ -343,6 +344,13 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
+    const execution = await requestSessionExecutionStop(deps.cache, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      sessionId: route.sessionId,
+      requestedBy: user.id,
+      stopReason: 'session_stop',
+    });
     const stopped = await stopActiveSessionStreams(
       deps.cache,
       route.workspaceId,
@@ -352,7 +360,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     json(res, 202, {
       success: true,
       session_id: route.sessionId,
-      state: stopped > 0 ? 'stopping' : 'not_found_or_finished',
+      state: execution || stopped > 0 ? 'stopping' : 'not_found_or_finished',
     });
     return true;
   }
@@ -368,12 +376,32 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
-    const items = listActiveSessionStreams(route.workspaceId, route.projectId, route.sessionId)
+    const sharedExecution = await readSessionExecutionRecord(
+      deps.cache,
+      route.workspaceId,
+      route.projectId,
+      route.sessionId,
+    );
+    const sharedItems = sharedExecution
+      && sharedExecution.streamId
+      && (sharedExecution.status === 'running' || sharedExecution.status === 'stopping')
+      ? [{
+          stream_id: sharedExecution.streamId,
+          status: sharedExecution.status,
+          started_at: sharedExecution.startedAt,
+        }]
+      : [];
+    const activeItems = listActiveSessionStreams(route.workspaceId, route.projectId, route.sessionId)
       .map((item) => ({
         stream_id: item.streamId,
         status: item.status,
         started_at: item.startedAt,
       }));
+    const deduped = new Map<string, { stream_id: string; status: string; started_at: string }>();
+    for (const item of [...sharedItems, ...activeItems]) {
+      deduped.set(item.stream_id, item);
+    }
+    const items = Array.from(deduped.values());
     json(res, 200, { items, total: items.length });
     return true;
   }
@@ -780,11 +808,23 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   if (route.kind === 'chatMessagesStreamStop' && method === 'POST') {
     const running = ACTIVE_CHAT_STREAMS.get(route.streamId);
     const registry = await readStreamRegistry(deps.cache, route.streamId);
+    const execution = await readSessionExecutionRecord(
+      deps.cache,
+      route.workspaceId,
+      route.projectId,
+      route.sessionId,
+    );
     const canStop =
       running
         ? running.workspaceId === route.workspaceId &&
           running.projectId === route.projectId &&
           running.sessionId === route.sessionId
+        : execution
+          ? execution.workspaceId === route.workspaceId &&
+            execution.projectId === route.projectId &&
+            execution.sessionId === route.sessionId &&
+            execution.streamId === route.streamId &&
+            (execution.status === 'running' || execution.status === 'stopping')
         : registry
           ? registry.workspaceId === route.workspaceId &&
             registry.projectId === route.projectId &&
@@ -794,6 +834,13 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       json(res, 202, { success: true, stream_id: route.streamId, state: 'not_found_or_finished' });
       return true;
     }
+    await requestSessionExecutionStop(deps.cache, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      sessionId: route.sessionId,
+      requestedBy: user.id,
+      stopReason: 'user_stop',
+    });
     await writeStreamRegistry(
       deps.cache,
       {
@@ -804,14 +851,6 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
         status: 'stopping',
         updatedAt: new Date().toISOString(),
       },
-      STREAM_REGISTRY_TTL_SECONDS,
-    );
-    await writeSessionStreamState(
-      deps.cache,
-      route.workspaceId,
-      route.projectId,
-      route.sessionId,
-      'stopping',
       STREAM_REGISTRY_TTL_SECONDS,
     );
     if (running) {

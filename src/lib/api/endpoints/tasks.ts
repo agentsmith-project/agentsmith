@@ -23,6 +23,13 @@ import type {
 import type { ApiClient } from '../client';
 import { API_BASE } from '../client';
 
+export type TaskCancelRunResponse = {
+  status: 'cancelling' | 'terminating';
+  task_id: string;
+  run_id: string;
+  request_id: string;
+};
+
 export class TaskAPI {
   constructor(private client: ApiClient) {}
 
@@ -177,8 +184,8 @@ export class TaskAPI {
     workspaceId: string,
     projectId: string,
     taskId: string,
-  ): Promise<{ status: 'cancelling'; task_id: string; run_id: string; request_id: string }> {
-    return this.client.post<{ status: 'cancelling'; task_id: string; run_id: string; request_id: string }>(
+  ): Promise<TaskCancelRunResponse> {
+    return this.client.post<TaskCancelRunResponse>(
       `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/cancel`,
       {},
     );

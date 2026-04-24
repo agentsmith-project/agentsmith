@@ -18,7 +18,12 @@ import { useTaskSSE } from "@/lib/hooks/use-task-sse";
 import { useErrorHandler } from "@/lib/hooks/use-error-handler";
 import { TaskAPI } from "@/lib/api";
 import { getApiClient } from "@/lib/api";
-import type { Artifact, Task, TaskMessage } from "@/lib/types/task";
+import {
+  isTaskRunStateActive,
+  isTaskRunStateRunning,
+  isTaskRunStateStoppingOrFinalizing,
+} from "@/lib/types/task";
+import type { Artifact, Task, TaskMessage, TaskRunState } from "@/lib/types/task";
 import { useRouter, useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
@@ -82,6 +87,22 @@ type ListedTerminalSession = Awaited<
 type TerminalWorkspaceHydrationState = "pending" | "ready" | "unavailable";
 
 type TaskTranslationFn = ReturnType<typeof useTranslations>;
+
+function getAuthoritativeRunInputPlaceholder(
+  tConversation: ReturnType<typeof useTranslations>,
+  runState: TaskRunState | null,
+) {
+  if (runState === "cancelling") {
+    return tConversation("input_placeholder_cancelling");
+  }
+  if (runState === "terminating") {
+    return tConversation("input_placeholder_terminating");
+  }
+  if (runState === "finalizing") {
+    return tConversation("input_placeholder_finalizing");
+  }
+  return null;
+}
 
 function mapListedTerminalSessionStatusToTabStatus(
   status: ListedTerminalSession["status"],
@@ -387,7 +408,7 @@ export function TaskPage({
       refetchInterval: (query) => {
         const currentTask = query.state.data as Task | undefined;
         return (
-          currentTask?.run_state === "running" ||
+          isTaskRunStateActive(currentTask?.run_state) ||
             sendMessage.isPending ||
             isAgentTurnRunning ||
             runtimeReconciliationActive
@@ -412,7 +433,7 @@ export function TaskPage({
     taskId,
   );
   const artifactsRefreshInterval = (
-    task?.run_state === "running" ||
+    isTaskRunStateActive(task?.run_state) ||
     sendMessage.isPending ||
     isAgentTurnRunning ||
     runtimeReconciliationActive
@@ -630,11 +651,42 @@ export function TaskPage({
     ],
   );
 
+  const authoritativeRunState = task?.run_state ?? null;
+  const authoritativeLastActivityAt = task?.last_activity_at ?? null;
+  const backendRunActive = isTaskRunStateRunning(authoritativeRunState);
+  const backendRunBusy = isTaskRunStateActive(authoritativeRunState);
+  const backendRunStoppingOrFinalizing =
+    isTaskRunStateStoppingOrFinalizing(authoritativeRunState);
+  const effectiveRunState: TaskRunState =
+    backendRunBusy
+      ? authoritativeRunState
+      : sendMessage.isPending || isAgentTurnRunning
+        ? "running"
+        : "idle";
+
   const cancelActiveRun = useMutation({
     mutationFn: () => taskAPI.cancelRun(workspaceId, projectId, taskId),
-    onSuccess: () => {
-      setLastRunActionSummary(tConversation("run_cancel_requested"));
-      toast.info(tConversation("run_cancel_requested"));
+    onSuccess: (response) => {
+      const nextRunState =
+        response.status === "terminating" ? "terminating" : "cancelling";
+      queryClient.setQueryData(taskDetailKey, (old: Task | undefined) =>
+        old
+          ? {
+              ...old,
+              run_state: nextRunState,
+            }
+          : old,
+      );
+      setLastRunActionSummary(
+        nextRunState === "terminating"
+          ? tConversation("run_terminating_description")
+          : tConversation("run_cancel_requested"),
+      );
+      toast.info(
+        nextRunState === "terminating"
+          ? tConversation("run_terminating_description")
+          : tConversation("run_cancel_requested"),
+      );
       void reconcileTaskRuntime("cancel_request");
     },
     onError: (err) => {
@@ -758,7 +810,7 @@ export function TaskPage({
       onDebug: (event) => appendSseDebugEvent(event, activeTraceMessageId),
       enabled: !!taskId && !taskLoading,
       watchdogEnabled:
-        task?.run_state === "running" ||
+        backendRunBusy ||
         sendMessage.isPending ||
         isAgentTurnRunning ||
         runtimeReconciliationActive,
@@ -938,6 +990,16 @@ export function TaskPage({
       toast.info(tTask("terminal_agent_run_blocked"));
       return;
     }
+    if (backendRunStoppingOrFinalizing) {
+      const stoppingInputPlaceholder = getAuthoritativeRunInputPlaceholder(
+        tConversation,
+        authoritativeRunState,
+      );
+      if (stoppingInputPlaceholder) {
+        toast.info(stoppingInputPlaceholder);
+      }
+      return;
+    }
     if (
       isAgentTurnRunning ||
       sendMessage.isPending ||
@@ -966,8 +1028,6 @@ export function TaskPage({
   const handlePendingRemove = React.useCallback((id: string) => {
     setPendingMessages((prev) => prev.filter((item) => item.id !== id));
   }, []);
-
-  const backendRunActive = task?.run_state === "running";
 
   const handleCancelActiveRun = React.useCallback(() => {
     if (!(isAgentTurnRunning || sendMessage.isPending || backendRunActive))
@@ -1008,11 +1068,8 @@ export function TaskPage({
     task?.run_state,
   ]);
 
-  const authoritativeRunState = task?.run_state ?? null;
-  const authoritativeLastActivityAt = task?.last_activity_at ?? null;
-
   React.useEffect(() => {
-    if (authoritativeRunState === "running" || !runtimeReconciliationActive) {
+    if (isTaskRunStateActive(authoritativeRunState) || !runtimeReconciliationActive) {
       runtimeIdleReconcileKeyRef.current = null;
       runtimeIdleReconcileInFlightRef.current = false;
     }
@@ -1021,7 +1078,7 @@ export function TaskPage({
   React.useEffect(() => {
     if (!runtimeReconciliationActive) return;
     if (authoritativeRunState == null) return;
-    if (authoritativeRunState === "running") return;
+    if (authoritativeRunState !== "idle") return;
     if (sendMessage.isPending || isAgentTurnRunning || cancelActiveRun.isPending) {
       return;
     }
@@ -1077,7 +1134,7 @@ export function TaskPage({
     if (
       isAgentTurnRunning ||
       sendMessage.isPending ||
-      backendRunActive ||
+      backendRunBusy ||
       runtimeReconciliationActive
     ) return;
     if (pendingFlushInFlightRef.current) return;
@@ -1092,7 +1149,7 @@ export function TaskPage({
     });
   }, [
     canUpdateTask,
-    backendRunActive,
+    backendRunBusy,
     isAgentTurnRunning,
     pendingMessages,
     runtimeReconciliationActive,
@@ -1149,8 +1206,8 @@ export function TaskPage({
   const isExternalAgentOffline =
     taskAgent?.mode === "external" && taskAgent.presence !== "online";
   const agentIsBusy =
-    sendMessage.isPending || isAgentTurnRunning || backendRunActive;
-  const fallbackRunStartedAt = backendRunActive
+    sendMessage.isPending || isAgentTurnRunning || backendRunBusy;
+  const fallbackRunStartedAt = backendRunBusy
     ? (() => {
         const parsed = taskLastActivityAt ? Date.parse(taskLastActivityAt) : NaN;
         return Number.isFinite(parsed) ? parsed : Date.now();
@@ -1264,7 +1321,10 @@ export function TaskPage({
     isExternalAgentOffline ||
     terminalBootstrapPending ||
     terminalTruthUnavailable ||
-    hasTerminalSessions;
+    hasTerminalSessions ||
+    backendRunStoppingOrFinalizing;
+  const runStateInputPlaceholder =
+    getAuthoritativeRunInputPlaceholder(tConversation, authoritativeRunState);
   const terminalDisabledReason = terminalSessionCount >= 3
     ? tTask("terminal_max_sessions_reached")
     : !canUseTerminal
@@ -2190,9 +2250,10 @@ export function TaskPage({
         pendingMessages={pendingMessages}
         projectId={projectId}
         runActivity={{
-          active: agentIsBusy,
+          active: effectiveRunState !== "idle",
+          state: effectiveRunState,
           elapsedSeconds: runElapsedSeconds,
-          cancelling: cancelActiveRun.isPending,
+          cancelling: cancelActiveRun.isPending && effectiveRunState === "running",
           lastSummary: latestRunAction.summary,
           lastKind: latestRunAction.kind,
           recentActions: recentRunActions,
@@ -2207,7 +2268,11 @@ export function TaskPage({
         terminalWorkspace={terminalWorkspace}
         terminalStatusStrip={terminalStatusStrip}
         artifactsDrawerOpen={artifactsDrawerOpen}
-        inputPlaceholder={hasTerminalSessions ? tTask("terminal_input_blocked_placeholder") : undefined}
+        inputPlaceholder={
+          hasTerminalSessions
+            ? tTask("terminal_input_blocked_placeholder")
+            : runStateInputPlaceholder ?? undefined
+        }
         conversationBlockedState={conversationBlockedState}
         taskId={taskId}
         traceErrorByMessageId={traceErrorByMessageId}

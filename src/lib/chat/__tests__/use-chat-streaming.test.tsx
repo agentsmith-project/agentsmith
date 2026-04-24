@@ -6,6 +6,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ChatAPI } from '@/lib/api/endpoints/chat';
 import type { ChatMessage, ChatSession } from '@/lib/api/types';
 import { useChatStreaming } from '@/lib/chat/use-chat-streaming';
+import { useChatStreamStore } from '@/lib/chat/stream-store';
 import { toast } from '@/components/ui/toast';
 
 vi.mock('@/lib/chat/stream', async () => {
@@ -40,6 +41,7 @@ const streamMessages = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useChatStreamStore.setState({ streamIdBySession: {}, streamStateBySession: {} });
 });
 
 function createSseResponse(events: Array<{ event: string; data: unknown }>): Response {
@@ -57,6 +59,235 @@ function createSseResponse(events: Array<{ event: string; data: unknown }>): Res
 }
 
 describe('useChatStreaming attach recovery', () => {
+  it('uses session-stop authority while a stream is still bootstrapping without a stream id', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          reject(new DOMException('The operation was aborted.', 'AbortError'));
+        }, { once: true });
+      }
+    }));
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const chatAPI: Pick<ChatAPI, 'getSessionStreams' | 'stopSessionStream' | 'stopStream'> = {
+      getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'stopping' }),
+      stopStream: vi.fn().mockResolvedValue({ success: true, stream_id: 'st_1', state: 'stopping' }),
+    };
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+
+    const sessions: ChatSession[] = [
+      {
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+        execution_status: 'running',
+      },
+    ];
+
+    const { result } = renderHook(
+      () =>
+        useChatStreaming({
+          token: 'tkn',
+          workspaceId: 'ws_1',
+          projectId: 'p_1',
+          sessions,
+          currentSessionId: 's_1',
+          chatAPI: chatAPI as unknown as ChatAPI,
+          queryClient: qc,
+          messages: streamMessages,
+          upsertStreamAssistantToCache: vi.fn(),
+          patchStreamAssistantInCache: vi.fn(),
+        }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      void result.current.runStream({
+        sessionId: 's_1',
+        model: 'm',
+        endpointId: 'ep_1',
+        input: { role: 'user', content: 'hello' },
+        mode: 'append',
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.streamStateBySession['s_1']?.status).toBe('connecting');
+    });
+
+    await act(async () => {
+      await result.current.stopStreamingSession('s_1', 'user');
+    });
+
+    expect(chatAPI.stopSessionStream).toHaveBeenCalledWith('ws_1', 'p_1', 's_1');
+    expect(chatAPI.stopStream).not.toHaveBeenCalled();
+    expect(result.current.streamStateBySession['s_1']?.status).toBe('stopping');
+
+    vi.stubGlobal('fetch', originalFetch);
+  });
+
+  it('keeps a user stop request in stopping while authoritative backend state catches up', async () => {
+    const chatAPI: Pick<ChatAPI, 'getSessionStreams' | 'stopSessionStream' | 'stopStream'> = {
+      getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'stopping' }),
+      stopStream: vi.fn().mockResolvedValue({ success: true, stream_id: 'st_1', state: 'stopping' }),
+    };
+
+    useChatStreamStore.setState({
+      streamIdBySession: { s_1: 'st_1' },
+      streamStateBySession: {
+        s_1: {
+          status: 'streaming',
+          assistant: {
+            messageId: 'm_asst',
+            content: 'partial',
+            mode: 'append',
+            startedAt: Date.now(),
+            lastTokenAt: Date.now(),
+          },
+        },
+      },
+    });
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+
+    const sessions: ChatSession[] = [
+      {
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+      },
+    ];
+
+    const { result } = renderHook(
+      () =>
+        useChatStreaming({
+          token: 'tkn',
+          workspaceId: 'ws_1',
+          projectId: 'p_1',
+          sessions,
+          currentSessionId: 's_1',
+          chatAPI: chatAPI as unknown as ChatAPI,
+          queryClient: qc,
+          messages: streamMessages,
+          upsertStreamAssistantToCache: vi.fn(),
+          patchStreamAssistantInCache: vi.fn(),
+        }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.stopStreamingSession('s_1', 'user');
+    });
+
+    expect(chatAPI.stopStream).toHaveBeenCalledWith('ws_1', 'p_1', 's_1', 'st_1');
+    expect(result.current.streamStateBySession['s_1']).toMatchObject({
+      status: 'stopping',
+      assistant: expect.objectContaining({
+        content: 'partial',
+      }),
+    });
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not synthesize a stopped state when session-stop reports not_found_or_finished', async () => {
+    const chatAPI: Pick<ChatAPI, 'getSessionStreams' | 'stopSessionStream' | 'stopStream'> = {
+      getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'not_found_or_finished' }),
+      stopStream: vi.fn().mockResolvedValue({ success: true, stream_id: 'st_1', state: 'stopping' }),
+    };
+
+    useChatStreamStore.setState({
+      streamIdBySession: {},
+      streamStateBySession: {
+        s_1: {
+          status: 'streaming',
+          assistant: {
+            messageId: 'm_asst',
+            content: 'partial',
+            mode: 'append',
+            startedAt: Date.now(),
+            lastTokenAt: Date.now(),
+          },
+        },
+      },
+    });
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+
+    const sessions: ChatSession[] = [
+      {
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+        execution_status: 'running',
+      },
+    ];
+
+    const { result } = renderHook(
+      () =>
+        useChatStreaming({
+          token: 'tkn',
+          workspaceId: 'ws_1',
+          projectId: 'p_1',
+          sessions,
+          currentSessionId: 's_1',
+          chatAPI: chatAPI as unknown as ChatAPI,
+          queryClient: qc,
+          messages: streamMessages,
+          upsertStreamAssistantToCache: vi.fn(),
+          patchStreamAssistantInCache: vi.fn(),
+        }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.stopStreamingSession('s_1', 'user');
+    });
+
+    expect(chatAPI.stopSessionStream).toHaveBeenCalledWith('ws_1', 'p_1', 's_1');
+    expect(result.current.streamStateBySession['s_1']).toMatchObject({
+      status: 'streaming',
+      assistant: expect.objectContaining({
+        content: 'partial',
+      }),
+    });
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('does not call session-stop preflight for append stream', async () => {
     const originalFetch = global.fetch;
     const fetchMock = vi.fn().mockResolvedValue(

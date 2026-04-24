@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { MessageList } from './MessageList';
 import { ConversationInput } from './ConversationInput';
-import type { TaskMessage, TaskTraceEvent } from '@/lib/types/task';
+import type { TaskMessage, TaskRunState, TaskTraceEvent } from '@/lib/types/task';
 import type { NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
 import { formatElapsed, getConnectionBannerCopy } from '@/components/notebook/conversation-panel/utils';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,7 @@ export interface ConversationPanelProps {
   onPendingRemove?: (id: string) => void;
   runActivity?: {
     active: boolean;
+    state?: TaskRunState;
     elapsedSeconds: number;
     cancelling?: boolean;
     lastSummary?: string | null;
@@ -110,6 +111,14 @@ export function ConversationPanel({
   const t = useTranslations('notebook.conversation');
   const tCommon = useTranslations('common');
   const [inputValue, setInputValue] = React.useState('');
+  const runState = runActivity?.state ?? (runActivity?.active ? 'running' : 'idle');
+  const runInputDisabled =
+    disabled ||
+    runState === 'cancelling' ||
+    runState === 'terminating' ||
+    runState === 'finalizing';
+  const showPendingHint =
+    runState === 'running' || (runState === 'idle' && agentRunning);
   const { title: connectionTitle, description: connectionDescription } = getConnectionBannerCopy({
     t,
     connectionStatus,
@@ -124,15 +133,31 @@ export function ConversationPanel({
   };
 
   const latestRunAction = runActivity?.recentActions?.[0];
-  const runSummaryText = runActivity?.active
+  const runSummaryText = runActivity?.active && runState === 'running'
     ? truncateRunActivitySummary(
         latestRunAction?.summary ?? runActivity.lastSummary ?? t('run_active_default_action'),
         RUN_ACTIVITY_SUMMARY_MAX_CHARS,
       )
     : null;
-  const runSummaryTitle = runActivity?.active
+  const runSummaryTitle = runActivity?.active && runState === 'running'
     ? latestRunAction?.summary ?? runActivity.lastSummary ?? t('run_active_default_action')
     : null;
+  const runStatusTitle =
+    runState === 'cancelling'
+      ? t('run_cancelling_title')
+      : runState === 'terminating'
+        ? t('run_terminating_title')
+        : runState === 'finalizing'
+          ? t('run_finalizing_title')
+          : null;
+  const runStatusDescription =
+    runState === 'cancelling'
+      ? t('run_cancelling_description')
+      : runState === 'terminating'
+        ? t('run_terminating_description')
+        : runState === 'finalizing'
+          ? t('run_finalizing_description')
+          : null;
 
   const showEmptyOrientation =
     messages.length === 0 &&
@@ -164,7 +189,9 @@ export function ConversationPanel({
                 ) : null}
                 {runActivity?.active ? (
                   <span className="rounded-full border border-subtle bg-surface-low px-2 py-0.5 text-[10px] font-medium text-secondary">
-                    {t('run_active_title', { duration: formatElapsed(runActivity.elapsedSeconds) })}
+                    {runState === 'running'
+                      ? t('run_active_title', { duration: formatElapsed(runActivity.elapsedSeconds) })
+                      : runStatusTitle}
                   </span>
                 ) : null}
               </div>
@@ -177,7 +204,7 @@ export function ConversationPanel({
                 ) : sandboxStarting ? (
                   <div className="text-tertiary">{t('sandbox_starting_description')}</div>
                 ) : runActivity?.active ? (
-                  latestRunAction ? (
+                  runState === 'running' && latestRunAction ? (
                     <button
                       type="button"
                       className="block w-full truncate text-left text-secondary/85 hover:text-secondary"
@@ -187,9 +214,16 @@ export function ConversationPanel({
                     >
                       {runSummaryText}
                     </button>
-                  ) : (
+                  ) : runState === 'running' ? (
                     <div className="truncate text-secondary/85" title={runSummaryTitle ?? undefined} data-testid="notebook__run-activity-summary">
                       {runSummaryText}
+                    </div>
+                  ) : (
+                    <div
+                      className="text-secondary/85"
+                      data-testid="notebook__run-activity-summary"
+                    >
+                      {runStatusDescription}
                     </div>
                   )
                 ) : null}
@@ -211,16 +245,16 @@ export function ConversationPanel({
               ) : null}
             </div>
             <div className="flex items-center gap-2">
-              {runActivity?.active && onCancelActiveRun ? (
+              {runState === 'running' && runActivity?.active && onCancelActiveRun ? (
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   className="h-6 px-2 text-[11px]"
                   onClick={onCancelActiveRun}
-                  disabled={disabled || runActivity.cancelling}
+                  disabled={runInputDisabled || runActivity.cancelling}
                 >
-                  {runActivity.cancelling ? t('run_cancel_requested') : tCommon('cancel')}
+                  {runActivity.cancelling ? t('run_cancel_submitting') : tCommon('cancel')}
                 </Button>
               ) : null}
             </div>
@@ -303,11 +337,11 @@ export function ConversationPanel({
           value={inputValue}
           onChange={setInputValue}
           onSend={handleSend}
-          agentRunning={agentRunning}
+          agentRunning={showPendingHint}
           pendingQueue={pendingQueue}
           onPendingUpdate={onPendingUpdate}
           onPendingRemove={onPendingRemove}
-          disabled={disabled}
+          disabled={runInputDisabled}
           sending={sending}
           placeholder={inputPlaceholder}
         />

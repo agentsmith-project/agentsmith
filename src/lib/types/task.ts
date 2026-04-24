@@ -5,6 +5,34 @@
  */
 
 export type TaskStatus = 'active' | 'archived';
+export type TaskRunState =
+  | 'running'
+  | 'cancelling'
+  | 'terminating'
+  | 'finalizing'
+  | 'idle';
+
+export function isTaskRunStateActive(
+  runState: TaskRunState | null | undefined,
+): runState is Exclude<TaskRunState, 'idle'> {
+  return runState != null && runState !== 'idle';
+}
+
+export function isTaskRunStateRunning(
+  runState: TaskRunState | null | undefined,
+): runState is 'running' {
+  return runState === 'running';
+}
+
+export function isTaskRunStateStoppingOrFinalizing(
+  runState: TaskRunState | null | undefined,
+): runState is 'cancelling' | 'terminating' | 'finalizing' {
+  return (
+    runState === 'cancelling' ||
+    runState === 'terminating' ||
+    runState === 'finalizing'
+  );
+}
 
 export type TaskInputRef =
   | {
@@ -84,7 +112,7 @@ export interface Task {
   updated_at: string; // ISO 8601
   last_activity_at: string; // ISO 8601
   agent_presence?: 'online' | 'offline' | 'managed' | 'unknown';
-  run_state?: 'running' | 'idle';
+  run_state?: TaskRunState;
   stats?: {
     user_turn_count: number;
     message_count: number;

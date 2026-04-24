@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import type { Agent, ChatSession, Endpoint } from '@/lib/api/types';
 import { getChatContentWidthClass, type ChatLayoutMode } from '@/lib/chat/layout';
+import type { SessionStreamStatus } from '@/lib/chat/stream-state';
 import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
@@ -59,7 +60,7 @@ export function ChatHeader({
   session: ChatSession | null;
   endpoints: Endpoint[];
   externalAgents?: Agent[];
-  streamStatus: 'idle' | 'connecting' | 'recovering' | 'streaming' | 'stopped' | 'error';
+  streamStatus: SessionStreamStatus;
   onRename: (title: string) => void;
   onSelectEndpoint: (endpoint: Endpoint) => void;
   onSelectExternalAgent?: (agent: Agent) => void;

@@ -1,6 +1,13 @@
 import type { ChatSession } from '@/lib/api/types';
 
-export type SessionStreamStatus = 'idle' | 'connecting' | 'recovering' | 'streaming' | 'stopped' | 'error';
+export type SessionStreamStatus =
+  | 'idle'
+  | 'connecting'
+  | 'recovering'
+  | 'streaming'
+  | 'stopping'
+  | 'stopped'
+  | 'error';
 
 export interface SessionStreamingAssistant {
   messageId?: string | null;
@@ -22,7 +29,8 @@ export interface SessionStreamState {
 export function mapExecutionStatusToStreamStatus(
   executionStatus: ChatSession['execution_status'] | undefined,
 ): SessionStreamStatus {
-  if (executionStatus === 'running' || executionStatus === 'stopping') return 'streaming';
+  if (executionStatus === 'running') return 'streaming';
+  if (executionStatus === 'stopping') return 'stopping';
   if (executionStatus === 'failed') return 'error';
   if (executionStatus === 'stopped') return 'stopped';
   return 'idle';

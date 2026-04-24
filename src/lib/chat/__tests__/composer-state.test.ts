@@ -98,4 +98,18 @@ describe('composer-state', () => {
       }),
     ).toBe('streaming');
   });
+
+  it('treats stopping as a blocked streaming state until backend truth settles', () => {
+    expect(
+      deriveChatComposerState({
+        currentSessionId: 'session_1',
+        activeSession: createSession(),
+        editingMessageId: null,
+        streamStatus: 'stopping',
+        createMessagePending: false,
+        editMessagePending: false,
+        initAttachmentPending: false,
+      }),
+    ).toBe('streaming');
+  });
 });

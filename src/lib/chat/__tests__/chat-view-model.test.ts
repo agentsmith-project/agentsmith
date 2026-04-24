@@ -87,6 +87,44 @@ describe('buildChatViewModel', () => {
     expect(model.mergedStreamingSessionIds).toContain(session.id);
   });
 
+  it('surfaces backend stopping as the authoritative active status', () => {
+    const session = makeSession({ execution_status: 'stopping' });
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      streamStateBySession: {},
+    });
+
+    expect(model.activeStreamStatus).toBe('stopping');
+    expect(model.disabled).toBe(true);
+    expect(model.mergedStreamingSessionIds).toContain(session.id);
+  });
+
+  it('does not let local recovering hide an authoritative backend stopping state', () => {
+    const session = makeSession({ execution_status: 'stopping' });
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      streamStateBySession: {
+        [session.id]: {
+          status: 'recovering',
+          assistant: {
+            messageId: null,
+            content: '',
+            mode: 'append',
+            startedAt: Date.now(),
+            lastTokenAt: Date.now(),
+          },
+        },
+      },
+    });
+
+    expect(model.activeStreamStatus).toBe('stopping');
+    expect(model.disabled).toBe(true);
+  });
+
   it('does not let stale local terminal state override an active backend execution', () => {
     const session = makeSession({ execution_status: 'running' });
     const model = buildChatViewModel({

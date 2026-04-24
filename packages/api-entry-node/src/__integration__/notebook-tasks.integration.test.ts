@@ -7,9 +7,9 @@ import { createDefaultNodeApiDeps } from '../index.js';
 import {
   acquireNotebookTaskRunLease,
   buildNotebookTaskRunState,
-  getNotebookTaskRunCancellationRequest,
+  getNotebookTaskRunStopRequestForRun,
   getNotebookTaskRunState,
-  requestNotebookTaskRunCancellation,
+  requestNotebookTaskRunStop,
 } from '../notebook-task/task-run-coordination.js';
 import type { TaskRecord } from '../notebook-task/task-models.js';
 import { getTasks } from '../notebook-task/task-runtime-state.js';
@@ -1068,7 +1068,7 @@ describe('api-entry-node notebook task routes', () => {
     });
   });
 
-  it('keeps notebook run_state visible after restart and accepts shared cancel requests', async () => {
+  it('keeps notebook run_state visible after restart and stores shared stop intent in the run control record', async () => {
     const deps = createDefaultNodeApiDeps();
     const firstServer = startServerWithDeps(deps);
     const workspaceLibrary = await createFileLibrary(firstServer.baseUrl, 'Restart Run Coordination Library');
@@ -1142,11 +1142,136 @@ describe('api-entry-node notebook task routes', () => {
       status: 'cancelling',
       task_id: task.id,
       run_id: 'run_restart_shared',
+      stop_mode: 'cancel',
     });
-    await expect(getNotebookTaskRunCancellationRequest(deps.cache, task.id)).resolves.toMatchObject({
-      task_id: task.id,
-      run_id: 'run_restart_shared',
+    await expect(getNotebookTaskRunStopRequestForRun(deps.cache, {
+      taskId: task.id,
+      runId: 'run_restart_shared',
+    })).resolves.toMatchObject({
+      mode: 'cancel',
       actor_user_id: 'user_test',
+    });
+  });
+
+  it('auto-upgrades stale internal run ownership to terminating truth and requests hard teardown', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const requestHardTeardown = vi.fn(async () => undefined);
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown,
+    } as never;
+    const { baseUrl } = startServerWithDeps(deps);
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Stale Internal Run Coordination Workspace');
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'stale-internal-run-agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const task = await createNotebookTaskForAgent(baseUrl, {
+      title: 'Stale internal run control task',
+      agentId: agent.id,
+      workspaceFileLibraryId: workspaceLibrary.id,
+    });
+
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: task.id,
+      runId: 'run_internal_stale_owner',
+      startedAt: '2026-03-18T08:00:00.000Z',
+      heartbeatAt: '2026-03-18T08:00:00.000Z',
+      ownerInstanceId: 'api-stale-owner',
+    }))).resolves.toBe(true);
+
+    const cancelRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+      'test-token',
+      { method: 'POST' },
+    );
+    expect(cancelRes.status).toBe(202);
+    await expect(cancelRes.json()).resolves.toMatchObject({
+      status: 'terminating',
+      task_id: task.id,
+      run_id: 'run_internal_stale_owner',
+      stop_mode: 'terminate',
+    });
+
+    const listRes = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      'test-token',
+    );
+    expect(listRes.status).toBe(200);
+    await expect(listRes.json()).resolves.toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          id: task.id,
+          run_state: 'terminating',
+        }),
+      ]),
+    });
+    expect(requestHardTeardown).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: sanitizeWorkloadId(task.id),
+    });
+  });
+
+  it('rejects stale external run ownership instead of returning happy cancelling', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const { baseUrl } = startServerWithDeps(deps);
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Stale External Run Coordination Workspace');
+    const { agentId } = await createExternalNotebookExecutionAgent(deps, 'stale-external-run-agent');
+    const task = await createNotebookTaskForAgent(baseUrl, {
+      title: 'Stale external run control task',
+      agentId,
+      workspaceFileLibraryId: workspaceLibrary.id,
+    });
+
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: task.id,
+      runId: 'run_external_stale_owner',
+      startedAt: '2026-03-18T09:00:00.000Z',
+      heartbeatAt: '2026-03-18T09:00:00.000Z',
+      ownerInstanceId: 'api-stale-owner',
+    }))).resolves.toBe(true);
+
+    const cancelRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+      'test-token',
+      { method: 'POST' },
+    );
+    expect(cancelRes.status).toBe(409);
+    await expect(cancelRes.json()).resolves.toMatchObject({
+      error_code: 'TASK_RUN_OWNER_UNAVAILABLE',
+      message: 'task_run_owner_unavailable',
+    });
+
+    const listRes = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      'test-token',
+    );
+    expect(listRes.status).toBe(200);
+    await expect(listRes.json()).resolves.toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          id: task.id,
+          run_state: 'running',
+        }),
+      ]),
     });
   });
 
@@ -1442,16 +1567,21 @@ describe('api-entry-node notebook task routes', () => {
 
       const activeRun = await getNotebookTaskRunState(deps.cache, task.id);
       expect(activeRun?.run_id).toBeTruthy();
-      await requestNotebookTaskRunCancellation(deps.cache, {
-        task_id: task.id,
-        run_id: activeRun?.run_id ?? 'missing_run_id',
-        requested_at: new Date().toISOString(),
-        actor_user_id: 'user_test',
+      await requestNotebookTaskRunStop(deps.cache, {
+        taskId: task.id,
+        runId: activeRun?.run_id ?? 'missing_run_id',
+        mode: 'cancel',
+        requestedAt: new Date().toISOString(),
+        actorUserId: 'user_test',
+        delivery: 'shared_owner',
       });
-      await expect(getNotebookTaskRunCancellationRequest(deps.cache, task.id)).resolves.toMatchObject({
-        task_id: task.id,
-        run_id: activeRun?.run_id,
+      await expect(getNotebookTaskRunStopRequestForRun(deps.cache, {
+        taskId: task.id,
+        runId: activeRun?.run_id ?? 'missing_run_id',
+      })).resolves.toMatchObject({
+        mode: 'cancel',
         actor_user_id: 'user_test',
+        delivery: 'shared_owner',
       });
 
       releaseEndpointGate?.();

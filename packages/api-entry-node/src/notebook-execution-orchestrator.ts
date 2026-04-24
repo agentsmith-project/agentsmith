@@ -19,6 +19,7 @@ import {
   resolveInternalWorkloadCoordinator,
   type InternalWorkloadHolderRef,
 } from './internal-workload-coordinator.js';
+import { markNotebookTaskRunFinalizing } from './notebook-task/task-run-coordination.js';
 export {
   readInternalWorkloadHolderSnapshotForTests,
   resetInternalWorkloadHolderCoordinatorForTests,
@@ -217,7 +218,11 @@ export async function runNotebookTaskWithExecutionAgent(input: {
   updateTaskActivity: (task: NotebookTaskRecord) => void;
   emitTaskEvent: (taskId: string, payload: ExecutionEventPayload) => void;
   onDispatched?: (args: { taskId: string; runId: string; requestId: string; cancel: () => void }) => void;
-  onFinalize: (taskId: string, runId: string) => void | Promise<void>;
+  onFinalize: (
+    taskId: string,
+    runId: string,
+    summary: { durableTerminalTruth: boolean },
+  ) => void | Promise<void>;
   isCancellationRequested?: () => boolean | Promise<boolean>;
   debugLog: (message: string, extra?: Record<string, unknown>) => void;
   taskCollections: {
@@ -710,6 +715,11 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       agent_chars: assistantMessage.content.length,
       reached_terminal: reachedTerminal,
     });
+    await markNotebookTaskRunFinalizing(deps.cache, {
+      taskId: task.id,
+      runId,
+      updatedAt: new Date().toISOString(),
+    });
     let persistedFinalState = false;
     try {
       await deps.docStore.upsert(taskCollections.messages, assistantMessage.id, assistantMessage);
@@ -722,9 +732,17 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         message_id: assistantMessage.id,
         error: error instanceof Error ? error.message : 'persist_failed',
       });
+      await markNotebookTaskRunFinalizing(deps.cache, {
+        taskId: task.id,
+        runId,
+        updatedAt: new Date().toISOString(),
+        errorCode: 'AGENT_FINALIZE_PERSIST_FAILED',
+      });
     }
     // Keep run_state authoritative until the terminal assistant/task truth is durably written.
-    await onFinalize(taskId, runId);
+    await onFinalize(taskId, runId, {
+      durableTerminalTruth: persistedFinalState,
+    });
     if (persistedFinalState) {
       emitTaskEvent(taskId, { type: 'message', data: assistantMessage });
       emitTaskEvent(taskId, { type: 'task_update', data: task });

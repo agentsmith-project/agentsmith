@@ -3,6 +3,12 @@
 import { Activity, Bot, CalendarClock, ChevronRight, Clock3, FileText, MessageSquare } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { formatTaskDateTime, formatTaskRelativeTime, getTaskPresenceLabel, getTaskPresenceVariant } from './utils';
+import type { TaskRunState } from '@/lib/types/task';
+
+function getTaskRunStateLabelKey(runState: TaskRunState | undefined) {
+  if (!runState || runState === 'idle') return null;
+  return `run_${runState}`;
+}
 
 export function TaskCard(args: {
   t: (key: string, values?: Record<string, string | number>) => string;
@@ -10,7 +16,7 @@ export function TaskCard(args: {
     id: string;
     title: string;
     agent_presence?: 'online' | 'offline' | 'managed' | 'unknown';
-    run_state?: 'running' | 'idle';
+    run_state?: TaskRunState;
     agent_name: string;
     last_activity_at: string;
     created_at: string;
@@ -30,6 +36,7 @@ export function TaskCard(args: {
   const lastActivityAbsoluteLabel = formatTaskDateTime(task.last_activity_at);
   const createdAtLabel = formatTaskDateTime(task.created_at);
   const taskCardSurfaceTestId = `notebook__task-card--${task.id}`;
+  const taskRunStateLabelKey = getTaskRunStateLabelKey(task.run_state);
 
   return (
     <div data-testid={taskCardSurfaceTestId}>
@@ -49,8 +56,10 @@ export function TaskCard(args: {
                   {agentPresenceLabel}
                 </Badge>
               ) : null}
-              {task.run_state === 'running' ? (
-                <Badge variant="secondary" className="text-[11px]">{t('run_running')}</Badge>
+              {taskRunStateLabelKey ? (
+                <Badge variant="secondary" className="text-[11px]">
+                  {t(taskRunStateLabelKey)}
+                </Badge>
               ) : null}
             </div>
             <div className="text-xs text-tertiary flex flex-wrap items-center gap-x-3 gap-y-1">

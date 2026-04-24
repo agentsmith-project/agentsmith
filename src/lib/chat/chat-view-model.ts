@@ -26,7 +26,11 @@ function resolveActiveStreamStatus(
   localStatus: SessionStreamStatus,
   executionStatus: ChatSession['execution_status'] | undefined,
 ): SessionStreamStatus {
+  if (executionStatus === 'stopping') return 'stopping';
   if (localStatus === 'connecting' || localStatus === 'recovering') return localStatus;
+  if (localStatus === 'stopping' && executionStatus !== 'completed' && executionStatus !== 'stopped' && executionStatus !== 'failed') {
+    return 'stopping';
+  }
   if (isExecutionActive(executionStatus)) return 'streaming';
   if (localStatus === 'streaming') return 'streaming';
   if (executionStatus === 'failed') return 'error';
@@ -66,7 +70,7 @@ export function buildChatViewModel(args: {
     .filter((session) => isExecutionActive(session.execution_status))
     .map((session) => session.id);
   const mergedStreamingSessionIds = Array.from(new Set([...streamingSessionIds, ...executionStreamingSessionIds]));
-  const disabled = isLocalStreamActive(activeLocalStatus) || isExecutionActive(activeExecutionStatus);
+  const disabled = activeLocalStatus === 'stopping' || isLocalStreamActive(activeLocalStatus) || isExecutionActive(activeExecutionStatus);
 
   return {
     activeStreamStatus,

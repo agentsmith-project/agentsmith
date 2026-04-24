@@ -1,4 +1,5 @@
 import type { Agent, ChatSession, Endpoint } from '@/lib/api/types';
+import type { SessionStreamStatus } from '@/lib/chat/stream-state';
 
 export function findCurrentEndpoint(session: ChatSession | null, endpoints: Endpoint[]) {
   if (!session) return null;
@@ -11,10 +12,11 @@ export function findCurrentExternalAgent(session: ChatSession | null, externalAg
 }
 
 export function getStreamStatusText(
-  streamStatus: 'idle' | 'connecting' | 'recovering' | 'streaming' | 'stopped' | 'error',
+  streamStatus: SessionStreamStatus,
   t: (key: string) => string,
 ) {
   if (streamStatus === 'connecting' || streamStatus === 'streaming') return t('header.status_generating');
+  if (streamStatus === 'stopping') return `${t('composer.stop')}…`;
   if (streamStatus === 'recovering') return t('header.status_recovering');
   if (streamStatus === 'stopped') return t('header.status_stopped');
   if (streamStatus === 'error') return t('header.status_error');

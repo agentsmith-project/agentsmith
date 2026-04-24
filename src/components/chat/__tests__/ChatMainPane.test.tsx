@@ -244,6 +244,76 @@ describe('ChatMainPane', () => {
     expect(screen.getByTestId('chat__composer')).toHaveAttribute('data-streaming', 'true');
   });
 
+  it('keeps the composer blocked without falling back to optimistic streaming while stopping', () => {
+    render(
+      <ChatMainPane
+        currentSessionId="session_1"
+        activeSession={{ id: 'session_1', project_id: 'proj_1', title: 'Session', endpoint_id: 'ep_1', model: 'gpt-4o' } as never}
+        endpoints={[]}
+        messages={[]}
+        messagesLoading={false}
+        attachments={[]}
+        activeVariantIndexByGroup={{}}
+        editingMessageId={null}
+        disabled={false}
+        activeStreamStatus="stopping"
+        activeStreamingAssistant={{
+          messageId: null,
+          content: '',
+          mode: 'append',
+          startedAt: Date.now(),
+          lastTokenAt: Date.now(),
+        }}
+        suppressAutoScroll={false}
+        createPending={false}
+        createMessagePending={false}
+        editMessagePending={false}
+        initAttachmentPending={false}
+        canUseChat
+        canAttachFiles
+        composerValue="hello"
+        fileInputRef={{ current: null }}
+        labels={{
+          loading: 'loading',
+          noActiveThreadTitle: 'noActiveThreadTitle',
+          noActiveThreadDescription: 'noActiveThreadDescription',
+          noActiveThreadHint: 'noActiveThreadHint',
+          noEndpointHint: 'noEndpointHint',
+          noEndpointRecoveryTitle: 'noEndpointRecoveryTitle',
+          noEndpointRecoveryDescription: 'noEndpointRecoveryDescription',
+          noEndpointRecoveryHint: 'noEndpointRecoveryHint',
+          newThread: 'newThread',
+          selectThreadHint: 'selectThreadHint',
+          attachmentsDisabledReason: 'attachmentsDisabledReason',
+          assistant: 'assistant',
+        }}
+        layoutMode="standard"
+        onCreateThread={vi.fn()}
+        onRenameActiveSession={vi.fn()}
+        onSelectActiveEndpoint={vi.fn()}
+        onSelectExternalAgent={vi.fn()}
+        onSelectVariant={vi.fn()}
+        onEditMessage={vi.fn()}
+        onEditCommit={vi.fn()}
+        onRegenerate={vi.fn()}
+        onComposerChange={vi.fn()}
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        onPickFiles={vi.fn()}
+        onPickFromLibrary={vi.fn()}
+        onPickUrl={vi.fn()}
+        onFilePicked={vi.fn()}
+        onAttachFiles={vi.fn()}
+        onRemoveAttachment={vi.fn()}
+        onRetryAttachment={vi.fn()}
+        onCancelEdit={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('chat__composer')).toHaveAttribute('data-disabled', 'true');
+    expect(screen.getByTestId('chat__composer')).toHaveAttribute('data-streaming', 'false');
+  });
+
   it('keeps the append footer visible until the assistant message is actually in the list', () => {
     render(
       <ChatMainPane

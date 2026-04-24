@@ -18,6 +18,7 @@ import { NotebookTerminalService } from './notebook-terminal-service.js';
 import {
   acquireNotebookTaskRunLease,
   buildNotebookTaskRunState,
+  getNotebookTaskRunState,
   refreshNotebookTaskRunLease,
 } from './notebook-task/task-run-coordination.js';
 import { clearNotebookTaskEventState, emitNotebookTaskEvent } from './notebook-task-sse-broker.js';
@@ -187,6 +188,147 @@ describe('task-route-handler workspace access', () => {
       deps.docStore.get(notebookTasksCollection('ws_default'), 'task_delete_busy'),
     ).resolves.toMatchObject({
       id: 'task_delete_busy',
+    });
+  });
+
+  it('upgrades stale internal run ownership to terminate and requests hard teardown', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const requestHardTeardown = vi.fn(async () => undefined);
+    deps.internalWorkloadCoordinator = {
+      requestHardTeardown,
+    } as never;
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_internal',
+      name: 'Internal Agent',
+      mode: 'internal',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_stale_internal', {
+      id: 'task_stale_internal',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Stale internal task',
+      agent_id: 'agent_internal',
+      agent_name: 'Internal Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_stale_internal',
+      runId: 'run_stale_internal',
+      startedAt: '2026-03-18T06:00:00.000Z',
+      heartbeatAt: '2026-03-18T06:00:00.000Z',
+      ownerInstanceId: 'api-stale-owner',
+    }))).resolves.toBe(true);
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_stale_internal',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({ mode: 'cancel' })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      202,
+      expect.objectContaining({
+        status: 'terminating',
+        task_id: 'task_stale_internal',
+        run_id: 'run_stale_internal',
+        stop_mode: 'terminate',
+      }),
+    );
+    await expect(getNotebookTaskRunState(deps.cache, 'task_stale_internal')).resolves.toMatchObject({
+      run_id: 'run_stale_internal',
+      phase: 'terminating',
+      stop: {
+        mode: 'terminate',
+        delivery: 'internal_teardown_requested',
+      },
+    });
+    expect(requestHardTeardown).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      workloadId: sanitizeWorkloadId('task_stale_internal'),
+    });
+  });
+
+  it('rejects stale external run ownership instead of pretending cancel succeeded', async () => {
+    const deps = createDefaultNodeApiDeps();
+    deps.agentResourceService.getAgent = vi.fn(async () => ({
+      id: 'agent_external',
+      name: 'External Agent',
+      mode: 'external',
+      interaction_kind: 'notebook',
+      status: 'enabled',
+      presence: 'online',
+    }) as never);
+
+    const now = new Date().toISOString();
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_stale_external', {
+      id: 'task_stale_external',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Stale external task',
+      agent_id: 'agent_external',
+      agent_name: 'External Agent',
+      status: 'active',
+      attached_inputs: [],
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: 'task_stale_external',
+      runId: 'run_stale_external',
+      startedAt: '2026-03-18T07:00:00.000Z',
+      heartbeatAt: '2026-03-18T07:00:00.000Z',
+      ownerInstanceId: 'api-stale-owner',
+    }))).resolves.toBe(true);
+
+    const json = vi.fn();
+    await expect(handleTaskRoute({
+      route: {
+        kind: 'taskCancelRun',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        taskId: 'task_stale_external',
+      } as never,
+      method: 'POST',
+      req: { headers: {}, url: '' } as never,
+      res: {} as never,
+      deps,
+      user: { id: 'user_1' } as never,
+      json,
+      readBody: vi.fn(async () => ({ mode: 'cancel' })),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      expect.anything(),
+      409,
+      { error_code: 'TASK_RUN_OWNER_UNAVAILABLE', message: 'task_run_owner_unavailable' },
+    );
+    await expect(getNotebookTaskRunState(deps.cache, 'task_stale_external')).resolves.toMatchObject({
+      run_id: 'run_stale_external',
+      phase: 'running',
     });
   });
 

@@ -36,6 +36,13 @@ import {
   type StoryRiskPolicyRisk,
   type StoryRiskPolicySource,
 } from './current-story-risk-policy';
+import {
+  scanTraceSpecStoryMap,
+  TRACE_SPEC_STORY_BINDING_CONTRACT,
+  TRACE_SPEC_STORY_BINDING_SCANNER_PATH,
+  TRACE_SPEC_STORY_BINDING_SOURCE_GLOB,
+  type TraceSpecStoryMapEntry,
+} from './trace-spec-story-map';
 
 export const VERIFICATION_CATALOG_SCHEMA = 'agentsmith_verification_catalog/v1' as const;
 export const VERIFICATION_CATALOG_FILE_NAME = 'verification-catalog.json' as const;
@@ -89,6 +96,8 @@ export interface VerificationCatalogVisualCodeRefMapping {
   level: 'V2';
   evidenceOwner: 'npm run verify:visual';
 }
+
+export type VerificationCatalogTraceSpecStoryMapEntry = TraceSpecStoryMapEntry;
 
 export interface VerificationEvidenceProjection {
   level: VerificationCatalogLevel;
@@ -172,6 +181,17 @@ export interface VerificationCatalog {
       used_as_story_truth: false;
       spec_count: number;
     };
+    trace_spec_story_bindings: {
+      authority: 'derived_projection' | 'input_override_non_authoritative';
+      source_mode: 'default_scanner' | 'input_override' | 'disabled_for_story_input_override';
+      used_as_story_truth: false;
+      scanner: typeof TRACE_SPEC_STORY_BINDING_SCANNER_PATH;
+      source_glob: typeof TRACE_SPEC_STORY_BINDING_SOURCE_GLOB;
+      binding_contract: typeof TRACE_SPEC_STORY_BINDING_CONTRACT;
+      spec_count: number;
+      binding_count: number;
+      unresolved_count: number;
+    };
     current_story_risk_policy: {
       authority: 'authoritative' | 'input_override_non_authoritative';
       source_mode: 'default_sidecar' | 'input_override';
@@ -188,6 +208,9 @@ export interface VerificationCatalog {
     entries: readonly VerificationCatalogVisualEntry[];
   };
   visual_code_ref_map: Record<string, readonly VerificationCatalogVisualCodeRefMapping[]>;
+  trace_spec_story_map: {
+    entries: readonly VerificationCatalogTraceSpecStoryMapEntry[];
+  };
   evidence: VerificationCatalogEvidenceProjection;
   generated_story_specs: {
     authority: 'derived_cache_only';
@@ -204,6 +227,7 @@ export interface BuildVerificationCatalogInput {
   visualCatalogEntries?: readonly VisualBaselineCatalogEntry[];
   verificationCampaigns?: readonly CurrentVerificationCampaignDefinition[];
   storyRiskPolicy?: unknown;
+  traceSpecStoryMapEntries?: readonly TraceSpecStoryMapEntry[];
 }
 
 export interface VerificationCatalogWriteResult {
@@ -558,6 +582,39 @@ function selectStoryRiskPolicy(args: {
   }, storyIds);
 }
 
+function traceSpecSummary(entries: readonly TraceSpecStoryMapEntry[]): {
+  specCount: number;
+  bindingCount: number;
+  unresolvedCount: number;
+} {
+  return {
+    specCount: new Set(entries.map((entry) => entry.specFile)).size,
+    bindingCount: entries.length,
+    unresolvedCount: 0,
+  };
+}
+
+function normalizeTraceSpecStoryMapEntries(
+  entries: readonly TraceSpecStoryMapEntry[],
+  storyById: Record<string, VerificationCatalogStory>,
+): VerificationCatalogTraceSpecStoryMapEntry[] {
+  return entries.map((entry) => {
+    const story = storyById[entry.storyId];
+    if (!story) {
+      throw new Error(`trace spec story map references unknown canonical story id: ${entry.storyId}`);
+    }
+    return {
+      specFile: normalizeVerificationCatalogRepoPath(entry.specFile),
+      storyId: entry.storyId,
+      storySourceFile: story.sourceFile,
+      sourceTruth: entry.sourceTruth,
+    };
+  }).sort((left, right) => (
+    left.specFile.localeCompare(right.specFile)
+    || left.storyId.localeCompare(right.storyId)
+  ));
+}
+
 export function buildVerificationCatalog(input: BuildVerificationCatalogInput = {}): VerificationCatalog {
   const stories = input.stories ?? loadCommittedStoryDefinitionsSync();
   const visualCatalogEntries = input.visualCatalogEntries ?? listVisualBaselineCatalogEntries();
@@ -585,6 +642,27 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
   const visualScenarioCount = new Set(visualCatalogEntries.map((entry) => entry.scenarioId)).size;
   const visualCatalogUsesInputOverride = Boolean(input.visualCatalogEntries);
   const verificationCampaignsUseInputOverride = Boolean(input.verificationCampaigns);
+  const traceSpecMapUsesInputOverride = Object.prototype.hasOwnProperty.call(input, 'traceSpecStoryMapEntries');
+  const traceSpecScan = (() => {
+    if (traceSpecMapUsesInputOverride) {
+      const entries = normalizeTraceSpecStoryMapEntries(input.traceSpecStoryMapEntries ?? [], storyProjection.storyById);
+      return {
+        entries,
+        summary: traceSpecSummary(entries),
+      };
+    }
+    if (storiesUseInputOverride) {
+      return {
+        entries: [],
+        summary: {
+          specCount: 0,
+          bindingCount: 0,
+          unresolvedCount: 0,
+        },
+      };
+    }
+    return scanTraceSpecStoryMap({ stories });
+  })();
 
   return {
     schema: VERIFICATION_CATALOG_SCHEMA,
@@ -643,6 +721,23 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
         used_as_story_truth: false,
         spec_count: generatedStorySpecStoryIds.length,
       },
+      trace_spec_story_bindings: {
+        authority: traceSpecMapUsesInputOverride || storiesUseInputOverride
+          ? 'input_override_non_authoritative'
+          : 'derived_projection',
+        source_mode: traceSpecMapUsesInputOverride
+          ? 'input_override'
+          : storiesUseInputOverride
+            ? 'disabled_for_story_input_override'
+            : 'default_scanner',
+        used_as_story_truth: false,
+        scanner: TRACE_SPEC_STORY_BINDING_SCANNER_PATH,
+        source_glob: TRACE_SPEC_STORY_BINDING_SOURCE_GLOB,
+        binding_contract: TRACE_SPEC_STORY_BINDING_CONTRACT,
+        spec_count: traceSpecScan.summary.specCount,
+        binding_count: traceSpecScan.summary.bindingCount,
+        unresolved_count: traceSpecScan.summary.unresolvedCount,
+      },
       current_story_risk_policy: {
         authority: riskPolicyUsesInputOverride ? 'input_override_non_authoritative' : 'authoritative',
         source_mode: riskPolicyUsesInputOverride ? 'input_override' : 'default_sidecar',
@@ -660,6 +755,9 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
       entries: visualProjection.entries,
     },
     visual_code_ref_map: visualProjection.codeRefMap,
+    trace_spec_story_map: {
+      entries: traceSpecScan.entries,
+    },
     evidence: buildEvidenceProjection(verificationCampaigns),
     generated_story_specs: {
       authority: 'derived_cache_only',

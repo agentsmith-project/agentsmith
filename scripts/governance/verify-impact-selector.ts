@@ -21,6 +21,7 @@ export type ChangedFileImpactRule =
   | 'canonical_story_markdown'
   | 'generated_story_specs_derived_cache'
   | 'visual_code_ref'
+  | 'trace_spec_story_binding'
   | 'runner_context_credential'
   | 'release_real_owner_diagnostic'
   | 'release_deploy_rehearsal'
@@ -190,6 +191,7 @@ const IMPACT_RULE_ORDER: readonly ChangedFileImpactRule[] = [
   'canonical_story_markdown',
   'generated_story_specs_derived_cache',
   'visual_code_ref',
+  'trace_spec_story_binding',
   'runner_context_credential',
   'release_real_owner_diagnostic',
   'release_deploy_rehearsal',
@@ -642,6 +644,13 @@ function findVisualMatches(
   return catalog.visual_code_ref_map[filePath] ?? [];
 }
 
+function findTraceSpecMatches(
+  filePath: string,
+  catalog: VerificationCatalog,
+): readonly VerificationCatalog['trace_spec_story_map']['entries'][number][] {
+  return catalog.trace_spec_story_map.entries.filter((entry) => entry.specFile === filePath);
+}
+
 function moreSevereRiskLevel(left: StoryRiskLevel, right: StoryRiskLevel): StoryRiskLevel {
   return RISK_LEVEL_ORDER.indexOf(left) <= RISK_LEVEL_ORDER.indexOf(right) ? left : right;
 }
@@ -1072,6 +1081,47 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
             },
           });
         }
+      }
+    }
+
+    const traceSpecMatches = findTraceSpecMatches(changedFile, catalog);
+    if (traceSpecMatches.length > 0) {
+      mapped = true;
+      const action = 'Run the mapped story verification levels for this trace-bound integration spec before accepting the spec impact.';
+      const surface = `trace-spec:${changedFile}`;
+      accumulator.surfaces.add(surface);
+      accumulator.reasons.push(`${changedFile} has ${traceSpecMatches.length} trace spec story binding(s).`);
+      pushUnique(accumulator.nextActions, action);
+      for (const match of traceSpecMatches) {
+        const story = catalog.story_by_id[match.storyId];
+        if (!story) {
+          continue;
+        }
+        const levels = levelsForStory(story);
+        addLevels(accumulator, levels);
+        recordChangedFileImpact(accumulator, {
+          changedFile,
+          rule: 'trace_spec_story_binding',
+          surfaces: [surface],
+          storyIds: [story.storyId],
+          action,
+          manualReviewRequired: false,
+          broadImpact: false,
+        });
+        addStoryCard(accumulator, story, {
+          risk: 'required',
+          levels,
+          evidenceStatus: 'not_evaluated',
+          nextAction: action,
+          impactSource: {
+            changedFile,
+            rule: 'trace_spec_story_binding',
+            surface,
+            action,
+            manualReviewRequired: false,
+            broadImpact: false,
+          },
+        });
       }
     }
 

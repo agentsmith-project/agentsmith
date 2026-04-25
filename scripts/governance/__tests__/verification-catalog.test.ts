@@ -21,6 +21,7 @@ import {
   VERIFICATION_CATALOG_SCHEMA,
   writeVerificationCatalog,
 } from '../verification-catalog';
+import { scanTraceSpecStoryMap } from '../trace-spec-story-map';
 
 describe('verification catalog', () => {
   it('validates the risk policy sidecar with exact canonical story coverage and policy refs only', () => {
@@ -218,6 +219,214 @@ describe('verification catalog', () => {
     expect(catalog.story_source_file_map[GENERATED_STORY_SPEC_PATH]).toBeUndefined();
     expect(catalog.stories.every((story) => story.sourceFile !== GENERATED_STORY_SPEC_PATH)).toBe(true);
     expect(catalog.generated_story_specs.story_ids.length).toBe(catalog.stories.length);
+  });
+
+  it('projects trace spec story bindings without using them as canonical story truth', () => {
+    const catalog = buildVerificationCatalog();
+    const entriesBySpec = new Map<string, string[]>();
+    for (const entry of catalog.trace_spec_story_map.entries) {
+      entriesBySpec.set(entry.specFile, [
+        ...(entriesBySpec.get(entry.specFile) ?? []),
+        entry.storyId,
+      ].sort((left, right) => left.localeCompare(right)));
+      expect(Object.keys(entry).sort()).toEqual([
+        'sourceTruth',
+        'specFile',
+        'storyId',
+        'storySourceFile',
+      ]);
+      expect(entry.sourceTruth).toMatchObject({
+        kind: 'trace_spec_story_binding',
+        usedAsStoryTruth: false,
+      });
+      expect(catalog.story_by_id[entry.storyId]?.sourceFile).toBe(entry.storySourceFile);
+    }
+
+    expect(catalog.source_truth.trace_spec_story_bindings).toMatchObject({
+      authority: 'derived_projection',
+      used_as_story_truth: false,
+      scanner: 'scripts/governance/trace-spec-story-map.ts',
+      source_glob: 'e2e/integration*.spec.ts',
+      binding_contract: 'createUxTraceBundleWriter({ specFile, storyId, storyBinding })',
+      unresolved_count: 0,
+    });
+    expect(catalog.source_truth.trace_spec_story_bindings.spec_count).toBeGreaterThan(0);
+    expect(catalog.source_truth.trace_spec_story_bindings.binding_count).toBe(catalog.trace_spec_story_map.entries.length);
+    expect(entriesBySpec.get('e2e/integration-chat.spec.ts')).toEqual([
+      'chat-day-two-thread-workflow',
+      'chat-stop-terminate-idempotent-state-resync',
+    ]);
+    expect(entriesBySpec.get('e2e/integration-notebook-terminal-ux.spec.ts')).toEqual([
+      'notebook-terminal-reentry-recovery',
+      'notebook-terminal-truth-unavailable-retry',
+      'notebook-terminal-workspace-multi-session',
+    ]);
+    expect(entriesBySpec.get('e2e/integration-visual-review.spec.ts')).toEqual(expect.arrayContaining([
+      'project-surface-handoff-continuity',
+      'real-backend-visual-review',
+    ]));
+    expect(entriesBySpec.get('e2e/integration-release-user-story.spec.ts')).toEqual([
+      'release-user-story-end-to-end',
+    ]);
+  });
+
+  it('disables default trace spec scanning for story input override fixtures', () => {
+    const [story] = loadCommittedStoryDefinitionsSync();
+    const catalog = buildVerificationCatalog({
+      stories: [story],
+      visualCatalogEntries: [],
+    });
+
+    expect(catalog.source_truth.trace_spec_story_bindings).toMatchObject({
+      source_mode: 'disabled_for_story_input_override',
+      used_as_story_truth: false,
+      spec_count: 0,
+      binding_count: 0,
+      unresolved_count: 0,
+    });
+    expect(catalog.trace_spec_story_map.entries).toEqual([]);
+  });
+
+  it('hard-fails trace spec bindings that point at unknown canonical stories', () => {
+    const [story] = loadCommittedStoryDefinitionsSync();
+
+    expect(() => scanTraceSpecStoryMap({
+      stories: [story],
+      sourceTexts: [{
+        filePath: 'e2e/integration-synthetic-unknown.spec.ts',
+        text: `
+          import { loadStoryDefinitionSync } from './story-loader';
+          import { buildTraceStoryBinding } from './story-trace-binding';
+          import { createUxTraceBundleWriter } from './trace-bundle-support';
+          const STORY = loadStoryDefinitionSync('unknown-story-id');
+          const BINDING = buildTraceStoryBinding(STORY);
+          async function run() {
+            await createUxTraceBundleWriter({
+              specFile: 'e2e/integration-synthetic-unknown.spec.ts',
+              storyId: STORY.storyId,
+              storyBinding: BINDING,
+            });
+          }
+        `,
+      }],
+    })).toThrow(/unknown trace spec story id: unknown-story-id/);
+  });
+
+  it('hard-fails unresolved trace spec writer metadata with source file, line, and reason', () => {
+    const [story] = loadCommittedStoryDefinitionsSync();
+
+    expect(() => scanTraceSpecStoryMap({
+      stories: [story],
+      sourceTexts: [{
+        filePath: 'e2e/integration-synthetic-unresolved.spec.ts',
+        text: `
+          import { loadStoryDefinitionSync } from './story-loader';
+          import { createUxTraceBundleWriter } from './trace-bundle-support';
+          const STORY = loadStoryDefinitionSync('${story.storyId}');
+          async function run() {
+            await createUxTraceBundleWriter({
+              storyId: STORY.storyId,
+            });
+          }
+        `,
+      }],
+    })).toThrow(
+      /unresolved trace spec story binding\(s\) found:\n- e2e\/integration-synthetic-unresolved\.spec\.ts:\d+: specFile metadata could not be resolved; storyBinding metadata could not be resolved/,
+    );
+  });
+
+  it('hard-fails partial trace spec scans when any writer binding is unresolved', () => {
+    const [story] = loadCommittedStoryDefinitionsSync();
+
+    expect(() => scanTraceSpecStoryMap({
+      stories: [story],
+      sourceTexts: [{
+        filePath: 'e2e/integration-synthetic-partial.spec.ts',
+        text: `
+          import { loadStoryDefinitionSync } from './story-loader';
+          import { buildTraceStoryBinding } from './story-trace-binding';
+          import { createUxTraceBundleWriter } from './trace-bundle-support';
+          const STORY = loadStoryDefinitionSync('${story.storyId}');
+          const BINDING = buildTraceStoryBinding(STORY);
+          async function run() {
+            await createUxTraceBundleWriter({
+              specFile: 'e2e/integration-synthetic-partial.spec.ts',
+              storyId: STORY.storyId,
+              storyBinding: BINDING,
+            });
+            await createUxTraceBundleWriter({
+              specFile: 'e2e/integration-synthetic-partial.spec.ts',
+              storyId: STORY.storyId,
+            });
+          }
+        `,
+      }],
+    })).toThrow(
+      /unresolved trace spec story binding\(s\) found:\n- e2e\/integration-synthetic-partial\.spec\.ts:\d+: storyBinding metadata could not be resolved/,
+    );
+  });
+
+  it('hard-fails trace spec writer specFile metadata that does not match the scanned source file', () => {
+    const [story] = loadCommittedStoryDefinitionsSync();
+
+    expect(() => scanTraceSpecStoryMap({
+      stories: [story],
+      sourceTexts: [{
+        filePath: 'e2e/integration-synthetic-actual.spec.ts',
+        text: `
+          import { loadStoryDefinitionSync } from './story-loader';
+          import { buildTraceStoryBinding } from './story-trace-binding';
+          import { createUxTraceBundleWriter } from './trace-bundle-support';
+          const STORY = loadStoryDefinitionSync('${story.storyId}');
+          const BINDING = buildTraceStoryBinding(STORY);
+          async function run() {
+            await createUxTraceBundleWriter({
+              specFile: 'e2e/integration-synthetic-declared.spec.ts',
+              storyId: STORY.storyId,
+              storyBinding: BINDING,
+            });
+          }
+        `,
+      }],
+    })).toThrow(
+      /trace spec specFile metadata mismatch in current source file e2e\/integration-synthetic-actual\.spec\.ts:\d+: declared specFile=e2e\/integration-synthetic-declared\.spec\.ts, actual source file=e2e\/integration-synthetic-actual\.spec\.ts/,
+    );
+  });
+
+  it('hard-fails trace spec storyId and storyBinding mismatches', () => {
+    const stories = loadCommittedStoryDefinitionsSync();
+    const leftStory = stories[0];
+    const rightStory = stories.find((candidate) => candidate.storyId !== leftStory?.storyId);
+    if (!leftStory || !rightStory) {
+      throw new Error('at least two canonical story fixtures are required');
+    }
+
+    expect(() => scanTraceSpecStoryMap({
+      stories,
+      sourceTexts: [{
+        filePath: 'e2e/integration-synthetic-mismatch.spec.ts',
+        text: `
+          import { loadStoryDefinitionSync } from './story-loader';
+          import { buildTraceStoryBinding } from './story-trace-binding';
+          import { createUxTraceBundleWriter } from './trace-bundle-support';
+          const LEFT_STORY = loadStoryDefinitionSync('${leftStory.storyId}');
+          const RIGHT_STORY = loadStoryDefinitionSync('${rightStory.storyId}');
+          const RIGHT_BINDING = buildTraceStoryBinding(RIGHT_STORY);
+          async function run() {
+            await createUxTraceBundleWriter({
+              specFile: 'e2e/integration-synthetic-mismatch.spec.ts',
+              storyId: LEFT_STORY.storyId,
+              storyBinding: RIGHT_BINDING,
+            });
+          }
+        `,
+      }],
+    })).toThrow(
+      new RegExp(
+        `trace spec story binding mismatch in e2e/integration-synthetic-mismatch.spec.ts:\\d+: `
+        + `LEFT_STORY.storyId resolved to ${leftStory.storyId}, RIGHT_BINDING resolved to ${rightStory.storyId}`,
+      ),
+    );
   });
 
   it('maps ChatMainPane visual code refs to V2 visual story surfaces', () => {

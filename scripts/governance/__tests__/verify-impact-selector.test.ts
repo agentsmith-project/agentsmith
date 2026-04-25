@@ -397,6 +397,130 @@ describe('verify impact selector', () => {
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
   });
 
+  it('maps trace-bound integration chat specs to exact story cards without broad impact', () => {
+    const plan = buildVerificationPlan({
+      changedFiles: ['e2e/integration-chat.spec.ts'],
+    });
+
+    expect(plan.affectedStories).toEqual([
+      'chat-day-two-thread-workflow',
+      'chat-stop-terminate-idempotent-state-resync',
+    ]);
+    expect(plan.affectedSurfaces).toEqual([
+      'trace-spec:e2e/integration-chat.spec.ts',
+    ]);
+    expect(plan.riskSummary.broadImpact).toBe(false);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.changedFileImpacts).toEqual([
+      expect.objectContaining({
+        changedFile: 'e2e/integration-chat.spec.ts',
+        matchedRules: ['trace_spec_story_binding'],
+        storyIds: [
+          'chat-day-two-thread-workflow',
+          'chat-stop-terminate-idempotent-state-resync',
+        ],
+        broadImpact: false,
+      }),
+    ]);
+    expect(plan.storyCards).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        storyId: 'chat-stop-terminate-idempotent-state-resync',
+        requiredLevels: ['V0', 'V1', 'V2', 'V3'],
+      }),
+      expect.objectContaining({
+        storyId: 'chat-day-two-thread-workflow',
+        requiredLevels: ['V0', 'V1', 'V3'],
+      }),
+    ]));
+    expect(plan.storyCards.flatMap((card) => card.impactSources)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        changedFile: 'e2e/integration-chat.spec.ts',
+        rule: 'trace_spec_story_binding',
+        broadImpact: false,
+      }),
+    ]));
+  });
+
+  it('keeps trace story cards and runner/context broad review for trace-bound notebook specs', () => {
+    const plan = buildVerificationPlan({
+      changedFiles: ['e2e/integration-notebook-terminal-ux.spec.ts'],
+    });
+    const impact = plan.changedFileImpacts.find(
+      (candidate) => candidate.changedFile === 'e2e/integration-notebook-terminal-ux.spec.ts',
+    );
+    const storyCard = plan.storyCards.find(
+      (card) => card.storyId === 'notebook-terminal-workspace-multi-session',
+    );
+
+    expect(plan.affectedStories).toContain('notebook-terminal-workspace-multi-session');
+    expect(plan.affectedStories).toContain('notebook-terminal-truth-unavailable-retry');
+    expect(plan.affectedStories).toContain('notebook-terminal-reentry-recovery');
+    expect(impact).toMatchObject({
+      matchedRules: ['trace_spec_story_binding', 'runner_context_credential'],
+      broadImpact: true,
+      manualReviewRequired: true,
+    });
+    expect(impact?.storyIds).toEqual(expect.arrayContaining([
+      'notebook-terminal-workspace-multi-session',
+      'notebook-terminal-truth-unavailable-retry',
+      'notebook-terminal-reentry-recovery',
+    ]));
+    expect(plan.riskSummary.broadImpact).toBe(true);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.affectedSurfaces).toContain('trace-spec:e2e/integration-notebook-terminal-ux.spec.ts');
+    expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
+    expect(storyCard?.impactSources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        rule: 'trace_spec_story_binding',
+        broadImpact: false,
+      }),
+      expect.objectContaining({
+        rule: 'runner_context_credential',
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+    ]));
+    expect(storyCard?.manualReviewReasons).toContain('runner/context/credential owner review');
+  });
+
+  it('keeps trace story cards and V4 release review for trace-bound release user story specs', () => {
+    const plan = buildVerificationPlan({
+      changedFiles: ['e2e/integration-release-user-story.spec.ts'],
+    });
+    const impact = plan.changedFileImpacts.find(
+      (candidate) => candidate.changedFile === 'e2e/integration-release-user-story.spec.ts',
+    );
+    const storyCard = plan.storyCards.find(
+      (card) => card.storyId === 'release-user-story-end-to-end',
+    );
+
+    expect(plan.affectedStories).toContain('release-user-story-end-to-end');
+    expect(impact).toMatchObject({
+      matchedRules: ['trace_spec_story_binding', 'release_deploy_rehearsal'],
+      broadImpact: true,
+      manualReviewRequired: true,
+    });
+    expect(impact?.storyIds).toContain('release-user-story-end-to-end');
+    expect(plan.requiredLevels).toContain('V4');
+    expect(plan.riskSummary.broadImpact).toBe(true);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.affectedSurfaces).toContain('trace-spec:e2e/integration-release-user-story.spec.ts');
+    expect(plan.affectedSurfaces).toContain('release/deploy/rehearsal');
+    expect(storyCard?.impactSources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        rule: 'trace_spec_story_binding',
+        broadImpact: false,
+      }),
+      expect.objectContaining({
+        rule: 'release_deploy_rehearsal',
+        broadImpact: true,
+        manualReviewRequired: true,
+      }),
+    ]));
+    expect(storyCard?.manualReviewReasons).toContain('release/deploy/rehearsal operator review');
+  });
+
   it('fails closed to V3 real-backend verification for runner, Context Store, and credential paths', () => {
     const plan = buildVerificationPlan({
       changedFiles: [
@@ -412,6 +536,33 @@ describe('verify impact selector', () => {
     expect(plan.finalVerdict).toContain('not_evaluated');
     expect(plan.nextAction).toContain('npm run verify:real');
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.riskSummary.broadImpact).toBe(true);
+    expect(plan.changedFileImpacts.find((impact) => impact.changedFile === 'src/lib/api/endpoints/context.ts')).toMatchObject({
+      matchedRules: ['runner_context_credential'],
+      broadImpact: true,
+    });
+  });
+
+  it('carries trace spec story binding sources into the acceptance report projection', () => {
+    const plan = buildVerificationPlan({
+      changedFiles: ['e2e/integration-chat.spec.ts'],
+    });
+    const report = buildStoryAcceptanceReport(plan, '/tmp/report-root');
+    const chatImpact = report.changed_file_impacts.find(
+      (impact) => impact.changed_file === 'e2e/integration-chat.spec.ts',
+    );
+    const chatCard = report.story_cards.find(
+      (card) => card.story_id === 'chat-stop-terminate-idempotent-state-resync',
+    );
+
+    expect(chatImpact?.matched_rules).toContain('trace_spec_story_binding');
+    expect(chatCard?.impact_sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        rule: 'trace_spec_story_binding',
+        changed_file: 'e2e/integration-chat.spec.ts',
+        broad_impact: false,
+      }),
+    ]));
   });
 
   it('recommends V4 release-ready next action for release and rehearsal paths without making a release verdict', () => {

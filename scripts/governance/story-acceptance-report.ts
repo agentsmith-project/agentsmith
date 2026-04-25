@@ -69,6 +69,16 @@ export interface StoryAcceptanceChangedFileImpact {
   broad_impact: boolean;
 }
 
+export interface StoryAcceptanceTraceabilityGap {
+  kind: 'missing_catalog_mapping';
+  story_id: string;
+  level: string;
+  owner: string;
+  status: VerificationStoryCard['status'];
+  artifact_path_template_reason: string;
+  next_action: string;
+}
+
 export interface StoryAcceptanceReport {
   schema: typeof STORY_ACCEPTANCE_REPORT_SCHEMA;
   generated_at: string;
@@ -88,6 +98,7 @@ export interface StoryAcceptanceReport {
   final_verdict: string;
   next_action: string;
   next_actions: readonly string[];
+  traceability_gaps: readonly StoryAcceptanceTraceabilityGap[];
   report_root: string;
   verification_catalog_path?: string;
   release_verdict: false;
@@ -169,11 +180,42 @@ function toChangedFileImpact(
   };
 }
 
+function traceabilityGapNextAction(gap: {
+  level: string;
+  owner: string;
+}): string {
+  return `Register the current gate result writer artifact_path_template mapping for ${gap.level} owner ${gap.owner} before treating this evidence card as traceable.`;
+}
+
+function collectTraceabilityGaps(
+  cards: readonly StoryAcceptanceReportCard[],
+): readonly StoryAcceptanceTraceabilityGap[] {
+  return cards.flatMap((card) => card.evidence_cards.flatMap((evidenceCard) => {
+    const reason = evidenceCard.artifact_path_template_reason?.trim();
+    if (evidenceCard.artifact_path_template !== null || !reason) {
+      return [];
+    }
+    return [{
+      kind: 'missing_catalog_mapping',
+      story_id: card.story_id,
+      level: evidenceCard.level,
+      owner: evidenceCard.owner,
+      status: evidenceCard.status,
+      artifact_path_template_reason: reason,
+      next_action: traceabilityGapNextAction({
+        level: evidenceCard.level,
+        owner: evidenceCard.owner,
+      }),
+    }];
+  }));
+}
+
 export function buildStoryAcceptanceReport(
   plan: VerificationPlan,
   reportRoot: string,
   options: BuildStoryAcceptanceReportOptions = {},
 ): StoryAcceptanceReport {
+  const storyCards = plan.storyCards.map(toReportCard);
   return {
     schema: STORY_ACCEPTANCE_REPORT_SCHEMA,
     generated_at: plan.generatedAt,
@@ -193,6 +235,7 @@ export function buildStoryAcceptanceReport(
     final_verdict: plan.finalVerdict,
     next_action: plan.nextAction,
     next_actions: plan.nextActions,
+    traceability_gaps: collectTraceabilityGaps(storyCards),
     report_root: reportRoot,
     ...(options.verificationCatalogPath
       ? { verification_catalog_path: path.resolve(options.verificationCatalogPath) }
@@ -200,7 +243,7 @@ export function buildStoryAcceptanceReport(
     release_verdict: false,
     not_release_readiness: true,
     changed_file_impacts: plan.changedFileImpacts.map(toChangedFileImpact),
-    story_cards: plan.storyCards.map(toReportCard),
+    story_cards: storyCards,
   };
 }
 
@@ -257,6 +300,26 @@ function renderStoryStatusTable(cards: readonly StoryAcceptanceReportCard[]): st
       card.required_levels.join(', '),
       card.manual_review_required ? card.manual_review_reasons.join(', ') || 'required' : 'false',
       card.next_action,
+    ].map(renderMarkdownTableValue).join(' | ')).map((row) => `| ${row} |`),
+  ];
+}
+
+function renderTraceabilityGapTable(gaps: readonly StoryAcceptanceTraceabilityGap[]): string[] {
+  if (gaps.length === 0) {
+    return ['No traceability gaps were detected.'];
+  }
+
+  return [
+    '| Kind | Story | Level | Owner | Status | Reason | Next action |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
+    ...gaps.map((gap) => [
+      gap.kind,
+      gap.story_id,
+      gap.level,
+      gap.owner,
+      gap.status,
+      gap.artifact_path_template_reason,
+      gap.next_action,
     ].map(renderMarkdownTableValue).join(' | ')).map((row) => `| ${row} |`),
   ];
 }
@@ -352,6 +415,10 @@ export function renderStoryAcceptanceReportMarkdown(report: StoryAcceptanceRepor
     `- Next action: ${report.next_action}`,
     '- Next actions:',
     ...renderNextActions(report.next_actions),
+    '',
+    '## Traceability Gaps',
+    '',
+    ...renderTraceabilityGapTable(report.traceability_gaps),
     '',
     '## Risk',
     '',

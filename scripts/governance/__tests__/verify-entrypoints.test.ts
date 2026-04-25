@@ -161,6 +161,16 @@ type ReportEvidenceCard = {
   artifact_path_template_reason: string | null;
 };
 
+type ReportTraceabilityGap = {
+  kind: 'missing_catalog_mapping';
+  story_id: string;
+  level: string;
+  owner: string;
+  status: string;
+  artifact_path_template_reason: string;
+  next_action: string;
+};
+
 type ReportStoryCard = {
   risk_level: string;
   risk_reason: string;
@@ -847,6 +857,7 @@ describe('verify human entrypoints', () => {
         not_release_readiness: boolean;
         required_levels: string[];
         recommended_commands: string[];
+        traceability_gaps: ReportTraceabilityGap[];
         story_cards: ReportStoryCard[];
       };
       const v3Evidence = report.story_cards[0]?.evidence_cards.find((card) => card.level === 'V3');
@@ -873,10 +884,15 @@ describe('verify human entrypoints', () => {
         artifact_path_template_reason: null,
       });
       expect(v3Evidence?.additional_artifact_path_templates).toEqual([]);
+      expect(report.traceability_gaps).toEqual([]);
       expect(report.release_verdict).toBe(false);
       expect(report.not_release_readiness).toBe(true);
       expect(reportStatusValues(report.story_cards)).not.toContain('passed');
       expect(reportStatusValues(report.story_cards)).not.toContain('stale');
+
+      const markdown = readFileSync(join(root, 'story-acceptance-report.md'), 'utf8');
+      expect(markdown).toContain('## Traceability Gaps');
+      expect(markdown).toContain('No traceability gaps were detected.');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -40,6 +40,16 @@ type ReportEvidenceCard = {
   artifact_path_template_reason: string | null;
 };
 
+type ReportTraceabilityGap = {
+  kind: 'missing_catalog_mapping';
+  story_id: string;
+  level: string;
+  owner: string;
+  status: string;
+  artifact_path_template_reason: string;
+  next_action: string;
+};
+
 type ReportChangedFileImpact = {
   changed_file: string;
   matched_rules: string[];
@@ -357,6 +367,7 @@ describe('verify impact selector', () => {
       expect(result.status).toBe(0);
       const report = JSON.parse(readFileSync(join(reportRoot, 'story-acceptance-report.json'), 'utf8')) as {
         schema: string;
+        traceability_gaps: ReportTraceabilityGap[];
         story_cards: ReportStoryCard[];
         release_verdict: boolean;
       };
@@ -372,6 +383,9 @@ describe('verify impact selector', () => {
         artifact_path_template: 'artifacts/backend-real/runs/<run-id>/ux-traces',
         artifact_path_template_reason: null,
       });
+      expect(report.traceability_gaps.some((gap) => (
+        gap.story_id === 'notebook-first-success' && gap.level === 'V3'
+      ))).toBe(false);
       expect(report.release_verdict).toBe(false);
       expect(reportStatusValues(report.story_cards)).not.toContain('passed');
       expect(reportStatusValues(report.story_cards)).not.toContain('stale');
@@ -705,6 +719,7 @@ describe('verify impact selector', () => {
       const report = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
         schema: string;
         changed_files: string[];
+        traceability_gaps: ReportTraceabilityGap[];
         story_cards: ReportStoryCard[];
         final_verdict: string;
         release_verdict: boolean;
@@ -743,6 +758,29 @@ describe('verify impact selector', () => {
       });
       expect(reportCard?.evidence_cards.find((card) => card.level === 'V0')?.artifact_path_template_reason)
         .toContain('No registered current gate result writer');
+      expect(report.traceability_gaps).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'missing_catalog_mapping',
+          story_id: 'mock-lane-chat-operate-and-recover',
+          level: 'V0',
+          owner: 'npm run verify:quick',
+          status: 'not_evaluated',
+          artifact_path_template_reason: expect.stringContaining('No registered current gate result writer for gate-fast'),
+          next_action: expect.stringContaining('Register the current gate result writer artifact_path_template mapping for V0'),
+        }),
+        expect.objectContaining({
+          kind: 'missing_catalog_mapping',
+          story_id: 'mock-lane-chat-operate-and-recover',
+          level: 'V1',
+          owner: 'npm run verify:default',
+          status: 'not_evaluated',
+          artifact_path_template_reason: expect.stringContaining('No registered current gate result writer for gate-default'),
+          next_action: expect.stringContaining('Register the current gate result writer artifact_path_template mapping for V1'),
+        }),
+      ]));
+      expect(report.traceability_gaps.some((gap) => (
+        gap.story_id === 'mock-lane-chat-operate-and-recover' && gap.level === 'V2'
+      ))).toBe(false);
       expect(reportStatusValues(report.story_cards)).not.toContain('passed');
       expect(reportStatusValues(report.story_cards)).not.toContain('stale');
       expect(report.final_verdict).toBe('not_evaluated_fail_closed');
@@ -753,6 +791,9 @@ describe('verify impact selector', () => {
       expect(markdown).toContain('| Story | Risk | Status | Required levels | Manual review | Next action |');
       expect(markdown).toContain('not release readiness');
       expect(markdown).toContain('not a release verdict');
+      expect(markdown).toContain('## Traceability Gaps');
+      expect(markdown).toContain('missing_catalog_mapping');
+      expect(markdown).toContain('No registered current gate result writer for gate-fast');
       expect(markdown).toContain('mock-lane-chat-operate-and-recover');
       expect(markdown).toContain('- Risk policy refs: visual_product_experience, standard_mock_workflow');
       expect(markdown).toContain(`- Risk policy source: ${CURRENT_STORY_RISK_POLICY_SOURCE}`);

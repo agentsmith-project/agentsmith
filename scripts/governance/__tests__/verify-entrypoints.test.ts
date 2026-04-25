@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmdirSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import type { SpawnSyncReturns } from 'node:child_process';
 
 import { describe, expect, it } from 'vitest';
 
@@ -37,6 +38,118 @@ exit 0
   chmodSync(path, 0o755);
 }
 
+type FakeGitOptions = {
+  refs?: Record<string, string>;
+  mergeBases?: Record<string, string>;
+  emptyMergeBases?: readonly string[];
+  baseDiffs?: Record<string, readonly string[]>;
+  dirtyFiles?: readonly string[];
+  cachedFiles?: readonly string[];
+  untrackedFiles?: readonly string[];
+};
+
+function bashCasePattern(value: string): string {
+  return value.replace(/[\\*?[\]]/g, '\\$&');
+}
+
+function bashArrayLiteral(values: readonly string[] = []): string {
+  return values.map((value) => `"${value.replace(/["\\$`]/g, '\\$&')}"`).join(' ');
+}
+
+function bashAssocLiteral(values: Record<string, string> = {}): string {
+  return Object.entries(values)
+    .map(([key, value]) => `["${key.replace(/["\\$`]/g, '\\$&')}"]="${value.replace(/["\\$`]/g, '\\$&')}"`)
+    .join(' ');
+}
+
+function bashDiffCases(baseDiffs: Record<string, readonly string[]> = {}): string {
+  return Object.entries(baseDiffs).map(([range, files]) => `
+    ${bashCasePattern(range)})
+      for file in ${bashArrayLiteral(files)}; do
+        printf '%s\\n' "$file"
+      done
+      exit 0
+      ;;
+`).join('');
+}
+
+function writeFakeGit(dir: string, logPath: string, options: FakeGitOptions): void {
+  const path = join(dir, 'git');
+  writeFileSync(path, `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${logPath}"
+
+declare -A refs=(${bashAssocLiteral(options.refs)})
+declare -A merge_bases=(${bashAssocLiteral(options.mergeBases)})
+empty_merge_bases=(${bashArrayLiteral(options.emptyMergeBases)})
+
+if [[ "$1" == "fetch" ]]; then
+  echo "fetch must not be called" >&2
+  exit 99
+fi
+
+if [[ "$1" == "rev-parse" && "$2" == "--verify" ]]; then
+  ref="$3"
+  if [[ -n "\${refs[$ref]:-}" ]]; then
+    printf '%s\\n' "\${refs[$ref]}"
+    exit 0
+  fi
+  echo "fatal: Needed a single revision" >&2
+  exit 128
+fi
+
+if [[ "$1" == "merge-base" ]]; then
+  key="$2 $3"
+  if [[ -n "\${merge_bases[$key]:-}" ]]; then
+    printf '%s\\n' "\${merge_bases[$key]}"
+    exit 0
+  fi
+  for empty_key in "\${empty_merge_bases[@]}"; do
+    if [[ "$key" == "$empty_key" ]]; then
+      exit 0
+    fi
+  done
+  echo "fatal: no merge base" >&2
+  exit 1
+fi
+
+if [[ "$1" == "diff" && "$2" == "--name-only" && "$#" -eq 2 ]]; then
+  for file in ${bashArrayLiteral(options.dirtyFiles)}; do
+    printf '%s\\n' "$file"
+  done
+  exit 0
+fi
+
+if [[ "$1" == "diff" && "$2" == "--name-only" && "$#" -eq 3 && "$3" == "--cached" ]]; then
+  for file in ${bashArrayLiteral(options.cachedFiles)}; do
+    printf '%s\\n' "$file"
+  done
+  exit 0
+fi
+
+if [[ "$1" == "diff" && "$2" == "--name-only" && "$#" -eq 3 ]]; then
+  range="$3"
+  case "$range" in
+${bashDiffCases(options.baseDiffs)}
+    *)
+      exit 0
+      ;;
+  esac
+fi
+
+if [[ "$1" == "ls-files" && "$#" -eq 3 && "$2" == "--others" && "$3" == "--exclude-standard" ]]; then
+  for file in ${bashArrayLiteral(options.untrackedFiles)}; do
+    printf '%s\\n' "$file"
+  done
+  exit 0
+fi
+
+echo "unexpected git command: $*" >&2
+exit 2
+`);
+  chmodSync(path, 0o755);
+}
+
 type ReportEvidenceCard = {
   level: string;
   state: string;
@@ -64,6 +177,48 @@ function reportStatusValues(cards: readonly ReportStoryCard[]): string[] {
     ...card.level_statuses.map((entry) => entry.status),
     ...card.evidence_cards.map((entry) => entry.status),
   ]);
+}
+
+type VerifyReport = {
+  changed_files: string[];
+  required_levels: string[];
+  recommended_commands: string[];
+  risk_summary: {
+    warnings: string[];
+    manual_review_required: boolean;
+    broad_impact: boolean;
+  };
+  story_cards: ReportStoryCard[];
+};
+
+function runVerifyWithFakeGit(
+  root: string,
+  args: readonly string[] = [],
+  env: NodeJS.ProcessEnv = {},
+): SpawnSyncReturns<string> {
+  return spawnSync('npx', [
+    'tsx',
+    'scripts/governance/run-verify.ts',
+    '--report-root',
+    root,
+    ...args,
+  ], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PATH: `${root}:${process.env.PATH ?? ''}`,
+      CI: '',
+      GITHUB_EVENT_NAME: '',
+      GITHUB_BASE_REF: '',
+      VERIFY_BASE_REF: '',
+      ...env,
+    },
+    encoding: 'utf8',
+  });
+}
+
+function readVerifyReport(root: string): VerifyReport {
+  return JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as VerifyReport;
 }
 
 describe('verify human entrypoints', () => {
@@ -155,6 +310,468 @@ describe('verify human entrypoints', () => {
         verdict_state: 'none',
         evidence_claims_created: false,
       });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('detects clean branch changed files from implicit origin/main merge-base diff', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-clean-branch-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {
+        refs: {
+          'origin/main': 'refs/remotes/origin/main',
+        },
+        mergeBases: {
+          'HEAD origin/main': 'merge-base-sha',
+        },
+        baseDiffs: {
+          'merge-base-sha..HEAD': ['src/components/chat/ChatMainPane.tsx'],
+        },
+      });
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--report-root',
+        root,
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+          CI: '',
+          GITHUB_EVENT_NAME: '',
+          GITHUB_BASE_REF: '',
+          VERIFY_BASE_REF: '',
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('Changed files: src/components/chat/ChatMainPane.tsx');
+      expect(result.stdout).toContain('npm run verify:visual');
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as VerifyReport;
+      expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
+      expect(report.recommended_commands).toContain('npm run verify:visual');
+
+      const log = readFileSync(gitLog, 'utf8');
+      expect(log).toContain('rev-parse --verify origin/main');
+      expect(log).toContain('merge-base HEAD origin/main');
+      expect(log).toContain('diff --name-only merge-base-sha..HEAD');
+      expect(log).not.toContain('fetch');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('uses explicit --base-ref without probing origin/main or fetching', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-explicit-base-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {
+        refs: {
+          'upstream/main': 'refs/remotes/upstream/main',
+        },
+        mergeBases: {
+          'HEAD upstream/main': 'upstream-merge-base-sha',
+        },
+        baseDiffs: {
+          'upstream-merge-base-sha..HEAD': ['src/components/chat/ChatMainPane.tsx'],
+        },
+      });
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--base-ref=upstream/main',
+        '--report-root',
+        root,
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+          CI: '',
+          GITHUB_EVENT_NAME: '',
+          GITHUB_BASE_REF: '',
+          VERIFY_BASE_REF: '',
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as VerifyReport;
+      expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
+      expect(report.recommended_commands).toContain('npm run verify:visual');
+
+      const log = readFileSync(gitLog, 'utf8');
+      expect(log).toContain('rev-parse --verify upstream/main');
+      expect(log).toContain('merge-base HEAD upstream/main');
+      expect(log).not.toContain('origin/main');
+      expect(log).not.toContain('fetch');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('uses VERIFY_BASE_REF when no explicit base ref is provided', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-env-base-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {
+        refs: {
+          'origin/develop': 'refs/remotes/origin/develop',
+        },
+        mergeBases: {
+          'HEAD origin/develop': 'env-merge-base-sha',
+        },
+        baseDiffs: {
+          'env-merge-base-sha..HEAD': ['src/components/chat/ChatMainPane.tsx'],
+        },
+      });
+
+      const result = runVerifyWithFakeGit(root, [], {
+        VERIFY_BASE_REF: 'origin/develop',
+      });
+
+      expect(result.status).toBe(0);
+      const report = readVerifyReport(root);
+      expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
+      expect(report.recommended_commands).toContain('npm run verify:visual');
+
+      const log = readFileSync(gitLog, 'utf8');
+      expect(log).toContain('rev-parse --verify origin/develop');
+      expect(log).toContain('merge-base HEAD origin/develop');
+      expect(log).not.toContain('origin/main');
+      expect(log).not.toContain('fetch');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('prefers explicit --base-ref over VERIFY_BASE_REF', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-explicit-over-env-base-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {
+        refs: {
+          'upstream/main': 'refs/remotes/upstream/main',
+          'origin/develop': 'refs/remotes/origin/develop',
+        },
+        mergeBases: {
+          'HEAD upstream/main': 'explicit-merge-base-sha',
+          'HEAD origin/develop': 'env-merge-base-sha',
+        },
+        baseDiffs: {
+          'explicit-merge-base-sha..HEAD': ['src/components/chat/ChatMainPane.tsx'],
+          'env-merge-base-sha..HEAD': ['src/lib/new-unmapped-source.ts'],
+        },
+      });
+
+      const result = runVerifyWithFakeGit(root, ['--base-ref', 'upstream/main'], {
+        VERIFY_BASE_REF: 'origin/develop',
+      });
+
+      expect(result.status).toBe(0);
+      const report = readVerifyReport(root);
+      expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
+      expect(report.changed_files).not.toContain('src/lib/new-unmapped-source.ts');
+
+      const log = readFileSync(gitLog, 'utf8');
+      expect(log).toContain('rev-parse --verify upstream/main');
+      expect(log).not.toContain('origin/develop');
+      expect(log).not.toContain('fetch');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('prefers VERIFY_BASE_REF over GitHub PR base ref', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-env-over-github-base-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {
+        refs: {
+          'upstream/main': 'refs/remotes/upstream/main',
+          'origin/main': 'refs/remotes/origin/main',
+        },
+        mergeBases: {
+          'HEAD upstream/main': 'env-merge-base-sha',
+          'HEAD origin/main': 'github-merge-base-sha',
+        },
+        baseDiffs: {
+          'env-merge-base-sha..HEAD': ['src/components/chat/ChatMainPane.tsx'],
+          'github-merge-base-sha..HEAD': ['src/lib/new-unmapped-source.ts'],
+        },
+      });
+
+      const result = runVerifyWithFakeGit(root, [], {
+        CI: 'true',
+        GITHUB_EVENT_NAME: 'pull_request',
+        GITHUB_BASE_REF: 'main',
+        VERIFY_BASE_REF: 'upstream/main',
+      });
+
+      expect(result.status).toBe(0);
+      const report = readVerifyReport(root);
+      expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
+      expect(report.changed_files).not.toContain('src/lib/new-unmapped-source.ts');
+
+      const log = readFileSync(gitLog, 'utf8');
+      expect(log).toContain('rev-parse --verify upstream/main');
+      expect(log).not.toContain('origin/main');
+      expect(log).not.toContain('fetch');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('uses goal defaults with a warning when implicit origin/main is unavailable', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-missing-implicit-base-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {});
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--report-root',
+        root,
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+          CI: '',
+          GITHUB_EVENT_NAME: '',
+          GITHUB_BASE_REF: '',
+          VERIFY_BASE_REF: '',
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('base ref unavailable');
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as VerifyReport;
+      expect(report.changed_files).toEqual([]);
+      expect(report.required_levels).toEqual(['V0', 'V1', 'V3']);
+      expect(report.risk_summary.warnings.join('\n')).toContain('base ref unavailable');
+      expect(report.risk_summary.manual_review_required).toBe(false);
+      expect(report.risk_summary.broad_impact).toBe(false);
+
+      const log = readFileSync(gitLog, 'utf8');
+      expect(log).toContain('rev-parse --verify origin/main');
+      expect(log).not.toContain('fetch');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('uses goal defaults with a warning when implicit origin/main merge-base is unavailable', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-missing-implicit-merge-base-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {
+        refs: {
+          'origin/main': 'refs/remotes/origin/main',
+        },
+      });
+
+      const result = runVerifyWithFakeGit(root);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('base ref unavailable');
+      const report = readVerifyReport(root);
+      expect(report.changed_files).toEqual([]);
+      expect(report.required_levels).toEqual(['V0', 'V1', 'V3']);
+      expect(report.risk_summary.warnings.join('\n')).toContain('base ref unavailable');
+      expect(report.risk_summary.manual_review_required).toBe(false);
+      expect(report.risk_summary.broad_impact).toBe(false);
+
+      const log = readFileSync(gitLog, 'utf8');
+      expect(log).toContain('merge-base HEAD origin/main');
+      expect(log).not.toContain('fetch');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps dirty files when implicit origin/main merge-base returns empty', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-empty-implicit-merge-base-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {
+        refs: {
+          'origin/main': 'refs/remotes/origin/main',
+        },
+        emptyMergeBases: ['HEAD origin/main'],
+        dirtyFiles: ['src/components/chat/ChatMainPane.tsx'],
+      });
+
+      const result = runVerifyWithFakeGit(root);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('base ref unavailable');
+      const report = readVerifyReport(root);
+      expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
+      expect(report.recommended_commands).toContain('npm run verify:visual');
+      expect(report.risk_summary.warnings.join('\n')).toContain('base ref unavailable');
+      expect(report.risk_summary.broad_impact).toBe(false);
+
+      const log = readFileSync(gitLog, 'utf8');
+      expect(log).toContain('merge-base HEAD origin/main');
+      expect(log).toContain('diff --name-only');
+      expect(log).not.toContain('fetch');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed to broad impact when explicit base ref is unavailable', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-missing-explicit-base-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {});
+
+      const result = runVerifyWithFakeGit(root, ['--base-ref=upstream/main']);
+
+      expect(result.status).toBe(0);
+      const report = readVerifyReport(root);
+      expect(report.changed_files).toEqual([]);
+      expect(report.risk_summary.warnings.join('\n')).toContain('Changed-file detection failed');
+      expect(report.risk_summary.warnings.join('\n')).toContain('base ref unavailable');
+      expect(report.risk_summary.manual_review_required).toBe(true);
+      expect(report.risk_summary.broad_impact).toBe(true);
+      expect(report.story_cards.length).toBeGreaterThan(10);
+
+      const log = readFileSync(gitLog, 'utf8');
+      expect(log).toContain('rev-parse --verify upstream/main');
+      expect(log).not.toContain('origin/main');
+      expect(log).not.toContain('fetch');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('unions base, dirty, cached, and untracked changed files', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-base-dirty-union-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {
+        refs: {
+          'origin/main': 'refs/remotes/origin/main',
+        },
+        mergeBases: {
+          'HEAD origin/main': 'merge-base-sha',
+        },
+        baseDiffs: {
+          'merge-base-sha..HEAD': ['src/components/chat/ChatMainPane.tsx'],
+        },
+        dirtyFiles: ['scripts/backend-real-full-gate.sh'],
+        cachedFiles: ['src/lib/api/endpoints/context.ts'],
+        untrackedFiles: ['e2e/stories/backend-real/notebook-first-success.story.md'],
+      });
+
+      const result = runVerifyWithFakeGit(root);
+
+      expect(result.status).toBe(0);
+      const report = readVerifyReport(root);
+      expect(report.changed_files).toEqual([
+        'e2e/stories/backend-real/notebook-first-success.story.md',
+        'scripts/backend-real-full-gate.sh',
+        'src/components/chat/ChatMainPane.tsx',
+        'src/lib/api/endpoints/context.ts',
+      ]);
+
+      const log = readFileSync(gitLog, 'utf8');
+      expect(log).toContain('diff --name-only merge-base-sha..HEAD');
+      expect(log).toContain('diff --name-only --cached');
+      expect(log).toContain('ls-files --others --exclude-standard');
+      expect(log).not.toContain('fetch');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed to broad impact when GitHub PR base ref is unavailable', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-missing-github-base-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {});
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--report-root',
+        root,
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+          CI: 'true',
+          GITHUB_EVENT_NAME: 'pull_request',
+          GITHUB_BASE_REF: 'main',
+          VERIFY_BASE_REF: '',
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as VerifyReport;
+      expect(report.changed_files).toEqual([]);
+      expect(report.risk_summary.warnings.join('\n')).toContain('Changed-file detection failed');
+      expect(report.risk_summary.manual_review_required).toBe(true);
+      expect(report.risk_summary.broad_impact).toBe(true);
+      expect(report.story_cards.length).toBeGreaterThan(10);
+
+      const log = readFileSync(gitLog, 'utf8');
+      expect(log).toContain('rev-parse --verify origin/main');
+      expect(log).not.toContain('fetch');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps --changed-file as highest priority and bypasses git', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-changed-file-priority-'));
+    const gitLog = join(root, 'git.log');
+    try {
+      writeFakeGit(root, gitLog, {
+        refs: {
+          'origin/main': 'refs/remotes/origin/main',
+        },
+      });
+
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--report-root',
+        root,
+        '--base-ref',
+        'upstream/main',
+        '--changed-file',
+        'src/components/chat/ChatMainPane.tsx',
+      ], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH ?? ''}`,
+          CI: 'true',
+          GITHUB_EVENT_NAME: 'pull_request',
+          GITHUB_BASE_REF: 'main',
+          VERIFY_BASE_REF: 'origin/develop',
+        },
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as VerifyReport;
+      expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
+      expect(report.recommended_commands).toContain('npm run verify:visual');
+      expect(existsSync(gitLog)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

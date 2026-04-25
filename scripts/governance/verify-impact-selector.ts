@@ -128,6 +128,7 @@ export interface BuildVerificationPlanInput {
   run?: boolean;
   changedFiles?: readonly string[];
   changeDetectionFailure?: string;
+  changeDetectionWarnings?: readonly string[];
   reportRoot?: string;
   generatedAt?: string;
   catalog?: VerificationCatalog;
@@ -864,6 +865,9 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
   const changedFiles = uniqueSorted((input.changedFiles ?? []).map(normalizeRepoPath).filter(Boolean));
   const storyBySourceFile = buildStorySourceMap(catalog);
   const accumulator = createAccumulator();
+  for (const warning of input.changeDetectionWarnings ?? []) {
+    pushUnique(accumulator.warnings, warning);
+  }
 
   if (input.changeDetectionFailure) {
     accumulator.surfaces.add('change-detection-failed');

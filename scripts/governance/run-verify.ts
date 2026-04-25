@@ -26,11 +26,27 @@ type ParsedVerifyArgs = {
   run: boolean;
   reportRoot?: string;
   changedFiles?: string[];
+  baseRef?: string;
 };
 
 type ChangedFileDetection = {
   changedFiles: string[];
   failure?: string;
+  warnings?: string[];
+};
+
+type BaseRefSource = 'explicit' | 'env' | 'github-pr' | 'implicit-local';
+
+type BaseRefSelection = {
+  ref: string;
+  source: BaseRefSource;
+};
+
+type GitCommandResult = {
+  args: readonly string[];
+  status: number | null;
+  stdout: string;
+  stderr: string;
 };
 
 function isCliEntrypoint(fileName: string): boolean {
@@ -78,6 +94,10 @@ function renderRecommendedPlan(plan: VerificationPlan): string[] {
   return plan.recommendedCommands.map((command, index) => `${index + 1}. ${command}`);
 }
 
+function renderRiskWarnings(plan: VerificationPlan): string {
+  return `Risk warnings: ${plan.riskSummary.warnings.length > 0 ? plan.riskSummary.warnings.join('; ') : '<none>'}`;
+}
+
 export function renderVerificationPlan(plan: VerificationPlan): string {
   return [
     'AgentSmith Verification',
@@ -87,6 +107,7 @@ export function renderVerificationPlan(plan: VerificationPlan): string {
     `Report root: ${plan.reportRoot ?? '<not written>'}`,
     `Risk: ${plan.risk} conservative recommendation`,
     `Risk summary: ${plan.riskSummary.summary}`,
+    renderRiskWarnings(plan),
     `Changed files: ${plan.changedFiles.length > 0 ? plan.changedFiles.join('; ') : '<none>'}`,
     `Affected stories: ${plan.affectedStories.join('; ')}`,
     `Affected surfaces: ${plan.affectedSurfaces.join('; ')}`,
@@ -115,6 +136,7 @@ function parseArgs(argv: readonly string[]): ParsedVerifyArgs {
   let run = false;
   let reportRoot: string | undefined;
   let changedFiles: string[] | undefined;
+  let baseRef: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -140,6 +162,11 @@ function parseArgs(argv: readonly string[]): ParsedVerifyArgs {
       index += 1;
     } else if (arg.startsWith('--changed-file=')) {
       changedFiles = [...(changedFiles ?? []), arg.slice('--changed-file='.length)];
+    } else if (arg === '--base-ref' && next) {
+      baseRef = next;
+      index += 1;
+    } else if (arg.startsWith('--base-ref=')) {
+      baseRef = arg.slice('--base-ref='.length);
     } else {
       throw new Error(`Unknown verify argument: ${arg}`);
     }
@@ -151,6 +178,7 @@ function parseArgs(argv: readonly string[]): ParsedVerifyArgs {
     run,
     reportRoot,
     changedFiles,
+    baseRef,
   };
 }
 
@@ -161,33 +189,157 @@ function parseGitFileList(stdout: string): string[] {
     .filter(Boolean);
 }
 
-function detectChangedFilesFromGit(): ChangedFileDetection {
+function runGit(args: readonly string[]): GitCommandResult {
+  const result = spawnSync('git', [...args], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+
+  return {
+    args,
+    status: result.status,
+    stdout: typeof result.stdout === 'string' ? result.stdout : '',
+    stderr: typeof result.stderr === 'string' ? result.stderr : '',
+  };
+}
+
+function gitFailureMessage(result: GitCommandResult): string {
+  const stderr = result.stderr.trim();
+  return stderr || `git ${result.args.join(' ')} exited with status ${String(result.status)}`;
+}
+
+function baseRefUnavailableMessage(baseRef: BaseRefSelection, detail: string): string {
+  return `base ref unavailable: ${baseRef.ref} (${detail})`;
+}
+
+function baseRefUnavailableDetection(baseRef: BaseRefSelection, detail: string): ChangedFileDetection {
+  const message = baseRefUnavailableMessage(baseRef, detail);
+  if (baseRef.source === 'implicit-local') {
+    return {
+      changedFiles: [],
+      warnings: [
+        `${message}; using goal default when no dirty working tree changes are present.`,
+      ],
+    };
+  }
+  return {
+    changedFiles: [],
+    failure: message,
+  };
+}
+
+function selectBaseRef(options: ParsedVerifyArgs, env: NodeJS.ProcessEnv = process.env): BaseRefSelection {
+  const explicitBaseRef = options.baseRef?.trim();
+  if (explicitBaseRef) {
+    return {
+      ref: explicitBaseRef,
+      source: 'explicit',
+    };
+  }
+
+  const envBaseRef = env.VERIFY_BASE_REF?.trim();
+  if (envBaseRef) {
+    return {
+      ref: envBaseRef,
+      source: 'env',
+    };
+  }
+
+  const githubBaseRef = env.GITHUB_BASE_REF?.trim();
+  if (githubBaseRef) {
+    return {
+      ref: `origin/${githubBaseRef}`,
+      source: 'github-pr',
+    };
+  }
+
+  return {
+    ref: 'origin/main',
+    source: 'implicit-local',
+  };
+}
+
+function addGitFileList(changedFiles: Set<string>, stdout: string): void {
+  for (const filePath of parseGitFileList(stdout)) {
+    changedFiles.add(filePath);
+  }
+}
+
+function detectBaseDiffFiles(baseRef: BaseRefSelection, changedFiles: Set<string>): ChangedFileDetection {
+  const verifyBaseResult = runGit(['rev-parse', '--verify', baseRef.ref]);
+  if (verifyBaseResult.status !== 0) {
+    return baseRefUnavailableDetection(baseRef, gitFailureMessage(verifyBaseResult));
+  }
+
+  const mergeBaseResult = runGit(['merge-base', 'HEAD', baseRef.ref]);
+  if (mergeBaseResult.status !== 0) {
+    return baseRefUnavailableDetection(baseRef, gitFailureMessage(mergeBaseResult));
+  }
+
+  const mergeBase = mergeBaseResult.stdout.trim().split(/\r?\n/)[0]?.trim();
+  if (!mergeBase) {
+    return baseRefUnavailableDetection(baseRef, `git merge-base HEAD ${baseRef.ref} returned an empty merge base`);
+  }
+
+  const baseDiffResult = runGit(['diff', '--name-only', `${mergeBase}..HEAD`]);
+  if (baseDiffResult.status !== 0) {
+    return {
+      changedFiles: [],
+      failure: gitFailureMessage(baseDiffResult),
+    };
+  }
+  addGitFileList(changedFiles, baseDiffResult.stdout);
+
+  return {
+    changedFiles: [],
+  };
+}
+
+function detectDirtyChangedFiles(changedFiles: Set<string>): ChangedFileDetection {
   const commands: readonly (readonly string[])[] = [
     ['diff', '--name-only'],
     ['diff', '--name-only', '--cached'],
     ['ls-files', '--others', '--exclude-standard'],
   ];
-  const changedFiles = new Set<string>();
 
   for (const args of commands) {
-    const result = spawnSync('git', [...args], {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-    });
+    const result = runGit(args);
     if (result.status !== 0) {
-      const stderr = typeof result.stderr === 'string' ? result.stderr.trim() : '';
       return {
         changedFiles: [],
-        failure: stderr || `git ${args.join(' ')} exited with status ${String(result.status)}`,
+        failure: gitFailureMessage(result),
       };
     }
-    for (const filePath of parseGitFileList(result.stdout)) {
-      changedFiles.add(filePath);
-    }
+    addGitFileList(changedFiles, result.stdout);
+  }
+
+  return {
+    changedFiles: [],
+  };
+}
+
+function detectChangedFilesFromGit(options: ParsedVerifyArgs): ChangedFileDetection {
+  const changedFiles = new Set<string>();
+  const warnings: string[] = [];
+  const baseDiff = detectBaseDiffFiles(selectBaseRef(options), changedFiles);
+  if (baseDiff.failure) {
+    return baseDiff;
+  }
+  for (const warning of baseDiff.warnings ?? []) {
+    warnings.push(warning);
+  }
+
+  const dirtyDiff = detectDirtyChangedFiles(changedFiles);
+  if (dirtyDiff.failure) {
+    return dirtyDiff;
+  }
+  for (const warning of dirtyDiff.warnings ?? []) {
+    warnings.push(warning);
   }
 
   return {
     changedFiles: [...changedFiles].sort((left, right) => left.localeCompare(right)),
+    warnings,
   };
 }
 
@@ -206,7 +358,7 @@ function buildPlanInput(options: ParsedVerifyArgs, reportRoot: string): BuildVer
     };
   }
 
-  const detected = detectChangedFilesFromGit();
+  const detected = detectChangedFilesFromGit(options);
   return {
     goal: options.goal,
     goalExplicit: options.goalExplicit,
@@ -214,6 +366,7 @@ function buildPlanInput(options: ParsedVerifyArgs, reportRoot: string): BuildVer
     reportRoot,
     changedFiles: detected.changedFiles,
     changeDetectionFailure: detected.failure,
+    changeDetectionWarnings: detected.warnings,
   };
 }
 

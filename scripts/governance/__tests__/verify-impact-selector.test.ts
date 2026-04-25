@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildVerificationPlan,
 } from '../run-verify';
+import { buildVerificationCatalog } from '../verification-catalog';
 
 function withTempDir<T>(prefix: string, run: (root: string) => T): T {
   const root = mkdtempSync(join(tmpdir(), prefix));
@@ -52,6 +53,28 @@ function reportStatusValues(cards: readonly ReportStoryCard[]): string[] {
 }
 
 describe('verify impact selector', () => {
+  it('uses the verification catalog for visual and backend-real impact lookup', () => {
+    const catalog = buildVerificationCatalog();
+    const visualPlan = buildVerificationPlan({
+      catalog,
+      changedFiles: ['src/components/chat/ChatMainPane.tsx'],
+    });
+    const backendRealPlan = buildVerificationPlan({
+      catalog,
+      changedFiles: [
+        'scripts/run-external-runner-dev.sh',
+        'src/lib/api/endpoints/context.ts',
+      ],
+    });
+
+    expect(visualPlan.requiredLevels).toEqual(['V0', 'V1', 'V2']);
+    expect(visualPlan.affectedStories).toContain('mock-lane-chat-operate-and-recover');
+    expect(visualPlan.affectedSurfaces.some((surface) => surface.startsWith('visual:'))).toBe(true);
+    expect(backendRealPlan.requiredLevels).toContain('V3');
+    expect(backendRealPlan.recommendedCommands).toContain('npm run verify:real');
+    expect(backendRealPlan.affectedSurfaces).toContain('runner/context-store/credentials');
+  });
+
   it('selects visual stories from visual catalog code refs and recommends V0/V1/V2', () => {
     const plan = buildVerificationPlan({
       goal: 'pr',

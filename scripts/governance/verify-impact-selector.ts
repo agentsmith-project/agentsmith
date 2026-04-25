@@ -1,21 +1,18 @@
-import path from 'node:path';
-
 import type { StoryDefinition } from '../../e2e/story-contract';
+import type { VisualBaselineCatalogEntry } from '../../e2e/visual-baseline-support';
 import {
-  listVisualBaselineCatalogEntries,
-  type VisualBaselineCatalogEntry,
-} from '../../e2e/visual-baseline-support';
-import { loadCommittedStoryDefinitionsSync } from '../story-catalog-support';
-import { findCurrentGateDefinitionById } from './current-gate-manifest';
-import {
-  findCurrentGateResultWriter,
-  resolveCurrentGateResultPath,
-} from './current-gate-result-schema';
-import { findCurrentVerificationCampaignById } from './current-verification-campaign-manifest';
+  buildVerificationCatalog,
+  evidenceProjectionForLevel,
+  normalizeVerificationCatalogRepoPath,
+  type VerificationCatalog,
+  type VerificationCatalogLevel,
+  type VerificationCatalogStory,
+  type VerificationCatalogVisualCodeRefMapping,
+} from './verification-catalog';
 
 export type VerificationGoal = 'debug' | 'pr' | 'visual' | 'real' | 'release-real';
 export type VerificationMode = 'dry-run' | 'run';
-export type VerificationLevel = 'V0' | 'V1' | 'V2' | 'V3' | 'V4';
+export type VerificationLevel = VerificationCatalogLevel;
 export type StoryCardRisk = 'required' | 'inferred';
 export type StoryEvidenceStatus = 'not_evaluated' | 'missing';
 export type StoryRiskLevel = 'R0' | 'R1' | 'R2' | 'R3';
@@ -103,6 +100,7 @@ export interface BuildVerificationPlanInput {
   changeDetectionFailure?: string;
   reportRoot?: string;
   generatedAt?: string;
+  catalog?: VerificationCatalog;
   stories?: readonly StoryDefinition[];
   visualCatalogEntries?: readonly VisualBaselineCatalogEntry[];
 }
@@ -145,7 +143,6 @@ const COMMAND_ORDER = [
   'npm run verify:release-real',
 ] as const;
 
-const GENERATED_STORY_SPEC_PATH = 'e2e/generated/story-specs.generated.json';
 const MANUAL_REVIEW_REASONS = {
   storyMarkdownChanged: 'story markdown changed',
   generatedSpecsDerivedCacheDrift: 'generated specs derived cache drift',
@@ -191,19 +188,11 @@ function orderedManualReviewReasons(values: Iterable<StoryManualReviewReason>): 
 }
 
 function normalizeRepoPath(value: string): string {
-  const normalized = value.replace(/\\/g, '/').trim();
-  if (!normalized) {
-    return normalized;
-  }
-  const absolute = path.isAbsolute(normalized)
-    ? normalized
-    : path.resolve(process.cwd(), normalized);
-  const relative = path.relative(process.cwd(), absolute).replace(/\\/g, '/');
-  return relative.startsWith('../') ? normalized.replace(/^\.\//, '') : relative;
+  return normalizeVerificationCatalogRepoPath(value);
 }
 
-function isGeneratedStorySpec(filePath: string): boolean {
-  return normalizeRepoPath(filePath) === GENERATED_STORY_SPEC_PATH;
+function isGeneratedStorySpec(filePath: string, catalog: VerificationCatalog): boolean {
+  return normalizeRepoPath(filePath) === catalog.generated_story_specs.path;
 }
 
 function isRunnerContextOrCredentialPath(filePath: string): boolean {
@@ -310,15 +299,8 @@ function evidenceForLevels(levels: Iterable<VerificationLevel>): string[] {
   return evidence;
 }
 
-function levelsForStory(story: StoryDefinition): readonly VerificationLevel[] {
-  const levels = new Set<VerificationLevel>(['V0', 'V1']);
-  if (story.lane === 'mock-lane' || story.gatePolicy.requiredEvidence.includes('visual')) {
-    levels.add('V2');
-  }
-  if (story.lane === 'backend-real') {
-    levels.add('V3');
-  }
-  return orderedLevels(levels);
+function levelsForStory(story: VerificationCatalogStory): readonly VerificationLevel[] {
+  return story.requiredLevels;
 }
 
 function createAccumulator(): ImpactAccumulator {
@@ -353,7 +335,7 @@ function pushUnique(values: string[], value: string): void {
 
 function addStoryCard(
   accumulator: ImpactAccumulator,
-  story: StoryDefinition,
+  story: VerificationCatalogStory,
   args: {
     risk: StoryCardRisk;
     levels: readonly VerificationLevel[];
@@ -392,7 +374,7 @@ function addStoryCard(
     personas: story.personas,
     family: story.family,
     lane: story.lane,
-    sourceFile: story.sourceFile ?? normalizeRepoPath(story.filePath),
+    sourceFile: story.sourceFile,
     risk: args.risk,
     requiredLevels: new Set(args.levels),
     evidenceStatus: args.evidenceStatus,
@@ -403,7 +385,7 @@ function addStoryCard(
 
 function addBroadStoryCards(
   accumulator: ImpactAccumulator,
-  stories: readonly StoryDefinition[],
+  stories: readonly VerificationCatalogStory[],
   args: {
     levels?: readonly VerificationLevel[];
     nextAction: string;
@@ -425,21 +407,22 @@ function addBroadStoryCards(
   }
 }
 
-function buildStorySourceMap(stories: readonly StoryDefinition[]): Map<string, StoryDefinition> {
-  const map = new Map<string, StoryDefinition>();
-  for (const story of stories) {
-    map.set(normalizeRepoPath(story.sourceFile ?? story.filePath), story);
+function buildStorySourceMap(catalog: VerificationCatalog): Map<string, VerificationCatalogStory> {
+  const map = new Map<string, VerificationCatalogStory>();
+  for (const [sourceFile, storyId] of Object.entries(catalog.story_source_file_map)) {
+    const story = catalog.story_by_id[storyId];
+    if (story) {
+      map.set(normalizeRepoPath(sourceFile), story);
+    }
   }
   return map;
 }
 
 function findVisualMatches(
   filePath: string,
-  visualCatalogEntries: readonly VisualBaselineCatalogEntry[],
-): VisualBaselineCatalogEntry[] {
-  return visualCatalogEntries.filter((entry) => (
-    entry.codeRefs.some((codeRef) => normalizeRepoPath(codeRef) === filePath)
-  ));
+  catalog: VerificationCatalog,
+): readonly VerificationCatalogVisualCodeRefMapping[] {
+  return catalog.visual_code_ref_map[filePath] ?? [];
 }
 
 function deriveRiskLevel(card: MutableStoryCard, requiredLevels: readonly VerificationLevel[]): StoryRiskLevel {
@@ -551,6 +534,7 @@ function latestEvidenceForCard(
 type EvidenceCardBuildContext = {
   goal: VerificationGoal;
   recommendedCommands: readonly string[];
+  catalog: VerificationCatalog;
 };
 
 type EvidenceTemplateResolution = {
@@ -558,44 +542,6 @@ type EvidenceTemplateResolution = {
   additionalArtifactPathTemplates: readonly string[];
   artifactPathTemplateReason: string | null;
 };
-
-function currentGateResultTemplate(gateId: string): EvidenceTemplateResolution {
-  if (!findCurrentGateResultWriter(gateId)) {
-    return {
-      artifactPathTemplate: null,
-      additionalArtifactPathTemplates: [],
-      artifactPathTemplateReason: `No registered current gate result writer for ${gateId}; verify report records the owner but cannot name a stable canonical artifact template.`,
-    };
-  }
-
-  return {
-    artifactPathTemplate: resolveCurrentGateResultPath(`artifacts/gate-results/${gateId}/<run-id>`),
-    additionalArtifactPathTemplates: [],
-    artifactPathTemplateReason: null,
-  };
-}
-
-function firstCurrentGateStoryArtifact(gateId: string, match: (path: string) => boolean): string | null {
-  return findCurrentGateDefinitionById(gateId)?.storyEvidenceArtifacts.find(match) ?? null;
-}
-
-function firstCurrentGateStandaloneArtifact(gateId: string, match: (path: string) => boolean): string | null {
-  return findCurrentGateDefinitionById(gateId)?.standaloneEvidenceArtifacts.find(match) ?? null;
-}
-
-function releaseCampaignEvidenceTemplate(): EvidenceTemplateResolution {
-  const campaign = findCurrentVerificationCampaignById('release-full');
-  const runRootPattern = campaign?.runRootPattern ?? 'artifacts/release-runs/<campaign-run-id>';
-  const terminalStep = campaign?.steps.find((step) => step.id === 'gate-release-full');
-  const resultHint = terminalStep?.evidenceHints.find((hint) => hint.endsWith('/gate-release-full/result.json'))
-    ?? '<campaign-root>/gate-release-full/result.json';
-
-  return {
-    artifactPathTemplate: resultHint.replaceAll('<campaign-root>', runRootPattern),
-    additionalArtifactPathTemplates: [runRootPattern],
-    artifactPathTemplateReason: null,
-  };
-}
 
 function releaseRealDiagnosticSelected(context: EvidenceCardBuildContext): boolean {
   return context.goal === 'release-real'
@@ -606,55 +552,24 @@ function evidenceTemplateForLevel(
   level: VerificationLevel,
   context: EvidenceCardBuildContext,
 ): EvidenceTemplateResolution {
-  if (level === 'V0') {
-    return currentGateResultTemplate('gate-fast');
-  }
-  if (level === 'V1') {
-    return currentGateResultTemplate('gate-default');
-  }
-  if (level === 'V2') {
-    const template = firstCurrentGateStandaloneArtifact(
-      'lane-visual',
-      (artifactPath) => artifactPath.endsWith('/run-manifest.json'),
-    );
-    return {
-      artifactPathTemplate: template,
-      additionalArtifactPathTemplates: [],
-      artifactPathTemplateReason: template
-        ? null
-        : 'No current lane-visual standalone run-manifest artifact template is registered.',
-    };
-  }
-  if (level === 'V3') {
-    const gateId = releaseRealDiagnosticSelected(context) ? 'gate-release' : 'lane-backend-real-core';
-    const template = releaseRealDiagnosticSelected(context)
-      ? firstCurrentGateStandaloneArtifact(gateId, (artifactPath) => artifactPath.includes('/ux-traces'))
-      : firstCurrentGateStoryArtifact(gateId, (artifactPath) => artifactPath.includes('/ux-traces'));
-    return {
-      artifactPathTemplate: template,
-      additionalArtifactPathTemplates: [],
-      artifactPathTemplateReason: template
-        ? null
-        : `No current ${gateId} UX trace artifact template is registered.`,
-    };
-  }
-  return releaseCampaignEvidenceTemplate();
+  const projection = evidenceProjectionForLevel({
+    catalog: context.catalog,
+    level,
+    releaseRealDiagnostic: releaseRealDiagnosticSelected(context),
+  });
+  return {
+    artifactPathTemplate: projection.artifactPathTemplate,
+    additionalArtifactPathTemplates: projection.additionalArtifactPathTemplates,
+    artifactPathTemplateReason: projection.artifactPathTemplateReason,
+  };
 }
 
 function evidenceOwnerForLevel(level: VerificationLevel, context: EvidenceCardBuildContext): string {
-  if (level === 'V0') {
-    return 'npm run verify:quick';
-  }
-  if (level === 'V1') {
-    return 'npm run verify:default';
-  }
-  if (level === 'V2') {
-    return 'npm run verify:visual';
-  }
-  if (level === 'V3') {
-    return releaseRealDiagnosticSelected(context) ? 'npm run verify:release-real' : 'npm run verify:real';
-  }
-  return 'npm run release:ready';
+  return evidenceProjectionForLevel({
+    catalog: context.catalog,
+    level,
+    releaseRealDiagnostic: releaseRealDiagnosticSelected(context),
+  }).owner;
 }
 
 function evidenceNoteForLevel(level: VerificationLevel): string {
@@ -742,10 +657,14 @@ function addGoalDefaults(accumulator: ImpactAccumulator, goal: VerificationGoal)
 export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): VerificationPlan {
   const goal = input.goal ?? 'pr';
   const mode: VerificationMode = input.run ? 'run' : 'dry-run';
-  const stories = input.stories ?? loadCommittedStoryDefinitionsSync();
-  const visualCatalogEntries = input.visualCatalogEntries ?? listVisualBaselineCatalogEntries();
+  const catalog = input.catalog ?? buildVerificationCatalog({
+    generatedAt: input.generatedAt,
+    stories: input.stories,
+    visualCatalogEntries: input.visualCatalogEntries,
+  });
+  const stories = catalog.stories;
   const changedFiles = uniqueSorted((input.changedFiles ?? []).map(normalizeRepoPath).filter(Boolean));
-  const storyBySourceFile = buildStorySourceMap(stories);
+  const storyBySourceFile = buildStorySourceMap(catalog);
   const accumulator = createAccumulator();
 
   if (input.changeDetectionFailure) {
@@ -790,7 +709,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       });
     }
 
-    if (isGeneratedStorySpec(changedFile)) {
+    if (isGeneratedStorySpec(changedFile, catalog)) {
       mapped = true;
       const action = 'Manual impact owner triage required because generated story specs are derived cache, not canonical story truth.';
       accumulator.surfaces.add('derived-cache:story-specs');
@@ -805,7 +724,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       });
     }
 
-    const visualMatches = findVisualMatches(changedFile, visualCatalogEntries);
+    const visualMatches = findVisualMatches(changedFile, catalog);
     if (visualMatches.length > 0) {
       mapped = true;
       const levels: readonly VerificationLevel[] = ['V0', 'V1', 'V2'];
@@ -815,8 +734,8 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       accumulator.reasons.push(`${changedFile} matches ${visualMatches.length} visual catalog code ref(s).`);
       pushUnique(accumulator.nextActions, action);
       for (const match of visualMatches) {
-        accumulator.surfaces.add(`visual:${match.scenarioId}`);
-        const story = stories.find((entry) => entry.storyId === match.storyId);
+        accumulator.surfaces.add(match.surface);
+        const story = catalog.story_by_id[match.storyId];
         if (story) {
           addStoryCard(accumulator, story, {
             risk: 'required',
@@ -901,6 +820,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
     .map((card) => storyCardToImmutable(card, {
       goal,
       recommendedCommands,
+      catalog,
     }))
     .sort((left, right) => left.storyId.localeCompare(right.storyId));
   const affectedStories = storyCards.length > 0

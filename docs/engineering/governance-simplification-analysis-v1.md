@@ -506,7 +506,7 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 
 交付：
 
-1. 从 canonical stories、current manifests、visual catalog、gate manifest 生成只读 verification catalog；generated specs 只能作为已校验的派生投影输入。
+1. 从 canonical stories、current gate manifest、current verification campaign manifest、derived visual catalog metadata、gate result schema 生成只读 verification catalog；catalog 无 verdict state，不检查 artifact 目录；generated story specs 只能标记为 derived cache，不能作为 story truth。
 2. 增加 story risk 推断。
 3. 增加 changed files 到 affected stories / required levels 的 impact map。
 4. `npm run verify` 根据 goal 和 diff 输出推荐执行计划。
@@ -518,7 +518,7 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 1. 改 UI 文件能推荐 V1/V2。
 2. 改 runner / Context Store / endpoint credential 能推荐 V3。
 3. 改 release/deploy 脚本能推荐 V4 或 rehearsal。
-4. 报告能明确缺失、过期、失败和下一步。
+4. P1/P1.1 报告能明确 required evidence owner、missing catalog mapping、`not_evaluated`、`missing`、`manual_review_needed` 和下一步；在 P2 evidence-claim validation 或明确限定的 artifact-inspection 切片消费 producer-owned artifacts 之前，报告不得声明 `passed`、`failed` 或 `stale`。
 5. QA/产品报告不能绕过 canonical evidence；报告中每张证据卡都能追溯到 producer-owned artifact。
 
 ### P2：治理 runner 与 evidence claim

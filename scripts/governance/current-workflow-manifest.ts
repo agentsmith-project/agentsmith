@@ -296,7 +296,7 @@ export const CURRENT_WORKFLOW_ENTRY_PATHS: readonly CurrentWorkflowEntryPath[] =
     id: 'ui_only',
     label: 'UI only',
     whenToUse: '只改前端页面、交互、文案，暂时不需要真实后端或 notebook / runner 主链。',
-    startCommands: ['npm run dev', 'npm run gate:fast', 'npm run test:e2e'],
+    startCommands: ['npm run dev', 'npm run verify', 'npm run verify:quick'],
     docs: ['README.md', 'DEVELOPMENT.md', 'docs/testing/diagnostic-catalog-v1.md'],
     avoid: ['不要把 `npm run dev` 当成 release verdict。', '不要直接跳到 `gate:release:full`。'],
   },
@@ -304,7 +304,7 @@ export const CURRENT_WORKFLOW_ENTRY_PATHS: readonly CurrentWorkflowEntryPath[] =
     id: 'local_manual',
     label: 'Local manual',
     whenToUse: '要验证真实本地 API / Web / notebook / runner 行为，或者要复现 local-manual 路径问题。',
-    startCommands: ['make substrate-up', 'make local-manual-up', 'make local-manual-seed-notebook'],
+    startCommands: ['make local-real-up', 'make local-real-status'],
     docs: [
       'DEVELOPMENT.md',
       'docs/user-guides/local-runtime-flows.md',
@@ -317,11 +317,11 @@ export const CURRENT_WORKFLOW_ENTRY_PATHS: readonly CurrentWorkflowEntryPath[] =
     label: 'Release grade',
     whenToUse: '准备收口大改动、发布前总验收、或者 incident 修复后的跨层复验。',
     startCommands: [
-      'npm run test:release:precheck',
-      'npm run release:campaign:full',
-      'npm run gate:release',
-      'npm run lane:demo-rehearsal',
-      'npm run lane:cluster-rehearsal',
+      'npm run release:ready',
+      'npm run release:status',
+      'npm run release:aggregate -- --campaign-root=<campaign-root>',
+      'npm run rehearse:demo',
+      'npm run rehearse:cluster',
     ],
     docs: [
       'docs/testing/verification-campaigns-v1.md',
@@ -446,7 +446,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     npmScript: 'test:release:precheck',
     workflowRole: 'diagnostic',
     whenToUse: '准备进入 release-grade 验证前，先确认本地 release substrate 和端口就绪。',
-    nextStep: 'precheck 绿只是准入，不是最终 release verdict。',
+    nextStep: 'precheck 绿只是准入，不是最终 release verdict；继续跑 `npm run release:ready`。',
   },
   {
     id: 'mock-lane',
@@ -463,7 +463,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'gate-release',
     workflowRole: 'diagnostic',
     whenToUse: 'release campaign 失败指向 backend-real release owner，或需要单独复核 `ux_trace_bundle` owner。',
-    nextStep: '通过后回到 `npm run release:campaign:full`；不要用它代替 full visual 或 rehearsal evidence。',
+    nextStep: '通过后回到 `npm run release:ready`；不要用它代替 full visual 或 rehearsal evidence。',
   },
   {
     id: 'release-demo-rehearsal-owner',
@@ -472,7 +472,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'lane-demo-rehearsal',
     workflowRole: 'diagnostic_lane',
     whenToUse: 'release campaign 失败指向 demo deployment rehearsal evidence owner。',
-    nextStep: '修复后从 clean reset 重跑该 lane，再回到 `npm run release:campaign:full`。',
+    nextStep: '修复后从 clean reset 重跑该 lane，再回到 `npm run release:ready`。',
   },
   {
     id: 'release-cluster-rehearsal-owner',
@@ -481,7 +481,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'lane-cluster-rehearsal',
     workflowRole: 'diagnostic_lane',
     whenToUse: 'release campaign 失败指向 cluster deployment rehearsal evidence owner。',
-    nextStep: '修复后从 clean reset 重跑该 lane，再回到 `npm run release:campaign:full`。',
+    nextStep: '修复后从 clean reset 重跑该 lane，再回到 `npm run release:ready`。',
   },
   {
     id: 'release-terminal-aggregate',
@@ -490,7 +490,7 @@ export const CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS: readonly CurrentWorkflowDiagn
     gateId: 'gate-release-full',
     workflowRole: 'diagnostic',
     whenToUse: '只在已有显式 campaign root/run id 时复核 terminal aggregate verdict；该命令不会执行任何 suite。',
-    nextStep: '如果缺少显式 campaign context，改跑 `npm run release:campaign:full` 生成当前 campaign evidence。',
+    nextStep: '如果缺少显式 campaign context，改跑 `npm run release:ready` 生成当前 campaign evidence。',
   },
 ] as const;
 
@@ -734,21 +734,18 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'start the local managed substrate',
         canonical: 'make',
         makeTarget: 'substrate-up',
-        recommended: true,
       },
       {
         command: 'make substrate-reseed',
         description: 'rebuild minimum substrate data',
         canonical: 'make',
         makeTarget: 'substrate-reseed',
-        recommended: true,
       },
       {
         command: 'make substrate-status',
         description: 'inspect the managed substrate',
         canonical: 'make',
         makeTarget: 'substrate-status',
-        recommended: true,
       },
       {
         command: 'make substrate-down',
@@ -763,18 +760,42 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         makeTarget: 'substrate-reset',
       },
       {
+        command: 'make local-real-up',
+        description: 'start the real local environment through the local-manual adapter',
+        canonical: 'make',
+        makeTarget: 'local-real-up',
+        recommended: true,
+      },
+      {
+        command: 'make local-real-status',
+        description: 'show substrate and local-manual adapter status',
+        canonical: 'make',
+        makeTarget: 'local-real-status',
+        recommended: true,
+      },
+      {
+        command: 'make local-real-down',
+        description: 'stop the real local environment through the local-manual adapter',
+        canonical: 'make',
+        makeTarget: 'local-real-down',
+      },
+      {
+        command: 'make local-real-reset',
+        description: 'reset the real local environment through the local-manual adapter',
+        canonical: 'make',
+        makeTarget: 'local-real-reset',
+      },
+      {
         command: 'make local-manual-up',
         description: 'start the real local manual-test environment',
         canonical: 'make',
         makeTarget: 'local-manual-up',
-        recommended: true,
       },
       {
         command: 'make local-manual-seed-notebook',
         description: 'create notebook demo resources and start the host runner',
         canonical: 'make',
         makeTarget: 'local-manual-seed-notebook',
-        recommended: true,
       },
       {
         command: 'make local-manual-internal-up',
@@ -805,7 +826,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         description: 'show the current real local environment state',
         canonical: 'make',
         makeTarget: 'local-manual-status',
-        recommended: true,
       },
       {
         command: 'make local-manual-down',
@@ -910,12 +930,48 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
     title: '测试',
     commands: [
       {
+        command: 'npm run verify',
+        description: 'print a dry-run verification plan for the current change',
+        canonical: 'npm',
+        npmScript: 'verify',
+        recommended: true,
+      },
+      {
+        command: 'npm run verify:quick',
+        description: 'run the quick verification adapter',
+        canonical: 'npm',
+        npmScript: 'verify:quick',
+      },
+      {
+        command: 'npm run verify:default',
+        description: 'run the default verification adapter',
+        canonical: 'npm',
+        npmScript: 'verify:default',
+      },
+      {
+        command: 'npm run verify:visual',
+        description: 'run the visual verification adapter',
+        canonical: 'npm',
+        npmScript: 'verify:visual',
+      },
+      {
+        command: 'npm run verify:real',
+        description: 'run the real-backend verification adapter',
+        canonical: 'npm',
+        npmScript: 'verify:real',
+      },
+      {
+        command: 'npm run verify:release-real',
+        description: 'run the release backend-real owner diagnostic adapter',
+        canonical: 'npm',
+        npmScript: 'verify:release-real',
+      },
+      {
         command: 'npm run test:default-e2e',
         description: 'run the default mock UI regression range',
         canonical: 'npm',
         npmScript: 'test:default-e2e',
         gateId: 'workspace-project-default',
-        recommended: true,
       },
       {
         command: 'npm run test:visual',
@@ -923,7 +979,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'test:visual',
         gateId: 'visual-lane-command',
-        recommended: true,
       },
       {
         command: 'npm run test:governance',
@@ -931,7 +986,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'test:governance',
         gateId: 'governance-default',
-        recommended: true,
       },
       {
         command: 'npm run test:backend-real:core',
@@ -939,7 +993,6 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
         canonical: 'npm',
         npmScript: 'test:backend-real:core',
         gateId: 'test-backend-real-core',
-        recommended: true,
       },
       {
         command: 'npm run test:demo-bundle:inputs',
@@ -1063,6 +1116,38 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
     title: '发布',
     commands: [
       {
+        command: 'npm run release:ready',
+        description: 'run the human-friendly release readiness wrapper',
+        canonical: 'npm',
+        npmScript: 'release:ready',
+        recommended: true,
+      },
+      {
+        command: 'npm run release:status',
+        description: 'read the latest release summary without re-aggregating evidence',
+        canonical: 'npm',
+        npmScript: 'release:status',
+        recommended: true,
+      },
+      {
+        command: 'npm run release:aggregate -- --campaign-root=<campaign-root>',
+        description: 'aggregate an explicitly selected campaign and write its summary',
+        canonical: 'npm',
+        npmScript: 'release:aggregate',
+      },
+      {
+        command: 'npm run rehearse:demo',
+        description: 'run the demo deployment rehearsal adapter',
+        canonical: 'npm',
+        npmScript: 'rehearse:demo',
+      },
+      {
+        command: 'npm run rehearse:cluster',
+        description: 'run the cluster deployment rehearsal adapter',
+        canonical: 'npm',
+        npmScript: 'rehearse:cluster',
+      },
+      {
         command: 'npm run backend-real:reset',
         description: 'clean release verification state',
         canonical: 'npm',
@@ -1099,10 +1184,9 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
       },
       {
         command: 'npm run release:campaign:full',
-        description: 'run the official one-shot release verification campaign',
+        description: 'run the campaign launcher behind release:ready; do not use as the human release entrypoint',
         canonical: 'npm',
         npmScript: 'release:campaign:full',
-        recommended: true,
       },
     ],
   },

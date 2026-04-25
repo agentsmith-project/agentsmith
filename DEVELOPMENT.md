@@ -40,21 +40,14 @@ Repo version files:
 ### 环境
 
 ```bash
-make substrate-up
-make substrate-reseed
-make substrate-status
-make local-manual-up
-make local-manual-seed-notebook
-make local-manual-status
+make local-real-up
+make local-real-status
 ```
 
 ### 测试
 
 ```bash
-npm run test:default-e2e
-npm run test:visual
-npm run test:governance
-npm run test:backend-real:core
+npm run verify
 ```
 
 ### 门禁
@@ -78,7 +71,8 @@ npm run lane:cluster-rehearsal
 ### 发布
 
 ```bash
-npm run release:campaign:full
+npm run release:ready
+npm run release:status
 ```
 <!-- current-workflow:development:end -->
 
@@ -103,7 +97,7 @@ Gate adapter fidelity notes:
 1. 先区分诊断路径和 authoritative verdict
 - `test` family commands、某个 focused Playwright spec、某条 targeted `lane` command，主要用于诊断、复现和缩小问题范围。
 - `gate` family commands 才是当前工程门禁 verdict surface；要回答“这次改动在当前层级是否可接受”，最终看对应 gate，而不是某个临时诊断命令。
-- `npm run gate:default` 不是 full visual，也不是 release-grade verdict。full visual 统一看 `npm run lane:visual`；发布级自动化入口统一看 `npm run release:campaign:full`，它会在 campaign context 内调用 terminal aggregate verdict。
+- `npm run gate:default` 不是 full visual，也不是 release-grade verdict。full visual 统一看 `npm run lane:visual`；面向人的发布级自动化入口统一看 `npm run release:ready`，它会在 precheck 通过后委托 campaign，并在 campaign context 内调用 terminal aggregate verdict。
 - `npm run gate:release:full` 是 aggregate-only 复核命令，只能在显式 campaign context 下使用，例如 `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full`；它不会执行任何 suite。
 
 2. `command passed` 不等于验收通过
@@ -115,7 +109,7 @@ Gate adapter fidelity notes:
 3. 日常开发、功能收口、release-grade 自动化是三种不同路径
 - 日常开发：先跑 contract / type / unit / targeted integration，尽量用最小成本定位问题。
 - 功能收口：补跑与改动直接相关的 integration、e2e、story、backend-real smoke 或 targeted visual。
-- release-grade 自动化：统一按照 [`docs/user-guides/release-readiness-checklist.md`](./docs/user-guides/release-readiness-checklist.md) 的自动化 campaign 执行，日常入口是 `npm run release:campaign:full`。
+- release-grade 自动化：统一按照 [`docs/user-guides/release-readiness-checklist.md`](./docs/user-guides/release-readiness-checklist.md) 的自动化 campaign 执行，日常入口是 `npm run release:ready`。
 - 如果需要理解 wave、证据、rerun 策略与常见误区，再看 [`docs/testing/verification-campaigns-v1.md`](./docs/testing/verification-campaigns-v1.md)。
 
 4. 手工 Feishu 操作与自动化 gate 分层
@@ -540,18 +534,18 @@ This backend-real variant auto starts integration dependencies, API, and fronten
 
 ## Release Readiness Checklist
 
-For final release-oriented verification, use the campaign launcher:
+For final release-oriented verification, use the human-friendly release readiness wrapper:
 
 ```bash
-npm run test:release:precheck
-npm run release:campaign:full
+npm run release:ready
+npm run release:status
 ```
 
 Notes:
 
-1. `npm run release:campaign:full` is the official one-shot automated release path. It orchestrates `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, demo rehearsal, cluster rehearsal, and the terminal aggregate verdict.
+1. `npm run release:ready` is the human-friendly automated release path. It runs the non-verdict precheck first, then delegates to `npm run release:campaign:full`, which orchestrates `gate:fast`, `gate:default`, `lane:visual`, `gate:release`, demo rehearsal, cluster rehearsal, and the terminal aggregate verdict.
 2. `npm run gate:release:full` is aggregate-only. Use it only with explicit campaign context, for example `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full`, and do not expect it to execute any suite.
-3. When diagnosing a failed campaign, rerun the owning evidence command such as `npm run gate:release`, `npm run lane:visual`, `npm run lane:demo-rehearsal`, or `npm run lane:cluster-rehearsal`, then return to `npm run release:campaign:full`.
+3. When diagnosing a failed campaign, rerun the owning evidence command such as `npm run gate:release`, `npm run lane:visual`, `npm run lane:demo-rehearsal`, or `npm run lane:cluster-rehearsal`, then return to `npm run release:ready`.
 4. Real-lane notebook verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).
 5. Fresh demo rehearsal roots seeded during `npm run release:campaign:full` keep `infra/deploy/demo/env/site.env.example` secret-free and derive a missing `PRESET_ENDPOINT_API_KEY` from repo-local runtime presets such as `.env.backend-real`.
 

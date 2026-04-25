@@ -18,6 +18,10 @@ import {
   writeCampaignEvidencePointer,
   writeCampaignGateResult,
 } from './release-campaign-io';
+import {
+  isDefaultReleaseRunsCampaignRoot,
+  writeReleaseSummaryForCampaign,
+} from './release-summary';
 import type { CurrentGateResultFailureClass } from './current-gate-result-schema';
 
 interface CampaignStepWriteOutcome {
@@ -299,6 +303,16 @@ function main(): void {
     terminalStep,
     outcome: aggregateOutcome,
   });
+
+  try {
+    writeReleaseSummaryForCampaign({
+      campaignRoot,
+      writeLatest: isDefaultReleaseRunsCampaignRoot(campaignRoot),
+    });
+  } catch (error) {
+    console.error(`[release:campaign:full] failed to write release summary: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(aggregateOutcome.exitCode === 0 ? 1 : aggregateOutcome.exitCode);
+  }
 
   process.exit(aggregateOutcome.exitCode);
 }

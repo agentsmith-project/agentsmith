@@ -104,12 +104,12 @@ npm run test:visual:backend-real:review
 建议路径：
 
 ```bash
-npm run test:release:precheck
-npm run release:campaign:full
+npm run release:ready
+npm run release:status
 ```
 
 说明：
-- `release:campaign:full` 会编排 full visual、backend-real release evidence 和 aggregate verdict
+- `release:ready` 会先执行非 verdict precheck，precheck 通过后委托 `release:campaign:full` 编排 full visual、backend-real release evidence 和 aggregate verdict
 - 人工 UX/UI 审查仍然需要单独记录，不能被自动化 verdict 替代
 
 ## 4. 审查单位与范围模型
@@ -302,8 +302,8 @@ UX/UI 审查的最小单位不是“一个 `page.tsx` 文件”，而是：
   - 需要 notebook/files 真实链路时：`make local-manual-seed-notebook`
   - 需要 standalone 真实界面产物时：`npm run test:visual:backend-real:review`
 - `release_grade`
-  - `npm run test:release:precheck`
-  - `npm run release:campaign:full`
+  - `npm run release:ready`
+  - `npm run release:status`
 
 注意：
 - `gate:default` 不能代替 `lane:visual`

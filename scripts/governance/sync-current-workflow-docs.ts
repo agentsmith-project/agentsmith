@@ -35,7 +35,7 @@ function replaceBlock(content: string, startMarker: string, endMarker: string, n
 
 function renderCommandList(section: CurrentWorkflowSection): string {
   const lines = [`### ${section.title}`, '', '```bash'];
-  for (const command of section.commands) {
+  for (const command of section.commands.filter((candidate) => candidate.npmScript !== 'release:campaign:full')) {
     lines.push(command.command);
   }
   lines.push('```');
@@ -124,7 +124,7 @@ function renderMakeHelpExtendedBlock(): string {
             ? 'Verification channels'
             : 'Release';
     lines.push(`\t@echo "${label}:"`);
-    for (const command of section.commands) {
+    for (const command of section.commands.filter((candidate) => candidate.npmScript !== 'release:campaign:full')) {
       lines.push(`\t@echo "  ${renderMakeCommandSummary(command)}"`);
     }
     lines.push('\t@echo ""');

@@ -4,6 +4,7 @@ import {
   CURRENT_WORKFLOW_TOP_LEVEL_TERMS,
   listCurrentWorkflowCommands,
   listRecommendedCurrentWorkflowCommands,
+  type CurrentWorkflowCommand,
 } from '../governance/current-workflow-manifest';
 
 const rootDir = process.cwd();
@@ -55,6 +56,10 @@ function forbidMatch(content: string, pattern: RegExp, message: string): void {
   }
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function extractBlock(content: string, startMarker: string, endMarker: string, label: string): string {
   const startIndex = content.indexOf(startMarker);
   const endIndex = content.indexOf(endMarker);
@@ -65,6 +70,12 @@ function extractBlock(content: string, startMarker: string, endMarker: string, l
   }
 
   return content.slice(startIndex + startMarker.length, endIndex);
+}
+
+const HIDDEN_HUMAN_WORKFLOW_NPM_SCRIPTS = new Set(['release:campaign:full']);
+
+function isHiddenHumanWorkflowCommand(command: Pick<CurrentWorkflowCommand, 'npmScript'>): boolean {
+  return Boolean(command.npmScript && HIDDEN_HUMAN_WORKFLOW_NPM_SCRIPTS.has(command.npmScript));
 }
 
 const readmeWorkflowBlock = extractBlock(
@@ -85,6 +96,26 @@ const governanceWorkflowBlock = extractBlock(
   '<!-- current-workflow:governance-model:end -->',
   'current engineering governance model workflow block',
 );
+const makeHelpExtendedWorkflowBlock = extractBlock(
+  makefile,
+  '# current-workflow:help-extended:start',
+  '# current-workflow:help-extended:end',
+  'Makefile help-extended workflow block',
+);
+const makeQuickHelpWorkflowBlock = extractBlock(
+  makefile,
+  '# current-workflow:quick-help:start',
+  '# current-workflow:quick-help:end',
+  'Makefile quick-help workflow block',
+);
+
+const humanCopyableWorkflowBlocks = [
+  ['README current workflow block', readmeWorkflowBlock],
+  ['DEVELOPMENT current workflow block', developmentWorkflowBlock],
+  ['current engineering governance model workflow block', governanceWorkflowBlock],
+  ['Makefile help-extended workflow block', makeHelpExtendedWorkflowBlock],
+  ['Makefile quick-help workflow block', makeQuickHelpWorkflowBlock],
+] as const;
 
 requireMatch(readme, /current-engineering-governance-model\.md/, 'README is missing the current engineering governance model reference');
 requireMatch(readme, /DESIGN\.md/, 'README must reference DESIGN.md as the UI design guide');
@@ -167,14 +198,16 @@ for (const term of CURRENT_WORKFLOW_TOP_LEVEL_TERMS) {
 }
 
 for (const command of listRecommendedCurrentWorkflowCommands()) {
-  const escapedCommand = command.command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedCommand = escapeRegExp(command.command);
   requireMatch(readmeWorkflowBlock, new RegExp(escapedCommand), `README current workflow block is missing recommended command: ${command.command}`);
   requireMatch(developmentWorkflowBlock, new RegExp(escapedCommand), `DEVELOPMENT current workflow block is missing recommended command: ${command.command}`);
 }
 
 for (const command of listCurrentWorkflowCommands()) {
-  const escapedCommand = command.command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  requireMatch(governanceWorkflowBlock, new RegExp(escapedCommand), `current engineering governance model workflow block is missing command: ${command.command}`);
+  const escapedCommand = escapeRegExp(command.command);
+  if (!isHiddenHumanWorkflowCommand(command)) {
+    requireMatch(governanceWorkflowBlock, new RegExp(escapedCommand), `current engineering governance model workflow block is missing command: ${command.command}`);
+  }
 
   if (command.npmScript && !packageJson.scripts?.[command.npmScript]) {
     failures.push(`package.json is missing current workflow script: ${command.npmScript}`);
@@ -182,6 +215,13 @@ for (const command of listCurrentWorkflowCommands()) {
 
   if (command.makeTarget) {
     requireMatch(makefile, new RegExp(`^${command.makeTarget}:`, 'm'), `Makefile is missing current workflow target: ${command.makeTarget}`);
+  }
+}
+
+for (const command of listCurrentWorkflowCommands().filter(isHiddenHumanWorkflowCommand)) {
+  const escapedCommand = escapeRegExp(command.command);
+  for (const [label, block] of humanCopyableWorkflowBlocks) {
+    forbidMatch(block, new RegExp(escapedCommand), `${label} must not expose hidden/internal workflow command: ${command.command}`);
   }
 }
 

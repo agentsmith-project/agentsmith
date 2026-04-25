@@ -63,6 +63,13 @@ artifacts/governance-reports/failed/
 artifacts/backend-real-visual/
 artifacts/backend-real/
 artifacts/mock-lane/
+artifacts/release-runs/
+artifacts/gate-results/
+artifacts/visual-baseline-reviews/
+artifacts/ux-traces/
+artifacts/uxui-reviews/
+artifacts/local-runtime/
+artifacts/tmp-release-proxy/
 artifacts/release-evidence/
 artifacts/system-state/
 artifacts/notebook-runner/

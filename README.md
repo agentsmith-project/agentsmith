@@ -46,9 +46,9 @@ Before you run commands, choose one entry path:
 
 | Entry path | Choose it when | Start here |
 | --- | --- | --- |
-| `ui_only` | You are changing frontend UI, copy, client state, or mock-only behavior. | `npm install`, `npm run dev`, then `npm run gate:fast` or `npm run test:e2e` |
-| `local_manual` | You need the real local API, Notebook, Terminal, runner, files, or backend behavior. | `make substrate-up`, `make local-manual-up`, `make local-manual-seed-notebook` |
-| `release_grade` | You need a release-level answer after a large change, release prep, or incident fix. | Run `npm run release:campaign:full`; read [Verification Campaigns v1](./docs/testing/verification-campaigns-v1.md) and [Release Readiness Checklist](./docs/user-guides/release-readiness-checklist.md) first if you need the evidence model. |
+| `ui_only` | You are changing frontend UI, copy, client state, or mock-only behavior. | `npm install`, `npm run dev`, then `npm run verify` for the dry-run plan. |
+| `local_manual` | You need the real local API, Notebook, Terminal, runner, files, or backend behavior. | `make local-real-up` and `make local-real-status` (adapter over local-manual). |
+| `release_grade` | You need a release-level answer after a large change, release prep, or incident fix. | Run `npm run release:ready`; use `npm run release:status` to read the latest summary. |
 
 Use the [diagnostic catalog](./docs/testing/diagnostic-catalog-v1.md) when you need the smallest command that can reproduce or narrow a failure. Diagnostic commands help you find the problem; gates give the final verdict for a layer.
 
@@ -98,21 +98,14 @@ Command naming rule:
 ### 环境
 
 ```bash
-make substrate-up
-make substrate-reseed
-make substrate-status
-make local-manual-up
-make local-manual-seed-notebook
-make local-manual-status
+make local-real-up
+make local-real-status
 ```
 
 ### 测试
 
 ```bash
-npm run test:default-e2e
-npm run test:visual
-npm run test:governance
-npm run test:backend-real:core
+npm run verify
 ```
 
 ### 门禁
@@ -136,7 +129,8 @@ npm run lane:cluster-rehearsal
 ### 发布
 
 ```bash
-npm run release:campaign:full
+npm run release:ready
+npm run release:status
 ```
 <!-- current-workflow:readme:end -->
 
@@ -177,10 +171,11 @@ This validates the required behavior for MVP deployment without sandbox:
 npm run gate:fast
 npm run gate:default
 npm run gate:release
-npm run release:campaign:full
 ```
 
-`npm run release:campaign:full` is the official one-shot release campaign. It orchestrates the required gates, lanes, evidence owners, rehearsal lanes, and terminal aggregate verdict.
+`npm run release:ready` is the human-friendly release readiness entrypoint. It runs the non-verdict precheck first, then delegates to the existing `npm run release:campaign:full` campaign when precheck passes.
+
+`npm run release:campaign:full` remains the campaign launcher behind the wrapper. It orchestrates the required gates, lanes, evidence owners, rehearsal lanes, and terminal aggregate verdict.
 
 Use `npm run gate:release:full` only to aggregate an existing campaign with explicit campaign context such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>`. It does not run suites.
 

@@ -11,6 +11,7 @@
 	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-config-audit-effect-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	build-reliability-smoke workspace-governance-smoke workspace-overview-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
+	local-real-up local-real-down local-real-status local-real-reset \
 	local-manual-up local-manual-down local-manual-status local-manual-reset local-manual-seed-notebook \
 	local-manual-internal-up local-manual-internal-down local-manual-internal-status local-manual-internal-reset local-manual-internal-smoke \
 	demo-rehearsal-up demo-rehearsal-down demo-rehearsal-status demo-rehearsal-reset demo-rehearsal-bootstrap demo-rehearsal-verify demo-rehearsal-report \
@@ -90,6 +91,10 @@ help-extended:
 	@echo "  make substrate-status  # inspect the managed substrate"
 	@echo "  make substrate-down  # stop the managed substrate"
 	@echo "  make substrate-reset  # clear the managed substrate"
+	@echo "  make local-real-up  # start the real local environment through the local-manual adapter"
+	@echo "  make local-real-status  # show substrate and local-manual adapter status"
+	@echo "  make local-real-down  # stop the real local environment through the local-manual adapter"
+	@echo "  make local-real-reset  # reset the real local environment through the local-manual adapter"
 	@echo "  make local-manual-up  # start the real local manual-test environment"
 	@echo "  make local-manual-seed-notebook  # create notebook demo resources and start the host runner"
 	@echo "  make local-manual-internal-up  # enable the local internal sandbox extension on top of local-manual"
@@ -115,6 +120,12 @@ help-extended:
 	@echo "  make cluster-rehearsal-report  # write the local cluster deploy rehearsal report after verify"
 	@echo ""
 	@echo "Tests:"
+	@echo "  npm run verify  # print a dry-run verification plan for the current change"
+	@echo "  npm run verify:quick  # run the quick verification adapter"
+	@echo "  npm run verify:default  # run the default verification adapter"
+	@echo "  npm run verify:visual  # run the visual verification adapter"
+	@echo "  npm run verify:real  # run the real-backend verification adapter"
+	@echo "  npm run verify:release-real  # run the release backend-real owner diagnostic adapter"
 	@echo "  npm run test:default-e2e  # run the default mock UI regression range"
 	@echo "  npm run test:visual  # run the visual verification suite"
 	@echo "  npm run test:governance  # run governance-focused verification"
@@ -138,12 +149,16 @@ help-extended:
 	@echo "  npm run lane:cluster-rehearsal  # run the cluster deployment rehearsal verification channel"
 	@echo ""
 	@echo "Release:"
+	@echo "  npm run release:ready  # run the human-friendly release readiness wrapper"
+	@echo "  npm run release:status  # read the latest release summary without re-aggregating evidence"
+	@echo "  npm run release:aggregate -- --campaign-root=<campaign-root>  # aggregate an explicitly selected campaign and write its summary"
+	@echo "  npm run rehearse:demo  # run the demo deployment rehearsal adapter"
+	@echo "  npm run rehearse:cluster  # run the cluster deployment rehearsal adapter"
 	@echo "  make backend-real-reset  # clean release verification state"
 	@echo "  make backend-real-bootstrap  # bootstrap release verification dependencies and tokens"
 	@echo "  make backend-real-ready  # wait for release verification readiness"
 	@echo "  make backend-real-run  # run the release verification matrix"
 	@echo "  make backend-real-report  # write the release verification report"
-	@echo "  npm run release:campaign:full  # run the official one-shot release verification campaign"
 	@echo ""
 	@echo "Bootstrap:"
 	@echo "  make bootstrap    # deps-up -> wait for ready -> deps-init -> deps-smoke (ordered)"
@@ -268,35 +283,14 @@ quick-help:
 	@echo ""
 	@echo "  note: make owns environment/rehearsal orchestration; npm run owns tests, gates, lanes, and release verification"
 	@echo ""
-	@echo "  make substrate-up"
-	@echo "    Start the local managed substrate."
+	@echo "  make local-real-up"
+	@echo "    Start the real local environment through the local-manual adapter."
 	@echo ""
-	@echo "  make substrate-reseed"
-	@echo "    Rebuild minimum substrate data."
+	@echo "  make local-real-status"
+	@echo "    Show substrate and local-manual adapter status."
 	@echo ""
-	@echo "  make substrate-status"
-	@echo "    Inspect the managed substrate."
-	@echo ""
-	@echo "  make local-manual-up"
-	@echo "    Start the real local manual-test environment."
-	@echo ""
-	@echo "  make local-manual-seed-notebook"
-	@echo "    Create notebook demo resources and start the host runner."
-	@echo ""
-	@echo "  make local-manual-status"
-	@echo "    Show the current real local environment state."
-	@echo ""
-	@echo "  npm run test:default-e2e"
-	@echo "    Run the default mock UI regression range."
-	@echo ""
-	@echo "  npm run test:visual"
-	@echo "    Run the visual verification suite."
-	@echo ""
-	@echo "  npm run test:governance"
-	@echo "    Run governance-focused verification."
-	@echo ""
-	@echo "  npm run test:backend-real:core"
-	@echo "    Run the core real-backend verification suite."
+	@echo "  npm run verify"
+	@echo "    Print a dry-run verification plan for the current change."
 	@echo ""
 	@echo "  make gate-fast"
 	@echo "    Run the fast engineering gate."
@@ -322,8 +316,11 @@ quick-help:
 	@echo "  npm run lane:cluster-rehearsal"
 	@echo "    Run the cluster deployment rehearsal verification channel."
 	@echo ""
-	@echo "  npm run release:campaign:full"
-	@echo "    Run the official one-shot release verification campaign."
+	@echo "  npm run release:ready"
+	@echo "    Run the human-friendly release readiness wrapper."
+	@echo ""
+	@echo "  npm run release:status"
+	@echo "    Read the latest release summary without re-aggregating evidence."
 	@echo ""
 # current-workflow:quick-help:end
 
@@ -881,6 +878,21 @@ local-manual-status:
 local-manual-reset:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/local-manual-down.sh && $(MAKE) substrate-reset SUBSTRATE=local-dev && $(MAKE) local-manual-up && $(MAKE) local-manual-seed-notebook
+
+local-real-up:
+	$(MAKE) substrate-up
+	$(MAKE) substrate-reseed
+	$(MAKE) local-manual-up
+
+local-real-status:
+	$(MAKE) substrate-status
+	$(MAKE) local-manual-status
+
+local-real-down:
+	$(MAKE) local-manual-down
+
+local-real-reset:
+	$(MAKE) local-manual-reset
 
 local-manual-internal-up:
 	./scripts/local-manual-internal-up.sh

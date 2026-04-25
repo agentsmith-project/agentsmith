@@ -15,7 +15,7 @@
 4. full visual、machine-readable story evidence 与两条部署排演通过
 
 补充判定规则：
-1. 当前 automated release-grade 执行入口统一是 `npm run release:campaign:full`。
+1. 当前面向人的 automated release-grade 执行入口统一是 `npm run release:ready`。
 2. `npm run gate:default` 不能代替 full visual，也不能代替 release-grade backend-real 或最终 release verdict。
 3. 对 evidence-owning gates 和 lanes，`command passed` 与 machine-readable evidence completeness 同级；缺少 required review artifacts、`visual_scene_catalog` 或 `ux_trace_bundle`，都不能算通过。
 4. 对当前在 `scripts/governance/current-gate-result-schema.ts` 注册了 writer 的 gate/lane，还必须存在 canonical `<evidence_dir>/result.json`。
@@ -42,16 +42,18 @@
 日常 release-grade 自动化入口只跑：
 
 ```bash
-npm run release:campaign:full
+npm run release:ready
 ```
 
-该命令会编排下面所有 required steps，并在 campaign context 内调用 terminal aggregate verdict。下面的 role table 用于理解证据所有权、排障和复核，不是要求新人手工维护第二套命令顺序。
+该命令先运行 `npm run test:release:precheck` 作为非 verdict guard。precheck 失败时会停止并输出 NOT STARTED，表示未进入 campaign、没有 release verdict。precheck 通过后才委托 `npm run release:campaign:full` 编排下面所有 required steps，并在 campaign context 内调用 terminal aggregate verdict。下面的 role table 用于理解证据所有权、排障和复核，不是要求新人手工维护第二套命令顺序。
 
 按 role 执行，而不是把某个 README 命令块当成第二套 release truth：
 
 | Role | Command | 必须证明什么 |
 | --- | --- | --- |
-| campaign launcher | `npm run release:campaign:full` | 官方 one-shot release campaign，编排所有 required steps |
+| human release entry | `npm run release:ready` | precheck 通过后进入 official campaign，并在结束后生成 summary |
+| status reader | `npm run release:status` | 读取 latest/summary 指针，但 verdict 必须重新读取 campaign-scoped terminal result，不重新聚合 evidence |
+| campaign launcher | `npm run release:campaign:full` | official campaign launcher，编排所有 required steps |
 | preflight | `npm run gate:fast` | 基础 contract、static、cheap checks 没先坏 |
 | tier verdict | `npm run gate:default` | 默认工程门禁通过 |
 | evidence owner | `npm run lane:visual` | full visual 与 `visual_scene_catalog` 完整 |
@@ -66,7 +68,7 @@ npm run release:campaign:full
 3. `npm run gate:release` / `npm run lane:backend-real:release` 承担 `ux_trace_bundle` 证据所有权。
 4. `npm run lane:demo-rehearsal` 与 `npm run lane:cluster-rehearsal` 都必须从各自 scenario-owned local kind world 的 clean reset 开始。
 5. `npm run gate:release:full` 是 terminal aggregate verifier；它的结论必须建立在前面 evidence owners 的结果和证据完整性之上，并且需要显式 campaign context。
-6. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代 `npm run release:campaign:full`。
+6. 如果某条 focused 测试、targeted lane 或 backend-real 局部命令通过，只能说明对应诊断切片恢复了，不能替代 `npm run release:ready`。
 
 ### 1.1 CI green 的含义
 
@@ -75,7 +77,7 @@ CI green 不是完整 release sign-off：
 1. PR 默认 CI 代表 `gate:fast` 和 `gate:default` 通过。
 2. `lane:visual` 在 push 或手动 workflow dispatch 时运行，并且在 CI 图里只依赖 `gate:fast`，不需要等待 `gate:default` 才开始。
 3. `lane-backend-real-core` 仍然是手动 dispatch，并且依赖 backend-real secret。
-4. release-grade sign-off 仍然必须看 `npm run release:campaign:full` 产生的 campaign evidence、`lane:visual`、backend-real release、两条 rehearsal lane 与 terminal aggregate verdict。
+4. release-grade sign-off 仍然必须看 `npm run release:ready` 产生的 campaign evidence、`lane:visual`、backend-real release、两条 rehearsal lane、terminal aggregate verdict 与 `summary.md`。
 
 ### 2. 手工 Feishu 联调步骤
 
@@ -90,14 +92,14 @@ make manual-feishu-check
 
 说明：
 1. 这组步骤属于 operator 手工联调，不属于 automated gate。
-2. 它们可以作为 release sign-off 的补充条件，但不能替代 `npm run release:campaign:full`。
+2. 它们可以作为 release sign-off 的补充条件，但不能替代 `npm run release:ready`。
 3. 如果这里失败，应在 release 结论中单独记录为手工集成阻塞，而不是改写 automated gate truth。
 
 ## 当前证据路径
 
 ### Official campaign-scoped evidence
 
-`npm run release:campaign:full` 的 canonical release evidence root 是：
+`npm run release:ready` 通过 precheck 后会委托 `npm run release:campaign:full` 产生 canonical release evidence root：
 
 ```text
 artifacts/release-runs/<campaign-run-id>
@@ -108,6 +110,10 @@ artifacts/release-runs/<campaign-run-id>
 - terminal aggregate verdict：
   - `<campaign-root>/gate-release-full/result.json`
   - `<campaign-root>/gate-release-full/evidence.json`
+- release summary：
+  - `<campaign-root>/summary.json`
+  - `<campaign-root>/summary.md`
+  - `artifacts/release-runs/latest.json`
 - full visual scene catalog and release campaign visual evidence：
   - `e2e/visual-baseline-support.ts`
   - `e2e/__screenshots__/visual.spec.ts`
@@ -135,7 +141,7 @@ artifacts/release-runs/<campaign-run-id>
 
 ### Standalone lane evidence
 
-下面路径只表示单独运行某个 lane/gate 时的默认产物位置，可用于诊断或人工查看；它们不能替代 official `release:campaign:full` 的 campaign-scoped evidence。
+下面路径只表示单独运行某个 lane/gate 时的默认产物位置，可用于诊断或人工查看；它们不能替代 `npm run release:ready` 产生的 campaign-scoped evidence。
 
 - standalone backend-real visual review：
   - `artifacts/backend-real-visual/<run-id>/review.md`

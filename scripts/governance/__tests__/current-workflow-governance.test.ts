@@ -36,6 +36,18 @@ function extractNpmRunScripts(content: string): string[] {
   return [...content.matchAll(/\bnpm run ([a-z0-9:_-]+)/g)].map((match) => match[1]);
 }
 
+function extractGeneratedBlock(relativePath: string, startMarker: string, endMarker: string): string {
+  const content = readRepoFile(relativePath);
+  const startIndex = content.indexOf(startMarker);
+  const endIndex = content.indexOf(endMarker);
+
+  if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
+    throw new Error(`${relativePath} is missing generated block markers: ${startMarker}`);
+  }
+
+  return content.slice(startIndex + startMarker.length, endIndex);
+}
+
 function readTrackedWorkflowFiles(): string[] {
   const stdout = execSync('git ls-files .github/workflows/*.yml', {
     cwd: rootDir,
@@ -295,23 +307,70 @@ describe('current workflow governance', () => {
   it('models release-grade entry through the campaign launcher instead of the aggregate-only gate', () => {
     const releaseEntry = CURRENT_WORKFLOW_ENTRY_PATHS.find((entry) => entry.id === 'release_grade');
     const commands = listCurrentWorkflowCommands();
+    const releaseReady = commands.find((command) => command.npmScript === 'release:ready');
+    const releaseStatus = commands.find((command) => command.npmScript === 'release:status');
+    const releaseAggregate = commands.find((command) => command.npmScript === 'release:aggregate');
     const releaseCampaign = commands.find((command) => command.npmScript === 'release:campaign:full');
     const fullReleaseGate = commands.find((command) => command.npmScript === 'gate:release:full');
     const releaseGate = commands.find((command) => command.npmScript === 'gate:release');
     const demoRehearsalLane = commands.find((command) => command.npmScript === 'lane:demo-rehearsal');
     const clusterRehearsalLane = commands.find((command) => command.npmScript === 'lane:cluster-rehearsal');
 
-    expect(releaseEntry?.startCommands).toContain('npm run release:campaign:full');
+    expect(releaseEntry?.startCommands).toContain('npm run release:ready');
+    expect(releaseEntry?.startCommands).toContain('npm run release:status');
     expect(releaseEntry?.startCommands).not.toContain('npm run gate:release:full');
 
+    expect(releaseReady?.workflowRole).toBe('release_operation');
+    expect(releaseReady?.recommended).toBe(true);
+    expect(releaseReady?.gateId).toBeUndefined();
+    expect(releaseStatus?.workflowRole).toBe('release_operation');
+    expect(releaseAggregate?.workflowRole).toBe('release_operation');
+    expect(releaseAggregate?.gateId).toBeUndefined();
     expect(releaseCampaign?.workflowRole).toBe('release_operation');
-    expect(releaseCampaign?.recommended).toBe(true);
+    expect(releaseCampaign?.recommended).not.toBe(true);
     expect(fullReleaseGate?.workflowRole).toBe('terminal_gate_verdict');
     expect(fullReleaseGate?.command).toBe('RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full');
     expect(fullReleaseGate?.recommended).not.toBe(true);
     expect(releaseGate?.workflowRole).toBe('gate_verdict');
     expect(demoRehearsalLane?.workflowRole).toBe('evidence_lane');
     expect(clusterRehearsalLane?.workflowRole).toBe('evidence_lane');
+  });
+
+  it('keeps hidden release launchers out of generated human workflow blocks', () => {
+    const packageScripts = readPackageScripts();
+    const hiddenCommand = 'npm run release:campaign:full';
+    const generatedBlocks = [
+      extractGeneratedBlock(
+        'README.md',
+        '<!-- current-workflow:readme:start -->',
+        '<!-- current-workflow:readme:end -->',
+      ),
+      extractGeneratedBlock(
+        'DEVELOPMENT.md',
+        '<!-- current-workflow:development:start -->',
+        '<!-- current-workflow:development:end -->',
+      ),
+      extractGeneratedBlock(
+        'docs/current-engineering-governance-model.md',
+        '<!-- current-workflow:governance-model:start -->',
+        '<!-- current-workflow:governance-model:end -->',
+      ),
+      extractGeneratedBlock(
+        'Makefile',
+        '# current-workflow:help-extended:start',
+        '# current-workflow:help-extended:end',
+      ),
+      extractGeneratedBlock(
+        'Makefile',
+        '# current-workflow:quick-help:start',
+        '# current-workflow:quick-help:end',
+      ),
+    ];
+
+    expect(packageScripts.has('release:campaign:full')).toBe(true);
+    for (const block of generatedBlocks) {
+      expect(block, 'generated human-copyable workflow blocks must hide the internal campaign launcher').not.toContain(hiddenCommand);
+    }
   });
 
   it('marks workflow commands with stable roles and keeps lane:mock as a diagnostic lane surface', () => {
@@ -345,7 +404,7 @@ describe('current workflow governance', () => {
 
     for (const doc of docs) {
       expect(readRepoFile(doc), `${doc} must mention the release campaign launcher`).toContain(
-        'npm run release:campaign:full',
+        'npm run release:ready',
       );
     }
 
@@ -362,6 +421,7 @@ describe('current workflow governance', () => {
     expect(combinedDocs).not.toMatch(/test:backend-real:full/);
     expect(combinedDocs).not.toMatch(/future .*one-shot campaign launcher|未来提供 one-shot campaign launcher/i);
     expect(combinedDocs).toMatch(/aggregate-only|聚合专用|explicit campaign|显式 campaign/);
+    expect(combinedDocs).toMatch(/release:status/);
     expect(combinedDocs).toMatch(/gate:release/);
     expect(combinedDocs).toMatch(/lane:demo-rehearsal/);
     expect(combinedDocs).toMatch(/lane:cluster-rehearsal/);
@@ -387,6 +447,76 @@ describe('current workflow governance', () => {
       '.github/workflows/integration-e2e.yml',
     ]),
     );
+  });
+
+  it('exposes local-real as a local-manual adapter without adding a runtime-line identity', () => {
+    const makefile = readRepoFile('Makefile');
+    const runtimeManifest = readRepoFile('scripts/governance/current-runtime-line-manifest.ts');
+    const localManualEntry = CURRENT_WORKFLOW_ENTRY_PATHS.find((entry) => entry.id === 'local_manual');
+    const commands = listCurrentWorkflowCommands();
+
+    expect(localManualEntry?.startCommands).toContain('make local-real-up');
+    expect(localManualEntry?.startCommands).toContain('make local-real-status');
+
+    for (const target of ['local-real-up', 'local-real-status', 'local-real-down', 'local-real-reset']) {
+      expect(makefile).toMatch(new RegExp(`^${target}:`, 'm'));
+      expect(commands.find((command) => command.makeTarget === target)?.gateId).toBeUndefined();
+    }
+
+    expect(makefile).toMatch(/local-real-up:[\s\S]*\$\(MAKE\) substrate-up[\s\S]*\$\(MAKE\) substrate-reseed[\s\S]*\$\(MAKE\) local-manual-up/);
+    expect(makefile).toMatch(/local-real-status:[\s\S]*\$\(MAKE\) substrate-status[\s\S]*\$\(MAKE\) local-manual-status/);
+    expect(runtimeManifest).not.toMatch(/id:\s*'local-real'/);
+    expect(runtimeManifest).not.toMatch(/formalName:\s*'local-real'/);
+  });
+
+  it('keeps verify aliases as adapters instead of new gate identities', () => {
+    const commands = listCurrentWorkflowCommands();
+    const verifyScripts = [
+      'verify',
+      'verify:quick',
+      'verify:default',
+      'verify:visual',
+      'verify:real',
+      'verify:release-real',
+    ];
+
+    for (const script of verifyScripts) {
+      const command = commands.find((candidate) => candidate.npmScript === script);
+      expect(command, `${script} must be discoverable in the workflow manifest`).toBeDefined();
+      expect(command?.gateId, `${script} must not create or impersonate a gate id`).toBeUndefined();
+    }
+  });
+
+  it('keeps diagnostic next steps on the human release:ready path', () => {
+    const releaseDiagnostics = CURRENT_WORKFLOW_DIAGNOSTIC_COMMANDS.filter(
+      (command) => command.id.startsWith('release-'),
+    );
+
+    expect(releaseDiagnostics.length).toBeGreaterThan(0);
+    for (const command of releaseDiagnostics) {
+      expect(command.nextStep).toContain('npm run release:ready');
+      expect(command.nextStep).not.toContain('npm run release:campaign:full');
+    }
+  });
+
+  it('ignores local evidence artifact roots without ignoring source docs', () => {
+    const gitignore = readRepoFile('.gitignore');
+
+    for (const artifactRoot of [
+      'artifacts/release-runs/',
+      'artifacts/gate-results/',
+      'artifacts/visual-baseline-reviews/',
+      'artifacts/ux-traces/',
+      'artifacts/uxui-reviews/',
+      'artifacts/local-runtime/',
+      'artifacts/tmp-release-proxy/',
+    ]) {
+      expect(gitignore).toMatch(new RegExp(`^${artifactRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm'));
+    }
+
+    expect(gitignore).not.toMatch(/^docs\/engineering\//m);
+    expect(gitignore).not.toMatch(/^docs\/testing\//m);
+    expect(gitignore).not.toMatch(/^docs\/user-guides\//m);
   });
 
   it('keeps governance check definitions complete and uniquely keyed', () => {

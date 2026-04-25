@@ -38,8 +38,14 @@ function assertReleaseCampaignEntrypointSurface(
 ): void {
   requireMatch(
     content,
+    /npm run release:ready/,
+    `${owner} must point human release-grade execution to npm run release:ready`,
+    failures,
+  );
+  requireMatch(
+    content,
     /npm run release:campaign:full/,
-    `${owner} must point release-grade execution to npm run release:campaign:full`,
+    `${owner} must describe npm run release:campaign:full as the campaign launcher behind npm run release:ready`,
     failures,
   );
   requireMatch(
@@ -193,7 +199,13 @@ const releaseCampaignWorkflow = listCurrentWorkflowCommands()
 const releaseFullAggregateWorkflow = listCurrentWorkflowCommands()
   .find((command) => command.npmScript === 'gate:release:full');
 if (releaseCampaignWorkflow?.command !== 'npm run release:campaign:full') {
-  failures.push('workflow command surface must define npm run release:campaign:full as the official full release entrypoint');
+  failures.push('workflow command surface must define npm run release:campaign:full as the campaign launcher behind npm run release:ready');
+}
+if (!/behind release:ready/.test(releaseCampaignWorkflow?.description ?? '')) {
+  failures.push('workflow command surface must describe release:campaign:full as the campaign launcher behind release:ready');
+}
+if (releaseCampaignWorkflow?.recommended === true) {
+  failures.push('workflow command surface must not recommend release:campaign:full as a human release entrypoint');
 }
 if (releaseFullAggregateWorkflow?.command !== 'RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full') {
   failures.push('workflow command surface must show gate:release:full as an aggregate-only terminal verifier with explicit campaign context');
@@ -315,7 +327,8 @@ requireMatch(releaseChecklist, /npm run gate:default/, 'release checklist must r
 requireMatch(releaseChecklist, /npm run lane:visual/, 'release checklist must require npm run lane:visual', failures);
 requireMatch(releaseChecklist, /npm run lane:demo-rehearsal/, 'release checklist must require npm run lane:demo-rehearsal', failures);
 requireMatch(releaseChecklist, /npm run lane:cluster-rehearsal/, 'release checklist must require npm run lane:cluster-rehearsal', failures);
-requireMatch(releaseChecklist, /npm run release:campaign:full/, 'release checklist must define npm run release:campaign:full as the official full release entrypoint', failures);
+requireMatch(releaseChecklist, /npm run release:ready/, 'release checklist must define npm run release:ready as the human-facing full release entrypoint', failures);
+requireMatch(releaseChecklist, /precheck[\s\S]*npm run release:campaign:full/, 'release checklist must state that release:ready delegates to release:campaign:full only after precheck passes', failures);
 requireMatch(releaseChecklist, /RELEASE_CAMPAIGN_ROOT=<campaign-root>\s+npm run gate:release:full/, 'release checklist must describe gate:release:full as an aggregate-only terminal verifier with explicit campaign context', failures);
 forbidMatch(releaseChecklist, /gate:release:full as the full release command/, 'release checklist must not describe gate:release:full as the full release command', failures);
 assertReleaseCampaignEntrypointSurface(notebookCodexRunbook, 'notebook codex runbook', failures);

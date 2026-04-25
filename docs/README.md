@@ -41,7 +41,8 @@
   - pick the smallest diagnostic command before an expensive gate
 - [Verification Campaigns v1](./testing/verification-campaigns-v1.md)
   - release-grade automated verification campaign guide
-  - official release entrypoint: `npm run release:campaign:full`
+  - human release entrypoint: `npm run release:ready`
+  - campaign launcher behind the wrapper: `npm run release:campaign:full`
   - use this when you need the current testing principles, evidence model, and execution advice
 
 ### Methodology reference

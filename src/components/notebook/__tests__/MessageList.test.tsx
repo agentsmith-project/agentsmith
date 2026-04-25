@@ -8,12 +8,13 @@ import { MessageList } from '../MessageList';
 import type { TaskMessage } from '@/lib/types/task';
 
 vi.mock('../MessageItem', () => ({
-  MessageItem: ({ message, streamingContent, disabled }: any) => (
+  MessageItem: ({ message, streamingContent, disabled, forceRunning }: any) => (
     <div data-testid={`message-item-${message.id}`}>
       <div data-message-role>{message.role}</div>
       <div data-message-content>{message.content || '(empty)'}</div>
       {streamingContent && <div data-streaming>{streamingContent}</div>}
       {disabled && <div data-disabled>disabled</div>}
+      {forceRunning && <div data-force-running>running</div>}
     </div>
   ),
 }));
@@ -191,6 +192,33 @@ describe('MessageList', () => {
 
       const messageItem = screen.getByTestId('message-item-msg-3');
       expect(messageItem.querySelector('[data-message-role]')?.textContent).toBe('agent');
+    });
+
+    it('forces the active agent message into running state when task truth stays busy after streaming ids clear', () => {
+      render(
+        <MessageList
+          messages={mockMessages}
+          streamingMessageId={null}
+          streamingContent={null}
+          activeAgentMessageId="msg-2"
+        />
+      );
+
+      expect(screen.getByTestId('message-item-msg-2').querySelector('[data-force-running]')).toBeInTheDocument();
+      expect(screen.getByTestId('message-item-msg-1').querySelector('[data-force-running]')).not.toBeInTheDocument();
+    });
+
+    it('keeps a synthetic streaming agent item in running state when it is the active agent message', () => {
+      render(
+        <MessageList
+          messages={[]}
+          streamingMessageId="msg-streaming"
+          streamingContent="Thinking..."
+          activeAgentMessageId="msg-streaming"
+        />
+      );
+
+      expect(screen.getByTestId('message-item-msg-streaming').querySelector('[data-force-running]')).toBeInTheDocument();
     });
   });
 

@@ -100,6 +100,65 @@ describe('useChatComposerActions', () => {
     expect(setComposerBySession).toHaveBeenCalled();
   });
 
+  it('uses the latest resolved session target when the visible activeSession prop is stale', async () => {
+    const createMessage = vi.fn().mockResolvedValue({ id: 'm_user_1' });
+    const runStream = vi.fn().mockResolvedValue(undefined);
+
+    const { result } = renderHook(() =>
+      useChatComposerActions({
+        canUseChat: true,
+        currentSessionId: 'session_1',
+        activeSession: createSession({ endpoint_id: 'ep_1', model: 'gpt-4o' }),
+        resolveSessionForSend: () => createSession({ endpoint_id: 'ep_2', model: 'claude-3-7-sonnet' }),
+        composerBySession: { session_1: 'hello' },
+        setComposerBySession: vi.fn(),
+        attachments: [],
+        editingMessageId: null,
+        visibleLeafId: null,
+        createMessage,
+        runStream,
+        initAttachment: vi.fn(),
+        fileInputRef: { current: null },
+      }),
+    );
+
+    await result.current.handleSend();
+
+    expect(runStream).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session_1',
+      model: 'claude-3-7-sonnet',
+      endpointId: 'ep_2',
+    }));
+  });
+
+  it('does not send while backend truth still marks the session stream as active', async () => {
+    const createMessage = vi.fn();
+    const runStream = vi.fn();
+
+    const { result } = renderHook(() =>
+      useChatComposerActions({
+        canUseChat: true,
+        disabled: true,
+        currentSessionId: 'session_1',
+        activeSession: createSession(),
+        composerBySession: { session_1: 'hello' },
+        setComposerBySession: vi.fn(),
+        attachments: [],
+        editingMessageId: null,
+        visibleLeafId: null,
+        createMessage,
+        runStream,
+        initAttachment: vi.fn(),
+        fileInputRef: { current: null },
+      }),
+    );
+
+    await result.current.handleSend();
+
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(runStream).not.toHaveBeenCalled();
+  });
+
   it('does not send while any attachment is non-ready', async () => {
     const createMessage = vi.fn();
     const runStream = vi.fn();

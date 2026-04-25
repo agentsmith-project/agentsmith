@@ -101,7 +101,7 @@ test.describe('@lane-real internal sandbox reclaim', () => {
     });
     const token1 = `INTERNAL_IDLE_RECLAIM_${Date.now()}`;
     const firstArtifactName = `idle-reclaim-${Date.now()}.md`;
-    await sendTaskMessage({
+    const { assistantMessageId: firstAssistantMessageId } = await sendTaskMessage({
       page,
       workspaceId: 'ws_default',
       projectId,
@@ -130,6 +130,7 @@ test.describe('@lane-real internal sandbox reclaim', () => {
         projectId,
         taskId: taskId1,
         token: token1,
+        assistantMessageId: firstAssistantMessageId,
         artifactPath: path.join(resolveMountedTaskRoot(localMount1.mountPath, {
           libraryRootPath: workspaceAccess1.library_root_path,
         }),

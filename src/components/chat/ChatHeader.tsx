@@ -59,6 +59,24 @@ function renderExecutionTargetLabel({
   return currentEndpoint?.name || session.endpoint_id || selectExecutionTargetLabel;
 }
 
+function isStopEscalationUnavailable(session: ChatSession | null) {
+  return (
+    session?.execution_status === 'stopping'
+    && session.can_escalate === false
+    && session.escalation_reason === 'STOP_ESCALATION_UNAVAILABLE'
+  );
+}
+
+function isExecutionTargetLocked(streamStatus: SessionStreamStatus) {
+  return (
+    streamStatus === 'connecting'
+    || streamStatus === 'recovering'
+    || streamStatus === 'streaming'
+    || streamStatus === 'stopping'
+    || streamStatus === 'terminating'
+  );
+}
+
 export function ChatHeader({
   session,
   endpoints,
@@ -104,6 +122,11 @@ export function ChatHeader({
     return findCurrentExternalAgent(session, externalAgents ?? []) ?? undefined;
   }, [externalAgents, session]);
   const usingExternalAgent = !!session?.external_agent_id;
+  const stopEscalationUnavailable = React.useMemo(() => isStopEscalationUnavailable(session), [session]);
+  const executionTargetLocked = React.useMemo(
+    () => isExecutionTargetLocked(streamStatus),
+    [streamStatus],
+  );
 
   const respondToEscalationRequest = React.useCallback((confirmed: boolean) => {
     if (!escalationRequest) return;
@@ -122,6 +145,7 @@ export function ChatHeader({
     const handleEscalationRequest = (event: Event) => {
       const detail = (event as CustomEvent<ChatStreamEscalationConfirmationRequestDetail>).detail;
       if (!detail || detail.sessionId !== session?.id) return;
+      if (stopEscalationUnavailable) return;
       setEscalationRequest(detail);
     };
     window.addEventListener(
@@ -134,7 +158,12 @@ export function ChatHeader({
         handleEscalationRequest,
       );
     };
-  }, [session?.id]);
+  }, [session?.id, stopEscalationUnavailable]);
+
+  React.useEffect(() => {
+    if (!stopEscalationUnavailable) return;
+    setEscalationRequest(null);
+  }, [stopEscalationUnavailable]);
 
   const statusText = React.useMemo(() => {
     return getStreamStatusText(streamStatus, t);
@@ -191,13 +220,28 @@ export function ChatHeader({
               <span className="truncate">{t('header.no_active_thread_hint')}</span>
             )}
           </div>
+          {stopEscalationUnavailable ? (
+            <div
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-subtle bg-surface/80 px-2.5 py-2 text-[11px] text-secondary"
+              data-testid="chat__stop-escalation-unavailable"
+            >
+              <span className="font-medium text-foreground">{t('stream_stop_escalation_unavailable')}</span>
+              <span className="text-tertiary">{t('header.stop_escalation_unavailable_hint')}</span>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-1.5 pt-0.5">
           {session ? (
             <DropdownMenu open={executionTargetOpen} onOpenChange={setExecutionTargetOpen}>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2" data-testid="chat__execution-target-trigger">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  disabled={executionTargetLocked}
+                  data-testid="chat__execution-target-trigger"
+                >
                   <span className="max-w-[220px] truncate">
                     {renderExecutionTargetLabel({
                       session,
@@ -230,7 +274,7 @@ export function ChatHeader({
                         onSelect={(event) => {
                           event.preventDefault();
                           setExecutionTargetOpen(false);
-                          if (disabled) return;
+                          if (disabled || executionTargetLocked) return;
                           onSelectEndpoint(endpoint);
                         }}
                         className={cn(active && 'bg-hover')}
@@ -259,6 +303,7 @@ export function ChatHeader({
                         onSelect={(event) => {
                           event.preventDefault();
                           setExecutionTargetOpen(false);
+                          if (executionTargetLocked) return;
                           onSelectExternalAgent?.(agent);
                         }}
                         className={cn(session.external_agent_id === agent.id && 'bg-hover')}

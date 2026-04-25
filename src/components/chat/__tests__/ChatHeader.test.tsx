@@ -36,6 +36,8 @@ vi.mock('next-intl', () => ({
         'header.stop_escalation_reason': 'Backend reason: {reason}',
         'header.stop_escalation_confirm': 'Force stop',
         'header.stop_escalation_cancel': 'Keep waiting',
+        'header.stop_escalation_unavailable_hint': 'Keep waiting in this thread. You can continue once the current stop finishes.',
+        'stream_stop_escalation_unavailable': 'Forced stop is not available.',
         'new_thread': 'New Thread',
       },
     };
@@ -145,6 +147,12 @@ describe('ChatHeader', () => {
 
       expect(screen.getByTestId('chat__execution-target-trigger')).toHaveTextContent('Primary Endpoint');
     });
+
+    it('disables execution target switching while the current thread is still active', () => {
+      render(<ChatHeader {...defaultProps} streamStatus="streaming" />);
+
+      expect(screen.getByTestId('chat__execution-target-trigger')).toBeDisabled();
+    });
   });
 
   describe('Stream Status', () => {
@@ -233,6 +241,41 @@ describe('ChatHeader', () => {
       } finally {
         window.removeEventListener(CHAT_STREAM_ESCALATION_CONFIRMATION_RESPONSE_EVENT, onResponse);
       }
+    });
+
+    it('shows a stable unavailable note instead of a confirm dialog when forced stop is unsupported', () => {
+      render(
+        <ChatHeader
+          {...defaultProps}
+          streamStatus="stopping"
+          session={{
+            ...mockSession,
+            execution_status: 'stopping',
+            can_escalate: false,
+            escalation_reason: 'STOP_ESCALATION_UNAVAILABLE',
+            stop_mode: 'cancel',
+          }}
+        />,
+      );
+
+      fireEvent(
+        window,
+        new CustomEvent(CHAT_STREAM_ESCALATION_CONFIRMATION_REQUEST_EVENT, {
+          detail: {
+            requestId: 'req_unsupported',
+            sessionId: mockSession.id,
+            reason: 'provider does not support terminate',
+          },
+        }),
+      );
+
+      expect(screen.getByTestId('chat__stop-escalation-unavailable')).toHaveTextContent(
+        'Forced stop is not available.',
+      );
+      expect(screen.getByTestId('chat__stop-escalation-unavailable')).toHaveTextContent(
+        'Keep waiting in this thread. You can continue once the current stop finishes.',
+      );
+      expect(screen.queryByTestId('chat__stop-escalation-dialog')).not.toBeInTheDocument();
     });
   });
 

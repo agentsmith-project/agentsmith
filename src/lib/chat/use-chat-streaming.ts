@@ -284,7 +284,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
       if (normalized.status !== 'stopping' && normalized.status !== 'terminating') {
         clearStopEscalationState(sessionId);
       }
-      if ((normalized.status === 'stopped' || normalized.status === 'error') && !normalized.assistant) {
+      if (normalized.status === 'stopped' && !normalized.assistant) {
         const timer = window.setTimeout(() => {
           const currentState = useChatStreamStore.getState().streamStateBySession[sessionId];
           if (!currentState) return;

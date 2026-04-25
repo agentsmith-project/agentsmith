@@ -72,6 +72,41 @@ describe('evaluateNotebookExecutionSnapshot', () => {
     expect(result.failure).toBe(true);
     expect(result.reason).toBe('task_idle_without_success_signal');
   });
+
+  it('ignores prior-round terminal traces when scoped to the current assistant message', () => {
+    const result = evaluateNotebookExecutionSnapshot({
+      token: 'TOKEN_OK',
+      assistantMessageId: 'msg_agent_current',
+      messages: [
+        { id: 'msg_agent_previous', role: 'agent', content: 'Execution failed. AGENT_CANCELLED' },
+        { id: 'msg_user_current', role: 'user', content: 'try again' },
+        { id: 'msg_agent_current', role: 'agent', content: '' },
+      ],
+      traces: [
+        {
+          message_id: 'msg_agent_previous',
+          category: 'error',
+          status: 'cancelled',
+          name: 'execution.terminal',
+          summary: 'Execution failed. AGENT_CANCELLED',
+        },
+        {
+          message_id: 'msg_agent_current',
+          category: 'progress',
+          status: 'running',
+          name: 'codex.command',
+          summary: 'running on the replacement pod',
+        },
+      ],
+      task: { run_state: 'running' },
+      podSeenBefore: true,
+      pod: { name: 'pod-2', phase: 'Running' },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.failure).toBe(false);
+    expect(result.reason).toBe(null);
+  });
 });
 
 describe('notebook outcome summaries', () => {

@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import {
   API_BASE,
@@ -444,9 +443,8 @@ test.describe('@lane-real invite flow and chat isolation', () => {
           { ensureProjectCreatorAccess: false },
         );
         await memberPage.goto(`/${LOCALE}${invitePath}`);
-        await expect(memberPage.getByTestId('join__accept-btn')).toBeVisible({ timeout: 30_000 });
+        await expect(memberPage.getByTestId('join__auto-accepting')).toBeVisible({ timeout: 30_000 });
         await capturePrivacyTrace(memberPage, 'accept-invite');
-        await memberPage.getByTestId('join__accept-btn').click();
         await expect(memberPage).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview$`), { timeout: 30_000 });
         await expect(memberPage.getByTestId('project-overview__page')).toBeVisible({ timeout: 30_000 });
         await capturePrivacyTrace(memberPage, 'verify-member-first-access');

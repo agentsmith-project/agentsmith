@@ -5,6 +5,7 @@ import { LoaderCircle, MoreHorizontal, Pin, Star, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import type { ChatSession } from '@/lib/api/types';
+import { getReferenceNow } from '@/lib/reference-now';
 import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
@@ -16,11 +17,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-function formatCompactAge(ts?: string) {
+function formatCompactAge(ts?: string, referenceTimeMs = getReferenceNow().getTime()) {
   if (!ts) return '';
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
-  const deltaMs = Date.now() - d.getTime();
+  const deltaMs = referenceTimeMs - d.getTime();
   const deltaMin = Math.floor(deltaMs / 60000);
   if (deltaMin < 1) return 'now';
   if (deltaMin < 60) return `${deltaMin}m`;
@@ -57,6 +58,7 @@ export function ThreadItem({
   const t = useTranslations('chat');
   const [editing, setEditing] = React.useState(false);
   const [draftTitle, setDraftTitle] = React.useState(session.title || '');
+  const referenceTimeMs = getReferenceNow().getTime();
 
   React.useEffect(() => {
     setDraftTitle(session.title || '');
@@ -125,7 +127,7 @@ export function ThreadItem({
             )}
           </div>
           <div className="shrink-0 text-[11px] tabular-nums text-tertiary">
-            <span title={session.updated_at}>{formatCompactAge(session.updated_at)}</span>
+            <span title={session.updated_at}>{formatCompactAge(session.updated_at, referenceTimeMs)}</span>
             <span className="mx-1 text-tertiary/60">·</span>
             <span>{session.message_count ?? 0}</span>
           </div>

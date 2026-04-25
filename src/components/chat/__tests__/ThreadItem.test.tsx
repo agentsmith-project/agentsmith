@@ -29,6 +29,7 @@ describe('ThreadItem', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    delete (window as Window & { __MBOS_TEST_NOW__?: string }).__MBOS_TEST_NOW__;
   });
 
   describe('Basic Rendering', () => {
@@ -49,6 +50,14 @@ describe('ThreadItem', () => {
       render(<ThreadItem {...defaultProps} />);
 
       expect(screen.getByText('5')).toBeInTheDocument();
+    });
+
+    it('uses the injected test clock for compact age rendering', () => {
+      (window as Window & { __MBOS_TEST_NOW__?: string }).__MBOS_TEST_NOW__ = '2024-01-01T02:00:00Z';
+
+      render(<ThreadItem {...defaultProps} />);
+
+      expect(screen.getByText('1h')).toBeInTheDocument();
     });
   });
 

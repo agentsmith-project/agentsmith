@@ -225,6 +225,57 @@
     "visualStepIds": []
   },
   {
+    "storyId": "chat-stop-terminate-idempotent-state-resync",
+    "title": "Chat stop, terminate, and idempotent state resync",
+    "actor": "project member",
+    "family": "chat-stop-recovery",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "chat-streaming-runtime",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real chat stop recovery story needs a live streaming runtime with authoritative session truth after refresh."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/chat",
+    "goal": "项目成员在 chat 里叫停一条过长或失控的回复时，应该先能 stop，必要时再升级 terminate；不管刷新、重进线程还是重复发 terminate，产品都要把同一条会话 resync 到唯一真相，不留下 ghost streaming、重复 assistant 回复或永远 disabled 的输入框。",
+    "sourceRef": "e2e/stories/backend-real/chat-stop-terminate-idempotent-state-resync.story.md#chat-stop-terminate-idempotent-state-resync",
+    "sourceFingerprint": "471ae719b67421304a0a2b74c44082410bbd8b1b32186d941c5af8104cc5387f",
+    "storyFingerprint": "a4cd18158001fff3a4e2d5d75ddad63698a8641058232a4d08d367f13ec68348",
+    "stepMapFingerprint": "2081fdf05e4de368183dcfc4b277bf4007fe0ee5e6b6eec813b4e2603c957cb8",
+    "sceneIds": [
+      "project-chat"
+    ],
+    "stepIds": [
+      "open-the-active-chat-thread",
+      "stop-the-active-stream-from-the-thread",
+      "escalate-to-terminate-if-stop-does-not-settle",
+      "refresh-and-reopen-the-same-thread-without-ghost-streaming",
+      "repeat-terminate-without-reopening-a-settled-stop-loop",
+      "continue-working-in-the-same-thread-after-resync"
+    ],
+    "traceStepIds": [
+      "open-the-active-chat-thread",
+      "stop-the-active-stream-from-the-thread",
+      "escalate-to-terminate-if-stop-does-not-settle",
+      "refresh-and-reopen-the-same-thread-without-ghost-streaming",
+      "repeat-terminate-without-reopening-a-settled-stop-loop",
+      "continue-working-in-the-same-thread-after-resync"
+    ],
+    "visualStepIds": []
+  },
+  {
     "storyId": "desktop-auth-request-complete-and-work",
     "title": "Desktop auth request, complete, and continue to work",
     "actor": "workspace member / desktop user",
@@ -416,6 +467,68 @@
       "promote-member-and-continue-work",
       "demote-member-and-continue-work",
       "remove-member-and-lose-project-access"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "internal-external-chat-notebook-proxy-matrix",
+    "title": "Internal and external chat/notebook continuity through the universal proxy matrix",
+    "actor": "project member",
+    "family": "ai-work-matrix",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "llm-universal-proxy",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real AI matrix story depends on llm-universal-proxy carrying the supported protocol matrix without leaking protocol details into the product surface."
+      },
+      {
+        "dependencyId": "internal-agent-runtime",
+        "kind": "service",
+        "required": true,
+        "note": "the internal half of the matrix needs a live internal runner path for chat and notebook."
+      },
+      {
+        "dependencyId": "provider-api-key",
+        "kind": "credential",
+        "required": true,
+        "note": "the external half of the matrix needs a valid upstream credential."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/chat",
+    "goal": "项目成员在同一个项目里切换 internal / external 的 chat 与 notebook 工作时，四条主线都应通过统一的项目级 AI 入口稳定可用；用户不需要理解底层协议、provider 差异或哪一路经过 llm-universal-proxy，仍然能把同一份项目上下文带着走。",
+    "sourceRef": "e2e/stories/backend-real/internal-external-chat-notebook-proxy-matrix.story.md#internal-external-chat-notebook-proxy-matrix",
+    "sourceFingerprint": "c92a1d7dcde84abb9ae174443bb3e0d08e010277533f16e0a923b91d95bb2d28",
+    "storyFingerprint": "1932413009c20315f3a5ce77545db6c358e14edc23ea4c200b1e5dac9ec9c62d",
+    "stepMapFingerprint": "d7a3edf9440484e12e1d4b128d1da31dfa3e6b91022340d45e959c244e47e4df",
+    "sceneIds": [
+      "project-chat",
+      "notebook-task"
+    ],
+    "stepIds": [
+      "work-through-the-external-chat-path",
+      "switch-to-the-internal-chat-path-without-leaving-chat-work",
+      "complete-an-external-notebook-task",
+      "complete-an-internal-notebook-task",
+      "keep-project-truth-consistent-across-all-four-paths"
+    ],
+    "traceStepIds": [
+      "work-through-the-external-chat-path",
+      "switch-to-the-internal-chat-path-without-leaving-chat-work",
+      "complete-an-external-notebook-task",
+      "complete-an-internal-notebook-task",
+      "keep-project-truth-consistent-across-all-four-paths"
     ],
     "visualStepIds": []
   },
@@ -648,14 +761,20 @@
     "externalDependencies": [],
     "lane": "mock-lane",
     "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/chat",
-    "goal": "用一组 mock-lane story scenes 覆盖用户在 chat 中正常对话、切换执行目标，以及在搜索为空时恢复新线程的高频心智。",
+    "goal": "用一组 mock-lane story scenes 覆盖用户在 chat 中正常对话、切换执行目标，以及 stop / recover / retry 这些前后端状态同步必须说人话的高频心智。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-chat-operate-and-recover.story.md#mock-lane-chat-operate-and-recover",
-    "sourceFingerprint": "a8b824b41dba489871945b94ca6f01901a3cb1ed4c54498a9d51c27a99e1ac1f",
-    "storyFingerprint": "d6513b9287cacfe043182f56d24584888092af3d71217fc74d39760204fe2597",
+    "sourceFingerprint": "e82d0dfc7ea32c83d0da5dc50458129f16919aba8e202822adc2fe968546bed7",
+    "storyFingerprint": "7debc70b52ed0d274f17a87ed15daf26ed2021f75da7cd9bd1389d2c75dca9f0",
     "stepMapFingerprint": "73516ca1aa246ff369d5e8fd98a0ce5aa4cec7abf22f0005e685db2b70c0ed5b",
     "sceneIds": [
       "chat-operate",
-      "chat-recover-empty"
+      "chat-recover-empty",
+      "chat-streaming-active",
+      "chat-stop-requested",
+      "chat-stop-escalation-confirm",
+      "chat-stop-escalation-unavailable",
+      "chat-recovering-live-session",
+      "chat-provider-capacity-retry"
     ],
     "stepIds": [
       "chat-operate-open",
@@ -836,16 +955,27 @@
     "externalDependencies": [],
     "lane": "mock-lane",
     "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/notebook",
-    "goal": "用一组 mock-lane story scenes 统一描述 notebook task 从列表、创建、详情到产物检查的高频任务生命周期。",
+    "goal": "用一组 mock-lane story scenes 统一描述 notebook task 的列表、创建、详情、产物检查，以及 cancel / force-stop confirm / provider error / SSE / terminal blocker 这些必须按用户心智说真话的状态同步时刻。",
     "sourceRef": "e2e/stories/mock-lane/mock-lane-notebook-task-lifecycle.story.md#mock-lane-notebook-task-lifecycle",
-    "sourceFingerprint": "1f6b79e2f2ee10bd736241915b4134d65f72c88daa97cb2f8df139fe5e090d91",
-    "storyFingerprint": "e60f3a29b208cecf69952a0b94ecd9f56c4fe56d2b4cad35a3546097e8c0dd74",
+    "sourceFingerprint": "1aaaeacc3641f9a0996fbcf5cc5fc90be577e59d7880689b13e17284102e1ae2",
+    "storyFingerprint": "bef66c7a13913fc26e383e2850233d9fdbf52fb2d8adfdacbe7b81e537e12c8b",
     "stepMapFingerprint": "fafa2add94be782963e45a8208404b3c19434432fa192bd4ea65d270302241de",
     "sceneIds": [
       "notebook-task-lifecycle-list",
       "notebook-task-lifecycle-create-dialog",
       "notebook-task-lifecycle-detail",
-      "notebook-task-lifecycle-artifact"
+      "notebook-task-lifecycle-artifact",
+      "notebook-task-running",
+      "notebook-task-cancelling",
+      "notebook-cancel-escalation-confirm",
+      "notebook-task-terminating",
+      "notebook-task-finalizing",
+      "notebook-sse-reconnecting",
+      "notebook-sse-unavailable-reconcile",
+      "notebook-task-recovered-ready",
+      "notebook-provider-upstream-error",
+      "notebook-hidden-terminal-blocked",
+      "notebook-terminal-truth-unavailable"
     ],
     "stepIds": [
       "notebook-task-lifecycle-open-list",
@@ -1039,6 +1169,57 @@
       "open-notebook-task",
       "open-files-artifacts",
       "download-artifact"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "notebook-cancel-terminate-refresh-recovery",
+    "title": "Notebook cancel, terminate, and refresh recovery",
+    "actor": "project member",
+    "family": "notebook-stop-recovery",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "notebook-task-runtime",
+        "kind": "service",
+        "required": true,
+        "note": "backend-real notebook stop recovery story needs a live notebook task runtime with authoritative stop state after refresh."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}",
+    "goal": "项目成员在 notebook 里叫停一条失控或过慢的运行时，应该先能 cancel，再在需要时升级为 terminate；刷新或重新进入同一 task 后，产品必须继续说真话，不让旧运行幽灵式复活，也不把成员卡死在不能恢复工作的假忙碌状态里。",
+    "sourceRef": "e2e/stories/backend-real/notebook-cancel-terminate-refresh-recovery.story.md#notebook-cancel-terminate-refresh-recovery",
+    "sourceFingerprint": "ff1d203b9b7af07a6a241411076c2dcf7e34fa4376195719a4297e2842d94081",
+    "storyFingerprint": "1bac3c978cfddfc7d2ad8ca159d265ec1259d8017343cd95cecbfddcbe304754",
+    "stepMapFingerprint": "06b4337146bb0f9b8be7ae2314e49962a741af1ea8197f54730478166bd8f0e0",
+    "sceneIds": [
+      "notebook-task"
+    ],
+    "stepIds": [
+      "reenter-running-notebook-task",
+      "cancel-the-active-run-from-the-task-surface",
+      "escalate-a-stuck-cancel-to-terminate",
+      "refresh-the-task-while-stop-truth-is-still-settling",
+      "recover-the-same-task-after-stop-settles",
+      "continue-the-next-turn-in-the-same-task"
+    ],
+    "traceStepIds": [
+      "reenter-running-notebook-task",
+      "cancel-the-active-run-from-the-task-surface",
+      "escalate-a-stuck-cancel-to-terminate",
+      "refresh-the-task-while-stop-truth-is-still-settling",
+      "recover-the-same-task-after-stop-settles",
+      "continue-the-next-turn-in-the-same-task"
     ],
     "visualStepIds": []
   },
@@ -1532,6 +1713,56 @@
     "visualStepIds": []
   },
   {
+    "storyId": "provider-capacity-retry-error-ux",
+    "title": "Provider capacity, retry, and error recovery UX",
+    "actor": "project member",
+    "family": "provider-capacity-recovery",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "upstream-provider",
+        "kind": "integration",
+        "required": true,
+        "note": "provider capacity and error UX story needs a real upstream path that can surface retryable capacity failures and non-retryable provider errors."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/chat",
+    "goal": "当 provider 短时拥塞或返回不可恢复错误时，成员应在 Chat / Notebook 工作面立刻知道自己该稍后重试、切换可用 endpoint，还是请项目操作人员修复配置；自己的线程、task 和已输入内容不应该在报错时一起丢失。",
+    "sourceRef": "e2e/stories/backend-real/provider-capacity-retry-error-ux.story.md#provider-capacity-retry-error-ux",
+    "sourceFingerprint": "67fa2862860c6c2f3100dfe7090d5dea8c727caafa1bd66b6afe66953ea64cef",
+    "storyFingerprint": "65022b0f07411b542692c4201023ca0478e630347074771ab5777f05ff319d96",
+    "stepMapFingerprint": "6f117859ae9bcca62e26cc7f2d211ee97eb2b9ae62e8c5086291afbc9fb709a7",
+    "sceneIds": [
+      "project-chat",
+      "notebook-task"
+    ],
+    "stepIds": [
+      "surface-retryable-provider-capacity-in-chat",
+      "recover-the-same-chat-thread-after-capacity-clears",
+      "surface-retryable-capacity-or-retry-limit-in-notebook",
+      "retry-the-same-notebook-task-after-capacity-recovers",
+      "distinguish-non-retryable-provider-errors-from-retry-later-states"
+    ],
+    "traceStepIds": [
+      "surface-retryable-provider-capacity-in-chat",
+      "recover-the-same-chat-thread-after-capacity-clears",
+      "surface-retryable-capacity-or-retry-limit-in-notebook",
+      "retry-the-same-notebook-task-after-capacity-recovers",
+      "distinguish-non-retryable-provider-errors-from-retry-later-states"
+    ],
+    "visualStepIds": []
+  },
+  {
     "storyId": "real-backend-visual-review",
     "title": "Backend-real visual review",
     "actor": "system 管理侧 / project owner",
@@ -1891,6 +2122,62 @@
       "review-system-workspaces",
       "reenter-workspace-alpha",
       "reenter-workspace-beta"
+    ],
+    "visualStepIds": []
+  },
+  {
+    "storyId": "unicode-filename-round-trip",
+    "title": "Unicode filename round-trip across Files, notebook artifacts, download, and mount",
+    "actor": "project member",
+    "family": "unicode-file-continuity",
+    "personas": [
+      "project member"
+    ],
+    "kind": "journey",
+    "gatePolicy": {
+      "tier": "default",
+      "requiredEvidence": [
+        "trace"
+      ]
+    },
+    "externalDependencies": [
+      {
+        "dependencyId": "juicefs-client",
+        "kind": "service",
+        "required": true,
+        "note": "unicode filename round-trip needs a live client mount so web truth and local path truth can be compared."
+      },
+      {
+        "dependencyId": "provider-api-key",
+        "kind": "credential",
+        "required": true,
+        "note": "notebook artifact generation in the unicode round-trip story needs a runnable AI path."
+      }
+    ],
+    "lane": "backend-real",
+    "entryRoute": "/en-US/workspaces/{workspaceId}/projects/{projectId}/files",
+    "goal": "成员使用非 ASCII 文件名工作时，Files、Notebook、.artifacts、下载结果和本地挂载都必须保留同一份文件名真相；用户不应该为了避开系统差异，被迫把真实文件重命名成英文占位符。",
+    "sourceRef": "e2e/stories/backend-real/unicode-filename-round-trip.story.md#unicode-filename-round-trip",
+    "sourceFingerprint": "b293c8c4dc3ca37b31ed0dc3e64d2e2ee99ecd1995a1a3ec0ad5aaa98530cb1c",
+    "storyFingerprint": "ce3f414d5598fd4d1a6715e70e954d5391a174e05ace3323191ddc2413376ced",
+    "stepMapFingerprint": "18f5d116eacd77f34e5b45ffb5bdd2479eb3d79bac9a3ef5360de24b87fb2c4a",
+    "sceneIds": [
+      "project-files",
+      "notebook-task"
+    ],
+    "stepIds": [
+      "see-the-unicode-file-name-in-files-without-fallback-renaming",
+      "confirm-the-mounted-library-keeps-the-same-unicode-name",
+      "use-the-unicode-file-in-notebook-and-write-a-unicode-artifact",
+      "return-to-files-and-see-the-unicode-artifact-unchanged",
+      "download-the-unicode-artifact-with-the-same-name"
+    ],
+    "traceStepIds": [
+      "see-the-unicode-file-name-in-files-without-fallback-renaming",
+      "confirm-the-mounted-library-keeps-the-same-unicode-name",
+      "use-the-unicode-file-in-notebook-and-write-a-unicode-artifact",
+      "return-to-files-and-see-the-unicode-artifact-unchanged",
+      "download-the-unicode-artifact-with-the-same-name"
     ],
     "visualStepIds": []
   },

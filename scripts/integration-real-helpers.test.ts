@@ -9,6 +9,7 @@ import {
   createExternalConnectionViaApi,
   createExternalRunnerAgentBundle,
   findPreparedTaskWorkspaceRootInRunnerLog,
+  parseWorkloadPodSnapshot,
   resolveIntegrationKeycloakBaseUrl,
   resolveNotebookRunnerSocketUrl,
 } from '../e2e/integration-real-helpers';
@@ -113,6 +114,95 @@ describe('integration-real-helpers', () => {
 
   it('returns null when the runner log has not yet declared a prepared task workspace', () => {
     expect(findPreparedTaskWorkspaceRootInRunnerLog('[notebook-codex-runner] connected')).toBeNull();
+  });
+
+  it('parses workload pod readiness truth from kubernetes pod list payloads', () => {
+    const payload = JSON.stringify({
+      items: [
+        {
+          metadata: { name: 'workload-pod-1', uid: 'pod-uid-1' },
+          status: {
+            phase: 'Running',
+            conditions: [
+              { type: 'Ready', status: 'True' },
+            ],
+            containerStatuses: [
+              { ready: true, state: { running: {} } },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(parseWorkloadPodSnapshot(payload)).toMatchObject({
+      name: 'workload-pod-1',
+      uid: 'pod-uid-1',
+      phase: 'Running',
+      ready: true,
+      containerReadyCount: 1,
+      containerCount: 1,
+    });
+  });
+
+  it('retains waiting reasons when a workload pod exists but is not ready yet', () => {
+    const payload = JSON.stringify({
+      items: [
+        {
+          metadata: { name: 'workload-pod-2', uid: 'pod-uid-2' },
+          status: {
+            phase: 'Pending',
+            conditions: [
+              { type: 'Ready', status: 'False', reason: 'ContainersNotReady' },
+            ],
+            containerStatuses: [
+              {
+                ready: false,
+                state: { waiting: { reason: 'ContainerCreating' } },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(parseWorkloadPodSnapshot(payload)).toMatchObject({
+      name: 'workload-pod-2',
+      uid: 'pod-uid-2',
+      phase: 'Pending',
+      ready: false,
+      readyReason: 'ContainersNotReady',
+      reason: 'ContainerCreating',
+      containerReadyCount: 0,
+      containerCount: 1,
+    });
+  });
+
+  it('keeps terminate recovery spec on ready-aware pod and execution outcome helpers', async () => {
+    const source = await readFile(path.resolve('e2e/integration-internal-notebook-workspace.spec.ts'), 'utf8');
+
+    expect(source).toContain('waitForNotebookExecutionOutcome');
+    expect(source).toContain('waitForWorkloadPodReady');
+    expect(source).not.toMatch(
+      /waitForAssistantToken\(\{\s*page,\s*workspaceId: "ws_default",\s*projectId,\s*taskId,\s*token: terminateRecoveryToken,/,
+    );
+  });
+
+  it('binds the terminate recovery assistant message id into the scoped outcome wait', async () => {
+    const source = await readFile(path.resolve('e2e/integration-internal-notebook-workspace.spec.ts'), 'utf8');
+
+    expect(source).toMatch(
+      /const \{ assistantMessageId: terminateRecoveryAssistantMessageId \}\s*=\s*await sendTaskMessage\(/,
+    );
+    expect(source).toMatch(
+      /waitForNotebookExecutionOutcome\(\{\s*page,\s*workspaceId: "ws_default",\s*projectId,\s*taskId,\s*token: terminateRecoveryToken,\s*assistantMessageId: terminateRecoveryAssistantMessageId,/,
+    );
+  });
+
+  it('scopes notebook execution outcome polling to the current assistant message boundary', async () => {
+    const source = await readFile(path.resolve('e2e/integration-real-helpers.ts'), 'utf8');
+
+    expect(source).toContain('assistantMessageId');
+    expect(source).toContain('message_id=');
   });
 
   it('prefers KEYCLOAK_BASE_URL over every other integration keycloak env source', () => {

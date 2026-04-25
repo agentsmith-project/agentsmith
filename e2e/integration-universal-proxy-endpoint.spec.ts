@@ -1,4 +1,4 @@
-import http, { type Server } from 'node:http';
+import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test, expect, type Page } from '@playwright/test';
 import {
@@ -11,6 +11,13 @@ import {
 type UpstreamServer = {
   baseUrl: string;
   stop: () => Promise<void>;
+  getRequestCount?: () => number;
+};
+
+type OpenAiCompatibleError = {
+  code: string;
+  message: string;
+  type: string;
 };
 
 function extractResponsesText(body: unknown): string | null {
@@ -34,6 +41,28 @@ function extractResponsesText(body: unknown): string | null {
     }
   }
   return null;
+}
+
+function extractOpenAiCompatibleError(body: unknown): OpenAiCompatibleError | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const error = (body as { error?: unknown }).error;
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return null;
+  const record = error as { code?: unknown; message?: unknown; type?: unknown };
+  if (
+    typeof record.code !== 'string'
+    || record.code.trim().length === 0
+    || typeof record.message !== 'string'
+    || record.message.trim().length === 0
+    || typeof record.type !== 'string'
+    || record.type.trim().length === 0
+  ) {
+    return null;
+  }
+  return {
+    code: record.code,
+    message: record.message,
+    type: record.type,
+  };
 }
 
 async function issueDevToken(page: Page): Promise<string> {
@@ -168,6 +197,66 @@ async function startOpenAiChatCompletionsUpstream(replyText: string): Promise<Up
   return {
     baseUrl: `http://127.0.0.1:${address.port}/v1`,
     stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+async function startOpenAiChatCompletionsRateLimitThenRecoveryUpstream(args: {
+  throttledMessage: string;
+  replyText: string;
+}): Promise<UpstreamServer> {
+  let requestCount = 0;
+  const server = http.createServer((req, res) => {
+    void (async () => {
+      if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
+        res.statusCode = 404;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ error: 'not_found' }));
+        return;
+      }
+      requestCount += 1;
+      if (requestCount === 1) {
+        res.statusCode = 429;
+        res.setHeader('content-type', 'application/json');
+        res.setHeader('retry-after', '1');
+        res.end(
+          JSON.stringify({
+            error: {
+              code: 'rate_limit_exceeded',
+              message: args.throttledMessage,
+              type: 'rate_limit_error',
+            },
+          }),
+        );
+        return;
+      }
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(
+        JSON.stringify({
+          object: 'chat.completion',
+          id: 'chatcmpl_it_recovered',
+          choices: [
+            {
+              index: 0,
+              finish_reason: 'stop',
+              message: {
+                role: 'assistant',
+                content: args.replyText,
+              },
+            },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 },
+        }),
+      );
+    })();
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const address = server.address() as AddressInfo;
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    getRequestCount: () => requestCount,
   };
 }
 
@@ -351,6 +440,74 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
       expect(response.ok()).toBeTruthy();
       const body = (await response.json()) as unknown;
       expect(extractResponsesText(body)).toBe('dev-universal-responses-native-ok');
+    } finally {
+      await upstream.stop();
+    }
+  });
+
+  test('responses proxy surfaces provider capacity errors clearly and recovers on the next explicit retry', async ({ page }) => {
+    test.setTimeout(240_000);
+    const upstream = await startOpenAiChatCompletionsRateLimitThenRecoveryUpstream({
+      throttledMessage: 'Selected model is at capacity. Please retry shortly.',
+      replyText: 'dev-universal-capacity-recovered',
+    });
+
+    try {
+      const token = await issueDevToken(page);
+      const projectId = await createProjectViaApi(page, token, `it-upx-capacity-${Date.now()}`);
+      const credentialId = await createCredentialViaApi(page, token, projectId);
+      const endpointId = await createEndpointViaApi(page, token, projectId, {
+        name: `it-upx-capacity-${Date.now()}`,
+        model: 'placeholder-model',
+        baseUrl: upstream.baseUrl,
+        credentialRef: credentialId,
+        upstreamProtocol: 'openai_chat_completions',
+      });
+
+      const throttledResponse = await page.request.post(
+        `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpointId}/proxy/openai/responses`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          data: {
+            model: 'placeholder-model',
+            input: 'trigger transient provider capacity',
+            max_output_tokens: 64,
+          },
+        },
+      );
+      expect(throttledResponse.status()).toBe(429);
+      expect(upstream.getRequestCount?.()).toBe(1);
+      const throttledBody = (await throttledResponse.json()) as unknown;
+      const throttledError = extractOpenAiCompatibleError(throttledBody);
+      expect(throttledError).toEqual(expect.objectContaining({
+        code: 'rate_limit_exceeded',
+        type: 'rate_limit_error',
+        message: expect.any(String),
+      }));
+      expect(throttledError?.message).toContain('Selected model is at capacity');
+      expect(throttledError?.message).toMatch(/retry/i);
+
+      const recoveredResponse = await page.request.post(
+        `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpointId}/proxy/openai/responses`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          data: {
+            model: 'placeholder-model',
+            input: 'retry after provider capacity clears',
+            max_output_tokens: 64,
+          },
+        },
+      );
+      expect(recoveredResponse.ok()).toBeTruthy();
+      const recoveredBody = (await recoveredResponse.json()) as unknown;
+      expect(extractResponsesText(recoveredBody)).toBe('dev-universal-capacity-recovered');
+      expect(upstream.getRequestCount?.()).toBe(2);
     } finally {
       await upstream.stop();
     }

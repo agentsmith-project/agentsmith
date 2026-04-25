@@ -135,7 +135,7 @@ describe('api-entry-node chat session routes', () => {
 
   it('applies chat pagination defaults and bounds consistently', async () => {
     const { baseUrl } = startServer();
-    const upstream = startOpenAICompatibleUpstreamServer();
+    const upstream = await startOpenAICompatibleUpstreamServer();
     const { sessionId } = await createChatEndpointAndSession(baseUrl, upstream.baseUrl);
 
     const createMessage = await apiFetch(
@@ -190,7 +190,7 @@ describe('api-entry-node chat session routes', () => {
   });
 
   it('supports user revision and assistant variants for chat branching', async () => {
-    const upstream = startUniversalProxyChatServer();
+    const upstream = await startUniversalProxyChatServer();
     const deps = createDefaultNodeApiDeps();
     deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
     const { baseUrl } = startServerWithDeps(deps);
@@ -314,7 +314,7 @@ describe('api-entry-node chat session routes', () => {
 
   it('supports paginated chat messages list', async () => {
     const { baseUrl } = startServer();
-    const upstream = startOpenAICompatibleUpstreamServer();
+    const upstream = await startOpenAICompatibleUpstreamServer();
     const { sessionId } = await createChatEndpointAndSession(baseUrl, upstream.baseUrl);
 
     for (const content of ['m1', 'm2', 'm3']) {

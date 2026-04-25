@@ -6,8 +6,8 @@
   "lane": "mock-lane",
   "family": "notebook-task-lifecycle",
   "entryRoute": "/en-US/workspaces/ws_default/projects/proj_001/notebook",
-  "goal": "用一组 mock-lane story scenes 统一描述 notebook task 从列表、创建、详情到产物检查的高频任务生命周期。",
-  "narrative": "Notebook task lifecycle scenes cover the list view, the create-task dialog, the task detail surface, and the artifact inspection hover state that a member uses when working through a task.",
+  "goal": "用一组 mock-lane story scenes 统一描述 notebook task 的列表、创建、详情、产物检查，以及 cancel / force-stop confirm / provider error / SSE / terminal blocker 这些必须按用户心智说真话的状态同步时刻。",
+  "narrative": "Notebook task lifecycle scenes cover the task list, the create-task dialog, the task detail surface, artifact inspection, and the blocked or degraded states a member must understand when a run is stopping, a force-stop confirmation is required, a provider error still leaves the same task recoverable, realtime updates are recovering, or terminal truth has not settled yet.",
   "preconditions": [
     "workspace ws_default and project proj_001 are available in the mock lane"
   ],
@@ -52,6 +52,139 @@
         "notebook__task-header",
         "notebook__artifact-card",
         "notebook__artifact-hover-panel"
+      ]
+    },
+    {
+      "sceneId": "notebook-task-running",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "recipeFamily": "work_surface_immersive",
+      "authLane": "authed",
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__execution-visibility",
+        "notebook__run-activity-summary",
+        "notebook__run-active-cancel",
+        "notebook__conversation-input"
+      ]
+    },
+    {
+      "sceneId": "notebook-task-cancelling",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "recipeFamily": "work_surface_immersive",
+      "authLane": "authed",
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__run-activity-summary",
+        "notebook__conversation-input",
+        "notebook__send-btn"
+      ]
+    },
+    {
+      "sceneId": "notebook-cancel-escalation-confirm",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "recipeFamily": "overlay_dialog",
+      "authLane": "authed",
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__cancel-escalation-dialog",
+        "notebook__cancel-escalation-cancel",
+        "notebook__cancel-escalation-confirm"
+      ]
+    },
+    {
+      "sceneId": "notebook-task-terminating",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "recipeFamily": "work_surface_immersive",
+      "authLane": "authed",
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__run-activity-summary",
+        "notebook__conversation-input",
+        "notebook__send-btn"
+      ]
+    },
+    {
+      "sceneId": "notebook-task-finalizing",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "recipeFamily": "work_surface_immersive",
+      "authLane": "authed",
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__run-activity-summary",
+        "notebook__conversation-input",
+        "notebook__send-btn"
+      ]
+    },
+    {
+      "sceneId": "notebook-sse-reconnecting",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "recipeFamily": "work_surface_immersive",
+      "authLane": "authed",
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__execution-visibility",
+        "notebook__sse-status",
+        "notebook__conversation-input",
+        "notebook__send-btn"
+      ]
+    },
+    {
+      "sceneId": "notebook-sse-unavailable-reconcile",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "recipeFamily": "work_surface_immersive",
+      "authLane": "authed",
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__execution-visibility",
+        "notebook__sse-status",
+        "notebook__sse-status-open-audit",
+        "notebook__sse-status-open-usage"
+      ]
+    },
+    {
+      "sceneId": "notebook-task-recovered-ready",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "recipeFamily": "work_surface_immersive",
+      "authLane": "authed",
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__conversation-input",
+        "notebook__send-btn"
+      ]
+    },
+    {
+      "sceneId": "notebook-provider-upstream-error",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "recipeFamily": "work_surface_immersive",
+      "authLane": "authed",
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__agent-message-bubble",
+        "notebook__message-run-status",
+        "notebook__send-btn"
+      ]
+    },
+    {
+      "sceneId": "notebook-hidden-terminal-blocked",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "recipeFamily": "work_surface_immersive",
+      "authLane": "authed",
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__task-terminal-status-strip",
+        "notebook__task-terminal-status-action",
+        "notebook__task-terminal-status-end-all"
+      ]
+    },
+    {
+      "sceneId": "notebook-terminal-truth-unavailable",
+      "route": "/en-US/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001",
+      "recipeFamily": "work_surface_immersive",
+      "authLane": "authed",
+      "stableMarkers": [
+        "notebook__task-header",
+        "notebook__task-terminal-truth-unavailable",
+        "notebook__task-terminal-truth-unavailable-retry"
       ]
     }
   ],
@@ -169,8 +302,10 @@
           "codeRefs": [
             "e2e/visual.spec.ts",
             "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx",
-            "src/components/notebook/TaskList.tsx",
-            "src/components/notebook/task-list/TaskListContent.tsx"
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/notebook/ConversationPanel.tsx",
+            "src/components/notebook/ConversationInput.tsx",
+            "src/components/notebook/TaskHeader.tsx"
           ],
           "capture": "full_page",
           "authLane": "authed",
@@ -187,6 +322,7 @@
           "group": "project_pages",
           "codeRefs": [
             "e2e/visual.spec.ts",
+            "src/components/notebook/TaskPage.tsx",
             "src/components/notebook/ArtifactCard.tsx"
           ],
           "capture": "full_page",
@@ -196,6 +332,445 @@
             "light",
             "dark"
           ]
+        },
+        {
+          "sceneId": "notebook-task-running",
+          "scenarioId": "notebook-task-running",
+          "scenario": "The current task is actively running, with a visible latest-action summary and a same-surface stop affordance instead of a silent busy state.",
+          "group": "project_pages",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx",
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/notebook/ConversationPanel.tsx",
+            "src/components/notebook/ConversationInput.tsx",
+            "src/components/notebook/TaskHeader.tsx"
+          ],
+          "capture": "full_page",
+          "authLane": "authed",
+          "uxState": "happy",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__task-header",
+              "notebook__execution-visibility",
+              "notebook__run-activity-summary",
+              "notebook__run-active-cancel",
+              "notebook__conversation-input"
+            ],
+            "prominentActionScopeTestIds": [
+              "notebook__execution-visibility"
+            ],
+            "maxProminentActions": 0,
+            "forbiddenVisibleText": [
+              "Unknown",
+              "Agent Unknown",
+              "Unknown Runner"
+            ]
+          }
+        },
+        {
+          "sceneId": "notebook-task-cancelling",
+          "scenarioId": "notebook-task-cancelling",
+          "scenario": "The member already requested cancel, so the task clearly says stopping is in progress and holds the next turn until stop truth settles.",
+          "group": "project_pages",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx",
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/notebook/ConversationPanel.tsx",
+            "src/components/notebook/ConversationInput.tsx"
+          ],
+          "capture": "full_page",
+          "authLane": "authed",
+          "uxState": "diagnostic",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__task-header",
+              "notebook__run-activity-summary",
+              "notebook__conversation-input",
+              "notebook__send-btn"
+            ],
+            "prominentActionScopeTestIds": [
+              "notebook__conversation-input"
+            ],
+            "maxProminentActions": 0,
+            "forbiddenVisibleText": [
+              "Unknown",
+              "Agent Unknown",
+              "Unknown Runner"
+            ]
+          }
+        },
+        {
+          "sceneId": "notebook-cancel-escalation-confirm",
+          "scenarioId": "notebook-cancel-escalation-confirm",
+          "scenario": "Cancel has not settled in time, so the same task asks for an explicit force-stop confirmation before escalating the run.",
+          "group": "overlay_cases",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/ui/alert-dialog.tsx"
+          ],
+          "capture": "viewport",
+          "authLane": "authed",
+          "uxState": "degraded",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__task-header",
+              "notebook__cancel-escalation-dialog",
+              "notebook__cancel-escalation-cancel",
+              "notebook__cancel-escalation-confirm"
+            ],
+            "prominentActionScopeTestIds": [
+              "notebook__cancel-escalation-dialog"
+            ],
+            "maxProminentActions": 0,
+            "forbiddenVisibleText": [
+              "Unknown",
+              "Agent Unknown",
+              "Unknown Runner"
+            ]
+          }
+        },
+        {
+          "sceneId": "notebook-task-terminating",
+          "scenarioId": "notebook-task-terminating",
+          "scenario": "Cancel escalated to terminate, and the task makes the stronger stop state explicit before allowing any new run to begin.",
+          "group": "project_pages",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx",
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/notebook/ConversationPanel.tsx",
+            "src/components/notebook/ConversationInput.tsx"
+          ],
+          "capture": "full_page",
+          "authLane": "authed",
+          "uxState": "diagnostic",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__task-header",
+              "notebook__run-activity-summary",
+              "notebook__conversation-input",
+              "notebook__send-btn"
+            ],
+            "prominentActionScopeTestIds": [
+              "notebook__conversation-input"
+            ],
+            "maxProminentActions": 0,
+            "forbiddenVisibleText": [
+              "Unknown",
+              "Agent Unknown",
+              "Unknown Runner"
+            ]
+          }
+        },
+        {
+          "sceneId": "notebook-task-finalizing",
+          "scenarioId": "notebook-task-finalizing",
+          "scenario": "Execution already ended and the task is still saving the final answer and artifacts, so the member sees a real finishing state instead of a fake idle reset.",
+          "group": "project_pages",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx",
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/notebook/ConversationPanel.tsx",
+            "src/components/notebook/ConversationInput.tsx"
+          ],
+          "capture": "full_page",
+          "authLane": "authed",
+          "uxState": "diagnostic",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__task-header",
+              "notebook__run-activity-summary",
+              "notebook__conversation-input",
+              "notebook__send-btn"
+            ],
+            "prominentActionScopeTestIds": [
+              "notebook__conversation-input"
+            ],
+            "maxProminentActions": 0,
+            "forbiddenVisibleText": [
+              "Unknown",
+              "Agent Unknown",
+              "Unknown Runner"
+            ]
+          }
+        },
+        {
+          "sceneId": "notebook-sse-reconnecting",
+          "scenarioId": "notebook-sse-reconnecting",
+          "scenario": "The same task is still open while the live task stream reconnects, so the member can understand the temporary gap without losing the task surface.",
+          "group": "project_pages",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx",
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/notebook/ConversationPanel.tsx",
+            "src/lib/hooks/use-task-sse.ts"
+          ],
+          "capture": "full_page",
+          "authLane": "authed",
+          "uxState": "diagnostic",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__task-header",
+              "notebook__sse-status",
+              "notebook__conversation-input",
+              "notebook__send-btn"
+            ],
+            "prominentActionScopeTestIds": [
+              "notebook__conversation-input"
+            ],
+            "maxProminentActions": 0,
+            "forbiddenVisibleText": [
+              "Unknown",
+              "Agent Unknown",
+              "Unknown Runner"
+            ]
+          }
+        },
+        {
+          "sceneId": "notebook-sse-unavailable-reconcile",
+          "scenarioId": "notebook-sse-unavailable-reconcile",
+          "scenario": "Live updates cannot currently be trusted, so the task surfaces manual recovery guidance and diagnostics links before the member blindly keeps going.",
+          "group": "project_pages",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx",
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/notebook/ConversationPanel.tsx",
+            "src/lib/build-failure-explainability.ts",
+            "src/lib/hooks/use-task-sse.ts"
+          ],
+          "capture": "full_page",
+          "authLane": "authed",
+          "uxState": "degraded",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__task-header",
+              "notebook__sse-status",
+              "notebook__sse-status-open-audit",
+              "notebook__sse-status-open-usage"
+            ],
+            "prominentActionScopeTestIds": [
+              "notebook__execution-visibility"
+            ],
+            "maxProminentActions": 0,
+            "forbiddenVisibleText": [
+              "Unknown",
+              "Agent Unknown",
+              "Unknown Runner"
+            ]
+          }
+        },
+        {
+          "sceneId": "notebook-task-recovered-ready",
+          "scenarioId": "notebook-task-recovered-ready",
+          "scenario": "After stop or reconnect truth settles, the same task returns to ready state so the member can continue without cloning a replacement task.",
+          "group": "project_pages",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx",
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/notebook/ConversationPanel.tsx",
+            "src/components/notebook/ConversationInput.tsx",
+            "src/components/notebook/TaskHeader.tsx"
+          ],
+          "capture": "full_page",
+          "authLane": "authed",
+          "uxState": "happy",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__task-header",
+              "notebook__conversation-input",
+              "notebook__send-btn"
+            ],
+            "prominentActionScopeTestIds": [
+              "notebook__conversation-input"
+            ],
+            "maxProminentActions": 0,
+            "forbiddenVisibleText": [
+              "Unknown",
+              "Agent Unknown",
+              "Unknown Runner"
+            ]
+          }
+        },
+        {
+          "sceneId": "notebook-provider-upstream-error",
+          "scenarioId": "notebook-provider-upstream-error",
+          "scenario": "The task stays recoverable after a provider failure by keeping the latest upstream guidance visible and leaving the same conversation ready for the next retry.",
+          "group": "project_pages",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/notebook/ConversationPanel.tsx",
+            "src/components/notebook/MessageItem.tsx",
+            "src/components/notebook/message-item/utils.ts"
+          ],
+          "capture": "full_page",
+          "authLane": "authed",
+          "uxState": "degraded",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__task-header",
+              "notebook__agent-message-bubble",
+              "notebook__message-run-status",
+              "notebook__send-btn"
+            ],
+            "prominentActionScopeTestIds": [
+              "notebook__conversation-input"
+            ],
+            "maxProminentActions": 0,
+            "forbiddenVisibleText": [
+              "Unknown",
+              "Agent Unknown",
+              "Unknown Runner"
+            ]
+          }
+        },
+        {
+          "sceneId": "notebook-hidden-terminal-blocked",
+          "scenarioId": "notebook-hidden-terminal-blocked",
+          "scenario": "Hidden terminal sessions still occupy the same task, so the conversation surface stays fail-closed with reopen or end-session guidance instead of pretending the task is free.",
+          "group": "project_pages",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx",
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/notebook/TaskHeader.tsx",
+            "src/components/notebook/terminal-session-summary.ts"
+          ],
+          "capture": "full_page",
+          "authLane": "authed",
+          "uxState": "degraded",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__task-header",
+              "notebook__task-terminal-status-strip",
+              "notebook__task-terminal-status-action",
+              "notebook__task-terminal-status-end-all"
+            ],
+            "prominentActionScopeTestIds": [
+              "notebook__task-terminal-status-strip"
+            ],
+            "maxProminentActions": 0,
+            "forbiddenVisibleText": [
+              "Unknown",
+              "Agent Unknown",
+              "Unknown Runner"
+            ]
+          }
+        },
+        {
+          "sceneId": "notebook-terminal-truth-unavailable",
+          "scenarioId": "notebook-terminal-truth-unavailable",
+          "scenario": "Backend terminal truth is temporarily unavailable, so the task stays fail-closed until the member retries terminal status from this same surface.",
+          "group": "project_pages",
+          "codeRefs": [
+            "e2e/visual.spec.ts",
+            "src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/notebook/tasks/[taskId]/page.tsx",
+            "src/components/notebook/TaskPage.tsx",
+            "src/components/notebook/TaskHeader.tsx"
+          ],
+          "capture": "full_page",
+          "authLane": "authed",
+          "uxState": "degraded",
+          "setupNotes": [
+            "viewport:1440x900"
+          ],
+          "themes": [
+            "light",
+            "dark"
+          ],
+          "semanticAssertions": {
+            "requiredViewportTestIds": [
+              "notebook__task-header",
+              "notebook__task-terminal-truth-unavailable",
+              "notebook__task-terminal-truth-unavailable-retry"
+            ],
+            "prominentActionScopeTestIds": [
+              "notebook__task-terminal-truth-unavailable"
+            ],
+            "maxProminentActions": 0,
+            "forbiddenVisibleText": [
+              "Unknown",
+              "Agent Unknown",
+              "Unknown Runner"
+            ]
+          }
         }
       ]
     }

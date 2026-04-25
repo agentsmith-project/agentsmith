@@ -149,6 +149,25 @@ async function waitForConnectionInfo(
   throw new Error(`connection info did not reach expected state: ${JSON.stringify(connection)}`);
 }
 
+async function waitForSessionConnectionInfo(
+  agentResourceService: AgentResourceService,
+  agentId: string,
+  sessionId: string,
+  predicate: (connection: Awaited<ReturnType<AgentResourceService['getSessionConnectionInfo']>>) => boolean,
+): Promise<Awaited<ReturnType<AgentResourceService['getSessionConnectionInfo']>>> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const connection = await agentResourceService.getSessionConnectionInfo(agentId, sessionId, {
+      allowAgentFallback: false,
+    });
+    if (predicate(connection)) return connection;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const connection = await agentResourceService.getSessionConnectionInfo(agentId, sessionId, {
+    allowAgentFallback: false,
+  });
+  throw new Error(`session connection info did not reach expected state: ${JSON.stringify(connection)}`);
+}
+
 function captureUnhandledRejections(): {
   errors: unknown[];
   dispose: () => void;
@@ -1019,9 +1038,10 @@ describe('AgentExecutionService', () => {
       key: keyPair.key,
       sessionId: 'task_send_window',
     });
-    const localConnection = await waitForConnectionInfo(
+    const localConnection = await waitForSessionConnectionInfo(
       agentResourceService,
       agent.id,
+      'task_send_window',
       (connection) => connection?.session_id === 'task_send_window',
     );
     const frames: Array<Record<string, unknown>> = [];

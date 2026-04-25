@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,6 +7,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
 const tempRoots: string[] = [];
+// These tests exercise real TERM/KILL grace windows, late descendant discovery,
+// and post-stop marker polling. The suite-level default needs to match that
+// contract instead of Vitest's generic 5s test timeout.
 const processHeavyOwnershipTestTimeoutMs = 8_000;
 const processHeavyCleanupElapsedBudgetMs = 6_000;
 
@@ -109,31 +112,46 @@ async function waitForPidExit(pid: number, timeoutMs = 4_000): Promise<boolean> 
   return !isPidAlive(pid);
 }
 
-function listTempRootProcessPids(tempRoot: string): number[] {
-  const output = execFileSync('ps', ['-eo', 'pid=,command='], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  });
-  return [...new Set(
-    output
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const match = line.match(/^(\d+)\s+(.*)$/);
-        if (!match) {
-          return null;
-        }
-        const pid = Number.parseInt(match[1], 10);
-        const command = match[2] ?? '';
-        if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid || !command.includes(tempRoot)) {
-          return null;
-        }
-        return pid;
-      })
-      .filter((pid): pid is number => pid !== null),
-  )];
+function readProcCommandLine(procRoot: string, pid: number): string {
+  const pidDir = path.join(procRoot, String(pid));
+  try {
+    const command = readFileSync(path.join(pidDir, 'cmdline'), 'utf8').replaceAll('\0', ' ').trim();
+    if (command) {
+      return command;
+    }
+  } catch {
+    // Processes can exit while we scan; best-effort leak detection is enough here.
+  }
+
+  try {
+    return readFileSync(path.join(pidDir, 'comm'), 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+function listTempRootProcessPids(tempRoot: string, procRoot = '/proc'): number[] {
+  const matches = new Set<number>();
+
+  for (const entry of readdirSync(procRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) {
+      continue;
+    }
+
+    const pid = Number.parseInt(entry.name, 10);
+    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) {
+      continue;
+    }
+
+    const command = readProcCommandLine(procRoot, pid);
+    if (!command.includes(tempRoot)) {
+      continue;
+    }
+
+    matches.add(pid);
+  }
+
+  return [...matches].sort((left, right) => left - right);
 }
 
 async function killPidAndWait(pid: number, timeoutMs = processHeavyOwnershipTestTimeoutMs): Promise<void> {
@@ -172,7 +190,27 @@ afterEach(async () => {
   }
 });
 
-describe('local runtime process ownership contract', () => {
+describe('local runtime process ownership contract', { timeout: processHeavyOwnershipTestTimeoutMs }, () => {
+  it('scans temp-root processes from procfs without depending on a global ps buffer', () => {
+    const tempRoot = makeTempRoot();
+    const procRoot = path.join(tempRoot, 'proc');
+    const targetPid = 43210;
+
+    mkdirSync(procRoot, { recursive: true });
+
+    for (let index = 0; index < 12; index += 1) {
+      const pidDir = path.join(procRoot, String(52000 + index));
+      mkdirSync(pidDir, { recursive: true });
+      writeFileSync(path.join(pidDir, 'cmdline'), `${`noise-${index}-`.repeat(12_000)}\0`, 'utf8');
+    }
+
+    const targetPidDir = path.join(procRoot, String(targetPid));
+    mkdirSync(targetPidDir, { recursive: true });
+    writeFileSync(path.join(targetPidDir, 'cmdline'), `bash\0${path.join(tempRoot, 'owned-child.sh')}\0`, 'utf8');
+
+    expect(listTempRootProcessPids(tempRoot, procRoot)).toEqual([targetPid]);
+  });
+
   it('captures the authoritative API listener pid while refreshing root ownership truth after startup handoff', async () => {
     const tempRoot = makeTempRoot();
     const processStateDir = path.join(tempRoot, 'processes');
@@ -1716,6 +1754,7 @@ while true; do :; done
       expect(grandchildPid).toBeGreaterThan(0);
 
       expect(stopResult.status).toBe(0);
+      expect(parseElapsedMs(stopResult.stdout)).toBeLessThan(processHeavyCleanupElapsedBudgetMs);
       expect(await waitForPidExit(rootPid)).toBe(true);
       expect(await waitForPidExit(childPid)).toBe(true);
       expect(await waitForPidExit(grandchildPid)).toBe(true);

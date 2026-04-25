@@ -46,6 +46,8 @@ describe('MessageItem', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
+    delete (window as Window & { __MBOS_TEST_NOW__?: string }).__MBOS_TEST_NOW__;
   });
 
   describe('User Messages', () => {
@@ -332,6 +334,30 @@ describe('MessageItem', () => {
           streamingMeta={{ startedAt: Date.now(), lastTokenAt: Date.now() }}
         />,
       );
+
+      expect(screen.queryByTestId('chat__message-stream-waiting')).not.toBeInTheDocument();
+    });
+
+    it('keeps waiting indicator stable when an injected test clock is present', () => {
+      vi.useFakeTimers();
+      const fixedNow = '2026-04-10T12:00:00.000Z';
+      const fixedNowMs = Date.parse(fixedNow);
+      (window as Window & { __MBOS_TEST_NOW__?: string }).__MBOS_TEST_NOW__ = fixedNow;
+
+      render(
+        <MessageItem
+          {...defaultProps}
+          message={mockAssistantMessage}
+          streamingOverride='Still streaming'
+          streamingMeta={{ startedAt: fixedNowMs - 5000, lastTokenAt: fixedNowMs - 2000 }}
+        />,
+      );
+
+      expect(screen.queryByTestId('chat__message-stream-waiting')).not.toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
 
       expect(screen.queryByTestId('chat__message-stream-waiting')).not.toBeInTheDocument();
     });

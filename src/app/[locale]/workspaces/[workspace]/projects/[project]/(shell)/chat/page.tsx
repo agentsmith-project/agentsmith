@@ -19,7 +19,7 @@ import { ChatAPI } from '@/lib/api/endpoints/chat';
 import { EndpointAPI } from '@/lib/api/endpoints/endpoints';
 import { FilesAPI } from '@/lib/api/endpoints/files';
 import { AgentAPI } from '@/lib/api/endpoints/agents';
-import type { ChatMessage } from '@/lib/api/types';
+import type { ChatMessage, ChatSession } from '@/lib/api/types';
 import { buildVariantGroups, buildVisibleChain } from '@/lib/chat/branch';
 import { patchChatMessageInCache, upsertChatMessageInCache } from '@/lib/chat/messages-cache';
 import { chatMessagesKey } from '@/lib/chat/query-keys';
@@ -29,6 +29,13 @@ import { useChatVariants } from '@/lib/chat/use-chat-variants';
 import { useChatData } from '@/lib/chat/use-chat-data';
 import { useChatComposerActions } from '@/lib/chat/use-chat-composer-actions';
 import { buildChatViewModel } from '@/lib/chat/chat-view-model';
+import {
+  applyChatSessionUpdate,
+  type PendingSessionUpdateOptions,
+  type ChatSessionUpdateData,
+  doesSessionMatchPatch,
+  mergeSessionWithPendingUpdate,
+} from '@/lib/chat/chat-session-update';
 import { useChatMessageActions } from '@/lib/chat/use-chat-message-actions';
 import { useChatThreadActions } from '@/lib/chat/use-chat-thread-actions';
 import { useChatDeleteDialog } from '@/lib/chat/use-chat-delete-dialog';
@@ -72,6 +79,9 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [libraryPickerOpen, setLibraryPickerOpen] = useState(false);
   const [addUrlOpen, setAddUrlOpen] = useState(false);
   const [urlInput, setUrlInput] = useState('');
+  const pendingSessionUpdateRef = useRef<Record<string, ChatSessionUpdateData>>({});
+  const [pendingSessionUpdateBySession, setPendingSessionUpdateBySession] =
+    useState<Record<string, ChatSessionUpdateData>>({});
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -125,7 +135,75 @@ export default function ChatPage({ params }: ChatPageProps) {
     if (!hasCurrent) setCurrentSessionId(sessions[0].id);
   }, [currentSessionId, sessions]);
 
-  const activeSession = sessions.find((s) => s.id === currentSessionId) ?? null;
+  const setPendingSessionUpdate = useCallback((
+    sessionId: string,
+    patch: ChatSessionUpdateData | null,
+    options?: PendingSessionUpdateOptions,
+  ) => {
+    if (patch) {
+      const next = {
+        ...pendingSessionUpdateRef.current,
+        [sessionId]: patch,
+      };
+      pendingSessionUpdateRef.current = next;
+      setPendingSessionUpdateBySession(next);
+      return;
+    }
+
+    const currentPatch = pendingSessionUpdateRef.current[sessionId];
+    if (!currentPatch) {
+      return;
+    }
+
+    if (options?.onlyIfCurrentPatch && currentPatch !== options.onlyIfCurrentPatch) {
+      return;
+    }
+
+    const { [sessionId]: _removed, ...rest } = pendingSessionUpdateRef.current;
+    pendingSessionUpdateRef.current = rest;
+    setPendingSessionUpdateBySession(rest);
+  }, []);
+
+  useEffect(() => {
+    let changed = false;
+    const nextPending: Record<string, ChatSessionUpdateData> = {};
+
+    for (const [sessionId, patch] of Object.entries(pendingSessionUpdateRef.current)) {
+      const session = sessions.find((candidate) => candidate.id === sessionId) ?? null;
+      if (!session) {
+        changed = true;
+        continue;
+      }
+      if (!doesSessionMatchPatch(session, patch)) {
+        nextPending[sessionId] = patch;
+        continue;
+      }
+      changed = true;
+    }
+
+    if (!changed) return;
+
+    pendingSessionUpdateRef.current = nextPending;
+    setPendingSessionUpdateBySession(nextPending);
+  }, [sessions]);
+
+  const resolveSessionWithPendingUpdate = useCallback((
+    sessionId: string | null,
+    fallbackSession: ChatSession | null = null,
+  ): ChatSession | null => {
+    if (!sessionId) return null;
+    const baseSession = sessions.find((session) => session.id === sessionId) ?? fallbackSession;
+    return mergeSessionWithPendingUpdate(baseSession, pendingSessionUpdateRef.current[sessionId]);
+  }, [sessions]);
+
+  const rawActiveSession = sessions.find((session) => session.id === currentSessionId) ?? null;
+  const activeSession = useMemo(
+    () => mergeSessionWithPendingUpdate(
+      rawActiveSession,
+      currentSessionId ? pendingSessionUpdateBySession[currentSessionId] : undefined,
+    ),
+    [currentSessionId, pendingSessionUpdateBySession, rawActiveSession],
+  );
   const activeEndpoint = useMemo(() => {
     if (!activeSession) return null;
     return endpoints.find((endpoint) => endpoint.id === activeSession.endpoint_id) ?? null;
@@ -176,6 +254,17 @@ export default function ChatPage({ params }: ChatPageProps) {
     },
     uploadFailedMessage: t('upload_failed'),
   });
+
+  const updateSession = useCallback(async (input: {
+    sessionId: string;
+    data: ChatSessionUpdateData;
+  }) => {
+    await applyChatSessionUpdate({
+      input,
+      mutateAsync: (nextInput) => updateSessionMutation.mutateAsync(nextInput),
+      setPendingSessionUpdate,
+    });
+  }, [setPendingSessionUpdate, updateSessionMutation]);
 
   const upsertStreamAssistantToCache = useCallback((sessionId: string, message: ChatMessage) => {
     upsertChatMessageInCache(
@@ -233,31 +322,39 @@ export default function ChatPage({ params }: ChatPageProps) {
     currentSessionId,
     streamStateBySession,
   });
+  const visibleMessages = useMemo<ChatMessage[]>(() => {
+    if (messages.length === 0) return [];
+    const groups = buildVariantGroups(messages);
+    return buildVisibleChain(messages, groups, activeVariantIndexByGroup).chain;
+  }, [messages, activeVariantIndexByGroup]);
 
   const {
     activeStreamStatus,
     activeStreamingAssistant,
+    activeStreamErrorCode,
+    activeStreamErrorMessage,
     mergedStreamingSessionIds,
     disabled,
   } = buildChatViewModel({
     currentSessionId,
     activeSession,
     sessions,
+    messages,
+    visibleMessages,
     streamStateBySession,
   });
 
-  const visibleLeafId = useMemo(() => {
-    if (messages.length === 0) return null;
-    const groups = buildVariantGroups(messages);
-    const { chain } = buildVisibleChain(messages, groups, activeVariantIndexByGroup);
-    const last = chain[chain.length - 1];
-    return last?.id ?? null;
-  }, [messages, activeVariantIndexByGroup]);
+  const visibleLeafId = visibleMessages[visibleMessages.length - 1]?.id ?? null;
 
   const { handleSend, onPickFiles, onFilePicked, onAttachFiles } = useChatComposerActions({
     canUseChat,
+    disabled,
     currentSessionId,
     activeSession,
+    resolveSessionForSend: (sessionId) => resolveSessionWithPendingUpdate(
+      sessionId,
+      sessionId === currentSessionId ? activeSession : null,
+    ),
     composerBySession,
     setComposerBySession,
     attachments,
@@ -293,10 +390,11 @@ export default function ChatPage({ params }: ChatPageProps) {
   } = useChatThreadActions({
     canUseChat,
     canManageChatSessions,
+    canChangeExecutionTarget: !disabled,
     sessions,
     activeSession,
     createSession: () => createSessionMutation.mutate(),
-    updateSession: (input) => updateSessionMutation.mutate(input),
+    updateSession,
     setCurrentSessionId,
     setEditingMessageId,
     setThreadToDelete,
@@ -420,6 +518,8 @@ export default function ChatPage({ params }: ChatPageProps) {
               disabled={disabled}
               activeStreamStatus={activeStreamStatus}
               activeStreamingAssistant={activeStreamingAssistant}
+              activeStreamErrorCode={activeStreamErrorCode}
+              activeStreamErrorMessage={activeStreamErrorMessage}
               suppressAutoScroll={suppressAutoScroll}
               createPending={createSessionMutation.isPending}
               createMessagePending={createMessageMutation.isPending}
@@ -439,6 +539,13 @@ export default function ChatPage({ params }: ChatPageProps) {
                 noEndpointRecoveryTitle: t('no_active_endpoint_recovery_title'),
                 noEndpointRecoveryDescription: t('no_active_endpoint_recovery_description'),
                 noEndpointRecoveryHint: t('no_active_endpoint_recovery_hint'),
+                streamErrorRecoveryCapacityTitle: t('stream_error_recovery_capacity_title'),
+                streamErrorRecoveryCapacityDescription: t('stream_error_recovery_capacity_description'),
+                streamErrorRecoveryUpstreamTitle: t('stream_error_recovery_upstream_title'),
+                streamErrorRecoveryUpstreamDescription: t('stream_error_recovery_upstream_description'),
+                streamErrorRecoveryMessageLabel: t('stream_error_recovery_message_label'),
+                streamErrorRecoverySameThreadHint: t('stream_error_recovery_same_thread_hint'),
+                streamErrorRecoveryEndpointHint: t('stream_error_recovery_endpoint_hint'),
                 selectThreadHint: t('no_active_thread_hint_select'),
                 attachmentsDisabledReason: t('attachments.multimodal_required'),
                 newThread: t('new_thread'),

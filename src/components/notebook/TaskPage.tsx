@@ -2180,6 +2180,7 @@ export function TaskPage({
           title: tTask("terminal_truth_unavailable_title"),
           description: tTask("terminal_truth_unavailable_description"),
           actionLabel: tTask("terminal_truth_unavailable_action"),
+          actionTestId: "notebook__conversation-blocked-action",
           onAction: handleRetryTerminalWorkspaceHydration,
           tone: "critical" as const,
         }
@@ -2188,6 +2189,7 @@ export function TaskPage({
             title: terminalSessionSummaryLabel,
             description: terminalHiddenStateDescription,
             actionLabel: terminalWorkspaceActionLabel,
+            actionTestId: "notebook__conversation-blocked-action",
             onAction: () => handleOpenTerminalWorkspace(terminalHasRecovery),
             tone: terminalHasRecovery ? ("critical" as const) : ("default" as const),
           }
@@ -2227,6 +2229,7 @@ export function TaskPage({
                 className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
                 onClick={handleRetryTerminalWorkspaceHydration}
                 disabled={terminalBootstrapPending}
+                data-testid="notebook__task-terminal-truth-unavailable-retry"
               >
                 {tTask("terminal_truth_unavailable_action")}
               </button>
@@ -2254,6 +2257,7 @@ export function TaskPage({
                 type="button"
                 className="inline-flex h-8 items-center justify-center rounded-md border border-border/24 bg-transparent px-3 text-[12px] text-secondary transition-colors duration-150 hover:border-border/32 hover:bg-surface-low/30 hover:text-foreground"
                 onClick={() => handleOpenTerminalWorkspace(terminalHasRecovery)}
+                data-testid="notebook__task-terminal-status-action"
               >
                 {terminalWorkspaceActionLabel}
               </button>
@@ -2265,6 +2269,7 @@ export function TaskPage({
               className="h-8 border-error/30 px-3 text-[12px] text-error hover:bg-error/5 hover:text-error"
               onClick={handleRequestCloseAllTerminalTabs}
               disabled={endAllTerminalPending}
+              data-testid="notebook__task-terminal-status-end-all"
             >
               {tTask("terminal_end_all")}
             </Button>
@@ -2416,7 +2421,10 @@ export function TaskPage({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={cancelActiveRun.isPending}>
+            <AlertDialogCancel
+              disabled={cancelActiveRun.isPending}
+              data-testid="notebook__cancel-escalation-cancel"
+            >
               {tConversation("run_escalation_cancel")}
             </AlertDialogCancel>
             <AlertDialogAction

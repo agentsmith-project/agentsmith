@@ -1,9 +1,12 @@
 export type NotebookOutcomeMessage = {
+  id?: string | null;
   role?: string | null;
   content?: string | null;
 };
 
 export type NotebookOutcomeTrace = {
+  message_id?: string | null;
+  run_id?: string | null;
   category?: string | null;
   phase?: string | null;
   status?: string | null;
@@ -25,6 +28,8 @@ export type NotebookOutcomePod = {
 
 export type NotebookExecutionSnapshot = {
   token: string;
+  assistantMessageId?: string;
+  runId?: string;
   minAgentMessages?: number;
   messages: NotebookOutcomeMessage[];
   traces: NotebookOutcomeTrace[];
@@ -52,6 +57,35 @@ function latestTrace(traces: NotebookOutcomeTrace[]): NotebookOutcomeTrace | nul
   return traces.length > 0 ? traces[traces.length - 1] ?? null : null;
 }
 
+function scopeMessagesToAssistantMessage(
+  messages: NotebookOutcomeMessage[],
+  assistantMessageId?: string,
+): NotebookOutcomeMessage[] {
+  const scopedAssistantMessageId = normalizeText(assistantMessageId);
+  if (!scopedAssistantMessageId) {
+    return messages;
+  }
+  return messages.filter((message) => normalizeText(message.id) === scopedAssistantMessageId);
+}
+
+function scopeTracesToAssistantMessage(
+  traces: NotebookOutcomeTrace[],
+  assistantMessageId?: string,
+  runId?: string,
+): NotebookOutcomeTrace[] {
+  const scopedAssistantMessageId = normalizeText(assistantMessageId);
+  const scopedRunId = normalizeText(runId);
+  if (!scopedAssistantMessageId && !scopedRunId) {
+    return traces;
+  }
+  return traces.filter((trace) => {
+    const matchesAssistantMessage = !scopedAssistantMessageId
+      || normalizeText(trace.message_id) === scopedAssistantMessageId;
+    const matchesRunId = !scopedRunId || normalizeText(trace.run_id) === scopedRunId;
+    return matchesAssistantMessage && matchesRunId;
+  });
+}
+
 function hasTerminalFailureTrace(traces: NotebookOutcomeTrace[]): boolean {
   return traces.some((trace) => {
     const status = normalizeText(trace.status);
@@ -71,13 +105,15 @@ function latestAgentMessage(messages: NotebookOutcomeMessage[]): string | null {
 
 export function evaluateNotebookExecutionSnapshot(input: NotebookExecutionSnapshot): NotebookExecutionEvaluation {
   const minAgentMessages = input.minAgentMessages ?? 1;
-  const agentMessages = input.messages.filter((message) => message.role === 'agent');
+  const scopedMessages = scopeMessagesToAssistantMessage(input.messages, input.assistantMessageId);
+  const scopedTraces = scopeTracesToAssistantMessage(input.traces, input.assistantMessageId, input.runId);
+  const agentMessages = scopedMessages.filter((message) => message.role === 'agent');
   const messageHasToken =
     agentMessages.length >= minAgentMessages
     && agentMessages.some((message) => normalizeText(message.content).includes(input.token));
   const artifactHasToken = normalizeText(input.artifactContent).includes(input.token);
-  const latestAgent = latestAgentMessage(input.messages);
-  const latestTraceEvent = latestTrace(input.traces);
+  const latestAgent = latestAgentMessage(scopedMessages);
+  const latestTraceEvent = latestTrace(scopedTraces);
   const latestTraceSummary = latestTraceEvent ? normalizeText(latestTraceEvent.summary) || null : null;
 
   if (messageHasToken || artifactHasToken) {
@@ -92,7 +128,7 @@ export function evaluateNotebookExecutionSnapshot(input: NotebookExecutionSnapsh
     };
   }
 
-  if (hasTerminalFailureTrace(input.traces)) {
+  if (hasTerminalFailureTrace(scopedTraces)) {
     return {
       success: false,
       failure: true,
@@ -118,7 +154,7 @@ export function evaluateNotebookExecutionSnapshot(input: NotebookExecutionSnapsh
   }
 
   const runState = normalizeText(input.task?.run_state);
-    if (input.podSeenBefore && runState === 'idle' && !input.pod?.name && input.traces.length > 0) {
+  if (input.podSeenBefore && runState === 'idle' && !input.pod?.name && scopedTraces.length > 0) {
     return {
       success: false,
       failure: true,

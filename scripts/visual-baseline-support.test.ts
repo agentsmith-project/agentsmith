@@ -13,6 +13,11 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadStoryDefinition, parseStoryDefinition } from '../e2e/story-loader';
 import {
+  getRequiredStoryVisualSceneBundle,
+  listStorySceneIds,
+  listStoryVisualSceneIds,
+} from './story-visual-scene-fixtures';
+import {
   assertVisualBaselineActualUrlMatchesRoute,
   buildVisualBaselineScenarioEvidence,
   fingerprintVisualBaselineSemanticAssertions,
@@ -29,6 +34,20 @@ import {
   resolveVisualBaselineReviewDir,
   type VisualBaselineCatalogEntry,
 } from '../e2e/visual-baseline-support';
+
+function extractSourceSection(args: {
+  source: string;
+  start: string;
+  end: string;
+}) {
+  const startIndex = args.source.indexOf(args.start);
+  const endIndex = args.source.indexOf(args.end, startIndex + args.start.length);
+
+  expect(startIndex).toBeGreaterThan(-1);
+  expect(endIndex).toBeGreaterThan(startIndex);
+
+  return args.source.slice(startIndex, endIndex);
+}
 
 function seedRunBoundVisualActualCaptures(
   buildInfoPath: string,
@@ -130,23 +149,54 @@ describe('visual baseline support', () => {
 
   it('runs semantic assertions before visual screenshots and keeps workspace overview exact', async () => {
     const visualSpec = await readFile(path.resolve('e2e/visual.spec.ts'), 'utf-8');
-    const semanticIndex = visualSpec.indexOf('expectVisualSemanticAssertions(page, scenario.semanticAssertions, scenario.scenarioId)');
-    const helperIndex = visualSpec.indexOf('async function captureSnapshotBoundActualScreenshot');
-    const captureIndex = visualSpec.indexOf('const actualCapture = await captureSnapshotBoundActualScreenshot({');
-    const screenshotIndex = visualSpec.indexOf('const actual = await args.page.screenshot({');
-    const comparatorIndex = visualSpec.indexOf('const comparison = screenshotComparator(actual, expected, {');
-    const writeCaptureIndex = visualSpec.indexOf('actualCapture,');
+    const captureHelperSource = extractSourceSection({
+      source: visualSpec,
+      start: 'async function captureSnapshotBoundActualScreenshot',
+      end: 'async function runVisualScenario',
+    });
+    const runScenarioSource = extractSourceSection({
+      source: visualSpec,
+      start: 'async function runVisualScenario',
+      end: "test.describe('Visual Auth Contract'",
+    });
+
+    const semanticIndex = runScenarioSource.indexOf(
+      'expectVisualSemanticAssertions(page, scenario.semanticAssertions, scenario.scenarioId)',
+    );
+    const captureCallIndex = runScenarioSource.indexOf(
+      'const actualCapture = await captureSnapshotBoundActualScreenshot({',
+    );
+    const writeCaptureIndex = runScenarioSource.indexOf('await writeRunBoundActualCapture({');
+    const captureFactoryIndex = captureHelperSource.indexOf('const capturePageScreenshot = () => args.page.screenshot({');
+    const initialCaptureIndex = captureHelperSource.indexOf('const actual = await capturePageScreenshot();');
+    const compareFactoryIndex = captureHelperSource.indexOf(
+      'const compareScreenshots = async (candidate: Buffer) => screenshotComparator(',
+    );
+    const initialComparisonIndex = captureHelperSource.indexOf('let comparison = await compareScreenshots(actual);');
+    const retryCaptureIndex = captureHelperSource.indexOf('failedActual = await capturePageScreenshot();');
+    const retryComparisonIndex = captureHelperSource.indexOf('comparison = await compareScreenshots(failedActual);');
+    const comparisonGuardIndex = captureHelperSource.indexOf('if (comparison) {');
+    const returnCaptureIndex = captureHelperSource.indexOf('return failedActual;');
 
     expect(semanticIndex).toBeGreaterThan(-1);
-    expect(helperIndex).toBeGreaterThan(-1);
-    expect(captureIndex).toBeGreaterThan(-1);
-    expect(screenshotIndex).toBeGreaterThan(-1);
-    expect(comparatorIndex).toBeGreaterThan(-1);
+    expect(captureCallIndex).toBeGreaterThan(-1);
     expect(writeCaptureIndex).toBeGreaterThan(-1);
-    expect(helperIndex).toBeLessThan(captureIndex);
-    expect(semanticIndex).toBeLessThan(captureIndex);
-    expect(screenshotIndex).toBeLessThan(comparatorIndex);
-    expect(comparatorIndex).toBeLessThan(writeCaptureIndex);
+    expect(captureFactoryIndex).toBeGreaterThan(-1);
+    expect(initialCaptureIndex).toBeGreaterThan(-1);
+    expect(compareFactoryIndex).toBeGreaterThan(-1);
+    expect(initialComparisonIndex).toBeGreaterThan(-1);
+    expect(retryCaptureIndex).toBeGreaterThan(-1);
+    expect(retryComparisonIndex).toBeGreaterThan(-1);
+    expect(comparisonGuardIndex).toBeGreaterThan(-1);
+    expect(returnCaptureIndex).toBeGreaterThan(-1);
+    expect(semanticIndex).toBeLessThan(captureCallIndex);
+    expect(captureCallIndex).toBeLessThan(writeCaptureIndex);
+    expect(captureFactoryIndex).toBeLessThan(initialCaptureIndex);
+    expect(initialCaptureIndex).toBeLessThan(compareFactoryIndex);
+    expect(compareFactoryIndex).toBeLessThan(initialComparisonIndex);
+    expect(retryCaptureIndex).toBeLessThan(retryComparisonIndex);
+    expect(initialComparisonIndex).toBeLessThan(comparisonGuardIndex);
+    expect(comparisonGuardIndex).toBeLessThan(returnCaptureIndex);
     expect(visualSpec).not.toContain('toHaveScreenshot(entry.screenshot');
     expect(visualSpec).not.toContain('._expectScreenshot({');
     expect(visualSpec).toMatch(/'workspace-overview':[\s\S]*screenshotOptions:[\s\S]*maxDiffPixelRatio: 0/);
@@ -796,47 +846,135 @@ describe('visual baseline support', () => {
 
   it('reads mock-lane visual scene metadata from the canonical story runtimeData contract', async () => {
     const story = await loadStoryDefinition('mock-lane-chat-operate-and-recover');
+    const providerCapacity = getRequiredStoryVisualSceneBundle(
+      story,
+      'chat-provider-capacity-retry',
+    );
+    const grouped = groupVisualBaselineCatalogByScenario();
+    const catalogEntry = grouped.get('chat-provider-capacity-retry');
 
-    expect(story.runtimeData?.visualReview?.scenes).toEqual([
-      {
-        sceneId: 'chat-operate',
-        scenarioId: 'chat-operate',
-        scenario: expect.stringContaining('active thread'),
-        group: 'project_pages',
-        codeRefs: expect.arrayContaining([
-          'e2e/visual.spec.ts',
-          'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat/page.tsx',
-          'src/components/chat/ChatMainPane.tsx',
-          'src/components/chat/ChatHeader.tsx',
-          'src/components/chat/ThreadsPane.tsx',
-        ]),
-        capture: 'full_page',
-        authLane: 'authed',
-        setupNotes: ['viewport:1440x900'],
-        themes: ['light', 'dark'],
+    expect(listVisualBaselineExecutorScenarios()
+      .filter((entry) => entry.storyId === story.storyId)
+      .map((entry) => entry.storySceneId)
+      .sort()).toEqual(listStorySceneIds(story));
+    expect(listStoryVisualSceneIds(story)).toEqual(listStorySceneIds(story));
+    expect(catalogEntry?.storyId).toBe(story.storyId);
+    expect(catalogEntry?.storySceneId).toBe(providerCapacity.visualScene.sceneId);
+    expect(catalogEntry?.route).toBe(providerCapacity.storyScene.route);
+    expect(catalogEntry?.recipeFamily).toBe(providerCapacity.storyScene.recipeFamily);
+    expect(catalogEntry?.stableMarkers).toEqual(providerCapacity.storyScene.stableMarkers);
+    expect(catalogEntry?.semanticAssertions.requiredViewportTestIds).toEqual(
+      expect.arrayContaining(
+        providerCapacity.visualScene.semanticAssertions?.requiredViewportTestIds ?? [],
+      ),
+    );
+    expect(catalogEntry?.semanticAssertions.prominentActionScopeTestIds).toEqual(
+      providerCapacity.visualScene.semanticAssertions?.prominentActionScopeTestIds ?? [],
+    );
+  });
+
+  it('keeps notebook lifecycle baseline metadata derived from canonical story scenes and targeted CTA invariants', async () => {
+    const story = await loadStoryDefinition('mock-lane-notebook-task-lifecycle');
+    const running = getRequiredStoryVisualSceneBundle(story, 'notebook-task-running');
+    const hiddenTerminalBlocked = getRequiredStoryVisualSceneBundle(
+      story,
+      'notebook-hidden-terminal-blocked',
+    );
+    const terminalTruthUnavailable = getRequiredStoryVisualSceneBundle(
+      story,
+      'notebook-terminal-truth-unavailable',
+    );
+    const grouped = groupVisualBaselineCatalogByScenario();
+    const runningCatalog = grouped.get('notebook-task-running');
+    const hiddenTerminalCatalog = grouped.get('notebook-hidden-terminal-blocked');
+    const terminalTruthUnavailableCatalog = grouped.get('notebook-terminal-truth-unavailable');
+
+    expect(listVisualBaselineExecutorScenarios()
+      .filter((entry) => entry.storyId === story.storyId)
+      .map((entry) => entry.storySceneId)
+      .sort()).toEqual(listStorySceneIds(story));
+    expect(listStoryVisualSceneIds(story)).toEqual(listStorySceneIds(story));
+
+    expect(runningCatalog?.storyId).toBe(story.storyId);
+    expect(runningCatalog?.storySceneId).toBe(running.visualScene.sceneId);
+    expect(runningCatalog?.stableMarkers).toEqual(running.storyScene.stableMarkers);
+    expect(runningCatalog?.semanticAssertions.requiredViewportTestIds).toEqual(
+      expect.arrayContaining(['notebook__run-active-cancel']),
+    );
+
+    expect(hiddenTerminalCatalog?.storyId).toBe(story.storyId);
+    expect(hiddenTerminalCatalog?.storySceneId).toBe(hiddenTerminalBlocked.visualScene.sceneId);
+    expect(hiddenTerminalCatalog?.stableMarkers).toEqual(hiddenTerminalBlocked.storyScene.stableMarkers);
+    expect(hiddenTerminalCatalog?.semanticAssertions.requiredViewportTestIds).toEqual(
+      expect.arrayContaining([
+        'notebook__task-terminal-status-action',
+        'notebook__task-terminal-status-end-all',
+      ]),
+    );
+    expect(hiddenTerminalCatalog?.semanticAssertions.requiredViewportTestIds).not.toContain(
+      'notebook__conversation-blocked-action',
+    );
+
+    expect(terminalTruthUnavailableCatalog?.storyId).toBe(story.storyId);
+    expect(terminalTruthUnavailableCatalog?.storySceneId).toBe(terminalTruthUnavailable.visualScene.sceneId);
+    expect(terminalTruthUnavailableCatalog?.stableMarkers).toEqual(
+      terminalTruthUnavailable.storyScene.stableMarkers,
+    );
+    expect(terminalTruthUnavailableCatalog?.semanticAssertions.requiredViewportTestIds).toEqual(
+      expect.arrayContaining(['notebook__task-terminal-truth-unavailable-retry']),
+    );
+    expect(terminalTruthUnavailableCatalog?.semanticAssertions.requiredViewportTestIds).not.toContain(
+      'notebook__conversation-blocked-action',
+    );
+  });
+
+  it('catalogs notebook escalation, provider recovery, and terminal recovery CTA scenes as first-class visual baselines', () => {
+    const grouped = groupVisualBaselineCatalogByScenario();
+
+    expect(grouped.get('notebook-cancel-escalation-confirm')).toMatchObject({
+      storyId: 'mock-lane-notebook-task-lifecycle',
+      recipeFamily: 'overlay_dialog',
+      semanticAssertions: {
+        requiredViewportTestIds: [
+          'notebook__task-header',
+          'notebook__cancel-escalation-dialog',
+          'notebook__cancel-escalation-cancel',
+          'notebook__cancel-escalation-confirm',
+        ],
       },
-      {
-        sceneId: 'chat-recover-empty',
-        scenarioId: 'chat-recover-empty',
-        scenario: expect.stringContaining('search results filtered to zero'),
-        group: 'project_pages',
-        codeRefs: expect.arrayContaining([
-          'e2e/visual.spec.ts',
-          'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat/page.tsx',
-          'src/components/chat/ChatMainPane.tsx',
-          'src/components/chat/ThreadsPane.tsx',
-        ]),
-        capture: 'full_page',
-        authLane: 'authed',
-        setupNotes: ['viewport:1440x900'],
-        themes: ['light', 'dark'],
-        semanticAssertions: {
-          requiredViewportTestIds: ['chat__new-thread-btn'],
-          prominentActionScopeTestIds: ['chat__threads-empty-state'],
-          maxProminentActions: 0,
-        },
+    });
+
+    expect(grouped.get('notebook-provider-upstream-error')).toMatchObject({
+      storyId: 'mock-lane-notebook-task-lifecycle',
+      recipeFamily: 'work_surface_immersive',
+      semanticAssertions: {
+        requiredViewportTestIds: [
+          'notebook__task-header',
+          'notebook__agent-message-bubble',
+          'notebook__message-run-status',
+          'notebook__send-btn',
+        ],
       },
-    ]);
+    });
+
+    expect(grouped.get('notebook-hidden-terminal-blocked')).toMatchObject({
+      semanticAssertions: {
+        requiredViewportTestIds: expect.arrayContaining([
+          'notebook__task-terminal-status-action',
+          'notebook__task-terminal-status-end-all',
+        ]),
+        prominentActionScopeTestIds: ['notebook__task-terminal-status-strip'],
+      },
+    });
+
+    expect(grouped.get('notebook-terminal-truth-unavailable')).toMatchObject({
+      semanticAssertions: {
+        requiredViewportTestIds: expect.arrayContaining([
+          'notebook__task-terminal-truth-unavailable-retry',
+        ]),
+        prominentActionScopeTestIds: ['notebook__task-terminal-truth-unavailable'],
+      },
+    });
   });
 
   it('exposes stable recipe markers for public/auth scenarios so visual waits can target real readiness points', () => {

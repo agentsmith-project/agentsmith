@@ -1,6 +1,11 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import type { StoryDefinition } from '../e2e/story-contract';
+import type {
+  StoryDefinition,
+  StoryRuntimeVisualReviewSceneDefinition,
+  StoryRuntimeVisualSemanticAssertionsDefinition,
+  StoryVisualReviewUxState,
+} from '../e2e/story-contract';
 
 export type ProductSurfaceCoverage = {
   surfaceId: string;
@@ -76,6 +81,61 @@ export type VisualStoryRuntimeContractIssue =
     term: string;
   };
 
+export type VisualStateMatrixContractIssue =
+  | {
+    issue: 'missing_visual_state_matrix_story';
+    storyId: string;
+  }
+  | {
+    issue: 'missing_visual_state_matrix_scenario';
+    storyId: string;
+    scenarioId: string;
+  }
+  | {
+    issue: 'visual_state_matrix_scene_mismatch';
+    storyId: string;
+    scenarioId: string;
+    expectedSceneId: string;
+    actualSceneId: string;
+  }
+  | {
+    issue: 'visual_state_matrix_ux_state_mismatch';
+    storyId: string;
+    scenarioId: string;
+    expectedUxState: StoryVisualReviewUxState;
+    actualUxState: StoryVisualReviewUxState | undefined;
+  }
+  | {
+    issue: 'visual_state_matrix_missing_semantic_assertions';
+    storyId: string;
+    scenarioId: string;
+  }
+  | {
+    issue: 'visual_state_matrix_missing_required_viewport_target';
+    storyId: string;
+    scenarioId: string;
+    testId: string;
+  }
+  | {
+    issue: 'visual_state_matrix_missing_prominent_action_scope';
+    storyId: string;
+    scenarioId: string;
+    testId: string;
+  }
+  | {
+    issue: 'visual_state_matrix_max_prominent_actions_mismatch';
+    storyId: string;
+    scenarioId: string;
+    expected: number;
+    actual: number | undefined;
+  }
+  | {
+    issue: 'visual_state_matrix_missing_forbidden_text';
+    storyId: string;
+    scenarioId: string;
+    text: string;
+  };
+
 export const MAJOR_PRODUCT_SURFACE_COVERAGE: readonly ProductSurfaceCoverage[] = [
   {
     surfaceId: 'entry_and_identity',
@@ -128,6 +188,7 @@ export const MAJOR_PRODUCT_SURFACE_COVERAGE: readonly ProductSurfaceCoverage[] =
     storyIds: [
       'chat-conversation-continuity',
       'chat-day-two-thread-workflow',
+      'chat-stop-terminate-idempotent-state-resync',
     ],
   },
   {
@@ -136,6 +197,7 @@ export const MAJOR_PRODUCT_SURFACE_COVERAGE: readonly ProductSurfaceCoverage[] =
     storyIds: [
       'notebook-first-success',
       'notebook-artifact-to-files-download',
+      'notebook-cancel-terminate-refresh-recovery',
       'notebook-terminal-workspace-multi-session',
       'notebook-terminal-reentry-recovery',
       'notebook-terminal-truth-unavailable-retry',
@@ -147,6 +209,7 @@ export const MAJOR_PRODUCT_SURFACE_COVERAGE: readonly ProductSurfaceCoverage[] =
     storyIds: [
       'files-crud-and-sync',
       'files-library-access-and-recovery',
+      'unicode-filename-round-trip',
       'workspace-project-personal-context',
       'workspace-shared-context-continuity',
     ],
@@ -158,6 +221,8 @@ export const MAJOR_PRODUCT_SURFACE_COVERAGE: readonly ProductSurfaceCoverage[] =
       'workspace-connections-to-project-use',
       'api-key-to-endpoint-consumption',
       'ai-runtime-failure-and-recovery',
+      'internal-external-chat-notebook-proxy-matrix',
+      'provider-capacity-retry-error-ux',
       'use-guide-first-consumption',
     ],
   },
@@ -176,6 +241,341 @@ export const MAJOR_PRODUCT_SURFACE_COVERAGE: readonly ProductSurfaceCoverage[] =
       'release-user-story-end-to-end',
       'real-backend-visual-review',
     ],
+  },
+] as const;
+
+export const CHAT_VISUAL_STATE_MATRIX_SCENARIO_IDS = [
+  'chat-streaming-active',
+  'chat-stop-requested',
+  'chat-stop-escalation-confirm',
+  'chat-stop-escalation-unavailable',
+  'chat-recovering-live-session',
+  'chat-provider-capacity-retry',
+] as const;
+
+export const NOTEBOOK_VISUAL_STATE_MATRIX_SCENARIO_IDS = [
+  'notebook-task-running',
+  'notebook-task-cancelling',
+  'notebook-cancel-escalation-confirm',
+  'notebook-task-terminating',
+  'notebook-task-finalizing',
+  'notebook-sse-reconnecting',
+  'notebook-sse-unavailable-reconcile',
+  'notebook-task-recovered-ready',
+  'notebook-provider-upstream-error',
+  'notebook-hidden-terminal-blocked',
+  'notebook-terminal-truth-unavailable',
+] as const;
+
+type VisualStateMatrixScenarioContract = {
+  storyId: string;
+  sceneId: string;
+  scenarioId: string;
+  uxState: StoryVisualReviewUxState;
+  semanticAssertions: {
+    requiredViewportTestIds: readonly string[];
+    prominentActionScopeTestIds?: readonly string[];
+    maxProminentActions: number;
+    forbiddenVisibleText: readonly string[];
+  };
+};
+
+const DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT = [
+  'Unknown',
+  'Agent Unknown',
+  'Unknown Runner',
+] as const;
+
+const CHAT_AND_NOTEBOOK_VISUAL_STATE_MATRIX_CONTRACTS: readonly VisualStateMatrixScenarioContract[] = [
+  {
+    storyId: 'mock-lane-chat-operate-and-recover',
+    sceneId: 'chat-streaming-active',
+    scenarioId: 'chat-streaming-active',
+    uxState: 'happy',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'chat__surface',
+        'chat__stream-status',
+        'chat__composer',
+        'chat__stop-btn',
+      ],
+      prominentActionScopeTestIds: ['chat__composer'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-chat-operate-and-recover',
+    sceneId: 'chat-stop-requested',
+    scenarioId: 'chat-stop-requested',
+    uxState: 'diagnostic',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'chat__surface',
+        'chat__stream-status',
+        'chat__composer',
+        'chat__stop-btn',
+      ],
+      prominentActionScopeTestIds: ['chat__composer'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-chat-operate-and-recover',
+    sceneId: 'chat-stop-escalation-confirm',
+    scenarioId: 'chat-stop-escalation-confirm',
+    uxState: 'degraded',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'chat__surface',
+        'chat__stop-escalation-dialog',
+        'chat__stop-escalation-cancel',
+        'chat__stop-escalation-confirm',
+      ],
+      prominentActionScopeTestIds: ['chat__stop-escalation-dialog'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-chat-operate-and-recover',
+    sceneId: 'chat-stop-escalation-unavailable',
+    scenarioId: 'chat-stop-escalation-unavailable',
+    uxState: 'degraded',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'chat__surface',
+        'chat__stream-status',
+        'chat__composer',
+        'chat__stop-escalation-unavailable',
+      ],
+      prominentActionScopeTestIds: ['chat__header'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-chat-operate-and-recover',
+    sceneId: 'chat-recovering-live-session',
+    scenarioId: 'chat-recovering-live-session',
+    uxState: 'diagnostic',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'chat__surface',
+        'chat__stream-status',
+        'chat__composer',
+        'chat__stop-btn',
+      ],
+      prominentActionScopeTestIds: ['chat__composer'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-chat-operate-and-recover',
+    sceneId: 'chat-provider-capacity-retry',
+    scenarioId: 'chat-provider-capacity-retry',
+    uxState: 'degraded',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'chat__surface',
+        'chat__stream-status',
+        'chat__composer',
+        'chat__stream-error-recovery',
+        'chat__stream-error-message',
+        'chat__composer-recovery-endpoint--ep_2',
+      ],
+      prominentActionScopeTestIds: ['chat__composer-recovery-shell'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-notebook-task-lifecycle',
+    sceneId: 'notebook-task-running',
+    scenarioId: 'notebook-task-running',
+    uxState: 'happy',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'notebook__task-header',
+        'notebook__execution-visibility',
+        'notebook__run-activity-summary',
+        'notebook__run-active-cancel',
+        'notebook__conversation-input',
+      ],
+      prominentActionScopeTestIds: ['notebook__execution-visibility'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-notebook-task-lifecycle',
+    sceneId: 'notebook-task-cancelling',
+    scenarioId: 'notebook-task-cancelling',
+    uxState: 'diagnostic',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'notebook__task-header',
+        'notebook__run-activity-summary',
+        'notebook__conversation-input',
+        'notebook__send-btn',
+      ],
+      prominentActionScopeTestIds: ['notebook__conversation-input'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-notebook-task-lifecycle',
+    sceneId: 'notebook-cancel-escalation-confirm',
+    scenarioId: 'notebook-cancel-escalation-confirm',
+    uxState: 'degraded',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'notebook__task-header',
+        'notebook__cancel-escalation-dialog',
+        'notebook__cancel-escalation-cancel',
+        'notebook__cancel-escalation-confirm',
+      ],
+      prominentActionScopeTestIds: ['notebook__cancel-escalation-dialog'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-notebook-task-lifecycle',
+    sceneId: 'notebook-task-terminating',
+    scenarioId: 'notebook-task-terminating',
+    uxState: 'diagnostic',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'notebook__task-header',
+        'notebook__run-activity-summary',
+        'notebook__conversation-input',
+        'notebook__send-btn',
+      ],
+      prominentActionScopeTestIds: ['notebook__conversation-input'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-notebook-task-lifecycle',
+    sceneId: 'notebook-task-finalizing',
+    scenarioId: 'notebook-task-finalizing',
+    uxState: 'diagnostic',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'notebook__task-header',
+        'notebook__run-activity-summary',
+        'notebook__conversation-input',
+        'notebook__send-btn',
+      ],
+      prominentActionScopeTestIds: ['notebook__conversation-input'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-notebook-task-lifecycle',
+    sceneId: 'notebook-sse-reconnecting',
+    scenarioId: 'notebook-sse-reconnecting',
+    uxState: 'diagnostic',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'notebook__task-header',
+        'notebook__sse-status',
+        'notebook__conversation-input',
+        'notebook__send-btn',
+      ],
+      prominentActionScopeTestIds: ['notebook__conversation-input'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-notebook-task-lifecycle',
+    sceneId: 'notebook-sse-unavailable-reconcile',
+    scenarioId: 'notebook-sse-unavailable-reconcile',
+    uxState: 'degraded',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'notebook__task-header',
+        'notebook__sse-status',
+        'notebook__sse-status-open-audit',
+        'notebook__sse-status-open-usage',
+      ],
+      prominentActionScopeTestIds: ['notebook__execution-visibility'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-notebook-task-lifecycle',
+    sceneId: 'notebook-task-recovered-ready',
+    scenarioId: 'notebook-task-recovered-ready',
+    uxState: 'happy',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'notebook__task-header',
+        'notebook__conversation-input',
+        'notebook__send-btn',
+      ],
+      prominentActionScopeTestIds: ['notebook__conversation-input'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-notebook-task-lifecycle',
+    sceneId: 'notebook-provider-upstream-error',
+    scenarioId: 'notebook-provider-upstream-error',
+    uxState: 'degraded',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'notebook__task-header',
+        'notebook__agent-message-bubble',
+        'notebook__message-run-status',
+        'notebook__send-btn',
+      ],
+      prominentActionScopeTestIds: ['notebook__conversation-input'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-notebook-task-lifecycle',
+    sceneId: 'notebook-hidden-terminal-blocked',
+    scenarioId: 'notebook-hidden-terminal-blocked',
+    uxState: 'degraded',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'notebook__task-header',
+        'notebook__task-terminal-status-strip',
+        'notebook__task-terminal-status-action',
+        'notebook__task-terminal-status-end-all',
+      ],
+      prominentActionScopeTestIds: ['notebook__task-terminal-status-strip'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
+  },
+  {
+    storyId: 'mock-lane-notebook-task-lifecycle',
+    sceneId: 'notebook-terminal-truth-unavailable',
+    scenarioId: 'notebook-terminal-truth-unavailable',
+    uxState: 'degraded',
+    semanticAssertions: {
+      requiredViewportTestIds: [
+        'notebook__task-header',
+        'notebook__task-terminal-truth-unavailable',
+        'notebook__task-terminal-truth-unavailable-retry',
+      ],
+      prominentActionScopeTestIds: ['notebook__task-terminal-truth-unavailable'],
+      maxProminentActions: 0,
+      forbiddenVisibleText: DEFAULT_VISUAL_STATE_MATRIX_FORBIDDEN_TEXT,
+    },
   },
 ] as const;
 
@@ -201,6 +601,97 @@ function buildSurfaceStoryIndex() {
     }
   }
   return index;
+}
+
+function visualSceneSemanticAssertionsIncludeAll(
+  values: readonly string[] | undefined,
+  requiredValues: readonly string[],
+) {
+  if (!values) {
+    return false;
+  }
+  return requiredValues.every((value) => values.includes(value));
+}
+
+function findVisualSceneForScenario(
+  story: StoryDefinition,
+  scenarioId: string,
+): StoryRuntimeVisualReviewSceneDefinition | undefined {
+  return story.runtimeData?.visualReview?.scenes.find((scene) => scene.scenarioId === scenarioId);
+}
+
+function validateVisualSceneSemanticAssertions(args: {
+  storyId: string;
+  scenarioId: string;
+  actual: StoryRuntimeVisualSemanticAssertionsDefinition | undefined;
+  expected: VisualStateMatrixScenarioContract['semanticAssertions'];
+}): VisualStateMatrixContractIssue[] {
+  const issues: VisualStateMatrixContractIssue[] = [];
+  if (!args.actual) {
+    issues.push({
+      issue: 'visual_state_matrix_missing_semantic_assertions',
+      storyId: args.storyId,
+      scenarioId: args.scenarioId,
+    });
+    return issues;
+  }
+
+  if (!visualSceneSemanticAssertionsIncludeAll(args.actual.requiredViewportTestIds, args.expected.requiredViewportTestIds)) {
+    for (const testId of args.expected.requiredViewportTestIds) {
+      if (args.actual.requiredViewportTestIds?.includes(testId)) {
+        continue;
+      }
+      issues.push({
+        issue: 'visual_state_matrix_missing_required_viewport_target',
+        storyId: args.storyId,
+        scenarioId: args.scenarioId,
+        testId,
+      });
+    }
+  }
+
+  if (args.expected.prominentActionScopeTestIds && !visualSceneSemanticAssertionsIncludeAll(
+    args.actual.prominentActionScopeTestIds,
+    args.expected.prominentActionScopeTestIds,
+  )) {
+    for (const testId of args.expected.prominentActionScopeTestIds) {
+      if (args.actual.prominentActionScopeTestIds?.includes(testId)) {
+        continue;
+      }
+      issues.push({
+        issue: 'visual_state_matrix_missing_prominent_action_scope',
+        storyId: args.storyId,
+        scenarioId: args.scenarioId,
+        testId,
+      });
+    }
+  }
+
+  if (args.actual.maxProminentActions !== args.expected.maxProminentActions) {
+    issues.push({
+      issue: 'visual_state_matrix_max_prominent_actions_mismatch',
+      storyId: args.storyId,
+      scenarioId: args.scenarioId,
+      expected: args.expected.maxProminentActions,
+      actual: args.actual.maxProminentActions,
+    });
+  }
+
+  if (!visualSceneSemanticAssertionsIncludeAll(args.actual.forbiddenVisibleText, args.expected.forbiddenVisibleText)) {
+    for (const text of args.expected.forbiddenVisibleText) {
+      if (args.actual.forbiddenVisibleText?.includes(text)) {
+        continue;
+      }
+      issues.push({
+        issue: 'visual_state_matrix_missing_forbidden_text',
+        storyId: args.storyId,
+        scenarioId: args.scenarioId,
+        text,
+      });
+    }
+  }
+
+  return issues;
 }
 
 export function validateMajorProductSurfaceCoverage(
@@ -245,6 +736,63 @@ export function validateMajorProductSurfaceCoverage(
     if (!surfaceStoryIndex.has(story.storyId)) {
       issues.push({ issue: 'missing_backend_real_surface', storyId: story.storyId });
     }
+  }
+
+  return issues;
+}
+
+export function validateChatNotebookVisualStateMatrixCoverage(
+  stories: readonly StoryDefinition[],
+): VisualStateMatrixContractIssue[] {
+  const issues: VisualStateMatrixContractIssue[] = [];
+  const storiesById = new Map(stories.map((story) => [story.storyId, story] as const));
+
+  for (const contract of CHAT_AND_NOTEBOOK_VISUAL_STATE_MATRIX_CONTRACTS) {
+    const story = storiesById.get(contract.storyId);
+    if (!story) {
+      issues.push({
+        issue: 'missing_visual_state_matrix_story',
+        storyId: contract.storyId,
+      });
+      continue;
+    }
+
+    const visualScene = findVisualSceneForScenario(story, contract.scenarioId);
+    if (!visualScene) {
+      issues.push({
+        issue: 'missing_visual_state_matrix_scenario',
+        storyId: contract.storyId,
+        scenarioId: contract.scenarioId,
+      });
+      continue;
+    }
+
+    if (visualScene.sceneId !== contract.sceneId) {
+      issues.push({
+        issue: 'visual_state_matrix_scene_mismatch',
+        storyId: contract.storyId,
+        scenarioId: contract.scenarioId,
+        expectedSceneId: contract.sceneId,
+        actualSceneId: visualScene.sceneId,
+      });
+    }
+
+    if (visualScene.uxState !== contract.uxState) {
+      issues.push({
+        issue: 'visual_state_matrix_ux_state_mismatch',
+        storyId: contract.storyId,
+        scenarioId: contract.scenarioId,
+        expectedUxState: contract.uxState,
+        actualUxState: visualScene.uxState,
+      });
+    }
+
+    issues.push(...validateVisualSceneSemanticAssertions({
+      storyId: contract.storyId,
+      scenarioId: contract.scenarioId,
+      actual: visualScene.semanticAssertions,
+      expected: contract.semanticAssertions,
+    }));
   }
 
   return issues;

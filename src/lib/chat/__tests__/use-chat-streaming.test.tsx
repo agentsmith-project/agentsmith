@@ -989,6 +989,90 @@ describe('useChatStreaming attach recovery', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
+  it('keeps attach recovery error state visible past the old 60s cleanup window', async () => {
+    vi.useFakeTimers();
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn().mockResolvedValue(
+      createSseResponse([
+        { event: 'meta', data: { stream_id: 'st_recovery', assistant_message_id: 'm_asst' } },
+        { event: 'error', data: { error_code: 'AGENT_UPSTREAM_ERROR', message: 'Provider attach failed' } },
+      ]),
+    );
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const chatAPI: Pick<ChatAPI, 'getSessionStreams' | 'stopSessionStream' | 'stopStream'> = {
+      getSessionStreams: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      stopSessionStream: vi.fn().mockResolvedValue({ success: true, session_id: 's_1', state: 'stopping' }),
+      stopStream: vi.fn().mockResolvedValue({ success: true, stream_id: 'st_recovery', state: 'stopping' }),
+    };
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+
+    const sessions: ChatSession[] = [
+      {
+        id: 's_1',
+        project_id: 'p_1',
+        title: 't',
+        model: 'm',
+        endpoint_id: 'ep_1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        message_count: 0,
+        total_tokens: 0,
+        execution_status: 'running',
+      },
+    ];
+
+    try {
+      const { result } = renderHook(
+        () =>
+          useChatStreaming({
+            token: 'tkn',
+            workspaceId: 'ws_1',
+            projectId: 'p_1',
+            sessions,
+            currentSessionId: 's_1',
+            chatAPI: chatAPI as unknown as ChatAPI,
+            queryClient: qc,
+            messages: streamMessages,
+            upsertStreamAssistantToCache: vi.fn(),
+            patchStreamAssistantInCache: vi.fn(),
+          }),
+        { wrapper },
+      );
+
+      await act(async () => {
+        await result.current.runStream({
+          sessionId: 's_1',
+          model: 'm',
+          endpointId: 'ep_1',
+          input: { role: 'user', content: 'hello' },
+          mode: 'append',
+        });
+      });
+
+      expect(result.current.streamStateBySession['s_1']).toMatchObject({
+        status: 'error',
+        errorMessage: 'agent upstream error',
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+
+      expect(result.current.streamStateBySession['s_1']).toMatchObject({
+        status: 'error',
+        errorMessage: 'agent upstream error',
+      });
+    } finally {
+      vi.stubGlobal('fetch', originalFetch);
+      vi.useRealTimers();
+    }
+  });
+
   it('maps agent protocol stream error to dedicated user message', async () => {
     const originalFetch = global.fetch;
     const fetchMock = vi.fn().mockResolvedValue(

@@ -42,6 +42,7 @@ run_grep() {
 run_grep e2e/integration-chat-llm-runner.spec.ts "streams multi-turn chat through the real local chat runner and persists replies" 20061 3062
 run_grep e2e/integration-chat-llm-runner.spec.ts "preserves conversation continuity across refresh with story-bound trace evidence" 20062 3063
 run_grep e2e/integration-chat-llm-runner.spec.ts "warns and recreates the session workspace when the local chat workspace has been reclaimed" 20063 3064
+run_grep e2e/integration-chat.spec.ts "stop escalation resyncs authoritative thread truth after refresh and keeps composer ready" 20066 3067
 (cd "${ROOT_DIR}" && bash scripts/run-internal-chat-real-gate.sh)
 run_grep e2e/integration-membership-chat-isolation.spec.ts "" 20065 3066
 

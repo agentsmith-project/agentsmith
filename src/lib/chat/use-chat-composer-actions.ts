@@ -7,8 +7,10 @@ import type { RunChatStreamArgs } from '@/lib/chat/use-chat-streaming';
 
 interface UseChatComposerActionsArgs {
   canUseChat: boolean;
+  disabled?: boolean;
   currentSessionId: string | null;
   activeSession: ChatSession | null;
+  resolveSessionForSend?: (sessionId: string) => ChatSession | null;
   composerBySession: Record<string, string>;
   setComposerBySession: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   attachments: Attachment[];
@@ -35,8 +37,10 @@ interface UseChatComposerActionsResult {
 export function useChatComposerActions(args: UseChatComposerActionsArgs): UseChatComposerActionsResult {
   const {
     canUseChat,
+    disabled = false,
     currentSessionId,
     activeSession,
+    resolveSessionForSend,
     composerBySession,
     setComposerBySession,
     attachments,
@@ -50,9 +54,11 @@ export function useChatComposerActions(args: UseChatComposerActionsArgs): UseCha
 
   const handleSend = useCallback(async () => {
     if (!canUseChat) return;
+    if (disabled) return;
     if (!currentSessionId) return;
-    if (!activeSession) return;
-    if (!hasEndpointBinding(activeSession)) return;
+    const sessionForSend = resolveSessionForSend?.(currentSessionId) ?? activeSession;
+    if (!sessionForSend) return;
+    if (!hasEndpointBinding(sessionForSend)) return;
 
     const composerValue = composerBySession[currentSessionId] || '';
     const content = composerValue.trim();
@@ -75,16 +81,18 @@ export function useChatComposerActions(args: UseChatComposerActionsArgs): UseCha
     setComposerBySession((prev) => ({ ...prev, [currentSessionId]: '' }));
     await runStream({
       sessionId: currentSessionId,
-      model: activeSession.model,
-      endpointId: activeSession.endpoint_id,
+      model: sessionForSend.model,
+      endpointId: sessionForSend.endpoint_id,
       branchLeafMessageId: userMsg.id,
       input: { role: 'user', content, inputs: readyInputRefs },
       mode: 'append',
     });
   }, [
     canUseChat,
+    disabled,
     currentSessionId,
     activeSession,
+    resolveSessionForSend,
     composerBySession,
     attachments,
     editingMessageId,

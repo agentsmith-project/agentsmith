@@ -28,6 +28,10 @@ import {
 import { VISUAL_TEST_REFERENCE_NOW_ISO } from '@/lib/mock-time';
 
 const WS_ID = 'ws_default';
+const VISUAL_CHAT_RUNTIME_SESSION_ID = 'session_001';
+const VISUAL_CHAT_ESCALATION_DELAY_MS = 30_000;
+const VISUAL_NOTEBOOK_CANCEL_ESCALATION_DELAY_MS = 30_000;
+const VISUAL_NOTEBOOK_SSE_RECONNECT_DELAY_MS = 3_000;
 const test = base;
 type ScreenshotComparator = (
   actual: Buffer,
@@ -39,7 +43,18 @@ type ScreenshotComparator = (
     threshold?: number;
   },
 ) => { errorMessage: string; diff?: Buffer } | null;
+type ScreenshotPngCodec = {
+  sync: {
+    read: (buffer: Buffer) => {
+      width: number;
+      height: number;
+      data: Buffer;
+    };
+    write: (png: { width: number; height: number; data: Buffer }) => Buffer;
+  };
+};
 let screenshotComparatorPromise: Promise<ScreenshotComparator> | null = null;
+let screenshotPngCodecPromise: Promise<ScreenshotPngCodec> | null = null;
 
 function getScreenshotComparator(): Promise<ScreenshotComparator> {
   if (!screenshotComparatorPromise) {
@@ -51,6 +66,15 @@ function getScreenshotComparator(): Promise<ScreenshotComparator> {
     });
   }
   return screenshotComparatorPromise;
+}
+
+function getScreenshotPngCodec(): Promise<ScreenshotPngCodec> {
+  if (!screenshotPngCodecPromise) {
+    screenshotPngCodecPromise = import(
+      pathToFileURL(path.resolve(process.cwd(), 'node_modules/playwright-core/lib/utilsBundle.js')).href
+    ).then((module) => (module as { PNG: ScreenshotPngCodec }).PNG);
+  }
+  return screenshotPngCodecPromise;
 }
 
 type VisualAuthOptions = {
@@ -70,6 +94,9 @@ type VisualScenarioContext = {
 type VisualScreenshotOptions = {
   fullPage?: boolean;
   maxDiffPixelRatio?: number;
+  maskTestIds?: string[];
+  stabilizeAttempts?: number;
+  stabilizeDelayMs?: number;
 };
 
 type VisualScenarioSetup = {
@@ -191,6 +218,23 @@ async function seedSystemWorkspaces(
   expect(response.ok()).toBe(true);
 }
 
+async function seedVisualMswHeaders(page: Page, headers: Record<string, string>) {
+  await page.addInitScript((nextHeaders) => {
+    const win = window as Window & { __MBOS_MSW_TEST_HEADERS__?: Record<string, string> };
+    win.__MBOS_MSW_TEST_HEADERS__ = {
+      ...(win.__MBOS_MSW_TEST_HEADERS__ ?? {}),
+      ...nextHeaders,
+    };
+  }, headers);
+  await page.evaluate((nextHeaders) => {
+    const win = window as Window & { __MBOS_MSW_TEST_HEADERS__?: Record<string, string> };
+    win.__MBOS_MSW_TEST_HEADERS__ = {
+      ...(win.__MBOS_MSW_TEST_HEADERS__ ?? {}),
+      ...nextHeaders,
+    };
+  }, headers).catch(() => {});
+}
+
 async function seedVisualFeishuState(
   page: Page,
   options: {
@@ -210,12 +254,7 @@ async function seedVisualFeishuState(
     'x-mock-connection-workspace': WS_ID,
     'x-mock-connection-email': options.connectedEmail ?? '',
   };
-  await page.addInitScript((nextHeaders) => {
-    (window as Window & { __MBOS_MSW_TEST_HEADERS__?: Record<string, string> }).__MBOS_MSW_TEST_HEADERS__ = nextHeaders;
-  }, headers);
-  await page.evaluate((nextHeaders) => {
-    (window as Window & { __MBOS_MSW_TEST_HEADERS__?: Record<string, string> }).__MBOS_MSW_TEST_HEADERS__ = nextHeaders;
-  }, headers).catch(() => {});
+  await seedVisualMswHeaders(page, headers);
 }
 
 async function seedVisualTestNow(page: Page, iso = VISUAL_TEST_REFERENCE_NOW_ISO) {
@@ -225,6 +264,52 @@ async function seedVisualTestNow(page: Page, iso = VISUAL_TEST_REFERENCE_NOW_ISO
   await page.evaluate((nextNow) => {
     (window as Window & { __MBOS_TEST_NOW__?: string }).__MBOS_TEST_NOW__ = nextNow;
   }, iso).catch(() => {});
+}
+
+async function installVisualMotionFreeze(page: Page) {
+  await page.addInitScript(() => {
+    type MotionFreezeWindow = Window & {
+      __agsVisualMotionFreezeInstalled?: boolean;
+      __agsVisualMotionFreezeObserver?: MutationObserver;
+    };
+
+    const STYLE_ID = 'ags-visual-disable-motion';
+    const win = window as MotionFreezeWindow;
+    const install = () => {
+      document.documentElement.setAttribute('data-visual-motion', 'disabled');
+      if (document.getElementById(STYLE_ID)) {
+        return;
+      }
+      const style = document.createElement('style');
+      style.id = STYLE_ID;
+      style.textContent = `
+        *, *::before, *::after {
+          animation: none !important;
+          transition: none !important;
+          scroll-behavior: auto !important;
+        }
+      `;
+      (document.head ?? document.documentElement).appendChild(style);
+    };
+
+    install();
+    if (!win.__agsVisualMotionFreezeObserver) {
+      win.__agsVisualMotionFreezeObserver = new MutationObserver(() => install());
+      win.__agsVisualMotionFreezeObserver.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+    }
+    win.__agsVisualMotionFreezeInstalled = true;
+  });
+  await page.evaluate(() => {
+    document.documentElement.setAttribute('data-visual-motion', 'disabled');
+  }).catch(() => {});
+}
+
+async function prepareStableVisualChatSurface(page: Page) {
+  await seedVisualTestNow(page);
+  await installVisualMotionFreeze(page);
 }
 
 async function seedJoinRequestNotifications(page: Page) {
@@ -409,6 +494,683 @@ async function openMemberEffectiveAccessDrawer(page: Page) {
   await expect(authorizeResult).toBeVisible();
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function extractProjectRouteParts(route: string) {
+  const match = route.match(/\/workspaces\/([^/]+)\/projects\/([^/]+)/);
+  if (!match) {
+    throw new Error(`Visual scenario route must include workspace/project params: ${route}`);
+  }
+  return {
+    workspaceId: decodeURIComponent(match[1]),
+    projectId: decodeURIComponent(match[2]),
+  };
+}
+
+function extractNotebookTaskRouteParts(route: string) {
+  const projectRoute = extractProjectRouteParts(route);
+  const match = route.match(/\/notebook\/tasks\/([^/?#]+)/);
+  if (!match) {
+    throw new Error(`Visual notebook scenario route must include a task id: ${route}`);
+  }
+  return {
+    ...projectRoute,
+    taskId: decodeURIComponent(match[1]),
+  };
+}
+
+function notebookConversationTextarea(page: Page) {
+  return page
+    .getByTestId('notebook__conversation-input')
+    .locator('textarea, input[type="text"], [contenteditable="true"]')
+    .first();
+}
+
+function chatComposerTextarea(page: Page) {
+  return page.getByTestId('chat__composer').locator('textarea').first();
+}
+
+function chatStreamAttachPathPattern(sessionId = VISUAL_CHAT_RUNTIME_SESSION_ID) {
+  return new RegExp(`/chat/sessions/${escapeRegExp(sessionId)}/messages/streams/[^/]+/?$`);
+}
+
+async function installVisualExactTimeoutRewrite(page: Page, rewrites: Record<number, number>) {
+  await page.addInitScript((nextRewrites) => {
+    type HarnessWindow = Window & {
+      __agsVisualTimeoutRewriteInstalled?: boolean;
+      __agsVisualTimeoutRewriteMap?: Record<string, number>;
+    };
+
+    const win = window as HarnessWindow;
+    const normalized = Object.fromEntries(
+      Object.entries(nextRewrites).map(([delay, nextDelay]) => [String(delay), Number(nextDelay)]),
+    );
+    win.__agsVisualTimeoutRewriteMap = normalized;
+
+    if (win.__agsVisualTimeoutRewriteInstalled) {
+      return;
+    }
+
+    const originalSetTimeout = window.setTimeout.bind(window);
+    window.setTimeout = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+      const requestedDelay = typeof timeout === 'number' ? timeout : 0;
+      const rewriteMap = win.__agsVisualTimeoutRewriteMap ?? {};
+      const rewrittenDelay = Object.prototype.hasOwnProperty.call(rewriteMap, String(requestedDelay))
+        ? rewriteMap[String(requestedDelay)]
+        : requestedDelay;
+      return originalSetTimeout(handler, rewrittenDelay, ...args);
+    }) as typeof window.setTimeout;
+
+    win.__agsVisualTimeoutRewriteInstalled = true;
+  }, rewrites);
+}
+
+async function installVisualChatHarness(
+  page: Page,
+  options: {
+    stopEscalationMode?: 'supported' | 'unsupported';
+    stallRecoveredStreamAttach?: boolean;
+    streamFailure?: {
+      sessionId?: string;
+      status?: number;
+      errorCode?: string;
+      errorMessage?: string;
+    };
+  } = {},
+) {
+  await page.addInitScript(({ config, recoveredStreamAttachPathPatternSource }) => {
+    type HarnessWindow = Window & {
+      __agsVisualChatHarnessInstalled?: boolean;
+      __agsVisualChatHarnessConfig?: {
+        stopEscalationMode?: 'supported' | 'unsupported';
+        stallRecoveredStreamAttach?: boolean;
+        streamFailure?: {
+          sessionId?: string;
+          status?: number;
+          errorCode?: string;
+          errorMessage?: string;
+        };
+      };
+    };
+
+    const win = window as HarnessWindow;
+    win.__agsVisualChatHarnessConfig = {
+      ...(win.__agsVisualChatHarnessConfig ?? {}),
+      ...config,
+    };
+    const recoveredStreamAttachPathPattern = new RegExp(recoveredStreamAttachPathPatternSource);
+    if (win.__agsVisualChatHarnessInstalled) {
+      return;
+    }
+
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : null;
+      const resolvedUrl = request?.url ?? String(input);
+      let url: URL;
+      try {
+        url = new URL(resolvedUrl, window.location.origin);
+      } catch {
+        return originalFetch(input, init);
+      }
+
+      const activeConfig = win.__agsVisualChatHarnessConfig ?? {};
+      const isChatRequest = url.pathname.includes('/api/v1/workspaces/') && url.pathname.includes('/chat/sessions');
+      if (!isChatRequest) {
+        return originalFetch(input, init);
+      }
+
+      if (activeConfig.stopEscalationMode) {
+        url.searchParams.set('mock_chat_stop_escalation', activeConfig.stopEscalationMode);
+      }
+
+      if (activeConfig.stallRecoveredStreamAttach && recoveredStreamAttachPathPattern.test(url.pathname)) {
+        return new Promise<Response>(() => {});
+      }
+
+      const streamFailure = activeConfig.streamFailure;
+      if (
+        streamFailure
+        && url.pathname.endsWith(`/chat/sessions/${streamFailure.sessionId ?? VISUAL_CHAT_RUNTIME_SESSION_ID}/messages/stream`)
+      ) {
+        return Promise.resolve(new Response(JSON.stringify({
+          error_code: streamFailure.errorCode ?? 'UPSTREAM_RATE_LIMIT',
+          message: streamFailure.errorMessage ?? 'Selected model is at capacity. Please retry shortly.',
+        }), {
+          status: streamFailure.status ?? 429,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }));
+      }
+
+      const nextInput = request ? new Request(url.toString(), request) : url.toString();
+      return originalFetch(nextInput, init);
+    };
+
+    win.__agsVisualChatHarnessInstalled = true;
+  }, {
+    config: options,
+    recoveredStreamAttachPathPatternSource: chatStreamAttachPathPattern().source,
+  });
+}
+
+async function runVisualBrowserApiRequest(
+  page: Page,
+  input: {
+    path: string;
+    method?: 'GET' | 'PATCH' | 'POST';
+    headers?: Record<string, string>;
+    body?: Record<string, unknown>;
+  },
+) {
+  const result = await page.evaluate(async (requestInput) => {
+    const response = await fetch(requestInput.path, {
+      method: requestInput.method ?? 'GET',
+      headers: {
+        ...(requestInput.body ? { 'Content-Type': 'application/json' } : {}),
+        'X-MSW-Enable': 'true',
+        ...(requestInput.headers ?? {}),
+      },
+      body: requestInput.body ? JSON.stringify(requestInput.body) : undefined,
+    });
+    const text = await response.text().catch(() => '');
+    let json: unknown = null;
+    if (text.trim().length > 0) {
+      try {
+        json = JSON.parse(text) as unknown;
+      } catch {
+        json = text;
+      }
+    }
+    return {
+      ok: response.ok,
+      status: response.status,
+      text,
+      json,
+    };
+  }, input);
+  expect(
+    result.ok,
+    `visual browser api request failed (${input.method ?? 'GET'} ${input.path}): ${result.status} ${result.text}`,
+  ).toBe(true);
+  return result.json;
+}
+
+async function bindVisualChatSessionToEndpoint(
+  page: Page,
+  route: string,
+  options: {
+    sessionId?: string;
+    endpointId: string;
+    model: string;
+  },
+) {
+  const { workspaceId, projectId } = extractProjectRouteParts(route);
+  const sessionId = options.sessionId ?? VISUAL_CHAT_RUNTIME_SESSION_ID;
+  await runVisualBrowserApiRequest(page, {
+    path: `/api/v1/workspaces/${workspaceId}/projects/${projectId}/chat/sessions/${sessionId}`,
+    method: 'PATCH',
+    body: {
+      endpoint_id: options.endpointId,
+      model: options.model,
+      external_agent_id: null,
+    },
+  });
+}
+
+async function patchVisualNotebookTaskTruth(
+  page: Page,
+  route: string,
+  patch: Record<string, unknown>,
+) {
+  const { taskId } = extractNotebookTaskRouteParts(route);
+  await installVisualNotebookHarness(page, {
+    taskPatchesByTaskId: {
+      [taskId]: patch,
+    },
+  });
+}
+
+async function createVisualNotebookTerminalSession(
+  page: Page,
+  route: string,
+  options: {
+    cols?: number;
+    rows?: number;
+    status?: 'active' | 'disconnected' | 'failed';
+  } = {},
+) {
+  const { taskId } = extractNotebookTaskRouteParts(route);
+  await installVisualNotebookHarness(page, {
+    terminalSessionsByTaskId: {
+      [taskId]: {
+        mode: 'ready',
+        items: [{
+          id: 'mock_terminal_visual_001',
+          status: options.status ?? 'active',
+          cols: options.cols ?? 120,
+          rows: options.rows ?? 30,
+          created_at: VISUAL_TEST_REFERENCE_NOW_ISO,
+          last_activity_at: VISUAL_TEST_REFERENCE_NOW_ISO,
+          ended_at: null,
+          close_reason: null,
+          exit_code: null,
+          ws_url: 'ws://mock.agentsmith.local/terminal/mock_terminal_visual_001',
+        }],
+      },
+    },
+  });
+}
+
+async function installVisualNotebookHarness(
+  page: Page,
+  options: {
+    taskPatchesByTaskId?: Record<string, Record<string, unknown>>;
+    messagesByTaskId?: Record<string, Array<Record<string, unknown>>>;
+    tracesByTaskId?: Record<string, Array<Record<string, unknown>>>;
+    terminalSessionsByTaskId?: Record<
+      string,
+      | { mode: 'ready'; items: Array<Record<string, unknown>> }
+      | { mode: 'unavailable' }
+    >;
+  } = {},
+) {
+  await page.addInitScript((config) => {
+    type HarnessWindow = Window & {
+      __agsVisualNotebookHarnessInstalled?: boolean;
+      __agsVisualNotebookHarnessConfig?: {
+        taskPatchesByTaskId?: Record<string, Record<string, unknown>>;
+        messagesByTaskId?: Record<string, Array<Record<string, unknown>>>;
+        tracesByTaskId?: Record<string, Array<Record<string, unknown>>>;
+        terminalSessionsByTaskId?: Record<
+          string,
+          | { mode: 'ready'; items: Array<Record<string, unknown>> }
+          | { mode: 'unavailable' }
+        >;
+      };
+    };
+
+    const win = window as HarnessWindow;
+    const previousConfig = win.__agsVisualNotebookHarnessConfig ?? {};
+    win.__agsVisualNotebookHarnessConfig = {
+      ...previousConfig,
+      taskPatchesByTaskId: {
+        ...(previousConfig.taskPatchesByTaskId ?? {}),
+        ...(config.taskPatchesByTaskId ?? {}),
+      },
+      messagesByTaskId: {
+        ...(previousConfig.messagesByTaskId ?? {}),
+        ...(config.messagesByTaskId ?? {}),
+      },
+      tracesByTaskId: {
+        ...(previousConfig.tracesByTaskId ?? {}),
+        ...(config.tracesByTaskId ?? {}),
+      },
+      terminalSessionsByTaskId: {
+        ...(previousConfig.terminalSessionsByTaskId ?? {}),
+        ...(config.terminalSessionsByTaskId ?? {}),
+      },
+    };
+    if (win.__agsVisualNotebookHarnessInstalled) {
+      return;
+    }
+
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : null;
+      const resolvedUrl = request?.url ?? String(input);
+      let url: URL;
+      try {
+        url = new URL(resolvedUrl, window.location.origin);
+      } catch {
+        return originalFetch(input, init);
+      }
+
+      const response = await originalFetch(input, init);
+      const method = (request?.method ?? init?.method ?? 'GET').toUpperCase();
+      const activeConfig = win.__agsVisualNotebookHarnessConfig ?? {};
+      const taskDetailMatch = url.pathname.match(/\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/tasks\/([^/]+)$/);
+      if (method === 'GET' && taskDetailMatch) {
+        const taskId = decodeURIComponent(taskDetailMatch[1]);
+        const taskPatch = activeConfig.taskPatchesByTaskId?.[taskId];
+        if (taskPatch) {
+          const text = await response.text().catch(() => '');
+          const json = text.trim().length > 0
+            ? JSON.parse(text) as Record<string, unknown>
+            : {};
+          return new Response(JSON.stringify({
+            ...json,
+            ...taskPatch,
+          }), {
+            status: response.status,
+            headers: {
+              'content-type': 'application/json',
+            },
+          });
+        }
+      }
+
+      const taskMessagesMatch = url.pathname.match(/\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/tasks\/([^/]+)\/messages$/);
+      if (method === 'GET' && taskMessagesMatch) {
+        const taskId = decodeURIComponent(taskMessagesMatch[1]);
+        const hasOverride = Object.prototype.hasOwnProperty.call(activeConfig.messagesByTaskId ?? {}, taskId);
+        if (hasOverride) {
+          return new Response(JSON.stringify(activeConfig.messagesByTaskId?.[taskId] ?? []), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          });
+        }
+      }
+
+      const taskTracesMatch = url.pathname.match(/\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/tasks\/([^/]+)\/traces$/);
+      if (method === 'GET' && taskTracesMatch) {
+        const taskId = decodeURIComponent(taskTracesMatch[1]);
+        const hasOverride = Object.prototype.hasOwnProperty.call(activeConfig.tracesByTaskId ?? {}, taskId);
+        if (hasOverride) {
+          const messageId = url.searchParams.get('message_id');
+          const runId = url.searchParams.get('run_id');
+          const items = (activeConfig.tracesByTaskId?.[taskId] ?? []).filter((item) => {
+            const itemMessageId = typeof item.message_id === 'string' ? item.message_id : null;
+            const itemRunId = typeof item.run_id === 'string' ? item.run_id : null;
+            if (messageId && itemMessageId !== messageId) {
+              return false;
+            }
+            if (runId && itemRunId !== runId) {
+              return false;
+            }
+            return true;
+          });
+          return new Response(JSON.stringify({
+            items,
+            total: items.length,
+            has_more: false,
+            next_after_id: null,
+          }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          });
+        }
+      }
+
+      const terminalSessionsMatch = url.pathname.match(/\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/tasks\/([^/]+)\/terminal\/sessions$/);
+      if (method === 'GET' && terminalSessionsMatch) {
+        const taskId = decodeURIComponent(terminalSessionsMatch[1]);
+        const terminalOverride = activeConfig.terminalSessionsByTaskId?.[taskId];
+        if (terminalOverride?.mode === 'unavailable') {
+          return new Response(JSON.stringify({
+            error_code: 'terminal_truth_unavailable',
+            message: 'terminal_truth_unavailable',
+          }), {
+            status: 503,
+            headers: {
+              'content-type': 'application/json',
+            },
+          });
+        }
+        if (terminalOverride?.mode === 'ready') {
+          return new Response(JSON.stringify({
+            total: terminalOverride.items.length,
+            items: terminalOverride.items,
+          }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          });
+        }
+      }
+
+      return response;
+    };
+
+    win.__agsVisualNotebookHarnessInstalled = true;
+  }, options);
+}
+
+async function installVisualNotebookMessagesOverride(
+  page: Page,
+  route: string,
+  items: Array<Record<string, unknown>>,
+) {
+  const { taskId } = extractNotebookTaskRouteParts(route);
+  await installVisualNotebookHarness(page, {
+    messagesByTaskId: {
+      [taskId]: items,
+    },
+  });
+}
+
+async function seedVisualNotebookConversationHistory(page: Page, route: string) {
+  const { taskId } = extractNotebookTaskRouteParts(route);
+  await installVisualNotebookMessagesOverride(page, route, [
+    {
+      id: 'msg_visual_notebook_user_001',
+      task_id: taskId,
+      role: 'user',
+      content: 'Review the existing task progress before retrying.',
+      created_at: '2026-04-12T09:12:00.000Z',
+    },
+    {
+      id: 'msg_visual_notebook_agent_001',
+      task_id: taskId,
+      role: 'agent',
+      content: 'The task already has prior context on this surface.',
+      created_at: '2026-04-12T09:12:05.000Z',
+    },
+  ]);
+}
+
+async function installVisualNotebookTraceOverride(
+  page: Page,
+  route: string,
+  items: Array<Record<string, unknown>>,
+) {
+  const { taskId } = extractNotebookTaskRouteParts(route);
+  await installVisualNotebookHarness(page, {
+    tracesByTaskId: {
+      [taskId]: items,
+    },
+  });
+}
+
+async function seedVisualNotebookRunState(
+  page: Page,
+  route: string,
+  runState: 'running' | 'cancelling' | 'terminating' | 'finalizing' | 'idle',
+) {
+  const futureActivityAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  await patchVisualNotebookTaskTruth(page, route, {
+    run_state: runState,
+    status: 'active',
+    updated_at: futureActivityAt,
+    last_activity_at: futureActivityAt,
+    stop_mode:
+      runState === 'cancelling'
+        ? 'cancel'
+        : runState === 'terminating'
+          ? 'terminate'
+          : null,
+    can_escalate: false,
+    escalation_reason: null,
+  });
+}
+
+async function seedVisualNotebookCancelEscalation(page: Page, route: string) {
+  const futureActivityAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  await patchVisualNotebookTaskTruth(page, route, {
+    run_state: 'cancelling',
+    status: 'active',
+    updated_at: futureActivityAt,
+    last_activity_at: futureActivityAt,
+    stop_mode: 'cancel',
+    can_escalate: true,
+    escalation_reason: 'agent did not acknowledge cancel',
+  });
+}
+
+async function installVisualNotebookEventSourceFailureHarness(page: Page) {
+  await page.addInitScript(() => {
+    type HarnessWindow = Window & {
+      __agsVisualNotebookEventSourceInstalled?: boolean;
+    };
+    const win = window as HarnessWindow;
+    if (win.__agsVisualNotebookEventSourceInstalled) {
+      return;
+    }
+
+    class VisualNotebookEventSource implements EventSource {
+      static readonly CONNECTING = 0;
+      static readonly OPEN = 1;
+      static readonly CLOSED = 2;
+
+      readonly CONNECTING = 0;
+      readonly OPEN = 1;
+      readonly CLOSED = 2;
+      readonly url: string;
+      readonly withCredentials: boolean;
+      readyState = VisualNotebookEventSource.CONNECTING;
+      private failureTimer: number | null = null;
+      private onopenHandler: ((this: EventSource, ev: Event) => unknown) | null = null;
+      private onmessageHandler: ((this: EventSource, ev: MessageEvent<string>) => unknown) | null = null;
+      private onerrorHandler: ((this: EventSource, ev: Event) => unknown) | null = null;
+
+      get onopen() {
+        return this.onopenHandler;
+      }
+
+      set onopen(handler: ((this: EventSource, ev: Event) => unknown) | null) {
+        this.onopenHandler = handler;
+      }
+
+      get onmessage() {
+        return this.onmessageHandler;
+      }
+
+      set onmessage(handler: ((this: EventSource, ev: MessageEvent<string>) => unknown) | null) {
+        this.onmessageHandler = handler;
+      }
+
+      get onerror() {
+        return this.onerrorHandler;
+      }
+
+      set onerror(handler: ((this: EventSource, ev: Event) => unknown) | null) {
+        this.onerrorHandler = handler;
+        this.scheduleFailure();
+      }
+
+      constructor(url: string | URL, eventSourceInitDict?: EventSourceInit) {
+        this.url = String(url);
+        this.withCredentials = Boolean(eventSourceInitDict?.withCredentials);
+        this.scheduleFailure();
+      }
+
+      private scheduleFailure() {
+        if (this.failureTimer !== null || this.readyState === VisualNotebookEventSource.CLOSED) {
+          return;
+        }
+        this.failureTimer = window.setTimeout(() => {
+          this.failureTimer = null;
+          if (this.readyState === VisualNotebookEventSource.CLOSED) {
+            return;
+          }
+          if (!this.onerrorHandler) {
+            this.scheduleFailure();
+            return;
+          }
+          this.readyState = VisualNotebookEventSource.CLOSED;
+          this.onerrorHandler.call(this as unknown as EventSource, new Event('error'));
+        }, 50);
+      }
+
+      addEventListener(): void {}
+
+      removeEventListener(): void {}
+
+      dispatchEvent(): boolean {
+        return true;
+      }
+
+      close(): void {
+        if (this.failureTimer !== null) {
+          window.clearTimeout(this.failureTimer);
+          this.failureTimer = null;
+        }
+        this.readyState = VisualNotebookEventSource.CLOSED;
+      }
+    }
+
+    window.EventSource = VisualNotebookEventSource as unknown as typeof window.EventSource;
+    win.__agsVisualNotebookEventSourceInstalled = true;
+  });
+}
+
+async function waitForVisualChatStreaming(page: Page) {
+  await expect(page.getByTestId('chat__surface')).toBeVisible();
+  await expect(page.getByTestId('chat__composer')).toBeVisible();
+  await expect(page.getByTestId('chat__stop-btn')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('chat__stream-status')).toContainText('Generating', { timeout: 15_000 });
+  await expect(page.getByTestId('chat__threads-generating-count')).toContainText('1 generating', { timeout: 15_000 });
+  await expect(page.getByTestId('chat__thread-streaming-indicator').first()).toBeVisible({ timeout: 15_000 });
+}
+
+async function waitForVisualChatRecovering(page: Page) {
+  await expect(page.getByTestId('chat__surface')).toBeVisible();
+  await expect(page.getByTestId('chat__composer')).toBeVisible();
+  await expect(page.getByTestId('chat__stop-btn')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('chat__stream-status')).toContainText('Recovering stream...', { timeout: 15_000 });
+  await expect(page.getByTestId('chat__threads-generating-count')).toContainText('1 generating', { timeout: 15_000 });
+  await expect(page.getByTestId('chat__thread-streaming-indicator').first()).toBeVisible({ timeout: 15_000 });
+}
+
+async function clickVisualChatStopAndWait(page: Page) {
+  await waitForVisualChatStreaming(page);
+  await page.getByTestId('chat__stop-btn').click();
+  await expect(page.getByTestId('chat__stream-status')).toContainText('Stop', { timeout: 15_000 });
+  await expect(page.getByTestId('chat__threads-generating-count')).toContainText('1 generating', { timeout: 15_000 });
+  await expect(page.getByTestId('chat__thread-streaming-indicator').first()).toBeVisible({ timeout: 15_000 });
+}
+
+async function ensureVisualChatEndpointBound(page: Page, endpointId = 'ep_1') {
+  await expect(page.getByTestId('chat__surface')).toBeVisible();
+  const composer = chatComposerTextarea(page);
+  if (await composer.isEditable().catch(() => false)) {
+    return;
+  }
+  const recoveryEndpoint = page.getByTestId(`chat__composer-recovery-endpoint--${endpointId}`);
+  if (await recoveryEndpoint.isVisible().catch(() => false)) {
+    await recoveryEndpoint.click();
+  }
+  await expect(composer).toBeEditable({ timeout: 15_000 });
+}
+
+async function triggerVisualChatCapacityRecovery(page: Page) {
+  await ensureVisualChatEndpointBound(page);
+  await chatComposerTextarea(page).fill('Retry after provider capacity clears.');
+  await expect(page.getByTestId('chat__send-btn')).toBeEnabled();
+  await page.getByTestId('chat__send-btn').click();
+  await expect(page.getByTestId('chat__stream-status')).toContainText('Interrupted', { timeout: 15_000 });
+  await expect(page.getByTestId('chat__composer-recovery')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('chat__stream-error-recovery')).toBeVisible();
+  await expect(page.getByTestId('chat__stream-error-message')).toContainText('capacity', { timeout: 15_000 });
+  await expect(page.getByTestId('chat__composer-recovery-endpoint--ep_2')).toBeVisible();
+  await expect(chatComposerTextarea(page)).toBeEditable();
+}
+
+async function waitForVisualNotebookTaskSurface(page: Page) {
+  await expect(page.getByTestId('notebook__task-header')).toBeVisible();
+  await waitForNotebookTerminalTruthReady(page);
+  await expect(page.getByTestId('notebook__conversation-input')).toBeVisible();
+  await expect(page.getByTestId('notebook__send-btn')).toBeVisible();
+}
+
 const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> = {
   'access-guide': {
     afterNavigate: async ({ page }) => {
@@ -467,13 +1229,122 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
     },
   },
   'chat-operate': {
+    beforeNavigate: async ({ page }) => {
+      await prepareStableVisualChatSurface(page);
+    },
     afterNavigate: async ({ page }) => {
       await expect(page.getByTestId('chat__execution-target-trigger')).toBeVisible();
     },
   },
   'chat-recover-empty': {
+    beforeNavigate: async ({ page }) => {
+      await prepareStableVisualChatSurface(page);
+    },
     afterNavigate: async ({ page }) => {
       await page.getByPlaceholder('Search threads...').fill('zzzzzz-no-match');
+    },
+  },
+  'chat-provider-capacity-retry': {
+    beforeNavigate: async ({ page, scenario }) => {
+      await prepareStableVisualChatSurface(page);
+      await bindVisualChatSessionToEndpoint(page, scenario.route, {
+        endpointId: 'ep_1',
+        model: 'gpt-4o',
+      });
+      await installVisualChatHarness(page, {
+        streamFailure: {
+          sessionId: VISUAL_CHAT_RUNTIME_SESSION_ID,
+          status: 429,
+          errorCode: 'UPSTREAM_RATE_LIMIT',
+          errorMessage: 'Selected model is at capacity. Please retry shortly.',
+        },
+      });
+    },
+    afterNavigate: async ({ page }) => {
+      await triggerVisualChatCapacityRecovery(page);
+    },
+  },
+  'chat-recovering-live-session': {
+    beforeNavigate: async ({ page }) => {
+      await prepareStableVisualChatSurface(page);
+      await installVisualChatHarness(page, {
+        stopEscalationMode: 'supported',
+        stallRecoveredStreamAttach: true,
+      });
+    },
+    afterNavigate: async ({ page }) => {
+      await waitForVisualChatRecovering(page);
+    },
+    screenshotOptions: {
+      maskTestIds: ['chat__execution-target-trigger'],
+      stabilizeAttempts: 4,
+      stabilizeDelayMs: 120,
+    },
+  },
+  'chat-stop-escalation-confirm': {
+    beforeNavigate: async ({ page }) => {
+      await prepareStableVisualChatSurface(page);
+      await installVisualExactTimeoutRewrite(page, {
+        [VISUAL_CHAT_ESCALATION_DELAY_MS]: 25,
+      });
+      await installVisualChatHarness(page, {
+        stopEscalationMode: 'supported',
+      });
+    },
+    afterNavigate: async ({ page }) => {
+      await clickVisualChatStopAndWait(page);
+      await expect(page.getByTestId('chat__stop-escalation-dialog')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('chat__stop-escalation-confirm')).toBeVisible();
+    },
+  },
+  'chat-stop-escalation-unavailable': {
+    beforeNavigate: async ({ page }) => {
+      await prepareStableVisualChatSurface(page);
+      await installVisualChatHarness(page, {
+        stopEscalationMode: 'unsupported',
+      });
+    },
+    afterNavigate: async ({ page }) => {
+      await clickVisualChatStopAndWait(page);
+      await expect(page.getByTestId('chat__stop-escalation-unavailable')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('chat__stop-escalation-dialog')).toHaveCount(0);
+    },
+    screenshotOptions: {
+      maskTestIds: ['chat__execution-target-trigger'],
+      stabilizeAttempts: 4,
+      stabilizeDelayMs: 120,
+    },
+  },
+  'chat-stop-requested': {
+    beforeNavigate: async ({ page }) => {
+      await prepareStableVisualChatSurface(page);
+      await installVisualChatHarness(page, {
+        stopEscalationMode: 'supported',
+      });
+    },
+    afterNavigate: async ({ page }) => {
+      await clickVisualChatStopAndWait(page);
+    },
+    screenshotOptions: {
+      maskTestIds: ['chat__execution-target-trigger'],
+      stabilizeAttempts: 4,
+      stabilizeDelayMs: 120,
+    },
+  },
+  'chat-streaming-active': {
+    beforeNavigate: async ({ page }) => {
+      await prepareStableVisualChatSurface(page);
+      await installVisualChatHarness(page, {
+        stopEscalationMode: 'supported',
+      });
+    },
+    afterNavigate: async ({ page }) => {
+      await waitForVisualChatStreaming(page);
+    },
+    screenshotOptions: {
+      maskTestIds: ['chat__execution-target-trigger'],
+      stabilizeAttempts: 4,
+      stabilizeDelayMs: 120,
     },
   },
   'chat-ultrawide': {
@@ -715,6 +1586,235 @@ const VISUAL_SCENE_SETUP_REGISTRY: Partial<Record<string, VisualScenarioSetup>> 
       await expect(page.getByTestId('notebook__task-list')).toBeVisible();
       await expect(page.getByTestId('notebook__task-card').first()).toBeVisible();
       await expect(page.getByTestId('notebook__create-task-btn')).toBeVisible();
+    },
+  },
+  'notebook-hidden-terminal-blocked': {
+    beforeNavigate: async ({ page, scenario }) => {
+      await createVisualNotebookTerminalSession(page, scenario.route, {
+        status: 'failed',
+      });
+      await seedVisualNotebookConversationHistory(page, scenario.route);
+    },
+    afterNavigate: async ({ page }) => {
+      await waitForNotebookTerminalTruthReady(page);
+      await expect(page.getByTestId('notebook__task-terminal-status-strip')).toBeVisible();
+      await expect(page.getByTestId('notebook__task-terminal-status-strip')).toContainText('terminal session');
+      await expect(page.getByTestId('notebook__task-terminal-status-action')).toHaveText('Reopen Terminal Workspace');
+      await expect(page.getByTestId('notebook__task-terminal-status-end-all')).toBeVisible();
+      await expect(page.getByTestId('notebook__conversation-blocked-state')).toHaveCount(0);
+      await expect(notebookConversationTextarea(page)).toHaveAttribute(
+        'placeholder',
+        'End terminal sessions before starting a new agent run.',
+      );
+    },
+  },
+  'notebook-cancel-escalation-confirm': {
+    beforeNavigate: async ({ page, scenario }) => {
+      await installVisualExactTimeoutRewrite(page, {
+        [VISUAL_NOTEBOOK_CANCEL_ESCALATION_DELAY_MS]: 25,
+      });
+      await seedVisualNotebookCancelEscalation(page, scenario.route);
+    },
+    afterNavigate: async ({ page }) => {
+      await expect(page.getByTestId('notebook__task-header')).toBeVisible();
+      await waitForNotebookTerminalTruthReady(page);
+      await expect(page.getByTestId('notebook__cancel-escalation-dialog')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('notebook__cancel-escalation-cancel')).toBeVisible();
+      await expect(page.getByTestId('notebook__cancel-escalation-confirm')).toBeVisible();
+    },
+  },
+  'notebook-sse-reconnecting': {
+    beforeNavigate: async ({ page, scenario }) => {
+      await seedVisualNotebookRunState(page, scenario.route, 'running');
+      await installVisualExactTimeoutRewrite(page, {
+        [VISUAL_NOTEBOOK_SSE_RECONNECT_DELAY_MS]: 60_000,
+      });
+      await installVisualNotebookEventSourceFailureHarness(page);
+    },
+    afterNavigate: async ({ page }) => {
+      await waitForVisualNotebookTaskSurface(page);
+      await expect(page.getByTestId('notebook__sse-status')).toContainText('Recovering live task stream', {
+        timeout: 15_000,
+      });
+    },
+  },
+  'notebook-sse-unavailable-reconcile': {
+    beforeNavigate: async ({ page, scenario }) => {
+      await seedVisualNotebookRunState(page, scenario.route, 'running');
+      await installVisualExactTimeoutRewrite(page, {
+        [VISUAL_NOTEBOOK_SSE_RECONNECT_DELAY_MS]: 10,
+      });
+      await installVisualNotebookEventSourceFailureHarness(page);
+    },
+    afterNavigate: async ({ page }) => {
+      await waitForVisualNotebookTaskSurface(page);
+      await expect(page.getByTestId('notebook__sse-status')).toContainText('Realtime task stream unavailable', {
+        timeout: 25_000,
+      });
+    },
+  },
+  'notebook-task-cancelling': {
+    beforeNavigate: async ({ page, scenario }) => {
+      await seedVisualNotebookRunState(page, scenario.route, 'cancelling');
+    },
+    afterNavigate: async ({ page }) => {
+      await waitForVisualNotebookTaskSurface(page);
+      await expect(page.getByTestId('notebook__run-activity-summary')).toContainText(
+        'Waiting for the agent to stop the current run.',
+      );
+      await expect(notebookConversationTextarea(page)).toHaveAttribute(
+        'placeholder',
+        'Wait for the current run to stop before sending another message.',
+      );
+    },
+  },
+  'notebook-task-finalizing': {
+    beforeNavigate: async ({ page, scenario }) => {
+      await seedVisualNotebookRunState(page, scenario.route, 'finalizing');
+    },
+    afterNavigate: async ({ page }) => {
+      await waitForVisualNotebookTaskSurface(page);
+      await expect(page.getByTestId('notebook__run-activity-summary')).toContainText(
+        'The run has ended. Saving the final answer and artifacts.',
+      );
+      await expect(notebookConversationTextarea(page)).toHaveAttribute(
+        'placeholder',
+        'Wait for the final results to finish saving before sending another message.',
+      );
+    },
+  },
+  'notebook-task-recovered-ready': {
+    beforeNavigate: async ({ page, scenario }) => {
+      await seedVisualNotebookRunState(page, scenario.route, 'idle');
+    },
+    afterNavigate: async ({ page }) => {
+      await waitForVisualNotebookTaskSurface(page);
+      await expect(page.getByTestId('notebook__run-activity-summary')).toHaveCount(0);
+      await expect(notebookConversationTextarea(page)).toBeEnabled();
+    },
+  },
+  'notebook-provider-upstream-error': {
+    beforeNavigate: async ({ page, scenario }) => {
+      const { taskId } = extractNotebookTaskRouteParts(scenario.route);
+      await seedVisualNotebookRunState(page, scenario.route, 'idle');
+      await installVisualNotebookMessagesOverride(page, scenario.route, [
+        {
+          id: 'msg_visual_provider_user',
+          task_id: taskId,
+          role: 'user',
+          content: 'Retry the same provider task once the upstream recovers.',
+          created_at: '2026-04-12T09:14:00.000Z',
+        },
+        {
+          id: 'msg_visual_provider_error',
+          task_id: taskId,
+          role: 'agent',
+          content: 'Provider returned an upstream error. Review the latest provider details, then retry from this same task when ready.',
+          created_at: '2026-04-12T09:14:06.000Z',
+        },
+      ]);
+      await installVisualNotebookTraceOverride(page, scenario.route, [
+        {
+          id: 'trace_visual_provider_001',
+          task_id: taskId,
+          message_id: 'msg_visual_provider_error',
+          run_id: 'run_visual_provider_error_001',
+          seq: 1,
+          at: '2026-04-12T09:14:01.000Z',
+          category: 'progress',
+          phase: 'start',
+          status: 'running',
+          name: 'codex.exec',
+          summary: 'Starting notebook execution',
+        },
+        {
+          id: 'trace_visual_provider_002',
+          task_id: taskId,
+          message_id: 'msg_visual_provider_error',
+          run_id: 'run_visual_provider_error_001',
+          seq: 2,
+          at: '2026-04-12T09:14:04.000Z',
+          category: 'error',
+          phase: 'end',
+          status: 'error',
+          name: 'provider.response',
+          summary: 'Provider returned an upstream error',
+          details: {
+            code: 'UPSTREAM_500',
+            provider: 'openai',
+          },
+        },
+        {
+          id: 'trace_visual_provider_003',
+          task_id: taskId,
+          message_id: 'msg_visual_provider_error',
+          run_id: 'run_visual_provider_error_001',
+          seq: 3,
+          at: '2026-04-12T09:14:05.000Z',
+          category: 'progress',
+          phase: 'end',
+          status: 'error',
+          name: 'run.summary',
+          summary: 'Notebook run failed',
+          details: {
+            final_status: 'error',
+            duration_ms: 4000,
+          },
+        },
+      ]);
+    },
+    afterNavigate: async ({ page }) => {
+      await waitForVisualNotebookTaskSurface(page);
+      await expect(page.getByTestId('notebook__agent-message-bubble')).toBeVisible();
+      await expect(page.getByTestId('notebook__message-run-status')).toContainText('Needs retry', {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('notebook__message-final-answer')).toContainText('upstream error');
+      await expect(page.getByTestId('notebook__send-btn')).toBeVisible();
+      await expect(notebookConversationTextarea(page)).toBeEnabled();
+    },
+  },
+  'notebook-task-running': {
+    beforeNavigate: async ({ page, scenario }) => {
+      await seedVisualNotebookRunState(page, scenario.route, 'running');
+    },
+    afterNavigate: async ({ page }) => {
+      await waitForVisualNotebookTaskSurface(page);
+      await expect(page.getByTestId('notebook__run-activity-summary')).toBeVisible();
+      await expect(page.getByTestId('notebook__run-active-cancel')).toBeVisible();
+      await expect(notebookConversationTextarea(page)).toBeEnabled();
+    },
+  },
+  'notebook-task-terminating': {
+    beforeNavigate: async ({ page, scenario }) => {
+      await seedVisualNotebookRunState(page, scenario.route, 'terminating');
+    },
+    afterNavigate: async ({ page }) => {
+      await waitForVisualNotebookTaskSurface(page);
+      await expect(page.getByTestId('notebook__run-activity-summary')).toContainText(
+        'Ending the current execution environment before the next action can start.',
+      );
+      await expect(notebookConversationTextarea(page)).toHaveAttribute(
+        'placeholder',
+        'Wait for the current execution environment to finish stopping before sending another message.',
+      );
+    },
+  },
+  'notebook-terminal-truth-unavailable': {
+    beforeNavigate: async ({ page, scenario }) => {
+      await seedVisualNotebookConversationHistory(page, scenario.route);
+      await seedVisualMswHeaders(page, {
+        'x-mock-terminal-truth': 'unavailable',
+      });
+    },
+    afterNavigate: async ({ page }) => {
+      await expect(page.getByTestId('notebook__task-header')).toHaveAttribute('data-terminal-truth-state', 'unavailable', {
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('notebook__task-terminal-truth-unavailable')).toBeVisible();
+      await expect(page.getByTestId('notebook__task-terminal-truth-unavailable-retry')).toHaveText('Retry terminal status check');
+      await expect(page.getByTestId('notebook__conversation-blocked-state')).toHaveCount(0);
+      await expect(notebookConversationTextarea(page)).toBeDisabled();
     },
   },
   'notification-center-join-request': {
@@ -1004,6 +2104,85 @@ async function writeRunBoundActualCapture(args: {
   writeFileSync(targetPath, args.actualCapture);
 }
 
+function parseScreenshotMaskColor(maskColor: string | undefined): [number, number, number, number] {
+  const normalized = (maskColor ?? '#FF00FF').trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
+    return [
+      Number.parseInt(normalized.slice(1, 3), 16),
+      Number.parseInt(normalized.slice(3, 5), 16),
+      Number.parseInt(normalized.slice(5, 7), 16),
+      255,
+    ];
+  }
+  if (/^#[0-9a-fA-F]{8}$/.test(normalized)) {
+    return [
+      Number.parseInt(normalized.slice(1, 3), 16),
+      Number.parseInt(normalized.slice(3, 5), 16),
+      Number.parseInt(normalized.slice(5, 7), 16),
+      Number.parseInt(normalized.slice(7, 9), 16),
+    ];
+  }
+  return [255, 0, 255, 255];
+}
+
+async function resolveScreenshotMaskBoxes(page: Page, testIds: string[] | undefined) {
+  if (!testIds || testIds.length === 0) {
+    return [];
+  }
+
+  const boxes = await Promise.all(testIds.map(async (testId) => {
+    const locator = page.getByTestId(testId);
+    const visible = await locator.first().isVisible().catch(() => false);
+    if (!visible) {
+      return null;
+    }
+    return locator.first().boundingBox().catch(() => null);
+  }));
+
+  return boxes
+    .filter((box): box is NonNullable<typeof box> => box !== null)
+    .map((box) => ({
+      x: Math.max(0, Math.floor(box.x)),
+      y: Math.max(0, Math.floor(box.y)),
+      width: Math.max(0, Math.ceil(box.width)),
+      height: Math.max(0, Math.ceil(box.height)),
+    }))
+    .filter((box) => box.width > 0 && box.height > 0);
+}
+
+async function applyScreenshotMaskBoxes(args: {
+  screenshot: Buffer;
+  maskBoxes: Array<{ x: number; y: number; width: number; height: number }>;
+  maskColor: string | undefined;
+}) {
+  if (args.maskBoxes.length === 0) {
+    return args.screenshot;
+  }
+
+  const pngCodec = await getScreenshotPngCodec();
+  const png = pngCodec.sync.read(args.screenshot);
+  const [red, green, blue, alpha] = parseScreenshotMaskColor(args.maskColor);
+
+  for (const box of args.maskBoxes) {
+    const left = Math.max(0, Math.min(png.width, box.x));
+    const top = Math.max(0, Math.min(png.height, box.y));
+    const right = Math.max(left, Math.min(png.width, box.x + box.width));
+    const bottom = Math.max(top, Math.min(png.height, box.y + box.height));
+
+    for (let y = top; y < bottom; y += 1) {
+      for (let x = left; x < right; x += 1) {
+        const index = (y * png.width + x) * 4;
+        png.data[index] = red;
+        png.data[index + 1] = green;
+        png.data[index + 2] = blue;
+        png.data[index + 3] = alpha;
+      }
+    }
+  }
+
+  return pngCodec.sync.write(png);
+}
+
 async function captureSnapshotBoundActualScreenshot(args: {
   page: Page;
   entry: VisualBaselineCatalogEntry;
@@ -1036,7 +2215,8 @@ async function captureSnapshotBoundActualScreenshot(args: {
   const expectedPath = testInfo.snapshotPath(args.entry.screenshot, { kind: 'screenshot' });
   const hasExpected = existsSync(expectedPath);
   const expected = hasExpected ? readFileSync(expectedPath) : undefined;
-  const actual = await args.page.screenshot({
+  const maskBoxes = await resolveScreenshotMaskBoxes(args.page, args.screenshotOptions.maskTestIds);
+  const capturePageScreenshot = () => args.page.screenshot({
     animations: configOptions.animations ?? 'disabled',
     caret: configOptions.caret ?? 'hide',
     fullPage: args.screenshotOptions.fullPage,
@@ -1044,6 +2224,7 @@ async function captureSnapshotBoundActualScreenshot(args: {
     omitBackground: configOptions.omitBackground,
     scale: configOptions.scale ?? 'css',
   });
+  const actual = await capturePageScreenshot();
 
   if (updateSnapshots === 'all' || updateSnapshots === 'changed') {
     mkdirSync(path.dirname(expectedPath), { recursive: true });
@@ -1061,17 +2242,37 @@ async function captureSnapshotBoundActualScreenshot(args: {
   }
 
   const screenshotComparator = await getScreenshotComparator();
-  const comparison = screenshotComparator(actual, expected, {
+  const maskedExpected = await applyScreenshotMaskBoxes({
+    screenshot: expected,
+    maskBoxes,
+    maskColor: configOptions.maskColor,
+  });
+  const compareScreenshots = async (candidate: Buffer) => screenshotComparator(await applyScreenshotMaskBoxes({
+    screenshot: candidate,
+    maskBoxes,
+    maskColor: configOptions.maskColor,
+  }), maskedExpected, {
     comparator: configOptions.comparator,
     maxDiffPixels: configOptions.maxDiffPixels,
     maxDiffPixelRatio: args.screenshotOptions.maxDiffPixelRatio ?? configOptions.maxDiffPixelRatio,
     threshold: configOptions.threshold,
   });
+  const stabilizeAttempts = Math.max(args.screenshotOptions.stabilizeAttempts ?? 1, 1);
+  const stabilizeDelayMs = Math.max(args.screenshotOptions.stabilizeDelayMs ?? 0, 0);
+  let comparison = await compareScreenshots(actual);
+  let failedActual = actual;
+  for (let attempt = 1; comparison && attempt < stabilizeAttempts; attempt += 1) {
+    if (stabilizeDelayMs > 0) {
+      await args.page.waitForTimeout(stabilizeDelayMs);
+    }
+    failedActual = await capturePageScreenshot();
+    comparison = await compareScreenshots(failedActual);
+  }
   if (comparison) {
     throw new Error(comparison.errorMessage);
   }
 
-  return actual;
+  return failedActual;
 }
 
 async function runVisualScenario(context: VisualScenarioContext) {

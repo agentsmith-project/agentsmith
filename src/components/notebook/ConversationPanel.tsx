@@ -70,6 +70,7 @@ export interface ConversationPanelProps {
     title: string;
     description: string;
     actionLabel?: string;
+    actionTestId?: string;
     onAction?: () => void;
     tone?: 'default' | 'critical';
   } | null;
@@ -253,6 +254,7 @@ export function ConversationPanel({
                   className="h-6 px-2 text-[11px]"
                   onClick={onCancelActiveRun}
                   disabled={runInputDisabled || runActivity.cancelling}
+                  data-testid="notebook__run-active-cancel"
                 >
                   {runActivity.cancelling ? t('run_cancel_submitting') : tCommon('cancel')}
                 </Button>
@@ -275,6 +277,7 @@ export function ConversationPanel({
                     size="sm"
                     className="h-8"
                     onClick={() => blockedState.onAction?.()}
+                    data-testid={blockedState.actionTestId}
                   >
                     {blockedState.actionLabel}
                   </Button>

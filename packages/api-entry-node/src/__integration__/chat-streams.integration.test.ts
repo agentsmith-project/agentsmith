@@ -34,7 +34,7 @@ describe('api-entry-node chat stream routes', () => {
   });
 
   it('supports chat stream via project endpoint and persists assistant reply', async () => {
-    const universalProxy = startUniversalProxyChatServer();
+    const universalProxy = await startUniversalProxyChatServer();
     process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
     const { endpointId, sessionId, userMessageId } = await createChatSession(
@@ -93,7 +93,7 @@ describe('api-entry-node chat stream routes', () => {
   });
 
   it('supports stopping an active stream by session id', async () => {
-    const universalProxy = startUniversalProxyChatServer();
+    const universalProxy = await startUniversalProxyChatServer();
     process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
     const { endpointId, sessionId, userMessageId } = await createChatSession(
@@ -147,7 +147,7 @@ describe('api-entry-node chat stream routes', () => {
   });
 
   it('reports cooperative cancel truth when direct-provider session terminate is unavailable', async () => {
-    const universalProxy = startUniversalProxyChatServer();
+    const universalProxy = await startUniversalProxyChatServer();
     process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
     const { endpointId, sessionId, userMessageId } = await createChatSession(
@@ -198,7 +198,7 @@ describe('api-entry-node chat stream routes', () => {
   });
 
   it('lists active stream ids by session for refresh recovery', async () => {
-    const universalProxy = startUniversalProxyChatServer();
+    const universalProxy = await startUniversalProxyChatServer();
     process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
     const { endpointId, sessionId, userMessageId } = await createChatSession(
@@ -250,7 +250,7 @@ describe('api-entry-node chat stream routes', () => {
   });
 
   it('returns empty active stream list after stream completion', async () => {
-    const universalProxy = startUniversalProxyChatServer();
+    const universalProxy = await startUniversalProxyChatServer();
     process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
     const { endpointId, sessionId, userMessageId } = await createChatSession(
@@ -289,7 +289,7 @@ describe('api-entry-node chat stream routes', () => {
   });
 
   it('rejects starting a second active stream for the same session', async () => {
-    const universalProxy = startUniversalProxyChatServer();
+    const universalProxy = await startUniversalProxyChatServer();
     process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
     const { endpointId, sessionId, userMessageId } = await createChatSession(

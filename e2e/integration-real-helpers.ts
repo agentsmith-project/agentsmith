@@ -1520,7 +1520,7 @@ export async function sendTaskMessage(args: {
   projectId: string;
   taskId: string;
   content: string;
-}): Promise<void> {
+}): Promise<{ assistantMessageId: string }> {
   const token = await readStoredAuthToken(args.page);
   const response = await args.page.request.post(
     `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`,
@@ -1536,6 +1536,12 @@ export async function sendTaskMessage(args: {
     },
   );
   expect(response.ok()).toBeTruthy();
+  const payload = (await response.json().catch(() => null)) as { id?: string } | null;
+  const assistantMessageId = payload?.id?.trim();
+  expect(assistantMessageId).toBeTruthy();
+  return {
+    assistantMessageId: assistantMessageId!,
+  };
 }
 
 export async function createTerminalSessionViaApi(args: {
@@ -1914,6 +1920,8 @@ type IntegrationTaskMessageSnapshot = {
 
 type IntegrationTaskTraceSnapshot = {
   id?: string;
+  message_id?: string;
+  run_id?: string;
   category?: string;
   phase?: string;
   status?: string;
@@ -1928,9 +1936,14 @@ type IntegrationTaskRealtimeSnapshot = {
   run_state?: string;
 };
 
-type WorkloadPodSnapshot = {
+export type WorkloadPodSnapshot = {
   name?: string | null;
+  uid?: string | null;
   phase?: string | null;
+  ready?: boolean | null;
+  readyReason?: string | null;
+  containerReadyCount?: number | null;
+  containerCount?: number | null;
   reason?: string | null;
   exitCode?: number | null;
 };
@@ -1957,9 +1970,16 @@ async function fetchTaskTracesSnapshot(args: {
   projectId: string;
   taskId: string;
   pageSize?: number;
+  messageId?: string;
+  runId?: string;
 }): Promise<IntegrationTaskTraceSnapshot[]> {
+  const query = [
+    `page_size=${args.pageSize ?? 100}`,
+    args.messageId?.trim() ? `message_id=${encodeURIComponent(args.messageId.trim())}` : null,
+    args.runId?.trim() ? `run_id=${encodeURIComponent(args.runId.trim())}` : null,
+  ].filter(Boolean).join('&');
   const response = await args.page.request.get(
-    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/traces?page_size=${args.pageSize ?? 100}`,
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/traces?${query}`,
     { headers: { Authorization: `Bearer ${args.authToken}` } },
   );
   if (!response.ok()) return [];
@@ -1982,6 +2002,52 @@ async function fetchTaskRealtimeSnapshot(args: {
   return (await response.json().catch(() => null)) as IntegrationTaskRealtimeSnapshot | null;
 }
 
+export function parseWorkloadPodSnapshot(payloadText: string): WorkloadPodSnapshot | null {
+  const payload = JSON.parse(payloadText || '{}') as {
+    items?: Array<{
+      metadata?: { name?: string; uid?: string };
+      status?: {
+        phase?: string;
+        reason?: string;
+        conditions?: Array<{ type?: string; status?: string; reason?: string }>;
+        containerStatuses?: Array<{
+          ready?: boolean;
+          state?: {
+            waiting?: { reason?: string };
+            terminated?: { exitCode?: number; reason?: string };
+          };
+        }>;
+      };
+    }>;
+  };
+  const item = payload.items?.[0];
+  if (!item) return null;
+  const containerStatuses = item.status?.containerStatuses ?? [];
+  const readyCondition =
+    item.status?.conditions?.find((condition) => condition.type === 'Ready') ?? null;
+  const waiting = containerStatuses.find((status) => status.state?.waiting)?.state?.waiting ?? null;
+  const terminated =
+    containerStatuses.find((status) => status.state?.terminated)?.state?.terminated ?? null;
+  const ready =
+    readyCondition != null
+      ? readyCondition.status === 'True'
+      : containerStatuses.length > 0
+        ? containerStatuses.every((status) => status.ready === true)
+        : null;
+
+  return {
+    name: item.metadata?.name ?? null,
+    uid: item.metadata?.uid ?? null,
+    phase: item.status?.phase ?? null,
+    ready,
+    readyReason: readyCondition?.reason ?? null,
+    containerReadyCount: containerStatuses.filter((status) => status.ready === true).length,
+    containerCount: containerStatuses.length,
+    reason: waiting?.reason ?? terminated?.reason ?? item.status?.reason ?? null,
+    exitCode: typeof terminated?.exitCode === 'number' ? terminated.exitCode : null,
+  };
+}
+
 async function fetchWorkloadPodSnapshot(args: {
   namespace: string;
   workloadId: string;
@@ -1992,25 +2058,7 @@ async function fetchWorkloadPodSnapshot(args: {
     { env: withoutProxyEnv(process.env) },
   );
   if (result.code !== 0) return null;
-  const payload = JSON.parse(result.stdout || '{}') as {
-    items?: Array<{
-      metadata?: { name?: string };
-      status?: {
-        phase?: string;
-        reason?: string;
-        containerStatuses?: Array<{ state?: { terminated?: { exitCode?: number; reason?: string } } }>;
-      };
-    }>;
-  };
-  const item = payload.items?.[0];
-  if (!item) return null;
-  const terminated = item.status?.containerStatuses?.[0]?.state?.terminated;
-  return {
-    name: item.metadata?.name ?? null,
-    phase: item.status?.phase ?? null,
-    reason: terminated?.reason ?? item.status?.reason ?? null,
-    exitCode: typeof terminated?.exitCode === 'number' ? terminated.exitCode : null,
-  };
+  return parseWorkloadPodSnapshot(result.stdout);
 }
 
 async function readArtifactText(artifactPath?: string): Promise<string | null> {
@@ -2020,6 +2068,28 @@ async function readArtifactText(artifactPath?: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+function scopeTaskMessagesToAssistantBoundary(
+  messages: IntegrationTaskMessageSnapshot[],
+  assistantMessageId?: string,
+): IntegrationTaskMessageSnapshot[] {
+  const scopedAssistantMessageId = assistantMessageId?.trim();
+  if (!scopedAssistantMessageId) {
+    return messages;
+  }
+  const assistantIndex = messages.findIndex((message) => message.id?.trim() === scopedAssistantMessageId);
+  if (assistantIndex < 0) {
+    return messages;
+  }
+  let startIndex = assistantIndex;
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === 'user') {
+      startIndex = index;
+      break;
+    }
+  }
+  return messages.slice(startIndex, assistantIndex + 1);
 }
 
 export async function requestTaskWorkspaceAccess(args: {
@@ -2099,6 +2169,8 @@ export async function collectInternalTaskFailureContext(args: {
   workspaceId: string;
   projectId: string;
   taskId: string;
+  assistantMessageId?: string;
+  runId?: string;
   namespace?: string;
   workloadId?: string;
   authToken?: string | null;
@@ -2106,20 +2178,38 @@ export async function collectInternalTaskFailureContext(args: {
   const authToken = args.authToken ?? (await readStoredAuthToken(args.page));
   const [messages, traces, task, pod] = await Promise.all([
     fetchTaskMessagesSnapshot({ ...args, authToken }),
-    fetchTaskTracesSnapshot({ ...args, authToken }),
+    fetchTaskTracesSnapshot({
+      ...args,
+      authToken,
+      messageId: args.assistantMessageId,
+      runId: args.runId,
+    }),
     fetchTaskRealtimeSnapshot({ ...args, authToken }),
     args.namespace && args.workloadId
       ? fetchWorkloadPodSnapshot({ namespace: args.namespace, workloadId: args.workloadId })
       : Promise.resolve(null),
   ]);
-  const messageSummary = summarizeNotebookMessages(messages);
+  const messageSummary = summarizeNotebookMessages(
+    scopeTaskMessagesToAssistantBoundary(messages, args.assistantMessageId),
+  );
   const traceSummary = summarizeNotebookTraces(traces);
+  const podSummary = summarizeNotebookPod(pod);
+  const podDetails = [
+    args.assistantMessageId ? `assistant_message_id=${args.assistantMessageId}` : null,
+    args.runId ? `run_id=${args.runId}` : null,
+    pod?.uid ? `uid=${pod.uid}` : null,
+    typeof pod?.ready === 'boolean' ? `ready=${pod.ready}` : null,
+    pod?.readyReason ? `ready_reason=${pod.readyReason}` : null,
+    typeof pod?.containerReadyCount === 'number' && typeof pod?.containerCount === 'number'
+      ? `containers_ready=${pod.containerReadyCount}/${pod.containerCount}`
+      : null,
+  ].filter(Boolean);
   const sections = [
     `task=${args.taskId}`,
     `run_state=${task?.run_state ?? '<unknown>'}`,
     `messages:\n${messageSummary.length > 0 ? messageSummary.join('\n') : '<none>'}`,
     `traces:\n${traceSummary.length > 0 ? traceSummary.join('\n') : '<none>'}`,
-    `pod=${summarizeNotebookPod(pod)}`,
+    `pod=${podDetails.length > 0 ? `${podSummary} ${podDetails.join(' ')}` : podSummary}`,
   ];
   return sections.join('\n\n');
 }
@@ -2130,11 +2220,14 @@ export async function waitForNotebookExecutionOutcome(args: {
   projectId: string;
   taskId: string;
   token: string;
+  assistantMessageId?: string;
+  runId?: string;
   artifactPath?: string;
   minAgentMessages?: number;
   namespace?: string;
   workloadId?: string;
   timeoutMs?: number;
+  startEvidenceTimeoutMs?: number;
 }): Promise<void> {
   const authToken = await readStoredAuthToken(args.page);
   const timeoutMs = args.timeoutMs ?? 300_000;
@@ -2145,7 +2238,12 @@ export async function waitForNotebookExecutionOutcome(args: {
   while (Date.now() - startedAt < timeoutMs) {
     const [messages, traces, task, artifactText, pod] = await Promise.all([
       fetchTaskMessagesSnapshot({ ...args, authToken }),
-      fetchTaskTracesSnapshot({ ...args, authToken }),
+      fetchTaskTracesSnapshot({
+        ...args,
+        authToken,
+        messageId: args.assistantMessageId,
+        runId: args.runId,
+      }),
       fetchTaskRealtimeSnapshot({ ...args, authToken }),
       readArtifactText(args.artifactPath),
       args.namespace && args.workloadId
@@ -2157,6 +2255,8 @@ export async function waitForNotebookExecutionOutcome(args: {
 
     const outcome = evaluateNotebookExecutionSnapshot({
       token: args.token,
+      assistantMessageId: args.assistantMessageId,
+      runId: args.runId,
       minAgentMessages: args.minAgentMessages,
       messages,
       traces,
@@ -2174,11 +2274,48 @@ export async function waitForNotebookExecutionOutcome(args: {
         workspaceId: args.workspaceId,
         projectId: args.projectId,
         taskId: args.taskId,
+        assistantMessageId: args.assistantMessageId,
+        runId: args.runId,
         namespace: args.namespace,
         workloadId: args.workloadId,
         authToken,
       });
       throw new Error(`notebook_execution_failed:${outcome.reason ?? 'unknown'}\n\n${context}`);
+    }
+
+    const executionTraceCount = traces.filter((trace) => trace.category !== 'debug').length;
+    const noExecutionSignals =
+      !outcome.messageHasToken &&
+      !(artifactText?.includes(args.token) === true) &&
+      executionTraceCount === 0;
+    const startEvidenceTimeoutMs = args.startEvidenceTimeoutMs ?? null;
+    if (
+      startEvidenceTimeoutMs != null &&
+      Date.now() - startedAt >= startEvidenceTimeoutMs &&
+      noExecutionSignals
+    ) {
+      const context = await collectInternalTaskFailureContext({
+        page: args.page,
+        workspaceId: args.workspaceId,
+        projectId: args.projectId,
+        taskId: args.taskId,
+        assistantMessageId: args.assistantMessageId,
+        runId: args.runId,
+        namespace: args.namespace,
+        workloadId: args.workloadId,
+        authToken,
+      });
+      const stallReason =
+        pod?.name == null
+          ? 'workload_pod_missing_without_execution_signal'
+          : pod.ready === false
+            ? 'workload_pod_not_ready_without_execution_signal'
+            : pod.ready === true
+              ? 'workload_pod_ready_without_execution_signal'
+              : 'workload_pod_present_without_execution_signal';
+      throw new Error(
+        `notebook_execution_stalled:${stallReason}:${startEvidenceTimeoutMs}ms\n\n${context}`,
+      );
     }
 
     const intervals = [1_000, 2_000, 5_000];
@@ -2192,6 +2329,8 @@ export async function waitForNotebookExecutionOutcome(args: {
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     taskId: args.taskId,
+    assistantMessageId: args.assistantMessageId,
+    runId: args.runId,
     namespace: args.namespace,
     workloadId: args.workloadId,
     authToken,
@@ -2433,6 +2572,56 @@ export async function waitForWorkloadPodIdentity(args: {
     )
     .not.toBeNull();
   return pod;
+}
+
+export async function waitForWorkloadPodReady(args: {
+  namespace: string;
+  workloadId: string;
+  timeoutMs?: number;
+}): Promise<WorkloadPodSnapshot & { name: string; uid: string; ready: true }> {
+  const timeoutMs = args.timeoutMs ?? 180_000;
+  const startedAt = Date.now();
+  let attempt = 0;
+  let latestPod: WorkloadPodSnapshot | null = null;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    latestPod = await fetchWorkloadPodSnapshot({
+      namespace: args.namespace,
+      workloadId: args.workloadId,
+    });
+    if (
+      latestPod?.name &&
+      latestPod.uid &&
+      latestPod.phase === 'Running' &&
+      latestPod.ready === true
+    ) {
+      return {
+        ...latestPod,
+        name: latestPod.name,
+        uid: latestPod.uid,
+        ready: true,
+      };
+    }
+
+    const intervals = [1_000, 2_000, 5_000];
+    const delay = intervals[Math.min(attempt, intervals.length - 1)] ?? 5_000;
+    attempt += 1;
+    await setTimeoutPromise(delay);
+  }
+
+  const podSummary = summarizeNotebookPod(latestPod);
+  const readinessSummary = [
+    latestPod?.uid ? `uid=${latestPod.uid}` : null,
+    typeof latestPod?.ready === 'boolean' ? `ready=${latestPod.ready}` : null,
+    latestPod?.readyReason ? `ready_reason=${latestPod.readyReason}` : null,
+    typeof latestPod?.containerReadyCount === 'number' &&
+    typeof latestPod?.containerCount === 'number'
+      ? `containers_ready=${latestPod.containerReadyCount}/${latestPod.containerCount}`
+      : null,
+  ].filter(Boolean);
+  const summary =
+    readinessSummary.length > 0 ? `${podSummary} ${readinessSummary.join(' ')}` : podSummary;
+  throw new Error(`workload_pod_ready_timeout:${args.workloadId}:${summary}`);
 }
 
 export async function waitForWorkloadPodDeleted(args: {

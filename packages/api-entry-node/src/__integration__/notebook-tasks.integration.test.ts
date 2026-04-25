@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import http, { type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
@@ -27,7 +26,12 @@ import type {
   ProjectGroupRecord,
   ProjectPermissionTemplateRecord,
 } from '../project-member-governance-types.js';
-import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './test-support.js';
+import {
+  apiFetch,
+  apiFetchWithToken,
+  startServerReady as startServer,
+  startServerWithDepsReady as startServerWithDeps,
+} from './test-support.js';
 
 const upstreamServers: Server[] = [];
 const sockets: WebSocket[] = [];
@@ -68,12 +72,12 @@ afterEach(async () => {
   upstreamServers.length = 0;
 });
 
-function startUpstreamServer(): {
+async function startUpstreamServer(): Promise<{
   server: Server;
   baseUrl: string;
   lastBody: () => unknown;
   lastPath: () => string;
-} {
+}> {
   let body: unknown = null;
   let path = '';
   const server = http.createServer((req, res) => {
@@ -90,18 +94,31 @@ function startUpstreamServer(): {
       res.end(JSON.stringify({ ok: true, echoed: body }));
     })();
   });
-  const raw = execFileSync('python3', ['-c', 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'], {
-    encoding: 'utf8',
-  }).trim();
-  const port = Number.parseInt(raw, 10);
-  if (!Number.isInteger(port) || port <= 0) {
-    throw new Error(`invalid_notebook_upstream_port:${raw}`);
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      server.off('error', onError);
+      server.off('listening', onListening);
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const onListening = () => {
+      cleanup();
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(0, '127.0.0.1');
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('invalid_notebook_upstream_port');
   }
-  server.listen(port, '127.0.0.1');
   upstreamServers.push(server);
   return {
     server,
-    baseUrl: `http://127.0.0.1:${port}/v1`,
+    baseUrl: `http://127.0.0.1:${address.port}/v1`,
     lastBody: () => body,
     lastPath: () => path,
   };
@@ -335,7 +352,7 @@ async function createActiveInternalTaskForTerminal(
 
 describe('api-entry-node notebook task routes', () => {
   it('isolates notebook tasks by owner for both external and internal agents', async () => {
-    const { baseUrl, deps } = startServer();
+    const { baseUrl, deps } = await startServer();
     const internalWorkspaceLibrary = await createFileLibrary(baseUrl, 'Internal Isolation Workspace');
     const externalWorkspaceLibrary = await createFileLibrary(baseUrl, 'External Isolation Workspace');
     const internalAgent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
@@ -463,7 +480,7 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('requires workspace file library when creating a notebook task without create-new mode', async () => {
-    const { baseUrl, deps } = startServer();
+    const { baseUrl, deps } = await startServer();
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
       mode: 'internal',
@@ -502,7 +519,7 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('auto-initializes a workspace file library when create-new mode is requested', async () => {
-    const { baseUrl, deps } = startServer();
+    const { baseUrl, deps } = await startServer();
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
       mode: 'internal',
@@ -542,7 +559,7 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('rejects creating notebook task for offline external agents', async () => {
-    const { baseUrl, deps } = startServer();
+    const { baseUrl, deps } = await startServer();
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Offline Agent Workspace');
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'offline-external-notebook-agent',
@@ -584,7 +601,7 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('returns task-bound workspace access for notebook task file libraries', async () => {
-    const { baseUrl, deps } = startServer();
+    const { baseUrl, deps } = await startServer();
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Workspace Access Library');
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
@@ -642,7 +659,7 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('allows scoped execution tickets for task workspace access and rejects mismatched scope', async () => {
-    const { baseUrl, deps } = startServer();
+    const { baseUrl, deps } = await startServer();
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
       mode: 'internal',
@@ -733,7 +750,7 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('returns task-bound workspace access for create_new notebook workspaces owned by the task creator', async () => {
-    const { baseUrl, deps } = startServer();
+    const { baseUrl, deps } = await startServer();
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'external-notebook-agent-create-new',
       mode: 'external',
@@ -794,7 +811,7 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('creates distinct workspace filesystems for different users even when create_new notebook task names match', async () => {
-    const { baseUrl, deps } = startServer();
+    const { baseUrl, deps } = await startServer();
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'external-notebook-agent-same-title',
       mode: 'external',
@@ -903,7 +920,7 @@ describe('api-entry-node notebook task routes', () => {
     const previousExternalExecutionBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
     process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://172.18.0.1:20000';
     try {
-      const { baseUrl, deps } = startServer();
+      const { baseUrl, deps } = await startServer();
       const workspaceLibrary = await createFileLibrary(baseUrl, 'External Runner Workspace Access Library');
       const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
         name: 'external-notebook-agent',
@@ -966,7 +983,7 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('rejects creating a second active task against an occupied workspace file library', async () => {
-    const { baseUrl, deps } = startServer();
+    const { baseUrl, deps } = await startServer();
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Occupied Workspace');
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
@@ -1023,7 +1040,7 @@ describe('api-entry-node notebook task routes', () => {
 
   it('keeps task workspace access available after api restart', async () => {
     const deps = createDefaultNodeApiDeps();
-    const firstServer = startServerWithDeps(deps);
+    const firstServer = await startServerWithDeps(deps);
     const workspaceLibrary = await createFileLibrary(firstServer.baseUrl, 'Restart Task Workspace');
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'restartable-internal-notebook-agent',
@@ -1063,7 +1080,7 @@ describe('api-entry-node notebook task routes', () => {
     firstServer.server.closeIdleConnections?.();
     await new Promise<void>((resolve) => firstServer.server.close(() => resolve()));
 
-    const secondServer = startServerWithDeps(deps);
+    const secondServer = await startServerWithDeps(deps);
     const workspaceAccessRes = await apiFetch(
       secondServer.baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/workspace-access`,
@@ -1080,7 +1097,7 @@ describe('api-entry-node notebook task routes', () => {
 
   it('keeps notebook run_state visible after restart and stores shared stop intent in the run control record', async () => {
     const deps = createDefaultNodeApiDeps();
-    const firstServer = startServerWithDeps(deps);
+    const firstServer = await startServerWithDeps(deps);
     const workspaceLibrary = await createFileLibrary(firstServer.baseUrl, 'Restart Run Coordination Library');
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'restartable-run-coordination-agent',
@@ -1127,7 +1144,7 @@ describe('api-entry-node notebook task routes', () => {
     firstServer.server.closeIdleConnections?.();
     await new Promise<void>((resolve) => firstServer.server.close(() => resolve()));
 
-    const secondServer = startServerWithDeps(deps);
+    const secondServer = await startServerWithDeps(deps);
     const listRes = await apiFetch(
       secondServer.baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
@@ -1170,7 +1187,7 @@ describe('api-entry-node notebook task routes', () => {
     deps.internalWorkloadCoordinator = {
       requestHardTeardown,
     } as never;
-    const { baseUrl } = startServerWithDeps(deps);
+    const { baseUrl } = await startServerWithDeps(deps);
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Stale Internal Run Coordination Workspace');
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'stale-internal-run-agent',
@@ -1272,7 +1289,7 @@ describe('api-entry-node notebook task routes', () => {
 
   it('rejects unsupported external terminate without mutating shared run truth', async () => {
     const deps = createDefaultNodeApiDeps();
-    const { baseUrl } = startServerWithDeps(deps);
+    const { baseUrl } = await startServerWithDeps(deps);
     const workspaceLibrary = await createFileLibrary(baseUrl, 'External Terminate Unavailable Workspace');
     const { agentId } = await createExternalNotebookExecutionAgent(deps, 'external-terminate-unavailable-agent');
     const task = await createNotebookTaskForAgent(baseUrl, {
@@ -1335,7 +1352,7 @@ describe('api-entry-node notebook task routes', () => {
 
   it('rejects stale external run ownership instead of returning happy cancelling', async () => {
     const deps = createDefaultNodeApiDeps();
-    const { baseUrl } = startServerWithDeps(deps);
+    const { baseUrl } = await startServerWithDeps(deps);
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Stale External Run Coordination Workspace');
     const { agentId } = await createExternalNotebookExecutionAgent(deps, 'stale-external-run-agent');
     const task = await createNotebookTaskForAgent(baseUrl, {
@@ -1382,7 +1399,7 @@ describe('api-entry-node notebook task routes', () => {
 
   it('rejects starting a second notebook run when a shared active run already exists', async () => {
     const deps = createDefaultNodeApiDeps();
-    const { baseUrl } = startServerWithDeps(deps);
+    const { baseUrl } = await startServerWithDeps(deps);
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Shared Conflict Library');
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'shared-conflict-agent',
@@ -1470,7 +1487,7 @@ describe('api-entry-node notebook task routes', () => {
     };
 
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
       const workspaceLibrary = await createFileLibrary(baseUrl, 'Pre-dispatch Cleanup Workspace');
       const { agentId } = await createExternalNotebookExecutionAgent(deps, 'pre-dispatch-cleanup-agent');
@@ -1544,7 +1561,7 @@ describe('api-entry-node notebook task routes', () => {
     };
 
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
       const workspaceLibrary = await createFileLibrary(baseUrl, 'Cancel Before Dispatch Workspace');
       const { agentId } = await createExternalNotebookExecutionAgent(deps, 'cancel-before-dispatch-agent');
@@ -1644,7 +1661,7 @@ describe('api-entry-node notebook task routes', () => {
     };
 
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
       const workspaceLibrary = await createFileLibrary(baseUrl, 'Shared Marker Before Dispatch Workspace');
       const { agentId } = await createExternalNotebookExecutionAgent(deps, 'shared-marker-before-dispatch-agent');
@@ -1858,7 +1875,7 @@ describe('api-entry-node notebook task routes', () => {
     });
 
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
       const workspaceLibrary = await createFileLibrary(baseUrl, 'Internal Pre-dispatch Recovery Workspace');
       const task = await createNotebookTaskForAgent(baseUrl, {
@@ -1975,7 +1992,7 @@ describe('api-entry-node notebook task routes', () => {
     });
 
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
       const workspaceLibrary = await createFileLibrary(baseUrl, 'Slow Audit Coordination Workspace');
       const { agentId } = await createExternalNotebookExecutionAgent(deps, 'slow-audit-coordination-agent');
@@ -2053,7 +2070,7 @@ describe('api-entry-node notebook task routes', () => {
     });
 
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
       const workspaceLibrary = await createFileLibrary(baseUrl, 'Delete Busy Workspace');
       const { agentId } = await createExternalNotebookExecutionAgent(deps, 'delete-busy-agent');
@@ -2118,10 +2135,10 @@ describe('api-entry-node notebook task routes', () => {
   it('runs notebook task message through external execution service and enforces single active run per task', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     try {
-    const { baseUrl } = startServer();
-    process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
-    const upstream = startUpstreamServer();
-    const workspaceLibrary = await createFileLibrary(baseUrl);
+      const { baseUrl } = await startServer();
+      process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
+      const upstream = await startUpstreamServer();
+      const workspaceLibrary = await createFileLibrary(baseUrl);
 
     const createCredentialRes = await apiFetch(
       baseUrl,
@@ -2577,7 +2594,7 @@ describe('api-entry-node notebook task routes', () => {
   it('synthesizes terminal trace and closes task when notebook execution dispatch fails', async () => {
     const previousPublicApiBase = process.env.PUBLIC_API_BASE_URL;
     try {
-      const { baseUrl } = startServer();
+      const { baseUrl } = await startServer();
       process.env.PUBLIC_API_BASE_URL = baseUrl;
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Offline Execution Workspace');
 
@@ -2752,7 +2769,7 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('exposes authenticated notebook task metrics snapshot', async () => {
-    const { baseUrl } = startServer();
+    const { baseUrl } = await startServer();
 
     const metricsRes = await apiFetch(baseUrl, '/api/v1/internal/notebook-task-metrics');
     expect(metricsRes.status).toBe(200);
@@ -2780,7 +2797,7 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('exposes authenticated notebook task metrics in prometheus text format', async () => {
-    const { baseUrl } = startServer();
+    const { baseUrl } = await startServer();
 
     const metricsRes = await apiFetch(baseUrl, '/api/v1/internal/notebook-task-metrics/prometheus');
     expect(metricsRes.status).toBe(200);
@@ -2791,7 +2808,7 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('records task trace query metrics for message-scoped requests', async () => {
-    const { baseUrl, deps } = startServer();
+    const { baseUrl, deps } = await startServer();
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Trace Metrics Workspace');
 
     const createCredentialRes = await apiFetch(
@@ -2930,7 +2947,7 @@ describe('api-entry-node notebook task routes', () => {
       last_pong_at: new Date().toISOString(),
     });
 
-    const { baseUrl } = startServerWithDeps(deps);
+    const { baseUrl } = await startServerWithDeps(deps);
     process.env.PUBLIC_API_BASE_URL = baseUrl;
     const workspaceLibrary = await createFileLibrary(baseUrl, 'External Terminal Workspace');
     const createTaskRes = await apiFetchWithToken(
@@ -3048,7 +3065,7 @@ describe('api-entry-node notebook task routes', () => {
       },
     });
 
-    const { baseUrl } = startServerWithDeps(deps);
+    const { baseUrl } = await startServerWithDeps(deps);
     process.env.PUBLIC_API_BASE_URL = `${baseUrl}/api/v1`;
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Internal Terminal Workspace');
     const createTaskRes = await apiFetchWithToken(
@@ -3110,7 +3127,7 @@ describe('api-entry-node notebook task routes', () => {
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
     deps.agentExecutionService.getAgentOnlineState = () => true;
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
       const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'List and delete terminals');
 
@@ -3192,7 +3209,7 @@ describe('api-entry-node notebook task routes', () => {
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
     deps.agentExecutionService.getAgentOnlineState = () => true;
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
       const project = await deps.createProjectUseCase.execute({
         workspaceId: 'ws_default',
@@ -3342,7 +3359,7 @@ describe('api-entry-node notebook task routes', () => {
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
     deps.agentExecutionService.getAgentOnlineState = () => true;
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
       const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Terminal blocks notebook run');
 
@@ -3396,7 +3413,7 @@ describe('api-entry-node notebook task routes', () => {
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
     deps.agentExecutionService.getAgentOnlineState = () => true;
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
       const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Delete after ending terminals');
 
@@ -3468,7 +3485,7 @@ describe('api-entry-node notebook task routes', () => {
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
     deps.agentExecutionService.getAgentOnlineState = () => true;
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
       const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Last terminal session releases task');
 
@@ -3559,7 +3576,7 @@ describe('api-entry-node notebook task routes', () => {
       { startupTimeoutMs: 50 },
     );
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
       const { taskId, agentId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Terminal start timeout');
       const agent = await deps.agentResourceService.getAgent('ws_default', 'proj_1', agentId);
@@ -3650,7 +3667,7 @@ describe('api-entry-node notebook task routes', () => {
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
     deps.agentExecutionService.getAgentOnlineState = () => true;
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
       const { taskId } = await createActiveExternalTaskForTerminal(deps, baseUrl, 'Terminal session cap');
 
@@ -3695,7 +3712,7 @@ describe('api-entry-node notebook task routes', () => {
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
     deps.agentExecutionService.getAgentOnlineState = () => true;
     try {
-      const { baseUrl } = startServerWithDeps(deps);
+      const { baseUrl } = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = baseUrl;
       const { taskId } = await createActiveExternalTaskForTerminal(
         deps,
@@ -3742,7 +3759,7 @@ describe('api-entry-node notebook task routes', () => {
     const deps = createDefaultNodeApiDeps();
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
     deps.agentExecutionService.getAgentOnlineState = () => true;
-    const firstServer = startServerWithDeps(deps);
+    const firstServer = await startServerWithDeps(deps);
     try {
       process.env.PUBLIC_API_BASE_URL = firstServer.baseUrl;
       const { taskId } = await createActiveExternalTaskForTerminal(deps, firstServer.baseUrl, 'Terminal identity survives reload');
@@ -3772,7 +3789,7 @@ describe('api-entry-node notebook task routes', () => {
         deps.cache,
         deps.agentExecutionService,
       );
-      const secondServer = startServerWithDeps(deps);
+      const secondServer = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = secondServer.baseUrl;
 
       const listAfterReload = await apiFetchWithToken(
@@ -3876,7 +3893,7 @@ describe('api-entry-node notebook task routes', () => {
         },
       })),
     } as never;
-    const firstServer = startServerWithDeps(deps);
+    const firstServer = await startServerWithDeps(deps);
 
     try {
       process.env.PUBLIC_API_BASE_URL = `${firstServer.baseUrl}/api/v1`;
@@ -3906,7 +3923,7 @@ describe('api-entry-node notebook task routes', () => {
         deps.cache,
         deps.agentExecutionService,
       );
-      const secondServer = startServerWithDeps(deps);
+      const secondServer = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = `${secondServer.baseUrl}/api/v1`;
 
       const listAfterReload = await apiFetchWithToken(
@@ -3955,7 +3972,7 @@ describe('api-entry-node notebook task routes', () => {
     const deps = createDefaultNodeApiDeps();
     deps.agentExecutionService.getAgentSessionOnlineState = () => true;
     deps.agentExecutionService.getAgentOnlineState = () => true;
-    const firstServer = startServerWithDeps(deps);
+    const firstServer = await startServerWithDeps(deps);
     try {
       process.env.PUBLIC_API_BASE_URL = firstServer.baseUrl;
       const ownerTask = await createActiveExternalTaskForTerminal(
@@ -3990,7 +4007,7 @@ describe('api-entry-node notebook task routes', () => {
         deps.cache,
         deps.agentExecutionService,
       );
-      const secondServer = startServerWithDeps(deps);
+      const secondServer = await startServerWithDeps(deps);
       process.env.PUBLIC_API_BASE_URL = secondServer.baseUrl;
 
       const sessionCacheKey = `notebook_terminal_session:${created.session_id}`;
@@ -4052,7 +4069,7 @@ describe('api-entry-node notebook task routes', () => {
       deps.agentExecutionService,
       { startupTimeoutMs: 50 },
     );
-    const firstServer = startServerWithDeps(deps);
+    const firstServer = await startServerWithDeps(deps);
     try {
       process.env.PUBLIC_API_BASE_URL = firstServer.baseUrl;
       const { taskId, agentId } = await createActiveExternalTaskForTerminal(deps, firstServer.baseUrl, 'Reloaded failed terminal cleanup');

@@ -62,6 +62,7 @@ interface InternalAgentPodManagerOptions {
   startupTimeoutMs?: number;
   phasePollIntervalMs?: number;
   onlinePollIntervalMs?: number;
+  sessionReadinessTimeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -210,6 +211,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
   private readonly startupTimeoutMs: number;
   private readonly phasePollIntervalMs: number;
   private readonly onlinePollIntervalMs: number;
+  private readonly sessionReadinessTimeoutMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(
@@ -221,6 +223,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     this.startupTimeoutMs = Math.max(10_000, options?.startupTimeoutMs ?? 300_000);
     this.phasePollIntervalMs = Math.max(200, options?.phasePollIntervalMs ?? 2_000);
     this.onlinePollIntervalMs = Math.max(100, options?.onlinePollIntervalMs ?? 500);
+    this.sessionReadinessTimeoutMs = Math.max(1, options?.sessionReadinessTimeoutMs ?? 75_000);
     this.sleep = options?.sleep ?? defaultSleep;
   }
 
@@ -402,6 +405,10 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     throw Object.assign(new Error('sandbox_startup_timeout'), { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' });
   }
 
+  private buildSessionReadinessDeadline(deadline: number): number {
+    return Math.min(deadline, Date.now() + this.sessionReadinessTimeoutMs);
+  }
+
   private getOnlineState(agentId: string, sessionId?: string): boolean {
     if (sessionId && typeof this.agentExecution.getAgentSessionOnlineState === 'function') {
       return this.agentExecution.getAgentSessionOnlineState(agentId, sessionId);
@@ -458,6 +465,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       throwIfAborted(signal);
+      this.checkDeadline(deadline);
       if (isTerminalPodPhase(status.phase)) {
         await this.runAbortableSandboxRpc(
           (rpcSignal) => this.sandboxClient.deletePod(workspaceId, projectId, workloadId, rpcSignal).catch(() => undefined),
@@ -503,24 +511,46 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         throwIfAborted(signal);
       }
 
-      if (!isTerminalPodPhase(status.phase)) {
-        break;
+      if (status.phase !== 'Running') {
+        await this.waitForPhase(workspaceId, projectId, workloadId, 'Running', deadline, signal);
+        status = { phase: 'Running' };
+      }
+
+      throwIfAborted(signal);
+      this.checkDeadline(deadline);
+      if (!sessionId) {
+        await this.waitForAgentOnline(agent.id, deadline, signal);
+        return;
+      }
+
+      const sessionReadinessDeadline = this.buildSessionReadinessDeadline(deadline);
+      try {
+        await this.waitForAgentSessionOnline(agent.id, sessionId, sessionReadinessDeadline, signal);
+        return;
+      } catch (error) {
+        throwIfAborted(signal);
+        const code = error && typeof error === 'object' && 'code' in error
+          ? (error as { code?: unknown }).code
+          : undefined;
+        if (code === 'AGENT_SANDBOX_REMOTE_OWNED') {
+          throw error;
+        }
+        if (code !== 'AGENT_SANDBOX_STARTUP_TIMEOUT') {
+          throw error;
+        }
+        if (sessionReadinessDeadline >= deadline || attempt >= 2) {
+          throw error;
+        }
+        await this.runAbortableSandboxRpc(
+          (rpcSignal) => this.sandboxClient.deletePod(workspaceId, projectId, workloadId, rpcSignal),
+          signal,
+        );
+        throwIfAborted(signal);
+        status = { phase: 'offline' };
       }
     }
 
-    throwIfAborted(signal);
-    this.checkDeadline(deadline);
-    if (status.phase !== 'Running') {
-      await this.waitForPhase(workspaceId, projectId, workloadId, 'Running', deadline, signal);
-    }
-
-    throwIfAborted(signal);
-    this.checkDeadline(deadline);
-    if (sessionId) {
-      await this.waitForAgentSessionOnline(agent.id, sessionId, deadline, signal);
-    } else {
-      await this.waitForAgentOnline(agent.id, deadline, signal);
-    }
+    throw Object.assign(new Error('sandbox_startup_timeout'), { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' });
   }
 
   private async isReadyForSession(agentId: string, sessionId?: string): Promise<boolean> {

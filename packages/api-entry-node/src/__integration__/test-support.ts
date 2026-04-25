@@ -42,6 +42,67 @@ function allocateTestPort(): number {
   return port;
 }
 
+async function listenLoopbackServer(server: Server): Promise<number> {
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      server.off('error', onError);
+      server.off('listening', onListening);
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const onListening = () => {
+      cleanup();
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(0, '127.0.0.1');
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('test_server_address_unavailable');
+  }
+  return address.port;
+}
+
+function resolveListeningPort(server: Server): number | null {
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    return null;
+  }
+  return address.port;
+}
+
+async function waitForServerListeningPort(server: Server): Promise<number> {
+  const existingPort = resolveListeningPort(server);
+  if (server.listening && existingPort) {
+    return existingPort;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      server.off('error', onError);
+      server.off('listening', onListening);
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const onListening = () => {
+      cleanup();
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+  });
+  const port = resolveListeningPort(server);
+  if (!port) {
+    throw new Error('test_server_address_unavailable');
+  }
+  return port;
+}
+
 const testUsers = {
   'test-token': {
     sub: 'user_test',
@@ -175,8 +236,8 @@ function applyMockKeycloakEnv(baseUrl: string, issuerUrl: string): void {
   process.env.KEYCLOAK_URL = `${baseUrl}/realms`;
 }
 
-export function startMockKeycloakServer(): { server: Server; issuerUrl: string; baseUrl: string } {
-  const server = http.createServer((req, res) => {
+function createMockKeycloakServer(): Server {
+  return http.createServer((req, res) => {
     const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
     const directoryUsers = [
       {
@@ -242,6 +303,42 @@ export function startMockKeycloakServer(): { server: Server; issuerUrl: string; 
     res.statusCode = 404;
     res.end(JSON.stringify({ error: 'not_found' }));
   });
+}
+
+function seedDefaultSystemWorkspace(issuerUrl: string): void {
+  seedPersistedSystemWorkspacesForTest([
+    {
+      id: 'ws_default',
+      name: 'Default Workspace',
+      workspace_admin: 'owner@example.com',
+      workspace_admin_user_id: 'user_owner',
+      workspace_admin_name: 'Owner User',
+      project_creators: [{ user_id: 'user_test', email: 'test@example.com', name: 'Test User' }],
+      idp: {
+        kind: 'keycloak',
+        url: issuerUrl,
+        realm: 'mbos',
+        client_id: 'agentsmith-web',
+      },
+      tenant: {
+        workspace_id: 'ws_default',
+        workspace_name: 'Default Workspace',
+        substrate_label: 'default',
+        database_name: 'agentsmith_ws_default',
+        collection_prefix: 'ws_default_',
+        key_prefix: 'ws_default:',
+      },
+      provisioning_status: 'ready',
+      last_initialized_at: null,
+      last_init_error: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ]);
+}
+
+export function startMockKeycloakServer(): { server: Server; issuerUrl: string; baseUrl: string } {
+  const server = createMockKeycloakServer();
   const port = allocateTestPort();
   server.listen(port, '127.0.0.1');
   servers.push(server);
@@ -252,37 +349,20 @@ export function startMockKeycloakServer(): { server: Server; issuerUrl: string; 
   return { server, issuerUrl, baseUrl };
 }
 
+export async function startMockKeycloakServerReady(): Promise<{ server: Server; issuerUrl: string; baseUrl: string }> {
+  const server = createMockKeycloakServer();
+  const port = await listenLoopbackServer(server);
+  servers.push(server);
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const issuerUrl = `${baseUrl}/realms/mbos`;
+  currentMockIssuer = issuerUrl;
+  applyMockKeycloakEnv(baseUrl, issuerUrl);
+  return { server, issuerUrl, baseUrl };
+}
+
 export function startServer(): { server: Server; baseUrl: string; deps: ReturnType<typeof createDefaultNodeApiDeps> } {
   const keycloak = startMockKeycloakServer();
-  seedPersistedSystemWorkspacesForTest([
-    {
-      id: 'ws_default',
-      name: 'Default Workspace',
-      workspace_admin: 'owner@example.com',
-      workspace_admin_user_id: 'user_owner',
-      workspace_admin_name: 'Owner User',
-      project_creators: [{ user_id: 'user_test', email: 'test@example.com', name: 'Test User' }],
-      idp: {
-        kind: 'keycloak',
-        url: keycloak.issuerUrl,
-        realm: 'mbos',
-        client_id: 'agentsmith-web',
-      },
-      tenant: {
-        workspace_id: 'ws_default',
-        workspace_name: 'Default Workspace',
-        substrate_label: 'default',
-        database_name: 'agentsmith_ws_default',
-        collection_prefix: 'ws_default_',
-        key_prefix: 'ws_default:',
-      },
-      provisioning_status: 'ready',
-      last_initialized_at: null,
-      last_init_error: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ]);
+  seedDefaultSystemWorkspace(keycloak.issuerUrl);
   const deps = createDefaultNodeApiDeps();
   const port = allocateTestPort();
   const server = createNodeApiServer(port, deps, undefined, '127.0.0.1');
@@ -292,37 +372,36 @@ export function startServer(): { server: Server; baseUrl: string; deps: ReturnTy
 
 export function startServerWithDeps(deps: ReturnType<typeof createDefaultNodeApiDeps>): { server: Server; baseUrl: string } {
   const keycloak = startMockKeycloakServer();
-  seedPersistedSystemWorkspacesForTest([
-    {
-      id: 'ws_default',
-      name: 'Default Workspace',
-      workspace_admin: 'owner@example.com',
-      workspace_admin_user_id: 'user_owner',
-      workspace_admin_name: 'Owner User',
-      project_creators: [{ user_id: 'user_test', email: 'test@example.com', name: 'Test User' }],
-      idp: {
-        kind: 'keycloak',
-        url: keycloak.issuerUrl,
-        realm: 'mbos',
-        client_id: 'agentsmith-web',
-      },
-      tenant: {
-        workspace_id: 'ws_default',
-        workspace_name: 'Default Workspace',
-        substrate_label: 'default',
-        database_name: 'agentsmith_ws_default',
-        collection_prefix: 'ws_default_',
-        key_prefix: 'ws_default:',
-      },
-      provisioning_status: 'ready',
-      last_initialized_at: null,
-      last_init_error: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ]);
+  seedDefaultSystemWorkspace(keycloak.issuerUrl);
   const port = allocateTestPort();
   const server = createNodeApiServer(port, deps, undefined, '127.0.0.1');
+  servers.push(server);
+  return { server, baseUrl: `http://127.0.0.1:${port}` };
+}
+
+// Reload-sensitive integration tests should prefer the ready helpers so the
+// returned baseUrl always belongs to a fully bound listener.
+export async function startServerReady(): Promise<{
+  server: Server;
+  baseUrl: string;
+  deps: ReturnType<typeof createDefaultNodeApiDeps>;
+}> {
+  const keycloak = await startMockKeycloakServerReady();
+  seedDefaultSystemWorkspace(keycloak.issuerUrl);
+  const deps = createDefaultNodeApiDeps();
+  const server = createNodeApiServer(0, deps, undefined, '127.0.0.1');
+  const port = await waitForServerListeningPort(server);
+  servers.push(server);
+  return { server, baseUrl: `http://127.0.0.1:${port}`, deps };
+}
+
+export async function startServerWithDepsReady(
+  deps: ReturnType<typeof createDefaultNodeApiDeps>,
+): Promise<{ server: Server; baseUrl: string }> {
+  const keycloak = await startMockKeycloakServerReady();
+  seedDefaultSystemWorkspace(keycloak.issuerUrl);
+  const server = createNodeApiServer(0, deps, undefined, '127.0.0.1');
+  const port = await waitForServerListeningPort(server);
   servers.push(server);
   return { server, baseUrl: `http://127.0.0.1:${port}` };
 }

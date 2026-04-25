@@ -5,6 +5,7 @@ import { Copy, Pencil, RotateCcw, ChevronLeft, ChevronRight, Check, X } from 'lu
 import { useTranslations } from 'next-intl';
 
 import type { Attachment, ChatMessage } from '@/lib/api/types';
+import { getReferenceNow } from '@/lib/reference-now';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
@@ -77,10 +78,10 @@ export const MessageItem = React.memo(function MessageItem({
     if (!isEditing) setShowDiff(false);
   }, [isEditing, message.content]);
 
-  const [nowTick, setNowTick] = React.useState(Date.now());
+  const [nowTick, setNowTick] = React.useState(() => getReferenceNow().getTime());
   React.useEffect(() => {
     if (!streamingMeta) return;
-    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
+    const id = window.setInterval(() => setNowTick(getReferenceNow().getTime()), 1000);
     return () => window.clearInterval(id);
   }, [streamingMeta]);
 

@@ -7,6 +7,7 @@ import {
   createProjectInWorkspace,
   keycloakLoginToWorkspace,
 } from './integration-real-helpers';
+import { readStoredAuthToken } from './integration-workspace-access';
 import { buildTraceStoryBinding } from './story-trace-binding';
 import { loadStoryDefinitionSync } from './story-loader';
 import { createUxTraceBundleWriter } from './trace-bundle-support';
@@ -22,6 +23,11 @@ type FilesCrudRuntime = {
   uploadFileName: string;
   uploadContent: string;
   renamedFileName: string;
+};
+
+type ContentDispositionFilename = {
+  source: 'filename' | 'filename_star';
+  value: string;
 };
 
 function requireWorkspaceId(): string {
@@ -56,6 +62,48 @@ function requireFilesCrudRuntime(): FilesCrudRuntime {
   return webCrud as unknown as FilesCrudRuntime;
 }
 
+function stripContentDispositionQuotes(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1).replace(/\\"/g, '"');
+  }
+  return trimmed;
+}
+
+function extractFilenameFromContentDisposition(header: string | null | undefined): ContentDispositionFilename | null {
+  if (typeof header !== 'string' || header.trim().length === 0) {
+    return null;
+  }
+
+  const filenameStarMatch = header.match(/(?:^|;)\s*filename\*\s*=\s*([^;]+)/i);
+  if (filenameStarMatch) {
+    const encodedValue = stripContentDispositionQuotes(filenameStarMatch[1]);
+    const rfc5987Match = encodedValue.match(/^([^']*)'[^']*'(.*)$/);
+    const encodedFilename = rfc5987Match ? rfc5987Match[2] : encodedValue;
+    try {
+      return {
+        source: 'filename_star',
+        value: decodeURIComponent(encodedFilename),
+      };
+    } catch {
+      return {
+        source: 'filename_star',
+        value: encodedFilename,
+      };
+    }
+  }
+
+  const filenameMatch = header.match(/(?:^|;)\s*filename\s*=\s*("(?:[^"\\]|\\.)*"|[^;]+)/i);
+  if (!filenameMatch) {
+    return null;
+  }
+
+  return {
+    source: 'filename',
+    value: stripContentDispositionQuotes(filenameMatch[1]),
+  };
+}
+
 async function dismissOpenFilesDialogs(page: Page) {
   const libraryDeleteConfirm = page.getByTestId('files__library-delete__confirm');
   if (await libraryDeleteConfirm.isVisible().catch(() => false)) {
@@ -76,6 +124,10 @@ test.describe('@lane-real files integration flow', () => {
     const multiSelectModifier: 'Control' | 'Meta' = process.platform === 'darwin' ? 'Meta' : 'Control';
     const runtime = requireFilesCrudRuntime();
     const workspaceId = requireWorkspaceId();
+    const unicodeToken = Date.now();
+    const unicodeUploadFileName = `客户周报-${unicodeToken}.txt`;
+    const unicodeContent = `Round-trip verification ${unicodeToken}\n报告内容：跨边界文件可靠性校验`;
+    const unicodeRenamedFileName = `已归档-季度总结-${unicodeToken}.txt`;
     const folderName = `${runtime.folderNamePrefix}-${Date.now()}`;
     const libraryName = `${runtime.libraryNamePrefix} ${Date.now()}`;
     const trace = await createUxTraceBundleWriter({
@@ -125,28 +177,28 @@ test.describe('@lane-real files integration flow', () => {
 
       await page.getByTestId('files__upload').click();
       await page.locator('input[type="file"]').setInputFiles({
-        name: runtime.uploadFileName,
+        name: unicodeUploadFileName,
         mimeType: 'text/plain',
-        buffer: Buffer.from(runtime.uploadContent, 'utf-8'),
+        buffer: Buffer.from(unicodeContent, 'utf-8'),
       });
-      await expect(page.locator('text=' + runtime.uploadFileName)).toBeVisible({ timeout: 30_000 });
+      await expect(page.locator('text=' + unicodeUploadFileName)).toBeVisible({ timeout: 30_000 });
 
       const uploadedRow = page
         .locator('[data-testid="files__object-row"]')
-        .filter({ hasText: runtime.uploadFileName })
+        .filter({ hasText: unicodeUploadFileName })
         .first();
       await uploadedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
       await uploadedRow.locator('input[type="checkbox"]').check();
 
       await page.getByTestId('files__rename').click();
       await page.getByTestId('files__move__dest-prefix').fill(`${folderName}/`);
-      await page.getByTestId('files__move__name').fill(runtime.renamedFileName);
+      await page.getByTestId('files__move__name').fill(unicodeRenamedFileName);
       await page.getByTestId('files__move__submit').click();
       await expect(
-        page.locator('[data-testid="files__object-row"]').filter({ hasText: runtime.uploadFileName }),
+        page.locator('[data-testid="files__object-row"]').filter({ hasText: unicodeUploadFileName }),
       ).toHaveCount(0);
       await expect(
-        page.locator('[data-testid="files__object-row"]').filter({ hasText: runtime.renamedFileName }),
+        page.locator('[data-testid="files__object-row"]').filter({ hasText: unicodeRenamedFileName }),
       ).toHaveCount(0);
 
       await page.keyboard.press('Escape');
@@ -159,7 +211,7 @@ test.describe('@lane-real files integration flow', () => {
         .dblclick();
       const movedRow = page
         .locator('[data-testid="files__object-row"]')
-        .filter({ hasText: runtime.renamedFileName })
+        .filter({ hasText: unicodeRenamedFileName })
         .first();
       await expect(movedRow).toBeVisible({ timeout: 30_000 });
       await movedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
@@ -175,9 +227,37 @@ test.describe('@lane-real files integration flow', () => {
       await page.keyboard.press('Escape');
       await movedRow.getByRole('button').click({ modifiers: [multiSelectModifier] });
       await expect(movedCheckbox).toBeChecked();
+      const downloadResponsePromise = page.waitForResponse((response) => (
+        response.request().method() === 'GET'
+        && response.url().includes(`/workspaces/${workspaceId}/projects/${projectId}/file-libraries/`)
+        && response.url().includes('/download')
+        && response.status() === 200
+      ));
+      await page.getByTestId('files__download').click();
+      const uiDownloadResponse = await downloadResponsePromise;
+      expect(uiDownloadResponse.ok()).toBeTruthy();
+      expect(uiDownloadResponse.url()).toContain(`path=${encodeURIComponent(`${folderName}/${unicodeRenamedFileName}`)}`);
+      expect(uiDownloadResponse.headers()['content-type']).toContain('text/');
+      const authToken = await readStoredAuthToken(page);
+      expect(authToken).toBeTruthy();
+      const verifiedDownload = await page.request.get(uiDownloadResponse.url(), {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      expect(verifiedDownload.ok()).toBeTruthy();
+      const contentDisposition = verifiedDownload.headers()['content-disposition']
+        ?? uiDownloadResponse.headers()['content-disposition']
+        ?? null;
+      expect(contentDisposition).toBeTruthy();
+      expect(contentDisposition?.toLowerCase()).toContain('attachment');
+      expect(contentDisposition).toMatch(/(?:^|;)\s*filename\*?\s*=/i);
+      const downloadedFilename = extractFilenameFromContentDisposition(contentDisposition);
+      expect(downloadedFilename).toBeTruthy();
+      expect(downloadedFilename?.value).toBe(unicodeRenamedFileName);
+      await expect(verifiedDownload.text()).resolves.toBe(unicodeContent);
+      await expect(movedCheckbox).toBeChecked();
       await page.getByTestId('files__delete').click();
       await page.getByTestId('files__dialog__delete').getByRole('button', { name: /Delete|删除/i }).click();
-      await expect(page.locator('text=' + runtime.renamedFileName)).toHaveCount(0);
+      await expect(page.locator('text=' + unicodeRenamedFileName)).toHaveCount(0);
       await trace.capture(page, { stepId: 'manage-files-from-web' });
       outcome = 'pass';
     } finally {

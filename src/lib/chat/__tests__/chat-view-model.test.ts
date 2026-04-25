@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildChatViewModel } from '@/lib/chat/chat-view-model';
-import type { ChatSession } from '@/lib/api/types';
+import type { ChatMessage, ChatSession } from '@/lib/api/types';
 
 function makeSession(partial: Partial<ChatSession>): ChatSession {
   return {
@@ -19,6 +19,17 @@ function makeSession(partial: Partial<ChatSession>): ChatSession {
   };
 }
 
+function makeMessage(partial: Partial<ChatMessage>): ChatMessage {
+  return {
+    id: 'msg_1',
+    session_id: 'sess_1',
+    role: 'assistant',
+    content: '',
+    created_at: new Date().toISOString(),
+    ...partial,
+  };
+}
+
 describe('buildChatViewModel', () => {
   it('uses local stream state first when present', () => {
     const session = makeSession({ execution_status: 'failed' });
@@ -26,6 +37,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: session.id,
       activeSession: session,
       sessions: [session],
+      messages: [],
       streamStateBySession: {
         [session.id]: {
           status: 'streaming',
@@ -52,6 +64,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: session.id,
       activeSession: session,
       sessions: [session],
+      messages: [],
       streamStateBySession: {},
     });
 
@@ -68,6 +81,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: session.id,
       activeSession: session,
       sessions: [session],
+      messages: [],
       streamStateBySession: {
         [session.id]: {
           status: 'recovering',
@@ -93,6 +107,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: session.id,
       activeSession: session,
       sessions: [session],
+      messages: [],
       streamStateBySession: {},
     });
 
@@ -107,6 +122,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: session.id,
       activeSession: session,
       sessions: [session],
+      messages: [],
       streamStateBySession: {
         [session.id]: {
           status: 'terminating',
@@ -129,6 +145,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: session.id,
       activeSession: session,
       sessions: [session],
+      messages: [],
       streamStateBySession: {},
     });
 
@@ -147,6 +164,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: session.id,
       activeSession: session,
       sessions: [session],
+      messages: [],
       streamStateBySession: {},
     });
 
@@ -170,6 +188,7 @@ describe('buildChatViewModel', () => {
         currentSessionId: session.id,
         activeSession: session,
         sessions: [session],
+        messages: [],
         streamStateBySession: {
           [session.id]: {
             status: 'terminating',
@@ -194,6 +213,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: session.id,
       activeSession: session,
       sessions: [session],
+      messages: [],
       streamStateBySession: {
         [session.id]: {
           status: 'stopping',
@@ -213,6 +233,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: session.id,
       activeSession: session,
       sessions: [session],
+      messages: [],
       streamStateBySession: {
         [session.id]: {
           status: 'recovering',
@@ -237,6 +258,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: session.id,
       activeSession: session,
       sessions: [session],
+      messages: [],
       streamStateBySession: {
         [session.id]: {
           status: 'stopped',
@@ -255,6 +277,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: session.id,
       activeSession: session,
       sessions: [session],
+      messages: [],
       streamStateBySession: {
         [session.id]: {
           status: 'stopped',
@@ -272,6 +295,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: null,
       activeSession: null,
       sessions: [],
+      messages: [],
       streamStateBySession: {},
     });
 
@@ -288,6 +312,7 @@ describe('buildChatViewModel', () => {
       currentSessionId: session.id,
       activeSession: session,
       sessions: [session],
+      messages: [],
       streamStateBySession: {
         [session.id]: {
           status: 'error',
@@ -299,6 +324,82 @@ describe('buildChatViewModel', () => {
 
     expect(model.activeStreamStatus).toBe('error');
     expect(model.activeStreamErrorMessage).toBe('Upstream rate limit');
+    expect(model.disabled).toBe(false);
+  });
+
+  it('surfaces a local attach error even while backend execution still says running', () => {
+    const session = makeSession({ execution_status: 'running' });
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      messages: [],
+      streamStateBySession: {
+        [session.id]: {
+          status: 'error',
+          assistant: null,
+          errorCode: 'AGENT_UPSTREAM_ERROR',
+          errorMessage: 'Provider attach failed',
+        },
+      },
+    });
+
+    expect(model.activeStreamStatus).toBe('streaming');
+    expect(model.activeStreamErrorCode).toBe('AGENT_UPSTREAM_ERROR');
+    expect(model.activeStreamErrorMessage).toBe('Provider attach failed');
+    expect(model.disabled).toBe(true);
+  });
+
+  it('keeps recovery truth from the latest failed assistant message after local error state is gone', () => {
+    const session = makeSession({});
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      messages: [
+        makeMessage({
+          id: 'msg_failed',
+          content: 'Provider stayed unavailable',
+          message_status: 'failed',
+          error_message: 'Provider stayed unavailable',
+          error_code: 'AGENT_UPSTREAM_ERROR',
+        }),
+      ],
+      streamStateBySession: {},
+    });
+
+    expect(model.activeStreamStatus).toBe('error');
+    expect(model.activeStreamErrorCode).toBe('AGENT_UPSTREAM_ERROR');
+    expect(model.activeStreamErrorMessage).toBe('Provider stayed unavailable');
+    expect(model.disabled).toBe(false);
+  });
+
+  it('uses the visible chain instead of hidden stale variants for persisted recovery truth', () => {
+    const session = makeSession({});
+    const hiddenFailedAssistant = makeMessage({
+      id: 'msg_hidden_failed',
+      content: 'Hidden provider failure',
+      message_status: 'failed',
+      error_message: 'Hidden provider failure',
+      error_code: 'AGENT_UPSTREAM_ERROR',
+    });
+    const visibleAssistant = makeMessage({
+      id: 'msg_visible_clean',
+      content: 'Visible assistant answer',
+      message_status: 'completed',
+    });
+    const model = buildChatViewModel({
+      currentSessionId: session.id,
+      activeSession: session,
+      sessions: [session],
+      messages: [hiddenFailedAssistant, visibleAssistant],
+      visibleMessages: [visibleAssistant],
+      streamStateBySession: {},
+    });
+
+    expect(model.activeStreamStatus).toBe('idle');
+    expect(model.activeStreamErrorCode).toBeNull();
+    expect(model.activeStreamErrorMessage).toBeNull();
     expect(model.disabled).toBe(false);
   });
 });

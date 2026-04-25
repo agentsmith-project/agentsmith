@@ -7,6 +7,11 @@ import {
   loadCommittedStoryDefinitions,
   loadCommittedStoryDefinitionById,
 } from './story-catalog-support';
+import {
+  getRequiredStoryVisualSceneBundle,
+  listStorySceneIds,
+  listStoryVisualSceneIds,
+} from './story-visual-scene-fixtures';
 import { loadAllStoryDefinitions, loadStoryDefinition, parseStoryDefinition } from '../e2e/story-loader';
 
 function buildJsonFrontmatterStory(overrides: Record<string, unknown> = {}): string {
@@ -183,47 +188,68 @@ describe('story loader', () => {
 
   it('loads explicit runtime visual review scenes from the story contract instead of a separate visual parser', async () => {
     const story = await loadCommittedStoryDefinitionById('mock-lane-chat-operate-and-recover');
+    const providerCapacity = getRequiredStoryVisualSceneBundle(
+      story,
+      'chat-provider-capacity-retry',
+    );
 
-    expect(story.runtimeData?.visualReview?.scenes).toEqual([
-      {
-        sceneId: 'chat-operate',
-        scenarioId: 'chat-operate',
-        scenario: expect.stringContaining('active thread'),
-        group: 'project_pages',
-        codeRefs: expect.arrayContaining([
-          'e2e/visual.spec.ts',
-          'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat/page.tsx',
-          'src/components/chat/ChatMainPane.tsx',
-          'src/components/chat/ChatHeader.tsx',
-          'src/components/chat/ThreadsPane.tsx',
+    expect(listStoryVisualSceneIds(story)).toEqual(listStorySceneIds(story));
+    expect(providerCapacity.visualScene).toMatchObject({
+      sceneId: 'chat-provider-capacity-retry',
+      semanticAssertions: {
+        requiredViewportTestIds: expect.arrayContaining([
+          'chat__stream-error-recovery',
+          'chat__stream-error-message',
+          'chat__composer-recovery-endpoint--ep_2',
         ]),
-        capture: 'full_page',
-        authLane: 'authed',
-        setupNotes: ['viewport:1440x900'],
-        themes: ['light', 'dark'],
+        prominentActionScopeTestIds: ['chat__composer-recovery-shell'],
       },
-      {
-        sceneId: 'chat-recover-empty',
-        scenarioId: 'chat-recover-empty',
-        scenario: expect.stringContaining('search results filtered to zero'),
-        group: 'project_pages',
-        codeRefs: expect.arrayContaining([
-          'e2e/visual.spec.ts',
-          'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat/page.tsx',
-          'src/components/chat/ChatMainPane.tsx',
-          'src/components/chat/ThreadsPane.tsx',
-        ]),
-        capture: 'full_page',
-        authLane: 'authed',
-        setupNotes: ['viewport:1440x900'],
-        themes: ['light', 'dark'],
-        semanticAssertions: {
-          requiredViewportTestIds: ['chat__new-thread-btn'],
-          prominentActionScopeTestIds: ['chat__threads-empty-state'],
-          maxProminentActions: 0,
-        },
-      },
-    ]);
+    });
+  });
+
+  it('keeps notebook lifecycle visual scenes anchored to same-surface running and terminal recovery contracts', async () => {
+    const story = await loadCommittedStoryDefinitionById('mock-lane-notebook-task-lifecycle');
+    const running = getRequiredStoryVisualSceneBundle(story, 'notebook-task-running');
+    const hiddenTerminalBlocked = getRequiredStoryVisualSceneBundle(
+      story,
+      'notebook-hidden-terminal-blocked',
+    );
+    const terminalTruthUnavailable = getRequiredStoryVisualSceneBundle(
+      story,
+      'notebook-terminal-truth-unavailable',
+    );
+
+    expect(listStoryVisualSceneIds(story)).toEqual(listStorySceneIds(story));
+    expect(running.storyScene.stableMarkers).toContain('notebook__run-active-cancel');
+    expect(running.visualScene.semanticAssertions?.requiredViewportTestIds).toEqual(
+      expect.arrayContaining(['notebook__run-active-cancel']),
+    );
+
+    expect(hiddenTerminalBlocked.storyScene.stableMarkers).toEqual(
+      expect.arrayContaining([
+        'notebook__task-terminal-status-action',
+        'notebook__task-terminal-status-end-all',
+      ]),
+    );
+    expect(hiddenTerminalBlocked.visualScene.semanticAssertions?.requiredViewportTestIds).toEqual(
+      expect.arrayContaining([
+        'notebook__task-terminal-status-action',
+        'notebook__task-terminal-status-end-all',
+      ]),
+    );
+    expect(hiddenTerminalBlocked.visualScene.semanticAssertions?.requiredViewportTestIds).not.toContain(
+      'notebook__conversation-blocked-action',
+    );
+
+    expect(terminalTruthUnavailable.storyScene.stableMarkers).toContain(
+      'notebook__task-terminal-truth-unavailable-retry',
+    );
+    expect(terminalTruthUnavailable.visualScene.semanticAssertions?.requiredViewportTestIds).toEqual(
+      expect.arrayContaining(['notebook__task-terminal-truth-unavailable-retry']),
+    );
+    expect(terminalTruthUnavailable.visualScene.semanticAssertions?.requiredViewportTestIds).not.toContain(
+      'notebook__conversation-blocked-action',
+    );
   });
 
   it('rejects section-style story markup because the loader only accepts json frontmatter stories', () => {

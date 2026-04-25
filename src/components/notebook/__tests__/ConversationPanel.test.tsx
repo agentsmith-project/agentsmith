@@ -463,7 +463,7 @@ describe('ConversationPanel', () => {
         'title',
         'Writing a very long execution update that should be truncated before it can ever stretch the notebook task status banner into multiple rows of noisy text for the user.',
       );
-      expect(screen.getByText('common.cancel')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__run-active-cancel')).toHaveTextContent('common.cancel');
       expect(screen.queryByTestId('notebook__execution-visibility-toggle')).not.toBeInTheDocument();
     });
 
@@ -514,6 +514,7 @@ describe('ConversationPanel', () => {
             description:
               'The terminal workspace is hidden, but this session still blocks new agent runs until you open the terminal workspace or end the session.',
             actionLabel: 'Open Terminal Workspace',
+            actionTestId: 'notebook__conversation-blocked-action',
             onAction,
           }}
         />
@@ -527,7 +528,7 @@ describe('ConversationPanel', () => {
       );
       expect(screen.queryByTestId('notebook__conversation-empty-state')).not.toBeInTheDocument();
 
-      await user.click(screen.getByRole('button', { name: 'Open Terminal Workspace' }));
+      await user.click(screen.getByTestId('notebook__conversation-blocked-action'));
       expect(onAction).toHaveBeenCalledTimes(1);
     });
   });

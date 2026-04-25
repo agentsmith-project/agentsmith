@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 async function createChatEndpointAndSession(baseUrl: string): Promise<{ endpointId: string; sessionId: string }> {
-  const upstream = startOpenAICompatibleUpstreamServer();
+  const upstream = await startOpenAICompatibleUpstreamServer();
   const createCredential = await apiFetchWithToken(
     baseUrl,
     '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
@@ -71,7 +71,7 @@ async function createChatEndpointAndSession(baseUrl: string): Promise<{ endpoint
 
 describe('api-entry-node chat isolation', () => {
   it('isolates chat sessions and messages by owner user', async () => {
-    const upstream = startOpenAICompatibleUpstreamServer();
+    const upstream = await startOpenAICompatibleUpstreamServer();
     const deps = createDefaultNodeApiDeps();
     deps.universalProxyService = new UniversalProxyService(upstream.baseUrl.replace(/\/v1$/, ''));
     const { baseUrl } = startServerWithDeps(deps);

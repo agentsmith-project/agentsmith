@@ -1632,7 +1632,7 @@ describe("api-entry-node projects routes", () => {
   });
 
   it("enforces endpoint requests_per_minute policy for chat stream preflight", async () => {
-    const upstream = startUniversalProxyChatServer();
+    const upstream = await startUniversalProxyChatServer();
     const deps = createDefaultNodeApiDeps();
     deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
     const { baseUrl } = startServerWithDeps(deps);
@@ -2546,7 +2546,7 @@ describe("api-entry-node projects routes", () => {
   });
 
   it("normalizes endpoint base_url when full chat/completions path is provided", async () => {
-    const upstream = startUniversalProxyChatServer();
+    const upstream = await startUniversalProxyChatServer();
     const deps = createDefaultNodeApiDeps();
     deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
     const { baseUrl } = startServerWithDeps(deps);

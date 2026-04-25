@@ -381,6 +381,77 @@ describe('internal-agent-pod-manager', () => {
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
   });
 
+  it('recreates a running workload pod when session dispatch readiness never arrives for that pod', async () => {
+    let now = 0;
+    const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    let podGeneration = 1;
+    const deletePod = vi.fn().mockImplementation(async () => {
+      podGeneration = 0;
+    });
+    const createOrEnsurePod = vi.fn().mockImplementation(async () => {
+      podGeneration = 2;
+      return { httpStatus: 201, pod: { phase: 'Running' } };
+    });
+    const options: ConstructorParameters<typeof InternalAgentPodManagerImpl>[3] & {
+      sessionReadinessTimeoutMs: number;
+    } = {
+      startupTimeoutMs: 50,
+      phasePollIntervalMs: 1,
+      onlinePollIntervalMs: 1,
+      sessionReadinessTimeoutMs: 5,
+      sleep: vi.fn(async (delayMs: number) => {
+        now += delayMs;
+      }),
+    };
+
+    try {
+      const manager = new InternalAgentPodManagerImpl(
+        {
+          checkReady: vi.fn().mockResolvedValue(undefined),
+          getPodStatus: vi.fn()
+            .mockImplementation(async () => {
+              if (podGeneration === 0) return { phase: 'offline' };
+              return { phase: 'Running' };
+            }),
+          createOrEnsurePod,
+          deletePod,
+          keepalive: vi.fn().mockResolvedValue(null),
+          exec: vi.fn(),
+        },
+        {
+          getAgentOnlineState: vi.fn().mockReturnValue(false),
+          getAgentSessionOnlineState: vi.fn().mockReturnValue(false),
+          getAgentSessionDispatchAuthority: vi.fn().mockImplementation(async () => (
+            podGeneration >= 2 ? 'local_dispatchable' : 'offline'
+          )),
+        },
+        'ws://api:20000',
+        options,
+      );
+
+      await manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        sessionId: 'task_1',
+        agent: buildAgent({
+          image: 'runner:v1',
+          _internal_raw_key: 'ask_xxx',
+        }),
+        workspaceMount: {
+          bindingId: 'flib_demo',
+          mountPath: '/workspace/task_1',
+        },
+      });
+
+      expect(deletePod).toHaveBeenCalledTimes(1);
+      expect(deletePod).toHaveBeenCalledWith('ws_1', 'proj_1', 'task_1', undefined);
+      expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
+    } finally {
+      dateNowSpy.mockRestore();
+    }
+  });
+
   it('maps remote-owned session authority to a distinct sandbox outcome instead of sandbox_startup_timeout', async () => {
     const internalAgentPodManagerModule = await import('./internal-agent-pod-manager.js') as typeof import('./internal-agent-pod-manager.js') & {
       mapRunnerSessionAuthorityToSandboxError?: (authority: string) => string | null;

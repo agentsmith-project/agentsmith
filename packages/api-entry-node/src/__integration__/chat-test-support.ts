@@ -1,6 +1,5 @@
 import type { AddressInfo } from 'node:net';
 import http, { type IncomingHttpHeaders, type Server } from 'node:http';
-import { execFileSync } from 'node:child_process';
 import { apiFetch } from './test-support.js';
 
 const upstreamServers: Server[] = [];
@@ -114,17 +113,39 @@ export function createUniversalProxyAdminHarness(
   };
 }
 
-function allocateTestPort(): number {
-  const raw = execFileSync(
-    'python3',
-    ['-c', 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'],
-    { encoding: 'utf8' },
-  ).trim();
-  const port = Number.parseInt(raw, 10);
-  if (!Number.isInteger(port) || port <= 0) {
-    throw new Error(`invalid_test_port:${raw}`);
+async function listenOnRandomLoopbackPort(server: Server, invalidPortError: string): Promise<AddressInfo> {
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      server.off('error', onError);
+      server.off('listening', onListening);
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const onListening = () => {
+      cleanup();
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    try {
+      server.listen(0, '127.0.0.1');
+    } catch (error: unknown) {
+      cleanup();
+      reject(error instanceof Error ? error : new Error('chat_upstream_listen_failed'));
+    }
+  });
+
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    server.closeAllConnections?.();
+    server.closeIdleConnections?.();
+    server.close();
+    throw new Error(invalidPortError);
   }
-  return port;
+
+  return address;
 }
 
 export async function cleanupChatUpstreamServers(): Promise<void> {
@@ -141,11 +162,11 @@ export async function cleanupChatUpstreamServers(): Promise<void> {
   upstreamServers.length = 0;
 }
 
-export function startOpenAICompatibleUpstreamServer(): {
+export async function startOpenAICompatibleUpstreamServer(): Promise<{
   server: Server;
   baseUrl: string;
   lastBody: () => unknown;
-} {
+}> {
   let body: unknown = null;
   const server = http.createServer((req, res) => {
     void (async () => {
@@ -200,13 +221,12 @@ export function startOpenAICompatibleUpstreamServer(): {
       res.end(JSON.stringify({ error: 'not_found' }));
     })();
   });
-  const port = allocateTestPort();
-  server.listen(port, '127.0.0.1');
+  const address = await listenOnRandomLoopbackPort(server, 'invalid_chat_upstream_port');
   upstreamServers.push(server);
-  return { server, baseUrl: `http://127.0.0.1:${port}/v1`, lastBody: () => body };
+  return { server, baseUrl: `http://127.0.0.1:${address.port}/v1`, lastBody: () => body };
 }
 
-export function startUniversalProxyChatServer(): {
+export async function startUniversalProxyChatServer(): Promise<{
   server: Server;
   baseUrl: string;
   lastBody: () => unknown;
@@ -214,7 +234,7 @@ export function startUniversalProxyChatServer(): {
   lastHeaders: () => IncomingHttpHeaders;
   configRequests: () => UniversalProxyAdminConfigRequest[];
   currentRevision: (namespace: string) => string | null;
-} {
+}> {
   let body: unknown = null;
   let path = '';
   let headers: IncomingHttpHeaders = {};
@@ -291,12 +311,11 @@ export function startUniversalProxyChatServer(): {
       res.end(JSON.stringify({ error: 'not_found' }));
     })();
   });
-  const port = allocateTestPort();
-  server.listen(port, '127.0.0.1');
+  const address = await listenOnRandomLoopbackPort(server, 'invalid_universal_proxy_chat_port');
   upstreamServers.push(server);
   return {
     server,
-    baseUrl: `http://127.0.0.1:${port}`,
+    baseUrl: `http://127.0.0.1:${address.port}`,
     lastBody: () => body,
     lastPath: () => path,
     lastHeaders: () => headers,
@@ -327,21 +346,21 @@ export async function startPassthroughUpstreamServer(): Promise<{
       res.end(JSON.stringify({ ok: true, echoed: body }));
     })();
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const address = await listenOnRandomLoopbackPort(server, 'invalid_chat_passthrough_upstream_port');
   upstreamServers.push(server);
   return {
     server,
-    baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
+    baseUrl: `http://127.0.0.1:${address.port}/v1`,
     lastBody: () => body,
     lastPath: () => path,
   };
 }
 
-export function startSlowOpenAICompatibleUpstreamServer(): {
+export async function startSlowOpenAICompatibleUpstreamServer(): Promise<{
   server: Server;
   baseUrl: string;
   lastBody: () => unknown;
-} {
+}> {
   let body: unknown = null;
   const server = http.createServer((req, res) => {
     void (async () => {
@@ -378,10 +397,9 @@ export function startSlowOpenAICompatibleUpstreamServer(): {
       }, 1_200);
     })();
   });
-  const port = allocateTestPort();
-  server.listen(port, '127.0.0.1');
+  const address = await listenOnRandomLoopbackPort(server, 'invalid_slow_chat_upstream_port');
   upstreamServers.push(server);
-  return { server, baseUrl: `http://127.0.0.1:${port}/v1`, lastBody: () => body };
+  return { server, baseUrl: `http://127.0.0.1:${address.port}/v1`, lastBody: () => body };
 }
 
 export function parseDefaultSseBlocks(text: string): ParsedDefaultSseBlock[] {

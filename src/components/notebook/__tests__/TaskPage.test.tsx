@@ -368,7 +368,10 @@ vi.mock('../ConversationPanel', () => ({
           <div data-testid="conversation-blocked-title">{blockedState.title}</div>
           <div data-testid="conversation-blocked-description">{blockedState.description}</div>
           {blockedState.actionLabel ? (
-            <button onClick={() => blockedState.onAction?.()}>
+            <button
+              onClick={() => blockedState.onAction?.()}
+              data-testid={blockedState.actionTestId}
+            >
               {blockedState.actionLabel}
             </button>
           ) : null}
@@ -1683,10 +1686,10 @@ describe('TaskPage', () => {
       ).toHaveTextContent(
         'We could not confirm live terminal sessions for this task. Retry to refresh backend terminal truth before running or deleting.',
       );
-      const retryButton = screen.getByTestId('conversation-blocked-state').querySelector('button');
+      const retryButton = screen.getByTestId('notebook__conversation-blocked-action');
       expect(retryButton).toHaveTextContent('Retry terminal status check');
       expect(
-        screen.getByTestId('notebook__task-terminal-truth-unavailable').querySelector('button'),
+        screen.queryByTestId('notebook__task-terminal-truth-unavailable-retry'),
       ).not.toBeInTheDocument();
 
       const listCallCountBeforeRetry =
@@ -2064,9 +2067,7 @@ describe('TaskPage', () => {
         expect(screen.getByTestId('notebook__task-terminal-status-strip')).toHaveTextContent(
           '1 terminal session is using this task',
         );
-        expect(
-          screen.getByTestId('notebook__task-terminal-status-strip').querySelector('button'),
-        ).toHaveTextContent('End All Sessions');
+        expect(screen.getByTestId('notebook__task-terminal-status-end-all')).toHaveTextContent('End All Sessions');
         expect(screen.getByTestId('notebook__task-terminal-status-strip')).not.toHaveTextContent(
           'The terminal workspace is hidden, but this session still blocks new agent runs until you open the terminal workspace or end the session.',
         );
@@ -2079,10 +2080,10 @@ describe('TaskPage', () => {
       });
       expect(latestTaskTerminalPanelPropsRef.current.open).toBe(true);
       expect(latestTaskTerminalPanelPropsRef.current.visible).toBe(false);
-      expect(screen.getAllByRole('button', { name: 'Open Terminal Workspace' })).toHaveLength(1);
-      await user.click(
-        screen.getByTestId('conversation-blocked-state').querySelector('button') as HTMLButtonElement,
+      expect(screen.getByTestId('notebook__conversation-blocked-action')).toHaveTextContent(
+        'Open Terminal Workspace',
       );
+      await user.click(screen.getByTestId('notebook__conversation-blocked-action'));
       await waitFor(() => {
         expect(latestTaskHeaderPropsRef.current.viewMode).toBe('terminal');
       });
@@ -3400,6 +3401,7 @@ describe('TaskPage', () => {
 
         expect(mockUseTaskRefetch).toHaveBeenCalledTimes(1);
         expect(screen.getByTestId('notebook__cancel-escalation-dialog')).toBeInTheDocument();
+        expect(screen.getByTestId('notebook__cancel-escalation-cancel')).toBeInTheDocument();
         expect(screen.getByText('Force stop this run?')).toBeInTheDocument();
         expect(screen.getByText('Backend reason: agent did not acknowledge cancel')).toBeInTheDocument();
         vi.useRealTimers();

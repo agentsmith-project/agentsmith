@@ -195,6 +195,7 @@ describe("MessageItem", () => {
 
     expect(screen.getByTestId("notebook__message-final-answer-pending")).toBeInTheDocument();
     expect(screen.getByTestId("notebook__message-run-status")).toHaveTextContent("Running");
+    expect(screen.queryByText("Ready")).not.toBeInTheDocument();
   });
 
   it("shows a subtle running indicator in the footer while the agent is still executing", () => {

@@ -14,7 +14,7 @@ afterEach(async () => {
 
 describe('api-entry-node chat attachment integrations', () => {
   it('sends image attachments to upstream multimodal chat payload', async () => {
-    const upstream = startUniversalProxyChatServer();
+    const upstream = await startUniversalProxyChatServer();
     const deps = createDefaultNodeApiDeps();
     deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
     const { baseUrl } = startServerWithDeps(deps);
@@ -161,7 +161,7 @@ describe('api-entry-node chat attachment integrations', () => {
   });
 
   it('treats octet-stream webp attachments as image in preview and upstream payload', async () => {
-    const upstream = startUniversalProxyChatServer();
+    const upstream = await startUniversalProxyChatServer();
     const deps = createDefaultNodeApiDeps();
     deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
     const { baseUrl } = startServerWithDeps(deps);

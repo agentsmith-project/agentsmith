@@ -116,26 +116,30 @@ export function MessageList({
   return (
     <div ref={containerRef} className="h-full overflow-y-auto px-3 py-3 sm:px-4 lg:px-5">
       <div ref={contentRef} className="space-y-3">
-        {messages.map((message) => (
-        <MessageItem
-          key={message.id}
-          message={message}
-          focusTraceName={focusTraceMessageId === message.id ? focusTraceName : null}
-          focusTraceToken={focusTraceMessageId === message.id ? focusTraceToken : 0}
-          streamingContent={
-            streamingMessageId === message.id ? streamingContent : null
-          }
-          traceEvents={traceEventsByMessageId?.[message.id] ?? []}
-          traceHasMore={traceHasMoreByMessageId?.[message.id] ?? false}
-          traceDetailsLoading={traceLoadingByMessageId?.[message.id] ?? false}
-          traceLoadMoreLoading={traceLoadMoreLoadingByMessageId?.[message.id] ?? false}
-          traceError={traceErrorByMessageId?.[message.id]}
-          disabled={disabled}
-          forceRunning={streamingMessageId === activeAgentMessageId}
-          onTraceExpand={onTraceExpand}
-          onTraceLoadMore={onTraceLoadMore}
-        />
-      ))}
+        {messages.map((message) => {
+          const isActiveAgentMessage =
+            message.role === 'agent' && message.id === activeAgentMessageId;
+          return (
+            <MessageItem
+              key={message.id}
+              message={message}
+              focusTraceName={focusTraceMessageId === message.id ? focusTraceName : null}
+              focusTraceToken={focusTraceMessageId === message.id ? focusTraceToken : 0}
+              streamingContent={
+                streamingMessageId === message.id ? streamingContent : null
+              }
+              traceEvents={traceEventsByMessageId?.[message.id] ?? []}
+              traceHasMore={traceHasMoreByMessageId?.[message.id] ?? false}
+              traceDetailsLoading={traceLoadingByMessageId?.[message.id] ?? false}
+              traceLoadMoreLoading={traceLoadMoreLoadingByMessageId?.[message.id] ?? false}
+              traceError={traceErrorByMessageId?.[message.id]}
+              disabled={disabled}
+              forceRunning={isActiveAgentMessage}
+              onTraceExpand={onTraceExpand}
+              onTraceLoadMore={onTraceLoadMore}
+            />
+          );
+        })}
         {streamingMessageId && !messages.find((m) => m.id === streamingMessageId) && (
         <MessageItem
           message={{

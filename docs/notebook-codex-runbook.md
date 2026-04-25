@@ -60,14 +60,19 @@ npm run test:e2e:integration:notebook:terminal:ux
 ### Current release-grade notebook path
 
 ```bash
-npm run gate:fast
-npm run gate:default
-npm run lane:visual
-npm run backend-real:reset
-npm run backend-real:bootstrap
-npm run backend-real:ready
-npm run lane:backend-real:release
+npm run release:ready
+npm run release:status
 ```
+
+默认从 `release:ready` 发起 release-grade campaign，用 `release:status` 查看当前 verdict / evidence 状态。下面命令只用于 campaign 失败后的 owner diagnostics / owner rerun，不能替代 `release:ready`。
+
+| Owner command | Use after campaign failure |
+| --- | --- |
+| `npm run gate:fast` / `npm run gate:default` | Fast/default gate owner rerun. |
+| `npm run lane:visual` | Visual lane owner diagnostics. |
+| `npm run backend-real:reset` / `npm run backend-real:bootstrap` / `npm run backend-real:ready` | Backend-real environment diagnostics before an owner rerun. |
+| `npm run lane:backend-real:release` | Backend-real release lane owner rerun. |
+| `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full` | Aggregate-only verifier for an explicit campaign context; it does not execute suites. |
 
 如果只排 notebook runner：
 - 先看 `npm run test:notebook:runner:fast`

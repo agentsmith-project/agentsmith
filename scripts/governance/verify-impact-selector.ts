@@ -12,6 +12,20 @@ export type VerificationMode = 'dry-run' | 'run';
 export type VerificationLevel = 'V0' | 'V1' | 'V2' | 'V3' | 'V4';
 export type StoryCardRisk = 'required' | 'inferred';
 export type StoryEvidenceStatus = 'not_evaluated' | 'missing';
+export type StoryRiskLevel = 'R0' | 'R1' | 'R2' | 'R3';
+export type StoryEvaluationStatus = 'not_evaluated' | 'missing' | 'manual_review_needed';
+
+export interface StoryLevelStatus {
+  level: VerificationLevel;
+  status: StoryEvaluationStatus;
+  reason: string;
+}
+
+export interface StoryLatestEvidence {
+  state: 'not_inspected_by_verify_report';
+  owner: string;
+  artifactPath: string | null;
+}
 
 export interface VerificationRiskSummary {
   posture: 'fail-closed';
@@ -30,8 +44,16 @@ export interface VerificationStoryCard {
   lane: StoryDefinition['lane'];
   sourceFile: string;
   risk: StoryCardRisk;
+  riskLevel: StoryRiskLevel;
+  riskReason: string;
   requiredLevels: readonly VerificationLevel[];
   evidenceStatus: StoryEvidenceStatus;
+  status: StoryEvaluationStatus;
+  failureReason: string | null;
+  manualReviewRequired: boolean;
+  manualReviewReasons: readonly string[];
+  levelStatuses: readonly StoryLevelStatus[];
+  latestEvidence: StoryLatestEvidence;
   nextAction: string;
 }
 
@@ -66,8 +88,20 @@ export interface BuildVerificationPlanInput {
   visualCatalogEntries?: readonly VisualBaselineCatalogEntry[];
 }
 
-type MutableStoryCard = Omit<VerificationStoryCard, 'requiredLevels'> & {
+type MutableStoryCard = Omit<
+  VerificationStoryCard,
+  | 'requiredLevels'
+  | 'riskLevel'
+  | 'riskReason'
+  | 'status'
+  | 'failureReason'
+  | 'manualReviewRequired'
+  | 'manualReviewReasons'
+  | 'levelStatuses'
+  | 'latestEvidence'
+> & {
   requiredLevels: Set<VerificationLevel>;
+  manualReviewReasons: Set<StoryManualReviewReason>;
 };
 
 type ImpactAccumulator = {
@@ -92,6 +126,26 @@ const COMMAND_ORDER = [
 ] as const;
 
 const GENERATED_STORY_SPEC_PATH = 'e2e/generated/story-specs.generated.json';
+const MANUAL_REVIEW_REASONS = {
+  storyMarkdownChanged: 'story markdown changed',
+  generatedSpecsDerivedCacheDrift: 'generated specs derived cache drift',
+  unmappedSource: 'unmapped source',
+  changeDetectionFailure: 'change detection failure',
+  runnerContextCredentialOwnerReview: 'runner/context/credential owner review',
+  releaseDeployRehearsalOperatorReview: 'release/deploy/rehearsal operator review',
+  visualV2NeedsReview: 'visual V2 needs review',
+} as const;
+type StoryManualReviewReason = (typeof MANUAL_REVIEW_REASONS)[keyof typeof MANUAL_REVIEW_REASONS];
+
+const MANUAL_REVIEW_REASON_ORDER: readonly StoryManualReviewReason[] = [
+  MANUAL_REVIEW_REASONS.storyMarkdownChanged,
+  MANUAL_REVIEW_REASONS.generatedSpecsDerivedCacheDrift,
+  MANUAL_REVIEW_REASONS.unmappedSource,
+  MANUAL_REVIEW_REASONS.changeDetectionFailure,
+  MANUAL_REVIEW_REASONS.runnerContextCredentialOwnerReview,
+  MANUAL_REVIEW_REASONS.releaseDeployRehearsalOperatorReview,
+  MANUAL_REVIEW_REASONS.visualV2NeedsReview,
+];
 
 function uniqueSorted(values: Iterable<string>): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
@@ -109,6 +163,11 @@ function orderedCommands(values: Iterable<string>): string[] {
     .filter((command) => !COMMAND_ORDER.includes(command as (typeof COMMAND_ORDER)[number]))
     .sort((left, right) => left.localeCompare(right));
   return [...known, ...unknown];
+}
+
+function orderedManualReviewReasons(values: Iterable<StoryManualReviewReason>): string[] {
+  const selected = new Set(values);
+  return MANUAL_REVIEW_REASON_ORDER.filter((reason) => selected.has(reason));
 }
 
 function normalizeRepoPath(value: string): string {
@@ -279,13 +338,21 @@ function addStoryCard(
     risk: StoryCardRisk;
     levels: readonly VerificationLevel[];
     evidenceStatus: StoryEvidenceStatus;
+    manualReviewReasons?: readonly StoryManualReviewReason[];
     nextAction: string;
   },
 ): void {
+  if (args.manualReviewReasons && args.manualReviewReasons.length > 0) {
+    accumulator.manualReviewRequired = true;
+  }
+
   const existing = accumulator.storyCards.get(story.storyId);
   if (existing) {
     for (const level of args.levels) {
       existing.requiredLevels.add(level);
+    }
+    for (const reason of args.manualReviewReasons ?? []) {
+      existing.manualReviewReasons.add(reason);
     }
     if (existing.risk === 'inferred' && args.risk === 'required') {
       existing.risk = 'required';
@@ -309,6 +376,7 @@ function addStoryCard(
     risk: args.risk,
     requiredLevels: new Set(args.levels),
     evidenceStatus: args.evidenceStatus,
+    manualReviewReasons: new Set(args.manualReviewReasons ?? []),
     nextAction: args.nextAction,
   });
 }
@@ -320,6 +388,7 @@ function addBroadStoryCards(
     levels?: readonly VerificationLevel[];
     nextAction: string;
     evidenceStatus?: StoryEvidenceStatus;
+    manualReviewReasons?: readonly StoryManualReviewReason[];
   },
 ): void {
   accumulator.broadImpact = true;
@@ -330,6 +399,7 @@ function addBroadStoryCards(
       risk: 'inferred',
       levels,
       evidenceStatus: args.evidenceStatus ?? 'missing',
+      manualReviewReasons: args.manualReviewReasons,
       nextAction: args.nextAction,
     });
   }
@@ -352,10 +422,130 @@ function findVisualMatches(
   ));
 }
 
+function deriveRiskLevel(card: MutableStoryCard, requiredLevels: readonly VerificationLevel[]): StoryRiskLevel {
+  if (requiredLevels.includes('V4')) {
+    return 'R0';
+  }
+  if (card.lane === 'backend-real' && requiredLevels.includes('V3')) {
+    return 'R1';
+  }
+  if (requiredLevels.includes('V2')) {
+    return 'R2';
+  }
+  return 'R3';
+}
+
+function riskReasonForCard(card: MutableStoryCard, riskLevel: StoryRiskLevel): string {
+  const prefix = card.risk === 'inferred'
+    ? 'Risk inferred fail-closed from required levels'
+    : 'Risk required by mapped story impact';
+
+  if (riskLevel === 'R0') {
+    return `${prefix}: V4 release/deploy/rehearsal story card requires operator review; verify report is not release readiness.`;
+  }
+  if (riskLevel === 'R1') {
+    return `${prefix}: backend-real story requires V3 verification; verify report did not inspect evidence.`;
+  }
+  if (riskLevel === 'R2') {
+    return `${prefix}: mock-lane/visual story requires V2 visual review; verify report did not inspect evidence.`;
+  }
+  return `${prefix}: debug/V0-only impact requires basic verification; verify report did not inspect evidence.`;
+}
+
+function manualReviewReasonForLevel(
+  level: VerificationLevel,
+  manualReviewReasons: ReadonlySet<StoryManualReviewReason>,
+): string | undefined {
+  if (level === 'V2' && manualReviewReasons.has(MANUAL_REVIEW_REASONS.visualV2NeedsReview)) {
+    return 'Visual V2 needs review; verify report did not inspect visual evidence.';
+  }
+  if (manualReviewReasons.has(MANUAL_REVIEW_REASONS.releaseDeployRehearsalOperatorReview)) {
+    return 'Release/deploy/rehearsal operator review required; verify report did not inspect release evidence.';
+  }
+  if (manualReviewReasons.has(MANUAL_REVIEW_REASONS.runnerContextCredentialOwnerReview)) {
+    return 'Runner, Context Store, or credential owner review required; verify report did not inspect backend-real evidence.';
+  }
+  if (manualReviewReasons.has(MANUAL_REVIEW_REASONS.generatedSpecsDerivedCacheDrift)) {
+    return 'Generated story specs are derived cache drift; verify report selected story impact fail-closed.';
+  }
+  if (manualReviewReasons.has(MANUAL_REVIEW_REASONS.unmappedSource)) {
+    return 'Unmapped source impact selected fail-closed; verify report did not inspect evidence.';
+  }
+  if (manualReviewReasons.has(MANUAL_REVIEW_REASONS.changeDetectionFailure)) {
+    return 'Change detection failure selected story impact fail-closed; verify report did not inspect evidence.';
+  }
+  if (manualReviewReasons.has(MANUAL_REVIEW_REASONS.storyMarkdownChanged)) {
+    return 'Canonical story markdown changed; manual story review is required before evidence acceptance.';
+  }
+  return undefined;
+}
+
+function levelStatusForCard(
+  card: MutableStoryCard,
+  requiredLevels: readonly VerificationLevel[],
+): readonly StoryLevelStatus[] {
+  return requiredLevels.map((level) => {
+    const manualReviewReason = manualReviewReasonForLevel(level, card.manualReviewReasons);
+    if (manualReviewReason) {
+      return {
+        level,
+        status: 'manual_review_needed',
+        reason: manualReviewReason,
+      };
+    }
+    if (card.evidenceStatus === 'missing') {
+      return {
+        level,
+        status: 'missing',
+        reason: `Required ${level} evidence was not inspected by verify report; artifact path is unavailable.`,
+      };
+    }
+    return {
+      level,
+      status: 'not_evaluated',
+      reason: `Required ${level} evidence was not inspected by verify report.`,
+    };
+  });
+}
+
+function latestEvidenceForCard(
+  card: MutableStoryCard,
+  requiredLevels: readonly VerificationLevel[],
+): StoryLatestEvidence {
+  let owner = 'verification owner';
+  if (requiredLevels.includes('V4')) {
+    owner = 'release/deploy/rehearsal operator';
+  } else if (card.lane === 'backend-real' && requiredLevels.includes('V3')) {
+    owner = 'backend-real owner';
+  } else if (requiredLevels.includes('V2')) {
+    owner = 'visual review owner';
+  }
+
+  return {
+    state: 'not_inspected_by_verify_report',
+    owner,
+    artifactPath: null,
+  };
+}
+
 function storyCardToImmutable(card: MutableStoryCard): VerificationStoryCard {
+  const requiredLevels = orderedLevels(card.requiredLevels);
+  const riskLevel = deriveRiskLevel(card, requiredLevels);
+  const manualReviewReasons = orderedManualReviewReasons(card.manualReviewReasons);
+  const manualReviewRequired = manualReviewReasons.length > 0;
+  const status: StoryEvaluationStatus = manualReviewRequired ? 'manual_review_needed' : card.evidenceStatus;
+
   return {
     ...card,
-    requiredLevels: orderedLevels(card.requiredLevels),
+    riskLevel,
+    riskReason: riskReasonForCard(card, riskLevel),
+    requiredLevels,
+    status,
+    failureReason: null,
+    manualReviewRequired,
+    manualReviewReasons,
+    levelStatuses: levelStatusForCard(card, requiredLevels),
+    latestEvidence: latestEvidenceForCard(card, requiredLevels),
   };
 }
 
@@ -408,7 +598,10 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
     accumulator.reasons.push('Changed files could not be derived, so all canonical stories are treated as potentially affected.');
     const action = 'Manual impact owner triage required because changed-file detection failed; rerun with --changed-file for a narrower plan.';
     pushUnique(accumulator.nextActions, action);
-    addBroadStoryCards(accumulator, stories, { nextAction: action });
+    addBroadStoryCards(accumulator, stories, {
+      nextAction: action,
+      manualReviewReasons: [MANUAL_REVIEW_REASONS.changeDetectionFailure],
+    });
   }
 
   if (changedFiles.length === 0 && !input.changeDetectionFailure) {
@@ -434,6 +627,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         risk: 'required',
         levels,
         evidenceStatus: 'not_evaluated',
+        manualReviewReasons: [MANUAL_REVIEW_REASONS.storyMarkdownChanged],
         nextAction: action,
       });
     }
@@ -447,7 +641,10 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       accumulator.warnings.push('Generated story spec changed as derived cache drift; canonical story truth remains e2e/stories/**/*.story.md.');
       accumulator.reasons.push(`${changedFile} is derived cache and is not used as story truth.`);
       pushUnique(accumulator.nextActions, action);
-      addBroadStoryCards(accumulator, stories, { nextAction: action });
+      addBroadStoryCards(accumulator, stories, {
+        nextAction: action,
+        manualReviewReasons: [MANUAL_REVIEW_REASONS.generatedSpecsDerivedCacheDrift],
+      });
     }
 
     const visualMatches = findVisualMatches(changedFile, visualCatalogEntries);
@@ -456,6 +653,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       const levels: readonly VerificationLevel[] = ['V0', 'V1', 'V2'];
       const action = 'Run npm run verify:visual and review affected visual story cards before accepting the UI impact.';
       addLevels(accumulator, levels);
+      accumulator.manualReviewRequired = true;
       accumulator.reasons.push(`${changedFile} matches ${visualMatches.length} visual catalog code ref(s).`);
       pushUnique(accumulator.nextActions, action);
       for (const match of visualMatches) {
@@ -466,6 +664,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
             risk: 'required',
             levels,
             evidenceStatus: 'not_evaluated',
+            manualReviewReasons: [MANUAL_REVIEW_REASONS.visualV2NeedsReview],
             nextAction: action,
           });
         }
@@ -482,6 +681,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       pushUnique(accumulator.nextActions, action);
       addBroadStoryCards(accumulator, stories.filter((story) => story.lane === 'backend-real'), {
         nextAction: action,
+        manualReviewReasons: [MANUAL_REVIEW_REASONS.runnerContextCredentialOwnerReview],
       });
     }
 
@@ -509,6 +709,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
         levels,
         nextAction: action,
         evidenceStatus: 'missing',
+        manualReviewReasons: [MANUAL_REVIEW_REASONS.releaseDeployRehearsalOperatorReview],
       });
     }
 
@@ -520,7 +721,10 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       accumulator.warnings.push(`${changedFile} did not match canonical story markdown, visual code refs, runner/context/credential paths, or release paths.`);
       accumulator.reasons.push(`${changedFile} is unmapped source impact.`);
       pushUnique(accumulator.nextActions, action);
-      addBroadStoryCards(accumulator, stories, { nextAction: action });
+      addBroadStoryCards(accumulator, stories, {
+        nextAction: action,
+        manualReviewReasons: [MANUAL_REVIEW_REASONS.unmappedSource],
+      });
     }
   }
 

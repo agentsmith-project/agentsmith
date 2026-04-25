@@ -17,8 +17,24 @@ export interface StoryAcceptanceReportCard {
   lane: VerificationStoryCard['lane'];
   source_file: string;
   risk: VerificationStoryCard['risk'];
+  risk_level: VerificationStoryCard['riskLevel'];
+  risk_reason: string;
   required_levels: readonly string[];
   evidence_status: VerificationStoryCard['evidenceStatus'];
+  status: VerificationStoryCard['status'];
+  failure_reason: string | null;
+  manual_review_required: boolean;
+  manual_review_reasons: readonly string[];
+  level_statuses: readonly {
+    level: string;
+    status: VerificationStoryCard['status'];
+    reason: string;
+  }[];
+  latest_evidence: {
+    state: VerificationStoryCard['latestEvidence']['state'];
+    owner: string;
+    artifact_path: string | null;
+  };
   next_action: string;
 }
 
@@ -62,8 +78,20 @@ function toReportCard(card: VerificationStoryCard): StoryAcceptanceReportCard {
     lane: card.lane,
     source_file: card.sourceFile,
     risk: card.risk,
+    risk_level: card.riskLevel,
+    risk_reason: card.riskReason,
     required_levels: card.requiredLevels,
     evidence_status: card.evidenceStatus,
+    status: card.status,
+    failure_reason: card.failureReason,
+    manual_review_required: card.manualReviewRequired,
+    manual_review_reasons: card.manualReviewReasons,
+    level_statuses: card.levelStatuses,
+    latest_evidence: {
+      state: card.latestEvidence.state,
+      owner: card.latestEvidence.owner,
+      artifact_path: card.latestEvidence.artifactPath,
+    },
     next_action: card.nextAction,
   };
 }
@@ -101,6 +129,39 @@ function renderList(values: readonly string[], empty = '<none>'): string[] {
   return values.map((value) => `- ${value}`);
 }
 
+function renderMarkdownTableValue(value: string): string {
+  return value.replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim();
+}
+
+function renderStoryStatusTable(cards: readonly StoryAcceptanceReportCard[]): string[] {
+  if (cards.length === 0) {
+    return ['No story cards were selected for this dry-run plan.'];
+  }
+
+  return [
+    '| Story | Risk | Status | Required levels | Manual review | Next action |',
+    '| --- | --- | --- | --- | --- | --- |',
+    ...cards.map((card) => [
+      card.story_id,
+      card.risk_level,
+      card.status,
+      card.required_levels.join(', '),
+      card.manual_review_required ? card.manual_review_reasons.join(', ') || 'required' : 'false',
+      card.next_action,
+    ].map(renderMarkdownTableValue).join(' | ')).map((row) => `| ${row} |`),
+  ];
+}
+
+function renderLevelStatuses(card: StoryAcceptanceReportCard): string[] {
+  if (card.level_statuses.length === 0) {
+    return ['- Level statuses: <none>'];
+  }
+  return [
+    '- Level statuses:',
+    ...card.level_statuses.map((entry) => `  - ${entry.level}: ${entry.status} (${entry.reason})`),
+  ];
+}
+
 function renderStoryCard(card: StoryAcceptanceReportCard): string[] {
   return [
     `### ${card.story_id}`,
@@ -110,9 +171,16 @@ function renderStoryCard(card: StoryAcceptanceReportCard): string[] {
     `- Family: ${card.family}`,
     `- Lane: ${card.lane}`,
     `- Source file: ${card.source_file}`,
-    `- Risk: ${card.risk}`,
+    `- Risk: ${card.risk_level} (${card.risk})`,
+    `- Risk reason: ${card.risk_reason}`,
     `- Required levels: ${card.required_levels.join(', ')}`,
     `- Evidence status: ${card.evidence_status}`,
+    `- Status: ${card.status}`,
+    `- Failure reason: ${card.failure_reason ?? '<none>'}`,
+    `- Manual review required: ${card.manual_review_required ? 'true' : 'false'}`,
+    `- Manual review reasons: ${card.manual_review_reasons.length > 0 ? card.manual_review_reasons.join(', ') : '<none>'}`,
+    ...renderLevelStatuses(card),
+    `- Latest evidence: ${card.latest_evidence.state}; owner=${card.latest_evidence.owner}; artifact_path=${card.latest_evidence.artifact_path ?? '<none>'}`,
     `- Next action: ${card.next_action}`,
     '',
   ];
@@ -142,6 +210,10 @@ export function renderStoryAcceptanceReportMarkdown(report: StoryAcceptanceRepor
     `- Summary: ${report.risk_summary.summary}`,
     `- Manual review required: ${report.risk_summary.manual_review_required ? 'true' : 'false'}`,
     `- Broad impact: ${report.risk_summary.broad_impact ? 'true' : 'false'}`,
+    '',
+    '## Story Status',
+    '',
+    ...renderStoryStatusTable(report.story_cards),
     '',
     '## Changed Files',
     '',

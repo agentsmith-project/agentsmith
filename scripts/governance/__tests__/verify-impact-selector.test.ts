@@ -42,7 +42,17 @@ describe('verify impact selector', () => {
     expect(plan.storyCards.find((card) => card.storyId === 'mock-lane-chat-operate-and-recover')).toMatchObject({
       lane: 'mock-lane',
       risk: 'required',
+      riskLevel: 'R2',
+      status: 'manual_review_needed',
       evidenceStatus: 'not_evaluated',
+      manualReviewRequired: true,
+    });
+    const visualCard = plan.storyCards.find((card) => card.storyId === 'mock-lane-chat-operate-and-recover');
+    expect(visualCard?.manualReviewReasons).toContain('visual V2 needs review');
+    expect(visualCard?.levelStatuses).toContainEqual({
+      level: 'V2',
+      status: 'manual_review_needed',
+      reason: 'Visual V2 needs review; verify report did not inspect visual evidence.',
     });
   });
 
@@ -88,6 +98,8 @@ describe('verify impact selector', () => {
     ]);
     expect(storyCard?.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
     expect(storyCard?.lane).toBe('backend-real');
+    expect(storyCard?.riskLevel).toBe('R1');
+    expect(storyCard?.riskReason).toContain('backend-real');
   });
 
   it('maps canonical story markdown changes to the exact story and requires manual review', () => {
@@ -170,6 +182,12 @@ describe('verify impact selector', () => {
     expect(plan.nextAction).toContain('npm run release:ready');
     expect(plan.releaseVerdict).toBe(false);
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.storyCards[0]).toMatchObject({
+      riskLevel: 'R0',
+      status: 'manual_review_needed',
+      manualReviewRequired: true,
+    });
+    expect(plan.storyCards[0]?.manualReviewReasons).toContain('release/deploy/rehearsal operator review');
   });
 
   it('maps backend-real full gate to the release-real owner diagnostic instead of V4 release closure', () => {
@@ -198,6 +216,9 @@ describe('verify impact selector', () => {
     expect(plan.riskSummary.broadImpact).toBe(true);
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
     expect(plan.nextAction).toContain('Manual impact owner triage');
+    expect(plan.storyCards[0]?.riskReason).toContain('inferred fail-closed');
+    expect(plan.storyCards[0]?.manualReviewReasons).toContain('unmapped source');
+    expect(plan.storyCards[0]?.levelStatuses.length).toBe(plan.storyCards[0]?.requiredLevels.length);
   });
 
   it('keeps broad-impact story cards on their own story-level evidence lanes', () => {
@@ -270,7 +291,12 @@ describe('verify impact selector', () => {
       const report = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
         schema: string;
         changed_files: string[];
-        story_cards: Array<{ story_id: string; evidence_status: string }>;
+        story_cards: Array<{
+          story_id: string;
+          evidence_status: string;
+          level_statuses: Array<{ level: string; status: string; reason: string }>;
+          latest_evidence: { state: string; owner: string; artifact_path: string | null };
+        }>;
         final_verdict: string;
         release_verdict: boolean;
       };
@@ -278,11 +304,23 @@ describe('verify impact selector', () => {
       expect(report.changed_files).toEqual(['src/components/chat/ChatMainPane.tsx']);
       expect(report.story_cards.some((card) => card.story_id === 'mock-lane-chat-operate-and-recover')).toBe(true);
       expect(report.story_cards.every((card) => ['not_evaluated', 'missing'].includes(card.evidence_status))).toBe(true);
+      const reportCard = report.story_cards.find((card) => card.story_id === 'mock-lane-chat-operate-and-recover');
+      expect(reportCard?.level_statuses).toContainEqual({
+        level: 'V2',
+        status: 'manual_review_needed',
+        reason: 'Visual V2 needs review; verify report did not inspect visual evidence.',
+      });
+      expect(reportCard?.latest_evidence).toEqual({
+        state: 'not_inspected_by_verify_report',
+        owner: 'visual review owner',
+        artifact_path: null,
+      });
       expect(report.final_verdict).toBe('not_evaluated_fail_closed');
       expect(report.release_verdict).toBe(false);
 
       const markdown = readFileSync(markdownPath, 'utf8');
       expect(markdown).toContain('Story Acceptance Report');
+      expect(markdown).toContain('| Story | Risk | Status | Required levels | Manual review | Next action |');
       expect(markdown).toContain('not release readiness');
       expect(markdown).toContain('not a release verdict');
       expect(markdown).toContain('mock-lane-chat-operate-and-recover');

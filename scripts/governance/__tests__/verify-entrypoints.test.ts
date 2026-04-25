@@ -98,6 +98,9 @@ describe('verify human entrypoints', () => {
       expect(result.stdout).toContain('npm run verify:visual');
       expect(result.stdout).toContain('this is not release readiness');
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
+      expect(readFileSync(join(root, 'story-acceptance-report.md'), 'utf8')).toContain(
+        '| Story | Risk | Status | Required levels | Manual review | Next action |',
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -273,9 +276,19 @@ describe('verify human entrypoints', () => {
       const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
         final_verdict: string;
         recommended_commands: string[];
+        story_cards: Array<{
+          risk_level: string;
+          manual_review_required: boolean;
+          manual_review_reasons: string[];
+        }>;
       };
       expect(report.final_verdict).toBe('not_evaluated_next_action_required');
       expect(report.recommended_commands).toEqual([]);
+      expect(report.story_cards[0]).toMatchObject({
+        risk_level: 'R0',
+        manual_review_required: true,
+      });
+      expect(report.story_cards[0]?.manual_review_reasons).toContain('release/deploy/rehearsal operator review');
       expect(existsSync(logPath)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });

@@ -97,6 +97,12 @@ export function renderVerificationPlan(plan: VerificationPlan): string {
     ...renderRecommendedPlan(plan),
     '',
     `Next action: ${plan.nextAction}`,
+    ...(plan.nextActions.length > 1
+      ? [
+          'Next actions:',
+          ...plan.nextActions.map((action, index) => `${index + 1}. ${action}`),
+        ]
+      : []),
     `Final verdict: ${humanizeVerdict(plan.finalVerdict)}`,
     'Note: this is not release readiness and not a release verdict.',
     '',

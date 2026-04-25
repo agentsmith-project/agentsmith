@@ -46,7 +46,25 @@ export interface StoryAcceptanceReportCard {
     artifact_path_template_reason: string | null;
     note: string;
   }[];
+  impact_sources: readonly {
+    changed_file: string;
+    rule: string;
+    surface: string;
+    action: string;
+    manual_review_required: boolean;
+    broad_impact: boolean;
+  }[];
   next_action: string;
+}
+
+export interface StoryAcceptanceChangedFileImpact {
+  changed_file: string;
+  matched_rules: readonly string[];
+  affected_surfaces: readonly string[];
+  story_ids: readonly string[];
+  action: string;
+  manual_review_required: boolean;
+  broad_impact: boolean;
 }
 
 export interface StoryAcceptanceReport {
@@ -67,10 +85,12 @@ export interface StoryAcceptanceReport {
   recommended_commands: readonly string[];
   final_verdict: string;
   next_action: string;
+  next_actions: readonly string[];
   report_root: string;
   verification_catalog_path?: string;
   release_verdict: false;
   not_release_readiness: true;
+  changed_file_impacts: readonly StoryAcceptanceChangedFileImpact[];
   story_cards: readonly StoryAcceptanceReportCard[];
 }
 
@@ -119,7 +139,29 @@ function toReportCard(card: VerificationStoryCard): StoryAcceptanceReportCard {
       artifact_path_template_reason: evidenceCard.artifactPathTemplateReason,
       note: evidenceCard.note,
     })),
+    impact_sources: card.impactSources.map((source) => ({
+      changed_file: source.changedFile,
+      rule: source.rule,
+      surface: source.surface,
+      action: source.action,
+      manual_review_required: source.manualReviewRequired,
+      broad_impact: source.broadImpact,
+    })),
     next_action: card.nextAction,
+  };
+}
+
+function toChangedFileImpact(
+  impact: VerificationPlan['changedFileImpacts'][number],
+): StoryAcceptanceChangedFileImpact {
+  return {
+    changed_file: impact.changedFile,
+    matched_rules: impact.matchedRules,
+    affected_surfaces: impact.affectedSurfaces,
+    story_ids: impact.storyIds,
+    action: impact.action,
+    manual_review_required: impact.manualReviewRequired,
+    broad_impact: impact.broadImpact,
   };
 }
 
@@ -146,12 +188,14 @@ export function buildStoryAcceptanceReport(
     recommended_commands: plan.recommendedCommands,
     final_verdict: plan.finalVerdict,
     next_action: plan.nextAction,
+    next_actions: plan.nextActions,
     report_root: reportRoot,
     ...(options.verificationCatalogPath
       ? { verification_catalog_path: path.resolve(options.verificationCatalogPath) }
       : {}),
     release_verdict: false,
     not_release_readiness: true,
+    changed_file_impacts: plan.changedFileImpacts.map(toChangedFileImpact),
     story_cards: plan.storyCards.map(toReportCard),
   };
 }
@@ -165,6 +209,33 @@ function renderList(values: readonly string[], empty = '<none>'): string[] {
 
 function renderMarkdownTableValue(value: string): string {
   return value.replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim();
+}
+
+function renderNextActions(actions: readonly string[]): string[] {
+  if (actions.length === 0) {
+    return ['- <none>'];
+  }
+  return actions.map((action) => `- ${action}`);
+}
+
+function renderChangedFileImpactTable(impacts: readonly StoryAcceptanceChangedFileImpact[]): string[] {
+  if (impacts.length === 0) {
+    return ['No changed-file impact explanations were selected.'];
+  }
+
+  return [
+    '| Changed file | Rules | Surfaces | Story IDs | Manual review | Broad impact | Action |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
+    ...impacts.map((impact) => [
+      impact.changed_file,
+      impact.matched_rules.join(', '),
+      impact.affected_surfaces.join(', '),
+      impact.story_ids.join(', '),
+      impact.manual_review_required ? 'true' : 'false',
+      impact.broad_impact ? 'true' : 'false',
+      impact.action,
+    ].map(renderMarkdownTableValue).join(' | ')).map((row) => `| ${row} |`),
+  ];
 }
 
 function renderStoryStatusTable(cards: readonly StoryAcceptanceReportCard[]): string[] {
@@ -183,6 +254,18 @@ function renderStoryStatusTable(cards: readonly StoryAcceptanceReportCard[]): st
       card.manual_review_required ? card.manual_review_reasons.join(', ') || 'required' : 'false',
       card.next_action,
     ].map(renderMarkdownTableValue).join(' | ')).map((row) => `| ${row} |`),
+  ];
+}
+
+function renderImpactSources(card: StoryAcceptanceReportCard): string[] {
+  if (card.impact_sources.length === 0) {
+    return ['- Impact sources: <none>'];
+  }
+  return [
+    '- Impact sources:',
+    ...card.impact_sources.map((source) => (
+      `  - ${source.changed_file}: rule=${source.rule}; surface=${source.surface}; manual_review=${source.manual_review_required ? 'true' : 'false'}; broad_impact=${source.broad_impact ? 'true' : 'false'}; action=${source.action}`
+    )),
   ];
 }
 
@@ -232,6 +315,7 @@ function renderStoryCard(card: StoryAcceptanceReportCard): string[] {
     `- Failure reason: ${card.failure_reason ?? '<none>'}`,
     `- Manual review required: ${card.manual_review_required ? 'true' : 'false'}`,
     `- Manual review reasons: ${card.manual_review_reasons.length > 0 ? card.manual_review_reasons.join(', ') : '<none>'}`,
+    ...renderImpactSources(card),
     ...renderLevelStatuses(card),
     `- Latest evidence: ${card.latest_evidence.state}; owner=${card.latest_evidence.owner}; artifact_path=${card.latest_evidence.artifact_path ?? '<none>'}`,
     ...renderEvidenceCards(card),
@@ -253,13 +337,15 @@ export function renderStoryAcceptanceReportMarkdown(report: StoryAcceptanceRepor
       ? [`- Verification catalog: ${report.verification_catalog_path}`]
       : []),
     '',
-    'This report is not release readiness and not a release verdict. It does not claim passed, stale, or release-ready evidence.',
+    'This report is not release readiness and not a release verdict. It only records not_evaluated, missing, or manual_review_needed states.',
     '',
     '## Verdict',
     '',
     `- Final verdict: ${report.final_verdict}`,
     '- Release verdict: false',
     `- Next action: ${report.next_action}`,
+    '- Next actions:',
+    ...renderNextActions(report.next_actions),
     '',
     '## Risk',
     '',
@@ -275,6 +361,10 @@ export function renderStoryAcceptanceReportMarkdown(report: StoryAcceptanceRepor
     '## Changed Files',
     '',
     ...renderList(report.changed_files),
+    '',
+    '## Changed File Impacts',
+    '',
+    ...renderChangedFileImpactTable(report.changed_file_impacts),
     '',
     '## Required Levels',
     '',

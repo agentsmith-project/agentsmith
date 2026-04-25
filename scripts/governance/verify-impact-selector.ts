@@ -17,6 +17,14 @@ export type StoryCardRisk = 'required' | 'inferred';
 export type StoryEvidenceStatus = 'not_evaluated' | 'missing';
 export type StoryRiskLevel = 'R0' | 'R1' | 'R2' | 'R3';
 export type StoryEvaluationStatus = 'not_evaluated' | 'missing' | 'manual_review_needed';
+export type ChangedFileImpactRule =
+  | 'canonical_story_markdown'
+  | 'generated_story_specs_derived_cache'
+  | 'visual_code_ref'
+  | 'runner_context_credential'
+  | 'release_real_owner_diagnostic'
+  | 'release_deploy_rehearsal'
+  | 'unmapped_source';
 
 export interface StoryLevelStatus {
   level: VerificationLevel;
@@ -40,6 +48,25 @@ export interface StoryEvidenceCard {
   additionalArtifactPathTemplates: readonly string[];
   artifactPathTemplateReason: string | null;
   note: string;
+}
+
+export interface VerificationStoryImpactSource {
+  changedFile: string;
+  rule: ChangedFileImpactRule;
+  surface: string;
+  action: string;
+  manualReviewRequired: boolean;
+  broadImpact: boolean;
+}
+
+export interface VerificationChangedFileImpact {
+  changedFile: string;
+  matchedRules: readonly ChangedFileImpactRule[];
+  affectedSurfaces: readonly string[];
+  storyIds: readonly string[];
+  action: string;
+  manualReviewRequired: boolean;
+  broadImpact: boolean;
 }
 
 export interface VerificationRiskSummary {
@@ -70,6 +97,7 @@ export interface VerificationStoryCard {
   levelStatuses: readonly StoryLevelStatus[];
   latestEvidence: StoryLatestEvidence;
   evidenceCards: readonly StoryEvidenceCard[];
+  impactSources: readonly VerificationStoryImpactSource[];
   nextAction: string;
 }
 
@@ -86,8 +114,10 @@ export interface VerificationPlan {
   recommendedCommands: readonly string[];
   riskSummary: VerificationRiskSummary;
   storyCards: readonly VerificationStoryCard[];
+  changedFileImpacts: readonly VerificationChangedFileImpact[];
   finalVerdict: string;
   nextAction: string;
+  nextActions: readonly string[];
   reportRoot?: string;
   releaseVerdict: false;
 }
@@ -117,9 +147,23 @@ type MutableStoryCard = Omit<
   | 'levelStatuses'
   | 'latestEvidence'
   | 'evidenceCards'
+  | 'impactSources'
+  | 'nextAction'
 > & {
   requiredLevels: Set<VerificationLevel>;
   manualReviewReasons: Set<StoryManualReviewReason>;
+  impactSources: Map<string, VerificationStoryImpactSource>;
+  nextActions: string[];
+};
+
+type MutableChangedFileImpact = {
+  changedFile: string;
+  matchedRules: Set<ChangedFileImpactRule>;
+  affectedSurfaces: Set<string>;
+  storyIds: Set<string>;
+  actions: string[];
+  manualReviewRequired: boolean;
+  broadImpact: boolean;
 };
 
 type ImpactAccumulator = {
@@ -129,12 +173,22 @@ type ImpactAccumulator = {
   reasons: string[];
   warnings: string[];
   storyCards: Map<string, MutableStoryCard>;
+  changedFileImpacts: Map<string, MutableChangedFileImpact>;
   manualReviewRequired: boolean;
   broadImpact: boolean;
   nextActions: string[];
 };
 
 const LEVEL_ORDER: readonly VerificationLevel[] = ['V0', 'V1', 'V2', 'V3', 'V4'];
+const IMPACT_RULE_ORDER: readonly ChangedFileImpactRule[] = [
+  'canonical_story_markdown',
+  'generated_story_specs_derived_cache',
+  'visual_code_ref',
+  'runner_context_credential',
+  'release_real_owner_diagnostic',
+  'release_deploy_rehearsal',
+  'unmapped_source',
+];
 const COMMAND_ORDER = [
   'npm run verify:quick',
   'npm run verify:default',
@@ -171,6 +225,11 @@ function uniqueSorted(values: Iterable<string>): string[] {
 function orderedLevels(values: Iterable<VerificationLevel>): VerificationLevel[] {
   const selected = new Set(values);
   return LEVEL_ORDER.filter((level) => selected.has(level));
+}
+
+function orderedImpactRules(values: Iterable<ChangedFileImpactRule>): ChangedFileImpactRule[] {
+  const selected = new Set(values);
+  return IMPACT_RULE_ORDER.filter((rule) => selected.has(rule));
 }
 
 function orderedCommands(values: Iterable<string>): string[] {
@@ -311,6 +370,7 @@ function createAccumulator(): ImpactAccumulator {
     reasons: [],
     warnings: [],
     storyCards: new Map<string, MutableStoryCard>(),
+    changedFileImpacts: new Map<string, MutableChangedFileImpact>(),
     manualReviewRequired: false,
     broadImpact: false,
     nextActions: [],
@@ -333,6 +393,124 @@ function pushUnique(values: string[], value: string): void {
   values.push(value);
 }
 
+function nextActionPriority(action: string): number {
+  if (action.includes('changed-file detection failed')) {
+    return 0;
+  }
+  if (action.includes('npm run release:ready') || action.includes('Release or deploy path changed')) {
+    return 1;
+  }
+  if (action.includes('Manual impact owner triage')) {
+    return 2;
+  }
+  if (action.includes('runner, Context Store, and credential owner review')) {
+    return 3;
+  }
+  if (action.includes('npm run verify:release-real')) {
+    return 4;
+  }
+  if (action.includes('Manual story review')) {
+    return 5;
+  }
+  if (action.includes('npm run verify:real')) {
+    return 6;
+  }
+  if (action.includes('npm run verify:visual')) {
+    return 7;
+  }
+  return 8;
+}
+
+function orderedNextActions(values: readonly string[]): string[] {
+  return values
+    .map((action, index) => ({ action, index, priority: nextActionPriority(action) }))
+    .sort((left, right) => (
+      left.priority - right.priority
+      || left.index - right.index
+      || left.action.localeCompare(right.action)
+    ))
+    .map((entry) => entry.action);
+}
+
+function storyImpactSourceKey(source: VerificationStoryImpactSource): string {
+  return [
+    source.changedFile,
+    source.rule,
+    source.surface,
+    source.action,
+    source.manualReviewRequired ? 'manual' : 'automatic',
+    source.broadImpact ? 'broad' : 'targeted',
+  ].join('\0');
+}
+
+function addStoryImpactSource(
+  card: MutableStoryCard,
+  source: VerificationStoryImpactSource | undefined,
+): void {
+  if (!source) {
+    return;
+  }
+  card.impactSources.set(storyImpactSourceKey(source), source);
+}
+
+function orderedStoryImpactSources(
+  sources: Iterable<VerificationStoryImpactSource>,
+): VerificationStoryImpactSource[] {
+  return [...sources].sort((left, right) => (
+    left.changedFile.localeCompare(right.changedFile)
+    || IMPACT_RULE_ORDER.indexOf(left.rule) - IMPACT_RULE_ORDER.indexOf(right.rule)
+    || left.surface.localeCompare(right.surface)
+    || left.action.localeCompare(right.action)
+  ));
+}
+
+function recordChangedFileImpact(
+  accumulator: ImpactAccumulator,
+  args: {
+    changedFile: string;
+    rule: ChangedFileImpactRule;
+    surfaces: readonly string[];
+    storyIds: readonly string[];
+    action: string;
+    manualReviewRequired: boolean;
+    broadImpact: boolean;
+  },
+): void {
+  const existing = accumulator.changedFileImpacts.get(args.changedFile) ?? {
+    changedFile: args.changedFile,
+    matchedRules: new Set<ChangedFileImpactRule>(),
+    affectedSurfaces: new Set<string>(),
+    storyIds: new Set<string>(),
+    actions: [],
+    manualReviewRequired: false,
+    broadImpact: false,
+  };
+
+  existing.matchedRules.add(args.rule);
+  for (const surface of args.surfaces) {
+    existing.affectedSurfaces.add(surface);
+  }
+  for (const storyId of args.storyIds) {
+    existing.storyIds.add(storyId);
+  }
+  pushUnique(existing.actions, args.action);
+  existing.manualReviewRequired = existing.manualReviewRequired || args.manualReviewRequired;
+  existing.broadImpact = existing.broadImpact || args.broadImpact;
+  accumulator.changedFileImpacts.set(args.changedFile, existing);
+}
+
+function changedFileImpactToImmutable(impact: MutableChangedFileImpact): VerificationChangedFileImpact {
+  return {
+    changedFile: impact.changedFile,
+    matchedRules: orderedImpactRules(impact.matchedRules),
+    affectedSurfaces: uniqueSorted(impact.affectedSurfaces),
+    storyIds: uniqueSorted(impact.storyIds),
+    action: orderedNextActions(impact.actions)[0] ?? 'Review changed-file impact selection with the verification owner.',
+    manualReviewRequired: impact.manualReviewRequired,
+    broadImpact: impact.broadImpact,
+  };
+}
+
 function addStoryCard(
   accumulator: ImpactAccumulator,
   story: VerificationCatalogStory,
@@ -342,6 +520,7 @@ function addStoryCard(
     evidenceStatus: StoryEvidenceStatus;
     manualReviewReasons?: readonly StoryManualReviewReason[];
     nextAction: string;
+    impactSource?: VerificationStoryImpactSource;
   },
 ): void {
   if (args.manualReviewReasons && args.manualReviewReasons.length > 0) {
@@ -362,9 +541,8 @@ function addStoryCard(
     if (existing.evidenceStatus === 'not_evaluated' && args.evidenceStatus === 'missing') {
       existing.evidenceStatus = 'missing';
     }
-    if (!existing.nextAction.includes(args.nextAction)) {
-      existing.nextAction = `${existing.nextAction} ${args.nextAction}`;
-    }
+    pushUnique(existing.nextActions, args.nextAction);
+    addStoryImpactSource(existing, args.impactSource);
     return;
   }
 
@@ -379,7 +557,10 @@ function addStoryCard(
     requiredLevels: new Set(args.levels),
     evidenceStatus: args.evidenceStatus,
     manualReviewReasons: new Set(args.manualReviewReasons ?? []),
-    nextAction: args.nextAction,
+    impactSources: new Map<string, VerificationStoryImpactSource>(
+      args.impactSource ? [[storyImpactSourceKey(args.impactSource), args.impactSource]] : [],
+    ),
+    nextActions: [args.nextAction],
   });
 }
 
@@ -391,6 +572,7 @@ function addBroadStoryCards(
     nextAction: string;
     evidenceStatus?: StoryEvidenceStatus;
     manualReviewReasons?: readonly StoryManualReviewReason[];
+    impactSource?: VerificationStoryImpactSource;
   },
 ): void {
   accumulator.broadImpact = true;
@@ -403,6 +585,7 @@ function addBroadStoryCards(
       evidenceStatus: args.evidenceStatus ?? 'missing',
       manualReviewReasons: args.manualReviewReasons,
       nextAction: args.nextAction,
+      impactSource: args.impactSource,
     });
   }
 }
@@ -606,9 +789,21 @@ function storyCardToImmutable(card: MutableStoryCard, context: EvidenceCardBuild
   const manualReviewRequired = manualReviewReasons.length > 0;
   const status: StoryEvaluationStatus = manualReviewRequired ? 'manual_review_needed' : card.evidenceStatus;
   const levelStatuses = levelStatusForCard(card, requiredLevels);
+  const nextAction = orderedNextActions(card.nextActions).join(' ');
+  const {
+    requiredLevels: _requiredLevels,
+    manualReviewReasons: _manualReviewReasons,
+    impactSources: _impactSources,
+    nextActions: _nextActions,
+    ...cardFields
+  } = card;
+  void _requiredLevels;
+  void _manualReviewReasons;
+  void _impactSources;
+  void _nextActions;
 
   return {
-    ...card,
+    ...cardFields,
     riskLevel,
     riskReason: riskReasonForCard(card, riskLevel),
     requiredLevels,
@@ -619,6 +814,8 @@ function storyCardToImmutable(card: MutableStoryCard, context: EvidenceCardBuild
     levelStatuses,
     latestEvidence: latestEvidenceForCard(card, requiredLevels),
     evidenceCards: evidenceCardsForCard(levelStatuses, context),
+    impactSources: orderedStoryImpactSources(card.impactSources.values()),
+    nextAction,
   };
 }
 
@@ -696,32 +893,71 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       mapped = true;
       const levels = levelsForStory(exactStory);
       const action = 'Manual story review required because canonical story markdown changed; then run the recommended verification aliases.';
+      const surface = `story:${exactStory.storyId}`;
+      const impactSource: VerificationStoryImpactSource = {
+        changedFile,
+        rule: 'canonical_story_markdown',
+        surface,
+        action,
+        manualReviewRequired: true,
+        broadImpact: false,
+      };
       addLevels(accumulator, levels);
-      accumulator.surfaces.add(`story:${exactStory.storyId}`);
+      accumulator.surfaces.add(surface);
       accumulator.manualReviewRequired = true;
       accumulator.reasons.push(`${changedFile} is canonical story markdown for ${exactStory.storyId}.`);
       pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'canonical_story_markdown',
+        surfaces: [surface],
+        storyIds: [exactStory.storyId],
+        action,
+        manualReviewRequired: true,
+        broadImpact: false,
+      });
       addStoryCard(accumulator, exactStory, {
         risk: 'required',
         levels,
         evidenceStatus: 'not_evaluated',
         manualReviewReasons: [MANUAL_REVIEW_REASONS.storyMarkdownChanged],
         nextAction: action,
+        impactSource,
       });
     }
 
     if (isGeneratedStorySpec(changedFile, catalog)) {
       mapped = true;
       const action = 'Manual impact owner triage required because generated story specs are derived cache, not canonical story truth.';
-      accumulator.surfaces.add('derived-cache:story-specs');
+      const surface = 'derived-cache:story-specs';
+      const storyIds = stories.map((story) => story.storyId);
+      const impactSource: VerificationStoryImpactSource = {
+        changedFile,
+        rule: 'generated_story_specs_derived_cache',
+        surface,
+        action,
+        manualReviewRequired: true,
+        broadImpact: true,
+      };
+      accumulator.surfaces.add(surface);
       accumulator.broadImpact = true;
       accumulator.manualReviewRequired = true;
       accumulator.warnings.push('Generated story spec changed as derived cache drift; canonical story truth remains e2e/stories/**/*.story.md.');
       accumulator.reasons.push(`${changedFile} is derived cache and is not used as story truth.`);
       pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'generated_story_specs_derived_cache',
+        surfaces: [surface],
+        storyIds,
+        action,
+        manualReviewRequired: true,
+        broadImpact: true,
+      });
       addBroadStoryCards(accumulator, stories, {
         nextAction: action,
         manualReviewReasons: [MANUAL_REVIEW_REASONS.generatedSpecsDerivedCacheDrift],
+        impactSource,
       });
     }
 
@@ -737,6 +973,15 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       for (const match of visualMatches) {
         accumulator.surfaces.add(match.surface);
         const story = catalog.story_by_id[match.storyId];
+        recordChangedFileImpact(accumulator, {
+          changedFile,
+          rule: 'visual_code_ref',
+          surfaces: [match.surface],
+          storyIds: [match.storyId],
+          action,
+          manualReviewRequired: true,
+          broadImpact: false,
+        });
         if (story) {
           addStoryCard(accumulator, story, {
             risk: 'required',
@@ -744,6 +989,14 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
             evidenceStatus: 'not_evaluated',
             manualReviewReasons: [MANUAL_REVIEW_REASONS.visualV2NeedsReview],
             nextAction: action,
+            impactSource: {
+              changedFile,
+              rule: 'visual_code_ref',
+              surface: match.surface,
+              action,
+              manualReviewRequired: true,
+              broadImpact: false,
+            },
           });
         }
       }
@@ -752,56 +1005,126 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
     if (isRunnerContextOrCredentialPath(changedFile)) {
       mapped = true;
       const action = 'Run npm run verify:real with runner, Context Store, and credential owner review.';
-      accumulator.surfaces.add('runner/context-store/credentials');
+      const surface = 'runner/context-store/credentials';
+      const impactedStories = stories.filter((story) => story.lane === 'backend-real');
+      const impactSource: VerificationStoryImpactSource = {
+        changedFile,
+        rule: 'runner_context_credential',
+        surface,
+        action,
+        manualReviewRequired: true,
+        broadImpact: true,
+      };
+      accumulator.surfaces.add(surface);
       accumulator.broadImpact = true;
       accumulator.manualReviewRequired = true;
       accumulator.reasons.push(`${changedFile} touches runner, Context Store, or credential behavior.`);
       pushUnique(accumulator.nextActions, action);
-      addBroadStoryCards(accumulator, stories.filter((story) => story.lane === 'backend-real'), {
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'runner_context_credential',
+        surfaces: [surface],
+        storyIds: impactedStories.map((story) => story.storyId),
+        action,
+        manualReviewRequired: true,
+        broadImpact: true,
+      });
+      addBroadStoryCards(accumulator, impactedStories, {
         nextAction: action,
         manualReviewReasons: [MANUAL_REVIEW_REASONS.runnerContextCredentialOwnerReview],
+        impactSource,
       });
     }
 
     if (isReleaseRealOwnerDiagnosticPath(changedFile)) {
       mapped = true;
       const action = 'Run npm run verify:release-real as a release backend-real owner diagnostic; this report is not release readiness.';
+      const surface = 'release-real-owner';
       accumulator.levels.add('V3');
       accumulator.commands.add('npm run verify:release-real');
-      accumulator.surfaces.add('release-real-owner');
+      accumulator.surfaces.add(surface);
       accumulator.reasons.push(`${changedFile} owns the backend-real release diagnostic gate.`);
       pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'release_real_owner_diagnostic',
+        surfaces: [surface],
+        storyIds: [],
+        action,
+        manualReviewRequired: false,
+        broadImpact: false,
+      });
     }
 
     if (isReleaseDeployOrRehearsalPath(changedFile)) {
       mapped = true;
       const levels: readonly VerificationLevel[] = ['V4'];
       const action = 'Release or deploy path changed. Use npm run release:ready as the next release operation outside this verification report; this report is not a release verdict.';
+      const surface = 'release/deploy/rehearsal';
+      const storyIds = stories.map((story) => story.storyId);
+      const impactSource: VerificationStoryImpactSource = {
+        changedFile,
+        rule: 'release_deploy_rehearsal',
+        surface,
+        action,
+        manualReviewRequired: true,
+        broadImpact: true,
+      };
       addLevels(accumulator, levels);
-      accumulator.surfaces.add('release/deploy/rehearsal');
+      accumulator.surfaces.add(surface);
       accumulator.broadImpact = true;
       accumulator.manualReviewRequired = true;
       accumulator.reasons.push(`${changedFile} touches release, deploy, or rehearsal operations.`);
       pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'release_deploy_rehearsal',
+        surfaces: [surface],
+        storyIds,
+        action,
+        manualReviewRequired: true,
+        broadImpact: true,
+      });
       addBroadStoryCards(accumulator, stories, {
         levels,
         nextAction: action,
         evidenceStatus: 'missing',
         manualReviewReasons: [MANUAL_REVIEW_REASONS.releaseDeployRehearsalOperatorReview],
+        impactSource,
       });
     }
 
     if (!mapped) {
       const action = 'Manual impact owner triage required; treat all canonical stories as potentially affected until the source path is mapped.';
-      accumulator.surfaces.add('unmapped-source');
+      const surface = 'unmapped-source';
+      const storyIds = stories.map((story) => story.storyId);
+      const impactSource: VerificationStoryImpactSource = {
+        changedFile,
+        rule: 'unmapped_source',
+        surface,
+        action,
+        manualReviewRequired: true,
+        broadImpact: true,
+      };
+      accumulator.surfaces.add(surface);
       accumulator.broadImpact = true;
       accumulator.manualReviewRequired = true;
       accumulator.warnings.push(`${changedFile} did not match canonical story markdown, visual code refs, runner/context/credential paths, or release paths.`);
       accumulator.reasons.push(`${changedFile} is unmapped source impact.`);
       pushUnique(accumulator.nextActions, action);
+      recordChangedFileImpact(accumulator, {
+        changedFile,
+        rule: 'unmapped_source',
+        surfaces: [surface],
+        storyIds,
+        action,
+        manualReviewRequired: true,
+        broadImpact: true,
+      });
       addBroadStoryCards(accumulator, stories, {
         nextAction: action,
         manualReviewReasons: [MANUAL_REVIEW_REASONS.unmappedSource],
+        impactSource,
       });
     }
   }
@@ -829,7 +1152,13 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
     : changedFiles.length === 0 && !input.changeDetectionFailure
       ? ['No changed files provided or detected; default goal-based verification plan.']
       : [`No story cards selected; mapped operational impact: ${affectedSurfaces.join(', ') || '<none>'}.`];
-  const nextAction = accumulator.nextActions[0] ?? defaultNextAction(requiredLevels);
+  const nextActions = orderedNextActions(
+    accumulator.nextActions.length > 0 ? accumulator.nextActions : [defaultNextAction(requiredLevels)],
+  );
+  const nextAction = nextActions[0] ?? defaultNextAction(requiredLevels);
+  const changedFileImpacts = [...accumulator.changedFileImpacts.values()]
+    .map(changedFileImpactToImmutable)
+    .sort((left, right) => left.changedFile.localeCompare(right.changedFile));
   const finalVerdict = mode === 'dry-run'
     ? 'not_evaluated_fail_closed'
     : recommendedCommands.length > 0
@@ -858,8 +1187,10 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
       broadImpact: accumulator.broadImpact,
     },
     storyCards,
+    changedFileImpacts,
     finalVerdict,
     nextAction,
+    nextActions,
     reportRoot: input.reportRoot,
     releaseVerdict: false,
   };

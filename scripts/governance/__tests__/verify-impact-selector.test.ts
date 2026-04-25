@@ -34,10 +34,30 @@ type ReportEvidenceCard = {
   artifact_path_template_reason: string | null;
 };
 
+type ReportChangedFileImpact = {
+  changed_file: string;
+  matched_rules: string[];
+  affected_surfaces: string[];
+  story_ids: string[];
+  action: string;
+  manual_review_required: boolean;
+  broad_impact: boolean;
+};
+
+type ReportStoryImpactSource = {
+  changed_file: string;
+  rule: string;
+  surface: string;
+  action: string;
+  manual_review_required: boolean;
+  broad_impact: boolean;
+};
+
 type ReportStoryCard = {
   story_id: string;
   status: string;
   evidence_status: string;
+  impact_sources: ReportStoryImpactSource[];
   level_statuses: Array<{ level: string; status: string; reason: string }>;
   latest_evidence: { state: string; owner: string; artifact_path: string | null };
   evidence_cards: ReportEvidenceCard[];
@@ -106,6 +126,9 @@ describe('verify impact selector', () => {
       status: 'manual_review_needed',
       reason: 'Visual V2 needs review; verify report did not inspect visual evidence.',
     });
+    expect(plan.nextActions).toEqual([
+      'Run npm run verify:visual and review affected visual story cards before accepting the UI impact.',
+    ]);
   });
 
   it('does not emit duplicated reasons or next-action text for a single mapped visual file', () => {
@@ -118,6 +141,60 @@ describe('verify impact selector', () => {
     expect(occurrenceCount(plan.nextAction, 'Run npm run verify:visual')).toBe(1);
     expect(storyCard).toBeDefined();
     expect(occurrenceCount(storyCard?.nextAction ?? '', 'Run npm run verify:visual')).toBe(1);
+  });
+
+  it('prioritizes broad manual triage over visual-only action for mixed visual and unmapped impact', () => {
+    const plan = buildVerificationPlan({
+      changedFiles: [
+        'src/components/chat/ChatMainPane.tsx',
+        'src/lib/new-unmapped-source.ts',
+      ],
+    });
+    const chatImpact = plan.changedFileImpacts.find(
+      (impact) => impact.changedFile === 'src/components/chat/ChatMainPane.tsx',
+    );
+    const unmappedImpact = plan.changedFileImpacts.find(
+      (impact) => impact.changedFile === 'src/lib/new-unmapped-source.ts',
+    );
+    const chatStory = plan.storyCards.find(
+      (card) => card.storyId === 'mock-lane-chat-operate-and-recover',
+    );
+
+    expect(plan.riskSummary.broadImpact).toBe(true);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+    expect(plan.nextAction).toContain('Manual impact owner triage');
+    expect(plan.nextActions.some((action) => action.includes('Manual impact owner triage'))).toBe(true);
+    expect(plan.nextActions.some((action) => action.includes('npm run verify:visual'))).toBe(true);
+    expect(chatImpact).toMatchObject({
+      changedFile: 'src/components/chat/ChatMainPane.tsx',
+      matchedRules: ['visual_code_ref'],
+      manualReviewRequired: true,
+      broadImpact: false,
+    });
+    expect(chatImpact?.affectedSurfaces.some((surface) => surface.startsWith('visual:'))).toBe(true);
+    expect(chatImpact?.storyIds).toContain('mock-lane-chat-operate-and-recover');
+    expect(unmappedImpact).toMatchObject({
+      changedFile: 'src/lib/new-unmapped-source.ts',
+      matchedRules: ['unmapped_source'],
+      affectedSurfaces: ['unmapped-source'],
+      manualReviewRequired: true,
+      broadImpact: true,
+    });
+    expect(unmappedImpact?.storyIds.length).toBeGreaterThan(10);
+    expect(chatStory?.nextAction.startsWith('Manual impact owner triage')).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(chatStory, 'nextActions')).toBe(false);
+    expect(chatStory?.impactSources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        changedFile: 'src/components/chat/ChatMainPane.tsx',
+        rule: 'visual_code_ref',
+        broadImpact: false,
+      }),
+      expect.objectContaining({
+        changedFile: 'src/lib/new-unmapped-source.ts',
+        rule: 'unmapped_source',
+        broadImpact: true,
+      }),
+    ]));
   });
 
   it('keeps release-real goal as V3 backend-real owner diagnostic instead of V4 release closure', () => {
@@ -434,6 +511,88 @@ describe('verify impact selector', () => {
       expect(markdown).toContain(
         '- V2: owner=npm run verify:visual; status=manual_review_needed; path_template=artifacts/visual-baseline-reviews/<run-id>/run-manifest.json',
       );
+    });
+  });
+
+  it('writes changed-file impact explanations and story impact sources to report JSON and markdown', () => {
+    withTempDir('agentsmith-story-acceptance-impact-sources-', (reportRoot) => {
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--report-root',
+        reportRoot,
+        '--changed-file',
+        'src/components/chat/ChatMainPane.tsx',
+        '--changed-file',
+        'src/lib/new-unmapped-source.ts',
+      ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+
+      const report = JSON.parse(readFileSync(join(reportRoot, 'story-acceptance-report.json'), 'utf8')) as {
+        changed_file_impacts: ReportChangedFileImpact[];
+        next_action: string;
+        next_actions: string[];
+        release_verdict: boolean;
+        story_cards: ReportStoryCard[];
+      };
+      const chatImpact = report.changed_file_impacts.find(
+        (impact) => impact.changed_file === 'src/components/chat/ChatMainPane.tsx',
+      );
+      const unmappedImpact = report.changed_file_impacts.find(
+        (impact) => impact.changed_file === 'src/lib/new-unmapped-source.ts',
+      );
+      const chatCard = report.story_cards.find(
+        (card) => card.story_id === 'mock-lane-chat-operate-and-recover',
+      );
+
+      expect(report.next_action).toContain('Manual impact owner triage');
+      expect(report.next_actions.some((action) => action.includes('Manual impact owner triage'))).toBe(true);
+      expect(report.next_actions.some((action) => action.includes('npm run verify:visual'))).toBe(true);
+      expect(chatImpact).toMatchObject({
+        matched_rules: ['visual_code_ref'],
+        manual_review_required: true,
+        broad_impact: false,
+      });
+      expect(chatImpact?.story_ids).toContain('mock-lane-chat-operate-and-recover');
+      expect(unmappedImpact).toMatchObject({
+        matched_rules: ['unmapped_source'],
+        affected_surfaces: ['unmapped-source'],
+        manual_review_required: true,
+        broad_impact: true,
+      });
+      expect(chatCard?.impact_sources).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          changed_file: 'src/components/chat/ChatMainPane.tsx',
+          rule: 'visual_code_ref',
+          broad_impact: false,
+        }),
+        expect.objectContaining({
+          changed_file: 'src/lib/new-unmapped-source.ts',
+          rule: 'unmapped_source',
+          broad_impact: true,
+        }),
+      ]));
+      expect(reportStatusValues(report.story_cards).every((status) => (
+        status === 'not_evaluated'
+        || status === 'missing'
+        || status === 'manual_review_needed'
+      ))).toBe(true);
+      expect(reportStatusValues(report.story_cards)).not.toContain('passed');
+      expect(reportStatusValues(report.story_cards)).not.toContain('failed');
+      expect(reportStatusValues(report.story_cards)).not.toContain('stale');
+      expect(report.release_verdict).toBe(false);
+
+      const markdown = readFileSync(join(reportRoot, 'story-acceptance-report.md'), 'utf8');
+      expect(markdown).toContain('## Changed File Impacts');
+      expect(markdown).toContain('src/lib/new-unmapped-source.ts');
+      expect(markdown).toContain('unmapped_source');
+      expect(markdown).toContain('src/components/chat/ChatMainPane.tsx');
+      expect(markdown).toContain('visual_code_ref');
+      expect(markdown).toContain('- Impact sources:');
     });
   });
 });

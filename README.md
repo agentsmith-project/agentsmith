@@ -152,28 +152,22 @@ This validates the required behavior for MVP deployment without sandbox:
 - current API/Web/Runner path is healthy (`make local-manual-status`)
 - internal-agent sandbox path is fail-fast with explicit `AGENT_SANDBOX_NOT_CONFIGURED`
 
-### Default Gates And Verification Channels
+### Advanced Diagnostics And Owner Commands
 
-```bash
-npm run gate:fast
-npm run gate:default
-npm run gate:release
-```
+For daily verification, use the generated workflow entry above: `npm run verify`. For release readiness, use `npm run release:ready` and `npm run release:status`.
 
-`npm run release:ready` is the human-friendly release readiness entrypoint. It runs the non-verdict precheck first, then delegates to the existing `npm run release:campaign:full` campaign when precheck passes.
+The commands below are retained as advanced diagnostics and owner rerun references. They are not the default sequence for new contributors.
 
-`npm run release:campaign:full` remains the campaign launcher behind the wrapper. It orchestrates the required gates, lanes, evidence owners, rehearsal lanes, and terminal aggregate verdict.
-
-Use `npm run gate:release:full` only to aggregate an existing campaign with explicit campaign context such as `RELEASE_CAMPAIGN_ROOT=<campaign-root>`. It does not run suites.
-
-Release evidence owners you may rerun while diagnosing a failed campaign:
-
-```bash
-npm run gate:release
-npm run lane:visual
-npm run lane:demo-rehearsal
-npm run lane:cluster-rehearsal
-```
+| Command | Use |
+| --- | --- |
+| `npm run gate:fast` | Diagnostics shortcut when an owner needs to isolate fast gate failures. |
+| `npm run gate:default` | Owner rerun reference for default gate diagnostics after `npm run verify` fails. |
+| `npm run gate:release` | Owner rerun reference for release gate diagnostics in explicit campaign context. |
+| `npm run release:campaign:full` | Launcher behind `npm run release:ready`; not the newcomer default entrypoint. |
+| `RELEASE_CAMPAIGN_ROOT=<campaign-root> npm run gate:release:full` | Aggregate-only release verdict for an existing campaign; does not run suites. |
+| `npm run lane:visual` | Owner rerun reference for visual lane evidence in campaign diagnostics. |
+| `npm run lane:demo-rehearsal` | Owner rerun reference for demo rehearsal lane evidence in explicit campaign context. |
+| `npm run lane:cluster-rehearsal` | Owner rerun reference for cluster rehearsal lane evidence in explicit campaign context. |
 
 Optional operator-only Feishu checks when the current release scope includes Feishu:
 

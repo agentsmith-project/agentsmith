@@ -6,6 +6,12 @@ import {
   type VisualBaselineCatalogEntry,
 } from '../../e2e/visual-baseline-support';
 import { loadCommittedStoryDefinitionsSync } from '../story-catalog-support';
+import { findCurrentGateDefinitionById } from './current-gate-manifest';
+import {
+  findCurrentGateResultWriter,
+  resolveCurrentGateResultPath,
+} from './current-gate-result-schema';
+import { findCurrentVerificationCampaignById } from './current-verification-campaign-manifest';
 
 export type VerificationGoal = 'debug' | 'pr' | 'visual' | 'real' | 'release-real';
 export type VerificationMode = 'dry-run' | 'run';
@@ -25,6 +31,18 @@ export interface StoryLatestEvidence {
   state: 'not_inspected_by_verify_report';
   owner: string;
   artifactPath: string | null;
+}
+
+export interface StoryEvidenceCard {
+  level: VerificationLevel;
+  state: 'not_inspected_by_verify_report';
+  status: StoryEvaluationStatus;
+  owner: string;
+  artifactPath: string | null;
+  artifactPathTemplate: string | null;
+  additionalArtifactPathTemplates: readonly string[];
+  artifactPathTemplateReason: string | null;
+  note: string;
 }
 
 export interface VerificationRiskSummary {
@@ -54,6 +72,7 @@ export interface VerificationStoryCard {
   manualReviewReasons: readonly string[];
   levelStatuses: readonly StoryLevelStatus[];
   latestEvidence: StoryLatestEvidence;
+  evidenceCards: readonly StoryEvidenceCard[];
   nextAction: string;
 }
 
@@ -99,6 +118,7 @@ type MutableStoryCard = Omit<
   | 'manualReviewReasons'
   | 'levelStatuses'
   | 'latestEvidence'
+  | 'evidenceCards'
 > & {
   requiredLevels: Set<VerificationLevel>;
   manualReviewReasons: Set<StoryManualReviewReason>;
@@ -528,12 +548,149 @@ function latestEvidenceForCard(
   };
 }
 
-function storyCardToImmutable(card: MutableStoryCard): VerificationStoryCard {
+type EvidenceCardBuildContext = {
+  goal: VerificationGoal;
+  recommendedCommands: readonly string[];
+};
+
+type EvidenceTemplateResolution = {
+  artifactPathTemplate: string | null;
+  additionalArtifactPathTemplates: readonly string[];
+  artifactPathTemplateReason: string | null;
+};
+
+function currentGateResultTemplate(gateId: string): EvidenceTemplateResolution {
+  if (!findCurrentGateResultWriter(gateId)) {
+    return {
+      artifactPathTemplate: null,
+      additionalArtifactPathTemplates: [],
+      artifactPathTemplateReason: `No registered current gate result writer for ${gateId}; verify report records the owner but cannot name a stable canonical artifact template.`,
+    };
+  }
+
+  return {
+    artifactPathTemplate: resolveCurrentGateResultPath(`artifacts/gate-results/${gateId}/<run-id>`),
+    additionalArtifactPathTemplates: [],
+    artifactPathTemplateReason: null,
+  };
+}
+
+function firstCurrentGateStoryArtifact(gateId: string, match: (path: string) => boolean): string | null {
+  return findCurrentGateDefinitionById(gateId)?.storyEvidenceArtifacts.find(match) ?? null;
+}
+
+function firstCurrentGateStandaloneArtifact(gateId: string, match: (path: string) => boolean): string | null {
+  return findCurrentGateDefinitionById(gateId)?.standaloneEvidenceArtifacts.find(match) ?? null;
+}
+
+function releaseCampaignEvidenceTemplate(): EvidenceTemplateResolution {
+  const campaign = findCurrentVerificationCampaignById('release-full');
+  const runRootPattern = campaign?.runRootPattern ?? 'artifacts/release-runs/<campaign-run-id>';
+  const terminalStep = campaign?.steps.find((step) => step.id === 'gate-release-full');
+  const resultHint = terminalStep?.evidenceHints.find((hint) => hint.endsWith('/gate-release-full/result.json'))
+    ?? '<campaign-root>/gate-release-full/result.json';
+
+  return {
+    artifactPathTemplate: resultHint.replaceAll('<campaign-root>', runRootPattern),
+    additionalArtifactPathTemplates: [runRootPattern],
+    artifactPathTemplateReason: null,
+  };
+}
+
+function releaseRealDiagnosticSelected(context: EvidenceCardBuildContext): boolean {
+  return context.goal === 'release-real'
+    && context.recommendedCommands.includes('npm run verify:release-real');
+}
+
+function evidenceTemplateForLevel(
+  level: VerificationLevel,
+  context: EvidenceCardBuildContext,
+): EvidenceTemplateResolution {
+  if (level === 'V0') {
+    return currentGateResultTemplate('gate-fast');
+  }
+  if (level === 'V1') {
+    return currentGateResultTemplate('gate-default');
+  }
+  if (level === 'V2') {
+    const template = firstCurrentGateStandaloneArtifact(
+      'lane-visual',
+      (artifactPath) => artifactPath.endsWith('/run-manifest.json'),
+    );
+    return {
+      artifactPathTemplate: template,
+      additionalArtifactPathTemplates: [],
+      artifactPathTemplateReason: template
+        ? null
+        : 'No current lane-visual standalone run-manifest artifact template is registered.',
+    };
+  }
+  if (level === 'V3') {
+    const gateId = releaseRealDiagnosticSelected(context) ? 'gate-release' : 'lane-backend-real-core';
+    const template = releaseRealDiagnosticSelected(context)
+      ? firstCurrentGateStandaloneArtifact(gateId, (artifactPath) => artifactPath.includes('/ux-traces'))
+      : firstCurrentGateStoryArtifact(gateId, (artifactPath) => artifactPath.includes('/ux-traces'));
+    return {
+      artifactPathTemplate: template,
+      additionalArtifactPathTemplates: [],
+      artifactPathTemplateReason: template
+        ? null
+        : `No current ${gateId} UX trace artifact template is registered.`,
+    };
+  }
+  return releaseCampaignEvidenceTemplate();
+}
+
+function evidenceOwnerForLevel(level: VerificationLevel, context: EvidenceCardBuildContext): string {
+  if (level === 'V0') {
+    return 'npm run verify:quick';
+  }
+  if (level === 'V1') {
+    return 'npm run verify:default';
+  }
+  if (level === 'V2') {
+    return 'npm run verify:visual';
+  }
+  if (level === 'V3') {
+    return releaseRealDiagnosticSelected(context) ? 'npm run verify:release-real' : 'npm run verify:real';
+  }
+  return 'npm run release:ready';
+}
+
+function evidenceNoteForLevel(level: VerificationLevel): string {
+  if (level === 'V4') {
+    return 'Report-only pointer to release:ready campaign evidence; this report is not a release verdict.';
+  }
+  return 'Report-only pointer to producer-owned evidence; verify report did not inspect this artifact.';
+}
+
+function evidenceCardsForCard(
+  levelStatuses: readonly StoryLevelStatus[],
+  context: EvidenceCardBuildContext,
+): readonly StoryEvidenceCard[] {
+  return levelStatuses.map((levelStatus) => {
+    const template = evidenceTemplateForLevel(levelStatus.level, context);
+    return {
+      level: levelStatus.level,
+      state: 'not_inspected_by_verify_report',
+      status: levelStatus.status,
+      owner: evidenceOwnerForLevel(levelStatus.level, context),
+      artifactPath: null,
+      artifactPathTemplate: template.artifactPathTemplate,
+      additionalArtifactPathTemplates: template.additionalArtifactPathTemplates,
+      artifactPathTemplateReason: template.artifactPathTemplateReason,
+      note: evidenceNoteForLevel(levelStatus.level),
+    };
+  });
+}
+
+function storyCardToImmutable(card: MutableStoryCard, context: EvidenceCardBuildContext): VerificationStoryCard {
   const requiredLevels = orderedLevels(card.requiredLevels);
   const riskLevel = deriveRiskLevel(card, requiredLevels);
   const manualReviewReasons = orderedManualReviewReasons(card.manualReviewReasons);
   const manualReviewRequired = manualReviewReasons.length > 0;
   const status: StoryEvaluationStatus = manualReviewRequired ? 'manual_review_needed' : card.evidenceStatus;
+  const levelStatuses = levelStatusForCard(card, requiredLevels);
 
   return {
     ...card,
@@ -544,8 +701,9 @@ function storyCardToImmutable(card: MutableStoryCard): VerificationStoryCard {
     failureReason: null,
     manualReviewRequired,
     manualReviewReasons,
-    levelStatuses: levelStatusForCard(card, requiredLevels),
+    levelStatuses,
     latestEvidence: latestEvidenceForCard(card, requiredLevels),
+    evidenceCards: evidenceCardsForCard(levelStatuses, context),
   };
 }
 
@@ -740,7 +898,10 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
   const recommendedCommands = orderedCommands(accumulator.commands);
   const affectedSurfaces = uniqueSorted(accumulator.surfaces);
   const storyCards = [...accumulator.storyCards.values()]
-    .map(storyCardToImmutable)
+    .map((card) => storyCardToImmutable(card, {
+      goal,
+      recommendedCommands,
+    }))
     .sort((left, right) => left.storyId.localeCompare(right.storyId));
   const affectedStories = storyCards.length > 0
     ? storyCards.map((card) => card.storyId)

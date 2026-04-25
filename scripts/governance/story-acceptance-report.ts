@@ -35,6 +35,17 @@ export interface StoryAcceptanceReportCard {
     owner: string;
     artifact_path: string | null;
   };
+  evidence_cards: readonly {
+    level: string;
+    state: VerificationStoryCard['latestEvidence']['state'];
+    status: VerificationStoryCard['status'];
+    owner: string;
+    artifact_path: string | null;
+    artifact_path_template: string | null;
+    additional_artifact_path_templates: readonly string[];
+    artifact_path_template_reason: string | null;
+    note: string;
+  }[];
   next_action: string;
 }
 
@@ -92,6 +103,17 @@ function toReportCard(card: VerificationStoryCard): StoryAcceptanceReportCard {
       owner: card.latestEvidence.owner,
       artifact_path: card.latestEvidence.artifactPath,
     },
+    evidence_cards: card.evidenceCards.map((evidenceCard) => ({
+      level: evidenceCard.level,
+      state: evidenceCard.state,
+      status: evidenceCard.status,
+      owner: evidenceCard.owner,
+      artifact_path: evidenceCard.artifactPath,
+      artifact_path_template: evidenceCard.artifactPathTemplate,
+      additional_artifact_path_templates: evidenceCard.additionalArtifactPathTemplates,
+      artifact_path_template_reason: evidenceCard.artifactPathTemplateReason,
+      note: evidenceCard.note,
+    })),
     next_action: card.nextAction,
   };
 }
@@ -162,6 +184,25 @@ function renderLevelStatuses(card: StoryAcceptanceReportCard): string[] {
   ];
 }
 
+function renderEvidenceCards(card: StoryAcceptanceReportCard): string[] {
+  if (card.evidence_cards.length === 0) {
+    return ['- Evidence cards: <none>'];
+  }
+
+  return [
+    '- Evidence cards:',
+    ...card.evidence_cards.map((entry) => {
+      const additionalTemplates = entry.additional_artifact_path_templates.length > 0
+        ? `; additional_path_templates=${entry.additional_artifact_path_templates.join(', ')}`
+        : '';
+      const missingTemplateReason = entry.artifact_path_template_reason
+        ? `; template_reason=${entry.artifact_path_template_reason}`
+        : '';
+      return `  - ${entry.level}: owner=${entry.owner}; status=${entry.status}; path_template=${entry.artifact_path_template ?? '<none>'}${additionalTemplates}${missingTemplateReason}`;
+    }),
+  ];
+}
+
 function renderStoryCard(card: StoryAcceptanceReportCard): string[] {
   return [
     `### ${card.story_id}`,
@@ -181,6 +222,7 @@ function renderStoryCard(card: StoryAcceptanceReportCard): string[] {
     `- Manual review reasons: ${card.manual_review_reasons.length > 0 ? card.manual_review_reasons.join(', ') : '<none>'}`,
     ...renderLevelStatuses(card),
     `- Latest evidence: ${card.latest_evidence.state}; owner=${card.latest_evidence.owner}; artifact_path=${card.latest_evidence.artifact_path ?? '<none>'}`,
+    ...renderEvidenceCards(card),
     `- Next action: ${card.next_action}`,
     '',
   ];

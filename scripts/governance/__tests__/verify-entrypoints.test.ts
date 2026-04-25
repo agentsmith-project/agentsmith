@@ -9,6 +9,7 @@ import {
   buildVerificationPlan,
   renderVerificationPlan,
 } from '../run-verify';
+import { findCurrentGateDefinitionById } from '../current-gate-manifest';
 
 function readPackageScripts(): Record<string, string> {
   return (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> }).scripts;
@@ -33,6 +34,35 @@ printf '%s\\n' "$*" >> "${logPath}"
 exit 0
 `);
   chmodSync(path, 0o755);
+}
+
+type ReportEvidenceCard = {
+  level: string;
+  state: string;
+  status: string;
+  owner: string;
+  artifact_path: string | null;
+  artifact_path_template: string | null;
+  additional_artifact_path_templates: string[];
+  artifact_path_template_reason: string | null;
+};
+
+type ReportStoryCard = {
+  status: string;
+  evidence_status: string;
+  manual_review_required: boolean;
+  manual_review_reasons: string[];
+  level_statuses: Array<{ level: string; status: string; reason: string }>;
+  evidence_cards: ReportEvidenceCard[];
+};
+
+function reportStatusValues(cards: readonly ReportStoryCard[]): string[] {
+  return cards.flatMap((card) => [
+    card.status,
+    card.evidence_status,
+    ...card.level_statuses.map((entry) => entry.status),
+    ...card.evidence_cards.map((entry) => entry.status),
+  ]);
 }
 
 describe('verify human entrypoints', () => {
@@ -142,6 +172,8 @@ describe('verify human entrypoints', () => {
   it('keeps release-real as a V3 backend-real diagnostic without release readiness claims', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-verify-release-real-'));
     try {
+      const releaseRealUxTraceTemplate = findCurrentGateDefinitionById('gate-release')
+        ?.standaloneEvidenceArtifacts.find((artifactPath) => artifactPath.includes('/ux-traces'));
       const result = spawnSync('npx', [
         'tsx',
         'scripts/governance/run-verify.ts',
@@ -166,11 +198,26 @@ describe('verify human entrypoints', () => {
         not_release_readiness: boolean;
         required_levels: string[];
         recommended_commands: string[];
+        story_cards: ReportStoryCard[];
       };
+      const v3Evidence = report.story_cards[0]?.evidence_cards.find((card) => card.level === 'V3');
+
+      expect(releaseRealUxTraceTemplate).toBeTruthy();
       expect(report.required_levels).toEqual(['V0', 'V1', 'V3']);
       expect(report.recommended_commands).toContain('npm run verify:release-real');
+      expect(v3Evidence).toMatchObject({
+        state: 'not_inspected_by_verify_report',
+        status: 'manual_review_needed',
+        owner: 'npm run verify:release-real',
+        artifact_path: null,
+        artifact_path_template: releaseRealUxTraceTemplate,
+        artifact_path_template_reason: null,
+      });
+      expect(v3Evidence?.additional_artifact_path_templates).toEqual([]);
       expect(report.release_verdict).toBe(false);
       expect(report.not_release_readiness).toBe(true);
+      expect(reportStatusValues(report.story_cards)).not.toContain('passed');
+      expect(reportStatusValues(report.story_cards)).not.toContain('stale');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -274,13 +321,12 @@ describe('verify human entrypoints', () => {
       expect(result.stdout).not.toContain('npm run verify:release-real');
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
       const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
+        schema: string;
         final_verdict: string;
         recommended_commands: string[];
-        story_cards: Array<{
-          risk_level: string;
-          manual_review_required: boolean;
-          manual_review_reasons: string[];
-        }>;
+        release_verdict: boolean;
+        not_release_readiness: boolean;
+        story_cards: Array<ReportStoryCard & { risk_level: string }>;
       };
       expect(report.final_verdict).toBe('not_evaluated_next_action_required');
       expect(report.recommended_commands).toEqual([]);
@@ -289,6 +335,27 @@ describe('verify human entrypoints', () => {
         manual_review_required: true,
       });
       expect(report.story_cards[0]?.manual_review_reasons).toContain('release/deploy/rehearsal operator review');
+      expect(report.story_cards[0]?.evidence_cards.find((card) => card.level === 'V4')).toMatchObject({
+        state: 'not_inspected_by_verify_report',
+        status: 'manual_review_needed',
+        owner: 'npm run release:ready',
+        artifact_path: null,
+        artifact_path_template: 'artifacts/release-runs/<campaign-run-id>/gate-release-full/result.json',
+        artifact_path_template_reason: null,
+      });
+      expect(report.story_cards[0]?.evidence_cards.find((card) => card.level === 'V4')?.additional_artifact_path_templates)
+        .toContain('artifacts/release-runs/<campaign-run-id>');
+      expect(report.schema).toBe('agentsmith_story_acceptance_report/v1');
+      expect(report.release_verdict).toBe(false);
+      expect(report.not_release_readiness).toBe(true);
+      expect(reportStatusValues(report.story_cards)).not.toContain('passed');
+      expect(reportStatusValues(report.story_cards)).not.toContain('stale');
+
+      const markdown = readFileSync(join(root, 'story-acceptance-report.md'), 'utf8');
+      expect(markdown).toContain(
+        '- V4: owner=npm run release:ready; status=manual_review_needed; path_template=artifacts/release-runs/<campaign-run-id>/gate-release-full/result.json; additional_path_templates=artifacts/release-runs/<campaign-run-id>',
+      );
+      expect(markdown).toContain('This report is not release readiness and not a release verdict.');
       expect(existsSync(logPath)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });

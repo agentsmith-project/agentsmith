@@ -22,6 +22,35 @@ function occurrenceCount(value: string, pattern: string): number {
   return value.split(pattern).length - 1;
 }
 
+type ReportEvidenceCard = {
+  level: string;
+  state: string;
+  status: string;
+  owner: string;
+  artifact_path: string | null;
+  artifact_path_template: string | null;
+  additional_artifact_path_templates: string[];
+  artifact_path_template_reason: string | null;
+};
+
+type ReportStoryCard = {
+  story_id: string;
+  status: string;
+  evidence_status: string;
+  level_statuses: Array<{ level: string; status: string; reason: string }>;
+  latest_evidence: { state: string; owner: string; artifact_path: string | null };
+  evidence_cards: ReportEvidenceCard[];
+};
+
+function reportStatusValues(cards: readonly ReportStoryCard[]): string[] {
+  return cards.flatMap((card) => [
+    card.status,
+    card.evidence_status,
+    ...card.level_statuses.map((entry) => entry.status),
+    ...card.evidence_cards.map((entry) => entry.status),
+  ]);
+}
+
 describe('verify impact selector', () => {
   it('selects visual stories from visual catalog code refs and recommends V0/V1/V2', () => {
     const plan = buildVerificationPlan({
@@ -118,6 +147,49 @@ describe('verify impact selector', () => {
     });
     expect(plan.storyCards[0].nextAction).toContain('Manual story review');
     expect(plan.riskSummary.manualReviewRequired).toBe(true);
+  });
+
+  it('writes backend-real V3 evidence card templates without inspecting artifacts', () => {
+    withTempDir('agentsmith-story-acceptance-backend-real-', (reportRoot) => {
+      const result = spawnSync('npx', [
+        'tsx',
+        'scripts/governance/run-verify.ts',
+        '--report-root',
+        reportRoot,
+        '--changed-file',
+        'e2e/stories/backend-real/notebook-first-success.story.md',
+      ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      const report = JSON.parse(readFileSync(join(reportRoot, 'story-acceptance-report.json'), 'utf8')) as {
+        schema: string;
+        story_cards: ReportStoryCard[];
+        release_verdict: boolean;
+      };
+      const reportCard = report.story_cards.find((card) => card.story_id === 'notebook-first-success');
+      const v3Evidence = reportCard?.evidence_cards.find((card) => card.level === 'V3');
+
+      expect(report.schema).toBe('agentsmith_story_acceptance_report/v1');
+      expect(v3Evidence).toMatchObject({
+        state: 'not_inspected_by_verify_report',
+        status: 'manual_review_needed',
+        owner: 'npm run verify:real',
+        artifact_path: null,
+        artifact_path_template: 'artifacts/backend-real/runs/<run-id>/ux-traces',
+        artifact_path_template_reason: null,
+      });
+      expect(report.release_verdict).toBe(false);
+      expect(reportStatusValues(report.story_cards)).not.toContain('passed');
+      expect(reportStatusValues(report.story_cards)).not.toContain('stale');
+
+      const markdown = readFileSync(join(reportRoot, 'story-acceptance-report.md'), 'utf8');
+      expect(markdown).toContain(
+        '- V3: owner=npm run verify:real; status=manual_review_needed; path_template=artifacts/backend-real/runs/<run-id>/ux-traces',
+      );
+    });
   });
 
   it('treats generated story specs as derived cache drift instead of canonical truth', () => {
@@ -291,12 +363,7 @@ describe('verify impact selector', () => {
       const report = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
         schema: string;
         changed_files: string[];
-        story_cards: Array<{
-          story_id: string;
-          evidence_status: string;
-          level_statuses: Array<{ level: string; status: string; reason: string }>;
-          latest_evidence: { state: string; owner: string; artifact_path: string | null };
-        }>;
+        story_cards: ReportStoryCard[];
         final_verdict: string;
         release_verdict: boolean;
       };
@@ -315,6 +382,22 @@ describe('verify impact selector', () => {
         owner: 'visual review owner',
         artifact_path: null,
       });
+      expect(reportCard?.evidence_cards.find((card) => card.level === 'V2')).toMatchObject({
+        state: 'not_inspected_by_verify_report',
+        status: 'manual_review_needed',
+        owner: 'npm run verify:visual',
+        artifact_path: null,
+        artifact_path_template: 'artifacts/visual-baseline-reviews/<run-id>/run-manifest.json',
+        artifact_path_template_reason: null,
+      });
+      expect(reportCard?.evidence_cards.find((card) => card.level === 'V0')).toMatchObject({
+        owner: 'npm run verify:quick',
+        artifact_path_template: null,
+      });
+      expect(reportCard?.evidence_cards.find((card) => card.level === 'V0')?.artifact_path_template_reason)
+        .toContain('No registered current gate result writer');
+      expect(reportStatusValues(report.story_cards)).not.toContain('passed');
+      expect(reportStatusValues(report.story_cards)).not.toContain('stale');
       expect(report.final_verdict).toBe('not_evaluated_fail_closed');
       expect(report.release_verdict).toBe(false);
 
@@ -324,6 +407,10 @@ describe('verify impact selector', () => {
       expect(markdown).toContain('not release readiness');
       expect(markdown).toContain('not a release verdict');
       expect(markdown).toContain('mock-lane-chat-operate-and-recover');
+      expect(markdown).toContain('- Evidence cards:');
+      expect(markdown).toContain(
+        '- V2: owner=npm run verify:visual; status=manual_review_needed; path_template=artifacts/visual-baseline-reviews/<run-id>/run-manifest.json',
+      );
     });
   });
 });

@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -11,6 +13,7 @@ import {
   buildVerificationCatalog,
   GENERATED_STORY_SPEC_PATH,
   VERIFICATION_CATALOG_SCHEMA,
+  writeVerificationCatalog,
 } from '../verification-catalog';
 
 describe('verification catalog', () => {
@@ -192,6 +195,33 @@ describe('verification catalog', () => {
     for (const ownerCommand of ownerCommands) {
       expect(ownerCommand.startsWith('npm run ')).toBe(true);
       expect(packageJson.scripts[ownerCommand.replace(/^npm run /, '')]).toBeTruthy();
+    }
+  });
+
+  it('writes the read-only catalog projection under the report root', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-verification-catalog-'));
+    try {
+      const catalog = buildVerificationCatalog({
+        generatedAt: '2026-04-25T12:00:00.000Z',
+      });
+      const result = writeVerificationCatalog(catalog, root);
+      const persisted = JSON.parse(readFileSync(result.jsonPath, 'utf8')) as typeof catalog;
+
+      expect(result).toMatchObject({
+        reportRoot: resolve(root),
+        jsonPath: join(resolve(root), 'verification-catalog.json'),
+      });
+      expect(persisted.schema).toBe(VERIFICATION_CATALOG_SCHEMA);
+      expect(persisted.provenance).toEqual({
+        generated_at: '2026-04-25T12:00:00.000Z',
+        projection_kind: 'read_only',
+        artifact_directory_inspection: false,
+        verdict_state: 'none',
+        evidence_claims_created: false,
+      });
+      expect(readFileSync(result.jsonPath, 'utf8').endsWith('\n')).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

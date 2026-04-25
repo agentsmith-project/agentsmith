@@ -662,6 +662,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
     stories: input.stories,
     visualCatalogEntries: input.visualCatalogEntries,
   });
+  const generatedAt = input.generatedAt ?? catalog.provenance.generated_at;
   const stories = catalog.stories;
   const changedFiles = uniqueSorted((input.changedFiles ?? []).map(normalizeRepoPath).filter(Boolean));
   const storyBySourceFile = buildStorySourceMap(catalog);
@@ -839,7 +840,7 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
     goal,
     mode,
     risk: 'fail-closed',
-    generatedAt: input.generatedAt ?? new Date().toISOString(),
+    generatedAt,
     changedFiles,
     affectedStories,
     affectedSurfaces,

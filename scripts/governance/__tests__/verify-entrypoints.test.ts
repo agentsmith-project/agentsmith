@@ -30,6 +30,7 @@ function writeReportAwareFakeNpm(dir: string, logPath: string): void {
   writeFileSync(path, `#!/usr/bin/env bash
 set -euo pipefail
 test -f "${dir}/story-acceptance-report.json"
+test -f "${dir}/verification-catalog.json"
 printf '%s\\n' "$*" >> "${logPath}"
 exit 0
 `);
@@ -127,10 +128,33 @@ describe('verify human entrypoints', () => {
       expect(result.stdout).toContain('Mode: dry-run');
       expect(result.stdout).toContain('npm run verify:visual');
       expect(result.stdout).toContain('this is not release readiness');
+      expect(result.stdout).toContain(`Verification catalog: ${join(root, 'verification-catalog.json')}`);
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
-      expect(readFileSync(join(root, 'story-acceptance-report.md'), 'utf8')).toContain(
-        '| Story | Risk | Status | Required levels | Manual review | Next action |',
-      );
+      expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
+      const markdown = readFileSync(join(root, 'story-acceptance-report.md'), 'utf8');
+      expect(markdown).toContain('| Story | Risk | Status | Required levels | Manual review | Next action |');
+      expect(markdown).toContain(`- Verification catalog: ${join(root, 'verification-catalog.json')}`);
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
+        generated_at: string;
+        verification_catalog_path: string;
+      };
+      const catalog = JSON.parse(readFileSync(join(root, 'verification-catalog.json'), 'utf8')) as {
+        provenance: {
+          generated_at: string;
+          projection_kind: string;
+          artifact_directory_inspection: boolean;
+          verdict_state: string;
+          evidence_claims_created: boolean;
+        };
+      };
+      expect(report.verification_catalog_path).toBe(join(root, 'verification-catalog.json'));
+      expect(report.generated_at).toBe(catalog.provenance.generated_at);
+      expect(catalog.provenance).toMatchObject({
+        projection_kind: 'read_only',
+        artifact_directory_inspection: false,
+        verdict_state: 'none',
+        evidence_claims_created: false,
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -157,6 +181,7 @@ describe('verify human entrypoints', () => {
 
       expect(jsonPath).toContain('/artifacts/verification/');
       expect(existsSync(jsonPath)).toBe(true);
+      expect(existsSync(join(reportRoot, 'verification-catalog.json'))).toBe(true);
     } finally {
       if (reportRoot?.includes('/artifacts/verification/')) {
         rmSync(reportRoot, { recursive: true, force: true });
@@ -249,6 +274,7 @@ describe('verify human entrypoints', () => {
       expect(result.stdout).toContain('Mode: dry-run');
       expect(result.stdout).toContain('npm run verify:quick');
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
+      expect(existsSync(join(root, 'verification-catalog.json'))).toBe(true);
       expect(existsSync(logPath)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });

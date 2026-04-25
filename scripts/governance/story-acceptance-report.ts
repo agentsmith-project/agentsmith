@@ -68,6 +68,7 @@ export interface StoryAcceptanceReport {
   final_verdict: string;
   next_action: string;
   report_root: string;
+  verification_catalog_path?: string;
   release_verdict: false;
   not_release_readiness: true;
   story_cards: readonly StoryAcceptanceReportCard[];
@@ -78,6 +79,10 @@ export interface StoryAcceptanceReportWriteResult {
   jsonPath: string;
   markdownPath: string;
   report: StoryAcceptanceReport;
+}
+
+export interface BuildStoryAcceptanceReportOptions {
+  verificationCatalogPath?: string;
 }
 
 function toReportCard(card: VerificationStoryCard): StoryAcceptanceReportCard {
@@ -118,7 +123,11 @@ function toReportCard(card: VerificationStoryCard): StoryAcceptanceReportCard {
   };
 }
 
-export function buildStoryAcceptanceReport(plan: VerificationPlan, reportRoot: string): StoryAcceptanceReport {
+export function buildStoryAcceptanceReport(
+  plan: VerificationPlan,
+  reportRoot: string,
+  options: BuildStoryAcceptanceReportOptions = {},
+): StoryAcceptanceReport {
   return {
     schema: STORY_ACCEPTANCE_REPORT_SCHEMA,
     generated_at: plan.generatedAt,
@@ -138,6 +147,9 @@ export function buildStoryAcceptanceReport(plan: VerificationPlan, reportRoot: s
     final_verdict: plan.finalVerdict,
     next_action: plan.nextAction,
     report_root: reportRoot,
+    ...(options.verificationCatalogPath
+      ? { verification_catalog_path: path.resolve(options.verificationCatalogPath) }
+      : {}),
     release_verdict: false,
     not_release_readiness: true,
     story_cards: plan.storyCards.map(toReportCard),
@@ -237,6 +249,9 @@ export function renderStoryAcceptanceReportMarkdown(report: StoryAcceptanceRepor
     `- Goal: ${report.goal}`,
     `- Mode: ${report.mode}`,
     `- Report root: ${report.report_root}`,
+    ...(report.verification_catalog_path
+      ? [`- Verification catalog: ${report.verification_catalog_path}`]
+      : []),
     '',
     'This report is not release readiness and not a release verdict. It does not claim passed, stale, or release-ready evidence.',
     '',
@@ -299,12 +314,13 @@ export function renderStoryAcceptanceReportMarkdown(report: StoryAcceptanceRepor
 export function writeStoryAcceptanceReport(
   plan: VerificationPlan,
   reportRoot = plan.reportRoot,
+  options: BuildStoryAcceptanceReportOptions = {},
 ): StoryAcceptanceReportWriteResult {
   if (!reportRoot) {
     throw new Error('report root is required to write the story acceptance report');
   }
   const resolvedReportRoot = path.resolve(reportRoot);
-  const report = buildStoryAcceptanceReport(plan, resolvedReportRoot);
+  const report = buildStoryAcceptanceReport(plan, resolvedReportRoot, options);
   const jsonPath = path.join(resolvedReportRoot, 'story-acceptance-report.json');
   const markdownPath = path.join(resolvedReportRoot, 'story-acceptance-report.md');
 

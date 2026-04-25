@@ -1,3 +1,4 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type { StoryDefinition } from '../../e2e/story-contract';
@@ -24,6 +25,7 @@ import {
 } from './current-verification-campaign-manifest';
 
 export const VERIFICATION_CATALOG_SCHEMA = 'agentsmith_verification_catalog/v1' as const;
+export const VERIFICATION_CATALOG_FILE_NAME = 'verification-catalog.json' as const;
 export const GENERATED_STORY_SPEC_PATH = 'e2e/generated/story-specs.generated.json' as const;
 export const VERIFICATION_LEVEL_ORDER = ['V0', 'V1', 'V2', 'V3', 'V4'] as const;
 
@@ -176,6 +178,12 @@ export interface BuildVerificationCatalogInput {
   stories?: readonly StoryDefinition[];
   visualCatalogEntries?: readonly VisualBaselineCatalogEntry[];
   verificationCampaigns?: readonly CurrentVerificationCampaignDefinition[];
+}
+
+export interface VerificationCatalogWriteResult {
+  reportRoot: string;
+  jsonPath: string;
+  catalog: VerificationCatalog;
 }
 
 type EvidenceTemplateResolution = {
@@ -571,6 +579,23 @@ export function buildVerificationCatalog(input: BuildVerificationCatalogInput = 
 
 export function loadDefaultVerificationCatalog(): VerificationCatalog {
   return buildVerificationCatalog();
+}
+
+export function writeVerificationCatalog(
+  catalog: VerificationCatalog,
+  reportRoot: string,
+): VerificationCatalogWriteResult {
+  const resolvedReportRoot = path.resolve(reportRoot);
+  const jsonPath = path.join(resolvedReportRoot, VERIFICATION_CATALOG_FILE_NAME);
+
+  mkdirSync(resolvedReportRoot, { recursive: true });
+  writeFileSync(jsonPath, `${JSON.stringify(catalog, null, 2)}\n`);
+
+  return {
+    reportRoot: resolvedReportRoot,
+    jsonPath,
+    catalog,
+  };
 }
 
 export function evidenceProjectionForLevel(args: {

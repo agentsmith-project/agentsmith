@@ -7,6 +7,10 @@ import {
   type VerificationGoal,
   type VerificationPlan,
 } from './verify-impact-selector';
+import {
+  buildVerificationCatalog,
+  writeVerificationCatalog,
+} from './verification-catalog';
 import { writeStoryAcceptanceReport } from './story-acceptance-report';
 
 export {
@@ -211,12 +215,22 @@ export function runVerificationCli(argv: readonly string[] = process.argv.slice(
   try {
     const options = parseArgs(argv);
     const reportRoot = options.reportRoot ?? defaultReportRoot();
-    const plan = buildVerificationPlan(buildPlanInput(options, reportRoot));
-    const writeResult = writeStoryAcceptanceReport(plan, reportRoot);
+    const generatedAt = new Date().toISOString();
+    const catalog = buildVerificationCatalog({ generatedAt });
+    const plan = buildVerificationPlan({
+      ...buildPlanInput(options, reportRoot),
+      generatedAt,
+      catalog,
+    });
+    const catalogWriteResult = writeVerificationCatalog(catalog, reportRoot);
+    const writeResult = writeStoryAcceptanceReport(plan, reportRoot, {
+      verificationCatalogPath: catalogWriteResult.jsonPath,
+    });
 
     process.stdout.write(renderVerificationPlan(plan));
     process.stdout.write(`Story acceptance report: ${writeResult.markdownPath}\n`);
     process.stdout.write(`Story acceptance report JSON: ${writeResult.jsonPath}\n`);
+    process.stdout.write(`Verification catalog: ${catalogWriteResult.jsonPath}\n`);
 
     if (plan.mode === 'dry-run') {
       return 0;

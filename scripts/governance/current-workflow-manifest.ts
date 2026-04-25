@@ -931,7 +931,7 @@ const CURRENT_WORKFLOW_RAW_MANIFEST: readonly RawCurrentWorkflowSection[] = [
     commands: [
       {
         command: 'npm run verify',
-        description: 'print a dry-run verification plan for the current change',
+        description: 'write a dry-run story acceptance report and print the recommended verification plan',
         canonical: 'npm',
         npmScript: 'verify',
         recommended: true,

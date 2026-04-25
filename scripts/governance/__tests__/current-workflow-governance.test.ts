@@ -504,6 +504,7 @@ describe('current workflow governance', () => {
 
     for (const artifactRoot of [
       'artifacts/release-runs/',
+      'artifacts/verification/',
       'artifacts/gate-results/',
       'artifacts/visual-baseline-reviews/',
       'artifacts/ux-traces/',

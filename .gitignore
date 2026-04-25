@@ -64,6 +64,7 @@ artifacts/backend-real-visual/
 artifacts/backend-real/
 artifacts/mock-lane/
 artifacts/release-runs/
+artifacts/verification/
 artifacts/gate-results/
 artifacts/visual-baseline-reviews/
 artifacts/ux-traces/

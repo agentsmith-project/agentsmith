@@ -1,19 +1,33 @@
 import { spawnSync } from 'node:child_process';
+import path from 'node:path';
 
-export type VerificationGoal = 'debug' | 'pr' | 'visual' | 'real' | 'release-real';
-export type VerificationMode = 'dry-run' | 'run';
+import {
+  buildVerificationPlan,
+  type BuildVerificationPlanInput,
+  type VerificationGoal,
+  type VerificationPlan,
+} from './verify-impact-selector';
+import { writeStoryAcceptanceReport } from './story-acceptance-report';
 
-export interface VerificationPlan {
+export {
+  buildVerificationPlan,
+  type VerificationGoal,
+  type VerificationMode,
+  type VerificationPlan,
+} from './verify-impact-selector';
+
+type ParsedVerifyArgs = {
   goal: VerificationGoal;
-  mode: VerificationMode;
-  risk: 'fail-closed';
-  affectedStories: readonly string[];
-  affectedSurfaces: readonly string[];
-  requiredLevels: readonly string[];
-  requiredEvidence: readonly string[];
-  recommendedCommands: readonly string[];
-  finalVerdict: string;
-}
+  goalExplicit: boolean;
+  run: boolean;
+  reportRoot?: string;
+  changedFiles?: string[];
+};
+
+type ChangedFileDetection = {
+  changedFiles: string[];
+  failure?: string;
+};
 
 function isCliEntrypoint(fileName: string): boolean {
   return Boolean(process.argv[1]?.replaceAll('\\', '/').endsWith(`/governance/${fileName}`));
@@ -32,80 +46,29 @@ function normalizeGoal(value: string | undefined): VerificationGoal {
   return 'pr';
 }
 
-function recommendedCommands(goal: VerificationGoal): readonly string[] {
-  if (goal === 'debug') {
-    return ['npm run verify:quick'];
-  }
-  if (goal === 'visual') {
-    return [
-      'npm run verify:quick',
-      'npm run verify:default',
-      'npm run verify:visual',
-    ];
-  }
-  if (goal === 'real') {
-    return [
-      'npm run verify:quick',
-      'npm run verify:default',
-      'npm run verify:real',
-    ];
-  }
-  if (goal === 'release-real') {
-    return ['npm run verify:release-real'];
-  }
-  return [
-    'npm run verify:quick',
-    'npm run verify:default',
-    'npm run verify:real',
-  ];
+function createVerificationRunId(date = new Date()): string {
+  return date.toISOString().replace(/[:.]/g, '-');
 }
 
-function requiredLevels(goal: VerificationGoal): readonly string[] {
-  if (goal === 'debug') {
-    return ['V0'];
-  }
-  if (goal === 'visual') {
-    return ['V0', 'V1', 'V2'];
-  }
-  if (goal === 'release-real') {
-    return ['V3'];
-  }
-  return ['V0', 'V1', 'V3'];
+function defaultReportRoot(runId = createVerificationRunId()): string {
+  return path.join('artifacts', 'verification', runId);
 }
 
-function requiredEvidence(goal: VerificationGoal): readonly string[] {
-  if (goal === 'visual') {
-    return ['default gate result', 'visual full catalog evidence'];
+function humanizeVerdict(verdict: string): string {
+  if (verdict === 'not_evaluated_fail_closed') {
+    return 'not evaluated (fail-closed dry-run)';
   }
-  if (goal === 'release-real') {
-    return ['release backend-real ux_trace_bundle evidence'];
+  if (verdict === 'delegated_to_executed_verification_commands') {
+    return 'delegated to the executed verification commands';
   }
-  if (goal === 'debug') {
-    return ['fast gate result'];
-  }
-  return ['default gate result', 'backend-real ux_trace_bundle evidence'];
+  return verdict.replaceAll('_', ' ');
 }
 
-export function buildVerificationPlan(input: {
-  goal?: VerificationGoal;
-  run?: boolean;
-} = {}): VerificationPlan {
-  const goal = input.goal ?? 'pr';
-  const mode: VerificationMode = input.run ? 'run' : 'dry-run';
-
-  return {
-    goal,
-    mode,
-    risk: 'fail-closed',
-    affectedStories: ['P0 impact selector not implemented; assume affected stories require conservative review.'],
-    affectedSurfaces: ['changed files not selected in P0; treat cross-surface governance/release changes as elevated risk.'],
-    requiredLevels: requiredLevels(goal),
-    requiredEvidence: requiredEvidence(goal),
-    recommendedCommands: recommendedCommands(goal),
-    finalVerdict: mode === 'dry-run'
-      ? 'not evaluated'
-      : 'delegated to the executed verification commands',
-  };
+function renderRecommendedPlan(plan: VerificationPlan): string[] {
+  if (plan.recommendedCommands.length === 0) {
+    return ['No verify alias is safe to run for this V4 dry-run; use the next action.'];
+  }
+  return plan.recommendedCommands.map((command, index) => `${index + 1}. ${command}`);
 }
 
 export function renderVerificationPlan(plan: VerificationPlan): string {
@@ -114,24 +77,31 @@ export function renderVerificationPlan(plan: VerificationPlan): string {
     '',
     `Goal: ${plan.goal}`,
     `Mode: ${plan.mode}`,
+    `Report root: ${plan.reportRoot ?? '<not written>'}`,
     `Risk: ${plan.risk} conservative recommendation`,
+    `Risk summary: ${plan.riskSummary.summary}`,
+    `Changed files: ${plan.changedFiles.length > 0 ? plan.changedFiles.join('; ') : '<none>'}`,
     `Affected stories: ${plan.affectedStories.join('; ')}`,
     `Affected surfaces: ${plan.affectedSurfaces.join('; ')}`,
     `Required levels: ${plan.requiredLevels.join(', ')}`,
     `Required evidence: ${plan.requiredEvidence.join(', ')}`,
     '',
     'Recommended plan:',
-    ...plan.recommendedCommands.map((command, index) => `${index + 1}. ${command}`),
+    ...renderRecommendedPlan(plan),
     '',
-    `Final verdict: ${plan.finalVerdict}`,
-    'Note: this is not release readiness. Run npm run release:ready before release.',
+    `Next action: ${plan.nextAction}`,
+    `Final verdict: ${humanizeVerdict(plan.finalVerdict)}`,
+    'Note: this is not release readiness and not a release verdict.',
     '',
   ].join('\n');
 }
 
-function parseArgs(argv: readonly string[]): { goal: VerificationGoal; run: boolean } {
+function parseArgs(argv: readonly string[]): ParsedVerifyArgs {
   let goal: VerificationGoal = 'pr';
+  let goalExplicit = false;
   let run = false;
+  let reportRoot: string | undefined;
+  let changedFiles: string[] | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -140,28 +110,110 @@ function parseArgs(argv: readonly string[]): { goal: VerificationGoal; run: bool
       run = true;
     } else if (arg === '--goal' && next) {
       goal = normalizeGoal(next);
+      goalExplicit = true;
       index += 1;
     } else if (arg.startsWith('--goal=')) {
       goal = normalizeGoal(arg.slice('--goal='.length));
+      goalExplicit = true;
     } else if (arg === '--dry-run') {
       run = false;
+    } else if (arg === '--report-root' && next) {
+      reportRoot = next;
+      index += 1;
+    } else if (arg.startsWith('--report-root=')) {
+      reportRoot = arg.slice('--report-root='.length);
+    } else if (arg === '--changed-file' && next) {
+      changedFiles = [...(changedFiles ?? []), next];
+      index += 1;
+    } else if (arg.startsWith('--changed-file=')) {
+      changedFiles = [...(changedFiles ?? []), arg.slice('--changed-file='.length)];
     } else {
       throw new Error(`Unknown verify argument: ${arg}`);
     }
   }
 
-  return { goal, run };
+  return {
+    goal,
+    goalExplicit,
+    run,
+    reportRoot,
+    changedFiles,
+  };
+}
+
+function parseGitFileList(stdout: string): string[] {
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function detectChangedFilesFromGit(): ChangedFileDetection {
+  const commands: readonly (readonly string[])[] = [
+    ['diff', '--name-only'],
+    ['diff', '--name-only', '--cached'],
+    ['ls-files', '--others', '--exclude-standard'],
+  ];
+  const changedFiles = new Set<string>();
+
+  for (const args of commands) {
+    const result = spawnSync('git', [...args], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    });
+    if (result.status !== 0) {
+      const stderr = typeof result.stderr === 'string' ? result.stderr.trim() : '';
+      return {
+        changedFiles: [],
+        failure: stderr || `git ${args.join(' ')} exited with status ${String(result.status)}`,
+      };
+    }
+    for (const filePath of parseGitFileList(result.stdout)) {
+      changedFiles.add(filePath);
+    }
+  }
+
+  return {
+    changedFiles: [...changedFiles].sort((left, right) => left.localeCompare(right)),
+  };
 }
 
 function npmScriptFromCommand(command: string): string {
   return command.replace(/^npm run /, '');
 }
 
+function buildPlanInput(options: ParsedVerifyArgs, reportRoot: string): BuildVerificationPlanInput {
+  if (options.changedFiles) {
+    return {
+      goal: options.goal,
+      goalExplicit: options.goalExplicit,
+      run: options.run,
+      reportRoot,
+      changedFiles: options.changedFiles,
+    };
+  }
+
+  const detected = detectChangedFilesFromGit();
+  return {
+    goal: options.goal,
+    goalExplicit: options.goalExplicit,
+    run: options.run,
+    reportRoot,
+    changedFiles: detected.changedFiles,
+    changeDetectionFailure: detected.failure,
+  };
+}
+
 export function runVerificationCli(argv: readonly string[] = process.argv.slice(2)): number {
   try {
     const options = parseArgs(argv);
-    const plan = buildVerificationPlan(options);
+    const reportRoot = options.reportRoot ?? defaultReportRoot();
+    const plan = buildVerificationPlan(buildPlanInput(options, reportRoot));
+    const writeResult = writeStoryAcceptanceReport(plan, reportRoot);
+
     process.stdout.write(renderVerificationPlan(plan));
+    process.stdout.write(`Story acceptance report: ${writeResult.markdownPath}\n`);
+    process.stdout.write(`Story acceptance report JSON: ${writeResult.jsonPath}\n`);
 
     if (plan.mode === 'dry-run') {
       return 0;

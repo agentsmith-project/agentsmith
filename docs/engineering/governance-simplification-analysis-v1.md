@@ -535,6 +535,12 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 6. Release campaign DAG 调度和 resume。
 7. CI 与本地共用 run plan。
 
+实施顺序确认：
+
+已完成 evidence claim schema、resource lock manifest、job metadata manifest 后，P2 不应先实现裸 `Artifact index` schema/validator。下一步先把这些 P2 模型接入只读报告或检查入口，让人能看到 job metadata、resource locks、evidence claim boundaries，减少查路径、猜并行/复用和误判 verdict。
+
+`Artifact index` 仍是 P2 目标，但必须等到已有 P2 模型被只读报告/检查入口消费后再实现。未来 guardrails：它不得读取文件、扫描目录、计算 digest、声明 `exists` / `passed` / `failed` / `reusable` / `verdict` / `cache_hit` / `claim_id`，不得成为 release verdict source；digest 仍属于 evidence claim 责任。
+
 验收：
 
 1. `gate-default` 和 full visual 可在安全边界内并行。
@@ -597,10 +603,14 @@ Logs: artifacts/release-runs/<precheck-run-id>/
 6. impact selector dry run
 7. story acceptance report
 8. evidence claim schema
-9. governance runner shell adapter
-10. DAG scheduler and resume
-11. CI integration
-12. old command de-emphasis and docs rewrite
+9. resource lock manifest
+10. job metadata manifest
+11. P2 model read-only report/check projection
+12. artifact index
+13. governance runner shell adapter
+14. DAG scheduler and resume
+15. CI integration
+16. old command de-emphasis and docs rewrite
 
 每个切片都必须先有 tests，再改实现，并保留旧入口回归测试。
 

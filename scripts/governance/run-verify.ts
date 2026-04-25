@@ -61,12 +61,15 @@ function humanizeVerdict(verdict: string): string {
   if (verdict === 'delegated_to_executed_verification_commands') {
     return 'delegated to the executed verification commands';
   }
+  if (verdict === 'not_evaluated_next_action_required') {
+    return 'not evaluated (next action required; no verify aliases executed)';
+  }
   return verdict.replaceAll('_', ' ');
 }
 
 function renderRecommendedPlan(plan: VerificationPlan): string[] {
   if (plan.recommendedCommands.length === 0) {
-    return ['No verify alias is safe to run for this V4 dry-run; use the next action.'];
+    return ['No verify alias is safe to run for this V4 plan; use the next action.'];
   }
   return plan.recommendedCommands.map((command, index) => `${index + 1}. ${command}`);
 }

@@ -265,10 +265,17 @@ describe('verify human entrypoints', () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Required levels: V4');
-      expect(result.stdout).toContain('No verify alias is safe to run for this V4 dry-run; use the next action.');
+      expect(result.stdout).toContain('No verify alias is safe to run for this V4 plan; use the next action.');
+      expect(result.stdout).toContain('Final verdict: not evaluated (next action required; no verify aliases executed)');
       expect(result.stdout).toContain('npm run release:ready');
       expect(result.stdout).not.toContain('npm run verify:release-real');
       expect(existsSync(join(root, 'story-acceptance-report.json'))).toBe(true);
+      const report = JSON.parse(readFileSync(join(root, 'story-acceptance-report.json'), 'utf8')) as {
+        final_verdict: string;
+        recommended_commands: string[];
+      };
+      expect(report.final_verdict).toBe('not_evaluated_next_action_required');
+      expect(report.recommended_commands).toEqual([]);
       expect(existsSync(logPath)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });

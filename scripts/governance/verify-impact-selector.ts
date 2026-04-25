@@ -148,8 +148,17 @@ function isRunnerContextOrCredentialPath(filePath: string): boolean {
   ].some((pattern) => pattern.test(filePath));
 }
 
+function isReleaseRealOwnerDiagnosticPath(filePath: string): boolean {
+  return [
+    /^scripts\/backend-real-full-gate\.sh$/,
+  ].some((pattern) => pattern.test(filePath));
+}
+
 function isReleaseDeployOrRehearsalPath(filePath: string): boolean {
   return [
+    /^scripts\/release-full-campaign\.sh$/,
+    /^scripts\/release-full-aggregate-gate\.sh$/,
+    /^scripts\/cluster-rehearsal-verify\.sh$/,
     /^scripts\/cluster-deploy\//,
     /^scripts\/demo-deploy\//,
     /^scripts\/scenarios\//,
@@ -223,10 +232,14 @@ function evidenceForLevels(levels: Iterable<VerificationLevel>): string[] {
 }
 
 function levelsForStory(story: StoryDefinition): readonly VerificationLevel[] {
+  const levels = new Set<VerificationLevel>(['V0', 'V1']);
   if (story.lane === 'mock-lane' || story.gatePolicy.requiredEvidence.includes('visual')) {
-    return ['V0', 'V1', 'V2'];
+    levels.add('V2');
   }
-  return ['V0', 'V1', 'V3'];
+  if (story.lane === 'backend-real') {
+    levels.add('V3');
+  }
+  return orderedLevels(levels);
 }
 
 function createAccumulator(): ImpactAccumulator {
@@ -304,16 +317,18 @@ function addBroadStoryCards(
   accumulator: ImpactAccumulator,
   stories: readonly StoryDefinition[],
   args: {
-    levels: readonly VerificationLevel[];
+    levels?: readonly VerificationLevel[];
     nextAction: string;
     evidenceStatus?: StoryEvidenceStatus;
   },
 ): void {
   accumulator.broadImpact = true;
   for (const story of stories) {
+    const levels = args.levels ?? levelsForStory(story);
+    addLevels(accumulator, levels);
     addStoryCard(accumulator, story, {
       risk: 'inferred',
-      levels: args.levels,
+      levels,
       evidenceStatus: args.evidenceStatus ?? 'missing',
       nextAction: args.nextAction,
     });
@@ -346,7 +361,7 @@ function storyCardToImmutable(card: MutableStoryCard): VerificationStoryCard {
 
 function defaultNextAction(levels: readonly VerificationLevel[]): string {
   if (levels.includes('V4')) {
-    return 'Release or deploy path changed. Use npm run release:ready as the next release operation outside this dry-run report; this report is not a release verdict.';
+    return 'Release or deploy path changed. Use npm run release:ready as the next release operation outside this verification report; this report is not a release verdict.';
   }
   if (levels.includes('V3')) {
     return 'Run npm run verify:real after reviewing the fail-closed impact selection.';
@@ -386,15 +401,14 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
   const accumulator = createAccumulator();
 
   if (input.changeDetectionFailure) {
-    const levels: readonly VerificationLevel[] = ['V0', 'V1', 'V3'];
-    addLevels(accumulator, levels);
     accumulator.surfaces.add('change-detection-failed');
     accumulator.broadImpact = true;
+    accumulator.manualReviewRequired = true;
     accumulator.warnings.push(`Changed-file detection failed: ${input.changeDetectionFailure}`);
     accumulator.reasons.push('Changed files could not be derived, so all canonical stories are treated as potentially affected.');
     const action = 'Manual impact owner triage required because changed-file detection failed; rerun with --changed-file for a narrower plan.';
     pushUnique(accumulator.nextActions, action);
-    addBroadStoryCards(accumulator, stories, { levels, nextAction: action });
+    addBroadStoryCards(accumulator, stories, { nextAction: action });
   }
 
   if (changedFiles.length === 0 && !input.changeDetectionFailure) {
@@ -426,15 +440,14 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
     if (isGeneratedStorySpec(changedFile)) {
       mapped = true;
-      const levels: readonly VerificationLevel[] = ['V0', 'V1', 'V3'];
       const action = 'Manual impact owner triage required because generated story specs are derived cache, not canonical story truth.';
-      addLevels(accumulator, levels);
       accumulator.surfaces.add('derived-cache:story-specs');
       accumulator.broadImpact = true;
+      accumulator.manualReviewRequired = true;
       accumulator.warnings.push('Generated story spec changed as derived cache drift; canonical story truth remains e2e/stories/**/*.story.md.');
       accumulator.reasons.push(`${changedFile} is derived cache and is not used as story truth.`);
       pushUnique(accumulator.nextActions, action);
-      addBroadStoryCards(accumulator, stories, { levels, nextAction: action });
+      addBroadStoryCards(accumulator, stories, { nextAction: action });
     }
 
     const visualMatches = findVisualMatches(changedFile, visualCatalogEntries);
@@ -461,26 +474,35 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
 
     if (isRunnerContextOrCredentialPath(changedFile)) {
       mapped = true;
-      const levels: readonly VerificationLevel[] = ['V0', 'V1', 'V3'];
       const action = 'Run npm run verify:real with runner, Context Store, and credential owner review.';
-      addLevels(accumulator, levels);
       accumulator.surfaces.add('runner/context-store/credentials');
       accumulator.broadImpact = true;
+      accumulator.manualReviewRequired = true;
       accumulator.reasons.push(`${changedFile} touches runner, Context Store, or credential behavior.`);
       pushUnique(accumulator.nextActions, action);
       addBroadStoryCards(accumulator, stories.filter((story) => story.lane === 'backend-real'), {
-        levels,
         nextAction: action,
       });
+    }
+
+    if (isReleaseRealOwnerDiagnosticPath(changedFile)) {
+      mapped = true;
+      const action = 'Run npm run verify:release-real as a release backend-real owner diagnostic; this report is not release readiness.';
+      accumulator.levels.add('V3');
+      accumulator.commands.add('npm run verify:release-real');
+      accumulator.surfaces.add('release-real-owner');
+      accumulator.reasons.push(`${changedFile} owns the backend-real release diagnostic gate.`);
+      pushUnique(accumulator.nextActions, action);
     }
 
     if (isReleaseDeployOrRehearsalPath(changedFile)) {
       mapped = true;
       const levels: readonly VerificationLevel[] = ['V4'];
-      const action = 'Release or deploy path changed. Use npm run release:ready as the next release operation outside this dry-run report; this report is not a release verdict.';
+      const action = 'Release or deploy path changed. Use npm run release:ready as the next release operation outside this verification report; this report is not a release verdict.';
       addLevels(accumulator, levels);
       accumulator.surfaces.add('release/deploy/rehearsal');
       accumulator.broadImpact = true;
+      accumulator.manualReviewRequired = true;
       accumulator.reasons.push(`${changedFile} touches release, deploy, or rehearsal operations.`);
       pushUnique(accumulator.nextActions, action);
       addBroadStoryCards(accumulator, stories, {
@@ -491,33 +513,42 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
     }
 
     if (!mapped) {
-      const levels: readonly VerificationLevel[] = ['V0', 'V1', 'V3'];
       const action = 'Manual impact owner triage required; treat all canonical stories as potentially affected until the source path is mapped.';
-      addLevels(accumulator, levels);
       accumulator.surfaces.add('unmapped-source');
       accumulator.broadImpact = true;
+      accumulator.manualReviewRequired = true;
       accumulator.warnings.push(`${changedFile} did not match canonical story markdown, visual code refs, runner/context/credential paths, or release paths.`);
       accumulator.reasons.push(`${changedFile} is unmapped source impact.`);
       pushUnique(accumulator.nextActions, action);
-      addBroadStoryCards(accumulator, stories, { levels, nextAction: action });
+      addBroadStoryCards(accumulator, stories, { nextAction: action });
     }
   }
 
   if (changedFiles.length > 0 && goal !== 'pr' && input.goalExplicit) {
-    addGoalDefaults(accumulator, goal);
+    if (goal === 'release-real' && accumulator.levels.has('V4')) {
+      accumulator.reasons.push('Explicit release-real diagnostic goal was suppressed because V4 release/deploy/rehearsal impact requires release:ready operator review.');
+    } else {
+      addGoalDefaults(accumulator, goal);
+    }
   }
 
   const requiredLevels = orderedLevels(accumulator.levels);
+  const recommendedCommands = orderedCommands(accumulator.commands);
+  const affectedSurfaces = uniqueSorted(accumulator.surfaces);
   const storyCards = [...accumulator.storyCards.values()]
     .map(storyCardToImmutable)
     .sort((left, right) => left.storyId.localeCompare(right.storyId));
   const affectedStories = storyCards.length > 0
     ? storyCards.map((card) => card.storyId)
-    : ['No changed files provided or detected; default goal-based verification plan.'];
+    : changedFiles.length === 0 && !input.changeDetectionFailure
+      ? ['No changed files provided or detected; default goal-based verification plan.']
+      : [`No story cards selected; mapped operational impact: ${affectedSurfaces.join(', ') || '<none>'}.`];
   const nextAction = accumulator.nextActions[0] ?? defaultNextAction(requiredLevels);
   const finalVerdict = mode === 'dry-run'
     ? 'not_evaluated_fail_closed'
-    : 'delegated_to_executed_verification_commands';
+    : recommendedCommands.length > 0
+      ? 'delegated_to_executed_verification_commands'
+      : 'not_evaluated_next_action_required';
 
   return {
     goal,
@@ -526,15 +557,15 @@ export function buildVerificationPlan(input: BuildVerificationPlanInput = {}): V
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     changedFiles,
     affectedStories,
-    affectedSurfaces: uniqueSorted(accumulator.surfaces),
+    affectedSurfaces,
     requiredLevels,
     requiredEvidence: evidenceForLevels(requiredLevels),
-    recommendedCommands: orderedCommands(accumulator.commands),
+    recommendedCommands,
     riskSummary: {
       posture: 'fail-closed',
       summary: accumulator.broadImpact
-        ? 'Fail-closed broad impact selection; no evidence has been evaluated by this dry-run.'
-        : 'Fail-closed targeted impact selection; no evidence has been evaluated by this dry-run.',
+        ? 'Fail-closed broad impact selection; no evidence has been evaluated by this report.'
+        : 'Fail-closed targeted impact selection; no evidence has been evaluated by this report.',
       reasons: accumulator.reasons,
       warnings: accumulator.warnings,
       manualReviewRequired: accumulator.manualReviewRequired,

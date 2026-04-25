@@ -72,6 +72,24 @@ describe('verify impact selector', () => {
     expect(plan.releaseVerdict).toBe(false);
   });
 
+  it('requires visual and backend-real evidence for backend-real stories with visual review evidence', () => {
+    const plan = buildVerificationPlan({
+      changedFiles: ['e2e/stories/backend-real/real-backend-visual-review.story.md'],
+    });
+    const storyCard = plan.storyCards.find((card) => card.storyId === 'real-backend-visual-review');
+
+    expect(plan.affectedStories).toEqual(['real-backend-visual-review']);
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(plan.recommendedCommands).toEqual([
+      'npm run verify:quick',
+      'npm run verify:default',
+      'npm run verify:visual',
+      'npm run verify:real',
+    ]);
+    expect(storyCard?.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(storyCard?.lane).toBe('backend-real');
+  });
+
   it('maps canonical story markdown changes to the exact story and requires manual review', () => {
     const plan = buildVerificationPlan({
       changedFiles: ['e2e/stories/backend-real/notebook-first-success.story.md'],
@@ -100,6 +118,8 @@ describe('verify impact selector', () => {
     expect(plan.affectedSurfaces).toContain('derived-cache:story-specs');
     expect(plan.storyCards.every((card) => card.sourceFile !== 'e2e/generated/story-specs.generated.json')).toBe(true);
     expect(plan.storyCards.some((card) => card.evidenceStatus === 'missing')).toBe(true);
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
   });
 
   it('fails closed to V3 real-backend verification for runner, Context Store, and credential paths', () => {
@@ -116,6 +136,7 @@ describe('verify impact selector', () => {
     expect(plan.affectedSurfaces).toContain('runner/context-store/credentials');
     expect(plan.finalVerdict).toContain('not_evaluated');
     expect(plan.nextAction).toContain('npm run verify:real');
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
   });
 
   it('recommends V4 release-ready next action for release and rehearsal paths without making a release verdict', () => {
@@ -130,6 +151,40 @@ describe('verify impact selector', () => {
     expect(plan.recommendedCommands).not.toContain('npm run release:ready');
     expect(plan.finalVerdict).toBe('not_evaluated_fail_closed');
     expect(plan.releaseVerdict).toBe(false);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+  });
+
+  it.each([
+    'scripts/release-full-campaign.sh',
+    'scripts/release-full-aggregate-gate.sh',
+    'scripts/cluster-rehearsal-verify.sh',
+  ])('maps root release and rehearsal script %s to V4 operator review only', (changedFile) => {
+    const plan = buildVerificationPlan({
+      changedFiles: [changedFile],
+    });
+
+    expect(plan.requiredLevels).toEqual(['V4']);
+    expect(plan.recommendedCommands).toEqual([]);
+    expect(plan.affectedSurfaces).toEqual(['release/deploy/rehearsal']);
+    expect(plan.affectedSurfaces).not.toContain('unmapped-source');
+    expect(plan.nextAction).toContain('npm run release:ready');
+    expect(plan.releaseVerdict).toBe(false);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+  });
+
+  it('maps backend-real full gate to the release-real owner diagnostic instead of V4 release closure', () => {
+    const plan = buildVerificationPlan({
+      changedFiles: ['scripts/backend-real-full-gate.sh'],
+    });
+
+    expect(plan.requiredLevels).toEqual(['V3']);
+    expect(plan.recommendedCommands).toEqual(['npm run verify:release-real']);
+    expect(plan.affectedSurfaces).toEqual(['release-real-owner']);
+    expect(plan.affectedStories.join('\n')).toContain('mapped operational impact: release-real-owner');
+    expect(plan.affectedStories.join('\n')).not.toContain('No changed files provided or detected');
+    expect(plan.nextAction).toContain('npm run verify:release-real');
+    expect(plan.nextAction).toContain('not release readiness');
+    expect(plan.releaseVerdict).toBe(false);
   });
 
   it('fails closed with broad impact and a clear next action for unmapped source files', () => {
@@ -138,10 +193,56 @@ describe('verify impact selector', () => {
     });
 
     expect(plan.affectedStories.length).toBeGreaterThan(10);
-    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V3']);
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
     expect(plan.affectedSurfaces).toContain('unmapped-source');
     expect(plan.riskSummary.broadImpact).toBe(true);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
     expect(plan.nextAction).toContain('Manual impact owner triage');
+  });
+
+  it('keeps broad-impact story cards on their own story-level evidence lanes', () => {
+    const plan = buildVerificationPlan({
+      changedFiles: [
+        'e2e/generated/story-specs.generated.json',
+        'src/lib/new-unmapped-source.ts',
+      ],
+    });
+    const mockLaneCard = plan.storyCards.find((card) => card.storyId === 'mock-lane-chat-operate-and-recover');
+    const backendRealCard = plan.storyCards.find((card) => card.storyId === 'notebook-first-success');
+    const backendRealVisualCard = plan.storyCards.find((card) => card.storyId === 'real-backend-visual-review');
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(mockLaneCard?.requiredLevels).toEqual(['V0', 'V1', 'V2']);
+    expect(backendRealCard?.requiredLevels).toEqual(['V0', 'V1', 'V3']);
+    expect(backendRealVisualCard?.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+  });
+
+  it('marks change detection failure as broad manual review with per-story levels', () => {
+    const plan = buildVerificationPlan({
+      changeDetectionFailure: 'git unavailable',
+    });
+    const mockLaneCard = plan.storyCards.find((card) => card.storyId === 'mock-lane-chat-operate-and-recover');
+    const backendRealCard = plan.storyCards.find((card) => card.storyId === 'notebook-first-success');
+
+    expect(plan.requiredLevels).toEqual(['V0', 'V1', 'V2', 'V3']);
+    expect(plan.affectedSurfaces).toContain('change-detection-failed');
+    expect(mockLaneCard?.requiredLevels).toEqual(['V0', 'V1', 'V2']);
+    expect(backendRealCard?.requiredLevels).toEqual(['V0', 'V1', 'V3']);
+    expect(plan.riskSummary.manualReviewRequired).toBe(true);
+  });
+
+  it('suppresses release-real owner diagnostics when explicit release-real goal has V4 release impact', () => {
+    const plan = buildVerificationPlan({
+      goal: 'release-real',
+      goalExplicit: true,
+      changedFiles: ['scripts/demo-deploy/deploy.sh'],
+    });
+
+    expect(plan.requiredLevels).toEqual(['V4']);
+    expect(plan.recommendedCommands).not.toContain('npm run verify:release-real');
+    expect(plan.recommendedCommands).toEqual([]);
+    expect(plan.nextAction).toContain('npm run release:ready');
   });
 
   it('writes the story acceptance report JSON and markdown under the requested report root', () => {
